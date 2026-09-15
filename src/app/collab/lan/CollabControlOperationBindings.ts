@@ -29,6 +29,11 @@ type BindingMap = {
 };
 
 export const COLLAB_CONTROL_OPERATION_BINDINGS = {
+  listProjectMembers: binding('GET', 'imported-members', 'membership', 'active-member', 'active', 'path', 200),
+  reissueTransferredMembershipClaim: binding('POST', 'imported-members/claims', 'membership', 'active-member', 'active', 'body', 200),
+  claimTransferredMembership: binding('POST', 'imported-members/claims/redeem', 'membership', 'public', 'active', 'body', 200),
+  createProjectRecoveryLink: binding('POST', 'recovery-links', 'membership', 'active-member', 'active', 'body', 200),
+  redeemProjectRecoveryLink: binding('POST', 'recovery-links/redeem', 'membership', 'public', 'active', 'body', 200),
   createJoinAttempt: binding('POST', 'join-attempts', 'join', 'invitation', 'active', 'body', 201),
   activateJoinAttempt: binding('POST', 'join-attempts/:joinAttemptId/activate', 'join', 'active-member', 'active', 'path-and-body', 200),
   getSnapshot: binding('GET', 'snapshot', 'project', 'active-member', 'active', 'path', 200),
@@ -36,6 +41,7 @@ export const COLLAB_CONTROL_OPERATION_BINDINGS = {
   listRequestComments: binding('GET', 'requests/:requestId/comments', 'request', 'active-member', 'active', 'path-and-query', 200),
   ensureMyRequest: binding('PUT', 'requests/mine', 'request', 'active-member', 'active', 'body', 200),
   createComment: binding('POST', 'requests/:requestId/comments', 'request', 'active-member', 'active', 'path-and-body', 201),
+  resolveTicketNumber: binding('GET', 'tickets/by-number/:ticketNumber', 'ticket', 'active-member', 'active', 'path', 200),
   listTickets: binding('GET', 'tickets', 'ticket', 'active-member', 'active', 'path-and-query', 200),
   getTicket: binding('GET', 'tickets/:ticketId', 'ticket', 'active-member', 'active', 'path', 200),
   listTicketComments: binding('GET', 'tickets/:ticketId/comments', 'ticket', 'active-member', 'active', 'path-and-query', 200),
@@ -72,12 +78,14 @@ export const COLLAB_CONTROL_OPERATION_BINDINGS = {
 
 function binding<
   Method extends CollabControlOperationBinding['method'],
+  Authentication extends CollabControlAuthentication,
+  Admission extends CollabControlAdmission,
 >(
   method: Method,
   route: string,
   family: CollabControlOperationBinding['family'],
-  authentication: CollabControlOperationBinding['authentication'],
-  admission: CollabControlOperationBinding['admission'],
+  authentication: Authentication,
+  admission: Admission,
   requestSource: CollabControlOperationBinding['requestSource'],
   successStatus: 200 | 201,
 ) {

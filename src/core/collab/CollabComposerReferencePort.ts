@@ -22,6 +22,15 @@ export interface CollabComposerReferenceCollection<T> {
   readonly stale: boolean;
 }
 
+export interface CollabComposerTicketPage extends CollabComposerReferenceCollection<CollabComposerTicket> {
+  readonly nextCursor?: string;
+}
+
+export interface CollabComposerTicketPageRequest {
+  readonly projectId: string;
+  readonly cursor?: string;
+}
+
 export interface CollabComposerReferenceSubscription {
   dispose(): void;
 }
@@ -32,10 +41,10 @@ export interface CollabComposerReferencePort {
     projectId: string,
     signal?: AbortSignal,
   ): Promise<CollabComposerReferenceCollection<CollabComposerMemberChange>>;
-  listOpenTickets(
-    projectId: string,
+  readOpenTicketPage(
+    request: CollabComposerTicketPageRequest,
     signal?: AbortSignal,
-  ): Promise<CollabComposerReferenceCollection<CollabComposerTicket>>;
+  ): Promise<CollabComposerTicketPage>;
   subscribeSelection(
     listener: (selection: CollabComposerSelection | null) => void,
   ): CollabComposerReferenceSubscription;

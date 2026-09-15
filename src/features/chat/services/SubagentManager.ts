@@ -120,14 +120,14 @@ export class SubagentManager {
     // Already rendered as sync → update label (no parentEl needed)
     const existingSyncState = this.syncSubagents.get(taskToolId);
     if (existingSyncState) {
-      this.updateSubagentLabel(existingSyncState.wrapperEl, existingSyncState.info, taskInput);
+      this.#updateSubagentLabel(existingSyncState.wrapperEl, existingSyncState.info, taskInput);
       return { action: 'label_updated' };
     }
 
     // Already rendered as async → update label (no parentEl needed)
     const existingAsyncState = this.asyncDomStates.get(taskToolId);
     if (existingAsyncState) {
-      this.updateSubagentLabel(existingAsyncState.wrapperEl, existingAsyncState.info, taskInput);
+      this.#updateSubagentLabel(existingAsyncState.wrapperEl, existingAsyncState.info, taskInput);
       // Sync to canonical SubagentInfo so status transitions don't revert updates
       const canonical = this.getByTaskId(taskToolId);
       if (canonical && canonical !== existingAsyncState.info) {
@@ -150,7 +150,7 @@ export class SubagentManager {
 
       // Do not lock mode before run_in_background is explicitly known.
       // Sync fallback is handled when child chunks/tool_result confirm sync.
-      if (this.resolveTaskMode(pending.toolCall.input)) {
+      if (this.#resolveTaskMode(pending.toolCall.input)) {
         const result = this.renderPendingTask(taskToolId, currentContentEl);
         if (result) {
           return result.mode === 'sync'
@@ -174,7 +174,7 @@ export class SubagentManager {
       return { action: 'buffered' };
     }
 
-    const mode = this.resolveTaskMode(taskInput);
+    const mode = this.#resolveTaskMode(taskInput);
     if (!mode) {
       const toolCall: ToolCallInfo = {
         id: taskToolId,
@@ -189,9 +189,9 @@ export class SubagentManager {
 
     this._spawnedThisStream++;
     if (mode === 'async') {
-      return this.createAsyncTask(taskToolId, taskInput, currentContentEl);
+      return this.#createAsyncTask(taskToolId, taskInput, currentContentEl);
     }
-    return this.createSyncTask(taskToolId, taskInput, currentContentEl);
+    return this.#createSyncTask(taskToolId, taskInput, currentContentEl);
   }
 
   // ============================================
@@ -222,13 +222,13 @@ export class SubagentManager {
 
     try {
       if (input.run_in_background === true) {
-        const result = this.createAsyncTask(pending.toolCall.id, input, targetEl);
+        const result = this.#createAsyncTask(pending.toolCall.id, input, targetEl);
         if (result.action === 'created_async') {
           this._spawnedThisStream++;
           return { mode: 'async', info: result.info, domState: result.domState };
         }
       } else {
-        const result = this.createSyncTask(pending.toolCall.id, input, targetEl);
+        const result = this.#createSyncTask(pending.toolCall.id, input, targetEl);
         if (result.action === 'created_sync') {
           this._spawnedThisStream++;
           return { mode: 'sync', subagentState: result.subagentState };
@@ -260,22 +260,22 @@ export class SubagentManager {
     const targetEl = parentElOverride ?? pending.parentEl;
     if (!targetEl) return null;
 
-    const explicitMode = this.resolveTaskMode(input);
+    const explicitMode = this.#resolveTaskMode(input);
     const taskResultText = extractToolResultContent(taskResult, { fallbackIndent: 2 });
     const inferredMode = explicitMode
-      ?? this.inferModeFromTaskResult(taskResultText, isError, taskToolUseResult);
+      ?? this.#inferModeFromTaskResult(taskResultText, isError, taskToolUseResult);
 
     this.pendingTasks.delete(toolId);
 
     try {
       if (inferredMode === 'async') {
-        const result = this.createAsyncTask(pending.toolCall.id, input, targetEl);
+        const result = this.#createAsyncTask(pending.toolCall.id, input, targetEl);
         if (result.action === 'created_async') {
           this._spawnedThisStream++;
           return { mode: 'async', info: result.info, domState: result.domState };
         }
       } else {
-        const result = this.createSyncTask(pending.toolCall.id, input, targetEl);
+        const result = this.#createSyncTask(pending.toolCall.id, input, targetEl);
         if (result.action === 'created_sync') {
           this._spawnedThisStream++;
           return { mode: 'sync', subagentState: result.subagentState };
@@ -322,7 +322,7 @@ export class SubagentManager {
     if (!subagentState) return null;
 
     const resultText = extractToolResultContent(result, { fallbackIndent: 2 });
-    const extractedResult = this.extractAgentResult(resultText, '', toolUseResult);
+    const extractedResult = this.#extractAgentResult(resultText, '', toolUseResult);
     finalizeSubagentBlock(subagentState, extractedResult, isError);
     this.syncSubagents.delete(toolId);
 
@@ -345,40 +345,40 @@ export class SubagentManager {
 
     if (isError) {
       if (!record.terminalSource) {
-        this.transitionToError(record, resultText || 'Task failed to start');
+        this.#transitionToError(record, resultText || 'Task failed to start');
       }
       return;
     }
 
-    const agentId = this.taskResultInterpreter.extractAgentId(toolUseResult) ?? this.parseAgentId(resultText);
+    const agentId = this.taskResultInterpreter.extractAgentId(toolUseResult) ?? this.#parseAgentId(resultText);
 
     if (!agentId) {
       if (record.terminalSource) return;
       const truncatedResult = resultText.length > 100 ? resultText.substring(0, 100) + '...' : resultText;
-      this.transitionToError(record, `Failed to parse agent_id. Result: ${truncatedResult}`);
+      this.#transitionToError(record, `Failed to parse agent_id. Result: ${truncatedResult}`);
       return;
     }
 
     record.info.agentId = agentId;
     record.info.startedAt ??= Date.now();
-    this.bindProviderIdentifier(agentId, taskToolId);
+    this.#bindProviderIdentifier(agentId, taskToolId);
 
     if (!record.terminalSource) {
       record.info.asyncStatus = 'running';
     }
-    this.publishAsyncState(record.info);
+    this.#publishAsyncState(record.info);
 
-    const deferred = this.takeDeferredAsyncCompletion(taskToolId, agentId);
+    const deferred = this.#takeDeferredAsyncCompletion(taskToolId, agentId);
     if (deferred) {
-      this.applyAsyncSubagentCompletion(record, deferred);
+      this.#applyAsyncSubagentCompletion(record, deferred);
     }
   }
 
   public handleAgentOutputToolUse(toolCall: ToolCallInfo): void {
-    const agentId = this.extractAgentIdFromInput(toolCall.input);
+    const agentId = this.#extractAgentIdFromInput(toolCall.input);
     if (!agentId) return;
 
-    const record = this.resolveByProviderIdentifier(agentId);
+    const record = this.#resolveByProviderIdentifier(agentId);
     if (!record) return;
 
     record.info.outputToolId = toolCall.id;
@@ -397,10 +397,10 @@ export class SubagentManager {
     let agentId = record?.info.agentId;
 
     if (!record) {
-      const inferredAgentId = this.inferAgentIdFromResult(resultText);
+      const inferredAgentId = this.#inferAgentIdFromResult(resultText);
       if (inferredAgentId) {
         agentId = inferredAgentId;
-        record = this.resolveByProviderIdentifier(inferredAgentId);
+        record = this.#resolveByProviderIdentifier(inferredAgentId);
       }
     }
 
@@ -409,7 +409,7 @@ export class SubagentManager {
 
     if (agentId) {
       subagent.agentId = subagent.agentId || agentId;
-      this.bindProviderIdentifier(agentId, subagent.id);
+      this.#bindProviderIdentifier(agentId, subagent.id);
     }
 
     if (
@@ -420,13 +420,13 @@ export class SubagentManager {
       return undefined;
     }
 
-    const stillRunning = this.isStillRunningResult(resultText, isError);
+    const stillRunning = this.#isStillRunningResult(resultText, isError);
     if (stillRunning) {
       this.outputToolToTaskToolUseId.delete(toolId);
       return subagent;
     }
 
-    const extractedResult = this.extractAgentResult(resultText, agentId ?? '', toolUseResult);
+    const extractedResult = this.#extractAgentResult(resultText, agentId ?? '', toolUseResult);
 
     // The chunk's is_error flag can be unreliable for async subagent results
     // (SDK may set is_error on the content block even when the agent succeeded).
@@ -444,27 +444,27 @@ export class SubagentManager {
 
     this.outputToolToTaskToolUseId.delete(toolId);
 
-    this.publishAsyncState(subagent);
+    this.#publishAsyncState(subagent);
     return subagent;
   }
 
   public handleAsyncSubagentCompletion(
     completion: AsyncSubagentCompletion,
   ): SubagentInfo | undefined {
-    const record = this.resolveAsyncSubagentCompletion(completion);
+    const record = this.#resolveAsyncSubagentCompletion(completion);
     if (!record) {
-      this.deferAsyncSubagentCompletion(completion);
+      this.#deferAsyncSubagentCompletion(completion);
       return undefined;
     }
-    return this.applyAsyncSubagentCompletion(record, completion);
+    return this.#applyAsyncSubagentCompletion(record, completion);
   }
 
-  private applyAsyncSubagentCompletion(
+  #applyAsyncSubagentCompletion(
     record: AsyncSubagentRecord,
     completion: AsyncSubagentCompletion,
   ): SubagentInfo | undefined {
     const subagent = record.info;
-    this.bindProviderIdentifier(completion.taskId, subagent.id);
+    this.#bindProviderIdentifier(completion.taskId, subagent.id);
 
     if (record.nativeCompletion) return undefined;
 
@@ -486,7 +486,7 @@ export class SubagentManager {
     subagent.completedAt ??= Date.now();
     record.terminalSource = 'notification';
 
-    this.publishAsyncState(subagent);
+    this.#publishAsyncState(subagent);
     return subagent;
   }
 
@@ -507,7 +507,7 @@ export class SubagentManager {
    * hydrating tool calls from SDK sidecar files) without changing lifecycle state.
    */
   public refreshAsyncSubagent(subagent: SubagentInfo): void {
-    this.updateAsyncDomState(subagent);
+    this.#updateAsyncDomState(subagent);
     this.onStateChange(subagent);
   }
 
@@ -539,7 +539,7 @@ export class SubagentManager {
 
     for (const record of this.asyncSubagents.values()) {
       if (record.info.asyncStatus === 'pending' || record.info.asyncStatus === 'running') {
-        this.markOrphaned(record);
+        this.#markOrphaned(record);
         orphaned.push(record.info);
       }
     }
@@ -564,47 +564,47 @@ export class SubagentManager {
   // Private: State Transitions
   // ============================================
 
-  private markOrphaned(record: AsyncSubagentRecord): void {
+  #markOrphaned(record: AsyncSubagentRecord): void {
     record.info.asyncStatus = 'orphaned';
     record.info.status = 'error';
     record.info.result = 'Conversation ended before task completed';
     record.info.completedAt = Date.now();
     record.terminalSource = 'local_error';
-    this.publishAsyncState(record.info);
+    this.#publishAsyncState(record.info);
   }
 
-  private transitionToError(record: AsyncSubagentRecord, errorResult: string): void {
+  #transitionToError(record: AsyncSubagentRecord, errorResult: string): void {
     record.info.asyncStatus = 'error';
     record.info.status = 'error';
     record.info.result = errorResult;
     record.info.completedAt = Date.now();
     record.terminalSource = 'local_error';
-    this.publishAsyncState(record.info);
+    this.#publishAsyncState(record.info);
   }
 
-  private bindProviderIdentifier(identifier: string, taskToolUseId: string): void {
+  #bindProviderIdentifier(identifier: string, taskToolUseId: string): void {
     const toolUseIds = this.providerIdentifierToToolUseIds.get(identifier) ?? new Set<string>();
     toolUseIds.add(taskToolUseId);
     this.providerIdentifierToToolUseIds.set(identifier, toolUseIds);
   }
 
-  private resolveByProviderIdentifier(identifier: string): AsyncSubagentRecord | undefined {
+  #resolveByProviderIdentifier(identifier: string): AsyncSubagentRecord | undefined {
     const taskToolUseIds = this.providerIdentifierToToolUseIds.get(identifier);
     if (!taskToolUseIds) return undefined;
     if (taskToolUseIds.size !== 1) return undefined;
     return this.asyncSubagents.get(taskToolUseIds.values().next().value!);
   }
 
-  private resolveAsyncSubagentCompletion(
+  #resolveAsyncSubagentCompletion(
     completion: AsyncSubagentCompletion,
   ): AsyncSubagentRecord | undefined {
     if (completion.toolUseId) {
       return this.asyncSubagents.get(completion.toolUseId);
     }
-    return this.resolveByProviderIdentifier(completion.taskId);
+    return this.#resolveByProviderIdentifier(completion.taskId);
   }
 
-  private deferAsyncSubagentCompletion(completion: AsyncSubagentCompletion): void {
+  #deferAsyncSubagentCompletion(completion: AsyncSubagentCompletion): void {
     const key = completion.toolUseId
       ? `tool:${completion.toolUseId}`
       : `provider:${completion.taskId}`;
@@ -621,7 +621,7 @@ export class SubagentManager {
     }
   }
 
-  private takeDeferredAsyncCompletion(
+  #takeDeferredAsyncCompletion(
     taskToolUseId: string,
     providerTaskId?: string,
   ): AsyncSubagentCompletion | undefined {
@@ -640,8 +640,8 @@ export class SubagentManager {
     return completion;
   }
 
-  private publishAsyncState(subagent: SubagentInfo): void {
-    this.updateAsyncDomState(subagent);
+  #publishAsyncState(subagent: SubagentInfo): void {
+    this.#updateAsyncDomState(subagent);
     this.onStateChange(subagent);
   }
 
@@ -649,7 +649,7 @@ export class SubagentManager {
   // Private: Task Creation
   // ============================================
 
-  private createSyncTask(
+  #createSyncTask(
     taskToolId: string,
     taskInput: Record<string, unknown>,
     parentEl: HTMLElement
@@ -659,7 +659,7 @@ export class SubagentManager {
     return { action: 'created_sync', subagentState };
   }
 
-  private createAsyncTask(
+  #createAsyncTask(
     taskToolId: string,
     taskInput: Record<string, unknown>,
     parentEl: HTMLElement
@@ -684,9 +684,9 @@ export class SubagentManager {
     const domState = createAsyncSubagentBlock(parentEl, taskToolId, taskInput);
     this.asyncDomStates.set(taskToolId, domState);
 
-    const deferred = this.takeDeferredAsyncCompletion(taskToolId);
+    const deferred = this.#takeDeferredAsyncCompletion(taskToolId);
     if (deferred) {
-      this.applyAsyncSubagentCompletion(record, deferred);
+      this.#applyAsyncSubagentCompletion(record, deferred);
     }
 
     return { action: 'created_async', info, domState };
@@ -696,7 +696,7 @@ export class SubagentManager {
   // Private: Label Update
   // ============================================
 
-  private updateSubagentLabel(
+  #updateSubagentLabel(
     wrapperEl: HTMLElement,
     info: SubagentInfo,
     newInput: Record<string, unknown>
@@ -721,7 +721,7 @@ export class SubagentManager {
     }
   }
 
-  private resolveTaskMode(taskInput: Record<string, unknown>): 'sync' | 'async' | null {
+  #resolveTaskMode(taskInput: Record<string, unknown>): 'sync' | 'async' | null {
     if (!Object.prototype.hasOwnProperty.call(taskInput, 'run_in_background')) {
       return null;
     }
@@ -734,7 +734,7 @@ export class SubagentManager {
     return null;
   }
 
-  private inferModeFromTaskResult(
+  #inferModeFromTaskResult(
     taskResult: string,
     isError: boolean,
     taskToolUseResult?: unknown
@@ -747,35 +747,35 @@ export class SubagentManager {
     }
     // Only promote to async for launch-shaped payloads. Completed sync results
     // can still contain agent metadata in the payload or final output text.
-    return this.parseAgentIdStrict(taskResult) ? 'async' : 'sync';
+    return this.#parseAgentIdStrict(taskResult) ? 'async' : 'sync';
   }
 
-  private parseAgentIdStrict(result: string): string | null {
-    const payload = this.unwrapTextPayload(result).trim();
+  #parseAgentIdStrict(result: string): string | null {
+    const payload = this.#unwrapTextPayload(result).trim();
     if (!payload) {
       return null;
     }
 
     const parsed = parseJsonRecord(payload);
     if (parsed) {
-      if (this.hasTerminalTaskStatus(parsed)) {
+      if (this.#hasTerminalTaskStatus(parsed)) {
         return null;
       }
 
-      const directAgentId = this.extractAgentIdFromRecord(parsed);
+      const directAgentId = this.#extractAgentIdFromRecord(parsed);
       if (directAgentId) {
         return directAgentId;
       }
 
       const taskRecord = parsed.task;
       if (isRecord(taskRecord)) {
-        return this.extractAgentIdFromRecord(taskRecord);
+        return this.#extractAgentIdFromRecord(taskRecord);
       }
     }
 
     const xmlStatus = this.taskResultInterpreter.extractTagValue(payload, 'retrieval_status')
       ?? this.taskResultInterpreter.extractTagValue(payload, 'status');
-    if (this.isTerminalTaskStatusValue(xmlStatus)) {
+    if (this.#isTerminalTaskStatusValue(xmlStatus)) {
       return null;
     }
 
@@ -783,17 +783,17 @@ export class SubagentManager {
     return exactLineMatch?.[1] ?? null;
   }
 
-  private hasTerminalTaskStatus(value: unknown): boolean {
+  #hasTerminalTaskStatus(value: unknown): boolean {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       return false;
     }
 
     const record = value as Record<string, unknown>;
     const rawStatus = record.retrieval_status ?? record.status;
-    return this.isTerminalTaskStatusValue(rawStatus);
+    return this.#isTerminalTaskStatusValue(rawStatus);
   }
 
-  private isTerminalTaskStatusValue(rawStatus: unknown): boolean {
+  #isTerminalTaskStatusValue(rawStatus: unknown): boolean {
     if (typeof rawStatus !== 'string') {
       return false;
     }
@@ -802,7 +802,7 @@ export class SubagentManager {
     return normalized === 'completed' || normalized === 'success' || normalized === 'error';
   }
 
-  private extractAgentIdFromRecord(record: Record<string, unknown>): string | null {
+  #extractAgentIdFromRecord(record: Record<string, unknown>): string | null {
     const direct = record.agent_id ?? record.agentId;
     if (typeof direct === 'string' && direct.length > 0) {
       return direct;
@@ -817,29 +817,11 @@ export class SubagentManager {
     return typeof nested === 'string' && nested.length > 0 ? nested : null;
   }
 
-  private extractAgentIdFromString(value: string): string | null {
-    const regexPatterns = [
-      /"agent_id"\s*:\s*"([^"]+)"/,
-      /"agentId"\s*:\s*"([^"]+)"/,
-      /agent_id[=:]\s*"?([a-zA-Z0-9_-]+)"?/i,
-      /agentId[=:]\s*"?([a-zA-Z0-9_-]+)"?/i,
-    ];
-
-    for (const pattern of regexPatterns) {
-      const match = value.match(pattern);
-      if (match && match[1]) {
-        return match[1];
-      }
-    }
-
-    return null;
-  }
-
   // ============================================
   // Private: Async DOM State Updates
   // ============================================
 
-  private updateAsyncDomState(subagent: SubagentInfo): void {
+  #updateAsyncDomState(subagent: SubagentInfo): void {
     // Find DOM state by task ID first, then by agentId
     let asyncState = this.asyncDomStates.get(subagent.id);
 
@@ -875,9 +857,9 @@ export class SubagentManager {
   // Private: Async Parsing Logic
   // ============================================
 
-  private isStillRunningResult(result: string, isError: boolean): boolean {
+  #isStillRunningResult(result: string, isError: boolean): boolean {
     const trimmed = result?.trim() || '';
-    const payload = this.unwrapTextPayload(trimmed);
+    const payload = this.#unwrapTextPayload(trimmed);
 
     if (isError) return false;
     if (!trimmed) return false;
@@ -925,9 +907,9 @@ export class SubagentManager {
     return false;
   }
 
-  private extractAgentResult(result: string, agentId: string, toolUseResult?: unknown): string {
+  #extractAgentResult(result: string, agentId: string, toolUseResult?: unknown): string {
     const structuredResult = this.taskResultInterpreter.extractStructuredResult(toolUseResult);
-    const normalizedStructuredResult = this.extractResultFromCandidateString(structuredResult);
+    const normalizedStructuredResult = this.#extractResultFromCandidateString(structuredResult);
     if (normalizedStructuredResult) {
       return normalizedStructuredResult;
     }
@@ -935,11 +917,11 @@ export class SubagentManager {
       return structuredResult;
     }
 
-    const payload = this.unwrapTextPayload(result);
+    const payload = this.#unwrapTextPayload(result);
 
     const parsed = parseJsonRecord(payload);
     if (parsed) {
-      const taskResult = this.extractResultFromTaskObject(parsed.task);
+      const taskResult = this.#extractResultFromTaskObject(parsed.task);
       if (taskResult) {
         return taskResult;
       }
@@ -947,11 +929,11 @@ export class SubagentManager {
       const agents = isRecord(parsed.agents) ? parsed.agents : null;
       const agentData = agents && agentId ? agents[agentId] : null;
       if (isRecord(agentData)) {
-        const parsedResult = this.extractResultFromCandidateString(agentData.result);
+        const parsedResult = this.#extractResultFromCandidateString(agentData.result);
         if (parsedResult) {
           return parsedResult;
         }
-        const parsedOutput = this.extractResultFromCandidateString(agentData.output);
+        const parsedOutput = this.#extractResultFromCandidateString(agentData.output);
         if (parsedOutput) {
           return parsedOutput;
         }
@@ -963,11 +945,11 @@ export class SubagentManager {
         if (agentIds.length > 0) {
           const firstAgent = agents[agentIds[0]];
           if (isRecord(firstAgent)) {
-            const parsedResult = this.extractResultFromCandidateString(firstAgent.result);
+            const parsedResult = this.#extractResultFromCandidateString(firstAgent.result);
             if (parsedResult) {
               return parsedResult;
             }
-            const parsedOutput = this.extractResultFromCandidateString(firstAgent.output);
+            const parsedOutput = this.#extractResultFromCandidateString(firstAgent.output);
             if (parsedOutput) {
               return parsedOutput;
             }
@@ -976,18 +958,18 @@ export class SubagentManager {
         }
       }
 
-      const parsedResult = this.extractResultFromCandidateString(parsed.result);
+      const parsedResult = this.#extractResultFromCandidateString(parsed.result);
       if (parsedResult) {
         return parsedResult;
       }
 
-      const parsedOutput = this.extractResultFromCandidateString(parsed.output);
+      const parsedOutput = this.#extractResultFromCandidateString(parsed.output);
       if (parsedOutput) {
         return parsedOutput;
       }
     }
 
-    const taggedResult = this.extractResultFromTaggedPayload(payload);
+    const taggedResult = this.#extractResultFromTaggedPayload(payload);
     if (taggedResult) {
       return taggedResult;
     }
@@ -995,16 +977,16 @@ export class SubagentManager {
     return payload;
   }
 
-  private extractResultFromTaskObject(task: unknown): string | null {
+  #extractResultFromTaskObject(task: unknown): string | null {
     if (!task || typeof task !== 'object') {
       return null;
     }
     const taskRecord = task as Record<string, unknown>;
-    return this.extractResultFromCandidateString(taskRecord.result)
-      ?? this.extractResultFromCandidateString(taskRecord.output);
+    return this.#extractResultFromCandidateString(taskRecord.result)
+      ?? this.#extractResultFromCandidateString(taskRecord.output);
   }
 
-  private extractResultFromCandidateString(candidate: unknown): string | null {
+  #extractResultFromCandidateString(candidate: unknown): string | null {
     if (typeof candidate !== 'string') {
       return null;
     }
@@ -1014,12 +996,12 @@ export class SubagentManager {
       return null;
     }
 
-    const taggedResult = this.extractResultFromTaggedPayload(trimmed);
+    const taggedResult = this.#extractResultFromTaggedPayload(trimmed);
     if (taggedResult) {
       return taggedResult;
     }
 
-    const jsonlResult = this.extractResultFromOutputJsonl(trimmed);
+    const jsonlResult = this.#extractResultFromOutputJsonl(trimmed);
     if (jsonlResult) {
       return jsonlResult;
     }
@@ -1027,7 +1009,7 @@ export class SubagentManager {
     return trimmed;
   }
 
-  private parseAgentId(result: string): string | null {
+  #parseAgentId(result: string): string | null {
     const regexPatterns = [
       /"agent_id"\s*:\s*"([^"]+)"/,
       /"agentId"\s*:\s*"([^"]+)"/,
@@ -1064,7 +1046,7 @@ export class SubagentManager {
     return null;
   }
 
-  private inferAgentIdFromResult(result: string): string | null {
+  #inferAgentIdFromResult(result: string): string | null {
     const parsed = parseJsonRecord(result);
     if (parsed) {
       const agents = isRecord(parsed.agents) ? parsed.agents : null;
@@ -1075,7 +1057,7 @@ export class SubagentManager {
     return null;
   }
 
-  private unwrapTextPayload(raw: string): string {
+  #unwrapTextPayload(raw: string): string {
     const parsed = parseJsonValue(raw);
     if (parsed !== null) {
       if (Array.isArray(parsed)) {
@@ -1088,14 +1070,14 @@ export class SubagentManager {
     return raw;
   }
 
-  private extractResultFromTaggedPayload(payload: string): string | null {
+  #extractResultFromTaggedPayload(payload: string): string | null {
     const directResult = this.taskResultInterpreter.extractTagValue(payload, 'result');
     if (directResult) return directResult;
 
     const outputContent = this.taskResultInterpreter.extractTagValue(payload, 'output');
     if (!outputContent) return null;
 
-    const extractedFromJsonl = this.extractResultFromOutputJsonl(outputContent);
+    const extractedFromJsonl = this.#extractResultFromOutputJsonl(outputContent);
     if (extractedFromJsonl) return extractedFromJsonl;
 
     const nestedResult = this.taskResultInterpreter.extractTagValue(outputContent, 'result');
@@ -1105,18 +1087,18 @@ export class SubagentManager {
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  private extractResultFromOutputJsonl(outputContent: string): string | null {
+  #extractResultFromOutputJsonl(outputContent: string): string | null {
     const inlineResult = extractFinalResultFromSubagentJsonl(outputContent);
     if (inlineResult) {
       return inlineResult;
     }
 
-    const fullOutputPath = this.extractFullOutputPath(outputContent);
+    const fullOutputPath = this.#extractFullOutputPath(outputContent);
     if (!fullOutputPath) {
       return null;
     }
 
-    const fullOutput = this.readFullOutputFile(fullOutputPath);
+    const fullOutput = this.#readFullOutputFile(fullOutputPath);
     if (!fullOutput) {
       return null;
     }
@@ -1124,7 +1106,7 @@ export class SubagentManager {
     return extractFinalResultFromSubagentJsonl(fullOutput);
   }
 
-  private extractFullOutputPath(content: string): string | null {
+  #extractFullOutputPath(content: string): string | null {
     const truncatedPattern = /\[Truncated\.\s*Full output:\s*([^\]\n]+)\]/i;
     const match = content.match(truncatedPattern);
     if (!match || !match[1]) {
@@ -1135,9 +1117,9 @@ export class SubagentManager {
     return outputPath.length > 0 ? outputPath : null;
   }
 
-  private readFullOutputFile(fullOutputPath: string): string | null {
+  #readFullOutputFile(fullOutputPath: string): string | null {
     try {
-      if (!this.isTrustedOutputPath(fullOutputPath)) {
+      if (!this.#isTrustedOutputPath(fullOutputPath)) {
         return null;
       }
 
@@ -1153,7 +1135,7 @@ export class SubagentManager {
     }
   }
 
-  private extractAgentIdFromInput(input: Record<string, unknown>): string | null {
+  #extractAgentIdFromInput(input: Record<string, unknown>): string | null {
     const agentId = (input.task_id as string) || (input.agentId as string) || (input.agent_id as string);
     return agentId || null;
   }
@@ -1171,7 +1153,7 @@ export class SubagentManager {
     return Array.from(roots);
   }
 
-  private isTrustedOutputPath(fullOutputPath: string): boolean {
+  #isTrustedOutputPath(fullOutputPath: string): boolean {
     if (!isAbsolute(fullOutputPath)) {
       return false;
     }

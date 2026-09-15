@@ -16,7 +16,7 @@ function createReferences(overrides: Partial<CollabComposerReferencePort> = {}):
       source: 'online',
       stale: false,
     })),
-    listOpenTickets: jest.fn(async (): Promise<CollabComposerReferenceCollection<CollabComposerTicket>> => ({
+    readOpenTicketPage: jest.fn(async (): Promise<CollabComposerReferenceCollection<CollabComposerTicket>> => ({
       items: [],
       source: 'online',
       stale: false,
@@ -99,7 +99,7 @@ describe('Collab composer sources', () => {
 
   it('matches Ticket references only at a token boundary and inserts #number text', async () => {
     const references = createReferences({
-      listOpenTickets: jest.fn(async (): Promise<CollabComposerReferenceCollection<CollabComposerTicket>> => ({
+      readOpenTicketPage: jest.fn(async (): Promise<CollabComposerReferenceCollection<CollabComposerTicket>> => ({
         items: [{ number: 12, ticketId: 'ticket-1', title: 'Fix composer menu' }],
         source: 'online',
         stale: false,
@@ -114,6 +114,29 @@ describe('Collab composer sources', () => {
     source.destroy();
   });
 
+  it('resets explicit paging when its query or Project changes', async () => {
+    let projectId = 'project-1';
+    const requests: unknown[] = [];
+    const references = createReferences({
+      getSelection: async () => ({ projectId, projectName: projectId }),
+      readOpenTicketPage: async request => {
+        requests.push(request);
+        return { items: [], nextCursor: 'next-page', source: 'online', stale: false };
+      },
+    });
+    const source = new CollabTicketReferenceSource(references);
+    const signal = new AbortController().signal;
+    const items = await source.load(source.match('#one', 4)!, signal);
+    const more = items.find(item => item.kind === 'folder');
+    if (!more || more.kind !== 'folder') throw new Error('Missing next page');
+    await more.load('two', signal);
+    expect(requests.at(-1)).toEqual({ projectId: 'project-1' });
+    projectId = 'project-2';
+    await more.load('one', signal);
+    expect(requests.at(-1)).toEqual({ projectId: 'project-2' });
+    source.destroy();
+  });
+
   it('rejects a Ticket result after the selected Project changes', async () => {
     let selection: CollabComposerSelection | null = {
       projectId: 'project-1',
@@ -122,7 +145,7 @@ describe('Collab composer sources', () => {
     let listener: ((value: CollabComposerSelection | null) => void) | null = null;
     const references = createReferences({
       getSelection: jest.fn(async () => selection),
-      listOpenTickets: jest.fn(async (): Promise<CollabComposerReferenceCollection<CollabComposerTicket>> => {
+      readOpenTicketPage: jest.fn(async (): Promise<CollabComposerReferenceCollection<CollabComposerTicket>> => {
         selection = { projectId: 'project-2', projectName: 'Project Two' };
         listener?.(selection);
         return { items: [], source: 'online', stale: false };

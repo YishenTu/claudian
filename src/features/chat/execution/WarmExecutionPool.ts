@@ -49,14 +49,14 @@ export class WarmExecutionPool {
       const existing = this.entries.get(owner.id);
       if (existing) {
         existing.owner = owner;
-        existing.lastUsed = this.nextUsageSequence();
-        await this.coolExcessOwners(this.getLimit());
+        existing.lastUsed = this.#nextUsageSequence();
+        await this.#coolExcessOwners(this.#getLimit());
         return;
       }
 
-      const limit = this.getLimit();
+      const limit = this.#getLimit();
       while (this.entries.size >= limit) {
-        const victim = this.findCoolingCandidate();
+        const victim = this.#findCoolingCandidate();
         if (!victim) {
           throw new WarmExecutionCapacityError(limit);
         }
@@ -67,7 +67,7 @@ export class WarmExecutionPool {
 
       this.entries.set(owner.id, {
         owner,
-        lastUsed: this.nextUsageSequence(),
+        lastUsed: this.#nextUsageSequence(),
       });
     });
   }
@@ -85,12 +85,12 @@ export class WarmExecutionPool {
   }
 
   reconcileLimit(): Promise<boolean> {
-    return this.enqueue(() => this.coolExcessOwners(this.getLimit()));
+    return this.enqueue(() => this.#coolExcessOwners(this.#getLimit()));
   }
 
   notifyOwnerMayCool(ownerId: string): Promise<boolean> {
-    if (!this.entries.has(ownerId) || this.entries.size <= this.getLimit()) {
-      return Promise.resolve(this.entries.size <= this.getLimit());
+    if (!this.entries.has(ownerId) || this.entries.size <= this.#getLimit()) {
+      return Promise.resolve(this.entries.size <= this.#getLimit());
     }
     return this.reconcileLimit();
   }
@@ -99,8 +99,8 @@ export class WarmExecutionPool {
     return this.enqueue(async () => {
       const entry = this.entries.get(ownerId);
       if (!entry) return;
-      entry.lastUsed = this.nextUsageSequence();
-      await this.coolExcessOwners(this.getLimit());
+      entry.lastUsed = this.#nextUsageSequence();
+      await this.#coolExcessOwners(this.#getLimit());
     });
   }
 
@@ -115,7 +115,7 @@ export class WarmExecutionPool {
     return pending;
   }
 
-  private findCoolingCandidate(): WarmExecutionEntry | null {
+  #findCoolingCandidate(): WarmExecutionEntry | null {
     let candidate: WarmExecutionEntry | null = null;
     for (const entry of this.entries.values()) {
       if (!entry.owner.canCool()) continue;
@@ -126,9 +126,9 @@ export class WarmExecutionPool {
     return candidate;
   }
 
-  private async coolExcessOwners(limit: number): Promise<boolean> {
+  async #coolExcessOwners(limit: number): Promise<boolean> {
     while (this.entries.size > limit) {
-      const victim = this.findCoolingCandidate();
+      const victim = this.#findCoolingCandidate();
       if (!victim) return false;
       await victim.owner.cool();
       this.entries.delete(victim.owner.id);
@@ -136,11 +136,11 @@ export class WarmExecutionPool {
     return true;
   }
 
-  private getLimit(): number {
+  #getLimit(): number {
     return normalizeWarmExecutionLimit(this.getConfiguredLimit());
   }
 
-  private nextUsageSequence(): number {
+  #nextUsageSequence(): number {
     this.usageSequence += 1;
     return this.usageSequence;
   }

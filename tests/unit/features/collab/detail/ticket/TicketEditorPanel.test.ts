@@ -4,15 +4,16 @@ import 'obsidian';
 
 import { type CollabTicketDetail } from '@claudian-collab/protocol';
 import { EditorView } from '@codemirror/view';
+import { within } from '@testing-library/dom';
+import { configureAxe } from 'jest-axe';
 
 import { type CollabCoordinationSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
   TicketEditorPanel,
   type TicketEditorPanelOptions,
-  type TicketMutationKind,
 } from '@/features/collab/detail/ticket/TicketEditorPanel';
-import { MutationIntentStore } from '@/features/collab/shared/MutationIntentStore';
+import { TicketEditorState } from '@/features/collab/detail/ticket/TicketEditorState';
 
 const CREATED_AT = '2026-08-10T00:00:00.000Z';
 const COMMENTED_EARLY_AT = '2026-08-10T00:01:00.000Z';
@@ -24,17 +25,267 @@ const renderMarkdown = jest.fn(async (markdown: string, host: HTMLElement) => {
 
 function createTicketEditorPanel(
   root: HTMLElement,
-  options: Omit<TicketEditorPanelOptions, 'mutationIntents'>,
+  options: Omit<TicketEditorPanelOptions, 'state'>,
 ): TicketEditorPanel {
   return new TicketEditorPanel(root, {
     ...options,
-    mutationIntents: new MutationIntentStore<TicketMutationKind>(),
+    state: new TicketEditorState(),
   });
 }
 
 describe('TicketEditorPanel', () => {
   beforeEach(() => {
     renderMarkdown.mockClear();
+  });
+
+  it('requires reconciliation when a status change follows a remote content edit', async () => {
+    const original = ticketDetail();
+    const remote = {
+      ...original,
+      body: 'Someone else changed this body',
+      ticket: { ...original.ticket, title: 'Remote title', revision: 4 },
+    };
+    const closed = {
+      ...remote,
+      ticket: { ...remote.ticket, status: 'closed' as const, revision: 5 },
+    };
+    const port = ticketPort();
+    port.readTicket.mockResolvedValueOnce(ticketRead(original))
+      .mockResolvedValueOnce(ticketRead(remote)).mockResolvedValue(ticketRead(closed));
+    port.closeTicket.mockResolvedValue({ status: 'success', value: closed.ticket });
+    port.updateTicketContent.mockResolvedValue({
+      status: 'failure', error: new CollabError({ code: 'operation-failed' }),
+    });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(), port, projectId: 'project-a', renderMarkdown,
+      ticketId: original.ticket.id,
+    });
+    await panel.open();
+    const ui = within(root);
+    within(root.querySelector<HTMLElement>('.claudian-collab-ticket-detail-header')!)
+      .getByRole('button', { name: 'Edit' }).click();
+    (ui.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value = 'My title';
+    setMarkdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!, 'My draft');
+    await panel.refresh();
+    ui.getByRole('button', { name: 'Open' }).click();
+    await nextTurn();
+
+    expect(port.closeTicket).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 4 }));
+    expect((ui.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(ui.getByText('Someone else changed this body')).not.toBeNull();
+    expect(await configureAxe({ rules: { region: { enabled: false } } })(root))
+      .toHaveNoViolations();
+    ui.getByRole('button', { name: 'Keep my version' }).click();
+    ui.getByRole('button', { name: 'Save' }).click();
+    expect(port.updateTicketContent).toHaveBeenCalledWith(expect.objectContaining({
+      expectedRevision: 5, body: 'My draft', title: 'My title',
+    }));
+    panel.destroy();
+  });
+
+  it('allows an unchanged content baseline to advance past comment revisions', async () => {
+    const detail = ticketDetail();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValueOnce(ticketRead(detail)).mockResolvedValue(ticketRead({
+      ...detail, ticket: { ...detail.ticket, revision: 4 },
+    }));
+    port.updateTicketContent.mockResolvedValue({
+      status: 'failure', error: new CollabError({ code: 'operation-failed' }),
+    });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(), port, projectId: 'project-a', renderMarkdown,
+      ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    const ui = within(root);
+    within(root.querySelector<HTMLElement>('.claudian-collab-ticket-detail-header')!)
+      .getByRole('button', { name: 'Edit' }).click();
+    (ui.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value = 'My title';
+    await panel.refresh();
+    ui.getByRole('button', { name: 'Save' }).click();
+    expect(port.updateTicketContent).toHaveBeenCalledWith(expect.objectContaining({
+      expectedRevision: 4, title: 'My title',
+    }));
+    panel.destroy();
+  });
+
+  it('acknowledges a saved status and retries only its failed refresh', async () => {
+    const detail = ticketDetail();
+    const closed = { ...detail, ticket: { ...detail.ticket, revision: 4, status: 'closed' as const } };
+    const port = ticketPort();
+    port.readTicket.mockResolvedValueOnce(ticketRead(detail)).mockResolvedValue({
+      status: 'failure', error: new CollabError({ code: 'operation-failed' }),
+    });
+    port.closeTicket.mockResolvedValue({ status: 'success', value: closed.ticket });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(), port, projectId: 'project-a', renderMarkdown, ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    const ui = within(root);
+    setMarkdownValue(root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!, 'My comment');
+    ui.getByRole('button', { name: 'Open' }).click();
+    await nextTurn();
+    expect(ui.getByText('Saved. The latest Ticket could not be loaded.')).not.toBeNull();
+    expect(ui.queryByText('Saving…')).toBeNull();
+    expect((ui.getByRole('button', { name: 'Open' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(await configureAxe({ rules: { region: { enabled: false } } })(root)).toHaveNoViolations();
+
+    port.readTicket.mockResolvedValue(ticketRead(closed));
+    ui.getByRole('button', { name: 'Retry refresh' }).click();
+    await nextTurn();
+    expect(ui.getByRole('button', { name: 'Closed' })).not.toBeNull();
+    expect(ui.queryByRole('button', { name: 'Retry refresh' })).toBeNull();
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-comment"]')!)).toBe('My comment');
+    expect(port.closeTicket).toHaveBeenCalledTimes(1);
+    panel.destroy();
+  });
+
+  it('refreshes a rejected stale edit and preserves the draft for reconciliation', async () => {
+    const detail = ticketDetail();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValueOnce(ticketRead(detail)).mockResolvedValue(ticketRead({
+      ...detail, body: 'New remote body', ticket: { ...detail.ticket, revision: 4 },
+    }));
+    port.updateTicketContent.mockResolvedValue({
+      status: 'failure', error: new CollabError({ code: 'stale-ticket' }),
+    });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(), port, projectId: 'project-a', renderMarkdown, ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    const ui = within(root);
+    within(root.querySelector<HTMLElement>('.claudian-collab-ticket-detail-header')!)
+      .getByRole('button', { name: 'Edit' }).click();
+    setMarkdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!, 'My draft');
+    ui.getByRole('button', { name: 'Save' }).click();
+    await nextTurn();
+    expect(ui.getByText('New remote body')).not.toBeNull();
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!)).toBe('My draft');
+    ui.getByRole('button', { name: 'Use latest version' }).click();
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!)).toBe('New remote body');
+    expect((ui.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(false);
+    panel.destroy();
+  });
+
+  it('keeps an acknowledged creation distinct from background reads until navigation completes', async () => {
+    const detail = ticketDetail();
+    const navigation = deferred<void>();
+    const onCreated = jest.fn(() => navigation.promise);
+    const port = ticketPort();
+    port.createTicket.mockResolvedValue({ status: 'success', value: detail });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, { onCreated, port, projectId: 'project-a', renderMarkdown });
+    await panel.open();
+    const ui = within(root);
+    (ui.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value = 'New Ticket';
+    setMarkdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!, 'Body');
+    root.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await nextTurn();
+    await panel.refresh();
+    expect(ui.queryByRole('button', { name: 'Create Ticket' })).toBeNull();
+    expect(ui.getByText('Ticket created.')).not.toBeNull();
+    navigation.resolve();
+    await nextTurn();
+    panel.destroy();
+  });
+
+  it('replays an uncertain content save without advancing its request revision on refresh', async () => {
+    const detail = ticketDetail();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValueOnce(ticketRead(detail)).mockResolvedValue(ticketRead({
+      ...detail, ticket: { ...detail.ticket, revision: 4 },
+    }));
+    port.updateTicketContent.mockResolvedValue({
+      status: 'failure', error: new CollabError({ code: 'operation-failed' }),
+    });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(), port, projectId: 'project-a', renderMarkdown, ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    const ui = within(root);
+    within(root.querySelector<HTMLElement>('.claudian-collab-ticket-detail-header')!)
+      .getByRole('button', { name: 'Edit' }).click();
+    setMarkdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!, 'My draft');
+    ui.getByRole('button', { name: 'Save' }).click();
+    await nextTurn();
+    await panel.refresh();
+    ui.getByRole('button', { name: 'Save' }).click();
+    expect(port.updateTicketContent.mock.calls[1]![0]).toEqual(port.updateTicketContent.mock.calls[0]![0]);
+    expect(port.updateTicketContent.mock.calls[1]![0].expectedRevision).toBe(3);
+    panel.destroy();
+  });
+
+  it.each(['failure', 'cache', 'older'] as const)('preserves newer edits after save when the detail read returns %s', async readOutcome => {
+    const detail = ticketDetail();
+    const saved = {
+      ...detail, body: 'Submitted body',
+      ticket: { ...detail.ticket, revision: 4, title: 'Submitted title' },
+    };
+    const response = deferred<Awaited<ReturnType<TicketEditorPanelOptions['port']['updateTicketContent']>>>();
+    const port = ticketPort();
+    port.readTicket.mockResolvedValueOnce(ticketRead(detail)).mockResolvedValue(readOutcome === 'failure'
+      ? { status: 'failure', error: new CollabError({ code: 'operation-failed' }) }
+      : readOutcome === 'older' ? ticketRead(detail)
+        : { status: 'success', value: { detail, stale: true, source: 'cache' } });
+    port.updateTicketContent.mockReturnValueOnce(response.promise).mockResolvedValue({
+      status: 'failure', error: new CollabError({ code: 'operation-failed' }),
+    });
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, {
+      onCreated: jest.fn(), port, projectId: 'project-a', renderMarkdown, ticketId: detail.ticket.id,
+    });
+    await panel.open();
+    const ui = within(root);
+    within(root.querySelector<HTMLElement>('.claudian-collab-ticket-detail-header')!)
+      .getByRole('button', { name: 'Edit' }).click();
+    (ui.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value = '  Submitted title  ';
+    setMarkdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!, 'Submitted body');
+    ui.getByRole('button', { name: 'Save' }).click();
+    setMarkdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!, 'Newer draft');
+    response.resolve({ status: 'success', value: saved.ticket });
+    await nextTurn();
+    expect(ui.getByText('Saved. The latest Ticket could not be loaded.')).not.toBeNull();
+    port.readTicket.mockResolvedValue(ticketRead(saved));
+    ui.getByRole('button', { name: 'Retry refresh' }).click();
+    await nextTurn();
+    expect(markdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!)).toBe('Newer draft');
+    ui.getByRole('button', { name: 'Save' }).click();
+    expect(port.updateTicketContent.mock.calls[1]![0]).toEqual(expect.objectContaining({
+      body: 'Newer draft', expectedRevision: 4, title: '  Submitted title  ',
+    }));
+    panel.destroy();
+  });
+
+  it('retries opening an already created Ticket without creating it again', async () => {
+    const detail = ticketDetail();
+    const port = ticketPort();
+    port.createTicket.mockResolvedValue({ status: 'success', value: detail });
+    const onCreated = jest.fn().mockRejectedValueOnce(new Error('Navigation unavailable')).mockResolvedValue(undefined);
+    const root = document.createElement('div');
+    const panel = createTicketEditorPanel(root, { onCreated, port, projectId: 'project-a', renderMarkdown });
+    await panel.open();
+    const ui = within(root);
+    (ui.getByRole('textbox', { name: 'Title' }) as HTMLInputElement).value = 'New Ticket';
+    setMarkdownValue(root.querySelector<HTMLElement>('[data-field="ticket-body"]')!, 'Body');
+    root.querySelector<HTMLFormElement>('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    await nextTurn();
+    const online = coordination();
+    port.readSnapshot.mockResolvedValue({ status: 'success', value: {
+      ...online, source: 'cache', stale: true,
+      syncState: { ...online.syncState, status: 'offline' },
+    } });
+    await panel.refresh();
+    expect(ui.getByText('Ticket created.')).not.toBeNull();
+    ui.getByRole('button', { name: 'Open Ticket' }).click();
+    await nextTurn();
+    expect(port.createTicket).toHaveBeenCalledTimes(1);
+    expect(onCreated.mock.calls).toEqual([[detail.ticket.id], [detail.ticket.id]]);
+    panel.destroy();
   });
 
   it('creates a ticket from the main editor and routes to its detail state', async () => {
@@ -191,11 +442,8 @@ describe('TicketEditorPanel', () => {
 
     root.querySelector<HTMLButtonElement>('[data-action="save-ticket"]')!.click();
     await nextTurn();
-    expect(port.updateTicketContent).toHaveBeenCalledWith(expect.objectContaining({
-      body: 'Local body',
-      expectedRevision: 3,
-      title: 'Local title',
-    }));
+    expect((within(root).getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(within(root).getByRole('button', { name: 'Keep my version' })).not.toBeNull();
   });
 
   it('renders the latest draft state when typing continues during an authority refresh', async () => {
@@ -386,7 +634,8 @@ describe('TicketEditorPanel', () => {
       .mockResolvedValueOnce(ticketRead(detail))
       .mockResolvedValue(ticketRead({
         ...detail,
-        ticket: { ...detail.ticket, revision: 4 },
+        body: 'Submitted body',
+        ticket: { ...detail.ticket, revision: 4, title: 'Submitted' },
       }));
     port.updateTicketContent
       .mockReturnValueOnce(pending.promise)
@@ -1530,6 +1779,7 @@ function coordination(
         id: 'project-a',
         mainOid: 'c'.repeat(40),
         mainRef: 'refs/heads/main',
+        authorityGeneration: 1,
         managerSetGeneration: 0,
         name: 'Project A',
       },

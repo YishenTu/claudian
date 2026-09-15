@@ -161,21 +161,21 @@ export class DefaultOpencodeAcpSessionKernel
     });
     this.connectPromise = pending;
     pending.then(
-      () => this.clearConnectPromise(pending),
-      () => this.clearConnectPromise(pending),
+      () => this.#clearConnectPromise(pending),
+      () => this.#clearConnectPromise(pending),
     );
-    void this.connectInternal(options).then(resolve, reject);
+    void this.#connectInternal(options).then(resolve, reject);
     return pending;
   }
 
-  private async connectInternal(
+  async #connectInternal(
     options: OpencodeKernelConnectOptions,
   ): Promise<void> {
     this.profile = options.profile;
     try {
       const cliPath = await this.options.plugin
         .getResolvedProviderCliPath('opencode') ?? 'opencode';
-      this.assertNotDisposed();
+      this.#assertNotDisposed();
       const runtimeEnv = buildOpencodeRuntimeEnv(
         this.options.plugin.settings,
         cliPath,
@@ -205,7 +205,7 @@ export class DefaultOpencodeAcpSessionKernel
           }),
         workspaceRoot: this.options.config.vaultWorkingDirectory,
       });
-      this.assertNotDisposed();
+      this.#assertNotDisposed();
       this.databasePath = artifacts.databasePath;
 
       const processEnv: NodeJS.ProcessEnv = {
@@ -225,9 +225,9 @@ export class DefaultOpencodeAcpSessionKernel
         env: processEnv,
       });
       this.process = subprocess;
-      this.assertNotDisposed();
+      this.#assertNotDisposed();
       subprocess.start();
-      this.assertNotDisposed();
+      this.#assertNotDisposed();
 
       const transport = new AcpJsonRpcTransport({
         input: subprocess.stdout,
@@ -235,7 +235,7 @@ export class DefaultOpencodeAcpSessionKernel
         output: subprocess.stdin,
       });
       this.transport = transport;
-      this.assertNotDisposed();
+      this.#assertNotDisposed();
       transport.onClose((error) => {
         if (!this.disposed && this.transport === transport) {
           this.options.onClosed(
@@ -250,35 +250,35 @@ export class DefaultOpencodeAcpSessionKernel
         presentPermission: presentOpencodePermission,
         sessionInstanceId: this.options.sessionInstanceId,
       });
-      this.assertNotDisposed();
+      this.#assertNotDisposed();
       const connection = new AcpClientConnection({
         clientInfo: {
           name: 'claudian',
           version: this.options.plugin.manifest?.version ?? '0.0.0',
         },
         delegate: {
-          fileSystem: this.createFileSystemDelegate(),
+          fileSystem: this.#createFileSystemDelegate(),
           onSessionNotification: (notification) => {
             if (!this.disposed) this.options.onNotification(notification);
           },
-          requestPermission: (request) => this.handlePermissionRequest(request),
+          requestPermission: (request) => this.#handlePermissionRequest(request),
         },
         transport,
       });
       this.connection = connection;
-      this.assertNotDisposed();
+      this.#assertNotDisposed();
       transport.start();
-      this.assertNotDisposed();
+      this.#assertNotDisposed();
       await connection.initialize();
-      this.assertNotDisposed();
+      this.#assertNotDisposed();
     } catch (error) {
-      await this.disposeNativeResources();
+      await this.#disposeNativeResources();
       throw error;
     }
   }
 
   async openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo> {
-    const connection = this.requireConnection();
+    const connection = this.#requireConnection();
     const cwd = this.options.config.vaultWorkingDirectory;
     if (resumeSessionId) {
       let response;
@@ -313,13 +313,13 @@ export class DefaultOpencodeAcpSessionKernel
   setConfigOption(request: Record<string, unknown>): Promise<{
     configOptions?: AcpSessionConfigOption[] | null;
   }> {
-    return this.requireConnection().setConfigOption(
+    return this.#requireConnection().setConfigOption(
       request as Parameters<AcpClientConnection['setConfigOption']>[0],
     );
   }
 
   prompt(request: AcpPromptRequest): Promise<AcpPromptResponse> {
-    return this.requireConnection().prompt(request);
+    return this.#requireConnection().prompt(request);
   }
 
   cancel(sessionId: string): void {
@@ -336,17 +336,17 @@ export class DefaultOpencodeAcpSessionKernel
       reject = nextReject;
     });
     this.disposePromise = pending;
-    void this.disposeInternal().then(resolve, reject);
+    void this.#disposeInternal().then(resolve, reject);
     return pending;
   }
 
-  private async disposeInternal(): Promise<void> {
-    await this.disposeNativeResources();
+  async #disposeInternal(): Promise<void> {
+    await this.#disposeNativeResources();
     await this.connectPromise?.catch(() => undefined);
-    await this.disposeNativeResources();
+    await this.#disposeNativeResources();
   }
 
-  private async disposeNativeResources(): Promise<void> {
+  async #disposeNativeResources(): Promise<void> {
     const interactionController = this.interactionController;
     this.interactionController = null;
     const connection = this.connection;
@@ -378,15 +378,15 @@ export class DefaultOpencodeAcpSessionKernel
     }
   }
 
-  private clearConnectPromise(pending: Promise<void>): void {
+  #clearConnectPromise(pending: Promise<void>): void {
     if (this.connectPromise === pending) this.connectPromise = null;
   }
 
-  private assertNotDisposed(): void {
+  #assertNotDisposed(): void {
     if (this.disposed) throw new Error('OpenCode ACP kernel is disposed');
   }
 
-  private createFileSystemDelegate(): {
+  #createFileSystemDelegate(): {
     readTextFile?: (request: AcpReadTextFileRequest) => Promise<{ content: string }>;
     writeTextFile?: (
       request: AcpWriteTextFileRequest,
@@ -432,7 +432,7 @@ export class DefaultOpencodeAcpSessionKernel
     };
   }
 
-  private handlePermissionRequest(
+  #handlePermissionRequest(
     request: AcpRequestPermissionRequest,
   ): Promise<AcpRequestPermissionResponse> {
     if (this.profile !== 'managed') {
@@ -442,7 +442,7 @@ export class DefaultOpencodeAcpSessionKernel
       ?? Promise.resolve({ outcome: { outcome: 'cancelled' } });
   }
 
-  private requireConnection(): AcpClientConnection {
+  #requireConnection(): AcpClientConnection {
     if (!this.connection) throw new Error('OpenCode ACP kernel is not connected');
     return this.connection;
   }

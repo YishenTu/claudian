@@ -118,7 +118,7 @@ export class ClaudeExecutionRequestEncoder {
       throw new Error(missingNodeError);
     }
 
-    const settings = this.resolveSettings(request);
+    const settings = this.#resolveSettings(request);
     const claudeSettings = getClaudeProviderSettings(settings);
     const model = toClaudeRuntimeModelId(settings.model);
     const effort = resolveEffortLevel(
@@ -130,7 +130,7 @@ export class ClaudeExecutionRequestEncoder {
     const sdkPermissionMode = settings.permissionMode === 'yolo'
       ? 'bypassPermissions'
       : claudeSettings.safeMode;
-    const prompt = this.encodePrompt(request, replayConversationHistory);
+    const prompt = this.#encodePrompt(request, replayConversationHistory);
     const policy = resolveToolPolicy(request);
     const systemPrompt = request.configuration.systemInstructions.kind === 'explicit'
       ? [
@@ -233,7 +233,7 @@ export class ClaudeExecutionRequestEncoder {
     };
   }
 
-  private resolveSettings(request: ProviderExecutionRequest): ClaudianSettings {
+  #resolveSettings(request: ProviderExecutionRequest): ClaudianSettings {
     const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
       this.deps.host.settings,
       'claude',
@@ -251,7 +251,7 @@ export class ClaudeExecutionRequestEncoder {
     return settings;
   }
 
-  private encodePrompt(
+  #encodePrompt(
     request: ProviderExecutionRequest,
     replayConversationHistory: boolean,
   ): string {

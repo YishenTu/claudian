@@ -76,7 +76,7 @@ export class MembershipAdminRepository {
     input: {
       readonly actorMemberId: CollabMemberId;
       readonly consumedAt: string;
-      readonly managerResponsibilityOfferId: CollabOperationId;
+      readonly managerResponsibilityOfferId?: CollabOperationId;
       readonly projectId: CollabProjectId;
       readonly targetMemberId: CollabMemberId;
     },
@@ -88,13 +88,20 @@ export class MembershipAdminRepository {
     if (input.targetMemberId === input.actorMemberId) {
       throw membershipError('stale-project-selection', 'membership-target-already-manager', ['retry']);
     }
-    this.managerResponsibilities.consume(connection, {
-      consumedAt: input.consumedAt,
-      expectedPurpose: 'manager-promotion',
-      expectedSourceManagerMemberId: input.actorMemberId,
-      expectedTargetMemberId: input.targetMemberId,
-      offerId: input.managerResponsibilityOfferId,
-    });
+    if (input.managerResponsibilityOfferId !== undefined) {
+      this.managerResponsibilities.consume(connection, {
+        consumedAt: input.consumedAt,
+        expectedPurpose: 'manager-promotion',
+        expectedSourceManagerMemberId: input.actorMemberId,
+        expectedTargetMemberId: input.targetMemberId,
+        offerId: input.managerResponsibilityOfferId,
+      });
+    } else {
+      this.managerResponsibilities.cancelRelatedNonterminal(connection, {
+        cancelledAt: input.consumedAt,
+        memberId: input.targetMemberId,
+      });
+    }
     const updated = this.managerSet.promote(connection, {
       expectedGeneration: managerSet.generation,
       targetMemberId: input.targetMemberId,
@@ -178,7 +185,7 @@ export class MembershipAdminRepository {
       });
       return {
         promotedSuccessor: null,
-        termination: this.terminateMember(connection, {
+        termination: this.#terminateMember(connection, {
           expectedRole: 'member',
           projectId: input.projectId,
           status: 'left',
@@ -206,7 +213,7 @@ export class MembershipAdminRepository {
       });
       return {
         promotedSuccessor: null,
-        termination: this.terminateMember(connection, {
+        termination: this.#terminateMember(connection, {
           expectedRole: 'member',
           projectId: input.projectId,
           status: 'left',
@@ -234,7 +241,7 @@ export class MembershipAdminRepository {
       expectedGeneration: managerSet.generation,
       targetMemberId: consumed.targetMemberId,
     });
-    const termination = this.terminateMember(connection, {
+    const termination = this.#terminateMember(connection, {
       expectedRole: 'member',
       projectId: input.projectId,
       status: 'left',
@@ -277,7 +284,7 @@ export class MembershipAdminRepository {
     if (input.targetMemberId === context.hostMemberId) {
       throw membershipError('authorization-denied', 'membership-host-cannot-terminate');
     }
-    const target = this.requireActiveTarget(connection, input.targetMemberId);
+    const target = this.#requireActiveTarget(connection, input.targetMemberId);
     if (target.role === 'manager') {
       const managerSet = this.managerSet.requireActiveManager(connection, input.actorMemberId);
       this.managerResponsibilities.cancelRelatedNonterminal(connection, {
@@ -294,7 +301,7 @@ export class MembershipAdminRepository {
         memberId: input.targetMemberId,
       });
     }
-    return this.terminateMember(connection, {
+    return this.#terminateMember(connection, {
       expectedRole: 'member',
       projectId: input.projectId,
       status: input.status,
@@ -341,7 +348,7 @@ export class MembershipAdminRepository {
     };
   }
 
-  private requireActiveTarget(
+  #requireActiveTarget(
     connection: AuthorityDatabaseConnection,
     memberId: CollabMemberId,
   ): { readonly role: CollabRole } {
@@ -358,7 +365,7 @@ export class MembershipAdminRepository {
     return { role: target.role };
   }
 
-  private terminateMember(
+  #terminateMember(
     connection: AuthorityDatabaseConnection,
     input: {
       readonly expectedRole: CollabRole;

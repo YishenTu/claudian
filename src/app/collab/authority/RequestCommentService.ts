@@ -1,19 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-import { type CollabMemberId, type CreateCommentRequest, type CreateCommentResponse } from '@claudian-collab/protocol';
+import { collabControlOperationCodec, type CollabMemberId, type CreateCommentRequest, type CreateCommentResponse } from '@claudian-collab/protocol';
 
 import { AcceptOperationRepository } from '@/app/collab/authority/AcceptOperationRepository';
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
 import { RequestCommentRepository } from '@/app/collab/authority/RequestCommentRepository';
-import {
-  decodeAuthorityChangeRequest,
-  RequestEnsureRepository,
-} from '@/app/collab/authority/RequestEnsureRepository';
+import { RequestEnsureRepository } from '@/app/collab/authority/RequestEnsureRepository';
 import type { RequestEnsureDatabasePort } from '@/app/collab/authority/RequestEnsureService';
-import {
-  decodeAuthorityComment,
-} from '@/app/collab/authority/RequestQueryRepository';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -69,48 +63,14 @@ function fingerprint(
 }
 
 function decodeReplay(value: unknown): CreateCommentResponse {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  try {
+    return collabControlOperationCodec('createComment').decodeResponse(value);
+  } catch {
     throw new CollabError({
       code: 'authority-integrity-error',
       safeContext: { reason: 'comment-idempotency-response-invalid' },
     });
   }
-  const response = value as Readonly<Record<string, unknown>>;
-  if (
-    !response.comment
-    || typeof response.comment !== 'object'
-    || Array.isArray(response.comment)
-    || !response.request
-    || typeof response.request !== 'object'
-    || Array.isArray(response.request)
-  ) {
-    throw new CollabError({
-      code: 'authority-integrity-error',
-      safeContext: { reason: 'comment-idempotency-response-invalid' },
-    });
-  }
-  const comment = response.comment as Readonly<Record<string, unknown>>;
-  const request = response.request as Readonly<Record<string, unknown>>;
-  return {
-    comment: decodeAuthorityComment({
-      author_member_id: comment.authorMemberId,
-      body: comment.body,
-      comment_id: comment.id,
-      created_at: comment.createdAt,
-      request_id: comment.requestId,
-    }),
-    request: decodeAuthorityChangeRequest({
-      ...request,
-      comment_count: request.commentCount,
-      created_at: request.createdAt,
-      first_base_oid: request.firstBaseOid,
-      latest_head_oid: request.latestHeadOid,
-      member_id: request.memberId,
-      merged_oid: request.mergedOid ?? null,
-      request_id: request.id,
-      updated_at: request.updatedAt,
-    }),
-  };
 }
 
 export class RequestCommentService {

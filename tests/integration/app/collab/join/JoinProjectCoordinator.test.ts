@@ -14,6 +14,9 @@ import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
+import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
+import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
+import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
 import {
   JoinProjectCoordinator,
   type JoinProjectFoundationPort,
@@ -36,6 +39,8 @@ const NOW = new Date('2026-08-08T00:00:00.000Z');
 const OID = 'a'.repeat(40);
 const CA_FINGERPRINT = 'ab'.repeat(32);
 const CA_PEM = '-----BEGIN CERTIFICATE-----\nTEST CA\n-----END CERTIFICATE-----\n';
+
+jest.setTimeout(30_000);
 
 interface TestHarness {
   readonly cloneInputs: unknown[];
@@ -79,7 +84,7 @@ describe('JoinProjectCoordinator', () => {
         id: 'project-alpha',
         name: 'Alpha',
         role: 'member',
-        workspacePath: 'Shared/Collab Projects/project-alpha',
+        workspacePath: 'Shared/Collab Projects/alpha',
       }),
     });
 
@@ -97,14 +102,14 @@ describe('JoinProjectCoordinator', () => {
       },
       project: {
         name: 'Alpha',
-        workspacePath: 'Shared/Collab Projects/project-alpha',
+        workspacePath: 'Shared/Collab Projects/alpha',
       },
     });
     await expect(stat(path.join(
       harness.root,
       'Shared',
       'Collab Projects',
-      'project-alpha',
+      'alpha',
       'note.md',
     )))
       .resolves.toMatchObject({});
@@ -120,6 +125,40 @@ describe('JoinProjectCoordinator', () => {
       decodeJoinProjectRecord,
     )).resolves.toBeNull();
     expect(JSON.stringify(harness.cloneInputs)).not.toContain(invitation.invitationSecret);
+  });
+
+  it.each([
+    ['Workspace', 'workspace-1'],
+    ['CON', 'con-1'],
+  ])('joins a Project named %s using an admissible directory', async (projectName, slug) => {
+    const harness = await createHarness({ projectName });
+    await expect(harness.coordinator.joinProject({
+      encodedInvitation: encodeInvitation(createInvitation('project-alpha')), memberDisplayName: 'Alice',
+    })).resolves.toMatchObject({ status: 'success', value: { workspacePath: `workspace/${slug}` } });
+  });
+
+  it('chooses a name suffix without modifying an occupied directory', async () => {
+    const harness = await createHarness();
+    await new CollabWorkspaceService(harness.root).claimProjectsFolder('workspace');
+    await mkdir(path.join(harness.root, 'workspace/alpha'));
+    await mkdir(path.join(harness.root, 'workspace/alpha-1'));
+    await mkdir(path.join(harness.root, 'workspace/alpha-2'));
+    await writeFile(path.join(harness.root, 'workspace/alpha/keep.md'), 'Keep');
+    await expect(harness.coordinator.joinProject({
+      encodedInvitation: encodeInvitation(createInvitation('project-alpha')), memberDisplayName: 'Alice',
+    })).resolves.toMatchObject({ status: 'success', value: { workspacePath: 'workspace/alpha-3' } });
+    expect(await stat(path.join(harness.root, 'workspace/alpha/keep.md'))).toBeDefined();
+  });
+
+  it.each(['activated', 'ready', 'placed'])('recovers named placement after interruption at %s', async cut => {
+    const harness = await createHarness();
+    harness.setRecordSaveFailure(cut === 'activated' ? cut : `named-${cut}`);
+    await expect(harness.coordinator.joinProject({
+      encodedInvitation: encodeInvitation(createInvitation('project-alpha')), memberDisplayName: 'Alice',
+    })).resolves.toMatchObject({ status: 'recovery-required' });
+    await expect(harness.coordinator.resumeJoin({ operationId: 'join-alpha' }))
+      .resolves.toMatchObject({ status: 'success', value: { workspacePath: 'workspace/alpha' } });
+    expect(await stat(path.join(harness.root, 'workspace/alpha/note.md'))).toBeDefined();
   });
 
   it('rejects invalid invitations and duplicate local membership without workspace mutation', async () => {
@@ -147,7 +186,7 @@ describe('JoinProjectCoordinator', () => {
     });
   });
 
-  it('rejects a newly pasted v7 invitation but recovers an already-owned v7 Join over v9', async () => {
+  it('rejects a newly pasted v7 invitation but recovers an already-owned v7 Join over v10', async () => {
     const legacyInvitation = {
       ...createInvitation('project-alpha'),
       protocolVersion: 7 as const,
@@ -198,6 +237,7 @@ describe('JoinProjectCoordinator', () => {
     const result = await harness.coordinator.joinProject({
       encodedInvitation: encodeInvitation(createInvitation('project-alpha')),
       memberDisplayName: 'Alice',
+      projectSlug: 'project-alpha',
     });
     expect(result).toMatchObject({
       durablePhase: 'committed',
@@ -227,7 +267,10 @@ describe('JoinProjectCoordinator', () => {
 
     harness.setCloneFailure(false);
     projectsFolder = 'Shared/Second Projects';
-    await expect(harness.coordinator.resumeJoin({ operationId: 'join-alpha' }))
+    const brokenPath = path.join(harness.root, harness.projects.getProjectPaths('project-broken').pendingOperation);
+    await mkdir(path.dirname(brokenPath), { recursive: true });
+    await writeFile(brokenPath, '{invalid');
+    await expect(harness.coordinator.resumeJoin({ operationId: 'join-alpha', projectId: 'project-alpha' }))
       .resolves.toMatchObject({
         status: 'success',
         value: { workspacePath: 'Shared/First Projects/project-alpha' },
@@ -304,6 +347,7 @@ describe('JoinProjectCoordinator', () => {
     const interrupted = await harness.coordinator.joinProject({
       encodedInvitation: encodeInvitation(createInvitation('project-alpha')),
       memberDisplayName: 'Alice',
+      projectSlug: 'project-alpha',
     });
     expect(interrupted).toMatchObject({
       operationId: 'join-alpha',
@@ -377,6 +421,7 @@ describe('JoinProjectCoordinator', () => {
   });
 
   async function createHarness(options: {
+    readonly projectName?: string;
     readonly getProjectsFolder?: () => string;
     readonly onBootstrap?: (projectId: string, signal?: AbortSignal) => Promise<void>;
   } = {}): Promise<TestHarness> {
@@ -394,7 +439,7 @@ describe('JoinProjectCoordinator', () => {
     let indexPath = 'note.md';
     let currentProjectId = 'project-alpha';
     const credential = Buffer.alloc(32, 9).toString('base64url');
-    const git = fakeGitFoundation(
+    const git = await fakeGitFoundation(
       root,
       cloneInputs,
       () => cloneFailure,
@@ -418,8 +463,8 @@ describe('JoinProjectCoordinator', () => {
       saveProjectDocument: async (
         ...args: Parameters<CollabLocalProjectRepository['saveProjectDocument']>
       ) => {
-        const document = args[2] as { readonly phase?: string };
-        if (document.phase === failRecordSavePhase) {
+        const document = args[2] as { readonly phase?: string; readonly namedPlacement?: string };
+        if (document.phase === failRecordSavePhase || `named-${document.namedPlacement}` === failRecordSavePhase) {
           failRecordSavePhase = null;
           throw new Error('Injected record save failure');
         }
@@ -448,6 +493,7 @@ describe('JoinProjectCoordinator', () => {
             () => expiresAt,
             credential,
             controlPaths,
+            options.projectName,
           ) as never;
         },
         fromStoredTrust: async projectId => {
@@ -458,6 +504,7 @@ describe('JoinProjectCoordinator', () => {
             () => expiresAt,
             credential,
             controlPaths,
+            options.projectName,
           ) as never;
         },
       }),
@@ -481,6 +528,7 @@ describe('JoinProjectCoordinator', () => {
       seedTrustedPendingJoin: async encodedInvitation => {
         await workspace.claimProjectsFolder('workspace');
         const record: JoinProjectRecord = {
+          authorityGeneration: null,
           createdAt: NOW.toISOString(),
           encodedInvitation,
           endpoint: 'https://127.0.0.1:54545',
@@ -537,15 +585,23 @@ describe('JoinProjectCoordinator', () => {
   }
 });
 
-function fakeGitFoundation(
+async function fakeGitFoundation(
   root: string,
   cloneInputs: unknown[],
   shouldFailClone: () => boolean,
   indexPath: () => string,
-): CollabGitFoundation {
+): Promise<CollabGitFoundation> {
+  const resolution = await new GitRuntimeResolver().resolve();
+  if (resolution.status !== 'available') throw new Error('Native Git is required for local identity validation');
+  const emptyConfigPath = path.join(root, 'fixture-empty.gitconfig');
+  await writeFile(emptyConfigPath, '');
+  const actualRepositories = new GitRepositoryService(new GitCommandRunner({
+    emptyConfigPath, executablePath: resolution.runtime.executablePath,
+  }));
   return {
     repositories: {
       assertHealthy: jest.fn(),
+      assertLocalRepositoryIdentity: actualRepositories.assertLocalRepositoryIdentity.bind(actualRepositories),
       cloneRepository: jest.fn(async input => {
         cloneInputs.push(input);
         if (shouldFailClone()) throw new CollabError({
@@ -554,11 +610,12 @@ function fakeGitFoundation(
           safeContext: { reason: 'test-clone-failed' },
         });
         const clonePath = path.join(input.parentDirectory, input.directoryName);
-        await mkdir(path.join(clonePath, '.git'), { recursive: true });
+        await mkdir(clonePath, { recursive: true });
+        await actualRepositories.initializeWorkingRepository(clonePath);
         await writeFile(path.join(clonePath, 'note.md'), 'joined\n');
         return clonePath;
       }),
-      configureLocalRepository: jest.fn(),
+      configureLocalRepository: actualRepositories.configureLocalRepository.bind(actualRepositories),
       fetch: jest.fn(),
       getWorkingTreeStatus: jest.fn(async () => []),
       resolveRef: jest.fn(async () => OID),
@@ -604,11 +661,12 @@ function fakePinnedClient(
   expiresAt: () => string,
   credential: string,
   controlPaths: string[] = [],
+  projectName?: string,
 ) {
   const request = async <T>(definition: CollabJsonRequest<T>): Promise<T> => {
     controlPaths.push(definition.path);
     const id = projectId();
-    if (definition.path.endsWith('/activate')) {
+    if (definition.path.endsWith('/activate') || definition.path.endsWith('/snapshot')) {
       return definition.decode(envelope({
         currentMember: member('active'),
         eventSequence: 3,
@@ -622,10 +680,11 @@ function fakePinnedClient(
           id,
           mainOid: OID,
           mainRef: COLLAB_MAIN_REF,
+          authorityGeneration: 1,
           managerSetGeneration: 0,
-          name: id === 'project-alpha'
+          name: projectName ?? (id === 'project-alpha'
             ? 'Alpha'
-            : id.slice('project-'.length),
+            : id.slice('project-'.length)),
         },
         ticketHighlights: [],
       }));

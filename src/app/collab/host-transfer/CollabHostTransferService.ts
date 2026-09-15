@@ -76,7 +76,7 @@ export class CollabHostTransferService {
     request: CollabCreateHostTransferRequest,
     options: CollabOperationOptions = {},
   ): Promise<void> {
-    this.assertOpen();
+    this.#assertOpen();
     const { coordination, membership } = await this.session(request.projectId, options);
     await this.options.createControlClient(membership).create({
       memberCredential: membership.member.credential,
@@ -94,7 +94,7 @@ export class CollabHostTransferService {
     request: CollabHostTransferIntentRequest,
     options: CollabOperationOptions = {},
   ): Promise<void> {
-    this.assertOpen();
+    this.#assertOpen();
     const { coordination, membership } = await this.session(request.projectId, options);
     const transfer = coordination.snapshot.hostTransfer;
     const acceptedRecovery = transfer?.phase === 'accepted'
@@ -111,8 +111,8 @@ export class CollabHostTransferService {
       || transfer.targetMemberId !== membership.member.id
       || (!transfer.canAccept && !canReplayAccepted)
     ) throw serviceError('host-transfer-acceptance-not-current', 'authorization-denied');
-    await (await this.incomingCoordinator(membership)).accept({
-      idempotencyKey: this.acceptanceIdempotencyKey(
+    await (await this.#incomingCoordinator(membership)).accept({
+      idempotencyKey: this.#acceptanceIdempotencyKey(
         request.projectId,
         request.transferId,
         membership.member.id,
@@ -125,7 +125,7 @@ export class CollabHostTransferService {
     });
   }
 
-  private acceptanceIdempotencyKey(
+  #acceptanceIdempotencyKey(
     projectId: CollabProjectId,
     transferId: string,
     targetMemberId: string,
@@ -137,7 +137,7 @@ export class CollabHostTransferService {
     request: CollabHostTransferIntentRequest,
     options: CollabOperationOptions = {},
   ): Promise<void> {
-    this.assertOpen();
+    this.#assertOpen();
     const { membership } = await this.session(request.projectId, options);
     await this.options.createControlClient(membership).decline({
       memberCredential: membership.member.credential,
@@ -155,7 +155,7 @@ export class CollabHostTransferService {
     request: CollabHostTransferIntentRequest,
     options: CollabOperationOptions = {},
   ): Promise<void> {
-    this.assertOpen();
+    this.#assertOpen();
     const { coordination, membership } = await this.session(request.projectId, options);
     await this.options.createControlClient(membership).cancel({
       memberCredential: membership.member.credential,
@@ -170,7 +170,7 @@ export class CollabHostTransferService {
   }
 
   async resume(options: CollabOperationOptions = {}): Promise<void> {
-    this.assertOpen();
+    this.#assertOpen();
     const index = await this.options.projects.loadIndex();
     let firstError: unknown;
     for (const project of index.projects) {
@@ -210,8 +210,8 @@ export class CollabHostTransferService {
       await this.options.resumeOutgoing?.(projectId);
       return;
     }
-    const membership = await this.requireMembership(projectId);
-    const incoming = await this.incomingCoordinator(membership);
+    const membership = await this.#requireMembership(projectId);
+    const incoming = await this.#incomingCoordinator(membership);
     if (signal) await incoming.resume(projectId, signal);
     else await incoming.resume(projectId);
   }
@@ -228,10 +228,10 @@ export class CollabHostTransferService {
     return this.closePromise;
   }
 
-  private incomingCoordinator(
+  #incomingCoordinator(
     membership: CollabLocalLanMembershipRecord,
   ): Promise<IncomingCoordinator> {
-    this.assertOpen();
+    this.#assertOpen();
     const authorityIdentity = [
       membership.authority.endpoint,
       membership.authority.hostCaFingerprint,
@@ -256,7 +256,7 @@ export class CollabHostTransferService {
     return coordinator;
   }
 
-  private assertOpen(): void {
+  #assertOpen(): void {
     if (this.closed) throw serviceError('host-transfer-service-closed');
   }
 
@@ -268,7 +268,7 @@ export class CollabHostTransferService {
     readonly membership: CollabLocalLanMembershipRecord;
   }> {
     const [membership, coordination] = await Promise.all([
-      this.requireMembership(projectId),
+      this.#requireMembership(projectId),
       this.options.snapshots.readCoordinationSnapshot(projectId, options),
     ]);
     if (coordination.source !== 'online' || coordination.stale) {
@@ -284,7 +284,7 @@ export class CollabHostTransferService {
     return { coordination: coordination as LanCoordinationSnapshot, membership };
   }
 
-  private async requireMembership(
+  async #requireMembership(
     projectId: CollabProjectId,
   ): Promise<CollabLocalLanMembershipRecord> {
     const membership = await this.options.projects.loadMembership(projectId);

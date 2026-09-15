@@ -3,6 +3,7 @@ import { type CollabProjectId } from '@claudian-collab/protocol';
 import type {
   PublishProjectPort,
   PublishRepositorySnapshot,
+  PublishWorkingReviewPort,
 } from '@/app/collab/publish/PublishCoordinator';
 import { workingTreeSnapshotId } from '@/app/collab/publish/PublishSnapshotProjection';
 import { type CollabChangedFile, type CollabOperationOptions, type CollabReviewFileContent, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest } from '@/core/collab';
@@ -16,6 +17,7 @@ export interface WorkingTreeSnapshotPort {
 }
 
 export interface WorkingTreeReviewFilePort {
+  matchesCommit(repositoryPath: string, review: CollabWorkingTreeReview, commitOid: string, signal?: AbortSignal): Promise<boolean>;
   listChanges(
     repositoryPath: string,
     baseOid: string,
@@ -46,6 +48,7 @@ function sameChangedFile(left: CollabChangedFile, right: CollabChangedFile): boo
     && left.kind === right.kind
     && left.binary === right.binary
     && left.workingTreeContentHash === right.workingTreeContentHash
+    && left.workingTreeMode === right.workingTreeMode
     && left.oldBytes === right.oldBytes
     && left.newBytes === right.newBytes
     && left.additions === right.additions
@@ -53,26 +56,42 @@ function sameChangedFile(left: CollabChangedFile, right: CollabChangedFile): boo
     && left.largeForReview === right.largeForReview;
 }
 
-export class WorkingTreeReviewService {
+export class WorkingTreeReviewService implements PublishWorkingReviewPort {
   constructor(
     private readonly projects: PublishProjectPort,
     private readonly snapshots: WorkingTreeSnapshotPort,
     private readonly files: WorkingTreeReviewFilePort,
   ) {}
 
+  async assertCurrent(
+    projectId: CollabProjectId,
+    expected: Pick<CollabWorkingTreeReview, 'baseOid' | 'headOid' | 'snapshotId'>,
+    signal?: AbortSignal,
+  ): Promise<CollabWorkingTreeReview> {
+    const review = await this.prepare(projectId, expected.baseOid, { signal });
+    if (review.headOid !== expected.headOid || review.snapshotId !== expected.snapshotId) {
+      throw reviewError('working-tree-busy', 'working-tree-review-stale');
+    }
+    return review;
+  }
+
+  matchesCommit(repositoryPath: string, review: CollabWorkingTreeReview, commitOid: string, signal?: AbortSignal): Promise<boolean> {
+    return this.files.matchesCommit(repositoryPath, review, commitOid, signal);
+  }
+
   async prepare(
     projectId: CollabProjectId,
     baseOid: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabWorkingTreeReview> {
-    return (await this.capture(projectId, baseOid, options)).review;
+    return (await this.inspect(projectId, () => baseOid, options)).review;
   }
 
   async readFile(
     request: CollabWorkingTreeReviewFileRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabReviewFileContent> {
-    const captured = await this.capture(request.projectId, request.baseOid, options);
+    const captured = await this.inspect(request.projectId, () => request.baseOid, options);
     const review = captured.review;
     if (
       review.headOid !== request.headOid
@@ -88,11 +107,15 @@ export class WorkingTreeReviewService {
     return this.files.readFile(captured.repositoryPath, request, options.signal);
   }
 
-  private async capture(
+  async inspect(
     projectId: CollabProjectId,
-    baseOid: string,
-    options: CollabOperationOptions,
-  ): Promise<{ readonly repositoryPath: string; readonly review: CollabWorkingTreeReview }> {
+    selectBase: (snapshot: PublishRepositorySnapshot) => string | Promise<string>,
+    options: CollabOperationOptions = {},
+  ): Promise<{
+    readonly repositoryPath: string;
+    readonly snapshot: PublishRepositorySnapshot;
+    readonly review: CollabWorkingTreeReview;
+  }> {
     if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
     const context = await this.projects.load(projectId);
     const snapshot = await this.snapshots.inspect(context, options.signal);
@@ -100,6 +123,7 @@ export class WorkingTreeReviewService {
     if (!snapshot.headOid) {
       throw reviewError('repository-invalid', 'working-tree-review-head-missing');
     }
+    const baseOid = await selectBase(snapshot);
     const files = await this.files.listChanges(
       context.repositoryPath,
       baseOid,
@@ -109,6 +133,7 @@ export class WorkingTreeReviewService {
     if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
     return {
       repositoryPath: context.repositoryPath,
+      snapshot,
       review: {
         baseOid,
         files,

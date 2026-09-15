@@ -42,7 +42,7 @@ export class CodexRpcTransport {
       input: this.proc.stdout,
       onClose: (listener) => {
         const exitHandler = (): void => {
-          listener(new Error(this.buildProcessExitMessage()));
+          listener(new Error(this.#buildProcessExitMessage()));
         };
         this.proc.onExit(exitHandler);
         return () => this.proc.offExit(exitHandler);
@@ -52,10 +52,10 @@ export class CodexRpcTransport {
     this.transport = transport;
 
     for (const [method, handler] of this.notificationHandlers) {
-      this.registerNotificationHandler(transport, method, handler);
+      this.#registerNotificationHandler(transport, method, handler);
     }
     for (const [method, handler] of this.serverRequestHandlers) {
-      this.registerServerRequestHandler(transport, method, handler);
+      this.#registerServerRequestHandler(transport, method, handler);
     }
     transport.start();
   }
@@ -91,29 +91,29 @@ export class CodexRpcTransport {
   onNotification(method: string, handler: NotificationHandler): void {
     this.notificationHandlers.set(method, handler);
     if (this.transport) {
-      this.registerNotificationHandler(this.transport, method, handler);
+      this.#registerNotificationHandler(this.transport, method, handler);
     }
   }
 
   onServerRequest(method: string, handler: ServerRequestHandler): void {
     this.serverRequestHandlers.set(method, handler);
     if (this.transport) {
-      this.registerServerRequestHandler(this.transport, method, handler);
+      this.#registerServerRequestHandler(this.transport, method, handler);
     }
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    this.clearUnsubscribers(this.notificationUnsubscribers);
-    this.clearUnsubscribers(this.serverRequestUnsubscribers);
+    this.#clearUnsubscribers(this.notificationUnsubscribers);
+    this.#clearUnsubscribers(this.serverRequestUnsubscribers);
     this.transport?.dispose(new Error('Transport disposed'));
     this.transport = null;
     this.notificationHandlers.clear();
     this.serverRequestHandlers.clear();
   }
 
-  private registerNotificationHandler(
+  #registerNotificationHandler(
     transport: JsonRpcTransport,
     method: string,
     handler: NotificationHandler,
@@ -122,7 +122,7 @@ export class CodexRpcTransport {
     this.notificationUnsubscribers.set(method, transport.onNotification(method, handler));
   }
 
-  private registerServerRequestHandler(
+  #registerServerRequestHandler(
     transport: JsonRpcTransport,
     method: string,
     handler: ServerRequestHandler,
@@ -134,12 +134,12 @@ export class CodexRpcTransport {
     ));
   }
 
-  private clearUnsubscribers(unsubscribers: Map<string, () => void>): void {
+  #clearUnsubscribers(unsubscribers: Map<string, () => void>): void {
     for (const unsubscribe of unsubscribers.values()) unsubscribe();
     unsubscribers.clear();
   }
 
-  private buildProcessExitMessage(): string {
+  #buildProcessExitMessage(): string {
     const stderr = this.proc.getStderrSnapshot();
     return stderr ? `App-server process exited\n\n${stderr}` : 'App-server process exited';
   }

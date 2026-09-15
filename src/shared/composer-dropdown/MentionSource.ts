@@ -49,15 +49,15 @@ export class MentionSource implements ComposerDropdownSource {
     const extensionFolders = this.extensionFoldersLoader?.(signal);
     if (extensionFolders instanceof Promise) {
       return extensionFolders
-        .then(folders => this.finishRootItems(folders, query, signal))
+        .then(folders => this.#finishRootItems(folders, query, signal))
         .catch(error => {
           if (signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
             throw error;
           }
-          return this.finishRootItems([], query, signal);
+          return this.#finishRootItems([], query, signal);
         });
     }
-    return this.finishRootItems(extensionFolders ?? [], query, signal);
+    return this.#finishRootItems(extensionFolders ?? [], query, signal);
   }
 
   match(input: string, cursor: number): ComposerTriggerMatch | null {
@@ -100,7 +100,7 @@ export class MentionSource implements ComposerDropdownSource {
     return () => this.listeners.delete(listener);
   }
 
-  private finishRootItems(
+  #finishRootItems(
     extensionFolders: readonly ComposerDropdownFolderItem[],
     query: string,
     signal: AbortSignal,
@@ -110,11 +110,11 @@ export class MentionSource implements ComposerDropdownSource {
     for (const folder of extensionFolders) {
       if (folder.label.toLocaleLowerCase().includes(query)) items.push(folder);
     }
-    items.push(...this.vaultItems(query));
+    items.push(...this.#vaultItems(query));
     return items;
   }
 
-  private vaultItems(query: string): readonly ComposerDropdownValueItem[] {
+  #vaultItems(query: string): readonly ComposerDropdownValueItem[] {
     type Scored = {
       readonly item: ComposerDropdownValueItem;
       readonly mtime: number;

@@ -38,7 +38,7 @@ export class AgentSkillManagementCoordinator {
 
   async create(input: AgentSkillInput): Promise<AgentSkillMutationResult<AgentSkillDocument>> {
     const value = await this.repository.create(input);
-    return this.completeMutation(value);
+    return this.#completeMutation(value);
   }
 
   async update(
@@ -47,7 +47,7 @@ export class AgentSkillManagementCoordinator {
     input: AgentSkillInput,
   ): Promise<AgentSkillMutationResult<AgentSkillDocument>> {
     const value = await this.repository.update(previousName, expectedRevision, input);
-    return this.completeMutation(value);
+    return this.#completeMutation(value);
   }
 
   async trash(
@@ -55,10 +55,10 @@ export class AgentSkillManagementCoordinator {
     expectedRevision: string,
   ): Promise<AgentSkillMutationResult<void>> {
     await this.repository.trash(name, expectedRevision);
-    return this.completeMutation(undefined);
+    return this.#completeMutation(undefined);
   }
 
-  private async completeMutation<T>(value: T): Promise<AgentSkillMutationResult<T>> {
+  async #completeMutation<T>(value: T): Promise<AgentSkillMutationResult<T>> {
     const refreshers = [...this.panelRefreshers];
     const [providerRefresh] = await Promise.all([
       Promise.resolve().then(() => this.notifyAgentSkillsChanged()).then(

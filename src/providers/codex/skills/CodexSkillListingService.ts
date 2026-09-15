@@ -138,7 +138,7 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     options?.signal?.throwIfAborted();
     if (options?.forceReload) {
       const generation = ++this.generation;
-      return this.startFetch(true, generation, options.signal);
+      return this.#startFetch(true, generation, options.signal);
     }
 
     if (options?.signal) {
@@ -147,7 +147,7 @@ export class CodexSkillListingService implements CodexSkillListProvider {
       }
       // A request-scoped signal owns its process lifetime. Do not coalesce it
       // behind work that another consumer may invalidate independently.
-      return this.startFetch(false, this.generation, options.signal);
+      return this.#startFetch(false, this.generation, options.signal);
     }
 
     if (this.pending?.generation === this.generation) {
@@ -158,10 +158,10 @@ export class CodexSkillListingService implements CodexSkillListProvider {
       return this.cache;
     }
 
-    return this.startFetch(false, this.generation);
+    return this.#startFetch(false, this.generation);
   }
 
-  private startFetch(
+  #startFetch(
     forceReload: boolean,
     generation: number,
     signal?: AbortSignal,
@@ -183,7 +183,7 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     const promise = fetch
       .then((skills) => {
         if (generation === this.generation) {
-          this.storeCache(skills);
+          this.#storeCache(skills);
         }
         return skills;
       })
@@ -267,7 +267,7 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     }
   }
 
-  private storeCache(skills: SkillMetadata[]): void {
+  #storeCache(skills: SkillMetadata[]): void {
     this.cache = skills;
     this.cacheExpiresAt = this.now() + this.ttlMs;
   }

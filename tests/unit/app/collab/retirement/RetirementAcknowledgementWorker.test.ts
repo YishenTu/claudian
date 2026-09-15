@@ -6,8 +6,8 @@ import {
 import type { RetirementRecord } from '@/app/collab/retirement/RetirementRecord';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const RETIRED_AT = '2026-08-13T00:00:00.000Z';
-const ACKNOWLEDGED_AT = '2026-08-13T00:01:00.000Z';
+const ACKNOWLEDGED_AT = new Date().toISOString();
+const RETIRED_AT = new Date(Date.parse(ACKNOWLEDGED_AT) - 60_000).toISOString();
 
 async function admitProjectRecovery(
   _projectId: string,
@@ -124,7 +124,7 @@ describe('RetirementAcknowledgementWorker', () => {
       acknowledgeCloud: jest.fn(),
     };
     const worker = new RetirementAcknowledgementWorker(store, client, {
-      now: () => new Date('2026-09-12T00:00:00.000Z'),
+      now: () => new Date(Date.parse(RETIRED_AT) + 30 * 24 * 60 * 60 * 1_000),
       projectRecoveryAdmission: admitProjectRecovery,
     });
 
@@ -172,7 +172,6 @@ describe('RetirementAcknowledgementWorker', () => {
 
     await expect(resumed.run('project-a')).resolves.toBe('acknowledged');
     expect(secondClient.acknowledgeCloud).toHaveBeenCalledWith({
-      developmentActorId: 'principal-manager-device',
       projectId: 'project-a',
       retirementId: 'retirement-cloud-one',
       serverUrl: 'https://cloud.example.test/',
@@ -193,7 +192,6 @@ function record(): RetirementRecord {
     acknowledgementStatus: 'pending',
     cleanupOperationId: 'retire-local-one',
     cleanupStatus: 'pending',
-    cloudDevelopmentActorId: null,
     cloudRetirementId: null,
     cloudServerUrl: null,
     createdAt: RETIRED_AT,
@@ -213,7 +211,6 @@ function record(): RetirementRecord {
 function cloudRecord(): RetirementRecord {
   return {
     ...record(),
-    cloudDevelopmentActorId: 'principal-manager-device',
     cloudRetirementId: 'retirement-cloud-one',
     cloudServerUrl: 'https://cloud.example.test/',
     hostCaCertificatePem: null,

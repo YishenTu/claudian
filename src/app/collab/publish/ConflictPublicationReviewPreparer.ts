@@ -1,6 +1,4 @@
-import { type CollabOperationId } from '@claudian-collab/protocol';
-
-import type { ConflictPublicationPort } from '@/app/collab/conflicts/ConflictResolutionCoordinator';
+import type { ConflictPublicationInput, ConflictPublicationPort } from '@/app/collab/conflicts/ConflictResolutionCoordinator';
 import type {
   CollabPublicationOperationRecord,
   CollabPublicationStateRecord,
@@ -34,20 +32,28 @@ export class ConflictPublicationReviewPreparer implements ConflictPublicationPor
     private readonly now: () => Date = () => new Date(),
   ) {}
 
+  async isResolutionRetained(
+    context: PublishProjectContext,
+    input: ConflictPublicationInput,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+    const state = await this.state.load(context.projectId);
+    this.#assertOperation(state.operation, input);
+    if (state.operation.phase !== 'review-ready') return false;
+    await this.candidates.assertRetained(context, input, signal);
+    return true;
+  }
+
   async prepareResolvedReview(
     context: PublishProjectContext,
-    input: {
-      readonly candidateOid: string;
-      readonly contributionHeadOid: string;
-      readonly currentMainOid: string;
-      readonly operationId: CollabOperationId;
-    },
+    input: ConflictPublicationInput,
     signal?: AbortSignal,
   ): Promise<CollabPublicationReview> {
     if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
     let state = await this.state.load(context.projectId);
     const operation = state.operation;
-    this.assertOperation(operation, input);
+    this.#assertOperation(operation, input);
     await this.candidates.assertRetained(context, input, signal);
     if (operation.phase === 'captured') {
       const updatedAt = this.now().toISOString();
@@ -71,14 +77,9 @@ export class ConflictPublicationReviewPreparer implements ConflictPublicationPor
     );
   }
 
-  private assertOperation(
+  #assertOperation(
     operation: CollabPublicationOperationRecord | null,
-    input: {
-      readonly candidateOid: string;
-      readonly contributionHeadOid: string;
-      readonly currentMainOid: string;
-      readonly operationId: CollabOperationId;
-    },
+    input: ConflictPublicationInput,
   ): asserts operation is CollabPublicationOperationRecord & {
     readonly phase: 'captured' | 'review-ready';
   } {

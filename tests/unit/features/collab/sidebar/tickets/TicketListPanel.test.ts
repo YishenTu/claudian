@@ -56,7 +56,7 @@ describe('TicketListPanel', () => {
             stale: false,
           },
         }),
-        subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+        observeProject: jest.fn().mockReturnValue({ dispose: jest.fn() }),
       } as unknown as CollabFeaturePort,
       project: project(),
     });
@@ -128,7 +128,7 @@ describe('TicketListPanel', () => {
       port: {
         listTickets,
         readSnapshot: jest.fn(),
-        subscribe: jest.fn().mockImplementation((listener: () => void) => {
+        observeProject: jest.fn().mockImplementation((_projectId: string, listener: () => void) => {
           invalidate = () => listener();
           return { dispose: jest.fn() };
         }),
@@ -173,7 +173,7 @@ describe('TicketListPanel', () => {
       port: {
         listTickets,
         readSnapshot: jest.fn(),
-        subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+        observeProject: jest.fn().mockReturnValue({ dispose: jest.fn() }),
       } as unknown as CollabFeaturePort,
       project: project(),
     });
@@ -208,7 +208,7 @@ describe('TicketListPanel', () => {
       port: {
         listTickets,
         readSnapshot: jest.fn(),
-        subscribe: jest.fn().mockImplementation((listener: () => void) => {
+        observeProject: jest.fn().mockImplementation((_projectId: string, listener: () => void) => {
           invalidate = listener;
           return { dispose: jest.fn() };
         }),
@@ -248,7 +248,7 @@ describe('TicketListPanel', () => {
             stale: false,
           },
         }),
-        subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+        observeProject: jest.fn().mockReturnValue({ dispose: jest.fn() }),
       } as unknown as CollabFeaturePort,
       project: project(),
     });
@@ -285,7 +285,7 @@ describe('TicketListPanel', () => {
             stale: true,
           },
         }),
-        subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+        observeProject: jest.fn().mockReturnValue({ dispose: jest.fn() }),
       } as unknown as CollabFeaturePort,
       project: project({ connectionStatus: 'offline' }),
     });

@@ -97,13 +97,13 @@ export class CCSettingsStorage {
   }
 
   async updatePermissions(permissions: CCPermissions): Promise<void> {
-    const settings = await this.loadForMutation();
+    const settings = await this.#loadForMutation();
     settings.permissions = permissions;
     await this.save(settings);
   }
 
   async addAllowRule(rule: PermissionRule): Promise<void> {
-    const settings = await this.loadForMutation();
+    const settings = await this.#loadForMutation();
     const permissions = settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS };
     if (!permissions.allow?.includes(rule)) {
       permissions.allow = [...(permissions.allow ?? []), rule];
@@ -113,7 +113,7 @@ export class CCSettingsStorage {
   }
 
   async addDenyRule(rule: PermissionRule): Promise<void> {
-    const settings = await this.loadForMutation();
+    const settings = await this.#loadForMutation();
     const permissions = settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS };
     if (!permissions.deny?.includes(rule)) {
       permissions.deny = [...(permissions.deny ?? []), rule];
@@ -123,7 +123,7 @@ export class CCSettingsStorage {
   }
 
   async addAskRule(rule: PermissionRule): Promise<void> {
-    const settings = await this.loadForMutation();
+    const settings = await this.#loadForMutation();
     const permissions = settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS };
     if (!permissions.ask?.includes(rule)) {
       permissions.ask = [...(permissions.ask ?? []), rule];
@@ -133,7 +133,7 @@ export class CCSettingsStorage {
   }
 
   async removeRule(rule: PermissionRule): Promise<void> {
-    const settings = await this.loadForMutation();
+    const settings = await this.#loadForMutation();
     const permissions = settings.permissions ?? { ...DEFAULT_CC_PERMISSIONS };
     permissions.allow = permissions.allow?.filter(r => r !== rule);
     permissions.deny = permissions.deny?.filter(r => r !== rule);
@@ -148,7 +148,7 @@ export class CCSettingsStorage {
   }
 
   async setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
-    const settings = await this.loadForMutation();
+    const settings = await this.#loadForMutation();
     const enabledPlugins = settings.enabledPlugins ?? {};
 
     enabledPlugins[pluginId] = enabled;
@@ -169,7 +169,7 @@ export class CCSettingsStorage {
     return enabledPlugins[pluginId] === false;
   }
 
-  private async loadForMutation(): Promise<CCSettings> {
+  async #loadForMutation(): Promise<CCSettings> {
     try {
       return await this.load();
     } catch (error) {

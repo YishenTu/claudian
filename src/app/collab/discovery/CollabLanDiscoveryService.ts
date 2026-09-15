@@ -22,6 +22,7 @@ export interface CollabDiscoveredHost {
 }
 
 export interface CollabLanAdvertisement {
+  readonly active: boolean;
   stop(): Promise<void>;
 }
 
@@ -168,16 +169,19 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
   }
 
   async advertiseProject(host: CollabDiscoveredHost): Promise<CollabLanAdvertisement> {
-    if (this.closed) return { stop: () => Promise.resolve() };
+    if (this.closed) return { active: false, stop: () => Promise.resolve() };
     let endpoint: string;
     try {
-      endpoint = this.validateHost(host).endpoint;
+      endpoint = this.#validateHost(host).endpoint;
     } catch {
-      return { stop: () => Promise.resolve() };
+      return { active: false, stop: () => Promise.resolve() };
     }
+    let failed = false;
+    const onError = () => { failed = true; };
+    this.errorListeners.add(onError);
     let publication: DnsSdPublication;
     try {
-      publication = this.requireRuntime().publish({
+      publication = this.#requireRuntime().publish({
         name: publicationName(host.projectId, endpoint),
         port: publicationPort(endpoint, this.invitationCodec),
         txt: {
@@ -188,20 +192,32 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
         },
       });
     } catch {
-      await this.releaseRuntimeIfIdle();
-      return { stop: () => Promise.resolve() };
+      this.errorListeners.delete(onError);
+      await this.#releaseRuntimeIfIdle();
+      return { active: false, stop: () => Promise.resolve() };
     }
     this.activePublications += 1;
     let stopped = false;
     return {
+      get active() { return !stopped && !failed; },
       stop: async () => {
         if (stopped) return;
         stopped = true;
-        await new Promise<void>(resolve => {
-          publication.stop(() => resolve());
-        });
-        this.activePublications -= 1;
-        await this.releaseRuntimeIfIdle();
+        this.errorListeners.delete(onError);
+        try {
+          await new Promise<void>(resolve => {
+            const timeout = window.setTimeout(resolve, 1_000);
+            try {
+              publication.stop(() => { window.clearTimeout(timeout); resolve(); });
+            } catch {
+              window.clearTimeout(timeout);
+              resolve();
+            }
+          });
+        } finally {
+          this.activePublications -= 1;
+          await this.#releaseRuntimeIfIdle();
+        }
       },
     };
   }
@@ -212,17 +228,17 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
     options: CollabOperationOptions = {},
   ): Promise<readonly CollabDiscoveredHost[]> {
     if (!FINGERPRINT_PATTERN.test(caFingerprint)) return [];
-    return this.discoverCandidates(projectId, caFingerprint, options);
+    return this.#discoverCandidates(projectId, caFingerprint, options);
   }
 
   discoverProjectCandidatesForTrustTransition(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<readonly CollabDiscoveredHost[]> {
-    return this.discoverCandidates(projectId, null, options);
+    return this.#discoverCandidates(projectId, null, options);
   }
 
-  private async discoverCandidates(
+  async #discoverCandidates(
     projectId: CollabProjectId,
     caFingerprint: string | null,
     options: CollabOperationOptions,
@@ -236,7 +252,7 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
     }
     let runtime: DnsSdRuntime;
     try {
-      runtime = this.requireRuntime();
+      runtime = this.#requireRuntime();
     } catch {
       return [];
     }
@@ -272,7 +288,7 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
         this.errorListeners.add(onError);
         try {
           const createdBrowser = runtime.browse(service => {
-            const candidate = this.decodeService(service);
+            const candidate = this.#decodeService(service);
             if (
               candidate?.projectId === projectId
               && (caFingerprint === null || candidate.caFingerprint === caFingerprint)
@@ -308,7 +324,7 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
       });
     } finally {
       this.activeBrowsers -= 1;
-      await this.releaseRuntimeIfIdle();
+      await this.#releaseRuntimeIfIdle();
     }
   }
 
@@ -322,7 +338,7 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
     if (runtime) await runtime.close();
   }
 
-  private decodeService(service: DnsSdService): CollabDiscoveredHost | null {
+  #decodeService(service: DnsSdService): CollabDiscoveredHost | null {
     const txt = txtRecord(service.txt);
     if (
       !txt
@@ -352,7 +368,7 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
     for (const listener of [...this.errorListeners]) listener();
   };
 
-  private releaseRuntimeIfIdle(): Promise<void> {
+  #releaseRuntimeIfIdle(): Promise<void> {
     if (this.activeBrowsers > 0 || this.activePublications > 0) {
       return Promise.resolve();
     }
@@ -361,12 +377,12 @@ export class CollabLanDiscoveryService implements CollabLanDiscoveryPort {
     return runtime?.close() ?? Promise.resolve();
   }
 
-  private requireRuntime(): DnsSdRuntime {
+  #requireRuntime(): DnsSdRuntime {
     if (!this.runtime) this.runtime = this.createRuntime(this.onRuntimeError);
     return this.runtime;
   }
 
-  private validateHost(host: CollabDiscoveredHost): CollabDiscoveredHost {
+  #validateHost(host: CollabDiscoveredHost): CollabDiscoveredHost {
     if (
       !isCollabProjectId(host.projectId)
       || !FINGERPRINT_PATTERN.test(host.caFingerprint)

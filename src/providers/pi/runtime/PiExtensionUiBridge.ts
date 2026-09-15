@@ -53,19 +53,19 @@ export class PiExtensionUiBridge {
     const method = getString(request.method) ?? getString(request.action) ?? getString(request.uiType);
     switch (method) {
       case 'select':
-        this.handleDialog(request, (renderer, signal) =>
+        this.#handleDialog(request, (renderer, signal) =>
           renderer.select(requireDialogRequest(request), signal));
         return true;
       case 'confirm':
-        this.handleDialog(request, (renderer, signal) =>
+        this.#handleDialog(request, (renderer, signal) =>
           renderer.confirm(requireDialogRequest(request), signal));
         return true;
       case 'input':
-        this.handleDialog(request, (renderer, signal) =>
+        this.#handleDialog(request, (renderer, signal) =>
           renderer.input(requireDialogRequest(request), signal));
         return true;
       case 'editor':
-        this.handleDialog(request, (renderer, signal) =>
+        this.#handleDialog(request, (renderer, signal) =>
           renderer.editor(requireDialogRequest(request), signal));
         return true;
       case 'notify':
@@ -93,7 +93,7 @@ export class PiExtensionUiBridge {
         this.renderer?.setEditorText(request);
         return true;
       default:
-        this.sendCancellation(request);
+        this.#sendCancellation(request);
         return true;
     }
   }
@@ -101,12 +101,12 @@ export class PiExtensionUiBridge {
   cleanup(): void {
     for (const [id, controller] of this.pending) {
       controller.abort();
-      this.sendResponse(id, { cancelled: true });
+      this.#sendResponse(id, { cancelled: true });
     }
     this.pending.clear();
   }
 
-  private handleDialog(
+  #handleDialog(
     request: PiRpcRecord,
     render: (
       renderer: PiExtensionUiRenderer,
@@ -115,7 +115,7 @@ export class PiExtensionUiBridge {
   ): void {
     const id = getString(request.id);
     if (!id || !this.renderer || !this.admitDialog(request)) {
-      this.sendCancellation(request);
+      this.#sendCancellation(request);
       return;
     }
 
@@ -124,12 +124,12 @@ export class PiExtensionUiBridge {
     render(this.renderer, controller.signal)
       .then((response) => {
         if (!controller.signal.aborted) {
-          this.sendResponse(id, response.cancelled ? { cancelled: true } : response);
+          this.#sendResponse(id, response.cancelled ? { cancelled: true } : response);
         }
       })
       .catch(() => {
         if (!controller.signal.aborted) {
-          this.sendResponse(id, { cancelled: true });
+          this.#sendResponse(id, { cancelled: true });
         }
       })
       .finally(() => {
@@ -137,14 +137,14 @@ export class PiExtensionUiBridge {
       });
   }
 
-  private sendCancellation(request: PiRpcRecord): void {
+  #sendCancellation(request: PiRpcRecord): void {
     const id = getString(request.id);
     if (id) {
-      this.sendResponse(id, { cancelled: true });
+      this.#sendResponse(id, { cancelled: true });
     }
   }
 
-  private sendResponse(id: string, response: Record<string, unknown>): void {
+  #sendResponse(id: string, response: Record<string, unknown>): void {
     this.transport.send({
       id,
       type: 'extension_ui_response',

@@ -26,11 +26,11 @@ export class CodexCliResolver {
     const envText = getRuntimeEnvironmentText(settings, 'codex');
     const executionTarget = getCodexExecutionTargetFromContext(context);
     if (executionTarget) {
-      return this.resolveAndCache(hostnamePath, legacyPath, envText, executionTarget);
+      return this.#resolveAndCache(hostnamePath, legacyPath, envText, executionTarget);
     }
 
     return resolveCodexExecutionTargetAsync({ settings }).then((resolvedTarget) => (
-      this.resolveAndCache(hostnamePath, legacyPath, envText, resolvedTarget)
+      this.#resolveAndCache(hostnamePath, legacyPath, envText, resolvedTarget)
     ));
   }
 
@@ -57,7 +57,7 @@ export class CodexCliResolver {
     this.lastExecutionTargetKey = '';
   }
 
-  private resolveAndCache(
+  #resolveAndCache(
     hostnamePath: string,
     legacyPath: string,
     envText: string,

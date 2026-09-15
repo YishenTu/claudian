@@ -12,12 +12,13 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { RequestCommentService } from '@/app/collab/authority/RequestCommentService';
-import type { RequestEnsureDatabasePort } from '@/app/collab/authority/RequestEnsureService';
+import { type RequestEnsureDatabasePort, RequestEnsureService } from '@/app/collab/authority/RequestEnsureService';
 import {
   type AuthorityDatabaseConnection,
   type AuthoritySqlRow,
   SqlJsProjectDatabase,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { TicketService } from '@/app/collab/authority/TicketService';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 
 const CREATED_AT = '2026-08-08T00:00:00.000Z';
@@ -100,6 +101,40 @@ describe('RequestCommentService', () => {
       }],
       idempotency: 1,
     });
+  });
+
+  it('replays the original Ticket relation after later Ticket edits and database reopen', async () => {
+    const tickets = new TicketService(database, {
+      createId: () => 'ticket-one',
+      now: () => new Date(CREATED_AT),
+    });
+    await tickets.create('member-host', {
+      projectId: 'project-alpha', idempotencyKey: 'ticket-key',
+      title: 'Original title', body: 'Original body',
+    });
+    const requests = new RequestEnsureService(database, {
+      validate: async () => ({ mainOid: MAIN }),
+    }, { createRelationId: () => 'relation-one', now: () => new Date(CREATED_AT) });
+    await requests.ensure('member-host', {
+      projectId: 'project-alpha', idempotencyKey: 'request-key',
+      description: 'Context #1', expectedMainOid: MAIN, headOid: HEAD,
+    });
+    const request = input('historical-comment', 'Please review #1');
+    const first = await service.create('member-host', request);
+    expect(first.request.ticketRelations).toEqual([expect.objectContaining({
+      ticketId: 'ticket-one', ticketTitle: 'Original title', ticketRevision: 1,
+    })]);
+    await tickets.updateContent('member-host', {
+      projectId: 'project-alpha', idempotencyKey: 'edit-ticket', ticketId: 'ticket-one',
+      expectedRevision: 1, title: 'Updated title', body: 'Updated body',
+    });
+    await database.close();
+    database = new SqlJsProjectDatabase(path.join(root, 'authority'), {
+      loadSqlJs: async () => SQL,
+    });
+    await database.open();
+    service = new RequestCommentService(database);
+    await expect(service.create('member-host', request)).resolves.toEqual(first);
   });
 
   it('rejects a reused idempotency key with a different normalized body', async () => {

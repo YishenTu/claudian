@@ -73,7 +73,7 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
     if (detail.request.latestHeadOid !== detail.reviewedHeadOid) {
       throw reviewError('authority-integrity-error', 'review-request-head-mismatch');
     }
-    await ensureTrustedCollabOrigin(this.git, context, 'review-origin-mismatch');
+    await ensureTrustedCollabOrigin(this.git, context, 'review-origin-mismatch', signal);
     const memberRef = collabMemberRef(detail.request.memberId);
     const memberRemoteRef = remoteMemberRef(detail.request.memberId);
     const localReview = await this.git.withReadSession(
@@ -81,13 +81,14 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
       'working',
       async session => {
         if (
-          await this.readRefAuthority(session, detail, memberRemoteRef)
+          await this.#readRefAuthority(session, detail, memberRemoteRef)
           !== 'authoritative'
         ) {
           return null;
         }
-        return this.prepareInSession(session, context, detail, signal);
+        return this.#prepareInSession(session, context, detail, signal);
       },
+      signal,
     );
     if (localReview) return localReview;
 
@@ -104,12 +105,12 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
     throwIfCancelled(signal);
 
     return this.git.withReadSession(context.repositoryPath, 'working', async session => {
-      await this.assertAuthoritativeRefs(session, detail, memberRemoteRef);
-      return this.prepareInSession(session, context, detail, signal);
-    });
+      await this.#assertAuthoritativeRefs(session, detail, memberRemoteRef);
+      return this.#prepareInSession(session, context, detail, signal);
+    }, signal);
   }
 
-  private async readRefAuthority(
+  async #readRefAuthority(
     session: GitRepositoryReadSession,
     detail: CollabRequestDetail,
     memberRemoteRef: string,
@@ -129,12 +130,12 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
       : 'head-changed';
   }
 
-  private async assertAuthoritativeRefs(
+  async #assertAuthoritativeRefs(
     session: GitRepositoryReadSession,
     detail: CollabRequestDetail,
     memberRemoteRef: string,
   ): Promise<void> {
-    switch (await this.readRefAuthority(session, detail, memberRemoteRef)) {
+    switch (await this.#readRefAuthority(session, detail, memberRemoteRef)) {
       case 'authoritative': return;
       case 'main-changed': throw reviewError('stale-main', 'review-main-changed');
       case 'head-missing':
@@ -146,7 +147,7 @@ export class NativeGitReviewRepository implements CollabReviewRepositoryPort {
     }
   }
 
-  private async prepareInSession(
+  async #prepareInSession(
     session: GitRepositoryReadSession,
     context: CollabReviewProjectContext,
     detail: CollabRequestDetail,

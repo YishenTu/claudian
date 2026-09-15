@@ -6,7 +6,6 @@ import {
   NativeGitReviewRepository,
   type ReviewGitNetworkPort,
 } from '@/app/collab/review/NativeGitReviewRepository';
-import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 
 const BASE = '0'.repeat(40);
 const MAIN = '1'.repeat(40);
@@ -87,6 +86,7 @@ describe('NativeGitReviewRepository', () => {
       '/vault/workspace/project-a',
       'working',
       expect.any(Function),
+      undefined,
     );
   });
 
@@ -191,7 +191,7 @@ describe('NativeGitReviewRepository', () => {
       undefined,
     );
     expect(git.addRemote).not.toHaveBeenCalled();
-    expect(git.listRemoteUrls).toHaveBeenCalledWith('/vault/workspace/project-a', 'origin');
+    expect(git.listRemoteUrls).toHaveBeenCalledWith('/vault/workspace/project-a', 'origin', undefined);
   });
 
   it('rejects a configured origin outside the synchronized Project authority before local review', async () => {
@@ -210,64 +210,7 @@ describe('NativeGitReviewRepository', () => {
     expect(reviewNetwork.withNetwork).not.toHaveBeenCalled();
   });
 
-  it('returns text, large-text, and safe binary-preview models one file at a time', async () => {
-    const git = fakeGit();
-    const repository = new NativeGitReviewRepository(git, network());
-    git.readBlobsAtPaths.mockResolvedValueOnce([
-      Buffer.from('old\n'),
-      Buffer.from('new\n'),
-    ]);
-    await expect(repository.readFile(context(), fileRequest({
-      binary: false,
-      kind: 'modified',
-      largeForReview: false,
-      path: 'note.md',
-    }))).resolves.toEqual({
-      file: expect.objectContaining({ newBytes: 4, oldBytes: 4, path: 'note.md' }),
-      kind: 'text',
-      newText: 'new\n',
-      oldText: 'old\n',
-    });
 
-    const manyLines = `${'x\n'.repeat(CLAUDIAN_COLLAB_LIMITS.maxTextDiffLines)}x`;
-    git.readBlobsAtPaths.mockResolvedValueOnce([
-      Buffer.from('old\n'),
-      Buffer.from(manyLines),
-    ]);
-    await expect(repository.readFile(context(), fileRequest({
-      binary: false,
-      kind: 'modified',
-      largeForReview: false,
-      path: 'large.md',
-    }))).resolves.toMatchObject({
-      file: { largeForReview: true, path: 'large.md' },
-      kind: 'large-text',
-    });
-
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    git.readBlobsAtPaths.mockResolvedValueOnce([png]);
-    await expect(repository.readFile(context(), fileRequest({
-      binary: true,
-      kind: 'added',
-      largeForReview: false,
-      path: 'image.png',
-    }))).resolves.toEqual({
-      file: expect.objectContaining({ binary: true, newBytes: 8, path: 'image.png' }),
-      kind: 'binary',
-      preview: { bytes: png, mimeType: 'image/png' },
-    });
-
-    git.readBlobsAtPaths.mockResolvedValueOnce([Buffer.from('<html>not an image</html>')]);
-    await expect(repository.readFile(context(), fileRequest({
-      binary: true,
-      kind: 'added',
-      largeForReview: false,
-      path: 'spoofed.png',
-    }))).resolves.toEqual({
-      file: expect.objectContaining({ binary: true, path: 'spoofed.png' }),
-      kind: 'binary',
-    });
-  });
 });
 
 function context(overrides: Partial<ReturnType<typeof baseContext>> = {}) {
@@ -304,21 +247,6 @@ function detail(reviewCondition: 'clean' | 'conflicting' | 'stale'): CollabReque
     },
     reviewCondition,
     reviewedHeadOid: HEAD,
-  };
-}
-
-function fileRequest(file: {
-  binary: boolean;
-  kind: 'added' | 'modified';
-  largeForReview: boolean;
-  path: string;
-}) {
-  return {
-    comparisonBaseOid: MAIN,
-    comparisonTargetOid: TREE,
-    file,
-    projectId: 'project-a',
-    requestId: 'request-a',
   };
 }
 
@@ -373,6 +301,7 @@ function fakeGit(): jest.Mocked<GitRepositoryService> {
     mergeTree: (acceptedOid, memberOid) => git.mergeTree(
       '/vault/workspace/project-a', acceptedOid, memberOid,
     ),
+    readBlobMetadataAtPaths: async () => { throw new Error('File reads use real Git integration tests'); },
     readBlobsAtPaths: requests => git.readBlobsAtPaths(
       '/vault/workspace/project-a', requests,
     ),

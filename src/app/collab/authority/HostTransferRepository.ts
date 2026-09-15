@@ -188,7 +188,7 @@ export class HostTransferRepository {
     projectId: CollabProjectId,
     actorMemberId: CollabMemberId,
   ): void {
-    this.requireActiveActor(connection, projectId, actorMemberId);
+    this.#requireActiveActor(connection, projectId, actorMemberId);
   }
 
   findIdempotency<T>(
@@ -199,7 +199,7 @@ export class HostTransferRepository {
       readonly requestFingerprint: string;
     },
   ): T | null {
-    this.assertIdempotency(input);
+    this.#assertIdempotency(input);
     const row = connection.get(
       `SELECT request_fingerprint, response_json
        FROM idempotency_results
@@ -231,7 +231,7 @@ export class HostTransferRepository {
       readonly response: T;
     },
   ): T {
-    this.assertIdempotency(input);
+    this.#assertIdempotency(input);
     timestamp(input.createdAt, 'host-transfer-idempotency-time-invalid');
     const existing = this.findIdempotency<T>(connection, input);
     if (existing) return existing;
@@ -295,7 +295,7 @@ export class HostTransferRepository {
       expiredAt,
       true,
     );
-    return this.requirePhase(connection, current.transferId, 'expired');
+    return this.#requirePhase(connection, current.transferId, 'expired');
   }
 
   createOffer(
@@ -309,7 +309,7 @@ export class HostTransferRepository {
       readonly transferId: CollabOperationId;
     },
   ): HostTransferAuthorityRecord {
-    const context = this.requireActiveActor(connection, input.projectId, input.actorMemberId);
+    const context = this.#requireActiveActor(connection, input.projectId, input.actorMemberId);
     if (context.hostMemberId !== input.actorMemberId) {
       throw repositoryError('host-transfer-host-required', 'authorization-denied');
     }
@@ -363,7 +363,7 @@ export class HostTransferRepository {
       readonly updatedAt: string;
     },
   ): HostTransferAuthorityRecord {
-    this.requireActiveActor(connection, input.projectId, input.actorMemberId);
+    this.#requireActiveActor(connection, input.projectId, input.actorMemberId);
     const current = this.require(connection, input.transferId);
     if (current.targetHostMemberId !== input.actorMemberId) {
       throw repositoryError('host-transfer-target-required', 'authorization-denied');
@@ -380,7 +380,7 @@ export class HostTransferRepository {
     assertHostTransferTransition(current.phase, 'accepted');
     if (input.updatedAt >= current.expiresAt) {
       this.transition(connection, input.transferId, current.phase, 'expired', input.updatedAt);
-      return this.requirePhase(connection, input.transferId, 'expired');
+      return this.#requirePhase(connection, input.transferId, 'expired');
     }
     connection.run(
       `UPDATE host_transfer_operations
@@ -396,7 +396,7 @@ export class HostTransferRepository {
         input.transferId,
       ],
     );
-    return this.requirePhase(connection, input.transferId, 'accepted');
+    return this.#requirePhase(connection, input.transferId, 'accepted');
   }
 
   terminateBeforeRelinquishment(
@@ -409,7 +409,7 @@ export class HostTransferRepository {
       readonly updatedAt: string;
     },
   ): HostTransferAuthorityRecord {
-    const context = this.requireActiveActor(connection, input.projectId, input.actorMemberId);
+    const context = this.#requireActiveActor(connection, input.projectId, input.actorMemberId);
     const current = this.require(connection, input.transferId);
     if (
       (input.phase === 'cancelled' && context.hostMemberId !== input.actorMemberId)
@@ -424,7 +424,7 @@ export class HostTransferRepository {
       throw repositoryError('host-transfer-user-cancel-unavailable', 'host-transfer-pending');
     }
     this.transition(connection, input.transferId, current.phase, input.phase, input.updatedAt, true);
-    return this.requirePhase(connection, input.transferId, input.phase);
+    return this.#requirePhase(connection, input.transferId, input.phase);
   }
 
   advance(
@@ -471,7 +471,7 @@ export class HostTransferRepository {
           || input.nextPhase === 'expired',
       );
     }
-    return this.requirePhase(connection, input.transferId, input.nextPhase);
+    return this.#requirePhase(connection, input.transferId, input.nextPhase);
   }
 
   relinquishAuthority(
@@ -553,7 +553,7 @@ export class HostTransferRepository {
     if (project?.host_member_id !== input.targetHostMemberId) {
       throw repositoryError('host-transfer-host-pointer-update-failed');
     }
-    return this.requirePhase(connection, input.transferId, 'authority-relinquished');
+    return this.#requirePhase(connection, input.transferId, 'authority-relinquished');
   }
 
   listProofs(connection: AuthorityDatabaseConnection): readonly CollabHostTrustTransitionProof[] {
@@ -607,7 +607,7 @@ export class HostTransferRepository {
     return record;
   }
 
-  private requirePhase(
+  #requirePhase(
     connection: AuthorityDatabaseConnection,
     transferId: CollabOperationId,
     phase: HostTransferDurablePhase,
@@ -617,7 +617,7 @@ export class HostTransferRepository {
     return record;
   }
 
-  private requireActiveActor(
+  #requireActiveActor(
     connection: AuthorityDatabaseConnection,
     projectId: CollabProjectId,
     actorMemberId: CollabMemberId,
@@ -652,7 +652,7 @@ export class HostTransferRepository {
     return projectId;
   }
 
-  private assertIdempotency(input: {
+  #assertIdempotency(input: {
     readonly actorMemberId: CollabMemberId;
     readonly idempotencyKey: string;
     readonly requestFingerprint: string;

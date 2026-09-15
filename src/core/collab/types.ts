@@ -28,12 +28,14 @@ export interface CollabProjectBase {
 }
 
 export interface CollabLanProject extends CollabProjectBase {
+  authorityGeneration: number;
   authorityKind: 'lan';
   hostMemberId: CollabMemberId;
   managerSetGeneration: number;
 }
 
 export interface CollabCloudProject extends CollabProjectBase {
+  authorityGeneration: number;
   authorityKind: 'cloud';
 }
 
@@ -142,6 +144,7 @@ export function isCollabCloudProjectSnapshot(
 /** Client-local review metadata captured from the working tree. */
 export interface CollabChangedFile extends SharedCollabChangedFile {
   workingTreeContentHash?: string;
+  workingTreeMode?: number;
 }
 
 export type CollabProjectLifecycle = 'active' | 'leaving' | 'retired';
@@ -234,7 +237,10 @@ export interface CollabRequestReview {
   canAccept: boolean;
 }
 
+export type CollabContributionIntent = 'publish' | 'update';
+
 export interface CollabPublicationReview {
+  intent?: CollabContributionIntent;
   kind: 'publication';
   projectId: CollabProjectId;
   operationId: CollabOperationId;

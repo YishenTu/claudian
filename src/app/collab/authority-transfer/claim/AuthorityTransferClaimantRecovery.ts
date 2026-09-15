@@ -13,6 +13,18 @@ import type { CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface AuthorityTransferClaimantRecoveryHandler {
+  assertTransferPredecessor?(record: AuthorityTransferClaimantRecord): Promise<void>;
+  beforeProject(
+    record: AuthorityTransferClaimantRecord,
+    options: CollabOperationOptions,
+  ): Promise<'skip' | void>;
+  complete(
+    record: AuthorityTransferClaimantRecord,
+    options: CollabOperationOptions,
+  ): Promise<void>;
+  isLocalOwner?(
+    record: AuthorityTransferClaimantRecord,
+  ): Promise<boolean>;
   resume(
     record: AuthorityTransferClaimantRecord,
     options: CollabOperationOptions,
@@ -27,24 +39,27 @@ export function authorityTransferClaimantRequiresSource(
   record: AuthorityTransferClaimantRecord,
   now: Date,
 ): boolean {
+  if (record.variant !== 'source-issued') return false;
   if (
     record.phase === 'prepared'
     || record.phase === 'claim-retained'
-    || record.phase === 'credential-persisted'
+    || (record.phase === 'credential-persisted' && (
+      now.getTime() < Date.parse(record.status.expiresAt)
+    ))
   ) return true;
   return record.phase === 'target-claimed'
     && now.getTime() < Date.parse(record.status.expiresAt);
 }
 
-function requiresNoRuntime(
+export function authorityTransferClaimantRequiresNoRuntime(
   record: AuthorityTransferClaimantRecord,
   now: Date,
 ): boolean {
   if (record.phase === 'completed' || record.phase === 'membership-converged') return true;
+  if (record.variant !== 'source-issued') return false;
   if (now.getTime() < Date.parse(record.status.expiresAt)) return false;
   return record.phase === 'prepared'
-    || record.phase === 'claim-retained'
-    || record.phase === 'credential-persisted';
+    || record.phase === 'claim-retained';
 }
 
 export class AuthorityTransferClaimantRecovery
@@ -76,15 +91,22 @@ implements CollabProjectLifecycleRecoveryStage {
     let firstError: unknown;
     for (const projectId of await this.store.listProjectIds()) {
       assertNotCancelled(options);
-      await this.lifecycle.runExclusive(
-        projectId,
-        this.durableOwner.name,
-        'recovery',
+      const selected = await this.store.load(projectId);
+      const admit = (operation: () => Promise<void>) => this.lifecycle!.runAuthorityTransferClaimant(projectId, async () => {
+        if (!this.handler.assertTransferPredecessor) throw new CollabError({ code: 'durable-progress-recovery-required' });
+        const current = await this.store.load(projectId);
+        if (!current || current.variant !== selected?.variant || current.operationIntentId !== selected.operationIntentId) {
+          throw new CollabError({ code: 'durable-progress-recovery-required' });
+        }
+        await this.handler.assertTransferPredecessor(current);
+      }, operation);
+      await admit(
         async () => {
           const record = await this.store.load(projectId);
           if (!record) return;
-          if (requiresNoRuntime(record, this.now())) {
-            await this.store.remove(projectId);
+          if (await this.handler.beforeProject(record, options) === 'skip') return;
+          if (authorityTransferClaimantRequiresNoRuntime(record, this.now())) {
+            await this.handler.complete(record, options);
             return;
           }
           await this.handler.resume(record, options);
@@ -108,7 +130,10 @@ implements CollabProjectLifecycleRecoveryStage {
   ): Promise<'absent' | 'nonterminal' | 'terminal'> {
     const record = await this.store.load(projectId);
     if (!record) return 'absent';
-    return record.phase === 'completed' || record.phase === 'membership-converged'
+    if (record.phase === 'completed' || record.phase === 'membership-converged') {
+      return 'terminal';
+    }
+    return await this.handler.isLocalOwner?.(record) === false
       ? 'terminal'
       : 'nonterminal';
   }

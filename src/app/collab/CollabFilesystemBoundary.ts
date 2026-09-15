@@ -102,7 +102,7 @@ async function syncDirectoryBestEffort(
 ): Promise<void> {
   let handle: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    handle = await open(absolutePath, fsConstants.O_RDONLY);
+    handle = await open(absolutePath, process.platform === 'win32' ? fsConstants.O_RDWR : fsConstants.O_RDONLY);
     await handle.sync();
   } catch {
     onDiagnostic?.({ code: 'directory-sync-unavailable', path: relativePath });
@@ -129,7 +129,8 @@ async function syncDirectoryDurably(
 ): Promise<void> {
   let handle: Awaited<ReturnType<typeof open>> | null = null;
   try {
-    handle = await open(absolutePath, fsConstants.O_RDONLY);
+    // Windows FlushFileBuffers requires write access, including directory handles.
+    handle = await open(absolutePath, process.platform === 'win32' ? fsConstants.O_RDWR : fsConstants.O_RDONLY);
     await handle.sync();
   } catch {
     throw filesystemError('operation-failed', 'directory-sync-required', relativePath);

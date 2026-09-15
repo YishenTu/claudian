@@ -423,11 +423,11 @@ describe('ClaudianPlugin', () => {
       );
       const port = (
         plugin as unknown as {
-          createCollabDetailViewPort(): { subscribe(listener: () => void): { dispose(): void } };
+          createCollabDetailViewPort(): { observeProject(projectId: string, listener: () => void): { dispose(): void } };
         }
       ).createCollabDetailViewPort();
 
-      const subscription = port.subscribe(jest.fn());
+      const subscription = port.observeProject('project-a', jest.fn());
       await new Promise(resolve => setImmediate(resolve));
 
       expect(requireCollabFeatureService).not.toHaveBeenCalled();
@@ -1786,12 +1786,15 @@ describe('ClaudianPlugin', () => {
       expect(() => plugin.onunload()).not.toThrow();
     });
 
-    it('leaves plugin-view detachment to Obsidian during unload', async () => {
+    it('detaches session-only Collab details even without a retained coordinator', async () => {
       await plugin.onload();
-
+      let attached = true;
+      const leaf = { detach: () => { attached = false; } };
+      mockApp.workspace.getLeavesOfType.mockImplementation((type: string) => (
+        type === COLLAB_DETAIL_VIEW_TYPE && attached ? [leaf] : []
+      ));
       plugin.onunload();
-
-      expect(mockApp.workspace.detachLeavesOfType).not.toHaveBeenCalled();
+      expect(attached).toBe(false);
     });
 
     it('disposes the application execution lifecycle registry', async () => {
@@ -1807,6 +1810,67 @@ describe('ClaudianPlugin', () => {
       expect(disposeSpy).toHaveBeenCalledTimes(1);
     });
 
+    it.each(['unchanged', 'failed-disable'] as const)('keeps detail navigation after an %s enablement transition', async transition => {
+      enableCollab();
+      await plugin.onload();
+      const leaf = { setViewState: jest.fn().mockResolvedValue(undefined), detach: jest.fn() };
+      mockApp.workspace.getLeaf.mockReturnValue(leaf);
+      const coordinator = (plugin as any).getCollabDetailViewCoordinator();
+      if (transition === 'failed-disable') mockApp.vault.adapter.write.mockRejectedValueOnce(new Error('settings write failed'));
+      const outcome = await plugin.setCollabEnabled(transition === 'unchanged').then(() => 'saved', error => error.message);
+      expect(outcome).toBe(transition === 'failed-disable' ? 'settings write failed' : 'saved');
+      await coordinator.open({ kind: 'ticket', projectId: 'project-alpha' });
+      expect(leaf.setViewState).toHaveBeenCalledWith(expect.objectContaining({ state: { kind: 'ticket', projectId: 'project-alpha' } }));
+    });
+
+    it.each(['disable', 'unload'] as const)('does not launch a conflict read completed during %s', async action => {
+      enableCollab();
+      await plugin.onload();
+      let finishRead!: (value: unknown) => void;
+      const pending = new Promise(resolve => { finishRead = resolve; });
+      Object.assign(plugin as unknown as Record<string, unknown>, {
+        collabLayoutReady: true,
+        collabFeatureService: { readConflict: () => pending, close: () => pending.then(() => undefined) },
+      });
+      const opening = (plugin as any).openCollabConflict('project-alpha', 'operation-one', 'update');
+      await Promise.resolve();
+      const closing = action === 'disable' ? plugin.setCollabEnabled(false) : (plugin.onunload(), (plugin as any).applicationShutdownPromise);
+      await new Promise(resolve => setImmediate(resolve));
+      const admissionOpen = (plugin as any).createCollabDetailViewPort().isDetailAdmissionOpen();
+      finishRead({ status: 'success', value: { descriptor: { projectId: 'project-alpha' } } });
+      await Promise.all([opening, closing]);
+      expect(admissionOpen).toBe(false);
+      expect(mockApp.workspace.getLeaf).not.toHaveBeenCalled();
+    });
+
+    it('detaches Collab detail immediately on unload and drains an in-flight open', async () => {
+      enableCollab();
+      await plugin.onload();
+      let mounted = false;
+      let finishOpen!: () => void;
+      const pending = new Promise<void>(resolve => { finishOpen = resolve; });
+      const leaf = {
+        detach: jest.fn(() => { mounted = false; }),
+        setViewState: jest.fn(async () => { mounted = true; await pending; mounted = true; }),
+      };
+      mockApp.workspace.getLeaf.mockReturnValue(leaf);
+      mockApp.workspace.getLeavesOfType.mockImplementation((type: string) => (
+        type === COLLAB_DETAIL_VIEW_TYPE && mounted ? [leaf] : []
+      ));
+      const coordinator = (plugin as any).getCollabDetailViewCoordinator();
+      const opening = coordinator.open({ kind: 'ticket', projectId: 'project-alpha' });
+      await Promise.resolve();
+      expect(mounted).toBe(true);
+      plugin.onunload();
+      expect(mounted).toBe(false);
+      finishOpen();
+      await opening;
+      await (plugin as any).applicationShutdownPromise;
+      expect(mounted).toBe(false);
+      await coordinator.open({ kind: 'ticket', projectId: 'project-alpha' });
+      expect(mounted).toBe(false);
+    });
+
     it('drains views before disposing execution and workspace resources', async () => {
       await plugin.onload();
       let resolveViewDrain!: () => void;
@@ -1814,12 +1878,12 @@ describe('ClaudianPlugin', () => {
         resolveViewDrain = resolve;
       });
       const prepareForPluginUnload = jest.fn(() => viewDrain);
-      mockApp.workspace.getLeavesOfType.mockReturnValue([{
+      mockApp.workspace.getLeavesOfType.mockImplementation((type: string) => type === VIEW_TYPE_CLAUDIAN ? [{
         view: {
           prepareForPluginUnload,
           getTabManager: jest.fn(),
         },
-      }]);
+      }] : []);
       const disposeExecution = jest.spyOn(
         plugin.executionLifecycleRegistry,
         'dispose',

@@ -4,6 +4,7 @@ import { type CollabBoundedQueryPort, type CollabConflictEntry, type CollabConfl
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
+import { agentRuntimeRequestBudget } from './AgentRuntimeRequestBudget';
 import {
   AGENT_RUNTIME_PROTOCOL_VERSION,
   type AgentRuntimeChangedFile,
@@ -23,6 +24,7 @@ import {
   type AgentRuntimeProjectDetail,
   type AgentRuntimeProjectSummary,
   type AgentRuntimePublicationReview,
+  type AgentRuntimeRetryPolicy,
   type AgentRuntimeReviewFileContent,
   type AgentRuntimeRpcEnvelope,
   type AgentRuntimeRpcError,
@@ -45,6 +47,8 @@ export type CollabAgentPort = Pick<
   | 'addTicketComment'
   | 'acceptRequest'
   | 'closeTicket'
+  | 'confirmUpdate'
+  | 'updateProject'
   | 'confirmPublish'
   | 'createTicket'
   | 'listProjects'
@@ -67,6 +71,7 @@ export type ResolveCollabAgentPort = () => Promise<CollabAgentPort | null>;
 
 export interface AgentRuntimePreparedInvocation {
   readonly access: AgentRuntimeOperationAccess;
+  readonly retry: AgentRuntimeRetryPolicy;
   readonly id: string;
   execute(signal: AbortSignal): Promise<AgentRuntimeRpcResponse>;
 }
@@ -80,7 +85,6 @@ export type AgentRuntimeMethodPrepareResult =
   };
 
 interface AgentRuntimeMethodContext {
-  readonly intentId: string;
   readonly resolveCollab: ResolveCollabAgentPort;
 }
 
@@ -88,8 +92,7 @@ type AgentRuntimeMethodOutcome =
   | { readonly status: 'success'; readonly result: AgentRuntimeRpcResult }
   | { readonly status: 'error'; readonly error: AgentRuntimeRpcError };
 
-interface AgentRuntimeMethodDefinition {
-  readonly access?: AgentRuntimeOperationAccess;
+interface AgentRuntimeMethodContract {
   readonly description: string;
   readonly parameters: readonly AgentRuntimeParameterDescriptor[];
   readonly resultDescription: string;
@@ -100,6 +103,11 @@ interface AgentRuntimeMethodDefinition {
   ): Promise<AgentRuntimeMethodOutcome>;
   readonly validate?: (params: Readonly<Record<string, unknown>>) => boolean;
 }
+
+type AgentRuntimeMethodDefinition = AgentRuntimeMethodContract & (
+  | { readonly access?: 'read'; readonly retry?: never }
+  | { readonly access: 'write'; readonly retry: Exclude<AgentRuntimeRetryPolicy['strategy'], 'read'> }
+);
 
 const CONTROL_FREE_PATTERN = '^[^\\u0000-\\u001F\\u007F]+$';
 
@@ -172,6 +180,7 @@ const PUBLISH_DESCRIPTION = Object.freeze({
 });
 
 const OID = Object.freeze({
+  maxLength: 64,
   pattern: '^(?:[0-9a-f]{40}|[0-9a-f]{64})$',
   type: 'string' as const,
 });
@@ -337,6 +346,32 @@ const METHOD_DEFINITIONS = {
         inspection => ({ project: toProjectDetail(inspection) }),
       ),
     ),
+  },
+  'collab.projects.update': {
+    access: 'write',
+    retry: 'inspect-before-repeat',
+    description: 'Apply accepted Project updates to the local working copy while preserving personal work. Continue an Update conflict after editing the real Project files. Does not publish personal changes or modify a Request.',
+    parameters: Object.freeze([projectIdParam()]),
+    resultDescription: 'Observed Update state after at most one exact candidate confirmation. A further review-required result needs another explicit Update call.',
+    execute: (params, context, signal) => withCollab(context, signal, async collab => {
+      const projectId = stringParam(params, 'projectId');
+      const prepared = await collab.updateProject(projectId, operationOptions(signal));
+      if (prepared.status !== 'success') return mapProjectUpdateFailure(projectId, prepared);
+      let outcome = prepared.value;
+      if (outcome.state === 'review-required' && outcome.review?.canConfirm && outcome.review.intent === 'update') {
+        const confirmed = await collab.confirmUpdate({
+          projectId,
+          operationId: outcome.review.operationId,
+          expectedMainOid: outcome.review.currentMainOid,
+          expectedCandidateOid: outcome.review.candidateOid,
+        }, operationOptions(signal));
+        if (confirmed.status !== 'success') return mapProjectUpdateFailure(projectId, confirmed);
+        outcome = confirmed.value;
+      }
+      return success({ projectId, state: outcome.state, nextAction: outcome.state === 'review-required' ? 'update' : null,
+        ...(outcome.review ? { files: outcome.review.files.map(toChangedFile) } : {}),
+      });
+    }),
   },
   'collab.tickets.list': {
     description: 'List one page of open or closed Tickets.',
@@ -598,9 +633,9 @@ const METHOD_DEFINITIONS = {
     ),
   },
   'collab.conflicts.get': {
-    description: 'Read the current Member single durable conflict from My changes or an existing Request.',
+    description: 'Read the current Member conflict from My changes or Update.',
     parameters: Object.freeze([projectIdParam()]),
-    resultDescription: 'Conflict location and immutable file manifest; resolution happens by editing Project files and publishing again.',
+    resultDescription: 'Conflict location and immutable file manifest. Edit real Project files, then continue Update with collab.projects.update or Publish with collab.changes.publish.',
     execute: async (params, context, signal) => withCollab(
       context,
       signal,
@@ -622,6 +657,7 @@ const METHOD_DEFINITIONS = {
   },
   'collab.tickets.create': {
     access: 'write',
+    retry: 'same-mutation',
     description: 'Create a Ticket in one Collab Project.',
     parameters: Object.freeze([
       projectIdParam(),
@@ -635,7 +671,7 @@ const METHOD_DEFINITIONS = {
       async collab => mapCollabResult(
         await collab.createTicket({
           body: stringParam(params, 'body'),
-          intentId: context.intentId,
+          intentId: mutationIntentId(params),
           projectId: stringParam(params, 'projectId'),
           title: stringParam(params, 'title'),
         }, operationOptions(signal)),
@@ -645,6 +681,7 @@ const METHOD_DEFINITIONS = {
   },
   'collab.tickets.update': {
     access: 'write',
+    retry: 'same-mutation',
     description: 'Update one Ticket title and Markdown body.',
     parameters: Object.freeze([
       projectIdParam(),
@@ -661,7 +698,7 @@ const METHOD_DEFINITIONS = {
         await collab.updateTicketContent({
           body: stringParam(params, 'body'),
           expectedRevision: numberParam(params, 'expectedRevision'),
-          intentId: context.intentId,
+          intentId: mutationIntentId(params),
           projectId: stringParam(params, 'projectId'),
           ticketId: stringParam(params, 'ticketId'),
           title: stringParam(params, 'title'),
@@ -672,6 +709,7 @@ const METHOD_DEFINITIONS = {
   },
   'collab.tickets.comments.create': {
     access: 'write',
+    retry: 'same-mutation',
     description: 'Add an immutable comment to one Ticket.',
     parameters: Object.freeze([
       projectIdParam(),
@@ -685,7 +723,7 @@ const METHOD_DEFINITIONS = {
       async collab => mapCollabResult(
         await collab.addTicketComment({
           body: stringParam(params, 'body'),
-          intentId: context.intentId,
+          intentId: mutationIntentId(params),
           projectId: stringParam(params, 'projectId'),
           ticketId: stringParam(params, 'ticketId'),
         }, operationOptions(signal)),
@@ -700,7 +738,8 @@ const METHOD_DEFINITIONS = {
   'collab.tickets.reopen': ticketStatusDefinition('reopen'),
   'collab.changes.publish': {
     access: 'write',
-    description: 'Publish all current Member unpublished changes, including a local-file resolution of an active conflict.',
+    retry: 'inspect-before-repeat',
+    description: 'Publish all current Member unpublished changes, including a local-file resolution of a Publish conflict.',
     parameters: Object.freeze([
       projectIdParam(),
       param('description', 'Nonblank change Request Markdown description.', true, PUBLISH_DESCRIPTION),
@@ -714,6 +753,7 @@ const METHOD_DEFINITIONS = {
   },
   'collab.requests.comments.create': {
     access: 'write',
+    retry: 'same-mutation',
     description: 'Add an immutable comment to an open change Request.',
     parameters: Object.freeze([
       projectIdParam(),
@@ -724,11 +764,12 @@ const METHOD_DEFINITIONS = {
     execute: (params, context, signal) => withCollab(
       context,
       signal,
-      collab => createRequestComment(collab, params, context.intentId, signal),
+      collab => createRequestComment(collab, params, mutationIntentId(params), signal),
     ),
   },
   'collab.requests.accept': {
     access: 'write',
+    retry: 'same-mutation',
     description: 'Accept one exact open change Request as the current Manager.',
     parameters: Object.freeze([
       projectIdParam(),
@@ -748,7 +789,7 @@ const METHOD_DEFINITIONS = {
           expectedMainOid: stringParam(params, 'expectedMainOid'),
           expectedRequestRevision: numberParam(params, 'expectedRequestRevision'),
           expectedResolvingTickets: resolvingTicketsParamValue(params),
-          intentId: context.intentId,
+          intentId: mutationIntentId(params),
           projectId: stringParam(params, 'projectId'),
           requestId: stringParam(params, 'requestId'),
         }, operationOptions(signal)),
@@ -776,7 +817,8 @@ export const AGENT_RUNTIME_OPERATION_DESCRIPTORS: readonly AgentRuntimeOperation
       access: definition.access ?? 'read',
       description: definition.description,
       name,
-      parameters: definition.parameters,
+      parameters: methodParameters(definition),
+      retry: retryPolicy(definition),
       resultDescription: definition.resultDescription,
     });
   }));
@@ -788,13 +830,15 @@ export const AGENT_RUNTIME_OPERATION_SUMMARIES: readonly AgentRuntimeOperationSu
     name: operation.name,
   })));
 
+export const AGENT_RUNTIME_MAX_REQUEST_BYTES = agentRuntimeRequestBudget(AGENT_RUNTIME_OPERATION_DESCRIPTORS);
+
 export class AgentRuntimeMethodRegistry {
   constructor(private readonly resolveCollab: ResolveCollabAgentPort) {}
 
   prepare(envelope: AgentRuntimeRpcEnvelope): AgentRuntimeMethodPrepareResult {
     if (!isAgentRuntimeRpcMethod(envelope.method)) return { status: 'method-not-found' };
     const definition: AgentRuntimeMethodDefinition = METHOD_DEFINITIONS[envelope.method];
-    const params = decodeParams(envelope.params, definition.parameters);
+    const params = decodeParams(envelope.params, methodParameters(definition));
     if (!params || definition.validate?.(params) === false) {
       return { status: 'invalid-params' };
     }
@@ -802,6 +846,7 @@ export class AgentRuntimeMethodRegistry {
     return {
       invocation: {
         access: definition.access ?? 'read',
+        retry: retryPolicy(definition),
         execute: signal => this.execute(
           envelope.id,
           definition,
@@ -825,7 +870,6 @@ export class AgentRuntimeMethodRegistry {
       const outcome = await definition.execute(
         params,
         {
-          intentId: intentIdFromRpcId(id),
           resolveCollab: this.resolveCollab,
         },
         signal,
@@ -850,6 +894,7 @@ function ticketStatusDefinition(
 ): AgentRuntimeMethodDefinition {
   return {
     access: 'write',
+    retry: 'same-mutation',
     description: `${action === 'close' ? 'Close' : 'Reopen'} one Ticket.`,
     parameters: Object.freeze([
       projectIdParam(),
@@ -863,7 +908,7 @@ function ticketStatusDefinition(
       async collab => {
         const request = {
           expectedRevision: numberParam(params, 'expectedRevision'),
-          intentId: context.intentId,
+          intentId: mutationIntentId(params),
           projectId: stringParam(params, 'projectId'),
           ticketId: stringParam(params, 'ticketId'),
         };
@@ -882,6 +927,7 @@ function ticketStatusDefinition(
 function listRuntimeOperations(): AgentRuntimeMethodOutcome {
   return success({
     access: 'read-write',
+    limits: { maxRequestBytes: AGENT_RUNTIME_MAX_REQUEST_BYTES },
     name: 'claudian-agent-runtime',
     operations: AGENT_RUNTIME_OPERATION_SUMMARIES,
     protocolVersion: AGENT_RUNTIME_PROTOCOL_VERSION,
@@ -1062,6 +1108,25 @@ function toProjectSummary(project: CollabLocalProjectSummary): AgentRuntimeProje
   };
 }
 
+function toProjectUpdate(update: CollabProjectInspection['projectUpdate']): AgentRuntimeProjectDetail['update'] {
+  const operation = update?.operation.kind;
+  const incoming = update?.incoming ?? 'unknown';
+  const freshness = update?.freshness ?? 'offline';
+  return {
+    state: operation === 'publish' ? 'publish-pending'
+      : operation === 'update-conflict' ? 'conflict'
+      : operation === 'update-review' ? 'review-required'
+      : operation === 'update-recovery' ? 'recovery-required'
+      : incoming === 'included' ? 'current' : incoming,
+    freshness, incoming,
+    ...(freshness === 'fresh' ? {} : { reason: freshness }),
+    nextAction: !update || !update.action.enabled || freshness !== 'fresh' ? null
+      : update.action.kind === 'complete-publish' ? 'complete-publish'
+      : operation === 'update-conflict' ? 'resolve-conflicts'
+      : update.action.kind === 'none' ? null : 'update',
+  };
+}
+
 function toProjectDetail(inspection: CollabProjectInspection): AgentRuntimeProjectDetail {
   const coordination = inspection.coordination;
   const currentMember = coordination?.snapshot.currentMember;
@@ -1076,6 +1141,7 @@ function toProjectDetail(inspection: CollabProjectInspection): AgentRuntimeProje
     .map(member => member.id);
   return {
     ...toProjectSummary(inspection.project),
+    update: toProjectUpdate(inspection.projectUpdate),
     authorityKind: inspection.project.authorityKind,
     coordination: !coordination || !currentMember
       ? null
@@ -1105,16 +1171,13 @@ function toPersonalChangesResult(
   inspection: CollabProjectInspection,
 ): AgentRuntimeRpcResult {
   const personal = inspection.personalChanges;
-  const ownership = conflictOwnership(inspection);
-  const requestOwnsState = ownership.location === 'request'
-    && (inspection.conflict !== undefined || personal?.review !== undefined);
   return {
     changes: personal
       ? {
-        action: requestOwnsState ? 'none' : personal.action,
+        action: personal.action,
         hasContribution: personal.hasContribution,
         updateAvailable: personal.updateAvailable,
-        ...(!requestOwnsState && personal.conflictOperationId !== undefined
+        ...(personal.conflictOperationId !== undefined
           ? { conflictOperationId: personal.conflictOperationId }
           : {}),
         unpublishedReview: {
@@ -1122,7 +1185,7 @@ function toPersonalChangesResult(
           files: personal.unpublishedReview.files.map(toChangedFile),
           headOid: personal.unpublishedReview.headOid,
         },
-        ...(!requestOwnsState && personal.review
+        ...(personal.review
           ? {
             preparedPublication: {
               baseMainOid: personal.review.baseMainOid,
@@ -1179,13 +1242,8 @@ function conflictOwnership(inspection: CollabProjectInspection): {
   readonly location: AgentRuntimeConflictLocation;
   readonly requestId?: string;
 } {
-  const snapshot = inspection.coordination?.snapshot;
-  const ownRequest = snapshot?.openRequests.find(
-    request => request.memberId === snapshot.currentMember.id,
-  );
-  return ownRequest
-    ? { location: 'request', requestId: ownRequest.id }
-    : { location: 'my-changes' };
+  if (inspection.conflict?.intent === 'update') return { location: 'update' };
+  return { location: 'my-changes' };
 }
 
 function toActiveMember(member: CollabMember): AgentRuntimeMember {
@@ -1422,6 +1480,23 @@ function mapCollabResult<T>(
   return success(mapper(result.value));
 }
 
+function mapProjectUpdateFailure(
+  projectId: string,
+  result: Exclude<CollabResult<unknown>, { readonly status: 'success' }>,
+): AgentRuntimeMethodOutcome {
+  if (result.status === 'cancelled') return error(cancelledError());
+  return error({
+    code: result.error.code,
+    data: {
+      projectId,
+      group: result.error.group,
+      recoveryActions: result.error.recoveryActions,
+      status: result.status,
+    },
+    message: result.error.message,
+  });
+}
+
 function mapCollabFailure(
   result: Exclude<CollabResult<unknown>, { readonly status: 'success' }>,
 ): AgentRuntimeMethodOutcome {
@@ -1576,6 +1651,26 @@ function resolvingTicketsParamValue(
   return params.expectedResolvingTickets as readonly CollabResolvingTicketExpectation[];
 }
 
-function intentIdFromRpcId(id: string): string {
-  return `r${Buffer.from(id, 'ascii').toString('base64url')}`;
+function mutationIntentId(params: Readonly<Record<string, unknown>>): string {
+  return `m${Buffer.from(stringParam(params, 'mutationId'), 'ascii').toString('base64url')}`;
+}
+
+function methodParameters(definition: AgentRuntimeMethodDefinition): readonly AgentRuntimeParameterDescriptor[] {
+  return definition.retry === 'same-mutation'
+    ? [param('mutationId', 'Unique ID for one mutation intent. Reuse it with identical parameters after an unknown outcome; generate a new ID for a new intent.', true, {
+      type: 'string', maxLength: 64, minLength: 1, pattern: '^[A-Za-z0-9._-]+$',
+    }), ...definition.parameters]
+    : definition.parameters;
+}
+
+function retryPolicy(definition: AgentRuntimeMethodDefinition): AgentRuntimeRetryPolicy {
+  const strategy = definition.retry ?? 'read';
+  return {
+    strategy,
+    description: strategy === 'read'
+      ? 'Repeat this query to obtain fresh state.'
+      : strategy === 'same-mutation'
+        ? 'A timeout or lost response may still commit. Retry identical parameters, including mutationId and revision expectations; the response correlation id may change. For a new intent use a new mutationId. After a known stale-state rejection, read current state before choosing a new intent.'
+        : 'This operation acts on current Project contents and continues its existing durable workflow. A timeout or lost response may still commit. Inspect current Project and personal-change state before deciding whether another explicit call is needed; repeating it is not a replay of an earlier snapshot.',
+  };
 }

@@ -18,6 +18,7 @@ import {
 import { parseInstallationKey } from '@/core/device/InstallationKey';
 
 const PROJECT_ID = 'project-alpha';
+const TARGET_OPERATION = { kind: 'authority-transfer' as const, operationId: 'intent-one', transferId: 'transfer-one', sourceGeneration: 2, targetGeneration: 3 };
 const INSTALLATION_A = parseInstallationKey(`device-${'a'.repeat(64)}`);
 const INSTALLATION_B = parseInstallationKey(`device-${'b'.repeat(64)}`);
 
@@ -65,7 +66,7 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     await writeFile(markerPath(), `${JSON.stringify(value)}\n`, { mode: 0o600 });
   }
 
-  it('writes schema 2 before exposing a newly owned authority capability', async () => {
+  it('writes resource identity before exposing a newly owned authority capability', async () => {
     const { binding } = createBinding();
 
     await expect(binding.inspect(PROJECT_ID)).resolves.toBe('absent');
@@ -75,12 +76,14 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     expect(JSON.parse(await readFile(markerPath(), 'utf8'))).toEqual({
       ownerInstallationKey: INSTALLATION_A,
       projectId: PROJECT_ID,
-      schemaVersion: 2,
+      resourceId: expect.any(String),
+      operation: null,
+      schemaVersion: 3,
     });
     await expect(binding.inspect(PROJECT_ID)).resolves.toBe('hosted-here');
   });
 
-  it('classifies a copied schema 2 marker as foreign and rejects every authority capability', async () => {
+  it('classifies a copied ownership marker as foreign and rejects every authority capability', async () => {
     const { binding: owner } = createBinding(INSTALLATION_A);
     await owner.createOwned(PROJECT_ID);
     await writeFile(path.join(authorityDirectory(), 'collab.db'), 'private-authority');
@@ -120,7 +123,9 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     expect(JSON.parse(await readFile(markerPath(), 'utf8'))).toEqual({
       ownerInstallationKey: INSTALLATION_A,
       projectId: PROJECT_ID,
-      schemaVersion: 2,
+      resourceId: expect.any(String),
+      operation: null,
+      schemaVersion: 3,
     });
     await expect(binding.claimLegacy(PROJECT_ID)).resolves.toMatchObject({ projectId: PROJECT_ID });
   });
@@ -149,7 +154,9 @@ describe('HostInstallationBindingService filesystem boundary', () => {
       marker: {
         ownerInstallationKey: INSTALLATION_A,
         projectId: PROJECT_ID,
-        schemaVersion: 2,
+        operation: null,
+        resourceId: expect.any(String),
+        schemaVersion: 3,
       },
       projectId: PROJECT_ID,
     }]);
@@ -188,7 +195,7 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     expect(prepareLegacyRuntime).toHaveBeenCalledTimes(2);
     expect(JSON.parse(await readFile(markerPath(), 'utf8'))).toMatchObject({
       ownerInstallationKey: INSTALLATION_A,
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
   });
 
@@ -207,7 +214,9 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     expect(JSON.parse(await readFile(markerPath(), 'utf8'))).toEqual({
       ownerInstallationKey: INSTALLATION_A,
       projectId: PROJECT_ID,
-      schemaVersion: 2,
+      resourceId: expect.any(String),
+      operation: null,
+      schemaVersion: 3,
     });
 
     await expect(binding.claimLegacy(PROJECT_ID)).resolves.toMatchObject({ projectId: PROJECT_ID });
@@ -222,7 +231,7 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     await expect(binding.claimLegacy(PROJECT_ID)).rejects.toThrow('fault after marker upgrade');
     expect(JSON.parse(await readFile(markerPath(), 'utf8'))).toMatchObject({
       ownerInstallationKey: INSTALLATION_A,
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
 
     const resumedMigration = jest.fn().mockResolvedValue(undefined);
@@ -279,7 +288,7 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     });
   });
 
-  it('removes and retires authority bytes only through a current owned capability', async () => {
+  it('removes authority bytes only through a current owned capability', async () => {
     const { binding, projects } = createBinding();
     const removable = await binding.createOwned(PROJECT_ID);
     await writeFile(path.join(authorityDirectory(), 'collab.db'), 'owned');
@@ -288,50 +297,23 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     await expect(readFile(path.join(authorityDirectory(), 'collab.db'), 'utf8'))
       .rejects.toMatchObject({ code: 'ENOENT' });
 
-    const retiredProjectId = 'project-retire';
-    const retiredAuthorityDirectory = path.join(
-      vaultRoot,
-      '.claudian',
-      'collab',
-      'authorities',
-      retiredProjectId,
-    );
-    const owned = await binding.createOwned(retiredProjectId);
-    await writeFile(path.join(retiredAuthorityDirectory, 'collab.db'), 'owned');
-    const retired = await projects.retireOwnedAuthorityDirectory(
-      owned,
-      'bootstrap-attempt-one',
-    );
-    expect(retired).toContain('retired-lan-authorities');
-    await expect(projects.retireOwnedAuthorityDirectory(
-      owned,
-      'bootstrap-attempt-one',
-    )).resolves.toBe(retired);
   });
 
-  it('makes owner-authorized post-cutover deletion idempotent without admitting foreign state', async () => {
+  it('requires an issued current resource for post-cutover deletion', async () => {
     const { binding: owner } = createBinding(INSTALLATION_A);
-    await owner.createOwned(PROJECT_ID);
-
-    await expect(owner.removeOwned(PROJECT_ID)).resolves.toBe(true);
-    await expect(owner.removeOwned(PROJECT_ID)).resolves.toBe(false);
-
-    await writeMarker({
-      ownerInstallationKey: INSTALLATION_A,
-      projectId: PROJECT_ID,
-      schemaVersion: 2,
-    });
+    const original = await owner.createOwned(PROJECT_ID);
+    await expect(owner.removeOwned(original)).resolves.toBe(true);
+    const replacement = await owner.createOwned(PROJECT_ID);
+    await expect(owner.removeOwned(original)).rejects.toMatchObject({ code: 'operation-failed' });
     const { binding: foreign } = createBinding(INSTALLATION_B);
-    await expect(foreign.removeOwned(PROJECT_ID)).rejects.toMatchObject({
-      code: 'authorization-denied',
-      safeContext: { reason: 'host-installation-owner-mismatch' },
-    });
+    await expect(foreign.removeOwned(replacement)).rejects.toMatchObject({ code: 'operation-failed' });
+    await expect(owner.removeOwned(replacement)).resolves.toBe(true);
   });
 
   it('refuses a target binding when copied legacy or foreign authority state already exists', async () => {
     await writeMarker({ projectId: PROJECT_ID, schemaVersion: 1 });
     const { binding: legacy } = createBinding(INSTALLATION_A);
-    await expect(legacy.bindTransferTarget(PROJECT_ID)).rejects.toMatchObject({
+    await expect(legacy.bindTransferTarget(PROJECT_ID, TARGET_OPERATION, async () => undefined)).rejects.toMatchObject({
       code: 'authorization-denied',
     });
 
@@ -341,9 +323,20 @@ describe('HostInstallationBindingService filesystem boundary', () => {
       schemaVersion: 2,
     });
     const { binding: foreign } = createBinding(INSTALLATION_B);
-    await expect(foreign.bindTransferTarget(PROJECT_ID)).rejects.toMatchObject({
+    await expect(foreign.bindTransferTarget(PROJECT_ID, TARGET_OPERATION, async () => undefined)).rejects.toMatchObject({
       code: 'authorization-denied',
     });
+  });
+
+  it('does not give a physical transfer another transfer target resource', async () => {
+    const { binding } = createBinding();
+    const first = { kind: 'host-transfer' as const, operationId: 'handoff-one', transferId: 'handoff-one', sourceGeneration: 1, targetGeneration: 1 };
+    const target = await binding.bindTransferTarget(PROJECT_ID, first, async () => undefined);
+    await writeFile(path.join(target.authorityDirectory, 'collab.db'), 'first handoff');
+    await expect(binding.bindTransferTarget(PROJECT_ID, {
+      ...first, operationId: 'handoff-two', transferId: 'handoff-two',
+    }, async () => undefined)).rejects.toMatchObject({ code: 'operation-failed' });
+    expect(await readFile(path.join(target.authorityDirectory, 'collab.db'), 'utf8')).toBe('first handoff');
   });
 
   it('keeps a Cloud-to-LAN target provisional until proof-time activation on its recorded installation', async () => {
@@ -351,6 +344,7 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     const provisional = await owner.prepareAuthorityTransferTarget(
       PROJECT_ID,
       INSTALLATION_A,
+      TARGET_OPERATION,
     );
     await writeFile(path.join(provisional.authorityDirectory, 'collab.db'), 'provisional');
     await mkdir(path.join(provisional.authorityDirectory, 'repository.git'));
@@ -359,10 +353,7 @@ describe('HostInstallationBindingService filesystem boundary', () => {
     await expect(owner.inspect(PROJECT_ID)).resolves.toBe('absent');
 
     const { binding: foreign } = createBinding(INSTALLATION_B);
-    await expect(foreign.activateAuthorityTransferTarget(
-      PROJECT_ID,
-      INSTALLATION_A,
-    )).rejects.toMatchObject({
+    await expect(foreign.activateAuthorityTransferTarget(provisional)).rejects.toMatchObject({
       code: 'durable-progress-recovery-required',
       safeContext: { reason: 'host-installation-recovery-owner-mismatch' },
     });
@@ -370,12 +361,14 @@ describe('HostInstallationBindingService filesystem boundary', () => {
       .resolves.toBe('provisional');
     await expect(readFile(markerPath(), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
 
-    await owner.activateAuthorityTransferTarget(PROJECT_ID, INSTALLATION_A);
+    await owner.activateAuthorityTransferTarget(provisional);
 
     expect(JSON.parse(await readFile(markerPath(), 'utf8'))).toEqual({
       ownerInstallationKey: INSTALLATION_A,
       projectId: PROJECT_ID,
-      schemaVersion: 2,
+      resourceId: expect.any(String),
+      operation: TARGET_OPERATION,
+      schemaVersion: 3,
     });
     await expect(foreign.inspect(PROJECT_ID)).resolves.toBe('hosted-elsewhere');
   });
@@ -383,13 +376,7 @@ describe('HostInstallationBindingService filesystem boundary', () => {
   it('does not create or bind a missing Cloud-to-LAN provisional authority at activation', async () => {
     const { binding: owner } = createBinding(INSTALLATION_A);
 
-    await expect(owner.activateAuthorityTransferTarget(
-      PROJECT_ID,
-      INSTALLATION_A,
-    )).rejects.toMatchObject({
-      code: 'durable-progress-recovery-required',
-      safeContext: { reason: 'host-installation-target-provisional-missing' },
-    });
+    await expect(owner.recoverAuthorityTransferTarget(PROJECT_ID, INSTALLATION_A, TARGET_OPERATION)).resolves.toBeNull();
 
     await expect(lstat(authorityDirectory())).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(readFile(markerPath(), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });

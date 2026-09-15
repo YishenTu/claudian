@@ -103,11 +103,11 @@ export class AcpSessionUpdateNormalizer {
   normalize(update: AcpSessionUpdate): AcpNormalizedUpdate {
     switch (update.sessionUpdate) {
       case 'user_message_chunk':
-        return this.normalizeMessageChunk('user', update);
+        return this.#normalizeMessageChunk('user', update);
       case 'agent_message_chunk':
-        return this.normalizeMessageChunk('assistant', update);
+        return this.#normalizeMessageChunk('assistant', update);
       case 'agent_thought_chunk':
-        return this.normalizeMessageChunk('thinking', update);
+        return this.#normalizeMessageChunk('thinking', update);
       case 'tool_call':
         return this.normalizeToolCall(update);
       case 'tool_call_update':
@@ -133,19 +133,19 @@ export class AcpSessionUpdateNormalizer {
     }
   }
 
-  private normalizeMessageChunk(
+  #normalizeMessageChunk(
     role: MessageRole,
     update: AcpContentChunk,
   ): Extract<AcpNormalizedUpdate, { type: 'message_chunk' }> {
     const streamChunks: StreamChunk[] = [];
 
-    if (role === 'user' && this.claimMessageStart('user', update.messageId)) {
+    if (role === 'user' && this.#claimMessageStart('user', update.messageId)) {
       streamChunks.push({
         content: extractPrimaryText(update.content),
         itemId: update.messageId ?? undefined,
         type: 'user_message_start',
       });
-    } else if (role === 'assistant' && this.claimMessageStart('assistant', update.messageId)) {
+    } else if (role === 'assistant' && this.#claimMessageStart('assistant', update.messageId)) {
       streamChunks.push({
         itemId: update.messageId ?? undefined,
         type: 'assistant_message_start',
@@ -272,7 +272,7 @@ export class AcpSessionUpdateNormalizer {
 
   // A message-start chunk must fire exactly once per (role, messageId). Anonymous streams
   // share a single slot per role so repeated chunks without an id do not restart the message.
-  private claimMessageStart(role: 'assistant' | 'user', messageId?: string | null): boolean {
+  #claimMessageStart(role: 'assistant' | 'user', messageId?: string | null): boolean {
     const key = messageId ?? ANONYMOUS_MESSAGE_KEY;
     let seen = this.seenMessages.get(role);
     if (!seen) {

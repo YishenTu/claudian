@@ -39,7 +39,7 @@ export class RetirementResponderExpiryScheduler {
   schedule(projectId: CollabProjectId, expiresAt: string): void {
     if (this.closed) return;
     this.cancel(projectId);
-    this.arm(projectId, expiresAt);
+    this.#arm(projectId, expiresAt);
   }
 
   cancel(projectId: CollabProjectId): void {
@@ -57,7 +57,7 @@ export class RetirementResponderExpiryScheduler {
     return this.closePromise;
   }
 
-  private arm(
+  #arm(
     projectId: CollabProjectId,
     expiresAt: string,
     retry = false,
@@ -71,11 +71,11 @@ export class RetirementResponderExpiryScheduler {
       if (this.timers.get(projectId) !== timer) return;
       this.timers.delete(projectId);
       if (Date.parse(expiresAt) > this.now().getTime()) {
-        this.arm(projectId, expiresAt);
+        this.#arm(projectId, expiresAt);
         return;
       }
       const expiring = Promise.resolve().then(() => this.onExpire(projectId)).catch(() => {
-        if (!this.closed) this.arm(projectId, expiresAt, true);
+        if (!this.closed) this.#arm(projectId, expiresAt, true);
       });
       this.inFlight.add(expiring);
       const clear = () => this.inFlight.delete(expiring);

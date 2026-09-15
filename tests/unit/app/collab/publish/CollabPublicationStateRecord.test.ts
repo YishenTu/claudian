@@ -25,6 +25,39 @@ function record(
 }
 
 describe('CollabPublicationStateRecord', () => {
+  it('retains Update intent and its applied personal review baseline across decoding', () => {
+    const reviewBaseline = {
+      acceptedMainOid: OID.main,
+      baselineOid: OID.base,
+      sourceHeadOid: OID.contribution,
+    };
+    const value = {
+      ...record(),
+      reviewBaseline,
+      operation: {
+        candidateOid: OID.candidate,
+        contributionHeadOid: OID.contribution,
+        createdAt: '2026-08-09T00:00:00.000Z',
+        currentMainOid: OID.main,
+        intent: 'update',
+        operationId: 'update-a',
+        phase: 'applied',
+        reviewBaseline,
+        updatedAt: '2026-08-09T00:01:00.000Z',
+      },
+    };
+    expect(decodeCollabPublicationStateRecord(JSON.parse(JSON.stringify(value)))).toEqual(value);
+    expect(() => decodeCollabPublicationStateRecord({
+      ...value, operation: { ...value.operation, intent: 'unknown' },
+    })).toThrow();
+    expect(() => decodeCollabPublicationStateRecord({
+      ...value, reviewBaseline: { ...reviewBaseline, baselineOid: 'invalid' },
+    })).toThrow();
+    expect(() => decodeCollabPublicationStateRecord({
+      ...value, operation: { ...value.operation, phase: 'pushed' },
+    })).toThrow();
+  });
+
   it('decodes a required base and exact review-ready operation', () => {
     const value = record({
       operation: {

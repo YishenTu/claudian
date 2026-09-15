@@ -88,7 +88,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
 
   setCommandSnapshot(commands: SlashCommand[]): void {
     if (this.probesBlocked) return;
-    this.invalidateProbeCache();
+    this.#invalidateProbeCache();
     this.commandSnapshot = commands.map(command => ({ ...command }));
   }
 
@@ -102,7 +102,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
       if (allowCachedCommandSnapshot && this.commandSnapshot.length > 0) {
         commands = this.commandSnapshot;
       } else {
-        const probedCommands = await this.ensureProbed(context.signal);
+        const probedCommands = await this.#ensureProbed(context.signal);
         commands = allowCachedCommandSnapshot && this.commandSnapshot.length > 0
           ? this.commandSnapshot
           : probedCommands;
@@ -118,16 +118,16 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
   }
 
   /** Probe the SDK for commands. Deduplicates concurrent calls. */
-  private async ensureProbed(signal?: AbortSignal): Promise<SlashCommand[]> {
+  async #ensureProbed(signal?: AbortSignal): Promise<SlashCommand[]> {
     signal?.throwIfAborted();
     if (this.probesBlocked) return [];
     if (this.probedCommands) return this.probedCommands;
     if (!this.probe) return [];
     if (signal) {
-      return await this.runProbe(signal);
+      return await this.#runProbe(signal);
     }
     if (!this.probePromise) {
-      const probePromise = this.runProbe().finally(() => {
+      const probePromise = this.#runProbe().finally(() => {
         if (this.probePromise === probePromise) {
           this.probePromise = null;
         }
@@ -137,7 +137,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
     return await this.probePromise;
   }
 
-  private async runProbe(signal?: AbortSignal): Promise<SlashCommand[]> {
+  async #runProbe(signal?: AbortSignal): Promise<SlashCommand[]> {
     const generation = this.cacheGeneration;
     let resolveCompletion!: () => void;
     const entry: ActiveCommandProbe = {
@@ -211,7 +211,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
   async quiesceForEnvironmentChange(): Promise<void> {
     this.quiescenceDepth += 1;
     try {
-      await this.drainProbes();
+      await this.#drainProbes();
     } finally {
       this.quiescenceDepth -= 1;
     }
@@ -219,16 +219,16 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
 
   async beginEnvironmentTransition(): Promise<void> {
     this.transitionActive = true;
-    await this.drainProbes();
+    await this.#drainProbes();
   }
 
   endEnvironmentTransition(): void {
     this.transitionActive = false;
   }
 
-  private async drainProbes(): Promise<void> {
+  async #drainProbes(): Promise<void> {
     const sharedProbe = this.probePromise;
-    this.invalidateProbeCache();
+    this.#invalidateProbeCache();
     this.commandSnapshot = [];
     const active = [...this.activeProbes];
     await Promise.all([
@@ -244,7 +244,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
     return this.disposePromise;
   }
 
-  private invalidateProbeCache(): void {
+  #invalidateProbeCache(): void {
     this.cacheGeneration += 1;
     this.probedCommands = null;
     for (const entry of this.activeProbes) {

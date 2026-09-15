@@ -2,13 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { type CollabOperationId, type CollabProjectId } from '@claudian-collab/protocol';
 
+import { ProjectTaskQueue } from '@/app/collab/ProjectTaskQueue';
 import type { CollabPublicationStateRecord } from '@/app/collab/publish/CollabPublicationStateRecord';
 import { classifyLocalContribution } from '@/app/collab/publish/LocalContributionClassifier';
 import type {
   PublishProjectContext,
   PublishRepositorySnapshot,
 } from '@/app/collab/publish/PublishCoordinator';
-import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { type CollabConflictDescriptor, type CollabOperationOptions, type CollabProjectSnapshot, type CollabReconciliationOutcome, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -137,7 +137,7 @@ function assertPersonalRemoteReachable(snapshot: PublishRepositorySnapshot): voi
 
 export class ReconciliationCoordinator {
   private readonly createOperationId: () => CollabOperationId;
-  private readonly operationQueue = new SerialTaskQueue();
+  private readonly operationQueue = new ProjectTaskQueue();
 
   constructor(
     private readonly projects: ReconciliationProjectPort,
@@ -154,10 +154,10 @@ export class ReconciliationCoordinator {
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
   ): Promise<CollabResult<CollabReconciliationOutcome>> {
-    return this.operationQueue.run(() => this.reconcileExclusive(projectId, options.signal));
+    return this.operationQueue.run(projectId, () => this.#reconcileExclusive(projectId, options.signal));
   }
 
-  private async reconcileExclusive(
+  async #reconcileExclusive(
     projectId: CollabProjectId,
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabReconciliationOutcome>> {
@@ -232,7 +232,7 @@ export class ReconciliationCoordinator {
       }
       const needsPersonalPush = current.personalAheadBy > 0;
       if (!classification.updateAvailable && !needsPersonalPush) {
-        await this.updateBaseMain(expectedPublicationState, current.acceptedMainOid);
+        await this.#updateBaseMain(expectedPublicationState, current.acceptedMainOid);
         return {
           status: 'success',
           value: { headOid, projectId, state: 'already-current' },
@@ -251,7 +251,7 @@ export class ReconciliationCoordinator {
       throwIfCancelled(signal);
       await this.projects.revalidate(context);
       await this.safety.assertSafe(context);
-      await this.assertPublicationStateUnchanged(projectId, expectedPublicationState);
+      await this.#assertPublicationStateUnchanged(projectId, expectedPublicationState);
       if (classification.updateAvailable) {
         current = (await this.repository.fastForward(context, current, signal)).snapshot;
       }
@@ -265,7 +265,7 @@ export class ReconciliationCoordinator {
           'reconciliation-fast-forward-not-exact-main',
         );
       }
-      await this.updateBaseMain(expectedPublicationState, current.acceptedMainOid);
+      await this.#updateBaseMain(expectedPublicationState, current.acceptedMainOid);
 
       throwIfCancelled(signal);
       await this.projects.revalidate(context);
@@ -306,7 +306,7 @@ export class ReconciliationCoordinator {
     };
   }
 
-  private async assertPublicationStateUnchanged(
+  async #assertPublicationStateUnchanged(
     projectId: CollabProjectId,
     expected: CollabPublicationStateRecord,
   ): Promise<void> {
@@ -325,7 +325,7 @@ export class ReconciliationCoordinator {
     }
   }
 
-  private async updateBaseMain(
+  async #updateBaseMain(
     state: CollabPublicationStateRecord,
     acceptedMainOid: string,
   ): Promise<void> {

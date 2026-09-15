@@ -34,7 +34,7 @@ export class SelectionController {
   };
   private readonly focusScopeFocusInHandler = (event: FocusEvent) => {
     const relatedTarget = event.relatedTarget as Node | null;
-    if (relatedTarget && this.isNodeWithinFocusScopes(relatedTarget)) return;
+    if (relatedTarget && this.#isNodeWithinFocusScopes(relatedTarget)) return;
     this.showHighlight();
   };
 
@@ -50,7 +50,7 @@ export class SelectionController {
     this.app = app;
     this.contextTray = contextTray;
     this.inputEl = inputEl;
-    this.focusScopeEls = this.normalizeFocusScopes(focusScopeEl);
+    this.focusScopeEls = this.#normalizeFocusScopes(focusScopeEl);
     this.onVisibilityChange = onVisibilityChange ?? null;
     this.onUserSelectionChanged = onUserSelectionChanged ?? null;
     this.owningLeaf = owningLeaf ?? null;
@@ -65,7 +65,7 @@ export class SelectionController {
       }
       focusScopeEl.addEventListener('focusin', this.focusScopeFocusInHandler);
     }
-    this.pollInterval = window.setInterval(() => this.poll(), SELECTION_POLL_INTERVAL);
+    this.pollInterval = window.setInterval(() => this.#poll(), SELECTION_POLL_INTERVAL);
   }
 
   stop(): void {
@@ -91,25 +91,25 @@ export class SelectionController {
   // Selection Polling
   // ============================================
 
-  private poll(): void {
+  #poll(): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     if (!view) {
       // Keep the captured selection only while focus is transitioning into
       // the chat UI; any other leaf switch should drop stale prompt context.
-      this.clearWhenMarkdownContextIsUnavailable();
+      this.#clearWhenMarkdownContextIsUnavailable();
       return;
     }
 
     // Reading/preview mode has no usable CM6 selection — use DOM selection instead
     if (view.getMode() === 'preview') {
-      this.pollReadingMode(view);
+      this.#pollReadingMode(view);
       return;
     }
 
     const editor = view.editor;
     const editorView = getEditorView(editor);
     if (!editorView) {
-      this.clearWhenMarkdownContextIsUnavailable();
+      this.#clearWhenMarkdownContextIsUnavailable();
       return;
     }
 
@@ -139,25 +139,25 @@ export class SelectionController {
 
       if (!unchanged) {
         if (s && !sameRange) {
-          this.clearHighlight();
+          this.#clearHighlight();
         }
         this.storedSelection = { notePath, selectedText, lineCount, startLine, from, to, editorView };
         this.updateIndicator();
         this.onUserSelectionChanged?.();
       }
     } else {
-      this.handleDeselection();
+      this.#handleDeselection();
     }
   }
 
-  private pollReadingMode(view: MarkdownView): void {
+  #pollReadingMode(view: MarkdownView): void {
     const containerEl = view.containerEl;
     if (!containerEl) {
-      this.clearWhenMarkdownContextIsUnavailable();
+      this.#clearWhenMarkdownContextIsUnavailable();
       return;
     }
 
-    const selection = this.getDocumentSelection(containerEl.ownerDocument);
+    const selection = this.#getDocumentSelection(containerEl.ownerDocument);
     const selectedText = selection?.toString() ?? '';
 
     if (selectedText.trim()) {
@@ -167,30 +167,30 @@ export class SelectionController {
         (!anchorNode || !containerEl.contains(anchorNode))
         && (!focusNode || !containerEl.contains(focusNode))
       ) {
-        this.handleDeselection();
+        this.#handleDeselection();
         return;
       }
 
       this.inputHandoffGraceUntil = null;
       const notePath = view.file?.path || 'unknown';
       const lineCount = selectedText.split(/\r?\n/).length;
-      const domRanges = this.cloneDOMRanges(selection);
+      const domRanges = this.#cloneDOMRanges(selection);
 
       const unchanged = this.storedSelection
         && this.storedSelection.editorView === undefined
         && this.storedSelection.notePath === notePath
         && this.storedSelection.selectedText === selectedText
         && this.storedSelection.lineCount === lineCount
-        && this.rangeListsMatch(this.storedSelection.domRanges, domRanges);
+        && this.#rangeListsMatch(this.storedSelection.domRanges, domRanges);
 
       if (!unchanged) {
-        this.clearHighlight();
+        this.#clearHighlight();
         this.storedSelection = { notePath, selectedText, lineCount, domRanges };
         this.updateIndicator();
         this.onUserSelectionChanged?.();
       }
     } else {
-      this.handleDeselection();
+      this.#handleDeselection();
     }
   }
 
@@ -211,30 +211,30 @@ export class SelectionController {
     return ownerWindow?.Highlight ?? rendererWindow?.Highlight ?? null;
   }
 
-  private rangesMatch(a: Range, b: Range): boolean {
+  #rangesMatch(a: Range, b: Range): boolean {
     return a.startContainer === b.startContainer
       && a.startOffset === b.startOffset
       && a.endContainer === b.endContainer
       && a.endOffset === b.endOffset;
   }
 
-  private rangeListsMatch(left: Range[] | undefined, right: Range[]): boolean {
+  #rangeListsMatch(left: Range[] | undefined, right: Range[]): boolean {
     return left !== undefined
       && left.length === right.length
-      && left.every((range, index) => this.rangesMatch(range, right[index]));
+      && left.every((range, index) => this.#rangesMatch(range, right[index]));
   }
 
-  private selectionMatchesRanges(selection: Selection | null, ranges: Range[]): boolean {
+  #selectionMatchesRanges(selection: Selection | null, ranges: Range[]): boolean {
     if (!selection || selection.rangeCount !== ranges.length) return false;
     for (let i = 0; i < ranges.length; i++) {
-      if (!this.rangesMatch(selection.getRangeAt(i), ranges[i])) {
+      if (!this.#rangesMatch(selection.getRangeAt(i), ranges[i])) {
         return false;
       }
     }
     return true;
   }
 
-  private cloneDOMRanges(selection: Selection | null): Range[] {
+  #cloneDOMRanges(selection: Selection | null): Range[] {
     if (!selection) return [];
     const ranges: Range[] = [];
     for (let i = 0; i < selection.rangeCount; i++) {
@@ -243,7 +243,7 @@ export class SelectionController {
     return ranges;
   }
 
-  private getDocumentSelection(ownerDocument?: Document | null): Selection | null {
+  #getDocumentSelection(ownerDocument?: Document | null): Selection | null {
     if (ownerDocument && typeof ownerDocument.getSelection === 'function') {
       return ownerDocument.getSelection();
     }
@@ -256,30 +256,30 @@ export class SelectionController {
     return null;
   }
 
-  private getActiveElement(ownerDocument?: Document | null): Element | null {
+  #getActiveElement(ownerDocument?: Document | null): Element | null {
     return ownerDocument?.activeElement ?? this.inputEl.ownerDocument?.activeElement ?? null;
   }
 
-  private normalizeFocusScopes(focusScopeEl?: FocusScopeInput): HTMLElement[] {
+  #normalizeFocusScopes(focusScopeEl?: FocusScopeInput): HTMLElement[] {
     const focusScopes = Array.isArray(focusScopeEl)
       ? focusScopeEl
       : [focusScopeEl ?? this.inputEl];
     return Array.from(new Set(focusScopes.filter(Boolean)));
   }
 
-  private getFocusScopeOwnerDocument(): Document | null {
+  #getFocusScopeOwnerDocument(): Document | null {
     return this.focusScopeEls[0]?.ownerDocument ?? this.inputEl.ownerDocument ?? null;
   }
 
-  private isNodeWithinFocusScopes(node: Node): boolean {
+  #isNodeWithinFocusScopes(node: Node): boolean {
     return this.focusScopeEls.some((focusScopeEl) =>
       node === focusScopeEl || focusScopeEl.contains(node)
     );
   }
 
-  private isFocusWithinChatSidebar(): boolean {
-    const activeElement = this.getActiveElement(this.getFocusScopeOwnerDocument()) as Node | null;
-    if (activeElement !== null && this.isNodeWithinFocusScopes(activeElement)) {
+  #isFocusWithinChatSidebar(): boolean {
+    const activeElement = this.#getActiveElement(this.#getFocusScopeOwnerDocument()) as Node | null;
+    if (activeElement !== null && this.#isNodeWithinFocusScopes(activeElement)) {
       return true;
     }
 
@@ -287,12 +287,12 @@ export class SelectionController {
       && this.app.workspace.getMostRecentLeaf() === this.owningLeaf;
   }
 
-  private isNativeEditorSelectionVisible(sel: StoredSelection): boolean {
+  #isNativeEditorSelectionVisible(sel: StoredSelection): boolean {
     if (!sel.editorView || sel.from === undefined || sel.to === undefined) {
       return false;
     }
 
-    const activeElement = this.getActiveElement(sel.editorView.dom.ownerDocument) as Node | null;
+    const activeElement = this.#getActiveElement(sel.editorView.dom.ownerDocument) as Node | null;
     if (activeElement === null || !sel.editorView.dom.contains(activeElement)) {
       return false;
     }
@@ -301,17 +301,17 @@ export class SelectionController {
     return cmSel.from === sel.from && cmSel.to === sel.to;
   }
 
-  private isNativePreviewSelectionVisible(ranges: Range[]): boolean {
-    if (this.isFocusWithinChatSidebar()) {
+  #isNativePreviewSelectionVisible(ranges: Range[]): boolean {
+    if (this.#isFocusWithinChatSidebar()) {
       return false;
     }
 
-    return this.selectionMatchesRanges(this.getDocumentSelection(this.getFocusScopeOwnerDocument()), ranges);
+    return this.#selectionMatchesRanges(this.#getDocumentSelection(this.#getFocusScopeOwnerDocument()), ranges);
   }
 
-  private clearWhenMarkdownContextIsUnavailable(): void {
+  #clearWhenMarkdownContextIsUnavailable(): void {
     if (!this.storedSelection) return;
-    if (this.isFocusWithinChatSidebar()) {
+    if (this.#isFocusWithinChatSidebar()) {
       this.inputHandoffGraceUntil = null;
       return;
     }
@@ -320,15 +320,15 @@ export class SelectionController {
     }
 
     this.inputHandoffGraceUntil = null;
-    this.clearHighlight();
+    this.#clearHighlight();
     this.storedSelection = null;
     this.updateIndicator();
     this.onUserSelectionChanged?.();
   }
 
-  private handleDeselection(): void {
+  #handleDeselection(): void {
     if (!this.storedSelection) return;
-    if (this.isFocusWithinChatSidebar()) {
+    if (this.#isFocusWithinChatSidebar()) {
       this.inputHandoffGraceUntil = null;
       return;
     }
@@ -338,7 +338,7 @@ export class SelectionController {
     }
 
     this.inputHandoffGraceUntil = null;
-    this.clearHighlight();
+    this.#clearHighlight();
     this.storedSelection = null;
     this.updateIndicator();
     this.onUserSelectionChanged?.();
@@ -354,7 +354,7 @@ export class SelectionController {
 
     // Edit mode: prefer native CM6 unfocused selection (.cm-selectionBackground)
     if (sel.editorView && sel.from !== undefined && sel.to !== undefined) {
-      if (this.isNativeEditorSelectionVisible(sel)) {
+      if (this.#isNativeEditorSelectionVisible(sel)) {
         // Native is showing — clear any stale mock
         hideSelectionHighlight(sel.editorView);
         return;
@@ -366,7 +366,7 @@ export class SelectionController {
 
     // Preview mode: prefer native DOM selection (::selection)
     if (sel.domRanges?.length) {
-      if (this.isNativePreviewSelectionVisible(sel.domRanges)) {
+      if (this.#isNativePreviewSelectionVisible(sel.domRanges)) {
         // Native is showing — clear any stale mock
         this.cssHighlights?.delete(HIGHLIGHT_KEY);
         return;
@@ -380,7 +380,7 @@ export class SelectionController {
     }
   }
 
-  private clearHighlight(): void {
+  #clearHighlight(): void {
     if (this.storedSelection?.editorView) {
       hideSelectionHighlight(this.storedSelection.editorView);
     }
@@ -441,7 +441,7 @@ export class SelectionController {
 
   clear(): void {
     this.inputHandoffGraceUntil = null;
-    this.clearHighlight();
+    this.#clearHighlight();
     this.storedSelection = null;
     this.updateIndicator();
   }

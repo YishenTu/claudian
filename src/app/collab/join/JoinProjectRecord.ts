@@ -15,6 +15,8 @@ export type JoinProjectPhase =
   | 'activated';
 
 export interface JoinProjectRecord {
+  /** Null until activation, or while recovering a record written before authority identity was captured. */
+  readonly authorityGeneration: number | null;
   readonly createdAt: string;
   readonly encodedInvitation: string | null;
   readonly endpoint: string;
@@ -24,6 +26,8 @@ export interface JoinProjectRecord {
   readonly lastEventSequence: number | null;
   /** Transient decoder flag used only for safe version-1 staging recovery. */
   readonly legacyJoinRecord?: true;
+  /** New automatic joins activate the validated staging copy before choosing its final directory. */
+  readonly namedPlacement?: 'awaiting-name' | 'ready' | 'placed';
   readonly memberCredential: string | null;
   readonly memberDisplayName: string;
   readonly memberId: CollabMemberId | null;
@@ -43,7 +47,6 @@ export interface JoinProjectRecord {
 
 type UnknownRecord = Readonly<Record<string, unknown>>;
 
-const SAFE_SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 
@@ -156,6 +159,13 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   }
   const decodedPhase = phase(value.phase);
   const legacy = value.schemaVersion === 1;
+  const namedPlacement = value.namedPlacement;
+  if (namedPlacement !== undefined && (legacy
+    || (namedPlacement !== 'awaiting-name' && namedPlacement !== 'ready' && namedPlacement !== 'placed')
+    || decodedPhase === 'placed'
+    || (namedPlacement !== 'awaiting-name' && decodedPhase !== 'activated'))) {
+    throw new TypeError('Invalid named Join placement');
+  }
   const projectsFolder = legacy ? 'workspace' : value.projectsFolder;
   if (typeof projectsFolder !== 'string' || !parseCollabProjectsFolder(projectsFolder).ok) {
     throw new TypeError('Invalid Projects folder');
@@ -163,7 +173,8 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   const projectId = requiredString(value, 'projectId', 64, undefined, isCollabProjectId);
   const operationId = requiredString(value, 'operationId', 128, undefined, isCollabOpaqueId);
   const joinAttemptId = requiredString(value, 'joinAttemptId', 128, undefined, isCollabOpaqueId);
-  const slug = requiredString(value, 'slug', 64, SAFE_SLUG_PATTERN);
+  const slug = requiredString(value, 'slug', 64);
+  if (!isCollabWorkingCopySlug(slug)) throw new TypeError('Invalid Join slug');
   const stagingDirectoryName = requiredString(
     value,
     'stagingDirectoryName',
@@ -188,6 +199,15 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   const projectName = nullableString(value, 'projectName', 200);
   const memberRole = value.memberRole;
   const lastEventSequence = value.lastEventSequence;
+  const authorityGeneration = value.authorityGeneration ?? null;
+  if (authorityGeneration !== null && (
+    typeof authorityGeneration !== 'number'
+    || !Number.isSafeInteger(authorityGeneration)
+    || authorityGeneration < 1
+    || decodedPhase !== 'activated'
+  )) {
+    throw new TypeError('Invalid Join authority generation');
+  }
 
   if (
     (memberRole !== null && memberRole !== 'manager' && memberRole !== 'member')
@@ -234,6 +254,8 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
   }
 
   return {
+    ...(namedPlacement === undefined ? {} : { namedPlacement }),
+    authorityGeneration,
     createdAt: timestamp(value, 'createdAt')!,
     encodedInvitation,
     endpoint: endpoint(value),
@@ -264,3 +286,4 @@ export function decodeJoinProjectRecord(value: unknown): JoinProjectRecord {
     ...(legacy ? { legacyJoinRecord: true as const } : {}),
   };
 }
+import { isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';

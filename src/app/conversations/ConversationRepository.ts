@@ -226,10 +226,10 @@ export class ConversationRepository {
 
   replaceAll(conversations: Conversation[]): void {
     for (const conversation of this.conversations) {
-      this.invalidateConversation(conversation.id);
+      this.#invalidateConversation(conversation.id);
     }
     for (const conversation of conversations) {
-      this.applyLinkedContentPathRenamesToHydratedConversation(conversation);
+      this.#applyLinkedContentPathRenamesToHydratedConversation(conversation);
     }
     this.conversations = conversations.filter(
       ({ id }) => !this.deletedConversationIds.has(id),
@@ -240,7 +240,7 @@ export class ConversationRepository {
     }
     this.linkedContentPathsByConversationId.clear();
     for (const conversation of this.conversations) {
-      this.captureLinkedContentIdentity(conversation);
+      this.#captureLinkedContentIdentity(conversation);
     }
     this.hydratedConversationIds = new Set(
       this.conversations
@@ -274,7 +274,7 @@ export class ConversationRepository {
         linkedContentPathCorrectedIds.add(conversation.id);
       } else if (
         !current
-        && this.applyLinkedContentPathRenamesToHydratedConversation(conversation)
+        && this.#applyLinkedContentPathRenamesToHydratedConversation(conversation)
       ) {
         linkedContentPathCorrectedIds.add(conversation.id);
       }
@@ -285,7 +285,7 @@ export class ConversationRepository {
         !this.getSync(conversation.id)
         && registeredProviderIds.has(conversation.providerId)
       ) {
-        await this.reconcileIncomingSelectedModel(conversation);
+        await this.#reconcileIncomingSelectedModel(conversation);
       }
     }
     const added = this.mergeMetadataConversations(
@@ -308,12 +308,12 @@ export class ConversationRepository {
           )
           || linkedContentPathCorrectedIds.has(conversation.id),
       )
-      .map(({ conversation, source }) => this.enqueuePersistence(
+      .map(({ conversation, source }) => this.#enqueuePersistence(
         conversation.id,
         async () => {
           const current = this.getSync(conversation.id);
-          if (!current || !await this.canWriteConversation(current)) return;
-          await this.writeMetadata(current, {
+          if (!current || !await this.#canWriteConversation(current)) return;
+          await this.#writeMetadata(current, {
             preserveProviderState: !this.hydratedConversationIds.has(current.id),
           });
           this.pendingLinkedContentPathCorrectionIds.delete(current.id);
@@ -335,7 +335,7 @@ export class ConversationRepository {
         this.getSync(conversation.id);
         continue;
       }
-      if (this.applyLinkedContentPathRenamesToHydratedConversation(conversation)) {
+      if (this.#applyLinkedContentPathRenamesToHydratedConversation(conversation)) {
         this.pendingLinkedContentPathCorrectionIds.add(conversation.id);
       }
     }
@@ -361,7 +361,7 @@ export class ConversationRepository {
         right.lastActivityAt - left.lastActivityAt,
     );
     for (const conversation of added) {
-      this.captureLinkedContentIdentity(conversation);
+      this.#captureLinkedContentIdentity(conversation);
       if (conversation.messages.length > 0) {
         this.hydratedConversationIds.add(conversation.id);
       }
@@ -385,12 +385,12 @@ export class ConversationRepository {
       this.executionBindings.delete(shell.id);
       this.linkedContentPathsByConversationId.delete(shell.id);
       this.metadataTargets.delete(shell.id);
-      this.invalidateConversation(shell.id);
+      this.#invalidateConversation(shell.id);
     }
   }
 
   getAll(): Conversation[] {
-    this.restoreAllLinkedContentIdentities();
+    this.#restoreAllLinkedContentIdentities();
     return this.conversations;
   }
 
@@ -423,7 +423,7 @@ export class ConversationRepository {
     const conversation: Conversation = {
       id,
       providerId,
-      title: this.generateDefaultTitle(),
+      title: this.#generateDefaultTitle(),
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
       sessionId: sessionId ?? null,
@@ -436,7 +436,7 @@ export class ConversationRepository {
 
     this.metadataTargets.set(conversation.id, 'device');
     this.conversations.unshift(conversation);
-    this.captureLinkedContentIdentity(conversation);
+    this.#captureLinkedContentIdentity(conversation);
     if (!sessionId) {
       this.hydratedConversationIds.add(conversation.id);
     }
@@ -457,12 +457,12 @@ export class ConversationRepository {
     const conversation = this.getSync(id);
     if (!conversation) return false;
 
-    return this.enqueuePersistence(id, async () => {
-      if (!await this.canWriteConversation(conversation)) return false;
-      const source = this.requireMetadataTarget(id);
+    return this.#enqueuePersistence(id, async () => {
+      if (!await this.#canWriteConversation(conversation)) return false;
+      const source = this.#requireMetadataTarget(id);
       if (source === 'device') return false;
 
-      await this.writeMetadata(conversation, {
+      await this.#writeMetadata(conversation, {
         preserveProviderState: !this.hydratedConversationIds.has(id),
       });
       await this.persistence.assignMetadataToDevice(id);
@@ -478,7 +478,7 @@ export class ConversationRepository {
     if (index === -1) {
       if (
         this.deletedConversationIds.has(id)
-        || await this.isDeletedInAnyMetadataTarget(id)
+        || await this.#isDeletedInAnyMetadataTarget(id)
       ) {
         await this.retryDeletedConversationCleanup(id);
       }
@@ -497,7 +497,7 @@ export class ConversationRepository {
     this.conversations.splice(index, 1);
     this.hydratedConversationIds.delete(id);
     this.hydrationPromises.delete(id);
-    this.invalidateConversation(id);
+    this.#invalidateConversation(id);
 
     if (pendingHydration) {
       await Promise.allSettled([pendingHydration]);
@@ -505,17 +505,17 @@ export class ConversationRepository {
 
     let markerDurable = false;
     try {
-      await this.enqueuePersistence(id, async () => {
+      await this.#enqueuePersistence(id, async () => {
         await this.persistence.markDeleted(
           id,
           Date.now(),
-          this.requireMetadataTarget(id),
+          this.#requireMetadataTarget(id),
         );
         markerDurable = true;
         this.deletingConversationIds.delete(id);
         this.deletionStates.delete(id);
         this.executionBindings.delete(id);
-        await this.finalizeDeletedConversation(id);
+        await this.#finalizeDeletedConversation(id);
       });
     } catch (error) {
       if (!markerDurable) {
@@ -530,8 +530,8 @@ export class ConversationRepository {
         if (conversation.messages.length > 0) {
           this.hydratedConversationIds.add(id);
         }
-        this.invalidateConversation(id);
-        await this.replayDeletionSnapshot(id, deletionState);
+        this.#invalidateConversation(id);
+        await this.#replayDeletionSnapshot(id, deletionState);
       }
       throw error;
     }
@@ -540,15 +540,15 @@ export class ConversationRepository {
   async retryDeletedConversationCleanup(id: string): Promise<void> {
     if (
       !this.deletedConversationIds.has(id)
-      && !await this.isDeletedInAnyMetadataTarget(id)
+      && !await this.#isDeletedInAnyMetadataTarget(id)
     ) {
       return;
     }
     this.deletedConversationIds.add(id);
     this.deletingConversationIds.delete(id);
-    await this.enqueuePersistence(
+    await this.#enqueuePersistence(
       id,
-      () => this.finalizeDeletedConversation(id),
+      () => this.#finalizeDeletedConversation(id),
     );
   }
 
@@ -574,7 +574,7 @@ export class ConversationRepository {
         conversation,
         vaultPath,
         missingProviderSessionId,
-        this.getHistoryPathContext(conversation.providerId, vaultPath),
+        this.#getHistoryPathContext(conversation.providerId, vaultPath),
       );
     } catch {
       conversation.sessionId = previousSessionId;
@@ -597,7 +597,7 @@ export class ConversationRepository {
     const conversation = this.getSync(id);
     if (!conversation) return;
 
-    conversation.title = title.trim() || this.generateDefaultTitle();
+    conversation.title = title.trim() || this.#generateDefaultTitle();
     await this.save(conversation);
   }
 
@@ -623,7 +623,7 @@ export class ConversationRepository {
       );
       if (selectedModel) {
         safeUpdates.selectedModel = selectedModel;
-        this.markSelectedModelMutation(conversation);
+        this.#markSelectedModelMutation(conversation);
       } else {
         delete safeUpdates.selectedModel;
       }
@@ -635,7 +635,7 @@ export class ConversationRepository {
       || 'resumeAtMessageId' in safeUpdates
     ) {
       this.hydratedConversationIds.delete(id);
-      this.invalidateConversation(id);
+      this.#invalidateConversation(id);
     }
     await this.save(conversation);
   }
@@ -707,7 +707,7 @@ export class ConversationRepository {
     const recovered = await mapWithConcurrency(
       candidates,
       async (conversation): Promise<Conversation | null> => {
-        const recovery = this.recoverHistoricalModelSelection(conversation);
+        const recovery = this.#recoverHistoricalModelSelection(conversation);
         if (!recovery) return null;
         const result = await recovery;
         return result === 'recovered' && this.getSync(conversation.id) === conversation
@@ -721,7 +721,7 @@ export class ConversationRepository {
     );
   }
 
-  private recoverHistoricalModelSelection(
+  #recoverHistoricalModelSelection(
     conversation: Conversation,
   ): Promise<HistoricalModelRecoveryResult> | null {
     if (getStoredModelSelection(conversation.selectedModel)) {
@@ -753,8 +753,8 @@ export class ConversationRepository {
     }
     if (!recoverModelSelection) return null;
 
-    const generation = this.getConversationGeneration(conversation.id);
-    const recovery = this.runHistoricalModelRecovery(
+    const generation = this.#getConversationGeneration(conversation.id);
+    const recovery = this.#runHistoricalModelRecovery(
       conversation,
       generation,
       recoverModelSelection,
@@ -764,7 +764,7 @@ export class ConversationRepository {
     return recovery;
   }
 
-  private async runHistoricalModelRecovery(
+  async #runHistoricalModelRecovery(
     conversation: Conversation,
     generation: number,
     recoverModelSelection: HistoricalModelRecovery,
@@ -776,14 +776,14 @@ export class ConversationRepository {
       selectedModel = (await recoverModelSelection(
         recoverySource,
         vaultPath,
-        this.getHistoryPathContext(recoverySource.providerId, vaultPath),
+        this.#getHistoryPathContext(recoverySource.providerId, vaultPath),
       ))?.trim() || null;
     } catch {
       return 'unresolved';
     }
     if (!selectedModel) return 'unresolved';
     if (
-      !this.isConversationCurrent(conversation, generation)
+      !this.#isConversationCurrent(conversation, generation)
       || getStoredModelSelection(conversation.selectedModel)
     ) {
       return 'superseded';
@@ -801,7 +801,7 @@ export class ConversationRepository {
 
     let didPersist: boolean;
     try {
-      didPersist = await this.persistSelectedModelBeforePublish(
+      didPersist = await this.#persistSelectedModelBeforePublish(
         conversation,
         selectedModel,
         true,
@@ -812,7 +812,7 @@ export class ConversationRepository {
     if (
       didPersist
       &&
-      this.isConversationCurrent(conversation, generation)
+      this.#isConversationCurrent(conversation, generation)
       && conversation.selectedModel === selectedModel
     ) {
       this.historicalModelRecoverySources.delete(conversation.id);
@@ -843,7 +843,7 @@ export class ConversationRepository {
     };
     this.linkedContentPathRenames.push(rename);
     const changed = this.conversations.filter(conversation => (
-      this.applyLinkedContentPathRename(conversation, rename)
+      this.#applyLinkedContentPathRename(conversation, rename)
     ));
     await this.persistConversations(changed);
   }
@@ -902,14 +902,14 @@ export class ConversationRepository {
       return Promise.resolve(false);
     }
 
-    return this.persistLatestExecutionSnapshot(conversationId, binding);
+    return this.#persistLatestExecutionSnapshot(conversationId, binding);
   }
 
-  private persistLatestExecutionSnapshot(
+  #persistLatestExecutionSnapshot(
     conversationId: string,
     binding: ExecutionBindingState,
   ): Promise<boolean> {
-    return this.enqueuePersistence(conversationId, async () => {
+    return this.#enqueuePersistence(conversationId, async () => {
       if (
         this.executionBindings.get(conversationId) !== binding
         || !binding.latestSnapshot
@@ -918,7 +918,7 @@ export class ConversationRepository {
         return false;
       }
       const current = this.getSync(conversationId);
-      if (!current || !await this.canWriteConversation(current)) {
+      if (!current || !await this.#canWriteConversation(current)) {
         return false;
       }
       if (
@@ -930,14 +930,14 @@ export class ConversationRepository {
       }
 
       const latest = binding.latestSnapshot;
-      this.applySnapshot(current, latest);
-      await this.writeMetadata(current);
+      this.#applySnapshot(current, latest);
+      await this.#writeMetadata(current);
       binding.lastPersistedRevision = latest.revision;
       return true;
     });
   }
 
-  private replayDeletionSnapshot(
+  #replayDeletionSnapshot(
     conversationId: string,
     deletionState: ConversationDeletionState,
   ): Promise<boolean> {
@@ -977,14 +977,14 @@ export class ConversationRepository {
     if (!conversation) {
       throw new ConversationInputStageRejectedError(conversationId);
     }
-    const target = this.requireMetadataTarget(conversationId);
-    if (!await this.canWriteConversation(conversation)) {
+    const target = this.#requireMetadataTarget(conversationId);
+    if (!await this.#canWriteConversation(conversation)) {
       throw new ConversationInputStageRejectedError(conversationId);
     }
     await this.persistence.assertMetadataWriteAuthority(conversationId, target);
     if (
       this.getSync(conversationId) !== conversation
-      || this.requireMetadataTarget(conversationId) !== target
+      || this.#requireMetadataTarget(conversationId) !== target
     ) {
       throw new ConversationInputStageRejectedError(conversationId);
     }
@@ -994,9 +994,9 @@ export class ConversationRepository {
     conversationId: string,
     record: ConversationInputRecord,
   ): Promise<void> {
-    const ledger = await this.requireInputLedger(conversationId);
-    await this.enqueuePersistence(conversationId, async () => {
-      if (!await this.canWriteLedger(conversationId, ledger)) {
+    const ledger = await this.#requireInputLedger(conversationId);
+    await this.#enqueuePersistence(conversationId, async () => {
+      if (!await this.#canWriteLedger(conversationId, ledger)) {
         throw new ConversationInputStageRejectedError(conversationId);
       }
       const existing = ledger.records.find(({ id }) => id === record.id);
@@ -1006,8 +1006,8 @@ export class ConversationRepository {
         ledger.records.push(insertedRecord);
       }
       try {
-        await this.writeInputLedger(conversationId, ledger);
-        this.markInputLedgerCanonical(conversationId, ledger);
+        await this.#writeInputLedger(conversationId, ledger);
+        this.#markInputLedgerCanonical(conversationId, ledger);
       } catch (error) {
         if (insertedRecord) {
           const insertedIndex = ledger.records.indexOf(insertedRecord);
@@ -1028,7 +1028,7 @@ export class ConversationRepository {
       providerAssistantMessageId?: string;
     } = {},
   ): Promise<void> {
-    const ledger = await this.requireInputLedger(conversationId);
+    const ledger = await this.#requireInputLedger(conversationId);
     const record = ledger.records.find(({ id }) => id === recordId);
     if (!record) {
       throw new Error(`Conversation input record not found: ${recordId}`);
@@ -1042,20 +1042,20 @@ export class ConversationRepository {
     }
     const conversation = this.getSync(conversationId);
     if (conversation) {
-      this.attachRecordToInMemoryMessages(conversation, record);
+      this.#attachRecordToInMemoryMessages(conversation, record);
       conversation.lastActivityAt = Math.max(
         conversation.lastActivityAt,
         record.timestamp,
       );
     }
 
-    await this.enqueuePersistence(conversationId, async () => {
-      if (!await this.canWriteLedger(conversationId, ledger)) return;
-      await this.writeInputLedger(conversationId, ledger);
-      this.markInputLedgerCanonical(conversationId, ledger);
+    await this.#enqueuePersistence(conversationId, async () => {
+      if (!await this.#canWriteLedger(conversationId, ledger)) return;
+      await this.#writeInputLedger(conversationId, ledger);
+      this.#markInputLedgerCanonical(conversationId, ledger);
       const current = this.getSync(conversationId);
-      if (current && await this.canWriteConversation(current)) {
-        await this.writeMetadata(current);
+      if (current && await this.#canWriteConversation(current)) {
+        await this.#writeMetadata(current);
       }
     });
   }
@@ -1064,11 +1064,11 @@ export class ConversationRepository {
     conversationId: string,
     recordId: string,
   ): Promise<void> {
-    const ledger = await this.requireInputLedger(conversationId);
+    const ledger = await this.#requireInputLedger(conversationId);
     const index = ledger.records.findIndex(({ id }) => id === recordId);
     if (index === -1 || ledger.records[index].state !== 'staged') return;
     ledger.records.splice(index, 1);
-    await this.persistLedgerOnly(conversationId, ledger);
+    await this.#persistLedgerOnly(conversationId, ledger);
   }
 
   async getConversationInputLedger(
@@ -1083,7 +1083,7 @@ export class ConversationRepository {
     targetConversationId: string,
     throughAssistantCheckpointId?: string,
   ): Promise<void> {
-    const source = await this.requireInputLedger(sourceConversationId);
+    const source = await this.#requireInputLedger(sourceConversationId);
     let records = source.records;
     if (throughAssistantCheckpointId !== undefined) {
       const checkpointIndex = records.findIndex(
@@ -1092,16 +1092,16 @@ export class ConversationRepository {
       );
       records = checkpointIndex === -1 ? [] : records.slice(0, checkpointIndex + 1);
     }
-    const target = await this.requireInputLedger(targetConversationId);
+    const target = await this.#requireInputLedger(targetConversationId);
     target.records = cloneJson(records);
-    await this.persistLedgerOnly(targetConversationId, target);
+    await this.#persistLedgerOnly(targetConversationId, target);
   }
 
   async truncateConversationInputsFrom(
     conversationId: string,
     inputIdentity: string,
   ): Promise<void> {
-    const ledger = await this.requireInputLedger(conversationId);
+    const ledger = await this.#requireInputLedger(conversationId);
     const index = ledger.records.findIndex(
       (record) =>
         record.id === inputIdentity
@@ -1110,7 +1110,7 @@ export class ConversationRepository {
     );
     if (index === -1) return;
     ledger.records.splice(index);
-    await this.persistLedgerOnly(conversationId, ledger);
+    await this.#persistLedgerOnly(conversationId, ledger);
   }
 
   async flushPersistence(conversationId: string): Promise<void> {
@@ -1138,12 +1138,12 @@ export class ConversationRepository {
       createdAt: conversation.createdAt,
       lastActivityAt: conversation.lastActivityAt,
       messageCount: conversation.messages.length,
-      preview: this.getPreview(conversation),
+      preview: this.#getPreview(conversation),
       linkedContentPath: conversation.linkedContentPath,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
-      isLegacySession: this.isLegacyMetadataTarget(id),
+      isLegacySession: this.#isLegacyMetadataTarget(id),
     };
   }
 
@@ -1158,10 +1158,10 @@ export class ConversationRepository {
       return existing;
     }
 
-    const generation = this.getConversationGeneration(id);
+    const generation = this.#getConversationGeneration(id);
     const promise = this.hydratedConversationIds.has(id)
-      ? this.reconcileHydratedConversation(conversation, generation)
-      : this.hydrateConversation(id, generation);
+      ? this.#reconcileHydratedConversation(conversation, generation)
+      : this.#hydrateConversation(id, generation);
     this.hydrationPromises.set(id, promise);
     try {
       return await promise;
@@ -1172,19 +1172,19 @@ export class ConversationRepository {
     }
   }
 
-  private async reconcileHydratedConversation(
+  async #reconcileHydratedConversation(
     conversation: Conversation,
     generation: number,
   ): Promise<Conversation | null> {
     await this.ensureSelectedModel(conversation);
-    if (!this.isConversationCurrent(conversation, generation)) return null;
-    await this.hydrateInputLedger(conversation);
-    return this.isConversationCurrent(conversation, generation)
+    if (!this.#isConversationCurrent(conversation, generation)) return null;
+    await this.#hydrateInputLedger(conversation);
+    return this.#isConversationCurrent(conversation, generation)
       ? conversation
       : null;
   }
 
-  private async hydrateConversation(
+  async #hydrateConversation(
     id: string,
     generation: number,
   ): Promise<Conversation | null> {
@@ -1193,14 +1193,14 @@ export class ConversationRepository {
       return null;
     }
 
-    await this.reconcileProviderSession(conversation);
-    if (!this.isConversationCurrent(conversation, generation)) return null;
+    await this.#reconcileProviderSession(conversation);
+    if (!this.#isConversationCurrent(conversation, generation)) return null;
     await this.ensureSelectedModel(conversation);
-    if (!this.isConversationCurrent(conversation, generation)) return null;
-    await this.hydrateProviderHistory(conversation);
-    if (!this.isConversationCurrent(conversation, generation)) return null;
-    await this.hydrateInputLedger(conversation);
-    if (!this.isConversationCurrent(conversation, generation)) return null;
+    if (!this.#isConversationCurrent(conversation, generation)) return null;
+    await this.#hydrateProviderHistory(conversation);
+    if (!this.#isConversationCurrent(conversation, generation)) return null;
+    await this.#hydrateInputLedger(conversation);
+    if (!this.#isConversationCurrent(conversation, generation)) return null;
     this.hydratedConversationIds.add(id);
     return conversation;
   }
@@ -1210,20 +1210,20 @@ export class ConversationRepository {
       (conversation) => conversation.id === id,
     ) ?? null;
     if (conversation) {
-      this.restoreLinkedContentIdentity(conversation);
+      this.#restoreLinkedContentIdentity(conversation);
     }
     return conversation;
   }
 
   findEmpty(): Conversation | null {
-    this.restoreAllLinkedContentIdentities();
+    this.#restoreAllLinkedContentIdentities();
     return this.conversations.find(
       (conversation) => conversation.messages.length === 0,
     ) ?? null;
   }
 
   list(): ConversationMeta[] {
-    this.restoreAllLinkedContentIdentities();
+    this.#restoreAllLinkedContentIdentities();
     return this.conversations.map((conversation) => ({
       id: conversation.id,
       providerId: conversation.providerId,
@@ -1232,12 +1232,12 @@ export class ConversationRepository {
       createdAt: conversation.createdAt,
       lastActivityAt: conversation.lastActivityAt,
       messageCount: conversation.messages.length,
-      preview: this.getPreview(conversation),
+      preview: this.#getPreview(conversation),
       linkedContentPath: conversation.linkedContentPath,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
-      isLegacySession: this.isLegacyMetadataTarget(conversation.id),
+      isLegacySession: this.#isLegacyMetadataTarget(conversation.id),
     }));
   }
 
@@ -1282,35 +1282,35 @@ export class ConversationRepository {
     return changed;
   }
 
-  private applyLinkedContentPathRenamesToHydratedConversation(
+  #applyLinkedContentPathRenamesToHydratedConversation(
     conversation: Conversation,
   ): boolean {
     const originalPath = conversation.linkedContentPath;
     let currentPath = normalizeLinkedContentPath(originalPath) ?? undefined;
     for (const rename of this.linkedContentPathRenames) {
       if (!currentPath) break;
-      currentPath = this.rewriteLinkedContentPath(currentPath, rename) ?? currentPath;
+      currentPath = this.#rewriteLinkedContentPath(currentPath, rename) ?? currentPath;
     }
     if (currentPath === originalPath) return false;
 
-    this.assignLinkedContentPath(conversation, currentPath);
+    this.#assignLinkedContentPath(conversation, currentPath);
     return true;
   }
 
-  private applyLinkedContentPathRename(
+  #applyLinkedContentPathRename(
     conversation: Conversation,
     rename: LinkedContentPathRename,
   ): boolean {
-    const currentPath = this.getAuthoritativeLinkedContentPath(conversation);
+    const currentPath = this.#getAuthoritativeLinkedContentPath(conversation);
     if (!currentPath) return false;
-    const rewrittenPath = this.rewriteLinkedContentPath(currentPath, rename);
+    const rewrittenPath = this.#rewriteLinkedContentPath(currentPath, rename);
     if (!rewrittenPath || rewrittenPath === currentPath) return false;
 
-    this.setLinkedContentIdentity(conversation, rewrittenPath);
+    this.#setLinkedContentIdentity(conversation, rewrittenPath);
     return true;
   }
 
-  private rewriteLinkedContentPath(
+  #rewriteLinkedContentPath(
     contentPath: string,
     rename: LinkedContentPathRename,
   ): string | null {
@@ -1322,46 +1322,46 @@ export class ConversationRepository {
     );
   }
 
-  private captureLinkedContentIdentity(conversation: Conversation): void {
+  #captureLinkedContentIdentity(conversation: Conversation): void {
     const path = normalizeLinkedContentPath(conversation.linkedContentPath)
       ?? undefined;
-    this.setLinkedContentIdentity(conversation, path);
+    this.#setLinkedContentIdentity(conversation, path);
   }
 
-  private setLinkedContentIdentity(
+  #setLinkedContentIdentity(
     conversation: Conversation,
     path: string | undefined,
   ): void {
     this.linkedContentPathsByConversationId.set(conversation.id, path);
-    this.assignLinkedContentPath(conversation, path);
+    this.#assignLinkedContentPath(conversation, path);
   }
 
-  private restoreLinkedContentIdentity(conversation: Conversation): void {
+  #restoreLinkedContentIdentity(conversation: Conversation): void {
     if (!this.linkedContentPathsByConversationId.has(conversation.id)) return;
-    this.assignLinkedContentPath(
+    this.#assignLinkedContentPath(
       conversation,
       this.linkedContentPathsByConversationId.get(conversation.id),
     );
   }
 
-  private restoreAllLinkedContentIdentities(): void {
+  #restoreAllLinkedContentIdentities(): void {
     for (const conversation of this.conversations) {
-      this.restoreLinkedContentIdentity(conversation);
+      this.#restoreLinkedContentIdentity(conversation);
     }
   }
 
-  private getAuthoritativeLinkedContentPath(
+  #getAuthoritativeLinkedContentPath(
     conversation: Conversation,
   ): string | undefined {
     if (this.linkedContentPathsByConversationId.has(conversation.id)) {
       const path = this.linkedContentPathsByConversationId.get(conversation.id);
-      this.assignLinkedContentPath(conversation, path);
+      this.#assignLinkedContentPath(conversation, path);
       return path;
     }
     return normalizeLinkedContentPath(conversation.linkedContentPath) ?? undefined;
   }
 
-  private assignLinkedContentPath(
+  #assignLinkedContentPath(
     conversation: Conversation,
     path: string | undefined,
   ): void {
@@ -1373,7 +1373,7 @@ export class ConversationRepository {
     mutableConversation.linkedContentPath = path;
   }
 
-  private async reconcileProviderSession(
+  async #reconcileProviderSession(
     conversation: Conversation,
   ): Promise<void> {
     const historyService = ProviderRegistry.getConversationHistoryService(
@@ -1381,7 +1381,7 @@ export class ConversationRepository {
     );
 
     const vaultPath = this.deps.getVaultPath();
-    const pathContext = this.getHistoryPathContext(
+    const pathContext = this.#getHistoryPathContext(
       conversation.providerId,
       vaultPath,
     );
@@ -1452,7 +1452,7 @@ export class ConversationRepository {
   ): Promise<void> {
     let recoveryResult: HistoricalModelRecoveryResult | 'unsupported' = 'unsupported';
     if (!getStoredModelSelection(conversation.selectedModel)) {
-      const recovery = this.recoverHistoricalModelSelection(conversation);
+      const recovery = this.#recoverHistoricalModelSelection(conversation);
       if (recovery) recoveryResult = await recovery;
     }
     const resolved = resolveConversationModel(
@@ -1474,10 +1474,10 @@ export class ConversationRepository {
       return;
     }
 
-    await this.persistSelectedModelBeforePublish(conversation, modelToPersist);
+    await this.#persistSelectedModelBeforePublish(conversation, modelToPersist);
   }
 
-  private async reconcileIncomingSelectedModel(conversation: Conversation): Promise<void> {
+  async #reconcileIncomingSelectedModel(conversation: Conversation): Promise<void> {
     if (
       !getStoredModelSelection(conversation.selectedModel)
     ) {
@@ -1499,19 +1499,19 @@ export class ConversationRepository {
     }
 
     const snapshot = { ...conversation, selectedModel: modelToPersist };
-    const didPersist = await this.enqueuePersistence(conversation.id, async () => {
+    const didPersist = await this.#enqueuePersistence(conversation.id, async () => {
       if (
         this.getSync(conversation.id)
         || this.deletedConversationIds.has(conversation.id)
         || this.deletingConversationIds.has(conversation.id)
         || await this.persistence.isDeleted(
           conversation.id,
-          this.requireMetadataTarget(conversation.id),
+          this.#requireMetadataTarget(conversation.id),
         )
       ) {
         return false;
       }
-      await this.writeMetadata(snapshot, {
+      await this.#writeMetadata(snapshot, {
         preserveProviderState: true,
       });
       return true;
@@ -1521,18 +1521,18 @@ export class ConversationRepository {
     }
   }
 
-  private async persistSelectedModelBeforePublish(
+  async #persistSelectedModelBeforePublish(
     conversation: Conversation,
     selectedModel: string,
     clearRecoverySource = false,
   ): Promise<boolean> {
     const previousSelectedModel = conversation.selectedModel;
-    const selectedModelMutationVersion = this.markSelectedModelMutation(conversation);
-    const didPersist = await this.enqueuePersistence(conversation.id, async () => {
+    const selectedModelMutationVersion = this.#markSelectedModelMutation(conversation);
+    const didPersist = await this.#enqueuePersistence(conversation.id, async () => {
       if (
-        this.getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
-        || !await this.canWriteConversation(conversation)
-        || this.getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
+        this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
+        || !await this.#canWriteConversation(conversation)
+        || this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
       ) {
         return false;
       }
@@ -1541,14 +1541,14 @@ export class ConversationRepository {
         selectedModel,
         ...(clearRecoverySource ? { modelRecoverySource: undefined } : {}),
       };
-      await this.writeMetadata(snapshot, {
+      await this.#writeMetadata(snapshot, {
         preserveProviderState: !this.hydratedConversationIds.has(conversation.id),
       });
       return true;
     });
     if (
       !didPersist
-      || this.getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
+      || this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
       || conversation.selectedModel !== previousSelectedModel
     ) {
       return false;
@@ -1561,17 +1561,17 @@ export class ConversationRepository {
     return true;
   }
 
-  private markSelectedModelMutation(conversation: Conversation): number {
-    const nextVersion = this.getSelectedModelMutationVersion(conversation) + 1;
+  #markSelectedModelMutation(conversation: Conversation): number {
+    const nextVersion = this.#getSelectedModelMutationVersion(conversation) + 1;
     this.selectedModelMutationVersions.set(conversation, nextVersion);
     return nextVersion;
   }
 
-  private getSelectedModelMutationVersion(conversation: Conversation): number {
+  #getSelectedModelMutationVersion(conversation: Conversation): number {
     return this.selectedModelMutationVersions.get(conversation) ?? 0;
   }
 
-  private async hydrateProviderHistory(
+  async #hydrateProviderHistory(
     conversation: Conversation,
   ): Promise<void> {
     const vaultPath = this.deps.getVaultPath();
@@ -1580,19 +1580,19 @@ export class ConversationRepository {
       .hydrateConversationHistory(
         conversation,
         vaultPath,
-        this.getHistoryPathContext(conversation.providerId, vaultPath),
+        this.#getHistoryPathContext(conversation.providerId, vaultPath),
       );
   }
 
-  private async hydrateInputLedger(
+  async #hydrateInputLedger(
     conversation: Conversation,
   ): Promise<void> {
     const state = await this.loadInputLedger(conversation.id);
     if (state.status !== 'loaded') return;
-    const correlation = this.correlateInputLedger(conversation, state.ledger);
+    const correlation = this.#correlateInputLedger(conversation, state.ledger);
     if (correlation.ledgerChanged) {
       try {
-        await this.persistLedgerOnly(conversation.id, state.ledger);
+        await this.#persistLedgerOnly(conversation.id, state.ledger);
       } catch {
         // Native history remains usable; the accepted promotion stays dirty.
       }
@@ -1655,7 +1655,7 @@ export class ConversationRepository {
     }
   }
 
-  private async requireInputLedger(
+  async #requireInputLedger(
     conversationId: string,
   ): Promise<ConversationInputLedger> {
     const conversation = this.getSync(conversationId);
@@ -1676,7 +1676,7 @@ export class ConversationRepository {
     return state.ledger;
   }
 
-  private correlateInputLedger(
+  #correlateInputLedger(
     conversation: Conversation,
     ledger: ConversationInputLedger,
   ): InputLedgerCorrelationResult {
@@ -1737,7 +1737,7 @@ export class ConversationRepository {
           ledgerChanged = true;
         }
       }
-      this.attachRecordToMessage(message, record);
+      this.#attachRecordToMessage(message, record);
       if (record.state === 'staged') {
         record.state = 'accepted';
         ledgerChanged = true;
@@ -1749,7 +1749,7 @@ export class ConversationRepository {
     return { ledgerChanged, lastAcceptedInputAt };
   }
 
-  private attachRecordToInMemoryMessages(
+  #attachRecordToInMemoryMessages(
     conversation: Conversation,
     record: ConversationInputRecord,
   ): void {
@@ -1763,7 +1763,7 @@ export class ConversationRepository {
     );
     if (userIndex === -1) return;
     const userMessage = conversation.messages[userIndex];
-    this.attachRecordToMessage(userMessage, record);
+    this.#attachRecordToMessage(userMessage, record);
     if (record.providerUserMessageId) {
       userMessage.userMessageId = record.providerUserMessageId;
     }
@@ -1778,7 +1778,7 @@ export class ConversationRepository {
     }
   }
 
-  private attachRecordToMessage(
+  #attachRecordToMessage(
     message: ChatMessage,
     record: ConversationInputRecord,
   ): void {
@@ -1791,18 +1791,18 @@ export class ConversationRepository {
     };
   }
 
-  private async persistLedgerOnly(
+  async #persistLedgerOnly(
     conversationId: string,
     ledger: ConversationInputLedger,
   ): Promise<void> {
-    await this.enqueuePersistence(conversationId, async () => {
-      if (!await this.canWriteLedger(conversationId, ledger)) return;
-      await this.writeInputLedger(conversationId, ledger);
-      this.markInputLedgerCanonical(conversationId, ledger);
+    await this.#enqueuePersistence(conversationId, async () => {
+      if (!await this.#canWriteLedger(conversationId, ledger)) return;
+      await this.#writeInputLedger(conversationId, ledger);
+      this.#markInputLedgerCanonical(conversationId, ledger);
     });
   }
 
-  private markInputLedgerCanonical(
+  #markInputLedgerCanonical(
     conversationId: string,
     ledger: ConversationInputLedger,
   ): void {
@@ -1812,7 +1812,7 @@ export class ConversationRepository {
     }
   }
 
-  private async canWriteLedger(
+  async #canWriteLedger(
     conversationId: string,
     ledger: ConversationInputLedger,
   ): Promise<boolean> {
@@ -1830,7 +1830,7 @@ export class ConversationRepository {
       !isCurrent()
       || await this.persistence.isDeleted(
         conversationId,
-        this.requireMetadataTarget(conversationId),
+        this.#requireMetadataTarget(conversationId),
       )
     ) {
       return false;
@@ -1838,7 +1838,7 @@ export class ConversationRepository {
     return isCurrent();
   }
 
-  private applySnapshot(
+  #applySnapshot(
     conversation: Conversation,
     snapshot: ProviderSessionSnapshot,
   ): void {
@@ -1854,7 +1854,7 @@ export class ConversationRepository {
       )
     ) {
       conversation.modelRecoverySource = undefined;
-      this.invalidateConversation(conversation.id);
+      this.#invalidateConversation(conversation.id);
     }
     if (snapshot.providerSessionId !== undefined) {
       conversation.sessionId = snapshot.providerSessionId;
@@ -1880,21 +1880,21 @@ export class ConversationRepository {
   }
 
   private save(conversation: Conversation): Promise<void> {
-    this.restoreLinkedContentIdentity(conversation);
-    const generation = this.getConversationGeneration(conversation.id);
-    return this.enqueuePersistence(conversation.id, async () => {
+    this.#restoreLinkedContentIdentity(conversation);
+    const generation = this.#getConversationGeneration(conversation.id);
+    return this.#enqueuePersistence(conversation.id, async () => {
       if (
-        !this.isConversationCurrent(conversation, generation)
-        || !await this.canWriteConversation(conversation)
+        !this.#isConversationCurrent(conversation, generation)
+        || !await this.#canWriteConversation(conversation)
       ) {
         return;
       }
-      this.restoreLinkedContentIdentity(conversation);
-      await this.writeMetadata(conversation);
+      this.#restoreLinkedContentIdentity(conversation);
+      await this.#writeMetadata(conversation);
     });
   }
 
-  private async canWriteConversation(
+  async #canWriteConversation(
     conversation: Conversation,
   ): Promise<boolean> {
     return (
@@ -1903,33 +1903,33 @@ export class ConversationRepository {
       && !this.deletingConversationIds.has(conversation.id)
       && !await this.persistence.isDeleted(
         conversation.id,
-        this.requireMetadataTarget(conversation.id),
+        this.#requireMetadataTarget(conversation.id),
       )
     );
   }
 
-  private writeMetadata(
+  #writeMetadata(
     conversation: Conversation,
     options: { preserveProviderState?: boolean } = {},
   ): Promise<void> {
     const metadata = this.toSessionMetadata(conversation, options);
-    const target = this.requireMetadataTarget(conversation.id);
+    const target = this.#requireMetadataTarget(conversation.id);
     return target === 'device'
       ? this.persistence.saveMetadata(metadata)
       : this.persistence.saveMetadata(metadata, target);
   }
 
-  private writeInputLedger(
+  #writeInputLedger(
     conversationId: string,
     ledger: ConversationInputLedger,
   ): Promise<void> {
-    const target = this.requireMetadataTarget(conversationId);
+    const target = this.#requireMetadataTarget(conversationId);
     return target === 'device'
       ? this.persistence.saveInputLedger(conversationId, ledger)
       : this.persistence.saveInputLedger(conversationId, ledger, target);
   }
 
-  private async isDeletedInAnyMetadataTarget(
+  async #isDeletedInAnyMetadataTarget(
     conversationId: string,
   ): Promise<boolean> {
     const [deviceDeleted, unscopedDeleted] = await Promise.all([
@@ -1939,7 +1939,7 @@ export class ConversationRepository {
     return deviceDeleted || unscopedDeleted;
   }
 
-  private requireMetadataTarget(conversationId: string): SessionMetadataAuthority {
+  #requireMetadataTarget(conversationId: string): SessionMetadataAuthority {
     const authority = this.metadataTargets.get(conversationId);
     if (!authority) {
       throw new Error(`Conversation metadata ownership is unresolved: ${conversationId}`);
@@ -1947,7 +1947,7 @@ export class ConversationRepository {
     return authority;
   }
 
-  private isLegacyMetadataTarget(conversationId: string): boolean {
+  #isLegacyMetadataTarget(conversationId: string): boolean {
     return this.metadataTargets.get(conversationId) === 'unscoped';
   }
 
@@ -1955,7 +1955,7 @@ export class ConversationRepository {
     conversation: Conversation,
     options: { preserveProviderState?: boolean } = {},
   ): SessionMetadata {
-    const linkedContentPath = this.getAuthoritativeLinkedContentPath(conversation);
+    const linkedContentPath = this.#getAuthoritativeLinkedContentPath(conversation);
     const historyService = ProviderRegistry.getConversationHistoryService(
       conversation.providerId,
     );
@@ -1992,7 +1992,7 @@ export class ConversationRepository {
     };
   }
 
-  private async cleanupDeletedConversation(id: string): Promise<void> {
+  async #cleanupDeletedConversation(id: string): Promise<void> {
     const target = this.metadataTargets.get(id);
     if (target === 'device') {
       await this.persistence.deleteCurrentMetadata(id);
@@ -2009,7 +2009,7 @@ export class ConversationRepository {
     this.linkedContentPathsByConversationId.delete(id);
   }
 
-  private async finalizeDeletedConversation(id: string): Promise<void> {
+  async #finalizeDeletedConversation(id: string): Promise<void> {
     let callbackError: unknown;
     try {
       await this.deps.onConversationDeleted(id);
@@ -2017,14 +2017,14 @@ export class ConversationRepository {
       callbackError = error;
     }
 
-    await this.cleanupDeletedConversation(id);
+    await this.#cleanupDeletedConversation(id);
     if (callbackError !== undefined) {
       throw toError(callbackError);
     }
     this.metadataTargets.delete(id);
   }
 
-  private enqueuePersistence<T>(
+  #enqueuePersistence<T>(
     conversationId: string,
     operation: () => Promise<T>,
   ): Promise<T> {
@@ -2046,7 +2046,7 @@ export class ConversationRepository {
     return result;
   }
 
-  private getHistoryPathContext(
+  #getHistoryPathContext(
     providerId: ProviderId,
     vaultPath: string | null = this.deps.getVaultPath(),
   ): ProviderHistoryPathContext {
@@ -2062,26 +2062,26 @@ export class ConversationRepository {
     };
   }
 
-  private getConversationGeneration(id: string): number {
+  #getConversationGeneration(id: string): number {
     return this.conversationGenerations.get(id) ?? 0;
   }
 
-  private invalidateConversation(id: string): void {
+  #invalidateConversation(id: string): void {
     this.historicalModelRecoveryPromises.delete(id);
     this.historicalModelRecoverySources.delete(id);
     this.conversationGenerations.set(
       id,
-      this.getConversationGeneration(id) + 1,
+      this.#getConversationGeneration(id) + 1,
     );
   }
 
-  private isConversationCurrent(
+  #isConversationCurrent(
     conversation: Conversation,
     generation: number,
   ): boolean {
     return (
       this.getSync(conversation.id) === conversation
-      && this.getConversationGeneration(conversation.id) === generation
+      && this.#getConversationGeneration(conversation.id) === generation
     );
   }
 
@@ -2089,7 +2089,7 @@ export class ConversationRepository {
     return `conv-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
   }
 
-  private generateDefaultTitle(): string {
+  #generateDefaultTitle(): string {
     const now = new Date();
     return now.toLocaleString(undefined, {
       month: 'short',
@@ -2099,7 +2099,7 @@ export class ConversationRepository {
     });
   }
 
-  private getPreview(conversation: Conversation): string {
+  #getPreview(conversation: Conversation): string {
     const firstUserMessage = conversation.messages.find(
       (message) => message.role === 'user',
     );

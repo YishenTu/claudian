@@ -44,8 +44,8 @@ export class CachedProviderCliResolver {
   }
 
   resolve(projection: ProviderCliSettingsProjection): string | null {
-    const context = this.createResolutionContext(projection);
-    const cacheKey = this.createCacheKey(context);
+    const context = this.#createResolutionContext(projection);
+    const cacheKey = this.#createCacheKey(context);
     if (this.cacheValid && cacheKey === this.cacheKey) {
       return this.cachedResolution;
     }
@@ -70,7 +70,7 @@ export class CachedProviderCliResolver {
     this.cachedResolution = null;
   }
 
-  private createResolutionContext(
+  #createResolutionContext(
     projection: ProviderCliSettingsProjection,
   ): ProviderCliResolutionContext {
     const environmentText = projection.environmentText || '';
@@ -83,7 +83,7 @@ export class CachedProviderCliResolver {
     };
   }
 
-  private createCacheKey(context: ProviderCliResolutionContext): string {
+  #createCacheKey(context: ProviderCliResolutionContext): string {
     const additionalInputs: Record<string, string | undefined> = {
       binaryName: this.options.binaryName,
       environmentText: context.environmentText,

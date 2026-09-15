@@ -31,7 +31,7 @@ export class ProviderTransitionFence {
   endTransition(): void {
     if (this.disposed || this.transitionDepth === 0) return;
     this.transitionDepth -= 1;
-    if (this.transitionDepth === 0) this.releaseWaiters();
+    if (this.transitionDepth === 0) this.#releaseWaiters();
   }
 
   isUnavailable(): boolean {
@@ -41,7 +41,7 @@ export class ProviderTransitionFence {
   async waitUntilAvailable(signal?: AbortSignal): Promise<boolean> {
     throwIfAborted(signal, this.abortMessage);
     while (!this.disposed && this.transitionDepth > 0) {
-      await this.waitForTransition(signal);
+      await this.#waitForTransition(signal);
     }
     return !this.disposed;
   }
@@ -50,15 +50,15 @@ export class ProviderTransitionFence {
     if (this.disposed) return;
     this.disposed = true;
     this.transitionDepth = 0;
-    this.releaseWaiters();
+    this.#releaseWaiters();
   }
 
-  private waitForTransition(signal?: AbortSignal): Promise<void> {
+  #waitForTransition(signal?: AbortSignal): Promise<void> {
     throwIfAborted(signal, this.abortMessage);
     return new Promise<void>((resolve, reject) => {
       const onAbort = (): void => {
         if (!this.waiters.delete(waiter)) return;
-        this.removeAbortListener(waiter);
+        this.#removeAbortListener(waiter);
         reject(toAbortError(signal!, this.abortMessage));
       };
       const waiter: TransitionWaiter = {
@@ -72,16 +72,16 @@ export class ProviderTransitionFence {
     });
   }
 
-  private releaseWaiters(): void {
+  #releaseWaiters(): void {
     const waiters = [...this.waiters];
     this.waiters.clear();
     for (const waiter of waiters) {
-      this.removeAbortListener(waiter);
+      this.#removeAbortListener(waiter);
       waiter.resolve();
     }
   }
 
-  private removeAbortListener(waiter: TransitionWaiter): void {
+  #removeAbortListener(waiter: TransitionWaiter): void {
     if (waiter.signal && waiter.onAbort) {
       waiter.signal.removeEventListener('abort', waiter.onAbort);
     }

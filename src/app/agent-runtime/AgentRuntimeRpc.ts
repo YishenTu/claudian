@@ -3,7 +3,8 @@ import type { CollabFileChangeKind, CollabReviewCondition, CollabRole, CollabTic
 import type { CollabAuthorityKind, CollabAuthoritySyncStatus, CollabConflictKind, CollabConnectionStatus, CollabHostStatus, CollabLocalCleanupStatus, CollabPersonalAction, CollabProjectHealth, CollabProjectLifecycle, CollabReviewComparisonKind } from '@/core/collab';
 import type { CollabErrorCode } from '@/core/collab/ClaudianCollabError';
 
-export const AGENT_RUNTIME_PROTOCOL_VERSION = 5 as const;
+export const AGENT_RUNTIME_PROTOCOL_VERSION = 7 as const;
+export const AGENT_RUNTIME_RPC_ID_MAX_LENGTH = 64;
 
 export type AgentRuntimeRpcOwnedErrorCode =
   | 'invalid_request'
@@ -78,7 +79,13 @@ export interface AgentRuntimeOperationSummary {
   readonly description: string;
 }
 
+export interface AgentRuntimeRetryPolicy {
+  readonly strategy: 'read' | 'same-mutation' | 'inspect-before-repeat';
+  readonly description: string;
+}
+
 export interface AgentRuntimeOperationDescriptor extends AgentRuntimeOperationSummary {
+  readonly retry: AgentRuntimeRetryPolicy;
   readonly name: string;
   readonly description: string;
   readonly parameters: readonly AgentRuntimeParameterDescriptor[];
@@ -109,7 +116,16 @@ export interface AgentRuntimeSyncState {
   readonly eventSequence: number;
 }
 
+export interface AgentRuntimeProjectUpdateState {
+  readonly state: 'unknown' | 'current' | 'available' | 'review-required' | 'conflict' | 'recovery-required' | 'publish-pending';
+  readonly freshness: 'fresh' | 'offline' | 'not-fetched';
+  readonly incoming: 'unknown' | 'current' | 'available' | 'included';
+  readonly reason?: 'offline' | 'not-fetched';
+  readonly nextAction: 'update' | 'resolve-conflicts' | 'complete-publish' | null;
+}
+
 export interface AgentRuntimeProjectDetail extends AgentRuntimeProjectSummary {
+  readonly update: AgentRuntimeProjectUpdateState;
   readonly workspacePath: string;
   readonly authorityKind: CollabAuthorityKind;
   readonly hostStatus: CollabHostStatus;
@@ -283,6 +299,7 @@ export type AgentRuntimeConflictFileContent =
   };
 
 export interface AgentRuntimeOperationsListResult {
+  readonly limits: { readonly maxRequestBytes: number };
   readonly access: 'read-write';
   readonly operations: readonly AgentRuntimeOperationSummary[];
   readonly name: 'claudian-agent-runtime';
@@ -472,7 +489,14 @@ export interface AgentRuntimeChangesPublishResult {
   readonly review?: AgentRuntimePublicationReview;
 }
 
-export type AgentRuntimeConflictLocation = 'my-changes' | 'request';
+export interface AgentRuntimeProjectUpdateResult {
+  readonly projectId: string;
+  readonly state: 'already-current' | 'updated' | 'review-required';
+  readonly nextAction: 'update' | null;
+  readonly files?: readonly AgentRuntimeChangedFile[];
+}
+
+export type AgentRuntimeConflictLocation = 'my-changes' | 'request' | 'update';
 
 export interface AgentRuntimeConflictGetResult {
   readonly projectId: string;
@@ -501,6 +525,7 @@ export type AgentRuntimeRpcResult =
   | AgentRuntimeHealthCheckResult
   | AgentRuntimeProjectsListResult
   | AgentRuntimeProjectGetResult
+  | AgentRuntimeProjectUpdateResult
   | AgentRuntimePersonalChangesResult
   | AgentRuntimePersonalChangeFileResult
   | AgentRuntimeRequestsListResult
@@ -544,7 +569,7 @@ export type AgentRuntimeRpcEnvelopeDecodeResult =
   | { readonly status: 'success'; readonly envelope: AgentRuntimeRpcEnvelope }
   | { readonly status: 'invalid-request' };
 
-const RPC_ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+const RPC_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 const REQUEST_KEYS = new Set(['id', 'method', 'params']);
 
 export function decodeAgentRuntimeRpcEnvelope(
@@ -555,7 +580,7 @@ export function decodeAgentRuntimeRpcEnvelope(
   if (keys.length !== REQUEST_KEYS.size || keys.some(key => !REQUEST_KEYS.has(key))) {
     return { status: 'invalid-request' };
   }
-  if (typeof input.id !== 'string' || !RPC_ID_PATTERN.test(input.id)) {
+  if (typeof input.id !== 'string' || input.id.length > AGENT_RUNTIME_RPC_ID_MAX_LENGTH || !RPC_ID_PATTERN.test(input.id)) {
     return { status: 'invalid-request' };
   }
   if (typeof input.method !== 'string' || !isPlainRecord(input.params)) {

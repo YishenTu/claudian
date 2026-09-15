@@ -38,21 +38,21 @@ export class LinkedContentSelector {
     if (this.destroyed) return;
     this.state = state;
     if (state.mode === 'submitting' || state.mode === 'locked') {
-      this.clearDom();
+      this.#clearDom();
       return;
     }
-    if (!this.selectorButton) this.buildSelectorButton();
-    this.updateSelectorButton();
+    if (!this.selectorButton) this.#buildSelectorButton();
+    this.#updateSelectorButton();
   }
 
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.clearDom();
+    this.#clearDom();
     this.state = null;
   }
 
-  private buildSelectorButton(): void {
+  #buildSelectorButton(): void {
     this.selectorRow = this.mountEl.createDiv({ cls: 'claudian-linked-content-selector-row' });
     const iconEl = this.selectorRow.createSpan({ cls: 'claudian-linked-content-selector-icon' });
     setIcon(iconEl, 'link');
@@ -72,7 +72,7 @@ export class LinkedContentSelector {
     this.selectorButton.addEventListener('click', this.handleSelectorClick);
   }
 
-  private updateSelectorButton(): void {
+  #updateSelectorButton(): void {
     if (!this.selectorButton || !this.state) return;
     const value = this.state.label ?? 'None';
     this.selectorButton.setText(value);
@@ -80,13 +80,13 @@ export class LinkedContentSelector {
 
   private readonly handleSelectorClick = (): void => {
     if (this.pickerEl) {
-      this.closePicker(true);
+      this.#closePicker(true);
       return;
     }
-    this.openPicker();
+    this.#openPicker();
   };
 
-  private openPicker(): void {
+  #openPicker(): void {
     if (this.destroyed || !this.selectorButton || !this.selectorRow) return;
     const selectorRect = this.selectorButton.getBoundingClientRect();
     this.selectorButton.setAttribute('aria-expanded', 'true');
@@ -101,7 +101,7 @@ export class LinkedContentSelector {
     });
     this.searchInput.addEventListener('input', this.handleSearchInput);
     this.searchInput.addEventListener('keydown', this.handleSearchKeydown);
-    this.sizeSearchInputToSelector(selectorRect);
+    this.#sizeSearchInputToSelector(selectorRect);
     this.pickerEl = this.mountEl.createDiv({
       cls: 'claudian-composer-dropdown claudian-linked-content-picker',
     });
@@ -115,30 +115,30 @@ export class LinkedContentSelector {
   }
 
   private readonly handleSearchInput = (): void => {
-    if (!this.getSearchQuery()) {
+    if (!this.#getSearchQuery()) {
       this.filteredItems = [];
       this.activeIndex = 0;
-      this.hidePickerResults();
+      this.#hidePickerResults();
       return;
     }
-    this.filterAndRenderItems();
+    this.#filterAndRenderItems();
   };
 
   private readonly handleSearchKeydown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      this.closePicker(true);
+      this.#closePicker(true);
       return;
     }
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      this.moveActive(1);
+      this.#moveActive(1);
       return;
     }
     if (event.key === 'ArrowUp') {
       event.preventDefault();
-      this.moveActive(-1);
+      this.#moveActive(-1);
       return;
     }
     if (event.key === 'Enter') {
@@ -152,23 +152,23 @@ export class LinkedContentSelector {
     if (event.key !== 'Escape' || event.target === this.searchInput) return;
     event.preventDefault();
     event.stopPropagation();
-    this.closePicker(true);
+    this.#closePicker(true);
   };
 
   private readonly handleWindowKeydown = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || !this.pickerEl) return;
     event.preventDefault();
     event.stopPropagation();
-    this.closePicker(true);
+    this.#closePicker(true);
   };
 
-  private filterAndRenderItems(): void {
+  #filterAndRenderItems(): void {
     if (!this.pickerEl) return;
-    const query = this.getSearchQuery();
+    const query = this.#getSearchQuery();
     if (!query) {
       this.filteredItems = [];
       this.activeIndex = 0;
-      this.hidePickerResults();
+      this.#hidePickerResults();
       return;
     }
     this.filteredItems = this.items.filter(item => (
@@ -177,13 +177,13 @@ export class LinkedContentSelector {
     ));
     const selectedIndex = this.filteredItems.findIndex(item => item.path === this.state?.path);
     this.activeIndex = selectedIndex >= 0 ? selectedIndex : 0;
-    this.renderItems();
+    this.#renderItems();
   }
 
-  private renderItems(): void {
+  #renderItems(): void {
     if (!this.pickerEl) return;
-    this.clearPickerResults();
-    this.showPickerResults();
+    this.#clearPickerResults();
+    this.#showPickerResults();
     const listEl = this.pickerEl.createDiv({ cls: 'claudian-linked-content-picker-list' });
     listEl.setAttribute('role', 'listbox');
     listEl.setAttribute('aria-label', 'Linked content choices');
@@ -228,12 +228,12 @@ export class LinkedContentSelector {
     });
   }
 
-  private moveActive(delta: number): void {
+  #moveActive(delta: number): void {
     if (this.filteredItems.length === 0) return;
     this.activeIndex = (
       this.activeIndex + delta + this.filteredItems.length
     ) % this.filteredItems.length;
-    this.renderItems();
+    this.#renderItems();
     const options = this.pickerEl?.querySelectorAll<HTMLElement>(
       '.claudian-linked-content-picker-option',
     );
@@ -242,14 +242,14 @@ export class LinkedContentSelector {
 
   private select(item: LinkedContentPickerItem): void {
     this.options.onSelect(item.path);
-    this.closePicker(true);
+    this.#closePicker(true);
   }
 
-  private getSearchQuery(): string {
+  #getSearchQuery(): string {
     return (this.searchInput?.value ?? '').trim().toLocaleLowerCase();
   }
 
-  private sizeSearchInputToSelector(selectorRect: DOMRect): void {
+  #sizeSearchInputToSelector(selectorRect: DOMRect): void {
     if (!this.searchInput) return;
     const fallbackWidth = Math.max(1, Array.from(this.state?.label || 'None').length);
     this.searchInput.style.width = selectorRect.width > 0
@@ -260,24 +260,24 @@ export class LinkedContentSelector {
     }
   }
 
-  private showPickerResults(): void {
+  #showPickerResults(): void {
     this.pickerEl?.addClass('is-visible');
   }
 
-  private hidePickerResults(): void {
-    this.clearPickerResults();
+  #hidePickerResults(): void {
+    this.#clearPickerResults();
     this.pickerEl?.removeClass('is-visible');
   }
 
-  private clearPickerResults(): void {
+  #clearPickerResults(): void {
     if (!this.pickerEl) return;
-    this.clearOptionListeners();
+    this.#clearOptionListeners();
     this.pickerEl.querySelector('.claudian-linked-content-picker-list')?.remove();
   }
 
-  private closePicker(returnFocus: boolean): void {
+  #closePicker(returnFocus: boolean): void {
     if (!this.pickerEl) return;
-    this.clearOptionListeners();
+    this.#clearOptionListeners();
     this.searchInput?.removeEventListener('input', this.handleSearchInput);
     this.searchInput?.removeEventListener('keydown', this.handleSearchKeydown);
     this.searchInput?.remove();
@@ -292,15 +292,15 @@ export class LinkedContentSelector {
     if (returnFocus) this.selectorButton?.focus();
   }
 
-  private clearOptionListeners(): void {
+  #clearOptionListeners(): void {
     for (const { element, listener } of this.optionListeners) {
       element.removeEventListener('click', listener);
     }
     this.optionListeners.length = 0;
   }
 
-  private clearDom(): void {
-    this.closePicker(false);
+  #clearDom(): void {
+    this.#closePicker(false);
     this.selectorButton?.removeEventListener('click', this.handleSelectorClick);
     this.selectorButton = null;
     this.selectorRow = null;

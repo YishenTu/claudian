@@ -264,6 +264,7 @@ export default class ClaudianPlugin extends Plugin {
       );
       registerFileMenu(this);
       this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+        if (file instanceof TFolder) void this.handleCollabFolderRename(oldPath, file.path);
         void this.handleLinkedContentRename(file, oldPath).catch(() => {
           new Notice('Failed to update linked content paths');
         });
@@ -469,6 +470,7 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private async shutdownApplication(): Promise<void> {
+    const detailClose = this.getCollabDetailViewCoordinator().close();
     const featureConstruction = this.collabFeatureServicePromise;
     const featureClose = this.collabFeatureService?.close();
     const agentRuntimeClose = this.agentRuntime?.close().catch(() => undefined);
@@ -485,6 +487,7 @@ export default class ClaudianPlugin extends Plugin {
     } catch {
       // Obsidian teardown has no error channel; workspace cleanup is best effort.
     }
+    await detailClose?.catch(() => undefined);
     await agentRuntimeClose;
     try {
       await this.agentRuntime?.waitForWriteInvocations();
@@ -647,7 +650,6 @@ export default class ClaudianPlugin extends Plugin {
           onSaveConfiguredGitPath: path => this.saveCollabGitPath(path),
           port: feature,
           preparedReviews: this.collabPreparedReviews,
-          projectSetup: feature,
           resolveGit: rescan => this.resolveCollabGit(rescan),
           ticketFocus: {
             read: () => this.readCollabTicketFocus(),
@@ -731,15 +733,10 @@ export default class ClaudianPlugin extends Plugin {
     });
     const { feature } = collab.createCollabFeatureSubcomposition({
       foundation,
+      getProjectsFolder: () => this.settings.collabProjectsFolder,
       projectSetup,
       vaultRoot,
     });
-    try {
-      await feature.prepareCloudBootstrapLocalRecovery();
-    } catch (error) {
-      await Promise.allSettled([feature.close(), foundation.close()]);
-      throw error;
-    }
     if (!this.isCollabEnabled() || generation !== this.collabLifecycleGeneration) {
       await feature.close();
       await foundation.close();
@@ -747,7 +744,6 @@ export default class ClaudianPlugin extends Plugin {
     }
     this.collabFoundation = foundation;
     this.collabFeatureService = feature;
-    void feature.recoverPendingCloudBootstraps().catch(() => undefined);
     return feature;
   }
 
@@ -904,7 +900,7 @@ export default class ClaudianPlugin extends Plugin {
 
   private createCollabDetailViewPort(): CollabDetailViewPort {
     return {
-      isDetailAdmissionOpen: () => this.collabLayoutReady,
+      isDetailAdmissionOpen: () => this.collabLayoutReady && this.isCollabEnabled(),
       acceptRequest: async (...args) => (
         (await this.requireCollabFeatureService()).acceptRequest(...args)
       ),
@@ -917,14 +913,17 @@ export default class ClaudianPlugin extends Plugin {
       closeTicket: async (...args) => (
         (await this.requireCollabFeatureService()).closeTicket(...args)
       ),
+      confirmUpdate: async (...args) => (
+        (await this.requireCollabFeatureService()).confirmUpdate(...args)
+      ),
       confirmPublish: async (...args) => (
         (await this.requireCollabFeatureService()).confirmPublish(...args)
       ),
       createTicket: async (...args) => (
         (await this.requireCollabFeatureService()).createTicket(...args)
       ),
-      listTickets: async (...args) => (
-        (await this.requireCollabFeatureService()).listTickets(...args)
+      resolveTicketNumber: async (...args) => (
+        (await this.requireCollabFeatureService()).resolveTicketNumber(...args)
       ),
       prepareReview: async (...args) => (
         (await this.requireCollabFeatureService()).prepareReview(...args)
@@ -965,13 +964,13 @@ export default class ClaudianPlugin extends Plugin {
       reopenTicket: async (...args) => (
         (await this.requireCollabFeatureService()).reopenTicket(...args)
       ),
-      subscribe: listener => {
+      observeProject: (projectId, listener) => {
         if (!this.isCollabEnabled()) return { dispose: () => undefined };
         let disposed = false;
         let subscription: { dispose(): void } | null = null;
         void this.requireCollabFeatureService().then(feature => {
           if (disposed) return;
-          subscription = feature.subscribe(listener);
+          subscription = feature.observeProject(projectId, listener);
         }).catch(() => undefined);
         return {
           dispose: () => {
@@ -990,8 +989,10 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private async openCollabProjectFile(projectId: string, filePath: string): Promise<void> {
+    const generation = this.collabLifecycleGeneration;
     try {
       const feature = await this.requireCollabFeatureService();
+      if (!this.isCurrentCollabLifecycle(generation)) return;
       const project = feature.state.projects.find(candidate => candidate.id === projectId);
       if (!project) throw new Error('Collab Project is unavailable');
       const vaultPath = normalizePath(`${project.workspacePath}/${filePath}`);
@@ -999,6 +1000,7 @@ export default class ClaudianPlugin extends Plugin {
       if (!(file instanceof TFile)) throw new Error('Collab Project file is unavailable');
       await this.app.workspace.getLeaf('tab').openFile(file);
     } catch {
+      if (!this.isCurrentCollabLifecycle(generation)) return;
       new Notice(t('collab.review.fileLoadFailed'));
     }
   }
@@ -1006,12 +1008,15 @@ export default class ClaudianPlugin extends Plugin {
   private async openCollabConflict(
     projectId: string,
     operationId: string,
-    location: 'my-changes' | 'request',
+    location: 'my-changes' | 'request' | 'update',
     requestId?: string,
   ): Promise<void> {
+    const generation = this.collabLifecycleGeneration;
     try {
       const feature = await this.requireCollabFeatureService();
+      if (!this.isCurrentCollabLifecycle(generation)) return;
       const result = await feature.readConflict(operationId);
+      if (!this.isCurrentCollabLifecycle(generation)) return;
       if (
         result.status !== 'success'
         || result.value.descriptor.projectId !== projectId
@@ -1027,17 +1032,21 @@ export default class ClaudianPlugin extends Plugin {
         ...(location === 'request' && requestId ? { requestId } : {}),
       });
     } catch {
+      if (!this.isCurrentCollabLifecycle(generation)) return;
       new Notice(t('collab.notices.conflictUnavailable'));
     }
   }
 
   private async openCollabRequest(projectId: string, requestId: string): Promise<void> {
+    const generation = this.collabLifecycleGeneration;
     try {
       const feature = await this.requireCollabFeatureService();
+      if (!this.isCurrentCollabLifecycle(generation)) return;
       const [reviewResult, snapshotResult] = await Promise.all([
         feature.prepareReview(projectId, requestId),
         feature.readSnapshot(projectId),
       ]);
+      if (!this.isCurrentCollabLifecycle(generation)) return;
       if (reviewResult.status !== 'success' || snapshotResult.status !== 'success') {
         new Notice(t('collab.notices.reviewUnavailable'));
         return;
@@ -1050,6 +1059,7 @@ export default class ClaudianPlugin extends Plugin {
         review.files[0]?.path,
       );
     } catch {
+      if (!this.isCurrentCollabLifecycle(generation)) return;
       new Notice(t('collab.notices.reviewUnavailable'));
     }
   }
@@ -1060,6 +1070,7 @@ export default class ClaudianPlugin extends Plugin {
     coordination: CollabCoordinationSnapshot,
     selectedPath?: string,
   ): Promise<void> {
+    if (!this.isCollabEnabled()) return;
     if (review.projectId !== projectId) {
       new Notice(t('collab.notices.reviewUnavailable'));
       return;
@@ -1089,6 +1100,7 @@ export default class ClaudianPlugin extends Plugin {
     review: CollabPublicationReview,
     selectedPath?: string,
   ): Promise<void> {
+    if (!this.isCollabEnabled()) return;
     if (review.projectId !== projectId) {
       new Notice(t('collab.notices.reviewUnavailable'));
       return;
@@ -1097,6 +1109,7 @@ export default class ClaudianPlugin extends Plugin {
       const selected = review.files.find(file => file.path === selectedPath) ?? review.files[0];
       this.collabPreparedReviews.storePublication(review);
       await this.getCollabDetailViewCoordinator().open({
+        ...(review.intent ? { intent: review.intent } : {}),
         candidateOid: review.candidateOid,
         comparisonBaseOid: review.comparisonBaseOid,
         comparisonTargetOid: review.comparisonTargetOid,
@@ -1118,10 +1131,14 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private getCollabDetailViewCoordinator(): CollabDetailViewCoordinator {
-    this.collabDetailViewCoordinator ??= new CollabDetailViewCoordinator(
-      this.app.workspace,
-      this.collabPreparedReviews,
-    );
+    if (!this.collabDetailViewCoordinator) {
+      const generation = this.collabLifecycleGeneration;
+      this.collabDetailViewCoordinator = new CollabDetailViewCoordinator(
+        this.app.workspace,
+        this.collabPreparedReviews,
+        () => this.isCurrentCollabLifecycle(generation),
+      );
+    }
     return this.collabDetailViewCoordinator;
   }
 
@@ -1337,14 +1354,13 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private async applyCollabEnabled(enabled: boolean): Promise<void> {
-    if (this.isUnloading) return;
+    if (this.isUnloading || this.settings.collabEnabled === enabled) return;
+    await this.mutateSettings(settings => {
+      settings.collabEnabled = enabled;
+    });
     this.collabLifecycleGeneration += 1;
+    if (this.isUnloading) return;
     if (!enabled) this.collabTransientSurfaces.closeAll();
-    if (this.settings.collabEnabled !== enabled) {
-      await this.mutateSettings(settings => {
-        settings.collabEnabled = enabled;
-      });
-    }
     this.collabComposerReferences.refreshAvailability();
     for (const view of this.getAllViews()) view.refreshCollabAvailability();
     if (enabled) {
@@ -1357,6 +1373,7 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private async closeCollabOwners(): Promise<void> {
+    const detailClose = this.collabDetailViewCoordinator?.close();
     if (this.collabHostRestoreTimer !== null) {
       window.clearTimeout(this.collabHostRestoreTimer);
       this.collabHostRestoreTimer = null;
@@ -1374,7 +1391,7 @@ export default class ClaudianPlugin extends Plugin {
     const constructed = await featureConstruction?.catch(() => null);
     await constructed?.close().catch(() => undefined);
     await featureClose?.catch(() => undefined);
-    await this.collabDetailViewCoordinator?.close().catch(() => undefined);
+    await detailClose?.catch(() => undefined);
     this.collabDetailViewCoordinator = null;
     this.collabPreparedReviews.clear();
     await this.collabFoundation?.close().catch(() => undefined);
@@ -2256,6 +2273,21 @@ export default class ClaudianPlugin extends Plugin {
   async setConversationArchived(id: string, isArchived: boolean): Promise<void> {
     await this.conversationRepository.setArchived(id, isArchived);
     this.notifyConversationViewsChanged();
+  }
+
+  private async handleCollabFolderRename(oldPath: string, newPath: string): Promise<void> {
+    if (!this.collabLayoutReady || !this.isCollabEnabled()) return;
+    const generation = this.collabLifecycleGeneration;
+    try {
+      const feature = await this.getCollabFeatureService();
+      if (!feature || !this.isCollabEnabled() || generation !== this.collabLifecycleGeneration) return;
+      const result = await feature.reconcileWorkingCopyLocations({ oldPath, newPath });
+      if (result.status !== 'success') throw new Error('Collab folder reconciliation failed');
+    } catch {
+      if (this.isCollabEnabled() && generation === this.collabLifecycleGeneration) {
+        new Notice(t('collab.panel.projectFolderRenameFailed'));
+      }
+    }
   }
 
   private async handleLinkedContentRename(

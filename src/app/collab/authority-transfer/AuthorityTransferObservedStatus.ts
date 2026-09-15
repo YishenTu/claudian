@@ -74,36 +74,106 @@ function intermediateStatus(
 }
 
 function sameIdentity(
+  current: CollabAuthorityTransferStatus,
+  observed: CollabAuthorityTransferStatus,
+): boolean {
+  return current.projectId === observed.projectId
+    && current.transferId === observed.transferId
+    && current.direction === observed.direction
+    && current.sourceAuthority.kind === observed.sourceAuthority.kind
+    && current.sourceAuthority.generation === observed.sourceAuthority.generation
+    && current.targetAuthority.kind === observed.targetAuthority.kind
+    && current.targetAuthority.generation === observed.targetAuthority.generation
+    && current.targetUrl === observed.targetUrl
+    && current.createdAt === observed.createdAt
+    && current.expiresAt === observed.expiresAt;
+}
+
+export function assertAuthorityTransferStatusObservation(
+  current: CollabAuthorityTransferStatus,
+  observedValue: CollabAuthorityTransferStatus,
+): CollabAuthorityTransferStatus {
+  const observed = decodeCollabAuthorityTransferStatus(observedValue);
+  if (!sameIdentity(current, observed)) {
+    throw statusError('authority-transfer-observed-identity-mismatch');
+  }
+  if (Date.parse(observed.updatedAt) < Date.parse(current.updatedAt)) {
+    throw statusError('authority-transfer-observed-time-regressed');
+  }
+  const path = phases(observed);
+  const currentIndex = path.indexOf(current.phase);
+  const observedIndex = path.indexOf(observed.phase);
+  const crossingIntoCancellation = observedIndex >= 0
+    && currentIndex < 0
+    && current.relinquishmentProof === null;
+  if ((!crossingIntoCancellation && currentIndex < 0) || observedIndex < 0) {
+    throw statusError('authority-transfer-observed-phase-family-mismatch');
+  }
+  if (!crossingIntoCancellation && observedIndex < currentIndex) {
+    throw statusError('authority-transfer-observed-phase-regressed');
+  }
+  if (
+    current.checkpointSha256 !== null
+    && current.checkpointSha256 !== observed.checkpointSha256
+  ) throw statusError('authority-transfer-observed-checkpoint-mismatch');
+  if (current.batchRevision !== null && (
+    current.batchRevision !== observed.batchRevision
+    || current.batchSha256 !== observed.batchSha256
+  )) throw statusError('authority-transfer-observed-batch-mismatch');
+  if (
+    current.relinquishmentProof !== null
+    && JSON.stringify(current.relinquishmentProof)
+      !== JSON.stringify(observed.relinquishmentProof)
+  ) throw statusError('authority-transfer-observed-relinquishment-mismatch');
+  if (current.phase === observed.phase) {
+    if (JSON.stringify(current) !== JSON.stringify(observed)) {
+      throw statusError('authority-transfer-observed-phase-conflict');
+    }
+    return observed;
+  }
+  return observed;
+}
+
+function canAdoptLanToCloudCanonicalIdentity(
   record: AuthorityTransferRecord,
   observed: CollabAuthorityTransferStatus,
 ): boolean {
-  return record.projectId === observed.projectId
+  return record.lifecycleOwnership === 'owned'
+    && record.localRole === 'source'
+    && record.status.direction === 'lan-to-cloud'
+    && record.status.phase === 'collecting-readiness'
+    && record.status.state === 'active'
+    && record.status.updatedAt === record.status.createdAt
+    && record.status.batchRevision === null
+    && record.status.batchSha256 === null
+    && record.status.checkpointSha256 === null
+    && record.status.relinquishmentProof === null
+    && observed.direction === 'lan-to-cloud'
+    && observed.phase !== 'collecting-readiness'
+    && record.projectId === observed.projectId
     && record.transferId === observed.transferId
-    && record.status.direction === observed.direction
     && record.status.sourceAuthority.kind === observed.sourceAuthority.kind
     && record.status.sourceAuthority.generation === observed.sourceAuthority.generation
     && record.status.targetAuthority.kind === observed.targetAuthority.kind
     && record.status.targetAuthority.generation === observed.targetAuthority.generation
-    && record.status.targetUrl === observed.targetUrl
-    && record.status.createdAt === observed.createdAt
-    && record.status.expiresAt === observed.expiresAt;
+    && record.status.targetUrl === observed.targetUrl;
 }
 
 /** Persists every durable phase implied by one later authoritative observation. */
 export async function advanceThroughObservedAuthorityStatus(
-  persistence: Pick<AuthorityTransferPersistence, 'advance'>,
+  persistence: Pick<
+    AuthorityTransferPersistence,
+    'adoptLanToCloudCanonicalIdentity' | 'advance'
+  >,
   initial: AuthorityTransferRecord,
   observedValue: CollabAuthorityTransferStatus,
 ): Promise<AuthorityTransferRecord> {
   const observed = decodeCollabAuthorityTransferStatus(observedValue);
-  if (!sameIdentity(initial, observed)) {
-    throw statusError('authority-transfer-observed-identity-mismatch');
-  }
-  if (initial.status.phase === observed.phase) {
-    if (JSON.stringify(initial.status) !== JSON.stringify(observed)) {
-      throw statusError('authority-transfer-observed-phase-conflict');
-    }
-    return initial;
+  const adoptingCanonicalIdentity = !sameIdentity(initial.status, observed)
+    && canAdoptLanToCloudCanonicalIdentity(initial, observed);
+  if (!adoptingCanonicalIdentity) {
+    assertAuthorityTransferStatusObservation(initial.status, observed);
+    if (initial.status.phase === observed.phase) return initial;
   }
   const path = phases(observed);
   const currentIndex = path.indexOf(initial.status.phase);
@@ -136,7 +206,11 @@ export async function advanceThroughObservedAuthorityStatus(
       stagingDirectoryName: current.stagingDirectoryName,
       status,
     });
-    await persistence.advance(next, current.status.phase);
+    if (adoptingCanonicalIdentity && current === initial) {
+      await persistence.adoptLanToCloudCanonicalIdentity(next);
+    } else {
+      await persistence.advance(next, current.status.phase);
+    }
     current = next;
   }
   return current;

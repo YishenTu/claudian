@@ -19,7 +19,7 @@ export class VaultFileCache {
     if (this.isInitialized) return;
 
     window.setTimeout(() => {
-      this.tryRefreshFiles();
+      this.#tryRefreshFiles();
     }, 0);
   }
 
@@ -29,12 +29,12 @@ export class VaultFileCache {
 
   getFiles(): TFile[] {
     if (this.dirty || !this.isInitialized) {
-      this.tryRefreshFiles();
+      this.#tryRefreshFiles();
     }
     return this.cachedFiles;
   }
 
-  private tryRefreshFiles(): void {
+  #tryRefreshFiles(): void {
     try {
       this.cachedFiles = this.app.vault.getFiles();
       this.dirty = false;

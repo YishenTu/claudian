@@ -195,7 +195,7 @@ export class NativeGitExactComparisonRepository {
       comparisonBaseOid,
       comparisonTargetOid,
       signal,
-    ));
+    ), signal);
   }
 
   async compareInSession(
@@ -225,7 +225,7 @@ export class NativeGitExactComparisonRepository {
       session,
       request,
       signal,
-    ));
+    ), signal);
   }
 
   async readFileInSession(
@@ -245,6 +245,34 @@ export class NativeGitExactComparisonRepository {
         treeish: request.comparisonTargetOid,
       }]),
     ];
+    if (!request.file.binary) {
+      const metadata = await session.readBlobMetadataAtPaths(requests);
+      const oldBlob = request.file.kind === 'added' ? null : metadata[0] ?? null;
+      const newBlob = request.file.kind === 'deleted'
+        ? null
+        : metadata[request.file.kind === 'added' ? 0 : 1] ?? null;
+      throwIfCancelled(signal);
+      if (request.file.kind !== 'added' && oldBlob === null) {
+        throw comparisonError('authority-integrity-error', 'review-old-blob-missing');
+      }
+      if (request.file.kind !== 'deleted' && newBlob === null) {
+        throw comparisonError('authority-integrity-error', 'review-new-blob-missing');
+      }
+      assertExpectedSize(request.file.oldBytes, oldBlob?.size, 'old');
+      assertExpectedSize(request.file.newBytes, newBlob?.size, 'new');
+      if (Math.max(oldBlob?.size ?? 0, newBlob?.size ?? 0)
+        > CLAUDIAN_COLLAB_LIMITS.maxTextDiffBytes) {
+        return {
+          file: {
+            ...request.file,
+            largeForReview: true,
+            ...(oldBlob ? { oldBytes: oldBlob.size } : {}),
+            ...(newBlob ? { newBytes: newBlob.size } : {}),
+          },
+          kind: 'large-text',
+        };
+      }
+    }
     const contents = await session.readBlobsAtPaths(requests);
     const oldContents = request.file.kind === 'added' ? null : contents[0] ?? null;
     const newContents = request.file.kind === 'deleted'

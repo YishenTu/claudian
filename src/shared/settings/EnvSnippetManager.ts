@@ -242,10 +242,10 @@ export class EnvSnippetManager {
     });
     setIcon(saveBtn, 'plus');
     saveBtn.addEventListener('click', () => {
-      void this.saveCurrentEnv();
+      void this.#saveCurrentEnv();
     });
 
-    const snippets = this.plugin.settings.envSnippets.filter((snippet) => this.shouldDisplaySnippet(snippet));
+    const snippets = this.plugin.settings.envSnippets.filter((snippet) => this.#shouldDisplaySnippet(snippet));
 
     if (snippets.length === 0) {
       const emptyEl = this.containerEl.createDiv({ cls: 'claudian-snippet-empty' });
@@ -278,7 +278,7 @@ export class EnvSnippetManager {
       restoreBtn.addEventListener('click', () => {
         void (async (): Promise<void> => {
         try {
-          await this.insertSnippet(snippet);
+          await this.#insertSnippet(snippet);
         } catch {
           new Notice('Failed to insert snippet');
         }
@@ -291,7 +291,7 @@ export class EnvSnippetManager {
       });
       setIcon(editBtn, 'pencil');
       editBtn.addEventListener('click', () => {
-        this.editSnippet(snippet);
+        this.#editSnippet(snippet);
       });
 
       const deleteBtn = actionsEl.createEl('button', {
@@ -303,7 +303,7 @@ export class EnvSnippetManager {
         void (async (): Promise<void> => {
         try {
           if (await confirmDelete(this.plugin.app, `Delete environment snippet "${snippet.name}"?`)) {
-            await this.deleteSnippet(snippet);
+            await this.#deleteSnippet(snippet);
           }
         } catch {
           new Notice('Failed to delete snippet');
@@ -313,7 +313,7 @@ export class EnvSnippetManager {
     }
   }
 
-  private async saveCurrentEnv() {
+  async #saveCurrentEnv() {
     const modal = new EnvSnippetModal(
       this.plugin.app,
       this.plugin,
@@ -332,7 +332,7 @@ export class EnvSnippetManager {
     modal.open();
   }
 
-  private async insertSnippet(snippet: EnvSnippet) {
+  async #insertSnippet(snippet: EnvSnippet) {
     const snippetContent = snippet.envVars.trim();
     const updates = getEnvironmentScopeUpdates(
       snippetContent,
@@ -341,11 +341,11 @@ export class EnvSnippetManager {
 
     if (updates.length === 1) {
       const [update] = updates;
-      this.syncTextareaValue(update.scope, update.envText);
+      this.#syncTextareaValue(update.scope, update.envText);
       await this.plugin.applyEnvironmentVariables(update.scope, update.envText);
     } else if (updates.length > 1) {
       for (const update of updates) {
-        this.syncTextareaValue(update.scope, update.envText);
+        this.#syncTextareaValue(update.scope, update.envText);
       }
       await this.plugin.applyEnvironmentVariablesBatch(updates);
     }
@@ -383,7 +383,7 @@ export class EnvSnippetManager {
     view?.refreshModelSelector?.();
   }
 
-  private editSnippet(snippet: EnvSnippet) {
+  #editSnippet(snippet: EnvSnippet) {
     const modal = new EnvSnippetModal(
       this.plugin.app,
       this.plugin,
@@ -408,7 +408,7 @@ export class EnvSnippetManager {
     modal.open();
   }
 
-  private async deleteSnippet(snippet: EnvSnippet) {
+  async #deleteSnippet(snippet: EnvSnippet) {
     await this.plugin.mutateSettings((settings) => {
       settings.envSnippets = settings.envSnippets.filter(s => s.id !== snippet.id);
     });
@@ -420,7 +420,7 @@ export class EnvSnippetManager {
     this.render();
   }
 
-  private shouldDisplaySnippet(snippet: EnvSnippet): boolean {
+  #shouldDisplaySnippet(snippet: EnvSnippet): boolean {
     if (this.scope === 'shared') {
       return !snippet.scope || snippet.scope === 'shared';
     }
@@ -428,7 +428,7 @@ export class EnvSnippetManager {
     return snippet.scope === this.scope;
   }
 
-  private syncTextareaValue(scope: EnvironmentScope, value: string): void {
+  #syncTextareaValue(scope: EnvironmentScope, value: string): void {
     const selector = `.claudian-settings-env-textarea[data-env-scope="${scope}"]`;
     const envTextarea = (this.containerEl.ownerDocument ?? window.document).querySelector<HTMLTextAreaElement>(selector);
     if (envTextarea) {

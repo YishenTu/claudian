@@ -27,7 +27,18 @@ function addMemberTableUniqueConstraint(database: Database): void {
   database.run('INSERT INTO members SELECT * FROM members_without_shadow_constraint');
 }
 
+function downgradeCurrentSchemaToV13(database: Database): void {
+  database.run(`DROP TRIGGER members_revision_update;
+    DROP TABLE imported_member_claims;
+    DROP TABLE imported_claim_authority;
+    ALTER TABLE members DROP COLUMN membership_revision;
+    DROP TABLE project_recovery_links;
+    DROP TABLE member_recovery_credentials;
+    PRAGMA user_version = 13;`);
+}
+
 function downgradeEmptyCurrentSchemaToV8(database: Database): void {
+  downgradeCurrentSchemaToV13(database);
   database.run(`
     DROP TRIGGER comments_request_capacity_insert;
     DROP TRIGGER request_ticket_relations_accepted_capacity_insert;
@@ -170,6 +181,7 @@ function insertProject(database: Database, managerMemberId = 'member-host'): voi
 }
 
 function downgradeCurrentSchemaToV11(database: Database): void {
+  downgradeCurrentSchemaToV13(database);
   database.run(`
     CREATE TABLE members_v11 (
       member_id TEXT PRIMARY KEY,

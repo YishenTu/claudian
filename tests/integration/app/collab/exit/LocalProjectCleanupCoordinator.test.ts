@@ -3,6 +3,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   symlink,
   writeFile,
@@ -11,7 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
-import type { LocalCleanupRecord } from '@/app/collab/exit/LocalCleanupRecord';
+import { decodeLocalCleanupRecord, type LocalCleanupRecord } from '@/app/collab/exit/LocalCleanupRecord';
 import {
   type LocalCleanupGitIdentityPort,
   type LocalCleanupRecordPort,
@@ -100,6 +101,60 @@ describe('LocalProjectCleanupCoordinator', () => {
         projectId: 'project-alpha',
       },
     );
+  });
+
+  it('keeps files when leaving a Project in a user-renamed directory', async () => {
+    const workspacePath = 'workspace/我的 Demo';
+    await rename(path.join(vaultRoot, 'workspace/project-alpha'), path.join(vaultRoot, workspacePath));
+    await expect(subject.cleanup(intent({ workspacePath }))).resolves.toMatchObject({ status: 'complete', filesPreserved: true });
+    const retained = records.records.get('project-alpha');
+    expect(decodeLocalCleanupRecord(retained)).toMatchObject({ workspacePath, phase: 'complete' });
+    expect(await readFile(path.join(vaultRoot, workspacePath, 'note.md'), 'utf8')).toBe('visible\n');
+    await expect(lstat(path.join(vaultRoot, workspacePath, '.git'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('deletes a Project with a long Unicode directory name without exceeding the filesystem component limit', async () => {
+    const workspacePath = `workspace/${'项'.repeat(80)}`;
+    await rename(path.join(vaultRoot, 'workspace/project-alpha'), path.join(vaultRoot, workspacePath));
+    const paths = await workspace.resolveCleanupPaths(workspacePath, 'cleanup-alpha');
+    expect(Buffer.byteLength(path.basename(paths.detachedProjectPath), 'utf8')).toBeLessThanOrEqual(255);
+    await expect(subject.cleanup(intent({ workspacePath, choice: 'delete-files' }))).resolves.toMatchObject({ status: 'complete', filesPreserved: false });
+    await expect(lstat(path.join(vaultRoot, workspacePath))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('resumes a legacy detached Project without recreating its source directory', async () => {
+    const controller = new AbortController();
+    await subject.cleanup(intent({ choice: 'delete-files' }), {
+      onProgress: progress => { if (progress.phase === 'marked') controller.abort(); },
+      signal: controller.signal,
+    });
+    const legacyPath = path.join(vaultRoot, 'workspace/.claudian-collab-project-cleanup-alpha-project-alpha');
+    await rename(path.join(vaultRoot, 'workspace/project-alpha'), legacyPath);
+    await records.save({ ...records.records.get('project-alpha')!, phase: 'deleting' });
+
+    await expect(subject.resume('project-alpha')).resolves.toMatchObject({ status: 'complete', filesPreserved: false });
+    await expect(lstat(legacyPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(lstat(path.join(vaultRoot, 'workspace/project-alpha'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('preserves both detached copies when legacy and current cleanup locations coexist', async () => {
+    const controller = new AbortController();
+    await subject.cleanup(intent({ choice: 'delete-files' }), {
+      onProgress: progress => { if (progress.phase === 'marked') controller.abort(); },
+      signal: controller.signal,
+    });
+    const paths = await workspace.resolveCleanupPaths('workspace/project-alpha', 'cleanup-alpha');
+    const legacyPath = path.join(vaultRoot, 'workspace/.claudian-collab-project-cleanup-alpha-project-alpha');
+    await rename(paths.projectPath, legacyPath);
+    await mkdir(paths.detachedProjectPath);
+    await writeFile(path.join(paths.detachedProjectPath, 'keep.md'), 'Other work');
+    await records.save({ ...records.records.get('project-alpha')!, phase: 'deleting' });
+
+    await expect(subject.resume('project-alpha')).rejects.toMatchObject({
+      code: 'workspace-boundary-invalid', safeContext: { reason: 'detached-project-location-ambiguous' },
+    });
+    expect(await readFile(path.join(legacyPath, 'note.md'), 'utf8')).toBe('visible\n');
+    expect(await readFile(path.join(paths.detachedProjectPath, 'keep.md'), 'utf8')).toBe('Other work');
   });
 
   it('deletes only the exact verified Project root and preserves siblings', async () => {

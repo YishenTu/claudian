@@ -11,6 +11,7 @@ import type {
 } from '@claudian-collab/protocol';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
+import { MemberRecoveryCredentialRepository } from '@/app/collab/authority/MemberRecoveryCredentialRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { AuthorityTransferAdmissionSettlement } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferAdmissionSettlement';
@@ -105,6 +106,18 @@ describe('AuthorityTransferCheckpoint', () => {
     await rm(root, { force: true, recursive: true });
   });
 
+  it('rejects an exhausted non-Host credential lineage before target activation', async () => {
+    const repository = new AuthorityTransferCheckpointRepository();
+    await source.mutate(connection => new MemberRecoveryCredentialRepository().retainHashes(connection, 'member-host',
+      Array.from({ length: 255 }, (_, index) => createHash('sha256').update(`historical-${index}`).digest('hex'))));
+    const records = await source.read(connection => repository.exportCoordination(connection, { expectedMainOid: MAIN_OID }));
+    await expect(target.mutate(connection => repository.importCoordination(connection, {
+      coordinationNdjson: records, manifest: checkpointManifest(records),
+      targetHostCredentialHash: new Uint8Array(32).fill(9), targetHostMemberId: 'member-a',
+    }))).rejects.toMatchObject({ safeContext: { reason: 'checkpoint-recovery-credential-capacity' } });
+    expect(await target.read(connection => new ProjectAuthorityRepository().get(connection))).toBeNull();
+  });
+
   it('exports deterministic portable records and imports one inert target authority', async () => {
     const repository = new AuthorityTransferCheckpointRepository();
     const first = await source.read(connection => repository.exportCoordination(connection, {
@@ -148,8 +161,7 @@ describe('AuthorityTransferCheckpoint', () => {
       }),
     ]);
     expect(first).toContain('"kind":"ticket-mention"');
-    expect(first).not.toContain('credential');
-    expect(first).not.toContain(Buffer.alloc(32, 7).toString('hex'));
+    expect(first).toContain('"recoveryCredentialHashes":["0707070707070707070707070707070707070707070707070707070707070707"]');
     expect(first).not.toContain('invitation');
 
     const manifest = checkpointManifest(first);
@@ -205,6 +217,10 @@ describe('AuthorityTransferCheckpoint', () => {
     expect(await target.read(connection => connection.get(
       'SELECT state FROM project WHERE singleton = 1',
     ))).toEqual({ state: 'active' });
+    expect(await target.read(connection => new MemberRecoveryCredentialRepository().readHashes(connection, 'member-host')))
+      .toEqual(['07'.repeat(32)]);
+    expect(await target.read(connection => new MemberRecoveryCredentialRepository().readHashes(connection, 'member-a')))
+      .toEqual(['08'.repeat(32), '09'.repeat(32)]);
     expect(await target.read(connection => connection.get(`
       SELECT
         (SELECT COUNT(*) FROM change_requests) AS requests,
@@ -222,6 +238,53 @@ describe('AuthorityTransferCheckpoint', () => {
       tickets: 1,
     });
   });
+
+  it.each([
+    { encoding: 'canonical', outcome: 'valid' },
+    { encoding: 'decoded', outcome: 'checkpoint-target-credential-conflict' },
+    { encoding: 'conflicting', outcome: 'checkpoint-target-credential-conflict' },
+  ])(
+    'validates the imported target credential without rewriting $encoding encoding',
+    async ({ encoding, outcome }) => {
+      const repository = new AuthorityTransferCheckpointRepository();
+      const coordinationNdjson = await source.read(connection => (
+        repository.exportCoordination(connection, { expectedMainOid: MAIN_OID })
+      ));
+      const credential = Buffer.alloc(32, 9).toString('base64url');
+      const decodedCredentialHash = createHash('sha256')
+        .update(Buffer.from(credential, 'base64url'))
+        .digest();
+      const canonicalCredentialHash = createHash('sha256')
+        .update(credential, 'utf8')
+        .digest();
+      const storedHash = encoding === 'canonical'
+        ? canonicalCredentialHash
+        : encoding === 'decoded' ? decodedCredentialHash : new Uint8Array(32).fill(6);
+      await target.mutate(connection => repository.importCoordination(connection, {
+        coordinationNdjson,
+        manifest: checkpointManifest(coordinationNdjson),
+        targetHostCredentialHash: storedHash,
+        targetHostMemberId: 'member-a',
+      }));
+      const validate = () => target.read(connection => (
+        repository.assertImportedTargetCredential(connection, {
+          canonicalCredentialHash,
+          projectId: 'project-alpha',
+          targetAuthorityGeneration: 2,
+          targetHostMemberId: 'member-a',
+        })
+      ));
+      const validateOutcome = () => validate().then(
+        () => 'valid',
+        error => error.safeContext.reason,
+      );
+      await expect(validateOutcome()).resolves.toBe(outcome);
+      await expect(validateOutcome()).resolves.toBe(outcome);
+      expect(await target.read(connection => connection.get(
+        "SELECT credential_hash FROM members WHERE member_id = 'member-a'",
+      ))).toEqual({ credential_hash: storedHash });
+    },
+  );
 
   it('refuses capture while invitation or pending Join admission is live', async () => {
     await source.mutate(connection => {

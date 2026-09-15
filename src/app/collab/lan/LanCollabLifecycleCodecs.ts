@@ -113,13 +113,11 @@ function validRequest(
         && isMutationContext(input)
         && isCollabOpaqueId(input.offerId);
     case 'promoteManager':
-      return hasExactKeys(input, [
-        'projectId', 'idempotencyKey', 'targetMemberId',
-        'managerResponsibilityOfferId',
-      ])
+      return (hasExactKeys(input, ['projectId', 'idempotencyKey', 'targetMemberId'])
+        || (hasExactKeys(input, ['projectId', 'idempotencyKey', 'targetMemberId', 'managerResponsibilityOfferId'])
+          && isCollabOpaqueId(input.managerResponsibilityOfferId)))
         && isMutationContext(input)
-        && isCollabMemberId(input.targetMemberId)
-        && isCollabOpaqueId(input.managerResponsibilityOfferId);
+        && isCollabMemberId(input.targetMemberId);
     case 'demoteManager':
       return hasExactKeys(input, ['projectId', 'idempotencyKey', 'targetMemberId'])
         && isMutationContext(input)

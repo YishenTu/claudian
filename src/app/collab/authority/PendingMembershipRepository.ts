@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 
 import { type CollabChangeRequest, type CollabMember, type CollabMemberId, collabMemberRef, type CollabMemberStatus, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
+import { MemberRecoveryCredentialRepository } from '@/app/collab/authority/MemberRecoveryCredentialRepository';
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -218,7 +219,7 @@ export class PendingMembershipRepository {
     `).map(decodeInvitation);
   }
 
-  rotateInvitation(
+  createInvitation(
     connection: AuthorityDatabaseConnection,
     input: CreateAuthorityInvitationInput,
   ): AuthorityInvitationRecord {
@@ -229,10 +230,6 @@ export class PendingMembershipRepository {
     if (input.tokenHash.byteLength !== 32) {
       throw membershipError('invitation-token-hash-invalid');
     }
-    connection.run(
-      'UPDATE invitations SET revoked_at = ? WHERE revoked_at IS NULL',
-      [input.createdAt],
-    );
     connection.run(
       `INSERT INTO invitations (
         invitation_id, token_hash, expires_at, revoked_at,
@@ -253,7 +250,7 @@ export class PendingMembershipRepository {
     return created;
   }
 
-  revokeCurrentInvitation(
+  revokeAllInvitations(
     connection: AuthorityDatabaseConnection,
     revokedAt: string,
   ): number {
@@ -374,6 +371,7 @@ export class PendingMembershipRepository {
     if (existing.member.status !== 'active') {
       throw membershipError('imported-member-not-active');
     }
+    new MemberRecoveryCredentialRepository().retainHashes(connection, memberId, [Buffer.from(credentialHash).toString('hex')]);
     if (existing.accessState === 'bound') {
       if (
         existing.credentialHash !== null

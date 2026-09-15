@@ -7,12 +7,13 @@ export class AcceptGitRepository implements AcceptCoordinatorGitPort {
     private readonly repositoryPath: string,
     private readonly git: GitRepositoryService,
     private readonly treePolicy = new CollabGitTreePolicy(),
+    private readonly resourceAdmission: <T>(operation: () => Promise<T>) => Promise<T> = operation => operation(),
   ) {}
 
   commitTree(
     input: Parameters<AcceptCoordinatorGitPort['commitTree']>[0],
   ): Promise<string> {
-    return this.git.commitTree(this.repositoryPath, input);
+    return this.resourceAdmission(() => this.git.commitTree(this.repositoryPath, input));
   }
 
   compareAndSwapRef(
@@ -20,31 +21,33 @@ export class AcceptGitRepository implements AcceptCoordinatorGitPort {
     nextOid: string,
     expectedOid: string,
   ): Promise<{ readonly currentOid: string | null; readonly updated: boolean }> {
-    return this.git.compareAndSwapRef(
+    return this.resourceAdmission(() => this.git.compareAndSwapRef(
       this.repositoryPath,
       ref,
       nextOid,
       expectedOid,
-    );
+    ));
   }
 
   isAncestor(ancestorOid: string, descendantOid: string): Promise<boolean> {
-    return this.git.isAncestor(this.repositoryPath, ancestorOid, descendantOid);
+    return this.resourceAdmission(() => this.git.isAncestor(this.repositoryPath, ancestorOid, descendantOid));
   }
 
   mergeTree(
     acceptedOid: string,
     memberOid: string,
   ): ReturnType<AcceptCoordinatorGitPort['mergeTree']> {
-    return this.git.mergeTree(this.repositoryPath, acceptedOid, memberOid);
+    return this.resourceAdmission(() => this.git.mergeTree(this.repositoryPath, acceptedOid, memberOid));
   }
 
   resolveRef(ref: string): Promise<string | null> {
-    return this.git.resolveRef(this.repositoryPath, ref);
+    return this.resourceAdmission(() => this.git.resolveRef(this.repositoryPath, ref));
   }
 
   async validateTree(treeishOid: string): Promise<void> {
-    const entries = await this.git.listTreeRecursive(this.repositoryPath, treeishOid);
-    this.treePolicy.validate(entries);
+    await this.resourceAdmission(async () => {
+      const entries = await this.git.listTreeRecursive(this.repositoryPath, treeishOid);
+      this.treePolicy.validate(entries);
+    });
   }
 }

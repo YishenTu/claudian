@@ -1,11 +1,16 @@
 /** @jest-environment jsdom */
 
+import { fireEvent, within } from '@testing-library/dom';
+
+import type { CollabFeatureState } from '@/core/collab';
 import { type CollabLocalProjectSummary } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
   LanHostSection,
-  type LanHostSectionPort,
 } from '@/features/collab/modals/project/LanHostSection';
+import { ProjectManagementSession, type ProjectManagementSessionPort } from '@/features/collab/modals/project/ProjectManagementSession';
+
+type LanHostSectionPort = Pick<ProjectManagementSessionPort, 'claimLegacyHostInstallation' | 'startHost' | 'stopHost'>;
 
 function project(
   overrides: Partial<CollabLocalProjectSummary> = {},
@@ -44,6 +49,46 @@ function createPort(
   } as jest.Mocked<LanHostSectionPort>;
 }
 
+function mountHost(container: HTMLElement, options: {
+  project: CollabLocalProjectSummary;
+  port: LanHostSectionPort;
+  confirmLegacyClaim?: () => Promise<boolean>;
+  onOpenDiagnostics?: ConstructorParameters<typeof LanHostSection>[1]['onOpenDiagnostics'];
+}) {
+  const unavailable = { status: 'failure' as const, error: new CollabError({ code: 'endpoint-unreachable' }) };
+  let publish!: (state: CollabFeatureState) => void;
+  const session = new ProjectManagementSession({
+    project: options.project,
+    port: {
+      ...options.port,
+      subscribe: listener => { publish = listener; return { dispose() {} }; },
+      readSnapshot: async () => unavailable,
+      readProjectCapabilities: async () => unavailable,
+      readLanToCloudTransfer: async () => ({ status: 'success', value: null }),
+      readCloudToLanTransfer: async () => ({ status: 'success', value: null }),
+      readManagementOperation: async () => ({ status: 'success', value: null }),
+      listMembers: async () => unavailable,
+      listManagerResponsibilityOffers: async () => unavailable,
+    },
+    confirmLegacyClaim: options.confirmLegacyClaim ?? (async () => false),
+    onChange: () => section.setState(session.host),
+    onResetInteraction() {},
+    onClose() {},
+  });
+  const section = new LanHostSection(container, {
+    state: session.host,
+    onAction: action => { void session.runHostAction(action); },
+    onOpenDiagnostics: options.onOpenDiagnostics,
+  });
+  session.open();
+  return {
+    destroy() { session.close(); section.destroy(); },
+    setProject(project: CollabLocalProjectSummary) {
+      publish({ lifecycle: 'ready', projects: [project], selectedProjectId: project.id });
+    },
+  };
+}
+
 async function flush(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -51,18 +96,44 @@ async function flush(): Promise<void> {
 }
 
 describe('LanHostSection', () => {
+  it('continues a confirmed legacy claim into Host startup after its own ownership publication', async () => {
+    const claimed = project({ hostInstallationStatus: 'hosted-here', hostStatus: 'stopped' });
+    const port = createPort({ claimLegacyHostInstallation: jest.fn().mockImplementation(async () => {
+      section.setProject(claimed);
+      return { status: 'success', value: claimed };
+    }) });
+    const container = document.body.createDiv();
+    const section = mountHost(container, {
+      confirmLegacyClaim: async () => true,
+      port,
+      project: project({ hostInstallationStatus: 'legacy-unbound', hostStatus: 'stopped' }),
+    });
+    try {
+      fireEvent.click(within(container).getByRole('button', { name: 'Start Host' }));
+      await flush(); await flush();
+      expect(within(container).getByRole('button', { name: 'Stop Host' })).not.toBeNull();
+      expect(within(container).getByText('Running')).not.toBeNull();
+    } finally { section.destroy(); container.remove(); }
+  });
+
+
   it('lets a non-Manager Host start and stop without exposing Manager controls', async () => {
     const container = document.body.createDiv();
     const port = createPort();
-    const section = new LanHostSection(container, {
+    const section = mountHost(container, {
       port,
       project: project(),
     });
 
     const sectionEl = container.querySelector<HTMLElement>('.claudian-collab-host-section')!;
     expect(sectionEl.tagName).toBe('DIV');
-    expect(sectionEl.textContent).toContain('LAN Host');
-    expect(sectionEl.textContent).toContain('Hosted on this device');
+    const header = sectionEl.querySelector<HTMLElement>(
+      '.claudian-collab-host-section-header',
+    )!;
+    expect(header.firstElementChild?.textContent).toBe('LAN Host (on this device)');
+    expect(header.querySelector('span.claudian-collab-host-badge')).toBeNull();
+    expect(header.querySelector<HTMLButtonElement>('[data-action="start-host"]')
+      ?.classList.contains('mod-cta')).toBe(true);
     expect(sectionEl.textContent).toContain('Stopped');
     expect(sectionEl.querySelectorAll('button')).toHaveLength(1);
     expect(sectionEl.querySelector('[data-action="create-invitation"]')).toBeNull();
@@ -103,7 +174,7 @@ describe('LanHostSection', () => {
           value: { projectId: 'project-alpha', status: 'running' },
         }),
     });
-    const section = new LanHostSection(container, {
+    const section = mountHost(container, {
       onOpenDiagnostics,
       port,
       project: project({ hostStatus: 'needs-attention' }),
@@ -142,7 +213,7 @@ describe('LanHostSection', () => {
 
   it('renders nothing for a Manager who does not own Host capability', () => {
     const container = document.body.createDiv();
-    new LanHostSection(container, {
+    mountHost(container, {
       port: createPort(),
       project: project({ hostStatus: 'not-host', role: 'manager' }),
     });
@@ -153,7 +224,7 @@ describe('LanHostSection', () => {
   it('shows a foreign Host installation as status-only with no Host action', () => {
     const container = document.body.createDiv();
     const port = createPort();
-    new LanHostSection(container, {
+    mountHost(container, {
       port,
       project: project({
         connectionStatus: 'offline',
@@ -162,8 +233,8 @@ describe('LanHostSection', () => {
       }),
     });
 
-    expect(container.textContent).toContain('LAN Host');
-    expect(container.textContent).toContain('Hosted on another device');
+    expect(container.textContent).toContain('LAN Host (on another device)');
+    expect(container.querySelector('.claudian-collab-host-badge')).toBeNull();
     expect(container.querySelectorAll('button')).toHaveLength(0);
     expect(port.startHost).not.toHaveBeenCalled();
   });
@@ -172,7 +243,7 @@ describe('LanHostSection', () => {
     const cancelledContainer = document.body.createDiv();
     const cancelledPort = createPort();
     const cancelConfirmation = jest.fn().mockResolvedValue(false);
-    new LanHostSection(cancelledContainer, {
+    mountHost(cancelledContainer, {
       confirmLegacyClaim: cancelConfirmation,
       port: cancelledPort,
       project: project({ hostInstallationStatus: 'legacy-unbound' }),
@@ -187,7 +258,7 @@ describe('LanHostSection', () => {
 
     const confirmedContainer = document.body.createDiv();
     const confirmedPort = createPort();
-    new LanHostSection(confirmedContainer, {
+    mountHost(confirmedContainer, {
       confirmLegacyClaim: jest.fn().mockResolvedValue(true),
       port: confirmedPort,
       project: project({ hostInstallationStatus: 'legacy-unbound' }),
@@ -211,7 +282,7 @@ describe('LanHostSection', () => {
     let confirm!: (accepted: boolean) => void;
     const port = createPort();
     const container = document.body.createDiv();
-    const section = new LanHostSection(container, {
+    const section = mountHost(container, {
       confirmLegacyClaim: jest.fn(() => new Promise(resolve => { confirm = resolve; })),
       port,
       project: project({ hostInstallationStatus: 'legacy-unbound' }),
@@ -229,7 +300,7 @@ describe('LanHostSection', () => {
 
   it('renders transitional Host states without exposing a second action', () => {
     const container = document.body.createDiv();
-    const section = new LanHostSection(container, {
+    const section = mountHost(container, {
       port: createPort(),
       project: project({ hostStatus: 'starting' }),
     });
@@ -258,7 +329,7 @@ describe('LanHostSection', () => {
       }),
     });
     const container = document.body.createDiv();
-    const section = new LanHostSection(container, {
+    const section = mountHost(container, {
       port,
       project: project(),
     });
@@ -275,7 +346,43 @@ describe('LanHostSection', () => {
     expect(container.childElementCount).toBe(0);
   });
 
-  it('fences an active operation when a newer external Host state arrives', async () => {
+  it('retains an admitted Host action through unrelated Project refreshes', async () => {
+    let finish!: (value: Awaited<ReturnType<LanHostSectionPort['startHost']>>) => void;
+    let signal: AbortSignal | undefined;
+    const port = createPort({ startHost: jest.fn((_projectId, options) => {
+      signal = options?.signal;
+      return new Promise(resolve => { finish = resolve; });
+    }) });
+    const container = document.body.createDiv();
+    const section = mountHost(container, { port, project: project() });
+    container.querySelector<HTMLButtonElement>('[data-action="start-host"]')!.click();
+    section.setProject(project({ name: 'Renamed Project' }));
+    expect(signal?.aborted).toBe(false);
+    expect(container.textContent).toContain('Starting');
+    finish({ status: 'failure', error: new CollabError({ code: 'operation-failed' }) });
+    await flush();
+    expect(container.textContent).toContain('Host could not be started');
+    section.setProject(project({ name: 'Renamed again' }));
+    expect(container.textContent).toContain('Host could not be started');
+    expect(container.querySelector<HTMLButtonElement>('[data-action="retry-host"]')?.disabled).toBe(false);
+    section.destroy(); container.remove();
+  });
+
+  it('does not restore Running from a late start result after a published stop', async () => {
+    let finish!: (result: Awaited<ReturnType<LanHostSectionPort['startHost']>>) => void;
+    const port = createPort({ startHost: jest.fn().mockImplementation(() => new Promise(resolve => { finish = resolve; })) });
+    const container = document.body.createDiv();
+    const section = mountHost(container, { port, project: project() });
+    fireEvent.click(within(container).getByRole('button', { name: 'Start Host' }));
+    section.setProject(project({ hostStatus: 'running' }));
+    section.setProject(project({ hostStatus: 'stopped' }));
+    finish({ status: 'success', value: { projectId: 'project-alpha', status: 'running' } });
+    await flush();
+    expect(within(container).getByRole('button', { name: 'Start Host' }).textContent).toContain('Stopped');
+    section.destroy(); container.remove();
+  });
+
+  it('keeps newer published Host state while consuming a late operation result', async () => {
     let finish!: (
       value: Awaited<ReturnType<LanHostSectionPort['startHost']>>,
     ) => void;
@@ -287,7 +394,7 @@ describe('LanHostSection', () => {
       }),
     });
     const container = document.body.createDiv();
-    const section = new LanHostSection(container, {
+    const section = mountHost(container, {
       port,
       project: project(),
     });
@@ -303,7 +410,7 @@ describe('LanHostSection', () => {
     });
     await flush();
 
-    expect(signal?.aborted).toBe(true);
+    expect(signal?.aborted).toBe(false);
     expect(container.textContent).toContain('Running');
     expect(container.textContent).not.toContain('Host could not be started');
   });

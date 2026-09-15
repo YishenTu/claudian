@@ -98,14 +98,14 @@ export class TeamReviewLoader {
         this.cache.set(requestId, { key: source.key, review: prepared.review });
       }
     }
-    this.cancelInvalidJobs();
+    this.#cancelInvalidJobs();
   }
 
   load(requestId: string): Promise<TeamReviewLoadResult> {
     if (this.destroyed) return Promise.resolve({ kind: 'stale' });
     const source = this.sources.get(requestId);
     if (!source) return Promise.resolve({ kind: 'stale' });
-    this.cancelPendingExcept(source.key);
+    this.#cancelPendingExcept(source.key);
     const cached = this.cache.get(requestId);
     if (cached?.key === source.key) {
       return Promise.resolve({ kind: 'ready', review: cached.review });
@@ -133,7 +133,7 @@ export class TeamReviewLoader {
     };
     this.jobs.set(job.key, job);
     this.pendingJobs.push(job);
-    this.pump();
+    this.#pump();
     return promise;
   }
 
@@ -142,7 +142,7 @@ export class TeamReviewLoader {
     const retainedKey = requestId === null
       ? null
       : this.sources.get(requestId)?.key ?? null;
-    this.cancelPendingExcept(retainedKey);
+    this.#cancelPendingExcept(retainedKey);
     const active = this.activeJob;
     if (!active || active.key === retainedKey) return Promise.resolve();
     active.controller.abort();
@@ -172,7 +172,7 @@ export class TeamReviewLoader {
     this.reset();
   }
 
-  private pump(): void {
+  #pump(): void {
     if (this.destroyed || this.activeJob) return;
     const job = this.pendingJobs.shift();
     if (!job) return;
@@ -180,7 +180,7 @@ export class TeamReviewLoader {
       this.jobs.delete(job.key);
       job.resolve({ kind: 'stale' });
       job.finish();
-      this.pump();
+      this.#pump();
       return;
     }
     this.activeJob = job;
@@ -190,7 +190,7 @@ export class TeamReviewLoader {
       job.finish();
       if (this.activeJob === job) this.activeJob = null;
       if (this.jobs.get(job.key) === job) this.jobs.delete(job.key);
-      this.pump();
+      this.#pump();
     });
   }
 
@@ -224,7 +224,7 @@ export class TeamReviewLoader {
     return { kind: 'ready', review };
   }
 
-  private cancelInvalidJobs(): void {
+  #cancelInvalidJobs(): void {
     if (this.activeJob && !this.isCurrent(this.activeJob)) {
       this.activeJob.controller.abort();
       this.activeJob.resolve({ kind: 'stale' });
@@ -243,7 +243,7 @@ export class TeamReviewLoader {
     this.pendingJobs = retained;
   }
 
-  private cancelPendingExcept(retainedKey: string | null): void {
+  #cancelPendingExcept(retainedKey: string | null): void {
     const retained: ReviewJob[] = [];
     for (const job of this.pendingJobs) {
       if (job.key === retainedKey) {

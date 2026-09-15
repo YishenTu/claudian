@@ -85,6 +85,7 @@ function coordination(openRequest?: CollabChangeRequest): CollabProjectSnapshot 
       id: CONTEXT.projectId,
       mainOid: MAIN,
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       name: 'Alpha',
     },
@@ -95,7 +96,7 @@ function coordination(openRequest?: CollabChangeRequest): CollabProjectSnapshot 
 class FakeProjectPort implements ReconciliationProjectPort {
   revalidate = jest.fn(async () => undefined);
 
-  async load(): Promise<PublishProjectContext> {
+  async load(_projectId?: string): Promise<PublishProjectContext> {
     return CONTEXT;
   }
 }
@@ -170,6 +171,36 @@ function createSubject() {
 }
 
 describe('ReconciliationCoordinator', () => {
+  it('allows another Project to finish while preserving order within a blocked Project', async () => {
+    const fixture = createSubject();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const entries: string[] = [];
+    fixture.projects.load = async projectId => {
+      entries.push(projectId!);
+      if (projectId === 'project-a') { entered(); await gate; }
+      throw new CollabError({ code: 'cancelled' });
+    };
+    const run = (projectId: string) => fixture.subject.reconcile(projectId);
+    const first = run('project-a');
+    await started;
+    const sameProject = run('project-a');
+    let otherFinished = false;
+    const other = run('project-b').then(result => { otherFinished = true; return result; });
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(otherFinished).toBe(true);
+      expect(entries).toEqual(['project-a', 'project-b']);
+    } finally {
+      release();
+      await Promise.all([first, sameProject, other]);
+    }
+    expect(entries).toEqual(['project-a', 'project-b', 'project-a']);
+  });
+
+
   it('fast-forwards and pushes accepted history without creating a request', async () => {
     const { control, repository, subject } = createSubject();
     repository.current = repositorySnapshot({ includesAcceptedMain: false });

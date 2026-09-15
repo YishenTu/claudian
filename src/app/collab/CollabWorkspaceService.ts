@@ -243,11 +243,9 @@ export class CollabWorkspaceService {
       throw workspaceBoundaryError('cleanup-operation-id-invalid');
     }
     const projectPath = await this.resolveManagedProjectPath(workspacePath);
-    const parentPath = path.dirname(projectPath);
-    const childName = path.basename(projectPath);
     return {
       detachedGitPath: path.join(projectPath, `.claudian-collab-git-${operationId}`),
-      detachedProjectPath: path.join(parentPath, `.claudian-collab-project-${operationId}-${childName}`),
+      detachedProjectPath: await this.#resolveDetachedProjectPath(workspacePath, operationId),
       gitPath: path.join(projectPath, '.git'),
       markerPath: path.join(projectPath, '.claudian-collab-detached.json'),
       projectPath,
@@ -367,8 +365,7 @@ export class CollabWorkspaceService {
       throw workspaceBoundaryError('cleanup-operation-id-invalid');
     }
     const projectPath = await resolveCollabVaultPath(this.vaultRoot, workspacePath);
-    const detachedRelativePath = `${projectsFolder}/.claudian-collab-project-${operationId}-${childName}`;
-    const detachedProjectPath = await resolveCollabVaultPath(this.vaultRoot, detachedRelativePath);
+    const detachedProjectPath = await this.#resolveDetachedProjectPath(workspacePath, operationId);
     if (await this.#cleanupPathExists(detachedProjectPath)) {
       const projectStillExists = await this.#cleanupPathExists(projectPath);
       if (projectStillExists) throw workspaceBoundaryError('detached-project-collision');
@@ -390,9 +387,7 @@ export class CollabWorkspaceService {
     if (separatorIndex <= 0) throw workspaceBoundaryError('project-workspace-path-invalid');
     const projectsFolder = workspacePath.slice(0, separatorIndex);
     await this.#requireOwnedProjectsFolder(projectsFolder);
-    const childName = workspacePath.slice(separatorIndex + 1);
-    const detachedRelativePath = `${projectsFolder}/.claudian-collab-project-${operationId}-${childName}`;
-    const detachedPath = await resolveCollabVaultPath(this.vaultRoot, detachedRelativePath);
+    const detachedPath = await this.#resolveDetachedProjectPath(workspacePath, operationId);
     if (!await this.#cleanupPathExists(detachedPath)) return;
     await this.#requireCleanupDirectory(detachedPath, 'detached-project-invalid');
     await this.assertDetachedProjectMarker(workspacePath, operationId, expectedMarker);
@@ -647,6 +642,27 @@ export class CollabWorkspaceService {
     });
   }
 
+   async #resolveDetachedProjectPath(workspacePath: string, operationId: string): Promise<string> {
+    if (!isCollabOpaqueId(operationId)) {
+      throw workspaceBoundaryError('cleanup-operation-id-invalid');
+    }
+    const projectsFolder = path.posix.dirname(workspacePath);
+    const digest = createHash('sha256').update(JSON.stringify([operationId, workspacePath])).digest('hex');
+    const canonicalPath = await resolveCollabVaultPath(
+      this.vaultRoot, `${projectsFolder}/.claudian-collab-project-${digest}`,
+    );
+    // Recover existing detachments in place; new names never grow with the visible folder name.
+    const legacyName = `.claudian-collab-project-${operationId}-${path.posix.basename(workspacePath)}`;
+    if (Buffer.byteLength(legacyName, 'utf8') > 255) return canonicalPath;
+    const legacyPath = await resolveCollabVaultPath(this.vaultRoot, `${projectsFolder}/${legacyName}`);
+    const canonicalExists = await this.#cleanupPathExists(canonicalPath);
+    const legacyExists = await this.#cleanupPathExists(legacyPath);
+    if (canonicalExists && legacyExists) {
+      throw workspaceBoundaryError('detached-project-location-ambiguous');
+    }
+    return legacyExists ? legacyPath : canonicalPath;
+  }
+
    async #resolveCleanupMarkerPath(
     workspacePath: string,
     operationId: string,
@@ -663,8 +679,7 @@ export class CollabWorkspaceService {
       throw workspaceBoundaryError('cleanup-operation-id-invalid');
     }
     const sourcePath = await resolveCollabVaultPath(this.vaultRoot, workspacePath);
-    const detachedRelativePath = `${projectsFolder}/.claudian-collab-project-${operationId}-${childName}`;
-    const detachedPath = await resolveCollabVaultPath(this.vaultRoot, detachedRelativePath);
+    const detachedPath = await this.#resolveDetachedProjectPath(workspacePath, operationId);
     const sourceExists = await this.#cleanupPathExists(sourcePath);
     const detachedExists = await this.#cleanupPathExists(detachedPath);
     if (sourceExists === detachedExists) {
@@ -691,10 +706,7 @@ export class CollabWorkspaceService {
       throw workspaceBoundaryError('cleanup-operation-id-invalid');
     }
     const sourcePath = await resolveCollabVaultPath(this.vaultRoot, workspacePath);
-    const detachedPath = await resolveCollabVaultPath(
-      this.vaultRoot,
-      `${projectsFolder}/.claudian-collab-project-${operationId}-${childName}`,
-    );
+    const detachedPath = await this.#resolveDetachedProjectPath(workspacePath, operationId);
     return !await this.#cleanupPathExists(sourcePath)
       && !await this.#cleanupPathExists(detachedPath);
   }

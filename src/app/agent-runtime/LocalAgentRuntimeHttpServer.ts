@@ -8,7 +8,7 @@ import {
 import type { Socket } from 'node:net';
 
 import type { AgentRuntimeGateway } from './AgentRuntimeGateway';
-import type { AgentRuntimePreparedInvocation } from './AgentRuntimeMethodRegistry';
+import { AGENT_RUNTIME_MAX_REQUEST_BYTES, type AgentRuntimePreparedInvocation } from './AgentRuntimeMethodRegistry';
 import type {
   AgentRuntimeRpcErrorResponse,
   AgentRuntimeRpcResponse,
@@ -16,7 +16,6 @@ import type {
 
 const LOOPBACK_HOST = '127.0.0.1';
 const RPC_PATH = '/v1/rpc';
-const MAX_BODY_BYTES = 64 * 1024;
 const DEFAULT_HANDLER_SHUTDOWN_TIMEOUT_MS = 2_000;
 const DEFAULT_INVOCATION_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -178,6 +177,10 @@ export class LocalAgentRuntimeHttpServer {
     response: ServerResponse,
   ): Promise<void> {
     try {
+      if (!hasLocalRequestAuthority(request)) {
+        sendTransportError(response, 403, 'RPC request authority is not allowed.');
+        return;
+      }
       if (request.url !== RPC_PATH) {
         sendTransportError(response, 404, 'RPC route not found.');
         return;
@@ -274,7 +277,7 @@ export class LocalAgentRuntimeHttpServer {
         releaseRequestAbort();
         executionController.abort();
         this.trackLateInvocation(execution);
-        resolve(requestTimeout(invocation.id));
+        resolve(requestTimeout(invocation));
       }, this.invocationTimeoutMs);
       requestController.signal.addEventListener('abort', onRequestAbort, { once: true });
       if (requestController.signal.aborted) onRequestAbort();
@@ -293,6 +296,19 @@ export class LocalAgentRuntimeHttpServer {
     const release = () => this.activeWriteInvocations.delete(execution);
     void execution.then(release, release);
   }
+}
+
+function hasLocalRequestAuthority(request: IncomingMessage): boolean {
+  const port = request.socket.localPort;
+  const hosts = request.headersDistinct.host;
+  const origins = request.headersDistinct.origin;
+  if (port === undefined || hosts?.length !== 1) return false;
+  const authority = `${LOOPBACK_HOST}:${port}`;
+  if (hosts[0] !== authority && !(port === 80 && hosts[0] === LOOPBACK_HOST)) return false;
+  return origins === undefined || (
+    origins.length === 1
+    && origins[0] === (port === 80 ? `http://${LOOPBACK_HOST}` : `http://${authority}`)
+  );
 }
 
 function listen(server: Server, port: number): Promise<void> {
@@ -392,7 +408,7 @@ function isJsonContentType(value: string | undefined): boolean {
 
 function readJsonBody(request: IncomingMessage): Promise<BodyReadResult> {
   const declaredLength = parseContentLength(request.headers['content-length']);
-  if (declaredLength !== null && declaredLength > MAX_BODY_BYTES) {
+  if (declaredLength !== null && declaredLength > AGENT_RUNTIME_MAX_REQUEST_BYTES) {
     request.resume();
     return Promise.resolve({ status: 'too-large' });
   }
@@ -412,7 +428,7 @@ function readJsonBody(request: IncomingMessage): Promise<BodyReadResult> {
     };
     const onData = (chunk: Buffer) => {
       bytes += chunk.byteLength;
-      if (bytes > MAX_BODY_BYTES) {
+      if (bytes > AGENT_RUNTIME_MAX_REQUEST_BYTES) {
         request.resume();
         finish({ status: 'too-large' });
         return;
@@ -482,13 +498,14 @@ function sendSerializedJson(
   response.end(body);
 }
 
-function requestTimeout(id: string): AgentRuntimeRpcErrorResponse {
+function requestTimeout(invocation: AgentRuntimePreparedInvocation): AgentRuntimeRpcErrorResponse {
   return {
     error: {
       code: 'request_timeout',
+      ...(invocation.access === 'write' ? { data: { outcome: 'unknown', retry: invocation.retry } } : {}),
       message: 'Agent Runtime request timed out.',
     },
-    id,
+    id: invocation.id,
   };
 }
 

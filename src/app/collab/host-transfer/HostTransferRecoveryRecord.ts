@@ -3,6 +3,7 @@ import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, t
 import { type InstallationKey, parseInstallationKey } from '@/core/device/InstallationKey';
 
 export const COLLAB_HOST_TRANSFER_RECOVERY_SCHEMA_VERSION = 2 as const;
+const SOURCE_RESOURCE_RECOVERY_SCHEMA_VERSION = 3 as const;
 export type HostTransferRecoveryDirection = 'incoming' | 'outgoing';
 export type HostTransferRecoveryPhase =
   | 'offered'
@@ -16,8 +17,9 @@ export type HostTransferRecoveryPhase =
   | 'declined'
   | 'expired';
 export interface HostTransferRecoveryRecord {
-  readonly schemaVersion: 1 | typeof COLLAB_HOST_TRANSFER_RECOVERY_SCHEMA_VERSION;
+  readonly schemaVersion: 1 | typeof COLLAB_HOST_TRANSFER_RECOVERY_SCHEMA_VERSION | typeof SOURCE_RESOURCE_RECOVERY_SCHEMA_VERSION;
   readonly ownerInstallationKey?: InstallationKey;
+  readonly sourceResourceId?: string;
   readonly kind: 'host-transfer-recovery';
   readonly direction: HostTransferRecoveryDirection;
   readonly projectId: CollabProjectId;
@@ -42,7 +44,8 @@ const CREDENTIAL = /^[A-Za-z0-9_-]{43}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const PHASES: readonly HostTransferRecoveryPhase[] = ['offered', 'accepted', 'quiescing', 'staged', 'authority-relinquished', 'target-active', 'completed', 'cancelled', 'declined', 'expired'];
 const LEGACY_KEYS = new Set(['schemaVersion', 'kind', 'direction', 'projectId', 'transferId', 'sourceHostMemberId', 'targetHostMemberId', 'phase', 'targetEndpoint', 'targetCaCertificatePem', 'targetCaFingerprint', 'receiverCredential', 'receiverCredentialHash', 'targetTerminalResponseReceived', 'stagingDirectoryName', 'manifestDigest', 'activationCertificate', 'createdAt', 'updatedAt']);
-const KEYS = new Set([...LEGACY_KEYS, 'ownerInstallationKey']);
+const INSTALLATION_KEYS = new Set([...LEGACY_KEYS, 'ownerInstallationKey']);
+const KEYS = new Set([...INSTALLATION_KEYS, 'sourceResourceId']);
 function text(value: Value, key: string, max: number, pattern?: RegExp): string {
   const field = value[key];
   if (typeof field !== 'string' || !field || field.length > max || (pattern && !pattern.test(field))) throw new TypeError(`Invalid ${key}`);
@@ -69,12 +72,16 @@ export function decodeHostTransferRecoveryRecord(value: unknown): HostTransferRe
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Invalid Host transfer recovery');
   const record = value as Value;
   const legacy = record.schemaVersion === 1;
-  const expectedKeys = legacy ? LEGACY_KEYS : KEYS;
-  if (Object.keys(record).length !== expectedKeys.size || Object.keys(record).some(key => !expectedKeys.has(key)) || (!legacy && record.schemaVersion !== COLLAB_HOST_TRANSFER_RECOVERY_SCHEMA_VERSION) || record.kind !== 'host-transfer-recovery') throw new TypeError('Invalid Host transfer recovery');
+  const expectedKeys = legacy ? LEGACY_KEYS : record.schemaVersion === 2 ? INSTALLATION_KEYS : KEYS;
+  if (Object.keys(record).length !== expectedKeys.size || Object.keys(record).some(key => !expectedKeys.has(key)) || (!legacy && record.schemaVersion !== 2 && record.schemaVersion !== SOURCE_RESOURCE_RECOVERY_SCHEMA_VERSION) || record.kind !== 'host-transfer-recovery') throw new TypeError('Invalid Host transfer recovery');
   const ownerInstallationKey = legacy
     ? undefined
     : parseInstallationKey(record.ownerInstallationKey);
+  const sourceResourceId = record.schemaVersion === SOURCE_RESOURCE_RECOVERY_SCHEMA_VERSION
+    ? text(record, 'sourceResourceId', 36, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    : undefined;
   const direction = record.direction;
+  if (sourceResourceId !== undefined && direction !== 'outgoing') throw new TypeError('Invalid source resource binding');
   const phase = record.phase;
   if ((direction !== 'incoming' && direction !== 'outgoing') || typeof phase !== 'string' || !PHASES.includes(phase as HostTransferRecoveryPhase)) throw new TypeError('Invalid Host transfer state');
   const transferId = text(record, 'transferId', 128);
@@ -163,7 +170,8 @@ export function decodeHostTransferRecoveryRecord(value: unknown): HostTransferRe
     projectId,
     receiverCredential,
     receiverCredentialHash,
-    schemaVersion: legacy ? 1 : COLLAB_HOST_TRANSFER_RECOVERY_SCHEMA_VERSION,
+    schemaVersion: legacy ? 1 : sourceResourceId === undefined ? 2 : SOURCE_RESOURCE_RECOVERY_SCHEMA_VERSION,
+    ...(sourceResourceId === undefined ? {} : { sourceResourceId }),
     sourceHostMemberId,
     stagingDirectoryName,
     targetCaCertificatePem,
@@ -183,7 +191,7 @@ export function bindLegacyHostTransferRecoveryOwner(
   if (record.direction !== 'outgoing') {
     throw new TypeError('Host transfer target owner is ambiguous');
   }
-  if (record.schemaVersion === COLLAB_HOST_TRANSFER_RECOVERY_SCHEMA_VERSION) {
+  if (record.schemaVersion !== 1) {
     if (record.ownerInstallationKey !== ownerInstallationKey) {
       throw new TypeError('Host transfer recovery owner changed');
     }
@@ -192,6 +200,13 @@ export function bindLegacyHostTransferRecoveryOwner(
   return decodeHostTransferRecoveryRecord({
     ...record,
     ownerInstallationKey,
-    schemaVersion: COLLAB_HOST_TRANSFER_RECOVERY_SCHEMA_VERSION,
+    schemaVersion: 2,
   });
+}
+
+export function bindHostTransferSourceResource(record: HostTransferRecoveryRecord, sourceResourceId: string): HostTransferRecoveryRecord {
+  if (record.direction !== 'outgoing' || (record.sourceResourceId !== undefined && record.sourceResourceId !== sourceResourceId)) {
+    throw new TypeError('Host transfer source resource changed');
+  }
+  return decodeHostTransferRecoveryRecord({ ...record, schemaVersion: SOURCE_RESOURCE_RECOVERY_SCHEMA_VERSION, sourceResourceId });
 }

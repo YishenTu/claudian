@@ -8,6 +8,7 @@ import type { IncomingHostTransferCoordinator } from '@/app/collab/host-transfer
 
 const membership = {
   authority: {
+    authorityGeneration: 1,
     endpoint: 'https://192.168.1.10:27001',
     gitRemoteUrl: 'https://192.168.1.10:27001/v1/git/project-a/repository.git',
     hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
@@ -53,6 +54,7 @@ const snapshot = {
       id: 'project-a',
       mainOid: 'a'.repeat(40),
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       name: 'Project A',
     },

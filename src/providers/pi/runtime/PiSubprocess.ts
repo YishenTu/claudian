@@ -44,7 +44,7 @@ export class PiSubprocess {
     });
     this.process.onError((error) => {
       this.closeError = error;
-      this.notifyClose(error);
+      this.#notifyClose(error);
     });
     this.process.onExit(({ code, signal }) => {
       const exitError = this.closeError ?? (
@@ -52,17 +52,17 @@ export class PiSubprocess {
           ? undefined
           : new Error(`Pi subprocess exited (${formatExit(code, signal)})`)
       );
-      this.notifyClose(exitError);
+      this.#notifyClose(exitError);
     });
   }
 
   get stdin(): Writable {
-    this.assertStarted();
+    this.#assertStarted();
     return this.process.stdin;
   }
 
   get stdout(): Readable {
-    this.assertStarted();
+    this.#assertStarted();
     return this.process.stdout;
   }
 
@@ -89,13 +89,13 @@ export class PiSubprocess {
     return this.process.shutdown();
   }
 
-  private assertStarted(): void {
+  #assertStarted(): void {
     if (!this.process.isStarted()) {
       throw new Error('Pi subprocess is not started');
     }
   }
 
-  private notifyClose(error?: Error): void {
+  #notifyClose(error?: Error): void {
     if (this.notifiedClose) return;
     this.notifiedClose = true;
     for (const listener of [...this.closeListeners]) {

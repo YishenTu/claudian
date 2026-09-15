@@ -9,7 +9,7 @@ export class GrokSessionNotificationMirrorDeduplicator {
   private candidate: MirrorCandidate | null = null;
 
   shouldProcess(notification: unknown, source: GrokSessionNotificationSource): boolean {
-    const fingerprint = this.createFingerprint(notification);
+    const fingerprint = this.#createFingerprint(notification);
     if (!fingerprint) {
       this.candidate = null;
       return true;
@@ -27,7 +27,7 @@ export class GrokSessionNotificationMirrorDeduplicator {
     this.candidate = null;
   }
 
-  private createFingerprint(notification: unknown): string | null {
+  #createFingerprint(notification: unknown): string | null {
     try {
       return JSON.stringify(notification) ?? null;
     } catch {

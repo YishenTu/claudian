@@ -141,6 +141,8 @@ function port(): jest.Mocked<CollabAgentPort> {
     acceptRequest: jest.fn(),
     closeTicket: jest.fn(),
     confirmPublish: jest.fn(),
+    confirmUpdate: jest.fn(),
+    updateProject: jest.fn(),
     createTicket: jest.fn(),
     inspectProject: jest.fn(),
     listProjects: jest.fn(),
@@ -173,10 +175,47 @@ function port(): jest.Mocked<CollabAgentPort> {
 }
 
 function intentId(rpcId: string): string {
-  return `r${Buffer.from(rpcId, 'ascii').toString('base64url')}`;
+  return `m${Buffer.from(rpcId, 'ascii').toString('base64url')}`;
 }
 
 describe('Agent Runtime write methods', () => {
+  it('separates request correlation from a retryable mutation identity', async () => {
+    const collab = port();
+    collab.createTicket.mockResolvedValue({ status: 'success', value: DETAIL });
+    const gateway = new AgentRuntimeGateway(async () => collab);
+    const params = { projectId: PROJECT_ID, title: TICKET.title, body: DETAIL.body, mutationId: 'ticket-operation-a' };
+    const first = await gateway.handle({ id: 'call-1', method: 'collab.tickets.create', params });
+    const retry = await gateway.handle({ id: 'call-2', method: 'collab.tickets.create', params });
+    expect(first).toMatchObject({ id: 'call-1', result: { ticket: { id: TICKET.id } } });
+    expect(retry).toMatchObject({ id: 'call-2', result: { ticket: { id: TICKET.id } } });
+    expect(collab.createTicket.mock.calls[1]![0].intentId).toBe(collab.createTicket.mock.calls[0]![0].intentId);
+    await gateway.handle({ id: 'call-1', method: 'collab.tickets.create', params: { ...params, mutationId: 'ticket-operation-b' } });
+    expect(collab.createTicket.mock.calls[2]![0].intentId).not.toBe(collab.createTicket.mock.calls[0]![0].intentId);
+  });
+
+  it('requires an explicit mutation identity before admitting a write', async () => {
+    const resolveCollab = jest.fn(async () => port());
+    const result = await new AgentRuntimeGateway(resolveCollab).handle({
+      id: 'correlation-only', method: 'collab.tickets.create',
+      params: { projectId: PROJECT_ID, title: TICKET.title, body: DETAIL.body },
+    });
+    expect(result).toMatchObject({ error: { code: 'invalid_params' } });
+    expect(resolveCollab).not.toHaveBeenCalled();
+  });
+
+  it('advertises distinct retry contracts for mutations and current-state workflows', async () => {
+    const gateway = new AgentRuntimeGateway(async () => null);
+    for (const [name, strategy] of [
+      ['collab.tickets.create', 'same-mutation'],
+      ['collab.changes.publish', 'inspect-before-repeat'],
+      ['collab.projects.update', 'inspect-before-repeat'],
+      ['collab.projects.get', 'read'],
+    ]) {
+      const result = await gateway.handle({ id: 'contract', method: 'runtime.operations.get', params: { name } });
+      expect(result).toMatchObject({ result: { protocolVersion: 7, operation: { retry: { strategy } } } });
+    }
+  });
+
   it('creates a Ticket through the application command with retry-stable intent', async () => {
     const collab = port();
     collab.createTicket.mockResolvedValue({ status: 'success', value: DETAIL });
@@ -186,7 +225,7 @@ describe('Agent Runtime write methods', () => {
     await expect(gateway.handle({
       id,
       method: 'collab.tickets.create',
-      params: {
+      params: { mutationId: id,
         body: DETAIL.body,
         projectId: PROJECT_ID,
         title: TICKET.title,
@@ -216,7 +255,7 @@ describe('Agent Runtime write methods', () => {
     const request = {
       id: 'ticket.retry.1',
       method: 'collab.tickets.create',
-      params: {
+      params: { mutationId: 'ticket.retry.1',
         body: DETAIL.body,
         projectId: PROJECT_ID,
         title: TICKET.title,
@@ -255,6 +294,7 @@ describe('Agent Runtime write methods', () => {
       id,
       method,
       params: {
+        mutationId: id,
         ...content,
         expectedRevision: TICKET.revision,
         projectId: PROJECT_ID,
@@ -282,7 +322,7 @@ describe('Agent Runtime write methods', () => {
     await expect(gateway.handle({
       id,
       method: 'collab.tickets.comments.create',
-      params: { body: COMMENT.body, projectId: PROJECT_ID, ticketId: TICKET_ID },
+      params: { mutationId: id, body: COMMENT.body, projectId: PROJECT_ID, ticketId: TICKET_ID },
     })).resolves.toEqual({
       id,
       result: { comment: COMMENT, projectId: PROJECT_ID },
@@ -321,7 +361,7 @@ describe('Agent Runtime write methods', () => {
     const resolveCollab = jest.fn<Promise<CollabAgentPort | null>, []>();
     const gateway = new AgentRuntimeGateway(resolveCollab);
 
-    await expect(gateway.handle({ id: 'invalid-write', method, params })).resolves.toEqual({
+    await expect(gateway.handle({ id: 'invalid-write', method, params: { ...params, mutationId: 'invalid-case' } })).resolves.toEqual({
       error: { code: 'invalid_params', message: 'Invalid RPC params.' },
       id: 'invalid-write',
     });
@@ -336,7 +376,7 @@ describe('Agent Runtime write methods', () => {
     await expect(gateway.handle({
       id: 'request.comment.general',
       method: 'collab.requests.comments.create',
-      params: {
+      params: { mutationId: 'request.comment.general',
         body: REQUEST_COMMENT.body,
         projectId: PROJECT_ID,
         requestId: REQUEST_ID,
@@ -368,7 +408,7 @@ describe('Agent Runtime write methods', () => {
     await expect(gateway.handle({
       id,
       method: 'collab.requests.accept',
-      params: {
+      params: { mutationId: id,
         expectedHeadOid: HEAD_OID,
         expectedMainOid: MAIN_OID,
         expectedRequestRevision: REQUEST.revision,
@@ -407,7 +447,7 @@ describe('Agent Runtime write methods', () => {
     await expect(gateway.handle({
       id: 'request.accept.stale',
       method: 'collab.requests.accept',
-      params: {
+      params: { mutationId: 'request.accept.stale',
         expectedHeadOid: HEAD_OID,
         expectedMainOid: MAIN_OID,
         expectedRequestRevision: REQUEST.revision,
@@ -439,7 +479,7 @@ describe('Agent Runtime write methods', () => {
     await expect(gateway.handle({
       id: 'accept-duplicate',
       method: 'collab.requests.accept',
-      params: {
+      params: { mutationId: 'accept-duplicate',
         expectedHeadOid: HEAD_OID,
         expectedMainOid: MAIN_OID,
         expectedRequestRevision: REQUEST.revision,
@@ -461,7 +501,7 @@ describe('Agent Runtime write methods', () => {
     await expect(gateway.handle({
       id: 'accept-extra-field',
       method: 'collab.requests.accept',
-      params: {
+      params: { mutationId: 'accept-extra-field',
         expectedHeadOid: HEAD_OID,
         expectedMainOid: MAIN_OID,
         expectedRequestRevision: REQUEST.revision,

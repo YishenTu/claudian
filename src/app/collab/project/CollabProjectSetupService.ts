@@ -25,6 +25,7 @@ import {
   COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
   type CollabProjectSetupRecord,
 } from '@/app/collab/project/CollabProjectSetupRecord';
+import { collabWorkingCopySlugBase } from '@/app/collab/project/CollabWorkingCopySlug';
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
 } from '@/app/collab/publish/CollabPublicationStateRecord';
@@ -56,12 +57,14 @@ export interface CollabProjectAuthorityFoundation extends Omit<
 export interface CollabProjectFoundationPort {
   readonly local: CollabLocalFoundation;
   requireGitFoundation(): Promise<CollabGitFoundation>;
-  createAuthority(projectId: CollabProjectId): Promise<CollabProjectAuthorityFoundation>;
-  openAuthority(projectId: CollabProjectId): Promise<CollabProjectAuthorityFoundation>;
+  createAuthority(projectId: CollabProjectId, operationId: string, resourceId?: string): Promise<CollabProjectAuthorityFoundation>;
+  openAuthority(projectId: CollabProjectId, operationId?: string, resourceId?: string): Promise<CollabProjectAuthorityFoundation>;
   inspectAuthority(
     projectId: CollabProjectId,
+    operationId?: string,
+    resourceId?: string,
   ): Promise<CollabProjectAuthorityFoundation | null>;
-  discardProvisionalAuthority(projectId: CollabProjectId): Promise<void>;
+  discardProvisionalAuthority(projectId: CollabProjectId, operationId: string, resourceId?: string): Promise<void>;
 }
 
 export interface CollabProjectSetupServiceOptions {
@@ -140,17 +143,7 @@ function projectSummary(record: CollabProjectSetupRecord): CollabLocalProjectSum
   };
 }
 
-function slugBase(name: string): string {
-  const slug = name
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('en-US')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 56)
-    .replace(/-+$/g, '');
-  return slug || 'project';
-}
+
 
 export class CollabProjectSetupService {
    readonly #createCredential: () => string;
@@ -265,7 +258,7 @@ export class CollabProjectSetupService {
     let record: CollabProjectSetupRecord | null = null;
     try {
       throwIfCancelled(options.signal);
-      const pending = await this.#findPending(request.operationId);
+      const pending = await this.#findPending(request.operationId, request.projectId);
       if (!pending) throw setupError('project-not-found', 'pending-setup-not-found');
       this.#assertRecoveryOwner(pending);
       record = pending;
@@ -362,7 +355,8 @@ export class CollabProjectSetupService {
     if (!record.initialCommitOid) {
       throw setupError('repository-invalid', 'initial-commit-missing', ['open-diagnostics']);
     }
-    const authority = await this.foundation.createAuthority(record.projectId);
+    const authority = await this.foundation.createAuthority(record.projectId, record.operationId, record.authorityResourceId);
+    record = await this.#pinAuthorityResource(record, authority);
     const existing = await authority.database.read(connection => authority.projects.get(connection));
     if (!existing) {
       const credentialHash = createHash('sha256')
@@ -398,8 +392,9 @@ export class CollabProjectSetupService {
     signal?: AbortSignal,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     const git = await this.foundation.requireGitFoundation();
-    const authority = await this.foundation.openAuthority(record.projectId);
-    await this.#ensureBareAuthority(record, authority, git, signal);
+    const authority = await this.foundation.openAuthority(record.projectId, record.operationId, record.authorityResourceId);
+    record = await this.#pinAuthorityResource(record, authority);
+    await this.foundation.local.projects.withAuthorityDirectory(authority.resource, () => this.#ensureBareAuthority(record, authority, git, signal));
     throwIfCancelled(signal);
     const workingCopy = await this.#ensureWorkingCopy(record, authority, git, signal);
     record = await this.#updateRecord(record, { phase: 'clone-completed' });
@@ -537,7 +532,7 @@ export class CollabProjectSetupService {
     const barePath = path.join(authority.authorityDirectory, 'repository.git');
     let clonePath: string;
     try {
-      clonePath = await git.repositories.cloneRepository({
+      clonePath = await this.foundation.local.projects.withAuthorityDirectory(authority.resource, async () => git.repositories.cloneRepository({
         branch: `members/${record.memberId}`,
         directoryName: record.cloneDirectoryName,
         parentDirectory: await resolveCollabVaultPath(
@@ -547,7 +542,7 @@ export class CollabProjectSetupService {
         ),
         remoteUrl: barePath,
         signal,
-      });
+      }));
     } catch (error) {
       await this.#removeOwnedWorkspaceChild(record, 'create-clone').catch(() => undefined);
       throw error;
@@ -576,6 +571,7 @@ export class CollabProjectSetupService {
   private async saveMembership(record: CollabProjectSetupRecord): Promise<void> {
     await this.foundation.local.projects.saveMembership({
       authority: {
+        authorityGeneration: 1,
         endpoint: null,
         gitRemoteUrl: null,
         hostCaCertificatePem: null,
@@ -607,6 +603,10 @@ export class CollabProjectSetupService {
     error: unknown,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
     const collabError = asCollabError(error);
+    if (record) {
+      const persisted = await this.#findPending(record.operationId).catch(() => null);
+      if (persisted?.projectId === record.projectId && persisted.ownerInstallationKey === record.ownerInstallationKey) record = persisted;
+    }
     if (record && await this.#isAuthorityCommitted(record).catch(() => true)) {
       await this.#updateRecord(record, { phase: 'committed' }).catch(() => undefined);
       return {
@@ -651,7 +651,7 @@ export class CollabProjectSetupService {
     // Authority cleanup is the safety boundary: keep the discoverable local
     // setup record and resumable staging artifacts until the provisional
     // foundation is actually gone.
-    await this.foundation.discardProvisionalAuthority(record.projectId);
+    await this.foundation.discardProvisionalAuthority(record.projectId, record.operationId, record.authorityResourceId);
     await this.#removeOwnedWorkspaceChild(record, 'create-seed').catch(() => undefined);
     await this.#removeOwnedWorkspaceChild(record, 'create-clone').catch(() => undefined);
     await this.foundation.local.projects.discardPendingOperation(record.projectId);
@@ -661,7 +661,7 @@ export class CollabProjectSetupService {
   }
 
    async #isAuthorityCommitted(record: CollabProjectSetupRecord): Promise<boolean> {
-    const authority = await this.foundation.inspectAuthority(record.projectId);
+    const authority = await this.foundation.inspectAuthority(record.projectId, record.operationId, record.authorityResourceId);
     if (!authority) return false;
     const project = await authority.database.read(connection => authority.projects.get(connection));
     if (!project) return false;
@@ -690,8 +690,8 @@ export class CollabProjectSetupService {
     }
   }
 
-   async #findPending(operationId: string): Promise<CollabProjectSetupRecord | null> {
-    const projectIds = await this.foundation.local.projects
+   async #findPending(operationId: string, selectedProjectId?: string): Promise<CollabProjectSetupRecord | null> {
+    const projectIds = selectedProjectId ? [selectedProjectId] : await this.foundation.local.projects
       .listPendingOperationProjectIds();
     let match: CollabProjectSetupRecord | null = null;
     for (const projectId of projectIds) {
@@ -700,7 +700,7 @@ export class CollabProjectSetupService {
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
-      if (pending?.kind === 'create-project' && pending.record.operationId === operationId) {
+      if (pending?.projectId === projectId && pending.kind === 'create-project' && pending.record.operationId === operationId) {
         if (match) throw setupError('repository-invalid', 'pending-operation-duplicate');
         match = pending.record;
       }
@@ -709,7 +709,7 @@ export class CollabProjectSetupService {
   }
 
    async #claimSlug(projectsFolder: string, name: string): Promise<string> {
-    const base = slugBase(name);
+    const base = collabWorkingCopySlugBase(name);
     const index = await this.foundation.local.projects.loadIndex();
     const reservedPaths = new Set(index.projects.map(project => project.workspacePath));
     const pendingProjectIds = await this.foundation.local.projects
@@ -720,12 +720,13 @@ export class CollabProjectSetupService {
         'pending-operation',
         decodeCollabPendingProjectOperation,
       );
-      if (pending) {
+      if (pending && pending.kind !== 'cloud-relocation') {
         reservedPaths.add(`${pending.record.projectsFolder}/${pending.record.slug}`);
       }
     }
     for (let suffix = 1; suffix <= 9_999; suffix += 1) {
       const candidate = suffix === 1 ? base : `${base.slice(0, 58)}-${suffix}`;
+      if (!this.foundation.local.pathPolicy.validateRepositoryPath(candidate).ok) continue;
       if (reservedPaths.has(`${projectsFolder}/${candidate}`)) continue;
       const absolutePath = this.#workspaceChildPathForRoot(projectsFolder, candidate);
       if (!await lstat(absolutePath).then(() => true, () => false)) return candidate;
@@ -756,11 +757,20 @@ export class CollabProjectSetupService {
     );
   }
 
+  async #pinAuthorityResource(record: CollabProjectSetupRecord, authority: CollabProjectAuthorityFoundation): Promise<CollabProjectSetupRecord> {
+    if (record.authorityResourceId !== undefined && record.authorityResourceId !== authority.resource.resourceId) {
+      throw setupError('repository-invalid', 'authority-resource-mismatch', ['open-diagnostics']);
+    }
+    return record.authorityResourceId === authority.resource.resourceId
+      ? record
+      : this.#updateRecord(record, { authorityResourceId: authority.resource.resourceId });
+  }
+
    async #updateRecord(
     record: CollabProjectSetupRecord,
     changes: Partial<Pick<
       CollabProjectSetupRecord,
-      'initialCommitOid' | 'phase'
+      'initialCommitOid' | 'phase' | 'authorityResourceId'
     >>,
   ): Promise<CollabProjectSetupRecord> {
     const updated: CollabProjectSetupRecord = {

@@ -61,7 +61,7 @@ export class CollabReviewService {
     requestId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabRequestReview> {
-    return this.prepareWith(
+    return this.#prepareWith(
       projectId,
       requestId,
       options,
@@ -74,7 +74,7 @@ export class CollabReviewService {
     requestId: string,
     options: CollabOperationOptions = {},
   ): Promise<CollabRequestReview> {
-    return this.prepareWith(
+    return this.#prepareWith(
       projectId,
       requestId,
       options,
@@ -82,7 +82,7 @@ export class CollabReviewService {
     );
   }
 
-  private async prepareWith(
+  async #prepareWith(
     projectId: string,
     requestId: string,
     options: CollabOperationOptions,

@@ -105,7 +105,7 @@ export class LocalProjectCleanupCoordinator implements LocalProjectCleanupPort {
     }
     const existing = await this.records.load(intent.projectId);
     if (existing) {
-      this.assertSameIntent(existing, intent);
+      this.#assertSameIntent(existing, intent);
       return this.run(existing, options);
     }
     const timestamp = this.timestamp();
@@ -156,7 +156,7 @@ export class LocalProjectCleanupCoordinator implements LocalProjectCleanupPort {
       if (intent.choice !== record.choice) {
         throw new TypeError('Retired cleanup choice does not match durable state');
       }
-      return this.completeResult(record);
+      return this.#completeResult(record);
     }
     if (record.phase === 'marker-removing') {
       if (intent.choice !== 'keep-files' || record.choice !== 'keep-files') {
@@ -204,7 +204,7 @@ export class LocalProjectCleanupCoordinator implements LocalProjectCleanupPort {
     options: LocalCleanupRunOptions,
   ): Promise<LocalCleanupResult> {
     let record = initial;
-    if (record.phase === 'complete') return this.completeResult(record);
+    if (record.phase === 'complete') return this.#completeResult(record);
     if (record.phase === 'failed') throw new TypeError('Local cleanup requires explicit recovery');
     if (record.phase === 'planned') {
       if (this.cancelled(options, record.phase)) return { status: 'cancelled', phase: record.phase };
@@ -296,10 +296,10 @@ export class LocalProjectCleanupCoordinator implements LocalProjectCleanupPort {
         if (record.purpose === 'retire') {
           await this.transition(record, 'choice-applied', options);
           options.onProgress?.({ phase: 'complete', projectId: record.projectId });
-          return this.completeResult(record);
+          return this.#completeResult(record);
         }
         record = await this.transition(record, 'complete', options);
-        return this.completeResult(record);
+        return this.#completeResult(record);
       }
       await this.workspace.assertDetachedProjectMarker(
         record.workspacePath,
@@ -315,11 +315,11 @@ export class LocalProjectCleanupCoordinator implements LocalProjectCleanupPort {
       if (record.purpose === 'retire') {
         await this.transition(record, 'choice-applied', options);
         options.onProgress?.({ phase: 'complete', projectId: record.projectId });
-        return this.completeResult(record);
+        return this.#completeResult(record);
       }
       record = await this.transition(record, 'complete', options);
     }
-    return this.completeResult(record);
+    return this.#completeResult(record);
   }
 
   private marker(record: LocalCleanupRecord): DetachedProjectMarker {
@@ -349,7 +349,7 @@ export class LocalProjectCleanupCoordinator implements LocalProjectCleanupPort {
     return options.signal?.aborted === true;
   }
 
-  private completeResult(record: LocalCleanupRecord): LocalCleanupResult {
+  #completeResult(record: LocalCleanupRecord): LocalCleanupResult {
     const filesPreserved = record.choice === 'keep-files';
     return {
       filesPreserved,
@@ -363,7 +363,7 @@ export class LocalProjectCleanupCoordinator implements LocalProjectCleanupPort {
     return this.now().toISOString();
   }
 
-  private assertSameIntent(record: LocalCleanupRecord, intent: LocalProjectCleanupIntent): void {
+  #assertSameIntent(record: LocalCleanupRecord, intent: LocalProjectCleanupIntent): void {
     if (
       record.choice !== intent.choice
       || record.memberId !== intent.memberId

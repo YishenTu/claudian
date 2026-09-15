@@ -54,7 +54,7 @@ export class StreamingRenderCoordinator<TSnapshot> {
     this.available = available;
     if (!available) {
       if (this.forceThroughVersion <= this.renderedVersion) {
-        this.cancelScheduledFrame();
+        this.#cancelScheduledFrame();
       }
       return;
     }
@@ -68,25 +68,25 @@ export class StreamingRenderCoordinator<TSnapshot> {
     const targetVersion = this.requestedVersion;
     this.forceThroughVersion = Math.max(this.forceThroughVersion, targetVersion);
     this.bypassThrottle = true;
-    this.cancelScheduledFrame();
+    this.#cancelScheduledFrame();
 
-    const completion = this.waitForVersion(targetVersion);
+    const completion = this.#waitForVersion(targetVersion);
     if (!this.renderRunning) {
-      void this.runRender();
+      void this.#runRender();
     }
     await completion;
   }
 
   cancel(): void {
     this.generation += 1;
-    this.cancelScheduledFrame();
+    this.#cancelScheduledFrame();
     this.latestSnapshot = null;
     this.requestedVersion = 0;
     this.renderedVersion = 0;
     this.forceThroughVersion = 0;
     this.lastRenderCompletedAt = Number.NEGATIVE_INFINITY;
     this.bypassThrottle = false;
-    this.resolveAllWaiters();
+    this.#resolveAllWaiters();
   }
 
   dispose(): void {
@@ -104,20 +104,20 @@ export class StreamingRenderCoordinator<TSnapshot> {
     this.bypassThrottle ||= bypassThrottle;
     const ownerWindow = this.getOwnerWindow();
     if (!ownerWindow) {
-      void this.runRender();
+      void this.#runRender();
       return;
     }
 
     this.scheduledFrame = scheduleAnimationFrame(() => {
       this.scheduledFrame = null;
-      void this.runRender();
+      void this.#runRender();
     }, ownerWindow);
   }
 
-  private async runRender(): Promise<void> {
+  async #runRender(): Promise<void> {
     if (this.disposed || this.renderRunning) return;
     if (!this.latestSnapshot || this.requestedVersion <= this.renderedVersion) {
-      this.resolveCompletedWaiters();
+      this.#resolveCompletedWaiters();
       return;
     }
 
@@ -129,7 +129,7 @@ export class StreamingRenderCoordinator<TSnapshot> {
       const ownerWindow = this.getOwnerWindow();
       if (!ownerWindow) {
         this.bypassThrottle = true;
-        void this.runRender();
+        void this.#runRender();
         return;
       }
 
@@ -165,18 +165,18 @@ export class StreamingRenderCoordinator<TSnapshot> {
     if (this.forceThroughVersion <= this.renderedVersion) {
       this.forceThroughVersion = 0;
     }
-    this.resolveCompletedWaiters();
+    this.#resolveCompletedWaiters();
 
     if (this.requestedVersion > this.renderedVersion) {
       if (this.forceThroughVersion > this.renderedVersion) {
-        void this.runRender();
+        void this.#runRender();
       } else {
         this.schedule();
       }
     }
   }
 
-  private waitForVersion(version: number): Promise<void> {
+  #waitForVersion(version: number): Promise<void> {
     if (version <= this.renderedVersion) return Promise.resolve();
 
     return new Promise(resolve => {
@@ -184,7 +184,7 @@ export class StreamingRenderCoordinator<TSnapshot> {
     });
   }
 
-  private resolveCompletedWaiters(): void {
+  #resolveCompletedWaiters(): void {
     const pending: RenderWaiter[] = [];
     for (const waiter of this.waiters) {
       if (waiter.version <= this.renderedVersion) {
@@ -196,7 +196,7 @@ export class StreamingRenderCoordinator<TSnapshot> {
     this.waiters = pending;
   }
 
-  private resolveAllWaiters(): void {
+  #resolveAllWaiters(): void {
     const waiters = this.waiters;
     this.waiters = [];
     for (const waiter of waiters) {
@@ -204,7 +204,7 @@ export class StreamingRenderCoordinator<TSnapshot> {
     }
   }
 
-  private cancelScheduledFrame(): void {
+  #cancelScheduledFrame(): void {
     if (!this.scheduledFrame) return;
 
     cancelScheduledAnimationFrame(this.scheduledFrame);

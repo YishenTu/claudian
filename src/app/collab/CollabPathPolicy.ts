@@ -258,19 +258,19 @@ export class CollabPathPolicy {
   }
 
   validateChangedPathCount(count: number): CollabError | null {
-    return this.validateQuota(count, 'maxChangedPaths');
+    return this.#validateQuota(count, 'maxChangedPaths');
   }
 
   validateReceivedPackSize(bytes: number): CollabError | null {
-    return this.validateQuota(bytes, 'maxReceivedPackBytes');
+    return this.#validateQuota(bytes, 'maxReceivedPackBytes');
   }
 
   validateCommentSize(bytes: number): CollabError | null {
-    return this.validateQuota(bytes, 'maxCommentBytes');
+    return this.#validateQuota(bytes, 'maxCommentBytes');
   }
 
   validateHostRepositorySize(bytes: number): CollabError | null {
-    return this.validateQuota(bytes, 'hostRepositorySoftLimitBytes');
+    return this.#validateQuota(bytes, 'hostRepositorySoftLimitBytes');
   }
 
   classifyTextDiff(bytes: number, lines: number): 'text' | 'opaque' {
@@ -281,7 +281,7 @@ export class CollabPathPolicy {
       : 'opaque';
   }
 
-  private validateQuota(
+  #validateQuota(
     actual: number,
     quota: keyof typeof CLAUDIAN_COLLAB_LIMITS,
   ): CollabError | null {

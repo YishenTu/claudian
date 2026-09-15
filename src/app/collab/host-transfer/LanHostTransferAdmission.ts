@@ -39,12 +39,12 @@ export class LanHostTransferAdmission implements HostTransferAdmissionPort {
     transferId: CollabOperationId,
     signal?: AbortSignal,
   ): Promise<void> {
-    this.assertIdentity(projectId, transferId);
+    this.#assertIdentity(projectId, transferId);
     return this.host.quiesceProjectForHostTransfer(projectId, signal);
   }
 
   async assertAcceptanceSettled(projectId: CollabProjectId): Promise<void> {
-    this.assertProject(projectId);
+    this.#assertProject(projectId);
     await this.options.assertAcceptanceSettled();
   }
 
@@ -52,7 +52,7 @@ export class LanHostTransferAdmission implements HostTransferAdmissionPort {
     projectId: CollabProjectId,
     transferId: CollabOperationId,
   ): Promise<void> {
-    this.assertIdentity(projectId, transferId);
+    this.#assertIdentity(projectId, transferId);
     return this.host.closeProjectForHostTransfer(projectId);
   }
 
@@ -60,7 +60,7 @@ export class LanHostTransferAdmission implements HostTransferAdmissionPort {
     projectId: CollabProjectId,
     transferId: CollabOperationId,
   ): Promise<void> {
-    this.assertIdentity(projectId, transferId);
+    this.#assertIdentity(projectId, transferId);
     return this.host.reopenProjectBeforeHostTransfer(projectId);
   }
 
@@ -68,19 +68,19 @@ export class LanHostTransferAdmission implements HostTransferAdmissionPort {
     projectId: CollabProjectId,
     transferId: CollabOperationId,
   ): Promise<void> {
-    this.assertIdentity(projectId, transferId);
+    this.#assertIdentity(projectId, transferId);
     await this.options.finalizeOldAuthority();
     await this.host.completeProjectHostTransfer(projectId);
   }
 
-  private assertIdentity(projectId: CollabProjectId, transferId: CollabOperationId): void {
-    this.assertProject(projectId);
+  #assertIdentity(projectId: CollabProjectId, transferId: CollabOperationId): void {
+    this.#assertProject(projectId);
     if (transferId !== this.transferId) {
       throw admissionError('host-transfer-admission-transfer-mismatch');
     }
   }
 
-  private assertProject(projectId: CollabProjectId): void {
+  #assertProject(projectId: CollabProjectId): void {
     if (projectId !== this.projectId) {
       throw admissionError('host-transfer-admission-project-mismatch');
     }

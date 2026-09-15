@@ -41,6 +41,7 @@ function snapshot(): CollabLanProjectSnapshot {
       id: PROJECT_ID,
       mainOid: 'a'.repeat(40),
       mainRef: 'refs/heads/main',
+      authorityGeneration: 1,
       managerSetGeneration: 0,
       name: 'Alpha',
     },
@@ -152,6 +153,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
     listTicketAcceptedRelations: jest.fn(),
     listTicketComments: jest.fn(),
     listTickets: jest.fn(),
+    resolveTicketNumber: jest.fn(),
     readSnapshot: jest.fn<
       ReturnType<CollabControlProjectService['readSnapshot']>,
       Parameters<CollabControlProjectService['readSnapshot']>
@@ -325,7 +327,7 @@ describe('CollabControlRouter', () => {
     expect(projectService.readSnapshot).not.toHaveBeenCalled();
   });
 
-  it.each([1, 6])(
+  it.each([1, 6, 10])(
     'rejects v%s Project control before body read, authentication, admission, or dispatch',
     async protocolVersion => {
       const run = jest.fn(async (operation: () => Promise<unknown>) => operation());
@@ -386,7 +388,7 @@ describe('CollabControlRouter', () => {
     },
   );
 
-  it.each([1, 6])('rejects the v%s event stream before authentication or admission', async (
+  it.each([1, 6, 10])('rejects the v%s event stream before authentication or admission', async (
     protocolVersion,
   ) => {
     const run = jest.fn(async (operation: () => Promise<unknown>) => operation());

@@ -82,14 +82,14 @@ export class AcpExecutionEventNormalizer {
           level: 'info',
           message: 'ACP emitted an unrecognized session update.',
           providerPayload: normalized.update,
-          scope: this.nextScope(),
+          scope: this.#nextScope(),
           type: 'notice',
         }],
         metadata: normalized,
       };
     }
 
-    const events = this.mapNormalizedUpdate(normalized);
+    const events = this.#mapNormalizedUpdate(normalized);
     return {
       events,
       metadata: normalized,
@@ -110,7 +110,7 @@ export class AcpExecutionEventNormalizer {
     this.options.toolStreamAdapter?.reset();
   }
 
-  private mapNormalizedUpdate(
+  #mapNormalizedUpdate(
     normalized: Exclude<AcpNormalizedUpdate, { type: 'unknown' }>,
   ): AcpNormalizedExecutionEvent[] {
     switch (normalized.type) {
@@ -122,13 +122,13 @@ export class AcpExecutionEventNormalizer {
               return [{
                 ...(chunk.content ? { content: chunk.content } : {}),
                 ...(chunk.itemId ? { nativeUserMessageId: chunk.itemId } : {}),
-                scope: this.nextScope(),
+                scope: this.#nextScope(),
                 type: 'user_message_started' as const,
               }];
             case 'assistant_message_start':
               return [{
                 ...(chunk.itemId ? { nativeAssistantId: chunk.itemId } : {}),
-                scope: this.nextScope(),
+                scope: this.#nextScope(),
                 type: 'assistant_message_started' as const,
               }];
             case 'text':
@@ -137,7 +137,7 @@ export class AcpExecutionEventNormalizer {
                   content: normalized.content,
                   messageId: normalized.messageId,
                 },
-                scope: this.nextScope(),
+                scope: this.#nextScope(),
                 text: chunk.content,
                 type: 'text_delta' as const,
               }];
@@ -147,7 +147,7 @@ export class AcpExecutionEventNormalizer {
                   content: normalized.content,
                   messageId: normalized.messageId,
                 },
-                scope: this.nextScope(),
+                scope: this.#nextScope(),
                 text: chunk.content,
                 type: 'thinking_delta' as const,
               }];
@@ -183,7 +183,7 @@ export class AcpExecutionEventNormalizer {
                 ...(chunk.providerPayload
                   ? { providerPayload: chunk.providerPayload }
                   : {}),
-                scope: this.nextScope(),
+                scope: this.#nextScope(),
                 toolCallId: chunk.id,
                 toolScope,
                 type: 'tool_started' as const,
@@ -191,7 +191,7 @@ export class AcpExecutionEventNormalizer {
             case 'tool_output':
               return [{
                 content: chunk.content,
-                scope: this.nextScope(),
+                scope: this.#nextScope(),
                 toolCallId: chunk.id,
                 toolScope,
                 type: 'tool_output' as const,
@@ -201,7 +201,7 @@ export class AcpExecutionEventNormalizer {
                 content: chunk.content,
                 isError: chunk.isError,
                 isBlocked: chunk.isBlocked,
-                scope: this.nextScope(),
+                scope: this.#nextScope(),
                 toolCallId: chunk.id,
                 toolScope,
                 ...(chunk.toolUseResult ? {
@@ -219,7 +219,7 @@ export class AcpExecutionEventNormalizer {
         return usage
           ? [{
             providerPayload: normalized.usage,
-            scope: this.nextScope(),
+            scope: this.#nextScope(),
             type: 'usage_updated',
             usage,
           }]
@@ -230,7 +230,7 @@ export class AcpExecutionEventNormalizer {
     }
   }
 
-  private nextScope(): ProviderTurnEventScope {
+  #nextScope(): ProviderTurnEventScope {
     return {
       ...this.options.scope,
       sequence: ++this.sequence,

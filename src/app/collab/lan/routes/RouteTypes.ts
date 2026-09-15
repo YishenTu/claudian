@@ -1,4 +1,6 @@
-import type { AcceptRequest, AcceptResponse, ChangeTicketStatusRequest, CollabCommentPage, CollabMemberStatus, CollabRequestDetail, CollabTicketAcceptedRelationPage, CollabTicketCommentPage, CollabTicketDetail, CollabTicketPage, CreateCommentRequest, CreateCommentResponse, CreateTicketCommentRequest, CreateTicketCommentResponse, CreateTicketRequest, CreateTicketResponse, EnsureMyRequestRequest, EnsureMyRequestResponse, GetRequestRequest, ListRequestCommentsRequest, ListTicketAcceptedRelationsRequest, ListTicketCommentsRequest, ListTicketsRequest, TicketMutationResponse, UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse, UpdateTicketContentRequest } from '@claudian-collab/protocol';
+import type { ClaimTransferredMembershipRequest, CollabTransferredMembershipRedemptionReceipt, ListProjectMembersResponse, ReissueTransferredMembershipClaimRequest, ReissueTransferredMembershipClaimResponse } from '@claudian-collab/protocol';
+import type { AcceptRequest, AcceptResponse, ChangeTicketStatusRequest, CollabCommentPage, CollabMemberStatus, CollabRequestDetail, CollabTicketAcceptedRelationPage, CollabTicketCommentPage, CollabTicketDetail, CollabTicketPage, CreateCommentRequest, CreateCommentResponse, CreateTicketCommentRequest, CreateTicketCommentResponse, CreateTicketRequest, CreateTicketResponse, EnsureMyRequestRequest, EnsureMyRequestResponse, GetRequestRequest, ListRequestCommentsRequest, ListTicketAcceptedRelationsRequest, ListTicketCommentsRequest, ListTicketsRequest, ResolveTicketNumberRequest, ResolveTicketNumberResponse, TicketMutationResponse, UpdateMyRequestMetadataRequest, UpdateMyRequestMetadataResponse, UpdateTicketContentRequest } from '@claudian-collab/protocol';
+import type { CreateProjectRecoveryLinkRequest, CreateProjectRecoveryLinkResponse, RedeemProjectRecoveryLinkRequest, RedeemProjectRecoveryLinkResponse } from '@claudian-collab/protocol';
 
 import type {
   CollabControlOperationMatch,
@@ -23,6 +25,12 @@ import type { LifecycleGatewayPort } from '@/app/collab/lan/lifecycle/LifecycleG
 import type { CollabLanProjectSnapshot, CollabRetirementResult } from '@/core/collab';
 
 export interface CollabControlProjectService {
+  createProjectRecoveryLink?(memberCredential: string, request: CreateProjectRecoveryLinkRequest): Promise<CreateProjectRecoveryLinkResponse>;
+  redeemProjectRecoveryLink?(request: RedeemProjectRecoveryLinkRequest): Promise<RedeemProjectRecoveryLinkResponse>;
+  listProjectMembers?(memberCredential: string, projectId: string): Promise<ListProjectMembersResponse>;
+  reissueTransferredMembershipClaim?(memberCredential: string, request: ReissueTransferredMembershipClaimRequest): Promise<ReissueTransferredMembershipClaimResponse>;
+  claimTransferredMembership?(request: Extract<ClaimTransferredMembershipRequest, { credentialHash: string }>): Promise<CollabTransferredMembershipRedemptionReceipt>;
+
   acceptRequest(
     memberCredential: string,
     request: AcceptRequest,
@@ -86,6 +94,10 @@ export interface CollabControlProjectService {
     memberCredential: string,
     request: ListTicketCommentsRequest,
   ): Promise<CollabTicketCommentPage>;
+  resolveTicketNumber(
+    memberCredential: string,
+    request: ResolveTicketNumberRequest,
+  ): Promise<ResolveTicketNumberResponse>;
   listTickets(
     memberCredential: string,
     request: ListTicketsRequest,
@@ -144,26 +156,24 @@ interface CollabControlRouteRequestBase {
   readonly authorization: string | null;
   readonly body: unknown;
   readonly idempotencyKey: string | null;
-  readonly method: string;
-  readonly operationMatch?: CollabControlOperationMatch;
   readonly projectId: string;
   readonly query: Readonly<Record<string, string>>;
   readonly remoteAddress: string;
-  readonly segments: readonly string[];
 }
 
-export interface CollabControlRouteRequest extends CollabControlRouteRequestBase {
+export interface CollabLifecycleRouteRequest extends CollabControlRouteRequestBase {
+  readonly operationMatch: CollabControlOperationMatch;
   readonly lifecycle: LifecycleGatewayPort;
+}
+
+export interface CollabControlRouteRequest extends CollabLifecycleRouteRequest {
   readonly service: CollabControlProjectService;
 }
 
 export interface CollabTerminalControlRouteRequest extends CollabControlRouteRequestBase {
+  readonly operationMatch: CollabControlOperationMatch | null;
   readonly lifecycle: LifecycleGatewayPort;
 }
-
-export type CollabLifecycleRouteRequest =
-  | CollabControlRouteRequest
-  | CollabTerminalControlRouteRequest;
 
 export interface CollabControlRouteResult {
   readonly afterResponseFlushed?: () => void;

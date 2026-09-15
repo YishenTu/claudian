@@ -183,7 +183,7 @@ export class ConversationController {
     this.callbacks = callbacks;
   }
 
-  private getExecutionCoordinator(): ChatExecutionCoordinator | null {
+  #getExecutionCoordinator(): ChatExecutionCoordinator | null {
     return this.deps.getExecutionCoordinator();
   }
 
@@ -215,7 +215,7 @@ export class ConversationController {
       if (isCancellingForegroundTurn) {
         state.cancelRequested = true;
         state.bumpStreamGeneration();
-        this.getExecutionCoordinator()?.cancel();
+        this.#getExecutionCoordinator()?.cancel();
       }
 
       if (this.deps.awaitBackgroundWork) {
@@ -248,7 +248,7 @@ export class ConversationController {
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
       state.hasPendingConversationSave = false;
 
-      await this.getExecutionCoordinator()?.bindConversation(null);
+      await this.#getExecutionCoordinator()?.bindConversation(null);
 
       const messagesEl = this.deps.getMessagesEl();
       messagesEl.empty();
@@ -289,7 +289,7 @@ export class ConversationController {
       state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true;
       state.hasPendingConversationSave = false;
 
-      await this.getExecutionCoordinator()?.bindConversation(null);
+      await this.#getExecutionCoordinator()?.bindConversation(null);
 
       this.deps.getLinkedContentController().resetAutoDraft();
 
@@ -305,7 +305,7 @@ export class ConversationController {
     }
 
     await this.deps.ensureExecutionForConversation?.(conversation);
-    this.restoreConversation(conversation);
+    this.#restoreConversation(conversation);
     this.updateWelcomeVisibility();
 
     this.callbacks.onConversationLoaded?.();
@@ -318,7 +318,7 @@ export class ConversationController {
       .catch(() => undefined)
       .then(async () => {
         if (requestRevision !== this.switchRequestRevision) return;
-        await this.switchToImmediately(id);
+        await this.#switchToImmediately(id);
       });
     this.switchTail = request.then(
       () => undefined,
@@ -327,7 +327,7 @@ export class ConversationController {
     await request;
   }
 
-  private async switchToImmediately(id: string): Promise<void> {
+  async #switchToImmediately(id: string): Promise<void> {
     const { plugin, state, subagentManager } = this.deps;
 
     if (this.deps.isDisposed?.()) return;
@@ -362,7 +362,7 @@ export class ConversationController {
       this.deps.getInputEl().value = '';
       this.deps.clearQueuedMessage();
 
-      this.restoreConversation(conversation);
+      this.#restoreConversation(conversation);
 
       this.deps.getHistoryDropdown()?.removeClass('visible');
       this.updateWelcomeVisibility();
@@ -438,7 +438,7 @@ export class ConversationController {
         }
       }
 
-      const coordinator = this.getExecutionCoordinator();
+      const coordinator = this.#getExecutionCoordinator();
       if (!coordinator) {
         new Notice(t('chat.rewind.failed', { error: 'Agent execution not available' }));
         return;
@@ -476,7 +476,7 @@ export class ConversationController {
           new Notice(t('chat.rewind.unavailableStreaming'));
           return;
         }
-        if (!isTargetCurrent() || this.getExecutionCoordinator() !== coordinator) {
+        if (!isTargetCurrent() || this.#getExecutionCoordinator() !== coordinator) {
           new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
           return;
         }
@@ -493,7 +493,7 @@ export class ConversationController {
         new Notice(t('chat.rewind.unavailableStreaming'));
         return;
       }
-      if (!isTargetCurrent() || this.getExecutionCoordinator() !== coordinator) {
+      if (!isTargetCurrent() || this.#getExecutionCoordinator() !== coordinator) {
         new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
         return;
       }
@@ -513,7 +513,7 @@ export class ConversationController {
         new Notice(t('chat.rewind.cannot', { error: result.error ?? 'Unknown error' }));
         return;
       }
-      if (!isTargetCurrent() || this.getExecutionCoordinator() !== coordinator) {
+      if (!isTargetCurrent() || this.#getExecutionCoordinator() !== coordinator) {
         new Notice(t('chat.rewind.failed', { error: 'Conversation changed while rewinding.' }));
         return;
       }
@@ -622,7 +622,7 @@ export class ConversationController {
    * Shared logic for restoring a conversation into the current tab.
    * Used by both loadActive() and switchTo() to avoid duplication.
    */
-  private restoreConversation(conversation: Conversation): void {
+  #restoreConversation(conversation: Conversation): void {
     const { plugin, state, renderer } = this.deps;
 
     state.currentConversationId = conversation.id;
@@ -674,7 +674,7 @@ export class ConversationController {
     const dropdown = this.deps.getHistoryDropdown();
     if (!dropdown) return;
 
-    this.renderHistoryItems(dropdown, {
+    this.#renderHistoryItems(dropdown, {
       onSelectConversation: (id) => this.switchTo(id),
       onRerender: () => this.updateHistoryDropdown(),
     });
@@ -684,14 +684,14 @@ export class ConversationController {
    * Renders history dropdown items to a container.
    * Shared implementation for updateHistoryDropdown() and renderHistoryDropdown().
    */
-  private renderHistoryItems(
+  #renderHistoryItems(
     container: HTMLElement,
     options: HistoryRenderOptions
   ): void {
     const { plugin } = this.deps;
     if (options.signal?.aborted) return;
     if (options.showMetadataPopover) {
-      this.closeSessionMetadataPopover();
+      this.#closeSessionMetadataPopover();
     }
 
     const previousList = options.preserveListState
@@ -714,7 +714,7 @@ export class ConversationController {
       ? previousVisibleCountFromState
       : previousList?.querySelectorAll('.claudian-history-item').length ?? 0;
     const previousScrollAnchors = previousSessionList
-      ? this.captureHistoryScrollAnchors(previousSessionList)
+      ? this.#captureHistoryScrollAnchors(previousSessionList)
       : [];
     const organization = options.organization ?? 'list';
 
@@ -909,7 +909,7 @@ export class ConversationController {
         const visibleConversations = isCollapsed || remainingVisibleCount <= 0
           ? []
           : section.conversations.slice(0, remainingVisibleCount);
-        this.renderLinkedContentSection(
+        this.#renderLinkedContentSection(
           pinnedList,
           section,
           visibleConversations,
@@ -927,7 +927,7 @@ export class ConversationController {
         Math.max(0, visibleCount - renderedConversationCount),
       );
       for (const conversation of visiblePinnedConversations) {
-        this.renderHistoryConversationItem(pinnedList, conversation, options);
+        this.#renderHistoryConversationItem(pinnedList, conversation, options);
       }
       renderedConversationCount += visiblePinnedConversations.length;
     }
@@ -942,7 +942,7 @@ export class ConversationController {
       if (organization !== 'linked-content' && visibleConversations.length === 0) break;
 
       if (organization === 'linked-content') {
-        this.renderLinkedContentSection(
+        this.#renderLinkedContentSection(
           sessionList,
           section,
           visibleConversations,
@@ -954,7 +954,7 @@ export class ConversationController {
         );
       } else {
         for (const conversation of visibleConversations) {
-          this.renderHistoryConversationItem(sessionList, conversation, options);
+          this.#renderHistoryConversationItem(sessionList, conversation, options);
         }
       }
       renderedConversationCount += visibleConversations.length;
@@ -973,7 +973,7 @@ export class ConversationController {
           options.onRerender();
           return;
         }
-        this.renderHistoryItems(container, {
+        this.#renderHistoryItems(container, {
           ...options,
           visibleCount: nextVisibleCount,
         });
@@ -989,7 +989,7 @@ export class ConversationController {
     );
   }
 
-  private renderLinkedContentSection(
+  #renderLinkedContentSection(
     list: HTMLElement,
     section: SessionListSection,
     visibleConversations: readonly ConversationMeta[],
@@ -998,9 +998,9 @@ export class ConversationController {
     linkedContentConversations: readonly ConversationMeta[],
   ): void {
     const conversationStatuses = section.conversations.map(conversation => (
-      this.getHistoryConversationStatusForMetadata(conversation, options)
+      this.#getHistoryConversationStatusForMetadata(conversation, options)
     ));
-    const groupStatusKind = this.getGroupSessionStatusIndicatorKind(
+    const groupStatusKind = this.#getGroupSessionStatusIndicatorKind(
       conversationStatuses,
       options,
     );
@@ -1048,7 +1048,7 @@ export class ConversationController {
     }
     const groupStatusIndicator = groupStatusKind === null
       ? null
-      : this.createSessionStatusIndicator(
+      : this.#createSessionStatusIndicator(
           groupHeader,
           groupStatusKind,
           true,
@@ -1165,7 +1165,7 @@ export class ConversationController {
         if (canArchiveLinkedContentSessions && onSetConversationsArchived) {
           const archivableConversationIds = linkedContentConversations
             .filter(conversation => (
-              !this.getHistoryConversationStatusForMetadata(conversation, options).isRunning
+              !this.#getHistoryConversationStatusForMetadata(conversation, options).isRunning
             ))
             .map(conversation => conversation.id);
           if (canToggleLinkedContentPin) menu.addSeparator();
@@ -1188,11 +1188,11 @@ export class ConversationController {
     }
 
     for (const conversation of visibleConversations) {
-      this.renderHistoryConversationItem(groupBody, conversation, options);
+      this.#renderHistoryConversationItem(groupBody, conversation, options);
     }
   }
 
-  private captureHistoryScrollAnchors(list: HTMLElement): HistoryScrollAnchor[] {
+  #captureHistoryScrollAnchors(list: HTMLElement): HistoryScrollAnchor[] {
     const listRect = list.getBoundingClientRect();
     if (listRect.height <= 0) return [];
 
@@ -1239,14 +1239,14 @@ export class ConversationController {
     }
   }
 
-  private renderHistoryConversationItem(
+  #renderHistoryConversationItem(
     list: HTMLElement,
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
   ): void {
     if (options.signal?.aborted) return;
 
-    const conversationStatus = this.getHistoryConversationStatusForMetadata(
+    const conversationStatus = this.#getHistoryConversationStatusForMetadata(
       conversation,
       options,
     );
@@ -1258,7 +1258,7 @@ export class ConversationController {
     const showReviewState = hasAttentionState
       && conversationStatus.attention?.kind === 'review'
       && conversationStatus.attention.outcome === 'completed';
-    const sessionStatusKind = this.getSessionStatusIndicatorKind(
+    const sessionStatusKind = this.#getSessionStatusIndicatorKind(
       conversationStatus,
       options,
     );
@@ -1288,7 +1288,7 @@ export class ConversationController {
     }
 
     const iconEl = item.createDiv({ cls: 'claudian-history-item-icon' });
-    setIcon(iconEl, this.getHistoryItemIcon(openState, showRunningPresentation));
+    setIcon(iconEl, this.#getHistoryItemIcon(openState, showRunningPresentation));
 
     const content = item.createDiv({ cls: 'claudian-history-item-content' });
     const titleEl = content.createDiv({
@@ -1302,13 +1302,13 @@ export class ConversationController {
       if (isSelectable) {
         focusTarget.setAttribute('role', 'button');
       }
-      this.attachSessionMetadataPopover(item, focusTarget, conversation, options);
+      this.#attachSessionMetadataPopover(item, focusTarget, conversation, options);
     } else {
       content.createDiv({
         cls: 'claudian-history-item-date',
-        text: this.getHistoryItemStatusText(
+        text: this.#getHistoryItemStatusText(
           conversationStatus,
-          this.getHistoryItemTimestamp(conversation, options),
+          this.#getHistoryItemTimestamp(conversation, options),
           options.showOpenStateLabels ?? true,
         ),
       });
@@ -1317,7 +1317,7 @@ export class ConversationController {
     if (isSelectable) {
       const selectConversation = (): void => {
         runConversationAction(
-          () => this.runHistoryAction(
+          () => this.#runHistoryAction(
             () => options.onSelectConversation(conversation.id),
             'Failed to load conversation',
           ),
@@ -1337,10 +1337,10 @@ export class ConversationController {
 
       content.addEventListener('click', (event) => {
         event.stopPropagation();
-        if (this.isHistoryNewTabModifierClick(event) && options.onOpenConversationInNewTab) {
+        if (this.#isHistoryNewTabModifierClick(event) && options.onOpenConversationInNewTab) {
           event.preventDefault();
           runConversationAction(
-            () => this.runHistoryAction(
+            () => this.#runHistoryAction(
               () => options.onOpenConversationInNewTab?.(conversation.id, true),
               'Failed to load conversation',
             ),
@@ -1358,7 +1358,7 @@ export class ConversationController {
           event.preventDefault();
           event.stopPropagation();
           runConversationAction(
-            () => this.runHistoryAction(
+            () => this.#runHistoryAction(
               () => options.onOpenConversationInNewTab?.(conversation.id, true),
               'Failed to load conversation',
             ),
@@ -1371,7 +1371,7 @@ export class ConversationController {
     item.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.showHistoryContextMenu(
+      this.#showHistoryContextMenu(
         item,
         conversation,
         isCurrent,
@@ -1409,7 +1409,7 @@ export class ConversationController {
       openInNewTabBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         runConversationAction(
-          () => this.runHistoryAction(
+          () => this.#runHistoryAction(
             () => options.onOpenConversationInNewTab?.(conversation.id, true),
             'Failed to load conversation',
           ),
@@ -1427,8 +1427,8 @@ export class ConversationController {
       deleteBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         runConversationAction(
-          () => this.runHistoryAction(
-            () => this.deleteHistoryConversation(conversation.id, options),
+          () => this.#runHistoryAction(
+            () => this.#deleteHistoryConversation(conversation.id, options),
             'Failed to delete conversation',
           ),
           'Failed to delete conversation',
@@ -1445,7 +1445,7 @@ export class ConversationController {
       assignDeviceBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         runConversationAction(
-          () => this.runHistoryAction(
+          () => this.#runHistoryAction(
             () => options.onAssignConversationToDevice?.(conversation.id),
             'Failed to assign session to this device',
           ),
@@ -1466,7 +1466,7 @@ export class ConversationController {
           pinBtn.addEventListener('click', (event) => {
             event.stopPropagation();
             runConversationAction(
-              () => this.runHistoryAction(
+              () => this.#runHistoryAction(
                 () => options.onSetConversationPinned?.(conversation.id, !isPinned),
                 isPinned ? 'Failed to unpin session' : 'Failed to pin session',
               ),
@@ -1489,7 +1489,7 @@ export class ConversationController {
           archiveBtn.addEventListener('click', (event) => {
             event.stopPropagation();
             runConversationAction(
-              () => this.runHistoryAction(
+              () => this.#runHistoryAction(
                 () => options.onSetConversationArchived?.(conversation.id, true),
                 'Failed to archive session',
               ),
@@ -1507,7 +1507,7 @@ export class ConversationController {
       restoreBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         runConversationAction(
-          () => this.runHistoryAction(
+          () => this.#runHistoryAction(
             () => options.onSetConversationArchived?.(conversation.id, false),
             'Failed to restore session',
           ),
@@ -1521,17 +1521,17 @@ export class ConversationController {
       renameBtn.setAttribute('aria-label', 'Rename');
       renameBtn.addEventListener('click', (event) => {
         event.stopPropagation();
-        this.showRenameEditor(item, conversation.id, conversation.title, options);
+        this.#showRenameEditor(item, conversation.id, conversation.title, options);
       });
       createDeleteButton();
     }
 
     if (sessionStatusKind) {
-      this.createSessionStatusIndicator(item, sessionStatusKind);
+      this.#createSessionStatusIndicator(item, sessionStatusKind);
     }
   }
 
-  private getSessionStatusIndicatorKind(
+  #getSessionStatusIndicatorKind(
     status: HistoryConversationStatus,
     options: HistoryRenderOptions,
   ): SessionStatusIndicatorKind | null {
@@ -1553,12 +1553,12 @@ export class ConversationController {
     return null;
   }
 
-  private getGroupSessionStatusIndicatorKind(
+  #getGroupSessionStatusIndicatorKind(
     statuses: readonly HistoryConversationStatus[],
     options: HistoryRenderOptions,
   ): SessionStatusIndicatorKind | null {
     const kinds = statuses.map(status => (
-      this.getSessionStatusIndicatorKind(status, options)
+      this.#getSessionStatusIndicatorKind(status, options)
     ));
     if (kinds.includes('action-required')) return 'action-required';
     if (kinds.includes('running')) return 'running';
@@ -1566,7 +1566,7 @@ export class ConversationController {
     return null;
   }
 
-  private createSessionStatusIndicator(
+  #createSessionStatusIndicator(
     parent: HTMLElement,
     kind: SessionStatusIndicatorKind,
     isGroup = false,
@@ -1607,7 +1607,7 @@ export class ConversationController {
     return indicator;
   }
 
-  private getHistoryConversationStatusForMetadata(
+  #getHistoryConversationStatusForMetadata(
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
   ): HistoryConversationStatus {
@@ -1620,20 +1620,20 @@ export class ConversationController {
     );
   }
 
-  private attachSessionMetadataPopover(
+  #attachSessionMetadataPopover(
     item: HTMLElement,
     focusTarget: HTMLElement,
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
   ): void {
     item.addEventListener('mouseenter', () => {
-      this.showSessionMetadataPopover(item, focusTarget, conversation, options);
+      this.#showSessionMetadataPopover(item, focusTarget, conversation, options);
     });
     item.addEventListener('mouseleave', () => {
-      this.scheduleSessionMetadataPopoverClose(item);
+      this.#scheduleSessionMetadataPopoverClose(item);
     });
     focusTarget.addEventListener('focusin', () => {
-      this.showSessionMetadataPopover(item, focusTarget, conversation, options);
+      this.#showSessionMetadataPopover(item, focusTarget, conversation, options);
     });
     focusTarget.addEventListener('focusout', () => {
       queueMicrotask(() => {
@@ -1641,28 +1641,28 @@ export class ConversationController {
         if (activeElement && focusTarget.contains(activeElement)) return;
         if (typeof item.matches === 'function' && item.matches(':hover')) return;
         if (this.metadataPopoverTarget === item) {
-          this.scheduleSessionMetadataPopoverClose(item);
+          this.#scheduleSessionMetadataPopoverClose(item);
         }
       });
     });
     focusTarget.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape' || this.metadataPopoverTarget !== item) return;
       event.stopPropagation();
-      this.closeSessionMetadataPopover();
+      this.#closeSessionMetadataPopover();
     });
   }
 
-  private showSessionMetadataPopover(
+  #showSessionMetadataPopover(
     item: HTMLElement,
     descriptionTarget: HTMLElement,
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
   ): void {
     if (this.metadataPopoverEl && this.metadataPopoverTarget === item) {
-      this.cancelSessionMetadataPopoverClose();
+      this.#cancelSessionMetadataPopoverClose();
       return;
     }
-    this.closeSessionMetadataPopover();
+    this.#closeSessionMetadataPopover();
 
     const document = item.ownerDocument;
     const body = document.body;
@@ -1686,7 +1686,7 @@ export class ConversationController {
         language,
       });
     if (hasLinkedContent) {
-      this.renderSessionMetadataRow(
+      this.#renderSessionMetadataRow(
         hoverEl,
         'file-text',
         null,
@@ -1697,30 +1697,30 @@ export class ConversationController {
         },
       );
     }
-    this.renderSessionMetadataProviderRow(
+    this.#renderSessionMetadataProviderRow(
       hoverEl,
       conversation,
       options.getProviderIcon?.(conversation),
       options.getModelLabel?.(conversation) ?? conversation.selectedModel ?? '',
     );
-    this.renderSessionMetadataRow(
+    this.#renderSessionMetadataRow(
       hoverEl,
       'calendar-days',
       'Created',
       this.formatMetadataDate(conversation.createdAt),
     );
-    this.renderSessionMetadataRow(
+    this.#renderSessionMetadataRow(
       hoverEl,
       'clock-3',
       'Last active',
       this.formatMetadataDateTime(conversation.lastActivityAt),
     );
 
-    this.positionSessionMetadataPopover(item, hoverEl);
-    const cancelClose = (): void => this.cancelSessionMetadataPopoverClose();
-    const scheduleClose = (): void => this.scheduleSessionMetadataPopoverClose(item);
+    this.#positionSessionMetadataPopover(item, hoverEl);
+    const cancelClose = (): void => this.#cancelSessionMetadataPopoverClose();
+    const scheduleClose = (): void => this.#scheduleSessionMetadataPopoverClose(item);
     const closeForViewportChange = (): void => {
-      if (this.metadataPopoverEl === hoverEl) this.closeSessionMetadataPopover();
+      if (this.metadataPopoverEl === hoverEl) this.#closeSessionMetadataPopover();
     };
     const closeForExternalScroll = (event: Event): void => {
       if (event.composedPath().includes(hoverEl)) return;
@@ -1734,7 +1734,7 @@ export class ConversationController {
     const signal = options.signal;
     const closeOnAbort = (): void => {
       if (this.metadataPopoverEl === hoverEl) {
-        this.closeSessionMetadataPopover();
+        this.#closeSessionMetadataPopover();
       }
     };
     signal?.addEventListener('abort', closeOnAbort, { once: true });
@@ -1750,7 +1750,7 @@ export class ConversationController {
     };
   }
 
-  private positionSessionMetadataPopover(target: HTMLElement, popover: HTMLElement): void {
+  #positionSessionMetadataPopover(target: HTMLElement, popover: HTMLElement): void {
     const document = target.ownerDocument;
     const targetRect = target.getBoundingClientRect();
     const popoverRect = popover.getBoundingClientRect();
@@ -1780,22 +1780,22 @@ export class ConversationController {
     popover.style.top = `${Math.round(top)}px`;
   }
 
-  private scheduleSessionMetadataPopoverClose(target: HTMLElement): void {
+  #scheduleSessionMetadataPopoverClose(target: HTMLElement): void {
     if (this.metadataPopoverTarget !== target) return;
-    this.cancelSessionMetadataPopoverClose();
+    this.#cancelSessionMetadataPopoverClose();
     const window = target.ownerDocument.defaultView;
     if (!window) {
-      this.closeSessionMetadataPopover();
+      this.#closeSessionMetadataPopover();
       return;
     }
     this.metadataPopoverCloseTimer = window.setTimeout(() => {
       if (this.metadataPopoverTarget === target) {
-        this.closeSessionMetadataPopover();
+        this.#closeSessionMetadataPopover();
       }
     }, 120);
   }
 
-  private cancelSessionMetadataPopoverClose(): void {
+  #cancelSessionMetadataPopoverClose(): void {
     if (this.metadataPopoverCloseTimer === null) return;
     this.metadataPopoverTarget?.ownerDocument.defaultView?.clearTimeout(
       this.metadataPopoverCloseTimer,
@@ -1803,7 +1803,7 @@ export class ConversationController {
     this.metadataPopoverCloseTimer = null;
   }
 
-  private renderSessionMetadataRow(
+  #renderSessionMetadataRow(
     parent: HTMLElement,
     icon: string,
     label: string | null,
@@ -1831,7 +1831,7 @@ export class ConversationController {
     if (options.title) valueEl.setAttribute('title', options.title);
   }
 
-  private renderSessionMetadataProviderRow(
+  #renderSessionMetadataProviderRow(
     parent: HTMLElement,
     conversation: ConversationMeta,
     icon: ProviderIconSvg | null | undefined,
@@ -1859,8 +1859,8 @@ export class ConversationController {
     });
   }
 
-  private closeSessionMetadataPopover(): void {
-    this.cancelSessionMetadataPopoverClose();
+  #closeSessionMetadataPopover(): void {
+    this.#cancelSessionMetadataPopoverClose();
     const popover = this.metadataPopoverEl;
     this.metadataPopoverCleanup?.();
     this.metadataPopoverCleanup = null;
@@ -1870,7 +1870,7 @@ export class ConversationController {
     popover?.remove();
   }
 
-  private getHistoryItemTimestamp(
+  #getHistoryItemTimestamp(
     conversation: ConversationMeta,
     options: HistoryRenderOptions,
   ): number {
@@ -1892,7 +1892,7 @@ export class ConversationController {
     };
   }
 
-  private getHistoryItemStatusText(
+  #getHistoryItemStatusText(
     status: HistoryConversationStatus,
     timestamp: number,
     showOpenStateLabels: boolean,
@@ -1910,7 +1910,7 @@ export class ConversationController {
 
     if (isRunning) {
       if (openState === 'closed') return 'Running';
-      return `Running in ${this.getHistoryTabLabel(status)}`;
+      return `Running in ${this.#getHistoryTabLabel(status)}`;
     }
 
     switch (openState) {
@@ -1919,13 +1919,13 @@ export class ConversationController {
           ? `Current tab ${status.tabIndex}`
           : 'Current session';
       case 'open':
-        return `Open in ${this.getHistoryTabLabel(status)}`;
+        return `Open in ${this.#getHistoryTabLabel(status)}`;
       case 'closed':
         return this.formatDate(timestamp);
     }
   }
 
-  private getHistoryTabLabel(status: HistoryConversationStatus): string {
+  #getHistoryTabLabel(status: HistoryConversationStatus): string {
     if (typeof status.tabIndex === 'number') {
       return `tab ${status.tabIndex}`;
     }
@@ -1937,7 +1937,7 @@ export class ConversationController {
     return 'tab';
   }
 
-  private getHistoryItemIcon(
+  #getHistoryItemIcon(
     openState: HistoryConversationOpenState,
     isRunning: boolean,
   ): string {
@@ -1946,11 +1946,11 @@ export class ConversationController {
     return 'message-square';
   }
 
-  private isHistoryNewTabModifierClick(event: MouseEvent): boolean {
+  #isHistoryNewTabModifierClick(event: MouseEvent): boolean {
     return !event.altKey && !event.shiftKey && (event.metaKey || event.ctrlKey);
   }
 
-  private async runHistoryAction(
+  async #runHistoryAction(
     action: () => Promise<void> | void,
     errorMessage: string,
   ): Promise<void> {
@@ -1961,7 +1961,7 @@ export class ConversationController {
     }
   }
 
-  private showHistoryContextMenu(
+  #showHistoryContextMenu(
     item: HTMLElement,
     conversation: ConversationMeta,
     isCurrent: boolean,
@@ -1982,7 +1982,7 @@ export class ConversationController {
         menu.addItem((menuItem) => menuItem
           .setTitle('Open in new tab')
           .onClick(() => {
-            void this.runHistoryAction(
+            void this.#runHistoryAction(
               () => options.onOpenConversationInNewTab?.(conversationId, true),
               'Failed to load conversation',
             );
@@ -1990,7 +1990,7 @@ export class ConversationController {
         menu.addItem((menuItem) => menuItem
           .setTitle('Open in background tab')
           .onClick(() => {
-            void this.runHistoryAction(
+            void this.#runHistoryAction(
               () => options.onOpenConversationInNewTab?.(conversationId, false),
               'Failed to load conversation',
             );
@@ -1999,7 +1999,7 @@ export class ConversationController {
         menu.addItem((menuItem) => menuItem
           .setTitle('Switch to open session')
           .onClick(() => {
-            void this.runHistoryAction(
+            void this.#runHistoryAction(
               () => options.onSelectConversation(conversationId),
               'Failed to load conversation',
             );
@@ -2011,7 +2011,7 @@ export class ConversationController {
       menu.addItem((menuItem) => menuItem
         .setTitle('Restore')
         .onClick(() => {
-          void this.runHistoryAction(
+          void this.#runHistoryAction(
             () => options.onSetConversationArchived?.(conversationId, false),
             'Failed to restore session',
           );
@@ -2019,8 +2019,8 @@ export class ConversationController {
       menu.addItem((menuItem) => menuItem
         .setTitle('Delete')
         .onClick(() => {
-          void this.runHistoryAction(
-            () => this.deleteHistoryConversation(conversationId, options),
+          void this.#runHistoryAction(
+            () => this.#deleteHistoryConversation(conversationId, options),
             'Failed to delete conversation',
           );
         }));
@@ -2033,7 +2033,7 @@ export class ConversationController {
       menu.addItem((menuItem) => menuItem
         .setTitle(isPinned ? 'Unpin' : 'Pin')
         .onClick(() => {
-          void this.runHistoryAction(
+          void this.#runHistoryAction(
             () => options.onSetConversationPinned?.(conversationId, !isPinned),
             isPinned ? 'Failed to unpin session' : 'Failed to pin session',
           );
@@ -2044,7 +2044,7 @@ export class ConversationController {
       menu.addItem((menuItem) => menuItem
         .setTitle('Rename')
         .onClick(() => {
-          this.showRenameEditor(item, conversationId, title, options);
+          this.#showRenameEditor(item, conversationId, title, options);
         }));
       menu.addItem((menuItem) => {
         menuItem
@@ -2052,7 +2052,7 @@ export class ConversationController {
           .setDisabled(isRunning);
         if (!isRunning) {
           menuItem.onClick(() => {
-            void this.runHistoryAction(
+            void this.#runHistoryAction(
               () => options.onSetConversationArchived?.(conversationId, true),
               'Failed to archive session',
             );
@@ -2066,13 +2066,13 @@ export class ConversationController {
     menu.addItem((menuItem) => menuItem
       .setTitle('Rename')
       .onClick(() => {
-        this.showRenameEditor(item, conversationId, title, options);
+        this.#showRenameEditor(item, conversationId, title, options);
       }));
     menu.addItem((menuItem) => menuItem
       .setTitle('Delete')
       .onClick(() => {
-        void this.runHistoryAction(
-          () => this.deleteHistoryConversation(conversationId, options),
+        void this.#runHistoryAction(
+          () => this.#deleteHistoryConversation(conversationId, options),
           'Failed to delete conversation',
         );
       }));
@@ -2080,7 +2080,7 @@ export class ConversationController {
     menu.showAtMouseEvent(event);
   }
 
-  private async deleteHistoryConversation(
+  async #deleteHistoryConversation(
     conversationId: string,
     options: HistoryRenderOptions,
   ): Promise<void> {
@@ -2095,14 +2095,14 @@ export class ConversationController {
     }
   }
 
-  private showRenameEditor(
+  #showRenameEditor(
     item: HTMLElement,
     convId: string,
     currentTitle: string,
     options: HistoryRenderOptions,
   ): void {
     const beginRename = (targetItem: HTMLElement) => {
-      this.showRenameInput(targetItem, convId, currentTitle, options);
+      this.#showRenameInput(targetItem, convId, currentTitle, options);
     };
     if (options.onRequestInlineRename) {
       options.onRequestInlineRename({
@@ -2116,7 +2116,7 @@ export class ConversationController {
   }
 
   /** Shows inline rename input for a conversation. */
-  private showRenameInput(
+  #showRenameInput(
     item: HTMLElement,
     convId: string,
     currentTitle: string,
@@ -2374,7 +2374,7 @@ export class ConversationController {
     container: HTMLElement,
     options: HistorySurfaceRenderOptions,
   ): void {
-    this.renderHistoryItems(container, {
+    this.#renderHistoryItems(container, {
       ...options,
       onRerender: options.onRerender
         ?? (() => this.renderHistoryDropdown(container, options)),

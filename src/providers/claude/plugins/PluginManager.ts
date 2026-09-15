@@ -84,7 +84,7 @@ export class PluginManager {
     if (this.loadPromise) {
       return this.loadPromise;
     }
-    const promise = this.loadPluginsInternal();
+    const promise = this.#loadPluginsInternal();
     this.loadPromise = promise;
     try {
       await promise;
@@ -95,12 +95,12 @@ export class PluginManager {
     }
   }
 
-  private async loadPluginsInternal(): Promise<void> {
+  async #loadPluginsInternal(): Promise<void> {
     const configDir = this.resolveConfigDir();
     const [installedPlugins, globalSettings, projectSettings, normalizedVaultPath] = await Promise.all([
       readJsonFile<InstalledPluginsFile>(path.join(configDir, 'plugins', 'installed_plugins.json')),
       readJsonFile<SettingsFile>(path.join(configDir, 'settings.json')),
-      this.loadProjectSettings(),
+      this.#loadProjectSettings(),
       normalizePathForComparison(this.vaultPath),
     ]);
 
@@ -142,7 +142,7 @@ export class PluginManager {
     });
   }
 
-  private async loadProjectSettings(): Promise<SettingsFile | null> {
+  async #loadProjectSettings(): Promise<SettingsFile | null> {
     const projectSettingsPath = path.join(this.vaultPath, '.claude', 'settings.json');
     return readJsonFile(projectSettingsPath);
   }
@@ -183,7 +183,7 @@ export class PluginManager {
       return;
     }
 
-    await this.persistEnabledState(plugin, !plugin.enabled);
+    await this.#persistEnabledState(plugin, !plugin.enabled);
   }
 
   async enablePlugin(pluginId: string): Promise<void> {
@@ -192,7 +192,7 @@ export class PluginManager {
       return;
     }
 
-    await this.persistEnabledState(plugin, true);
+    await this.#persistEnabledState(plugin, true);
   }
 
   async disablePlugin(pluginId: string): Promise<void> {
@@ -201,10 +201,10 @@ export class PluginManager {
       return;
     }
 
-    await this.persistEnabledState(plugin, false);
+    await this.#persistEnabledState(plugin, false);
   }
 
-  private async persistEnabledState(plugin: PluginInfo, enabled: boolean): Promise<void> {
+  async #persistEnabledState(plugin: PluginInfo, enabled: boolean): Promise<void> {
     const previous = plugin.enabled;
     plugin.enabled = enabled;
     try {

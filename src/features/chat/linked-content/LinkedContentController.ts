@@ -111,15 +111,15 @@ export class LinkedContentController {
   }
 
   resetAutoDraft(): void {
-    this.assertLive();
+    this.#assertLive();
     this.activeSubmission = null;
     this.mode = 'auto-draft';
-    this.path = this.eligibleActiveFilePath(this.app.workspace.getActiveFile());
+    this.path = this.#eligibleActiveFilePath(this.app.workspace.getActiveFile());
     this.publish();
   }
 
   selectExplicit(path: string | null): void {
-    this.assertLive();
+    this.#assertLive();
     if (this.mode === 'submitting') {
       throw new Error('Linked content cannot be changed while submitting');
     }
@@ -133,18 +133,18 @@ export class LinkedContentController {
 
   handleActiveFileChanged(file: TFile | null, isActiveOwner: boolean): void {
     if (this.destroyed || !isActiveOwner || this.mode !== 'auto-draft') return;
-    this.reconcileAutoDraftPath(file);
+    this.#reconcileAutoDraftPath(file);
   }
 
   handleActiveFileMetadataChanged(file: TFile | null): void {
     if (this.destroyed || this.mode !== 'auto-draft') return;
     const activeFile = this.app.workspace.getActiveFile();
     if (file !== null && activeFile?.path !== file.path) return;
-    this.reconcileAutoDraftPath(activeFile);
+    this.#reconcileAutoDraftPath(activeFile);
   }
 
   lock(path: string | undefined): void {
-    this.assertLive();
+    this.#assertLive();
     this.activeSubmission = null;
     this.mode = 'locked';
     this.path = path === undefined ? null : assertLinkedContentPath(path);
@@ -152,7 +152,7 @@ export class LinkedContentController {
   }
 
   beginSubmission(): LinkedContentSubmissionToken {
-    this.assertLive();
+    this.#assertLive();
     if (this.mode !== 'auto-draft' && this.mode !== 'explicit-draft') {
       throw new Error('Linked content submission requires an editable draft');
     }
@@ -167,11 +167,11 @@ export class LinkedContentController {
   }
 
   commitSubmission(token: LinkedContentSubmissionToken): LinkedContentSubmissionSettlement {
-    this.assertLive();
-    const submission = this.requireSubmission(token);
+    this.#assertLive();
+    const submission = this.#requireSubmission(token);
     this.mode = 'locked';
     this.path = token.path ?? null;
-    for (const event of submission.queuedEvents) this.applyPathEvent(event);
+    for (const event of submission.queuedEvents) this.#applyPathEvent(event);
     this.activeSubmission = null;
     this.publish();
     return {
@@ -181,11 +181,11 @@ export class LinkedContentController {
   }
 
   rollbackSubmission(token: LinkedContentSubmissionToken): void {
-    this.assertLive();
-    const submission = this.requireSubmission(token);
+    this.#assertLive();
+    const submission = this.#requireSubmission(token);
     this.mode = submission.checkpoint.mode;
     this.path = submission.checkpoint.path;
-    for (const event of submission.queuedEvents) this.applyPathEvent(event);
+    for (const event of submission.queuedEvents) this.#applyPathEvent(event);
     this.activeSubmission = null;
     this.publish();
   }
@@ -206,7 +206,7 @@ export class LinkedContentController {
       this.activeSubmission.queuedEvents.push(event);
       return;
     }
-    if (this.applyPathEvent(event)) this.publish();
+    if (this.#applyPathEvent(event)) this.publish();
   }
 
   handleDeleted(path: string, includeDescendants = false): void {
@@ -220,7 +220,7 @@ export class LinkedContentController {
       this.activeSubmission.queuedEvents.push(event);
       return;
     }
-    if (this.applyPathEvent(event)) this.publish();
+    if (this.#applyPathEvent(event)) this.publish();
   }
 
   handleCreated(path: string): void {
@@ -230,7 +230,7 @@ export class LinkedContentController {
   }
 
   mountWelcome(welcomeEl: HTMLElement): void {
-    this.assertLive();
+    this.#assertLive();
     this.selector?.destroy();
     const mountEl = welcomeEl.querySelector<HTMLElement>('.claudian-welcome-linked-content');
     if (!mountEl) {
@@ -240,7 +240,7 @@ export class LinkedContentController {
       listItems: () => this.pickerSource.list(),
       onSelect: path => this.selectExplicit(path),
     });
-    this.renderSelector();
+    this.#renderSelector();
   }
 
   unmountWelcome(): void {
@@ -249,14 +249,14 @@ export class LinkedContentController {
   }
 
   mountContextTray(contextTray: ComposerContextTray): void {
-    this.assertLive();
+    this.#assertLive();
     this.chip?.destroy();
     this.chip = new LinkedContentChip(contextTray, () => {
       void this.activateCurrentContent();
     }, () => {
       this.selectExplicit(null);
     });
-    this.renderChip();
+    this.#renderChip();
   }
 
   unmountContextTray(): void {
@@ -273,7 +273,7 @@ export class LinkedContentController {
     }
     if (content.target instanceof TFile) {
       try {
-        await this.revealFile(content.target);
+        await this.#revealFile(content.target);
       } catch (error) {
         new Notice(
           `Failed to open Linked content: ${error instanceof Error ? error.message : String(error)}`,
@@ -281,7 +281,7 @@ export class LinkedContentController {
       }
       return;
     }
-    if (content.target instanceof TFolder) await this.revealFolder(content.target);
+    if (content.target instanceof TFolder) await this.#revealFolder(content.target);
   }
 
   destroy(): void {
@@ -292,14 +292,14 @@ export class LinkedContentController {
     this.unmountContextTray();
   }
 
-  private requireSubmission(token: LinkedContentSubmissionToken): ActiveSubmission {
+  #requireSubmission(token: LinkedContentSubmissionToken): ActiveSubmission {
     if (!this.activeSubmission || this.activeSubmission.token !== token) {
       throw new Error('Stale Linked content submission');
     }
     return this.activeSubmission;
   }
 
-  private applyPathEvent(event: LinkedContentPathEvent): boolean {
+  #applyPathEvent(event: LinkedContentPathEvent): boolean {
     if (this.path === null) return false;
     if (event.kind === 'rename') {
       const renamed = rewritePath(
@@ -319,25 +319,25 @@ export class LinkedContentController {
     return true;
   }
 
-  private reconcileAutoDraftPath(file: TFile | null): void {
-    const nextPath = this.eligibleActiveFilePath(file);
+  #reconcileAutoDraftPath(file: TFile | null): void {
+    const nextPath = this.#eligibleActiveFilePath(file);
     if (nextPath === this.path) return;
     this.path = nextPath;
     this.publish();
   }
 
-  private eligibleActiveFilePath(file: TFile | null): string | null {
+  #eligibleActiveFilePath(file: TFile | null): string | null {
     if (
       !file
       || file.extension.toLocaleLowerCase() !== 'md'
-      || this.getExcludedTagState(file) !== 'not-excluded'
+      || this.#getExcludedTagState(file) !== 'not-excluded'
     ) {
       return null;
     }
     return normalizeLinkedContentPath(file.path);
   }
 
-  private getExcludedTagState(file: TFile): ExcludedTagState {
+  #getExcludedTagState(file: TFile): ExcludedTagState {
     const excludedTags = this.options.getExcludedTags();
     if (excludedTags.length === 0) return 'not-excluded';
     const cache = this.app.metadataCache.getFileCache(file);
@@ -360,14 +360,14 @@ export class LinkedContentController {
 
   private publish(): void {
     const snapshot = this.getSnapshot();
-    const presentation = this.derivePresentation(snapshot.path);
-    this.renderSelector(snapshot, presentation);
-    this.renderChip(presentation);
+    const presentation = this.#derivePresentation(snapshot.path);
+    this.#renderSelector(snapshot, presentation);
+    this.#renderChip(presentation);
   }
 
-  private renderSelector(
+  #renderSelector(
     snapshot = this.getSnapshot(),
-    presentation = this.derivePresentation(snapshot.path),
+    presentation = this.#derivePresentation(snapshot.path),
   ): void {
     this.selector?.render({
       mode: snapshot.mode,
@@ -378,16 +378,16 @@ export class LinkedContentController {
     });
   }
 
-  private renderChip(presentation = this.derivePresentation(this.path)): void {
+  #renderChip(presentation = this.#derivePresentation(this.path)): void {
     const removable = this.mode === 'auto-draft' || this.mode === 'explicit-draft';
     this.chip?.render(presentation, removable);
   }
 
-  private derivePresentation(path: string | null): LinkedContentPresentation | null {
+  #derivePresentation(path: string | null): LinkedContentPresentation | null {
     return path ? deriveLinkedContentPresentation(this.app, path) : null;
   }
 
-  private async revealFile(file: TFile): Promise<void> {
+  async #revealFile(file: TFile): Promise<void> {
     const workspace = this.app.workspace;
     let existingLeaf: WorkspaceLeaf | null = null;
     workspace.iterateRootLeaves(leaf => {
@@ -409,7 +409,7 @@ export class LinkedContentController {
     await workspace.getLeaf('tab').openFile(file);
   }
 
-  private async revealFolder(folder: TFolder): Promise<void> {
+  async #revealFolder(folder: TFolder): Promise<void> {
     type FileExplorerView = {
       revealInFolder?: (target: TFolder) => Promise<void> | void;
       revealFile?: (target: TFolder) => Promise<void> | void;
@@ -429,7 +429,7 @@ export class LinkedContentController {
     await reveal?.call(leaf.view, folder);
   }
 
-  private assertLive(): void {
+  #assertLive(): void {
     if (this.destroyed) throw new Error('Linked content controller is destroyed');
   }
 }

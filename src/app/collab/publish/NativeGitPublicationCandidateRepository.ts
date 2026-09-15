@@ -1,3 +1,6 @@
+import { copyFile, mkdtemp, rm } from 'node:fs/promises';
+import path from 'node:path';
+
 import { collabMemberRef, type CollabOperationId, isCollabGitOid, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import { COLLAB_ORIGIN_MAIN_REF } from '@/app/collab/git/collabGitRefs';
@@ -6,7 +9,6 @@ import type {
   GitCommitTreeInput,
   GitMergeTreeResult,
   GitRefUpdateResult,
-  GitRepositoryService,
   GitStatusEntry,
 } from '@/app/collab/git/GitRepositoryService';
 import type {
@@ -82,12 +84,50 @@ export class NativeGitPublicationCandidateRepository {
     private readonly runner: Pick<GitCommandRunner, 'run'>,
   ) {}
 
+  async hasIncomingChanges(
+    repositoryPath: string,
+    contributionHeadOid: string,
+    currentMainOid: string,
+    includeWorkingTree = false,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+    requireOid(contributionHeadOid, 'publication-contribution-head-invalid');
+    requireOid(currentMainOid, 'publication-current-main-invalid');
+    if (includeWorkingTree) {
+      const temporaryRoot = await mkdtemp(path.join(repositoryPath, '.git', 'update-preview-'));
+      const indexFilePath = path.join(temporaryRoot, 'index');
+      try {
+        await copyFile(path.join(repositoryPath, '.git', 'index'), indexFilePath);
+        await this.runner.run({ args: ['add', '--all'], cwd: repositoryPath, indexFilePath, signal, suppressHooks: true });
+        const tree = await this.runner.run({ args: ['write-tree'], cwd: repositoryPath, indexFilePath, signal, suppressHooks: true, maxStdoutBytes: 128 });
+        // This object has no ref: the real HEAD, index and working files remain unchanged.
+        const preview = await this.runner.run({
+          args: ['commit-tree', requireOid(tree.stdout.toString('utf8').trim(), 'update-preview-tree-invalid'), '-p', contributionHeadOid],
+          cwd: repositoryPath, identity: CANDIDATE_IDENTITY, stdin: 'Preview local update\n', signal, maxStdoutBytes: 128,
+        });
+        return this.hasIncomingChanges(repositoryPath,
+          requireOid(preview.stdout.toString('utf8').trim(), 'update-preview-head-invalid'), currentMainOid, false, signal);
+      } finally {
+        await rm(temporaryRoot, { recursive: true, force: true });
+      }
+    }
+    const merge = await this.git.mergeTree(repositoryPath, currentMainOid, contributionHeadOid);
+    if (signal?.aborted) throw new CollabError({ code: 'cancelled' });
+    if (merge.kind !== 'clean') return true;
+    const headTree = await this.runner.run({
+      args: ['show', '-s', '--format=%T', contributionHeadOid],
+      cwd: repositoryPath, maxStdoutBytes: 128, signal,
+    });
+    return merge.treeOid !== requireOid(headTree.stdout.toString('utf8').trim(), 'publication-head-tree-invalid');
+  }
+
   async prepare(
     context: PublishProjectContext,
     input: PublicationCandidateInput,
     signal?: AbortSignal,
   ): Promise<string> {
-    this.assertContext(context);
+    this.#assertContext(context);
     const contributionHeadOid = requireOid(
       input.contributionHeadOid,
       'publication-contribution-head-invalid',
@@ -108,7 +148,7 @@ export class NativeGitPublicationCandidateRepository {
 
     const existingOid = await this.git.resolveRef(context.repositoryPath, candidateRef);
     if (existingOid) {
-      if (await this.matchesCandidate(
+      if (await this.#matchesCandidate(
         context.repositoryPath,
         existingOid,
         merge.treeOid,
@@ -169,7 +209,7 @@ export class NativeGitPublicationCandidateRepository {
     if (retained !== candidateOid) {
       throw candidateError('repository-invalid', 'publication-candidate-ref-mismatch');
     }
-    if (!await this.matchesCandidate(
+    if (!await this.#matchesCandidate(
       context.repositoryPath,
       candidateOid,
       null,
@@ -189,7 +229,7 @@ export class NativeGitPublicationCandidateRepository {
   ): Promise<void> {
     await this.assertRetained(context, input, signal);
     const [symbolicHead, personalOid, mainOid, status] = await Promise.all([
-      this.readSymbolicHead(context, signal),
+      this.#readSymbolicHead(context, signal),
       this.git.resolveRef(context.repositoryPath, context.personalRef),
       this.git.resolveRef(context.repositoryPath, COLLAB_ORIGIN_MAIN_REF),
       this.git.getWorkingTreeStatus(context.repositoryPath),
@@ -220,6 +260,7 @@ export class NativeGitPublicationCandidateRepository {
       args: [
         'merge',
         '--ff-only',
+        '--no-overwrite-ignore',
         '--no-edit',
         '--no-stat',
         '--no-verify',
@@ -253,13 +294,13 @@ export class NativeGitPublicationCandidateRepository {
     }
   }
 
-  private assertContext(context: PublishProjectContext): void {
+  #assertContext(context: PublishProjectContext): void {
     if (context.personalRef !== collabMemberRef(context.memberId)) {
       throw candidateError('repository-invalid', 'publication-personal-ref-mismatch');
     }
   }
 
-  private async matchesCandidate(
+  async #matchesCandidate(
     repositoryPath: string,
     candidateOid: string,
     expectedTreeOid: string | null,
@@ -280,7 +321,7 @@ export class NativeGitPublicationCandidateRepository {
       && parents === `${contributionHeadOid} ${currentMainOid}`;
   }
 
-  private async readSymbolicHead(
+  async #readSymbolicHead(
     context: PublishProjectContext,
     signal?: AbortSignal,
   ): Promise<string | null> {
@@ -293,11 +334,4 @@ export class NativeGitPublicationCandidateRepository {
     });
     return result.exitCode === 0 ? result.stdout.toString('utf8').trim() : null;
   }
-}
-
-export function createNativeGitPublicationCandidateRepository(
-  git: GitRepositoryService,
-  runner: GitCommandRunner,
-): NativeGitPublicationCandidateRepository {
-  return new NativeGitPublicationCandidateRepository(git, runner);
 }

@@ -9,4 +9,5 @@ export const CLAUDIAN_COLLAB_LIMITS = Object.freeze({
   maxTextDiffBytes: 2 * 1024 * 1024,
   maxTextDiffLines: 20_000,
   maxTicketHighlights: 5,
+  maxTicketCacheBytes: 4 * 1024 * 1024,
 });

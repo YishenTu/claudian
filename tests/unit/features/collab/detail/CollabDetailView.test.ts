@@ -3,6 +3,8 @@
 import { type CollabTicketDetail } from '@claudian-collab/protocol';
 import { EditorSelection } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { getByRole } from '@testing-library/dom';
+import { configureAxe } from 'jest-axe';
 import { MarkdownRenderer, setIcon, type WorkspaceLeaf } from 'obsidian';
 
 import { type CollabAcceptOutcome, type CollabConflictDescriptor, type CollabCoordinationSnapshot, type CollabPublicationReview, type CollabRequestReview, type CollabReviewFileContent, type CollabWorkingTreeReview } from '@/core/collab';
@@ -38,7 +40,7 @@ describe('CollabDetailView', () => {
     await nextTurn();
 
     expect(view.getState()).toEqual(viewState());
-    expect(port.subscribe).not.toHaveBeenCalled();
+    expect(port.observeProject).not.toHaveBeenCalled();
     expect(port.prepareReview).not.toHaveBeenCalled();
     expect(port.readSnapshot).not.toHaveBeenCalled();
   });
@@ -58,7 +60,7 @@ describe('CollabDetailView', () => {
     await nextTurn();
 
     expect(view.getState()).toEqual(state);
-    expect(port.subscribe).not.toHaveBeenCalled();
+    expect(port.observeProject).not.toHaveBeenCalled();
     expect(port.readTicket).not.toHaveBeenCalled();
   });
 
@@ -113,7 +115,7 @@ describe('CollabDetailView', () => {
     await view.setState(viewState(), { history: false });
     await nextTurn();
 
-    expect(port.subscribe).toHaveBeenCalled();
+    expect(port.observeProject).toHaveBeenCalled();
     expect(port.prepareReview).toHaveBeenCalledWith(
       'project-a',
       'request-a',
@@ -143,7 +145,7 @@ describe('CollabDetailView', () => {
       value: {
         localHeadOid: HEAD,
         projectId: 'project-a',
-        state: 'pushed',
+        state: 'request-synchronized',
       },
     });
     const view = createView(port, renderer, objectUrlPort(), undefined, leaf);
@@ -203,7 +205,7 @@ describe('CollabDetailView', () => {
     await nextTurn();
 
     expect(port.publish).toHaveBeenCalledWith(
-      { description: 'Published change', projectId: 'project-a' },
+      { description: 'Published change', projectId: 'project-a', expectedWorkingTree: { baseOid: review.baseOid, headOid: review.headOid, snapshotId: review.snapshotId } },
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(leaf.detach).toHaveBeenCalledTimes(1);
@@ -495,7 +497,7 @@ describe('CollabDetailView', () => {
     });
     port.updateRequestMetadata.mockReturnValue(pending.promise);
     let invalidate: (() => void) | undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -774,26 +776,7 @@ describe('CollabDetailView', () => {
     const review = workingTreeReview();
     const port = detailPort(requestReview());
     port.prepareWorkingTreeReview.mockResolvedValue({ status: 'success', value: review });
-    port.listTickets.mockResolvedValue({
-      status: 'success',
-      value: {
-        page: {
-          tickets: [{
-            authorMemberId: 'member-a',
-            commentCount: 0,
-            createdAt: '2026-08-08T00:00:00.000Z',
-            id: 'ticket-a',
-            number: 17,
-            revision: 1,
-            status: 'open',
-            title: 'Preview reference',
-            updatedAt: '2026-08-08T00:00:00.000Z',
-          }],
-        },
-        source: 'online',
-        stale: false,
-      },
-    });
+    port.resolveTicketNumber.mockResolvedValue({ status: 'success', value: { ticketId: 'ticket-a' } });
     const openTicketInNewTab = jest.fn().mockResolvedValue(undefined);
     const render = MarkdownRenderer.render as jest.Mock;
     const previousRender = render.getMockImplementation();
@@ -830,15 +813,14 @@ describe('CollabDetailView', () => {
     await nextTurn();
     if (previousRender) render.mockImplementation(previousRender);
 
-    expect(port.listTickets).toHaveBeenCalledWith({
-      limit: 100,
+    expect(port.resolveTicketNumber).toHaveBeenCalledWith({
       projectId: 'project-a',
-      status: 'open',
+      ticketNumber: 17,
     }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(openTicketInNewTab).toHaveBeenCalledWith('project-a', 'ticket-a');
   });
 
-  it('closes the working-tree review when Publish prepares a final review', async () => {
+  it('continues in the same leaf when Publish requires a final review', async () => {
     const review = workingTreeReview();
     const finalReview = publicationReview();
     const port = detailPort(requestReview());
@@ -886,9 +868,79 @@ describe('CollabDetailView', () => {
     await nextTurn();
 
     expect(preparedReviews.readPublication(publicationViewState(finalReview))).toBe(finalReview);
-    expect(leaf.setViewState).not.toHaveBeenCalled();
-    expect(leaf.detach).toHaveBeenCalledTimes(1);
+    expect(leaf.setViewState).toHaveBeenCalledWith({ active: true, state: publicationViewState(finalReview), type: expect.any(String) });
+    expect(leaf.detach).not.toHaveBeenCalled();
   });
+
+  it.each(['stale', 'committed-locally', 'pushed'] as const)('keeps incomplete publication visible with a current working preview: %s', async outcome => {
+    const review = workingTreeReview();
+    const refreshed = { ...review, snapshotId: '5'.repeat(64) };
+    const port = detailPort(requestReview());
+    const leaf = { detach: jest.fn(), setViewState: jest.fn().mockResolvedValue(undefined) } as unknown as WorkspaceLeaf;
+    port.prepareWorkingTreeReview.mockResolvedValueOnce({ status: 'success', value: review })
+      .mockResolvedValue({ status: 'success', value: refreshed });
+    port.readWorkingTreeReviewFile.mockResolvedValue({ status: 'success', value: {
+      file: review.files[0], kind: 'text', newText: 'working\n', oldText: 'head\n',
+    } });
+    port.publish.mockResolvedValue(outcome === 'stale'
+      ? { status: 'stale', staleKind: 'working-copy', error: new CollabError({ code: 'working-tree-busy' }) }
+      : { status: 'success', value: { state: outcome, projectId: review.projectId, localHeadOid: HEAD } });
+    const view = createView(port, diffPort(), objectUrlPort(), undefined, leaf);
+    await view.setState(workingTreeViewState(), { history: false });
+    await nextTurn();
+    setMarkdownValue(view.contentEl.querySelector<HTMLElement>('[data-collab-description="true"]')!, 'My description');
+    view.contentEl.querySelector<HTMLButtonElement>('[data-collab-action="publish-working-tree"]')!.click();
+    await nextTurn();
+    expect(leaf.setViewState).toHaveBeenCalledWith({ active: true, type: expect.any(String), state: {
+      ...workingTreeViewState(), snapshotId: refreshed.snapshotId, selectedPath: 'note.md',
+    } });
+    expect(port.publish).toHaveBeenCalledTimes(1);
+    expect(leaf.detach).not.toHaveBeenCalled();
+  });
+
+  it.each(['review-required', 'committed-locally', 'pushed', 'recovery-required'] as const)(
+    'continues a publication through the replacement session to completion: %s', async outcome => {
+      const working = workingTreeReview();
+      const publication = publicationReview();
+      const port = detailPort(requestReview());
+      const leaf = {
+        detach: jest.fn(),
+        setViewState: jest.fn(async state => view.setState(state.state, { history: false })),
+      } as unknown as WorkspaceLeaf;
+      const view = createView(port, diffPort(), objectUrlPort(), new CollabPreparedReviewCache(), leaf);
+      port.prepareWorkingTreeReview.mockResolvedValue({ status: 'success', value: working });
+      port.preparePublicationReview.mockResolvedValue({ status: 'success', value: publication });
+      port.readWorkingTreeReviewFile.mockResolvedValue({ status: 'success', value: {
+        file: working.files[0], kind: 'text', newText: 'working\n', oldText: 'head\n',
+      } });
+      port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: {
+        file: publication.files[0], kind: 'text', newText: 'candidate\n', oldText: 'main\n',
+      } });
+      port.readPublishDescription.mockResolvedValue({ status: 'success', value: 'My description' });
+      port.confirmPublish.mockResolvedValue({ status: 'success', value: {
+        state: 'request-synchronized', projectId: working.projectId, localHeadOid: HEAD,
+      } });
+      port.publish.mockResolvedValueOnce(outcome === 'recovery-required'
+        ? { status: 'recovery-required', operationId: publication.operationId, durablePhase: 'committed', durableProgress: true, error: new CollabError({ code: 'operation-failed' }) }
+        : { status: 'success', value: { state: outcome, projectId: working.projectId, localHeadOid: HEAD, ...(outcome === 'review-required' ? { review: publication } : {}) } })
+        .mockResolvedValue({ status: 'success', value: { state: 'request-synchronized', projectId: working.projectId, localHeadOid: HEAD } });
+      await view.setState(workingTreeViewState(), { history: false });
+      await nextTurn();
+      getByRole(view.contentEl, 'button', { name: 'Publish' }).click();
+      await nextTurn();
+      expect(leaf.setViewState).toHaveBeenCalledTimes(1);
+      expect(leaf.detach).not.toHaveBeenCalled();
+      const finalAction = getByRole(view.contentEl, 'button', { name: 'Publish' });
+      expect((finalAction as HTMLButtonElement).disabled).toBe(false);
+      finalAction.click();
+      await nextTurn();
+      expect(leaf.detach).toHaveBeenCalledTimes(1);
+      expect(outcome === 'review-required' ? port.confirmPublish : port.publish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ description: 'My description', projectId: working.projectId }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    },
+  );
 
   it('opens an unpublished conflict under My changes', async () => {
     const review = workingTreeReview();
@@ -932,6 +984,66 @@ describe('CollabDetailView', () => {
       },
       type: COLLAB_DETAIL_VIEW_TYPE,
     });
+  });
+
+  it('reviews an Update and confirms the local candidate without a description', async () => {
+    const review = { ...publicationReview(), intent: 'update' as const, comparisonBaseOid: HEAD };
+    const port = detailPort(requestReview());
+    port.preparePublicationReview.mockResolvedValue({ status: 'success', value: review });
+    port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: { file: review.files[0], kind: 'text', newText: 'team update', oldText: 'personal checkpoint' } });
+    port.confirmUpdate.mockResolvedValue({ status: 'success', value: { localHeadOid: review.candidateOid, projectId: review.projectId, state: 'updated' } });
+    const leaf = { detach: jest.fn(), setViewState: jest.fn() } as unknown as WorkspaceLeaf;
+    const view = createView(port, diffPort(), objectUrlPort(), undefined, leaf);
+    await view.setState({ ...publicationViewState(review), intent: 'update' }, { history: false });
+    await nextTurn();
+    expect(view.getDisplayText()).toBe('Review project update');
+    expect(view.contentEl.querySelector('[data-collab-description]')).toBeNull();
+    const confirm = getByRole(view.contentEl, 'button', { name: 'Update' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(false);
+    expect(await configureAxe({ rules: { region: { enabled: false } } })(view.contentEl)).toHaveNoViolations();
+    confirm.click();
+    await nextTurn();
+    expect(port.confirmUpdate).toHaveBeenCalledWith({ projectId: review.projectId, operationId: review.operationId, expectedMainOid: review.currentMainOid, expectedCandidateOid: review.candidateOid }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(port.confirmPublish).not.toHaveBeenCalled();
+    expect(leaf.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an offline Update review readable without enabling confirmation', async () => {
+    const review = { ...publicationReview(), intent: 'update' as const, comparisonBaseOid: HEAD };
+    const port = detailPort(requestReview());
+    port.preparePublicationReview.mockResolvedValue({ status: 'success', value: review });
+    port.readSnapshot.mockResolvedValue({ status: 'success', value: { ...coordination(requestReview()), source: 'cache', stale: true } });
+    port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: { file: review.files[0], kind: 'text', newText: 'team update', oldText: 'personal checkpoint' } });
+    const view = createView(port, diffPort(), objectUrlPort());
+    await view.setState({ ...publicationViewState(review), intent: 'update' }, { history: false });
+    await nextTurn();
+    expect(view.getDisplayText()).toBe('Review project update');
+    expect((getByRole(view.contentEl, 'button', { name: 'Update' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(view.contentEl.textContent).toContain('Reconnect to continue');
+    expect(port.confirmUpdate).not.toHaveBeenCalled();
+  });
+
+  it('disables and restores an open Update confirmation as connectivity changes', async () => {
+    const review = { ...publicationReview(), intent: 'update' as const, comparisonBaseOid: HEAD };
+    const port = detailPort(requestReview());
+    port.preparePublicationReview.mockResolvedValue({ status: 'success', value: review });
+    port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: { file: review.files[0], kind: 'text', newText: 'team update', oldText: 'personal checkpoint' } });
+    const view = createView(port, diffPort(), objectUrlPort());
+    await view.setState({ ...publicationViewState(review), intent: 'update' }, { history: false });
+    await nextTurn();
+    const confirm = getByRole(view.contentEl, 'button', { name: 'Update' }) as HTMLButtonElement;
+    port.readSnapshot.mockResolvedValue({ status: 'success', value: { ...coordination(requestReview()), source: 'cache', stale: true } });
+    const observer = (port.observeProject as jest.Mock).mock.calls.at(-1)[1];
+    observer();
+    await nextTurn();
+    expect(confirm.disabled).toBe(true);
+    confirm.click();
+    expect(port.confirmUpdate).not.toHaveBeenCalled();
+    port.readSnapshot.mockResolvedValue({ status: 'success', value: coordination(requestReview()) });
+    observer();
+    await nextTurn();
+    expect(confirm.disabled).toBe(false);
+    expect(getByRole(view.contentEl, 'button', { name: 'Update' })).toBe(confirm);
   });
 
   it('renders publication review without comments and confirms the exact candidate', async () => {
@@ -1008,7 +1120,7 @@ describe('CollabDetailView', () => {
     expect(leaf.detach).toHaveBeenCalledTimes(1);
   });
 
-  it('opens a conflict on the current Member existing Request', async () => {
+  it('opens private publication conflicts under My changes with an existing Request', async () => {
     const request = requestReview();
     const review = publicationReview();
     const port = detailPort(request);
@@ -1059,10 +1171,9 @@ describe('CollabDetailView', () => {
       active: true,
       state: {
         kind: 'conflict',
-        location: 'request',
+        location: 'my-changes',
         operationId: 'conflict-a',
         projectId: 'project-a',
-        requestId: 'request-a',
       },
       type: COLLAB_DETAIL_VIEW_TYPE,
     });
@@ -1598,7 +1709,7 @@ describe('CollabDetailView', () => {
     const review = requestReview();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1628,7 +1739,7 @@ describe('CollabDetailView', () => {
     const review = requestReview();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1681,7 +1792,7 @@ describe('CollabDetailView', () => {
     const review = requestReview();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1717,7 +1828,7 @@ describe('CollabDetailView', () => {
     const review = requestReview();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1784,7 +1895,7 @@ describe('CollabDetailView', () => {
     };
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1842,7 +1953,7 @@ describe('CollabDetailView', () => {
     const port = detailPort(review);
     const renderer = diffPort();
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1892,7 +2003,7 @@ describe('CollabDetailView', () => {
     const pending = deferred<ReturnType<typeof successfulMetadataUpdate>>();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -1971,7 +2082,7 @@ describe('CollabDetailView', () => {
     }>();
     const port = detailPort(review);
     let invalidate = () => undefined;
-    port.subscribe.mockImplementation(listener => {
+    port.observeProject.mockImplementation((_projectId, listener) => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
@@ -2031,7 +2142,7 @@ describe('CollabDetailView', () => {
       status: 'failure',
     });
     let invalidate: () => void = () => undefined;
-    port.subscribe.mockImplementation((listener: (state: never) => void) => {
+    port.observeProject.mockImplementation((_projectId: string, listener: (state: never) => void) => {
       invalidate = () => listener(undefined as never);
       return { dispose: jest.fn() };
     });
@@ -2111,12 +2222,12 @@ describe('CollabDetailView', () => {
     }));
     let lookupSignal: AbortSignal | undefined;
     let releaseLookup!: () => void;
-    port.listTickets.mockImplementation((_request, options) => {
+    port.resolveTicketNumber.mockImplementation((_request, options) => {
       lookupSignal = options?.signal;
       return new Promise(resolve => {
         releaseLookup = () => resolve({
           status: 'success',
-          value: { page: { tickets: [] }, source: 'online', stale: false },
+          value: { ticketId: null },
         });
       });
     });
@@ -2175,16 +2286,12 @@ describe('CollabDetailView', () => {
     });
     let lookupSignal: AbortSignal | undefined;
     let releaseLookup!: () => void;
-    port.listTickets.mockImplementation((_request, options) => {
+    port.resolveTicketNumber.mockImplementation((_request, options) => {
       lookupSignal = options?.signal;
       return new Promise(resolve => {
         releaseLookup = () => resolve({
           status: 'success',
-          value: {
-            page: { tickets: [{ ...ticketDetail().ticket, number: 99 }] },
-            source: 'online',
-            stale: false,
-          },
+          value: { ticketId: ticketDetail().ticket.id },
         });
       });
     });
@@ -2520,7 +2627,7 @@ describe('CollabDetailView', () => {
   it('keeps conflict detail read-only and preserves its owner location', async () => {
     const port = detailPort(requestReview());
     const panel = { destroy: jest.fn(), open: jest.fn().mockResolvedValue(undefined) };
-    let location: 'my-changes' | 'request' | undefined;
+    let location: 'my-changes' | 'request' | 'update' | undefined;
     const leaf = { setViewState: jest.fn().mockResolvedValue(undefined) };
     const view = new CollabDetailView(leaf as unknown as WorkspaceLeaf, port, {
       conflictPanelFactory: (_root, _conflictPort, options) => {
@@ -2553,16 +2660,17 @@ describe('CollabDetailView', () => {
 
 describe('CollabDetailViewCoordinator', () => {
   it('closes the active detail leaf after a completed external action', async () => {
-    const leaf = { detach: jest.fn() };
+    let attached = true;
+    const leaf = { detach: () => { attached = false; } };
     const workspace = {
       getLeaf: jest.fn(),
-      getLeavesOfType: jest.fn().mockReturnValue([leaf]),
+      getLeavesOfType: () => attached ? [leaf as unknown as WorkspaceLeaf] : [],
       revealLeaf: jest.fn().mockResolvedValue(undefined),
     };
 
     await new CollabDetailViewCoordinator(workspace).close();
 
-    expect(leaf.detach).toHaveBeenCalledTimes(1);
+    expect(attached).toBe(false);
   });
 
   it('reuses the existing detail leaf and persists identifiers without credentials', async () => {
@@ -2875,8 +2983,9 @@ function detailPort(review: CollabRequestReview) {
     addTicketComment: jest.fn(),
     closeTicket: jest.fn(),
     confirmPublish: jest.fn(),
+    confirmUpdate: jest.fn(),
     createTicket: jest.fn(),
-    listTickets: jest.fn(),
+    resolveTicketNumber: jest.fn(),
     prepareWorkingTreeReview: jest.fn(),
     preparePublicationReview: jest.fn(),
     prepareReview: jest.fn().mockResolvedValue({ status: 'success', value: review }),
@@ -2899,7 +3008,7 @@ function detailPort(review: CollabRequestReview) {
     isDetailAdmissionOpen: jest.fn().mockReturnValue(true),
     publish: jest.fn(),
     reopenTicket: jest.fn(),
-    subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+    observeProject: jest.fn().mockReturnValue({ dispose: jest.fn() }),
     updateRequestMetadata: jest.fn(),
     updateTicketContent: jest.fn(),
   } satisfies CollabDetailViewPort;
@@ -2967,6 +3076,7 @@ function coordination(review: CollabRequestReview): CollabCoordinationSnapshot {
         id: 'project-a',
         mainOid: MAIN,
         mainRef: 'refs/heads/main',
+        authorityGeneration: 1,
         managerSetGeneration: 0,
         name: 'Project A',
       },

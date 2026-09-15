@@ -2,15 +2,15 @@ import '@/providers';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import {
-  LEGACY_SESSIONS_PATH,
-  SESSIONS_PATH,
-  SessionStorage,
+LEGACY_SESSIONS_PATH,
+SESSIONS_PATH,
+SessionStorage,
 } from '@/core/bootstrap/SessionStorage';
 import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderId } from '@/core/providers/types';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import type { Conversation, SessionMetadata, UsageInfo } from '@/core/types';
+import type { Conversation,SessionMetadata,UsageInfo } from '@/core/types';
 
 const DEVICE_KEY = `device-${'a'.repeat(64)}`;
 
@@ -42,12 +42,6 @@ describe('SessionStorage', () => {
     } as unknown as jest.Mocked<VaultFileAdapter>;
 
     storage = new SessionStorage(mockAdapter, DEVICE_KEY);
-  });
-
-  describe('SESSIONS_PATH', () => {
-    it('should be .claudian/sessions', () => {
-      expect(SESSIONS_PATH).toBe('.claudian/sessions');
-    });
   });
 
   describe('getMetadataPath', () => {

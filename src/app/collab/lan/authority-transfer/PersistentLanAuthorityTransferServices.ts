@@ -45,6 +45,7 @@ export interface PersistentTerminalSourceServiceOptions {
   readonly cleanupStaging: (record: AuthorityTransferRecord) => Promise<void>;
   readonly expiresAt: string;
   readonly now?: () => Date;
+  readonly prepareExpiry?: () => Promise<void>;
   readonly persistence: Pick<
     AuthorityTransferPersistence,
     | 'completeTerminalCleanup'
@@ -78,7 +79,7 @@ implements LanAuthorityTransferTerminalSourceService {
   }
 
   async expire(): Promise<void> {
-    const record = await this.options.persistence.load(this.options.projectId);
+    const record = await this.options.persistence.load(this.options.projectId, this.options.transferId);
     if (
       !record
       || record.transferId !== this.options.transferId
@@ -91,6 +92,7 @@ implements LanAuthorityTransferTerminalSourceService {
         'authority-transfer-terminal-source-unavailable',
       );
     }
+    await this.options.prepareExpiry?.();
     await this.options.persistence.expireTerminalResponder(
       this.options.projectId,
       this.options.transferId,
@@ -112,14 +114,14 @@ implements LanAuthorityTransferTerminalSourceService {
     _actor: LanAuthorityTransferActor,
     request: GetProjectAuthorityTransferRequest,
   ) {
-    return (await this.requireTerminal(request.projectId, request.transferId)).status;
+    return (await this.#requireTerminal(request.projectId, request.transferId)).status;
   }
 
   async getTransferredMembershipClaim(
     actor: LanAuthorityTransferActor,
     request: GetTransferredMembershipClaimRequest,
   ) {
-    await this.requireTerminal(request.projectId, request.transferId);
+    await this.#requireTerminal(request.projectId, request.transferId);
     return this.options.persistence.loadClaim(
       request.projectId,
       request.transferId,
@@ -131,7 +133,7 @@ implements LanAuthorityTransferTerminalSourceService {
     actor: LanAuthorityTransferActor,
     request: AcknowledgeTransferredMembershipClaimRedemptionRequest,
   ) {
-    const record = await this.requireTerminal(request.projectId, request.transferId);
+    const record = await this.#requireTerminal(request.projectId, request.transferId);
     if (request.receipt.memberId !== actor.memberId) {
       throw serviceError('authorization-denied', 'authority-transfer-receipt-member-mismatch');
     }
@@ -150,14 +152,14 @@ implements LanAuthorityTransferTerminalSourceService {
     };
   }
 
-  private async requireTerminal(
+  async #requireTerminal(
     projectId: CollabProjectId,
     transferId: string,
   ): Promise<AuthorityTransferRecord> {
     if (projectId !== this.options.projectId) {
       throw serviceError('project-not-found', 'authority-transfer-route-not-found');
     }
-    const record = await this.options.persistence.load(projectId);
+    const record = await this.options.persistence.load(projectId, transferId);
     if (
       !record
       || record.transferId !== transferId

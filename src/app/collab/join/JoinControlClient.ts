@@ -11,12 +11,12 @@ import type {
 } from '@/app/collab/lan/CollabHttpClient';
 import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
 import type { LanCollabJoinAttempt as CollabJoinAttempt } from '@/app/collab/lan/LanCollabControlOperations';
-import type { CollabProject } from '@/core/collab';
+import type { CollabLanProject } from '@/core/collab';
 
 export interface JoinActivationSnapshot {
   readonly currentMember: CollabMember;
   readonly eventSequence: number;
-  readonly project: CollabProject;
+  readonly project: CollabLanProject;
 }
 
 export class JoinControlClient {

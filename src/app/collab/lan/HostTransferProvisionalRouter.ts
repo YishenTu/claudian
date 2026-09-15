@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
+import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
   HOST_TRANSFER_MAX_AUTHORITY_SNAPSHOT_BYTES,
   HOST_TRANSFER_MAX_GIT_BUNDLE_BYTES,
@@ -213,12 +214,15 @@ export class HostTransferProvisionalRouter {
       requireCredential(request, receiver.credentialHash);
       if (request.method !== 'POST') throw routeError('host-transfer-method-invalid');
       if (action === 'probe') {
-        writeJson(response, 200, { projectId: receiver.projectId, transferId });
+        writeJson(response, 200, {
+          authoritySchemaVersions: [12, COLLAB_AUTHORITY_SCHEMA_VERSION],
+          projectId: receiver.projectId, transferId,
+        });
         return true;
       }
       if (action === 'cancel') {
         const result = await receiver.coordinator.cancel(receiver.projectId, transferId);
-        this.writeTerminalResponse(
+        this.#writeTerminalResponse(
           response,
           receiver,
           result,
@@ -229,7 +233,7 @@ export class HostTransferProvisionalRouter {
       }
       if (action === 'complete') {
         const result = await receiver.coordinator.complete(receiver.projectId, transferId);
-        this.writeTerminalResponse(
+        this.#writeTerminalResponse(
           response,
           receiver,
           result,
@@ -240,7 +244,7 @@ export class HostTransferProvisionalRouter {
       }
       if (action === 'confirm') {
         const result = await receiver.coordinator.confirm(receiver.projectId, transferId);
-        this.writeTerminalResponse(
+        this.#writeTerminalResponse(
           response,
           receiver,
           result,
@@ -337,7 +341,7 @@ export class HostTransferProvisionalRouter {
     return this.receivers.delete(transferId);
   }
 
-  private writeTerminalResponse(
+  #writeTerminalResponse(
     response: ServerResponse,
     receiver: RegisteredReceiver,
     result: IncomingHostTransferTerminalResult,

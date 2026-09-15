@@ -9,6 +9,8 @@ import type {
   CollabTicketCommentPage,
   CollabTicketDetail,
   CollabTicketPage,
+  ResolveTicketNumberRequest,
+  ResolveTicketNumberResponse,
 } from '@claudian-collab/protocol';
 import type { CollabChangeRequest, CollabTicketSummary } from '@claudian-collab/protocol';
 
@@ -25,6 +27,7 @@ import type {
 } from '@/core/collab';
 
 export interface CollabAuthorityControlPort {
+  readLanCapabilities?(projectId: string, options?: CollabOperationOptions): Promise<readonly string[]>;
   ensure(input: PublishRequestEnsureInput): Promise<CollabChangeRequest>;
   acceptRequest(input: {
     readonly expectedHeadOid: string;
@@ -73,6 +76,10 @@ export interface CollabAuthorityControlPort {
     idempotencyKey: string,
     options?: CollabOperationOptions,
   ): Promise<CollabChangeRequest>;
+  resolveTicketNumber(
+    request: ResolveTicketNumberRequest,
+    options?: CollabOperationOptions,
+  ): Promise<ResolveTicketNumberResponse>;
   listTickets(
     request: CollabListTicketsRequest,
     options?: CollabOperationOptions,

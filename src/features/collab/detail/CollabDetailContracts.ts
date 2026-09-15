@@ -1,6 +1,7 @@
+import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 import type { CollabChangeRequest, CollabComment, CollabTicketComment, CollabTicketDetail, CollabTicketSummary } from '@claudian-collab/protocol';
 
-import type { CollabAcceptOutcome, CollabAcceptRequest, CollabAddCommentRequest, CollabAddTicketCommentRequest, CollabChangeTicketStatusRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabListTicketsRequest, CollabOperationOptions, CollabPublicationReview, CollabPublishOutcome, CollabRequestReview, CollabResult, CollabTicketDetailProjection, CollabTicketPageProjection, CollabUpdateRequestMetadataRequest, CollabUpdateTicketContentRequest, CollabWorkingTreeReview } from '@/core/collab';
+import type { CollabAcceptOutcome, CollabAcceptRequest, CollabAddCommentRequest, CollabAddTicketCommentRequest, CollabChangeTicketStatusRequest, CollabConfirmUpdateRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabOperationOptions, CollabProjectUpdateOutcome, CollabPublicationReview, CollabPublishOutcome, CollabPublishRequest, CollabRequestReview, CollabResult, CollabTicketDetailProjection, CollabUpdateRequestMetadataRequest, CollabUpdateTicketContentRequest, CollabWorkingTreeReview } from '@/core/collab';
 import type {
   CollabConflictResolutionPanelOptions,
   CollabConflictResolutionPort,
@@ -20,13 +21,14 @@ export interface CollabRequestDetailViewState {
 
 export interface CollabConflictDetailViewState {
   readonly kind: 'conflict';
-  readonly location: 'my-changes' | 'request';
+  readonly location: 'my-changes' | 'request' | 'update';
   readonly operationId: string;
   readonly projectId: string;
   readonly requestId?: string;
 }
 
 export interface CollabPublicationDetailViewState {
+  readonly intent?: 'publish' | 'update';
   readonly candidateOid: string;
   readonly comparisonBaseOid: string;
   readonly comparisonTargetOid: string;
@@ -67,10 +69,10 @@ export type CollabReviewDetailViewState =
 export interface CollabDetailViewPort
   extends CollabConflictResolutionPort, ReviewDiffSessionPort {
   isDetailAdmissionOpen(): boolean;
-  listTickets(
-    request: CollabListTicketsRequest,
+  resolveTicketNumber(
+    request: ResolveTicketNumberRequest,
     options?: CollabOperationOptions,
-  ): Promise<CollabResult<CollabTicketPageProjection>>;
+  ): Promise<CollabResult<ResolveTicketNumberResponse>>;
   prepareReview(
     projectId: string,
     requestId: string,
@@ -87,9 +89,10 @@ export interface CollabDetailViewPort
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabWorkingTreeReview>>;
   publish(
-    request: { readonly description: string; readonly projectId: string },
+    request: CollabPublishRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabPublishOutcome>>;
+  confirmUpdate(request: CollabConfirmUpdateRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabProjectUpdateOutcome>>;
   confirmPublish(
     request: {
       readonly expectedCandidateOid: string;
@@ -145,7 +148,7 @@ export interface CollabDetailViewPort
     request: CollabUpdateTicketContentRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabTicketSummary>>;
-  subscribe(listener: () => void): { dispose(): void };
+  observeProject(projectId: string, listener: () => void): { dispose(): void };
 }
 
 export interface CollabDetailConflictPanel {
