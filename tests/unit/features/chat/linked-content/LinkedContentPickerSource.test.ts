@@ -53,4 +53,20 @@ describe('LinkedContentPickerSource', () => {
     expect(items).toContainEqual(expect.objectContaining({ path: 'Notes/Draft.md' }));
     expect(items).not.toContainEqual(expect.objectContaining({ path: '../outside.md' }));
   });
+
+  it('lists sibling real folders that differ only by entity-shaped names', () => {
+    const source = new LinkedContentPickerSource({
+      getCachedVaultFiles: () => [],
+      getCachedVaultFolders: () => [
+        createFolder('People & Teams'),
+        createFolder('People &amp; Teams'),
+      ],
+    });
+
+    expect(source.list()).toEqual([
+      expect.objectContaining({ kind: 'none' }),
+      expect.objectContaining({ kind: 'folder', path: 'People & Teams' }),
+      expect.objectContaining({ kind: 'folder', path: 'People &amp; Teams' }),
+    ]);
+  });
 });

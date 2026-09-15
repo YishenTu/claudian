@@ -523,6 +523,60 @@ describe('ConversationInputLedgerStorage', () => {
     expect(adapter.write).not.toHaveBeenCalled();
   });
 
+  it('repairs prompt-render escapes in the ledger Linked content path', async () => {
+    const adapter = createAdapter();
+    const storage = new ConversationInputLedgerStorage(adapter);
+    const ledger = createLedger();
+    const raw = {
+      ...ledger,
+      records: [{
+        ...ledger.records[0],
+        context: {
+          linkedContent: { path: 'Calendar/Meetings/People &amp; Teams/note.md' },
+        },
+      }],
+    };
+    adapter.exists.mockResolvedValue(true);
+    adapter.read.mockResolvedValue(JSON.stringify(raw));
+
+    const result = await storage.load(ledger.conversationId);
+
+    expect(result).toEqual({
+      status: 'loaded',
+      ledger: {
+        ...ledger,
+        records: [{
+          ...ledger.records[0],
+          context: {
+            linkedContent: { path: 'Calendar/Meetings/People & Teams/note.md' },
+          },
+        }],
+      },
+      needsMigration: true,
+    });
+  });
+
+  it('keeps the write contract for entity-shaped vault paths', async () => {
+    const adapter = createAdapter();
+    const storage = new ConversationInputLedgerStorage(adapter);
+    const ledger = createLedger();
+    const withEntityName = {
+      ...ledger,
+      records: [{
+        ...ledger.records[0],
+        context: {
+          linkedContent: { path: 'People &amp; Teams/note.md' },
+        },
+      }],
+    };
+
+    await expect(storage.save(
+      ledger.conversationId,
+      withEntityName as unknown as ConversationInputLedger,
+    )).resolves.toBeUndefined();
+    expect(adapter.write).toHaveBeenCalled();
+  });
+
   it('fails closed for invalid canonical context without falling back to legacy', async () => {
     const adapter = createAdapter();
     const storage = new ConversationInputLedgerStorage(adapter);
