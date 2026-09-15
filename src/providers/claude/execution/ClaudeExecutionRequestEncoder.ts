@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+
 import type {
   HookCallbackMatcher,
   Options,
@@ -33,6 +35,11 @@ import {
   getMissingNodeError,
   parseEnvironmentVariables,
 } from '../../../utils/env';
+import {
+  extractExternalMentionDirectories,
+  type PathKind,
+} from '../../../utils/externalMention';
+import { expandHomePath } from '../../../utils/path';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
@@ -208,6 +215,16 @@ export class ClaudeExecutionRequestEncoder {
       options.persistSession = true;
     }
 
+    const additionalDirectories = settings.enableExternalFileMentions
+      ? this.resolveExternalMentionDirectories(
+        request,
+        sessionConfig.vaultWorkingDirectory,
+      )
+      : [];
+    if (additionalDirectories.length > 0) {
+      options.additionalDirectories = additionalDirectories;
+    }
+
     return {
       prompt,
       images: request.input
@@ -228,9 +245,40 @@ export class ClaudeExecutionRequestEncoder {
         enableChrome: claudeSettings.enableChrome,
         enableAutoMode: claudeSettings.safeMode === 'auto',
         persistSession: options.persistSession,
+        additionalDirectories,
       }),
       allowedTools: policy.allowedTools,
     };
+  }
+
+  /**
+   * Collects directories referenced by external `@` mentions in this turn so the
+   * SDK grants the agent read access beyond the vault. Only the mentioned file's
+   * directory is added — mentioning a file does not widen access to its whole
+   * subtree unless the user mentions those nested paths too.
+   */
+  private resolveExternalMentionDirectories(
+    request: ProviderExecutionRequest,
+    vaultWorkingDirectory: string,
+  ): string[] {
+    const text = request.input
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n\n');
+    return extractExternalMentionDirectories(text, {
+      expandHome: expandHomePath,
+      resolveBase: () => vaultWorkingDirectory,
+      statPath: (absolutePath): PathKind => {
+        try {
+          const stats = fs.statSync(absolutePath);
+          if (stats.isDirectory()) return 'dir';
+          if (stats.isFile()) return 'file';
+          return null;
+        } catch {
+          return null;
+        }
+      },
+    });
   }
 
   private resolveSettings(request: ProviderExecutionRequest): ClaudianSettings {

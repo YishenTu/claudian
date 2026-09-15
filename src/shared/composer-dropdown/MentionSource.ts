@@ -1,5 +1,7 @@
 import type { TFile } from 'obsidian';
 
+import { isExternalMentionQuery } from '@/utils/externalMention';
+
 import { formatVaultFileMention } from '../mention/formatMention';
 import type { FolderMentionItem } from '../mention/types';
 import type {
@@ -65,6 +67,17 @@ export class MentionSource implements ComposerDropdownSource {
     const index = before.lastIndexOf('@');
     if (index < 0 || (index > 0 && !/\s/.test(before[index - 1]))) return null;
     const query = before.slice(index + 1);
+    // A trailing space closes the mention. Interior spaces are kept so
+    // multi-word vault filenames (e.g. "@Alpha note") still match while typing;
+    // only a trailing space signals the user finished, which also prevents the
+    // dropdown from reopening after a folder mention like "@notes/ " is chosen.
+    if (/\s$/.test(query)) return null;
+    // External filesystem paths (`@/…`, `@~/…`, `@./…`, `@../…`, `@C:\…`) are
+    // owned exclusively by FilesystemMentionSource. Declining them here means
+    // that once that source closes on a completed path (a space appears), the
+    // vault source does not greedily reopen on the same `@` — vault files never
+    // carry absolute/relative filesystem prefixes anyway.
+    if (isExternalMentionQuery(query)) return null;
     return {
       atInputStart: index === 0,
       end: cursor,

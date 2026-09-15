@@ -435,6 +435,10 @@
       "name": "Dossier des médias",
       "desc": "Dossier contenant les pièces jointes/images. Lorsque les notes utilisent ![[image.jpg]], Claude cherchera ici. Laisser vide pour la racine du coffre."
     },
+    "externalFileMentions": {
+      "name": "Autoriser les mentions @ hors du coffre",
+      "desc": "Permet à @ de parcourir et de référencer des fichiers et dossiers hors de votre coffre par chemin absolu ou ~. Le dossier du fichier mentionné reçoit un accès en lecture pour l'agent. Désactivé par défaut."
+    },
     "systemPrompt": {
       "name": "Prompt système personnalisé",
       "desc": "Instructions supplémentaires ajoutées au prompt système par défaut"

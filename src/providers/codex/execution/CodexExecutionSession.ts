@@ -32,6 +32,11 @@ import {
 } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import {
+  extractExternalMentionDirectories,
+  type PathKind,
+} from '../../../utils/externalMention';
+import { expandHomePath } from '../../../utils/path';
+import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
 } from '../../../utils/session';
@@ -1852,11 +1857,49 @@ export class CodexExecutionSession
         ? { type: 'dangerFullAccess' }
         : sandboxConfig.sandbox === 'read-only'
           ? strictReadOnlySandbox()
-          : this.buildWorkspaceWriteSandboxPolicy(),
+          : this.buildWorkspaceWriteSandboxPolicy(
+            this.resolveExternalMentionRoots(request, settings),
+          ),
     };
   }
 
-  private buildWorkspaceWriteSandboxPolicy(): SandboxPolicy {
+  /**
+   * Collects target-mapped directories referenced by external `@` mentions so
+   * Codex's workspace-write sandbox can read and write them. Only engaged when
+   * the outside-vault mention setting is on; each mentioned file contributes its
+   * containing directory, mirroring the Claude provider's additionalDirectories.
+   */
+  private resolveExternalMentionRoots(
+    request: ProviderExecutionRequest,
+    settings: Record<string, unknown>,
+  ): string[] {
+    if (settings.enableExternalFileMentions !== true) return [];
+    const text = request.input
+      .filter(block => block.type === 'text')
+      .map(block => block.text)
+      .join('\n\n');
+    const hostDirectories = extractExternalMentionDirectories(text, {
+      expandHome: expandHomePath,
+      resolveBase: () => this.config.vaultWorkingDirectory,
+      statPath: (absolutePath): PathKind => {
+        try {
+          const stats = fs.statSync(absolutePath);
+          if (stats.isDirectory()) return 'dir';
+          if (stats.isFile()) return 'file';
+          return null;
+        } catch {
+          return null;
+        }
+      },
+    });
+    return hostDirectories
+      .map(directory => this.mapHostPathToTarget(directory))
+      .filter((value): value is string => Boolean(value?.trim()));
+  }
+
+  private buildWorkspaceWriteSandboxPolicy(
+    extraWritableRoots: readonly string[] = [],
+  ): SandboxPolicy {
     const transcriptRoot = this.resolveTranscriptRootTarget();
     const memoriesDir = deriveCodexMemoriesDirFromSessionsRoot(transcriptRoot)
       ?? this.runtimeContext?.memoriesDirTarget
@@ -1866,6 +1909,7 @@ export class CodexExecutionSession
       memoriesDir,
       this.mapHostPathToTarget(os.tmpdir()),
       this.launchSpec?.target.platformFamily === 'unix' ? '/tmp' : null,
+      ...extraWritableRoots,
     ].filter((value): value is string => Boolean(value?.trim()));
     return {
       type: 'workspaceWrite',

@@ -435,6 +435,10 @@
       "name": "Media folder",
       "desc": "Folder containing attachments/images. When notes use ![[image.jpg]], Claude will look here. Leave empty for vault root."
     },
+    "externalFileMentions": {
+      "name": "Allow @ mentions outside the vault",
+      "desc": "Let @ browse and reference files and folders outside your vault by absolute or ~ path. The mentioned file's directory is granted read access to the agent. Off by default."
+    },
     "systemPrompt": {
       "name": "Custom system prompt",
       "desc": "Additional instructions appended to the default system prompt"

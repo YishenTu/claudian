@@ -13,6 +13,7 @@ import type {
   ProviderChatUIConfig,
   ProviderId,
 } from '../../../../core/providers/types';
+import { getVaultPath } from '../../../../utils/path';
 import { MainChatComposerDropdown } from '../../composer/MainChatComposerDropdown';
 import { LinkedContentController } from '../../linked-content';
 import { ComposerContextTray } from '../../ui/ComposerContextTray';
@@ -114,6 +115,9 @@ function buildComposerDropdown(
       hiddenCommands: getHiddenCommands?.() ?? new Set(),
       providerConfig: catalogInfo?.config,
       providerDiscovery: catalogInfo?.discovery,
+      isExternalFileMentionsEnabled: () =>
+        options.plugin.settings.enableExternalFileMentions === true,
+      resolveExternalMentionBase: () => getVaultPath(options.plugin.app),
       onSlashCommandSelected: command => {
         if (command.id !== 'builtin:instruction') return;
         dom.inputEl.value = '';

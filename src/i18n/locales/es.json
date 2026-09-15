@@ -435,6 +435,10 @@
       "name": "Carpeta de medios",
       "desc": "Carpeta que contiene archivos adjuntos/imagenes. Cuando las notas usan ![[image.jpg]], Claude buscará aquí. Dejar vacío para la raíz del depósito."
     },
+    "externalFileMentions": {
+      "name": "Permitir menciones @ fuera del depósito",
+      "desc": "Permite que @ explore y haga referencia a archivos y carpetas fuera de tu depósito mediante ruta absoluta o ~. El directorio del archivo mencionado recibe acceso de lectura para el agente. Desactivado por defecto."
+    },
     "systemPrompt": {
       "name": "Prompt de sistema personalizado",
       "desc": "Instrucciones adicionales añadidas al prompt de sistema por defecto"

@@ -616,6 +616,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
       });
 
+    new Setting(container)
+      .setName(t('settings.externalFileMentions.name'))
+      .setDesc(t('settings.externalFileMentions.desc'))
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.enableExternalFileMentions ?? false)
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.enableExternalFileMentions = value;
+            });
+          });
+      });
+
     // --- Input ---
 
     new Setting(container).setName(t('settings.input')).setHeading();

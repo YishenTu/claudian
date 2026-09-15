@@ -53,6 +53,7 @@ export interface Options {
   };
   agents?: Record<string, AgentDefinition>;
   persistSession?: boolean;
+  additionalDirectories?: string[];
 }
 
 export interface Settings {
