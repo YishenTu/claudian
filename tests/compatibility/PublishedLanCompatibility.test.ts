@@ -328,6 +328,10 @@ describe('published 2.2.6 LAN compatibility', () => {
     unwrap(await peer.feature.joinProject({ encodedInvitation: invitation.encodedInvitation, memberDisplayName: 'New Host' }));
     const before = unwrap(await peer.feature.readSnapshot(project.id)).snapshot;
     unwrap(await host.feature.createHostTransfer({ projectId: project.id, targetMemberId: before.currentMember.id }));
+    await waitFor(async () => {
+      const snapshot = unwrap(await peer.feature.readSnapshot(project.id)).snapshot;
+      return 'hostTransfer' in snapshot && Boolean(snapshot.hostTransfer);
+    });
     const offered = unwrap(await peer.feature.readSnapshot(project.id)).snapshot;
     if (!('hostTransfer' in offered) || !offered.hostTransfer) throw new Error('Missing Host offer');
     unwrap(await peer.feature.acceptHostTransfer({ projectId: project.id, transferId: offered.hostTransfer.transferId }));
@@ -364,6 +368,10 @@ describe('published 2.2.6 LAN compatibility', () => {
     unwrap(await peer.feature.joinProject({ encodedInvitation: invitation.encodedInvitation, memberDisplayName: 'Old receiver' }));
     const member = unwrap(await peer.feature.readSnapshot(project.id)).snapshot.currentMember;
     unwrap(await host.feature.createHostTransfer({ projectId: project.id, targetMemberId: member.id }));
+    await waitFor(async () => {
+      const snapshot = unwrap(await peer.feature.readSnapshot(project.id)).snapshot;
+      return 'hostTransfer' in snapshot && Boolean(snapshot.hostTransfer);
+    });
     const offered = unwrap(await peer.feature.readSnapshot(project.id)).snapshot;
     if (!('hostTransfer' in offered) || !offered.hostTransfer) throw new Error('Missing Host offer');
     const transferId = offered.hostTransfer.transferId;
