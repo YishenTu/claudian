@@ -52,6 +52,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   enableAutoScroll: true,
   showMessageTimestamps: false,
   deferMathRenderingDuringStreaming: true,
+  renderDiagramsInChat: false,
   expandFileEditsByDefault: false,
   chatViewPlacement: 'right-sidebar',
   enableDualPane: true,

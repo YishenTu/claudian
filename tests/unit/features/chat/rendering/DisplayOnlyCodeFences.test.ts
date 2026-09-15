@@ -2,6 +2,8 @@ import { createMockEl } from '@test/helpers/MockElement';
 import { loadPrism } from 'obsidian';
 
 import {
+  DIAGRAM_SOURCE_CLASS,
+  hasDiagramFence,
   prepareDisplayOnlyCodeFences,
   restoreDisplayOnlyCodeFences,
 } from '@/features/chat/rendering/DisplayOnlyCodeFences';
@@ -39,6 +41,52 @@ describe('DisplayOnlyCodeFences', () => {
       {
         placeholderLanguage: 'claudian-display-only-fence-1',
         originalLanguage: 'typescript',
+      },
+    ]);
+  });
+
+  it('neutralizes diagram fences too and only flags them for Claudian rendering', () => {
+    const markdown = [
+      '```dataview',
+      'TABLE file.name',
+      '```',
+      '```Mermaid title="sample"',
+      'flowchart TB',
+      '```',
+      '```dataviewjs',
+      'dv.list([])',
+      '```',
+    ].join('\n');
+
+    const prepared = prepareDisplayOnlyCodeFences(markdown, {
+      diagramLanguages: ['mermaid'],
+    });
+
+    expect(prepared.markdown).toBe([
+      '```claudian-display-only-fence-0',
+      'TABLE file.name',
+      '```',
+      '```claudian-display-only-fence-1 title="sample"',
+      'flowchart TB',
+      '```',
+      '```claudian-display-only-fence-2',
+      'dv.list([])',
+      '```',
+    ].join('\n'));
+    expect(prepared.markdown).not.toContain('mermaid');
+    expect(prepared.fences).toEqual([
+      {
+        placeholderLanguage: 'claudian-display-only-fence-0',
+        originalLanguage: 'dataview',
+      },
+      {
+        placeholderLanguage: 'claudian-display-only-fence-1',
+        originalLanguage: 'Mermaid',
+        diagram: true,
+      },
+      {
+        placeholderLanguage: 'claudian-display-only-fence-2',
+        originalLanguage: 'dataviewjs',
       },
     ]);
   });
@@ -149,5 +197,59 @@ describe('DisplayOnlyCodeFences', () => {
     }])).resolves.toBeUndefined();
 
     expect(code.hasClass('language-dataview')).toBe(true);
+  });
+
+  it('marks diagram fences for Claudian rendering instead of highlighting them', async () => {
+    const highlightElement = jest.fn();
+    (loadPrism as jest.Mock).mockResolvedValue({ highlightElement });
+    const container = createMockEl();
+    const diagram = container.createEl('code', {
+      cls: 'language-claudian-display-only-fence-0',
+      text: 'flowchart TB',
+    });
+    const source = container.createEl('code', {
+      cls: 'language-claudian-display-only-fence-1',
+      text: 'const value = 1;',
+    });
+
+    await restoreDisplayOnlyCodeFences(container, [
+      {
+        placeholderLanguage: 'claudian-display-only-fence-0',
+        originalLanguage: 'mermaid',
+        diagram: true,
+      },
+      {
+        placeholderLanguage: 'claudian-display-only-fence-1',
+        originalLanguage: 'typescript',
+      },
+    ]);
+
+    expect(diagram.hasClass('language-mermaid')).toBe(true);
+    expect(diagram.hasClass(DIAGRAM_SOURCE_CLASS)).toBe(true);
+    expect(highlightElement).not.toHaveBeenCalledWith(diagram);
+    expect(highlightElement).toHaveBeenCalledWith(source);
+  });
+
+  describe('hasDiagramFence', () => {
+    it.each([
+      ['plain fence', '```mermaid\nflowchart TB\n'],
+      ['uppercase language', '```Mermaid\nflowchart TB\n'],
+      ['blockquoted fence', '> ```mermaid\n> flowchart TB\n'],
+      ['list-nested fence', '- ```mermaid\n  flowchart TB\n'],
+      ['attributed fence', '```mermaid title="sample"\nflowchart TB\n'],
+      ['tilde fence', '~~~mermaid\nflowchart TB\n'],
+    ])('detects a %s', (_label, content) => {
+      expect(hasDiagramFence(content)).toBe(true);
+    });
+
+    it.each([
+      ['inner fence of an outer code block', '````markdown\n```mermaid\nflowchart TB\n```\n````'],
+      ['inline code mentioning a fence', 'Use ` ```mermaid ` to draw a diagram.'],
+      ['a different language', '```dataview\nTABLE file.name\n```'],
+      ['a language that only starts with mermaid', '```mermaidjs\nflowchart TB\n```'],
+      ['prose', 'Mermaid diagrams are nice.'],
+    ])('does not report %s', (_label, content) => {
+      expect(hasDiagramFence(content)).toBe(false);
+    });
   });
 });
