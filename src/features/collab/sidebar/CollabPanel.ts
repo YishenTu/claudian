@@ -577,6 +577,7 @@ export class CollabPanel implements CollabSidebarSurfaceController {
       });
       const tickets = home.createDiv({ cls: 'claudian-collab-ticket-home' });
       this.ticketPanel = new TicketListPanel(tickets, {
+        scrollContainer: this.rootEl,
         ...(this.options.ticketFocus ? { focus: this.options.ticketFocus } : {}),
         onCreate: () => this.options.onCreateTicket?.(project),
         onOpen: ticket => this.options.onOpenTicket?.(project, ticket.id),

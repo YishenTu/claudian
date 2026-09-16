@@ -4,12 +4,14 @@ import {
   isCollabProjectId,
 } from '@claudian-collab/protocol';
 import {
+  type EventRef,
   ItemView,
   MarkdownRenderer,
   type ViewStateResult,
   type WorkspaceLeaf,
 } from 'obsidian';
 
+import type { CollabProjectChanges } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type {
   CollabConflictDetailViewState,
@@ -220,6 +222,8 @@ export class CollabDetailView extends ItemView {
   private reviewSession: ReviewDetailSession | null = null;
   private state: CollabDetailViewState | null = null;
   private ticketSession: TicketDetailSession | null = null;
+  private refreshDirty = false;
+  private visibilityEvents: EventRef[] = [];
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -264,6 +268,7 @@ export class CollabDetailView extends ItemView {
 
   async setState(value: unknown, result: ViewStateResult): Promise<void> {
     const state = parseState(value);
+    this.refreshDirty = false;
     result.history = true;
     if (!this.port.isDetailAdmissionOpen()) {
       // A restored leaf before workspace-layout readiness may keep its parsed
@@ -293,6 +298,13 @@ export class CollabDetailView extends ItemView {
 
   async onOpen(): Promise<void> {
     if (!this.port.isDetailAdmissionOpen()) return;
+    if (this.visibilityEvents.length === 0) {
+      const reveal = () => queueMicrotask(() => this.refreshVisibleDetail());
+      this.visibilityEvents = [
+        this.app.workspace.on('active-leaf-change', reveal),
+        this.app.workspace.on('layout-change', reveal),
+      ];
+    }
     this.observeState(this.state);
     this.contentEl.replaceChildren();
     this.contentEl.classList.add('claudian-collab-review');
@@ -309,6 +321,30 @@ export class CollabDetailView extends ItemView {
     }
   }
 
+  onResize(): void {
+    this.refreshVisibleDetail();
+  }
+
+  private refreshVisibleDetail(): void {
+    if (!this.refreshDirty || !this.containerEl.isShown()) return;
+    this.refreshDirty = false;
+    const current = this.state;
+    if (current?.kind === 'ticket') void this.loadTicket(current);
+    if (current?.kind === 'request' || (current?.kind === 'publication' && current.intent === 'update')) {
+      void this.reviewSession?.refresh();
+    }
+  }
+
+  private affectedBy(changes?: CollabProjectChanges): boolean {
+    if (!changes || changes.members) return true;
+    const current = this.state;
+    if (current?.kind === 'ticket') return changes.tickets === true
+      || (current.ticketId !== undefined && changes.tickets?.includes(current.ticketId) === true);
+    if (current?.kind === 'request') return changes.main === true || changes.requests === true
+      || changes.requests?.includes(current.requestId) === true;
+    return current?.kind === 'publication' && current.intent === 'update' && changes.main === true;
+  }
+
   private observeState(state: CollabDetailViewState | null): void {
     const projectId = state && 'projectId' in state ? state.projectId : null;
     if (this.observedProjectId === projectId) return;
@@ -316,10 +352,10 @@ export class CollabDetailView extends ItemView {
     this.featureSubscription = null;
     this.observedProjectId = projectId;
     if (!projectId) return;
-    this.featureSubscription = this.port.observeProject(projectId, () => {
-      const current = this.state;
-      if (current?.kind === 'ticket') void this.loadTicket(current);
-      if (current?.kind === 'request' || (current?.kind === 'publication' && current.intent === 'update')) void this.reviewSession?.refresh();
+    this.featureSubscription = this.port.observeProject(projectId, (_coordination, changes) => {
+      if (!this.affectedBy(changes)) return;
+      this.refreshDirty = true;
+      this.refreshVisibleDetail();
     });
   }
 
@@ -350,6 +386,9 @@ export class CollabDetailView extends ItemView {
     await session.open(state);
   }
   async onClose(): Promise<void> {
+    this.refreshDirty = false;
+    for (const event of this.visibilityEvents) this.app.workspace.offref(event);
+    this.visibilityEvents = [];
     this.cancelWork();
     this.diffSession.destroy();
     this.featureSubscription?.dispose();

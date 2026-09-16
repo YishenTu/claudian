@@ -2511,6 +2511,28 @@ describe('CloudProjectEventClient', () => {
     client.dispose();
   });
 
+  it.each([
+    ['request.comment-added', { requestId: 'request-a' }, { requests: ['request-a'] }],
+    ['request.updated', { requestId: 'request-a' }, { requests: ['request-a'], tickets: true }],
+    ['ticket.comment-added', { ticketId: 'ticket-a' }, { tickets: ['ticket-a'] }],
+    ['ticket.updated', { ticketId: 'ticket-a' }, { tickets: ['ticket-a'], requests: true }],
+    ['membership.updated', { memberId: 'member-a' }, { members: true }],
+    ['authority-transfer.updated', { transferId: 'transfer-a' }, { hosting: true }],
+    ['main.updated', { requestId: 'request-a', mainOid: 'a'.repeat(40) }, { main: true, requests: true, tickets: true }],
+  ] as const)('routes Cloud %s to the affected presentation data', async (kind, payload, changes) => {
+    const socket = new FakeSocket();
+    const onInvalidation = jest.fn(async input => input.sequence);
+    const client = new CloudProjectEventClient({
+      headers: {}, afterSequence: 3, projectId: PROJECT_ID, serverUrl: 'https://cloud.example.test',
+    }, onInvalidation, { createSocket: () => socket });
+    client.start(); socket.open(); await flush();
+    socket.message(JSON.stringify({ kind, payload, projectId: PROJECT_ID,
+      protocolVersion: 15, sequence: 4, occurredAt: '2026-08-27T00:00:00.000Z' }));
+    await flush();
+    expect(onInvalidation).toHaveBeenLastCalledWith({ kind: 'changes', changes, sequence: 4 });
+    client.dispose();
+  });
+
   it('refreshes snapshot first, detects a gap, and reconnects after the applied cursor', async () => {
     const sockets: FakeSocket[] = [];
     const onInvalidation = jest.fn(async invalidation => invalidation.sequence);

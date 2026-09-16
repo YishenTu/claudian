@@ -1,5 +1,7 @@
 /** @jest-environment jsdom */
 
+import { within } from '@testing-library/dom';
+
 import type {
   CollabCoordinationSnapshot,
   CollabFeatureState,
@@ -707,3 +709,18 @@ function deferred<T>(): {
 function nextTurn(): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
+
+it('keeps the request navigation stable on an unrelated ticket comment', async () => {
+  const container = document.body.createDiv();
+  const test = fixture(snapshot());
+  const panel = new TeamChangesPanel(container, {
+    onOpenFile: jest.fn(), port: test.port, project: project(),
+  });
+  await flush();
+  const row = within(container).getAllByRole('button')[0]!;
+  row.focus();
+  test.port.observeProject.mock.calls[0]?.[1](snapshot(), { tickets: ['ticket-other'] });
+  expect(row.isConnected).toBe(true);
+  expect(document.activeElement).toBe(row);
+  panel.destroy();
+});

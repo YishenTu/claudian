@@ -88,6 +88,7 @@ import {
 } from '@/app/collab/review/NativeGitWorkingTreeReviewRepository';
 import { PersonalChangesReviewBaseline } from '@/app/collab/review/PersonalChangesReviewBaseline';
 import { WorkingTreeReviewService } from '@/app/collab/review/WorkingTreeReviewService';
+import type { CollabProjectChanges } from '@/core/collab';
 import type { CollabConnectionStatus, CollabProjectSnapshot } from '@/core/collab';
 import type { CollabChangedFile } from '@/core/collab';
 import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConfirmUpdateRequest, type CollabConflictDescriptor, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabCoordinationSnapshot, type CollabCreateTicketRequest, type CollabGitStatus, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectCapabilities, type CollabProjectUpdateInspection, type CollabProjectUpdateOutcome, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRequestReview, type CollabResult, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest } from '@/core/collab';
@@ -135,6 +136,7 @@ export type CollabCoordinationInvalidationListener = (
   projectId: CollabProjectId,
   reason: 'accepted-main-changed' | 'coordination-changed',
   coordination?: CollabCoordinationSnapshot,
+  changes?: CollabProjectChanges,
 ) => void;
 
 interface ReviewOutcome {
@@ -315,7 +317,7 @@ export class CollabPublicationService {
     options: CollabOperationOptions = {},
   ): Promise<CollabCoordinationSnapshot> {
     const snapshot = await this.projection.readPresentationSnapshot(projectId, options);
-    this.sessions.acquire(projectId).observedAcceptedMainOid ??= snapshot.snapshot.project.mainOid;
+    this.sessions.acquire(projectId).acceptedMainNotificationBaseline ??= snapshot.snapshot.project.mainOid;
     return snapshot;
   }
 
@@ -324,7 +326,7 @@ export class CollabPublicationService {
     options: CollabOperationOptions = {},
   ): Promise<CollabCoordinationSnapshot> {
     const snapshot = await this.projection.readSnapshot(projectId, options);
-    this.sessions.acquire(projectId).observedAcceptedMainOid = snapshot.snapshot.project.mainOid;
+    this.sessions.acquire(projectId).acceptedMainNotificationBaseline ??= snapshot.snapshot.project.mainOid;
     return snapshot;
   }
 
@@ -1169,17 +1171,18 @@ export class CollabPublicationService {
       const generation = session.generation;
       const observationRevision = session.observationRevision;
       let previousSequence: number | null = null;
-      const publish = (snapshot: CollabProjectSnapshot) => {
+      const publish = (snapshot: CollabProjectSnapshot, changes?: CollabProjectChanges) => {
         if (!session.hasObservers || session.observationRevision !== observationRevision || session.generation !== generation
           || previousSequence !== null && snapshot.eventSequence <= previousSequence) return;
         previousSequence = snapshot.eventSequence;
-        const previousMainOid = session.observedAcceptedMainOid;
-        session.observedAcceptedMainOid = snapshot.project.mainOid;
+        const previousMainOid = session.acceptedMainNotificationBaseline;
+        session.acceptedMainNotificationBaseline = snapshot.project.mainOid;
         this.#notifyCoordination(projectId,
           previousMainOid !== null && previousMainOid !== snapshot.project.mainOid
             ? 'accepted-main-changed' : 'coordination-changed',
           { snapshot, source: 'online', stale: false,
             syncState: { eventSequence: snapshot.eventSequence, generation, projectId, status: 'synchronized' } },
+          changes,
         );
       };
       return this.projection.subscribe(projectId, publish);
@@ -1395,10 +1398,11 @@ export class CollabPublicationService {
     projectId: CollabProjectId,
     reason: 'accepted-main-changed' | 'coordination-changed',
     coordination?: CollabCoordinationSnapshot,
+    changes?: CollabProjectChanges,
   ): void {
     for (const listener of this.coordinationListeners) {
       try {
-        listener(projectId, reason, coordination);
+        listener(projectId, reason, coordination, changes);
       } catch {
         // Presentation invalidation observers cannot own projection state.
       }

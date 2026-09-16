@@ -1,6 +1,7 @@
 import type { ResolveTicketNumberRequest, ResolveTicketNumberResponse } from '@claudian-collab/protocol';
 import type { CollabChangeRequest, CollabComment, CollabTicketComment, CollabTicketDetail, CollabTicketSummary } from '@claudian-collab/protocol';
 
+import type { CollabProjectObserver } from '@/core/collab';
 import type { CollabAcceptOutcome, CollabAcceptRequest, CollabAddCommentRequest, CollabAddTicketCommentRequest, CollabChangeTicketStatusRequest, CollabConfirmUpdateRequest, CollabCoordinationSnapshot, CollabCreateTicketRequest, CollabOperationOptions, CollabProjectUpdateOutcome, CollabPublicationReview, CollabPublishOutcome, CollabPublishRequest, CollabRequestReview, CollabResult, CollabTicketDetailProjection, CollabUpdateRequestMetadataRequest, CollabUpdateTicketContentRequest, CollabWorkingTreeReview } from '@/core/collab';
 import type {
   CollabConflictResolutionPanelOptions,
@@ -148,7 +149,7 @@ export interface CollabDetailViewPort
     request: CollabUpdateTicketContentRequest,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabTicketSummary>>;
-  observeProject(projectId: string, listener: () => void): { dispose(): void };
+  observeProject(projectId: string, listener: CollabProjectObserver): { dispose(): void };
 }
 
 export interface CollabDetailConflictPanel {

@@ -152,6 +152,20 @@ export interface CollabPendingReconnectView {
   readonly serverUrl: string;
 }
 
+/** Scoped invalidation after authoritative convergence. Omission means full refresh. */
+export interface CollabProjectChanges {
+  readonly members?: boolean;
+  readonly hosting?: boolean;
+  readonly main?: boolean;
+  readonly requests?: true | readonly string[];
+  readonly tickets?: true | readonly string[];
+}
+
+export type CollabProjectObserver = (
+  coordination?: CollabCoordinationSnapshot,
+  changes?: CollabProjectChanges,
+) => void;
+
 export interface CollabCoordinationSnapshot {
   snapshot: CollabProjectSnapshot;
   source: 'online' | 'cache';
@@ -667,7 +681,7 @@ export interface CollabFeaturePort {
   withdrawCloudToLanTarget(request: CollabWithdrawCloudToLanTargetRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   observeCloudToLanTransfer(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
   cancelCloudToLanTransfer(handle: CollabCloudToLanTransferHandle, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
-  observeProject(projectId: CollabProjectId, listener: (coordination?: CollabCoordinationSnapshot) => void): CollabFeatureSubscription;
+  observeProject(projectId: CollabProjectId, listener: CollabProjectObserver): CollabFeatureSubscription;
   subscribe(listener: CollabFeatureStateListener): CollabFeatureSubscription;
 }
 

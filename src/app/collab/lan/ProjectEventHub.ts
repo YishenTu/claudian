@@ -53,12 +53,17 @@ interface EventConnection {
 function eventPayload(record: AuthorityEventRecord): Readonly<Record<string, unknown>> {
   const requestId = record.payload.requestId;
   const memberId = record.payload.memberId;
+  const ticketId = record.payload.ticketId;
   if (
     (record.kind.startsWith('request.') || record.kind === 'comment.created')
     && typeof requestId === 'string'
     && isCollabOpaqueId(requestId)
   ) {
     return { requestId };
+  }
+  if ((record.kind.startsWith('ticket.') || record.kind === 'ticket-comment.created')
+    && isCollabOpaqueId(ticketId)) {
+    return { ticketId };
   }
   if (
     record.kind.startsWith('membership.')
@@ -73,6 +78,8 @@ function eventPayload(record: AuthorityEventRecord): Readonly<Record<string, unk
 function eventKind(kind: string): CollabEventKind | null {
   if (kind.startsWith('request.')) return 'request-updated';
   if (kind === 'comment.created') return 'comment-added';
+  if (kind.startsWith('ticket.')) return 'ticket-updated';
+  if (kind === 'ticket-comment.created') return 'ticket-comment-added';
   if (kind.startsWith('membership.')) return 'membership-updated';
   if (kind.startsWith('invitation.')) return 'invitation-updated';
   if (kind.startsWith('host.')) return 'host-state-updated';

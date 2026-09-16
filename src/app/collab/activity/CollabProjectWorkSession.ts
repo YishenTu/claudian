@@ -58,7 +58,8 @@ export class CollabProjectWorkSession {
    #retainedSnapshotSource: 'online' | 'cache' | null = null;
    #snapshotRead: Promise<CollabProjectSnapshot> | null = null;
 
-  observedAcceptedMainOid: string | null = null;
+  // Queries may seed this baseline; only event convergence may advance it.
+  acceptedMainNotificationBaseline: string | null = null;
   #observers = 0;
   #observationRevision = 0;
 
@@ -282,7 +283,7 @@ export class CollabProjectWorkSession {
     this.#retainedSnapshot = null;
     this.#retainedSnapshotSource = null;
     this.#connection?.invalidate(options.preserveConnectionAttempt);
-    this.observedAcceptedMainOid = null;
+    this.acceptedMainNotificationBaseline = null;
     this.#eventConnection?.dispose();
     this.#eventConnection = null;
     const authoritySession = this.#authoritySession;
@@ -411,7 +412,7 @@ export class CollabProjectWorkSessionRegistry {
   private readonly sessions = new Map<CollabProjectId, CollabProjectWorkSession>();
    readonly #suspensions = new Map<
     CollabProjectId,
-    CollabProjectWorkSessionSuspension & { readonly observedAcceptedMainOid: string | null }
+    CollabProjectWorkSessionSuspension & { readonly acceptedMainNotificationBaseline: string | null }
   >();
 
   constructor(
@@ -506,7 +507,7 @@ export class CollabProjectWorkSessionRegistry {
       return existingSuspension;
     }
     const suspension = Object.freeze({
-      observedAcceptedMainOid: this.sessions.get(projectId)?.observedAcceptedMainOid ?? null,
+      acceptedMainNotificationBaseline: this.sessions.get(projectId)?.acceptedMainNotificationBaseline ?? null,
       projectId,
       token: Symbol(projectId),
     });
@@ -540,7 +541,7 @@ export class CollabProjectWorkSessionRegistry {
     if (observation) {
       observation.lease?.dispose();
       const session = this.acquire(projectId);
-      session.observedAcceptedMainOid = current.observedAcceptedMainOid;
+      session.acceptedMainNotificationBaseline = current.acceptedMainNotificationBaseline;
       observation.lease = session.retainObservation();
       observation.start(session);
     }

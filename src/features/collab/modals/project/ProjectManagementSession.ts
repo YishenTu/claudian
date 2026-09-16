@@ -16,7 +16,7 @@ import type {
 import { type LatestTaskHandle, LatestTaskScope } from '@/shared/async/LatestTaskScope';
 
 export type ProjectManagementSessionPort = Pick<CollabFeaturePort,
-  | 'subscribe' | 'readSnapshot' | 'readProjectCapabilities'
+  | 'subscribe' | 'observeProject' | 'readSnapshot' | 'readProjectCapabilities'
   | 'readLanToCloudTransfer' | 'readCloudToLanTransfer' | 'readManagementOperation'
   | 'listMembers' | 'listManagerResponsibilityOffers'
   | 'claimLegacyHostInstallation' | 'startHost' | 'stopHost'
@@ -73,6 +73,7 @@ export interface ProjectManagementSessionOptions {
 export class ProjectManagementSession {
   private readonly lifetime = new AbortController();
   private readonly reads = new LatestTaskScope();
+  private projectSubscription: { dispose(): void } | null = null;
   private subscription: { dispose(): void; } | null = null;
   private refreshing: Promise<void> | null = null;
   private refreshRequested = false;
@@ -156,6 +157,9 @@ export class ProjectManagementSession {
     const subscription = this.options.port.subscribe(state => this.acceptProjection(state));
     if (this.signal.aborted) { subscription.dispose(); return; }
     this.subscription = subscription;
+    this.projectSubscription = this.options.port.observeProject(this.project.id, (_coordination, changes) => {
+      if (!changes || changes.members || changes.hosting) void this.refresh();
+    });
     void this.refresh();
   }
 
@@ -168,6 +172,8 @@ export class ProjectManagementSession {
     this.hostOperation = null;
     this.subscription?.dispose();
     this.subscription = null;
+    this.projectSubscription?.dispose();
+    this.projectSubscription = null;
     this.refreshRequested = false;
   }
 
@@ -186,9 +192,9 @@ export class ProjectManagementSession {
       || project.hostStatus !== this.project.hostStatus
       || project.connectionStatus !== this.project.connectionStatus
     );
+    const changed = project !== undefined && JSON.stringify(project) !== JSON.stringify(this.project);
     if (project) this.acceptProject(project);
-    // Feature publications invalidate management even if the local summary is unchanged.
-    void this.refresh(supersede);
+    if (changed) void this.refresh(supersede);
   }
 
   private acceptProject(project: CollabLocalProjectSummary): void {

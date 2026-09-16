@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 
 import type { CollabTicketSummary } from '@claudian-collab/protocol';
+import { within } from '@testing-library/dom';
 
 import type { CollabFeaturePort, CollabLocalProjectSummary } from '@/core/collab';
 import { TicketListPanel } from '@/features/collab/sidebar/tickets/TicketListPanel';
@@ -346,3 +347,69 @@ function project(
 async function nextTurn(): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, 0));
 }
+
+it('preserves loaded tickets through unrelated events and refreshes the loaded pages in place', async () => {
+  let notify: Parameters<CollabFeaturePort['observeProject']>[1] | undefined;
+  let updated = false;
+  const root = document.createElement('div');
+  const viewport = document.createElement('div');
+  document.body.append(viewport); viewport.append(root);
+  const panel = new TicketListPanel(root, {
+    scrollContainer: viewport,
+    onCreate: () => undefined, onOpen: () => undefined, project: project(),
+    port: {
+      observeProject: (_id: string, listener: NonNullable<typeof notify>) => {
+        notify = listener; return { dispose() {} };
+      },
+      listTickets: async ({ cursor }: { cursor?: string }) => ({ status: 'success', value: ticketPageRead(cursor
+        ? { tickets: [ticket('second', 2, updated ? 'Updated second ticket' : 'Second ticket', 'open')] }
+        : { nextCursor: 'page-two', tickets: [ticket('first', 3, 'First ticket', 'open')] }) }),
+    } as unknown as CollabFeaturePort,
+  });
+  panel.setActive(true);
+  await nextTurn();
+  within(root).getByRole('button', { name: 'Load more' }).click();
+  await nextTurn();
+  const second = within(root).getByRole('button', { name: /Second ticket/ });
+  second.focus();
+  viewport.scrollTop = 80;
+  notify?.(undefined, { requests: ['unrelated-pr'] });
+  expect(within(root).getByRole('button', { name: /Second ticket/ })).toBe(second);
+  updated = true;
+  notify?.(undefined, { tickets: ['second'] });
+  expect(within(root).getByRole('button', { name: /Second ticket/ })).toBe(second);
+  await nextTurn();
+  expect(within(root).getByRole('button', { name: /Updated second ticket/ })).toBe(document.activeElement);
+  expect(viewport.scrollTop).toBe(80);
+  within(root).getByRole('button', { name: 'Open' }).focus();
+  notify?.(undefined, { tickets: ['second'] });
+  await nextTurn();
+  expect(within(root).getByRole('button', { name: 'Open' })).toBe(document.activeElement);
+  panel.destroy(); viewport.remove();
+});
+
+it('waits for background convergence before allowing another page', async () => {
+  let notify: Parameters<CollabFeaturePort['observeProject']>[1] | undefined;
+  let release!: () => void;
+  let waiting = false;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const root = document.createElement('div');
+  const panel = new TicketListPanel(root, {
+    onCreate: () => undefined, onOpen: () => undefined, project: project(),
+    port: {
+      observeProject: (_id: string, listener: NonNullable<typeof notify>) => { notify = listener; return { dispose() {} }; },
+      listTickets: async () => {
+        if (waiting) await gate;
+        return { status: 'success', value: ticketPageRead({ nextCursor: 'page-two', tickets: [ticket('first', 3, 'First ticket', 'open')] }) };
+      },
+    } as unknown as CollabFeaturePort,
+  });
+  try {
+    panel.setActive(true); await nextTurn();
+    waiting = true;
+    notify?.(undefined, { tickets: ['first'] });
+    expect((within(root).getByRole('button', { name: 'Load more' }) as HTMLButtonElement).disabled).toBe(true);
+    release(); await nextTurn();
+    expect((within(root).getByRole('button', { name: 'Load more' }) as HTMLButtonElement).disabled).toBe(false);
+  } finally { release(); panel.destroy(); }
+});

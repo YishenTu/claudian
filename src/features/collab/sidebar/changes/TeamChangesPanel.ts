@@ -1,5 +1,6 @@
 import type { CollabChangeRequest } from '@claudian-collab/protocol';
 
+import type { CollabProjectObserver } from '@/core/collab';
 import type { CollabCoordinationSnapshot, CollabFeatureState, CollabLocalProjectSummary, CollabOperationOptions, CollabRequestReview, CollabResult } from '@/core/collab';
 import type { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';
 import {
@@ -22,7 +23,7 @@ export interface TeamChangesPanelPort extends TeamReviewLoaderPort {
     projectId: string,
     options?: CollabOperationOptions,
   ): Promise<CollabResult<CollabCoordinationSnapshot>>;
-  observeProject(projectId: string, listener: (coordination?: CollabCoordinationSnapshot) => void): { dispose(): void };
+  observeProject(projectId: string, listener: CollabProjectObserver): { dispose(): void };
 }
 
 export interface TeamChangesPanelOptions {
@@ -89,8 +90,8 @@ export class TeamChangesPanel {
   }
 
   private observeProject(): { dispose(): void } {
-    return this.options.port.observeProject(this.project.id, coordination => {
-      if (this.destroyed) return;
+    return this.options.port.observeProject(this.project.id, (coordination, changes) => {
+      if (this.destroyed || (changes && !changes.members && !changes.main && !changes.requests)) return;
       if (!this.active) { this.refreshOnResume = true; return; }
       if (coordination) this.adoptSnapshot(coordination);
       else this.#queueRefresh();

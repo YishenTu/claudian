@@ -76,6 +76,7 @@ export type ProjectManagementModalPort = Pick<
   | 'startHost'
   | 'stopHost'
   | 'subscribe'
+  | 'observeProject'
   | 'acceptLanToCloudTransfer'
   | 'acceptCloudToLanTransfer'
   | 'beginCloudToLanTransfer'

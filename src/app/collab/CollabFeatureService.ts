@@ -35,6 +35,7 @@ import {
   type ProjectOperationPolicy,
   type ProjectOperationSuspension,
 } from '@/app/collab/ProjectOperationAdmission';
+import type { CollabProjectChanges, CollabProjectObserver } from '@/core/collab';
 import type { CollabCompleteManagementOperationRequest, CollabImportedMemberClaimRequest, CollabInvitationOperation, CollabInvitationSummaryView, CollabManagementOperationView, CollabManagerResponsibilityOfferSummary, CollabMemberSummaryView, CollabOpenInvitationRequest, CollabRevokeInvitationRequest } from '@/core/collab';
 import { type CollabAcceptOutcome, type CollabAcceptRequest, type CollabAddCommentRequest, type CollabAddTicketCommentRequest, type CollabBoundedQueryPort, type CollabCancelManagerResponsibilityOfferRequest, type CollabChangeTicketStatusRequest, type CollabConfirmPublishRequest, type CollabConfirmUpdateRequest, type CollabConflictFileContent, type CollabConflictFileRequest, type CollabConflictSession, type CollabConnectionStatus, type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabCreateManagerResponsibilityOfferRequest, type CollabCreateProjectRequest, type CollabCreateTicketRequest, type CollabDemoteManagerRequest, type CollabFeaturePort, type CollabFeatureState, type CollabFeatureStateListener, type CollabFeatureSubscription, type CollabFinalizeRetiredProjectRequest, type CollabGitStatus, type CollabHostSession, type CollabHostStatus, type CollabHostTransferIntentRequest, type CollabInvitationView, type CollabJoinProjectRequest, type CollabLeaveProjectRequest, type CollabListTicketsRequest, type CollabLocalProjectSummary, type CollabOperationOptions, type CollabPersonalChangesInspection, type CollabProjectInspection, type CollabProjectSelectionProjection, type CollabProjectUpdateInspection, type CollabProjectUpdateOutcome, type CollabPromoteManagerRequest, type CollabPublicationReview, type CollabPublicationReviewFileRequest, type CollabPublishOutcome, type CollabPublishRequest, type CollabReconciliationOutcome, type CollabReconnectProjectRequest, type CollabRemoveMemberRequest, type CollabRequestReview, type CollabResult, type CollabResumeSetupRequest, type CollabRetireProjectRequest, type CollabReviewFileContent, type CollabReviewFileRequest, type CollabTicketDetailProjection, type CollabTicketPageProjection, type CollabUpdateRequestMetadataRequest, type CollabUpdateTicketContentRequest, type CollabWorkingTreeReview, type CollabWorkingTreeReviewFileRequest, resolveEffectiveCollabProjectId } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -349,6 +350,7 @@ export interface CollabPublicationPort {
       projectId: CollabProjectId,
       reason: 'accepted-main-changed' | 'coordination-changed',
       coordination?: CollabCoordinationSnapshot,
+      changes?: CollabProjectChanges,
     ) => void,
   ): { dispose(): void };
   readConnectionStatus(projectId: CollabProjectId): CollabConnectionStatus;
@@ -525,7 +527,7 @@ class CollabFeatureServiceCore {
    #activeOperationProjectId: CollabProjectId | null = null;
    #initializePromise: Promise<CollabResult<CollabFeatureState>> | null = null;
   private readonly listeners = new Set<CollabFeatureStateListener>();
-  readonly #projectListeners = new Map<CollabProjectId, Set<(coordination?: CollabCoordinationSnapshot) => void>>();
+  readonly #projectListeners = new Map<CollabProjectId, Set<CollabProjectObserver>>();
    #lifecycleRecoveryController: AbortController | null = null;
    #lifecycleRecoveryPromise: Promise<void> | null = null;
    readonly #publicationSubscription: { dispose(): void };
@@ -564,11 +566,12 @@ class CollabFeatureServiceCore {
       projectId,
       reason,
       coordination,
+      changes,
     ) => {
       if (reason === 'accepted-main-changed') {
         this.scheduleAcceptedMainSynchronization(projectId);
       }
-      this.#notifyProject(projectId, coordination);
+      this.#notifyProject(projectId, coordination, changes);
       void this.operationAdmission.runGlobal(async () => {
           await this.#refreshProjects({ projectId }).catch(error => {
             this.#publishState({
@@ -2120,7 +2123,7 @@ class CollabFeatureServiceCore {
 
   observeProject(
     projectId: CollabProjectId,
-    listener: (coordination?: CollabCoordinationSnapshot) => void,
+    listener: CollabProjectObserver,
   ): CollabFeatureSubscription {
     if (this.#closing || this.disposed) return { dispose: () => undefined };
     const listeners = this.#projectListeners.get(projectId) ?? new Set();
@@ -2139,9 +2142,9 @@ class CollabFeatureServiceCore {
     }
   }
 
-  #notifyProject(projectId: CollabProjectId, coordination?: CollabCoordinationSnapshot): void {
+  #notifyProject(projectId: CollabProjectId, coordination?: CollabCoordinationSnapshot, changes?: CollabProjectChanges): void {
     for (const listener of this.#projectListeners.get(projectId) ?? []) {
-      try { listener(coordination); } catch { /* Observers cannot invalidate application state. */ }
+      try { listener(coordination, changes); } catch { /* Observers cannot invalidate application state. */ }
     }
   }
 

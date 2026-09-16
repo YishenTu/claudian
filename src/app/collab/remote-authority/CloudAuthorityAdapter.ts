@@ -989,10 +989,32 @@ export class CloudProjectEventClient {
       });
       return;
     }
-    const requestId = 'requestId' in message.payload ? message.payload.requestId : undefined;
-    this.request(requestId === undefined
-      ? { kind: 'snapshot', sequence: message.sequence }
-      : { kind: 'request', requestId, sequence: message.sequence });
+    const sequence = message.sequence;
+    switch (message.kind) {
+      case 'request.comment-added':
+        this.request({ kind: 'changes', changes: { requests: [message.payload.requestId] }, sequence });
+        break;
+      case 'request.updated':
+        this.request({ kind: 'changes', changes: { requests: [message.payload.requestId], tickets: true }, sequence });
+        break;
+      case 'ticket.comment-added':
+        this.request({ kind: 'changes', changes: { tickets: [message.payload.ticketId] }, sequence });
+        break;
+      case 'ticket.updated':
+        this.request({ kind: 'changes', changes: { tickets: [message.payload.ticketId], requests: true }, sequence });
+        break;
+      case 'main.updated':
+        this.request({ kind: 'changes', changes: { main: true, requests: true, tickets: true }, sequence });
+        break;
+      case 'membership.updated':
+      case 'membership.claimed':
+        this.request({ kind: 'changes', changes: { members: true }, sequence });
+        break;
+      case 'authority-transfer.updated':
+      case 'authority-transfer.preparation-updated':
+        this.request({ kind: 'changes', changes: { hosting: true }, sequence });
+        break;
+    }
   }
 
   private request(invalidation: CollabAuthorityEventInvalidation): void {

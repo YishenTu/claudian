@@ -8,7 +8,7 @@ import type {
   CloudAuthorityMembershipControlPort,
   CollabAuthorityMembershipControlPort,
 } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
-import type { CollabAuthorityKind, CollabProjectSnapshot } from '@/core/collab';
+import type { CollabAuthorityKind, CollabProjectChanges, CollabProjectSnapshot } from '@/core/collab';
 import type { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export type CollabAuthorityEventInvalidation =
@@ -20,8 +20,8 @@ export type CollabAuthorityEventInvalidation =
   }
   | { readonly kind: 'snapshot'; readonly sequence: number }
   | {
-    readonly kind: 'request';
-    readonly requestId: string;
+    readonly kind: 'changes';
+    readonly changes: CollabProjectChanges;
     readonly sequence: number;
   };
 

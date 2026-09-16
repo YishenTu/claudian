@@ -130,11 +130,29 @@ describe('ProjectEventClient', () => {
     await flushTasks();
 
     expect(onInvalidation).toHaveBeenCalledWith({
-      kind: 'request',
-      requestId: 'request-a',
+      kind: 'changes',
+      changes: { requests: ['request-a'], tickets: true },
       sequence: 4,
     });
     expect(client.lastSequence).toBe(4);
+    client.dispose();
+  });
+
+  it.each([
+    ['comment-added', { requestId: 'request-a' }, { requests: ['request-a'] }],
+    ['ticket-comment-added', { ticketId: 'ticket-a' }, { tickets: ['ticket-a'] }],
+    ['ticket-updated', { ticketId: 'ticket-a' }, { tickets: ['ticket-a'], requests: true }],
+    ['membership-updated', { memberId: 'member-a' }, { members: true }],
+    ['host-state-updated', {}, { hosting: true }],
+    ['main-updated', {}, { main: true, requests: true, tickets: true }],
+  ] as const)('routes %s to the affected presentation data', async (kind, payload, changes) => {
+    const socket = new FakeClientSocket();
+    const onInvalidation = jest.fn(async input => input.sequence);
+    const client = createClient(() => socket, onInvalidation, 3);
+    client.start(); socket.emitOpen(); await flushTasks();
+    socket.emitMessage(JSON.stringify(event(4, kind, payload)));
+    await flushTasks();
+    expect(onInvalidation).toHaveBeenLastCalledWith({ kind: 'changes', changes, sequence: 4 });
     client.dispose();
   });
 

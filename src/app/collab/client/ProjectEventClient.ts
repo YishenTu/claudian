@@ -214,7 +214,20 @@ export class ProjectEventClient {
       (event.kind === 'request-updated' || event.kind === 'comment-added')
       && isCollabOpaqueId(requestId)
     ) {
-      return { kind: 'request', requestId, sequence: event.sequence };
+      return { kind: 'changes', changes: { requests: [requestId], ...(event.kind === 'request-updated' ? { tickets: true } : {}) }, sequence: event.sequence };
+    }
+    const ticketId = event.payload.ticketId;
+    if ((event.kind === 'ticket-updated' || event.kind === 'ticket-comment-added') && isCollabOpaqueId(ticketId)) {
+      return { kind: 'changes', changes: { tickets: [ticketId], ...(event.kind === 'ticket-updated' ? { requests: true } : {}) }, sequence: event.sequence };
+    }
+    if (event.kind === 'membership-updated' || event.kind === 'invitation-updated') {
+      return { kind: 'changes', changes: { members: true }, sequence: event.sequence };
+    }
+    if (event.kind === 'host-state-updated' || event.kind === 'host-updated') {
+      return { kind: 'changes', changes: { hosting: true }, sequence: event.sequence };
+    }
+    if (event.kind === 'main-updated') {
+      return { kind: 'changes', changes: { main: true, requests: true, tickets: true }, sequence: event.sequence };
     }
     return { kind: 'snapshot', sequence: event.sequence };
   }

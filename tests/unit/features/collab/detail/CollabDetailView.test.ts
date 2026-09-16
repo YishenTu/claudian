@@ -3166,3 +3166,39 @@ function deferred<T>(): {
   });
   return { promise, resolve };
 }
+
+it('defers hidden review refresh and ignores changes to other requests', async () => {
+  const review = requestReview();
+  const port = detailPort(review);
+  let notify: Parameters<CollabDetailViewPort['observeProject']>[1] | undefined;
+  port.observeProject.mockImplementation((_id, listener) => { notify = listener; return { dispose() {} }; });
+  const view = createView(port, diffPort(), objectUrlPort());
+  const visibilityListeners = new Set<() => void>();
+  view.app = { workspace: {
+    on: (_event: string, listener: () => void) => { visibilityListeners.add(listener); return listener; },
+    offref: (listener: () => void) => visibilityListeners.delete(listener),
+  } } as never;
+  let shown = true;
+  view.containerEl.isShown = () => shown;
+  await view.onOpen(); await view.setState(viewState(), { history: false });
+  const next = { ...review, detail: { ...review.detail,
+    request: { ...review.detail.request, commentCount: 1 },
+    comments: { comments: [{ id: 'comment-new', authorMemberId: 'member-b', requestId: 'request-a',
+      body: 'New review feedback', createdAt: '2026-08-08T00:01:00.000Z' }] },
+  } };
+  port.readSnapshot.mockResolvedValue({ status: 'success', value: coordination(next) });
+  port.prepareReview.mockResolvedValue({ status: 'success', value: next });
+  notify?.(undefined, { requests: ['other-request'] });
+  await nextTurn();
+  expect(view.contentEl.textContent).not.toContain('Comments (1)');
+  shown = false;
+  notify?.(undefined, { requests: ['request-a'] });
+  notify?.(undefined, { requests: ['request-a'] });
+  await nextTurn();
+  expect(view.contentEl.textContent).not.toContain('Comments (1)');
+  shown = true;
+  for (const listener of visibilityListeners) listener();
+  await nextTurn();
+  expect(view.contentEl.textContent).toContain('Comments (1)');
+  await view.onClose();
+});

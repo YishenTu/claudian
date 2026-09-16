@@ -573,6 +573,64 @@ describe('CollabPublicationService reconnect', () => {
     }
   });
 
+  it.each([false, true])('keeps a main update pending when a query reads it before event convergence (retained: %s)', async retained => {
+    const releaseRefresh = deferred<void>();
+    let snapshotReads = 0;
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json');
+      if (request.method === 'GET') {
+        response.end(JSON.stringify(collabCloudCapabilityDocument(['project-snapshot', 'project-events'], cloudLimits)));
+        return;
+      }
+      snapshotReads += 1;
+      const snapshot = cloudSnapshot();
+      if (snapshotReads <= (retained ? 2 : 1)) {
+        response.end(JSON.stringify(collabCloudSuccessEnvelope('response-snapshot', snapshot)));
+        return;
+      }
+      void releaseRefresh.promise.then(() => response.end(JSON.stringify(collabCloudSuccessEnvelope('response-snapshot', {
+        ...snapshot, eventSequence: 2, project: { ...snapshot.project, expectedMainOid: 'b'.repeat(40) },
+      }))));
+    });
+    const sockets = new WebSocketServer({ server });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing server address');
+    const vaultRoot = await mkdtemp(path.join(tmpdir(), 'collab-initial-main-'));
+    const projects = new CollabLocalProjectRepository(vaultRoot);
+    await projects.saveMembership(cloudMembership(`http://127.0.0.1:${address.port}`));
+    await new CloudProjectCredentialStore(vaultRoot).getOrCreate(CLOUD_PROJECT_ID);
+    const service = new CollabPublicationService({
+      local: { pathPolicy: {}, projects, workspace: {} }, requireGitFoundation: jest.fn(),
+    } as unknown as CollabPublicationFoundationPort, completeCollabPublicationOptions({
+      cloudAuthority: new CloudAuthorityAdapter(vaultRoot, { requestIdFactory: () => 'response-snapshot' }),
+      vaultRoot,
+    }));
+    const refreshed = deferred<string>();
+    service.subscribeCoordination((_projectId, reason, coordination) => {
+      if (coordination?.snapshot.eventSequence === 2) refreshed.resolve(reason);
+    });
+    try {
+      if (retained) await service.readSnapshot(CLOUD_PROJECT_ID);
+      await expect(service.readPresentationSnapshot(CLOUD_PROJECT_ID)).resolves.toMatchObject({
+        stale: false,
+        snapshot: { project: { mainOid: 'a'.repeat(40) } },
+      });
+      releaseRefresh.resolve();
+      await service.readCoordinationSnapshot(CLOUD_PROJECT_ID);
+      service.observeProject(CLOUD_PROJECT_ID);
+      await expect(refreshed.promise).resolves.toBe('accepted-main-changed');
+    } finally {
+      releaseRefresh.resolve();
+      await service.close();
+      for (const socket of sockets.clients) socket.terminate();
+      await new Promise<void>(resolve => sockets.close(() => resolve()));
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      await rm(vaultRoot, { recursive: true, force: true });
+    }
+  });
+
   it('reopens an existing event subscription after explicit endpoint rotation without another read', async () => {
     const server = createServer((request, response) => {
       response.setHeader('content-type', 'application/json');

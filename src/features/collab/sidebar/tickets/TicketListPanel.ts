@@ -9,6 +9,7 @@ import {
 } from '@/shared/async/LatestTaskScope';
 
 export interface TicketListPanelOptions {
+  readonly scrollContainer?: HTMLElement;
   readonly focus?: TicketFocusPort;
   readonly onCreate: () => void;
   readonly onOpen: (ticket: CollabTicketSummary) => Promise<void> | void;
@@ -32,6 +33,8 @@ export class TicketListPanel {
   private dirty = true;
   private readonly focusSubscription: { dispose(): void } | null;
   private listRevision = 0;
+  private loadedPages = 1;
+  private hasContent = false;
   private readonly readTasks = new LatestTaskScope();
   private readOnly = false;
   private status: CollabTicketStatus = 'open';
@@ -44,8 +47,8 @@ export class TicketListPanel {
     this.focusSubscription = options.focus?.subscribe(() => {
       if (!this.destroyed) this.#syncFocusedTicket();
     }) ?? null;
-    this.subscription = options.port.observeProject(options.project.id, () => {
-      if (this.destroyed) return;
+    this.subscription = options.port.observeProject(options.project.id, (_coordination, changes) => {
+      if (this.destroyed || (changes && !changes.members && !changes.tickets)) return;
       this.dirty = true;
       if (this.active) void this.refresh();
     });
@@ -78,16 +81,40 @@ export class TicketListPanel {
     this.cancel();
     const revision = this.listRevision;
     const task = this.readTasks.start();
+    let restoreViewport: (() => void) | undefined;
+    const loadMore = this.rootEl.querySelector<HTMLButtonElement>('[data-action="load-more-tickets"]');
+    if (loadMore) loadMore.disabled = true;
     try {
-      this.#renderShell(this.options.project.connectionStatus !== 'connected');
-      this.rootEl.createDiv({
-        cls: 'claudian-collab-ticket-list-status',
-        text: t('collab.tickets.loading'),
-      });
-      const result = await this.options.port.listTickets({
+      if (!this.hasContent) {
+        this.#renderShell(this.options.project.connectionStatus !== 'connected');
+        this.rootEl.createDiv({
+          cls: 'claudian-collab-ticket-list-status',
+          text: t('collab.tickets.loading'),
+        });
+      }
+      let result = await this.options.port.listTickets({
         projectId: this.options.project.id,
         status: this.status,
       }, { signal: task.signal });
+      if (!this.isCurrent(task, revision)) return;
+      if (result.status === 'success') {
+        const tickets = [...result.value.page.tickets];
+        let page = result.value.page;
+        let stale = result.value.stale;
+        for (let count = 1; count < this.loadedPages && page.nextCursor; count += 1) {
+          const next = await this.options.port.listTickets({
+            projectId: this.options.project.id, status: this.status, cursor: page.nextCursor,
+          }, { signal: task.signal });
+          if (!this.isCurrent(task, revision)) return;
+          if (next.status !== 'success') { result = next; break; }
+          tickets.push(...next.value.page.tickets);
+          page = next.value.page;
+          stale ||= next.value.stale;
+        }
+        if (result.status === 'success') result = {
+          ...result, value: { ...result.value, stale, page: { ...page, tickets } },
+        };
+      }
       const snapshotResult = result.status === 'success'
         ? null
         : await this.options.port.readSnapshot(this.options.project.id, {
@@ -99,7 +126,21 @@ export class TicketListPanel {
       const readOnly = ticketReadOnly || (snapshotResult?.status === 'success'
         ? snapshotResult.value.source === 'cache' || snapshotResult.value.stale
         : this.options.project.connectionStatus !== 'connected');
+      const scrollContainer = this.options.scrollContainer ?? this.rootEl;
+      const scrollTop = scrollContainer.scrollTop;
+      const focused = this.rootEl.ownerDocument.activeElement as HTMLElement | null;
+      const focusKey = focused && this.rootEl.contains(focused)
+        ? ['ticketId', 'action', 'ticketStatus'].find(key => focused.dataset[key]) : undefined;
+      const focusValue = focusKey ? focused?.dataset[focusKey] : undefined;
+      restoreViewport = () => {
+        if (focusKey && focusValue) {
+          [...this.rootEl.querySelectorAll<HTMLElement>('button')]
+            .find(item => item.dataset[focusKey] === focusValue)?.focus({ preventScroll: true });
+        }
+        scrollContainer.scrollTop = scrollTop;
+      };
       this.#renderShell(readOnly);
+      this.hasContent = result.status === 'success';
       const content = this.rootEl.createDiv({ cls: 'claudian-collab-ticket-list-content' });
       if (result.status !== 'success') {
         const knownEmpty = this.#hasFreshEmptyOpenSnapshot(snapshotResult);
@@ -129,6 +170,7 @@ export class TicketListPanel {
         this.#renderLoadMore(items, result.value.page.nextCursor, revision);
       }
     } finally {
+      if (this.isCurrent(task, revision)) restoreViewport?.();
       task.complete();
     }
   }
@@ -236,6 +278,7 @@ export class TicketListPanel {
         });
         return;
       }
+      this.loadedPages += 1;
       button.remove();
       this.rootEl.querySelector('[data-state="ticket-page-error"]')?.remove();
       if (result.value.stale) this.#enterReadOnly();
@@ -273,6 +316,8 @@ export class TicketListPanel {
     });
     filter.addEventListener('click', () => {
       this.status = this.status === 'open' ? 'closed' : 'open';
+      this.loadedPages = 1;
+      this.hasContent = false;
       void this.refresh();
     });
     const add = actions.createEl('button', {

@@ -19,6 +19,7 @@ import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/C
 import type { CollabAuthorityEventInvalidation, CollabAuthoritySession } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import type { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import type { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
+import type { CollabProjectChanges } from '@/core/collab';
 import type { CollabProjectSnapshot } from '@/core/collab';
 import { isCollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabCoordinationSnapshot, type CollabListTicketsRequest, type CollabOperationOptions, type CollabTicketDetailProjection, type CollabTicketPageProjection } from '@/core/collab';
@@ -127,7 +128,7 @@ interface ProjectionEventSession {
   readonly ready: Promise<void>;
   readonly failed: boolean;
   readonly client: CollabProjectResource;
-  readonly listeners: Set<(snapshot: CollabProjectSnapshot) => void>;
+  readonly listeners: Set<(snapshot: CollabProjectSnapshot, changes?: CollabProjectChanges) => void>;
   dispose(): void;
 }
 
@@ -714,7 +715,7 @@ export class CollabClientProjection {
 
   async subscribe(
     projectId: string,
-    listener: (snapshot: CollabProjectSnapshot) => void,
+    listener: (snapshot: CollabProjectSnapshot, changes?: CollabProjectChanges) => void,
   ): Promise<{ dispose(): void }> {
     this.#assertOpen();
     const work = this.sessions.acquire(projectId);
@@ -774,7 +775,7 @@ export class CollabClientProjection {
 
   async #connectEvents(
     projectId: string,
-    listeners: Set<(snapshot: CollabProjectSnapshot) => void>,
+    listeners: Set<(snapshot: CollabProjectSnapshot, changes?: CollabProjectChanges) => void>,
   ): Promise<ProjectionEventSession> {
     const work = this.sessions.acquire(projectId);
     const generation = work.generation;
@@ -977,7 +978,9 @@ export class CollabClientProjection {
         const connection = work.getEventConnection<ProjectionEventSession>();
         for (const listener of connection?.listeners ?? []) {
           try {
-            listener(snapshot);
+            // A snapshot ahead of this event may contain changes whose hints were skipped.
+            listener(snapshot, invalidation.kind === 'changes' && snapshot.eventSequence === invalidation.sequence
+              ? invalidation.changes : undefined);
           } catch {
             // Projection observers cannot invalidate authoritative refresh state.
           }

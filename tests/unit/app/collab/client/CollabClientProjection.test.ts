@@ -1057,6 +1057,21 @@ describe('CollabClientProjection', () => {
       .rejects.toMatchObject({ code: 'authorization-denied' });
   });
 
+  it('retains the scope of an exact event snapshot for observers', async () => {
+    const store = new MemoryProjectionStore();
+    store.membership = { ...store.membership, lastEventSequence: 4 };
+    const socket = new FakeEventSocket();
+    const projection = new CollabClientProjection(store, controlPort(), {
+      ...projectionOptions(), authoritySessions: lanEventSessions(() => socket),
+    });
+    const listener = jest.fn();
+    const subscription = await projection.subscribe('project-a', listener);
+    socket.message(lanEvent('comment-added', { requestId: 'request-a' }, 5));
+    await flushEvents();
+    expect(listener).toHaveBeenCalledWith(expect.objectContaining({ eventSequence: 5 }), { requests: ['request-a'] });
+    subscription.dispose();
+  });
+
   it('coalesces event refreshes, notifies invalidation subscribers, and tears down', async () => {
     const store = new MemoryProjectionStore();
     const control = controlPort();
@@ -1078,7 +1093,7 @@ describe('CollabClientProjection', () => {
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({
       eventSequence: 5,
       project: expect.objectContaining({ id: 'project-a' }),
-    }));
+    }), undefined);
     expect(socket.closed).toEqual([]);
 
     subscription.dispose();

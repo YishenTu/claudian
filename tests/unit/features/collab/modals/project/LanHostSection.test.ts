@@ -61,6 +61,7 @@ function mountHost(container: HTMLElement, options: {
     project: options.project,
     port: {
       ...options.port,
+      observeProject: () => ({ dispose() {} }),
       subscribe: listener => { publish = listener; return { dispose() {} }; },
       readSnapshot: async () => unavailable,
       readProjectCapabilities: async () => unavailable,

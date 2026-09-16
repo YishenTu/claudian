@@ -161,6 +161,7 @@ function createPort(
       status: 'stopped',
     })),
     subscribe: jest.fn().mockReturnValue({ dispose: jest.fn() }),
+    observeProject: jest.fn().mockReturnValue({ dispose: jest.fn() }),
     withdrawCloudToLanTarget: jest.fn().mockResolvedValue(success(undefined)),
     ...overrides,
   } as jest.Mocked<ProjectManagementModalPort>;
@@ -454,9 +455,7 @@ it.each([false, true])('automatically restores management after Host startup wit
   it.each(['destination', 'actor-change'] as const)('preserves identity-bound transfer form state for %s', async scenario => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const summary = project({ authorityKind: 'cloud', connectionStatus: 'connected' });
-    let publish!: (state: CollabFeatureState) => void;
     const port = createPort(members, {
-      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({ authorityKind: 'cloud', authorityTransfer: true })),
       readSnapshot: jest.fn().mockResolvedValue(success({
         snapshot: { currentMember: members[0], members, project: { authorityKind: 'cloud' } },
@@ -479,7 +478,7 @@ it.each([false, true])('automatically restores management after Host startup wit
           source: 'online', stale: false, syncState: { status: 'synchronized' },
         } as never));
       }
-      publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+      port.observeProject.mock.calls[0]?.[1]();
       await flush();
       if (scenario === 'actor-change') {
         const toggle = ui.getByRole('button', { name: 'Move to LAN' });
@@ -499,9 +498,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     const replacement = member('member-replacement', 'Replacement', { role: 'manager' });
     const summary = project({ authorityKind: 'cloud', connectionStatus: 'connected' });
     const handle = { operationIntentId: 'intent-one', projectId: summary.id, transferId: 'transfer-one' };
-    let publish!: (state: CollabFeatureState) => void;
     const port = createPort([original], {
-      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({ authorityKind: 'cloud', authorityTransfer: true })),
       readSnapshot: jest.fn().mockResolvedValue(success({
         snapshot: { currentMember: original, members: [original], project: { authorityKind: 'cloud' } },
@@ -523,7 +520,7 @@ it.each([false, true])('automatically restores management after Host startup wit
           handle, status: { phase: 'source-quiesced', state: 'active' },
         }, target: null,
       } as never));
-      publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+      port.observeProject.mock.calls[0]?.[1]();
       await flush();
       fireEvent.click(within(modal.contentEl).getByRole('button', { name: 'Refresh transfer status' }));
       await flush();
@@ -2150,10 +2147,8 @@ it.each([false, true])('automatically restores management after Host startup wit
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const summary = project({ authorityKind: 'cloud', connectionStatus: 'offline' });
     const offline = { status: 'failure' as const, error: new CollabError({ code: 'endpoint-unreachable' }) };
-    let publish!: (state: CollabFeatureState) => void;
     let finish!: (result: Awaited<ReturnType<ProjectManagementModalPort['readSnapshot']>>) => void;
     const port = createPort(members, {
-      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
       readSnapshot: jest.fn().mockResolvedValue(offline),
       readProjectCapabilities: jest.fn().mockResolvedValue(offline),
       readCloudToLanTransfer: jest.fn().mockResolvedValue(success({
@@ -2168,7 +2163,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       const ui = within(modal.contentEl);
       expect(ui.getByRole('button', { name: 'Resume' })).toBeDefined();
       port.readSnapshot.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-      publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+      port.observeProject.mock.calls[0]?.[1]();
       await flush();
       expect(ui.getByRole('button', { name: 'Resume' })).toBeDefined();
       finish(offline); await flush();
@@ -2365,14 +2360,12 @@ it.each([false, true])('automatically restores management after Host startup wit
     const original = member('member-manager', 'Original manager', { role: 'manager' });
     const replacement = member('member-manager', 'Replacement manager', { role: 'manager' });
     const summary = project({ authorityKind: 'cloud', connectionStatus: 'connected' });
-    let publish!: (state: CollabFeatureState) => void;
     let finish!: (result: Awaited<ReturnType<ProjectManagementModalPort['listMembers']>>) => void;
     const snapshot = (current: CollabMember) => success({
       snapshot: { currentMember: current, members: [current], project: { authorityKind: 'cloud' } },
       source: 'online', stale: false, syncState: { status: 'synchronized' },
     } as never);
     const port = createPort([original], {
-      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
       readSnapshot: jest.fn().mockResolvedValue(snapshot(original)),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', authorityTransfer: true, membershipManagement: true,
@@ -2382,10 +2375,10 @@ it.each([false, true])('automatically restores management after Host startup wit
     modal.onOpen(); await flush();
     port.readSnapshot.mockResolvedValue(snapshot(replacement));
     port.listMembers.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-    publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+    port.observeProject.mock.calls[0]?.[1]();
     await flush();
     // Another publication can render the current view while the richer member read is pending.
-    publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+    port.observeProject.mock.calls[0]?.[1]();
     expect(within(modal.contentEl).getByText('Original manager')).not.toBeNull();
     expect(within(modal.contentEl).queryByText('Replacement manager')).toBeNull();
     finish(success([])); await flush();
@@ -2398,14 +2391,12 @@ it.each([false, true])('automatically restores management after Host startup wit
     const replacement = member('member-replacement', 'Replacement manager', { role: 'manager' });
     const other = member('member-other', 'Other');
     const summary = project({ authorityKind: 'cloud', connectionStatus: 'connected' });
-    let publish!: (state: CollabFeatureState) => void;
     let finish!: (result: Awaited<ReturnType<ProjectManagementModalPort['listMembers']>>) => void;
     const snapshot = (current: CollabMember) => success({
       snapshot: { currentMember: current, members: [current, other], project: { authorityKind: 'cloud' } },
       source: 'online', stale: false, syncState: { status: 'synchronized' },
     } as never);
     const port = createPort([original, other], {
-      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
       readSnapshot: jest.fn().mockResolvedValue(snapshot(original)),
       readProjectCapabilities: jest.fn().mockResolvedValue(success({
         authorityKind: 'cloud', membershipManagement: true,
@@ -2417,7 +2408,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     expect(within(modal.contentEl).getByRole('button', { name: 'Confirm' })).not.toBeNull();
     port.readSnapshot.mockResolvedValue(snapshot(replacement));
     port.listMembers.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-    publish({ lifecycle: 'ready', projects: [summary], selectedProjectId: summary.id });
+    port.observeProject.mock.calls[0]?.[1]();
     await flush();
     expect(within(modal.contentEl).queryByRole('button', { name: 'Confirm' })).toBeNull();
     expect(within(modal.contentEl).queryByRole('button', { name: 'Remove: Other' })).toBeNull();
@@ -2438,10 +2429,8 @@ it.each([false, true])('automatically restores management after Host startup wit
   it('replays invalidation deferred during a failed management command', async () => {
     const manager = member('member-manager', 'Alice', { role: 'manager' });
     const other = member('member-other', 'Other');
-    let publish!: (state: CollabFeatureState) => void;
     let finish!: (result: Awaited<ReturnType<ProjectManagementModalPort['removeMember']>>) => void;
     const port = createPort([manager, other], {
-      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
       removeMember: jest.fn<ReturnType<ProjectManagementModalPort['removeMember']>, Parameters<ProjectManagementModalPort['removeMember']>>(() => new Promise(resolve => { finish = resolve; })),
     });
     const modal = new ProjectManagementModal({} as never, port, { project: project() });
@@ -2454,18 +2443,16 @@ it.each([false, true])('automatically restores management after Host startup wit
       snapshot: { currentMember: updated, members: [updated, other], project: { authorityKind: 'lan', hostMemberId: 'member-host' } },
       source: 'online', stale: false, syncState: { status: 'synchronized' },
     } as never));
-    publish({ lifecycle: 'ready', projects: [project()], selectedProjectId: 'project-alpha' });
+    port.observeProject.mock.calls[0]?.[1]();
     finish({ status: 'failure', error: new CollabError({ code: 'operation-failed' }) });
     await flush();
     expect(within(modal.contentEl).getByText('Updated manager')).not.toBeNull();
     modal.onClose();
   });
 
-  it('refreshes members on feature invalidation without changing the local summary', async () => {
+  it('refreshes members on project invalidation without changing the local summary', async () => {
     const original = member('member-manager', 'Alice', { role: 'manager' });
-    let publish!: (state: CollabFeatureState) => void;
     const port = createPort([original], {
-      subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
     });
     const modal = new ProjectManagementModal({} as never, port, { project: project() });
     modal.onOpen(); await flush();
@@ -2474,7 +2461,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       snapshot: { currentMember: updated, members: [updated], project: { authorityKind: 'lan', hostMemberId: 'member-host' } },
       source: 'online', stale: false, syncState: { status: 'synchronized' },
     } as never));
-    publish({ lifecycle: 'ready', projects: [project()], selectedProjectId: 'project-alpha' });
+    port.observeProject.mock.calls[0]?.[1]();
     await flush();
     expect(within(modal.contentEl).getByText('Updated member')).not.toBeNull();
     modal.onClose();
@@ -3826,4 +3813,32 @@ it.each([false, true])('automatically restores management after Host startup wit
     expect(modal.contentEl.childElementCount).toBe(0);
   });
 
+});
+
+ it('updates members from project events without a local project summary change', async () => {
+  const members = [member('member-manager', 'Alice', { role: 'manager' }), member('member-host', 'Bob')];
+  let publish: Parameters<ProjectManagementModalPort['subscribe']>[0] | undefined;
+  let changed: Parameters<ProjectManagementModalPort['observeProject']>[1] | undefined;
+  const port = createPort(members, {
+    subscribe: jest.fn().mockImplementation(listener => { publish = listener; return { dispose() {} }; }),
+    observeProject: jest.fn().mockImplementation((_id, listener) => {
+      changed = listener;
+      return { dispose: jest.fn() };
+    }),
+  });
+  const modal = new ProjectManagementModal({} as never, port, { project: project({ connectionStatus: 'connected' }) });
+  modal.onOpen();
+  await flush();
+  const before = await port.readSnapshot('project-alpha');
+  if (before.status !== 'success') throw new Error('Missing snapshot');
+  port.readSnapshot.mockResolvedValue(success({ ...before.value, snapshot: {
+    ...before.value.snapshot, members: [...members, member('member-new', 'New teammate')],
+  } }));
+  publish?.({ lifecycle: 'ready', projects: [project({ connectionStatus: 'connected' })], selectedProjectId: 'project-alpha' });
+  await flush();
+  expect(within(modal.contentEl).queryByText('New teammate')).toBeNull();
+  changed?.(undefined, { members: true });
+  await flush();
+  expect(within(modal.contentEl).getByText('New teammate')).toBeTruthy();
+  modal.close();
 });
