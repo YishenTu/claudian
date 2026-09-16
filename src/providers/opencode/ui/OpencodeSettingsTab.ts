@@ -13,7 +13,6 @@ import type {
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
 import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import {
   renderLastEnabledProviderWarning,
@@ -171,15 +170,6 @@ export const opencodeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         },
       );
     }
-
-    renderNativeMcpSettingsSection(container, {
-      descriptionAfterCommand: ' and they will be available in Claudian. ',
-      descriptionBeforeCommand: 'OpenCode manages MCP servers through its own CLI. Configure them with ',
-      documentationLabel: 'Learn more',
-      documentationUrl: 'https://opencode.ai/docs/mcp-servers/',
-      heading: t('settings.mcpServers.name'),
-      setupCommand: 'opencode mcp add',
-    });
 
     renderEnvironmentSettingsSection({
       container,

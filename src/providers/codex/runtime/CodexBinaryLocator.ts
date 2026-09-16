@@ -86,7 +86,54 @@ function getPreferredCodexBinaryDirs(platform: NodeJS.Platform): string[] {
     ];
   }
 
-  return [];
+  return getPreferredWindowsCodexBinaryDirs();
+}
+
+function getPreferredWindowsCodexBinaryDirs(): string[] {
+  const preferredDirs: string[] = [];
+  const configuredInstallDir = process.env.CODEX_INSTALL_DIR?.trim();
+  if (configuredInstallDir) {
+    preferredDirs.push(expandHomePath(stripSurroundingQuotes(configuredInstallDir)));
+  }
+
+  const localAppData = process.env.LOCALAPPDATA;
+  if (localAppData) {
+    preferredDirs.push(path.join(localAppData, 'Programs', 'OpenAI', 'Codex', 'bin'));
+    preferredDirs.push(...getCompleteCodexDesktopRuntimeDirs(
+      path.join(localAppData, 'OpenAI', 'Codex', 'bin'),
+    ));
+  }
+
+  return [...new Set(preferredDirs)].filter(isCompleteWindowsCodexRuntimeDir);
+}
+
+function getCompleteCodexDesktopRuntimeDirs(runtimeRoot: string): string[] {
+  try {
+    return fs.readdirSync(runtimeRoot, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => path.join(runtimeRoot, entry.name))
+      .filter(isCompleteWindowsCodexRuntimeDir)
+      // Executable timestamps are a freshness heuristic, not an app-owned active-version marker.
+      .map(dir => ({ dir, mtime: getCodexBinaryMtime(dir) }))
+      .sort((left, right) => right.mtime - left.mtime
+        || (left.dir < right.dir ? -1 : left.dir > right.dir ? 1 : 0))
+      .map(candidate => candidate.dir);
+  } catch {
+    return [];
+  }
+}
+
+function isCompleteWindowsCodexRuntimeDir(dir: string): boolean {
+  return isExistingFile(path.join(dir, 'codex.exe'))
+    && isExistingFile(path.join(dir, 'codex-code-mode-host.exe'));
+}
+
+function getCodexBinaryMtime(dir: string): number {
+  try {
+    return fs.statSync(path.join(dir, 'codex.exe')).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 function getHomeDir(): string {

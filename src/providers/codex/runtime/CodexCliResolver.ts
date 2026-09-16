@@ -65,7 +65,9 @@ export class CodexCliResolver {
   ): string | null {
     const executionTargetKey = getCodexExecutionTargetCacheKey(executionTarget);
 
+    // Native Windows desktop runtimes can change directories without a settings change.
     if (
+      executionTarget.method !== 'native-windows' &&
       this.resolvedPath &&
       hostnamePath === this.lastHostnamePath &&
       legacyPath === this.lastLegacyPath &&

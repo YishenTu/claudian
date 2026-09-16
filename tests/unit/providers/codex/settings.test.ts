@@ -31,6 +31,18 @@ describe('codex settings', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
+  it.each(['pragmatic', 'friendly'] as const)('persists the %s response style while preserving provider settings', (responseStyle) => {
+    const settings = { providerConfigs: { codex: { customModels: 'custom' } } };
+    updateCodexProviderSettings(settings, { responseStyle });
+    expect(getCodexProviderSettings(settings)).toMatchObject({ responseStyle, customModels: 'custom' });
+  });
+
+  it.each([undefined, null, '', 'invalid', 42, {}, []])('normalizes invalid response style %p to pragmatic', (responseStyle) => {
+    const settings = { providerConfigs: { codex: { responseStyle } } };
+    expect(getCodexProviderSettings(settings)).toMatchObject({ responseStyle: 'pragmatic' });
+    expect(normalizeCodexStoredConfig(settings).config).toMatchObject({ responseStyle: 'pragmatic' });
+  });
+
   it('defaults installationMethod to native-windows, ultra effort off, and leaves wslDistroOverride empty', () => {
     const settings = getCodexProviderSettings({});
 

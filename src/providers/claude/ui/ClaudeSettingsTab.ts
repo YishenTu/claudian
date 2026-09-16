@@ -10,7 +10,6 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
 import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import { renderLastEnabledProviderWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
@@ -213,6 +212,24 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
         });
       });
 
+    new Setting(container)
+      .setName(t('settings.claude.responseStyle.name'))
+      .setDesc(t('settings.claude.responseStyle.desc'))
+      .addDropdown((dropdown) => {
+        dropdown.selectEl.setAttribute('aria-label', t('settings.claude.responseStyle.name'));
+        dropdown
+          .addOption('Default', t('settings.claude.responseStyle.default'))
+          .addOption('Concise', t('settings.claude.responseStyle.concise'))
+          .setValue(claudeSettings.responseStyle)
+          .onChange(async (value) => {
+            await context.plugin.mutateSettings((settings) => {
+              updateClaudeProviderSettings(settings, {
+                responseStyle: value === 'Concise' ? 'Concise' : 'Default',
+              });
+            });
+          });
+      });
+
     // --- Safety ---
 
     new Setting(container).setName(t('settings.safety')).setHeading();
@@ -289,17 +306,6 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       app: context.plugin.app,
       agentManager: claudeWorkspace.agentManager,
       agentStorage: claudeWorkspace.agentStorage,
-    });
-
-    // --- MCP Servers ---
-
-    renderNativeMcpSettingsSection(container, {
-      descriptionAfterCommand: t('settings.mcpServers.descAfterCommand'),
-      descriptionBeforeCommand: t('settings.mcpServers.descBeforeCommand'),
-      documentationLabel: t('settings.mcpServers.learnMore'),
-      documentationUrl: 'https://code.claude.com/docs/en/mcp',
-      heading: t('settings.mcpServers.name'),
-      setupCommand: 'claude mcp add',
     });
 
     // --- Plugins ---

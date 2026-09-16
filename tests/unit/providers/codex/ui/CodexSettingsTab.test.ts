@@ -1,11 +1,18 @@
+/** @jest-environment jsdom */
+
 import { createMockEl } from '@test/helpers/MockElement';
 import { applyTextInput } from '@test/helpers/settingsControls';
+import { fireEvent, waitFor, within } from '@testing-library/dom';
 import * as fs from 'fs';
+import { axe } from 'jest-axe';
+import { setImmediate } from 'timers';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/settings';
 import { codexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
+
+Object.assign(globalThis, { setImmediate });
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
@@ -156,6 +163,7 @@ interface MockTextAreaComponent extends MockTextComponent {
 }
 
 interface MockDropdownComponent {
+  selectEl: HTMLSelectElement;
   value: string;
   options: Array<{ value: string; label: string }>;
   onChangeCallback: ((value: string) => Promise<void> | void) | null;
@@ -248,19 +256,23 @@ function createTextAreaComponent(): MockTextAreaComponent {
 
 function createDropdownComponent(): MockDropdownComponent {
   const component = {} as MockDropdownComponent;
+  component.selectEl = document.createElement('select');
   component.value = '';
   component.options = [];
   component.onChangeCallback = null;
   component.addOption = jest.fn((value: string, label: string) => {
     component.options.push({ value, label });
+    component.selectEl.add(new Option(label, value));
     return component;
   });
   component.setValue = jest.fn((value: string) => {
     component.value = value;
+    component.selectEl.value = value;
     return component;
   });
   component.onChange = jest.fn((callback: (value: string) => Promise<void> | void) => {
     component.onChangeCallback = callback;
+    component.selectEl.addEventListener('change', () => { void callback(component.selectEl.value); });
     return component;
   });
 
@@ -680,6 +692,22 @@ describe('CodexSettingsTab', () => {
 
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', true);
+  });
+
+  it('persists response styles through an accessible native selector', async () => {
+    const plugin = createPlugin();
+    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    const subtree = document.createElement('main');
+    subtree.appendChild(findSetting('Response style').dropdownComponents[0].selectEl);
+    const select = within(subtree).getByRole('combobox', { name: 'Response style' }) as HTMLSelectElement;
+    expect(select.value).toBe('pragmatic');
+    for (const [label, value] of [['Friendly', 'friendly'], ['Pragmatic', 'pragmatic']]) {
+      const option = within(select).getByRole('option', { name: label }) as HTMLOptionElement;
+      fireEvent.change(select, { target: { value: option.value } });
+      await waitFor(() => expect(plugin.settings.providerConfigs.codex.responseStyle).toBe(value));
+    }
+    expect(plugin.settings.providerConfigs.codex.customModels).toBe('my-custom-model');
+    expect(await axe(subtree)).toHaveNoViolations();
   });
 
   it('renders the fixed-root shared skill manager', () => {

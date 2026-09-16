@@ -59,6 +59,7 @@ jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => {
 
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { CodexRpcResponseError } from '@/providers/codex/runtime/CodexRpcTransport';
+import { updateCodexProviderSettings } from '@/providers/codex/settings';
 
 type NotificationHandler = (params: unknown) => void;
 type ServerRequestHandler = (
@@ -480,6 +481,7 @@ describe('CodexExecutionBackend', () => {
         model: TEST_CODEX_MODEL,
         effort: 'high',
         serviceTier: 'priority',
+        personality: 'pragmatic',
       }),
     );
     expect(events.map(event => event.type)).toEqual(expect.arrayContaining([
@@ -1218,7 +1220,8 @@ describe('CodexExecutionBackend', () => {
       throw new Error(`Unexpected method: ${method}`);
     });
 
-    const session = new CodexExecutionBackend(createPlugin()).createSession(
+    const plugin = createPlugin();
+    const session = new CodexExecutionBackend(plugin).createSession(
       createSessionConfig({
         resumeSeed: {
           providerSessionId: 'thread-existing',
@@ -1231,6 +1234,7 @@ describe('CodexExecutionBackend', () => {
     );
 
     await collectEvents(session.execute(createRequest()).events);
+    updateCodexProviderSettings(plugin.settings as unknown as Record<string, unknown>, { responseStyle: 'friendly' });
     await collectEvents(session.execute(createRequest()).events);
 
     expect(
@@ -1239,6 +1243,9 @@ describe('CodexExecutionBackend', () => {
     expect(
       mockTransportRequest.mock.calls.filter(call => call[0] === 'turn/start'),
     ).toHaveLength(2);
+
+    expect(mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start').map(([, params]) => params.personality))
+      .toEqual(['pragmatic', 'friendly']);
 
     await session.dispose();
   });
@@ -2705,6 +2712,57 @@ describe('CodexExecutionBackend', () => {
     expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
     expect(session.getStatus()).toBe('disposed');
     expect(() => session.execute(createRequest())).toThrow(/disposed/i);
+  });
+
+  it('answers an MCP confirmation received during a native turn and completes that turn', async () => {
+    const interactionPort = createInteractionPort();
+    (interactionPort.askUserQuestion as jest.Mock).mockImplementation(async request => ({
+      interactionId: request.interactionId,
+      answers: { 'mcp-elicitation-confirmation': 'accept' },
+    }));
+    let nativeResponse: unknown;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') return createThreadResult('thread-elicitation');
+      if (method === 'turn/start') {
+        queueMicrotask(async () => {
+          try {
+            nativeResponse = await serverRequestHandlers.get('mcpServer/elicitation/request')?.(
+              'elicitation-native',
+              {
+                threadId: 'thread-elicitation',
+                turnId: 'turn-elicitation',
+                serverName: 'cua_repl',
+                mode: 'form',
+                message: 'Allow Computer Use to use "Obsidian"?',
+                requestedSchema: { type: 'object', properties: {} },
+              },
+            );
+          } finally {
+            completeTurn('thread-elicitation', 'turn-elicitation');
+          }
+        });
+        return createTurnResult('turn-elicitation');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin()).createSession(
+      createSessionConfig({ interactionPort }),
+    );
+    try {
+      const events = await collectEvents(session.execute(createRequest()).events);
+      expect(nativeResponse).toEqual({ action: 'accept', content: {} });
+      expect(events.at(-1)?.type).toBe('turn_completed');
+    } finally {
+      await session.dispose();
+    }
   });
 
   it('routes approvals and questions with stable local identities', async () => {

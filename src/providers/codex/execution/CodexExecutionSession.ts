@@ -593,6 +593,7 @@ export class CodexExecutionSession
         serviceTier,
         effort,
         summary: getEffectiveCodexReasoningSummary(settings, model),
+        personality: getCodexProviderSettings(settings).responseStyle,
         sandboxPolicy: policy.sandboxPolicy,
         collaborationMode,
       });
@@ -715,6 +716,7 @@ export class CodexExecutionSession
       'item/permissions/requestApproval',
       'item/tool/requestUserInput',
       'item/tool/call',
+      'mcpServer/elicitation/request',
     ];
     for (const method of serverRequestMethods) {
       transport.onServerRequest(

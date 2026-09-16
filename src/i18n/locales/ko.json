@@ -604,12 +604,6 @@
       "desc": "드롭다운에서 특정 명령어와 스킬을 숨깁니다. Claudian과 관련 없는 Claude Code 항목을 숨기는 데 유용합니다. 앞의 슬래시 없이 이름을 한 줄에 하나씩 입력하세요.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "mcpServers": {
-      "name": "MCP 서버",
-      "descBeforeCommand": "Claude Code는 자체 CLI로 MCP 서버를 관리합니다. ",
-      "descAfterCommand": " 명령으로 구성하면 Claudian에서 사용할 수 있습니다. ",
-      "learnMore": "자세히 알아보기"
-    },
     "plugins": {
       "name": "Claude Code 플러그인",
       "desc": "~/.claude/plugins에서 발견된 Claude Code 플러그인을 관리합니다. 활성화된 플러그인은 .claude/settings.json에 Vault별로 저장됩니다."
@@ -812,6 +806,14 @@
       "lastProviderWarning": "Claudian을 사용하려면 하나 이상의 제공자를 활성화해야 합니다.",
       "noModelsWarning": "활성화된 {provider} 모델이 없습니다. 아래 모델 섹션에서 하나 이상의 모델을 활성화하세요."
     },
+    "claude": {
+      "responseStyle": {
+        "name": "응답 스타일",
+        "desc": "기본은 Claude의 일반 스타일입니다. 간결 모드는 결과부터 제시하고 서두를 생략합니다. Claude Code 2.1.237 이상이 필요합니다.",
+        "default": "기본",
+        "concise": "간결"
+      }
+    },
     "codex": {
       "installationMethod": {
         "name": "설치 방식",
@@ -841,6 +843,12 @@
         "desc": "추가 Codex 모델 ID를 한 줄에 하나씩 선택기에 추가합니다. `OPENAI_MODEL`이 설정되어 있으면 계속 우선 적용됩니다.",
         "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
+      "responseStyle": {
+        "name": "응답 스타일",
+        "desc": "지원되는 모델에서 Codex의 대화 스타일을 선택합니다. 다음 메시지부터 적용됩니다.",
+        "pragmatic": "실용적",
+        "friendly": "친근함"
+      },
       "reasoningSummary": {
         "name": "추론 요약",
         "desc": "생각 블록에 모델의 추론 과정 요약을 표시합니다.",
@@ -863,11 +871,6 @@
       "subagents": {
         "name": "Codex 하위 에이전트",
         "desc": ".codex/agents/에 저장된 vault 수준 Codex 하위 에이전트를 관리합니다. 각 TOML 파일은 사용자 지정 에이전트 하나를 정의합니다."
-      },
-      "mcp": {
-        "descBeforeCommand": "Codex는 자체 CLI로 MCP 서버를 관리합니다. ",
-        "descAfterCommand": " 명령으로 구성하면 Claudian에서 사용할 수 있습니다. ",
-        "learnMore": "자세히 알아보기"
       },
       "environment": {
         "name": "Codex 환경",

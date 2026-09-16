@@ -604,12 +604,6 @@
       "desc": "ドロップダウンから特定のコマンドとスキルを非表示にします。Claudian に関係のない Claude Code の項目を隠すのに便利です。先頭のスラッシュなしで名前を1行に1つ入力してください。",
       "placeholder": "commit\nbuild\ntest"
     },
-    "mcpServers": {
-      "name": "MCP サーバー",
-      "descBeforeCommand": "Claude Code は独自の CLI で MCP サーバーを管理します。",
-      "descAfterCommand": " で設定すると Claudian で利用できます。",
-      "learnMore": "詳しく見る"
-    },
     "plugins": {
       "name": "Claude Code プラグイン",
       "desc": "~/.claude/plugins から検出された Claude Code プラグインを管理します。有効化されたプラグインは Vault ごとに .claude/settings.json に保存されます。"
@@ -812,6 +806,14 @@
       "lastProviderWarning": "Claudian を使用するには、少なくとも 1 つのプロバイダーを有効にする必要があります。",
       "noModelsWarning": "有効な {provider} モデルがありません。下の「モデル」で少なくとも1つのモデルを有効にしてください。"
     },
+    "claude": {
+      "responseStyle": {
+        "name": "応答スタイル",
+        "desc": "デフォルトは Claude の通常のスタイルです。簡潔モードは結果を先に示し、前置きを省きます。Claude Code 2.1.237 以降が必要です。",
+        "default": "デフォルト",
+        "concise": "簡潔"
+      }
+    },
     "codex": {
       "installationMethod": {
         "name": "インストール方式",
@@ -841,6 +843,12 @@
         "desc": "追加の Codex モデル ID を1行に1つずつピッカーに追加します。`OPENAI_MODEL` が設定されている場合は引き続き優先されます。",
         "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
+      "responseStyle": {
+        "name": "応答スタイル",
+        "desc": "対応モデルでの Codex の話し方を選択します。次のメッセージから適用されます。",
+        "pragmatic": "実用的",
+        "friendly": "フレンドリー"
+      },
       "reasoningSummary": {
         "name": "推論サマリー",
         "desc": "思考ブロックにモデルの推論プロセスのサマリーを表示します。",
@@ -863,11 +871,6 @@
       "subagents": {
         "name": "Codex サブエージェント",
         "desc": ".codex/agents/ に保存された Vault レベルの Codex サブエージェントを管理します。各 TOML ファイルがカスタムエージェントを1つ定義します。"
-      },
-      "mcp": {
-        "descBeforeCommand": "Codex は独自の CLI で MCP サーバーを管理します。",
-        "descAfterCommand": " で設定すると Claudian で利用できます。",
-        "learnMore": "詳しく見る"
       },
       "environment": {
         "name": "Codex 環境",

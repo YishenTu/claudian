@@ -8,7 +8,6 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
-import { renderNativeMcpSettingsSection } from '../../../shared/settings/NativeMcpSettingsSection';
 import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import {
   renderLastEnabledProviderWarning,
@@ -252,6 +251,24 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
           context.notifyProviderModelOptionsChanged('codex');
         }));
 
+    new Setting(container)
+      .setName(t('settings.codex.responseStyle.name'))
+      .setDesc(t('settings.codex.responseStyle.desc'))
+      .addDropdown((dropdown) => {
+        dropdown.selectEl.setAttribute('aria-label', t('settings.codex.responseStyle.name'));
+        dropdown
+          .addOption('pragmatic', t('settings.codex.responseStyle.pragmatic'))
+          .addOption('friendly', t('settings.codex.responseStyle.friendly'))
+          .setValue(codexSettings.responseStyle)
+          .onChange(async (value) => {
+            await context.plugin.mutateSettings((settings) => {
+              updateCodexProviderSettings(settings, {
+                responseStyle: value === 'friendly' ? 'friendly' : 'pragmatic',
+              });
+            });
+          });
+      });
+
     const SUMMARY_OPTIONS: { value: string; label: string }[] = [
       { value: 'auto', label: t('settings.codex.reasoningSummary.auto') },
       { value: 'concise', label: t('settings.codex.reasoningSummary.concise') },
@@ -322,17 +339,6 @@ export const codexSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     const subagentContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
     new CodexSubagentSettings(subagentContainer, codexWorkspace.subagentStorage, context.plugin.app);
-
-    // --- MCP Servers ---
-
-    renderNativeMcpSettingsSection(container, {
-      descriptionAfterCommand: t('settings.codex.mcp.descAfterCommand'),
-      descriptionBeforeCommand: t('settings.codex.mcp.descBeforeCommand'),
-      documentationLabel: t('settings.codex.mcp.learnMore'),
-      documentationUrl: 'https://developers.openai.com/codex/mcp',
-      heading: t('settings.mcpServers.name'),
-      setupCommand: 'codex mcp',
-    });
 
     // --- Environment ---
 

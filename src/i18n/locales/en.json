@@ -604,12 +604,6 @@
       "desc": "Hide specific commands and skills from the dropdown. Useful for hiding Claude Code entries that are not relevant to Claudian. Enter names without the leading slash, one per line.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "mcpServers": {
-      "name": "MCP Servers",
-      "descBeforeCommand": "Claude Code manages MCP servers via its own CLI. Configure with ",
-      "descAfterCommand": " and they will be available in Claudian. ",
-      "learnMore": "Learn more"
-    },
     "plugins": {
       "name": "Claude Code Plugins",
       "desc": "Manage Claude Code plugins discovered from ~/.claude/plugins. Enabled plugins are stored per vault in .claude/settings.json."
@@ -812,6 +806,14 @@
       "lastProviderWarning": "At least one provider must remain enabled for Claudian to work.",
       "noModelsWarning": "No {provider} models are enabled. Go to Models below and enable at least one model."
     },
+    "claude": {
+      "responseStyle": {
+        "name": "Response style",
+        "desc": "Default uses Claude’s normal style. Concise leads with results and skips preamble. Requires Claude Code 2.1.237 or later.",
+        "default": "Default",
+        "concise": "Concise"
+      }
+    },
     "codex": {
       "installationMethod": {
         "name": "Installation method",
@@ -841,6 +843,12 @@
         "desc": "Append additional Codex model IDs to the picker, one per line. `OPENAI_MODEL` still takes precedence when set.",
         "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
+      "responseStyle": {
+        "name": "Response style",
+        "desc": "Choose how Codex communicates on supported models. Applies from the next message.",
+        "pragmatic": "Pragmatic",
+        "friendly": "Friendly"
+      },
       "reasoningSummary": {
         "name": "Reasoning summary",
         "desc": "Show a summary of the model's reasoning process in the thinking block.",
@@ -863,11 +871,6 @@
       "subagents": {
         "name": "Codex subagents",
         "desc": "Manage vault-level Codex subagents stored in .codex/agents/. Each TOML file defines one custom agent."
-      },
-      "mcp": {
-        "descBeforeCommand": "Codex manages MCP servers via its own CLI. Configure with ",
-        "descAfterCommand": " and they will be available in Claudian. ",
-        "learnMore": "Learn more"
       },
       "environment": {
         "name": "Codex environment",

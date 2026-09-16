@@ -112,10 +112,6 @@
   color: var(--text-normal);
 }
 
-.claudian-mcp-settings-desc {
-  margin-bottom: 12px;
-}
-
 .claudian-collab-git-installation-help {
   margin: var(--size-4-1) var(--size-4-3) var(--size-4-4);
   color: var(--text-muted);
@@ -164,7 +160,6 @@
 
 /* Custom section descriptions - align with items */
 .claudian-sp-settings-desc,
-.claudian-mcp-settings-desc,
 .claudian-plugin-settings-desc {
   padding: 0 12px;
 }

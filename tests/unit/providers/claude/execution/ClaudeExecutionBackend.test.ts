@@ -34,6 +34,7 @@ const mockBuildClaudeSDKUserMessage = buildClaudeSDKUserMessage as jest.MockedFu
 const sdkMock = sdkModule as unknown as {
   getLastOptions: () => sdkModule.Options | undefined;
   getLastResponse: () => {
+    applyFlagSettings: jest.Mock;
     interrupt: jest.Mock;
     setModel: jest.Mock;
     setPermissionMode: jest.Mock;
@@ -1011,6 +1012,28 @@ describe('ClaudeExecutionBackend', () => {
       behavior: 'deny',
     }));
     expect(interactionPort.requestApproval).not.toHaveBeenCalled();
+  });
+
+  it('uses native output styles at launch and updates them on the same session', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const host = createHost();
+    host.settings.providerConfigs = { claude: { responseStyle: 'Concise' } };
+    const { services } = createServices();
+    const session = new ClaudeExecutionBackend(host, services).createSession(createConfig());
+
+    await collectEvents(session.execute(createRequest()).events);
+    expect(sdkMock.getLastOptions()?.settings).toEqual({ outputStyle: 'Concise' });
+    const query = sdkMock.getLastResponse();
+    for (const responseStyle of ['Default', 'Concise']) {
+      host.settings.providerConfigs = { claude: { responseStyle } };
+      await collectEvents(session.execute(createRequest()).events);
+      expect(sdkMock.getLastResponse()).toBe(query);
+      expect(query?.applyFlagSettings).toHaveBeenLastCalledWith({ outputStyle: responseStyle });
+    }
+    await session.dispose();
   });
 
   it('applies model, effort, and permission changes without replacing a compatible persistent query', async () => {
