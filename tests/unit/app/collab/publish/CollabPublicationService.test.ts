@@ -74,7 +74,7 @@ function cloudMembership(serverUrl: string): CollabLocalCloudMembershipRecord {
       gitRemoteUrl: `${serverUrl}/v10/projects/${CLOUD_PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl,
-      wireVersion: 14,
+      wireVersion: 15,
     },
     createdAt: CLOUD_CREATED_AT,
     lastEventSequence: 0,

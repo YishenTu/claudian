@@ -295,7 +295,7 @@ function membership(
       gitRemoteUrl: `${origin}/v10/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: origin,
-      wireVersion: 14,
+      wireVersion: 15,
     },
     createdAt: CREATED_AT,
     lastEventSequence: 0,

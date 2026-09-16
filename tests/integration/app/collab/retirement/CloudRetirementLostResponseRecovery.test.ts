@@ -57,7 +57,7 @@ describe('Cloud Retirement lost-response recovery', () => {
         gitRemoteUrl: `https://cloud.example.test/operator/v10/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/operator',
-        wireVersion: 14 as const,
+        wireVersion: 15 as const,
       },
       createdAt: NOW,
       lastEventSequence: 4,

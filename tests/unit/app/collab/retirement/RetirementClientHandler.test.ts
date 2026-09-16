@@ -790,7 +790,7 @@ function cloudMembership(): CollabLocalMembershipRecord {
       gitRemoteUrl: 'https://cloud.example.test/v10/projects/project-a/repository.git',
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test/',
-      wireVersion: 14,
+      wireVersion: 15,
     },
     member: {
       displayName: local.member.displayName,

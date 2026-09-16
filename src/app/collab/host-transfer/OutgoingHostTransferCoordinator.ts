@@ -25,6 +25,7 @@ import type { InstallationKey } from '@/core/device/InstallationKey';
 export interface OutgoingHostTransferCoordinatorOptions {
   readonly installationKey: InstallationKey | string;
   readonly sourceResourceId?: string;
+  readonly settleImportedClaims?: () => Promise<void>;
   readonly now?: () => Date;
   readonly syncProjection?: (projectId: CollabProjectId) => void;
   readonly trust?: HostTrustTransitionService;
@@ -256,6 +257,7 @@ export class OutgoingHostTransferCoordinator {
         if (record.phase === 'quiescing') {
           await this.admission.quiesceAndDrain(projectId, transferId, signal);
           await this.admission.assertAcceptanceSettled(projectId);
+          await this.options.settleImportedClaims?.();
           const signer = await this.identity.hostCaSigner();
           const proof = await this.trust.signTransition(signer, {
             issuedAt: this.now().toISOString(),
@@ -311,6 +313,7 @@ export class OutgoingHostTransferCoordinator {
           this.#assertPreparedPackage(record, prepared);
           const signer = await this.identity.hostCaSigner();
           const activationCertificate = await this.trust.signActivation(signer, {
+            authorityGeneration: prepared.authorityGeneration,
             cutoverAt: this.now().toISOString(),
             manifestDigest: record.manifestDigest!,
             projectId,

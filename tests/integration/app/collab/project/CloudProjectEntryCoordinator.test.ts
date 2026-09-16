@@ -419,7 +419,7 @@ describe('CloudProjectEntryCoordinator', () => {
     const projects = fixture.foundation.local.projects;
     const membership = {
       schemaVersion: 3 as const, createdAt: CREATED_AT, updatedAt: CREATED_AT, lastEventSequence: 7,
-      authority: { kind: 'cloud' as const, authorityGeneration: 7, bindingVersion: 10 as const, wireVersion: 14 as const,
+      authority: { kind: 'cloud' as const, authorityGeneration: 7, bindingVersion: 10 as const, wireVersion: 15 as const,
         serverUrl: fixture.serverUrl, gitRemoteUrl: `${fixture.serverUrl}/v10/projects/${PROJECT_ID}/repository.git` },
       member: { id: MEMBER_ID, displayName: 'Bob', role: 'member' as const, personalRef: `refs/heads/members/${MEMBER_ID}` },
       project: { id: PROJECT_ID, name: 'Cloud Notes', workspacePath: 'Original/Projects/recovered-notes' },
@@ -1056,7 +1056,7 @@ describe('CloudProjectEntryCoordinator', () => {
       expect(await foundation.local.projects.loadProjectDocument(PROJECT_ID, 'publication-state', decodeCollabPublicationStateRecord))
         .toMatchObject({ baseMainOid: mainOid, operation: null });
       expect(await foundation.local.projects.loadMembership(PROJECT_ID)).toMatchObject({
-        authority: { authorityGeneration: 7, bindingVersion: 10, kind: 'cloud', serverUrl, wireVersion: 14 },
+        authority: { authorityGeneration: 7, bindingVersion: 10, kind: 'cloud', serverUrl, wireVersion: 15 },
         member: { id: MEMBER_ID, personalRef: `refs/heads/members/${MEMBER_ID}`, role: 'manager' },
       });
       const workingCopy = path.join(vaultRoot, 'Shared', 'Projects', 'cloud-notes');

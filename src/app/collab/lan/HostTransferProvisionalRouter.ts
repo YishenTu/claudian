@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
+import { type CollabOperationId, type CollabProjectId, decodeCollabLanHostActivationProof, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
@@ -261,7 +261,19 @@ export class HostTransferProvisionalRouter {
         } catch {
           throw routeError('host-transfer-activation-invalid');
         }
-        const certificate = activationCertificate(decoded);
+        const legacyCertificate = activationCertificate(decoded);
+        const encodedProof = request.headers['x-claudian-host-activation-proof'];
+        let certificate = legacyCertificate;
+        if (encodedProof !== undefined) {
+          if (typeof encodedProof !== 'string' || encodedProof.length > MAX_ACTIVATION_BYTES
+            || !/^[A-Za-z0-9_-]+$/.test(encodedProof)) throw routeError('host-transfer-activation-invalid');
+          try {
+            const bytes = Buffer.from(encodedProof, 'base64url');
+            if (bytes.toString('base64url') !== encodedProof) throw new Error('Invalid encoding');
+            certificate = { ...legacyCertificate,
+              authorityProof: decodeCollabLanHostActivationProof(JSON.parse(bytes.toString('utf8'))) };
+          } catch { throw routeError('host-transfer-activation-invalid'); }
+        }
         if (certificate.projectId !== receiver.projectId || certificate.transferId !== transferId) {
           throw routeError('host-transfer-activation-binding-mismatch');
         }

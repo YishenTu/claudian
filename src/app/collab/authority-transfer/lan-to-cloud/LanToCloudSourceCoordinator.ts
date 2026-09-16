@@ -7,6 +7,7 @@ import {
   type CollabAuthorityRelinquishmentProof,
   type CollabAuthorityTransferStatus,
   type CollabCloudAuthorityTransferArtifact,
+  type CollabLanHostActivationProof,
   type CollabMemberId,
   type CollabProjectId,
   decodeCollabAuthorityTransferOperationRequest,
@@ -49,6 +50,7 @@ export interface LanToCloudCheckpointArtifact {
 }
 
 export interface LanToCloudCapturedCheckpoint {
+  readonly hostActivationProofs?: readonly CollabLanHostActivationProof[];
   readonly artifacts: readonly LanToCloudCheckpointArtifact[];
   readonly checkpointManifestSha256: string;
   readonly sourceHostMemberId: string;
@@ -360,6 +362,7 @@ export class LanToCloudSourceCoordinator {
                   projectId: record.projectId,
                   sourceHostMemberId: captured.sourceHostMemberId,
                   sourceProof: captured.sourceProof,
+                  ...(captured.hostActivationProofs?.length ? { hostActivationProofs: captured.hostActivationProofs } : {}),
                   targetUrl: record.status.targetUrl,
                   transferId: record.transferId,
                 },

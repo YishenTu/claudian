@@ -939,6 +939,36 @@ export class ClaudianCollabService {
     };
   }
 
+  async detachTransferredLanSource(record: AuthorityTransferRecord): Promise<void> {
+    if (record.localRole !== 'source' || record.status.direction !== 'lan-to-cloud'
+      || record.status.state !== 'completed' || !record.status.relinquishmentProof) {
+      throw new CollabError({ code: 'durable-progress-recovery-required', safeContext: { reason: 'authority-transfer-source-not-completed' } });
+    }
+    this.hostInstallations.assertRecoveryOwner(record.ownerInstallationKey, record.projectId, 'authority-transfer');
+    const membership = await this.local.projects.loadMembership(record.projectId);
+    if (!membership || membership.authority.authorityGeneration < record.status.targetAuthority.generation
+      || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) {
+      throw new CollabError({ code: 'durable-progress-recovery-required', safeContext: { reason: 'authority-transfer-source-not-converged' } });
+    }
+    if (await this.hostInstallations.inspect(record.projectId) === 'absent') return;
+    const resource = await this.hostInstallations.assertOwned(record.projectId, 'cleanup');
+    const authority = await this.#openOwnedAuthority(resource);
+    const project = await authority.database.read(connection => authority.projects.get(connection));
+    // A later incarnation has no cleanup obligation to this transfer.
+    if (project && project.authorityGeneration > record.status.sourceAuthority.generation) return;
+    if (!project || project.projectId !== record.projectId
+      || project.authorityGeneration !== record.status.sourceAuthority.generation
+      || project.hostMemberId !== record.status.relinquishmentProof.sourceHostMemberId
+      || this.lanHost.isProjectRunning(record.projectId)) {
+      throw new CollabError({ code: 'durable-progress-recovery-required', safeContext: { reason: 'authority-transfer-source-resource-mismatch' } });
+    }
+    await this.closeAuthority(record.projectId);
+    await this.local.projects.detachOwnedAuthorityDirectory(resource, {
+      kind: 'authority-transfer', operationId: record.operationIntentId, transferId: record.transferId,
+      sourceGeneration: record.status.sourceAuthority.generation, targetGeneration: record.status.targetAuthority.generation,
+    });
+  }
+
   async #prepareHostTransferInstall(
     input: Parameters<HostTransferModuleOptions['installTransferTarget']>[0],
   ): Promise<void> {
@@ -990,6 +1020,7 @@ export class ClaudianCollabService {
     snapshots: HostTransferModuleOptions['snapshots'],
     projectRecoveryAdmission: CollabProjectLifecycleAdmission,
     syncProjection: (projectId: CollabProjectId) => void,
+    settleImportedClaims?: HostTransferModuleOptions['settleImportedClaims'],
   ): CollabHostTransferService {
     this.#assertOpen();
     if (this.#hostTransferModule) {
@@ -1018,6 +1049,7 @@ export class ClaudianCollabService {
         );
         return Promise.resolve();
       },
+      settleImportedClaims,
       installTransferTarget: async input => {
         this.hostInstallations.assertRecoveryOwner(input.record.ownerInstallationKey, input.record.projectId, 'host-transfer');
         await this.#prepareHostTransferInstall(input);
@@ -1395,7 +1427,7 @@ export class ClaudianCollabService {
     const operation: AuthorityResourceOperation = {
       kind: 'host-transfer', operationId: transferId, transferId, sourceGeneration: null, targetGeneration: null,
     };
-    await this.local.projects.resumeAuthorityDirectoryRemovals(projectId, operation);
+    await this.local.projects.resumeAuthorityDirectoryRemovals(projectId, operation, false);
     if (await this.hostInstallations.inspect(projectId) === 'absent') return;
     const resource = captured ?? await this.hostInstallations.assertOwned(projectId, 'cleanup');
     await this.local.projects.validateOwnedAuthorityDirectory(resource);
@@ -1409,7 +1441,7 @@ export class ClaudianCollabService {
       await this.local.projects.hostTransferRecovery.save(record);
     }
     await this.closeAuthority(projectId);
-    await this.hostInstallations.removeOwned(resource, operation);
+    await this.local.projects.detachOwnedAuthorityDirectory(resource, operation);
   }
 
   async #removeRetiredAuthority(

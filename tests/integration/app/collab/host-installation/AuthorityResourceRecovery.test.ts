@@ -151,6 +151,24 @@ describe('authority resource recovery', () => {
     await expect(app.local.projects.removeOwnedAuthorityDirectory(authority.resource)).resolves.toBe(true);
   }, 5_000);
 
+  it.each([false, true])('reclaims an isolated old authority while its replacement is serving work (tree already removed: %s)', async treeRemoved => {
+    const app = foundation();
+    const previous = await app.createAuthority(PROJECT_ID);
+    await writeFile(path.join(previous.authorityDirectory, 'old.txt'), 'old authority');
+    await app.closeAuthority(PROJECT_ID);
+    await app.local.projects.detachOwnedAuthorityDirectory(previous.resource);
+    if (treeRemoved) await rm(path.join(root, '.claudian', 'collab', 'authority-removals', PROJECT_ID,
+      `${previous.resource.resourceId}.tree`), { recursive: true });
+    const replacement = await app.local.projects.createOwnedAuthorityDirectory(PROJECT_ID);
+    await writeFile(path.join(replacement.authorityDirectory, 'keep.txt'), 'current authority');
+    await app.local.projects.withAuthorityDirectory(replacement, async () => {
+      await expect(app.local.projects.reclaimDetachedAuthorityDirectories()).resolves.toBeUndefined();
+      expect(await readFile(path.join(replacement.authorityDirectory, 'keep.txt'), 'utf8')).toBe('current authority');
+    });
+    await expect(app.local.projects.resumeAuthorityDirectoryRemoval(PROJECT_ID, previous.resource.resourceId))
+      .resolves.toBe(false);
+  });
+
   it('rejects retained SQL access after its authority resource is replaced', async () => {
     const app = foundation();
     const authority = await app.createAuthority(PROJECT_ID);

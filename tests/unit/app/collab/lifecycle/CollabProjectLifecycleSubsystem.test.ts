@@ -20,7 +20,7 @@ describe('CollabProjectLifecycleSubsystem', () => {
     let offered = false;
     const owner = {
       name: 'authority-transfer',
-      inspect: async () => retained ? 'retained' as const : 'absent' as const,
+      inspect: async () => retained ? 'nonterminal' as const : 'absent' as const,
       runHostTransferOffer: async (_projectId: string, _options: unknown, createOffer: () => Promise<void>) => {
         await createOffer();
         retained = false;
@@ -37,7 +37,7 @@ describe('CollabProjectLifecycleSubsystem', () => {
     expect(offered).toBe(true);
   });
 
-  it.each(['nonterminal', 'retained'] as const)('admits a claimant beside a proved %s transfer but rejects an unproved predecessor', async state => {
+  it.each(['nonterminal'] as const)('admits a claimant beside a proved %s transfer but rejects an unproved predecessor', async state => {
     const subsystem = new CollabProjectLifecycleSubsystem({ ...ports(), recoveryStages: [], durableOwners: [
       { name: 'authority-transfer', inspect: async () => state },
       { name: 'authority-transfer-claimant', inspect: async () => 'nonterminal' },

@@ -18,7 +18,6 @@ import {
   AuthorityTransferModule,
 } from '@/app/collab/authority-transfer/AuthorityTransferModule';
 import {
-  isAuthorityTransferTerminalResponderExpired,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
   AuthorityTransferClaimantBindingResolver,
@@ -510,6 +509,15 @@ export function createCollabFeatureSubcomposition(
       requirePublication().resetProjectConnection(projectId, { resumeEvents: true });
       void requireLifecycle().refreshLifecycleProjection().catch(() => undefined);
     },
+    async resource => {
+      if (resource.operation?.kind !== 'authority-transfer' || !resource.operation.transferId) return;
+      const record = await foundation.authorityTransfers.load(resource.projectId, resource.operation.transferId);
+      if (!record || record.localRole !== 'target' || record.status.direction !== 'cloud-to-lan') return;
+      await new ProductionCloudToLanTargetEffects({
+        cloudSession: null, convergence: authorityTransferConvergence, foundation,
+        persistence: foundation.authorityTransfers, projectId: record.projectId,
+      }).settleImportedClaims(record);
+    },
   );
   let exitCoordinator: LocalProjectExitCoordinator | null = null;
   const requireExitCoordinator = (): Promise<LocalProjectExitCoordinator> => {
@@ -656,6 +664,10 @@ export function createCollabFeatureSubcomposition(
     hostTransfer,
     localExit,
     recoveryStages: [
+      {
+        name: 'detached-authority-resources',
+        run: () => foundation.local.projects.reclaimDetachedAuthorityDirectories(),
+      },
       {
         name: 'retirement-responders',
         run: () => foundation.restoreRetirementResponders(
@@ -922,10 +934,6 @@ export function createCollabFeatureSubcomposition(
       }, operationOptions);
     },
     recoverClaimant: record => claimantBindingResolver.resolve(record),
-    retainCompletedTargetForHostTransfer: record => new ProductionCloudToLanTargetEffects({
-      cloudSession: null, convergence: authorityTransferConvergence, foundation,
-      persistence: foundation.authorityTransfers, projectId: record.projectId,
-    }).retainForHostTransfer(record),
     restoreRetained: async record => {
       const effectsOptions = {
         cloudSession: null, convergence: authorityTransferConvergence, foundation,
@@ -1050,29 +1058,14 @@ export function createCollabFeatureSubcomposition(
             if (!membership) {
               throw compositionError('authority-transfer-terminal-membership-missing');
             }
-            const cloudSession = isAuthorityTransferTerminalResponderExpired(
-              record,
-              new Date(),
-            )
-              ? null
-              : await cloudAuthority.connect({
-                  projectId: record.projectId,
-                  serverUrl: isCollabLocalCloudMembership(membership)
-                    ? membership.authority.serverUrl
-                    : record.status.targetUrl,
-                }, operationOptions);
-            try {
-              await new ProductionLanToCloudSourceEffects({
-                retainCommittedTargetRedemptions,
-                cloudSession,
-                convergence: authorityTransferConvergence,
-                foundation,
-                persistence: foundation.authorityTransfers,
-                projectId: record.projectId,
-              }).restoreCompleted(record, operationOptions);
-            } finally {
-              cloudSession?.dispose();
-            }
+            await new ProductionLanToCloudSourceEffects({
+              retainCommittedTargetRedemptions,
+              cloudSession: null,
+              convergence: authorityTransferConvergence,
+              foundation,
+              persistence: foundation.authorityTransfers,
+              projectId: record.projectId,
+            }).restoreCompleted(record, operationOptions);
           },
         };
       },

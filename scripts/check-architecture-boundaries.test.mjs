@@ -671,7 +671,7 @@ test('Claudian consumes the standalone Collab protocol only from the exact regis
     lockfile.packages?.[protocolInstallPath]?.resolved,
     `https://registry.npmjs.org/@claudian-collab/protocol/-/protocol-${protocolVersion}.tgz`,
   );
-  assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 14);
+  assert.equal(protocol.COLLAB_PROTOCOL_VERSION, 15);
   assert.equal(protocol.COLLAB_CLOUD_BINDING_VERSION, 10);
   assert.equal(protocol.COLLAB_PROJECT_BACKUP_COORDINATION_FORMAT_VERSION, 3);
   assert.deepEqual(

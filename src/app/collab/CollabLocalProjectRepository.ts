@@ -2717,7 +2717,39 @@ export class CollabLocalProjectRepository {
     });
   }
 
-  resumeAuthorityDirectoryRemovals(projectId: CollabProjectId, operation: AuthorityResourceOperation): Promise<void> {
+  detachOwnedAuthorityDirectory(capability: OwnedAuthorityDirectoryCapability, operation: AuthorityResourceOperation | null = capability.operation): Promise<boolean> {
+    return this.#operationQueue.run(async () => {
+      this.#assertIssuedAuthorityCapability(capability);
+      if (await this.#resumeAuthorityDirectoryRemovalUnlocked(capability.projectId, capability.resourceId, false)) return true;
+      await this.#validateOwnedAuthorityDirectoryUnlocked(capability);
+      return this.#detachAuthorityDirectoryUnlocked(capability, operation, false);
+    });
+  }
+
+  /** Reclaims only already-isolated resources; it never detaches a current authority. */
+  reclaimDetachedAuthorityDirectories(): Promise<void> {
+    return this.#operationQueue.run(async () => {
+      const root = `${PRIVATE_STATE_DIRECTORY}/authority-removals`;
+      const directory = await resolveCollabVaultPath(this.vaultRoot, root);
+      const projects = await readdir(directory).catch(error => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+        throw error;
+      });
+      for (const projectId of projects) {
+        if (!isCollabProjectId(projectId)) continue;
+        const projectPath = `${root}/${projectId}`;
+        const entries = await readdir(await resolveCollabVaultPath(this.vaultRoot, projectPath));
+        for (const entry of entries) {
+          if (!/^[a-f0-9-]{36}\.json$/.test(entry)) continue;
+          const removal = await this.#loadAuthorityRemovalRecord(`${projectPath}/${entry}`);
+          if (!removal || removal.resource.ownerInstallationKey !== this.#requireInstallationKey()) continue;
+          await this.#resumeAuthorityDirectoryRemovalUnlocked(projectId, removal.resource.resourceId, true, false);
+        }
+      }
+    });
+  }
+
+  resumeAuthorityDirectoryRemovals(projectId: CollabProjectId, operation: AuthorityResourceOperation, reclaim = true): Promise<void> {
     this.#requireProjectId(projectId);
     operation = decodeAuthorityResourceOperation(operation);
     return this.#operationQueue.run(async () => {
@@ -2732,7 +2764,7 @@ export class CollabLocalProjectRepository {
         const record = await this.#loadAuthorityRemovalRecord(`${relativeDirectory}/${entry}`);
         if (record !== null && sameAuthorityResourceOperation(record.operation, operation)) {
           if (entry !== `${record.resource.resourceId}.json`) throw localRecordError('authority-removal-record-invalid', 'index', projectId);
-          await this.#resumeAuthorityDirectoryRemovalUnlocked(projectId, record.resource.resourceId);
+          await this.#resumeAuthorityDirectoryRemovalUnlocked(projectId, record.resource.resourceId, reclaim);
         }
       }
     });
@@ -2746,6 +2778,7 @@ export class CollabLocalProjectRepository {
   async #detachAuthorityDirectoryUnlocked(
     capability: OwnedAuthorityDirectoryCapability | ProvisionalAuthorityDirectoryCapability,
     operation: AuthorityResourceOperation | null = capability.operation,
+    reclaim = true,
   ): Promise<boolean> {
     this.#assertAuthorityResourceIdle(capability.projectId);
     const removalDirectory = `${PRIVATE_STATE_DIRECTORY}/authority-removals/${capability.projectId}`;
@@ -2760,10 +2793,10 @@ export class CollabLocalProjectRepository {
         resourceId: capability.resourceId, operation: capability.operation, schemaVersion: AUTHORITY_OWNERSHIP_SCHEMA_VERSION,
       } })}\n`, { mode: 0o600, onDiagnostic: this.#onDiagnostic });
     await syncCollabVaultDirectoryDurably(this.vaultRoot, removalDirectory);
-    return this.#resumeAuthorityDirectoryRemovalUnlocked(capability.projectId, capability.resourceId);
+    return this.#resumeAuthorityDirectoryRemovalUnlocked(capability.projectId, capability.resourceId, reclaim);
   }
 
-  async #resumeAuthorityDirectoryRemovalUnlocked(projectId: CollabProjectId, resourceId: string): Promise<boolean> {
+  async #resumeAuthorityDirectoryRemovalUnlocked(projectId: CollabProjectId, resourceId: string, reclaim = true, detach = true): Promise<boolean> {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(resourceId)) {
       throw localRecordError('authority-resource-mismatch', 'index', projectId);
     }
@@ -2771,7 +2804,6 @@ export class CollabLocalProjectRepository {
     const recordPath = `${removalDirectory}/${resourceId}.json`;
     const removal = await this.#loadAuthorityRemovalRecord(recordPath);
     if (removal === null) return false;
-    this.#assertAuthorityResourceIdle(projectId);
     const record = removal.resource;
     if (record.schemaVersion !== AUTHORITY_OWNERSHIP_SCHEMA_VERSION || record.projectId !== projectId
       || record.resourceId !== resourceId || record.ownerInstallationKey !== this.#requireInstallationKey()) {
@@ -2790,6 +2822,8 @@ export class CollabLocalProjectRepository {
       const current = active ?? provisional;
       if (current?.schemaVersion === AUTHORITY_OWNERSHIP_SCHEMA_VERSION && current.resourceId === resourceId
         && current.projectId === projectId && current.ownerInstallationKey === record.ownerInstallationKey) {
+        if (!detach) return false;
+        this.#assertAuthorityResourceIdle(projectId);
         const canonicalDirectory = await resolveCollabVaultPath(this.vaultRoot, canonicalPath, { mustExist: true });
         const original = await lstat(canonicalDirectory, { bigint: true });
         if (!original.isDirectory() || original.isSymbolicLink()
@@ -2805,6 +2839,7 @@ export class CollabLocalProjectRepository {
       || detached.dev.toString() !== removal.device || detached.ino.toString() !== removal.inode) {
       throw localRecordError('authority-directory-boundary-invalid', 'index', projectId);
     }
+    if (!reclaim) return true;
     await removeCollabDirectoryDurably(this.vaultRoot, detachedPath, this.#onDiagnostic);
     await syncCollabVaultDirectoryDurably(this.vaultRoot, removalDirectory);
     await removeCollabFileDurably(this.vaultRoot, recordPath, this.#onDiagnostic);

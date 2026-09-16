@@ -41,7 +41,7 @@ describe('Host transfer provisional LAN transport', () => {
     if (vaultRoot) await rm(vaultRoot, { force: true, recursive: true });
   });
 
-  it('pins the target CA and authenticates probe, streamed stage, activation, and cancellation', async () => {
+  it.each([false, true])('pins the target CA and authenticates activation with optional authority evidence: %s', async withEvidence => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-transfer-lan-'));
     const tls = new LanTlsIdentity(vaultRoot, { installationKey: TEST_INSTALLATION_A });
     const identity = await tls.issueServerIdentity('127.0.0.1');
@@ -137,6 +137,13 @@ describe('Host transfer provisional LAN transport', () => {
     })).resolves.toEqual({ manifestDigest });
 
     const certificate: HostTransferActivationCertificate = {
+      ...(withEvidence ? { authorityProof: {
+        schemaVersion: 1 as const, authorityGeneration: 4, projectId: 'project-a', transferId: 'transfer-a',
+        targetHostMemberId: 'member-target', targetCaFingerprint: identity.caFingerprint,
+        manifestSha256: manifestDigest, cutoverAt: '2026-08-13T00:01:00.000Z',
+        caCertificatePem: identity.caCertificatePem, signatureAlgorithm: 'rsa-pss-sha256' as const,
+        signature: Buffer.alloc(256, 8).toString('base64url'),
+      } } : {}),
       cutoverAt: '2026-08-13T00:01:00.000Z',
       manifestDigest,
       projectId: 'project-a',

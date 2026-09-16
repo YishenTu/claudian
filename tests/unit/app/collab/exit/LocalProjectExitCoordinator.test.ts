@@ -70,7 +70,7 @@ function cloudMembership(
       gitRemoteUrl: 'http://127.0.0.1:8787/v10/projects/project-alpha/repository.git',
       kind: 'cloud',
       serverUrl: 'http://127.0.0.1:8787',
-      wireVersion: 14,
+      wireVersion: 15,
     },
     createdAt: NOW,
     lastEventSequence: 1,

@@ -60,7 +60,7 @@ describe('Pending Cloud Leave lost-response recovery', () => {
           gitRemoteUrl: 'https://cloud.example.test/v10/projects/project-cloud/repository.git',
           kind: 'cloud',
           serverUrl: 'https://cloud.example.test',
-          wireVersion: 14,
+          wireVersion: 15,
         },
         createdAt: NOW,
         lastEventSequence: 3,

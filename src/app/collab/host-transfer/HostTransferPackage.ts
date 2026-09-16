@@ -28,6 +28,7 @@ export interface HostTransferPackageManifest {
   readonly authoritySchemaVersion: 8 | 9 | 10 | 11 | 12 | typeof COLLAB_AUTHORITY_SCHEMA_VERSION;
   readonly projectId: CollabProjectId;
   readonly transferId: CollabOperationId;
+  // Legacy wire name: Project snapshot revision, not the LAN/Cloud authority generation.
   readonly sourceAuthorityGeneration: number;
   readonly targetHostMemberId: CollabMemberId;
   readonly targetCaFingerprint: string;

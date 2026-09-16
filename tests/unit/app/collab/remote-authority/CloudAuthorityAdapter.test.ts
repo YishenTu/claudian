@@ -110,7 +110,7 @@ function membership(): CollabLocalCloudMembershipRecord {
       gitRemoteUrl: `https://cloud.example.test/v10/projects/${PROJECT_ID}/repository.git`,
       kind: 'cloud',
       serverUrl: 'https://cloud.example.test',
-      wireVersion: 14,
+      wireVersion: 15,
     },
     createdAt: '2026-08-22T00:00:00.000Z',
     lastEventSequence: 3,
@@ -1331,7 +1331,7 @@ describe('CloudAuthorityAdapter', () => {
               projectId: 'project-cloud',
               projectName: 'Cloud Project',
             },
-            protocolVersion: 14,
+            protocolVersion: 15,
             requestId: 'request-entry',
           },
           path: '/operator/cloud/v10/projects/project-cloud/operations/createCloudProject',
@@ -1657,7 +1657,7 @@ describe('CloudAuthorityAdapter', () => {
           idempotencyKey: 'publish-head',
           projectId: PROJECT_ID,
         },
-        protocolVersion: 14,
+        protocolVersion: 15,
         requestId: 'request-ensure',
       },
       headers: expect.objectContaining({ authorization: expect.stringMatching(/^Bearer /u) }),
@@ -1717,7 +1717,7 @@ describe('CloudAuthorityAdapter', () => {
           projectId: PROJECT_ID,
           requestId: 'request-one',
         },
-        protocolVersion: 14,
+        protocolVersion: 15,
         requestId: expect.any(String),
       },
       headers: expect.objectContaining({ authorization: expect.stringMatching(/^Bearer /u) }),
@@ -2497,7 +2497,7 @@ describe('CloudProjectEventClient', () => {
         retirementId: 'retirement-cloud-one',
       },
       projectId: PROJECT_ID,
-      protocolVersion: 14,
+      protocolVersion: 15,
       sequence: 4,
     }));
     await flush();
@@ -2575,7 +2575,7 @@ describe('CloudProjectEventClient', () => {
         occurredAt: '2026-08-22T00:00:00.000Z',
         payload: { requestId: `request-${sequence}` },
         projectId: PROJECT_ID,
-        protocolVersion: 14,
+        protocolVersion: 15,
         sequence,
       }));
     }
@@ -2611,7 +2611,7 @@ describe('CloudProjectEventClient', () => {
       occurredAt: '2026-08-22T00:00:00.000Z',
       payload: { requestId: 'request-four' },
       projectId: PROJECT_ID,
-      protocolVersion: 14,
+      protocolVersion: 15,
       sequence: 4,
     }));
     await flush();

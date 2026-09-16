@@ -1,4 +1,4 @@
-import { type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
+import { type CollabLanHostActivationProof, type CollabMemberId, type CollabOperationId, type CollabProjectId, decodeCollabLanHostActivationProof, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
 import {
@@ -93,7 +93,7 @@ function decodeActivation(value: string | null): HostTransferActivationCertifica
       || typeof decoded.signature !== 'string'
     ) throw new Error('Invalid activation');
     timestamp(decoded.cutoverAt, 'host-transfer-activation-time-invalid');
-    return Object.freeze({ ...decoded });
+    return Object.freeze({ ...decoded, ...(decoded.authorityProof ? { authorityProof: decodeCollabLanHostActivationProof(decoded.authorityProof) } : {}) });
   } catch {
     throw repositoryError('host-transfer-activation-invalid');
   }
@@ -554,6 +554,18 @@ export class HostTransferRepository {
       throw repositoryError('host-transfer-host-pointer-update-failed');
     }
     return this.#requirePhase(connection, input.transferId, 'authority-relinquished');
+  }
+
+  listActivationProofs(connection: AuthorityDatabaseConnection, authorityGeneration: number): readonly CollabLanHostActivationProof[] {
+    return connection.all(
+      `SELECT operations.activation_certificate FROM host_transition_proofs AS proofs
+       JOIN host_transfer_operations AS operations ON operations.transfer_id = proofs.transfer_id
+       WHERE operations.phase IN ('authority-relinquished', 'target-active', 'completed')
+       ORDER BY proofs.sequence ASC`,
+    ).flatMap(row => {
+      const proof = decodeActivation(text(row, 'activation_certificate', true))?.authorityProof;
+      return proof?.authorityGeneration === authorityGeneration ? [proof] : [];
+    });
   }
 
   listProofs(connection: AuthorityDatabaseConnection): readonly CollabHostTrustTransitionProof[] {

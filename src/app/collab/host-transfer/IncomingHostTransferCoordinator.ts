@@ -97,7 +97,8 @@ function sameActivationCertificate(
     && left.manifestDigest === right.manifestDigest
     && left.cutoverAt === right.cutoverAt
     && left.signatureAlgorithm === right.signatureAlgorithm
-    && left.signature === right.signature;
+    && left.signature === right.signature
+    && JSON.stringify(left.authorityProof) === JSON.stringify(right.authorityProof);
 }
 
 const DEFAULT_TERMINAL_RECEIPT_TTL_MS = 24 * 60 * 60 * 1_000;

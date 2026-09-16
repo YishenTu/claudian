@@ -5,7 +5,7 @@ import {
   X509Certificate,
 } from 'node:crypto';
 
-import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
+import { type CollabIsoTimestamp, type CollabLanHostActivationProof, type CollabMemberId, type CollabOperationId, type CollabProjectId, decodeCollabLanHostActivationProof, encodeCollabLanHostActivationProofSigningInput, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { digestHostTransitionProofChain } from '@/app/collab/host-transfer/HostTransferPackage';
 import type { HostTrustCheckpoint } from '@/app/collab/host-transfer/HostTrustCheckpoint';
@@ -20,6 +20,7 @@ const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{64,2048}$/;
 
 export interface HostTransferActivationCertificate {
+  readonly authorityProof?: CollabLanHostActivationProof;
   readonly schemaVersion: 1;
   readonly projectId: CollabProjectId;
   readonly transferId: CollabOperationId;
@@ -39,6 +40,7 @@ export interface SignHostTransitionInput {
 }
 
 export interface SignHostActivationInput {
+  readonly authorityGeneration?: number;
   readonly projectId: CollabProjectId;
   readonly transferId: CollabOperationId;
   readonly targetHostMemberId: CollabMemberId;
@@ -334,7 +336,18 @@ export class HostTrustTransitionService {
     };
     const signature = await signer.signRsaPssSha256(activationPayload(unsigned));
     decodeSignature(signature);
-    return Object.freeze({ ...unsigned, signature });
+    const authorityProof = input.authorityGeneration === undefined ? undefined : {
+      schemaVersion: 1 as const, projectId: input.projectId,
+      authorityGeneration: input.authorityGeneration, transferId: input.transferId,
+      targetHostMemberId: input.targetHostMemberId, targetCaFingerprint: input.targetCaFingerprint,
+      manifestSha256: input.manifestDigest, cutoverAt: input.cutoverAt,
+      caCertificatePem: signerCa.certificatePem, signatureAlgorithm: 'rsa-pss-sha256' as const,
+    };
+    return Object.freeze({ ...unsigned, signature, ...(authorityProof ? {
+      authorityProof: decodeCollabLanHostActivationProof({ ...authorityProof,
+        signature: await signer.signRsaPssSha256(Buffer.from(
+          encodeCollabLanHostActivationProofSigningInput(authorityProof), 'utf8')) }),
+    } : {}) });
   }
 
   verifyActivation(
@@ -365,6 +378,20 @@ export class HostTrustTransitionService {
       previousCaCertificatePem,
       'host-activation-signer-ca-invalid',
     );
+    if (certificate.authorityProof) {
+      const proof = decodeCollabLanHostActivationProof(certificate.authorityProof);
+      if (proof.projectId !== certificate.projectId || proof.transferId !== certificate.transferId
+        || proof.targetHostMemberId !== certificate.targetHostMemberId
+        || proof.targetCaFingerprint !== certificate.targetCaFingerprint
+        || proof.manifestSha256 !== certificate.manifestDigest || proof.cutoverAt !== certificate.cutoverAt
+        || (expected.authorityGeneration !== undefined && proof.authorityGeneration !== expected.authorityGeneration)
+        || normalizeCaCertificate(proof.caCertificatePem, 'host-activation-ca-invalid').fingerprint !== previousCa.fingerprint) {
+        throw trustError('host-activation-binding-mismatch');
+      }
+      const { signature: _signature, ...payload } = proof;
+      verifySignature(Buffer.from(encodeCollabLanHostActivationProofSigningInput(payload), 'utf8'),
+        proof.signature, previousCa.certificate);
+    }
     verifySignature(activationPayload({
       cutoverAt: certificate.cutoverAt,
       manifestDigest: certificate.manifestDigest,

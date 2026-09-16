@@ -80,6 +80,7 @@ import type {
   AuthorityTransferPersistence,
   LanToCloudCancellationIntent,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
+import { completedTargetHandleDigest } from '@/app/collab/authority-transfer/persistence/RetainedAuthorityTransferRecord';
 import {
   AuthorityTransferRecovery,
 } from '@/app/collab/authority-transfer/recovery/AuthorityTransferRecovery';
@@ -187,7 +188,6 @@ export interface AuthorityTransferModuleOptions {
     record: AuthorityTransferClaimantRecord,
   ) => Promise<RecoveredAuthorityTransferClaimantBinding>;
   readonly terminalResolver?: AuthorityTransferRuntimeResolver;
-  readonly retainCompletedTargetForHostTransfer?: (record: AuthorityTransferRecord) => Promise<boolean>;
   readonly restoreRetained?: (record: AuthorityTransferRecord, options: CollabOperationOptions) => Promise<void>;
 }
 
@@ -521,7 +521,6 @@ export class AuthorityTransferModule {
   readonly convergence: AuthorityTransferLocalConvergence;
   readonly runtimes: AuthorityTransferRuntimeDispatch;
   private readonly claimantRecovery: AuthorityTransferClaimantRecovery;
-  private readonly readyCloudToLanTargets = new Map<CollabProjectId, AuthorityTransferBindingOwner>();
   private readonly sourceProposals: LanToCloudSourceProposalCoordinator;
   private readonly sourceBindings = new Map<CollabProjectId, SourceBinding>();
   private readonly targetBindings = new Map<CollabProjectId, TargetBinding>();
@@ -810,10 +809,7 @@ export class AuthorityTransferModule {
       || record.status.state !== 'completed'
       || record.terminalCleanupCompleted
     ) return;
-    const ready = this.readyCloudToLanTargets.get(record.projectId);
-    if (!ready || !bindingOwnerMatches(ready, record)) {
-      throw moduleError('authority-transfer-target-recovery-required');
-    }
+    throw moduleError('authority-transfer-target-recovery-required');
   }
 
   cancelLanToCloudTransfer(
@@ -1236,10 +1232,15 @@ export class AuthorityTransferModule {
         const retained = await this.options.persistence.loadRetainedCloudToLanTarget(handle.projectId, handle.transferId);
         if (retained) {
           try {
-            assertCloudToLanTargetHandle(retained.target, handle);
+            if (completedTargetHandleDigest(handle) !== retained.targetHandleSha256) throw new TypeError();
           } catch {
             throw moduleError('authority-transfer-target-handle-mismatch');
           }
+          const manager = await this.options.persistence.loadCloudToLanManagerEntry(handle.projectId);
+          if (manager && this.#cloudToLanManagerMatchesPhysical(manager, retained.record)) {
+            await this.#settleRecoveredCloudToLanManager(retained.record);
+          }
+          await this.#releaseCompletedCloudToLanRuntime(handle.projectId);
           return retained.record.status;
         }
         let binding = this.targetBindings.get(handle.projectId);
@@ -1275,7 +1276,6 @@ export class AuthorityTransferModule {
           await this.runtimes.resume(completed, options);
           await this.#settleMatchingCloudToLanManager(handle, completed.status);
           await this.#releaseCompletedCloudToLanRuntime(handle.projectId);
-          this.readyCloudToLanTargets.set(handle.projectId, bindingOwner(completed.operationIntentId, completed.status));
           return completed.status;
         }
         if (!binding) {
@@ -1351,7 +1351,6 @@ export class AuthorityTransferModule {
         }
         if (status.state === 'completed') {
           await this.#releaseCompletedCloudToLanRuntime(handle.projectId);
-          this.readyCloudToLanTargets.set(handle.projectId, bindingOwner(handle.operationIntentId, status));
         }
         return status;
       },
@@ -1436,7 +1435,8 @@ export class AuthorityTransferModule {
   }
 
   async #releaseCompletedCloudToLanRuntime(projectId: CollabProjectId): Promise<void> {
-    const record = await this.options.persistence.load(projectId);
+    const bindingTransfer = this.targetBindings.get(projectId)?.owner.transferId;
+    const record = await this.options.persistence.load(projectId, bindingTransfer);
     if (
       record?.localRole !== 'target'
       || record.status.direction !== 'cloud-to-lan'
@@ -1670,10 +1670,14 @@ export class AuthorityTransferModule {
       await this.options.persistence.settleCloudToLanManagerEntry(entry);
       return;
     }
-    const physical = await this.options.persistence.load(projectId);
+    const physical = await this.options.persistence.load(projectId, entry.status?.transferId);
     if (physical?.ownerInstallationKey === this.options.installationKey) {
       if (!this.#cloudToLanManagerMatchesPhysical(entry, physical)) {
         throw moduleError('authority-transfer-manager-physical-mismatch');
+      }
+      if (physical.status.state === 'completed') {
+        await this.#settleRecoveredCloudToLanManager(physical);
+        await this.#releaseCompletedCloudToLanRuntime(projectId);
       }
       return;
     }
@@ -1747,19 +1751,10 @@ export class AuthorityTransferModule {
       || record.status.state !== 'completed') return false;
     throwIfCancelled(options.signal);
     await this.#resumeAuthorityTransferRecord(record, options);
+    if (await this.options.persistence.load(projectId)) {
+      throw moduleError('authority-transfer-host-predecessor-unsettled');
+    }
     await createOffer();
-    const current = await this.options.persistence.load(projectId);
-    if (current && (current.transferId !== record.transferId
-      || current.operationIntentId !== record.operationIntentId)) {
-      throw moduleError('authority-transfer-host-predecessor-changed');
-    }
-    if (current) {
-      if (!this.options.retainCompletedTargetForHostTransfer
-        || !await this.options.retainCompletedTargetForHostTransfer(current)) {
-        throw moduleError('authority-transfer-host-predecessor-unsettled');
-      }
-      this.readyCloudToLanTargets.delete(projectId);
-    }
     return true;
   }
 
@@ -1767,7 +1762,7 @@ export class AuthorityTransferModule {
     record: AuthorityTransferRecord,
     options: CollabOperationOptions,
   ): Promise<void> {
-    if (record.terminalCleanupCompleted) {
+    if (record.terminalCleanupCompleted && record.status.state !== 'completed') {
       await this.options.persistence.completeTerminalCleanup({
         operationIntentId: record.operationIntentId,
         projectId: record.projectId,
@@ -1784,7 +1779,7 @@ export class AuthorityTransferModule {
       }
     }
     await this.#releaseCompletedCloudToLanRuntime(record.projectId);
-    const current = await this.options.persistence.load(record.projectId);
+    const current = await this.options.persistence.load(record.projectId, record.transferId);
     if (current && (
       current.status.state === 'cancelled'
       || (current.localRole === 'source' && current.status.state === 'completed')
@@ -1797,20 +1792,7 @@ export class AuthorityTransferModule {
       && current.status.direction === 'cloud-to-lan'
       && (current.status.state === 'cancelled' || current.status.state === 'completed')
     ) await this.#settleRecoveredCloudToLanManager(current);
-    if (
-      current
-      && current.ownerInstallationKey === this.options.installationKey
-      && current.localRole === 'target'
-      && current.status.direction === 'cloud-to-lan'
-      && current.status.state === 'completed'
-      && !current.terminalCleanupCompleted
-    ) this.readyCloudToLanTargets.set(current.projectId, bindingOwner(current.operationIntentId, current.status));
-    if (current && current.ownerInstallationKey === this.options.installationKey
-      && current.localRole === 'target' && current.status.direction === 'cloud-to-lan'
-      && current.status.state === 'completed'
-      && await this.options.retainCompletedTargetForHostTransfer?.(current)) {
-      this.readyCloudToLanTargets.delete(current.projectId);
-    }
+
   }
 
   async #settleRecoveredCloudToLanManager(

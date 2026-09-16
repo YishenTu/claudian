@@ -1074,7 +1074,7 @@ describe('LanHostCoordinator production transport', () => {
         gitRemoteUrl: `http://127.0.0.1:8787/v10/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud',
         serverUrl: 'http://127.0.0.1:8787/',
-        wireVersion: 14,
+        wireVersion: 15,
       },
       createdAt: existing.createdAt,
       lastEventSequence: existing.lastEventSequence,

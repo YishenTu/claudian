@@ -238,12 +238,16 @@ export class HostTransferTargetTransport implements HostTransferTargetTransportP
 
   async activate(input: Parameters<HostTransferTargetTransportPort['activate']>[0]): Promise<void> {
     pinnedTrust({ ...input, projectId: input.activationCertificate.projectId });
-    const body = Buffer.from(JSON.stringify(input.activationCertificate), 'utf8');
+    const { authorityProof, ...legacyCertificate } = input.activationCertificate;
+    const body = Buffer.from(JSON.stringify(legacyCertificate), 'utf8');
     const response = responseRecord(await requestReceiver({
       body,
       contentLength: body.byteLength,
       endpoint: input.endpoint,
-      headers: { 'content-type': 'application/json' },
+      // Published LAN receivers retain their exact certificate JSON contract.
+      headers: { 'content-type': 'application/json', ...(authorityProof ? {
+        'x-claudian-host-activation-proof': Buffer.from(JSON.stringify(authorityProof), 'utf8').toString('base64url'),
+      } : {}) },
       path: hostTransferProvisionalPath(input.transferId, 'activate'),
       receiverCredential: input.receiverCredential,
       ...(input.signal ? { signal: input.signal } : {}),

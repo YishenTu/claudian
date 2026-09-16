@@ -310,6 +310,11 @@ export class HostTransferAuthoritySnapshot {
         }
         migrateLegacyAuthorityDatabaseToCurrent(database);
       }
+      if (certificate.authorityProof !== undefined
+        && certificate.authorityProof.authorityGeneration !== one(database,
+          'SELECT authority_generation FROM authority_metadata WHERE singleton = 1').authority_generation) {
+        throw snapshotError('host-transfer-authority-activation-binding-invalid');
+      }
       this.#applyActivation(database, certificate, true);
       const generation = one(database, 'SELECT authority_generation FROM authority_metadata WHERE singleton = 1').authority_generation;
       if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 1) {

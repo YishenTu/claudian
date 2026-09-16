@@ -72,6 +72,7 @@ export interface HostTransferAdmissionPort {
 }
 
 export interface PreparedHostTransferPackage {
+  readonly authorityGeneration: number;
   readonly manifest: HostTransferPackageManifest;
   readonly manifestDigest: string;
   readonly proof: CollabHostTrustTransitionProof;

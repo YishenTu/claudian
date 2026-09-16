@@ -186,7 +186,7 @@ describe('AuthorityTransferRecovery', () => {
     await expect(recovery.durableOwner.inspect(PROJECT_ID)).resolves.toBe('terminal');
   });
 
-  it.each(['semantic', 'physical'] as const)('restores retained routes while %s transfer recovery is pending', async owner => {
+  it.each(['semantic', 'physical', 'retained-failure'] as const)('restores retained routes while %s transfer recovery is pending', async owner => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     for (const generation of [1, 3]) {
       const transferId = `retained-transfer-${generation}`;
@@ -207,10 +207,10 @@ describe('AuthorityTransferRecovery', () => {
           phase: 'completed', state: 'completed', relinquishmentProof: proof, updatedAt: '2026-08-26T00:04:00.000Z' },
       });
       await repository.authorityTransferRecords.saveRetained({
-        schemaVersion: 1, record, custody: null, commitment: null, source: null, target: null,
+        schemaVersion: 2, record, custody: null, commitment: null, targetHandleSha256: null,
       });
     }
-    if (owner === 'semantic') await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
+    if (owner !== 'physical') await repository.authorityTransferRecords.save(createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A, lifecycleOwnership: 'owned', localRole: 'source',
       operationIntentId: 'current-intent', stagingDirectoryName: '.claudian-authority-transfer-current-transfer',
       status: { ...status('collecting-readiness', PROJECT_ID, 'current-transfer'),
@@ -219,14 +219,21 @@ describe('AuthorityTransferRecovery', () => {
     const persistence = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), { isRecoveryOwner: () => true });
     const recovered: string[] = [];
     const recovery = new AuthorityTransferRecovery(persistence, recoveryHandler({
-      resumeRetained: async record => { recovered.push(`retained:${record.transferId}`); },
+      resumeRetained: async record => {
+        if (owner === 'retained-failure' && record.transferId === 'retained-transfer-1') throw new Error('old responder unavailable');
+        recovered.push(`retained:${record.transferId}`);
+      },
       resume: async record => { recovered.push(`current:${record.transferId}`); },
     }), () => undefined);
     const subsystem = lifecycle();
     if (owner === 'physical') subsystem.registerDurableOwner({ name: 'host-transfer', inspect: async () => 'nonterminal' });
     recovery.register(subsystem);
-    await subsystem.lifecycleRecovery.resume();
-    expect(recovered).toEqual(['retained:retained-transfer-1', 'retained:retained-transfer-3', ...(owner === 'semantic' ? ['current:current-transfer'] : [])]);
+    const failed = await subsystem.lifecycleRecovery.resume().then(() => false, () => true);
+    expect(failed).toBe(owner === 'retained-failure');
+    expect(recovered).toEqual([
+      ...(owner === 'retained-failure' ? [] : ['retained:retained-transfer-1']),
+      'retained:retained-transfer-3', ...(owner === 'physical' ? [] : ['current:current-transfer']),
+    ]);
   });
 
   it('enumerates startup state and reacquires the lifecycle arbiter for recovery', async () => {

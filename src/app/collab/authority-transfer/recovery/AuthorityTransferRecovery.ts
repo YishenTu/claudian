@@ -91,10 +91,18 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
           await this.handler.reconcileRequester?.(projectId);
           for (const retained of await this.persistence.listRetained(projectId)) {
             if (retained.terminalCleanupCompleted) continue;
-            await this.assertRecoveryOwner(retained.ownerInstallationKey, projectId);
-            await this.handler.resumeRetained(retained, options);
+            try {
+              await this.assertRecoveryOwner(retained.ownerInstallationKey, projectId);
+              await this.handler.resumeRetained(retained, options);
+            } catch (error) {
+              firstError ??= error;
+            }
           }
         });
+      } catch (error) {
+        firstError ??= error;
+      }
+      try {
         const ownerState = await this.persistence.inspectLifecycleOwner(projectId);
         if (ownerState === 'absent' || ownerState === 'terminal') continue;
       } catch (error) {
@@ -148,10 +156,10 @@ export class AuthorityTransferRecovery implements CollabProjectLifecycleRecovery
 
   private async inspect(
     projectId: CollabProjectId,
-  ): Promise<'absent' | 'nonterminal' | 'proposal' | 'retained' | 'terminal'> {
+  ): Promise<'absent' | 'nonterminal' | 'proposal' | 'terminal'> {
     const state = await this.persistence.inspectLifecycleOwner(projectId);
     if (
-      (state === 'nonterminal' || state === 'retained')
+      state === 'nonterminal'
       && await this.handler.managerHandoffEstablished?.(projectId)
     ) return 'terminal';
     return state;

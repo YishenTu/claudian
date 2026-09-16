@@ -144,6 +144,29 @@ describe('HostTrustTransitionService', () => {
     )).toThrow();
   });
 
+  it('binds committed Host activation evidence to its authority generation', async () => {
+    const source = await identity('activation-generation');
+    const signer = await source.hostCaSigner();
+    const input = {
+      authorityGeneration: 7,
+      cutoverAt: '2026-08-08T00:05:00.000Z', manifestDigest: 'a'.repeat(64),
+      projectId: 'project-1', targetCaFingerprint: 'b'.repeat(64),
+      targetHostMemberId: 'member-2', transferId: 'transfer-1',
+    } as const;
+    const certificate = await service.signActivation(signer, input);
+    expect(certificate.authorityProof).toMatchObject({
+      authorityGeneration: 7, caCertificatePem: signer.caCertificatePem,
+      manifestSha256: input.manifestDigest, targetHostMemberId: 'member-2',
+    });
+    expect(() => service.verifyActivation(certificate, signer.caCertificatePem, input)).not.toThrow();
+    expect(() => service.verifyActivation(certificate, signer.caCertificatePem, {
+      ...input, authorityGeneration: 8,
+    })).toThrow();
+    expect(() => service.verifyActivation({ ...certificate, authorityProof: {
+      ...certificate.authorityProof!, targetHostMemberId: 'member-attacker',
+    } }, signer.caCertificatePem, input)).toThrow();
+  });
+
   it('continues full retained history from a Member already trusting an intermediate Host', async () => {
     const [first, second, third] = await Promise.all([
       identity('history-first'), identity('history-second'), identity('history-third'),

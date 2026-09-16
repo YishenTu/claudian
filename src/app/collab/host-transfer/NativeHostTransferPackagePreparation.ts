@@ -11,6 +11,7 @@ import path from 'node:path';
 
 import { COLLAB_MAIN_REF, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
+import { AuthorityMetadataRepository } from '@/app/collab/authority/AuthorityMetadataRepository';
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
@@ -306,13 +307,16 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
     }
   }
 
-  private loaded(
+  private async loaded(
     directory: string,
     manifest: HostTransferPackageManifest,
     proof: CollabHostTrustTransitionProof,
     signal?: AbortSignal,
-  ): PreparedHostTransferPackage {
+  ): Promise<PreparedHostTransferPackage> {
+    const authorityGeneration = await this.options.database.read(connection =>
+      new AuthorityMetadataRepository().getGeneration(connection));
     return Object.freeze({
+      authorityGeneration,
       authoritySnapshot: this.#streamFile(path.join(directory, SNAPSHOT_FILE), signal),
       gitBundle: this.#streamFile(path.join(directory, BUNDLE_FILE), signal),
       manifest,

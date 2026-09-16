@@ -854,6 +854,8 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
   }
 
   async restoreCompleted(record: AuthorityTransferRecord): Promise<void> {
+    const active = await this.options.persistence.load(record.projectId);
+    if (!active || active.transferId !== record.transferId) return this.restoreRetained(record);
     return this.queue.run(async () => {
       const proof = record.status.relinquishmentProof;
       if (record.status.state !== 'completed' || !proof) {
@@ -876,6 +878,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
           stagingDirectoryName: record.stagingDirectoryName,
           transferId: record.transferId,
         });
+        await this.options.persistence.settleCompletedTransfer(record);
         await this.#startConfiguredHost(record);
         return;
       }
@@ -884,6 +887,12 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       );
       if (!state) {
         if (expired || emptyClaims) {
+          const converged = await this.#assertCompletedTargetConvergence(record, authority, null, null, false);
+          await this.options.persistence.assertCloudToLanCompletedTargetIdentity({
+            memberId: converged.member.id, personalRef: converged.member.personalRef,
+            operationIntentId: record.operationIntentId, projectId: record.projectId, transferId: record.transferId,
+          });
+          await this.options.persistence.settleCompletedTransfer(record);
           await this.options.foundation.lanHost.stopAuthorityTransferRoute(
             record.projectId,
             'target-active',
@@ -898,6 +907,7 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       }
       const targetProof = await this.#assertActiveState(record, proof, state, authority);
       await this.#convergePersistedState(record, state, targetProof, authority);
+      await this.options.persistence.settleCompletedTransfer(record);
       if (expired || emptyClaims) {
         await this.options.foundation.lanHost.stopAuthorityTransferRoute(
           record.projectId,
@@ -1523,25 +1533,18 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
     await this.queue.run(() => this.#retainCommittedRedemptions(record, members));
   }
 
-  async retainForHostTransfer(record: AuthorityTransferRecord): Promise<boolean> {
-    return this.queue.run(() => this.options.persistence.retainCompletedCloudToLanTarget(record, async () => {
+  async settleImportedClaims(record: AuthorityTransferRecord): Promise<void> {
+    if (record.terminalCleanupCompleted) return;
+    await this.queue.run(() => this.options.persistence.runWithAuthorityStartGuard(record.projectId, async () => {
       const authority = await this.options.foundation.openAuthority(record.projectId);
-      const members = await authority.database.read(connection => {
-        const project = authority.projects.get(connection);
-        if (!project || project.projectId !== record.projectId || project.state !== 'active'
-          || project.authorityGeneration !== record.status.targetAuthority.generation) {
-          throw targetError('authority-transfer-target-generation-stale');
-        }
-        const offer = new HostTransferRepository().getNonterminal(connection);
-        if (!offer || offer.phase !== 'offered' || offer.sourceHostMemberId !== project.hostMemberId
-          || offer.expiresAt <= this.now().toISOString()) return null;
-        return new PendingMembershipRepository().listCredentialRecords(connection, ['active'])
-          .filter(member => member.accessState === 'bound' && member.credentialHash !== null)
-          .map(member => ({ memberId: member.member.id, credentialHash: Buffer.from(member.credentialHash!).toString('hex') }));
-      });
-      if (!members) return false;
-      if (!record.terminalCleanupCompleted) await this.#retainCommittedRedemptions(record, members);
-      return true;
+      if (authority.resource.operation?.transferId !== record.transferId) {
+        throw targetError('authority-transfer-target-generation-stale');
+      }
+      const members = await authority.database.read(connection => new PendingMembershipRepository()
+        .listCredentialRecords(connection, ['active'])
+        .filter(member => member.accessState === 'bound' && member.credentialHash !== null)
+        .map(member => ({ memberId: member.member.id, credentialHash: Buffer.from(member.credentialHash!).toString('hex') })));
+      await this.#retainCommittedRedemptions(record, members);
     }));
   }
 
@@ -1607,16 +1610,25 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       if (credentialHash.byteLength !== 32) {
         throw new CollabError({ code: 'membership-claim-invalid' });
       }
-      const activeState = state;
       return this.options.persistence.runWithAuthorityStartGuard(record.projectId, async () => {
+      // Another effects instance may have settled receipts while this claim waited.
+      const activeState = await readState(statePath);
+      if (!activeState?.claimBatch) throw targetError('authority-transfer-target-claims-missing');
+      const replay = activeState.receipts[receiptKeyId];
+      if (replay) return replay;
       const authority = await this.options.foundation.openAuthority(record.projectId);
-      const project = await authority.database.read(connection => authority.projects.get(connection));
+      const project = await authority.database.read(connection => {
+        if (new HostTransferRepository().getNonterminal(connection)) {
+          throw targetError('authority-transfer-target-generation-stale');
+        }
+        return authority.projects.get(connection);
+      });
       if (!project || project.projectId !== record.projectId || project.state !== 'active'
         || project.authorityGeneration !== record.status.targetAuthority.generation) {
         throw targetError('authority-transfer-target-generation-stale');
       }
       const payload = {
-        checkpointSha256: activeState.claimBatch!.checkpointSha256,
+        checkpointSha256: activeState.claimBatch.checkpointSha256,
         claimSha256: claimDigest,
         memberId: item.memberId,
         operationIntentId: request.idempotencyKey,
@@ -1647,6 +1659,9 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
         await writeState(statePath, { ...activeState, pendingReceipts: { ...activeState.pendingReceipts, [receiptKeyId]: receipt } });
       }
       await authority.database.mutate(connection => {
+        if (new HostTransferRepository().getNonterminal(connection)) {
+          throw targetError('authority-transfer-target-generation-stale');
+        }
         new ImportedMembershipClaimRepository().assertSourceClaimAllowed(connection, item.memberId);
         return new PendingMembershipRepository().bindImportedActive(connection, item.memberId, credentialHash);
       });
@@ -1654,9 +1669,14 @@ export class ProductionCloudToLanTargetEffects implements CloudToLanTargetEffect
       delete pendingReceipts[receiptKeyId];
       await writeState(statePath, { ...activeState, pendingReceipts, receipts: { ...activeState.receipts, [receiptKeyId]: receipt } });
       return receipt;
-      }, current => {
-        if (!current || current.transferId !== record.transferId
-          || current.operationIntentId !== record.operationIntentId) {
+      }, async current => {
+        if (current && (current.transferId !== record.transferId
+          || current.operationIntentId !== record.operationIntentId)) {
+          throw targetError('authority-transfer-target-generation-stale');
+        }
+        const resource = await this.options.foundation.hostInstallations.assertOwned(record.projectId, 'recover');
+        if (resource.operation?.kind !== 'authority-transfer'
+          || resource.operation.transferId !== record.transferId) {
           throw targetError('authority-transfer-target-generation-stale');
         }
       });

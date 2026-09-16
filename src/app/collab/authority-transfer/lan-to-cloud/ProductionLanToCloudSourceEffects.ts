@@ -34,6 +34,7 @@ import {
   validateCollabProjectCheckpointConsistency,
 } from '@claudian-collab/protocol';
 
+import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
 import type { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
 import {
@@ -385,26 +386,33 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     if (!proof) throw effectsError('authority-transfer-relinquishment-proof-missing');
     const service = await this.#terminalService(record);
     await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
+    await this.#convergeHost(record, options);
+    await this.options.foundation.detachTransferredLanSource(record);
+    await this.options.persistence.settleCompletedTransfer(record);
     await this.options.foundation.lanHost.activateAuthorityTransferTerminalSource({
       projectId: record.projectId,
       relinquishmentProof: proof,
       service,
       transferId: record.transferId,
     });
-    await this.#convergeHost(record, options);
     await this.#settleEmptyClaimBatch(record, service);
   }
 
   async restoreCompleted(
     record: AuthorityTransferRecord,
-    options: CollabOperationOptions = {},
+    _options: CollabOperationOptions = {},
   ): Promise<void> {
     if (!record.status.relinquishmentProof) {
       throw effectsError('authority-transfer-relinquishment-proof-missing');
     }
+    const active = await this.options.persistence.load(record.projectId);
+    if (!active || active.transferId !== record.transferId) return this.restoreRetained(record);
+    await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
+    await this.options.convergence.lanToCloudHostOffline(record.status);
+    await this.options.foundation.detachTransferredLanSource(record);
+    await this.options.persistence.settleCompletedTransfer(record);
     const service = await this.#terminalService(record);
     if (isAuthorityTransferTerminalResponderExpired(record, new Date())) {
-      await this.options.foundation.lanHost.relinquishProjectForAuthorityTransfer(record.projectId);
       await service.expire();
       await this.options.foundation.lanHost.stopAuthorityTransferRoute(
         record.projectId,
@@ -420,7 +428,6 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       state: 'terminal-source',
       transferId: record.transferId,
     });
-    await this.#convergeHost(record, options);
     await this.#settleEmptyClaimBatch(record, service);
   }
 
@@ -551,9 +558,12 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       throw effectsError('authority-transfer-source-capture-fence-invalid');
     }
     const sourceMembers = await this.#retainSourceMemberCredentials(record, stagingPath, authority);
-    for (const target of await this.options.persistence.listRetained(record.projectId)) {
-      if (target.localRole !== 'target' || target.terminalCleanupCompleted
-        || target.status.targetAuthority.generation !== record.status.sourceAuthority.generation) continue;
+    const importedTransferId = authority.resource.operation?.kind === 'authority-transfer'
+      ? authority.resource.operation.transferId : null;
+    const target = importedTransferId
+      ? await this.options.persistence.load(record.projectId, importedTransferId) : null;
+    if (target?.localRole === 'target' && !target.terminalCleanupCompleted
+      && target.status.targetAuthority.generation === record.status.sourceAuthority.generation) {
       if (!this.options.retainCommittedTargetRedemptions) {
         throw effectsError('authority-transfer-target-redemption-recovery-unavailable');
       }
@@ -664,6 +674,8 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
       ],
       checkpointManifestSha256: manifest.manifestSha256,
       sourceHostMemberId: membership.member.id,
+      hostActivationProofs: await authority.database.read(connection => new HostTransferRepository()
+        .listActivationProofs(connection, record.status.sourceAuthority.generation)),
       sourceProof,
     };
   }

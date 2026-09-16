@@ -66,6 +66,7 @@ export interface CreateOutgoingHostTransferRuntimeInput {
 }
 
 export interface HostTransferModuleOptions {
+  readonly settleImportedClaims?: (resource: OwnedAuthorityDirectoryCapability) => Promise<void>;
   readonly activateTransferredAuthority: (input: {
     readonly projectId: CollabProjectId;
     readonly targetHostMemberId: string;
@@ -239,6 +240,7 @@ export class HostTransferModule {
           {
             installationKey: this.options.installationKey,
             sourceResourceId: input.authority.resource.resourceId,
+            settleImportedClaims: () => this.options.settleImportedClaims?.(input.authority.resource) ?? Promise.resolve(),
             syncProjection: this.options.syncProjection,
           },
         );

@@ -43,6 +43,7 @@ import {
 } from '@/app/collab';
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { AuthorityMetadataRepository } from '@/app/collab/authority/AuthorityMetadataRepository';
+import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { createAuthorityTransferEntryRecord, createAuthorityTransferRequesterEntry } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
 import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
@@ -77,6 +78,7 @@ import {
   isCollabLocalLanMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
+import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import { listPrivateIpv4Addresses } from '@/app/collab/lan/LanHostCoordinator';
@@ -715,15 +717,18 @@ describe('production authority-transfer effects', () => {
     const convergence = {
       lanToCloudHostOffline: jest.fn(async () => { events.push('converge'); }),
     } as unknown as AuthorityTransferLocalConvergence;
+    let settled = false;
     const persistence = {
+      settleCompletedTransfer: jest.fn(async () => { settled = true; events.push('settle'); }),
       completeTerminalCleanup: jest.fn(async () => { events.push('cleanup'); }),
       expireTerminalResponder: jest.fn(async () => { events.push('expire'); }),
-      load: jest.fn(async () => completedRecord),
+      load: jest.fn(async (_id: string, transferId?: string) => settled && !transferId ? null : completedRecord),
     };
     const effects = new ProductionLanToCloudSourceEffects({
       cloudSession: null,
       convergence,
       foundation: {
+        detachTransferredLanSource: jest.fn(async () => { events.push('detach'); }),
         inspectAuthority: jest.fn(async () => ({ database: {} })),
         lanHost: {
           relinquishProjectForAuthorityTransfer: jest.fn(async () => {
@@ -756,6 +761,8 @@ describe('production authority-transfer effects', () => {
     expect(events).toEqual([
       'relinquish',
       'converge',
+      'detach',
+      'settle',
       'expire',
       'remove-staging',
       'cleanup',
@@ -763,103 +770,6 @@ describe('production authority-transfer effects', () => {
     ]);
   });
 
-  it('settles an empty completed LAN source without retaining a blocking terminal route', async () => {
-    const endpoint = 'https://127.0.0.1:54545';
-    const completed = status('lan-to-cloud', 'completed', 'https://cloud.example.test/');
-    const completedRecord = createAuthorityTransferRecord({
-      ownerInstallationKey: TEST_INSTALLATION_A,
-      lifecycleOwnership: 'owned',
-      localRole: 'source',
-      operationIntentId: OPERATION_ID,
-      sourceLanEndpoint: endpoint,
-      stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: {
-        ...completed,
-        batchRevision: 1,
-        batchSha256: 'b'.repeat(64),
-        checkpointSha256: 'a'.repeat(64),
-        phase: 'completed',
-        relinquishmentProof: {
-          batchRevision: 1,
-          batchSha256: 'b'.repeat(64),
-          certificate: Buffer.alloc(64, 2).toString('base64url'),
-          certificateAlgorithm: 'ed25519',
-          checkpointSha256: 'a'.repeat(64),
-          committedAt: '2026-08-28T00:02:00.000Z',
-          operationIntentId: OPERATION_ID,
-          projectId: PROJECT_ID,
-          sourceAuthority: { generation: 1, kind: 'lan' },
-          sourceHostMemberId: MEMBER_ID,
-          targetAuthority: { generation: 2, kind: 'cloud' },
-          transferId: TRANSFER_ID,
-        },
-        state: 'completed',
-        updatedAt: '2026-08-28T00:03:00.000Z',
-      },
-    });
-    const events: string[] = [];
-    const convergence = {
-      lanToCloudHost: jest.fn(async () => { events.push('converge-online'); }),
-      lanToCloudHostOffline: jest.fn(async () => { events.push('converge-offline'); }),
-    } as unknown as AuthorityTransferLocalConvergence;
-    const persistence = {
-      completeTerminalCleanup: jest.fn(async () => { events.push('cleanup'); }),
-      expireTerminalResponder: jest.fn(async () => { events.push('expire'); }),
-      load: jest.fn(async () => completedRecord),
-      isRetainedClaimBatchEmpty: jest.fn(async () => true),
-    };
-    const stopAuthorityTransferRoute = jest.fn(async () => { events.push('stop-route'); });
-    const effects = new ProductionLanToCloudSourceEffects({
-      cloudSession: {
-        readSnapshot: jest.fn(async () => ({ project: { id: PROJECT_ID } })),
-      } as never,
-      convergence,
-      foundation: {
-        inspectAuthority: jest.fn(async () => ({ database: {} })),
-        lanHost: {
-          activateAuthorityTransferTerminalSource: jest.fn(async () => {
-            events.push('activate-route');
-          }),
-          relinquishProjectForAuthorityTransfer: jest.fn(async () => {
-            events.push('relinquish');
-          }),
-          stopAuthorityTransferRoute,
-        },
-        local: {
-          projects: {
-            loadMembership: jest.fn(async () => ({
-              project: { workspacePath: '/vault/Projects/Portable' },
-            })),
-          },
-          workspace: {
-            removeReservedProjectsFolderChild: jest.fn(async () => {
-              events.push('remove-staging');
-            }),
-          },
-        },
-      } as never,
-      persistence: persistence as never,
-      projectId: PROJECT_ID,
-    });
-
-    await effects.activateTerminal(completedRecord);
-
-    expect(persistence.isRetainedClaimBatchEmpty).toHaveBeenCalledWith(
-      PROJECT_ID,
-      TRANSFER_ID,
-    );
-    expect(stopAuthorityTransferRoute).toHaveBeenCalledWith(PROJECT_ID, 'terminal-source', TRANSFER_ID);
-    expect(events).toEqual([
-      'relinquish',
-      'activate-route',
-      'converge-online',
-      'converge-offline',
-      'expire',
-      'remove-staging',
-      'cleanup',
-      'stop-route',
-    ]);
-  });
 
   it('removes the terminal route when empty-source cleanup resumes after responder expiry', async () => {
     const endpoint = 'https://127.0.0.1:54545';
@@ -897,6 +807,7 @@ describe('production authority-transfer effects', () => {
     });
     let currentRecord = completedRecord;
     const persistence = {
+      settleCompletedTransfer: jest.fn(async () => undefined),
       completeTerminalCleanup: jest.fn(async () => undefined),
       expireTerminalResponder: jest.fn(async () => {
         if (currentRecord.terminalResponder?.state === 'active') {
@@ -919,6 +830,7 @@ describe('production authority-transfer effects', () => {
         lanToCloudHostOffline: jest.fn(async () => undefined),
       } as unknown as AuthorityTransferLocalConvergence,
       foundation: {
+        detachTransferredLanSource: jest.fn(async () => undefined),
         inspectAuthority: jest.fn(async () => ({ database: {} })),
         lanHost: {
           activateAuthorityTransferTerminalSource: jest.fn(async () => undefined),
@@ -1237,7 +1149,7 @@ describe('production authority-transfer effects', () => {
             serverUrl: targetUrl,
           },
         });
-      const exact = await sourceFoundation.authorityTransfers.load(PROJECT_ID);
+      const exact = await sourceFoundation.authorityTransfers.load(PROJECT_ID, completed.transferId);
       if (!exact) throw new Error('Missing completed source transfer');
       const nextTarget = createCloudToLanTargetEntry({
         createdAt: new Date().toISOString(), expiresAt: '2026-09-26T00:00:00.000Z',
@@ -1247,8 +1159,7 @@ describe('production authority-transfer effects', () => {
         sourceAuthorityGeneration: 2, sourceCloudUrl: targetUrl,
       });
       await sourceFoundation.authorityTransfers.prepareCloudToLanTargetEntry(nextTarget);
-      await sourceFoundation.closeAuthority(PROJECT_ID);
-      await sourceFoundation.hostInstallations.removeOwned(await sourceFoundation.hostInstallations.assertOwned(PROJECT_ID, 'cleanup'));
+      await expect(sourceFoundation.inspectAuthority(PROJECT_ID)).resolves.toBeNull();
       const terminalRequest = { projectId: PROJECT_ID, transferId: exact.transferId };
       await expect(client.requestWithMember('getProjectAuthorityTransfer', terminalRequest, peerCredential))
         .resolves.toEqual(completed);
@@ -2702,6 +2613,20 @@ describe('production authority-transfer effects', () => {
     });
   }
 
+  it('releases completed Cloud import ownership while preserving member claim replay', async () => {
+    const target = await restoreStoppedCloudToLanTarget();
+    try {
+      await expect(target.foundation.authorityTransfers.load(PROJECT_ID)).resolves.toBeNull();
+      await expect(target.foundation.authorityTransfers.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('absent');
+      await expect(target.claimClient.claimTransferredMembership(target.claimRequest))
+        .resolves.toEqual(target.firstReceipt);
+      await expect(target.restartedComposition.feature.startHost(PROJECT_ID))
+        .resolves.toMatchObject({ status: 'success' });
+    } finally {
+      await target.restartedComposition.feature.close();
+    }
+  });
+
   it('offers a new physical Host handoff after Cloud import while retaining claim replay', async () => {
     const target = await restoreStoppedCloudToLanTarget();
     try {
@@ -2732,7 +2657,7 @@ describe('production authority-transfer effects', () => {
       });
       await expect(target.restartedComposition.feature.createHostTransfer({
         projectId: PROJECT_ID, targetMemberId: MEMBER_ID,
-      })).resolves.toMatchObject({ status: 'failure' });
+      })).resolves.toMatchObject({ status: 'success' });
       retentionWrite.mockRestore();
       await expect(target.restartedComposition.feature.restoreLifecycle()).resolves.toBeUndefined();
       const snapshot = await target.restartedComposition.feature.readSnapshot(PROJECT_ID);
@@ -2769,6 +2694,7 @@ describe('production authority-transfer effects', () => {
       await target.restartedComposition.feature.startHost(PROJECT_ID);
       const sourceMembership = await target.foundation.local.projects.loadMembership(PROJECT_ID);
       if (sourceMembership?.authority.kind !== 'lan') throw new Error('Missing source LAN membership');
+      const pinnedSourceCa = sourceMembership.authority.hostCaCertificatePem!;
       await receiver.feature.initialize();
       const invitation = await target.restartedComposition.feature.createInvitation(PROJECT_ID);
       if (invitation.status !== 'success') throw new Error('Missing invitation');
@@ -2926,6 +2852,23 @@ describe('production authority-transfer effects', () => {
         .toEqual(formerState === 'activation-interrupted'
           ? { title: 'Keep after activation', body: 'Committed target work' } : null);
 
+      const currentAuthority = await receiverFoundation.openAuthority(PROJECT_ID);
+      const committed = await currentAuthority.database.read(connection => ({
+        certificate: new HostTransferRepository().get(connection, transferId!)?.activationCertificate,
+        proofs: new HostTransferRepository().listActivationProofs(connection, 3),
+      }));
+      expect(committed.certificate?.authorityProof).toMatchObject({ authorityGeneration: 3 });
+      expect(committed.proofs).toHaveLength(1);
+      expect(committed.proofs[0]).toMatchObject({
+        authorityGeneration: 3, transferId, targetHostMemberId: local.member.id,
+      });
+      if (!committed.certificate) throw new Error('Missing committed Host activation certificate');
+      expect(() => new HostTrustTransitionService().verifyActivation(
+        committed.certificate!, pinnedSourceCa, {
+          ...committed.certificate!, authorityGeneration: 3,
+        },
+      )).not.toThrow();
+
       await expect(target.claimClient.claimTransferredMembership(target.claimRequest))
         .resolves.toEqual(target.firstReceipt);
       await expect(target.claimClient.claimTransferredMembership(interruptedRequest))
@@ -2958,6 +2901,38 @@ describe('production authority-transfer effects', () => {
       } finally {
         await restarted.feature.close();
       }
+      const nextStatus: CollabAuthorityTransferStatus = {
+        ...status('lan-to-cloud', 'collecting-readiness', 'https://cloud.example.test/'),
+        sourceAuthority: { generation: 3, kind: 'lan' },
+        targetAuthority: { generation: 4, kind: 'cloud' },
+        transferId: 'transfer-return-after-handoff',
+      };
+      const nextEntry = createAuthorityTransferEntryRecord({
+        ownerInstallationKey: TEST_INSTALLATION_B, proposedByMemberId: local.member.id,
+        request: { projectId: PROJECT_ID, expectedAuthorityGeneration: 3,
+          idempotencyKey: 'intent-return-after-handoff', targetUrl: nextStatus.targetUrl },
+        status: nextStatus,
+      });
+      await receiverFoundation.authorityTransfers.proposeEntry(nextEntry);
+      const submitted = jest.fn(async () => { throw new Error('Cloud request captured'); });
+      const coordinator = new LanToCloudSourceCoordinator({
+        cloud: { authorityTransfer: submitted } as unknown as CollabAuthorityLifecyclePort,
+        installationKey: TEST_INSTALLATION_B, persistence: receiverFoundation.authorityTransfers,
+        source: new ProductionLanToCloudSourceEffects({
+          cloudSession: { principalId: 'principal:receiving-host' } as CloudAuthorityConnection,
+          convergence: {} as AuthorityTransferLocalConvergence, foundation: receiverFoundation,
+          persistence: receiverFoundation.authorityTransfers, projectId: PROJECT_ID,
+        }),
+      });
+      await expect(coordinator.acceptAndTransfer({
+        projectId: PROJECT_ID, transferId: nextStatus.transferId, expectedAuthorityGeneration: 3,
+        targetUrl: nextStatus.targetUrl,
+        idempotencyKey: authorityTransferChildIdempotencyKey(nextEntry.request.idempotencyKey, 'accept'),
+      })).rejects.toThrow('Cloud request captured');
+      expect(submitted).toHaveBeenCalledWith('beginLanToCloudTransfer', expect.objectContaining({
+        expectedSourceAuthorityGeneration: 3, sourceHostMemberId: local.member.id,
+        hostActivationProofs: committed.proofs,
+      }), {});
     } finally {
       await receiver.feature.close();
       await receiverFoundation.close();
@@ -3108,6 +3083,7 @@ describe('production authority-transfer effects', () => {
     await autoStartRecoveryComposition.feature.initialize();
     await expect(autoStartRecoveryComposition.feature.restoreLifecycle())
       .resolves.toBeUndefined();
+    await expect(autoStartRecoveryComposition.feature.restoreHosts()).resolves.toBeUndefined();
     expect(target.foundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
     expect(autoStartRecoveryRoute.mock.calls.some(
       ([registration]) => registration.state === 'target-active',
@@ -3490,7 +3466,7 @@ describe('production authority-transfer effects', () => {
 
   });
 
-  it('blocks lifecycle and Host restoration without durable auto-start ownership', async () => {
+  it('restores claim replay independently of ordinary Host auto-start', async () => {
     const target = await activateCloudToLanTarget();
     await target.recoveringEffects().restoreCompleted(target.completedRecord);
     await target.foundation.lanHost.stopProject(PROJECT_ID);
@@ -3501,7 +3477,7 @@ describe('production authority-transfer effects', () => {
     }
     await target.foundation.local.projects.saveMembership({
       ...invalidMembership,
-      hostOwnership: { ownsAuthority: true },
+      hostOwnership: { autoStart: false, ownsAuthority: true },
     });
     const invalidRecoveryRouteStart = jest.spyOn(
       target.foundation.lanHost,
@@ -3516,13 +3492,9 @@ describe('production authority-transfer effects', () => {
       vaultRoot: targetRoot,
     });
     await invalidRecoveryComposition.feature.initialize();
-    await expect(invalidRecoveryComposition.feature.restoreLifecycle()).rejects.toMatchObject({
-      code: 'durable-progress-recovery-required',
-    });
-    await expect(invalidRecoveryComposition.feature.restoreHosts()).rejects.toMatchObject({
-      code: 'durable-progress-recovery-required',
-    });
-    expect(invalidRecoveryRouteStart).not.toHaveBeenCalled();
+    await expect(invalidRecoveryComposition.feature.restoreLifecycle()).resolves.toBeUndefined();
+    await expect(invalidRecoveryComposition.feature.restoreHosts()).resolves.toBeUndefined();
+    expect(invalidRecoveryRouteStart).toHaveBeenCalled();
     expect(target.foundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
     await invalidRecoveryComposition.feature.close();
     await target.foundation.close();
@@ -3663,39 +3635,19 @@ describe('production authority-transfer effects', () => {
     await expect(expiryRegistration.service.expire())
       .rejects.toThrow('simulated crash after target-private unlink');
     await expect(access(target.targetStatePath)).rejects.toMatchObject({ code: 'ENOENT' });
-    await expect(target.foundation.authorityTransfers.load(PROJECT_ID)).resolves.toMatchObject({
+    await expect(target.foundation.authorityTransfers.load(PROJECT_ID, TRANSFER_ID)).resolves.toMatchObject({
       terminalCleanupCompleted: false,
     });
     const stopExpiredRoute = jest.spyOn(
       target.foundation.lanHost,
       'stopAuthorityTransferRoute',
     );
-    const assertTargetIdentity = jest.spyOn(
-      target.foundation.authorityTransfers,
-      'assertCloudToLanCompletedTargetIdentity',
-    );
     await expect(target.recoveringEffects().restoreCompleted(target.completedRecord)).resolves.toBeUndefined();
     expect(stopExpiredRoute).toHaveBeenCalledWith(PROJECT_ID, 'target-active', TRANSFER_ID);
-    expect(assertTargetIdentity).toHaveBeenCalledWith({
-      memberId: 'member-production-peer',
-      operationIntentId: OPERATION_ID,
-      personalRef: 'refs/heads/members/member-production-peer',
-      projectId: PROJECT_ID,
-      transferId: TRANSFER_ID,
-    });
     expect(completeTerminalCleanup).toHaveBeenCalledTimes(2);
-    await expect(target.foundation.authorityTransfers.load(PROJECT_ID)).resolves.toMatchObject({
+    await expect(target.foundation.authorityTransfers.load(PROJECT_ID, TRANSFER_ID)).resolves.toMatchObject({
       terminalCleanupCompleted: true,
     });
-    await target.foundation.local.projects.authorityTransferEntries.saveTarget(
-      handoffCloudToLanTargetEntry(target.targetEntry, target.completedRecord),
-    );
-    await expect(target.foundation.local.projects.authorityTransferEntries.load(PROJECT_ID))
-      .resolves.toMatchObject({ target: { phase: 'handed-off' } });
-    await expect(expiryRegistration.service.expire()).resolves.toBeUndefined();
-    expect(completeTerminalCleanup).toHaveBeenCalledTimes(3);
-    await expect(target.foundation.local.projects.authorityTransferEntries.load(PROJECT_ID))
-      .resolves.toMatchObject({ target: { phase: 'handed-off' } });
     expect(target.foundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
     await expect(target.foundation.lanHost.startProject(PROJECT_ID)).resolves.toMatchObject({
       projectId: PROJECT_ID,
@@ -3714,7 +3666,7 @@ describe('production authority-transfer effects', () => {
     await target.foundation.close();
   });
 
-  it.each([false, true])('moves Cloud authority through the composed feature facade (single Member: %s)', async (singleMember) => {
+  it.each([[false, false], [true, false], [true, true]])('moves Cloud authority through the composed feature facade (single Member: %s, interrupted Manager settlement: %s)', async (singleMember, interruptManagerSettlement) => {
     const {
       artifactBytes,
       repositoryBytes,
@@ -4086,19 +4038,49 @@ describe('production authority-transfer effects', () => {
 
     let target = await seed(targetRoot, TEST_INSTALLATION_B, singleMember ? members[0] : members[1]);
     const manager = singleMember ? target : await seed(managerRoot, TEST_INSTALLATION_A, members[0]);
+    const replayAccepted = async (handle: Parameters<typeof target.composition.feature.acceptCloudToLanTransfer>[0]) => {
+      await expect(target.composition.feature.acceptCloudToLanTransfer(handle))
+        .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
+    };
+    const recoverInterruptedManager = async (result: { status: string }) => {
+      expect(result.status).not.toBe('success');
+      expect(await target.foundation.authorityTransfers.load(PROJECT_ID)).toBeNull();
+      expect(await target.foundation.authorityTransfers.loadCloudToLanManagerEntry(PROJECT_ID))
+        .toMatchObject({ phase: 'observing' });
+      cloudAuthority.connectAuthorityTransfer.mockRejectedValue(new Error('old Cloud is offline'));
+      await expect(target.composition.feature.restoreLifecycle()).resolves.toBeUndefined();
+      await expect(target.composition.feature.proposeLanToCloudTransfer({
+        projectId: PROJECT_ID, serverUrl: cloudServerUrl,
+      })).resolves.toMatchObject({ status: 'success', value: { phase: 'collecting-readiness' } });
+      const binding = await target.composition.authorityTransfer.bindLanToCloudSource({
+        cloudSession: { projectId: PROJECT_ID, serverUrl: cloudServerUrl, supports: () => true } as unknown as CloudAuthorityConnection,
+        projectId: PROJECT_ID,
+      });
+      await binding.dispose();
+    };
     try {
       const { accepted, handle } = await (async () => {
         if (singleMember) {
-          const result = await target.composition.feature.moveCloudToLan(PROJECT_ID);
+          const actualRename = fsPromises.rename;
+          const interruptedSettlement = interruptManagerSettlement
+            ? jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
+              if (String(to).endsWith('/manager.json')) {
+                const entry = JSON.parse(await readFile(from, 'utf8'));
+                if (entry.phase === 'settled') throw new Error('process stopped after target archival');
+              }
+              return actualRename(from, to);
+            }) : null;
+          let result = await target.composition.feature.moveCloudToLan(PROJECT_ID);
+          interruptedSettlement?.mockRestore();
+          if (interruptManagerSettlement) {
+            await recoverInterruptedManager(result);
+            result = { status: 'success', value: transferStatus! };
+          }
           if (result.status !== 'success') {
             if ('error' in result) throw result.error;
             throw new Error(`Local move returned ${result.status}`);
           }
-          const view = await target.composition.feature.readCloudToLanTransfer(PROJECT_ID);
-          if (view.status !== 'success' || !view.value?.target?.handle) {
-            throw new Error('Missing durable completed target handle');
-          }
-          return { accepted: result, handle: view.value.target.handle };
+          return { accepted: result, handle: null };
         }
       const prepared = await target.composition.feature.prepareCloudToLanTarget({
         projectId: PROJECT_ID,
@@ -4121,7 +4103,7 @@ describe('production authority-transfer effects', () => {
       if (begunResult.status !== 'success') throw new Error('Manager begin failed');
       const deadline = Date.now() + 15_000;
       while (Date.now() < deadline) {
-        const record = await target.foundation.local.projects.authorityTransferRecords.load(PROJECT_ID);
+        const record = await target.foundation.authorityTransfers.load(PROJECT_ID, begunResult.value.transferId);
         if (record?.status.state === 'completed') return {
           accepted: { status: 'success' as const, value: record.status }, handle: begunResult.value,
         };
@@ -4136,8 +4118,7 @@ describe('production authority-transfer effects', () => {
         throw new Error(`Target acceptance returned ${accepted.status}`);
       }
       expect(accepted.value).toMatchObject({ state: 'completed' });
-      await expect(target.composition.feature.acceptCloudToLanTransfer(handle))
-        .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
+      if (handle) await replayAccepted(handle);
       const observed = singleMember ? accepted
         : await manager.composition.feature.observeCloudToLanTransfer(PROJECT_ID);
       if (observed.status !== 'success') {
@@ -4177,12 +4158,13 @@ describe('production authority-transfer effects', () => {
       };
       await target.composition.feature.initialize();
       cloudAuthority.connectAuthorityTransfer.mockRejectedValue(new Error('completed retry must stay local'));
-      await expect(target.composition.feature.acceptCloudToLanTransfer(handle))
-        .resolves.toMatchObject({ status: 'success', value: { state: 'completed' } });
+      if (handle) await replayAccepted(handle);
+      await target.composition.feature.restoreHosts();
       const nextProposal = await target.composition.feature.proposeLanToCloudTransfer({
             projectId: PROJECT_ID,
             serverUrl: cloudServerUrl,
           });
+      if (nextProposal.status === 'failure') throw nextProposal.error;
       expect({ proposal: nextProposal }).toMatchObject({
         proposal: {
           status: 'success',

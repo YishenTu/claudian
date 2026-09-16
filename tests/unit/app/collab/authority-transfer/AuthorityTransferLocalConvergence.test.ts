@@ -170,7 +170,7 @@ describe('AuthorityTransferLocalConvergence', () => {
     let membership: CollabLocalMembershipRecord = kind === 'lan' ? local : {
       ...local,
       authority: {
-        authorityGeneration: 1, kind: 'cloud', bindingVersion: 10, wireVersion: 14,
+        authorityGeneration: 1, kind: 'cloud', bindingVersion: 10, wireVersion: 15,
         serverUrl: 'https://old-cloud.example.test/',
         gitRemoteUrl: `https://old-cloud.example.test/v10/projects/${PROJECT_ID}/repository.git`,
       },
@@ -304,7 +304,7 @@ describe('AuthorityTransferLocalConvergence', () => {
         bindingVersion: 10,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 14,
+        wireVersion: 15,
       },
       lastEventSequence: 5,
       member: { id: 'member-host' },
@@ -347,7 +347,7 @@ describe('AuthorityTransferLocalConvergence', () => {
         bindingVersion: 10,
         kind: 'cloud',
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 14,
+        wireVersion: 15,
       },
       lastEventSequence: 1,
       member: {
@@ -369,7 +369,7 @@ describe('AuthorityTransferLocalConvergence', () => {
         gitRemoteUrl: `https://cloud.example.test/v10/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 14 as const,
+        wireVersion: 15 as const,
       },
       member: {
         displayName: 'Host',
@@ -506,7 +506,7 @@ describe('AuthorityTransferLocalConvergence', () => {
         gitRemoteUrl: `https://cloud.example.test/v10/projects/${PROJECT_ID}/repository.git`,
         kind: 'cloud' as const,
         serverUrl: 'https://cloud.example.test/',
-        wireVersion: 14 as const,
+        wireVersion: 15 as const,
       },
       member: {
         displayName: 'Host',

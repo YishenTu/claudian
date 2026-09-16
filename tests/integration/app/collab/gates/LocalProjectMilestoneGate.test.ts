@@ -558,21 +558,17 @@ describe('G3 local Project milestone gate', () => {
       reopenedFoundation.lanHost,
       'startAuthorityTransferRoute',
     );
-    await expect(reopened.feature.restoreLifecycle()).rejects.toThrow(
-      'simulated Cloud snapshot outage',
-    );
-    expect(restoreTerminalRoute).toHaveBeenCalledTimes(1);
     await expect(reopened.feature.restoreLifecycle()).resolves.toBeUndefined();
     const convergedMembership = await reopenedFoundation.local.projects.loadMembership(PROJECT_ID);
     expect(convergedMembership).toMatchObject({ authority: { kind: 'cloud' } });
     expect(convergedMembership).not.toHaveProperty('hostOwnership');
-    expect(readSnapshot).toHaveBeenCalledTimes(2);
-    expect(snapshotSignals).toEqual(connectionSignals);
-    expect(snapshotSignals.every(signal => signal.aborted)).toBe(true);
-    expect(restoreTerminalRoute).toHaveBeenCalledTimes(2);
+    expect(readSnapshot).not.toHaveBeenCalled();
+    expect(snapshotSignals).toEqual([]);
+    expect(connectionSignals).toEqual([]);
+    expect(restoreTerminalRoute).toHaveBeenCalledTimes(1);
     await expect(reopenedFoundation.lanHost.startProject(PROJECT_ID)).rejects.toMatchObject({
-      code: 'durable-progress-recovery-required',
-      safeContext: { reason: 'authority-transfer-source-relinquished' },
+      code: 'authorization-denied',
+      safeContext: { reason: 'host-installation-not-owned' },
     });
     await reopened.feature.close();
     await reopenedFoundation.close();
@@ -1102,7 +1098,7 @@ describe('G3 local Project milestone gate', () => {
     }).feature;
     await expect(reopened.restoreLifecycle()).resolves.toBeUndefined();
     await expect(reopenedFoundation.authorityTransfers.inspectLifecycleOwner(PROJECT_ID))
-      .resolves.toBe('terminal');
+      .resolves.toBe('absent');
     await expect(lstat(reserved.absolutePath).catch(() => null)).resolves.toBeNull();
 
     await reopened.close();
