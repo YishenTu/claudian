@@ -2750,7 +2750,7 @@ describe('production authority-transfer effects', () => {
     }
   });
 
-  it('completes physical Host handoff after Cloud import and preserves retained receipt replay', async () => {
+  it.each(['absent', 'older', 'interrupted', 'projection-interrupted', 'activation-interrupted', 'same', 'newer'] as const)('completes or safely rejects physical Host handoff after Cloud import (former local authority: %s)', async formerState => {
     const target = await restoreStoppedCloudToLanTarget();
     const receiverRoot = await mkdtemp(path.join(tmpdir(), 'claudian-after-cloud-handoff-'));
     const receiverFoundation = foundation(receiverRoot, TEST_INSTALLATION_B);
@@ -2767,6 +2767,8 @@ describe('production authority-transfer effects', () => {
         connection.run('UPDATE project SET manager_set_generation = manager_set_generation + 1');
       });
       await target.restartedComposition.feature.startHost(PROJECT_ID);
+      const sourceMembership = await target.foundation.local.projects.loadMembership(PROJECT_ID);
+      if (sourceMembership?.authority.kind !== 'lan') throw new Error('Missing source LAN membership');
       await receiver.feature.initialize();
       const invitation = await target.restartedComposition.feature.createInvitation(PROJECT_ID);
       if (invitation.status !== 'success') throw new Error('Missing invitation');
@@ -2774,6 +2776,29 @@ describe('production authority-transfer effects', () => {
         encodedInvitation: invitation.value.encodedInvitation, memberDisplayName: 'Next Host',
       });
       if (joined.status !== 'success') throw new Error('Receiver join failed');
+      let formerDirectory: string | undefined;
+      let formerBytes: Buffer | undefined;
+      if (formerState !== 'absent') {
+        const former = await receiverFoundation.createAuthority(PROJECT_ID);
+        await former.database.mutate(connection => former.projects.initialize(connection, {
+          createdAt: '2026-08-08T00:00:00.000Z',
+          hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
+          hostDisplayName: 'Former Host', hostMemberId: MEMBER_ID, name: 'Portable', projectId: PROJECT_ID,
+        }));
+        if (formerState === 'same' || formerState === 'newer') {
+          await former.database.mutate(connection => connection.run(
+            'UPDATE authority_metadata SET authority_generation = ?', [formerState === 'same' ? 3 : 5],
+          ));
+        }
+        await receiverFoundation.local.projects.bindOwnedAuthorityOperation(former.resource, {
+          kind: 'setup', operationId: 'former-host-setup', transferId: null,
+          sourceGeneration: null, targetGeneration: 1,
+        });
+        git(former.authorityDirectory, ['init', '--bare', 'repository.git']);
+        await receiverFoundation.closeAuthority(PROJECT_ID);
+        formerDirectory = former.authorityDirectory;
+        formerBytes = await readFile(path.join(formerDirectory, 'collab.db'));
+      }
       const interruptedRequest = { ...target.claimRequest, idempotencyKey: 'claim-before-physical-handoff' };
       const actualRename = fsPromises.rename;
       const receiptWrite = jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
@@ -2790,6 +2815,36 @@ describe('production authority-transfer effects', () => {
       receiptWrite.mockRestore();
       const local = await receiverFoundation.local.projects.loadMembership(PROJECT_ID);
       if (!local) throw new Error('Receiver membership missing');
+      const worktree = path.join(receiverRoot, local.project.workspacePath);
+      await writeFile(path.join(worktree, 'uncommitted.md'), 'Preserve receiver work.\n');
+      const beforeWork = { head: git(worktree, ['rev-parse', 'HEAD']), status: git(worktree, ['status', '--porcelain']) };
+      let detachInterrupted = false;
+      let targetTicketId: string | undefined;
+      const detachWrite = jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
+        if (formerState === 'interrupted' && !detachInterrupted && String(from) === formerDirectory
+          && String(to).endsWith('.tree')) {
+          detachInterrupted = true;
+          throw new Error('simulated authority detachment interruption');
+        }
+        if (formerState === 'activation-interrupted' && !detachInterrupted
+          && String(to) === path.join(receiverRoot, '.claudian/collab/projects', PROJECT_ID, 'host-transfer-recovery.json')) {
+          const next = JSON.parse(await readFile(from, 'utf8')) as { phase: string };
+          if (next.phase === 'completed') {
+            detachInterrupted = true;
+            throw new Error('simulated interruption after target route activation');
+          }
+        }
+        if (formerState === 'projection-interrupted' && !detachInterrupted
+          && String(to) === path.join(receiverRoot, '.claudian/collab/projects', PROJECT_ID, 'membership.json')) {
+          const next = JSON.parse(await readFile(from, 'utf8')) as { hostOwnership?: { ownsAuthority?: boolean } };
+          if (next.hostOwnership?.ownsAuthority) {
+            await actualRename(from, to);
+            detachInterrupted = true;
+            throw new Error('simulated interruption after target projection commit');
+          }
+        }
+        return actualRename(from, to);
+      });
       await expect(target.restartedComposition.feature.createHostTransfer({
         projectId: PROJECT_ID, targetMemberId: local.member.id,
       })).resolves.toMatchObject({ status: 'success' });
@@ -2809,6 +2864,43 @@ describe('production authority-transfer effects', () => {
       if (!transferId) throw new Error('Host offer did not arrive');
       await expect(receiver.feature.acceptHostTransfer({ projectId: PROJECT_ID, transferId }))
         .resolves.toMatchObject({ status: 'success' });
+      const assertProjectionRemainsInert = async () => {
+        await expect(receiver.feature.startHost(PROJECT_ID)).resolves.toMatchObject({
+          status: 'failure', error: { code: 'durable-progress-recovery-required' },
+        });
+        expect(receiverFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+      };
+      const assertRejectedTransferPreservesAuthority = async () => {
+        await expect(receiver.feature.restoreLifecycle()).rejects.toMatchObject({
+          safeContext: { reason: 'host-transfer-former-source-not-replaceable' },
+        });
+        expect(await readFile(path.join(formerDirectory!, 'collab.db'))).toEqual(formerBytes);
+        expect(receiverFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+        expect(target.foundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);
+        expect({ head: git(worktree, ['rev-parse', 'HEAD']), status: git(worktree, ['status', '--porcelain']) }).toEqual(beforeWork);
+      };
+      if (formerState === 'same' || formerState === 'newer' || formerState === 'interrupted' || formerState === 'projection-interrupted' || formerState === 'activation-interrupted') {
+        while (Date.now() < deadline) {
+          const recovery = await receiverFoundation.local.projects.hostTransferRecovery.load(PROJECT_ID, 'incoming');
+          if (formerState.endsWith('interrupted') ? detachInterrupted : recovery?.phase === 'authority-relinquished') break;
+          await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        if (!formerState.endsWith('interrupted')) {
+          await assertRejectedTransferPreservesAuthority();
+          detachWrite.mockRestore();
+          return;
+        }
+        if (!detachInterrupted) throw new Error('Expected authority detachment interruption');
+        if (formerState === 'projection-interrupted') await assertProjectionRemainsInert();
+        if (formerState === 'activation-interrupted') {
+          const created = await receiver.feature.createTicket({ projectId: PROJECT_ID, title: 'Keep after activation', body: 'Committed target work' });
+          if (created.status !== 'success') throw new Error('Target mutation failed');
+          targetTicketId = created.value.ticket.id;
+        }
+        await receiver.feature.restoreLifecycle().catch(error => { throw new Error('receiver recovery failed', { cause: error }); });
+        await target.restartedComposition.feature.restoreLifecycle().catch(error => { throw new Error('source recovery failed', { cause: error }); });
+      }
+      detachWrite.mockRestore();
       while (Date.now() < deadline) {
         const membership = await receiverFoundation.local.projects.loadMembership(PROJECT_ID);
         const previousHost = await target.foundation.local.projects.loadMembership(PROJECT_ID);
@@ -2820,12 +2912,27 @@ describe('production authority-transfer effects', () => {
         .resolves.toMatchObject({ hostOwnership: { ownsAuthority: true }, authority: { authorityGeneration: 3 } });
       await expect(target.foundation.local.projects.loadMembership(PROJECT_ID))
         .resolves.toMatchObject({ hostOwnership: { ownsAuthority: false } });
+      await expect(target.restartedComposition.feature.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+        status: 'success', value: { source: 'online', snapshot: { project: { hostMemberId: local.member.id } } },
+      });
+      await expect(receiver.feature.readSnapshot(PROJECT_ID)).resolves.toMatchObject({
+        status: 'success', value: { source: 'online', snapshot: { project: { hostMemberId: local.member.id } } },
+      });
+      expect({ head: git(worktree, ['rev-parse', 'HEAD']), status: git(worktree, ['status', '--porcelain']) }).toEqual(beforeWork);
+      expect(await readFile(path.join(worktree, 'uncommitted.md'), 'utf8')).toBe('Preserve receiver work.\n');
+      const retainedTicket = targetTicketId ? await receiver.feature.readTicket(PROJECT_ID, targetTicketId) : null;
+      expect(retainedTicket?.status === 'success'
+        ? { title: retainedTicket.value.detail.ticket.title, body: retainedTicket.value.detail.body } : retainedTicket)
+        .toEqual(formerState === 'activation-interrupted'
+          ? { title: 'Keep after activation', body: 'Committed target work' } : null);
+
       await expect(target.claimClient.claimTransferredMembership(target.claimRequest))
         .resolves.toEqual(target.firstReceipt);
       await expect(target.claimClient.claimTransferredMembership(interruptedRequest))
         .resolves.toMatchObject({ memberId: MEMBER_ID, operationIntentId: interruptedRequest.idempotencyKey });
       await target.restartedComposition.feature.close();
       await target.restart();
+      const restoredRouteStart = jest.spyOn(target.foundation.lanHost, 'startAuthorityTransferRoute');
       const restarted = createCollabFeatureSubcomposition({
         foundation: target.foundation,
         projectSetup: new CollabProjectSetupService(target.foundation, {
@@ -2835,8 +2942,17 @@ describe('production authority-transfer effects', () => {
       });
       try {
         await restarted.feature.initialize();
-        await restarted.feature.restoreLifecycle();
-        await expect(target.claimClient.claimTransferredMembership(interruptedRequest))
+        await restarted.feature.restoreLifecycle().catch(error => { throw new Error('source restart recovery failed', { cause: error }); });
+        const restoredSession = await restoredRouteStart.mock.results[0]?.value;
+        restoredRouteStart.mockRestore();
+        if (!restoredSession) throw new Error('Missing restored terminal listener');
+        const restoredClaimClient = new LanAuthorityTransferClient({
+          caCertificatePem: sourceMembership.authority.hostCaCertificatePem!,
+          caFingerprint: sourceMembership.authority.hostCaFingerprint!,
+          endpoint: restoredSession.endpoint,
+          projectId: PROJECT_ID,
+        });
+        await expect(restoredClaimClient.claimTransferredMembership(interruptedRequest))
           .resolves.toMatchObject({ memberId: MEMBER_ID, operationIntentId: interruptedRequest.idempotencyKey });
         await expect(target.foundation.inspectAuthority(PROJECT_ID)).resolves.toBeNull();
       } finally {

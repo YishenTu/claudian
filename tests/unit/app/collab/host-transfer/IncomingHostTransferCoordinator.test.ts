@@ -88,7 +88,7 @@ describe('IncomingHostTransferCoordinator', () => {
     projections = {
       demoteSourceHost: jest.fn(),
       promoteTargetHost: jest.fn(async () => events.push('promote')),
-      readPinnedSourceCa: jest.fn(async () => 'SOURCE CA'),
+      readPinnedSourceCa: jest.fn(async () => '-----BEGIN CERTIFICATE-----\nSOURCE CA\n-----END CERTIFICATE-----'),
     };
     recovery = {
       load: jest.fn(async () => record),

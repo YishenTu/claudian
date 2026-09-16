@@ -1223,6 +1223,7 @@ export class LanHostCoordinator {
         !membership
         || !isCollabLocalLanMembership(membership)
         || !membership.hostOwnership.ownsAuthority
+        || (incomingRecovery.phase !== 'target-active' && incomingRecovery.phase !== 'completed')
       ) {
         throw hostError(
           'durable-progress-recovery-required',

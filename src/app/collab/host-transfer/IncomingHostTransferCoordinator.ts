@@ -20,8 +20,9 @@ import {
   createIncomingHostTransferIntentRecord,
   parseHostTransferActivationCertificate,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
-import type {
-  HostTransferRecoveryRecord,
+import {
+  decodeHostTransferRecoveryRecord,
+  type HostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import {
   type HostTransferActivationCertificate,
@@ -241,6 +242,7 @@ export class IncomingHostTransferCoordinator {
         return;
       }
       if (record.phase === 'authority-relinquished' || record.phase === 'target-active') {
+        await this.preparation.restoreProvisional(record);
         await this.#activateRecord(record, signal);
         return;
       }
@@ -608,66 +610,58 @@ export class IncomingHostTransferCoordinator {
     record: Awaited<ReturnType<HostTransferRecoveryStorePort['load']>> & {},
     signal?: AbortSignal,
   ): Promise<void> {
-    const certificate = parseHostTransferActivationCertificate(record);
-    const previousCa = await this.projections.readPinnedSourceCa(record.projectId);
-    this.trust.verifyActivation(certificate, previousCa, {
-      cutoverAt: certificate.cutoverAt,
-      manifestDigest: record.manifestDigest!,
-      projectId: record.projectId,
-      targetCaFingerprint: record.targetCaFingerprint!,
-      targetHostMemberId: record.targetHostMemberId,
-      transferId: record.transferId,
+    let active = record;
+    if (record.phase === 'authority-relinquished') {
+      const certificate = parseHostTransferActivationCertificate(record);
+      const previousCa = record.sourceCaCertificatePem
+        ?? await this.projections.readPinnedSourceCa(record.projectId);
+      this.trust.verifyActivation(certificate, previousCa, {
+        cutoverAt: certificate.cutoverAt,
+        manifestDigest: record.manifestDigest!,
+        projectId: record.projectId,
+        targetCaFingerprint: record.targetCaFingerprint!,
+        targetHostMemberId: record.targetHostMemberId,
+        transferId: record.transferId,
+      });
+      // Persist source trust before the membership projection rotates to the target CA.
+      const retained = record.sourceCaCertificatePem === undefined
+        ? decodeHostTransferRecoveryRecord({ ...record, schemaVersion: 4, sourceCaCertificatePem: previousCa })
+        : record;
+      if (retained !== record) await this.recovery.save(retained);
+      throwIfCancelled(signal);
+      const activated = await this.packages.installAndActivate({
+        activationCertificate: certificate,
+        manifestDigest: retained.manifestDigest!,
+        record: retained,
+        ...(signal ? { signal } : {}),
+      });
+      await this.projections.promoteTargetHost({
+        autoStart: true,
+        endpoint: retained.targetEndpoint!,
+        eventSequence: activated.eventSequence,
+        proofChainDigest: activated.proofChainDigest,
+        ownsAuthority: true,
+        projectId: retained.projectId,
+        targetCaCertificatePem: retained.targetCaCertificatePem!,
+        targetCaFingerprint: retained.targetCaFingerprint!,
+        targetHostMemberId: retained.targetHostMemberId,
+        transferId: retained.transferId,
+      });
+      active = advanceHostTransferRecoveryRecord(retained, 'target-active', this.now().toISOString());
+      // Once the route is writable, recovery must not reinstall its initial snapshot.
+      await this.recovery.save(active);
+    }
+    const session = await this.activation.activate({
+      projectId: active.projectId,
+      targetHostMemberId: active.targetHostMemberId,
+      transferId: active.transferId,
     });
-    throwIfCancelled(signal);
-    const activated = await this.packages.installAndActivate({
-      activationCertificate: certificate,
-      manifestDigest: record.manifestDigest!,
-      record,
-      ...(signal ? { signal } : {}),
-    });
-    await this.projections.promoteTargetHost({
-      autoStart: true,
-      endpoint: record.targetEndpoint!,
-      eventSequence: activated.eventSequence,
-      proofChainDigest: activated.proofChainDigest,
-      ownsAuthority: true,
-      projectId: record.projectId,
-      targetCaCertificatePem: record.targetCaCertificatePem!,
-      targetCaFingerprint: record.targetCaFingerprint!,
-      targetHostMemberId: record.targetHostMemberId,
-      transferId: record.transferId,
-    });
-    const active = await this.activation.activate({
-      projectId: record.projectId,
-      targetHostMemberId: record.targetHostMemberId,
-      transferId: record.transferId,
-    });
-    if (active.endpoint !== record.targetEndpoint) {
+    if (session.endpoint !== active.targetEndpoint) {
       throw incomingError('host-transfer-target-endpoint-drift');
     }
-    if (record.phase === 'authority-relinquished') {
-      const targetActive = advanceHostTransferRecoveryRecord(
-        record,
-        'target-active',
-        this.now().toISOString(),
-      );
-      await this.recovery.save(targetActive);
-      const completed = advanceHostTransferRecoveryRecord(
-        targetActive,
-        'completed',
-        this.now().toISOString(),
-      );
-      await this.recovery.save(completed);
-      this.options.syncProjection?.(record.projectId);
-      return;
-    }
-    const completed = advanceHostTransferRecoveryRecord(
-      record,
-      'completed',
-      this.now().toISOString(),
-    );
+    const completed = advanceHostTransferRecoveryRecord(active, 'completed', this.now().toISOString());
     await this.recovery.save(completed);
-    this.options.syncProjection?.(record.projectId);
+    this.options.syncProjection?.(active.projectId);
   }
 
    async #requireRecord(projectId: string, transferId: string) {

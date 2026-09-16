@@ -506,7 +506,8 @@ export function createCollabFeatureSubcomposition(
       'recovery',
       operation,
     ),
-    () => {
+    projectId => {
+      requirePublication().resetProjectConnection(projectId, { resumeEvents: true });
       void requireLifecycle().refreshLifecycleProjection().catch(() => undefined);
     },
   );

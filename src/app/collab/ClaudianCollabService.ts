@@ -939,6 +939,53 @@ export class ClaudianCollabService {
     };
   }
 
+  async #prepareHostTransferInstall(
+    input: Parameters<HostTransferModuleOptions['installTransferTarget']>[0],
+  ): Promise<void> {
+    const { record, authorityGeneration } = input;
+    const operation: AuthorityResourceOperation = {
+      kind: 'host-transfer', operationId: record.transferId, transferId: record.transferId,
+      sourceGeneration: authorityGeneration, targetGeneration: authorityGeneration,
+    };
+    const current = await this.local.projects.hostTransferRecovery.load(record.projectId, 'incoming');
+    const membership = await this.local.projects.loadMembership(record.projectId);
+    if (!current || current.ownerInstallationKey !== record.ownerInstallationKey
+      || current.transferId !== record.transferId || current.manifestDigest !== record.manifestDigest
+      || current.sourceHostMemberId !== record.sourceHostMemberId || current.targetHostMemberId !== record.targetHostMemberId
+      || !['authority-relinquished', 'target-active', 'completed'].includes(current.phase)
+      || !membership || !isCollabLocalLanMembership(membership)
+      || membership.member.id !== record.targetHostMemberId
+      || membership.authority.authorityGeneration !== authorityGeneration) {
+      throw new CollabError({ code: 'durable-progress-recovery-required', recoveryActions: ['resume'],
+        safeContext: { reason: 'host-transfer-target-install-intent-mismatch' } });
+    }
+    await this.local.projects.resumeAuthorityDirectoryRemovals(record.projectId, operation);
+    if (await this.hostInstallations.inspect(record.projectId) === 'absent') return;
+    const resource = await this.hostInstallations.assertOwned(record.projectId, 'recover');
+    const bound = resource.operation;
+    if (bound?.kind === operation.kind && bound.operationId === operation.operationId
+      && bound.transferId === operation.transferId && bound.sourceGeneration === authorityGeneration
+      && bound.targetGeneration === authorityGeneration) return;
+    if (membership.hostOwnership.ownsAuthority || this.lanHost.isProjectRunning(record.projectId)) {
+      throw new CollabError({ code: 'durable-progress-recovery-required', recoveryActions: ['resume'],
+        safeContext: { reason: 'host-transfer-former-source-not-replaceable' } });
+    }
+    // Inspect every surviving snapshot without opening or upgrading the old authority.
+    const inspected = await this.local.projects.withAuthorityDirectory(resource, () => (
+      this.#createAuthorityDatabase(resource.authorityDirectory).inspectPersisted(connection => {
+        const previous = new ProjectAuthorityRepository().get(connection);
+        if (!previous || previous.projectId !== record.projectId || previous.authorityGeneration >= authorityGeneration) {
+          throw new CollabError({ code: 'durable-progress-recovery-required', recoveryActions: ['resume'],
+            safeContext: { reason: 'host-transfer-former-source-not-replaceable' } });
+        }
+      })
+    ));
+    // An empty interrupted install is still checked by the package owner's legacy validator.
+    if (!inspected) return;
+    await this.closeAuthority(record.projectId);
+    await this.hostInstallations.removeOwned(resource, operation);
+  }
+
   createHostTransferService(
     snapshots: HostTransferModuleOptions['snapshots'],
     projectRecoveryAdmission: CollabProjectLifecycleAdmission,
@@ -973,6 +1020,7 @@ export class ClaudianCollabService {
       },
       installTransferTarget: async input => {
         this.hostInstallations.assertRecoveryOwner(input.record.ownerInstallationKey, input.record.projectId, 'host-transfer');
+        await this.#prepareHostTransferInstall(input);
         const resource = await this.hostInstallations.bindTransferTarget(input.record.projectId, {
           kind: 'host-transfer', operationId: input.record.transferId, transferId: input.record.transferId,
           sourceGeneration: input.authorityGeneration, targetGeneration: input.authorityGeneration,

@@ -335,7 +335,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
         HOST_TRANSFER_MAX_AUTHORITY_SNAPSHOT_BYTES,
         input.signal,
       ),
-      this.options.readPinnedSourceCa(input.record.projectId),
+      input.record.sourceCaCertificatePem ?? this.options.readPinnedSourceCa(input.record.projectId),
     ]);
     if (
       bundleIdentity.sha256 !== manifest.gitBundle.sha256
