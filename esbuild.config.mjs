@@ -186,7 +186,8 @@ const external = [
   '@lezer/highlight',
   '@lezer/lr',
   ...builtinModules,
-  ...builtinModules.map(m => `node:${m}`),
+  // Older build hosts omit prefix-only modules such as node:sqlite from builtinModules.
+  'node:*',
 ];
 
 const mainContext = await esbuild.context({
