@@ -1758,7 +1758,10 @@ export class ConversationRepository {
         message.role === 'user'
         && (
           message.id === record.localMessageId
-          || message.userMessageId === record.providerUserMessageId
+          || (
+            record.providerUserMessageId !== undefined
+            && message.userMessageId === record.providerUserMessageId
+          )
         ),
     );
     if (userIndex === -1) return;

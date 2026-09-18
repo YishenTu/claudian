@@ -89,7 +89,7 @@ class FakeKernel implements OpencodeAcpSessionKernel {
   openSessionError: unknown = null;
   onOpenSession: (() => void) | null = null;
   onSetConfigOption: (() => void) | null = null;
-  promptResult = { userMessageId: 'native-user' };
+  promptResult: Awaited<ReturnType<OpencodeAcpSessionKernel['prompt']>> = { userMessageId: 'native-user' };
   private resolvePrompt: ((value: typeof this.promptResult) => void) | null = null;
   private deferredOpenSession: Deferred<OpencodeNativeSessionInfo> | null = null;
   private deferredDisposal: Deferred<void> | null = null;
@@ -315,6 +315,31 @@ describe('OpencodeExecutionBackend', () => {
       launchKey: 'launch-key',
       systemPromptPath: '/vault/.claudian/opencode/system.md',
     });
+  });
+
+  it('combines final prompt usage with the current turn context window', async () => {
+    const harness = createHarness();
+    try {
+      const eventsPromise = collect(harness.session.execute(createRequest()).events);
+      await waitForCondition(() => harness.kernels.length > 0);
+      const kernel = harness.kernels[0];
+      await waitForPrompt(kernel);
+      kernel.options.onNotification({
+        sessionId: 'native-session',
+        update: { sessionUpdate: 'usage_update', size: 1000, used: 100 },
+      });
+      await new Promise(resolve => setImmediate(resolve));
+      kernel.promptResult = { usage: {
+        inputTokens: 12, outputTokens: 3, totalTokens: 15, cachedReadTokens: 4,
+      } };
+      kernel.completePrompt();
+      const events = await eventsPromise;
+      expect(events.filter(event => event.type === 'usage_updated').at(-1)).toMatchObject({
+        usage: { inputTokens: 12, cacheReadInputTokens: 4, contextWindow: 1000, contextTokens: 100 },
+      });
+    } finally {
+      await harness.session.dispose();
+    }
   });
 
   it('does not start a process when a turn is cancelled during CLI resolution', async () => {

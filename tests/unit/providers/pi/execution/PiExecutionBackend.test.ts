@@ -280,6 +280,43 @@ function createHarness(
 }
 
 describe('PiExecutionBackend', () => {
+  it.each([true, false])('advances the Pi assistant checkpoint (stored leaf: %s)', async storedLeaf => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-review-'));
+    const sessionFile = path.join(tempDir, 'session.jsonl');
+    const records = [
+      { type: 'session', version: 3, id: 'pi-session-1', cwd: tempDir },
+      { type: 'message', id: 'user-1', parentId: null, message: { role: 'user', content: 'First' } },
+      { type: 'message', id: 'assistant-1', parentId: 'user-1', message: { role: 'assistant', content: 'First answer' } },
+    ];
+    await fs.writeFile(sessionFile, records.map(r => JSON.stringify(r)).join('\n') + '\n');
+    const harness = createHarness(createConfig({
+      vaultWorkingDirectory: tempDir,
+      resumeSeed: { providerSessionId: 'pi-session-1', providerState: {
+        sessionId: 'pi-session-1', sessionFile, ...(storedLeaf ? { leafEntryId: 'assistant-1' } : {}),
+      } },
+    }));
+    // Pi's documented get_state has sessionId/sessionFile, but no leafEntryId.
+    harness.responses.set('get_state', { sessionId: 'pi-session-1', sessionFile });
+    try {
+      const eventsPromise = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
+      await fs.appendFile(sessionFile, [
+        { type: 'message', id: 'user-2', parentId: 'assistant-1', message: { role: 'user', content: 'Second' } },
+        { type: 'message', id: 'assistant-2', parentId: 'user-2', message: { role: 'assistant', content: 'Second answer' } },
+      ].map(r => JSON.stringify(r)).join('\n') + '\n');
+      harness.kernels[0].emit({ type: 'agent_start' });
+      harness.kernels[0].emit({ type: 'agent_end' });
+      const events = await eventsPromise;
+      expect(events.at(-1)).toMatchObject({
+        type: 'turn_completed', nativeAssistantId: 'assistant-2', nativeCheckpointId: 'assistant-2',
+      });
+      expect(harness.session.getSnapshot().providerState).toMatchObject({ leafEntryId: 'assistant-2' });
+    } finally {
+      await harness.session.dispose();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('uses an isolated no-session kernel for command metadata probes', async () => {
     const responses = new Map<string, unknown>([
       ['get_commands', {

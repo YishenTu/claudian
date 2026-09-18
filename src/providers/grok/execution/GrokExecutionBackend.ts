@@ -57,7 +57,12 @@ export interface GrokExecutionNativeConnection {
       source: 'extension' | 'standard',
     ) => void,
   ): () => void;
+  onInterjection?(listener: (notification: {
+    sessionId: string;
+    interjectionId?: string;
+  }) => void): () => void;
   onModeChanged?(listener: (mode: 'normal' | 'yolo') => void): () => void;
+  onClose?(listener: (error?: Error) => void): () => void;
   onModelsChanged?(listener: (models: AcpSessionModelState) => void): () => void;
   prompt(request: AcpPromptRequest): Promise<AcpPromptResponse>;
   rewind?(request: {

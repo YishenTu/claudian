@@ -1417,7 +1417,8 @@ export class CodexExecutionSession
       type: 'turn_completed',
       scope: run.createScope(),
       reason: 'completed',
-      ...(nativeCheckpointId ? { nativeCheckpointId } : {}),
+      // Codex forks resume at turn IDs, not streaming agent-message item IDs.
+      ...(nativeCheckpointId ? { nativeAssistantId: nativeCheckpointId, nativeCheckpointId } : {}),
     });
     this.#releaseRun(run);
   }

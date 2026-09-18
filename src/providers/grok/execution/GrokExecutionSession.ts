@@ -35,6 +35,8 @@ import {
   type AcpSessionModelState,
   type AcpSessionNotification,
   AcpToolStreamAdapter,
+  type AcpUsage,
+  type AcpUsageUpdate,
   buildAcpUsageInfo,
 } from '../../acp';
 import type { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
@@ -43,6 +45,7 @@ import {
   resolveGrokSessionCwd,
   resolveGrokSessionDirectory,
 } from '../history/GrokHistoryPathResolver';
+import { resolveGrokUpdateMessageId } from '../history/GrokHistoryStore';
 import {
   decodeGrokModelId,
   findGrokModel,
@@ -56,6 +59,7 @@ import {
   normalizeGrokToolUseResult,
   resolveGrokRawToolName,
 } from '../normalization/grokToolNormalization';
+import { parseGrokPromptUsage, parseGrokUsage } from '../normalization/grokUsage';
 import {
   buildGrokSystemPrompt,
   type GrokSystemPromptSettings,
@@ -131,6 +135,8 @@ class GrokExecutionRunState implements ProviderExecutionRun {
   readonly events: AsyncIterable<ProviderExecutionEvent>;
   private readonly queue: ExecutionEventQueue;
   private terminal = false;
+  private settle!: () => void;
+  readonly settled = new Promise<void>(resolve => { this.settle = resolve; });
 
   constructor(
     readonly executionId: string,
@@ -154,11 +160,18 @@ class GrokExecutionRunState implements ProviderExecutionRun {
     this.terminal = true;
     this.queue.push(event);
     this.queue.close();
+    this.settle();
   }
 
   get isTerminal(): boolean {
     return this.terminal;
   }
+}
+
+interface PendingInterjection {
+  accepted: boolean;
+  applied: boolean;
+  readonly text: string;
 }
 
 interface ActiveExecution {
@@ -170,6 +183,12 @@ interface ActiveExecution {
   readonly request: ProviderExecutionRequest;
   readonly run: GrokExecutionRunState;
   sequence: number;
+  contextUsage: AcpUsageUpdate | null;
+  promptUsage: AcpUsage | null;
+  promptResponse?: AcpPromptResponse;
+  readonly interjections: Map<string, PendingInterjection>;
+  observedTurnCompletions: number;
+  requiredTurnCompletions: number;
 }
 
 interface GrokNativeOwner {
@@ -178,6 +197,7 @@ interface GrokNativeOwner {
   loadedSessionConfigurationKey: string | null;
   loadedSessionId: string | null;
   modeUnsubscribe: () => void;
+  interjectionUnsubscribe: () => void;
   readonly modelContextKey: string;
   modelsUnsubscribe: () => void;
   readonly native: GrokExecutionNativeConnection;
@@ -255,8 +275,16 @@ RewindableExecutionSession {
       abortController: new AbortController(),
       accepted: false,
       cancellationGeneration: this.cancellationGeneration,
+      contextUsage: null,
+      promptUsage: null,
+      interjections: new Map(),
+      observedTurnCompletions: 0,
+      requiredTurnCompletions: 0,
       normalizer: new AcpExecutionEventNormalizer({
-        mapUsage: usage => buildAcpUsageInfo({ contextWindow: usage }),
+        mapUsage: usage => {
+          if (active.acceptingLiveOutput) active.contextUsage = usage;
+          return buildAcpUsageInfo({ contextWindow: usage });
+        },
         scope: {
           executionId: run.executionId,
           kind: 'requested',
@@ -331,15 +359,21 @@ RewindableExecutionSession {
       || request.signal.aborted
     ) return false;
     const blocks = buildPromptBlocks(request);
-    await native.interject({
-      content: blocks,
-      interjectionId: randomUUID(),
-      sessionId: this.providerSessionId,
-      text: blocks.filter(block => block.type === 'text')
-        .map(block => block.text)
-        .join('\n'),
-    }, request.signal);
-    return true;
+    const interjectionId = randomUUID();
+    const text = blocks.filter(block => block.type === 'text').map(block => block.text).join('\n');
+    const pending: PendingInterjection = { accepted: false, applied: false, text };
+    active.interjections.set(interjectionId, pending);
+    try {
+      await native.interject({ content: blocks, interjectionId, sessionId: this.providerSessionId, text }, request.signal);
+      pending.accepted = true;
+      if (pending.applied) active.interjections.delete(interjectionId);
+      return true;
+    } catch (error) {
+      active.interjections.delete(interjectionId);
+      throw error;
+    } finally {
+      this.#finishCompletedIfReady(active);
+    }
   }
 
   async previewRewind(
@@ -381,6 +415,7 @@ RewindableExecutionSession {
       if (this.active === active) this.active = null;
       return;
     }
+    let unsubscribeClose: (() => void) | undefined;
     try {
       if (this.cancellationFlight) await this.cancellationFlight;
       if (this.#isCancellationRequested(active)) return;
@@ -392,16 +427,24 @@ RewindableExecutionSession {
       if (this.#isCancellationRequested(active)) return;
       active.normalizer.reset();
       active.acceptingLiveOutput = true;
-      const response = await native.prompt({
+      const closed = new Promise<never>((_resolve, reject) => {
+        unsubscribeClose = native.onClose?.(error => {
+          reject(new Error('Grok transport closed', { cause: error }));
+        });
+      });
+      const response = await Promise.race([closed, native.prompt({
         prompt: buildPromptBlocks(
           active.request,
           !this.nativeConversationContextEstablished,
         ),
         sessionId,
-      });
+      })]);
       if (this.#isCancellationRequested(active)) return;
       this.accept(active, response);
-      this.#finishCompleted(active, response);
+      active.promptResponse = response;
+      active.promptUsage = parseGrokPromptUsage(response) ?? active.promptUsage;
+      this.#finishCompletedIfReady(active);
+      await Promise.race([closed, active.run.settled]);
     } catch (error) {
       if (this.#isCancellationRequested(active)) return;
       const category = classifyError(error);
@@ -427,6 +470,8 @@ RewindableExecutionSession {
       });
       active.normalizer.dispose();
       this.active = null;
+    } finally {
+      unsubscribeClose?.();
     }
   }
 
@@ -497,6 +542,7 @@ RewindableExecutionSession {
       loadedSessionConfigurationKey: null,
       loadedSessionId: null,
       modeUnsubscribe: () => {},
+      interjectionUnsubscribe: () => {},
       modelContextKey: computeGrokEnvironmentHash(this.plugin.settings),
       modelsUnsubscribe: () => {},
       native,
@@ -509,6 +555,9 @@ RewindableExecutionSession {
       owner.notificationUnsubscribe = native.onNotification((notification, source) => {
         if (this.#isCurrentNativeOwner(owner)) this.handleNotification(notification, source);
       });
+      owner.interjectionUnsubscribe = native.onInterjection?.(notification => {
+        if (this.#isCurrentNativeOwner(owner)) this.#handleInterjection(notification);
+      }) ?? (() => {});
       owner.modeUnsubscribe = native.onModeChanged?.(mode => {
         if (!this.#isCurrentNativeOwner(owner)) return;
         this.#updateSnapshot(this.active ? 'executing' : 'idle');
@@ -760,8 +809,22 @@ RewindableExecutionSession {
       || notification.sessionId !== this.providerSessionId
       || !this.mirrorDeduplicator.shouldProcess(notification, source)
     ) return;
-    if (isTurnCompleted(notification.update)) return;
-    const result = active.normalizer.normalize(notification.update);
+    if (isTurnCompleted(notification.update)) {
+      if (active.acceptingLiveOutput) {
+        active.promptUsage = parseGrokUsage((notification.update as unknown as { usage?: unknown }).usage)
+          ?? active.promptUsage;
+        active.observedTurnCompletions += 1;
+        this.#finishCompletedIfReady(active);
+      }
+      return;
+    }
+    let update = notification.update;
+    if (update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'user_message_chunk') {
+      const role = update.sessionUpdate === 'agent_message_chunk' ? 'assistant' : 'user';
+      const messageId = resolveGrokUpdateMessageId(update, role, notification._meta);
+      if (messageId) update = { ...update, messageId };
+    }
+    const result = active.normalizer.normalize(update);
     if (result.metadata?.type === 'commands') {
       this.options.commandCatalog?.setCommandSnapshot([...result.metadata.commands]);
       return;
@@ -799,7 +862,40 @@ RewindableExecutionSession {
     });
   }
 
-  #finishCompleted(active: ActiveExecution, response: AcpPromptResponse): void {
+  #handleInterjection(notification: { sessionId: string; interjectionId?: string }): void {
+    const active = this.active;
+    if (!active || this.#isCancellationRequested(active) || notification.sessionId !== this.providerSessionId) return;
+    const id = notification.interjectionId
+      ?? (active.interjections.size === 1 ? active.interjections.keys().next().value : undefined);
+    if (!id) return;
+    const pending = active.interjections.get(id);
+    if (!pending || pending.applied) return;
+    pending.applied = true;
+    active.requiredTurnCompletions = Math.max(active.requiredTurnCompletions, active.observedTurnCompletions + 1);
+    active.run.emit({ type: 'user_message_started', scope: this.#nextScope(active), content: pending.text });
+    if (pending.accepted) active.interjections.delete(id);
+    this.#finishCompletedIfReady(active);
+  }
+
+  #finishCompletedIfReady(active: ActiveExecution): void {
+    if (this.#isCancellationRequested(active)
+      || !active.promptResponse
+      || active.interjections.size > 0
+      || active.observedTurnCompletions < active.requiredTurnCompletions) return;
+    const response = active.promptResponse;
+    if (active.promptUsage) {
+      const model = active.request.configuration.model ?? '';
+      const advertisedWindow = findGrokModel(
+        getGrokProviderSettings(this.plugin.settings).currentCatalog?.models ?? [], model,
+      )?.contextWindow;
+      const size = active.contextUsage?.size || advertisedWindow;
+      const usage = buildAcpUsageInfo({
+        model: decodeGrokModelId(model) ?? undefined,
+        contextWindow: size ? { size, used: active.promptUsage.totalTokens } : null,
+        promptUsage: active.promptUsage,
+      });
+      if (usage) active.run.emit({ type: 'usage_updated', scope: this.#nextScope(active), usage });
+    }
     this.#updateSnapshot('idle');
     this.#emitCurrentSnapshot();
     active.run.finish({
@@ -968,6 +1064,7 @@ RewindableExecutionSession {
       }
       try {
         owner.modeUnsubscribe();
+        owner.interjectionUnsubscribe();
       } catch {
         // Listener cleanup cannot prevent process shutdown.
       }

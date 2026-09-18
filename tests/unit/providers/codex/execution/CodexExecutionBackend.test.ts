@@ -491,6 +491,11 @@ describe('CodexExecutionBackend', () => {
       'text_delta',
       'turn_completed',
     ]));
+    expect(events.at(-1)).toMatchObject({
+      type: 'turn_completed',
+      nativeAssistantId: 'turn-new',
+      nativeCheckpointId: 'turn-new',
+    });
     expect(events.find(event => event.type === 'turn_started')).toEqual(
       expect.objectContaining({
         accepted: true,

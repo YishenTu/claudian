@@ -819,6 +819,34 @@ describe('ChatExecutionCoordinator', () => {
     expect(assistantMessage.assistantMessageId).toBe('native-assistant');
   });
 
+  it('uses the terminal assistant identity for fork projections and accepted inputs', async () => {
+    const harness = createHarness();
+    const user: ChatMessage = { id: 'user', role: 'user', content: 'Hello', timestamp: 1 };
+    const assistant: ChatMessage = { id: 'assistant', role: 'assistant', content: '', timestamp: 2 };
+    const { session, run, resultPromise } = await beginExecution(
+      harness, createSubmission({ messages: { user, assistant } }),
+    );
+    run.events.push({ type: 'turn_started', scope: requestedScope(session, run, 1), accepted: true });
+    run.events.push({
+      type: 'assistant_message_started', scope: requestedScope(session, run, 2),
+      nativeAssistantId: 'msg_item',
+    });
+    run.events.push({
+      type: 'turn_completed', scope: requestedScope(session, run, 3), reason: 'completed',
+      nativeAssistantId: 'turn-checkpoint', nativeCheckpointId: 'turn-checkpoint',
+    });
+    run.events.end();
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'completed', nativeAssistantMessageId: 'turn-checkpoint',
+    });
+    expect(assistant.assistantMessageId).toBe('turn-checkpoint');
+    expect(harness.repository.acceptConversationInput).toHaveBeenLastCalledWith(
+      'conversation-1', 'input-1',
+      expect.objectContaining({ providerAssistantMessageId: 'turn-checkpoint' }),
+    );
+  });
+
   it('does not send staged input if the conversation switches while the ledger write is pending', async () => {
     const harness = createHarness();
     const stageBarrier = deferred<void>();

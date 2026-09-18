@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 const mockLoadGrokPromptIndexAfterAssistant = jest.fn();
 const mockResolveGrokSessionDirectory = jest.fn();
 
@@ -219,6 +221,15 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
     newSessionId: 'session-forked',
     parentSessionId: request.sourceSessionId,
   });
+  private interjectionListener?: (value: { sessionId: string; interjectionId?: string }) => void;
+  onInterjection(listener: (value: { sessionId: string; interjectionId?: string }) => void): () => void {
+    this.interjectionListener = listener;
+    return () => { this.interjectionListener = undefined; };
+  }
+  emitInterjection(index = -1): void {
+    const request = this.interjectCalls.at(index) as { sessionId: string; interjectionId: string };
+    this.interjectionListener?.(request);
+  }
   interjectImplementation: () => Promise<void> = async () => {};
   modelImplementation: (
     request: AcpSetSessionModelRequest,
@@ -331,10 +342,15 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
     await this.shutdownImplementation();
   }
 
-  emit(update: Record<string, unknown>, source: 'extension' | 'standard' = 'standard'): void {
+  emit(
+    update: Record<string, unknown>,
+    source: 'extension' | 'standard' = 'standard',
+    metadata?: Record<string, unknown>,
+  ): void {
     this.notification?.({
       sessionId: 'session-existing',
       update,
+      ...(metadata ? { _meta: metadata } : {}),
     } as unknown as AcpSessionNotification, source);
   }
 
@@ -367,6 +383,70 @@ describe('GrokExecutionBackend', () => {
       ),
     );
   });
+
+  it.each(['notification', 'update', 'standard'] as const)(
+    'preserves Grok checkpoint IDs from %s metadata across assistant messages',
+    async location => {
+      const native = new FakeNativeConnection();
+      native.promptImplementation = async () => {
+        for (const id of ['assistant-first', 'assistant-final']) {
+          native.emit({
+            content: { text: id, type: 'text' },
+            sessionUpdate: 'agent_message_chunk',
+            ...(location === 'standard' ? { messageId: id } : {}),
+            ...(location === 'update' ? { _meta: { eventId: id } } : {}),
+          }, 'extension', location === 'notification' ? { eventId: id } : undefined);
+        }
+        return { stopReason: 'end_turn' };
+      };
+      const session = new GrokExecutionBackend({ settings: {} } as ProviderHost, {
+        nativeFactory: { create: () => native },
+      }).createSession(sessionConfig);
+      try {
+        const events = await collect(session.execute(executionRequest()).events);
+        expect(events.filter(event => event.type === 'assistant_message_started')).toEqual([
+          expect.objectContaining({ nativeAssistantId: 'assistant-first' }),
+          expect.objectContaining({ nativeAssistantId: 'assistant-final' }),
+        ]);
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
+
+  it.each(['notification', 'response', 'metadata'] as const)(
+    'emits final Grok usage from %s with the streamed context window',
+    async source => {
+      const fixture = JSON.parse(readFileSync(
+        'tests/fixtures/providers/grok/runtime/turn-completed.json', 'utf8',
+      ));
+      const update = fixture.params.params.update;
+      const native = new FakeNativeConnection();
+      native.promptImplementation = async () => {
+        native.emit({ sessionUpdate: 'usage_update', size: 200_000, used: 12 });
+        if (source === 'notification') native.emit(update, 'extension');
+        return {
+          stopReason: 'end_turn',
+          ...(source === 'response' ? { usage: update.usage } : {}),
+          ...(source === 'metadata' ? { _meta: { usage: update.usage } } : {}),
+        };
+      };
+      const session = new GrokExecutionBackend({ settings: {} } as ProviderHost, {
+        nativeFactory: { create: () => native },
+      }).createSession(sessionConfig);
+      try {
+        const events = await collect(session.execute(executionRequest()).events);
+        expect(events.filter(event => event.type === 'usage_updated').at(-1)).toMatchObject({
+          usage: {
+            inputTokens: 10327, cacheReadInputTokens: 1280, contextTokens: 10377,
+            contextWindow: 200_000, contextWindowIsAuthoritative: true, percentage: 5,
+          },
+        });
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
 
   it('loads the fixed native session, configures model/mode, and streams correlated ACP output', async () => {
     const native = new FakeNativeConnection();
@@ -1519,6 +1599,143 @@ describe('GrokExecutionBackend', () => {
       },
       type: 'tool_completed',
     }));
+  });
+
+  it.each(['before', 'after'] as const)(
+    'keeps steered output when native interjection arrives %s the original completion',
+    async order => {
+      const native = new FakeNativeConnection();
+      const prompt = createDeferred<{ stopReason: string }>();
+      const interjection = createDeferred<void>();
+      native.promptImplementation = () => prompt.promise;
+      native.interjectImplementation = () => interjection.promise;
+      const session = new GrokExecutionBackend({ settings: {} } as ProviderHost, {
+        nativeFactory: { create: () => native },
+      }).createSession(sessionConfig);
+      try {
+        let finished = false;
+        const eventsPromise = collect(session.execute(executionRequest()).events).then(events => {
+          finished = true;
+          return events;
+        });
+        while (native.promptRequests.length === 0) await Promise.resolve();
+        if (!isSteerableExecutionSession(session)) throw new Error('Missing steering');
+        const steering = session.steer(executionRequest('redirect'));
+        const emitSteeredResponse = () => native.emit({
+          sessionUpdate: 'agent_message_chunk', messageId: 'assistant-steered',
+          content: { type: 'text', text: 'Steered response' },
+        });
+        if (order === 'before') {
+          native.emitInterjection();
+          emitSteeredResponse();
+        }
+        native.emit({ sessionUpdate: 'turn_completed', prompt_id: 'original' }, 'extension');
+        prompt.resolve({ stopReason: 'end_turn' });
+        await new Promise(resolve => setImmediate(resolve));
+        expect(finished).toBe(false);
+        if (order === 'after') native.emitInterjection();
+        interjection.resolve();
+        await expect(steering).resolves.toBe(true);
+        if (order === 'after') {
+          emitSteeredResponse();
+          native.emit({ sessionUpdate: 'turn_completed', prompt_id: 'steered' }, 'extension');
+        }
+        const events = await eventsPromise;
+        expect(events).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Steered response' }));
+        expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
+
+  it('keeps successive queued interjections visible until both native turns finish', async () => {
+    const native = new FakeNativeConnection();
+    const prompt = createDeferred<{ stopReason: string }>();
+    native.promptImplementation = () => prompt.promise;
+    const session = new GrokExecutionBackend({ settings: {} } as ProviderHost, {
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    try {
+      let finished = false;
+      const eventsPromise = collect(session.execute(executionRequest()).events).then(events => {
+        finished = true;
+        return events;
+      });
+      while (native.promptRequests.length === 0) await Promise.resolve();
+      if (!isSteerableExecutionSession(session)) throw new Error('Missing steering');
+      await session.steer(executionRequest('first redirect'));
+      await session.steer(executionRequest('second redirect'));
+      native.emit({ sessionUpdate: 'turn_completed', prompt_id: 'original' });
+      prompt.resolve({ stopReason: 'end_turn' });
+      await new Promise(resolve => setImmediate(resolve));
+      for (const [index, text] of ['First redirect reply', 'Second redirect reply'].entries()) {
+        expect(finished).toBe(false);
+        native.emitInterjection(index);
+        native.emit({
+          sessionUpdate: 'agent_message_chunk', messageId: `assistant-${index}`,
+          content: { type: 'text', text },
+        });
+        native.emit({ sessionUpdate: 'turn_completed', prompt_id: `steered-${index}` });
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      const events = await eventsPromise;
+      expect(events.filter(event => event.type === 'text_delta')).toEqual([
+        expect.objectContaining({ text: 'First redirect reply' }),
+        expect.objectContaining({ text: 'Second redirect reply' }),
+      ]);
+      expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  it('settles the original turn when a pending interjection is rejected before application', async () => {
+    const native = new FakeNativeConnection();
+    const prompt = createDeferred<{ stopReason: string }>();
+    const interjection = createDeferred<void>();
+    native.promptImplementation = () => prompt.promise;
+    native.interjectImplementation = () => interjection.promise;
+    const session = new GrokExecutionBackend({ settings: {} } as ProviderHost, {
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    try {
+      const eventsPromise = collect(session.execute(executionRequest()).events);
+      while (native.promptRequests.length === 0) await Promise.resolve();
+      if (!isSteerableExecutionSession(session)) throw new Error('Missing steering');
+      const steering = session.steer(executionRequest('redirect'));
+      const outcome = steering.catch((error: unknown) => error);
+      prompt.resolve({ stopReason: 'end_turn' });
+      await new Promise(resolve => setImmediate(resolve));
+      interjection.reject(new Error('interjection rejected'));
+      expect(await outcome).toEqual(new Error('interjection rejected'));
+      expect((await eventsPromise).at(-1)).toMatchObject({ type: 'turn_completed' });
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  it('honors abort while waiting for queued steering after the original prompt returns', async () => {
+    const native = new FakeNativeConnection();
+    const prompt = createDeferred<{ stopReason: string }>();
+    native.promptImplementation = () => prompt.promise;
+    const session = new GrokExecutionBackend({ settings: {} } as ProviderHost, {
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    try {
+      const controller = new AbortController();
+      const eventsPromise = collect(session.execute({ ...executionRequest(), signal: controller.signal }).events);
+      while (native.promptRequests.length === 0) await Promise.resolve();
+      if (!isSteerableExecutionSession(session)) throw new Error('Missing steering');
+      await session.steer(executionRequest('redirect'));
+      native.emit({ sessionUpdate: 'turn_completed', prompt_id: 'original' });
+      prompt.resolve({ stopReason: 'end_turn' });
+      await new Promise(resolve => setImmediate(resolve));
+      controller.abort();
+      expect((await eventsPromise).at(-1)).toMatchObject({ type: 'cancelled' });
+    } finally {
+      await session.dispose();
+    }
   });
 
   it('uses native interjection and rewind without creating an unrelated session', async () => {

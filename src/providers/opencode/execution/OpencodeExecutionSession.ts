@@ -16,6 +16,7 @@ import type { ChatMessage, PermissionMode } from '@/core/types';
 import {
   AcpExecutionEventNormalizer,
   type AcpSessionNotification,
+  type AcpUsageUpdate,
   buildAcpUsageInfo,
   extractAcpSessionThoughtLevelState,
 } from '@/providers/acp';
@@ -99,6 +100,7 @@ class OpencodeExecutionRun implements ProviderExecutionRun {
   terminal = false;
   accepted = false;
   acceptingLiveOutput = false;
+  contextUsage: AcpUsageUpdate | null = null;
   cancellationRequested = false;
   lastSequence = 0;
   abortCleanup: (() => void) | null = null;
@@ -339,6 +341,14 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       this.#markNativeConversationContextEstablished(run);
       if (!this.#isRunCurrent(run, generation)) return;
       run.accept(response.userMessageId ?? undefined);
+      if (response.usage) {
+        const usage = buildAcpUsageInfo({
+          contextWindow: run.contextUsage,
+          model: this.#resolveSelectedRawModelId(request.configuration.model) ?? undefined,
+          promptUsage: response.usage,
+        });
+        if (usage) run.emit({ type: 'usage_updated', scope: run.scope(), usage });
+      }
       this.snapshot = this.#createSnapshot('idle');
       run.emit({
         scope: run.scope(),
@@ -455,11 +465,13 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     let normalizer = this.runNormalizers.get(run);
     if (!normalizer) {
       normalizer = new AcpExecutionEventNormalizer({
-        mapUsage: (usage) => buildAcpUsageInfo({
-          contextWindow: usage,
-          model: this.#resolveSelectedRawModelId(undefined) ?? undefined,
-          promptUsage: null,
-        }),
+        mapUsage: (usage) => {
+          if (run.acceptingLiveOutput) run.contextUsage = usage;
+          return buildAcpUsageInfo({
+            contextWindow: usage,
+            model: this.#resolveSelectedRawModelId(undefined) ?? undefined,
+          });
+        },
         scope: {
           executionId: run.executionId,
           kind: 'requested',

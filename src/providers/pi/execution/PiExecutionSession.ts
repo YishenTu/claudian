@@ -998,10 +998,11 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (!sessionFile) return;
     try {
       const parsed = parsePiSessionEntries(await fsp.readFile(sessionFile, 'utf8'));
-      const path = resolvePiActivePath(
-        parsed.entries,
-        getPiState(this.providerState).leafEntryId,
-      );
+      if (!this.isActive(active)) return;
+      // Live completion follows the appended native branch, not the saved resume leaf.
+      const path = resolvePiActivePath(parsed.entries);
+      const leafEntryId = [...path].reverse().find(entry => entry.id)?.id;
+      if (leafEntryId) this.#setOptionalProviderStateValue('leafEntryId', leafEntryId);
       const previousIndex = previousLeafId
         ? path.findIndex(entry => entry.id === previousLeafId)
         : -1;

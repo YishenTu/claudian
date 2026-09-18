@@ -340,11 +340,13 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     };
   }
 
-  buildForkProviderState(
+  async buildForkProviderState(
     sourceSessionId: string,
     resumeAt: string,
     sourceProviderState?: Record<string, unknown>,
-  ): Record<string, unknown> {
+    _vaultPath?: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<Record<string, unknown>> {
     const sourceState = getCodexState(sourceProviderState);
     const sourceTranscriptRootPath = sourceState.transcriptRootPath
       ?? deriveCodexSessionsRootFromSessionPath(sourceState.sessionFilePath);
@@ -362,6 +364,29 @@ export class CodexConversationHistoryService implements ProviderConversationHist
           : {}
       ),
     };
+    const deadline = Date.now() + CODEX_HISTORY_LOOKUP_TIMEOUT_MS;
+    let sourcePath = await this.#resolveSourceSessionFile(providerState, pathContext, deadline);
+    let turns = sourcePath ? await readSessionTurns(sourcePath) : [];
+    if (turns.length === 0) {
+      const trustedRoot = resolveCodexTranscriptRootHint(sourceTranscriptRootPath, pathContext);
+      const roots = [
+        ...(trustedRoot ? [trustedRoot] : []),
+        ...getCodexArchivedTranscriptRoots(pathContext, trustedRoot ? [trustedRoot] : []),
+      ];
+      for (const root of roots) {
+        const candidate = await findCodexSessionFileAsync(
+          sourceSessionId, root, Math.max(0, deadline - Date.now()),
+        );
+        if (!candidate || candidate === sourcePath) continue;
+        sourcePath = candidate;
+        turns = await readSessionTurns(candidate);
+        if (turns.length > 0) break;
+      }
+    }
+    if (!sourcePath || !turns.some(turn => turn.turnId === resumeAt)) {
+      throw new Error(`Fork checkpoint not found: ${resumeAt}. Reload the source conversation and choose an available checkpoint.`);
+    }
+    providerState.forkSourceSessionFilePath = sourcePath;
     return providerState as Record<string, unknown>;
   }
 
