@@ -8,15 +8,26 @@ import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import { WebSocketServer } from 'ws';
 
 import { ProjectEventClient } from '@/app/collab/client/ProjectEventClient';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { LanTlsIdentity, type LanTlsServerIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
 import type { CollabError } from '@/core/collab/ClaudianCollabError';
 
-it('detects a silently lost idle Host independently for three members', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'claudian-idle-members-'));
-  const identity = await new LanTlsIdentity(root, {
+let root: string | undefined;
+let identity: LanTlsServerIdentity;
+
+// Native key generation is fixture setup, outside the transport behavior's timeout.
+beforeAll(async () => {
+  root = await mkdtemp(path.join(tmpdir(), 'claudian-event-client-'));
+  identity = await new LanTlsIdentity(root, {
     installationKey: TEST_INSTALLATION_A,
   }).issueServerIdentity('127.0.0.1');
+}, 30_000);
+
+afterAll(async () => {
+  if (root) await rm(root, { recursive: true, force: true });
+});
+
+it('detects a silently lost idle Host independently for three members', async () => {
   const server = createServer({ key: identity.privateKeyPem, cert: identity.certificateChainPem });
   const sockets = new WebSocketServer({ server });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -53,7 +64,6 @@ it('detects a silently lost idle Host independently for three members', async ()
       for (const socket of sockets.clients) socket.terminate();
       await new Promise<void>(resolve => sockets.close(() => resolve()));
       await new Promise<void>(resolve => server.close(() => resolve()));
-      await rm(root, { recursive: true, force: true });
     } finally {
       clock.restore();
     }
@@ -61,8 +71,6 @@ it('detects a silently lost idle Host independently for three members', async ()
 });
 
 it.each([401, 403])('stops on native LAN Upgrade authorization rejection %s', async status => {
-  const root = await mkdtemp(path.join(tmpdir(), 'claudian-event-auth-'));
-  const identity = await new LanTlsIdentity(root, { installationKey: TEST_INSTALLATION_A }).issueServerIdentity('127.0.0.1');
   const server = createServer({ key: identity.privateKeyPem, cert: identity.certificateChainPem });
   server.on('upgrade', (_request, socket) => socket.end(`HTTP/1.1 ${status} Denied\r\nContent-Length: 0\r\n\r\n`));
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -80,6 +88,5 @@ it.each([401, 403])('stops on native LAN Upgrade authorization rejection %s', as
   } finally {
     client.dispose();
     await new Promise<void>(resolve => server.close(() => resolve()));
-    await rm(root, { recursive: true, force: true });
   }
 });
