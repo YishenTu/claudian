@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import { normalizeLinkedContentPath } from '../path/LinkedContentPath';
+import {
+  normalizeEscapedLinkedContentPath,
+  normalizeLinkedContentPath,
+} from '../path/LinkedContentPath';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   ExecutionInputContextSnapshot,
@@ -110,7 +113,9 @@ export class ConversationInputLedgerStorage
     ) {
       return { status: 'unavailable', reason: 'unsupported-version' };
     }
-    const normalized = normalizeConversationInputLedger(parsed, conversationId);
+    const normalized = normalizeConversationInputLedger(parsed, conversationId, {
+      repairRenderedEscapes: true,
+    });
     if (!normalized) {
       return { status: 'unavailable', reason: 'malformed' };
     }
@@ -126,7 +131,9 @@ export class ConversationInputLedgerStorage
     ledger: ConversationInputLedger,
   ): Promise<void> {
     const path = this.getPath(conversationId);
-    const normalized = normalizeConversationInputLedger(ledger, conversationId);
+    const normalized = normalizeConversationInputLedger(ledger, conversationId, {
+      repairRenderedEscapes: false,
+    });
     if (!normalized || normalized.needsMigration) {
       throw new Error(`Invalid conversation input ledger: ${conversationId}`);
     }
@@ -138,9 +145,20 @@ export class ConversationInputLedgerStorage
   }
 }
 
+interface ConversationInputLedgerNormalizeOptions {
+  /**
+   * Ledger reads repair prompt-render escapes that the agent copied back into
+   * structured state (issue #1230). Writes keep the strict canonical contract:
+   * what is persisted must already be canonical, so a vault path that genuinely
+   * contains entity-shaped text is not rejected as a migration candidate.
+   */
+  repairRenderedEscapes: boolean;
+}
+
 function normalizeConversationInputLedger(
   value: unknown,
   conversationId: string,
+  options: ConversationInputLedgerNormalizeOptions,
 ): { ledger: ConversationInputLedger; needsMigration: boolean } | null {
   if (
     !isRecord(value)
@@ -154,7 +172,7 @@ function normalizeConversationInputLedger(
   let needsMigration = false;
   for (const record of value.records) {
     if (!isConversationInputRecord(record)) return null;
-    const normalized = normalizeInputContext(record.context);
+    const normalized = normalizeInputContext(record.context, options);
     if (!normalized) return null;
     needsMigration ||= normalized.needsMigration;
     normalizedRecords.push({
@@ -176,6 +194,7 @@ function normalizeConversationInputLedger(
 
 function normalizeInputContext(
   value: ExecutionInputContextSnapshot | undefined,
+  options: ConversationInputLedgerNormalizeOptions,
 ): {
   context: ExecutionInputContextSnapshot | undefined;
   needsMigration: boolean;
@@ -206,7 +225,9 @@ function normalizeInputContext(
       needsMigration: true,
     };
   }
-  const path = normalizeLinkedContentPath(selected.path);
+  const path = options.repairRenderedEscapes
+    ? normalizeEscapedLinkedContentPath(selected.path)
+    : normalizeLinkedContentPath(selected.path);
   const content = selected.content;
   if (path === null || (content !== undefined && typeof content !== 'string')) {
     return {
