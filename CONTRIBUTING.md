@@ -104,7 +104,7 @@ npm run test:cross-platform-collab -- --maxWorkers=2 --json --outputFile=.contex
 node scripts/summarize-jest-results.mjs .context/native.json .context/native-timings
 ```
 
-CI runs native smoke with three workers on macOS and one on Windows. The local wrapper
+CI runs native smoke with three workers on macOS and two on Windows. The local wrapper
 remains serial unless a worker count is supplied. Compare the same selection and
 commit, including fixture setup/teardown, and report elapsed time separately from
 summed suite durations. Recheck timings on the actual CI runners before increasing

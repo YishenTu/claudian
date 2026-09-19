@@ -236,7 +236,7 @@ jobs:
         shell: bash
         env:
           TEST_SELECTION: ${{ needs.test-scope.outputs.cross-platform-tests }}
-          NATIVE_WORKERS: ${{ runner.os == 'macOS' && '3' || '1' }}
+          NATIVE_WORKERS: ${{ runner.os == 'macOS' && '3' || '2' }}
         run: |
           mkdir -p test-results
           npm run test:cross-platform-collab -- --selection "$TEST_SELECTION" --maxWorkers="$NATIVE_WORKERS" --json --outputFile=test-results/native.json
