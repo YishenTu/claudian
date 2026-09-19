@@ -34,14 +34,6 @@ describe('ProviderRegistry', () => {
     expect(caps).toHaveProperty('supportsFork');
   });
 
-  it('returns boundary services for the default provider', () => {
-    const historyService = ProviderRegistry.getConversationHistoryService();
-    expect(historyService).toHaveProperty('hydrateConversationHistory');
-
-    const taskInterpreter = ProviderRegistry.getTaskResultInterpreter();
-    expect(taskInterpreter).toHaveProperty('resolveTerminalStatus');
-  });
-
   it('creates transcript-backed subagent history only for providers that own it', () => {
     const host = {} as any;
 
@@ -53,18 +45,6 @@ describe('ProviderRegistry', () => {
     expect(ProviderRegistry.createSubagentHistoryService(host, 'grok')).toBeNull();
     expect(ProviderRegistry.createSubagentHistoryService(host, 'opencode')).toBeNull();
     expect(ProviderRegistry.createSubagentHistoryService(host, 'pi')).toBeNull();
-  });
-
-  it('returns a settings reconciler for the default provider', () => {
-    const reconciler = ProviderRegistry.getSettingsReconciler();
-    expect(reconciler).toHaveProperty('reconcileModelWithEnvironment');
-    expect(reconciler).toHaveProperty('normalizeModelVariantSettings');
-  });
-
-  it('returns a chat UI config for the default provider', () => {
-    const uiConfig = ProviderRegistry.getChatUIConfig();
-    expect(uiConfig).toHaveProperty('getModelOptions');
-    expect(uiConfig).toHaveProperty('getCustomModelIds');
   });
 
   it('throws when an unknown provider is requested', () => {

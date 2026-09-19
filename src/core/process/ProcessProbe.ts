@@ -6,7 +6,8 @@ export async function runProcessProbe(
   timeoutMs = 5_000,
 ): Promise<string | null> {
   const process = new ManagedStdioProcess(options);
-  let output = '';
+  const output: Buffer[] = [];
+  let outputBytes = 0;
   let timer: number | undefined;
   try {
     return await new Promise<string | null>((resolve) => {
@@ -18,14 +19,21 @@ export async function runProcessProbe(
         resolve(value);
       };
       process.onError(() => finish(null));
-      process.onClose(({ code, error }) => finish(code === 0 && !error ? output : null));
+      process.onClose(({ code, error }) => finish(
+        code === 0 && !error ? Buffer.concat(output).toString('utf8') : null,
+      ));
       timer = window.setTimeout(() => finish(null), timeoutMs);
       process.start();
       process.stdin.end();
       process.stdout.on('data', (chunk: Buffer | string) => {
         if (settled) return;
-        output += chunk.toString();
-        if (Buffer.byteLength(output) > 16_384) finish(null);
+        const bytes = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+        outputBytes += bytes.length;
+        if (outputBytes > 16_384) {
+          finish(null);
+          return;
+        }
+        output.push(bytes);
       });
     });
   } catch {

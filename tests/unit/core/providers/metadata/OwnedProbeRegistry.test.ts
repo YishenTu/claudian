@@ -27,6 +27,43 @@ function createRegistry(
 }
 
 describe('OwnedProbeRegistry', () => {
+  it('disposes a resource that finishes creation after disposal starts', async () => {
+    const creation = new Deferred<TestResource>();
+    const released: number[] = [];
+    const registry = createRegistry(resource => { released.push(resource.id); });
+    const run = registry.run({
+      create: () => creation.promise,
+      query: async () => 'stale result',
+    });
+    let disposed = false;
+    const disposal = registry.dispose().then(() => { disposed = true; });
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+
+    creation.resolve({ id: 1 });
+    await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+    await disposal;
+    expect(released).toEqual([1]);
+    expect(disposed).toBe(true);
+  });
+
+  it('rejects a late successful result after caller cancellation', async () => {
+    const query = new Deferred<string>();
+    const controller = new AbortController();
+    const registry = createRegistry();
+    const run = registry.run({
+      create: () => ({ id: 1 }),
+      query: () => query.promise,
+    }, controller.signal);
+    const cancellation = new Error('caller cancelled');
+
+    controller.abort(cancellation);
+    query.resolve('stale result');
+
+    await expect(run).rejects.toBe(cancellation);
+    await registry.dispose();
+  });
+
   it('tracks concurrent probes and disposes every resource exactly once', async () => {
     const firstQuery = new Deferred<string>();
     const secondQuery = new Deferred<string>();
