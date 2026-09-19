@@ -374,6 +374,7 @@ export interface ThreadStartParams {
   serviceTier?: string | null;
   baseInstructions?: string;
   experimentalRawEvents?: boolean;
+  ephemeral?: boolean;
   persistExtendedHistory?: boolean;
   sandboxPolicy?: SandboxPolicy;
   dynamicTools?: LegacyDynamicToolSpec[];
