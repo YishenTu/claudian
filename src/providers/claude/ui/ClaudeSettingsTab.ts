@@ -28,7 +28,6 @@ import {
 } from '../settings';
 import { AgentSettings } from './AgentSettings';
 import { claudeChatUIConfig } from './ClaudeChatUIConfig';
-import { PluginSettingsManager } from './PluginSettingsManager';
 import { SlashCommandSettings } from './SlashCommandSettings';
 
 export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
@@ -307,27 +306,6 @@ export const claudeSettingsTabRenderer: ProviderSettingsTabRenderer = {
       app: context.plugin.app,
       agentManager: claudeWorkspace.agentManager,
       agentStorage: claudeWorkspace.agentStorage,
-    });
-
-    // --- Plugins ---
-
-    new Setting(container).setName(t('settings.plugins.name')).setHeading();
-
-    const pluginsDesc = container.createDiv({ cls: 'claudian-plugin-settings-desc' });
-    pluginsDesc.createEl('p', {
-      text: t('settings.plugins.desc'),
-      cls: 'setting-item-description',
-    });
-
-    const pluginsContainer = container.createDiv({ cls: 'claudian-plugins-container' });
-    new PluginSettingsManager(pluginsContainer, {
-      pluginManager: claudeWorkspace.pluginManager,
-      agentManager: claudeWorkspace.agentManager,
-      restartTabs: async () => {
-        await context.plugin.runProviderExecutionTransition(['claude'], async () => {
-          await claudeWorkspace.agentManager.loadAgents();
-        });
-      },
     });
 
     // --- Environment ---

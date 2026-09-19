@@ -70,7 +70,7 @@ interface BackgroundTurn {
 
 type ClaudeExecutionSessionServices = Pick<
   ClaudeWorkspaceServices,
-  'agentManager' | 'commandCatalog' | 'pluginManager'
+  'agentManager' | 'commandCatalog'
 >;
 
 export class ClaudeExecutionSession
@@ -145,7 +145,6 @@ ClaudeExecutionStrategySink {
       ?? forkSource?.resumeAt;
     this.encoder = new ClaudeExecutionRequestEncoder({
       host,
-      pluginManager: services.pluginManager,
     });
     this.interactionHandler = new ClaudeInteractionHandler({
       interactionPort: config.interactionPort,

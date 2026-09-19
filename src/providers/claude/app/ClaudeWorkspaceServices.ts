@@ -5,7 +5,6 @@ import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorks
 import type {
   AppAgentManager,
   AppAgentStorage,
-  AppPluginManager,
   ProviderCliResolver,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
@@ -20,15 +19,15 @@ import {
 } from '../commands/ClaudeCommandCatalog';
 import { probeRuntimeCommands } from '../commands/probeRuntimeCommands';
 import { resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
-import { PluginManager } from '../plugins/PluginManager';
+import { ClaudePluginDiscovery } from '../plugins/ClaudePluginDiscovery';
 import { ClaudeCliResolver } from '../runtime/ClaudeCliResolver';
-import { StorageService } from '../storage/StorageService';
+import { AgentVaultStorage } from '../storage/AgentVaultStorage';
+import { SkillStorage } from '../storage/SkillStorage';
+import { SlashCommandStorage } from '../storage/SlashCommandStorage';
 import { claudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
 
 export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
-  claudeStorage: StorageService;
   cliResolver: ProviderCliResolver;
-  pluginManager: AppPluginManager;
   agentStorage: AppAgentStorage;
   agentManager: AppAgentManager;
   commandCatalog: ProviderCommandCatalog;
@@ -45,8 +44,6 @@ export async function createClaudeWorkspaceServices(
   adapter: VaultFileAdapter,
   options: ClaudeWorkspaceServicesOptions = {},
 ): Promise<ClaudeWorkspaceServices> {
-  const claudeStorage = new StorageService(plugin, adapter);
-
   const cliResolver = new ClaudeCliResolver();
 
   const vaultPath = getVaultPath(plugin.app) ?? '';
@@ -58,18 +55,17 @@ export async function createClaudeWorkspaceServices(
     hostPlatform: process.platform,
     vaultPath,
   });
-  const pluginManager = new PluginManager(
+  const pluginDiscovery = new ClaudePluginDiscovery(
     vaultPath,
-    claudeStorage.ccSettings,
     getClaudeConfigDir,
   );
 
-  const agentStorage = claudeStorage.agents;
-  const agentManager = new AgentManager(vaultPath, pluginManager, getClaudeConfigDir);
+  const agentStorage = new AgentVaultStorage(adapter);
+  const agentManager = new AgentManager(vaultPath, pluginDiscovery, getClaudeConfigDir);
 
   const commandCatalog = new ClaudeCommandCatalog(
-    claudeStorage.commands,
-    claudeStorage.skills,
+    new SlashCommandStorage(adapter),
+    new SkillStorage(adapter),
     options.commandProbe ?? (signal => probeRuntimeCommands(plugin, signal)),
   );
   const unregisterTransitionHook = plugin.executionLifecycleRegistry
@@ -80,16 +76,14 @@ export async function createClaudeWorkspaceServices(
   let disposePromise: Promise<void> | null = null;
 
   return {
-    claudeStorage,
     cliResolver,
-    pluginManager,
     agentStorage,
     agentManager,
     commandCatalog,
     vaultCommandRepository: commandCatalog,
     settingsTabRenderer: claudeSettingsTabRenderer,
     prepareSettings: async () => {
-      await pluginManager.loadPlugins();
+      await pluginDiscovery.loadPlugins();
       await agentManager.loadAgents();
     },
     dispose() {
@@ -104,10 +98,6 @@ export async function createClaudeWorkspaceServices(
 export const claudeWorkspaceRegistration: ProviderWorkspaceRegistration<ClaudeWorkspaceServices> = {
   initialize: async ({ plugin, vaultAdapter }) => createClaudeWorkspaceServices(plugin, vaultAdapter),
 };
-
-export function maybeGetClaudeWorkspaceServices(): ClaudeWorkspaceServices | null {
-  return ProviderWorkspaceRegistry.getServices('claude') as ClaudeWorkspaceServices | null;
-}
 
 export function getClaudeWorkspaceServices(): ClaudeWorkspaceServices {
   return ProviderWorkspaceRegistry.requireServices('claude') as ClaudeWorkspaceServices;

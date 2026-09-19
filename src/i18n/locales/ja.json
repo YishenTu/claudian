@@ -604,10 +604,6 @@
       "desc": "ドロップダウンから特定のコマンドとスキルを非表示にします。Claudian に関係のない Claude Code の項目を隠すのに便利です。先頭のスラッシュなしで名前を1行に1つ入力してください。",
       "placeholder": "commit\nbuild\ntest"
     },
-    "plugins": {
-      "name": "Claude Code プラグイン",
-      "desc": "~/.claude/plugins から検出された Claude Code プラグインを管理します。有効化されたプラグインは Vault ごとに .claude/settings.json に保存されます。"
-    },
     "subagents": {
       "name": "サブエージェント",
       "desc": ".claude/agents/ に保存された Vault レベルのサブエージェントを管理します。各 Markdown ファイルがカスタムエージェントを1つ定義します。",

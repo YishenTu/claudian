@@ -11,7 +11,6 @@ import type {
 import { buildSystemPrompt } from '../../../core/prompt/mainAgent';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
-import type { AppPluginManager } from '../../../core/providers/types';
 import {
   isReadOnlyTool,
   READ_ONLY_TOOLS,
@@ -90,7 +89,6 @@ export interface ClaudeEncodedExecutionRequest {
 
 export interface ClaudeExecutionRequestEncoderDeps {
   readonly host: ProviderHost;
-  readonly pluginManager: AppPluginManager;
 }
 
 export class ClaudeExecutionRequestEncoder {

@@ -84,8 +84,6 @@
 
 .claudian-settings :is(
   .claudian-sp-label,
-  .claudian-plugin-label,
-  .claudian-plugin-section-header,
   .claudian-snippet-label,
   .claudian-context-limits-label,
   .claudian-provider-model-picker-selected-label,
@@ -102,7 +100,6 @@
 
 .claudian-settings :is(
   .claudian-sp-header,
-  .claudian-plugin-header,
   .claudian-snippet-header,
   .claudian-context-limits-header
 ) {
@@ -113,7 +110,6 @@
 
 .claudian-settings :is(
   .claudian-sp-settings-desc,
-  .claudian-plugin-settings-desc,
   .claudian-context-limits-desc,
   .claudian-provider-model-picker-summary
 ) {
@@ -123,8 +119,6 @@
 .claudian-settings :is(
   .claudian-sp-item,
   .claudian-sp-empty-state,
-  .claudian-plugin-item,
-  .claudian-plugin-empty,
   .claudian-snippet-item,
   .claudian-context-limits-item,
   .claudian-provider-model-picker-selected-row,
@@ -134,7 +128,6 @@
 ),
 .claudian-settings :is(
   .claudian-sp-item,
-  .claudian-plugin-item,
   .claudian-snippet-item,
   .claudian-context-limits-item,
   .claudian-hotkey-item
@@ -142,7 +135,7 @@
   background: transparent;
 }
 
-.claudian-settings :is(.claudian-sp-item, .claudian-plugin-item, .claudian-snippet-item) {
+.claudian-settings :is(.claudian-sp-item, .claudian-snippet-item) {
   padding: var(--size-4-3);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-m);

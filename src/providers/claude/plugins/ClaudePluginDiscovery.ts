@@ -1,5 +1,5 @@
 /**
- * PluginManager - Discover and manage Claude Code plugins.
+ * Read-only discovery of native Claude Code plugins for agent enumeration.
  *
  * Plugins are discovered from two sources:
  * - {CLAUDE_CONFIG_DIR}/plugins/installed_plugins.json: install paths for scanning agents
@@ -10,10 +10,8 @@ import { promises as fs } from 'fs';
 import { Notice } from 'obsidian';
 import * as path from 'path';
 
-import type { PluginInfo, PluginScope } from '../../../core/types';
 import { resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
-import type { CCSettingsStorage } from '../storage/CCSettingsStorage';
-import type { InstalledPluginEntry, InstalledPluginsFile } from '../types/plugins';
+import type { InstalledPluginEntry, InstalledPluginsFile, PluginInfo, PluginScope } from '../types/plugins';
 
 interface SettingsFile {
   enabledPlugins?: Record<string, boolean>;
@@ -63,8 +61,7 @@ function extractPluginName(pluginId: string): string {
   return pluginId;
 }
 
-export class PluginManager {
-  private ccSettingsStorage: CCSettingsStorage;
+export class ClaudePluginDiscovery {
   private vaultPath: string;
   private resolveConfigDir: () => string;
   private plugins: PluginInfo[] = [];
@@ -72,11 +69,9 @@ export class PluginManager {
 
   constructor(
     vaultPath: string,
-    ccSettingsStorage: CCSettingsStorage,
     configDir: string | (() => string) = () => resolveClaudeConfigDir(),
   ) {
     this.vaultPath = vaultPath;
-    this.ccSettingsStorage = ccSettingsStorage;
     this.resolveConfigDir = typeof configDir === 'function' ? configDir : () => configDir;
   }
 
@@ -151,67 +146,4 @@ export class PluginManager {
     return [...this.plugins];
   }
 
-  hasPlugins(): boolean {
-    return this.plugins.length > 0;
-  }
-
-  hasEnabledPlugins(): boolean {
-    return this.plugins.some((p) => p.enabled);
-  }
-
-  getEnabledCount(): number {
-    return this.plugins.filter((p) => p.enabled).length;
-  }
-
-  /** Used to detect changes that require restarting the persistent query. */
-  getPluginsKey(): string {
-    const enabledPlugins = this.plugins
-      .filter((p) => p.enabled)
-      .sort((a, b) => a.id.localeCompare(b.id));
-
-    if (enabledPlugins.length === 0) {
-      return '';
-    }
-
-    return enabledPlugins.map((p) => `${p.id}:${p.installPath}`).join('|');
-  }
-
-  /** Writes to project .claude/settings.json so CLI respects the state. */
-  async togglePlugin(pluginId: string): Promise<void> {
-    const plugin = this.plugins.find((p) => p.id === pluginId);
-    if (!plugin) {
-      return;
-    }
-
-    await this.#persistEnabledState(plugin, !plugin.enabled);
-  }
-
-  async enablePlugin(pluginId: string): Promise<void> {
-    const plugin = this.plugins.find((p) => p.id === pluginId);
-    if (!plugin || plugin.enabled) {
-      return;
-    }
-
-    await this.#persistEnabledState(plugin, true);
-  }
-
-  async disablePlugin(pluginId: string): Promise<void> {
-    const plugin = this.plugins.find((p) => p.id === pluginId);
-    if (!plugin || !plugin.enabled) {
-      return;
-    }
-
-    await this.#persistEnabledState(plugin, false);
-  }
-
-  async #persistEnabledState(plugin: PluginInfo, enabled: boolean): Promise<void> {
-    const previous = plugin.enabled;
-    plugin.enabled = enabled;
-    try {
-      await this.ccSettingsStorage.setPluginEnabled(plugin.id, enabled);
-    } catch (error) {
-      plugin.enabled = previous;
-      throw error;
-    }
-  }
 }

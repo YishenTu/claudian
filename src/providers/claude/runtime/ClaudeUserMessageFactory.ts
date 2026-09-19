@@ -57,27 +57,3 @@ export function buildClaudeSDKUserMessage(
     uuid: randomUUID(),
   };
 }
-
-export function buildClaudePromptWithImages(
-  prompt: string,
-  images?: ImageAttachment[],
-): string | AsyncGenerator<SDKUserMessage> {
-  if (!images || images.length === 0) {
-    return prompt;
-  }
-
-  const content = buildUserContentBlocks(prompt, images);
-
-  async function* messageGenerator() {
-    yield {
-      type: 'user' as const,
-      message: {
-        role: 'user' as const,
-        content,
-      },
-      parent_tool_use_id: null,
-    };
-  }
-
-  return messageGenerator();
-}

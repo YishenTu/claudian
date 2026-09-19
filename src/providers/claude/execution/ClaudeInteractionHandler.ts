@@ -175,12 +175,6 @@ export class ClaudeInteractionHandler {
   }
 }
 
-export function createClaudeExecutionCanUseTool(
-  deps: ClaudeExecutionInteractionDeps,
-): CanUseTool {
-  return new ClaudeInteractionHandler(deps).canUseTool;
-}
-
 class StaleClaudeInteractionResponseError extends Error {}
 
 function assertResponseIdentity(expected: string, actual: string): void {

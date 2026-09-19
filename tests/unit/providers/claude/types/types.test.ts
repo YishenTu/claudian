@@ -8,10 +8,6 @@ normalizeLegacyClaudeModelAlias,
 resolveContextWindowSize,
 supportsXHighEffort,
 } from '@/providers/claude/types/models';
-import {
-createPermissionRule,
-parseCCPermissionRule
-} from '@/providers/claude/types/settings';
 
 describe('types.ts', () => {
 
@@ -19,46 +15,6 @@ describe('types.ts', () => {
 
     it('should enable Claude by default for backward compatibility', () => {
       expect(getClaudeProviderSettings({ providerConfigs: { claude: {} } }).enabled).toBe(true);
-    });
-  });
-
-  describe('Permission Conversion Utilities', () => {
-    describe('parseCCPermissionRule', () => {
-      it('should parse rule with pattern', () => {
-        const result = parseCCPermissionRule(createPermissionRule('Bash(git status)'));
-        expect(result.tool).toBe('Bash');
-        expect(result.pattern).toBe('git status');
-      });
-
-      it('should parse rule with complex pattern', () => {
-        const result = parseCCPermissionRule(createPermissionRule('WebFetch(domain:github.com)'));
-        expect(result.tool).toBe('WebFetch');
-        expect(result.pattern).toBe('domain:github.com');
-      });
-
-      it('should parse rule without pattern', () => {
-        const result = parseCCPermissionRule(createPermissionRule('Read'));
-        expect(result.tool).toBe('Read');
-        expect(result.pattern).toBeUndefined();
-      });
-
-      it('should handle nested parentheses in pattern', () => {
-        const result = parseCCPermissionRule(createPermissionRule('Bash(echo "hello (world)")'));
-        expect(result.tool).toBe('Bash');
-        expect(result.pattern).toBe('echo "hello (world)"');
-      });
-
-      it('should handle path patterns', () => {
-        const result = parseCCPermissionRule(createPermissionRule('Read(/Users/test/vault/notes)'));
-        expect(result.tool).toBe('Read');
-        expect(result.pattern).toBe('/Users/test/vault/notes');
-      });
-
-      it('should return rule as tool for malformed input', () => {
-        const result = parseCCPermissionRule(createPermissionRule('not-valid-format'));
-        expect(result.tool).toBe('not-valid-format');
-        expect(result.pattern).toBeUndefined();
-      });
     });
   });
 

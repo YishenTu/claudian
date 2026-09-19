@@ -111,9 +111,6 @@ function createServices(): {
   return {
     commandCatalog,
     services: {
-      pluginManager: {
-        getPluginsKey: jest.fn().mockReturnValue(''),
-      },
       agentManager: {
         setBuiltinAgentNames: jest.fn(),
       },

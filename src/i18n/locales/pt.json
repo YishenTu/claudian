@@ -604,10 +604,6 @@
       "desc": "Oculta comandos e habilidades específicos do menu suspenso. Útil para ocultar entradas do Claude Code que não são relevantes para o Claudian. Digite os nomes sem a barra inicial, um por linha.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "plugins": {
-      "name": "Plugins do Claude Code",
-      "desc": "Gerencie plugins do Claude Code descobertos em ~/.claude/plugins. Plugins ativados são armazenados por vault em .claude/settings.json."
-    },
     "subagents": {
       "name": "Subagentes",
       "desc": "Gerencie subagentes a nível de vault armazenados em .claude/agents/. Cada arquivo Markdown define um agente personalizado.",

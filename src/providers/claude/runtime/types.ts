@@ -1,7 +1,6 @@
-import type { SDKMessage, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 
-import type { ImageAttachment, StreamChunk } from '../../../core/types';
-import type { ClaudeModel } from '../types/models';
+import type { ImageAttachment } from '../../../core/types';
 
 export interface TextContentBlock {
   type: 'text';
@@ -36,60 +35,6 @@ export interface PendingAttachmentMessage {
 
 export type PendingMessage = PendingTextMessage | PendingAttachmentMessage;
 
-export interface ResponseHandler {
-  readonly id: string;
-  onChunk: (chunk: StreamChunk) => void;
-  onDone: () => void;
-  onError: (error: Error) => void;
-  readonly sawStreamText: boolean;
-  readonly sawStreamThinking: boolean;
-  readonly sawAnyChunk: boolean;
-  markStreamTextSeen(): void;
-  markStreamThinkingSeen(): void;
-  resetStreamText(): void;
-  resetStreamThinking(): void;
-  markChunkSeen(): void;
-}
-
-export interface ResponseHandlerOptions {
-  id: string;
-  onChunk: (chunk: StreamChunk) => void;
-  onDone: () => void;
-  onError: (error: Error) => void;
-}
-
-export function createResponseHandler(options: ResponseHandlerOptions): ResponseHandler {
-  let _sawStreamText = false;
-  let _sawStreamThinking = false;
-  let _sawAnyChunk = false;
-
-  return {
-    id: options.id,
-    onChunk: options.onChunk,
-    onDone: options.onDone,
-    onError: options.onError,
-    get sawStreamText() { return _sawStreamText; },
-    get sawStreamThinking() { return _sawStreamThinking; },
-    get sawAnyChunk() { return _sawAnyChunk; },
-    markStreamTextSeen() { _sawStreamText = true; },
-    markStreamThinkingSeen() { _sawStreamThinking = true; },
-    resetStreamText() { _sawStreamText = false; },
-    resetStreamThinking() { _sawStreamThinking = false; },
-    markChunkSeen() { _sawAnyChunk = true; },
-  };
-}
-
-export interface SessionState {
-  sessionId: string | null;
-  sessionModel: ClaudeModel | null;
-  pendingSessionModel: ClaudeModel | null;
-  wasInterrupted: boolean;
-  /** Set when SDK returns a different session ID than expected (context lost). */
-  needsHistoryRebuild: boolean;
-  /** Set when the current session is invalidated by SDK errors. */
-  sessionInvalidated: boolean;
-}
-
 export const UNSUPPORTED_SDK_TOOLS = ['EnterPlanMode', 'ExitPlanMode'] as const;
 
 export const DISABLED_BUILTIN_TASK_TOOLS = [
@@ -104,7 +49,3 @@ export const DISABLED_BUILTIN_TASK_TOOLS = [
 export const DISABLED_BUILTIN_SUBAGENTS = [
   'Task(statusline-setup)',
 ] as const;
-
-export function isTurnCompleteMessage(message: SDKMessage): boolean {
-  return message.type === 'result';
-}

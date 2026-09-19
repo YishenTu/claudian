@@ -2,6 +2,7 @@ import '@/providers';
 
 import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 
+import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@/app/settings/defaultSettings';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import {
@@ -9,7 +10,6 @@ import {
   ClaudianSettingsStorage,
   LEGACY_CLAUDIAN_SETTINGS_PATH,
 } from '@/providers/claude/storage/ClaudianSettingsStorage';
-import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 import {
   getCodexProviderSettings,
   updateCodexProviderSettings,

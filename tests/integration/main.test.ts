@@ -1,6 +1,7 @@
 import { Notice, TFile, TFolder } from 'obsidian';
 
 import { LocalAgentRuntimeHttpServer } from '@/app/agent-runtime/LocalAgentRuntimeHttpServer';
+import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@/app/settings/defaultSettings';
 import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
 import type { SessionMetadataReadResult } from '@/core/bootstrap/SessionStorage';
@@ -14,7 +15,6 @@ import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
 import { COLLAB_DETAIL_VIEW_TYPE } from '@/features/collab/detail/CollabDetailView';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
-import { DEFAULT_SETTINGS } from '@/providers/claude/types/settings';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import {
   getCodexProviderSettings,

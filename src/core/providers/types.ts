@@ -10,7 +10,6 @@ import type {
   AuxiliaryContinuityReset,
   Conversation,
   InstructionRefineResult,
-  PluginInfo,
   SessionMetadata,
   SlashCommand,
   SubagentInfo,
@@ -148,19 +147,6 @@ export interface AppAgentStorage {
   load(agent: AgentDefinition): Promise<AgentDefinition | null>;
   save(agent: AgentDefinition): Promise<void>;
   delete(agent: AgentDefinition): Promise<void>;
-}
-
-/** Provider plugin manager interface consumed by the app layer. */
-export interface AppPluginManager {
-  loadPlugins(): Promise<void>;
-  getPlugins(): PluginInfo[];
-  hasPlugins(): boolean;
-  hasEnabledPlugins(): boolean;
-  getEnabledCount(): number;
-  getPluginsKey(): string;
-  togglePlugin(pluginId: string): Promise<void>;
-  enablePlugin(pluginId: string): Promise<void>;
-  disablePlugin(pluginId: string): Promise<void>;
 }
 
 /** Provider agent manager interface consumed by the app layer. */

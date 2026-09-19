@@ -259,14 +259,6 @@ const allowedAppProviderImports = new Set([
 ]);
 const allowedProviderAppImports = new Set([
   resolvedImportKey(
-    path.join(providersRoot, 'claude', 'types', 'settings.ts'),
-    path.join(appRoot, 'settings', 'defaultSettings'),
-  ),
-  resolvedImportKey(
-    path.join(providersRoot, 'claude', 'storage', 'StorageService.ts'),
-    path.join(appRoot, 'settings', 'ClaudianSettingsStorage'),
-  ),
-  resolvedImportKey(
     path.join(providersRoot, 'claude', 'storage', 'ClaudianSettingsStorage.ts'),
     path.join(appRoot, 'settings', 'ClaudianSettingsStorage'),
   ),

@@ -15,7 +15,6 @@ Object.assign(globalThis, { setImmediate });
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockSlashCommandSettings = jest.fn();
-const mockPluginSettingsManager = jest.fn();
 const mockCliResolverReset = jest.fn();
 const mockAgentManagerLoadAgents = jest.fn().mockResolvedValue(undefined);
 const mockVaultCommandRepository = {};
@@ -130,7 +129,6 @@ jest.mock('@/providers/claude/app/ClaudeWorkspaceServices', () => ({
       loadAgents: mockAgentManagerLoadAgents,
     },
     agentStorage: {},
-    pluginManager: {},
   })),
 }));
 
@@ -138,9 +136,6 @@ jest.mock('@/providers/claude/ui/AgentSettings', () => ({
   AgentSettings: jest.fn(),
 }));
 
-jest.mock('@/providers/claude/ui/PluginSettingsManager', () => ({
-  PluginSettingsManager: jest.fn((...args: unknown[]) => mockPluginSettingsManager(...args)),
-}));
 
 jest.mock('@/providers/claude/ui/SlashCommandSettings', () => ({
   SlashCommandSettings: class MockSlashCommandSettings {
@@ -623,34 +618,6 @@ describe('ClaudeSettingsTab', () => {
     expect(plugin.settings.providerConfigs.claude.cliPathsByHost).toEqual({
       'host-a': '"/custom dir/claude"',
     });
-  });
-
-  it('invalidates Claude plugin and agent configuration inside the execution transition', async () => {
-    let transitionActive = false;
-    const plugin = createPlugin();
-    plugin.runProviderExecutionTransition.mockImplementation(async (
-      providerIds: string[],
-      mutation: () => Promise<unknown>,
-    ) => {
-      expect(providerIds).toEqual(['claude']);
-      transitionActive = true;
-      try {
-        return await mutation();
-      } finally {
-        transitionActive = false;
-      }
-    });
-    mockAgentManagerLoadAgents.mockImplementation(async () => {
-      expect(transitionActive).toBe(true);
-    });
-
-    claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
-    const dependencies = mockPluginSettingsManager.mock.calls[0]?.[1] as {
-      restartTabs(): Promise<void>;
-    };
-    await dependencies.restartTabs();
-
-    expect(mockAgentManagerLoadAgents).toHaveBeenCalledTimes(1);
   });
 
   it('does not render obsolete Opus and Sonnet 1M toggles', () => {

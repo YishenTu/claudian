@@ -604,10 +604,6 @@
       "desc": "从下拉菜单中隐藏特定的命令与技能。适用于隐藏与 Claudian 无关的 Claude Code 条目。每行输入一个名称，无需前导斜杠。",
       "placeholder": "commit\nbuild\ntest"
     },
-    "plugins": {
-      "name": "Claude Code 插件",
-      "desc": "管理从 ~/.claude/plugins 发现的 Claude Code 插件。启用的插件按 Vault 存储在 .claude/settings.json 中。"
-    },
     "subagents": {
       "name": "子代理",
       "desc": "管理存储在 .claude/agents/ 中的 Vault 级子代理。每个 Markdown 文件定义一个自定义代理。",

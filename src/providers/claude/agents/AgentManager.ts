@@ -12,7 +12,7 @@ import * as path from 'path';
 import type { AgentDefinition, AgentFrontmatter } from '../../../core/types';
 import { mapWithConcurrency } from '../../../utils/concurrency';
 import { resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
-import type { PluginManager } from '../plugins/PluginManager';
+import type { ClaudePluginDiscovery } from '../plugins/ClaudePluginDiscovery';
 import { buildAgentFromFrontmatter, parseAgentFile } from './AgentStorage';
 
 const VAULT_AGENTS_DIR = '.claude/agents';
@@ -47,17 +47,17 @@ export class AgentManager {
   private agents: AgentDefinition[] = FALLBACK_BUILTIN_AGENT_NAMES.map(makeBuiltinAgent);
   private builtinAgentNames: string[] = FALLBACK_BUILTIN_AGENT_NAMES;
   private vaultPath: string;
-  private pluginManager: PluginManager;
+  private pluginDiscovery: ClaudePluginDiscovery;
   private resolveConfigDir: () => string;
   private loadPromise: Promise<void> | null = null;
 
   constructor(
     vaultPath: string,
-    pluginManager: PluginManager,
+    pluginDiscovery: ClaudePluginDiscovery,
     configDir: string | (() => string) = () => resolveClaudeConfigDir(),
   ) {
     this.vaultPath = vaultPath;
-    this.pluginManager = pluginManager;
+    this.pluginDiscovery = pluginDiscovery;
     this.resolveConfigDir = typeof configDir === 'function' ? configDir : () => configDir;
   }
 
@@ -107,7 +107,7 @@ export class AgentManager {
   }
 
   async #loadPluginAgents(): Promise<void> {
-    for (const plugin of this.pluginManager.getPlugins()) {
+    for (const plugin of this.pluginDiscovery.getPlugins()) {
       if (!plugin.enabled) continue;
 
       const agentsDir = path.join(plugin.installPath, PLUGIN_AGENTS_DIR);

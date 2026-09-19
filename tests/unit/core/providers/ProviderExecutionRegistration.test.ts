@@ -52,7 +52,6 @@ describe('provider execution registration', () => {
     ProviderWorkspaceRegistry.setServices('claude', {
       agentManager: {},
       commandCatalog: {},
-      pluginManager: {},
     } as any);
     ProviderWorkspaceRegistry.setServices('codex', {} as any);
     ProviderWorkspaceRegistry.setServices('grok', {

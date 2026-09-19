@@ -159,8 +159,7 @@
 }
 
 /* Custom section descriptions - align with items */
-.claudian-sp-settings-desc,
-.claudian-plugin-settings-desc {
+.claudian-sp-settings-desc {
   padding: 0 12px;
 }
 

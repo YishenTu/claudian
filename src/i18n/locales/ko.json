@@ -604,10 +604,6 @@
       "desc": "드롭다운에서 특정 명령어와 스킬을 숨깁니다. Claudian과 관련 없는 Claude Code 항목을 숨기는 데 유용합니다. 앞의 슬래시 없이 이름을 한 줄에 하나씩 입력하세요.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "plugins": {
-      "name": "Claude Code 플러그인",
-      "desc": "~/.claude/plugins에서 발견된 Claude Code 플러그인을 관리합니다. 활성화된 플러그인은 .claude/settings.json에 Vault별로 저장됩니다."
-    },
     "subagents": {
       "name": "서브에이전트",
       "desc": ".claude/agents/에 저장된 Vault 수준의 서브에이전트를 관리합니다. 각 Markdown 파일이 하나의 커스텀 에이전트를 정의합니다.",
