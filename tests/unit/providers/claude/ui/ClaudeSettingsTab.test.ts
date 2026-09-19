@@ -8,7 +8,7 @@ import { axe } from 'jest-axe';
 import { setImmediate } from 'timers';
 
 import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
-import { claudeSettingsTabRenderer } from '@/providers/claude/ui/ClaudeSettingsTab';
+import { createClaudeSettingsTabRenderer } from '@/providers/claude/ui/ClaudeSettingsTab';
 
 Object.assign(globalThis, { setImmediate });
 
@@ -117,9 +117,8 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
-
-jest.mock('@/providers/claude/app/ClaudeWorkspaceServices', () => ({
-  getClaudeWorkspaceServices: jest.fn(() => ({
+function createSettingsRenderer() {
+  return createClaudeSettingsTabRenderer({
     cliResolver: {
       reset: mockCliResolverReset,
     },
@@ -129,13 +128,12 @@ jest.mock('@/providers/claude/app/ClaudeWorkspaceServices', () => ({
       loadAgents: mockAgentManagerLoadAgents,
     },
     agentStorage: {},
-  })),
-}));
+  } as unknown as Parameters<typeof createClaudeSettingsTabRenderer>[0]);
+}
 
 jest.mock('@/providers/claude/ui/AgentSettings', () => ({
   AgentSettings: jest.fn(),
 }));
-
 
 jest.mock('@/providers/claude/ui/SlashCommandSettings', () => ({
   SlashCommandSettings: class MockSlashCommandSettings {
@@ -450,7 +448,7 @@ describe('ClaudeSettingsTab', () => {
     };
     const plugin = createPlugin();
     Object.assign(plugin.settings.providerConfigs.claude, config);
-    claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     const input = findSetting('settings.cliPath.name').textComponents[0];
     expect(input.value).toBe(hasHostOverride ? '/host/claude' : '/legacy/claude');
     await applyTextInput(input, '');
@@ -460,7 +458,7 @@ describe('ClaudeSettingsTab', () => {
 
   it('persists response styles through an accessible native selector', async () => {
     const plugin = createPlugin();
-    claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     const subtree = document.createElement('main');
     subtree.appendChild(findSetting('Response style').dropdownComponents[0].selectEl);
     const select = within(subtree).getByRole('combobox', { name: 'Response style' }) as HTMLSelectElement;
@@ -477,7 +475,7 @@ describe('ClaudeSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const cliPathSetting = findSetting('settings.cliPath.name');
     const cliPathInput = cliPathSetting.textComponents[0];
@@ -510,7 +508,7 @@ describe('ClaudeSettingsTab', () => {
     });
     const context = createContext(plugin);
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
     const toggle = findSetting('settings.providerEnablement.name').toggleComponents[0];
     await toggle.onChangeCallback?.(false);
 
@@ -526,7 +524,7 @@ describe('ClaudeSettingsTab', () => {
       .ProviderSettingsCoordinator;
     coordinator.canApplyProviderEnablement.mockImplementationOnce(() => false);
 
-    claudeSettingsTabRenderer.render(container, context);
+    createSettingsRenderer().render(container, context);
     const warningCallIndex = container.createDiv.mock.calls.findIndex(
       ([options]: [{ text?: string }?]) => options?.text
         === 'settings.providerEnablement.lastProviderWarning',
@@ -575,7 +573,7 @@ describe('ClaudeSettingsTab', () => {
       expect(transitionActive).toBe(true);
     });
 
-    claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     await applyTextInput(findSetting('settings.cliPath.name')
       .textComponents[0], '/custom/claude');
 
@@ -611,7 +609,7 @@ describe('ClaudeSettingsTab', () => {
     ) => mutation());
     mockCliResolverReset.mockImplementation(() => undefined);
 
-    claudeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     await applyTextInput(findSetting('settings.cliPath.name')
       .textComponents[0], '"/custom dir/claude"');
 
@@ -624,14 +622,14 @@ describe('ClaudeSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableOpus1M.name');
     expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableSonnet1M.name');
   });
 
   it('renders Models before Safety', () => {
-    claudeSettingsTabRenderer.render(createContainer(), createContext(createPlugin()));
+    createSettingsRenderer().render(createContainer(), createContext(createPlugin()));
 
     const headings = createdSettings.filter(setting => setting.heading).map(setting => setting.name);
     expect(headings.indexOf('settings.models')).toBeLessThan(
@@ -644,7 +642,7 @@ describe('ClaudeSettingsTab', () => {
     plugin.settings.providerConfigs.claude.defaultModel = 'claude-code/claude-opus-4-6';
     const context = createContext(plugin);
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const setting = findSetting('Default model');
     const dropdown = setting.dropdownComponents[0];
@@ -669,7 +667,7 @@ describe('ClaudeSettingsTab', () => {
     ].join('\n');
     const context = createContext(plugin);
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const dropdown = findSetting('Default model').dropdownComponents[0];
     expect(dropdown.value).toBe('claude-code/claude-opus-enterprise');
@@ -683,7 +681,7 @@ describe('ClaudeSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     expect(context.renderAgentSkillSettings).not.toHaveBeenCalled();
     expect(mockSlashCommandSettings).toHaveBeenCalledWith(
@@ -698,7 +696,7 @@ describe('ClaudeSettingsTab', () => {
     const context = createContext(plugin);
     const target = createContainer();
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const environmentOptions = mockRenderEnvironmentSettingsSection.mock.calls[0]?.[0];
     expect(environmentOptions).toEqual(expect.objectContaining({
@@ -713,7 +711,7 @@ describe('ClaudeSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const customModelsSetting = findSetting('settings.customModels.name');
     const customModelsTextArea = customModelsSetting.textAreaComponents[0];
@@ -730,7 +728,7 @@ describe('ClaudeSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const safeModeSetting = findSetting('settings.claudeSafeMode.name');
     const safeModeDropdown = safeModeSetting.dropdownComponents[0];
@@ -753,7 +751,7 @@ describe('ClaudeSettingsTab', () => {
     });
     const context = createContext(plugin);
 
-    claudeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const customModelsSetting = findSetting('settings.customModels.name');
     const customModelsTextArea = customModelsSetting.textAreaComponents[0];

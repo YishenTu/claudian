@@ -10,7 +10,7 @@ import { setImmediate } from 'timers';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { DEFAULT_CODEX_PROVIDER_SETTINGS } from '@/providers/codex/settings';
-import { codexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
+import { createCodexSettingsTabRenderer } from '@/providers/codex/ui/CodexSettingsTab';
 
 Object.assign(globalThis, { setImmediate });
 
@@ -122,14 +122,14 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
-jest.mock('@/providers/codex/app/CodexWorkspaceServices', () => ({
-  getCodexWorkspaceServices: jest.fn(() => ({
+function createSettingsRenderer() {
+  return createCodexSettingsTabRenderer({
     commandCatalog: null,
     subagentStorage: {},
     refreshModelCatalog: mockRefreshModelCatalog,
     cliResolver: { reset: mockCodexCliResolverReset },
-  })),
-}));
+  } as unknown as Parameters<typeof createCodexSettingsTabRenderer>[0]);
+}
 
 jest.mock('@/providers/codex/ui/CodexModelPicker', () => ({
   renderCodexModelPicker: (
@@ -478,7 +478,7 @@ describe('CodexSettingsTab', () => {
     };
     const plugin = createPlugin();
     Object.assign(plugin.settings.providerConfigs.codex, config);
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     const input = findSetting('Codex CLI path').textComponents[0];
     expect(input.value).toBe(hasHostOverride ? '/host/codex' : '/legacy/codex');
     await applyTextInput(input, '');
@@ -490,7 +490,7 @@ describe('CodexSettingsTab', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const plugin = createPlugin();
 
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     expect(findSetting('Installation method').dropdownComponents).toHaveLength(1);
     expect(findSetting('WSL distro override').textComponents).toHaveLength(1);
@@ -506,7 +506,7 @@ describe('CodexSettingsTab', () => {
       checkedDistro = context.executionTarget.distroName;
       return null;
     };
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     await new Promise<void>(resolve => setImmediate(resolve));
     expect(checkedDistro).toBe('Ubuntu');
 
@@ -519,7 +519,7 @@ describe('CodexSettingsTab', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin();
 
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     expect(findOptionalSetting('Installation method')).toBeUndefined();
     expect(findOptionalSetting('WSL distro override')).toBeUndefined();
@@ -528,7 +528,7 @@ describe('CodexSettingsTab', () => {
   it('renders Models before Safety', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
 
-    codexSettingsTabRenderer.render(createContainer(), createContext(createPlugin()));
+    createSettingsRenderer().render(createContainer(), createContext(createPlugin()));
 
     const headings = createdSettings.filter(setting => setting.heading).map(setting => setting.name);
     expect(headings.indexOf('Models')).toBeLessThan(headings.indexOf('Safety'));
@@ -539,7 +539,7 @@ describe('CodexSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
-    codexSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const setting = findSetting('Enable ultra effort');
     const toggle = setting.toggleComponents[0];
@@ -560,7 +560,7 @@ describe('CodexSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
-    codexSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
     const enableSetting = findSetting('Enable Codex');
     await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
@@ -599,7 +599,7 @@ describe('CodexSettingsTab', () => {
     });
     const context = createContext(plugin);
 
-    codexSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
     const toggle = findSetting('Enable Codex').toggleComponents[0];
     await toggle.onChangeCallback?.(true);
 
@@ -631,7 +631,7 @@ describe('CodexSettingsTab', () => {
       });
       const context = createContext(plugin);
 
-      codexSettingsTabRenderer.render(createContainer(), context);
+      createSettingsRenderer().render(createContainer(), context);
       const toggle = findSetting('Enable Codex').toggleComponents[0];
       toggle.value = false;
       toggle.setValue.mockClear();
@@ -653,7 +653,7 @@ describe('CodexSettingsTab', () => {
     const context = createContext(plugin);
     const container = createContainer();
 
-    codexSettingsTabRenderer.render(container, context);
+    createSettingsRenderer().render(container, context);
 
     expect(mockRenderCodexModelPicker).toHaveBeenCalledWith(
       container,
@@ -676,7 +676,7 @@ describe('CodexSettingsTab', () => {
     const context = createContext(plugin);
     const container = createContainer();
 
-    codexSettingsTabRenderer.render(container, context);
+    createSettingsRenderer().render(container, context);
 
     const warningCallIndex = container.createDiv.mock.calls.findIndex(
       ([options]: [{ text?: string }?]) => options?.text
@@ -696,7 +696,7 @@ describe('CodexSettingsTab', () => {
 
   it('persists response styles through an accessible native selector', async () => {
     const plugin = createPlugin();
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     const subtree = document.createElement('main');
     subtree.appendChild(findSetting('Response style').dropdownComponents[0].selectEl);
     const select = within(subtree).getByRole('combobox', { name: 'Response style' }) as HTMLSelectElement;
@@ -716,7 +716,7 @@ describe('CodexSettingsTab', () => {
     const context = createContext(plugin);
     const container = createContainer();
 
-    codexSettingsTabRenderer.render(container, context);
+    createSettingsRenderer().render(container, context);
 
     expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
       container,
@@ -748,7 +748,7 @@ describe('CodexSettingsTab', () => {
       },
     });
 
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     const cliPathSetting = findSetting('Codex CLI path');
     expect(cliPathSetting.desc).toBe('Optional CLI path for this computer. Leave empty to detect automatically.');
@@ -775,7 +775,7 @@ describe('CodexSettingsTab', () => {
       await plugin.saveSettings();
     });
 
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     await applyTextInput(findSetting('Codex CLI path').textComponents[0], '"/my tools/codex"');
 
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe('"/my tools/codex"');
@@ -804,7 +804,7 @@ describe('CodexSettingsTab', () => {
       await plugin.saveSettings();
     });
 
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     const installationMethodSetting = findSetting('Installation method');
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
@@ -830,7 +830,7 @@ describe('CodexSettingsTab', () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const plugin = createPlugin();
 
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     const installationMethodSetting = findSetting('Installation method');
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
@@ -859,7 +859,7 @@ describe('CodexSettingsTab', () => {
       },
     });
 
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     const installationMethodSetting = findSetting('Installation method');
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
@@ -880,7 +880,7 @@ describe('CodexSettingsTab', () => {
     const plugin = createPlugin();
     const container = createContainer();
 
-    codexSettingsTabRenderer.render(container, createContext(plugin));
+    createSettingsRenderer().render(container, createContext(plugin));
 
     const installationMethodSetting = findSetting('Installation method');
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
@@ -904,7 +904,7 @@ describe('CodexSettingsTab', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin();
 
-    codexSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     expect(createdSettings.some(setting => setting.name === 'Custom models')).toBe(false);
   });

@@ -33,7 +33,7 @@ describe('ClaudianProviderHost', () => {
   it('delegates provider capabilities without exposing plugin lifecycle APIs', async () => {
     const trace: string[] = [];
     const plugin = createPlugin({
-      saveSettings: jest.fn(async () => { trace.push('save'); }),
+      mutateSettings: jest.fn(async () => { trace.push('mutate'); }),
       applyEnvironmentVariables: jest.fn(async () => { trace.push('environment'); }),
       getResolvedProviderCliPath: jest.fn(() => {
         trace.push('cli');
@@ -42,11 +42,11 @@ describe('ClaudianProviderHost', () => {
     });
     const host = new ClaudianProviderHost(plugin);
 
-    await host.saveSettings();
+    await host.mutateSettings(() => undefined);
     await host.applyEnvironmentVariables('provider:codex', 'OPENAI_API_KEY=test');
     await expect(host.getResolvedProviderCliPath('codex')).resolves.toBe('/usr/bin/codex');
 
-    expect(trace).toEqual(['save', 'environment', 'cli']);
+    expect(trace).toEqual(['mutate', 'environment', 'cli']);
     expect('registerView' in host).toBe(false);
     expect('addCommand' in host).toBe(false);
   });

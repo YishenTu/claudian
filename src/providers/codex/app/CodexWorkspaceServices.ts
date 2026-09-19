@@ -16,7 +16,7 @@ import { CodexModelDiscoveryService } from '../runtime/CodexModelDiscoveryServic
 import { getCodexProviderSettings } from '../settings';
 import { CodexSkillListingService } from '../skills/CodexSkillListingService';
 import { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
-import { codexSettingsTabRenderer } from '../ui/CodexSettingsTab';
+import { createCodexSettingsTabRenderer } from '../ui/CodexSettingsTab';
 
 export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
   subagentStorage: CodexSubagentStorage;
@@ -32,10 +32,6 @@ export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
 export interface CodexWorkspaceServicesOptions {
   readonly modelCatalogCoordinator?: CodexModelCatalogCoordinator;
   readonly skillListingService?: CodexSkillListingService;
-}
-
-function createCodexCliResolver(): ProviderCliResolver {
-  return new CodexCliResolver();
 }
 
 export async function createCodexWorkspaceServices(
@@ -76,12 +72,13 @@ export async function createCodexWorkspaceServices(
     });
   }
 
+  const cliResolver = new CodexCliResolver();
   return {
     subagentStorage,
     commandCatalog,
-    cliResolver: createCodexCliResolver(),
+    cliResolver,
     modelCatalogCoordinator,
-    settingsTabRenderer: codexSettingsTabRenderer,
+    settingsTabRenderer: createCodexSettingsTabRenderer({ cliResolver, subagentStorage, modelCatalogCoordinator, refreshModelCatalog: context => modelCatalogCoordinator.refreshModelCatalog(context) }),
     refreshModelCatalog: async context => modelCatalogCoordinator.refreshModelCatalog(context),
     dispose() {
       if (disposePromise) return disposePromise;

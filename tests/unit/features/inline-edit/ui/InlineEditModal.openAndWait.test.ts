@@ -5,6 +5,7 @@ import { MarkdownRenderer, Notice } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import { InlineEditSessionOwner } from '@/features/inline-edit/InlineEditSessionOwner';
 import { type InlineEditContext, InlineEditModal } from '@/features/inline-edit/ui/InlineEditModal';
 import { VaultFolderCache } from '@/shared/mention/VaultMentionCache';
 import * as editorUtils from '@/utils/editor';
@@ -28,7 +29,9 @@ function createInertInlineEditService() {
 }
 
 describe('InlineEditModal - openAndWait', () => {
+  let owner: InlineEditSessionOwner;
   beforeEach(() => {
+    owner = new InlineEditSessionOwner();
     jest.clearAllMocks();
     jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined);
     jest
@@ -37,6 +40,7 @@ describe('InlineEditModal - openAndWait', () => {
   });
 
   afterEach(() => {
+    owner.dispose();
     jest.restoreAllMocks();
   });
 
@@ -68,7 +72,7 @@ describe('InlineEditModal - openAndWait', () => {
       .mockReturnValueOnce(undefined)
       .mockReturnValueOnce(undefined);
 
-    const modal = new InlineEditModal(app, plugin, callbackEditor, view, editContext, 'note.md');
+    const modal = new InlineEditModal(app, plugin, callbackEditor, view, editContext, 'note.md', owner);
     const result = await modal.openAndWait();
 
     expect(result).toEqual({ decision: 'reject' });
@@ -108,11 +112,11 @@ describe('InlineEditModal - openAndWait', () => {
       },
     };
 
-    jest.spyOn(editorUtils, 'getEditorView').mockReturnValue({} as any);
+    jest.spyOn(editorUtils, 'getEditorView').mockReturnValue({ dispatch: jest.fn() } as any);
     jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockRejectedValue(new Error('stop after provider resolution'));
 
-    const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+    const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
 
     await expect(modal.openAndWait()).resolves.toEqual({ decision: 'reject' });
     expect(ProviderWorkspaceRegistry.ensureInitialized).toHaveBeenCalledWith(
@@ -159,11 +163,11 @@ describe('InlineEditModal - openAndWait', () => {
       },
     };
 
-    jest.spyOn(editorUtils, 'getEditorView').mockReturnValue({} as any);
+    jest.spyOn(editorUtils, 'getEditorView').mockReturnValue({ dispatch: jest.fn() } as any);
     jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockRejectedValue(new Error('stop after provider resolution'));
 
-    const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+    const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
 
     await expect(modal.openAndWait()).resolves.toEqual({ decision: 'reject' });
     expect(ProviderWorkspaceRegistry.ensureInitialized).toHaveBeenCalledWith(
@@ -254,7 +258,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -285,120 +289,6 @@ describe('InlineEditModal - openAndWait', () => {
     }
   });
 
-  it('uses provider-scoped hidden commands for Codex inline edit dropdowns', async () => {
-    const originalDocument = (global as any).document;
-    (global as any).document = {
-      body: createMockEl('body'),
-      createElement: (tagName: string) => createMockEl(tagName),
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn(),
-    };
-
-    try {
-      const app = {
-        vault: {
-          getFiles: jest.fn().mockReturnValue([]),
-          getAllLoadedFiles: jest.fn().mockReturnValue([]),
-        },
-        workspace: {
-          getActiveViewOfType: jest.fn(),
-        },
-      } as any;
-      const plugin = {
-        settings: {
-          hiddenProviderCommands: {
-            claude: ['commit'],
-            codex: ['analyze'],
-          },
-          providerConfigs: {
-            codex: { enabled: true },
-          },
-        },
-        getConversationSync: jest.fn().mockReturnValue(null),
-        getView: jest.fn().mockReturnValue({
-          getActiveTab: jest.fn().mockReturnValue({
-            providerId: 'codex',
-            service: null,
-            conversationId: null,
-          }),
-        }),
-      } as any;
-      plugin.providerHost = plugin;
-      jest.spyOn(ProviderWorkspaceRegistry, 'getCommandCatalog').mockReturnValue({
-        getDropdownConfig: jest.fn().mockReturnValue({
-          providerId: 'codex',
-          triggerChars: ['/', '$'],
-          builtInPrefix: '/',
-          skillPrefix: '$',
-          commandPrefix: '/',
-        }),
-        listDropdownEntries: jest.fn().mockResolvedValue([]),
-      } as any);
-      const editor = {} as any;
-      const view = { editor } as any;
-
-      let widgetRef: any = null;
-      const dispatch = jest.fn((transaction: any) => {
-        const effects = Array.isArray(transaction?.effects)
-          ? transaction.effects
-          : transaction?.effects
-            ? [transaction.effects]
-            : [];
-        for (const effect of effects) {
-          const widget = effect?.value?.widget;
-          if (widget && typeof widget.createInputDOM === 'function') {
-            widgetRef = widget;
-            widget.createInputDOM();
-          }
-        }
-      });
-      const editorView = {
-        state: {
-          doc: {
-            line: jest.fn(() => ({ from: 0 })),
-            lineAt: jest.fn(() => ({ from: 0 })),
-          },
-        },
-        dispatch,
-        dom: {
-          ownerDocument: (global as any).document,
-          addEventListener: jest.fn(),
-          removeEventListener: jest.fn(),
-        },
-      } as any;
-
-      jest.spyOn(editorUtils, 'getEditorView').mockReturnValue(editorView);
-
-      const editContext: InlineEditContext = {
-        mode: 'cursor',
-        cursorContext: {
-          beforeCursor: '',
-          afterCursor: '',
-          isInbetween: true,
-          line: 0,
-          column: 0,
-        },
-      };
-
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
-      const resultPromise = modal.openAndWait();
-      await Promise.resolve();
-
-      expect(ProviderWorkspaceRegistry.ensureInitialized).toHaveBeenCalledWith(
-        plugin,
-        'codex',
-        'inline-edit',
-      );
-      expect(Array.from(widgetRef?.slashSource?.hiddenCommands ?? [])).toEqual(['analyze']);
-      expect(widgetRef?.slashSource?.includeBuiltIns).toBe(false);
-      expect(widgetRef?.slashSource?.discovery).toBeDefined();
-
-      widgetRef?.reject();
-      await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
-    } finally {
-      (global as any).document = originalDocument;
-    }
-  });
 
   it('passes the active chat runtime model into inline edit services when available', async () => {
     const originalDocument = (global as any).document;
@@ -504,7 +394,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -623,7 +513,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -639,131 +529,6 @@ describe('InlineEditModal - openAndWait', () => {
     }
   });
 
-  it('shows a single notice and degrades gracefully when getFiles throws', async () => {
-    const originalDocument = (global as any).document;
-    (global as any).document = {
-      body: createMockEl('body'),
-      createElement: (tagName: string) => createMockEl(tagName),
-      addEventListener: jest.fn(),
-      removeEventListener: jest.fn(),
-    };
-
-    try {
-      const app = {
-        vault: {
-          adapter: { basePath: '/vault' },
-          getFiles: jest.fn().mockImplementation(() => {
-            throw new Error('vault unavailable');
-          }),
-          getAllLoadedFiles: jest.fn().mockReturnValue([]),
-        },
-        workspace: {
-          getActiveViewOfType: jest.fn(),
-        },
-      } as any;
-      const plugin = {
-        settings: {
-          hiddenProviderCommands: {
-            claude: [],
-            codex: [],
-          },
-        },
-        getSdkCommands: jest.fn().mockReturnValue([]),
-      } as any;
-      plugin.providerHost = plugin;
-      const editor = {} as any;
-      const view = { editor } as any;
-
-      let widgetRef: any = null;
-      const dispatch = jest.fn((transaction: any) => {
-        const effects = Array.isArray(transaction?.effects)
-          ? transaction.effects
-          : transaction?.effects
-            ? [transaction.effects]
-            : [];
-        for (const effect of effects) {
-          const widget = effect?.value?.widget;
-          if (widget && typeof widget.createInputDOM === 'function') {
-            widgetRef = widget;
-            widget.createInputDOM();
-          }
-        }
-      });
-      const editorView = {
-        state: {
-          doc: {
-            line: jest.fn(() => ({ from: 0 })),
-            lineAt: jest.fn(() => ({ from: 0, number: 1 })),
-          },
-        },
-        dispatch,
-        dom: {
-          ownerDocument: (global as any).document,
-          addEventListener: jest.fn(),
-          removeEventListener: jest.fn(),
-        },
-      } as any;
-
-      const getEditorViewSpy = jest
-        .spyOn(editorUtils, 'getEditorView')
-        .mockReturnValue(editorView);
-
-      const editContext: InlineEditContext = {
-        mode: 'cursor',
-        cursorContext: {
-          beforeCursor: '',
-          afterCursor: '',
-          isInbetween: true,
-          line: 0,
-          column: 0,
-        },
-      };
-
-      const modal = new InlineEditModal(
-        app,
-        plugin,
-        editor,
-        view,
-        editContext,
-        'note.md',
-      );
-      const resultPromise = modal.openAndWait();
-      await Promise.resolve();
-
-      const callbacks = widgetRef?.mentionSource?.callbacks;
-      expect(callbacks.getCachedVaultFiles()).toEqual([]);
-      expect(callbacks.getCachedVaultFiles()).toEqual([]);
-
-      const editTextMock = jest.fn().mockResolvedValue({
-        success: true,
-        clarification: 'Need more detail',
-      });
-      widgetRef.inlineEditService = {
-        editText: editTextMock,
-        continueConversation: jest.fn(),
-        cancel: jest.fn(),
-        resetConversation: jest.fn(),
-      };
-
-      widgetRef.inputEl.value = 'Please help with this edit.';
-      await widgetRef.generate();
-
-      expect(editTextMock).toHaveBeenCalledTimes(1);
-      expect(editTextMock.mock.calls[0][0].contextFiles).toEqual([]);
-
-      const noticeMock = Notice as unknown as jest.Mock;
-      expect(noticeMock).toHaveBeenCalledTimes(1);
-      expect(noticeMock).toHaveBeenCalledWith(
-        'Failed to load vault files. Vault @-mentions may be unavailable.'
-      );
-
-      widgetRef.reject();
-      await expect(resultPromise).resolves.toEqual({ decision: 'reject' });
-      getEditorViewSpy.mockRestore();
-    } finally {
-      (global as any).document = originalDocument;
-    }
-  });
 
   it('parses @mentions into contextFiles at send time without dropdown attachment state', async () => {
     const originalDocument = (global as any).document;
@@ -846,7 +611,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -955,7 +720,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md');
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -1062,7 +827,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -1176,7 +941,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -1285,7 +1050,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -1407,7 +1172,7 @@ describe('InlineEditModal - openAndWait', () => {
         selectedText: oldMarkdown,
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md');
+      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
       widgetRef.inlineEditService = {

@@ -101,8 +101,7 @@ function findForbiddenSymbolInventoryViolations(pattern, allowedOccurrences) {
   );
 }
 
-function listSourceImports(file) {
-  const sourceText = fs.readFileSync(file, 'utf8');
+function listSourceImports(file, sourceText = fs.readFileSync(file, 'utf8')) {
   const sourceFile = ts.createSourceFile(
     file,
     sourceText,
@@ -1032,4 +1031,46 @@ test('production bundle policy rejects plugin artifact filename references', () 
     inspectPluginArtifactReferences('writeFile("host-transfer-metadata.json")'),
     [],
   );
+});
+
+test('shared and utility modules do not depend on application or feature orchestration', () => {
+  assert.deepEqual(findResolvedImportViolations(
+    [path.join(sourceRoot, 'shared'), path.join(sourceRoot, 'utils')],
+    target => isPathWithin(target, appRoot) || isPathWithin(target, featuresRoot),
+  ), []);
+});
+
+test('runtime source imports are acyclic', () => {
+  const files = listTypeScriptFiles(sourceRoot).filter(file => !file.endsWith('.d.ts'));
+  const graph = new Map(files.map(file => {
+    // Check emitted imports: type dependencies do not form runtime cycles.
+    const emitted = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+      compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext },
+      fileName: file,
+    }).outputText;
+    return [file, listSourceImports(file, emitted)
+      .filter(entry => !entry.dynamic)
+      .map(entry => resolveTypeScriptImport(file, entry.specifier))
+      .filter(target => target && isPathWithin(target, sourceRoot))];
+  }));
+  const visited = new Set();
+  const active = new Set();
+  const stack = [];
+  const cycles = [];
+  function visit(file) {
+    if (active.has(file)) {
+      cycles.push([...stack.slice(stack.indexOf(file)), file]
+        .map(entry => normalizeRepositoryPath(path.relative(sourceRoot, entry))).join(' -> '));
+      return;
+    }
+    if (visited.has(file)) return;
+    visited.add(file);
+    active.add(file);
+    stack.push(file);
+    for (const dependency of graph.get(file) ?? []) visit(dependency);
+    stack.pop();
+    active.delete(file);
+  }
+  for (const file of files) visit(file);
+  assert.deepEqual(cycles, []);
 });

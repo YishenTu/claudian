@@ -1556,7 +1556,6 @@ export class InputController {
 
     // Mark as pending only when we're actually starting generation
     await plugin.updateConversation(state.currentConversationId, { titleGenerationStatus: 'pending' });
-    conversationController.updateHistoryDropdown();
 
     const convId = state.currentConversationId;
     const expectedTitle = fallbackTitle; // Store to check if user renamed during generation
@@ -1582,7 +1581,6 @@ export class InputController {
           // User manually renamed, clear the status (user's choice takes precedence)
           await plugin.updateConversation(conversationId, { titleGenerationStatus: undefined });
         }
-        conversationController.updateHistoryDropdown();
       }
     ).catch(() => {
       // Silently ignore title generation errors

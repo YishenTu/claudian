@@ -19,7 +19,8 @@ const GROK_PROVIDER_STATE_KEYS = [
 ] as const;
 
 export class GrokConversationHistoryService implements ProviderConversationHistoryService {
-  private readonly hydratedKeys = new Map<string, string>();
+  // A discarded repository draft must not mark another projection hydrated.
+  private readonly hydratedKeys = new WeakMap<Conversation, string>();
 
   async hydrateConversationHistory(
     conversation: Conversation,
@@ -29,7 +30,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
     const state = parseGrokProviderState(conversation.providerState);
     if (this.isPendingForkConversation(conversation)) {
       if (!pathContext) {
-        this.hydratedKeys.delete(conversation.id);
+        this.hydratedKeys.delete(conversation);
         return;
       }
       const forkSource = state.forkSource!;
@@ -51,7 +52,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
       }
       if (conversation.messages.length > 0) return;
       if (!sourceSessionDirectory) {
-        this.hydratedKeys.delete(conversation.id);
+        this.hydratedKeys.delete(conversation);
         return;
       }
       const hydrationKey = `fork::${sourceSessionDirectory}::${forkSource.resumeAt}`;
@@ -60,17 +61,17 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
         message.role === 'assistant' && message.assistantMessageId === forkSource.resumeAt
       ));
       if (checkpointIndex < 0) {
-        this.hydratedKeys.delete(conversation.id);
+        this.hydratedKeys.delete(conversation);
         return;
       }
       conversation.messages = parsed.messages.slice(0, checkpointIndex + 1);
-      this.hydratedKeys.set(conversation.id, hydrationKey);
+      this.hydratedKeys.set(conversation, hydrationKey);
       return;
     }
 
     const sessionId = conversation.sessionId;
     if (!sessionId || !pathContext) {
-      this.hydratedKeys.delete(conversation.id);
+      this.hydratedKeys.delete(conversation);
       return;
     }
     const sessionDirectory = resolveGrokSessionDirectory(
@@ -90,20 +91,20 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
       );
     }
     if (!sessionDirectory) {
-      this.hydratedKeys.delete(conversation.id);
+      this.hydratedKeys.delete(conversation);
       return;
     }
 
     const hydrationKey = `${sessionId}::${sessionDirectory}`;
     if (
       conversation.messages.length > 0
-      && this.hydratedKeys.get(conversation.id) === hydrationKey
+      && this.hydratedKeys.get(conversation) === hydrationKey
     ) {
       return;
     }
     const parsed = await loadGrokHistory(sessionDirectory, sessionId);
     if (parsed.messages.length === 0) {
-      this.hydratedKeys.delete(conversation.id);
+      this.hydratedKeys.delete(conversation);
       return;
     }
     conversation.messages = parsed.messages;
@@ -118,7 +119,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
         }) as Record<string, unknown> | undefined,
       );
     }
-    this.hydratedKeys.set(conversation.id, hydrationKey);
+    this.hydratedKeys.set(conversation, hydrationKey);
   }
 
   resolveSessionIdForConversation(conversation: Conversation | null): string | null {
@@ -145,7 +146,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
     conversation.providerState = Object.keys(providerState).length > 0
       ? providerState
       : undefined;
-    this.hydratedKeys.delete(conversation.id);
+    this.hydratedKeys.delete(conversation);
     return 'reset';
   }
 

@@ -416,6 +416,10 @@ export interface ProviderWorkspaceRegistration<
   initialize(context: ProviderWorkspaceInitContext): Promise<TServices>;
 }
 
+/**
+ * Mutation callbacks receive a detached repository-owned draft. Only the repository
+ * may publish its history/session fields after validating the captured binding.
+ */
 export interface ProviderConversationHistoryService {
   /** Whether this conversation still references native history worth model recovery. */
   hasConversationModelRecoverySource?(conversation: Conversation): boolean;

@@ -11,7 +11,7 @@ import type {
 import { PiCommandCatalog } from '../commands/PiCommandCatalog';
 import { PiCommandMetadataProbe } from '../execution/PiCommandMetadataProbe';
 import { PiCliResolver } from '../runtime/PiCliResolver';
-import { piSettingsTabRenderer } from '../ui/PiSettingsTab';
+import { createPiSettingsTabRenderer } from '../ui/PiSettingsTab';
 import { PiCommandLoader } from './PiCommandLoader';
 
 export interface PiWorkspaceServices extends ProviderWorkspaceServices {
@@ -50,11 +50,12 @@ export async function createPiWorkspaceServices(
       },
     });
 
+  const cliResolver = new PiCliResolver();
   return {
-    cliResolver: new PiCliResolver(),
+    cliResolver,
     commandCatalog: new PiCommandCatalog(),
     commandLoader: new PiCommandLoader(commandMetadataProbe),
-    settingsTabRenderer: piSettingsTabRenderer,
+    settingsTabRenderer: createPiSettingsTabRenderer({ cliResolver }),
     tabWarmupPolicy: piTabWarmupPolicy,
     async dispose() {
       unregisterTransitionHook();

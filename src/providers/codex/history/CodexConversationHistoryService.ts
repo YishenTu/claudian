@@ -55,7 +55,8 @@ async function readSessionModel(
 }
 
 export class CodexConversationHistoryService implements ProviderConversationHistoryService {
-  private hydratedConversationPaths = new Map<string, string>();
+  // A discarded repository draft must not mark another projection hydrated.
+  private hydratedConversationPaths = new WeakMap<Conversation, string>();
 
   hasConversationModelRecoverySource(conversation: Conversation): boolean {
     const state = getCodexState(conversation.providerState);
@@ -167,7 +168,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
       const resumeAt = state.forkSource!.resumeAt;
       const truncated = this.#truncateTurnsAtCheckpoint(turns, resumeAt);
       if (!truncated) {
-        this.hydratedConversationPaths.delete(conversation.id);
+        this.hydratedConversationPaths.delete(conversation);
         return;
       }
       conversation.messages = truncated.flatMap(t => t.messages);
@@ -201,7 +202,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         const resumeAt = state.forkSource.resumeAt;
         const sourcePrefix = this.#truncateTurnsAtCheckpoint(sourceTurns, resumeAt);
         if (!sourcePrefix) {
-          this.hydratedConversationPaths.delete(conversation.id);
+          this.hydratedConversationPaths.delete(conversation);
           return;
         }
         const sourceTurnIds = new Set(sourceTurns.map(t => t.turnId).filter(Boolean));
@@ -213,12 +214,12 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         ];
 
         if (messages.length === 0) {
-          this.hydratedConversationPaths.delete(conversation.id);
+          this.hydratedConversationPaths.delete(conversation);
           return;
         }
 
         conversation.messages = messages;
-        this.hydratedConversationPaths.set(conversation.id, `fork::${state.threadId}`);
+        this.hydratedConversationPaths.set(conversation, `fork::${state.threadId}`);
         this.#markNativeConversationContextEstablished(conversation);
         return;
       }
@@ -242,14 +243,14 @@ export class CodexConversationHistoryService implements ProviderConversationHist
       ?? deriveCodexSessionsRootFromSessionPath(sessionFilePath);
 
     if (!sessionFilePath) {
-      this.hydratedConversationPaths.delete(conversation.id);
+      this.hydratedConversationPaths.delete(conversation);
       return;
     }
 
     const hydrationKey = `${threadId ?? ''}::${sessionFilePath}`;
     if (
       conversation.messages.length > 0
-      && this.hydratedConversationPaths.get(conversation.id) === hydrationKey
+      && this.hydratedConversationPaths.get(conversation) === hydrationKey
     ) {
       this.#markNativeConversationContextEstablished(conversation);
       return;
@@ -272,12 +273,12 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
     const sdkMessages = await parseCodexSessionFileAsync(sessionFilePath);
     if (sdkMessages.length === 0) {
-      this.hydratedConversationPaths.delete(conversation.id);
+      this.hydratedConversationPaths.delete(conversation);
       return;
     }
 
     conversation.messages = sdkMessages;
-    this.hydratedConversationPaths.set(conversation.id, hydrationKey);
+    this.hydratedConversationPaths.set(conversation, hydrationKey);
     this.#markNativeConversationContextEstablished(conversation);
   }
 
@@ -320,7 +321,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     conversation.providerState = Object.keys(providerState).length > 0
       ? providerState
       : undefined;
-    this.hydratedConversationPaths.delete(conversation.id);
+    this.hydratedConversationPaths.delete(conversation);
     return 'reset';
   }
 

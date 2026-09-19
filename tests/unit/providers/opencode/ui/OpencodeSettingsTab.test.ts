@@ -7,7 +7,7 @@ import {
   getOpencodeProviderSettings,
   OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
 } from '@/providers/opencode/settings';
-import { opencodeSettingsTabRenderer } from '@/providers/opencode/ui/OpencodeSettingsTab';
+import { createOpencodeSettingsTabRenderer } from '@/providers/opencode/ui/OpencodeSettingsTab';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
@@ -104,8 +104,8 @@ jest.mock('@/providers/opencode/ui/OpencodeAgentSettings', () => ({
   },
 }));
 
-jest.mock('@/providers/opencode/app/OpencodeWorkspaceServices', () => ({
-  maybeGetOpencodeWorkspaceServices: jest.fn(() => ({
+function createSettingsRenderer() {
+  return createOpencodeSettingsTabRenderer({
     agentStorage: mockAgentStorage,
     cliResolver: {
       reset: mockCliResolverReset,
@@ -114,8 +114,8 @@ jest.mock('@/providers/opencode/app/OpencodeWorkspaceServices', () => ({
       loadCatalog: mockMetadataLoadCatalog,
       warmModelMetadata: mockMetadataWarmModel,
     },
-  })),
-}));
+  } as unknown as Parameters<typeof createOpencodeSettingsTabRenderer>[0]);
+}
 
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'),
@@ -466,7 +466,7 @@ describe('OpencodeSettingsTab', () => {
     };
     const plugin = createPlugin();
     Object.assign(plugin.settings.providerConfigs.opencode, config);
-    opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     const input = findSetting('CLI path').textComponents[0];
     expect(input.value).toBe(hasHostOverride ? '/host/opencode' : '/legacy/opencode');
     await applyTextInput(input, '');
@@ -478,7 +478,7 @@ describe('OpencodeSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
-    opencodeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
     const enableSetting = findSetting('Enable OpenCode');
     await enableSetting.toggleComponents[0].onChangeCallback?.(false);
 
@@ -511,7 +511,7 @@ describe('OpencodeSettingsTab', () => {
     });
     const context = createContext(plugin);
 
-    opencodeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
     const toggle = findSetting('Enable OpenCode').toggleComponents[0];
     await flushPromises();
     mockMetadataLoadCatalog.mockClear();
@@ -547,7 +547,7 @@ describe('OpencodeSettingsTab', () => {
       });
       const context = createContext(plugin);
 
-      opencodeSettingsTabRenderer.render(createContainer(), context);
+      createSettingsRenderer().render(createContainer(), context);
       const toggle = findSetting('Enable OpenCode').toggleComponents[0];
       toggle.value = false;
       toggle.setValue.mockClear();
@@ -577,7 +577,7 @@ describe('OpencodeSettingsTab', () => {
       await plugin.saveSettings();
     });
 
-    opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
     await applyTextInput(findSetting('CLI path').textComponents[0], '"/my tools/opencode"');
 
     expect(plugin.settings.providerConfigs.opencode.cliPathsByHost).toEqual({
@@ -612,7 +612,7 @@ describe('OpencodeSettingsTab', () => {
       expect(transitionActive).toBe(true);
     });
 
-    opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     const cliPathSetting = findSetting('CLI path');
     await applyTextInput(cliPathSetting.textComponents[0], '/custom/opencode');
@@ -637,7 +637,7 @@ describe('OpencodeSettingsTab', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
-    opencodeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     expect(findSetting('Skills').heading).toBe(true);
     expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
@@ -657,7 +657,7 @@ describe('OpencodeSettingsTab', () => {
   it('reloads native subagents inside an execution transition', async () => {
     const plugin = createPlugin();
 
-    opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     expect(findSetting('Subagents').heading).toBe(true);
     expect(createdElements).toContainEqual({
@@ -680,7 +680,7 @@ describe('OpencodeSettingsTab', () => {
   it('passes the default Exa env var into the environment section copy', () => {
     const plugin = createPlugin();
 
-    opencodeSettingsTabRenderer.render(createContainer(), createContext(plugin));
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     expect(mockRenderEnvironmentSettingsSection).toHaveBeenCalledWith(expect.objectContaining({
       desc: expect.stringContaining(OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES),
@@ -713,7 +713,7 @@ describe('OpencodeSettingsTab', () => {
     });
     const context = createContext(plugin);
 
-    opencodeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const catalogEl = findElement('details', 'claudian-provider-model-picker-catalog');
     catalogEl.open = true;
@@ -749,7 +749,7 @@ describe('OpencodeSettingsTab', () => {
     });
     const context = createContext(plugin);
 
-    opencodeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
     await Promise.resolve();
     await Promise.resolve();
 
@@ -782,7 +782,7 @@ describe('OpencodeSettingsTab', () => {
     });
     const context = createContext(plugin);
 
-    opencodeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
     await Promise.resolve();
     await Promise.resolve();
 
@@ -812,7 +812,7 @@ describe('OpencodeSettingsTab', () => {
     });
     const context = createContext(plugin);
 
-    opencodeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const checkboxEl = createdDomElements.find((element) => element.type === 'checkbox');
     if (!checkboxEl) {
@@ -846,7 +846,7 @@ describe('OpencodeSettingsTab', () => {
     });
     const context = createContext(plugin);
 
-    opencodeSettingsTabRenderer.render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), context);
 
     const aliasInput = findElement('input', 'claudian-provider-model-picker-selected-alias');
     aliasInput.value = 'V4 Pro';

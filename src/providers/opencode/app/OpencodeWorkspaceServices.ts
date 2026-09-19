@@ -11,7 +11,7 @@ import { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import { OpencodeCliResolver } from '../runtime/OpencodeCliResolver';
 import { OpencodeAgentStorage } from '../storage/OpencodeAgentStorage';
-import { opencodeSettingsTabRenderer } from '../ui/OpencodeSettingsTab';
+import { createOpencodeSettingsTabRenderer } from '../ui/OpencodeSettingsTab';
 import { OpencodeCommandLoader } from './OpencodeCommandLoader';
 
 export interface OpencodeWorkspaceServices extends ProviderWorkspaceServices {
@@ -34,13 +34,14 @@ export async function createOpencodeWorkspaceServices(
   const commandCatalog = new OpencodeCommandCatalog();
   const metadataService = new OpencodeMetadataService(plugin, { commandCatalog });
 
+  const cliResolver = new OpencodeCliResolver();
   return {
     agentStorage,
     commandCatalog,
-    cliResolver: new OpencodeCliResolver(),
+    cliResolver,
     metadataService,
     commandLoader: new OpencodeCommandLoader(metadataService),
-    settingsTabRenderer: opencodeSettingsTabRenderer,
+    settingsTabRenderer: createOpencodeSettingsTabRenderer({ cliResolver, agentStorage, metadataService }),
     tabWarmupPolicy: opencodeTabWarmupPolicy,
     dispose: async () => metadataService.dispose(),
   };

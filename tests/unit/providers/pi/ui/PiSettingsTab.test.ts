@@ -129,13 +129,13 @@ jest.mock('obsidian', () => ({
 jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
-jest.mock('@/providers/pi/app/PiWorkspaceServices', () => ({
-  maybeGetPiWorkspaceServices: jest.fn(() => ({
+function createSettingsRenderer() {
+  return createPiSettingsTabRenderer({
     cliResolver: {
       reset: mockCliResolverReset,
     },
-  })),
-}));
+  } as unknown as Parameters<typeof createPiSettingsTabRenderer>[0]);
+}
 jest.mock('@/providers/pi/runtime/PiModelDiscoveryService', () => ({
   PiModelDiscoveryService: jest.fn().mockImplementation(() => ({
     discoverModels: mockDiscoverModels,
@@ -147,7 +147,7 @@ jest.mock('@/utils/env', () => ({
 }));
 
 import { getPiProviderSettings } from '@/providers/pi/settings';
-import { piSettingsTabRenderer } from '@/providers/pi/ui/PiSettingsTab';
+import { createPiSettingsTabRenderer } from '@/providers/pi/ui/PiSettingsTab';
 
 const createdSettings: MockSetting[] = [];
 const createdDomElements: any[] = [];
@@ -377,7 +377,7 @@ function createContext(settings: Record<string, unknown>) {
 
 function render(settings: Record<string, unknown>) {
   const context = createContext(settings);
-  piSettingsTabRenderer.render(createElement(), context as any);
+  createSettingsRenderer().render(createElement(), context as any);
   return context;
 }
 

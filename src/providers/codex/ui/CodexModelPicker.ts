@@ -8,11 +8,11 @@ import {
   type ProviderModelPickerState,
   renderProviderModelPicker,
 } from '../../../shared/settings/ProviderModelPicker';
-import type { CodexWorkspaceServices } from '../app/CodexWorkspaceServices';
 import {
   getCodexModelsInPickerOrder,
   isCodexModelAvailable,
 } from '../models';
+import type { CodexModelCatalogCoordinator } from '../runtime/CodexModelCatalogCoordinator';
 import {
   createCodexVisibleModelFilter,
   getCodexProviderSettings,
@@ -30,7 +30,7 @@ function sameVisibleModels(left: string[] | null, right: string[] | null): boole
 export function renderCodexModelPicker(
   container: HTMLElement,
   context: ProviderSettingsTabRendererContext,
-  workspace: CodexWorkspaceServices,
+  workspace: { modelCatalogCoordinator: Pick<CodexModelCatalogCoordinator, 'ensureFresh'> },
 ): ProviderModelPickerController {
   const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
 
