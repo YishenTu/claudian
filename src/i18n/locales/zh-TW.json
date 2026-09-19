@@ -645,7 +645,7 @@
     "safety": "安全",
     "loadUserSettings": {
       "name": "載入使用者 Claude 設定",
-      "desc": "載入 ~/.claude/settings.json。啟用後，使用者的 Claude Code 權限規則可能繞過安全模式。"
+      "desc": "從 ~/.claude 載入使用者層級 Claude Code 設定：settings.json、技能、指令、代理程式和外掛。停用時僅能使用儲存庫層級設定。啟用後，使用者的權限規則可能繞過安全模式。"
     },
     "claudeSafeMode": {
       "name": "安全模式",

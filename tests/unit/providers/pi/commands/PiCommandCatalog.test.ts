@@ -64,6 +64,7 @@ describe('PiCommandCatalog', () => {
     expect(catalog.getDropdownConfig()).toEqual({
       builtInPrefix: '/',
       commandPrefix: '/',
+      discoveryTimeoutMs: 'provider-owned',
       providerId: 'pi',
       skillPrefix: '/',
       triggerChars: ['/'],

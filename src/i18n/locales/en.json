@@ -645,7 +645,7 @@
     "safety": "Safety",
     "loadUserSettings": {
       "name": "Load user Claude settings",
-      "desc": "Load ~/.claude/settings.json. When enabled, user's Claude Code permission rules may bypass Safe mode."
+      "desc": "Load user-level Claude Code configuration from ~/.claude: settings.json, skills, commands, agents, and plugins. When disabled, only vault-level configuration is available. When enabled, user permission rules may bypass Safe mode."
     },
     "claudeSafeMode": {
       "name": "Safe mode",

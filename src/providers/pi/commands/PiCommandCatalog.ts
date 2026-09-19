@@ -33,6 +33,8 @@ export class PiCommandCatalog extends RuntimeCommandCatalog {
       dropdownConfig: {
         builtInPrefix: '/',
         commandPrefix: '/',
+        // Discovery chains internal step bounds with fallbacks.
+        discoveryTimeoutMs: 'provider-owned',
         providerId: 'pi',
         skillPrefix: '/',
         triggerChars: ['/'],

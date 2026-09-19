@@ -61,6 +61,9 @@ const BUILTIN_HIDDEN_COMMANDS = new Set([
   'insights', 'loop', 'schedule', 'security-review', 'simplify', 'update-config',
 ]);
 
+// A cold CLI start plus capped MCP startup can exceed the shared picker deadline.
+const CLAUDE_COMMAND_DISCOVERY_TIMEOUT_MS = 30_000;
+
 export type CommandProbe = (signal?: AbortSignal) => Promise<SlashCommand[]>;
 
 interface ActiveCommandProbe {
@@ -108,13 +111,9 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
           : probedCommands;
       }
     }
-    const runtimeEntries = commands
+    return commands
       .filter(cmd => !BUILTIN_HIDDEN_COMMANDS.has(cmd.name.toLowerCase()))
       .map(slashCommandToEntry);
-    if (context.commandSnapshot !== undefined || runtimeEntries.length > 0) {
-      return runtimeEntries;
-    }
-    return this.listVaultEntries(context.signal);
   }
 
   /** Probe the SDK for commands. Deduplicates concurrent calls. */
@@ -156,11 +155,11 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
       if (this.disposed || generation !== this.cacheGeneration) return [];
       this.probedCommands = commands.map(command => ({ ...command }));
       return this.probedCommands;
-    } catch {
+    } catch (error) {
       signal?.throwIfAborted();
       if (this.disposed || generation !== this.cacheGeneration) return [];
-      this.probedCommands = [];
-      return this.probedCommands;
+      // Failures stay uncached so a retry re-probes.
+      throw error;
     } finally {
       signal?.removeEventListener('abort', onAbort);
       this.activeProbes.delete(entry);
@@ -201,6 +200,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
       builtInPrefix: '/',
       skillPrefix: '/',
       commandPrefix: '/',
+      discoveryTimeoutMs: CLAUDE_COMMAND_DISCOVERY_TIMEOUT_MS,
     };
   }
 

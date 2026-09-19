@@ -645,7 +645,7 @@
     "safety": "セキュリティ",
     "loadUserSettings": {
       "name": "ユーザーClaude設定を読み込む",
-      "desc": "~/.claude/settings.json を読み込みます。有効にすると、ユーザーの Claude Code 許可ルールがセキュリティモードをバイパスする可能性があります。"
+      "desc": "~/.claude からユーザーレベルの Claude Code 設定（settings.json、スキル、コマンド、エージェント、プラグイン）を読み込みます。無効にすると、Vault レベルの設定のみ利用できます。有効にすると、ユーザーの許可ルールがセキュリティモードをバイパスする可能性があります。"
     },
     "claudeSafeMode": {
       "name": "セーフモード",

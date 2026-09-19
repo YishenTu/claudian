@@ -645,7 +645,7 @@
     "safety": "安全",
     "loadUserSettings": {
       "name": "加载用户 Claude 设置",
-      "desc": "加载 ~/.claude/settings.json。启用后，用户的 Claude Code 权限规则可能绕过安全模式。"
+      "desc": "从 ~/.claude 加载用户级 Claude Code 配置：settings.json、技能、命令、智能体和插件。禁用时仅可使用仓库级配置。启用后，用户的权限规则可能绕过安全模式。"
     },
     "claudeSafeMode": {
       "name": "安全模式",

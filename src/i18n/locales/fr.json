@@ -645,7 +645,7 @@
     "safety": "Sécurité",
     "loadUserSettings": {
       "name": "Charger les paramètres utilisateur Claude",
-      "desc": "Charge ~/.claude/settings.json. Lorsqu'activé, les règles de permission de l'utilisateur peuvent contourner le mode sécurisé."
+      "desc": "Charge la configuration Claude Code au niveau utilisateur depuis ~/.claude : settings.json, skills, commandes, agents et plugins. Lorsque désactivé, seule la configuration au niveau du coffre est disponible. Lorsqu'activé, les règles de permission de l'utilisateur peuvent contourner le mode sécurisé."
     },
     "claudeSafeMode": {
       "name": "Mode sécurisé",

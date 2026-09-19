@@ -84,6 +84,7 @@ describe('OpencodeCommandCatalog', () => {
       builtInPrefix: '/',
       skillPrefix: '/',
       commandPrefix: '/',
+      discoveryTimeoutMs: 'provider-owned',
     });
     expect('listVaultEntries' in catalog).toBe(false);
     expect('saveVaultEntry' in catalog).toBe(false);

@@ -120,12 +120,8 @@ describe('ClaudeCommandCatalog', () => {
       expect(entries[0].scope).toBe('runtime');
     });
 
-    it('falls back to vault commands and skills when SDK discovery is empty', async () => {
+    it('reports a failed probe and probes again on the next request', async () => {
       const adapter = createMockAdapter({
-        '.claude/commands/review.md': `---
-description: Review code
----
-Review this code`,
         '.claude/skills/deploy/SKILL.md': `---
 description: Deploy app
 ---
@@ -133,15 +129,21 @@ Deploy the app`,
       });
       const commands = new SlashCommandStorage(adapter);
       const skills = new SkillStorage(adapter);
-      const probe = jest.fn().mockResolvedValue([]);
+      const probe = jest.fn()
+        .mockRejectedValueOnce(new Error('Claude CLI exited'))
+        .mockResolvedValueOnce([
+          { id: 'sdk:user-skill', name: 'user-skill', description: 'User skill', content: '', source: 'sdk' },
+        ]);
       const catalog = new ClaudeCommandCatalog(commands, skills, probe);
 
-      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
-
-      expect(probe).toHaveBeenCalledTimes(1);
-      expect(entries).toHaveLength(2);
-      expect(entries.map(entry => entry.name).sort()).toEqual(['deploy', 'review']);
-      expect(entries.every(entry => entry.scope === 'vault')).toBe(true);
+      await expect(
+        catalog.listDropdownEntries({ includeBuiltIns: false }),
+      ).rejects.toThrow('Claude CLI exited');
+      await expect(
+        catalog.listDropdownEntries({ includeBuiltIns: false }),
+      ).resolves.toEqual([
+        expect.objectContaining({ name: 'user-skill', scope: 'runtime' }),
+      ]);
     });
 
     it('does not probe when runtime commands are cached', async () => {

@@ -1,7 +1,8 @@
+import { resolveCommandDiscoveryTimeoutMs } from '@/core/providers/commands/catalogCommandDiscovery';
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import { ProviderCommandDiscoveryStore } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import { PI_PROVIDER_CAPABILITIES } from '@/providers/pi/capabilities';
+import { PiCommandCatalog } from '@/providers/pi/commands/PiCommandCatalog';
 import { PiCommandMetadataProbe } from '@/providers/pi/execution/PiCommandMetadataProbe';
 
 class Deferred<T> {
@@ -154,10 +155,9 @@ describe('PiCommandMetadataProbe', () => {
           };
         },
         {
-          resolveTimeoutMs: () => PI_PROVIDER_CAPABILITIES.commandDiscoveryDeadline
-            === 'provider-owned'
-            ? null
-            : undefined,
+          resolveTimeoutMs: () => resolveCommandDiscoveryTimeoutMs(
+            new PiCommandCatalog().getDropdownConfig(),
+          ),
         },
       );
 

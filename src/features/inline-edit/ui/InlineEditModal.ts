@@ -4,9 +4,8 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { App, Component, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
+import { createCatalogCommandDiscoveryStore } from '../../../core/providers/commands/catalogCommandDiscovery';
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
-import { normalizeProviderCommandDiscoveryItems } from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
-import { ProviderCommandDiscoveryStore } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -545,14 +544,7 @@ export class InlineEditSession {
       hiddenCommands: getHiddenProviderCommandSet(this.plugin.settings, this.resolvedProviderId),
       ...(inlineCatalog ? {
         providerConfig: inlineCatalog.getDropdownConfig(),
-        providerDiscovery: new ProviderCommandDiscoveryStore(async signal =>
-          normalizeProviderCommandDiscoveryItems(
-            await inlineCatalog.listDropdownEntries({
-              includeBuiltIns: false,
-              signal,
-            }),
-          ),
-        ),
+        providerDiscovery: createCatalogCommandDiscoveryStore(inlineCatalog),
       } : {}),
     });
     this.mentionSource = new MentionSource({

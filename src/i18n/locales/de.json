@@ -645,7 +645,7 @@
     "safety": "Sicherheit",
     "loadUserSettings": {
       "name": "Benutzer-Claude-Einstellungen laden",
-      "desc": "Lädt ~/.claude/settings.json. Wenn aktiviert, können Benutzer-Claude-Code-Berechtigungsregeln den Sicherheitsmodus umgehen."
+      "desc": "Lädt die Claude-Code-Konfiguration auf Benutzerebene aus ~/.claude: settings.json, Skills, Befehle, Agenten und Plugins. Wenn deaktiviert, ist nur die Konfiguration auf Vault-Ebene verfügbar. Wenn aktiviert, können Benutzer-Berechtigungsregeln den Sicherheitsmodus umgehen."
     },
     "claudeSafeMode": {
       "name": "Sicherheitsmodus",

@@ -1788,7 +1788,9 @@ describe('TabManager provider execution orchestration', () => {
     (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
       providerId: 'opencode',
       supportsProviderCommands: true,
-      commandDiscoveryDeadline: 'provider-owned',
+    });
+    commandCatalog.getDropdownConfig.mockReturnValue({
+      discoveryTimeoutMs: 'provider-owned',
     });
     const { manager } = createManager();
 

@@ -8,6 +8,11 @@ export interface ProviderCommandDropdownConfig {
   builtInPrefix: string;
   skillPrefix: string;
   commandPrefix: string;
+  /**
+   * Discovery deadline in milliseconds. Omitted uses the shared picker deadline;
+   * 'provider-owned' means the provider bounds discovery itself.
+   */
+  discoveryTimeoutMs?: number | 'provider-owned';
 }
 
 export interface ProviderCommandListContext {

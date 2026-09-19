@@ -645,7 +645,7 @@
     "safety": "보안",
     "loadUserSettings": {
       "name": "사용자 Claude 설정 로드",
-      "desc": "~/.claude/settings.json을 로드합니다. 활성화하면 사용자의 Claude Code 허용 규칙이 보안 모드를 우회할 수 있습니다."
+      "desc": "~/.claude에서 사용자 수준 Claude Code 구성(settings.json, 스킬, 명령, 에이전트, 플러그인)을 로드합니다. 비활성화하면 Vault 수준 구성만 사용할 수 있습니다. 활성화하면 사용자의 허용 규칙이 보안 모드를 우회할 수 있습니다."
     },
     "claudeSafeMode": {
       "name": "안전 모드",
