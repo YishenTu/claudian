@@ -92,8 +92,8 @@ options. Unknown inputs or an unavailable base retain full coverage. This does n
 replace typecheck, lint, build/performance checks or native checks on other platforms.
 
 Full Linux CI verification uses two Jest shards, with script checks on the first
-shard. Affected selections use one job. Both shards must pass the aggregate test
-gate, and each uploads its own timing artifact. Sharding uses more runner capacity
+shard. Affected selections use one job. Each Linux test job uses three workers.
+Both shards must pass the aggregate test gate, and each uploads its own timing artifact. Sharding uses more runner capacity
 to reduce elapsed time; compare runner minutes as well as wall time.
 
 JSON Jest runs also produce suite timings and execution metadata. CI uploads these
@@ -104,7 +104,7 @@ npm run test:cross-platform-collab -- --maxWorkers=2 --json --outputFile=.contex
 node scripts/summarize-jest-results.mjs .context/native.json .context/native-timings
 ```
 
-CI runs native smoke with three workers on macOS and two on Windows. The local wrapper
+CI runs native smoke with three workers on both macOS and Windows. The local wrapper
 remains serial unless a worker count is supplied. Compare the same selection and
 commit, including fixture setup/teardown, and report elapsed time separately from
 summed suite durations. Recheck timings on the actual CI runners before increasing
