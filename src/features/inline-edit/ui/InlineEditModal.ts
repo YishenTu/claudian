@@ -27,6 +27,8 @@ import { type CursorContext, getEditorView } from '../../../utils/editor';
 import { normalizeInsertionText } from '../../../utils/inlineEdit';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
+import type { InlineEditSessionOwner } from '../InlineEditSessionOwner';
+import { onInlineEditEditorDestroyed } from './InlineEditEditorLifetime';
 import { renderInlineEditMarkdownPreview } from './inlineEditMarkdownPreview';
 
 type InlineEditHost = FeatureHost & Component;
@@ -56,21 +58,15 @@ const showInsertion = StateEffect.define<{
 }>();
 const hideInlineEdit = StateEffect.define<null>();
 
-let activeController: InlineEditSession | null = null;
-
-function rejectActiveController(): boolean {
-  const controller = activeController;
-  if (!controller) return false;
-  controller.reject();
-  return true;
-}
-
 class InputWidget extends WidgetType {
   constructor(private controller: InlineEditSession) {
     super();
   }
   toDOM(): HTMLElement {
     return this.controller.createInputDOM();
+  }
+  destroy(dom: HTMLElement): void {
+    this.controller.destroyInputDOM(dom);
   }
   eq(): boolean {
     return false;
@@ -296,8 +292,6 @@ function resolveInlineEditProviderContext(plugin: InlineEditHost): InlineEditPro
 }
 
 export class InlineEditModal {
-  private controller: InlineEditSession | null = null;
-
   constructor(
     private app: App,
     private plugin: InlineEditHost,
@@ -305,13 +299,10 @@ export class InlineEditModal {
     private view: MarkdownView,
     private editContext: InlineEditContext,
     private notePath: string,
+    private readonly owner: InlineEditSessionOwner,
   ) {}
 
   async openAndWait(): Promise<{ decision: InlineEditDecision; editedText?: string }> {
-    if (rejectActiveController()) {
-      return { decision: 'reject' };
-    }
-
     // Use the editor/view provided by Obsidian's editorCallback.
     // This avoids timing issues during leaf/view transitions (e.g., navigating via Search in the same tab).
     let editor = this.editor;
@@ -329,34 +320,55 @@ export class InlineEditModal {
     }
 
     const providerContext = resolveInlineEditProviderContext(this.plugin);
-    try {
-      await ProviderWorkspaceRegistry.ensureInitialized(
+    return new Promise((resolve) => {
+      let settled = false;
+      let session: InlineEditSession | null = null;
+      let releaseOwner: (() => void) | null = null;
+      let releaseEditor: (() => void) | null = null;
+      const finish = (result: { decision: InlineEditDecision; editedText?: string }) => {
+        if (settled) return;
+        settled = true;
+        releaseEditor?.();
+        releaseOwner?.();
+        resolve(result);
+      };
+      const close = () => {
+        try {
+          session?.close();
+        } finally {
+          finish({ decision: 'reject' });
+        }
+      };
+      releaseOwner = this.owner.claim(close);
+      if (!releaseOwner) {
+        finish({ decision: 'reject' });
+        return;
+      }
+      releaseEditor = onInlineEditEditorDestroyed(editorView, close);
+      void ProviderWorkspaceRegistry.ensureInitialized(
         this.plugin.providerHost,
         providerContext.providerId,
         'inline-edit',
-      );
-    } catch {
-      new Notice(`Inline edit unavailable: failed to initialize the ${providerContext.providerId} provider.`);
-      return { decision: 'reject' };
-    }
-
-    if (rejectActiveController()) {
-      return { decision: 'reject' };
-    }
-
-    return new Promise((resolve) => {
-      this.controller = new InlineEditSession(
-        this.app,
-        this.plugin,
-        editorView,
-        editor,
-        this.editContext,
-        this.notePath,
-        resolve,
-        providerContext,
-      );
-      activeController = this.controller;
-      this.controller.show();
+      ).then(() => {
+        if (settled) return;
+        session = new InlineEditSession(
+          this.app,
+          this.plugin,
+          editorView,
+          editor,
+          this.editContext,
+          this.notePath,
+          finish,
+          providerContext,
+        );
+        releaseEditor?.();
+        releaseEditor = null;
+        session.show();
+      }).catch(() => {
+        if (settled) return;
+        new Notice(`Inline edit unavailable: failed to start the ${providerContext.providerId} provider.`);
+        close();
+      });
     });
   }
 }
@@ -378,15 +390,23 @@ export class InlineEditSession {
   private escHandler: ((e: KeyboardEvent) => void) | null = null;
   private selectionListener: ((e: Event) => void) | null = null;
   private isConversing = false;
+  private generating = false;
+  private instructionDraft = '';
+  private inputPlaceholder: string | null = null;
+  private replyMarkdown: string | null = null;
   private resolvedProviderId: ProviderId;
-  private composerDropdown: ComposerDropdownController | null = null;
-  private mentionSource: MentionSource | null = null;
-  private slashSource: SlashCommandSource | null = null;
+  private inputResources: {
+    container: HTMLElement;
+    dropdown: ComposerDropdownController;
+    dispose(): void;
+  } | null = null;
   private mentionDataProvider: VaultMentionDataProvider;
   private agentReplyRenderVersion = 0;
   private sourceSnapshot: InlineEditSourceSnapshot | null = null;
   private settled = false;
   private generation = 0;
+  private releaseEditorLifetime: (() => void) | null = null;
+  private editorDestroyed = false;
 
   constructor(
     private app: App,
@@ -448,6 +468,10 @@ export class InlineEditSession {
   }
 
   show() {
+    this.releaseEditorLifetime = onInlineEditEditorDestroyed(this.editorView, () => {
+      this.editorDestroyed = true;
+      this.close();
+    });
     if (!installedEditors.has(this.editorView)) {
       this.editorView.dispatch({
         effects: StateEffect.appendConfig.of(inlineEditField),
@@ -516,7 +540,20 @@ export class InlineEditSession {
     this.editorView.dom.addEventListener('keyup', this.selectionListener);
   }
 
+  destroyInputDOM(container: HTMLElement): void {
+    if (this.inputResources?.container !== container) return;
+    this.instructionDraft = this.inputEl?.value ?? this.instructionDraft;
+    this.inputResources.dispose();
+    this.inputResources = null;
+    this.agentReplyRenderVersion += 1;
+    this.inputEl = null;
+    this.spinnerEl = null;
+    this.agentReplyEl = null;
+    if (this.containerEl === container) this.containerEl = null;
+  }
+
   createInputDOM(): HTMLElement {
+    if (this.inputResources) this.destroyInputDOM(this.inputResources.container);
     const ownerDocument = this.getOwnerDocument();
     const container = createDiv({ cls: 'claudian-inline-input-container' });
     this.containerEl = container;
@@ -529,46 +566,70 @@ export class InlineEditSession {
       cls: 'claudian-inline-input',
       attr: {
         type: 'text',
-        placeholder: this.mode === 'cursor' ? 'Insert instructions...' : 'Edit instructions...',
+        'aria-label': this.mode === 'cursor' ? 'Insert instructions' : 'Edit instructions',
+        placeholder: this.inputPlaceholder
+          ?? (this.mode === 'cursor' ? 'Insert instructions...' : 'Edit instructions...'),
         spellcheck: 'false',
       },
     });
     this.inputEl = inputEl;
+    inputEl.value = this.instructionDraft;
+    inputEl.disabled = this.generating;
 
     this.spinnerEl = inputWrap.createDiv({ cls: 'claudian-inline-spinner claudian-hidden' });
+    if (this.generating) this.spinnerEl.removeClass('claudian-hidden');
 
     const inlineCatalog = ProviderWorkspaceRegistry.getCommandCatalog(this.resolvedProviderId);
-    this.slashSource = new SlashCommandSource({
+    const discovery = inlineCatalog ? createCatalogCommandDiscoveryStore(inlineCatalog) : null;
+    const slashSource = new SlashCommandSource({
       includeBuiltIns: false,
       providerId: this.resolvedProviderId,
       hiddenCommands: getHiddenProviderCommandSet(this.plugin.settings, this.resolvedProviderId),
-      ...(inlineCatalog ? {
+      ...(inlineCatalog && discovery ? {
         providerConfig: inlineCatalog.getDropdownConfig(),
-        providerDiscovery: createCatalogCommandDiscoveryStore(inlineCatalog),
+        providerDiscovery: discovery,
       } : {}),
     });
-    this.mentionSource = new MentionSource({
+    const mentionSource = new MentionSource({
       // Inline Edit resolves @mentions at send time from input text.
       getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
       getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
       normalizePathForVault: (rawPath) => this.normalizePathForVault(rawPath),
     });
-    this.composerDropdown = new ComposerDropdownController(
+    const dropdown = new ComposerDropdownController(
       ownerDocument.body,
       inputEl,
-      [this.slashSource, this.mentionSource],
+      [slashSource, mentionSource],
       { fixed: true },
     );
-
-    inputEl.addEventListener('keydown', (e) => this.handleKeydown(e));
-    inputEl.addEventListener('input', () => this.composerDropdown?.handleInputChange());
-
-    window.setTimeout(() => inputEl.focus(), 50);
+    const onKeydown = (event: KeyboardEvent) => this.handleKeydown(event);
+    const onInput = () => {
+      this.instructionDraft = inputEl.value;
+      dropdown.handleInputChange();
+    };
+    inputEl.addEventListener('keydown', onKeydown);
+    inputEl.addEventListener('input', onInput);
+    const focusTimer = window.setTimeout(() => inputEl.focus(), 50);
+    this.inputResources = {
+      container,
+      dropdown,
+      dispose: () => {
+        window.clearTimeout(focusTimer);
+        inputEl.removeEventListener('keydown', onKeydown);
+        inputEl.removeEventListener('input', onInput);
+        dropdown.destroy();
+        slashSource.destroy();
+        mentionSource.destroy();
+        discovery?.invalidate();
+      },
+    };
+    if (this.replyMarkdown !== null) this.showAgentReply(this.replyMarkdown);
     return container;
   }
 
   createDiffPreviewDOM(diffOps: DiffOp[]): HTMLElement {
     const previewEl = createDiv({ cls: 'claudian-inline-diff-preview' });
+    this.containerEl = previewEl;
 
     const bodyEl = previewEl.createDiv({ cls: 'claudian-inline-diff-preview-body markdown-rendered' });
 
@@ -641,10 +702,11 @@ export class InlineEditSession {
   }
 
   private async generate(): Promise<void> {
-    if (this.settled || !this.inputEl || !this.spinnerEl) return;
+    if (this.settled || this.generating || !this.inputEl || !this.spinnerEl) return;
     const userMessage = this.inputEl.value.trim();
     if (!userMessage) return;
     const generation = ++this.generation;
+    this.generating = true;
 
     const sourceDoc = this.editorView.state.doc;
     this.sourceSnapshot = {
@@ -696,6 +758,8 @@ export class InlineEditSession {
       return;
     } finally {
       if (this.#isGenerationActive(generation)) {
+        this.generating = false;
+        if (this.inputEl) this.inputEl.disabled = false;
         this.spinnerEl?.addClass('claudian-hidden');
       }
     }
@@ -716,12 +780,16 @@ export class InlineEditSession {
         this.insertedText = result.insertedText;
         this.#showInsertionInPlace();
       } else if (result.clarification) {
-        this.showAgentReply(result.clarification);
         this.isConversing = true;
-        this.inputEl.disabled = false;
-        this.inputEl.value = '';
-        this.inputEl.placeholder = 'Reply to continue...';
-        this.inputEl.focus();
+        this.instructionDraft = '';
+        this.inputPlaceholder = 'Reply to continue...';
+        this.showAgentReply(result.clarification);
+        if (this.inputEl) {
+          this.inputEl.disabled = false;
+          this.inputEl.value = '';
+          this.inputEl.placeholder = this.inputPlaceholder;
+          this.inputEl.focus();
+        }
       } else {
         this.#handleError('No response from agent');
       }
@@ -735,6 +803,7 @@ export class InlineEditSession {
   }
 
   private showAgentReply(message: string) {
+    this.replyMarkdown = message;
     if (!this.agentReplyEl || !this.containerEl) return;
     const replyEl = this.agentReplyEl;
     const renderVersion = ++this.agentReplyRenderVersion;
@@ -752,6 +821,7 @@ export class InlineEditSession {
   }
 
   #handleError(errorMessage: string) {
+    this.inputPlaceholder = errorMessage;
     if (!this.inputEl) return;
     this.inputEl.disabled = false;
     this.inputEl.placeholder = errorMessage;
@@ -861,6 +931,14 @@ export class InlineEditSession {
     this.resolve({ decision: 'reject' });
   }
 
+  /** Ends ownership without restoring selection or stealing focus during teardown. */
+  close(): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.cleanup();
+    this.resolve({ decision: 'reject' });
+  }
+
   #removeSelectionListeners() {
     if (this.selectionListener) {
       this.editorView.dom.removeEventListener('mouseup', this.selectionListener);
@@ -871,6 +949,9 @@ export class InlineEditSession {
 
   private cleanup(options?: { keepSelectionHighlight?: boolean }) {
     this.generation += 1;
+    this.generating = false;
+    this.releaseEditorLifetime?.();
+    this.releaseEditorLifetime = null;
     this.inlineEditService.cancel();
     this.inlineEditService.resetConversation();
     this.isConversing = false;
@@ -878,16 +959,9 @@ export class InlineEditSession {
     if (this.escHandler) {
       this.getOwnerDocument().removeEventListener('keydown', this.escHandler);
     }
-    this.composerDropdown?.destroy();
-    this.composerDropdown = null;
-    this.slashSource?.destroy();
-    this.slashSource = null;
-    this.mentionSource?.destroy();
-    this.mentionSource = null;
+    if (this.inputResources) this.destroyInputDOM(this.inputResources.container);
 
-    if (activeController === this) {
-      activeController = null;
-    }
+    if (this.editorDestroyed) return;
     this.editorView.dispatch({
       effects: hideInlineEdit.of(null),
     });
@@ -962,7 +1036,7 @@ export class InlineEditSession {
   }
 
   private handleKeydown(e: KeyboardEvent) {
-    if (this.composerDropdown?.handleKeydown(e)) {
+    if (this.inputResources?.dropdown.handleKeydown(e)) {
       return;
     }
 

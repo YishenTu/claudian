@@ -29,10 +29,10 @@ import type {
   FeatureTabManagerHost,
   TabWorkspaceStateDeliveryRegistration,
 } from '../FeatureHost';
-import type { HistoryConversationStatus } from './controllers/ConversationController';
 import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import { TabStatePersistenceCoordinator } from './services/TabStatePersistenceCoordinator';
 import { getObsidianLanguage } from './session-manager/ProvisionalNoteNames';
+import { type HistoryConversationStatus, SessionBrowser } from './session-manager/SessionBrowser';
 import { renderSessionGroupToggleIcon } from './session-manager/SessionManagerIcons';
 import { getTabProviderId } from './tabs/providerResolution';
 import { TabBar } from './tabs/TabBar';
@@ -142,10 +142,21 @@ export class ClaudianView extends ItemView {
   private shutdownSnapshotPromise: Promise<void> | null = null;
   private viewLifecycleRevision = 0;
   private viewShutdownStarted = false;
+  private sessionBrowser: SessionBrowser;
 
   constructor(leaf: WorkspaceLeaf, plugin: FeatureHost) {
     super(leaf);
     this.plugin = plugin;
+    this.sessionBrowser = new SessionBrowser({
+      plugin,
+      getCurrentConversationId: () => this.tabManager?.getActiveTab()?.state.currentConversationId ?? null,
+      isStreaming: () => this.tabManager?.getActiveTab()?.state.isStreaming ?? false,
+      reloadActiveConversation: async () => {
+        await this.tabManager?.getActiveTab()?.controllers.conversationController.loadActive();
+      },
+      getTitleGenerationService: () => this.tabManager?.getActiveTab()?.services.titleGenerationService ?? null,
+      onListChanged: () => this.updateHistoryDropdown(),
+    });
 
     // Hover Editor compatibility: Define load as an instance method that can't be
     // overwritten by prototype patching. Hover Editor patches ClaudianView.prototype.load
@@ -483,6 +494,7 @@ export class ClaudianView extends ItemView {
 
   async onClose() {
     this.viewShutdownStarted = true;
+    this.sessionBrowser.dispose();
     const lifecycleRevision = (this.viewLifecycleRevision ?? 0) + 1;
     this.viewLifecycleRevision = lifecycleRevision;
     const tabManager = this.tabManager;
@@ -1133,15 +1145,8 @@ export class ClaudianView extends ItemView {
     signal: AbortSignal,
     navigationMode: 'history' | 'sessions' = 'history',
   ): void {
-    const activeTab = this.tabManager?.getActiveTab();
-    const conversationController = activeTab?.controllers.conversationController;
-    if (!conversationController) {
-      container.empty();
-      return;
-    }
-
     const isArchiveView = this.isArchiveSessionView;
-    conversationController.renderHistoryDropdown(container, {
+    this.sessionBrowser.renderHistoryDropdown(container, {
       onSelectConversation: (id) => navigationMode === 'sessions'
         ? this.openSessionConversation(id)
         : this.openHistoryConversation(id),
@@ -2508,7 +2513,7 @@ export class ClaudianView extends ItemView {
         || this.isSessionSearchComposing
       ) return;
       const activeTab = this.tabManager?.getActiveTab();
-      if (activeTab?.controllers.conversationController.cancelInlineRename()) return false;
+      if (this.sessionBrowser.cancelInlineRename()) return false;
       if (this.isSessionSearchActive) {
         this.closeSessionSearch();
         return false;

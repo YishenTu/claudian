@@ -19,7 +19,6 @@ import type {
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
 import { renderCopyableCodeFence } from '../../shared/components/CopyableCodeFence';
-import { AgentSkillSettings } from '../../shared/settings/AgentSkillSettings';
 import { renderEnvironmentSettingsSection } from '../../shared/settings/EnvironmentSettingsSection';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import {
@@ -28,6 +27,7 @@ import {
 } from '../chat/execution/WarmExecutionPool';
 import type { FeatureHost } from '../FeatureHost';
 import { AgentSkillManagementCoordinator } from './AgentSkillManagementCoordinator';
+import { AgentSkillSettings } from './AgentSkillSettings';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 
 type SettingsTabId = 'general' | 'collab' | 'providers';

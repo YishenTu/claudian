@@ -1119,7 +1119,7 @@ describe('ClaudianPlugin', () => {
         providerState: { threadId: 'thread-before-invalidation' },
       };
       await plugin.onload();
-      (plugin as any).pendingEnvironmentInvalidationGenerations.set('codex', 1);
+      (plugin as any).runtimeSettings.pendingEnvironmentInvalidationGenerations.set('codex', 1);
       const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
           records: deviceMetadataRecords(metadata),
@@ -2597,9 +2597,9 @@ describe('ClaudianPlugin', () => {
 
         const generation = plugin.settings.pendingProviderSessionInvalidations.claude;
         expect(generation).toEqual(expect.any(Number));
-        expect((plugin as any).pendingEnvironmentInvalidationGenerations.get('claude'))
+        expect((plugin as any).runtimeSettings.pendingEnvironmentInvalidationGenerations.get('claude'))
           .toBe(generation);
-        expect((plugin as any).blockedEnvironmentInvalidationGenerations.get('claude'))
+        expect((plugin as any).runtimeSettings.blockedEnvironmentInvalidationGenerations.get('claude'))
           .toBe(generation);
         expect(conversation.sessionId).toBe('pre-invalidation-session');
         const persistedFailureSettings = JSON.parse(
@@ -2620,8 +2620,8 @@ describe('ClaudianPlugin', () => {
 
         expect(conversation.sessionId).toBeNull();
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect((plugin as any).pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
-        expect((plugin as any).blockedEnvironmentInvalidationGenerations.has('claude')).toBe(false);
+        expect((plugin as any).runtimeSettings.pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
+        expect((plugin as any).runtimeSettings.blockedEnvironmentInvalidationGenerations.has('claude')).toBe(false);
         expect(invalidateSpy).toHaveBeenCalledTimes(2);
         expect(plugin.executionLifecycleRegistry.getProviderGeneration('claude'))
           .toBe(initialGeneration + 2);
@@ -2656,9 +2656,9 @@ describe('ClaudianPlugin', () => {
         expect(first.sessionId).toBeNull();
         expect(second.sessionId).toBeNull();
         expect(generation).toEqual(expect.any(Number));
-        expect((plugin as any).pendingEnvironmentInvalidationGenerations.get('claude'))
+        expect((plugin as any).runtimeSettings.pendingEnvironmentInvalidationGenerations.get('claude'))
           .toBe(generation);
-        expect((plugin as any).blockedEnvironmentInvalidationGenerations.get('claude'))
+        expect((plugin as any).runtimeSettings.blockedEnvironmentInvalidationGenerations.get('claude'))
           .toBe(generation);
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
@@ -2680,8 +2680,8 @@ describe('ClaudianPlugin', () => {
           expect.objectContaining({ id: second.id, sessionId: null }),
         ]));
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-        expect((plugin as any).pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
-        expect((plugin as any).blockedEnvironmentInvalidationGenerations.has('claude')).toBe(false);
+        expect((plugin as any).runtimeSettings.pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
+        expect((plugin as any).runtimeSettings.blockedEnvironmentInvalidationGenerations.has('claude')).toBe(false);
       } finally {
         saveMetadataSpy.mockRestore();
       }
@@ -2803,7 +2803,7 @@ describe('ClaudianPlugin', () => {
       } | null = null;
       const afterTransition = jest.fn(() => {
         stateAtRelease = {
-          blocked: (plugin as any).blockedEnvironmentInvalidationGenerations.has('claude'),
+          blocked: (plugin as any).runtimeSettings.blockedEnvironmentInvalidationGenerations.has('claude'),
           deferredSessionId: plugin.getCachedConversation(deferredMetadata.id)?.sessionId,
           liveSessionId: live.sessionId,
           pending: plugin.settings.pendingProviderSessionInvalidations.claude,
@@ -2848,8 +2848,8 @@ describe('ClaudianPlugin', () => {
         resumeAtMessageId: 'deferred-resume-message',
       }));
       expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
-      expect((plugin as any).pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
-      expect((plugin as any).blockedEnvironmentInvalidationGenerations.has('claude')).toBe(false);
+      expect((plugin as any).runtimeSettings.pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
+      expect((plugin as any).runtimeSettings.blockedEnvironmentInvalidationGenerations.has('claude')).toBe(false);
       expect(saveMetadataSpy).not.toHaveBeenCalledWith(expect.objectContaining({
         id: deferredMetadata.id,
         sessionId: null,
@@ -3101,7 +3101,7 @@ describe('ClaudianPlugin', () => {
       const reconcileSpy = jest.spyOn(claudeReconciler, 'reconcileModelWithEnvironment')
         .mockReturnValue({ changed: true, invalidatedConversations: [] });
       claudeReconciler.environmentSessionPolicy = 'reload';
-      const stagePendingSpy = jest.spyOn(plugin as any, 'stagePendingSessionInvalidations');
+      const stagePendingSpy = jest.spyOn((plugin as any).runtimeSettings, 'stagePendingSessionInvalidations');
       const getTabManager = jest.fn();
       const mockView = {
         getTabManager,

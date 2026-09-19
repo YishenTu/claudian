@@ -18,7 +18,8 @@ const OPENCODE_PROVIDER_STATE_KEYS = [
 ] as const;
 
 export class OpencodeConversationHistoryService implements ProviderConversationHistoryService {
-  private hydratedKeys = new Map<string, string>();
+  // A discarded repository draft must not mark another projection hydrated.
+  private hydratedKeys = new WeakMap<Conversation, string>();
 
   hasConversationModelRecoverySource(conversation: Conversation): boolean {
     return !!conversation.sessionId;
@@ -56,14 +57,14 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     }
     const sessionId = conversation.sessionId;
     if (!sessionId) {
-      this.hydratedKeys.delete(conversation.id);
+      this.hydratedKeys.delete(conversation);
       return;
     }
 
     const hydrationKey = `${sessionId}::${databasePath ?? ''}`;
     if (
       conversation.messages.length > 0
-      && this.hydratedKeys.get(conversation.id) === hydrationKey
+      && this.hydratedKeys.get(conversation) === hydrationKey
     ) {
       this.#markNativeConversationContextEstablished(conversation);
       return;
@@ -75,7 +76,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       pathContext?.environment,
     );
     if (messages.length === 0) {
-      this.hydratedKeys.delete(conversation.id);
+      this.hydratedKeys.delete(conversation);
       return;
     }
 
@@ -84,11 +85,11 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       messages.length === 1
       && isOpencodeSessionHydrationDiagnosticMessage(messages[0])
     ) {
-      this.hydratedKeys.delete(conversation.id);
+      this.hydratedKeys.delete(conversation);
       return;
     }
 
-    this.hydratedKeys.set(conversation.id, hydrationKey);
+    this.hydratedKeys.set(conversation, hydrationKey);
     this.#markNativeConversationContextEstablished(conversation);
   }
 
@@ -110,7 +111,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       ...conversation.providerState,
       nativeConversationContextEstablished: false,
     };
-    this.hydratedKeys.delete(conversation.id);
+    this.hydratedKeys.delete(conversation);
     return 'reset';
   }
 

@@ -22,7 +22,7 @@ import { ClaudeCliResolver } from '../runtime/ClaudeCliResolver';
 import { AgentVaultStorage } from '../storage/AgentVaultStorage';
 import { SkillStorage } from '../storage/SkillStorage';
 import { SlashCommandStorage } from '../storage/SlashCommandStorage';
-import { claudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
+import { createClaudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
 
 export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   cliResolver: ProviderCliResolver;
@@ -79,7 +79,7 @@ export async function createClaudeWorkspaceServices(
     agentManager,
     commandCatalog,
     vaultCommandRepository: commandCatalog,
-    settingsTabRenderer: claudeSettingsTabRenderer,
+    settingsTabRenderer: createClaudeSettingsTabRenderer({ cliResolver, agentManager, agentStorage, vaultCommandRepository: commandCatalog }),
     prepareSettings: async () => {
       await pluginDiscovery.loadPlugins();
       await agentManager.loadAgents();

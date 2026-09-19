@@ -219,7 +219,6 @@ export function buildTabRuntimeControllers(
       state,
       renderer,
       subagentManager: services.subagentManager,
-      getHistoryDropdown: () => null,
       getWelcomeEl: () => dom.welcomeEl,
       setWelcomeEl: (element) => {
         dom.welcomeEl = element;
@@ -240,7 +239,6 @@ export function buildTabRuntimeControllers(
       clearQueuedMessage: () => (
         runtimeRef.requirePublished().controllers.inputController.clearQueuedMessage()
       ),
-      getTitleGenerationService: () => services.titleGenerationService,
       getExecutionCoordinator: () => shell.executionCoordinator,
       ensureExecutionInitialized,
       getProviderId: () => getTabProviderId(runtimeRef.requirePublished(), plugin),

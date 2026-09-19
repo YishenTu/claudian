@@ -28,10 +28,6 @@ export class ClaudianProviderHost implements ProviderHost {
     return this.plugin.manifest;
   }
 
-  saveSettings(): Promise<void> {
-    return this.plugin.saveSettings();
-  }
-
   mutateSettings(
     mutation: (settings: typeof this.plugin.settings) => void | Promise<void>,
   ): Promise<void> {
@@ -42,18 +38,6 @@ export class ClaudianProviderHost implements ProviderHost {
     mutation: (settings: typeof this.plugin.settings) => boolean | Promise<boolean>,
   ): Promise<void> {
     return this.plugin.mutateSettingsConditionally(mutation);
-  }
-
-  loadData(): Promise<unknown> {
-    return this.plugin.loadData();
-  }
-
-  saveData(data: unknown): Promise<void> {
-    return this.plugin.saveData(data);
-  }
-
-  normalizeModelVariantSettings(): boolean {
-    return this.plugin.normalizeModelVariantSettings();
   }
 
   getActiveEnvironmentVariables(providerId: ProviderId): string {

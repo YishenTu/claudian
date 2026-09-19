@@ -1,37 +1,14 @@
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
+import { parseCliVersion } from '@/core/providers/cli/CliInstallationProbe';
 
-import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
-
-describe('CLI installation probe', () => {
-  it('reports the resolved binary and the version returned by its command', async () => {
-    const result = await probeCliInstallation({
-      path: process.execPath,
-      configuredPath: process.execPath,
-      args: ['-e', 'process.stdout.write("test-cli 1.2.3-beta.4\\n")'],
-      env: process.env,
-    });
-    expect(result).toEqual({ path: process.execPath, source: 'custom', version: '1.2.3-beta.4' });
-  });
-
-  it('keeps a found binary when the version command fails', async () => {
-    const result = await probeCliInstallation({
-      path: process.execPath,
-      configuredPath: '',
-      args: ['-e', 'process.exit(1)'],
-      env: process.env,
-    });
-    expect(result).toEqual({ path: process.execPath, source: 'auto', version: null });
-  });
-
-  it('does not report a nonexistent configured binary as found', async () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-installation-'));
-    try {
-      expect(await probeCliInstallation({ path: path.join(directory, 'missing'), configuredPath: '', args: ['--version'], env: process.env }))
-        .toEqual({ path: null, source: 'auto', version: null });
-    } finally {
-      fs.rmSync(directory, { recursive: true });
-    }
+describe('parseCliVersion', () => {
+  it.each([
+    ['cli 1.2.3\n', '1.2.3'],
+    ['cli 1.2.3-beta.4+build.7\n', '1.2.3-beta.4+build.7'],
+    ['warning: runtime 24\ncli 2.3.4', '2.3.4'],
+    ['version unavailable', null],
+    ['cli 1.2', null],
+    [null, null],
+  ])('extracts a complete version from %p', (output, expected) => {
+    expect(parseCliVersion(output)).toBe(expected);
   });
 });

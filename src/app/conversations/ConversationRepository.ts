@@ -558,36 +558,43 @@ export class ConversationRepository {
   ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'> {
     const conversation = this.getSync(id);
     if (!conversation) return 'not_found';
+    const generation = this.#getConversationGeneration(id);
 
     const historyService = ProviderRegistry.getConversationHistoryService(
       conversation.providerId,
     );
     if (!historyService.resolveMissingConversationSession) return 'preserved';
 
-    const previousSessionId = conversation.sessionId;
-    const previousProviderState = conversation.providerState;
-    const previousResumeAtMessageId = conversation.resumeAtMessageId;
     const vaultPath = this.deps.getVaultPath();
     let resolution: 'delete' | 'reset' | 'preserve';
+    let nativeReadCompleted = false;
     try {
-      resolution = await historyService.resolveMissingConversationSession(
-        conversation,
-        vaultPath,
-        missingProviderSessionId,
-        this.#getHistoryPathContext(conversation.providerId, vaultPath),
-      );
-    } catch {
-      conversation.sessionId = previousSessionId;
-      conversation.providerState = previousProviderState;
-      conversation.resumeAtMessageId = previousResumeAtMessageId;
+      const outcome = await this.#readProviderHistory(conversation, async draft => {
+        const result = await historyService.resolveMissingConversationSession!(
+          draft,
+          vaultPath,
+          missingProviderSessionId,
+          this.#getHistoryPathContext(draft.providerId, vaultPath),
+        );
+        nativeReadCompleted = true;
+        return result;
+      }, value => value === 'reset');
+      if (!outcome.current) return 'preserved';
+      resolution = outcome.value;
+    } catch (error) {
+      // Native inspection is best effort; a failed durable transition must surface.
+      if (nativeReadCompleted) throw error;
       return 'preserved';
     }
+    // Acceptance can supersede the native decision before this await continuation.
+    if (!this.#isConversationCurrent(conversation, generation)) return 'preserved';
     if (resolution === 'delete') {
       await this.delete(id);
       return 'deleted';
     }
     if (resolution === 'reset') {
-      await this.save(conversation);
+      this.hydratedConversationIds.delete(id);
+      this.#invalidateConversation(id);
       return 'reset';
     }
     return 'preserved';
@@ -665,6 +672,26 @@ export class ConversationRepository {
       conversation.isPinned = false;
     }
     await this.save(conversation);
+  }
+
+  invalidateProviderSessions(providerIds: ProviderId[]): Conversation[] {
+    const drafts = this.conversations.map(conversation => cloneJson(conversation));
+    const invalidated = ProviderSettingsCoordinator.invalidateConversationSessions(drafts, providerIds);
+    return invalidated.flatMap(draft => {
+      const conversation = this.getSync(draft.id);
+      if (!conversation) return [];
+      conversation.sessionId = draft.sessionId;
+      conversation.providerState = draft.providerState;
+      conversation.resumeAtMessageId = draft.resumeAtMessageId;
+      this.hydratedConversationIds.delete(conversation.id);
+      this.#invalidateConversation(conversation.id);
+      return [conversation];
+    });
+  }
+
+  async persistProviderSessionInvalidations(providerIds: ProviderId[]): Promise<void> {
+    const providers = new Set(providerIds);
+    await this.persistConversations(this.conversations.filter(conversation => providers.has(conversation.providerId)));
   }
 
   async persistConversations(
@@ -1193,11 +1220,11 @@ export class ConversationRepository {
       return null;
     }
 
-    await this.#reconcileProviderSession(conversation);
+    if (!await this.#reconcileProviderSession(conversation)) return null;
     if (!this.#isConversationCurrent(conversation, generation)) return null;
     await this.ensureSelectedModel(conversation);
     if (!this.#isConversationCurrent(conversation, generation)) return null;
-    await this.#hydrateProviderHistory(conversation);
+    if (!await this.#hydrateProviderHistory(conversation)) return null;
     if (!this.#isConversationCurrent(conversation, generation)) return null;
     await this.#hydrateInputLedger(conversation);
     if (!this.#isConversationCurrent(conversation, generation)) return null;
@@ -1375,7 +1402,7 @@ export class ConversationRepository {
 
   async #reconcileProviderSession(
     conversation: Conversation,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const historyService = ProviderRegistry.getConversationHistoryService(
       conversation.providerId,
     );
@@ -1386,64 +1413,33 @@ export class ConversationRepository {
       vaultPath,
     );
     if (historyService.recoverConversationSessionReference) {
-      const previousSessionId = conversation.sessionId;
-      const previousProviderState = conversation.providerState;
-      const previousResumeAtMessageId = conversation.resumeAtMessageId;
       try {
-        if (
-          await historyService.recoverConversationSessionReference(
-            conversation,
-            vaultPath,
-            pathContext,
-          )
-        ) {
-          await this.save(conversation);
-        }
+        const outcome = await this.#readProviderHistory(conversation, draft => (
+          historyService.recoverConversationSessionReference!(draft, vaultPath, pathContext)
+        ), changed => changed);
+        if (!outcome.current) return false;
       } catch {
-        conversation.sessionId = previousSessionId;
-        conversation.providerState = previousProviderState;
-        conversation.resumeAtMessageId = previousResumeAtMessageId;
-        return;
+        return true;
       }
     }
 
-    if (!historyService.getConversationSessionAvailability) return;
-
-    let availability;
+    if (!historyService.getConversationSessionAvailability) return true;
     try {
-      availability =
-        await historyService.getConversationSessionAvailability(
-          conversation,
-          vaultPath,
-          pathContext,
-        );
-    } catch {
-      return;
-    }
-    if (
-      availability !== 'relocated'
-      || !historyService.prepareRelocatedConversationSession
-    ) {
-      return;
-    }
-
-    const previousSessionId = conversation.sessionId;
-    const previousProviderState = conversation.providerState;
-    const previousResumeAtMessageId = conversation.resumeAtMessageId;
-    try {
+      const availability = await this.#readProviderHistory(conversation, draft => (
+        historyService.getConversationSessionAvailability!(draft, vaultPath, pathContext)
+      ));
+      if (!availability.current) return false;
       if (
-        await historyService.prepareRelocatedConversationSession(
-          conversation,
-          vaultPath,
-          pathContext,
-        )
-      ) {
-        await this.save(conversation);
-      }
+        availability.value !== 'relocated'
+        || !historyService.prepareRelocatedConversationSession
+      ) return true;
+      const outcome = await this.#readProviderHistory(conversation, draft => (
+        historyService.prepareRelocatedConversationSession!(draft, vaultPath, pathContext)
+      ), changed => changed);
+      return outcome.current;
     } catch {
-      conversation.sessionId = previousSessionId;
-      conversation.providerState = previousProviderState;
-      conversation.resumeAtMessageId = previousResumeAtMessageId;
+      // Failed reads only discard their isolated draft.
+      return true;
     }
   }
 
@@ -1573,15 +1569,50 @@ export class ConversationRepository {
 
   async #hydrateProviderHistory(
     conversation: Conversation,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const vaultPath = this.deps.getVaultPath();
-    await ProviderRegistry
-      .getConversationHistoryService(conversation.providerId)
-      .hydrateConversationHistory(
-        conversation,
-        vaultPath,
-        this.#getHistoryPathContext(conversation.providerId, vaultPath),
-      );
+    const outcome = await this.#readProviderHistory(conversation, draft => (
+      ProviderRegistry.getConversationHistoryService(draft.providerId)
+        .hydrateConversationHistory(
+          draft,
+          vaultPath,
+          this.#getHistoryPathContext(draft.providerId, vaultPath),
+        )
+    ));
+    return outcome.current;
+  }
+
+  /** Native readers may mutate only this detached draft; the repository publishes it. */
+  async #readProviderHistory<T>(
+    conversation: Conversation,
+    read: (draft: Conversation) => Promise<T>,
+    shouldPersist: (value: T) => boolean = () => false,
+  ): Promise<{ current: false } | { current: true; value: T }> {
+    const generation = this.#getConversationGeneration(conversation.id);
+    const fields = ['sessionId', 'providerState', 'resumeAtMessageId', 'messages'] as const;
+    const before = fields.map(field => JSON.stringify(conversation[field]));
+    const draft = cloneJson(conversation);
+    const value = await read(draft);
+    const isCurrent = (): boolean => (
+      this.#isConversationCurrent(conversation, generation)
+      && fields.every((field, index) => JSON.stringify(conversation[field]) === before[index])
+    );
+    if (!isCurrent()) return { current: false };
+    const patch: ConversationMutablePatch = {};
+    if (JSON.stringify(draft.messages) !== before[3]) patch.messages = draft.messages;
+    if (JSON.stringify(draft.sessionId) !== before[0]) patch.sessionId = draft.sessionId;
+    if (JSON.stringify(draft.providerState) !== before[1]) patch.providerState = draft.providerState;
+    if (JSON.stringify(draft.resumeAtMessageId) !== before[2]) patch.resumeAtMessageId = draft.resumeAtMessageId;
+    if (shouldPersist(value)) {
+      const persisted = await this.#enqueuePersistence(conversation.id, async () => {
+        if (!await this.#canWriteConversation(conversation) || !isCurrent()) return false;
+        await this.#writeMetadata({ ...conversation, ...patch });
+        return true;
+      });
+      if (!persisted || !isCurrent()) return { current: false };
+    }
+    Object.assign(conversation, patch);
+    return { current: true, value };
   }
 
   async #hydrateInputLedger(

@@ -13,7 +13,7 @@ import {
   type LanAuthorityTransferRouteRegistration,
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferRouter';
 import { LanAuthorityTransferRouteRegistry } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferRouteRegistry';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { LanTlsIdentity, type LanTlsServerIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-connection-recovery';
@@ -31,17 +31,25 @@ const STATUS: CollabAuthorityTransferStatus = {
 
 describe('LAN authority-transfer connection recovery', () => {
   let directory: string;
-  let identity: Awaited<ReturnType<LanTlsIdentity['issueServerIdentity']>>;
+  let identity: LanTlsServerIdentity;
+  let otherIdentity: LanTlsServerIdentity;
   let candidates: readonly CollabDiscoveredHost[];
   const servers: Server[] = [];
   const registries: LanAuthorityTransferRouteRegistry[] = [];
   const credentials: Array<{ readonly endpoint: string; readonly authorization: string }> = [];
 
-  beforeEach(async () => {
+  // Share immutable certificates; each case still owns its listeners and routes.
+  beforeAll(async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'claudian-transfer-connection-'));
     identity = await new LanTlsIdentity(directory, {
       installationKey: TEST_INSTALLATION_A,
     }).issueServerIdentity('127.0.0.1');
+    otherIdentity = await new LanTlsIdentity(directory, {
+      installationKey: TEST_INSTALLATION_B,
+    }).issueServerIdentity('127.0.0.1');
+  }, 60_000);
+
+  beforeEach(() => {
     candidates = [];
     credentials.length = 0;
   });
@@ -57,7 +65,10 @@ describe('LAN authority-transfer connection recovery', () => {
   afterEach(async () => {
     await Promise.all(servers.splice(0).map(close));
     await Promise.all(registries.splice(0).map(registry => registry.close()));
-    await rm(directory, { force: true, recursive: true });
+  });
+
+  afterAll(async () => {
+    if (directory) await rm(directory, { force: true, recursive: true });
   });
 
   function source(generation = 1): LanAuthorityTransferRouteRegistration {
@@ -200,9 +211,6 @@ describe('LAN authority-transfer connection recovery', () => {
   });
 
   it('recovers when the historical location now belongs to another installation', async () => {
-    const otherIdentity = await new LanTlsIdentity(directory, {
-      installationKey: TEST_INSTALLATION_B,
-    }).issueServerIdentity('127.0.0.1');
     const reassigned = await listen(source(), otherIdentity);
     const relocated = await listen();
     discover(relocated.endpoint);
@@ -240,9 +248,6 @@ describe('LAN authority-transfer connection recovery', () => {
 
   it('withholds credentials from a candidate with a different CA', async () => {
     const original = await listen();
-    const otherIdentity = await new LanTlsIdentity(directory, {
-      installationKey: TEST_INSTALLATION_B,
-    }).issueServerIdentity('127.0.0.1');
     const impostor = await listen(source(), otherIdentity);
     await close(original.server);
     discover(impostor.endpoint);

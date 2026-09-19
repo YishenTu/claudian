@@ -1,6 +1,7 @@
 import { getVaultPath } from '../../utils/path';
 import { InlineEditService as SharedInlineEditService } from '../auxiliary/InlineEditService';
 import { InstructionRefineService as SharedInstructionRefineService } from '../auxiliary/InstructionRefineService';
+import { RoutedTitleGenerationService } from '../auxiliary/RoutedTitleGenerationService';
 import { TitleGenerationService as SharedTitleGenerationService } from '../auxiliary/TitleGenerationService';
 import type {
   ProviderExecutionBackend,
@@ -25,7 +26,6 @@ import {
   type ProviderSubagentHistoryService,
   type ProviderTaskResultInterpreter,
   type ProviderUIOption,
-  type TitleGenerationCallback,
   type TitleGenerationService,
 } from './types';
 
@@ -71,7 +71,13 @@ export class ProviderRegistry {
 
   static createTitleGenerationService(plugin: ProviderHost, providerId?: ProviderId): TitleGenerationService {
     if (!providerId) {
-      return new RoutedTitleGenerationService(plugin);
+      return new RoutedTitleGenerationService({
+        resolveProviderId: () => this.resolveTitleGenerationProviderId(plugin.settings),
+        initializeProvider: provider => ProviderWorkspaceRegistry.ensureInitialized(
+          plugin, provider, 'title-generation',
+        ),
+        createService: provider => this.createTitleGenerationService(plugin, provider),
+      });
     }
     const registration = this.getProviderRegistration(providerId);
     return new SharedTitleGenerationService({
@@ -316,57 +322,3 @@ const PASSIVE_AUXILIARY_INTERACTION_PORT: ProviderInteractionPort = {
   }),
   dismissInteraction: () => undefined,
 };
-
-interface ActiveTitleGeneration {
-  service: TitleGenerationService;
-}
-
-class RoutedTitleGenerationService implements TitleGenerationService {
-  private readonly activeGenerations = new Map<string, ActiveTitleGeneration>();
-
-  constructor(private readonly plugin: ProviderHost) {}
-
-  async generateTitle(
-    conversationId: string,
-    userMessage: string,
-    callback: TitleGenerationCallback,
-  ): Promise<void> {
-    const providerId = ProviderRegistry.resolveTitleGenerationProviderId(
-      this.plugin.settings,
-    );
-    await ProviderWorkspaceRegistry.ensureInitialized(
-      this.plugin,
-      providerId,
-      'title-generation',
-    );
-    const service = ProviderRegistry.createTitleGenerationService(this.plugin, providerId);
-    const generation = { service };
-    const previous = this.activeGenerations.get(conversationId);
-
-    this.activeGenerations.set(conversationId, generation);
-    previous?.service.cancel();
-
-    try {
-      await service.generateTitle(conversationId, userMessage, async (convId, result) => {
-        if (this.activeGenerations.get(conversationId) !== generation) {
-          return;
-        }
-        await callback(convId, result);
-      });
-    } finally {
-      if (this.activeGenerations.get(conversationId) === generation) {
-        this.activeGenerations.delete(conversationId);
-      }
-    }
-  }
-
-  cancel(): void {
-    const services = new Set<TitleGenerationService>(
-      [...this.activeGenerations.values()].map(generation => generation.service),
-    );
-    this.activeGenerations.clear();
-    for (const service of services) {
-      service.cancel();
-    }
-  }
-}

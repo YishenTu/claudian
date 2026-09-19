@@ -23,16 +23,12 @@ export interface ProviderHost {
   readonly storage: SharedAppStorage;
   readonly manifest?: { version?: string };
 
-  saveSettings(): Promise<void>;
   mutateSettings(
     mutation: (settings: ClaudianSettings) => void | Promise<void>,
   ): Promise<void>;
   mutateSettingsConditionally(
     mutation: (settings: ClaudianSettings) => boolean | Promise<boolean>,
   ): Promise<void>;
-  loadData(): Promise<unknown>;
-  saveData(data: unknown): Promise<void>;
-  normalizeModelVariantSettings(): boolean;
 
   getActiveEnvironmentVariables(providerId: ProviderId): string;
   getEnvironmentVariablesForScope(scope: EnvironmentScope): string;

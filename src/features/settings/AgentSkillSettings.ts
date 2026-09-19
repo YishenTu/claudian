@@ -14,11 +14,11 @@ import {
   ManagedResourcePathError,
   ManagedResourceRelocationError,
 } from '../../core/storage/VaultFileAdapter';
+import { t } from '../../i18n/i18n';
 import type {
   AgentSkillManagementCoordinator,
   AgentSkillMutationResult,
-} from '../../features/settings/AgentSkillManagementCoordinator';
-import { t } from '../../i18n/i18n';
+} from './AgentSkillManagementCoordinator';
 
 type AgentSkillSaveHandler = (
   input: AgentSkillInput,
@@ -55,7 +55,6 @@ export class AgentSkillModal extends Modal {
   private nameInput!: HTMLInputElement;
   private descriptionInput!: HTMLInputElement;
   private instructionsArea!: HTMLTextAreaElement;
-  private triggerSave!: () => Promise<void>;
 
   constructor(
     app: App,
@@ -63,20 +62,6 @@ export class AgentSkillModal extends Modal {
     private readonly onSave: AgentSkillSaveHandler,
   ) {
     super(app);
-  }
-
-  getTestInputs(): {
-    nameInput: HTMLInputElement;
-    descriptionInput: HTMLInputElement;
-    instructionsArea: HTMLTextAreaElement;
-    triggerSave: () => Promise<void>;
-  } {
-    return {
-      nameInput: this.nameInput,
-      descriptionInput: this.descriptionInput,
-      instructionsArea: this.instructionsArea,
-      triggerSave: this.triggerSave,
-    };
   }
 
   onOpen(): void {
@@ -90,6 +75,7 @@ export class AgentSkillModal extends Modal {
       .setDesc(t('settings.agentSkills.modal.nameDesc'))
       .addText(text => {
         this.nameInput = text.inputEl;
+        text.inputEl.setAttribute('aria-label', t('settings.agentSkills.modal.name'));
         text
           .setValue(this.existing?.name ?? '')
           .setPlaceholder(t('settings.agentSkills.modal.namePlaceholder'));
@@ -100,6 +86,7 @@ export class AgentSkillModal extends Modal {
       .setDesc(t('settings.agentSkills.modal.descriptionDesc'))
       .addText(text => {
         this.descriptionInput = text.inputEl;
+        text.inputEl.setAttribute('aria-label', t('settings.agentSkills.modal.description'));
         text
           .setValue(this.existing?.description ?? '')
           .setPlaceholder(t('settings.agentSkills.modal.descriptionPlaceholder'));
@@ -113,12 +100,13 @@ export class AgentSkillModal extends Modal {
       cls: 'claudian-agent-skill-instructions',
       attr: {
         rows: '12',
+        'aria-label': t('settings.agentSkills.modal.instructions'),
         placeholder: t('settings.agentSkills.modal.instructionsPlaceholder'),
       },
     });
     this.instructionsArea.value = this.existing?.instructions ?? '';
 
-    this.triggerSave = async (): Promise<void> => {
+    const save = async (): Promise<void> => {
       const input: AgentSkillInput = {
         name: this.nameInput.value.trim(),
         description: this.descriptionInput.value.trim(),
@@ -142,16 +130,18 @@ export class AgentSkillModal extends Modal {
 
     const actions = this.contentEl.createDiv({ cls: 'claudian-agent-skill-modal-actions' });
     const cancelButton = actions.createEl('button', {
+      attr: { type: 'button' },
       text: t('common.cancel'),
       cls: 'claudian-cancel-btn',
     });
     cancelButton.addEventListener('click', () => this.close());
     const saveButton = actions.createEl('button', {
+      attr: { type: 'button' },
       text: t('common.save'),
       cls: 'claudian-save-btn',
     });
     saveButton.addEventListener('click', () => {
-      void this.triggerSave();
+      void save();
     });
   }
 
@@ -161,7 +151,6 @@ export class AgentSkillModal extends Modal {
 }
 
 export class AgentSkillDeleteModal extends Modal {
-  private triggerDelete!: () => Promise<void>;
 
   constructor(
     app: App,
@@ -169,10 +158,6 @@ export class AgentSkillDeleteModal extends Modal {
     private readonly onDelete: () => Promise<AgentSkillMutationResult<void>>,
   ) {
     super(app);
-  }
-
-  getTestTrigger(): () => Promise<void> {
-    return this.triggerDelete;
   }
 
   onOpen(): void {
@@ -183,7 +168,7 @@ export class AgentSkillDeleteModal extends Modal {
     });
     this.contentEl.createEl('code', { text: this.skill.directoryPath });
 
-    this.triggerDelete = async (): Promise<void> => {
+    const deleteSkill = async (): Promise<void> => {
       try {
         const result = await this.onDelete();
         if (result.refreshFailed) {
@@ -203,16 +188,18 @@ export class AgentSkillDeleteModal extends Modal {
 
     const actions = this.contentEl.createDiv({ cls: 'claudian-agent-skill-modal-actions' });
     const cancelButton = actions.createEl('button', {
+      attr: { type: 'button' },
       text: t('common.cancel'),
       cls: 'claudian-cancel-btn',
     });
     cancelButton.addEventListener('click', () => this.close());
     const deleteButton = actions.createEl('button', {
+      attr: { type: 'button' },
       text: t('settings.agentSkills.delete.confirm'),
       cls: 'mod-warning',
     });
     deleteButton.addEventListener('click', () => {
-      void this.triggerDelete();
+      void deleteSkill();
     });
   }
 
@@ -300,7 +287,7 @@ export class AgentSkillSettings {
     const actions = header.createDiv({ cls: 'claudian-sp-header-actions' });
     const refreshButton = actions.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': t('common.refresh') },
+      attr: { type: 'button', 'aria-label': t('common.refresh') },
     });
     setIcon(refreshButton, 'refresh-cw');
     refreshButton.addEventListener('click', () => {
@@ -308,7 +295,7 @@ export class AgentSkillSettings {
     });
     const addButton = actions.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': t('common.add') },
+      attr: { type: 'button', 'aria-label': t('common.add') },
     });
     setIcon(addButton, 'plus');
     addButton.addEventListener('click', () => this.#openEditModal(null));
@@ -328,13 +315,13 @@ export class AgentSkillSettings {
     const actions = item.createDiv({ cls: 'claudian-sp-item-actions' });
     const editButton = actions.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': t('common.edit') },
+      attr: { type: 'button', 'aria-label': t('common.edit') },
     });
     setIcon(editButton, 'pencil');
     editButton.addEventListener('click', () => this.#openEditModal(skill));
     const deleteButton = actions.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
-      attr: { 'aria-label': t('common.delete') },
+      attr: { type: 'button', 'aria-label': t('common.delete') },
     });
     setIcon(deleteButton, 'trash-2');
     deleteButton.addEventListener('click', () => this.#openDeleteModal(skill));

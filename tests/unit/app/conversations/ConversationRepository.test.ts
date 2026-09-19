@@ -940,22 +940,14 @@ describe('ConversationRepository hydration', () => {
 
     await expect(repository.ensureHydrated(conversation.id)).resolves.toBe(conversation);
 
-    expect(recoverConversationSessionReference).toHaveBeenCalledWith(
-      conversation,
-      '/vault',
-      expect.any(Object),
-    );
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: conversation.id,
       sessionId: 'recovered-session',
       providerState: { providerSessionId: 'recovered-session' },
       lastActivityAt: 42,
     }));
-    expect(hydrateConversationHistory).toHaveBeenCalledWith(
-      conversation,
-      '/vault',
-      expect.any(Object),
-    );
+    expect(conversation.messages.map(message => message.content)).toEqual(['Recovered']);
+
   });
 
   it('allows hydration to retry after a provider history failure', async () => {
@@ -1038,9 +1030,10 @@ describe('ConversationRepository hydration', () => {
       releaseFirstHydration = resolve;
     });
     const hydrateConversationHistory = jest.fn()
-      .mockImplementationOnce(async () => {
+      .mockImplementationOnce(async (draft: Conversation) => {
         markFirstHydrationStarted();
         await firstHydrationRelease;
+        draft.messages = [{ id: 'old-message', role: 'assistant', content: 'Old session', timestamp: 1 }];
       })
       .mockResolvedValueOnce(undefined);
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
@@ -1055,6 +1048,7 @@ describe('ConversationRepository hydration', () => {
     releaseFirstHydration();
 
     await expect(staleHydration).resolves.toBeNull();
+    expect(repository.getCachedConversation(conversation.id)?.messages).toEqual([]);
     await expect(repository.ensureHydrated(conversation.id)).resolves.toBe(conversation);
     expect(hydrateConversationHistory).toHaveBeenCalledTimes(2);
   });

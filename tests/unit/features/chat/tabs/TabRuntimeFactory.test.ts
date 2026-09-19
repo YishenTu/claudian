@@ -331,7 +331,6 @@ function installTransitionController(
     state: tab.state,
     renderer: tab.renderer!,
     subagentManager: tab.services.subagentManager,
-    getHistoryDropdown: () => null,
     getWelcomeEl: () => tab.dom.welcomeEl,
     setWelcomeEl: (element) => { tab.dom.welcomeEl = element; },
     getMessagesEl: () => tab.dom.messagesEl,
@@ -339,7 +338,6 @@ function installTransitionController(
     getLinkedContentController: () => tab.ui.linkedContentController,
     getImageContextManager: () => null,
     clearQueuedMessage: jest.fn(),
-    getTitleGenerationService: () => null,
     getExecutionCoordinator: () => tab.executionCoordinator,
     awaitBackgroundWork: () => tab.session.awaitBackgroundWork(),
     ensureExecutionForConversation: async (conversation) => {

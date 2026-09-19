@@ -38,14 +38,18 @@ npm run typecheck && npm run lint && npm run test && npm run build && npm run ch
 
 ## Required test workflow
 
-- Behavior changes require a failing executable test before implementation. Documentation/mechanical changes are exempt; when automation is infeasible, record repeatable failure and test the nearest stable seam.
+- Before writing tests, read nearby tests, shared helpers, and test configuration. Follow existing conventions and use commands from project files.
+- Choose the test level by regression risk: unit tests for isolated logic, integration tests for interactions between owned modules or supported real dependencies. State the level and reason in one line.
 - Documented owners/public contracts are accepted seams. Resolve ownership before testing beyond them; no test-only public facade.
+- For behavior changes, run a test and confirm it fails for the intended reason before implementation. Documentation/mechanical changes are exempt; when automation is infeasible, record repeatable failure and test the nearest stable seam.
 - Complete one observable behavior before refactoring or adding another. Derive expectations independently from specs, accepted fixtures, captured native examples, or worked examples; no mirrored algorithms, internal call-count assertions, or storage inspection behind undeclared seams.
 - Do not test statically defined values whose correctness is already established by their source or type declaration. Test the observable behavior that consumes them only when that behavior has meaningful regression risk.
 - When logic is deleted, do not add negative tests that merely prove the removed path no longer exists. Cover only the observable replacement behavior or contract that could realistically regress.
 - Mock only environment, Obsidian, and provider boundaries through narrow ports; keep owned modules real. Shared provider changes need neutral-contract coverage plus distinct native adapter behavior.
 - Atomic UI actions use native controls with explicit non-submit button types. Non-native controls need justified semantics and complete name/role/keyboard coverage.
 - Real-DOM tests use Testing Library role/name queries and outcome assertions, plus targeted jest-axe checks. MockElement class/tag checks do not substitute.
+- Never weaken, skip, or delete existing tests merely to get green. If an existing expectation appears incorrect, ask before changing it.
+- Run added or changed tests after implementation and report actual results.
 
 ## Instruction maintenance
 

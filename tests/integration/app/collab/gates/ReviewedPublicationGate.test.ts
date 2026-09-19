@@ -69,9 +69,12 @@ describe('Reviewed publication boundary', () => {
     unwrap(await feature.initialize());
     const { value: project } = projectBaseline;
     unwrap(await feature.startHost(project.id));
+    // Establish fetched refs before edits; background synchronization may not have run yet.
+    unwrap(await feature.updateProject(project.id));
     const repo = path.join(hostRoot, project.workspacePath);
     await writeFile(path.join(repo, 'reviewed.md'), 'reviewed content\n');
     const before = unwrap(await feature.inspectProject(project.id));
+    expect(before.gitStatus!.personalRemoteOid).toBe(before.gitStatus!.headOid);
     const preview = before.personalChanges!.unpublishedReview;
     const input = {
       projectId: project.id, description: 'Publish reviewed change',

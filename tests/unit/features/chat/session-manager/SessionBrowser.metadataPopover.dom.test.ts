@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
+import { SessionBrowser, type SessionBrowserDeps } from '@/features/chat/session-manager/SessionBrowser';
 import { ChatState } from '@/features/chat/state/ChatState';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -8,12 +8,12 @@ HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...c
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 HTMLElement.prototype.hasClass = function (className) { return this.classList.contains(className); };
 
-function createController(): ConversationController {
+function createController(): SessionBrowser {
   const state = new ChatState();
   const inputEl = document.createElement('textarea');
   const messagesEl = document.createElement('div');
 
-  return new ConversationController({
+  return new SessionBrowser({
     plugin: {
       getConversationList: jest.fn().mockReturnValue([{
         id: 'session-1',
@@ -25,7 +25,10 @@ function createController(): ConversationController {
       }]),
       settings: {},
     },
-    state,
+    getCurrentConversationId: () => state.currentConversationId,
+    isStreaming: () => false,
+    reloadActiveConversation: async () => undefined,
+    onListChanged: () => undefined,
     renderer: {},
     subagentManager: {},
     getHistoryDropdown: () => null,
@@ -38,10 +41,10 @@ function createController(): ConversationController {
     clearQueuedMessage: jest.fn(),
     getTitleGenerationService: () => null,
     getExecutionCoordinator: () => null,
-  } as unknown as ConversationControllerDeps);
+  } as unknown as SessionBrowserDeps);
 }
 
-describe('ConversationController session metadata popover', () => {
+describe('SessionBrowser session metadata popover', () => {
   afterEach(() => {
     document.body.replaceChildren();
   });

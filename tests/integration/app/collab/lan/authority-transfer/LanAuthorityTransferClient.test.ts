@@ -12,7 +12,7 @@ import {
   type LanAuthorityTransferRouteRegistration,
   type LanAuthorityTransferSourceActiveService,
 } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferRouter';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { type LanTlsHostCa, LanTlsIdentity, type LanTlsServerIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-alpha';
@@ -42,6 +42,23 @@ function status(): CollabAuthorityTransferStatus {
 describe('LanAuthorityTransferClient', () => {
   let directory: string;
   let server: Server;
+  let identity: LanTlsServerIdentity;
+  let attackerIdentity: LanTlsHostCa;
+
+  // Share immutable certificates; each case still owns its HTTPS server.
+  beforeAll(async () => {
+    directory = await mkdtemp(path.join(tmpdir(), 'claudian-authority-transfer-client-'));
+    const pinnedDirectory = path.join(directory, 'pinned');
+    const attackerDirectory = path.join(directory, 'attacker');
+    await mkdir(pinnedDirectory);
+    await mkdir(attackerDirectory);
+    identity = await new LanTlsIdentity(pinnedDirectory, {
+      installationKey: TEST_INSTALLATION_A,
+    }).issueServerIdentity('127.0.0.1');
+    attackerIdentity = await new LanTlsIdentity(attackerDirectory, {
+      installationKey: TEST_INSTALLATION_B,
+    }).loadOrCreate();
+  }, 60_000);
 
   afterEach(async () => {
     await new Promise<void>(resolve => {
@@ -49,14 +66,13 @@ describe('LanAuthorityTransferClient', () => {
       server.close(() => resolve());
       server.closeAllConnections();
     });
+  });
+
+  afterAll(async () => {
     if (directory) await rm(directory, { force: true, recursive: true });
   });
 
   it('uses pinned TLS, sends Member auth, decodes the independent envelope, and replays', async () => {
-    directory = await mkdtemp(path.join(tmpdir(), 'claudian-authority-transfer-client-'));
-    const identity = await new LanTlsIdentity(directory, {
-      installationKey: TEST_INSTALLATION_A,
-    }).issueServerIdentity('127.0.0.1');
     const requestLanToCloudTransfer = jest.fn(async () => status());
     const service: LanAuthorityTransferSourceActiveService = {
       acceptLanToCloudTransferTarget: jest.fn(),
@@ -141,25 +157,9 @@ describe('LanAuthorityTransferClient', () => {
   });
 
   it('rejects an appended CA even when the pinned CA is first', async () => {
-    directory = await mkdtemp(path.join(tmpdir(), 'claudian-authority-transfer-ca-'));
-    const pinnedDirectory = path.join(directory, 'pinned');
-    const attackerDirectory = path.join(directory, 'attacker');
-    await Promise.all([
-      mkdir(pinnedDirectory),
-      mkdir(attackerDirectory),
-    ]);
-    const pinnedIdentity = await new LanTlsIdentity(
-      pinnedDirectory,
-      { installationKey: TEST_INSTALLATION_A },
-    ).issueServerIdentity('127.0.0.1');
-    const attackerIdentity = await new LanTlsIdentity(
-      attackerDirectory,
-      { installationKey: TEST_INSTALLATION_B },
-    ).issueServerIdentity('127.0.0.1');
-
     expect(() => new LanAuthorityTransferClient({
-      caCertificatePem: `${pinnedIdentity.caCertificatePem}${attackerIdentity.caCertificatePem}`,
-      caFingerprint: pinnedIdentity.caFingerprint,
+      caCertificatePem: `${identity.caCertificatePem}${attackerIdentity.caCertificatePem}`,
+      caFingerprint: identity.caFingerprint,
       endpoint: 'https://127.0.0.1:443',
       projectId: PROJECT_ID,
     })).toThrow(expect.objectContaining({
@@ -172,10 +172,6 @@ describe('LanAuthorityTransferClient', () => {
     { bindingVersion: 1, protocolVersion: 6, receivedVersion: 1, supportedVersion: 3 },
     { bindingVersion: 3, protocolVersion: 6, receivedVersion: 6, supportedVersion: 15 },
   ])('rejects response binding $bindingVersion / wire $protocolVersion', async versions => {
-    directory = await mkdtemp(path.join(tmpdir(), 'claudian-authority-transfer-version-'));
-    const identity = await new LanTlsIdentity(directory, {
-      installationKey: TEST_INSTALLATION_A,
-    }).issueServerIdentity('127.0.0.1');
     server = createServer({
       cert: identity.certificateChainPem,
       key: identity.privateKeyPem,

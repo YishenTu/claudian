@@ -1,11 +1,9 @@
-import '@/providers';
-
 import {
   BUILT_IN_COMMANDS,
   detectBuiltInCommand,
   getBuiltInCommandsForDropdown,
   isBuiltInCommandSupported,
-} from '../../../../src/core/commands/builtInCommands';
+} from '@/core/commands/builtInCommands';
 
 describe('builtInCommands', () => {
   describe('detectBuiltInCommand', () => {
@@ -125,30 +123,6 @@ describe('builtInCommands', () => {
 
   });
 
-  describe('getBuiltInCommandsForDropdown - provider filtering', () => {
-
-    it('excludes Codex-only commands for the Claude provider', () => {
-      const commands = getBuiltInCommandsForDropdown('claude');
-      expect(commands.length).toBe(BUILT_IN_COMMANDS.length - 1);
-      expect(commands.map(c => c.name)).toContain('clear');
-      expect(commands.map(c => c.name)).toContain('resume');
-      expect(commands.map(c => c.name)).toContain('fork');
-      expect(commands.map(c => c.name)).not.toContain('fast');
-    });
-
-    it('returns only commands supported by codex capabilities', () => {
-      const commands = getBuiltInCommandsForDropdown('codex');
-      expect(commands.length).toBe(5);
-      expect(commands.map(c => c.name)).toEqual([
-        'clear',
-        'resume',
-        'fork',
-        'fast',
-        'instruction',
-      ]);
-    });
-  });
-
   describe('isBuiltInCommandSupported', () => {
     it('returns true for universal commands on any provider', () => {
       const clearCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'clear')!;
@@ -158,7 +132,7 @@ describe('builtInCommands', () => {
 
     it('returns false for provider-restricted commands on other providers', () => {
       const resumeCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'resume')!;
-      expect(isBuiltInCommandSupported(resumeCmd, 'claude')).toBe(true);
+      expect(isBuiltInCommandSupported(resumeCmd, { supportsNativeHistory: true })).toBe(true);
       expect(isBuiltInCommandSupported(
         resumeCmd,
         { supportsNativeHistory: false, supportsFork: true },

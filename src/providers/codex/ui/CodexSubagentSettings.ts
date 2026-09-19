@@ -71,7 +71,6 @@ class CodexSubagentModal extends Modal {
   private _modelInput!: HTMLInputElement;
   private _reasoningEffort = '';
   private _sandboxMode = '';
-  private _triggerSave!: () => Promise<void>;
 
   constructor(
     app: App,
@@ -87,19 +86,6 @@ class CodexSubagentModal extends Modal {
     this._sandboxMode = existing?.sandboxMode ?? '';
   }
 
-  getTestInputs() {
-    return {
-      nameInput: this._nameInput,
-      descInput: this._descInput,
-      instructionsArea: this._instructionsArea,
-      nicknamesInput: this._nicknamesInput,
-      modelInput: this._modelInput,
-      setReasoningEffort: (v: string) => { this._reasoningEffort = v; },
-      setSandboxMode: (v: string) => { this._sandboxMode = v; },
-      triggerSave: this._triggerSave,
-    };
-  }
-
   onOpen() {
     this.setTitle(this.existing ? t('settings.codexSubagents.modal.titleEdit') : t('settings.codexSubagents.modal.titleAdd'));
     this.modalEl.addClass('claudian-sp-modal');
@@ -111,6 +97,7 @@ class CodexSubagentModal extends Modal {
       .setDesc(t('settings.codexSubagents.modal.nameDesc'))
       .addText(text => {
         this._nameInput = text.inputEl;
+        text.inputEl.setAttribute('aria-label', t('settings.subagents.modal.name'));
         text.setValue(this.existing?.name ?? '')
           .setPlaceholder(t('settings.codexSubagents.modal.namePlaceholder'));
       });
@@ -120,6 +107,7 @@ class CodexSubagentModal extends Modal {
       .setDesc(t('settings.codexSubagents.modal.descriptionDesc'))
       .addText(text => {
         this._descInput = text.inputEl;
+        text.inputEl.setAttribute('aria-label', t('settings.subagents.modal.description'));
         text.setValue(this.existing?.description ?? '')
           .setPlaceholder('Reviews code for correctness and security');
       });
@@ -144,6 +132,7 @@ class CodexSubagentModal extends Modal {
       .setDesc(t('settings.codexSubagents.modal.modelDesc'))
       .addText(text => {
         this._modelInput = text.inputEl;
+        text.inputEl.setAttribute('aria-label', t('settings.subagents.modal.model'));
         text.setValue(this.existing?.model ?? '')
           .setPlaceholder('Model ID');
       });
@@ -152,6 +141,7 @@ class CodexSubagentModal extends Modal {
       .setName(t('settings.codexSubagents.reasoningEffort.name'))
       .setDesc(t('settings.codexSubagents.reasoningEffort.desc'))
       .addDropdown(dropdown => {
+        dropdown.selectEl.setAttribute('aria-label', t('settings.codexSubagents.reasoningEffort.name'));
         for (const opt of getCodexSubagentReasoningEffortOptions()) {
           dropdown.addOption(opt.value, opt.label);
         }
@@ -163,6 +153,7 @@ class CodexSubagentModal extends Modal {
       .setName(t('settings.codexSubagents.sandboxMode.name'))
       .setDesc(t('settings.codexSubagents.sandboxMode.desc'))
       .addDropdown(dropdown => {
+        dropdown.selectEl.setAttribute('aria-label', t('settings.codexSubagents.sandboxMode.name'));
         for (const opt of getSandboxModeOptions()) {
           dropdown.addOption(opt.value, opt.label);
         }
@@ -175,6 +166,7 @@ class CodexSubagentModal extends Modal {
       .setDesc(t('settings.codexSubagents.nicknameCandidates.desc'))
       .addText(text => {
         this._nicknamesInput = text.inputEl;
+        text.inputEl.setAttribute('aria-label', t('settings.codexSubagents.nicknameCandidates.name'));
         text.setValue(this.existing?.nicknameCandidates?.join(', ') ?? '');
       });
 
@@ -187,6 +179,7 @@ class CodexSubagentModal extends Modal {
       cls: 'claudian-sp-content-area',
       attr: {
         rows: '10',
+        'aria-label': t('settings.codexSubagents.developerInstructions.name'),
         placeholder: t('settings.codexSubagents.developerInstructions.placeholder'),
       },
     });
@@ -254,17 +247,18 @@ class CodexSubagentModal extends Modal {
       }
       this.close();
     };
-    this._triggerSave = doSave;
 
     const buttonContainer = contentEl.createDiv({ cls: 'claudian-sp-modal-buttons' });
 
     const cancelBtn = buttonContainer.createEl('button', {
+      attr: { type: 'button' },
       text: t('common.cancel'),
       cls: 'claudian-cancel-btn',
     });
     cancelBtn.addEventListener('click', () => this.close());
 
     const saveBtn = buttonContainer.createEl('button', {
+      attr: { type: 'button' },
       text: t('common.save'),
       cls: 'claudian-save-btn',
     });
@@ -307,14 +301,14 @@ export class CodexSubagentSettings {
 
     const refreshBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': t('common.refresh') },
+      attr: { type: 'button', 'aria-label': t('common.refresh') },
     });
     setIcon(refreshBtn, 'refresh-cw');
     refreshBtn.addEventListener('click', () => { void this.render(); });
 
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': t('common.add') },
+      attr: { type: 'button', 'aria-label': t('common.add') },
     });
     setIcon(addBtn, 'plus');
     addBtn.addEventListener('click', () => this.#openModal(null));
@@ -352,14 +346,14 @@ export class CodexSubagentSettings {
 
     const editBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': t('common.edit') },
+      attr: { type: 'button', 'aria-label': t('common.edit') },
     });
     setIcon(editBtn, 'pencil');
     editBtn.addEventListener('click', () => this.#openModal(agent));
 
     const deleteBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
-      attr: { 'aria-label': t('common.delete') },
+      attr: { type: 'button', 'aria-label': t('common.delete') },
     });
     setIcon(deleteBtn, 'trash-2');
     deleteBtn.addEventListener('click', () => {

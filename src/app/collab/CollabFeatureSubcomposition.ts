@@ -3,9 +3,7 @@ import {
   type CollabProjectId,
 } from '@claudian-collab/protocol';
 
-import type {
-  CollabProjectWorkSessionSuspension,
-} from '@/app/collab/activity/CollabProjectWorkSession';
+import type { CollabProjectActivityAdmission, CollabProjectWorkSuspensionPort } from '@/app/collab/activity/CollabProjectActivity';
 import { AuthorityMigrationFollower } from '@/app/collab/authority-transfer/AuthorityMigrationFollower';
 import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
 import {
@@ -17,8 +15,7 @@ import {
 import {
   AuthorityTransferModule,
 } from '@/app/collab/authority-transfer/AuthorityTransferModule';
-import {
-} from '@/app/collab/authority-transfer/AuthorityTransferRecord';
+import { } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
   AuthorityTransferClaimantBindingResolver,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantBindingResolver';
@@ -70,19 +67,21 @@ import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProject
 import { CloudProjectEntryCoordinator } from '@/app/collab/project/CloudProjectEntryCoordinator';
 import type { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import { CollabWorkingCopyLocationService } from '@/app/collab/project/CollabWorkingCopyLocationService';
+import { WorkingCopyLocationTransition } from '@/app/collab/project/WorkingCopyLocationTransition';
 import {
   ProjectOperationAdmission,
-  type ProjectOperationSuspension,
 } from '@/app/collab/ProjectOperationAdmission';
 import { CollabPublicationService } from '@/app/collab/publish/CollabPublicationService';
+import { CloudRelocationActivity } from '@/app/collab/reconnect/CloudRelocationActivity';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
+import { CloudRetirementActivity } from '@/app/collab/retirement/CloudRetirementActivity';
 import { CloudRetirementClient } from '@/app/collab/retirement/CloudRetirementClient';
 import { decodeCloudRetirementIntent } from '@/app/collab/retirement/CloudRetirementIntent';
 import { RetirementAcknowledgementWorker } from '@/app/collab/retirement/RetirementAcknowledgementWorker';
 import { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import { RetirementLocalRecovery } from '@/app/collab/retirement/RetirementLocalRecovery';
-import { type CollabFinalizeRetiredProjectRequest, type CollabLeaveProjectRequest, type CollabOperationOptions, isCollabCloudProjectSnapshot } from '@/core/collab';
+import { type CollabFinalizeRetiredProjectRequest, type CollabLeaveProjectRequest, type CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import { toError } from '@/utils/error';
 
@@ -209,117 +208,23 @@ export function createCollabFeatureSubcomposition(
     }
     return feature;
   };
-  type CloudRetirementSuspension = {
-    readonly admission: ProjectOperationSuspension;
-    readonly workSession: CollabProjectWorkSessionSuspension;
+  const activityAdmission: CollabProjectActivityAdmission = {
+    closeProjectAdmission: projectId => requireFeature().closeProjectAdmission(projectId),
+    drainAdmittedOperations: projectId => requireFeature().drainAdmittedOperations(projectId),
+    resumeProjectAdmission: suspension => requireFeature().resumeProjectAdmission(suspension),
+    suspendProjectAdmission: projectId => requireFeature().suspendProjectAdmission(projectId),
   };
-  const cloudRetirementSuspensions = new Map<CollabProjectId, CloudRetirementSuspension>();
-  const cloudRetirementActivity = {
-    complete: async (projectId: CollabProjectId): Promise<void> => {
-      const suspension = cloudRetirementSuspensions.get(projectId);
-      if (!suspension) return;
-      cloudRetirementSuspensions.delete(projectId);
-      await requirePublication().completeProjectSuspension(suspension.workSession);
-      requireFeature().closeProjectAdmission(projectId);
-    },
-    resume: async (projectId: CollabProjectId): Promise<void> => {
-      const suspension = cloudRetirementSuspensions.get(projectId);
-      if (!suspension) return;
-      await requirePublication().resumeProject(suspension.workSession);
-      if (!requireFeature().resumeProjectAdmission(suspension.admission)) {
-        throw new CollabError({
-          code: 'durable-progress-recovery-required',
-          recoveryActions: ['retry', 'open-diagnostics'],
-          safeContext: { reason: 'cloud-retirement-admission-resume-failed' },
-        });
-      }
-      cloudRetirementSuspensions.delete(projectId);
-    },
-    suspend: async (projectId: CollabProjectId): Promise<void> => {
-      if (cloudRetirementSuspensions.has(projectId)) return;
-      const admission = requireFeature().suspendProjectAdmission(projectId);
-      try {
-        const workSession = await requirePublication().suspendProject(projectId);
-        cloudRetirementSuspensions.set(projectId, { admission, workSession });
-      } catch (error) {
-        requireFeature().resumeProjectAdmission(admission);
-        throw error;
-      }
-    },
+  const workSessions: CollabProjectWorkSuspensionPort = {
+    completeProjectSuspension: suspension => requirePublication().completeProjectSuspension(suspension),
+    resumeProject: suspension => requirePublication().resumeProject(suspension),
+    suspendProject: projectId => requirePublication().suspendProject(projectId),
   };
-  type CloudRelocationSuspension = {
-    readonly admission: ProjectOperationSuspension;
-    workSession: CollabProjectWorkSessionSuspension | null;
-  };
-  const cloudRelocationSuspensions = new Map<CollabProjectId, CloudRelocationSuspension>();
-  const cloudRelocationActivity = {
-    activate: async (
-      projectId: CollabProjectId,
-      operationOptions: CollabOperationOptions = {},
-    ): Promise<void> => {
-      const suspension = cloudRelocationSuspensions.get(projectId);
-      if (!suspension) {
-        throw new CollabError({
-          code: 'durable-progress-recovery-required',
-          recoveryActions: ['resume', 'open-diagnostics'],
-          safeContext: { reason: 'cloud-relocation-suspension-missing' },
-        });
-      }
-      if (suspension.workSession) {
-        await requirePublication().resumeProject(suspension.workSession);
-        suspension.workSession = null;
-      }
-      requirePublication().resetProjectConnection(projectId);
-      const [membership, authoritySnapshot] = await Promise.all([
-        foundation.local.projects.loadMembership(projectId),
-        requirePublication().readAuthoritySnapshot(projectId, operationOptions),
-      ]);
-      const snapshot = authoritySnapshot.snapshot;
-      if (
-        !membership
-        || !isCollabLocalCloudMembership(membership)
-        || !isCollabCloudProjectSnapshot(snapshot)
-        || snapshot.project.id !== membership.project.id
-        || snapshot.project.authorityGeneration
-          !== membership.authority.authorityGeneration
-        || snapshot.currentMember.id !== membership.member.id
-        || snapshot.currentMember.personalRef !== membership.member.personalRef
-        || snapshot.currentMember.status !== 'active'
-      ) {
-        throw new CollabError({
-          code: 'authority-integrity-error',
-          safeContext: { reason: 'cloud-relocation-activation-mismatch' },
-        });
-      }
-    },
-    resume: async (projectId: CollabProjectId): Promise<void> => {
-      const suspension = cloudRelocationSuspensions.get(projectId);
-      if (!suspension) return;
-      if (suspension.workSession) {
-        await requirePublication().resumeProject(suspension.workSession);
-      }
-      if (!requireFeature().resumeProjectAdmission(suspension.admission)) {
-        throw new CollabError({
-          code: 'durable-progress-recovery-required',
-          recoveryActions: ['resume', 'open-diagnostics'],
-          safeContext: { reason: 'cloud-relocation-admission-resume-failed' },
-        });
-      }
-      cloudRelocationSuspensions.delete(projectId);
-    },
-    suspend: async (projectId: CollabProjectId): Promise<void> => {
-      if (cloudRelocationSuspensions.has(projectId)) return;
-      const admission = requireFeature().suspendProjectAdmission(projectId);
-      try {
-        await requireFeature().drainAdmittedOperations(projectId);
-        const workSession = await requirePublication().suspendProject(projectId);
-        cloudRelocationSuspensions.set(projectId, { admission, workSession });
-      } catch (error) {
-        requireFeature().resumeProjectAdmission(admission);
-        throw error;
-      }
-    },
-  };
+  const cloudRetirementActivity = new CloudRetirementActivity(activityAdmission, workSessions);
+  const cloudRelocationActivity = new CloudRelocationActivity(activityAdmission, {
+    ...workSessions,
+    resetProjectConnection: (...args) => requirePublication().resetProjectConnection(...args),
+    readAuthoritySnapshot: (...args) => requirePublication().readAuthoritySnapshot(...args),
+  }, foundation.local.projects);
   let terminalRetirementHandler: RetirementClientHandler | null = null;
   const retirementIntents = {
     listProjectIds: () => foundation.local.projects.listCloudRetirementIntentProjectIds(),
@@ -1088,22 +993,16 @@ export function createCollabFeatureSubcomposition(
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
     module: authorityTransfer,
   });
+  const workingCopyTransition = new WorkingCopyLocationTransition({
+    admission: activityAdmission,
+    workSessions,
+    runTransition: (projectId, operation) => requireFeature().runProjectLifecycleTransition(projectId, operation),
+    runExclusive: (projectId, operation) => requireLifecycle().runExclusive(projectId, 'working-copy-location', 'operation', operation),
+    runProjection: (projectId, operation) => foundation.runAuthorityProjectionTransition(projectId, operation),
+  });
   const workingCopyLocations = new CollabWorkingCopyLocationService(foundation, {
     vaultRoot,
-    transitionProject: (projectId, operation) => requireFeature().runProjectLifecycleTransition(projectId, () => (
-      requireLifecycle().runExclusive(projectId, 'working-copy-location', 'operation', async () => {
-        const admission = requireFeature().suspendProjectAdmission(projectId);
-        let workSession: CollabProjectWorkSessionSuspension | undefined;
-        try {
-          workSession = await requirePublication().suspendProject(projectId);
-          await requireFeature().drainAdmittedOperations(projectId);
-          await foundation.runAuthorityProjectionTransition(projectId, operation);
-        } finally {
-          if (workSession) await requirePublication().resumeProject(workSession);
-          requireFeature().resumeProjectAdmission(admission);
-        }
-      })
-    )),
+    transitionProject: (projectId, operation) => workingCopyTransition.run(projectId, operation),
   });
   feature = new CollabFeatureService(foundation, projectSetup, {
     migrationFollower,

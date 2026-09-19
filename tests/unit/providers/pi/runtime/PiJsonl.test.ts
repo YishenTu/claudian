@@ -3,6 +3,23 @@ import { PassThrough } from 'node:stream';
 import { subscribePiJsonlLines, writePiJsonl } from '@/providers/pi/runtime/PiJsonl';
 
 describe('PiJsonl', () => {
+  it.each(['\n', ''])('preserves fragmented UTF-8 with terminator %j', async terminator => {
+    const stream = new PassThrough();
+    const lines: string[] = [];
+    const unsubscribe = subscribePiJsonlLines(stream, line => lines.push(line));
+    try {
+      for (const byte of Buffer.from(`你好 café 😀${terminator}`)) {
+        stream.write(Buffer.from([byte]));
+      }
+      stream.end();
+      await new Promise(resolve => setImmediate(resolve));
+      expect(lines).toEqual(['你好 café 😀']);
+    } finally {
+      unsubscribe();
+      stream.destroy();
+    }
+  });
+
   it('splits only on LF and strips CR', () => {
     const stream = new PassThrough();
     const lines: string[] = [];

@@ -4,6 +4,7 @@ import { Notice, Setting } from 'obsidian';
 
 import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
+import type { ProviderCliResolver } from '@/core/providers/types';
 import { PI_PROVIDER_ICON } from '@/shared/icons';
 import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
 
@@ -26,7 +27,6 @@ import {
 } from '../../../shared/settings/ProviderModelPicker';
 import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCliPath } from '../../../utils/path';
-import { maybeGetPiWorkspaceServices } from '../app/PiWorkspaceServices';
 import { sameDiscoveredModels, sameStringList } from '../internal/compareCollections';
 import { decodePiModelId, type PiDiscoveredModel } from '../models';
 import { PiModelDiscoveryService } from '../runtime/PiModelDiscoveryService';
@@ -37,127 +37,130 @@ import {
   updatePiProviderSettings,
 } from '../settings';
 
-export const piSettingsTabRenderer: ProviderSettingsTabRenderer = {
-  render(container, context) {
-    const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
-    const hostnameKey = getHostnameKey();
-    const workspace = maybeGetPiWorkspaceServices();
+export function createPiSettingsTabRenderer(
+  workspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; },
+): ProviderSettingsTabRenderer {
+  return {
+    render(container, context) {
+      const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
+      const hostnameKey = getHostnameKey();
 
-    const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
-      getValue: () => getPiProviderSettings(settingsBag).enabled,
-      name: t('settings.providerEnablement.name', { provider: 'Pi' }),
-      onChange: async (value) => {
-        if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
-          settingsBag,
-          'pi',
-          value,
-        )) {
-          lastProviderWarning.showFor();
-          return;
-        }
+      const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
+        getValue: () => getPiProviderSettings(settingsBag).enabled,
+        name: t('settings.providerEnablement.name', { provider: 'Pi' }),
+        onChange: async (value) => {
+          if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
+            settingsBag,
+            'pi',
+            value,
+          )) {
+            lastProviderWarning.showFor();
+            return;
+          }
 
-        let accepted = true;
-        await context.plugin.runProviderExecutionTransition(['pi'], async () => {
-          await context.plugin.mutateSettings((settings) => {
-            accepted = ProviderSettingsCoordinator.applyProviderEnablement(
-              settings,
-              'pi',
-              value,
-            );
-          });
-        });
-        if (accepted) {
-          lastProviderWarning.hide();
-        } else {
-          lastProviderWarning.showFor();
-        }
-        modelWarning.context.notifyProviderModelOptionsChanged('pi');
-      },
-    };
-
-    const installationContainer = container.createDiv();
-    const lastProviderWarning = renderLastEnabledProviderWarning(container);
-
-    const modelWarning = renderProviderModelEnablementWarning(container, context, {
-      getHasEnabledModels: () => getPiProviderSettings(settingsBag).visibleModels.length > 0,
-      getIsEnabled: () => getPiProviderSettings(settingsBag).enabled,
-      providerId: 'pi',
-      providerName: 'Pi',
-    });
-
-    renderCliInstallationSetting({
-      cliName: 'Pi CLI',
-      icon: PI_PROVIDER_ICON,
-      inspect: async () => {
-        const settings = context.plugin.settings as unknown as Record<string, unknown>;
-        const config = getPiProviderSettings(settings);
-        return probeCliInstallation({
-          path: await context.plugin.getResolvedProviderCliPath('pi'),
-          configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
-          args: ['--version'],
-          env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'pi') },
-          prepareLaunch: (spec) => ({ ...spec, ...resolvePiProcessSpec(spec, spec.env.PATH ?? '') }),
-        });
-      },
-      container: installationContainer,
-      enablement,
-      getValue: () => {
-        const config = getPiProviderSettings(settingsBag);
-        return config.cliPathsByHost[hostnameKey] || config.cliPath;
-      },
-      name: 'CLI path',
-      onChange: async (value) => {
-        const cliPathsByHost = {
-          ...getPiProviderSettings(settingsBag).cliPathsByHost,
-        };
-        if (value) {
-          cliPathsByHost[hostnameKey] = value;
-        } else {
-          delete cliPathsByHost[hostnameKey];
-        }
-
-        await context.plugin.applyProviderRuntimeSettings(
-          ['pi'],
-          (settings) => {
-            updatePiProviderSettings(settings, {
-              cliPathsByHost,
-              discoveredModels: [],
+          let accepted = true;
+          await context.plugin.runProviderExecutionTransition(['pi'], async () => {
+            await context.plugin.mutateSettings((settings) => {
+              accepted = ProviderSettingsCoordinator.applyProviderEnablement(
+                settings,
+                'pi',
+                value,
+              );
             });
-          },
-          () => workspace?.cliResolver?.reset(),
-        );
-        context.notifyProviderModelOptionsChanged('pi');
-      },
-      placeholder: process.platform === 'win32'
-        ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd'
-        : '/usr/local/bin/pi',
-      validate: validateCliPath,
-    });
+          });
+          if (accepted) {
+            lastProviderWarning.hide();
+          } else {
+            lastProviderWarning.showFor();
+          }
+          modelWarning.context.notifyProviderModelOptionsChanged('pi');
+        },
+      };
 
-    new Setting(container).setName('Models').setHeading();
-    renderPiModelPicker(container, modelWarning.context, settingsBag);
+      const installationContainer = container.createDiv();
+      const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
-    new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
-    context.renderAgentSkillSettings(container, 'pi');
+      const modelWarning = renderProviderModelEnablementWarning(container, context, {
+        getHasEnabledModels: () => getPiProviderSettings(settingsBag).visibleModels.length > 0,
+        getIsEnabled: () => getPiProviderSettings(settingsBag).enabled,
+        providerId: 'pi',
+        providerName: 'Pi',
+      });
 
-    new Setting(container).setName('Commands').setHeading();
-    context.renderHiddenProviderCommandSetting(container, 'pi', {
-      name: 'Hidden Pi commands and skills',
-      desc: 'Hide runtime commands and skills advertised by Pi from the command dropdown. Enter exact names without the leading slash, one per line.',
-      placeholder: 'skill:review\ncompact',
-    });
+      renderCliInstallationSetting({
+        cliName: 'Pi CLI',
+        icon: PI_PROVIDER_ICON,
+        inspect: async () => {
+          const settings = context.plugin.settings as unknown as Record<string, unknown>;
+          const config = getPiProviderSettings(settings);
+          return probeCliInstallation({
+            path: await context.plugin.getResolvedProviderCliPath('pi'),
+            configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
+            args: ['--version'],
+            env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'pi') },
+            prepareLaunch: (spec) => ({ ...spec, ...resolvePiProcessSpec(spec, spec.env.PATH ?? '') }),
+          });
+        },
+        container: installationContainer,
+        enablement,
+        getValue: () => {
+          const config = getPiProviderSettings(settingsBag);
+          return config.cliPathsByHost[hostnameKey] || config.cliPath;
+        },
+        name: 'CLI path',
+        onChange: async (value) => {
+          const cliPathsByHost = {
+            ...getPiProviderSettings(settingsBag).cliPathsByHost,
+          };
+          if (value) {
+            cliPathsByHost[hostnameKey] = value;
+          } else {
+            delete cliPathsByHost[hostnameKey];
+          }
 
-    renderEnvironmentSettingsSection({
-      container,
-      desc: 'Environment variables passed only to Pi.',
-      heading: 'Environment',
-      name: 'Pi environment variables',
-      placeholder: 'PI_CODING_AGENT_SESSION_DIR=/path/to/sessions',
-      plugin: context.plugin,
-      scope: 'provider:pi',
-    });
-  },
-};
+          await context.plugin.applyProviderRuntimeSettings(
+            ['pi'],
+            (settings) => {
+              updatePiProviderSettings(settings, {
+                cliPathsByHost,
+                discoveredModels: [],
+              });
+            },
+            () => workspace?.cliResolver?.reset(),
+          );
+          context.notifyProviderModelOptionsChanged('pi');
+        },
+        placeholder: process.platform === 'win32'
+          ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd'
+          : '/usr/local/bin/pi',
+        validate: validateCliPath,
+      });
+
+      new Setting(container).setName('Models').setHeading();
+      renderPiModelPicker(container, modelWarning.context, settingsBag);
+
+      new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
+      context.renderAgentSkillSettings(container, 'pi');
+
+      new Setting(container).setName('Commands').setHeading();
+      context.renderHiddenProviderCommandSetting(container, 'pi', {
+        name: 'Hidden Pi commands and skills',
+        desc: 'Hide runtime commands and skills advertised by Pi from the command dropdown. Enter exact names without the leading slash, one per line.',
+        placeholder: 'skill:review\ncompact',
+      });
+
+      renderEnvironmentSettingsSection({
+        container,
+        desc: 'Environment variables passed only to Pi.',
+        heading: 'Environment',
+        name: 'Pi environment variables',
+        placeholder: 'PI_CODING_AGENT_SESSION_DIR=/path/to/sessions',
+        plugin: context.plugin,
+        scope: 'provider:pi',
+      });
+    },
+  };
+}
 
 function renderPiModelPicker(
   container: HTMLElement,

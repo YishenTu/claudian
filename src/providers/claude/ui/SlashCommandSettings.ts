@@ -342,7 +342,7 @@ export class SlashCommandSettings {
 
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': 'Add' },
+      attr: { 'aria-label': 'Add', type: 'button' },
     });
     setIcon(addBtn, 'plus');
     addBtn.addEventListener('click', () => this.#openCommandModal(null));
@@ -389,7 +389,7 @@ export class SlashCommandSettings {
     if (cmd.isEditable) {
       const editBtn = actionsEl.createEl('button', {
         cls: 'claudian-settings-action-btn',
-        attr: { 'aria-label': 'Edit' },
+        attr: { 'aria-label': 'Edit', type: 'button' },
       });
       setIcon(editBtn, 'pencil');
       editBtn.addEventListener('click', () => this.#openCommandModal(cmd));
@@ -398,7 +398,7 @@ export class SlashCommandSettings {
     if (!isSkillEntry(cmd) && cmd.isEditable) {
       const convertBtn = actionsEl.createEl('button', {
         cls: 'claudian-settings-action-btn',
-        attr: { 'aria-label': 'Convert to skill' },
+        attr: { 'aria-label': 'Convert to skill', type: 'button' },
       });
       setIcon(convertBtn, 'package');
       convertBtn.addEventListener('click', () => {
@@ -415,7 +415,7 @@ export class SlashCommandSettings {
     if (cmd.isDeletable) {
       const deleteBtn = actionsEl.createEl('button', {
         cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
-        attr: { 'aria-label': 'Delete' },
+        attr: { 'aria-label': 'Delete', type: 'button' },
       });
       setIcon(deleteBtn, 'trash-2');
       deleteBtn.addEventListener('click', () => {
