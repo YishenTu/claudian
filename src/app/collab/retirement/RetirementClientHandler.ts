@@ -32,7 +32,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 export type RetirementDeliverySource = 'event' | 'response' | 'terminal-fallback';
 
 export interface RetirementClientProjectionStore extends RetirementClientStore {
-  loadMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord | null>;
+  loadRetirementMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord | null>;
   loadWorkspacePath(projectId: CollabProjectId): Promise<string | null>;
   transitionProjectToRetired(
     record: RetirementRecord,
@@ -157,7 +157,7 @@ export class RetirementClientHandler {
       await this.converge(existing);
       return;
     }
-    const membership = await this.store.loadMembership(result.projectId);
+    const membership = await this.store.loadRetirementMembership(result.projectId);
     const cloudMembership = membership && isCollabLocalCloudMembership(membership)
       ? membership
       : null;

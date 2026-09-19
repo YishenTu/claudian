@@ -13,6 +13,7 @@
 
 ## Durable operations
 
+- Shared-vault indexes and memberships cannot override terminal lifecycle facts. Keep credential-free retirement and finalization evidence outside disposable Project state; late synchronization must never reactivate a retired Project. Retirement alone never proves a local file choice was completed.
 - Cloud has no supported legacy binding population. Do not add speculative Cloud migrations or persist development actor assertions. Real LAN migrations remain supported.
 - Setup/recovery documents are independently discoverable before the Project index. Missing/corrupt indexes never authorize overwriting unrecoverable retirement identity or abandoning pending work.
 - Capture the Projects root before possible Create/Join effects; settings changes cannot redirect pending/completed Projects. A generated-looking directory name never proves ownership for deletion. Preserve unmarked collisions and require both root and operation ownership.

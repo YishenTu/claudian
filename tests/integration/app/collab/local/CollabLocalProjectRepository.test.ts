@@ -25,13 +25,22 @@ type CollabLocalProjectIndexEntry,
 CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
+import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
+import { FilesystemLocalRepositoryIdentity } from '@/app/collab/exit/FilesystemLocalRepositoryIdentity';
+import { LocalProjectCleanupCoordinator } from '@/app/collab/exit/LocalProjectCleanupCoordinator';
+import { RetiredProjectFinalizer } from '@/app/collab/exit/RetiredProjectFinalizer';
 import {
 createHostTransferRecoveryRecord,
 } from '@/app/collab/host-transfer/HostTransferRecovery';
+import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
+import { ProjectOperationAdmission } from '@/app/collab/ProjectOperationAdmission';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import {
 decodeCloudRetirementIntent,
 } from '@/app/collab/retirement/CloudRetirementIntent';
+import { RetirementAcknowledgementWorker } from '@/app/collab/retirement/RetirementAcknowledgementWorker';
+import { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
+import { RetirementLocalRecovery } from '@/app/collab/retirement/RetirementLocalRecovery';
 import {
 decodeRetirementRecord,
 type RetirementRecord,
@@ -153,6 +162,27 @@ function durableRetirementRecord(): RetirementRecord {
   });
 }
 
+function retirementRecovery(vaultRoot: string) {
+  const projects = new CollabLocalProjectRepository(vaultRoot);
+  const journals = new CollabLifecycleJournalStore(vaultRoot);
+  const operations = new ProjectOperationAdmission();
+  const cleanup = new LocalProjectCleanupCoordinator(
+    new CollabWorkspaceService(vaultRoot), new FilesystemLocalRepositoryIdentity(), journals.retiredCleanups,
+  );
+  const acknowledgements = new RetirementAcknowledgementWorker(projects, {
+    acknowledge: async () => { throw new Error('Network unavailable'); },
+    acknowledgeCloud: async () => { throw new Error('Network unavailable'); },
+  }, { projectRecoveryAdmission: (_projectId, operation) => operations.runLifecycleRecovery(operation) });
+  const handler = new RetirementClientHandler(projects, {
+    closeProject: async projectId => { operations.closeProject(projectId); },
+    drainProject: projectId => operations.drainAdmittedOperations(projectId),
+  }, acknowledgements, cleanup);
+  const recovery = new RetirementLocalRecovery(projects, journals.pendingLeaves, journals.retiredCleanups,
+    handler, new RetiredProjectFinalizer(cleanup, projects),
+    (_projectId, operation) => operations.runLifecycleRecovery(operation));
+  return { operations, recovery, close: async () => { await handler.close(); await acknowledgements.close(); } };
+}
+
 describe('CollabLocalProjectRepository', () => {
   let vaultRoot: string;
 
@@ -162,6 +192,131 @@ describe('CollabLocalProjectRepository', () => {
 
   afterEach(async () => {
     await rm(vaultRoot, { force: true, recursive: true });
+  });
+
+  it('keeps retirement authoritative when another device restores an active index and membership', async () => {
+    const first = new CollabLocalProjectRepository(vaultRoot);
+    await first.upsertProject(indexEntry());
+    await first.saveMembership(membershipRecord());
+    const indexPath = path.join(vaultRoot, '.claudian/collab/index.json');
+    const staleIndex = await readFile(indexPath);
+    const retirement = { ...durableRetirementRecord(), projectId: PROJECT_ID };
+    await first.transitionProjectToRetired(retirement);
+
+    // Model independently synchronized files from the other device's old snapshot.
+    await writeFile(indexPath, staleIndex);
+    await writeFile(path.join(vaultRoot, first.getProjectPaths(PROJECT_ID).membership), JSON.stringify(membershipRecord()));
+    const second = new CollabLocalProjectRepository(vaultRoot);
+    await expect(second.loadIndex()).resolves.toMatchObject({ projects: [{ lifecycle: 'retired' }] });
+    await expect(second.loadMembership(PROJECT_ID)).resolves.toBeNull();
+    await second.upsertProject(indexEntry());
+    await expect(second.loadIndex()).resolves.toMatchObject({ projects: [{ lifecycle: 'retired' }] });
+  });
+
+  it('does not resurrect finalized retirement after acknowledgement removal and a stale index replay', async () => {
+    const first = new CollabLocalProjectRepository(vaultRoot);
+    await first.upsertProject(indexEntry());
+    const indexPath = path.join(vaultRoot, '.claudian/collab/index.json');
+    const staleIndex = await readFile(indexPath);
+    await first.transitionProjectToRetired({ ...durableRetirementRecord(), projectId: PROJECT_ID, cleanupStatus: 'complete' });
+    await first.finalizeRetiredProject(PROJECT_ID);
+    await first.removeRetirementAcknowledgement(PROJECT_ID);
+    await writeFile(indexPath, staleIndex);
+
+    const second = new CollabLocalProjectRepository(vaultRoot);
+    await expect(second.loadIndex()).resolves.toMatchObject({ projects: [], selectedProjectId: null });
+    await second.upsertProject(indexEntry());
+    await expect(new CollabLocalProjectRepository(vaultRoot).loadIndex()).resolves.toMatchObject({ projects: [] });
+  });
+
+  it('reconstructs an unfinished retired project when the synchronized index omits it', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.upsertProject(indexEntry());
+    await repository.transitionProjectToRetired({ ...durableRetirementRecord(), projectId: PROJECT_ID });
+    await rm(path.join(vaultRoot, '.claudian/collab/index.json'));
+
+    await expect(new CollabLocalProjectRepository(vaultRoot).loadIndex()).resolves.toMatchObject({
+      projects: [{ id: PROJECT_ID, name: 'Project Alpha', lifecycle: 'retired', cleanupStatus: 'failed' }],
+    });
+  });
+
+  it.each(['retirement.json', 'retired.json'])('recovers when the %s durable write is interrupted', async filename => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.upsertProject(indexEntry());
+    await repository.saveMembership(membershipRecord());
+    const fs = jest.requireActual<typeof NodeFsPromises>('node:fs/promises');
+    const rename = fs.rename;
+    const fault = jest.spyOn(fs, 'rename').mockImplementation(async (...args: Parameters<typeof fs.rename>) => {
+      if (path.basename(String(args[1])) === filename) throw Object.assign(new Error('injected write failure'), { code: 'EIO' });
+      return rename(...args);
+    });
+    const retirement = { ...durableRetirementRecord(), projectId: PROJECT_ID };
+    try { await expect(repository.transitionProjectToRetired(retirement)).rejects.toBeDefined(); }
+    finally { fault.mockRestore(); }
+    const restarted = new CollabLocalProjectRepository(vaultRoot);
+    // Either the original membership or the full retirement operation must survive.
+    expect(await restarted.loadRetirementRecord(PROJECT_ID) ?? await restarted.loadMembership(PROJECT_ID)).not.toBeNull();
+    await restarted.transitionProjectToRetired(retirement);
+    await expect(restarted.loadIndex()).resolves.toMatchObject({ projects: [{ lifecycle: 'retired' }] });
+  });
+
+  it('resumes private-state removal after finalization is committed', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.upsertProject(indexEntry());
+    await repository.transitionProjectToRetired({ ...durableRetirementRecord(), projectId: PROJECT_ID, cleanupStatus: 'complete' });
+    const fs = jest.requireActual<typeof NodeFsPromises>('node:fs/promises');
+    const remove = fs.rm;
+    const privateDirectory = path.join(vaultRoot, '.claudian/collab/projects', PROJECT_ID);
+    const fault = jest.spyOn(fs, 'rm').mockImplementation(async (...args: Parameters<typeof fs.rm>) => {
+      if (String(args[0]) === privateDirectory) throw Object.assign(new Error('injected remove failure'), { code: 'EIO' });
+      return remove(...args);
+    });
+    try { await expect(repository.finalizeRetiredProject(PROJECT_ID)).rejects.toBeDefined(); }
+    finally { fault.mockRestore(); }
+    const restarted = new CollabLocalProjectRepository(vaultRoot);
+    const runtime = retirementRecovery(vaultRoot);
+    const controller = new AbortController();
+    controller.abort();
+    try {
+      await expect(runtime.recovery.resume({ signal: controller.signal })).rejects.toMatchObject({ code: 'cancelled' });
+      await expect(stat(privateDirectory)).resolves.toBeDefined();
+      runtime.operations.beginClose();
+      await expect(runtime.recovery.resume()).rejects.toMatchObject({ code: 'cancelled' });
+      await expect(stat(privateDirectory)).resolves.toBeDefined();
+    } finally { await runtime.close(); }
+    await writeFile(path.join(vaultRoot, '.claudian/collab/index.json'), '{corrupt');
+    await expect(restarted.repairIndexFromMemberships()).resolves.toMatchObject({ projects: [] });
+    const resumed = retirementRecovery(vaultRoot);
+    try { await resumed.recovery.resume(); }
+    finally { await resumed.close(); }
+    await expect(restarted.loadIndex()).resolves.toMatchObject({ projects: [] });
+    await expect(stat(privateDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(restarted.listRetirementAcknowledgementProjectIds()).resolves.toEqual([PROJECT_ID]);
+  });
+
+  it('keeps unrelated projects usable while a retirement record is corrupt', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.upsertProject(indexEntry());
+    await repository.saveMembership(membershipRecord());
+    await writeFile(path.join(vaultRoot, '.claudian/collab/projects', PROJECT_ID, 'retirement.json'), '{invalid');
+    await repository.upsertProject(indexEntry({ id: 'project-other', name: 'Other', workspacePath: 'workspace/other' }));
+    await repository.selectProject('project-other');
+    await expect(repository.loadIndex()).resolves.toMatchObject({ selectedProjectId: 'project-other' });
+    await expect(repository.loadMembership(PROJECT_ID)).rejects.toMatchObject({ code: 'operation-failed' });
+    await expect(repository.saveMembership(membershipRecord())).rejects.toMatchObject({ code: 'operation-failed' });
+  });
+
+  it('keeps valid terminal evidence authoritative when cleanup progress is corrupt', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    await repository.upsertProject(indexEntry());
+    const indexPath = path.join(vaultRoot, '.claudian/collab/index.json');
+    const staleIndex = await readFile(indexPath);
+    await repository.transitionProjectToRetired({ ...durableRetirementRecord(), projectId: PROJECT_ID });
+    await writeFile(path.join(vaultRoot, '.claudian/collab/projects', PROJECT_ID, 'retirement.json'), '{invalid');
+    await writeFile(indexPath, staleIndex);
+    await expect(new CollabLocalProjectRepository(vaultRoot).loadIndex()).resolves.toMatchObject({
+      projects: [{ lifecycle: 'retired', cleanupStatus: 'failed' }],
+    });
   });
 
   it('returns an empty index without creating folders when local state is missing', async () => {
@@ -533,7 +688,7 @@ describe('CollabLocalProjectRepository', () => {
     });
   });
 
-  it('fails closed before a corrupt index can erase a durable retired Project', async () => {
+  it('rebuilds a corrupt index from retained retirement and membership authorities', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const retirement = durableRetirementRecord();
     await repository.upsertProject(indexEntry({
@@ -549,6 +704,20 @@ describe('CollabLocalProjectRepository', () => {
     const indexPath = path.join(vaultRoot, '.claudian', 'collab', 'index.json');
     await writeFile(indexPath, '{corrupt');
 
+    await expect(repository.repairIndexFromMemberships()).resolves.toMatchObject({
+      projects: expect.arrayContaining([
+        expect.objectContaining({ id: 'project-retired', name: 'Retired Project', lifecycle: 'retired' }),
+        expect.objectContaining({ id: PROJECT_ID, authorityKind: 'cloud' }),
+      ]),
+    });
+  });
+
+  it('preserves a legacy retirement with no recoverable project identity when the index is corrupt', async () => {
+    const repository = new CollabLocalProjectRepository(vaultRoot);
+    const retirement = durableRetirementRecord();
+    await repository.saveLifecycleProjectDocument(retirement.projectId, 'retirement', retirement, decodeRetirementRecord);
+    const indexPath = path.join(vaultRoot, '.claudian/collab/index.json');
+    await writeFile(indexPath, '{corrupt');
     await expect(repository.repairIndexFromMemberships()).rejects.toMatchObject({
       code: 'operation-failed',
       safeContext: {
@@ -625,7 +794,8 @@ describe('CollabLocalProjectRepository', () => {
       workspacePath: 'workspace/project-retired',
     }));
     await repository.transitionProjectToRetired(retirement);
-    await repository.saveMembership(staleMembership);
+    await expect(repository.saveMembership(staleMembership)).rejects.toMatchObject({ code: 'project-retired' });
+    await writeFile(path.join(vaultRoot, repository.getProjectPaths(retirement.projectId).membership), JSON.stringify(staleMembership));
     await repository.upsertProject(indexEntry({
       cleanupStatus: retirement.cleanupStatus,
       id: retirement.projectId,
@@ -644,9 +814,7 @@ describe('CollabLocalProjectRepository', () => {
         retiredAt: retirement.retiredAt,
       }],
     });
-    await expect(repository.loadMembership(retirement.projectId)).resolves.toEqual(
-      staleMembership,
-    );
+    await expect(repository.loadMembership(retirement.projectId)).resolves.toBeNull();
   });
 
   it('persists lifecycle records and discovers tombstones without an active Project', async () => {
@@ -672,7 +840,45 @@ describe('CollabLocalProjectRepository', () => {
       }],
     };
 
+    await repository.upsertProject(indexEntry());
+    await repository.saveMembership(membershipRecord());
     await repository.saveRetirementTombstone(tombstone);
+    await expect(new CollabLocalProjectRepository(vaultRoot).loadIndex()).resolves.toMatchObject({
+      projects: [{ lifecycle: 'retired', cleanupStatus: 'failed', retiredAt: tombstone.retiredAt }],
+    });
+    await repository.removeRetirementTombstone(PROJECT_ID);
+    await expect(new CollabLocalProjectRepository(vaultRoot).loadIndex()).resolves.toMatchObject({ projects: [{ lifecycle: 'retired' }] });
+    await repository.saveRetirementTombstone(tombstone);
+    await expect(repository.loadMembership(PROJECT_ID)).resolves.toBeNull();
+    const workspace = new CollabWorkspaceService(vaultRoot);
+    await workspace.claimProjectsFolder('workspace');
+    const workingCopy = path.join(vaultRoot, 'workspace/project-alpha');
+    await mkdir(path.join(workingCopy, '.git'), { recursive: true });
+    await writeFile(path.join(workingCopy, 'note.md'), 'preserved');
+    await writeFile(path.join(workingCopy, '.git/config'), '[claudian]\nprojectId = project-alpha\nmemberId = member-alice\npersonalRef = refs/heads/members/member-alice\n');
+    const operations = new ProjectOperationAdmission();
+    const acknowledgement = new RetirementAcknowledgementWorker(repository, {
+      acknowledge: async () => ({ projectId: PROJECT_ID, retiredAt: tombstone.retiredAt, acknowledgedAt: tombstone.retiredAt }),
+      acknowledgeCloud: async () => { throw new Error('Unexpected Cloud acknowledgement'); },
+    }, {
+      now: () => new Date(tombstone.retiredAt),
+      projectRecoveryAdmission: (_projectId, operation) => operations.runLifecycleRecovery(operation),
+    });
+    const handler = new RetirementClientHandler(repository, {
+      closeProject: async projectId => { operations.closeProject(projectId); },
+      drainProject: projectId => operations.drainAdmittedOperations(projectId),
+    }, acknowledgement, new LocalProjectCleanupCoordinator(
+      workspace, new FilesystemLocalRepositoryIdentity(), new CollabLifecycleJournalStore(vaultRoot).retiredCleanups,
+    ));
+    try {
+      await handler.handle(tombstone.result, 'response');
+      await expect(repository.loadRetirementRecord(PROJECT_ID)).resolves.toMatchObject({ cleanupStatus: 'complete' });
+      await expect(readFile(path.join(workingCopy, 'note.md'), 'utf8')).resolves.toBe('preserved');
+      await expect(stat(path.join(workingCopy, '.git'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await handler.close();
+      await acknowledgement.close();
+    }
     await repository.removeProject(PROJECT_ID);
 
     const restarted = new CollabLocalProjectRepository(vaultRoot);

@@ -170,9 +170,14 @@ export class CollabProjectCatalog {
       const pendingLeave = pendingByProject.get(project.id) ?? null;
       const hasCloudRetirementIntent = cloudRetirementProjects.has(project.id);
       const setup = setupsByProject.get(project.id);
+      let membershipUnavailable = false;
       const [membership, workingCopyHealthy] = await Promise.all([
         this.options.projects.loadMembership(project.id).catch(error => {
           if (isUnsupportedLocalMembership(error)) return null;
+          if (error instanceof CollabError) {
+            membershipUnavailable = true;
+            return null;
+          }
           throw error;
         }),
         this.#hasWorkingCopy(project.workspacePath),
@@ -180,7 +185,7 @@ export class CollabProjectCatalog {
       const summary = await this.#projectSummary(
         project,
         membership,
-        setup?.unavailable === true || setup?.pending != null || pendingLeave !== null || hasCloudRetirementIntent,
+        membershipUnavailable || setup?.unavailable === true || setup?.pending != null || pendingLeave !== null || hasCloudRetirementIntent,
         workingCopyHealthy,
       );
       pendingByProject.delete(project.id);

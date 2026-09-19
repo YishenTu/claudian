@@ -92,6 +92,7 @@ import {
 
 const PRIVATE_STATE_DIRECTORY = '.claudian/collab';
 const RETIREMENT_ACKNOWLEDGEMENT_DIRECTORY = `${PRIVATE_STATE_DIRECTORY}/retirement-acknowledgements`;
+const RETIRED_PROJECT_DIRECTORY = `${PRIVATE_STATE_DIRECTORY}/retired-projects`;
 const AUTHORITY_OWNERSHIP_MARKER = '.claudian-authority.json';
 const PROVISIONAL_AUTHORITY_MARKER = '.claudian-authority-resource.json';
 const LEGACY_AUTHORITY_OWNERSHIP_SCHEMA_VERSION = 1 as const;
@@ -1051,7 +1052,9 @@ export class CollabLocalProjectRepository {
         ) {
           throw error;
         }
-        existing = null;
+        existing = await this.#projectRetirementsUnlocked({
+          schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION, projects: [], selectedProjectId: null,
+        });
       }
       const projectsRelativePath = `${PRIVATE_STATE_DIRECTORY}/projects`;
       const projectsPath = await resolveCollabVaultPath(this.vaultRoot, projectsRelativePath);
@@ -1069,6 +1072,7 @@ export class CollabLocalProjectRepository {
         ) {
           throw localRecordError('local-project-directory-invalid', 'index');
         }
+        if ((await this.#readRetiredProjectUnlocked(entry.name))?.finalized) continue;
         const retirement = await this.#loadRetirementRecordUnlocked(entry.name);
         if (retirement) {
           const terminal = existing?.projects.find(project => project.id === entry.name);
@@ -1266,7 +1270,8 @@ export class CollabLocalProjectRepository {
     this.#requireProjectId(projectId);
     return this.#operationQueue.run(async () => {
       const index = await this.#loadIndexUnlocked(false);
-      const entry = index.projects.find(project => project.id === projectId);
+      const terminal = await this.#readRetiredProjectUnlocked(projectId);
+      const entry = terminal?.finalized ? terminal.project : index.projects.find(project => project.id === projectId);
       if (
         !entry
         || entry.lifecycle !== 'retired'
@@ -1279,7 +1284,7 @@ export class CollabLocalProjectRepository {
               safeContext: { projectId, reason: 'local-retirement-projection-missing' },
             });
       }
-      const record = await this.#loadRetirementRecordUnlocked(projectId);
+      const record = terminal?.finalized ? null : await this.#loadRetirementRecordUnlocked(projectId);
       if (record?.acknowledgementStatus === 'pending') {
         await ensureCollabVaultDirectory(
           this.vaultRoot,
@@ -1292,13 +1297,14 @@ export class CollabLocalProjectRepository {
           serializeJson(record),
           { mode: 0o600, onDiagnostic: this.#onDiagnostic },
         );
-      } else {
+      } else if (!terminal?.finalized) {
         await removeCollabFileDurably(
           this.vaultRoot,
           this.#retirementAcknowledgementPath(projectId),
           this.#onDiagnostic,
         );
       }
+      await this.#retainRetiredProjectUnlocked(entry, 'finalized');
       await removeCollabDirectoryDurably(
         this.vaultRoot,
         `${PRIVATE_STATE_DIRECTORY}/projects/${projectId}`,
@@ -1312,6 +1318,16 @@ export class CollabLocalProjectRepository {
           : index.selectedProjectId,
       });
     });
+  }
+
+  listRetiredProjectIds(): Promise<readonly CollabProjectId[]> {
+    return this.#operationQueue.run(() => this.#retiredProjectIds());
+  }
+
+  async resumeFinalizedRetiredProject(projectId: CollabProjectId): Promise<void> {
+    this.#requireProjectId(projectId);
+    const terminal = await this.#operationQueue.run(() => this.#readRetiredProjectUnlocked(projectId));
+    if (terminal?.finalized) await this.finalizeRetiredProject(projectId);
   }
 
   transitionProjectToRetired(
@@ -1331,6 +1347,13 @@ export class CollabLocalProjectRepository {
     const projectId = retirement.projectId;
     this.#requireProjectId(projectId);
     return this.#operationQueue.run(async () => {
+      const terminal = await this.#readRetiredProjectUnlocked(projectId);
+      if (terminal?.finalized) {
+        if (terminal.project.retiredAt !== retirement.retiredAt) {
+          throw localRecordError('local-retirement-identity-conflict', 'retirement', projectId);
+        }
+        return;
+      }
       const index = await this.#loadIndexUnlocked(false);
       const entry = index.projects.find(project => project.id === projectId);
       const existingValue = await this.#readJson(
@@ -1384,6 +1407,13 @@ export class CollabLocalProjectRepository {
           { mode: 0o600, onDiagnostic: this.#onDiagnostic },
         );
       }
+      await this.#retainRetiredProjectUnlocked({
+        ...retiredEntry,
+        lifecycle: 'retired',
+        cleanupStatus: authoritative.cleanupStatus,
+        retiredAt: authoritative.retiredAt,
+        updatedAt: authoritative.updatedAt,
+      }, 'retired');
       await this.#saveIndexUnlocked({
         ...index,
         projects: entry
@@ -1510,6 +1540,16 @@ export class CollabLocalProjectRepository {
   loadMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord | null> {
     this.#requireProjectId(projectId);
     return this.#operationQueue.run(() => this.#loadMembershipUnlocked(projectId, true));
+  }
+
+  // Terminal delivery still needs the former identity to persist its cleanup
+  // and acknowledgement operation. This read never authorizes active work.
+  loadRetirementMembership(projectId: CollabProjectId): Promise<CollabLocalMembershipRecord | null> {
+    this.#requireProjectId(projectId);
+    return this.#operationQueue.run(async () => {
+      if ((await this.#readRetiredProjectUnlocked(projectId))?.finalized) return null;
+      return this.#readMembershipUnlocked(projectId, true);
+    });
   }
 
   saveMembership(record: CollabLocalMembershipRecord): Promise<void> {
@@ -2267,7 +2307,10 @@ export class CollabLocalProjectRepository {
     projectId: CollabProjectId,
   ): Promise<RetirementTombstoneRecord | null> {
     this.#requireProjectId(projectId);
-    return this.#operationQueue.run(async () => {
+    return this.#operationQueue.run(() => this.#loadRetirementTombstoneUnlocked(projectId));
+  }
+
+  async #loadRetirementTombstoneUnlocked(projectId: CollabProjectId): Promise<RetirementTombstoneRecord | null> {
       const value = await this.#readJson(
         this.#retirementTombstonePath(projectId),
         'retirement-tombstone',
@@ -2281,7 +2324,6 @@ export class CollabLocalProjectRepository {
       } catch {
         throw localRecordError('local-record-corrupt', 'retirement-tombstone', projectId);
       }
-    });
   }
 
   saveRetirementTombstone(record: RetirementTombstoneRecord): Promise<void> {
@@ -3259,11 +3301,11 @@ export class CollabLocalProjectRepository {
    async #loadIndexUnlocked(persistMigration: boolean): Promise<CollabLocalProjectIndex> {
     const value = await this.#readJson(`${PRIVATE_STATE_DIRECTORY}/index.json`, 'index');
     if (value === null) {
-      return {
+      return this.#projectRetirementsUnlocked({
         projects: [],
         schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
         selectedProjectId: null,
-      };
+      });
     }
 
     let decoded: DecodeResult<CollabLocalProjectIndex>;
@@ -3293,13 +3335,97 @@ export class CollabLocalProjectRepository {
     if (decoded.migrated && persistMigration) {
       await this.#saveIndexUnlocked(decoded.value);
     }
-    return decoded.value;
+    return this.#projectRetirementsUnlocked(decoded.value, persistMigration);
+  }
+
+  // These two immutable facts are the local terminal authority. Keeping them
+  // outside disposable private state and in separate files makes late sync of
+  // retirement incapable of overwriting completed finalization.
+  async #readRetiredProjectUnlocked(projectId: CollabProjectId): Promise<{
+    project: CollabLocalProjectIndexEntry;
+    finalized: boolean;
+  } | null> {
+    for (const phase of ['finalized', 'retired'] as const) {
+      const value = await this.#readJson(`${RETIRED_PROJECT_DIRECTORY}/${projectId}/${phase}.json`, 'retirement', projectId);
+      if (value === null) continue;
+      try {
+        if (!isRecord(value) || value.schemaVersion !== 1 || Object.keys(value).length !== 2) throw new TypeError();
+        const project = normalizeIndexEntry(value.project);
+        if (project.id !== projectId || project.lifecycle !== 'retired'
+          || (phase === 'finalized' && project.cleanupStatus !== 'complete')) throw new TypeError();
+        return { project, finalized: phase === 'finalized' };
+      } catch {
+        throw localRecordError('local-record-corrupt', 'retirement', projectId);
+      }
+    }
+    return null;
+  }
+
+  async #retainRetiredProjectUnlocked(project: CollabLocalProjectIndexEntry, phase: 'retired' | 'finalized'): Promise<void> {
+    const existing = await this.#readRetiredProjectUnlocked(project.id);
+    if (existing && existing.project.retiredAt !== project.retiredAt) {
+      throw localRecordError('local-retirement-identity-conflict', 'retirement', project.id);
+    }
+    if (existing?.finalized || (existing && phase === 'retired')) return;
+    const directory = `${RETIRED_PROJECT_DIRECTORY}/${project.id}`;
+    await ensureCollabVaultDirectory(this.vaultRoot, directory, { durable: true, mode: 0o700, onDiagnostic: this.#onDiagnostic });
+    await writeCollabFileAtomically(this.vaultRoot, `${directory}/${phase}.json`, serializeJson({
+      schemaVersion: 1, project: normalizeIndexEntry(project),
+    }), { mode: 0o600, onDiagnostic: this.#onDiagnostic });
+  }
+
+  async #retiredProjectIds(): Promise<CollabProjectId[]> {
+    const directory = await resolveCollabVaultPath(this.vaultRoot, RETIRED_PROJECT_DIRECTORY);
+    const entries = await readdir(directory, { withFileTypes: true }).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw localRecordError('local-record-read-failed', 'retirement');
+    });
+    return entries.flatMap(entry => isCollabProjectId(entry.name) ? [entry.name] : []);
+  }
+
+  async #projectRetirementsUnlocked(index: CollabLocalProjectIndex, migrate = false): Promise<CollabLocalProjectIndex> {
+    const projects = new Map(index.projects.map(project => [project.id, project]));
+    const ids = new Set([...projects.keys(), ...await this.#retiredProjectIds()]);
+    for (const projectId of ids) {
+      try {
+        const terminal = await this.#readRetiredProjectUnlocked(projectId);
+        if (terminal?.finalized) {
+          projects.delete(projectId);
+          continue;
+        }
+        if (terminal) projects.set(projectId, { ...terminal.project, cleanupStatus: 'failed' });
+        const retirement = await this.#loadRetirementRecordUnlocked(projectId);
+        const tombstone = terminal || retirement ? null : await this.#loadRetirementTombstoneUnlocked(projectId);
+        const seed = terminal?.project ?? projects.get(projectId);
+        if (!seed || (!terminal && !retirement && !tombstone)) continue;
+        const retired: CollabLocalProjectIndexEntry = {
+          ...seed,
+          lifecycle: 'retired',
+          retiredAt: terminal?.project.retiredAt ?? retirement?.retiredAt ?? tombstone!.retiredAt,
+          cleanupStatus: retirement?.cleanupStatus ?? 'failed',
+          updatedAt: retirement?.updatedAt ?? seed.updatedAt,
+        };
+        if (migrate && !terminal) await this.#retainRetiredProjectUnlocked(retired, 'retired');
+        projects.set(projectId, retired);
+      } catch (error) {
+        // A broken Project stays unavailable through its membership boundary;
+        // global index operations must still serve the other Projects.
+        if (!(error instanceof CollabError)) throw error;
+      }
+    }
+    return { ...index, projects: [...projects.values()], selectedProjectId: index.selectedProjectId && projects.has(index.selectedProjectId) ? index.selectedProjectId : null };
   }
 
    async #loadMembershipUnlocked(
     projectId: CollabProjectId,
     persistMigration: boolean,
   ): Promise<CollabLocalMembershipRecord | null> {
+    if (await this.#readRetiredProjectUnlocked(projectId) || await this.#loadRetirementRecordUnlocked(projectId)
+      || await this.#loadRetirementTombstoneUnlocked(projectId)) return null;
+    return this.#readMembershipUnlocked(projectId, persistMigration);
+  }
+
+  async #readMembershipUnlocked(projectId: CollabProjectId, persistMigration: boolean): Promise<CollabLocalMembershipRecord | null> {
     const relativePath = this.getProjectPaths(projectId).membership;
     const value = await this.#readJson(relativePath, 'membership', projectId);
     if (value === null) return null;
@@ -3331,6 +3457,10 @@ export class CollabLocalProjectRepository {
   }
 
    async #saveMembershipUnlocked(membership: CollabLocalMembershipRecord): Promise<void> {
+    if (await this.#readRetiredProjectUnlocked(membership.project.id) || await this.#loadRetirementRecordUnlocked(membership.project.id)
+      || await this.#loadRetirementTombstoneUnlocked(membership.project.id)) {
+      throw new CollabError({ code: 'project-retired', safeContext: { projectId: membership.project.id } });
+    }
     await this.#ensurePrivateProjectDirectory(membership.project.id);
     await writeCollabFileAtomically(
       this.vaultRoot, this.getProjectPaths(membership.project.id).membership, serializeJson(membership),
@@ -3349,7 +3479,7 @@ export class CollabLocalProjectRepository {
     await writeCollabFileAtomically(
       this.vaultRoot,
       `${PRIVATE_STATE_DIRECTORY}/index.json`,
-      serializeJson(normalized),
+      serializeJson(await this.#projectRetirementsUnlocked(normalized)),
       { mode: 0o600, onDiagnostic: this.#onDiagnostic },
     );
   }

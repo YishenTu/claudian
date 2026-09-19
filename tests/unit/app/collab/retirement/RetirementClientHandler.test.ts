@@ -712,7 +712,7 @@ class MemoryProjectionStore implements RetirementClientProjectionStore {
 
   constructor(private readonly order: string[]) {}
 
-  async loadMembership(): Promise<CollabLocalMembershipRecord | null> {
+  async loadRetirementMembership(): Promise<CollabLocalMembershipRecord | null> {
     return this.membership;
   }
 

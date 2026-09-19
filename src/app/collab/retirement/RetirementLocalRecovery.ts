@@ -13,6 +13,8 @@ import { type CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface RetirementLocalRecoveryStore {
+  listRetiredProjectIds(): Promise<readonly CollabProjectId[]>;
+  resumeFinalizedRetiredProject(projectId: CollabProjectId): Promise<void>;
   loadIndex(): Promise<CollabLocalProjectIndex>;
   loadRetirementRecord(projectId: CollabProjectId): Promise<RetirementRecord | null>;
   listRetirementAcknowledgementProjectIds(): Promise<readonly CollabProjectId[]>;
@@ -35,9 +37,8 @@ export interface RetirementLocalRecoveryFinalizer {
 }
 
 /**
- * Reconciles the two crash boundaries that cannot be represented by the Project
- * index alone: a durable retirement record before the Retired index write, and
- * an applied cleanup journal after the index/private projection was removed.
+ * Reconciles durable retirement, finalization, and cleanup work independently
+ * of the Project index, through the shared Project lifecycle admission.
  */
 export class RetirementLocalRecovery {
   constructor(
@@ -50,6 +51,15 @@ export class RetirementLocalRecovery {
   ) {}
 
   async resume(options: CollabOperationOptions = {}): Promise<void> {
+    let firstError: unknown;
+    if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
+    for (const projectId of await this.store.listRetiredProjectIds()) {
+      if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
+      await this.projectRecoveryAdmission(projectId, () => {
+        if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
+        return this.store.resumeFinalizedRetiredProject(projectId);
+      }).catch(error => { firstError ??= error; });
+    }
     const [index, journalProjectIds, acknowledgementProjectIds] = await Promise.all([
       this.store.loadIndex(),
       this.cleanupRecords.listProjectIds(),
@@ -58,7 +68,6 @@ export class RetirementLocalRecovery {
     const indexed = new Set(index.projects.map(project => project.id));
     const journaled = new Set(journalProjectIds);
     const acknowledgementOnly = new Set(acknowledgementProjectIds);
-    let firstError: unknown;
     for (const project of index.projects) {
       if (options.signal?.aborted) throw new CollabError({ code: 'cancelled' });
       const [retirement, pendingLeave, cleanupRecord] = await Promise.all([

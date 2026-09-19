@@ -58,6 +58,7 @@ async function bounded<T>(promise: Promise<T>, reason: string): Promise<T> {
 }
 
 interface Fixture {
+  readonly vaultRoot: string;
   readonly service: CollabFeatureService;
   readonly foundation: ClaudianCollabService;
   readonly publication: CollabPublicationService;
@@ -160,7 +161,7 @@ async function withFixture(run: (fixture: Fixture) => Promise<void>, initialize 
     service = new CollabFeatureService(foundation, new CollabProjectSetupService(foundation, { installationKey: TEST_INSTALLATION_A, vaultRoot }), { ...completeCollabFeatureOptions({ vaultRoot }), publication });
     if (initialize) expect((await service.initialize()).status).toBe('success');
     await new Promise<void>(resolve => setImmediate(resolve));
-    await run({ service, foundation, publication, sockets, networkRequestCount: () => networkRequests,
+    await run({ vaultRoot, service, foundation, publication, sockets, networkRequestCount: () => networkRequests,
       advance: (projectId, mainOid) => { if (mainOid) mainOids.set(projectId, mainOid); const sequence = (sequences.get(projectId) ?? 2) + 1; sequences.set(projectId, sequence); sockets.find(socket => !socket.closed && socket.projectId === projectId)?.snapshotRequired(sequence); },
       enableNetwork: () => { enabled = true; } });
   } finally {
@@ -207,6 +208,17 @@ it('keeps the catalog and inspection coherent with an accepted demotion during s
   });
 });
 
+
+it('keeps healthy projects selectable when another project has corrupt retirement state', async () => {
+  await withFixture(async ({ vaultRoot, service }) => {
+    await writeFile(path.join(vaultRoot, '.claudian/collab/projects/project-alpha/retirement.json'), '{invalid');
+    await expect(service.listProjects()).resolves.toMatchObject({ status: 'success', value: expect.arrayContaining([
+      expect.objectContaining({ id: 'project-alpha', health: 'needs-attention' }),
+      expect.objectContaining({ id: 'project-beta', health: 'healthy' }),
+    ]) });
+    await expect(service.selectProject('project-beta')).resolves.toMatchObject({ status: 'success' });
+  });
+});
 
 it('retains maintenance when refresh adopts a durably selected Project', async () => {
   await withFixture(async ({ service, foundation, sockets, enableNetwork }) => {
