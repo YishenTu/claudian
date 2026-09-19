@@ -246,12 +246,16 @@ implements ClaudeExecutionStrategy {
       await query.setModel(request.model);
       if (this.query !== query || this.disposed) return;
     }
-    if (request.effort !== current.effort) {
-      await query.applyFlagSettings({ effortLevel: request.effort });
-      if (this.query !== query || this.disposed) return;
-    }
-    if (request.responseStyle !== current.responseStyle) {
-      await query.applyFlagSettings({ outputStyle: request.responseStyle });
+    const flagSettings: Parameters<Query['applyFlagSettings']>[0] = {
+      ...(request.effort !== current.effort
+        ? { effortLevel: request.effort }
+        : {}),
+      ...(request.responseStyle !== current.responseStyle
+        ? { outputStyle: request.responseStyle }
+        : {}),
+    };
+    if (Object.keys(flagSettings).length > 0) {
+      await query.applyFlagSettings(flagSettings);
       if (this.query !== query || this.disposed) return;
     }
     if (request.sdkPermissionMode !== current.sdkPermissionMode) {

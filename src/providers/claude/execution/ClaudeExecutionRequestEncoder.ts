@@ -169,6 +169,11 @@ export class ClaudeExecutionRequestEncoder {
         claudeSettings.loadUserSettings,
       ),
       spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
+      // Auto mode stays available so safe-mode switches remain live setters.
+      extraArgs: {
+        'enable-auto-mode': null,
+        ...(claudeSettings.enableChrome ? { chrome: null } : {}),
+      },
       includePartialMessages: true,
       enableFileCheckpointing: true,
       canUseTool,
@@ -184,18 +189,6 @@ export class ClaudeExecutionRequestEncoder {
       ...(resume.fork ? { forkSession: true } : {}),
     };
 
-    if (claudeSettings.safeMode === 'auto') {
-      options.extraArgs = {
-        ...options.extraArgs,
-        'enable-auto-mode': null,
-      };
-    }
-    if (claudeSettings.enableChrome) {
-      options.extraArgs = {
-        ...options.extraArgs,
-        chrome: null,
-      };
-    }
     if (sessionConfig.nativePersistence === 'disabled-if-supported') {
       options.persistSession = false;
       if (request.toolPolicy.kind === 'passive') {
@@ -219,12 +212,10 @@ export class ClaudeExecutionRequestEncoder {
       restartKey: JSON.stringify({
         systemPrompt,
         tools: policy.tools,
-        disallowedTools: options.disallowedTools,
         hooks: Boolean(policy.hooks),
         cliPath,
         settingSources: options.settingSources,
         enableChrome: claudeSettings.enableChrome,
-        enableAutoMode: claudeSettings.safeMode === 'auto',
         persistSession: options.persistSession,
       }),
       allowedTools: policy.allowedTools,

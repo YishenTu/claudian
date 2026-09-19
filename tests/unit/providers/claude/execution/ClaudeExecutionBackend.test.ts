@@ -1091,8 +1091,30 @@ describe('ClaudeExecutionBackend', () => {
 
     expect(sdkMock.getQueryCallCount()).toBe(1);
     expect(query?.setModel).toHaveBeenCalledWith('claude-opus-4-6');
+    expect(query?.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: 'high' });
     expect(query?.setPermissionMode).toHaveBeenCalledWith('bypassPermissions');
     expect(query?.setMcpServers).not.toHaveBeenCalled();
+  });
+
+  it('switches into auto safe mode on the same persistent query', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const host = createHost();
+    host.settings.providerConfigs = { claude: { safeMode: 'default' } };
+    const { services } = createServices();
+    const session = new ClaudeExecutionBackend(host, services)
+      .createSession(createConfig());
+
+    await collectEvents(session.execute(createRequest()).events);
+    const query = sdkMock.getLastResponse();
+    host.settings.providerConfigs = { claude: { safeMode: 'auto' } };
+    await collectEvents(session.execute(createRequest()).events);
+
+    expect(sdkMock.getQueryCallCount()).toBe(1);
+    expect(query?.setPermissionMode).toHaveBeenLastCalledWith('auto');
+    await session.dispose();
   });
 
   it('replays canonical history only while bootstrapping a native session', async () => {
