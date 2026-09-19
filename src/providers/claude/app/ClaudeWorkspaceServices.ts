@@ -3,8 +3,6 @@ import type { ProviderVaultEntryRepository } from '../../../core/providers/comma
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
-  AppAgentManager,
-  AppAgentStorage,
   ProviderCliResolver,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
@@ -28,8 +26,8 @@ import { claudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
 
 export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   cliResolver: ProviderCliResolver;
-  agentStorage: AppAgentStorage;
-  agentManager: AppAgentManager;
+  agentStorage: AgentVaultStorage;
+  agentManager: AgentManager;
   commandCatalog: ProviderCommandCatalog;
   vaultCommandRepository: ProviderVaultEntryRepository;
   dispose(): Promise<void>;

@@ -29,13 +29,13 @@ import {
 import { appendEditorContext } from '../../../utils/editor';
 import {
   getEnhancedPath,
-  getMissingNodeError,
   parseEnvironmentVariables,
 } from '../../../utils/env';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
 } from '../../../utils/session';
+import { getMissingNodeError } from '../cli/claudeLaunchValidation';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import {

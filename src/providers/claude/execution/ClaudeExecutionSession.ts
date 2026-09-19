@@ -102,7 +102,7 @@ ClaudeExecutionStrategySink {
   private backgroundCounter = 0;
   private sessionSequence = 0;
   private queryToken = 0;
-  private latestCommandQueryToken = -1;
+  private commandPublication = 0;
   private disposed = false;
   private readonly suppressedPersistentQueryTokens = new Set<number>();
   private readonly suppressedEphemeralQueryTokens = new Set<number>();
@@ -619,21 +619,22 @@ ClaudeExecutionStrategySink {
     }
   }
 
-  publishCommands(query: Query, queryToken: number): void {
-    this.latestCommandQueryToken = queryToken;
-    void query.supportedCommands()
-      .then((commands) => {
-        if (
-          this.disposed
-          || this.latestCommandQueryToken !== queryToken
-        ) {
-          return;
-        }
-        this.services.commandCatalog.setCommandSnapshot(
-          commands.map(mapSdkCommand),
-        );
-      })
-      .catch(() => undefined);
+  publishCommands(query: Query, commands?: Awaited<ReturnType<Query['supportedCommands']>>): void {
+    if (this.disposed || this.nativeQuery !== query) return;
+    const publication = ++this.commandPublication;
+    const publish = (snapshot: Awaited<ReturnType<Query['supportedCommands']>>) => {
+      if (
+        this.disposed
+        || this.nativeQuery !== query
+        || this.commandPublication !== publication
+      ) return;
+      this.services.commandCatalog.setCommandSnapshot(snapshot.map(mapSdkCommand));
+    };
+    if (commands !== undefined) {
+      publish(commands);
+    } else {
+      void query.supportedCommands().then(publish).catch(() => undefined);
+    }
   }
 
   releaseNativeTurnFence(queryToken: number): void {

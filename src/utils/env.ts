@@ -253,19 +253,6 @@ export function cliPathRequiresNode(cliPath: string): boolean {
   }
 }
 
-export function getMissingNodeError(cliPath: string, enhancedPath?: string): string | null {
-  if (!cliPathRequiresNode(cliPath)) {
-    return null;
-  }
-
-  const nodePath = findNodeExecutable(enhancedPath);
-  if (nodePath) {
-    return null;
-  }
-
-  return 'Claude Code CLI requires Node.js, but Node was not found on PATH. Install Node.js or use the native Claude Code binary, then restart Obsidian.';
-}
-
 export function getEnhancedPath(additionalPaths?: string, cliPath?: string): string {
   const extraPaths = getExtraBinaryPaths().filter(p => p);
   const currentPath = process.env.PATH || '';

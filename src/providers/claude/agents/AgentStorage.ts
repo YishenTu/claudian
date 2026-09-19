@@ -1,6 +1,6 @@
-import type { AgentDefinition, AgentFrontmatter } from '../../../core/types';
 import { extractStringArray, isRecord, normalizeStringArray, parseFrontmatter } from '../../../utils/frontmatter';
-import { type ClaudeModelTier, isClaudeModelTier } from '../modelTiers';
+import { isClaudeModelTier } from '../modelTiers';
+import type { AgentDefinition, AgentFrontmatter } from '../types/agent';
 import { AGENT_PERMISSION_MODES, type AgentPermissionMode } from '../types/agent';
 
 const KNOWN_AGENT_KEYS = new Set([
@@ -67,15 +67,13 @@ export function parsePermissionMode(mode?: string): AgentPermissionMode | undefi
   return undefined;
 }
 
-export type ClaudeAgentModel = ClaudeModelTier | 'inherit';
-
-export function parseModel(model?: string): ClaudeAgentModel {
+export function parseModel(model?: string): string {
   if (!model) return 'inherit';
   const normalized = model.toLowerCase().trim();
   if (normalized === 'inherit' || isClaudeModelTier(normalized)) {
     return normalized;
   }
-  return 'inherit';
+  return model.trim() || 'inherit';
 }
 
 export function buildAgentFromFrontmatter(

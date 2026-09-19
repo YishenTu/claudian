@@ -1,6 +1,6 @@
-import type { AgentDefinition } from '@/core/types';
+import { serializeAgent, validateAgentName } from '@/providers/claude/agents/agentSerialization';
 import { buildAgentFromFrontmatter, parseAgentFile } from '@/providers/claude/agents/AgentStorage';
-import { serializeAgent, validateAgentName } from '@/utils/agent';
+import type { AgentDefinition } from '@/providers/claude/types/agent';
 
 describe('validateAgentName', () => {
   it('returns null for valid name', () => {

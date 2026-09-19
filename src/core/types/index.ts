@@ -64,9 +64,3 @@ export {
   type ToolDiffData,
   type ToolProviderPayload,
 } from './tools';
-
-// Agent types
-export {
-  type AgentDefinition,
-  type AgentFrontmatter,
-} from './agent';

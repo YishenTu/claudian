@@ -6,7 +6,6 @@ import type {
 } from '../execution';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
-  AgentDefinition,
   AuxiliaryContinuityReset,
   Conversation,
   InstructionRefineResult,
@@ -141,19 +140,6 @@ export interface AppCommandStorage {
 export interface AppSkillStorage {
   save(skill: SlashCommand): Promise<void>;
   delete(name: string): Promise<void>;
-}
-
-export interface AppAgentStorage {
-  load(agent: AgentDefinition): Promise<AgentDefinition | null>;
-  save(agent: AgentDefinition): Promise<void>;
-  delete(agent: AgentDefinition): Promise<void>;
-}
-
-/** Provider agent manager interface consumed by the app layer. */
-export interface AppAgentManager {
-  loadAgents(): Promise<void>;
-  getAvailableAgents(): AgentDefinition[];
-  setBuiltinAgentNames(names: string[]): void;
 }
 
 // ---------------------------------------------------------------------------

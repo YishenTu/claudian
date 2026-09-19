@@ -12,13 +12,6 @@ model: sonnet
 ---
 You are a code reviewer.`;
 
-  const validAgent2Md = `---
-name: test-runner
-description: Runs tests
-tools: [Bash]
----
-Run the tests.`;
-
   beforeEach(() => {
     mockAdapter = {
       exists: jest.fn().mockResolvedValue(true),
@@ -37,115 +30,17 @@ Run the tests.`;
     storage = new AgentVaultStorage(mockAdapter);
   });
 
-  describe('loadAll', () => {
-    it('loads all agent files', async () => {
-      mockAdapter.listFiles.mockResolvedValue([
-        '.claude/agents/code-reviewer.md',
-        '.claude/agents/test-runner.md',
-      ]);
-      mockAdapter.read
-        .mockResolvedValueOnce(validAgentMd)
-        .mockResolvedValueOnce(validAgent2Md);
-
-      const agents = await storage.loadAll();
-
-      expect(agents).toHaveLength(2);
-      expect(agents[0].name).toBe('code-reviewer');
-      expect(agents[0].description).toBe('Reviews code for issues');
-      expect(agents[0].model).toBe('sonnet');
-      expect(agents[0].source).toBe('vault');
-      expect(agents[0].prompt).toBe('You are a code reviewer.');
-      expect(agents[1].name).toBe('test-runner');
-      expect(agents[1].tools).toEqual(['Bash']);
+  it.each(['claude-sonnet-4-6', 'regional/Custom-Model-V2'])('preserves native model %s when editing an unrelated agent field', async (model) => {
+    mockAdapter.read.mockResolvedValue(validAgentMd.replace('model: sonnet', `model: ${model}`));
+    const loaded = await storage.load({
+      id: 'code-reviewer', name: 'code-reviewer', description: '', prompt: '', source: 'vault',
     });
-
-    it('skips non-markdown files', async () => {
-      mockAdapter.listFiles.mockResolvedValue([
-        '.claude/agents/agent.md',
-        '.claude/agents/readme.txt',
-        '.claude/agents/config.json',
-      ]);
-      mockAdapter.read.mockResolvedValue(validAgentMd);
-
-      const agents = await storage.loadAll();
-
-      expect(agents).toHaveLength(1);
-    });
-
-    it('returns empty array when directory does not exist', async () => {
-      mockAdapter.listFiles.mockRejectedValue(new Error('not found'));
-
-      const agents = await storage.loadAll();
-
-      expect(agents).toHaveLength(0);
-    });
-
-    it('skips malformed files', async () => {
-      mockAdapter.listFiles.mockResolvedValue([
-        '.claude/agents/good.md',
-        '.claude/agents/bad.md',
-      ]);
-      mockAdapter.read
-        .mockResolvedValueOnce(validAgentMd)
-        .mockResolvedValueOnce('not valid frontmatter');
-
-      const agents = await storage.loadAll();
-
-      expect(agents).toHaveLength(1);
-      expect(agents[0].name).toBe('code-reviewer');
-    });
-
-    it('continues loading if one file throws', async () => {
-      mockAdapter.listFiles.mockResolvedValue([
-        '.claude/agents/good.md',
-        '.claude/agents/error.md',
-        '.claude/agents/also-good.md',
-      ]);
-      mockAdapter.read
-        .mockResolvedValueOnce(validAgentMd)
-        .mockRejectedValueOnce(new Error('read error'))
-        .mockResolvedValueOnce(validAgent2Md);
-
-      const agents = await storage.loadAll();
-
-      expect(agents).toHaveLength(2);
-    });
-
-    it('handles empty directory', async () => {
-      mockAdapter.listFiles.mockResolvedValue([]);
-
-      const agents = await storage.loadAll();
-
-      expect(agents).toHaveLength(0);
-    });
-
-    it('preserves filePath from disk', async () => {
-      mockAdapter.listFiles.mockResolvedValue([
-        '.claude/agents/custom-filename.md',
-      ]);
-      mockAdapter.read.mockResolvedValue(validAgentMd);
-
-      const agents = await storage.loadAll();
-
-      expect(agents[0].filePath).toBe('.claude/agents/custom-filename.md');
-    });
-
-    it('parses permissionMode from frontmatter', async () => {
-      const agentWithPermission = `---
-name: strict-agent
-description: Strict agent
-permissionMode: dontAsk
----
-Be strict.`;
-
-      mockAdapter.listFiles.mockResolvedValue(['.claude/agents/strict-agent.md']);
-      mockAdapter.read.mockResolvedValue(agentWithPermission);
-
-      const agents = await storage.loadAll();
-
-      expect(agents).toHaveLength(1);
-      expect(agents[0].permissionMode).toBe('dontAsk');
-    });
+    expect(loaded).not.toBeNull();
+    await storage.save({ ...loaded!, description: 'Updated description' });
+    expect(mockAdapter.write).toHaveBeenCalledWith(
+      '.claude/agents/code-reviewer.md',
+      expect.stringContaining(`model: ${model}\n`),
+    );
   });
 
   describe('save', () => {

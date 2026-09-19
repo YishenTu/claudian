@@ -320,11 +320,7 @@ describe('parseModel', () => {
     expect(parseModel('  sonnet  ')).toBe('sonnet');
   });
 
-  it('returns inherit for invalid model value', () => {
-    expect(parseModel('claude-3')).toBe('inherit');
-    expect(parseModel('gpt-4')).toBe('inherit');
-    expect(parseModel('invalid')).toBe('inherit');
-  });
+
 });
 
 describe('parsePermissionMode', () => {
@@ -415,16 +411,6 @@ describe('buildAgentFromFrontmatter', () => {
 
     expect(result.pluginName).toBe('my-plugin');
     expect(result.source).toBe('plugin');
-  });
-
-  it('defaults model to inherit for invalid value', () => {
-    const result = buildAgentFromFrontmatter(
-      { name: 'Test', description: 'Desc', model: 'gpt-4' },
-      'Prompt.',
-      { id: 'test', source: 'vault' }
-    );
-
-    expect(result.model).toBe('inherit');
   });
 
   it('returns undefined permissionMode for invalid value', () => {

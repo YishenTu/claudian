@@ -1,15 +1,13 @@
 import type { App } from 'obsidian';
 import { Modal, Notice, setIcon, Setting } from 'obsidian';
 
-import type {
-  AppAgentManager,
-  AppAgentStorage,
-} from '../../../core/providers/types';
-import type { AgentDefinition } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
-import { validateAgentName } from '../../../utils/agent';
+import type { AgentManager } from '../agents/AgentManager';
+import { validateAgentName } from '../agents/agentSerialization';
 import { CLAUDE_MODEL_TIER_DEFINITIONS } from '../modelTiers';
+import type { AgentVaultStorage } from '../storage/AgentVaultStorage';
+import type { AgentDefinition } from '../types/agent';
 
 const MODEL_OPTIONS = [
   { value: 'inherit', label: 'Inherit' },
@@ -89,6 +87,9 @@ class AgentModal extends Modal {
         for (const opt of MODEL_OPTIONS) {
           dropdown.addOption(opt.value, opt.label);
         }
+        if (!MODEL_OPTIONS.some(option => option.value === modelValue)) {
+          dropdown.addOption(modelValue, modelValue);
+        }
         dropdown
           .setValue(modelValue)
           .onChange(value => { modelValue = value; });
@@ -135,12 +136,14 @@ class AgentModal extends Modal {
 
     const cancelBtn = buttonContainer.createEl('button', {
       text: t('common.cancel'),
+      attr: { type: 'button' },
       cls: 'claudian-cancel-btn',
     });
     cancelBtn.addEventListener('click', () => this.close());
 
     const saveBtn = buttonContainer.createEl('button', {
       text: t('common.save'),
+      attr: { type: 'button' },
       cls: 'claudian-save-btn',
     });
     saveBtn.addEventListener('click', () => {
@@ -215,15 +218,15 @@ class AgentModal extends Modal {
 
 export interface AgentSettingsDeps {
   app: App;
-  agentManager: Pick<AppAgentManager, 'getAvailableAgents' | 'loadAgents'>;
-  agentStorage: Pick<AppAgentStorage, 'load' | 'save' | 'delete'>;
+  agentManager: Pick<AgentManager, 'getAvailableAgents' | 'loadAgents'>;
+  agentStorage: Pick<AgentVaultStorage, 'load' | 'save' | 'delete'>;
 }
 
 export class AgentSettings {
   private app: App;
   private containerEl: HTMLElement;
-  private agentManager: Pick<AppAgentManager, 'getAvailableAgents' | 'loadAgents'>;
-  private agentStorage: Pick<AppAgentStorage, 'load' | 'save' | 'delete'>;
+  private agentManager: Pick<AgentManager, 'getAvailableAgents' | 'loadAgents'>;
+  private agentStorage: Pick<AgentVaultStorage, 'load' | 'save' | 'delete'>;
 
   constructor(containerEl: HTMLElement, deps: AgentSettingsDeps) {
     this.app = deps.app;
@@ -243,14 +246,14 @@ export class AgentSettings {
 
     const refreshBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': t('common.refresh') },
+      attr: { type: 'button', 'aria-label': t('common.refresh') },
     });
     setIcon(refreshBtn, 'refresh-cw');
     refreshBtn.addEventListener('click', () => { void this.#refreshAgents(); });
 
     const addBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': t('common.add') },
+      attr: { type: 'button', 'aria-label': t('common.add') },
     });
     setIcon(addBtn, 'plus');
     addBtn.addEventListener('click', () => { void this.openAgentModal(null); });
@@ -290,14 +293,14 @@ export class AgentSettings {
 
     const editBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn',
-      attr: { 'aria-label': t('common.edit') },
+      attr: { type: 'button', 'aria-label': t('common.edit') },
     });
     setIcon(editBtn, 'pencil');
     editBtn.addEventListener('click', () => { void this.openAgentModal(agent); });
 
     const deleteBtn = actionsEl.createEl('button', {
       cls: 'claudian-settings-action-btn claudian-settings-delete-btn',
-      attr: { 'aria-label': t('common.delete') },
+      attr: { type: 'button', 'aria-label': t('common.delete') },
     });
     setIcon(deleteBtn, 'trash-2');
     deleteBtn.addEventListener('click', () => {

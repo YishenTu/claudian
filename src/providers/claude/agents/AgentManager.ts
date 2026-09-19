@@ -9,10 +9,10 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
-import type { AgentDefinition, AgentFrontmatter } from '../../../core/types';
 import { mapWithConcurrency } from '../../../utils/concurrency';
 import { resolveClaudeConfigDir } from '../config/ClaudeConfigDir';
 import type { ClaudePluginDiscovery } from '../plugins/ClaudePluginDiscovery';
+import type { AgentDefinition, AgentFrontmatter } from '../types/agent';
 import { buildAgentFromFrontmatter, parseAgentFile } from './AgentStorage';
 
 const VAULT_AGENTS_DIR = '.claude/agents';

@@ -3,10 +3,10 @@ import type {
   Query,
   SDKMessage,
   SDKUserMessage,
+  SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
 
 import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
-import { runColdStartQuery } from '../runtime/claudeColdStartQuery';
 import { MessageChannel } from '../runtime/ClaudeMessageChannel';
 import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
 import type { ClaudeEncodedExecutionRequest } from './ClaudeExecutionRequestEncoder';
@@ -30,7 +30,7 @@ export interface ClaudeExecutionStrategySink {
     model: string,
     contextWindow: number,
   ): void;
-  publishCommands(query: Query, queryToken: number): void;
+  publishCommands(query: Query, commands?: SlashCommand[]): void;
 }
 
 export interface ClaudeExecutionStrategy {
@@ -281,7 +281,7 @@ implements ClaudeExecutionStrategy {
 
     let request: ReturnType<Query['getContextUsage']>;
     try {
-      request = query.getContextUsage();
+      request = query.getContextUsage({ detail: 'summary' });
     } catch {
       return Promise.resolve();
     }
@@ -324,22 +324,17 @@ implements ClaudeExecutionStrategy {
           return;
         }
         if (message.type === 'system' && message.subtype === 'init') {
-          this.sink.publishCommands(query, queryToken);
+          this.sink.publishCommands(query);
+        }
+        if (message.type === 'system' && message.subtype === 'commands_changed') {
+          this.sink.publishCommands(query, message.commands);
         }
         const nativeTurn = this.#getNativeTurn(query);
         await this.sink.handleNativeMessage(
           message,
           nativeTurn?.queryToken ?? queryToken,
         );
-        if (
-          message.type === 'system'
-          && message.subtype === 'init'
-          && message.session_id
-        ) {
-          this.messageChannel?.setSessionId(message.session_id);
-        }
         if (message.type === 'result') {
-          this.messageChannel?.onTurnComplete();
           this.#finishNativeTurn(query, { type: 'completed' });
         }
       }
@@ -451,33 +446,23 @@ implements ClaudeExecutionStrategy {
     this.activeAbortController = abortController;
     let query: Query | null = null;
     try {
-      await runColdStartQuery({
-        options,
-        prompt,
-        stopAfterResult: true,
-        onQuery: (openedQuery) => {
-          query = openedQuery;
-          this.activeQuery = openedQuery;
-          this.sink.handleNativeQueryOpened(openedQuery);
-          this.sink.markNativeTurnHandedOff(queryToken);
-        },
-        onMessage: async (message) => {
-          if (
-            !query
-            || this.activeQuery !== query
-            || this.disposed
-          ) {
-            return;
-          }
-          if (
-            message.type === 'system'
-            && message.subtype === 'init'
-          ) {
-            this.sink.publishCommands(query, queryToken);
-          }
-          await this.sink.handleNativeMessage(message, queryToken);
-        },
-      });
+      const agentQuery = await loadClaudeAgentQuery();
+      abortController.signal.throwIfAborted();
+      query = agentQuery({ options, prompt });
+      this.activeQuery = query;
+      this.sink.handleNativeQueryOpened(query);
+      this.sink.markNativeTurnHandedOff(queryToken);
+      for await (const message of query) {
+        if (this.activeQuery !== query || this.disposed) break;
+        if (message.type === 'system' && message.subtype === 'init') {
+          this.sink.publishCommands(query);
+        }
+        if (message.type === 'system' && message.subtype === 'commands_changed') {
+          this.sink.publishCommands(query, message.commands);
+        }
+        await this.sink.handleNativeMessage(message, queryToken);
+        if (message.type === 'result') break;
+      }
     } catch (error) {
       if (
         (!query || this.activeQuery === query)

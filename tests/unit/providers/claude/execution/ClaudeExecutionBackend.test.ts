@@ -12,12 +12,16 @@ import type {
   ProviderSessionSnapshot,
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation } from '@/core/types';
 import type { ClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
+import { ClaudeCommandCatalog } from '@/providers/claude/commands/ClaudeCommandCatalog';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { buildClaudeSDKUserMessage } from '@/providers/claude/runtime/ClaudeUserMessageFactory';
+import { SkillStorage } from '@/providers/claude/storage/SkillStorage';
+import { SlashCommandStorage } from '@/providers/claude/storage/SlashCommandStorage';
 
 jest.mock('@/providers/claude/runtime/ClaudeUserMessageFactory', () => {
   const actual = jest.requireActual('@/providers/claude/runtime/ClaudeUserMessageFactory');
@@ -226,6 +230,50 @@ describe('ClaudeExecutionBackend', () => {
       snapshot: expect.objectContaining({ providerId: 'claude', providerSessionId: 'session-1' }),
     }));
   });
+
+  it.each(['persistent', 'ephemeral'] as const)(
+    'keeps pushed commands over delayed initialization metadata in a %s session',
+    async (lifecycle) => {
+      const metadata = createDeferred<sdkModule.SlashCommand[]>();
+      const finish = createDeferred<unknown>();
+      const query = createScriptedPersistentQuery([[
+        { type: 'system', subtype: 'init', session_id: 'session-1' },
+        {
+          type: 'system', subtype: 'commands_changed',
+          commands: [{ name: 'new-command', description: 'New command', argumentHint: '' }],
+        },
+        finish.promise,
+      ]]);
+      query.supportedCommands.mockReturnValue(metadata.promise);
+      jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+        .mockResolvedValueOnce((() => query) as unknown as typeof sdkModule.query);
+      const host = createHost();
+      const adapter = new VaultFileAdapter(host.app);
+      const catalog = new ClaudeCommandCatalog(
+        new SlashCommandStorage(adapter), new SkillStorage(adapter),
+      );
+      const { services } = createServices();
+      services.commandCatalog = catalog;
+      const session = new ClaudeExecutionBackend(host, services)
+        .createSession(createConfig({ lifecycle }));
+      const events = collectEvents(session.execute(createRequest()).events);
+      try {
+        await waitFor(() => query.supportedCommands.mock.calls.length > 0);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(await catalog.listDropdownEntries({ includeBuiltIns: true }))
+          .toEqual([expect.objectContaining({ name: 'new-command' })]);
+        metadata.resolve([{ name: 'old-command', description: 'Old command', argumentHint: '' }]);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(await catalog.listDropdownEntries({ includeBuiltIns: true }))
+          .toEqual([expect.objectContaining({ name: 'new-command' })]);
+      } finally {
+        finish.resolve({ type: 'result', subtype: 'success' });
+        await events;
+        await session.dispose();
+        await catalog.dispose();
+      }
+    },
+  );
 
   it('creates a persistent session that normalizes SDK output and publishes commands', async () => {
     sdkMock.setMockSupportedCommands([
@@ -620,7 +668,7 @@ describe('ClaudeExecutionBackend', () => {
       },
     })).events);
 
-    expect(sdkMock.getLastResponse()?.getContextUsage).toHaveBeenCalledTimes(1);
+    expect(sdkMock.getLastResponse()?.getContextUsage).toHaveBeenCalledWith({ detail: 'summary' });
     const usageEvents = events.filter((event) => event.type === 'usage_updated');
     expect(usageEvents.at(-1)).toEqual(expect.objectContaining({
       type: 'usage_updated',
