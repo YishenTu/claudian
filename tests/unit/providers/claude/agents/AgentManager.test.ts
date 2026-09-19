@@ -21,7 +21,7 @@ jest.mock('os', () => ({
 }));
 
 import { AgentManager } from '@/providers/claude/agents/AgentManager';
-import type { ClaudePluginDiscovery } from '@/providers/claude/plugins/ClaudePluginDiscovery';
+import { ClaudePluginDiscovery } from '@/providers/claude/plugins/ClaudePluginDiscovery';
 
 const mockFs = jest.mocked(fs);
 const mockFsPromises = jest.mocked(fs.promises);
@@ -103,6 +103,43 @@ describe('AgentManager', () => {
     (mockFsPromises.readFile as jest.Mock).mockImplementation(
       async (...args: Parameters<typeof fs.readFileSync>) => mockFs.readFileSync(...args),
     );
+  });
+
+  it('discovers nested vault agents and lets custom files override built-ins after reload', async () => {
+    const manager = new AgentManager(VAULT_PATH, new ClaudePluginDiscovery(VAULT_PATH));
+    (mockFsPromises.readdir as jest.Mock).mockImplementation(async (dir: string) => {
+      if (dir === VAULT_AGENTS_DIR) return [createMockDirent('nested', false), createMockDirent('Explore.md', true)];
+      if (dir === path.join(VAULT_AGENTS_DIR, 'nested')) return [createMockDirent('check.md', true)];
+      return [];
+    });
+    (mockFsPromises.readFile as jest.Mock).mockImplementation(async (file: string) => (
+      file.endsWith('Explore.md')
+        ? '---\nname: Explore\ndescription: Custom explorer\n---\nCustom instructions.'
+        : MINIMAL_AGENT_FILE
+    ));
+    await manager.loadAgents();
+    manager.setBuiltinAgentNames(['Explore', 'Plan']);
+    await manager.loadAgents();
+    expect(manager.getAvailableAgents()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'Explore', source: 'vault', prompt: 'Custom instructions.' }),
+      expect.objectContaining({ id: 'MinimalAgent', source: 'vault', filePath: path.join(VAULT_AGENTS_DIR, 'nested/check.md') }),
+    ]));
+  });
+
+  it('retains a file override when native built-in names arrive during discovery', async () => {
+    let release!: (content: string) => void;
+    const content = new Promise<string>(resolve => { release = resolve; });
+    (mockFsPromises.readdir as jest.Mock).mockImplementation(async (dir: string) => (
+      dir === VAULT_AGENTS_DIR ? [createMockDirent('Explore.md', true)] : []
+    ));
+    (mockFsPromises.readFile as jest.Mock).mockReturnValue(content);
+    const manager = new AgentManager(VAULT_PATH, new ClaudePluginDiscovery(VAULT_PATH));
+    const loading = manager.loadAgents();
+    manager.setBuiltinAgentNames(['Explore']);
+    release('---\nname: Explore\ndescription: Custom exploration\n---\nCustom.');
+    await loading;
+    expect(manager.getAvailableAgents().find(agent => agent.id === 'Explore'))
+      .toMatchObject({ source: 'vault', prompt: 'Custom.' });
   });
 
   describe('constructor', () => {
@@ -333,7 +370,7 @@ describe('AgentManager', () => {
       expect(vaultAgents.length).toBe(1);
     });
 
-    it('ignores directories', async () => {
+    it('retains top-level agents alongside empty subdirectories', async () => {
       const manager = new AgentManager(VAULT_PATH, createMockClaudePluginDiscovery());
 
       mockFs.existsSync.mockImplementation((p) => p === VAULT_AGENTS_DIR);
@@ -356,7 +393,7 @@ describe('AgentManager', () => {
       expect(vaultAgents.length).toBe(1);
     });
 
-    it('loads plugin agents with namespaced IDs', async () => {
+    it.each(['', 'review'])('loads plugin agents with namespaced IDs under %s', async (folder) => {
       const pluginDiscovery = createMockClaudePluginDiscovery([
         { name: 'PR Review Toolkit', enabled: true, installPath: '/plugins/pr-review' },
       ]);
@@ -365,7 +402,8 @@ describe('AgentManager', () => {
 
       mockFs.existsSync.mockImplementation((p) => p === pluginAgentsDir);
       (mockFs.readdirSync as jest.Mock).mockImplementation((dir: string) => {
-        if (dir === pluginAgentsDir) {
+        if (folder && dir === pluginAgentsDir) return [createMockDirent(folder, false)];
+        if (dir === path.join(pluginAgentsDir, folder)) {
           return [createMockDirent('reviewer.md', true)];
         }
         return [];
@@ -377,7 +415,7 @@ describe('AgentManager', () => {
 
       const pluginAgent = agents.find(a => a.source === 'plugin');
       expect(pluginAgent).toBeDefined();
-      expect(pluginAgent?.id).toBe('pr-review-toolkit:code-reviewer');
+      expect(pluginAgent?.id).toBe(folder ? 'pr-review-toolkit:review:code-reviewer' : 'pr-review-toolkit:code-reviewer');
       expect(pluginAgent?.name).toBe('code-reviewer');
       expect(pluginAgent?.description).toBe('Reviews code for issues');
       expect(pluginAgent?.tools).toEqual(['Read', 'Grep']);

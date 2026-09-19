@@ -30,6 +30,24 @@ You are a code reviewer.`;
     storage = new AgentVaultStorage(mockAdapter);
   });
 
+  it('preserves manual permissions when another agent field is edited', async () => {
+    mockAdapter.read.mockResolvedValue(validAgentMd.replace('model: sonnet', 'permissionMode: manual'));
+    const loaded = await storage.load({
+      id: 'code-reviewer', name: 'code-reviewer', description: '', prompt: '', source: 'vault',
+    });
+    await storage.save({ ...loaded!, description: 'Edited description' });
+    expect(mockAdapter.write).toHaveBeenCalledWith(
+      '.claude/agents/code-reviewer.md', expect.stringContaining('permissionMode: default\n'),
+    );
+  });
+
+  it('rejects an unsupported explicit permission mode instead of converting it to inheritance', async () => {
+    mockAdapter.read.mockResolvedValue(validAgentMd.replace('model: sonnet', 'permissionMode: delegate'));
+    await expect(storage.load({
+      id: 'code-reviewer', name: 'code-reviewer', description: '', prompt: '', source: 'vault',
+    })).rejects.toThrow('Unsupported agent permission mode');
+  });
+
   it.each(['claude-sonnet-4-6', 'regional/Custom-Model-V2'])('preserves native model %s when editing an unrelated agent field', async (model) => {
     mockAdapter.read.mockResolvedValue(validAgentMd.replace('model: sonnet', `model: ${model}`));
     const loaded = await storage.load({
@@ -55,7 +73,7 @@ You are a code reviewer.`;
 
       expect(mockAdapter.write).toHaveBeenCalledWith(
         '.claude/agents/code-reviewer.md',
-        expect.stringContaining('name: code-reviewer')
+        expect.stringContaining('name: "code-reviewer"')
       );
     });
 
@@ -71,7 +89,7 @@ You are a code reviewer.`;
       });
 
       const written = mockAdapter.write.mock.calls[0][1] as string;
-      expect(written).toContain('name: my-agent');
+      expect(written).toContain('name: "my-agent"');
       expect(written).toContain('description: My agent');
       expect(written).toContain('model: opus');
       expect(written).toContain('tools:\n  - Read\n  - Grep');

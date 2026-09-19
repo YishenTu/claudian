@@ -1859,6 +1859,16 @@ export class TabManager implements TabManagerInterface {
       return { result: { status: 'empty' } };
     }
 
+    const liveCommands = targetTab.executionCoordinator.getCommandSnapshot(
+      targetTab.conversationId, providerId,
+    );
+    if (liveCommands !== undefined) {
+      return {
+        result: normalizeProviderCommandDiscoveryItems([...liveCommands]),
+        commandSnapshot: liveCommands,
+      };
+    }
+
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     const commandLoader = ProviderWorkspaceRegistry.getCommandLoader(providerId);
     const context = await this.#buildProviderWarmupContext(targetTab, providerId);
@@ -1891,6 +1901,7 @@ export class TabManager implements TabManagerInterface {
 
     if (
       catalog
+      && hasCommandSnapshot
       && targetTab.id === this.activeTabId
       && this.#isCommandContextCurrent(targetTab, providerId, commandContext)
       && (result.status === 'ready' || result.status === 'empty')

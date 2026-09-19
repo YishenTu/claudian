@@ -2,6 +2,8 @@ import { createMockEl } from '@test/helpers/MockElement';
 import { within } from '@testing-library/dom';
 import { JSDOM } from 'jsdom';
 
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
+import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { ConversationController } from '@/features/chat/controllers/ConversationController';
@@ -34,6 +36,7 @@ const titleServiceInstances: Array<{ cancel: jest.Mock }> = [];
 let coordinatorDisposeError: Error | null = null;
 
 interface MockCoordinator {
+  getCommandSnapshot: jest.Mock;
   bindConversation: jest.Mock;
   cancel: jest.Mock;
   dispose: jest.Mock;
@@ -48,6 +51,7 @@ interface MockCoordinator {
 jest.mock('@/features/chat/execution/ChatExecutionCoordinator', () => ({
   ChatExecutionCoordinator: jest.fn().mockImplementation((deps) => {
     const coordinator: MockCoordinator = {
+      getCommandSnapshot: jest.fn().mockReturnValue(undefined),
       bindConversation: jest.fn().mockResolvedValue(undefined),
       cancel: jest.fn(),
       dispose: jest.fn().mockImplementation(() => coordinatorDisposeError
@@ -173,7 +177,7 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
       },
     },
     providerHost: {
-      executionLifecycleRegistry: {},
+      executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
     },
     chatModelSelection: {
       beginIntent: jest.fn(() => {
@@ -383,6 +387,45 @@ describe('Tab provider execution ownership', () => {
 
   afterAll(() => {
     globalThis.ResizeObserver = originalResizeObserver;
+  });
+
+  it('refreshes cached picker entries when the owning session publishes command changes', async () => {
+    const getCatalog = jest.mocked(ProviderWorkspaceRegistry.getCommandCatalog);
+    const getCapabilities = jest.mocked(ProviderRegistry.getCapabilities);
+    const previousCapabilities = getCapabilities('claude');
+    const catalog = new RuntimeCommandCatalog({
+      dropdownConfig: { providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' },
+      projectEntry: command => ({
+        ...command, providerId: 'claude', kind: 'command', scope: 'runtime', source: 'sdk',
+        isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/',
+      }),
+    });
+    getCatalog.mockReturnValue(catalog);
+    getCapabilities.mockReturnValue({ ...previousCapabilities, supportsProviderCommands: true });
+    const manager = createTabManager(createPlugin());
+    try {
+      const tab = await manager.createTab();
+      coordinatorInstances[0].getCommandSnapshot.mockReturnValue([
+        { id: 'before', name: 'before', description: '', content: '' },
+      ]);
+      const discovery = tab!.providerCatalogResolver!()!.discovery;
+      expect(await discovery.load()).toMatchObject({ status: 'ready', items: [{ name: 'before' }] });
+      coordinatorInstances[0].getCommandSnapshot.mockReturnValue([
+        { id: 'after', name: 'after', description: '', content: '' },
+      ]);
+      await coordinatorDeps[0].onSessionEvent?.({
+        type: 'commands_changed',
+        scope: { kind: 'session', sessionInstanceId: 'session-instance-1', sequence: 1 },
+      }, createEventContext());
+      expect(await discovery.load()).toMatchObject({ status: 'ready', items: [{ name: 'after' }] });
+      coordinatorInstances[0].getCommandSnapshot.mockReturnValue(undefined);
+      coordinatorDeps[0].warmExecution?.onWarmStateChanged?.(false);
+      expect(await discovery.load()).toEqual({ status: 'empty' });
+    } finally {
+      await manager.destroy();
+      getCatalog.mockReturnValue(null);
+      getCapabilities.mockReturnValue(previousCapabilities);
+    }
   });
 
   it('creates exactly one tab-owned execution coordinator', async () => {

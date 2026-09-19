@@ -70,7 +70,7 @@ interface BackgroundTurn {
 
 type ClaudeExecutionSessionServices = Pick<
   ClaudeWorkspaceServices,
-  'agentManager' | 'commandCatalog'
+  'agentManager'
 >;
 
 export class ClaudeExecutionSession
@@ -103,6 +103,7 @@ ClaudeExecutionStrategySink {
   private sessionSequence = 0;
   private queryToken = 0;
   private commandPublication = 0;
+  private commandSnapshot: SlashCommand[] | undefined;
   private disposed = false;
   private readonly suppressedPersistentQueryTokens = new Set<number>();
   private readonly suppressedEphemeralQueryTokens = new Set<number>();
@@ -619,6 +620,10 @@ ClaudeExecutionStrategySink {
     }
   }
 
+  getCommandSnapshot(): readonly SlashCommand[] | undefined {
+    return this.commandSnapshot?.map(command => ({ ...command }));
+  }
+
   publishCommands(query: Query, commands?: Awaited<ReturnType<Query['supportedCommands']>>): void {
     if (this.disposed || this.nativeQuery !== query) return;
     const publication = ++this.commandPublication;
@@ -628,7 +633,8 @@ ClaudeExecutionStrategySink {
         || this.nativeQuery !== query
         || this.commandPublication !== publication
       ) return;
-      this.services.commandCatalog.setCommandSnapshot(snapshot.map(mapSdkCommand));
+      this.commandSnapshot = snapshot.map(mapSdkCommand);
+      this.#emitSession({ type: 'commands_changed' });
     };
     if (commands !== undefined) {
       publish(commands);
@@ -644,12 +650,15 @@ ClaudeExecutionStrategySink {
   handleNativeQueryOpened(query: Query): void {
     if (this.nativeQuery === query) return;
     this.nativeQuery = query;
+    this.commandSnapshot = undefined;
     this.authoritativeContextWindow = null;
   }
 
   handleNativeQueryClosed(query: Query): void {
     if (this.nativeQuery !== query) return;
     this.nativeQuery = null;
+    this.commandSnapshot = undefined;
+    this.#emitSession({ type: 'commands_changed' });
     this.authoritativeContextWindow = null;
   }
 

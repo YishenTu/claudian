@@ -1,3 +1,4 @@
+import type { SlashCommand } from '../types';
 import type { ProviderId } from '../types/provider';
 import type {
   ProviderExecutionEvent,
@@ -39,6 +40,11 @@ export interface ProviderExecutionSession {
   cancel(): void;
   getSnapshot(): ProviderSessionSnapshot;
   getStatus(): ProviderSessionStatus;
+  /**
+   * Current native query commands; undefined means no authoritative snapshot is available.
+   * Reading never starts provider work. Implementations emit commands_changed when it changes or clears.
+   */
+  getCommandSnapshot?(): readonly SlashCommand[] | undefined;
   onEvent(listener: (event: ProviderSessionEvent) => void): () => void;
   dispose(): Promise<void>;
 }

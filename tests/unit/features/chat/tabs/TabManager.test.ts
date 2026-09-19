@@ -2,7 +2,9 @@ import { createMockEl } from '@test/helpers/MockElement';
 import { Notice } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
+import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 
 const mockDestroyTab = jest.fn().mockResolvedValue(undefined);
@@ -49,6 +51,7 @@ function createMockTab(options: Record<string, any>): any {
     conversationId: options.conversation?.id ?? null,
     draftModel: options.conversation ? null : 'claude-default',
     executionCoordinator: {
+      getCommandSnapshot: () => undefined,
       copyInputsForFork: jest.fn().mockResolvedValue(undefined),
       hasBackgroundWork: false,
       notifyMayCool: jest.fn(),
@@ -235,6 +238,8 @@ function deferred<T>(): {
 
 describe('TabManager provider execution orchestration', () => {
   beforeEach(() => {
+    jest.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
+    jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
     mockTabs.length = 0;
     jest.clearAllMocks();
     (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
@@ -1729,6 +1734,32 @@ describe('TabManager provider execution orchestration', () => {
       lifecycleState: 'cold',
       tabId: 'restored-2',
     }));
+  });
+
+  it('uses each tab live command snapshot instead of unrelated discovery state', async () => {
+    const catalog = new RuntimeCommandCatalog({
+      dropdownConfig: { providerId: 'claude', triggerChars: ['/'], builtInPrefix: '/', skillPrefix: '/', commandPrefix: '/' },
+      projectEntry: command => ({
+        ...command, providerId: 'claude', kind: 'command', scope: 'runtime', source: 'sdk',
+        isEditable: false, isDeletable: false, displayPrefix: '/', insertPrefix: '/',
+      }),
+    });
+    jest.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(catalog);
+    jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(null);
+    const { manager } = createManager();
+    const first = await manager.createTab();
+    const second = await manager.createTab(null, 'second', { activate: false });
+    const command = (name: string) => ({ id: name, name, description: name, content: '', source: 'sdk' as const });
+    (first!.executionCoordinator as any).getCommandSnapshot = () => [command('first-live')];
+    (second!.executionCoordinator as any).getCommandSnapshot = () => [command('second-live')];
+    expect(await manager.getProviderCommandDiscovery(first!.id)).toMatchObject({
+      status: 'ready', items: [{ name: 'first-live' }],
+    });
+    expect(await manager.getProviderCommandDiscovery(second!.id)).toMatchObject({
+      status: 'ready', items: [{ name: 'second-live' }],
+    });
+    (first!.executionCoordinator as any).getCommandSnapshot = () => [];
+    expect(await manager.getProviderCommandDiscovery(first!.id)).toEqual({ status: 'empty' });
   });
 
   it('runs command discovery without a runtime or provider session', async () => {

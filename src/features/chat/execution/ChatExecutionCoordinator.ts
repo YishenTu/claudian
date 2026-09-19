@@ -253,6 +253,16 @@ export class ChatExecutionCoordinator {
     return this.#sessionBinding?.session.getSnapshot() ?? null;
   }
 
+  getCommandSnapshot(conversationId: string | null, providerId: ProviderId) {
+    const binding = this.#sessionBinding;
+    if (
+      !binding || this.#stale || !this.#isBindingCurrent(binding)
+      || binding.conversation.conversationId !== conversationId
+      || binding.session.providerId !== providerId
+    ) return undefined;
+    return binding.session.getCommandSnapshot?.();
+  }
+
   get hasBackgroundWork(): boolean {
     return (this.#sessionBinding?.backgroundSequences.size ?? 0) > 0;
   }

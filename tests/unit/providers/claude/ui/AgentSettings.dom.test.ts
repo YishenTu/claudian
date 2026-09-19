@@ -51,6 +51,7 @@ import { promises as fs } from 'fs';
 
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { AgentManager } from '@/providers/claude/agents/AgentManager';
+import { parseAgentFile } from '@/providers/claude/agents/AgentStorage';
 import { ClaudePluginDiscovery } from '@/providers/claude/plugins/ClaudePluginDiscovery';
 import { AgentVaultStorage } from '@/providers/claude/storage/AgentVaultStorage';
 import { AgentSettings } from '@/providers/claude/ui/AgentSettings';
@@ -58,8 +59,8 @@ import { AgentSettings } from '@/providers/claude/ui/AgentSettings';
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...names: string[]) { this.classList.add(...names); };
 
-it('shows an existing native model ID and preserves it when saving an edit', async () => {
-  let contents = '---\nname: review\ndescription: Review code\nmodel: regional/Custom-Model-V2\n---\nReview carefully.';
+it.each(['review', 'Explore', '[review]', 'review #2'])('preserves the existing name and model when editing %s', async (name) => {
+  let contents = `---\nname: ${JSON.stringify(name)}\ndescription: Review code\nmodel: regional/Custom-Model-V2\n---\nReview carefully.`;
   jest.mocked(fs.readFile).mockImplementation(async () => contents);
   jest.mocked(fs.readdir).mockImplementation(async (folder) => (
     String(folder) === '/vault/.claude/agents'
@@ -85,5 +86,7 @@ it('shows an existing native model ID and preserves it when saving an edit', asy
   fireEvent.click(within(document.body).getByRole('button', { name: 'Save' }));
   await waitFor(() => expect(contents).toContain('model: regional/Custom-Model-V2\n'));
   await waitFor(() => expect(within(document.body).queryByRole('combobox')).toBeNull());
+  expect(parseAgentFile(contents)?.frontmatter.name).toBe(name);
+  expect(within(container).getByRole('button', { name: 'Edit' })).toBeTruthy();
   container.remove();
 });

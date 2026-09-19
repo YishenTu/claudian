@@ -17,7 +17,7 @@ import {
   type RewindableExecutionSession,
   type SteerableExecutionSession,
 } from '@/core/execution';
-import type { ChatMessage, Conversation, ProviderId } from '@/core/types';
+import type { ChatMessage, Conversation, ProviderId, SlashCommand } from '@/core/types';
 import {
   ChatExecutionCoordinator,
   type ChatExecutionCoordinatorDeps,
@@ -95,6 +95,8 @@ class FakeSession implements ProviderExecutionSession,
   readonly runs: FakeRun[] = [];
   readonly steerRequests: ProviderExecutionRequest[] = [];
   readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
+  commands: SlashCommand[] | undefined;
+  getCommandSnapshot() { return this.commands; }
   cancelCalls = 0;
   disposeCalls = 0;
   status: ProviderSessionStatus = 'idle';
@@ -358,6 +360,20 @@ async function reserveProtectedWarmSlots(
 }
 
 describe('ChatExecutionCoordinator', () => {
+  it('exposes commands only for the current conversation and provider binding', async () => {
+    const harness = createHarness();
+    await harness.coordinator.bindConversation({ conversationId: 'one', providerId: 'claude' });
+    await harness.coordinator.prepare();
+    const session = harness.backends.get('claude')!.sessions[0];
+    session.commands = [{ id: 'review', name: 'review', description: '', content: '' }];
+    expect(harness.coordinator.getCommandSnapshot('one', 'claude')).toEqual(session.commands);
+    expect(harness.coordinator.getCommandSnapshot('two', 'claude')).toBeUndefined();
+    expect(harness.coordinator.getCommandSnapshot('one', 'codex')).toBeUndefined();
+    await harness.coordinator.bindConversation({ conversationId: 'two', providerId: 'claude' });
+    expect(harness.coordinator.getCommandSnapshot('two', 'claude')).toBeUndefined();
+    await harness.coordinator.dispose();
+  });
+
   it('binds cold and acquires a persistent execution session only on prepare or execute', async () => {
     const harness = createHarness();
 

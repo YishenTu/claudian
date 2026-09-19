@@ -17,7 +17,7 @@ function pushYamlList(lines: string[], key: string, items?: string[]): void {
 export function serializeAgent(agent: AgentDefinition): string {
   const lines: string[] = ['---'];
 
-  lines.push(`name: ${agent.name}`);
+  lines.push(`name: ${JSON.stringify(agent.name)}`);
   lines.push(`description: ${yamlString(agent.description)}`);
 
   pushYamlList(lines, 'tools', agent.tools);

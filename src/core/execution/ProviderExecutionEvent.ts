@@ -320,7 +320,12 @@ export type ProviderBackgroundOutputEvent =
   | (ProviderSessionStateChangedEvent & { readonly scope: ProviderBackgroundEventScope })
   | (ProviderPermissionModeChangedEvent & { readonly scope: ProviderBackgroundEventScope });
 
+export type ProviderCommandsChangedEvent = ProviderEventBase<
+  'commands_changed', ProviderSessionEventScope
+>;
+
 export type ProviderSessionEvent =
+  | ProviderCommandsChangedEvent
   | ProviderBackgroundTurnStartedEvent
   | ProviderBackgroundOutputEvent
   | ProviderBackgroundTurnCompletedEvent

@@ -111,7 +111,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
     const runtimeEntries = commands
       .filter(cmd => !BUILTIN_HIDDEN_COMMANDS.has(cmd.name.toLowerCase()))
       .map(slashCommandToEntry);
-    if (runtimeEntries.length > 0) {
+    if (context.commandSnapshot !== undefined || runtimeEntries.length > 0) {
       return runtimeEntries;
     }
     return this.listVaultEntries(context.signal);

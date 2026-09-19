@@ -42,7 +42,7 @@ export function parseAgentFile(content: string): { frontmatter: AgentFrontmatter
     disallowedTools,
     model,
     skills: extractStringArray(fm, 'skills'),
-    permissionMode: typeof fm.permissionMode === 'string' ? fm.permissionMode : undefined,
+    permissionMode: parsePermissionMode(fm.permissionMode),
     hooks: isRecord(fm.hooks) ? fm.hooks : undefined,
     extraFrontmatter: Object.keys(extra).length > 0 ? extra : undefined,
   };
@@ -58,13 +58,14 @@ export function parseToolsList(tools?: string | string[]): string[] | undefined 
   return normalizeStringArray(tools);
 }
 
-export function parsePermissionMode(mode?: string): AgentPermissionMode | undefined {
-  if (!mode) return undefined;
-  const trimmed = mode.trim();
+export function parsePermissionMode(mode?: unknown): AgentPermissionMode | undefined {
+  if (mode === undefined) return undefined;
+  const trimmed = typeof mode === 'string' ? mode.trim() : '';
+  if (trimmed === 'manual') return 'default';
   if ((AGENT_PERMISSION_MODES as readonly string[]).includes(trimmed)) {
     return trimmed as AgentPermissionMode;
   }
-  return undefined;
+  throw new Error(`Unsupported agent permission mode: ${String(mode)}`);
 }
 
 export function parseModel(model?: string): string {

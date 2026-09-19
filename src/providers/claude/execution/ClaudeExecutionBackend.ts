@@ -8,7 +8,7 @@ import { ClaudeExecutionSession } from './ClaudeExecutionSession';
 
 type ClaudeExecutionBackendServices = Pick<
   ClaudeWorkspaceServices,
-  'agentManager' | 'commandCatalog'
+  'agentManager'
 >;
 
 export class ClaudeExecutionBackend implements ProviderExecutionBackend {

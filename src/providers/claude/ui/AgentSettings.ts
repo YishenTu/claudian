@@ -149,7 +149,7 @@ class AgentModal extends Modal {
     saveBtn.addEventListener('click', () => {
       void (async (): Promise<void> => {
       const name = nameInput.value.trim();
-      const nameError = validateAgentName(name);
+      const nameError = name === this.existingAgent?.name ? null : validateAgentName(name);
       if (nameError) {
         new Notice(nameError);
         return;

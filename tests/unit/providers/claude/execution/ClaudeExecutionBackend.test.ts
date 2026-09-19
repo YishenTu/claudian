@@ -12,16 +12,12 @@ import type {
   ProviderSessionSnapshot,
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation } from '@/core/types';
 import type { ClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
-import { ClaudeCommandCatalog } from '@/providers/claude/commands/ClaudeCommandCatalog';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { buildClaudeSDKUserMessage } from '@/providers/claude/runtime/ClaudeUserMessageFactory';
-import { SkillStorage } from '@/providers/claude/storage/SkillStorage';
-import { SlashCommandStorage } from '@/providers/claude/storage/SlashCommandStorage';
 
 jest.mock('@/providers/claude/runtime/ClaudeUserMessageFactory', () => {
   const actual = jest.requireActual('@/providers/claude/runtime/ClaudeUserMessageFactory');
@@ -107,19 +103,13 @@ function createHost(): ProviderHost {
 
 function createServices(): {
   services: ClaudeWorkspaceServices;
-  commandCatalog: { setCommandSnapshot: jest.Mock };
 } {
-  const commandCatalog = {
-    setCommandSnapshot: jest.fn(),
-  };
   return {
-    commandCatalog,
     services: {
       agentManager: {
         setBuiltinAgentNames: jest.fn(),
       },
-      commandCatalog,
-    } as unknown as ClaudeWorkspaceServices,
+      } as unknown as ClaudeWorkspaceServices,
   };
 }
 
@@ -248,29 +238,23 @@ describe('ClaudeExecutionBackend', () => {
       jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
         .mockResolvedValueOnce((() => query) as unknown as typeof sdkModule.query);
       const host = createHost();
-      const adapter = new VaultFileAdapter(host.app);
-      const catalog = new ClaudeCommandCatalog(
-        new SlashCommandStorage(adapter), new SkillStorage(adapter),
-      );
       const { services } = createServices();
-      services.commandCatalog = catalog;
       const session = new ClaudeExecutionBackend(host, services)
         .createSession(createConfig({ lifecycle }));
       const events = collectEvents(session.execute(createRequest()).events);
       try {
         await waitFor(() => query.supportedCommands.mock.calls.length > 0);
         await new Promise(resolve => setTimeout(resolve, 0));
-        expect(await catalog.listDropdownEntries({ includeBuiltIns: true }))
+        expect(session.getCommandSnapshot())
           .toEqual([expect.objectContaining({ name: 'new-command' })]);
         metadata.resolve([{ name: 'old-command', description: 'Old command', argumentHint: '' }]);
         await new Promise(resolve => setTimeout(resolve, 0));
-        expect(await catalog.listDropdownEntries({ includeBuiltIns: true }))
+        expect(session.getCommandSnapshot())
           .toEqual([expect.objectContaining({ name: 'new-command' })]);
       } finally {
         finish.resolve({ type: 'result', subtype: 'success' });
         await events;
         await session.dispose();
-        await catalog.dispose();
       }
     },
   );
@@ -303,10 +287,14 @@ describe('ClaudeExecutionBackend', () => {
       },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
-    const { services, commandCatalog } = createServices();
+    const { services } = createServices();
     const session = new ClaudeExecutionBackend(createHost(), services)
       .createSession(createConfig());
 
+    const commandSnapshots: unknown[] = [];
+    session.onEvent(event => {
+      if (event.type === 'commands_changed') commandSnapshots.push(session.getCommandSnapshot());
+    });
     const run = session.execute(createRequest());
     const events = await collectEvents(run.events);
 
@@ -350,7 +338,7 @@ describe('ClaudeExecutionBackend', () => {
     }));
     expect(session.getSnapshot().providerStateDeletes).toBeUndefined();
     await Promise.resolve();
-    expect(commandCatalog.setCommandSnapshot).toHaveBeenCalledWith([
+    expect(commandSnapshots).toContainEqual([
       {
         id: 'sdk:review',
         name: 'review',

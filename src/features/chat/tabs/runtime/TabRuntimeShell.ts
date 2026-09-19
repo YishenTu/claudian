@@ -269,12 +269,14 @@ function createTabExecutionCoordinator(
     onRequestedEvent: event => (
       runtimeRef.requirePublished().controllers.inputController.handleExecutionEvent(event)
     ),
-    onSessionEvent: (event, context) => enqueueTabSessionEvent(
-      runtimeRef.requirePublished(),
-      plugin,
-      event,
-      context,
-    ),
+    onSessionEvent: (event, context) => {
+      const tab = runtimeRef.requirePublished();
+      if (event.type === 'commands_changed') {
+        options.onCommandContextChanged?.(tab);
+        return;
+      }
+      return enqueueTabSessionEvent(tab, plugin, event, context);
+    },
     onBackgroundWorkChanged: () => {
       options.onWorkChanged?.(runtimeRef.requirePublished());
     },
@@ -298,6 +300,7 @@ function createTabExecutionCoordinator(
         const tab = runtimeRef.requirePublished();
         if (tab.lifecycleState === 'closing') return;
         tab.lifecycleState = isWarm ? 'warm' : 'cold';
+        if (!isWarm) options.onCommandContextChanged?.(tab);
       },
     },
   });
