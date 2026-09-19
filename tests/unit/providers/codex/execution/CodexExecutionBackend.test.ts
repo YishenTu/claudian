@@ -475,6 +475,10 @@ describe('CodexExecutionBackend', () => {
         ],
       }),
     );
+    expect(mockTransportRequest).not.toHaveBeenCalledWith(
+      'thread/start',
+      expect.objectContaining({ ephemeral: true }),
+    );
     expect(mockTransportRequest).toHaveBeenCalledWith(
       'turn/start',
       expect.objectContaining({
@@ -2394,7 +2398,10 @@ describe('CodexExecutionBackend', () => {
             platformOs: 'macos',
           };
         }
-        if (method === 'thread/start') return createThreadResult('thread-ephemeral');
+        if (method === 'thread/start') {
+          const result = createThreadResult('thread-ephemeral');
+          return { ...result, thread: { ...result.thread, ephemeral: true, path: null } };
+        }
         if (method === 'turn/start') {
           queueMicrotask(() => completeTurn('thread-ephemeral', 'turn-ephemeral'));
           return createTurnResult('turn-ephemeral');
@@ -2409,7 +2416,7 @@ describe('CodexExecutionBackend', () => {
         }),
       );
 
-      await collectEvents(session.execute(createRequest(
+      const events = await collectEvents(session.execute(createRequest(
         new AbortController().signal,
         { toolPolicy },
       )).events);
@@ -2417,6 +2424,7 @@ describe('CodexExecutionBackend', () => {
       expect(mockTransportRequest).toHaveBeenCalledWith(
         'thread/start',
         expect.objectContaining({
+          ephemeral: true,
           persistExtendedHistory: false,
           approvalPolicy: 'never',
           sandbox: 'read-only',
@@ -2437,6 +2445,8 @@ describe('CodexExecutionBackend', () => {
         call => call[0] === 'thread/start',
       )?.[1];
       expect(startParams.dynamicTools).toBeUndefined();
+      expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+      expect(session.getSnapshot().providerState?.sessionFilePath).toBeUndefined();
 
       await session.dispose();
     },

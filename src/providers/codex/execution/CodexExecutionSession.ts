@@ -1164,6 +1164,9 @@ export class CodexExecutionSession
         ),
         baseInstructions,
         experimentalRawEvents: true,
+        ...(this.config.nativePersistence === 'disabled-if-supported'
+          ? { ephemeral: true }
+          : {}),
         ...(persistExtendedHistory !== undefined
           ? { persistExtendedHistory }
           : {}),
