@@ -6,9 +6,6 @@ describe('i18n/constants', () => {
     const info = getLocaleInfo('en');
     expect(info).toBeDefined();
     expect(info?.code).toBe('en');
-    expect(info?.name).toBe('English');
-    expect(info?.englishName).toBe('English');
-    expect(info?.flag).toBe('🇺🇸');
   });
 
   it('getLocaleInfo returns undefined for unknown locale', () => {

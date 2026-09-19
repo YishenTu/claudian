@@ -6,6 +6,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 
 import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabAuthorityTransferStatus, type CollabCloudAuthorityTransferArtifact, type CollabCloudCapability, type CollabTransferredMembershipClaimBatch, decodeCollabProjectCheckpointManifest, encodeCollabProjectCheckpointManifestCanonicalJson } from '@claudian-collab/protocol';
+import { CollabFixtureSnapshot } from '@test/helpers/collab/CollabFixtureSnapshot';
 import { cloudReceiptVerifier, git, HOST_CREDENTIAL, MEMBER_ID, productionAuthorityTransferFixture,PROJECT_ID, signCloudRelinquishmentProof, status, TRANSFER_ID } from '@test/helpers/collab/ProductionAuthorityTransferFixture';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 
@@ -41,6 +42,55 @@ describe('production authority-transfer hosting handoff effects', () => {
     sourceRoot = fixture.sourceRoot;
     targetRoot = fixture.targetRoot;
   });
+
+  let importedSnapshot: CollabFixtureSnapshot | undefined;
+  let importedClaims: Pick<Awaited<ReturnType<typeof restoreStoppedCloudToLanTarget>>, 'claimRequest' | 'firstReceipt'>;
+
+  afterAll(async () => { await importedSnapshot?.dispose(); });
+
+  async function restoreImportedHost() {
+    // These cases vary physical handoff after a completed import. Keep the
+    // full import-to-offer journey in the separate test below.
+    if (!importedSnapshot) {
+      const imported = await restoreStoppedCloudToLanTarget();
+      importedClaims = structuredClone({ claimRequest: imported.claimRequest, firstReceipt: imported.firstReceipt });
+      await fixture.closeParticipants();
+      importedSnapshot = await CollabFixtureSnapshot.capture(targetRoot);
+    }
+    await importedSnapshot.restore();
+    let host = foundation(targetRoot);
+    const membership = await host.local.projects.loadMembership(PROJECT_ID);
+    if (membership?.authority.kind !== 'lan') throw new Error('Missing imported Host membership');
+    const routeStart = jest.spyOn(host.lanHost, 'startAuthorityTransferRoute');
+    const restartedComposition = createCollabFeatureSubcomposition({
+      foundation: host,
+      projectSetup: new CollabProjectSetupService(host, { installationKey: TEST_INSTALLATION_A, vaultRoot: targetRoot }),
+      vaultRoot: targetRoot,
+    });
+    await restartedComposition.feature.initialize();
+    await restartedComposition.feature.restoreLifecycle();
+    const route = await routeStart.mock.results[0]?.value;
+    routeStart.mockRestore();
+    if (!route) throw new Error('Missing imported claim responder');
+    const targetAuthority = await host.inspectAuthority(PROJECT_ID);
+    if (!targetAuthority) throw new Error('Missing imported authority');
+    const claimClient = new LanAuthorityTransferClient({
+      authorityGeneration: 3,
+      caCertificatePem: membership.authority.hostCaCertificatePem!,
+      caFingerprint: membership.authority.hostCaFingerprint!,
+      endpoint: route.endpoint,
+      projectId: PROJECT_ID,
+    });
+    const { claimRequest, firstReceipt } = structuredClone(importedClaims);
+    return {
+      claimRequest, firstReceipt, claimClient, restartedComposition, targetAuthority,
+      get foundation() { return host; },
+      restart: async () => {
+        await host.close();
+        host = foundation(targetRoot);
+      },
+    };
+  }
 
   it('offers a new physical Host handoff after Cloud import while retaining claim replay', async () => {
     const target = await restoreStoppedCloudToLanTarget();
@@ -91,7 +141,7 @@ describe('production authority-transfer hosting handoff effects', () => {
   });
 
   it.each(['absent', 'older', 'interrupted', 'projection-interrupted', 'activation-interrupted', 'same', 'newer'] as const)('completes or safely rejects physical Host handoff after Cloud import (former local authority: %s)', async formerState => {
-    const target = await restoreStoppedCloudToLanTarget();
+    const target = await restoreImportedHost();
     const receiverRoot = await mkdtemp(path.join(tmpdir(), 'claudian-after-cloud-handoff-'));
     const receiverFoundation = foundation(receiverRoot, TEST_INSTALLATION_B);
     const receiver = createCollabFeatureSubcomposition({

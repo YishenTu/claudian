@@ -16,7 +16,8 @@ if (args[0] === '--selection') {
   args.splice(0, 2);
 }
 if (selected.length === 0) process.exit(0);
-const result = spawnSync(process.execPath, [runJest, '--runInBand', ...args, '--runTestsByPath', ...selected], {
+const workers = args.some(arg => arg === '--maxWorkers' || arg.startsWith('--maxWorkers=') || arg === '-w' || /^-w\d/.test(arg));
+const result = spawnSync(process.execPath, [runJest, ...(workers ? [] : ['--runInBand']), ...args, '--runTestsByPath', ...selected], {
   cwd: root,
   stdio: 'inherit',
 });

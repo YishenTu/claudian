@@ -87,6 +87,10 @@ jobs:
   selected-tests:
     needs: test-scope
     if: needs.test-scope.outputs.has-tests == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.test-scope.outputs.test-shards) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -105,10 +109,11 @@ jobs:
         id: tests
         env:
           TEST_SELECTION: ${{ needs.test-scope.outputs.test-files }}
-          SCRIPT_SELECTION: ${{ needs.test-scope.outputs.script-tests }}
+          SCRIPT_SELECTION: ${{ matrix.shard == '2/2' && '[]' || needs.test-scope.outputs.script-tests }}
+          TEST_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p test-results
-          npm run test -- --selection "$TEST_SELECTION" --script-selection "$SCRIPT_SELECTION" --json --outputFile=test-results/jest.json
+          npm run test -- --selection "$TEST_SELECTION" --script-selection "$SCRIPT_SELECTION" --shard="$TEST_SHARD" --json --outputFile=test-results/jest.json
 
       - name: Summarize test timings
         if: always() && steps.tests.outcome != 'skipped' && needs.test-scope.outputs.test-files != '[]'
@@ -118,7 +123,7 @@ jobs:
         if: always() && steps.tests.outcome != 'skipped' && needs.test-scope.outputs.test-files != '[]'
         uses: actions/upload-artifact@v7
         with:
-          name: jest-timings
+          name: jest-timings-${{ strategy.job-index }}
           path: test-results/timings/
           if-no-files-found: error
           retention-days: 14
@@ -128,6 +133,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       test-files: ${{ steps.scope.outputs.test-files }}
+      test-shards: ${{ steps.scope.outputs.test-shards }}
       script-tests: ${{ steps.scope.outputs.script-tests }}
       cross-platform-tests: ${{ steps.scope.outputs.cross-platform-tests }}
       pi-windows: ${{ steps.scope.outputs.pi-windows }}
@@ -226,17 +232,33 @@ jobs:
         run: npm run build
 
       - name: Run OS-sensitive Collab tests
+        id: native-tests
         shell: bash
         env:
           TEST_SELECTION: ${{ needs.test-scope.outputs.cross-platform-tests }}
-        run: npm run test:cross-platform-collab -- --selection "$TEST_SELECTION"
+          NATIVE_WORKERS: ${{ runner.os == 'macOS' && '3' || '1' }}
+        run: |
+          mkdir -p test-results
+          npm run test:cross-platform-collab -- --selection "$TEST_SELECTION" --maxWorkers="$NATIVE_WORKERS" --json --outputFile=test-results/native.json
+
+      - name: Summarize native test timings
+        if: always() && steps.native-tests.outcome != 'skipped' && needs.test-scope.outputs.cross-platform-tests != '[]'
+        run: node scripts/summarize-jest-results.mjs test-results/native.json test-results/native-timings
+
+      - name: Upload native test timings
+        if: always() && steps.native-tests.outcome != 'skipped' && needs.test-scope.outputs.cross-platform-tests != '[]'
+        uses: actions/upload-artifact@v7
+        with:
+          name: jest-native-timings-${{ runner.os }}
+          path: test-results/native-timings/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Run Windows Pi launch integration
         if: runner.os == 'Windows' && needs.test-scope.outputs.pi-windows == 'true'
         run: npm run test:unit -- --runInBand tests/integration/providers/pi/PiSubprocess.windows.test.ts
 
-  build:
-    needs: [quality, test]
+  build-artifacts:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -253,3 +275,19 @@ jobs:
 
       - name: Build and inspect production artifacts
         run: npm run build && npm run check:performance
+
+  build:
+    needs: [quality, test, build-artifacts]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require quality, tests and production artifacts
+        env:
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build-artifacts.result }}
+        run: |
+          test "$QUALITY_RESULT" = success
+          test "$TEST_RESULT" = success
+          test "$BUILD_RESULT" = success

@@ -34,7 +34,21 @@ jobs:
         run: npm ci
 
       - name: Run full test suite
-        run: npm run test
+        id: tests
+        run: npm run test -- --json --outputFile=test-results/jest.json
+
+      - name: Summarize test timings
+        if: always() && steps.tests.outcome != 'skipped'
+        run: node scripts/summarize-jest-results.mjs test-results/jest.json test-results/timings
+
+      - name: Upload test timings
+        if: always() && steps.tests.outcome != 'skipped'
+        uses: actions/upload-artifact@v7
+        with:
+          name: jest-full-timings-${{ runner.os }}
+          path: test-results/timings/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Verify published LAN compatibility
         run: npm run test:lan-compatibility

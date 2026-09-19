@@ -3,6 +3,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { CollabFixtureSnapshot } from '@test/helpers/collab/CollabFixtureSnapshot';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
@@ -22,26 +23,52 @@ jest.setTimeout(90_000);
 describe('Reviewed publication boundary', () => {
   let SQL: SqlJsStatic;
   let root = '';
+  let snapshot: CollabFixtureSnapshot;
+  let projectBaseline: Awaited<ReturnType<CollabFeatureService['createProject']>> & { status: 'success' };
   const foundations: ClaudianCollabService[] = [];
   const features: CollabFeatureService[] = [];
 
-  beforeAll(async () => { SQL = await initSqlJs(); });
-  afterEach(async () => {
-    jest.restoreAllMocks();
-    await Promise.all(features.splice(0).map(feature => feature.close()));
-    await Promise.all(foundations.splice(0).map(foundation => foundation.close()));
-    if (root) await rm(root, { recursive: true, force: true });
-  });
-
-  async function setup() {
+  beforeAll(async () => {
+    SQL = await initSqlJs();
     root = await mkdtemp(path.join(tmpdir(), 'claudian-reviewed-publish-'));
     const hostRoot = path.join(root, 'host');
     await mkdir(hostRoot);
     const codec = new InvitationCodec({ isAddressAllowed: address => address === '127.0.0.1' });
     const host = createFoundation(hostRoot, codec, await availablePort());
     const feature = createFeature(host, hostRoot, TEST_INSTALLATION_A);
+    try {
+      unwrap(await feature.initialize());
+      const created = await feature.createProject({ memberDisplayName: 'Manager', name: 'Reviewed Publish' });
+      if (created.status !== 'success') throw new Error('Fixture Project creation failed');
+      projectBaseline = created;
+    } finally {
+      await closeParticipants();
+    }
+    snapshot = await CollabFixtureSnapshot.capture(root);
+  });
+  afterAll(async () => {
+    await closeParticipants();
+    await snapshot?.dispose();
+    if (root) await rm(root, { recursive: true, force: true });
+  });
+  async function closeParticipants() {
+    await Promise.all(features.splice(0).map(feature => feature.close()));
+    await Promise.all(foundations.splice(0).map(foundation => foundation.close()));
+  }
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await closeParticipants();
+  });
+
+  async function setup() {
+    await snapshot.restore();
+    const hostRoot = path.join(root, 'host');
+    const codec = new InvitationCodec({ isAddressAllowed: address => address === '127.0.0.1' });
+    const host = createFoundation(hostRoot, codec, await availablePort());
+    const feature = createFeature(host, hostRoot, TEST_INSTALLATION_A);
     unwrap(await feature.initialize());
-    const project = unwrap(await feature.createProject({ memberDisplayName: 'Manager', name: 'Reviewed Publish' }));
+    const { value: project } = projectBaseline;
+    unwrap(await feature.startHost(project.id));
     const repo = path.join(hostRoot, project.workspacePath);
     await writeFile(path.join(repo, 'reviewed.md'), 'reviewed content\n');
     const before = unwrap(await feature.inspectProject(project.id));

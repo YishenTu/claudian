@@ -29,6 +29,8 @@ const crossPlatformTests = [
   'tests/integration/app/collab/join/JoinProjectCoordinator.test.ts',
   'tests/integration/app/collab/join/JoinProjectLanIntegration.test.ts',
   'tests/integration/app/collab/project/CloudProjectEntryCoordinator.test.ts',
+  'tests/integration/app/collab/project/CloudProjectEntryCoordinator.location.test.ts',
+  'tests/integration/app/collab/project/CloudProjectEntryCoordinator.recovery.test.ts',
   'tests/integration/app/collab/remote-authority/CloudProjectCredentialStore.test.ts',
   'tests/integration/app/collab/reconciliation/NativeGitAcceptedStateIntegrator.test.ts',
   'tests/integration/app/collab/publish/NativeGitPublicationCandidateRepository.test.ts',

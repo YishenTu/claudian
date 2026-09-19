@@ -347,18 +347,6 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('reconcileAllProviders', () => {
-    it('delegates to each registered provider reconciler with its own conversations', () => {
-      const settings: Record<string, unknown> = { model: 'haiku' };
-      const claudeConv = { providerId: 'claude', messages: [] } as unknown as Conversation;
-      const conversations = [claudeConv];
-
-      const result = ProviderSettingsCoordinator.reconcileAllProviders(settings, conversations);
-
-      expect(result).toHaveProperty('changed');
-      expect(result).toHaveProperty('invalidatedConversations');
-      expect(Array.isArray(result.invalidatedConversations)).toBe(true);
-    });
-
     it('filters conversations per provider', () => {
       const reconcileSpy = jest.spyOn(
         ProviderRegistry.getSettingsReconciler('claude'),
@@ -447,12 +435,6 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('normalizeAllModelVariants', () => {
-    it('delegates to registered providers', () => {
-      const settings: Record<string, unknown> = { model: 'haiku' };
-      const result = ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
-      expect(typeof result).toBe('boolean');
-    });
-
     it('migrates the active Codex primary model when an older built-in value is persisted', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',

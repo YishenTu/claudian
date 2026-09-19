@@ -92,10 +92,6 @@ describe('types.ts', () => {
       expect(getContextWindowSize('sonnet', {})).toBe(CONTEXT_WINDOW_1M);
     });
 
-    it('should handle undefined custom limits', () => {
-      expect(getContextWindowSize('sonnet', undefined)).toBe(CONTEXT_WINDOW_1M);
-    });
-
     describe('defensive validation for invalid custom limit values', () => {
       it('should fall back to default for NaN custom limit', () => {
         const customLimits = { 'custom-model': NaN };

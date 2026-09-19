@@ -240,3 +240,49 @@ describe('getCurrentModelFromEnvironment', () => {
     })).toBeNull();
   });
 });
+
+describe('custom model environment edge cases', () => {
+
+  it('should deduplicate models with same value', () => {
+    const envVars = {
+      ANTHROPIC_MODEL: 'same-model',
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'same-model',
+    };
+    const result = getModelsFromEnvironment(envVars);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].value).toBe('same-model');
+    expect(result[0].description).toContain('model');
+    expect(result[0].description).toContain('opus');
+  });
+
+  it('should handle model names with slashes (provider/model format)', () => {
+    const envVars = { ANTHROPIC_MODEL: 'anthropic/claude-3-opus' };
+    const result = getModelsFromEnvironment(envVars);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].value).toBe('anthropic/claude-3-opus');
+    expect(result[0].label).toBe('claude-3-opus');
+  });
+
+  it('should fallback to full value when slash-split yields empty', () => {
+    const envVars = { ANTHROPIC_MODEL: 'trailing-slash/' };
+    const result = getModelsFromEnvironment(envVars);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].label).toBe('trailing-slash/');
+  });
+
+  it('should sort models by priority (model > haiku > sonnet > opus)', () => {
+    const envVars = {
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-model',
+      ANTHROPIC_MODEL: 'main-model',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-model',
+    };
+    const result = getModelsFromEnvironment(envVars);
+
+    expect(result[0].value).toBe('main-model');
+    expect(result[1].value).toBe('sonnet-model');
+    expect(result[2].value).toBe('opus-model');
+  });
+});

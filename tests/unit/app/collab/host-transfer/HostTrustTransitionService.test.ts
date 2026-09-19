@@ -15,6 +15,7 @@ jest.setTimeout(120_000);
 describe('HostTrustTransitionService', () => {
   const service = new HostTrustTransitionService();
   const roots: string[] = [];
+  let identities: LanTlsIdentity[];
 
   async function identity(name: string): Promise<LanTlsIdentity> {
     const root = await mkdtemp(path.join(tmpdir(), `claudian-${name}-`));
@@ -25,13 +26,18 @@ describe('HostTrustTransitionService', () => {
     });
   }
 
-  afterEach(async () => {
+  beforeAll(async () => {
+    identities = await Promise.all(['first', 'second', 'third'].map(identity));
+    await Promise.all(identities.map(value => value.loadOrCreate()));
+  });
+
+  afterAll(async () => {
     await Promise.all(roots.splice(0).map(root => rm(root, { force: true, recursive: true })));
   });
 
   it('canonicalizes CRLF CA certificates before they enter transition proofs', async () => {
-    const source = await identity('source-crlf');
-    const target = await identity('target-crlf');
+    const source = identities[0];
+    const target = identities[1];
     const next = await target.loadOrCreate();
     const proof = await service.signTransition(await source.hostCaSigner(), {
       issuedAt: '2026-08-08T00:00:00.000Z',
@@ -44,8 +50,8 @@ describe('HostTrustTransitionService', () => {
   });
 
   it('signs the exact RSA-PSS transition payload without projecting private material', async () => {
-    const source = await identity('source');
-    const target = await identity('target');
+    const source = identities[0];
+    const target = identities[1];
     const sourceSigner = await source.hostCaSigner();
     const targetCa = await target.loadOrCreate();
 
@@ -70,9 +76,9 @@ describe('HostTrustTransitionService', () => {
   });
 
   it('validates an ordered chain and rejects project, ordering, duplicate, and tamper errors', async () => {
-    const first = await identity('first');
-    const second = await identity('second');
-    const third = await identity('third');
+    const first = identities[0];
+    const second = identities[1];
+    const third = identities[2];
     const firstSigner = await first.hostCaSigner();
     const secondSigner = await second.hostCaSigner();
     const secondCa = await second.loadOrCreate();
@@ -120,7 +126,7 @@ describe('HostTrustTransitionService', () => {
   });
 
   it('binds activation to the exact target CA and package manifest', async () => {
-    const source = await identity('source');
+    const source = identities[0];
     const sourceSigner = await source.hostCaSigner();
     const input = {
       cutoverAt: '2026-08-08T00:05:00.000Z',
@@ -145,7 +151,7 @@ describe('HostTrustTransitionService', () => {
   });
 
   it('binds committed Host activation evidence to its authority generation', async () => {
-    const source = await identity('activation-generation');
+    const source = identities[0];
     const signer = await source.hostCaSigner();
     const input = {
       authorityGeneration: 7,
@@ -168,9 +174,7 @@ describe('HostTrustTransitionService', () => {
   });
 
   it('continues full retained history from a Member already trusting an intermediate Host', async () => {
-    const [first, second, third] = await Promise.all([
-      identity('history-first'), identity('history-second'), identity('history-third'),
-    ]);
+    const [first, second, third] = identities;
     const [a, b, c] = await Promise.all([first.hostCaSigner(), second.hostCaSigner(), third.hostCaSigner()]);
     const ab = await service.signTransition(a, {
       issuedAt: '2026-08-08T00:00:00.000Z', nextCaCertificatePem: b.caCertificatePem,
@@ -187,9 +191,7 @@ describe('HostTrustTransitionService', () => {
   });
 
   it('distinguishes a continuous return to a Host installation from competing successor proofs', async () => {
-    const [first, second, third] = await Promise.all([
-      identity('return-first'), identity('return-second'), identity('return-third'),
-    ]);
+    const [first, second, third] = identities;
     const [a, b, c] = await Promise.all([first.hostCaSigner(), second.hostCaSigner(), third.hostCaSigner()]);
     const ab = await service.signTransition(a, {
       issuedAt: '2026-08-08T00:00:00.000Z', nextCaCertificatePem: b.caCertificatePem,

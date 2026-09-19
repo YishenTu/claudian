@@ -27,6 +27,7 @@ const baseConfig = {
 
 module.exports = {
   maxWorkers,
+  reporters: ['default', '<rootDir>/scripts/jestTimingReporter.cjs'],
   projects: [
     {
       ...baseConfig,

@@ -83,6 +83,33 @@ Do not change the base contract version for an additive feature. Keep existing f
 
 Physical Host handoff also checks the receiver's authority-data format before the source quiesces. A 2.2.6 Host can hand off to a current receiver; receiving a current Host's authority requires an upgraded receiver. Other Project Members can continue using 2.2.6.
 
+For local iteration, `npm run test:affected -- --base origin/main` selects tests from
+committed, staged, unstaged and untracked changes using the CI dependency graph.
+It prints the selection, runs the selected Jest and script checks, and runs
+published LAN compatibility when affected. Use `--list` to inspect without running,
+`--full` for all tests and LAN compatibility, and `-- --runInBand` to forward Jest
+options. Unknown inputs or an unavailable base retain full coverage. This does not
+replace typecheck, lint, build/performance checks or native checks on other platforms.
+
+Full Linux CI verification uses two Jest shards, with script checks on the first
+shard. Affected selections use one job. Both shards must pass the aggregate test
+gate, and each uploads its own timing artifact. Sharding uses more runner capacity
+to reduce elapsed time; compare runner minutes as well as wall time.
+
+JSON Jest runs also produce suite timings and execution metadata. CI uploads these
+for Linux, native smoke and scheduled suites. To compare native worker counts locally:
+
+```bash
+npm run test:cross-platform-collab -- --maxWorkers=2 --json --outputFile=.context/native.json
+node scripts/summarize-jest-results.mjs .context/native.json .context/native-timings
+```
+
+CI runs native smoke with three workers on macOS and one on Windows. The local wrapper
+remains serial unless a worker count is supplied. Compare the same selection and
+commit, including fixture setup/teardown, and report elapsed time separately from
+summed suite durations. Recheck timings on the actual CI runners before increasing
+concurrency further.
+
 `npm run test:lan-compatibility` runs real clients from this checkout and pinned 2.2.6 source against real HTTPS, WebSocket, SQL and Git implementations. It downloads the exact baseline protocol tarball and verifies it against the published lockfile's integrity hash. Other runtime dependencies use this checkout's installed versions. The command requires network access to the public registry and, in shallow checkouts, to fetch the baseline Git commit. Temporary source and packages live under `.context/` and are removed when the runner exits. CI and scheduled verification run this gate; do not replace its published side with candidate-generated fixtures or vendored protocol source.
 
 The project architecture and area-specific development rules are documented in `AGENTS.md` and the scoped `AGENTS.md` files under `src/`.

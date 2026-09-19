@@ -6,7 +6,6 @@ const fs = jest.requireActual<typeof fsType>('fs');
 const os = jest.requireActual<typeof osType>('os');
 const path = jest.requireActual<typeof pathType>('path');
 
-import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
 import {
   expandHomePath,
   getVaultPath,
@@ -129,6 +128,7 @@ describe('expandHomePath', () => {
   it('preserves unmatched variable patterns', () => {
     delete process.env.NONEXISTENT_VAR_12345;
     expect(expandHomePath('$NONEXISTENT_VAR_12345/bin')).toBe('$NONEXISTENT_VAR_12345/bin');
+    expect(expandHomePath('%NONEXISTENT_VAR_12345%/bin')).toBe('%NONEXISTENT_VAR_12345%/bin');
   });
 
   it('returns path unchanged when no special patterns', () => {
@@ -405,202 +405,6 @@ describe('normalizePathForVault', () => {
   });
 });
 
-describe('findClaudeCLIPath', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
-  it('returns null when nothing found', () => {
-    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
-    const result = findClaudeCLIPath('/nonexistent/path');
-    expect(result).toBeNull();
-  });
-
-  it('resolves from custom path entries', () => {
-    const claudePath = isWindows
-      ? 'C:\\custom\\bin\\claude.exe'
-      : '/custom/bin/claude';
-
-    jest.spyOn(fs, 'existsSync').mockImplementation(
-      p => String(p) === claudePath
-    );
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === claudePath }) as fsType.Stats
-    );
-
-    const result = findClaudeCLIPath(isWindows ? 'C:\\custom\\bin' : '/custom/bin');
-    expect(result).toBe(claudePath);
-  });
-
-  it('returns string or null', () => {
-    const result = findClaudeCLIPath();
-    expect(result === null || typeof result === 'string').toBe(true);
-  });
-
-  it('finds claude from common paths when no custom path provided', () => {
-    const commonPath = path.join(os.homedir(), '.claude', 'local', 'claude');
-
-    jest.spyOn(fs, 'existsSync').mockImplementation(
-      p => String(p) === commonPath
-    );
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === commonPath }) as fsType.Stats
-    );
-
-    const result = findClaudeCLIPath();
-    expect(result).toBe(commonPath);
-  });
-
-  it('falls back to npm cli-wrapper.cjs paths when binary not found', () => {
-    const cliWrapperPath = path.join(
-      os.homedir(), '.npm-global', 'lib', 'node_modules',
-      '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs'
-    );
-
-    jest.spyOn(fs, 'existsSync').mockImplementation(
-      p => String(p) === cliWrapperPath
-    );
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === cliWrapperPath }) as fsType.Stats
-    );
-
-    const result = findClaudeCLIPath();
-    expect(result).toBe(cliWrapperPath);
-  });
-
-  it('keeps legacy npm cli.js fallback when cli-wrapper.cjs is absent', () => {
-    const legacyCliPath = path.join(
-      os.homedir(), '.npm-global', 'lib', 'node_modules',
-      '@anthropic-ai', 'claude-code', 'cli.js'
-    );
-
-    jest.spyOn(fs, 'existsSync').mockImplementation(
-      p => String(p) === legacyCliPath
-    );
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === legacyCliPath }) as fsType.Stats
-    );
-
-    const result = findClaudeCLIPath();
-    expect(result).toBe(legacyCliPath);
-  });
-
-  it('falls back to PATH environment when common and npm paths fail', () => {
-    const envClaudePath = '/env/specific/bin/claude';
-    const originalPath = process.env.PATH;
-    process.env.PATH = `/env/specific/bin:${originalPath}`;
-
-    jest.spyOn(fs, 'existsSync').mockImplementation(
-      p => String(p) === envClaudePath
-    );
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      p => ({ isFile: () => String(p) === envClaudePath }) as fsType.Stats
-    );
-
-    try {
-      const result = findClaudeCLIPath();
-      expect(result).toBe(envClaudePath);
-    } finally {
-      process.env.PATH = originalPath;
-    }
-  });
-
-  it('returns null for custom path without claude binary on non-Windows', () => {
-    // On non-Windows, custom path resolution only looks for 'claude' binary
-    const customDir = '/custom/tools';
-
-    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
-
-    const result = findClaudeCLIPath(customDir);
-    expect(result).toBeNull();
-  });
-
-  it('handles inaccessible filesystem paths gracefully', () => {
-    jest.spyOn(fs, 'existsSync').mockImplementation(() => {
-      throw new Error('Permission denied');
-    });
-
-    const result = findClaudeCLIPath('/some/path');
-    expect(result).toBeNull();
-  });
-
-  it('finds claude via nvm default version when NVM_BIN is not set (Unix)', () => {
-    if (isWindows) return;
-
-    const savedNvmBin = process.env.NVM_BIN;
-    const savedNvmDir = process.env.NVM_DIR;
-    delete process.env.NVM_BIN;
-    delete process.env.NVM_DIR;
-
-    const nvmDir = '/fake/home/.nvm';
-    const claudePath = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin', 'claude');
-    const binDir = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin');
-
-    jest.spyOn(os, 'homedir').mockReturnValue('/fake/home');
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => {
-      const s = String(p);
-      return s === claudePath || s === binDir;
-    });
-    jest.spyOn(fs, 'readFileSync').mockImplementation(((p: string) => {
-      if (String(p) === path.join(nvmDir, 'alias', 'default')) return '22';
-      throw new Error('not found');
-    }) as typeof fs.readFileSync);
-    jest.spyOn(fs, 'readdirSync').mockImplementation(((p: string) => {
-      if (String(p) === path.join(nvmDir, 'versions', 'node')) return ['v22.18.0'];
-      return [];
-    }) as typeof fs.readdirSync);
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      () => ({ isFile: () => true }) as fsType.Stats
-    );
-
-    const result = findClaudeCLIPath();
-    expect(result).toBe(claudePath);
-
-    if (savedNvmBin !== undefined) process.env.NVM_BIN = savedNvmBin;
-    else delete process.env.NVM_BIN;
-    if (savedNvmDir !== undefined) process.env.NVM_DIR = savedNvmDir;
-    else delete process.env.NVM_DIR;
-  });
-
-  it('finds claude via built-in nvm node alias when NVM_BIN is not set (Unix)', () => {
-    if (isWindows) return;
-
-    const savedNvmBin = process.env.NVM_BIN;
-    const savedNvmDir = process.env.NVM_DIR;
-    delete process.env.NVM_BIN;
-    delete process.env.NVM_DIR;
-
-    const nvmDir = '/fake/home/.nvm';
-    const claudePath = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin', 'claude');
-    const binDir = path.join(nvmDir, 'versions', 'node', 'v22.18.0', 'bin');
-
-    jest.spyOn(os, 'homedir').mockReturnValue('/fake/home');
-    jest.spyOn(fs, 'existsSync').mockImplementation(p => {
-      const s = String(p);
-      return s === claudePath || s === binDir;
-    });
-    jest.spyOn(fs, 'readFileSync').mockImplementation(((p: string) => {
-      if (String(p) === path.join(nvmDir, 'alias', 'default')) return 'node';
-      throw new Error('not found');
-    }) as typeof fs.readFileSync);
-    jest.spyOn(fs, 'readdirSync').mockImplementation(((p: string) => {
-      if (String(p) === path.join(nvmDir, 'versions', 'node')) return ['v20.10.0', 'v22.18.0'];
-      return [];
-    }) as typeof fs.readdirSync);
-    jest.spyOn(fs, 'statSync').mockImplementation(
-      () => ({ isFile: () => true }) as fsType.Stats
-    );
-
-    const result = findClaudeCLIPath();
-    expect(result).toBe(claudePath);
-
-    if (savedNvmBin !== undefined) process.env.NVM_BIN = savedNvmBin;
-    else delete process.env.NVM_BIN;
-    if (savedNvmDir !== undefined) process.env.NVM_DIR = savedNvmDir;
-    else delete process.env.NVM_DIR;
-  });
-});
-
 describe('expandHomePath - Windows environment variable formats', () => {
   const originalPlatform = process.platform;
 
@@ -716,5 +520,204 @@ describe('normalizeConfiguredCliPath', () => {
   it('returns an empty string for blank or missing input', () => {
     expect(normalizeConfiguredCliPath('   ')).toBe('');
     expect(normalizeConfiguredCliPath(undefined)).toBe('');
+  });
+});
+
+describe('filesystem path expansion and Windows prefixes', () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  it('strips Windows device prefixes when platform is win32', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    expect(normalizePathForFilesystem('\\\\?\\C:\\Users\\test\\file.txt')).toBe('C:\\Users\\test\\file.txt');
+    expect(normalizePathForFilesystem('\\\\?\\UNC\\server\\share\\file.txt')).toBe('\\\\server\\share\\file.txt');
+  });
+
+  it('translates MSYS paths when platform is win32', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    expect(normalizePathForFilesystem('/c/Users/test/file.txt')).toBe('C:\\Users\\test\\file.txt');
+  });
+
+  it('handles non-existent environment variables', () => {
+    // Non-existent env vars should be left as-is
+    expect(normalizePathForFilesystem('$NONEXISTENT/path')).toBe('$NONEXISTENT/path');
+    expect(normalizePathForFilesystem('%NONEXISTENT%/path')).toBe('%NONEXISTENT%/path');
+  });
+
+  it('handles chained home and environment variable expansions', () => {
+    const envKey = 'CLAUDIAN_TEST_SUBDIR';
+    const originalValue = process.env[envKey];
+    process.env[envKey] = 'project';
+
+    try {
+      const result = normalizePathForFilesystem(`~/$${envKey}/file.md`);
+      const expected = path.join(os.homedir(), 'project', 'file.md');
+      expect(result).toBe(expected);
+    } finally {
+      if (originalValue === undefined) {
+        delete process.env[envKey];
+      } else {
+        process.env[envKey] = originalValue;
+      }
+    }
+  });
+
+  it('handles Windows env vars with parentheses like ProgramFiles(x86)', () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const originalPFx86 = process.env['ProgramFiles(x86)'];
+
+    try {
+      process.env['ProgramFiles(x86)'] = 'C:\\Program Files (x86)';
+      const result = normalizePathForFilesystem('%ProgramFiles(x86)%/app/file.txt');
+      expect(result).toBe('C:\\Program Files (x86)\\app\\file.txt');
+    } finally {
+      if (originalPFx86 === undefined) {
+        delete process.env['ProgramFiles(x86)'];
+      } else {
+        process.env['ProgramFiles(x86)'] = originalPFx86;
+      }
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    }
+  });
+});
+
+describe('relative Vault paths', () => {
+
+  it('returns vault-relative path for relative input inside vault', () => {
+    expect(normalizePathForVault('notes/a.md', '/vault')).toBe('notes/a.md');
+  });
+});
+
+describe('Vault boundary edge cases', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('should block path traversal escaping vault', () => {
+    expect(isPathWithinVault('../secrets.txt', '/vault')).toBe(false);
+  });
+
+  it('should expand tilde and still enforce vault boundary', () => {
+    jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
+    expect(isPathWithinVault('~/vault/notes/a.md', '/vault')).toBe(false);
+  });
+
+  it('should allow exact vault path', () => {
+    expect(isPathWithinVault('/vault', '/vault')).toBe(true);
+    expect(isPathWithinVault('.', '/vault')).toBe(true);
+  });
+
+  it('should handle non-existent paths via fallback resolution', () => {
+    // When fs.realpathSync throws (file doesn't exist), path.resolve is used
+    jest.spyOn(fs, 'realpathSync').mockImplementation(() => {
+      throw new Error('ENOENT');
+    });
+    // Even with mock throwing, function should still work via fallback
+    expect(isPathWithinVault('nonexistent/path.md', '/vault')).toBe(true);
+  });
+
+  it('should block symlink escapes for non-existent targets', () => {
+    jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => {
+      const s = String(p);
+      return s === '/' || s === '/vault' || s === '/vault/export';
+    });
+
+    const realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation((p: any) => {
+      const s = String(p);
+      if (s === '/') return '/';
+      if (s === '/vault') return '/vault';
+      if (s === '/vault/export') return '/tmp/export';
+      throw new Error('ENOENT');
+    });
+    (fs.realpathSync as any).native = realpathSpy;
+
+    expect(isPathWithinVault('export/newfile.txt', '/vault')).toBe(false);
+  });
+});
+
+describe('Windows separator normalization', () => {
+  const originalPlatform = process.platform;
+  const originalSep = path.sep;
+  const originalIsAbsolute = path.isAbsolute;
+
+  beforeEach(() => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    // Force Windows-style separator to detect regressions when comparisons rely on path.sep.
+    Object.defineProperty(path, 'sep', { value: '\\', writable: true });
+    jest.spyOn(path, 'isAbsolute').mockImplementation((p: any) => {
+      const value = String(p);
+      return /^[A-Za-z]:[\\/]/.test(value) || originalIsAbsolute(value);
+    });
+
+    const realpathSpy = jest.spyOn(fs, 'realpathSync').mockImplementation((p: any) => String(p) as any);
+    (fs.realpathSync as any).native = realpathSpy;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    Object.defineProperty(path, 'sep', { value: originalSep, writable: true });
+    jest.restoreAllMocks();
+  });
+
+  it('allows vault paths after slash normalization', () => {
+    expect(isPathWithinVault('C:\\Users\\test\\vault\\note.md', 'C:\\Users\\test\\vault')).toBe(true);
+  });
+
+});
+
+describe('MSYS translation across simulated platforms', () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  describe('on Windows', () => {
+    beforeEach(() => {
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+    });
+
+    it('should translate MSYS drive paths to Windows paths', () => {
+      expect(translateMsysPath('/c/Users/test')).toBe('C:\\Users\\test');
+      expect(translateMsysPath('/d/Projects/vault')).toBe('D:\\Projects\\vault');
+    });
+
+    it('should handle uppercase drive letters', () => {
+      expect(translateMsysPath('/C/Users/test')).toBe('C:\\Users\\test');
+    });
+
+    it('should handle root drive paths', () => {
+      expect(translateMsysPath('/c')).toBe('C:');
+      expect(translateMsysPath('/c/')).toBe('C:\\');
+    });
+
+    it('should not translate non-MSYS absolute paths', () => {
+      expect(translateMsysPath('/home/user')).toBe('/home/user');
+      expect(translateMsysPath('/tmp/file.txt')).toBe('/tmp/file.txt');
+    });
+
+    it('should not translate Windows native paths', () => {
+      expect(translateMsysPath('C:\\Users\\test')).toBe('C:\\Users\\test');
+    });
+
+    it('should not translate relative paths', () => {
+      expect(translateMsysPath('./file.txt')).toBe('./file.txt');
+      expect(translateMsysPath('../parent/file.txt')).toBe('../parent/file.txt');
+    });
+  });
+
+  describe('on Unix', () => {
+    beforeEach(() => {
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+    });
+
+    it('should not translate any paths', () => {
+      expect(translateMsysPath('/c/Users/test')).toBe('/c/Users/test');
+      expect(translateMsysPath('/home/user')).toBe('/home/user');
+    });
   });
 });

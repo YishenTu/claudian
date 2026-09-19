@@ -113,12 +113,16 @@ export function productionAuthorityTransferFixture() {
   let sourceRoot: string;
   let sourceSnapshot: CollabFixtureSnapshot;
   let targetRoot: string;
+  let cloudSourceSnapshot: CollabFixtureSnapshot | undefined;
+  let cloudSource: Omit<Awaited<ReturnType<typeof prepareCloudSource>>, 'sourceFeature' | 'sourceFoundation'> | undefined;
   const foundations = new Set<ClaudianCollabService>();
   const features = new Set<ReturnType<typeof createProductionFeatureSubcomposition>['feature']>();
 
   beforeAll(async () => {
     SQL = await initSqlJs();
     sourceRoot = await mkdtemp(path.join(tmpdir(), 'claudian-transfer-source-'));
+    targetRoot = await mkdtemp(path.join(tmpdir(), 'claudian-transfer-target-'));
+    await rm(targetRoot, { recursive: true });
     const { sourceFoundation, sourceFeature } = sourceParticipant();
     try {
       await sourceFeature.initialize();
@@ -136,24 +140,36 @@ export function productionAuthorityTransferFixture() {
 
   beforeEach(async () => {
     await mkdir(sourceRoot);
-    targetRoot = await mkdtemp(path.join(tmpdir(), 'claudian-transfer-target-'));
+    await mkdir(targetRoot);
   });
 
-  afterEach(async () => {
-    await Promise.allSettled([...features].map(feature => feature.close()));
+  async function closeParticipants() {
+    const closedFeatures = await Promise.allSettled([...features].map(feature => feature.close()));
     features.clear();
-    await Promise.allSettled([...foundations].map(service => service.close()));
+    const closedFoundations = await Promise.allSettled([...foundations].map(service => service.close()));
     foundations.clear();
-    jest.restoreAllMocks();
-    await Promise.all([
-      rm(sourceRoot, { force: true, recursive: true }),
-      rm(targetRoot, { force: true, recursive: true }),
-    ]);
+    const errors = [...closedFeatures, ...closedFoundations]
+      .filter(result => result.status === 'rejected').map(result => result.reason);
+    if (errors.length) throw new AggregateError(errors, 'Transfer fixture cleanup failed');
+  }
+
+  afterEach(async () => {
+    try {
+      await closeParticipants();
+    } finally {
+      jest.restoreAllMocks();
+      await Promise.all([
+        rm(sourceRoot, { force: true, recursive: true }),
+        rm(targetRoot, { force: true, recursive: true }),
+      ]);
+    }
   });
 
   afterAll(async () => {
     await sourceSnapshot?.dispose();
+    await cloudSourceSnapshot?.dispose();
     if (sourceRoot) await rm(sourceRoot, { force: true, recursive: true });
+    if (targetRoot) await rm(targetRoot, { force: true, recursive: true });
   });
 
   function sourceParticipant() {
@@ -332,7 +348,7 @@ export function productionAuthorityTransferFixture() {
     };
   }
 
-  async function prepareCloudToLanTarget(moveAddress = false, cloudGeneration = 2) {
+  async function prepareCloudSource() {
     const {
       artifactBytes,
       recoveryRecord,
@@ -378,6 +394,40 @@ export function productionAuthorityTransferFixture() {
       sourceStaging.absolutePath,
       'relinquishment-proof.json.partial',
     ))).rejects.toMatchObject({ code: 'ENOENT' });
+    return {
+      artifactBytes, repositoryBytes, sourceCoordinationBytes, sourceManifest,
+      sourceMembership, sourceFeature, sourceFoundation,
+    };
+  }
+
+  async function restoreCloudSource() {
+    // Target scenarios consume the same committed checkpoint. Source scenarios
+    // still call captureSource directly and exercise fresh capture/recovery.
+    if (!cloudSource) {
+      const { sourceFeature, sourceFoundation, ...prepared } = await prepareCloudSource();
+      await sourceFeature.close();
+      features.delete(sourceFeature);
+      await sourceFoundation.close();
+      foundations.delete(sourceFoundation);
+      cloudSourceSnapshot = await CollabFixtureSnapshot.capture(sourceRoot);
+      cloudSource = prepared;
+    } else {
+      await cloudSourceSnapshot!.restore();
+    }
+    const participant = sourceParticipant();
+    await participant.sourceFeature.initialize();
+    return {
+      ...cloudSource,
+      ...participant,
+      artifactBytes: new Map([...cloudSource.artifactBytes].map(([name, bytes]) => [name, Buffer.from(bytes)])),
+    };
+  }
+
+  async function prepareCloudToLanTarget(moveAddress = false, cloudGeneration = 2) {
+    const {
+      artifactBytes, repositoryBytes, sourceCoordinationBytes, sourceManifest,
+      sourceMembership, sourceFeature, sourceFoundation,
+    } = await restoreCloudSource();
     const records = sourceCoordinationBytes.toString('utf8').trimEnd().split('\n')
       .map(line => JSON.parse(line) as Record<string, unknown>);
     const project = records[0] as { value: Record<string, unknown> };
@@ -855,6 +905,7 @@ export function productionAuthorityTransferFixture() {
     get sourceRoot() { return sourceRoot; },
     get targetRoot() { return targetRoot; },
     captureSource,
+    closeParticipants,
     prepareCloudToLanTarget,
     stageCloudToLanTarget,
     activateCloudToLanTarget,

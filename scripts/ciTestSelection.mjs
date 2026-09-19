@@ -18,6 +18,9 @@ const isCollabRuntime = file => /^(?:src|tests\/(?:unit|integration))\/(?:app|co
 
 // These consumers read files through fs rather than imports, so Jest cannot find their edges.
 const fileConsumers = [
+  [/^tests\/helpers\/collab\/CloudEntryCrashFixture\.ts$/, [
+    'tests/integration/app/collab/project/CloudProjectEntryCoordinator.recovery.test.ts',
+  ]],
   // esbuild reads these entry points dynamically. Their owner tests also carry
   // the transitive import edges needed when a dependency of an entry changes.
   [/^(?:src|tests\/unit)\/(?:app\/collab\/lan\/LanTlsIdentity|features\/collab\/detail\/review\/CollabDiffRenderer|features\/collab\/shared\/markdown\/MarkdownDraftEditor)(?:\.test)?\.ts$/, [
@@ -91,6 +94,20 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   };
 }
 
+export function selectRelatedCiTests({ changes, eventName = 'pull_request' }) {
+  let selection = selectCiTests({ changes, relatedTests: [], eventName });
+  const inputs = changes.filter(change => change.status !== 'D' && isGraphInput(change.path))
+    .map(change => change.path);
+  if (selection.testFiles !== null && inputs.length > 0) {
+    const relatedTests = JSON.parse(execFileSync(process.execPath, [
+      'scripts/run-jest.js', '--listTests', '--json', '--findRelatedTests', ...inputs,
+    ], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }))
+      .map(file => path.relative(process.cwd(), file).split(path.sep).join('/'));
+    selection = selectCiTests({ changes, relatedTests, eventName });
+  }
+  return selection;
+}
+
 function main() {
   const eventName = process.env.GITHUB_EVENT_NAME;
   const { BASE_SHA: base, HEAD_SHA: head } = process.env;
@@ -114,20 +131,12 @@ function main() {
       for (let index = 0; index < entries.length; index += 2) {
         changes.push({ status: entries[index], path: entries[index + 1] });
       }
-      selection = selectCiTests({ changes, relatedTests: [], eventName });
-      const inputs = changes.filter(change => change.status !== 'D' && isGraphInput(change.path))
-        .map(change => change.path);
-      if (selection.testFiles !== null && inputs.length > 0) {
-        const relatedTests = JSON.parse(execFileSync(process.execPath, [
-          'scripts/run-jest.js', '--listTests', '--json', '--findRelatedTests', ...inputs,
-        ], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }))
-          .map(file => path.relative(process.cwd(), file).split(path.sep).join('/'));
-        selection = selectCiTests({ changes, relatedTests, eventName });
-      }
+      selection = selectRelatedCiTests({ changes, eventName });
     }
   }
   const output = [
     `test-files=${JSON.stringify(selection.testFiles)}`,
+    `test-shards=${JSON.stringify(selection.testFiles === null ? ['1/2', '2/2'] : ['1/1'])}`,
     `script-tests=${JSON.stringify(selection.scriptTests)}`,
     `cross-platform-tests=${JSON.stringify(selection.crossPlatformTests)}`,
     `lan=${selection.lanCompatibility}`,

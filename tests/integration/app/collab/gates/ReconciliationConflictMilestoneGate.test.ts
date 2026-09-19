@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import type { CollabProjectId } from '@claudian-collab/protocol';
+import { CollabFixtureSnapshot } from '@test/helpers/collab/CollabFixtureSnapshot';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
@@ -28,22 +29,137 @@ describe('M6 publish conflict gate', () => {
   const foundations: ClaudianCollabService[] = [];
   const features: CollabFeatureService[] = [];
   let root = '';
+  let hostPort: number;
+  let snapshot: CollabFixtureSnapshot;
+  let baseline: Pick<Awaited<ReturnType<typeof prepareConflict>>, 'projectId' | 'memberBRequest' | 'operationId' | 'memberBPath'>;
 
   beforeAll(async () => {
     SQL = await initSqlJs();
+    hostPort = await availablePort();
+    try {
+      const prepared = await prepareConflict();
+      baseline = { projectId: prepared.projectId, memberBRequest: prepared.memberBRequest, operationId: prepared.operationId, memberBPath: prepared.memberBPath };
+    } finally {
+      await closeParticipants();
+    }
+    snapshot = await CollabFixtureSnapshot.capture(root);
   });
 
-  afterEach(async () => {
+  async function closeParticipants() {
     await Promise.all(features.splice(0).map(feature => feature.close()));
     await Promise.all(foundations.splice(0).map(foundation => foundation.close()));
+  }
+  afterEach(closeParticipants);
+  afterAll(async () => {
+    await closeParticipants();
+    await snapshot?.dispose();
     if (root) await rm(root, { force: true, recursive: true });
-    root = '';
   });
 
   it.each(['normal', 'cleanup retry', 'cleanup restart'] as const)(
     'auto-syncs contribution-free work and completes conflict publication with %s',
     async recovery => {
-    root = await mkdtemp(path.join(tmpdir(), 'claudian-m6-gate-'));
+    // Retain one uninterrupted path from conflict creation to publication.
+    const fixture = recovery === 'normal' ? await prepareConflict() : await restoreConflict();
+    const { projectId, memberBRequest, operationId, memberBPath, memberBRoot, invitationCodec } = fixture;
+    let { memberB, memberBFeature } = fixture;
+
+    await Promise.all([
+      writeFile(path.join(memberBPath, 'agent.md'), 'reviewed agent file\n'),
+      writeFile(path.join(memberBPath, 'manual.md'), 'manual reviewed\n'),
+    ]);
+    let observedInterruption: unknown = null;
+    let faultInjected = false;
+    if (recovery !== 'normal') {
+      const operationPath = path.join(
+        memberBRoot,
+        memberB.local.projects.getConflictDirectoryPath(),
+        operationId,
+      );
+      const realRm = fs.rm;
+      const fault = jest.spyOn(fs, 'rm').mockImplementation(async (target, options) => {
+        if (!faultInjected && String(target) === operationPath) {
+          faultInjected = true;
+          throw Object.assign(new Error('Temporary scratch cleanup failure'), { code: 'EBUSY' });
+        }
+        return realRm(target, options);
+      });
+      try {
+        observedInterruption = await memberBFeature.publish({
+          description: memberBRequest.description,
+          projectId,
+        });
+      } finally {
+        fault.mockRestore();
+      }
+      if (recovery === 'cleanup restart') {
+        await memberBFeature.close();
+        await memberB.close();
+        memberB = createFoundation(memberBRoot, invitationCodec);
+        memberBFeature = createFeature(memberB, memberBRoot);
+        unwrap(await memberBFeature.initialize(), 'Restarted Member B initialization');
+      }
+    }
+    expect(faultInjected).toBe(recovery !== 'normal');
+    const expectedInterruption = expect.objectContaining({ durableProgress: true, status: 'recovery-required' });
+    expect(observedInterruption).toEqual(recovery === 'normal' ? null : expectedInterruption);
+    const prepared = unwrap(await memberBFeature.publish({
+      description: memberBRequest.description,
+      projectId,
+    }), 'Publish local conflict resolution');
+    expect(prepared.state).toBe('review-required');
+    const review = prepared.review;
+    if (!review) throw new Error('Resolved publication review missing');
+    await expect(readFile(path.join(memberBPath, 'agent.md'), 'utf8'))
+      .resolves.toBe('reviewed agent file\n');
+    await expect(readFile(path.join(memberBPath, 'manual.md'), 'utf8'))
+      .resolves.toBe('manual reviewed\n');
+    await expect(readFile(path.join(memberBPath, 'image.bin')))
+      .resolves.toEqual(Buffer.from([0x10, 0x11]));
+
+    const resumedPublish = unwrap(await memberBFeature.confirmPublish({
+      description: memberBRequest.description,
+      expectedCandidateOid: review.candidateOid,
+      expectedMainOid: review.currentMainOid,
+      operationId: review.operationId,
+      projectId,
+    }), 'Confirm resolved publication');
+    expect(resumedPublish).toMatchObject({
+      request: { id: memberBRequest.id, status: 'open' },
+      state: 'request-synchronized',
+    });
+    await expect(readFile(path.join(memberBPath, 'agent.md'), 'utf8'))
+      .resolves.toBe('reviewed agent file\n');
+    await expect(readFile(path.join(memberBPath, 'manual.md'), 'utf8'))
+      .resolves.toBe('manual reviewed\n');
+
+    const memberBGit = await memberB.requireGitFoundation();
+    expect(await memberBGit.repositories.getWorkingTreeStatus(memberBPath)).toEqual([]);
+    expect(memberBGit.runner.activeProcessCount).toBe(0);
+    },
+  );
+
+  async function restoreConflict() {
+    await snapshot.restore();
+    const hostRoot = path.join(root, 'host-vault');
+    const memberBRoot = path.join(root, 'member-b-vault');
+    const invitationCodec = new InvitationCodec({ isAddressAllowed: address => address === '127.0.0.1' });
+    const host = createFoundation(hostRoot, invitationCodec, hostPort, true);
+    const hostFeature = createFeature(host, hostRoot);
+    const memberB = createFoundation(memberBRoot, invitationCodec);
+    const memberBFeature = createFeature(memberB, memberBRoot);
+    const { projectId } = baseline;
+    unwrap(await hostFeature.initialize(), 'Restored Host initialization');
+    unwrap(await hostFeature.startHost(projectId), 'Restored Host start');
+    unwrap(await memberBFeature.initialize(), 'Restored Member B initialization');
+
+    return { ...baseline, memberB, memberBFeature, memberBRoot, invitationCodec };
+  }
+
+  async function prepareConflict() {
+    if (!root) root = await mkdtemp(path.join(tmpdir(), 'claudian-m6-gate-'));
+    else await rm(root, { recursive: true, force: true });
+    await mkdir(root, { recursive: true });
     const hostRoot = path.join(root, 'host-vault');
     const memberARoot = path.join(root, 'member-a-vault');
     const memberBRoot = path.join(root, 'member-b-vault');
@@ -52,12 +168,12 @@ describe('M6 publish conflict gate', () => {
     const invitationCodec = new InvitationCodec({
       isAddressAllowed: address => address === '127.0.0.1',
     });
-    const host = createFoundation(hostRoot, invitationCodec, await availablePort(), true);
+    const host = createFoundation(hostRoot, invitationCodec, hostPort, true);
     const memberA = createFoundation(memberARoot, invitationCodec);
-    let memberB = createFoundation(memberBRoot, invitationCodec);
+    const memberB = createFoundation(memberBRoot, invitationCodec);
     const hostFeature = createFeature(host, hostRoot);
     const memberAFeature = createFeature(memberA, memberARoot);
-    let memberBFeature = createFeature(memberB, memberBRoot);
+    const memberBFeature = createFeature(memberB, memberBRoot);
 
     unwrap(await hostFeature.initialize(), 'Host initialization');
     unwrap(await memberAFeature.initialize(), 'Member A initialization');
@@ -169,80 +285,8 @@ describe('M6 publish conflict gate', () => {
       status: 'conflict',
     });
 
-    await Promise.all([
-      writeFile(path.join(memberBPath, 'agent.md'), 'reviewed agent file\n'),
-      writeFile(path.join(memberBPath, 'manual.md'), 'manual reviewed\n'),
-    ]);
-    let observedInterruption: unknown = null;
-    let faultInjected = false;
-    if (recovery !== 'normal') {
-      const operationPath = path.join(
-        memberBRoot,
-        memberB.local.projects.getConflictDirectoryPath(),
-        operationId,
-      );
-      const realRm = fs.rm;
-      const fault = jest.spyOn(fs, 'rm').mockImplementation(async (target, options) => {
-        if (!faultInjected && String(target) === operationPath) {
-          faultInjected = true;
-          throw Object.assign(new Error('Temporary scratch cleanup failure'), { code: 'EBUSY' });
-        }
-        return realRm(target, options);
-      });
-      try {
-        observedInterruption = await memberBFeature.publish({
-          description: memberBRequest.description,
-          projectId,
-        });
-      } finally {
-        fault.mockRestore();
-      }
-      if (recovery === 'cleanup restart') {
-        await memberBFeature.close();
-        await memberB.close();
-        memberB = createFoundation(memberBRoot, invitationCodec);
-        memberBFeature = createFeature(memberB, memberBRoot);
-        unwrap(await memberBFeature.initialize(), 'Restarted Member B initialization');
-      }
-    }
-    expect(faultInjected).toBe(recovery !== 'normal');
-    const expectedInterruption = expect.objectContaining({ durableProgress: true, status: 'recovery-required' });
-    expect(observedInterruption).toEqual(recovery === 'normal' ? null : expectedInterruption);
-    const prepared = unwrap(await memberBFeature.publish({
-      description: memberBRequest.description,
-      projectId,
-    }), 'Publish local conflict resolution');
-    expect(prepared.state).toBe('review-required');
-    const review = prepared.review;
-    if (!review) throw new Error('Resolved publication review missing');
-    await expect(readFile(path.join(memberBPath, 'agent.md'), 'utf8'))
-      .resolves.toBe('reviewed agent file\n');
-    await expect(readFile(path.join(memberBPath, 'manual.md'), 'utf8'))
-      .resolves.toBe('manual reviewed\n');
-    await expect(readFile(path.join(memberBPath, 'image.bin')))
-      .resolves.toEqual(Buffer.from([0x10, 0x11]));
-
-    const resumedPublish = unwrap(await memberBFeature.confirmPublish({
-      description: memberBRequest.description,
-      expectedCandidateOid: review.candidateOid,
-      expectedMainOid: review.currentMainOid,
-      operationId: review.operationId,
-      projectId,
-    }), 'Confirm resolved publication');
-    expect(resumedPublish).toMatchObject({
-      request: { id: memberBRequest.id, status: 'open' },
-      state: 'request-synchronized',
-    });
-    await expect(readFile(path.join(memberBPath, 'agent.md'), 'utf8'))
-      .resolves.toBe('reviewed agent file\n');
-    await expect(readFile(path.join(memberBPath, 'manual.md'), 'utf8'))
-      .resolves.toBe('manual reviewed\n');
-
-    const memberBGit = await memberB.requireGitFoundation();
-    expect(await memberBGit.repositories.getWorkingTreeStatus(memberBPath)).toEqual([]);
-    expect(memberBGit.runner.activeProcessCount).toBe(0);
-    },
-  );
+    return { projectId, memberBRequest, operationId, memberBPath, memberB, memberBFeature, memberBRoot, invitationCodec };
+  }
 
   function createFoundation(
     vaultRoot: string,

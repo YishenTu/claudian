@@ -135,6 +135,7 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
     git('add', '.'); git('commit', '-m', 'Edit source');
     const edited = git('rev-parse', 'HEAD');
     assert.deepEqual(scope(edited)['test-files'], ['tests/unit/value.test.ts']);
+    assert.deepEqual(scope(edited)['test-shards'], ['1/1']);
     assert.deepEqual(scope(edited, { GITHUB_EVENT_NAME: 'pull_request' })['test-files'], ['tests/unit/value.test.ts']);
     renameSync(path.join(root, 'tests/unit/value.test.ts'), path.join(root, 'tests/unit/renamed.test.ts'));
     git('add', '.'); git('commit', '-m', 'Rename test');
@@ -144,10 +145,15 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
     git('add', '.'); git('commit', '-m', 'Delete test');
     const deleted = git('rev-parse', 'HEAD');
     assert.deepEqual(scope(deleted, { BASE_SHA: renamed })['test-files'], []);
+    assert.deepEqual(scope(deleted, { BASE_SHA: renamed })['test-shards'], ['1/1']);
     for (const overrides of [
       { BASE_SHA: 'f'.repeat(40) }, { BASE_SHA: '0'.repeat(40) }, { BASE_SHA: '' },
       { GITHUB_REF: 'refs/tags/2.3.0' },
-    ]) assert.equal(scope(deleted, overrides)['test-files'], null);
+    ]) {
+      const full = scope(deleted, overrides);
+      assert.equal(full['test-files'], null);
+      assert.deepEqual(full['test-shards'], ['1/2', '2/2']);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -163,4 +169,55 @@ test('esbuild entry points and their transitive consumers retain the dependency 
     assert.ok(select([`src/${owner}.ts`]).testFiles.includes(envelope));
     assert.ok(select(['src/utils/path.ts'], [`tests/unit/${owner}.test.ts`]).testFiles.includes(envelope));
   }
+});
+
+test('local selection includes committed, staged, unstaged and untracked edits with safe fallbacks', async () => {
+  const { copyFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const root = mkdtempSync(path.join(tmpdir(), 'claudian-local-scope-'));
+  try {
+    for (const directory of ['scripts', 'src', 'tests/unit']) mkdirSync(path.join(root, directory), { recursive: true });
+    for (const file of ['ciTestSelection.mjs', 'testSuites.cjs', 'run-affected-tests.mjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
+    writeFileSync(path.join(root, 'scripts/run-jest.js'), `require(${JSON.stringify(path.resolve('scripts/run-jest.js'))});`);
+    writeFileSync(path.join(root, 'jest.config.js'), `module.exports = { testMatch: ['<rootDir>/tests/unit/**/*.test.ts'] };`);
+    for (const name of ['committed', 'staged', 'unstaged', 'deleted']) {
+      writeFileSync(path.join(root, `tests/unit/${name}.test.ts`), "test('example', () => {});");
+    }
+    const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+    git('init'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.test');
+    git('config', 'commit.gpgsign', 'false'); git('add', '.'); git('commit', '-m', 'Baseline');
+    const base = git('rev-parse', 'HEAD');
+    const scope = (...args) => JSON.parse(execFileSync(process.execPath, [
+      'scripts/run-affected-tests.mjs', '--base', base, '--list', ...args,
+    ], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    assert.deepEqual(scope().testFiles, []);
+    writeFileSync(path.join(root, 'tests/unit/committed.test.ts'), "test('committed edit', () => {});");
+    git('add', '.'); git('commit', '-m', 'Committed edit');
+    renameSync(path.join(root, 'tests/unit/staged.test.ts'), path.join(root, 'tests/unit/renamed.test.ts'));
+    git('add', '.');
+    writeFileSync(path.join(root, 'tests/unit/unstaged.test.ts'), "test('unstaged edit', () => {});");
+    writeFileSync(path.join(root, 'tests/unit/new test.test.ts'), "test('new', () => {});");
+    rmSync(path.join(root, 'tests/unit/deleted.test.ts'));
+    assert.deepEqual(scope().testFiles.sort(), [
+      'tests/unit/committed.test.ts', 'tests/unit/new test.test.ts',
+      'tests/unit/renamed.test.ts', 'tests/unit/unstaged.test.ts',
+    ]);
+    assert.deepEqual(scope().scriptTests, ['scripts/check-architecture-boundaries.test.mjs']);
+    assert.equal(scope('--full').testFiles, null);
+    assert.equal(scope('--base', 'missing-base').testFiles, null);
+    writeFileSync(path.join(root, 'unknown-config'), 'new');
+    assert.equal(scope().testFiles, null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test('the dynamically bundled Cloud crash fixture selects its recovery and native checks', () => {
+  const recovery = 'tests/integration/app/collab/project/CloudProjectEntryCoordinator.recovery.test.ts';
+  const selection = select(['tests/helpers/collab/CloudEntryCrashFixture.ts']);
+  assert.ok(selection.testFiles.includes(recovery));
+  assert.ok(selection.crossPlatformTests.includes(recovery));
+  assert.equal(selection.lanCompatibility, true);
 });

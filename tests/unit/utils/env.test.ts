@@ -1284,3 +1284,59 @@ describe('Obsidian CLI path integration', () => {
     expect(segments).toContain('/home/test/.local/bin');
   });
 });
+
+describe('environment variable parsing edge cases', () => {
+  it('should skip lines without = sign', () => {
+    const input = 'VALID=value\nINVALID_LINE\nANOTHER=test';
+    const result = parseEnvironmentVariables(input);
+
+    expect(result).toEqual({
+      VALID: 'value',
+      ANOTHER: 'test',
+    });
+  });
+
+  it('should skip lines with = at start (no key)', () => {
+    const input = '=value\nKEY=valid\n =also-no-key';
+    const result = parseEnvironmentVariables(input);
+
+    expect(result).toEqual({
+      KEY: 'valid',
+    });
+  });
+
+  it('should return empty object for empty input', () => {
+    expect(parseEnvironmentVariables('')).toEqual({});
+    expect(parseEnvironmentVariables('   ')).toEqual({});
+    expect(parseEnvironmentVariables('\n\n')).toEqual({});
+  });
+
+  it('should handle values with spaces', () => {
+    const input = 'MESSAGE=Hello World';
+    const result = parseEnvironmentVariables(input);
+
+    expect(result).toEqual({
+      MESSAGE: 'Hello World',
+    });
+  });
+
+  it('should not strip mismatched quotes', () => {
+    const input = 'VAL1="not-closed\nVAL2=\'also-not-closed\nVAL3="mixed\'';
+    const result = parseEnvironmentVariables(input);
+
+    expect(result).toEqual({
+      VAL1: '"not-closed',
+      VAL2: "'also-not-closed",
+      VAL3: '"mixed\'',
+    });
+  });
+
+  it('should preserve quotes inside values', () => {
+    const input = 'JSON={"key": "value"}';
+    const result = parseEnvironmentVariables(input);
+
+    expect(result).toEqual({
+      JSON: '{"key": "value"}',
+    });
+  });
+});

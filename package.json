@@ -20,6 +20,7 @@
     "lint:css": "stylelint \"src/style/**/*.css\"",
     "lint:fix": "npm run lint:ts -- --fix && npm run lint:css -- --fix",
     "test": "node scripts/run-tests.js",
+    "test:affected": "node scripts/run-affected-tests.mjs",
     "test:unit": "node scripts/run-jest.js",
     "test:cross-platform-collab": "node scripts/run-cross-platform-collab-tests.js",
     "test:lan-compatibility": "node scripts/run-lan-compatibility.mjs",

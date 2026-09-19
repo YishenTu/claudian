@@ -1,0 +1,48 @@
+name: Windows test worker benchmark
+
+on:
+  push:
+    branches: [repo-test-optimization-plan]
+    paths: [.github/workflows/windows-test-benchmark.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    strategy:
+      fail-fast: false
+      matrix:
+        order: ['1,2', '2,1']
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Compare native worker counts
+        shell: pwsh
+        env:
+          WORKER_ORDER: ${{ matrix.order }}
+        run: |
+          New-Item -ItemType Directory -Force test-results | Out-Null
+          $failed = $false
+          foreach ($workers in $env:WORKER_ORDER.Split(',')) {
+            $timer = [System.Diagnostics.Stopwatch]::StartNew()
+            & npm run test:cross-platform-collab -- "--maxWorkers=$workers" --json "--outputFile=test-results/workers-$workers.json"
+            $testExit = $LASTEXITCODE
+            $timer.Stop()
+            @{ workers = [int]$workers; elapsedSeconds = $timer.Elapsed.TotalSeconds; exitCode = $testExit } | ConvertTo-Json | Set-Content "test-results/workers-$workers-wall.json"
+            if ($testExit -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: windows-workers-${{ strategy.job-index }}
+          path: test-results/
+          if-no-files-found: error
