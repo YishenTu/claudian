@@ -21,6 +21,10 @@ type SlashValue =
   }
   | { readonly kind: 'retry' };
 
+type SlashCommandDropdownItem = ComposerDropdownValueItem & {
+  readonly aliases?: readonly string[];
+};
+
 export interface SlashCommandSourceOptions {
   readonly hiddenCommands?: ReadonlySet<string>;
   readonly includeBuiltIns?: boolean;
@@ -36,7 +40,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
   private discovery: ProviderCommandDiscoverySource<ProviderCommandEntry> | null;
   private discoveryUnsubscribe: (() => void) | null = null;
   private hiddenCommands: ReadonlySet<string>;
-  private readonly includeBuiltIns: boolean;
+  private includeBuiltIns: boolean;
   private readonly listeners = new Set<() => void>();
   private readonly onSelect: ((command: SlashCommand) => void) | undefined;
   private providerConfig: ProviderCommandDropdownConfig | null;
@@ -85,7 +89,8 @@ export class SlashCommandSource implements ComposerDropdownSource {
       .filter(item => {
         const query = match.query.toLocaleLowerCase();
         return item.label.toLocaleLowerCase().includes(query)
-          || item.detail?.toLocaleLowerCase().includes(query);
+          || item.detail?.toLocaleLowerCase().includes(query)
+          || item.aliases?.some(alias => alias.toLocaleLowerCase().includes(query));
       })
       .sort((left, right) => left.label.localeCompare(right.label));
 
@@ -158,6 +163,13 @@ export class SlashCommandSource implements ComposerDropdownSource {
     };
   }
 
+  /** Destinations without Claudian built-in commands hide them entirely. */
+  setBuiltInsEnabled(enabled: boolean): void {
+    if (this.includeBuiltIns === enabled) return;
+    this.includeBuiltIns = enabled;
+    this.notify();
+  }
+
   setHiddenCommands(commands: ReadonlySet<string>): void {
     this.hiddenCommands = commands;
     this.notify();
@@ -198,8 +210,8 @@ export class SlashCommandSource implements ComposerDropdownSource {
   #buildItems(
     providerEntries: readonly ProviderCommandEntry[],
     includeBuiltIns: boolean,
-  ): ComposerDropdownValueItem[] {
-    const items: ComposerDropdownValueItem[] = [];
+  ): SlashCommandDropdownItem[] {
+    const items: SlashCommandDropdownItem[] = [];
     const seen = new Set<string>();
 
     if (includeBuiltIns) {
@@ -209,6 +221,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
         seen.add(key);
         const slashCommand: SlashCommand = command;
         items.push({
+          aliases: command.aliases,
           detail: command.argumentHint
             ? `${command.description} · ${normalizeArgumentHint(command.argumentHint)}`
             : command.description,

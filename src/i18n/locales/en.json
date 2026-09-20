@@ -57,6 +57,30 @@
       "errorNoActiveTab": "No active tab",
       "commandNoMessages": "Cannot fork: no messages in conversation",
       "commandNoAssistantUuid": "Cannot fork: no assistant response with identifiers"
+    },
+    "sideChat": {
+      "title": "Side chat",
+      "collapse": "Collapse",
+      "discard": "Discard",
+      "statusPreparing": "Preparing",
+      "statusQueued": "{count} queued",
+      "statusWorking": "Working",
+      "statusError": "Needs attention",
+      "statusActionRequired": "Needs input",
+      "placeholder": "Ask a follow-up in the side chat",
+      "composerLabel": "Side chat message",
+      "needsPrompt": "Add a prompt after /side to start a side chat.",
+      "unsupportedProvider": "Side chat is not supported by this provider.",
+      "unavailableBusy": "Side chat needs a completed reply. Wait for the current turn to finish.",
+      "unavailableNoCheckpoint": "Side chat needs a completed reply in this conversation first.",
+      "unavailableNoSession": "Side chat could not resolve this conversation's provider session.",
+      "alreadyExists": "A side chat already exists for this conversation. Discard it to start another.",
+      "nestedUnavailable": "Side chat cannot start another side chat. Collapse to Main first.",
+      "mainOnlyCommand": "/{command} is available in the main chat only.",
+      "instructionModeActive": "Finish or cancel instruction mode before using the side chat.",
+      "startFailed": "Side chat could not start: {error}",
+      "queued": "Queued for the side chat.",
+      "busySide": "The side chat is still responding. Wait for it to finish."
     }
   },
   "collab": {

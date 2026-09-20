@@ -36,7 +36,10 @@ import { type HistoryConversationStatus, SessionBrowser } from './session-manage
 import { renderSessionGroupToggleIcon } from './session-manager/SessionManagerIcons';
 import { getTabProviderId } from './tabs/providerResolution';
 import { TabBar } from './tabs/TabBar';
-import { sendTabInputMessageFromExplicitEnterShortcut } from './tabs/TabInputEvents';
+import {
+  cancelSelectedDestinationTurn,
+  sendTabInputMessageFromExplicitEnterShortcut,
+} from './tabs/TabInputEvents';
 import { commitProvisionalTab } from './tabs/TabLifecycle';
 import { TabManager } from './tabs/TabManager';
 import type { AssembledTabRuntime, TabId } from './tabs/types';
@@ -76,6 +79,8 @@ export class ClaudianView extends ItemView {
   private tabContentEl: HTMLElement | null = null;
   private navRowContent: HTMLElement | null = null;
   private inputFooterEl: HTMLElement | null = null;
+  private sideChatChipHostEl: HTMLElement | null = null;
+  private sideChatChipController: AssembledTabRuntime['controllers']['sideChatController'] | null = null;
   private inputNavRowHostEl: HTMLElement | null = null;
   private activeInputSlotEl: HTMLElement | null = null;
   private activeInputTabId: TabId | null = null;
@@ -811,6 +816,7 @@ export class ClaudianView extends ItemView {
   refreshMessageTimestamps(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
       tab.renderer.refreshMessageTimestamps();
+      tab.controllers.sideChatController.runtime?.renderer.refreshMessageTimestamps();
     }
   }
 
@@ -846,6 +852,7 @@ export class ClaudianView extends ItemView {
     if (!this.chatPanelEl) return;
 
     this.inputFooterEl = this.chatPanelEl.createDiv({ cls: 'claudian-input-footer' });
+    this.sideChatChipHostEl = this.inputFooterEl.createDiv({ cls: 'claudian-side-chat-chip-slot' });
     this.inputNavRowHostEl = this.inputFooterEl.createDiv({
       cls: 'claudian-input-nav-row claudian-view-input-nav-row',
     });
@@ -863,6 +870,7 @@ export class ClaudianView extends ItemView {
   private updateInputLocation(): void {
     const activeTab = this.tabManager?.getActiveTab();
     if (!this.activeInputSlotEl) return;
+    this.updateSideChatChipLocation();
 
     if (!activeTab) {
       this.activeInputSlotEl.empty();
@@ -890,6 +898,8 @@ export class ClaudianView extends ItemView {
   }
 
   private restoreActiveInputToTabContent(): void {
+    this.sideChatChipController?.setCollapsedHost(null);
+    this.sideChatChipController = null;
     if (!this.activeInputTabId) return;
 
     const activeInputTab = this.tabManager?.getTab(this.activeInputTabId);
@@ -961,6 +971,7 @@ export class ClaudianView extends ItemView {
     const showTabBar = tabCount >= 2;
 
     this.tabBarContainerEl.toggleClass('claudian-hidden', !showTabBar);
+    this.updateSideChatChipLocation();
 
     this.updateNewTabButtonVisibility();
   }
@@ -1557,7 +1568,23 @@ export class ClaudianView extends ItemView {
     return surfaces;
   }
 
+  private updateSideChatChipLocation(): void {
+    if (!this.sideChatChipHostEl) return;
+    if (this.navRowContent && this.inputFooterEl && this.inputNavRowHostEl) {
+      const useNavRow = !this.isWideSessionLayout && this.tabManager?.getTabCount() === 1;
+      const parent = useNavRow ? this.navRowContent : this.inputFooterEl;
+      if (this.sideChatChipHostEl.parentElement !== parent) {
+        parent.insertBefore(this.sideChatChipHostEl, useNavRow ? parent.firstChild : this.inputNavRowHostEl);
+      }
+    }
+    const controller = this.tabManager?.getActiveTab()?.controllers?.sideChatController ?? null;
+    if (this.sideChatChipController !== controller) this.sideChatChipController?.setCollapsedHost(null);
+    this.sideChatChipController = controller;
+    controller?.setCollapsedHost(this.isWideSessionLayout ? null : this.sideChatChipHostEl);
+  }
+
   private updateSidebarSurfaceVisibility(): void {
+    this.updateSideChatChipLocation();
     const collabEnabled = Boolean(
       this.plugin?.collabSurfaceFactory
       && this.isCollabAvailable()
@@ -2315,6 +2342,7 @@ export class ClaudianView extends ItemView {
       if (!this.isWideSessionLayout) {
         this.isWideSessionLayout = true;
         this.viewContainerEl.addClass('claudian-wide-session-layout');
+        this.updateSideChatChipLocation();
       }
       this.refreshSidebarSurfacePager();
       this.historyDropdown?.removeClass('visible');
@@ -2518,10 +2546,8 @@ export class ClaudianView extends ItemView {
         this.closeSessionSearch();
         return false;
       }
-      if (!e.defaultPrevented) {
-        if (activeTab?.state.isStreaming) {
-          activeTab.controllers.inputController.cancelStreaming();
-        }
+      if (!e.defaultPrevented && activeTab) {
+        cancelSelectedDestinationTurn(activeTab);
       }
       return false;
     });

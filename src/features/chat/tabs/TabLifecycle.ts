@@ -43,6 +43,7 @@ export function commitProvisionalTab(tab: AssembledTabRuntime): void {
 export function activateTab(tab: AssembledTabRuntime): void {
   tab.dom.contentEl.removeClass('claudian-hidden');
   tab.controllers.streamController.setTabActive(true);
+  tab.controllers.sideChatController.setTabActive(true);
   tab.controllers.selectionController.start();
   tab.controllers.browserSelectionController.start();
   tab.controllers.canvasSelectionController.start();
@@ -51,6 +52,7 @@ export function activateTab(tab: AssembledTabRuntime): void {
 
 export function deactivateTab(tab: AssembledTabRuntime): void {
   tab.controllers.streamController.setTabActive(false);
+  tab.controllers.sideChatController.setTabActive(false);
   tab.dom.contentEl.addClass('claudian-hidden');
   tab.controllers.selectionController.stop();
   tab.controllers.browserSelectionController.stop();

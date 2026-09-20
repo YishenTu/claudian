@@ -4,22 +4,15 @@ import type {
   ProviderBackgroundOutputEvent,
   ProviderSessionEvent,
 } from '../../../core/execution';
-import { TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
-import type { ChatMessage, StreamChunk } from '../../../core/types';
+import type { StreamChunk } from '../../../core/types';
 import type { FeatureHost } from '../../FeatureHost';
 import {
   providerOutputEventToStreamChunk,
 } from '../controllers/StreamController';
 import type { ChatExecutionEventContext } from '../execution/ChatExecutionCoordinator';
+import { renderAutoTriggeredTurn } from '../rendering/BackgroundTurnRenderer';
 import { updateTabPermissionMode } from './TabProviderState';
 import type { AssembledTabRuntime } from './types';
-
-interface BackgroundTurnRenderResult {
-  chunks: StreamChunk[];
-  metadata: {
-    assistantMessageId?: string;
-  };
-}
 
 const backgroundTurnBuffers = new WeakMap<
   AssembledTabRuntime,
@@ -80,7 +73,14 @@ async function handleTabSessionEvent(
     const chunks = events
       .map(providerOutputEventToStreamChunk)
       .filter((chunk): chunk is StreamChunk => chunk !== null);
-    const hasVisibleOutput = await renderAutoTriggeredTurn(tab, {
+    const hasVisibleOutput = await renderAutoTriggeredTurn({
+      state: tab.state,
+      renderer: tab.renderer,
+      stream: tab.controllers.streamController,
+      subagents: tab.services.subagentManager,
+      isConnected: () => tab.dom.contentEl.isConnected,
+      createMessageId: createTabMessageId,
+    }, {
       chunks,
       metadata: {
         ...(event.nativeAssistantId
@@ -182,126 +182,4 @@ export function enqueueTabBackgroundWork(
 
 export function createTabMessageId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-function isVisibleAutoTurnChunk(chunk: StreamChunk, hiddenToolIds: Set<string>): boolean {
-  switch (chunk.type) {
-    case 'text':
-      return chunk.content.trim().length > 0;
-    case 'thinking':
-    case 'citations':
-    case 'notice':
-    case 'error':
-    case 'tool_output':
-    case 'context_compacted':
-    case 'task_notification':
-    case 'subagent_tool_use':
-    case 'subagent_tool_result':
-      return true;
-    case 'tool_use':
-      return chunk.name !== TOOL_AGENT_OUTPUT;
-    case 'tool_result':
-      return !hiddenToolIds.has(chunk.id);
-    default:
-      return false;
-  }
-}
-
-function hasVisibleAutoTurnMessageContent(message: ChatMessage): boolean {
-  if (message.content.trim().length > 0) return true;
-  if (message.toolCalls && message.toolCalls.length > 0) return true;
-  return message.contentBlocks?.some(block =>
-    block.type !== 'text' || block.content.trim().length > 0
-  ) ?? false;
-}
-
-async function renderAutoTriggeredTurn(
-  tab: AssembledTabRuntime,
-  result: BackgroundTurnRenderResult,
-  isCurrent: () => boolean,
-): Promise<boolean> {
-  if (!isCurrent() || !tab.dom.contentEl.isConnected) {
-    return false;
-  }
-
-  const { chunks, metadata } = result;
-  if (chunks.length === 0) return false;
-
-  const hiddenToolIds = new Set(
-    chunks
-      .filter((chunk): chunk is Extract<StreamChunk, { type: 'tool_use' }> =>
-        chunk.type === 'tool_use' && chunk.name === TOOL_AGENT_OUTPUT
-      )
-      .map(chunk => chunk.id),
-  );
-  const hasVisibleContent = chunks.some(chunk => isVisibleAutoTurnChunk(chunk, hiddenToolIds));
-
-  const assistantMessage: ChatMessage = {
-    id: metadata.assistantMessageId ?? createTabMessageId(),
-    role: 'assistant',
-    isAutomaticResponse: true,
-    content: '',
-    timestamp: Date.now(),
-    completedAt: Date.now(),
-    toolCalls: [],
-    contentBlocks: [],
-    ...(metadata.assistantMessageId && { assistantMessageId: metadata.assistantMessageId }),
-  };
-
-  const previousContentEl = tab.state.currentContentEl;
-  const previousTextEl = tab.state.currentTextEl;
-  const previousTextContent = tab.state.currentTextContent;
-  const previousThinkingState = tab.state.currentThinkingState;
-
-  if (hasVisibleContent) {
-    tab.state.addMessage(assistantMessage);
-    const messageEl = tab.renderer.addMessage(assistantMessage);
-    const contentEl = messageEl?.querySelector<HTMLElement>('.claudian-message-content');
-    if (contentEl) {
-      if (!previousContentEl) {
-        tab.state.toolCallElements.clear();
-      }
-      tab.state.currentContentEl = contentEl;
-      tab.state.currentTextEl = null;
-      tab.state.currentTextContent = '';
-      tab.state.currentThinkingState = null;
-    }
-  }
-
-  try {
-    for (const chunk of chunks) {
-      if (!isCurrent()) return false;
-      await tab.controllers.streamController.handleStreamChunk(chunk, assistantMessage);
-      if (!isCurrent()) return false;
-    }
-
-    if (
-      isCurrent()
-      && hasVisibleContent
-      && !hasVisibleAutoTurnMessageContent(assistantMessage)
-    ) {
-      const placeholder = '(background task completed)';
-      assistantMessage.content = placeholder;
-      await tab.controllers.streamController.appendText(placeholder);
-    }
-
-    if (isCurrent() && hasVisibleContent) {
-      await tab.controllers.streamController.finalizeCurrentThinkingBlock(assistantMessage);
-      if (!isCurrent()) return false;
-      await tab.controllers.streamController.finalizeCurrentTextBlock(assistantMessage);
-      if (!isCurrent()) return false;
-      tab.renderer.finalizeResponse(assistantMessage, [assistantMessage]);
-    }
-  } finally {
-    if (hasVisibleContent) {
-      tab.controllers.streamController.hideThinkingIndicator();
-      tab.services.subagentManager.resetStreamingState();
-      tab.state.currentContentEl = previousContentEl;
-      tab.state.currentTextEl = previousTextEl;
-      tab.state.currentTextContent = previousTextContent;
-      tab.state.currentThinkingState = previousThinkingState;
-      tab.renderer.scrollToBottom();
-    }
-  }
-  return hasVisibleContent;
 }

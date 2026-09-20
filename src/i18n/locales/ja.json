@@ -57,6 +57,30 @@
       "errorNoActiveTab": "アクティブなタブがありません",
       "commandNoMessages": "フォークできません: 会話にメッセージがありません",
       "commandNoAssistantUuid": "フォークできません: 識別子付きのアシスタント応答がありません"
+    },
+    "sideChat": {
+      "title": "サイドチャット",
+      "collapse": "折りたたむ",
+      "discard": "破棄",
+      "statusPreparing": "準備中",
+      "statusQueued": "{count} 件待機中",
+      "statusWorking": "実行中",
+      "statusError": "要確認",
+      "statusActionRequired": "入力が必要",
+      "placeholder": "サイドチャットで続けて質問",
+      "composerLabel": "サイドチャットのメッセージ",
+      "needsPrompt": "/side の後にプロンプトを入力してサイドチャットを開始してください。",
+      "unsupportedProvider": "このプロバイダーはサイドチャットに対応していません。",
+      "unavailableBusy": "サイドチャットには完了した返信が必要です。現在のターンの終了をお待ちください。",
+      "unavailableNoCheckpoint": "先にこの会話で返信を完了してからサイドチャットを開始してください。",
+      "unavailableNoSession": "この会話のプロバイダーセッションを解決できませんでした。",
+      "alreadyExists": "この会話にはすでにサイドチャットがあります。破棄してから新しく開始してください。",
+      "nestedUnavailable": "サイドチャットから別のサイドチャットは開始できません。先にメインへ折りたたんでください。",
+      "mainOnlyCommand": "/{command} はメインチャットでのみ使用できます。",
+      "instructionModeActive": "サイドチャットを使う前に、インストラクションモードを完了またはキャンセルしてください。",
+      "startFailed": "サイドチャットを開始できませんでした：{error}",
+      "queued": "サイドチャットのキューに追加しました。",
+      "busySide": "サイドチャットが応答中です。完了までお待ちください。"
     }
   },
   "collab": {

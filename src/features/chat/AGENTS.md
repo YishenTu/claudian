@@ -12,10 +12,12 @@
 - First canonical input freezes Linked content for both creation and provider context. Create failure restores the draft; post-create failure leaves a locked conversation whose retry is still the first turn. Later/steered/compact turns must not resend it through a mutable sent flag.
 - Blank-tab provider transitions serialize and roll back to the last stable draft. Model-picker intents affect only the selected tab/conversation and the future-tab seed; existing tabs must not subscribe to that seed.
 - Conversation authority is revalidated after accepted-input staging and session preparation immediately before provider handoff. Superseded warm preparation cannot install or publish resources.
+- A temporary child conversation owns execution, rendering and settings in memory only; it never reaches conversation persistence, the accepted-input ledger, or view-scoped tab state. Seed it with returned fork state alone, never the parent's established provider session id. Providers own native ephemeral fork support and any initial context fallback. Keep ephemeral children protected from cooling; lost native context requires a new side chat, never transcript rehydration.
 
 ## Surface and input behavior
 
 - Dynamic Main Agent sections are best-effort system configuration; failures must not block Chat. Collab references insert visible text only and cannot mutate selected Project or persist hidden entity metadata.
 - Live Collab disable destroys its surface while preserving the chat tab. Plugin-lifetime composer ports reset to unavailable rather than terminal disposal; compact/dual presentation reuse one controller/tree.
+- One composer serves every destination, and its target is derived from presentation state rather than a separately mutable selection. User-originated sends and cancels resolve the target when they run; internally queued main work keeps the owner it was admitted with and must never read the current target at dispatch.
 - Horizontal swipes rely on native snap scrolling and scrollend. Do not cancel wheel events, classify gestures by idle/delta heuristics, or move the strip with transforms; Chromium retains the stationary pointer's wheel target through the transaction.
 - Preload may prepare a drag target without activating it. Commit semantic surface state only after snap completion; the two-surface visual replica stays inert and owns no controller/state.

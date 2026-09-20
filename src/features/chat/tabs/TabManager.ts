@@ -1131,7 +1131,9 @@ export class TabManager implements TabManagerInterface {
     return tab.state.isStreaming
       || tab.session.activeTurn !== null
       || tab.executionCoordinator.hasBackgroundWork
-      || tab.services.subagentManager.hasActiveAsyncSubagents();
+      || tab.services.subagentManager.hasActiveAsyncSubagents()
+      // Collapsed side work stays discoverable from the tab bar.
+      || (tab.controllers.sideChatController.runtime?.isWorking ?? false);
   }
 
   /** Reconciles blank drafts after provider/model availability changes. */

@@ -92,6 +92,11 @@ function createMockTab(options: Record<string, any>): any {
       inputController: {
         resumeQueuedTurnAfterIntentAdmission: jest.fn(),
       },
+      sideChatController: {
+        destination: 'main',
+        handleConversationChanged: jest.fn(),
+        runtime: null,
+      },
     },
     dom: {
       contentEl: createMockEl(),

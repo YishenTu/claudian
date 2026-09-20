@@ -15,7 +15,7 @@ import {
   isSteerableExecutionSession,
   ProviderExecutionLifecycleRegistry,
 } from '@/core/execution';
-import type { Conversation } from '@/core/types';
+import type { ChatMessage, Conversation } from '@/core/types';
 import { createPiWorkspaceServices } from '@/providers/pi/app/PiWorkspaceServices';
 import {
   PiCommandMetadataProbe,
@@ -1532,14 +1532,18 @@ describe('PiExecutionBackend', () => {
       },
     }));
 
-    const conversationHistory = createConversationHistory('ephemeral prior');
+    const conversationHistory: ChatMessage[] = createConversationHistory('ephemeral prior');
+    conversationHistory[0].images = [{
+      id: 'captured', name: 'captured.png', data: 'aW1hZ2U=',
+      mediaType: 'image/png', source: 'paste', size: 5,
+    }];
     for (const text of ['First', 'Clarification']) {
       const run = harness.session.execute(createRequest({
         conversationHistory,
         input: [{ text, type: 'text' }],
       }));
       const eventsPromise = collect(run.events);
-      await waitFor(() => harness.kernels.length === 1);
+      await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt' && String(request.payload.message).includes(text)) ?? false);
       completeTurn(harness.kernels[0]);
       await eventsPromise;
     }
@@ -1563,6 +1567,10 @@ describe('PiExecutionBackend', () => {
       'forkSourceSessionFile',
     ]);
     expect(Object.isFrozen(snapshot.providerStateDeletes)).toBe(true);
+    harness.kernels[0].close();
+    const ended = await collect(harness.session.execute(createRequest({ conversationHistory })).events);
+    expect(ended.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('cannot be restored') });
+    expect(harness.kernels).toHaveLength(1);
   });
 
   it.each([

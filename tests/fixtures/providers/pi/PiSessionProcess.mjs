@@ -6,12 +6,14 @@ import * as readline from 'node:readline';
 const root = process.env.CLAUDIAN_TEST_PI_ROOT;
 const args = process.argv.slice(2);
 const sessionIndex = args.indexOf('--session');
-const sessionFile = sessionIndex < 0 ? path.join(root, 'source.jsonl') : args[sessionIndex + 1];
+const noSession = args.includes('--no-session');
+const sessionFile = noSession ? null : sessionIndex < 0 ? path.join(root, 'source.jsonl') : args[sessionIndex + 1];
+const memoryRecords = [];
 const contextsFile = path.join(root, 'contexts.jsonl');
 const pendingDialogs = new Map();
 const write = record => process.stdout.write(JSON.stringify(record) + '\n');
 const respond = (request, data) => write({ type: 'response', id: request.id, command: request.type, success: true, data });
-const readRecords = file => fs.existsSync(file)
+const readRecords = file => file === null ? memoryRecords : fs.existsSync(file)
   ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
   : [];
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -36,7 +38,7 @@ for await (const line of lines) {
       const records = readRecords(sessionFile);
       const ordinal = readRecords(contextsFile).length + 1;
       fs.appendFileSync(contextsFile, JSON.stringify({
-        file: sessionFile, ids: records.filter(record => record.type === 'message').map(record => record.id),
+        file: sessionFile, ...(noSession ? { text: request.message, images: request.images ?? [] } : {}), ids: records.filter(record => record.type === 'message').map(record => record.id),
       }) + '\n');
       const entries = [
         { type: 'message', id: `pi-user-${ordinal}`, parentId: records.at(-1)?.type === 'message' ? records.at(-1).id : null,
@@ -44,7 +46,8 @@ for await (const line of lines) {
         { type: 'message', id: `pi-assistant-${ordinal}`, parentId: `pi-user-${ordinal}`,
           message: { role: 'assistant', content: [{ type: 'text', text: `Reply ${ordinal}` }] } },
       ];
-      fs.appendFileSync(sessionFile, entries.map(entry => JSON.stringify(entry)).join('\n') + '\n');
+      if (noSession) memoryRecords.push(...entries);
+      else fs.appendFileSync(sessionFile, entries.map(entry => JSON.stringify(entry)).join('\n') + '\n');
       respond(request, {});
       write({ type: 'agent_start' });
       write({ type: 'message_update', assistantMessageEvent: { text_delta: `Reply ${ordinal}` } });

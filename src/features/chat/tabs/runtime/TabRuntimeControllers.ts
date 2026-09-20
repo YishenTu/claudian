@@ -14,6 +14,7 @@ import { NavigationController } from '../../controllers/NavigationController';
 import { SelectionController } from '../../controllers/SelectionController';
 import { StreamController } from '../../controllers/StreamController';
 import { MessageRenderer } from '../../rendering/MessageRenderer';
+import { SideChatController } from '../../side-chat/SideChatController';
 import { getTabProviderId } from '../providerResolution';
 import {
   handleForkAll,
@@ -263,6 +264,7 @@ export function buildTabRuntimeControllers(
         }
 
         tab.conversationId = nextConversationId;
+        tab.controllers.sideChatController.handleConversationChanged(nextConversationId);
         tab.draftModel = null;
         if (tab.lifecycleState !== 'provisional') {
           tab.lifecycleState = 'cold';
@@ -288,6 +290,7 @@ export function buildTabRuntimeControllers(
         const previousProviderId = tab.providerId;
         const nextModel = resolveNewConversationModel(plugin.settings);
         void shell.executionCoordinator.bindConversation(null);
+        tab.controllers.sideChatController.handleConversationChanged(null);
         commitProvisionalTab(tab);
         tab.draftModel = nextModel?.model ?? null;
         tab.conversationId = null;
@@ -313,6 +316,28 @@ export function buildTabRuntimeControllers(
     },
   );
 
+  const sideChatController = new SideChatController({
+    component,
+    composerEl: dom.inputComposerEl,
+    getImageContextManager: () => ui.imageContextManager,
+    getInputEl: () => dom.inputEl,
+    getTab: () => runtimeRef.requirePublished(),
+    inputWrapperEl: dom.inputWrapper,
+    isInstructionModeActive: () => ui.instructionModeManager.isActive(),
+    isRuntimeLive,
+    onDestinationChanged: () => {
+      const tab = runtimeRef.current();
+      if (!tab) return;
+      ui.composerDropdown.setBuiltInsEnabled(
+        tab.controllers.sideChatController.destination === 'main',
+      );
+      refreshTabProviderUI(tab);
+    },
+    onStatusChanged: () => options.onWorkChanged?.(runtimeRef.requirePublished()),
+    plugin,
+  });
+  options.registerCleanup('tab side chat', () => sideChatController.dispose());
+
   const inputController = new InputController({
     plugin,
     state,
@@ -337,6 +362,7 @@ export function buildTabRuntimeControllers(
     getSubagentManager: () => services.subagentManager,
     getTabProviderId: () => getTabProviderId(runtimeRef.requirePublished(), plugin),
     canStartTurn: () => shell.session.acceptsIntents,
+    getSideChatController: () => sideChatController,
     turnOwner: shell.session,
     ensureExecutionInitialized,
     openConversation: openConversation
@@ -388,6 +414,7 @@ export function buildTabRuntimeControllers(
       streamController,
       inputController,
       navigationController,
+      sideChatController,
     },
   };
 }

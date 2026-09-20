@@ -5,7 +5,10 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 import {
   type BuiltInCommand,
   detectBuiltInCommand,
+  detectMainOnlyBuiltInCommand,
+  detectSideChatCommand,
   isBuiltInCommandSupported,
+  isSideChatCommandSupported,
 } from '../../../core/commands/builtInCommands';
 import type { ProviderExecutionEvent } from '../../../core/execution';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
@@ -30,6 +33,7 @@ import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
 import { extractUserDisplayContent } from '../../../utils/context';
 import type { EditorSelectionContext } from '../../../utils/editor';
+import { toError } from '../../../utils/error';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import type { FeatureHost } from '../../FeatureHost';
 import {
@@ -41,10 +45,13 @@ import type {
   LinkedContentController,
   LinkedContentSubmissionToken,
 } from '../linked-content';
-import { type InlineAskQuestionConfig, InlineAskUserQuestion } from '../rendering/InlineAskUserQuestion';
+import {
+  type InlineApprovalOptions,
+  InlineInteractionPrompts,
+} from '../rendering/InlineInteractionPrompts';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
-import { setToolIcon } from '../rendering/ToolCallRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
+import type { SideChatController } from '../side-chat/SideChatController';
 import type { ChatState } from '../state/ChatState';
 import type { ChatTurnRequest, QueuedMessage, TabReviewOutcome } from '../state/types';
 import type { ImageContextManager } from '../ui/ImageContext';
@@ -60,37 +67,7 @@ import {
 import type { ActiveTurnOwner } from './TurnCoordinator';
 import { TurnCoordinator } from './TurnCoordinator';
 
-const APPROVAL_OPTION_MAP: Record<string, ApprovalDecision> = {
-  'Deny': 'deny',
-  'Allow once': 'allow',
-  'Always allow': 'allow-always',
-};
-
-interface ApprovalDecisionOption {
-  label: string;
-  description?: string;
-  value: string;
-  decision?: ApprovalDecision;
-}
-
-interface ApprovalCallbackOptions {
-  decisionReason?: string;
-  blockedPath?: string;
-  agentID?: string;
-  decisionOptions?: ApprovalDecisionOption[];
-  additionalPermissions?: unknown;
-}
-
-const DEFAULT_APPROVAL_DECISION_OPTIONS: ApprovalDecisionOption[] =
-  Object.entries(APPROVAL_OPTION_MAP).map(([label, decision]) => ({
-    label,
-    value: label,
-    decision,
-  }));
-
-function toError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
-}
+type ApprovalCallbackOptions = InlineApprovalOptions;
 
 export interface InputControllerDeps {
   plugin: FeatureHost;
@@ -128,9 +105,13 @@ export interface InputControllerDeps {
   captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
   canStartTurn?: () => boolean;
   turnOwner?: ActiveTurnOwner;
+  /** Destination seam for the shared composer; absent means main-only. */
+  getSideChatController?: () => SideChatController | null;
 }
 
 export interface SendMessageOptions {
+  /** Retained main input must not follow later composer destination changes. */
+  destination?: 'main';
   editorContextOverride?: EditorSelectionContext | null;
   browserContextOverride?: BrowserSelectionContext | null;
   canvasContextOverride?: CanvasSelectionContext | null;
@@ -166,10 +147,8 @@ interface PendingSteerState {
 
 export class InputController {
   private deps: InputControllerDeps;
-  private pendingApprovalInline: InlineAskUserQuestion | null = null;
-  private pendingAskInline: InlineAskUserQuestion | null = null;
   private activeResumeDropdown: ResumeSessionDropdown | null = null;
-  private inputContainerHideDepth = 0;
+  private readonly inlinePrompts: InlineInteractionPrompts;
   private readonly pendingSteersByConversation = new Map<string, PendingSteerState>();
   private activeStreamingAssistantMessage: ChatMessage | null = null;
   private pendingProviderUserMessages: PendingProviderUserMessage[] = [];
@@ -183,6 +162,11 @@ export class InputController {
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
+    this.inlinePrompts = new InlineInteractionPrompts({
+      getPromptParentEl: () => this.deps.getInputContainerEl().parentElement,
+      getSuppressedEl: () => this.deps.getInputContainerEl(),
+      onBeforeShow: () => this.deps.streamController.hideThinkingIndicator(),
+    });
     this.turnCoordinator = new TurnCoordinator(
       (options) => this.#executeSendMessage(options),
       deps.turnOwner,
@@ -309,6 +293,53 @@ export class InputController {
     if (state.isRewinding) {
       new Notice(t('chat.rewind.inProgress'));
       this.#reportDeferredReviewableSettlement();
+      return;
+    }
+
+    const sideChat = this.deps.getSideChatController?.() ?? null;
+    const destination = options?.destination ?? sideChat?.destination ?? 'main';
+
+    // Reserved side-chat aliases never reach provider chat as ordinary text.
+    const sideCommand = detectSideChatCommand(content);
+    if (sideCommand) {
+      this.#reportDeferredReviewableSettlement();
+      if (!sideChat || !isSideChatCommandSupported(this.#getActiveCapabilities())) {
+        new Notice(t('chat.sideChat.unsupportedProvider'));
+        return;
+      }
+      const images = hasImages
+        ? [...(imageOverride ?? imageContextManager?.getAttachedImages() ?? [])]
+        : [];
+      // The side controller owns composer clearing so a rejected command keeps the draft.
+      await sideChat.handleCommandSubmission(sideCommand.argument, images, this.#buildSideContext());
+      return;
+    }
+
+    if (destination === 'side' && sideChat) {
+      this.#reportDeferredReviewableSettlement();
+      const mainOnly = detectMainOnlyBuiltInCommand(content);
+      if (mainOnly) {
+        new Notice(t('chat.sideChat.mainOnlyCommand', { command: mainOnly.name }));
+        return;
+      }
+      const images = hasImages
+        ? [...(imageOverride ?? imageContextManager?.getAttachedImages() ?? [])]
+        : [];
+      const context = this.#buildSideContext();
+      const previousValue = inputEl.value;
+      if (shouldUseInput) {
+        inputEl.value = '';
+        imageContextManager?.clearImages();
+      }
+      const accepted = await sideChat.submitToSide(
+        content,
+        images,
+        context,
+      );
+      if (!accepted && shouldUseInput) {
+        inputEl.value = previousValue;
+        imageContextManager?.setImages(images);
+      }
       return;
     }
 
@@ -479,7 +510,10 @@ export class InputController {
       const ready = await this.deps.ensureExecutionInitialized();
       if (!ready) {
         new Notice('Failed to initialize agent execution. Please try again.');
-        this.#restoreMessageToInput(this.#createQueuedMessage(displayContent, admittedTurnRequest));
+        this.#restoreMessageToInput(
+          this.#createQueuedMessage(displayContent, admittedTurnRequest),
+          { mergeWithComposer: true },
+        );
         this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
         this.activeStreamingAssistantMessage = null;
         this.#resetProviderMessageBoundaryState();
@@ -491,7 +525,10 @@ export class InputController {
     const coordinator = this.#getExecutionCoordinator();
     if (!coordinator) {
       new Notice('Agent execution is not available. Please reload the plugin.');
-      this.#restoreMessageToInput(this.#createQueuedMessage(displayContent, admittedTurnRequest));
+      this.#restoreMessageToInput(
+        this.#createQueuedMessage(displayContent, admittedTurnRequest),
+        { mergeWithComposer: true },
+      );
       this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
       this.activeStreamingAssistantMessage = null;
       this.#resetProviderMessageBoundaryState();
@@ -776,16 +813,25 @@ export class InputController {
 
     const { content, images } = message;
     const inputEl = this.deps.getInputEl();
-    const currentContent = options.mergeWithComposer ? inputEl.value.trim() : '';
-    inputEl.value = currentContent
+    const sideChat = this.deps.getSideChatController?.() ?? null;
+    const mainDraft = sideChat?.destination === 'side' ? sideChat.getMainDraft() : null;
+    const currentContent = options.mergeWithComposer
+      ? (mainDraft?.content ?? inputEl.value).trim()
+      : '';
+    const restoredContent = currentContent
       ? appendMarkdownSnippet(content, currentContent)
       : content;
 
     const imageContextManager = this.deps.getImageContextManager();
     const currentImages = options.mergeWithComposer
-      ? (imageContextManager?.getAttachedImages() ?? [])
+      ? (mainDraft?.images ?? imageContextManager?.getAttachedImages() ?? [])
       : [];
     const restoredImages = [...(images ?? []), ...currentImages];
+    if (mainDraft && sideChat) {
+      sideChat.restoreMainDraft({ content: restoredContent, images: restoredImages });
+      return;
+    }
+    inputEl.value = restoredContent;
     if (imageContextManager && (!options.mergeWithComposer || restoredImages.length > 0)) {
       imageContextManager.setImages(restoredImages);
     }
@@ -793,8 +839,11 @@ export class InputController {
   }
 
   #captureComposerDraft(): QueuedMessage | null {
-    const content = this.deps.getInputEl().value;
-    const attachedImages = this.deps.getImageContextManager()?.getAttachedImages() ?? [];
+    const sideChat = this.deps.getSideChatController?.() ?? null;
+    const mainDraft = sideChat?.destination === 'side' ? sideChat.getMainDraft() : null;
+    const content = mainDraft?.content ?? this.deps.getInputEl().value;
+    const attachedImages = mainDraft?.images
+      ?? this.deps.getImageContextManager()?.getAttachedImages() ?? [];
     const images = attachedImages.length > 0 ? [...attachedImages] : undefined;
     if (!content.trim() && !images) {
       return null;
@@ -834,8 +883,9 @@ export class InputController {
           return;
         }
         void this.sendMessage({
+          destination: 'main',
           content: queuedMessage.content,
-          images: queuedMessage.images,
+          images: queuedMessage.images ?? [],
           turnRequestOverride: this.#toQueuedChatTurn(queuedMessage).request,
         }).catch(() => this.#reportDeferredReviewableSettlement());
       },
@@ -887,6 +937,26 @@ export class InputController {
 
   #clearDeferredReviewableSettlement(): void {
     this.deferredReviewableSettlement = null;
+  }
+
+  #buildSideContext() {
+    const editorSelection = this.deps.selectionController.getContext();
+    const browserSelection = this.deps.browserSelectionController?.getContext() ?? null;
+    const canvasSelection = this.deps.canvasSelectionController.getContext();
+    return {
+      ...(browserSelection ? { browserSelection: { ...browserSelection } } : {}),
+      ...(canvasSelection ? {
+        canvasSelection: { ...canvasSelection, nodeIds: [...canvasSelection.nodeIds] },
+      } : {}),
+      ...(editorSelection ? {
+        editorSelection: {
+          ...editorSelection,
+          ...(editorSelection.cursorContext
+            ? { cursorContext: { ...editorSelection.cursorContext } }
+            : {}),
+        },
+      } : {}),
+    };
   }
 
   #buildTurnSubmission(options: {
@@ -1425,7 +1495,7 @@ export class InputController {
     this.deps.streamController.showThinkingIndicator();
     this.deps.state.responseStartTime = performance.now();
     this.awaitingProviderAssistantStart = true;
-    if (acceptanceError) throw toError(acceptanceError);
+    if (acceptanceError) throw toError(acceptanceError, 'Provider user message failed');
   }
 
   async #handleProviderAssistantMessageStart(): Promise<void> {
@@ -1620,6 +1690,15 @@ export class InputController {
   // ============================================
 
   cancelStreaming(): void {
+    const sideChat = this.deps.getSideChatController?.() ?? null;
+    if (sideChat?.destination === 'side') {
+      sideChat.cancelSide();
+      return;
+    }
+    this.#cancelMainStreaming();
+  }
+
+  #cancelMainStreaming(): void {
     const { state, streamController } = this.deps;
     if (!state.isStreaming) return;
     state.cancelRequested = true;
@@ -1771,204 +1850,37 @@ export class InputController {
   // Approval Dialogs
   // ============================================
 
-  async handleApprovalRequest(
+  handleApprovalRequest(
     toolName: string,
-    _input: Record<string, unknown>,
+    input: Record<string, unknown>,
     description: string,
     approvalOptions?: ApprovalCallbackOptions,
   ): Promise<ApprovalDecision> {
-    const inputContainerEl = this.deps.getInputContainerEl();
-    const parentEl = inputContainerEl.parentElement;
-    if (!parentEl) {
-      throw new Error('Input container is detached from DOM');
-    }
-
-    // Build header element, then detach — InlineAskUserQuestion will re-attach it
-    const headerEl = parentEl.createDiv({ cls: 'claudian-ask-approval-info' });
-    headerEl.remove();
-
-    const toolEl = headerEl.createDiv({ cls: 'claudian-ask-approval-tool' });
-    const iconEl = toolEl.createSpan({ cls: 'claudian-ask-approval-icon' });
-    iconEl.setAttribute('aria-hidden', 'true');
-    setToolIcon(iconEl, toolName);
-    toolEl.createSpan({ text: toolName, cls: 'claudian-ask-approval-tool-name' });
-
-    if (approvalOptions?.decisionReason) {
-      headerEl.createDiv({ text: approvalOptions.decisionReason, cls: 'claudian-ask-approval-reason' });
-    }
-    if (approvalOptions?.blockedPath) {
-      headerEl.createDiv({ text: approvalOptions.blockedPath, cls: 'claudian-ask-approval-blocked-path' });
-    }
-    if (approvalOptions?.agentID) {
-      headerEl.createDiv({ text: `Agent: ${approvalOptions.agentID}`, cls: 'claudian-ask-approval-agent' });
-    }
-
-    const descriptionEl = headerEl.createDiv({
-      text: description,
-      cls: 'claudian-ask-approval-desc',
-    });
-    descriptionEl.setAttribute('aria-label', `${toolName} approval details`);
-    descriptionEl.setAttribute('role', 'region');
-    descriptionEl.setAttribute('tabindex', '0');
-    descriptionEl.addEventListener('keydown', (event) => {
-      if (
-        event.key === 'ArrowDown'
-        || event.key === 'ArrowUp'
-        || event.key === 'Enter'
-      ) {
-        event.stopPropagation();
-      }
-    });
-
-    const decisionOptions = approvalOptions?.decisionOptions ?? DEFAULT_APPROVAL_DECISION_OPTIONS;
-    const optionDecisionMap = new Map<string, ApprovalDecision>();
-    const questionOptions = decisionOptions.map((option, index) => {
-      const value = option.value || `approval-option-${index}`;
-      if (option.decision) {
-        optionDecisionMap.set(value, option.decision);
-      }
-      return {
-        label: option.label,
-        description: option.description ?? '',
-        value,
-      };
-    });
-    const input = {
-      questions: [{
-        question: 'Allow this action?',
-        options: questionOptions,
-        isOther: false,
-        isSecret: false,
-      }],
-    };
-
-    const result = await this.#showInlineQuestion(
-      parentEl,
-      inputContainerEl,
+    return this.inlinePrompts.requestApproval(
+      toolName,
       input,
-      (inline) => { this.pendingApprovalInline = inline; },
-      undefined,
-      { title: 'Permission required', headerEl, showCustomInput: false, immediateSelect: true },
-    );
-
-    if (!result) return 'cancel';
-    const selected = Object.values(result)[0];
-    const selectedValue = Array.isArray(selected) ? selected[0] : selected;
-    if (typeof selectedValue !== 'string') {
-      new Notice(`Unexpected approval selection: "${String(selectedValue)}"`);
-      return 'cancel';
-    }
-
-    const decision = optionDecisionMap.get(selectedValue);
-    if (decision) {
-      return decision;
-    }
-
-    return {
-      type: 'select-option',
-      value: selectedValue,
-    };
-  }
-
-  async handleAskUserQuestion(
-    input: Record<string, unknown>,
-    signal?: AbortSignal,
-  ): Promise<Record<string, string | string[]> | null> {
-    const inputContainerEl = this.deps.getInputContainerEl();
-    const parentEl = inputContainerEl.parentElement;
-    if (!parentEl) {
-      throw new Error('Input container is detached from DOM');
-    }
-
-    return this.#showInlineQuestion(
-      parentEl,
-      inputContainerEl,
-      input,
-      (inline) => { this.pendingAskInline = inline; },
-      signal,
+      description,
+      approvalOptions,
     );
   }
 
-  #showInlineQuestion(
-    parentEl: HTMLElement,
-    inputContainerEl: HTMLElement,
+  handleAskUserQuestion(
     input: Record<string, unknown>,
-    setPending: (inline: InlineAskUserQuestion | null) => void,
     signal?: AbortSignal,
-    config?: InlineAskQuestionConfig,
   ): Promise<Record<string, string | string[]> | null> {
-    this.deps.streamController.hideThinkingIndicator();
-    this.#hideInputContainer(inputContainerEl);
-
-    return new Promise<Record<string, string | string[]> | null>((resolve, reject) => {
-      const inline = new InlineAskUserQuestion(
-        parentEl,
-        input,
-        (result: Record<string, string | string[]> | null) => {
-          setPending(null);
-          this.#restoreInputContainer(inputContainerEl);
-          resolve(result);
-        },
-        signal,
-        config,
-      );
-      setPending(inline);
-      try {
-        inline.render();
-      } catch (err) {
-        setPending(null);
-        this.#restoreInputContainer(inputContainerEl);
-        reject(toError(err));
-      }
-    });
+    return this.inlinePrompts.askUserQuestion(input, signal);
   }
 
   dismissPendingApprovalPrompt(): void {
-    if (this.pendingApprovalInline) {
-      this.pendingApprovalInline.destroy();
-      this.pendingApprovalInline = null;
-    }
+    this.inlinePrompts.dismissApproval();
   }
 
   dismissProviderInteraction(kind: 'approval' | 'question'): void {
-    if (kind === 'approval') {
-      this.dismissPendingApprovalPrompt();
-      return;
-    }
-    if (kind === 'question') {
-      this.pendingAskInline?.destroy();
-      this.pendingAskInline = null;
-      return;
-    }
+    this.inlinePrompts.dismiss(kind);
   }
 
   dismissPendingApproval(): void {
-    this.dismissPendingApprovalPrompt();
-    if (this.pendingAskInline) {
-      this.pendingAskInline.destroy();
-      this.pendingAskInline = null;
-    }
-    this.#resetInputContainerVisibility();
-  }
-
-  #hideInputContainer(inputContainerEl: HTMLElement): void {
-    this.inputContainerHideDepth++;
-    inputContainerEl.addClass('claudian-hidden');
-  }
-
-  #restoreInputContainer(inputContainerEl: HTMLElement): void {
-    if (this.inputContainerHideDepth <= 0) return;
-    this.inputContainerHideDepth--;
-    if (this.inputContainerHideDepth === 0) {
-      inputContainerEl.removeClass('claudian-hidden');
-    }
-  }
-
-  #resetInputContainerVisibility(): void {
-    if (this.inputContainerHideDepth > 0) {
-      this.inputContainerHideDepth = 0;
-      this.deps.getInputContainerEl().removeClass('claudian-hidden');
-    }
+    this.inlinePrompts.dismissAll();
   }
 
   // ============================================
@@ -2022,6 +1934,15 @@ export class InputController {
         } catch {
           new Notice('Failed to toggle fast mode.');
         }
+        break;
+      }
+      case 'side': {
+        const sideChat = this.deps.getSideChatController?.() ?? null;
+        if (!sideChat) {
+          new Notice(t('chat.sideChat.unsupportedProvider'));
+          return;
+        }
+        await sideChat.handleCommandSubmission('', []);
         break;
       }
       case 'instruction': {

@@ -57,6 +57,30 @@
       "errorNoActiveTab": "Nenhuma aba ativa",
       "commandNoMessages": "Não é possível bifurcar: não há mensagens na conversa",
       "commandNoAssistantUuid": "Não é possível bifurcar: não há resposta do assistente com identificadores"
+    },
+    "sideChat": {
+      "title": "Conversa lateral",
+      "collapse": "Recolher",
+      "discard": "Descartar",
+      "statusPreparing": "Preparando",
+      "statusQueued": "{count} na fila",
+      "statusWorking": "Trabalhando",
+      "statusError": "Requer atenção",
+      "statusActionRequired": "Precisa de uma resposta",
+      "placeholder": "Faça uma pergunta na conversa lateral",
+      "composerLabel": "Mensagem da conversa lateral",
+      "needsPrompt": "Adicione um prompt após /side para iniciar uma conversa lateral.",
+      "unsupportedProvider": "Este provedor não oferece suporte à conversa lateral.",
+      "unavailableBusy": "A conversa lateral precisa de uma resposta concluída. Aguarde o turno atual terminar.",
+      "unavailableNoCheckpoint": "Conclua primeiro uma resposta nesta conversa.",
+      "unavailableNoSession": "Não foi possível resolver a sessão do provedor desta conversa.",
+      "alreadyExists": "Já existe uma conversa lateral aqui. Descarte-a para iniciar outra.",
+      "nestedUnavailable": "Uma conversa lateral não pode iniciar outra. Recolha para a principal primeiro.",
+      "mainOnlyCommand": "/{command} está disponível apenas na conversa principal.",
+      "instructionModeActive": "Conclua ou cancele o modo de instrução antes de usar a conversa lateral.",
+      "startFailed": "Não foi possível iniciar a conversa lateral: {error}",
+      "queued": "Adicionado à fila da conversa lateral.",
+      "busySide": "A conversa lateral ainda está respondendo. Aguarde a conclusão."
     }
   },
   "collab": {

@@ -314,6 +314,38 @@ describe('session utilities', () => {
   });
 
   describe('buildContextFromHistory', () => {
+    it.each(['error', 'blocked'] as const)('preserves the full %s tool result in captured context', (status) => {
+      const diagnostic = `${'Diagnostic detail.\n'.repeat(40)}Recovery requires restoring project-48271.`;
+      const messages: ChatMessage[] = [{
+        id: 'msg-1',
+        role: 'assistant',
+        content: '',
+        timestamp: 1000,
+        toolCalls: [{ id: 'tool-1', name: 'Bash', input: {}, status, result: diagnostic }],
+      }];
+
+      const captured = buildContextFromHistory(messages, { preserveCapturedContext: true });
+      const compact = buildContextFromHistory(messages);
+
+      expect(captured).toContain(diagnostic);
+      expect(compact).toContain('(truncated)');
+      expect(compact).not.toContain('Recovery requires restoring project-48271.');
+    });
+
+    it('retains complete structured tool arguments in the initial captured context', () => {
+      const content = `${'original line\n'.repeat(30)}Keep project-48271`;
+      const history: ChatMessage[] = [{
+        id: 'assistant-1', role: 'assistant', content: '', timestamp: 1,
+        toolCalls: [{
+          id: 'tool-1', name: 'Write', status: 'completed', result: 'Written',
+          input: { content, operations: [{ replacement: 'nested-value', previous: null }] },
+        }],
+      }];
+      const context = buildContextFromHistory(history, { preserveCapturedContext: true });
+      expect(context).toContain('Keep project-48271');
+      expect(context).toContain('"operations":[{"replacement":"nested-value","previous":null}]');
+    });
+
     it('builds context from simple user/assistant exchange', () => {
       const messages: ChatMessage[] = [
         { id: 'msg-1', role: 'user', content: 'Hello', timestamp: 1000 },
@@ -622,6 +654,25 @@ describe('session utilities', () => {
   });
 
   describe('buildPromptWithHistoryContext', () => {
+    it('retains a repeated question when the previous occurrence already has an answer', () => {
+      const history: ChatMessage[] = [
+        { id: 'u1', role: 'user', content: 'Continue', timestamp: 1 },
+        { id: 'a1', role: 'assistant', content: 'Prior answer', timestamp: 2 },
+      ];
+      expect(buildPromptWithHistoryContext(
+        'User: Continue\n\nAssistant: Prior answer', 'Continue', 'Continue', history,
+      )).toBe('User: Continue\n\nAssistant: Prior answer\n\nUser: Continue');
+    });
+
+    it('does not duplicate an unanswered input followed by an empty assistant placeholder', () => {
+      const history: ChatMessage[] = [
+        { id: 'u1', role: 'user', content: 'Continue', timestamp: 1 },
+        { id: 'a1', role: 'assistant', content: '', timestamp: 2 },
+      ];
+      expect(buildPromptWithHistoryContext('User: Continue', 'Continue', 'Continue', history))
+        .toBe('User: Continue');
+    });
+
     it('returns prompt unchanged when historyContext is null', () => {
       const prompt = '<query>\nhello\n</query>';
       const result = buildPromptWithHistoryContext(null, prompt, 'hello', []);
@@ -629,7 +680,7 @@ describe('session utilities', () => {
       expect(result).toBe(prompt);
     });
 
-    it('returns only history when actualPrompt matches last user message', () => {
+    it('appends the current prompt when the matching historical question already has an answer', () => {
       const messages: ChatMessage[] = [
         { id: 'msg-1', role: 'user', content: 'hello', timestamp: 1000 },
         { id: 'msg-2', role: 'assistant', content: 'hi', timestamp: 2000 },
@@ -640,8 +691,7 @@ describe('session utilities', () => {
 
       const result = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, messages);
 
-      // Should NOT append prompt since actualPrompt matches last user message
-      expect(result).toBe(historyContext);
+      expect(result).toBe(`${historyContext}\n\nUser: ${prompt}`);
     });
 
     it('appends prompt when actualPrompt differs from last user message', () => {

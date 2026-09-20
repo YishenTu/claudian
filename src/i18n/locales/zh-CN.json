@@ -57,6 +57,30 @@
       "errorNoActiveTab": "没有活动标签页",
       "commandNoMessages": "无法分叉：对话中没有消息",
       "commandNoAssistantUuid": "无法分叉：没有带标识符的助手回复"
+    },
+    "sideChat": {
+      "title": "侧边对话",
+      "collapse": "收起",
+      "discard": "放弃",
+      "statusPreparing": "准备中",
+      "statusQueued": "{count} 条排队中",
+      "statusWorking": "处理中",
+      "statusError": "需要处理",
+      "statusActionRequired": "需要输入",
+      "placeholder": "在侧边对话中继续提问",
+      "composerLabel": "侧边对话消息",
+      "needsPrompt": "请在 /side 后输入提示词以开始侧边对话。",
+      "unsupportedProvider": "此提供方不支持侧边对话。",
+      "unavailableBusy": "侧边对话需要一条已完成的回复。请等待当前回合结束。",
+      "unavailableNoCheckpoint": "请先在此对话中完成一次回复，再开始侧边对话。",
+      "unavailableNoSession": "无法解析该对话的提供方会话。",
+      "alreadyExists": "该对话已有侧边对话。请先放弃后再新建。",
+      "nestedUnavailable": "侧边对话中无法再开启侧边对话。请先收起回到主对话。",
+      "mainOnlyCommand": "/{command} 仅可在主对话中使用。",
+      "instructionModeActive": "请先完成或取消指令模式，再使用侧边对话。",
+      "startFailed": "侧边对话启动失败：{error}",
+      "queued": "已加入侧聊队列。",
+      "busySide": "侧边对话仍在回复，请等待其完成。"
     }
   },
   "collab": {

@@ -3785,6 +3785,7 @@ describe('ClaudianView Escape handling', () => {
         controllers: {
           conversationController: { cancelInlineRename },
           inputController: { cancelStreaming },
+          sideChatController: { destination: 'main', runtime: null },
         },
         ui: {
           fileContextManager: {

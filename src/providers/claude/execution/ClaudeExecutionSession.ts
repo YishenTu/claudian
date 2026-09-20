@@ -64,6 +64,7 @@ interface ActiveRequestedRun {
 }
 
 interface BackgroundTurn {
+  readonly queryToken: number;
   readonly turnId: string;
   sequence: number;
 }
@@ -100,6 +101,8 @@ ClaudeExecutionStrategySink {
   private snapshotInvalidation: ProviderSessionInvalidation | null = null;
   private activeRun: ActiveRequestedRun | null = null;
   private backgroundTurn: BackgroundTurn | null = null;
+  private nativeQueryToken = 0;
+  private cancelledBackgroundQueryToken: number | null = null;
   private backgroundCounter = 0;
   private sessionSequence = 0;
   private queryToken = 0;
@@ -225,7 +228,18 @@ ClaudeExecutionStrategySink {
 
   cancel(): void {
     const active = this.activeRun;
-    if (!active || active.terminal) return;
+    if (!active || active.terminal) {
+      if (!this.backgroundTurn || this.cancelledBackgroundQueryToken !== null) return;
+      this.cancelledBackgroundQueryToken = this.backgroundTurn.queryToken;
+      this.#setStatus('cancelling');
+      this.#emitBackground(this.backgroundTurn, {
+        type: 'session_state_changed',
+        snapshot: this.getSnapshot(),
+      });
+      this.interactionHandler.dismissAll('cancelled');
+      this.strategy.cancel(null, true);
+      return;
+    }
     this.#setStatus('cancelling');
     this.#emitRequestedState(active);
     active.abortController.abort();
@@ -420,6 +434,11 @@ ClaudeExecutionStrategySink {
     queryToken: number,
   ): Promise<void> {
     if (this.disposed) return;
+    this.nativeQueryToken = queryToken;
+    if (this.cancelledBackgroundQueryToken === queryToken) {
+      if (message.type === 'result') this.#finishCancelledBackground(queryToken);
+      return;
+    }
     if (this.suppressedEphemeralQueryTokens.has(queryToken)) {
       if (message.type === 'result') {
         this.suppressedEphemeralQueryTokens.delete(queryToken);
@@ -540,6 +559,7 @@ ClaudeExecutionStrategySink {
 
   handleNativeFailure(error: unknown, queryToken: number): void {
     if (this.disposed) return;
+    if (this.#finishCancelledBackground(queryToken)) return;
     if (this.suppressedEphemeralQueryTokens.delete(queryToken)) return;
     if (this.suppressedPersistentQueryTokens.delete(queryToken)) {
       const replacement = this.activeRun;
@@ -580,6 +600,7 @@ ClaudeExecutionStrategySink {
 
   handleNativeEnd(queryToken: number): void {
     if (this.disposed) return;
+    if (this.#finishCancelledBackground(queryToken)) return;
     if (this.suppressedEphemeralQueryTokens.delete(queryToken)) return;
     if (this.suppressedPersistentQueryTokens.delete(queryToken)) {
       const replacement = this.activeRun;
@@ -737,7 +758,7 @@ ClaudeExecutionStrategySink {
   }
 
   #getNativeResume(): ClaudeNativeResume {
-    if (this.config.nativePersistence === 'disabled-if-supported') {
+    if (this.config.nativePersistence === 'disabled-if-supported' && !this.pendingFork) {
       return {};
     }
     const nativeResumeSessionId = this.#getNativeResumeSessionId();
@@ -760,7 +781,7 @@ ClaudeExecutionStrategySink {
   ): boolean {
     if (!request.conversationHistory?.length) return false;
     if (this.config.nativePersistence === 'disabled-if-supported') {
-      return this.nativeQuery === null;
+      return !this.pendingFork && this.nativeQuery === null;
     }
     return !this.#getNativeResumeSessionId()
       || this.replayHistoryOnNextTurn;
@@ -769,6 +790,9 @@ ClaudeExecutionStrategySink {
   #captureProviderSession(sessionId: string): void {
     this.#bumpRevision();
     if (this.config.nativePersistence === 'disabled-if-supported') {
+      this.pendingFork = false;
+      this.resumeAt = undefined;
+      this.#deleteProviderStateValue('forkSource');
       return;
     }
     const liveProviderSessionId = this.providerSessionId;
@@ -829,6 +853,7 @@ ClaudeExecutionStrategySink {
     if (this.activeRun) return this.activeRun;
     if (!this.backgroundTurn) {
       const background: BackgroundTurn = {
+        queryToken: this.nativeQueryToken,
         turnId: `claude-background-${++this.backgroundCounter}`,
         sequence: 0,
       };
@@ -1033,6 +1058,13 @@ ClaudeExecutionStrategySink {
       ...details,
     });
     this.#endActiveRun(active);
+  }
+
+  #finishCancelledBackground(queryToken: number): boolean {
+    if (this.cancelledBackgroundQueryToken !== queryToken) return false;
+    this.cancelledBackgroundQueryToken = null;
+    this.#finishBackgroundTurn('provider-ended');
+    return true;
   }
 
   #finishBackgroundTurn(

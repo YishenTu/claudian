@@ -57,6 +57,30 @@
       "errorNoActiveTab": "Aucun onglet actif",
       "commandNoMessages": "Impossible de bifurquer : aucun message dans la conversation",
       "commandNoAssistantUuid": "Impossible de bifurquer : aucune réponse de l’assistant avec des identifiants"
+    },
+    "sideChat": {
+      "title": "Conversation annexe",
+      "collapse": "Réduire",
+      "discard": "Abandonner",
+      "statusPreparing": "Préparation",
+      "statusQueued": "{count} en attente",
+      "statusWorking": "En cours",
+      "statusError": "Attention requise",
+      "statusActionRequired": "Saisie requise",
+      "placeholder": "Poser une question dans la conversation annexe",
+      "composerLabel": "Message de la conversation annexe",
+      "needsPrompt": "Ajoute une consigne après /side pour démarrer une conversation annexe.",
+      "unsupportedProvider": "Ce fournisseur ne prend pas en charge la conversation annexe.",
+      "unavailableBusy": "La conversation annexe exige une réponse terminée. Attends la fin du tour en cours.",
+      "unavailableNoCheckpoint": "Termine d'abord une réponse dans cette conversation.",
+      "unavailableNoSession": "Impossible de résoudre la session du fournisseur pour cette conversation.",
+      "alreadyExists": "Une conversation annexe existe déjà ici. Abandonne-la pour en démarrer une autre.",
+      "nestedUnavailable": "Une conversation annexe ne peut pas en démarrer une autre. Réduis d'abord vers la principale.",
+      "mainOnlyCommand": "/{command} n'est disponible que dans la conversation principale.",
+      "instructionModeActive": "Termine ou annule le mode instruction avant d'utiliser la conversation annexe.",
+      "startFailed": "Impossible de démarrer la conversation annexe : {error}",
+      "queued": "Ajouté à la file de la discussion secondaire.",
+      "busySide": "La conversation annexe répond encore. Attends la fin."
     }
   },
   "collab": {

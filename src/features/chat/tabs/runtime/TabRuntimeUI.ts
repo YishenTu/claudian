@@ -15,6 +15,7 @@ import type {
 } from '../../../../core/providers/types';
 import { MainChatComposerDropdown } from '../../composer/MainChatComposerDropdown';
 import { LinkedContentController } from '../../linked-content';
+import type { SideChatController } from '../../side-chat/SideChatController';
 import { ComposerContextTray } from '../../ui/ComposerContextTray';
 import { FileContextManager } from '../../ui/FileContext';
 import { ImageContextManager } from '../../ui/ImageContext';
@@ -210,6 +211,29 @@ function buildInputToolbar(
     },
   });
 
+  /** Side chat owns an in-memory settings projection while it is selected. */
+  const getSelectedSideChat = (): SideChatController | null => {
+    const tab = runtimeRef.current();
+    if (!tab) return null;
+    const sideChat = tab.controllers.sideChatController;
+    return sideChat.destination === 'side' ? sideChat : null;
+  };
+
+  const applySideSetting = (
+    patch: Parameters<SideChatController['updateSideSettings']>[0],
+  ): boolean => {
+    const sideChat = getSelectedSideChat();
+    if (!sideChat) return false;
+    sideChat.updateSideSettings(patch);
+    const tab = runtimeRef.requirePublished();
+    tab.ui.modelSelector.updateDisplay();
+    tab.ui.modeSelector.updateDisplay();
+    tab.ui.thinkingBudgetSelector.updateDisplay();
+    tab.ui.permissionToggle.updateDisplay();
+    tab.ui.serviceTierToggle.updateDisplay();
+    return true;
+  };
+
   const toolbarComponents = createInputToolbar(inputToolbar, {
     getUIConfig: () => {
       if (shell.conversationId === null) {
@@ -218,11 +242,37 @@ function buildInputToolbar(
       return getTabChatUIConfig(shell, plugin);
     },
     getCapabilities: () => getTabCapabilities(shell, plugin),
-    getSettings: () => getTabSettingsSnapshot(shell, plugin),
+    getSettings: () => {
+      const base = getTabSettingsSnapshot(shell, plugin);
+      const sideSettings = getSelectedSideChat()?.runtime?.settings;
+      if (!sideSettings) return base;
+      return {
+        ...base,
+        ...(sideSettings.model ? { model: sideSettings.model } : {}),
+        ...(sideSettings.permissionMode
+          ? { permissionMode: sideSettings.permissionMode }
+          : {}),
+        ...(sideSettings.reasoning
+          ? { effortLevel: sideSettings.reasoning, thinkingBudget: sideSettings.reasoning }
+          : {}),
+        ...(sideSettings.serviceTier ? { serviceTier: sideSettings.serviceTier } : {}),
+      };
+    },
     getEnvironmentVariables: () => plugin.getActiveEnvironmentVariables(),
     onModelChange: async (model: string) => {
       const tab = runtimeRef.requirePublished();
       if (!options.isRuntimeLive(tab)) return;
+      const sideChat = getSelectedSideChat();
+      if (sideChat) {
+        // Enabled-model checks still apply; a side selection never substitutes one.
+        if (getEnabledProviderForModel(model, plugin.settings) !== sideChat.runtime?.providerId) {
+          new Notice('Cannot switch provider inside a side chat.');
+          tab.ui.modelSelector.updateDisplay();
+          return;
+        }
+        applySideSetting({ model });
+        return;
+      }
       if (tab.conversationId === null) {
         const selectionIntent = plugin.chatModelSelection.beginIntent();
         const request = modelSelection.beginRequest();
@@ -343,6 +393,12 @@ function buildInputToolbar(
     },
     onModeChange: async (mode: string) => {
       const tab = runtimeRef.requirePublished();
+      if (getSelectedSideChat()) {
+        // Mode selection is provider-owned UI state that side chat does not project.
+        new Notice('Mode selection applies to the main chat.');
+        tab.ui.modeSelector.updateDisplay();
+        return;
+      }
       await updateTabProviderSettings(tab, plugin, (settings) => {
         getTabChatUIConfig(tab, plugin).applyModeSelection?.(mode, settings);
       });
@@ -351,6 +407,7 @@ function buildInputToolbar(
       onUserModified();
     },
     onThinkingBudgetChange: async (budget: string) => {
+      if (applySideSetting({ reasoning: budget })) return;
       const tab = runtimeRef.requirePublished();
       await updateTabProviderSettings(tab, plugin, (settings) => {
         const model = getTabSelectedModel(tab, plugin) ?? settings.model;
@@ -360,6 +417,7 @@ function buildInputToolbar(
       onUserModified();
     },
     onEffortLevelChange: async (effort: string) => {
+      if (applySideSetting({ reasoning: effort })) return;
       const tab = runtimeRef.requirePublished();
       await updateTabProviderSettings(tab, plugin, (settings) => {
         const model = getTabSelectedModel(tab, plugin) ?? settings.model;
@@ -369,11 +427,13 @@ function buildInputToolbar(
       onUserModified();
     },
     onServiceTierChange: async (serviceTier: string) => {
+      if (applySideSetting({ serviceTier })) return;
       const tab = runtimeRef.requirePublished();
       await updateTabServiceTier(tab, plugin, serviceTier);
       onUserModified();
     },
     onPermissionModeChange: async (mode: string) => {
+      if (applySideSetting({ permissionMode: mode })) return;
       const tab = runtimeRef.requirePublished();
       await updateTabPermissionMode(tab, plugin, mode);
       onUserModified();
