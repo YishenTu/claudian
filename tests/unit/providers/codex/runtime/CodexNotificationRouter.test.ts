@@ -3680,6 +3680,85 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('webSearch tool', () => {
+    // Shapes captured from the 2026-09-20 native research session.
+    it.each([
+      {
+        label: 'multi-query summary',
+        input: { search_query: [{ q: 'AI drug discovery' }, { q: 'clinical trials' }] },
+        item: {
+          query: 'AI drug discovery ...',
+          action: { type: 'search', query: null, queries: ['AI drug discovery', 'clinical trials'] },
+        },
+      },
+      {
+        label: 'open with an opaque native action',
+        input: { open: [{ ref_id: 'turn2view3' }] },
+        item: { query: '', action: { type: 'other' } },
+      },
+      {
+        label: 'click with an opaque native action',
+        input: { click: [{ ref_id: 'turn9view0', id: 13 }], response_length: 'short' },
+        item: { query: '', action: { type: 'other' } },
+      },
+      {
+        label: 'find without a native URL',
+        input: { find: [{ ref_id: 'turn10view0', pattern: 'FINANCIAL HIGHLIGHTS' }] },
+        item: {
+          query: "'FINANCIAL HIGHLIGHTS'",
+          action: { type: 'findInPage', url: null, pattern: 'FINANCIAL HIGHLIGHTS' },
+        },
+      },
+    ])('keeps $label before the final answer without a duplicate', ({ input, item }) => {
+      router.beginTurn();
+      router.handleNotification('rawResponseItem/completed', {
+        item: {
+          type: 'custom_tool_call', name: 'exec', call_id: 'call_web',
+          input: `text(await tools.web__run(${JSON.stringify(input)}));`,
+        },
+      });
+      router.handleNotification('item/completed', {
+        item: { ...item, type: 'webSearch', id: 'exec_web', status: 'completed' },
+      });
+      router.handleNotification('rawResponseItem/completed', {
+        item: { type: 'custom_tool_call_output', call_id: 'call_web', output: 'Sources found.' },
+      });
+      router.handleNotification('item/agentMessage/delta', {
+        itemId: 'final', delta: 'Research complete.',
+      });
+      router.handleNotification('turn/completed', {
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks).toEqual([
+        expect.objectContaining({ type: 'tool_use', id: 'exec_web', name: 'WebSearch' }),
+        { type: 'tool_result', id: 'exec_web', content: 'Search complete', isError: false },
+        { type: 'text', content: 'Research complete.' },
+        { type: 'done' },
+      ]);
+    });
+
+    it('preserves concurrent raw opens when an opaque native action cannot identify one', () => {
+      router.beginTurn();
+      for (const [callId, refId] of [['call_first', 'turn1view0'], ['call_second', 'turn2view0']]) {
+        router.handleNotification('rawResponseItem/completed', {
+          item: {
+            type: 'custom_tool_call', name: 'exec', call_id: callId,
+            input: `text(await tools.web__run({open:[{ref_id:"${refId}"}]}));`,
+          },
+        });
+      }
+      router.handleNotification('item/completed', {
+        item: { type: 'webSearch', id: 'exec_web', action: { type: 'other' }, status: 'completed' },
+      });
+      router.handleNotification('turn/completed', {
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual([
+        'exec_web', 'call_first', 'call_second',
+      ]);
+    });
+
     it('maps webSearch item/started to tool_use chunk', () => {
       router.handleNotification('item/started', {
         item: {

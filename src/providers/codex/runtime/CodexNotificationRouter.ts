@@ -2123,8 +2123,22 @@ function toolInputsCompatible(
   }
 
   if (name === 'WebSearch') {
-    return stableValueKey(normalizeComparedWebInput(expected))
-      === stableValueKey(normalizeComparedWebInput(actual));
+    const expectedWeb = normalizeComparedWebInput(expected);
+    const actualWeb = normalizeComparedWebInput(actual);
+    // Native reference-based opens and clicks can expose only an `other` action.
+    // The caller still requires a unique candidate; concurrent calls stay distinct.
+    if (
+      actualWeb.actionType === 'other'
+      && (expectedWeb.actionType === 'open_page'
+        || (Array.isArray(expectedWeb.click) && expectedWeb.click.length > 0))
+    ) {
+      return true;
+    }
+    // Native find events can retain the pattern but omit the opaque page reference.
+    if (actualWeb.actionType === 'find_in_page' && !actualWeb.url) {
+      delete expectedWeb.url;
+    }
+    return stableValueKey(expectedWeb) === stableValueKey(actualWeb);
   }
 
   return stableValueKey(expected) === stableValueKey(actual);
@@ -2144,12 +2158,13 @@ function normalizeComparedWebInput(input: Record<string, unknown>): Record<strin
   if (normalizedActionType === 'open_page' || normalizedActionType === 'find_in_page') {
     delete normalized.query;
     delete normalized.queries;
-  } else if (
-    Array.isArray(normalized.queries)
-    && normalized.queries.length === 1
-    && normalized.queries[0] === normalized.query
-  ) {
-    delete normalized.queries;
+  } else if (Array.isArray(normalized.queries) && normalized.queries.length > 0) {
+    // The query field can be a display summary (first query + " ...").
+    // Compare the actual query list when the native event supplies it.
+    normalized.query = normalized.queries[0];
+    if (normalized.queries.length === 1) {
+      delete normalized.queries;
+    }
   }
   return normalized;
 }
