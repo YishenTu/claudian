@@ -48,7 +48,7 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
   },
   {
     id: 'fable',
-    label: 'Fable ($$$)',
+    label: 'Fable',
     agentLabel: 'Fable',
     description: "Anthropic's most capable model — premium pricing above Opus",
     environmentKey: 'ANTHROPIC_DEFAULT_FABLE_MODEL',
