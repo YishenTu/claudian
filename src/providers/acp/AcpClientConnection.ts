@@ -14,6 +14,8 @@ import type {
   AcpClientCapabilities,
   AcpCreateTerminalRequest,
   AcpCreateTerminalResponse,
+  AcpForkSessionRequest,
+  AcpForkSessionResponse,
   AcpImplementation,
   AcpInitializeRequest,
   AcpInitializeResponse,
@@ -155,6 +157,10 @@ export class AcpClientConnection {
 
   newSession(request: AcpNewSessionRequest): Promise<AcpNewSessionResponse> {
     return this.#requestWithFallback<AcpNewSessionResponse>('newSession', request);
+  }
+
+  forkSession(request: AcpForkSessionRequest): Promise<AcpForkSessionResponse> {
+    return this.#requestWithFallback<AcpForkSessionResponse>('forkSession', request);
   }
 
   loadSession(request: AcpLoadSessionRequest): Promise<AcpLoadSessionResponse> {

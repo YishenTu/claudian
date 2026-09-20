@@ -29,6 +29,8 @@ export interface ProviderCapabilities {
   supportsEphemeralSessions: boolean;
   supportsRewind: boolean;
   supportsFork: boolean;
+  /** Omitted means checkpoint forking; full-session providers can fork only the latest reply. */
+  forkMode?: 'checkpoint' | 'full-session';
   supportsProviderCommands: boolean;
   supportsImageAttachments: boolean;
   supportsInstructionMode: boolean;

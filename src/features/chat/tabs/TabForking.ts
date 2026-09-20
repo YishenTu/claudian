@@ -2,7 +2,7 @@ import { Notice } from 'obsidian';
 
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
-import type { ProviderId } from '../../../core/providers/types';
+import type { ProviderCapabilities, ProviderId } from '../../../core/providers/types';
 import {
   type ChatMessage,
   isCanonicalUserMessage,
@@ -19,6 +19,7 @@ import type { AssembledTabRuntime } from './types';
 export interface ForkContext {
   messages: ChatMessage[];
   providerId?: ProviderId;
+  forkMode?: ProviderCapabilities['forkMode'];
   sourceConversationId: string | null;
   sourceSessionId: string;
   sourceProviderState?: Record<string, unknown>;
@@ -114,6 +115,11 @@ export async function handleForkRequest(
     return;
   }
 
+  if (getTabCapabilities(tab, plugin).forkMode === 'full-session' && assistantIdx !== msgs.length - 1) {
+    new Notice('This provider can fork only from the latest reply.');
+    return;
+  }
+
   const checkpoint = msgs[assistantIdx].assistantMessageId;
   if (!checkpoint) {
     new Notice(t('chat.fork.unavailableNoUuid'));
@@ -125,11 +131,14 @@ export async function handleForkRequest(
     !source
     || !isRuntimeLive(tab)
     || tab.conversationId !== sourceConversationId
+    || (getTabCapabilities(tab, plugin).forkMode === 'full-session'
+      && (state.isStreaming || state.messages.at(-1)?.assistantMessageId !== checkpoint))
   ) return;
 
   await forkRequestCallback({
     messages: deepCloneMessages(msgs.slice(0, assistantIdx + 1)),
     providerId: source.providerId,
+    forkMode: getTabCapabilities(tab, plugin).forkMode,
     sourceConversationId,
     sourceSessionId: source.sourceSessionId,
     sourceProviderState: source.sourceProviderState,
@@ -170,6 +179,11 @@ export async function handleForkAll(
     return;
   }
 
+  if (getTabCapabilities(tab, plugin).forkMode === 'full-session' && msgs.at(-1)?.role !== 'assistant') {
+    new Notice('This provider can fork only from the latest reply.');
+    return;
+  }
+
   let lastAssistantUuid: string | undefined;
   for (let index = msgs.length - 1; index >= 0; index -= 1) {
     if (msgs[index].role === 'assistant' && msgs[index].assistantMessageId) {
@@ -188,11 +202,14 @@ export async function handleForkAll(
     !source
     || !isRuntimeLive(tab)
     || tab.conversationId !== sourceConversationId
+    || (getTabCapabilities(tab, plugin).forkMode === 'full-session'
+      && (state.isStreaming || state.messages.at(-1)?.assistantMessageId !== lastAssistantUuid))
   ) return;
 
   await forkRequestCallback({
     messages: deepCloneMessages(msgs),
     providerId: source.providerId,
+    forkMode: getTabCapabilities(tab, plugin).forkMode,
     sourceConversationId,
     sourceSessionId: source.sourceSessionId,
     sourceProviderState: source.sourceProviderState,

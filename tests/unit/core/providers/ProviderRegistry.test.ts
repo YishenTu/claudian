@@ -65,7 +65,7 @@ describe('ProviderRegistry', () => {
     expect(caps.providerId).toBe('opencode');
     expect(caps.supportsProviderCommands).toBe(true);
     expect(caps.supportsInstructionMode).toBe(true);
-    expect(caps.supportsFork).toBe(false);
+    expect(caps.supportsFork).toBe(true);
   });
 
   it('registers provider-owned subagent protocols outside the capability matrix', () => {

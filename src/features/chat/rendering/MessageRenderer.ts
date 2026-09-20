@@ -185,6 +185,9 @@ export class MessageRenderer {
    * Returns the message element for content updates.
    */
   addMessage(msg: ChatMessage): HTMLElement {
+    if (this.getCapabilities().forkMode === 'full-session') {
+      this.messagesEl.querySelectorAll('.claudian-message-fork-btn').forEach(button => button.remove());
+    }
     // Render images above message bubble for user messages
     if (msg.role === 'user' && msg.images && msg.images.length > 0) {
       const imagesEl = this.renderMessageImages(this.messagesEl, msg.images);
@@ -448,7 +451,10 @@ export class MessageRenderer {
       blocks.filter(block => block.type === 'text').map(block => block.content).join('\n\n') || msg.content,
     ).content;
     if (copyText.trim()) this.addTextCopyButton(toolbar, copyText);
-    if (this.forkCallback && msg.assistantMessageId) this.#addForkButton(msgEl, msg.id);
+    if (this.forkCallback && msg.assistantMessageId
+      && (this.getCapabilities().forkMode !== 'full-session' || messages.at(-1)?.id === msg.id)) {
+      this.#addForkButton(msgEl, msg.id);
+    }
     this.#appendMessageTimestamp(msgEl, msg.role === 'user' ? msg.timestamp : msg.completedAt);
   }
 

@@ -1935,7 +1935,7 @@ describe('TabManager provider execution orchestration', () => {
     expect(tab!.executionCoordinator.prepare).not.toHaveBeenCalled();
   });
 
-  it('copies the accepted input ledger when forking', async () => {
+  it.each(['checkpoint', 'full-session'] as const)('copies the accepted input ledger for a %s fork', async (forkMode) => {
     const sourceConversation = {
         id: 'source-conversation',
         linkedContentPath: 'Projects',
@@ -1947,9 +1947,11 @@ describe('TabManager provider execution orchestration', () => {
     }));
     const source = await manager.createTab('source-conversation');
 
+    source!.state.messages = [{ id: 'latest', role: 'assistant', content: 'Done', timestamp: 1 }];
     await manager.forkToNewTab({
+      forkMode,
       linkedContentPath: 'Projects',
-      messages: [],
+      messages: [...source!.state.messages],
       providerId: 'claude',
       resumeAt: 'assistant-checkpoint',
       sourceConversationId: 'source-conversation',
@@ -1959,7 +1961,7 @@ describe('TabManager provider execution orchestration', () => {
     expect((source!.executionCoordinator!.copyInputsForFork as jest.Mock)).toHaveBeenCalledWith(
       'source-conversation',
       'forked',
-      'assistant-checkpoint',
+      forkMode === 'full-session' ? undefined : 'assistant-checkpoint',
     );
     expect(plugin.createConversation).toHaveBeenCalledWith(expect.objectContaining({
       linkedContentPath: 'Projects',
@@ -2386,6 +2388,26 @@ describe('TabManager provider execution orchestration', () => {
         lifecycleState: 'provisional',
       }),
     ]));
+  });
+
+  it('rejects a full-session fork if its source advances during native startup', async () => {
+    const forkState = deferred<Record<string, unknown>>();
+    const buildForkProviderState = jest.fn(() => forkState.promise);
+    (ProviderRegistry.getConversationHistoryService as jest.Mock).mockReturnValueOnce({ buildForkProviderState });
+    const { manager, plugin } = createManager();
+    const source = await manager.createTab();
+    source!.state.messages = [{ id: 'latest', role: 'assistant', content: 'Done', timestamp: 1 }];
+    const fork = manager.forkToNewTab({
+      messages: [...source!.state.messages], providerId: 'opencode', resumeAt: 'native-latest',
+      sourceConversationId: null, sourceSessionId: 'native-session', forkMode: 'full-session',
+    }, source);
+    for (let attempt = 0; attempt < 10 && !buildForkProviderState.mock.calls.length; attempt++) await Promise.resolve();
+    expect(buildForkProviderState).toHaveBeenCalled();
+    source!.state.messages.push({ id: 'next', role: 'user', content: 'Continue', timestamp: 2 });
+    forkState.resolve({ sessionId: 'native-child' });
+    await expect(fork).resolves.toBeNull();
+    expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
+    expect(manager.getAllTabs()).toEqual([source]);
   });
 
   it('deletes a fork conversation when manager destruction wins the race', async () => {

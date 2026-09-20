@@ -4,6 +4,9 @@ import type {
   ProviderHistoryPathContext,
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
+import { getEnhancedPath } from '../../../utils/env';
+import { OpencodeCliResolver } from '../runtime/OpencodeCliResolver';
+import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
 import { getOpencodeState, type OpencodeProviderState } from '../types';
 import { resolveOpencodeDatabasePathHint } from './OpencodeHistoryPathResolver';
 import {
@@ -11,9 +14,11 @@ import {
   loadOpencodeSessionMessages,
   loadOpencodeSessionModel,
 } from './OpencodeHistoryStore';
+import { forkOpencodeSession } from './OpencodeSessionFork';
 
 const OPENCODE_PROVIDER_STATE_KEYS = [
   'databasePath',
+  'sessionId',
   'nativeConversationContextEstablished',
 ] as const;
 
@@ -22,7 +27,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   private hydratedKeys = new WeakMap<Conversation, string>();
 
   hasConversationModelRecoverySource(conversation: Conversation): boolean {
-    return !!conversation.sessionId;
+    return !!this.resolveSessionIdForConversation(conversation);
   }
 
   async recoverConversationModelSelection(
@@ -30,11 +35,12 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     _vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<string | null> {
-    if (!conversation.sessionId) return null;
+    const sessionId = this.resolveSessionIdForConversation(conversation);
+    if (!sessionId) return null;
     const state = getOpencodeState(conversation.providerState);
     const databasePath = resolveOpencodeDatabasePathHint(state.databasePath, pathContext);
     if (!databasePath) return null;
-    return loadOpencodeSessionModel(conversation.sessionId, { databasePath }, pathContext?.environment);
+    return loadOpencodeSessionModel(sessionId, { databasePath }, pathContext?.environment);
   }
 
   async hydrateConversationHistory(
@@ -55,7 +61,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
         ? providerState
         : undefined;
     }
-    const sessionId = conversation.sessionId;
+    const sessionId = this.resolveSessionIdForConversation(conversation);
     if (!sessionId) {
       this.hydratedKeys.delete(conversation);
       return;
@@ -99,9 +105,9 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     missingProviderSessionId?: string,
   ): Promise<'delete' | 'reset' | 'preserve'> {
     if (
-      !conversation.sessionId
+      !this.resolveSessionIdForConversation(conversation)
       || !missingProviderSessionId
-      || conversation.sessionId !== missingProviderSessionId
+      || this.resolveSessionIdForConversation(conversation) !== missingProviderSessionId
     ) {
       return 'preserve';
     }
@@ -111,24 +117,48 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       ...conversation.providerState,
       nativeConversationContextEstablished: false,
     };
+    delete conversation.providerState.sessionId;
     this.hydratedKeys.delete(conversation);
     return 'reset';
   }
 
   resolveSessionIdForConversation(conversation: Conversation | null): string | null {
-    return conversation?.sessionId ?? null;
+    return conversation?.sessionId ?? getOpencodeState(conversation?.providerState).sessionId ?? null;
   }
 
   isPendingForkConversation(_conversation: Conversation): boolean {
     return false;
   }
 
-  buildForkProviderState(
-    _sourceSessionId: string,
+  async buildForkProviderState(
+    sourceSessionId: string,
     _resumeAt: string,
-    _sourceProviderState?: Record<string, unknown>,
-  ): Record<string, unknown> {
-    return {};
+    sourceProviderState?: Record<string, unknown>,
+    vaultPath?: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<Record<string, unknown>> {
+    const cwd = vaultPath ?? pathContext?.vaultPath;
+    if (!cwd) throw new Error('OpenCode fork requires a workspace directory.');
+    const source = getOpencodeState(sourceProviderState);
+    const databasePath = resolveOpencodeDatabasePathHint(source.databasePath, pathContext);
+    if (!databasePath || databasePath === ':memory:') {
+      throw new Error('OpenCode fork requires a persistent native database.');
+    }
+    const settings = pathContext?.settings ?? {};
+    const cliPath = new OpencodeCliResolver().resolveFromSettings(settings) ?? 'opencode';
+    const environment: NodeJS.ProcessEnv = {
+      ...buildOpencodeRuntimeEnv(settings, cliPath, databasePath),
+      ...pathContext?.environment,
+      OPENCODE_DB: databasePath,
+    };
+    environment.PATH = getEnhancedPath(environment.PATH, cliPath);
+    const sessionId = await forkOpencodeSession({
+      cliPath,
+      cwd,
+      environment,
+      sourceSessionId,
+    });
+    return { sessionId, databasePath, nativeConversationContextEstablished: true };
   }
 
   buildPersistedProviderState(
@@ -136,6 +166,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   ): Record<string, unknown> | undefined {
     const state = getOpencodeState(conversation.providerState);
     const providerState: OpencodeProviderState = {
+      ...(state.sessionId ? { sessionId: state.sessionId } : {}),
       ...(state.databasePath ? { databasePath: state.databasePath } : {}),
       ...(typeof state.nativeConversationContextEstablished === 'boolean'
         ? {

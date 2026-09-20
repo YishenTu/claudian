@@ -116,7 +116,7 @@ export async function createForkTestEnvironment() {
         .buildForkProviderState(context.sourceSessionId, context.resumeAt, context.sourceProviderState, root);
       child = await repository.create({ providerId });
       await repository.update(child.id, { messages: context.messages, providerState });
-      await chat.coordinator.copyInputsForFork(chat.conversation.id, child.id, context.resumeAt);
+      await chat.coordinator.copyInputsForFork(chat.conversation.id, child.id, context.forkMode === 'full-session' ? undefined : context.resumeAt);
     }, () => true);
     return child;
   }

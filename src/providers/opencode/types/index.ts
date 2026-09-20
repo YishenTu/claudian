@@ -1,5 +1,6 @@
 export interface OpencodeProviderState extends Record<string, unknown> {
   databasePath?: string;
+  sessionId?: string;
   nativeConversationContextEstablished?: boolean;
 }
 
@@ -18,7 +19,8 @@ export function getOpencodeState(
   const parsed = Object.fromEntries(
     Object.entries(record).filter(
       ([key, value]) => (
-        key !== 'databasePath'
+        key !== 'sessionId'
+        && key !== 'databasePath'
         && key !== 'nativeConversationContextEstablished'
         && value !== undefined
       ),
@@ -31,6 +33,9 @@ export function getOpencodeState(
   if (typeof record.nativeConversationContextEstablished === 'boolean') {
     parsed.nativeConversationContextEstablished =
       record.nativeConversationContextEstablished;
+  }
+  if (typeof record.sessionId === 'string' && record.sessionId.trim()) {
+    parsed.sessionId = record.sessionId.trim();
   }
   return parsed;
 }

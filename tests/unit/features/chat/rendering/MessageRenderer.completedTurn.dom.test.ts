@@ -14,14 +14,14 @@ HTMLElement.prototype.appendText = function (text) { this.append(document.create
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 
-function setup() {
+function setup(providerId = 'claude') {
   const messagesEl = document.body.createDiv();
   const fork = jest.fn().mockResolvedValue(undefined);
   const settings = { mediaFolder: '', showMessageTimestamps: true };
   const renderer = new MessageRenderer(
     { app: {}, settings } as any,
     { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any,
-    messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities('claude'),
+    messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities(providerId),
   );
   return { renderer, messagesEl, fork, settings };
 }
@@ -197,5 +197,24 @@ it('offers fork on the final live response of a multi-message turn', async () =>
   fireEvent.click(within(response).getByRole('button', { name: 'Fork conversation' }));
   await Promise.resolve();
   expect(fork).toHaveBeenCalledWith('a2');
+  renderer.dispose();
+});
+
+
+it('offers full-session fork only on the latest reply and removes it when another turn starts', async () => {
+  const { renderer, messagesEl, fork } = setup('opencode');
+  const latest: ChatMessage = { id: 'a3', role: 'assistant', content: 'Latest answer', timestamp: 7,
+    assistantMessageId: 'native-a3' };
+  renderer.renderMessages([...messages, { id: 'u2', role: 'user', content: 'Next', timestamp: 6 }, latest], () => 'Hello');
+  const buttons = within(messagesEl).getAllByRole('button', { name: 'Fork conversation' });
+  expect(buttons).toHaveLength(1);
+  expect(buttons[0].closest('[data-message-id]')?.getAttribute('data-message-id')).toBe('a3');
+  expect(buttons[0].getAttribute('type')).toBe('button');
+  fireEvent.click(buttons[0]);
+  await Promise.resolve();
+  expect(fork).toHaveBeenCalledWith('a3');
+  expect((await axe(messagesEl)).violations).toEqual([]);
+  renderer.addMessage({ id: 'u3', role: 'user', content: 'Continue', timestamp: 8 });
+  expect(within(messagesEl).queryByRole('button', { name: 'Fork conversation' })).toBeNull();
   renderer.dispose();
 });

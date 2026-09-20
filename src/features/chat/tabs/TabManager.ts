@@ -118,6 +118,7 @@ type SdkCommandDiscovery = {
 };
 
 type ForkSourceLease = {
+  readonly latestMessageId?: string | null;
   readonly conversationId: string | null;
   readonly tab: AssembledTabRuntime;
 };
@@ -1571,6 +1572,7 @@ export class TabManager implements TabManagerInterface {
   ): Promise<void> {
     const sourceLease: ForkSourceLease = {
       conversationId: context.sourceConversationId,
+      latestMessageId: context.forkMode === 'full-session' ? context.messages.at(-1)?.id ?? null : undefined,
       tab: sourceTab,
     };
     if (!this.#isForkSourceCurrent(sourceLease)) return;
@@ -1602,7 +1604,8 @@ export class TabManager implements TabManagerInterface {
     sourceTab: AssembledTabRuntime | null = this.getActiveTab(),
   ): Promise<AssembledTabRuntime | null> {
     const sourceLease = sourceTab
-      ? { conversationId: context.sourceConversationId, tab: sourceTab }
+      ? { conversationId: context.sourceConversationId, tab: sourceTab,
+        latestMessageId: context.forkMode === 'full-session' ? context.messages.at(-1)?.id ?? null : undefined }
       : null;
     if (!this.#isForkSourceCurrent(sourceLease)) return null;
     const sourceCoordinator = sourceTab?.executionCoordinator ?? null;
@@ -1654,6 +1657,7 @@ export class TabManager implements TabManagerInterface {
 
     const sourceLease: ForkSourceLease = {
       conversationId: context.sourceConversationId,
+      latestMessageId: context.forkMode === 'full-session' ? context.messages.at(-1)?.id ?? null : undefined,
       tab: sourceTab,
     };
     if (!this.#isForkSourceCurrent(sourceLease)) return false;
@@ -1742,7 +1746,7 @@ export class TabManager implements TabManagerInterface {
         await sourceCoordinator.copyInputsForFork(
           sourceLease.conversationId,
           conversation.id,
-          context.resumeAt,
+          context.forkMode === 'full-session' ? undefined : context.resumeAt,
         );
       }
       if (!this.#isForkSourceCurrent(sourceLease)) {
@@ -1762,6 +1766,10 @@ export class TabManager implements TabManagerInterface {
       && (!sourceLease || (
         this.#isTabAlive(sourceLease.tab)
         && sourceLease.tab.conversationId === sourceLease.conversationId
+        && (sourceLease.latestMessageId === undefined || (
+          !sourceLease.tab.state.isStreaming
+          && sourceLease.tab.state.messages.at(-1)?.id === sourceLease.latestMessageId
+        ))
       ));
   }
 

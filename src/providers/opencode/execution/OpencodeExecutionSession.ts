@@ -185,8 +185,8 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
   ) {
     this.createKernel = options.createKernel
       ?? ((kernelOptions) => new DefaultOpencodeAcpSessionKernel(kernelOptions));
-    this.nativeSessionId = config.resumeSeed?.providerSessionId ?? null;
     const providerState = getOpencodeState(config.resumeSeed?.providerState);
+    this.nativeSessionId = config.resumeSeed?.providerSessionId ?? providerState.sessionId ?? null;
     this.seedProviderState = Object.freeze({ ...providerState });
     this.databasePath = providerState.databasePath ?? null;
     this.nativeConversationContextEstablished = typeof providerState

@@ -3,6 +3,7 @@ export type AcpLogicalMethod =
   | 'authenticate'
   | 'newSession'
   | 'loadSession'
+  | 'forkSession'
   | 'listSessions'
   | 'prompt'
   | 'cancel'
@@ -16,6 +17,7 @@ const ACP_METHOD_CANDIDATES = {
   authenticate: ['authenticate'],
   cancel: ['session/cancel', 'cancel'],
   initialize: ['initialize'],
+  forkSession: ['session/fork'],
   listSessions: ['session/list', 'listSessions'],
   loadSession: ['session/load', 'loadSession'],
   newSession: ['session/new', 'newSession'],

@@ -204,6 +204,21 @@ export interface AcpNewSessionResponse {
   sessionId: AcpSessionId;
 }
 
+export interface AcpForkSessionRequest {
+  _meta?: AcpMetadata | null;
+  additionalDirectories?: string[];
+  cwd: string;
+  mcpServers?: AcpMcpServer[];
+  sessionId: AcpSessionId;
+}
+
+export interface AcpForkSessionResponse {
+  _meta?: AcpMetadata | null;
+  configOptions?: AcpSessionConfigOption[] | null;
+  modes?: AcpSessionModeState | null;
+  sessionId: AcpSessionId;
+}
+
 export interface AcpLoadSessionRequest {
   _meta?: AcpMetadata | null;
   additionalDirectories?: string[];
