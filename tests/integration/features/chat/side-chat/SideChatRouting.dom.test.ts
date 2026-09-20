@@ -417,16 +417,45 @@ it.each(['discard', 'cancel', 'replace main'] as const)(
   },
 );
 
-it('prepares an ephemeral child before handing captured context to execution', async () => {
+it('uses saved native execution when the provider requires persistent forks', async () => {
+  const harness = createHarness({ supportsEphemeralFork: false });
+  const { started } = await startSideChat(harness);
+  expect(harness.backend.latest.config).toMatchObject({
+    lifecycle: 'persistent', nativePersistence: 'enabled',
+  });
+  harness.backend.latest.complete();
+  expect(await started).toBe(true);
+});
+
+it('uses the configured provider environment when preparing the native side fork', async () => {
+  let database: string | undefined;
   const harness = createHarness({
-    buildForkProviderState: (_sessionId, _checkpoint, _state, _vault, _context, options) => {
-      if (!options?.ephemeral) throw new Error('A temporary child must not persist a native fork');
+    settings: { providerConfigs: { claude: { environmentVariables: 'OPENCODE_DB=/custom/chat.db' } } },
+    buildForkProviderState: (_session, _checkpoint, _state, _vault, context) => {
+      database = context?.environment.OPENCODE_DB;
       return {};
     },
   });
   const { started } = await startSideChat(harness);
-  expect(harness.backend.latest.config.nativePersistence).toBe('disabled-if-supported');
-  expect(harness.backend.latest.requests[0].conversationHistory).toEqual(harness.tab.state.messages);
   harness.backend.latest.complete();
-  expect(await started).toBe(true);
+  await started;
+  expect(database).toBe('/custom/chat.db');
+});
+
+it('rejects a full-session side fork when main advances during native preparation', async () => {
+  let finishFork: ((state: Record<string, unknown>) => void) | undefined;
+  const harness = createHarness({
+    forkMode: 'full-session', supportsEphemeralFork: false,
+    buildForkProviderState: () => new Promise(resolve => { finishFork = resolve; }),
+  });
+  const started = harness.controller.handleCommandSubmission('Explore the current reply', []);
+  await waitFor(() => expect(finishFork).toBeDefined());
+  harness.controller.collapse();
+  harness.tab.state.messages.push({ id: 'new-main-question', content: 'Main advances', role: 'user', timestamp: 3 });
+  finishFork!({ sessionId: 'native-child' });
+  await waitFor(() => expect(harness.controller.runtime?.status === 'error' || harness.backend.sessions.length > 0).toBe(true));
+  if (harness.backend.sessions.length > 0) harness.backend.latest.complete();
+  await started;
+  expect(harness.controller.runtime?.status).toBe('error');
+  expect(harness.controller.runtime?.lastError).toMatch(/source.*changed/i);
 });

@@ -2,7 +2,7 @@ import { waitFor } from '@testing-library/dom';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
+import type { ProviderCapabilities, ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
 import { WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
@@ -46,12 +46,19 @@ export async function releaseSideChatHarnesses(): Promise<void> {
   jest.clearAllMocks();
 }
 
-export function createHarness(options: { supportsFork?: boolean; checkpoint?: string | null; settings?: Record<string, unknown>; buildForkProviderState?: ProviderConversationHistoryService['buildForkProviderState'] } = {}) {
+export function createHarness(options: {
+  supportsFork?: boolean;
+  checkpoint?: string | null;
+  settings?: Record<string, unknown>;
+  supportsEphemeralFork?: boolean;
+  forkMode?: ProviderCapabilities['forkMode'];
+  buildForkProviderState?: ProviderConversationHistoryService['buildForkProviderState'];
+} = {}) {
   const backend = new FakeSideBackend();
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const forkState = { forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } };
   ProviderRegistry.register('claude', {
-    capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true },
+    capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, forkMode: options.forkMode },
     chatUIConfig: ProviderRegistry.getChatUIConfig('claude'),
     createExecutionBackend: () => backend,
     historyService: {

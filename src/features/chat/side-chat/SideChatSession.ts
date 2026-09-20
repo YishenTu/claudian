@@ -51,7 +51,7 @@ export interface SideChatWarmExecution {
 
 export interface SideChatSessionDeps {
   readonly providerId: ProviderId;
-  readonly supportsEphemeralSessions: boolean;
+  readonly ephemeral: boolean;
   readonly lifecycleRegistry: ProviderExecutionLifecycleRegistry;
   readonly resolveBackend: (providerId: ProviderId) => ProviderExecutionBackend;
   /**
@@ -206,7 +206,7 @@ export class SideChatSession {
       !this.#disposed
       && this.#supervisor.current
       // An ephemeral native id cannot survive eviction of its process.
-      && !this.deps.supportsEphemeralSessions
+      && !this.deps.ephemeral
       && !this.#preparing
       && this.#executionController === null
       && this.#active === null
@@ -269,8 +269,8 @@ export class SideChatSession {
         backend,
         {
           interactionPort: this.#fencedInteractionPort,
-          lifecycle: this.deps.supportsEphemeralSessions ? 'ephemeral' : 'persistent',
-          nativePersistence: this.deps.supportsEphemeralSessions ? 'disabled-if-supported' : 'enabled',
+          lifecycle: this.deps.ephemeral ? 'ephemeral' : 'persistent',
+          nativePersistence: this.deps.ephemeral ? 'disabled-if-supported' : 'enabled',
           ...(seed ? { resumeSeed: seed } : {}),
           vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
         },
@@ -391,7 +391,7 @@ export class SideChatSession {
   }
 
   #handleInvalidation(reason: ProviderExecutionInvalidationReason): void {
-    this.#invalidated = this.deps.supportsEphemeralSessions;
+    this.#invalidated = this.deps.ephemeral;
     const active = this.#active;
     if (active) {
       active.terminationOverride = 'invalidated';

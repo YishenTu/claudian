@@ -869,34 +869,6 @@ describe('OpencodeExecutionBackend', () => {
     },
   );
 
-  it.each(['process exit', 'configuration change', 'cancel'] as const)(
-    'requires a new memory session after %s instead of reconstructing its history',
-    async reason => {
-      const harness = createHarness(createConfig({
-        lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported',
-      }));
-      const first = harness.session.execute(createRequest());
-      await waitForPrompt(harness.kernels[0]);
-      if (reason === 'cancel') first.cancel();
-      else harness.kernels[0].completePrompt();
-      await collect(first.events);
-      if (reason === 'process exit') harness.kernels[0].close();
-
-      const second = harness.session.execute(createRequest({
-        conversationHistory: [{ id: 'side-message', role: 'user', content: 'Captured side history', timestamp: 1 }],
-        ...(reason === 'configuration change' ? { toolPolicy: { kind: 'read-only' } } : {}),
-      }));
-      let settled = false;
-      const result = collect(second.events).then(events => { settled = true; return events; });
-      await waitForCondition(() => settled || Boolean(harness.kernels[1]?.prompts.length));
-      harness.kernels[1]?.completePrompt();
-      expect((await result).at(-1)).toMatchObject({
-        type: 'execution_error', message: expect.stringMatching(/new side chat/i),
-      });
-      await harness.session.dispose();
-    },
-  );
-
   it('reuses a healthy native process and session across requested turns', async () => {
     const harness = createHarness();
     const first = harness.session.execute(createRequest());

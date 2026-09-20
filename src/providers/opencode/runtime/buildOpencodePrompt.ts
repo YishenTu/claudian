@@ -16,7 +16,7 @@ import {
   appendEditorContext,
   type EditorSelectionContext,
 } from '../../../utils/editor';
-import { buildContextFromHistory, buildPromptWithHistoryContext, getHistoryImages } from '../../../utils/session';
+import { buildContextFromHistory, buildPromptWithHistoryContext } from '../../../utils/session';
 import type { AcpContentBlock } from '../../acp';
 
 export interface OpencodePromptRequest {
@@ -31,7 +31,6 @@ export interface OpencodePromptRequest {
 export function buildOpencodePromptText(
   request: OpencodePromptRequest,
   conversationHistory: ChatMessage[] = [],
-  preserveCapturedContext = false,
 ): string {
   let prompt = request.text;
 
@@ -58,7 +57,7 @@ export function buildOpencodePromptText(
   }
 
   if (conversationHistory.length > 0) {
-    const historyContext = buildContextFromHistory(conversationHistory, { preserveCapturedContext });
+    const historyContext = buildContextFromHistory(conversationHistory);
     prompt = buildPromptWithHistoryContext(
       historyContext,
       prompt,
@@ -73,14 +72,12 @@ export function buildOpencodePromptText(
 export function buildOpencodePromptBlocks(
   request: OpencodePromptRequest,
   conversationHistory: ChatMessage[] = [],
-  preserveCapturedContext = false,
 ): AcpContentBlock[] {
   const blocks: AcpContentBlock[] = [
-    { type: 'text', text: buildOpencodePromptText(request, conversationHistory, preserveCapturedContext) },
+    { type: 'text', text: buildOpencodePromptText(request, conversationHistory) },
   ];
 
-  const historyImages = preserveCapturedContext ? getHistoryImages(conversationHistory) : [];
-  for (const image of [...historyImages, ...(request.images ?? [])]) {
+  for (const image of request.images ?? []) {
     if (!image.data) {
       continue;
     }

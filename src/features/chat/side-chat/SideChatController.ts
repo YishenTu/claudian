@@ -5,6 +5,7 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 import { detectSideChatCommand } from '../../../core/commands/builtInCommands';
 import type { ProviderExecutionContext } from '../../../core/execution';
+import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ImageAttachment } from '../../../core/types';
@@ -293,6 +294,16 @@ export class SideChatController {
     }
   }
 
+  #assertForkSourceCurrent(source: SideChatSource): void {
+    const tab = this.deps.getTab();
+    const fullSession = ProviderRegistry.getCapabilities(source.providerId).forkMode === 'full-session';
+    if (!this.deps.isRuntimeLive(tab)
+      || tab.conversationId !== source.conversationId
+      || (fullSession && (tab.state.isStreaming || tab.state.messages.at(-1)?.id !== source.messages.at(-1)?.id))) {
+      throw new Error('The source conversation changed. Discard this side chat and start a new one.');
+    }
+  }
+
   #mountPanel(source: SideChatSource): void {
     const panel = new SideChatPanel(this.deps.composerEl, {
       onCollapse: () => this.collapse(),
@@ -309,21 +320,28 @@ export class SideChatController {
       source.providerId,
     );
     const runtime = new SideChatRuntime({
-      buildChildResumeState: async () => ProviderRegistry
-        .getConversationHistoryService(source.providerId)
-        .buildForkProviderState(
-          source.sessionId,
-          source.resumeAt,
-          source.providerState,
-          vaultPath,
-          {
-            environment: { ...process.env },
-            hostPlatform: process.platform,
-            settings: this.deps.plugin.settings,
+      buildChildResumeState: async () => {
+        this.#assertForkSourceCurrent(source);
+        const state = await ProviderRegistry
+          .getConversationHistoryService(source.providerId)
+          .buildForkProviderState(
+            source.sessionId,
+            source.resumeAt,
+            source.providerState,
             vaultPath,
-          },
-          { ephemeral: ProviderRegistry.getCapabilities(source.providerId).supportsEphemeralSessions },
-        ),
+            {
+              environment: {
+                ...process.env,
+                ...getRuntimeEnvironmentVariables(this.deps.plugin.settings, source.providerId),
+              },
+              hostPlatform: process.platform,
+              settings: this.deps.plugin.settings,
+              vaultPath,
+            },
+          );
+        this.#assertForkSourceCurrent(source);
+        return state;
+      },
       component: this.deps.component,
       getPromptParentEl: () => panel.promptsEl,
       lifecycleRegistry: this.deps.plugin.providerHost.executionLifecycleRegistry,

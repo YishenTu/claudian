@@ -54,7 +54,8 @@ export async function traceSideChild(
   if (!captured) return null;
   await options.beforeStart?.();
 
-  const supportsEphemeralSessions = ProviderRegistry.getCapabilities(captured.providerId).supportsEphemeralSessions;
+  const capabilities = ProviderRegistry.getCapabilities(captured.providerId);
+  const ephemeral = capabilities.supportsEphemeralFork ?? capabilities.supportsEphemeralSessions;
   const providerState = await ProviderRegistry
     .getConversationHistoryService(captured.providerId)
     .buildForkProviderState(
@@ -62,8 +63,6 @@ export async function traceSideChild(
       captured.resumeAt,
       captured.sourceProviderState,
       env.root,
-      undefined,
-      { ephemeral: supportsEphemeralSessions },
     );
   const registry = options.lifecycleRegistry
     ?? (env.host as unknown as { executionLifecycleRegistry: ProviderExecutionLifecycleRegistry })
@@ -71,7 +70,7 @@ export async function traceSideChild(
   let responseText = '';
   const session = new SideChatSession({
     providerId: captured.providerId,
-    supportsEphemeralSessions,
+    ephemeral,
     buildChildResumeState: async () => providerState,
     resolveBackend: () => backend,
     lifecycleRegistry: registry,

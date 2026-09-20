@@ -21,7 +21,7 @@ function createSession(overrides: Partial<ConstructorParameters<typeof SideChatS
     onRequestedEvent: event => { requestedEvents.push(event.type); },
     onSessionEvent: event => { sessionEvents.push(event.type); },
     providerId: 'claude',
-    supportsEphemeralSessions: false,
+    ephemeral: false,
     resolveBackend: () => backend,
     vaultWorkingDirectory: '/vault',
     ...overrides,
@@ -64,7 +64,7 @@ describe('SideChatSession', () => {
   });
 
   it('ends an ephemeral child when a provider transition replaces its session', async () => {
-    const harness = createSession({ supportsEphemeralSessions: true });
+    const harness = createSession({ ephemeral: true });
     const first = harness.session.execute(turn('Explore B'));
     await waitFor(() => harness.backend.sessions.length === 1);
     harness.backend.latest.complete();

@@ -100,6 +100,7 @@ export class SideChatRuntime {
       subagentManager: this.#subagents,
       updateQueueIndicator: () => undefined,
     });
+    const ephemeral = this.capabilities.supportsEphemeralFork ?? this.capabilities.supportsEphemeralSessions;
     this.#session = new SideChatSession({
       buildChildResumeState: deps.buildChildResumeState,
       interactionPort: this.#createInteractionPort(),
@@ -107,14 +108,14 @@ export class SideChatRuntime {
       onError: error => deps.onError?.(error),
       onInvalidated: () => {
         this.#queuedSubmissions.length = 0;
-        this.#lastError = this.capabilities.supportsEphemeralSessions
+        this.#lastError = ephemeral
           ? 'This side chat has ended. Discard it and start a new side chat.'
           : 'The provider session was replaced. Send again to resume the side chat.';
         this.#refreshStatus();
       },
       onRequestedEvent: event => this.#handleExecutionEvent(event),
       providerId: deps.source.providerId,
-      supportsEphemeralSessions: this.capabilities.supportsEphemeralSessions,
+      ephemeral,
       resolveBackend: deps.resolveBackend,
       vaultWorkingDirectory: deps.vaultWorkingDirectory,
       ...(deps.warmExecution ? { warmExecution: deps.warmExecution } : {}),

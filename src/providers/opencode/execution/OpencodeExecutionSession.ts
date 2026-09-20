@@ -271,13 +271,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       let kernel = this.kernel;
       let native = this.nativeInfo;
       if (
-        this.#resolveDatabasePath() === ':memory:'
-        && this.nativeSessionId !== null
-        && (!kernel || !native || this.kernelConfigurationKey !== kernelConfigurationKey)
-      ) {
-        throw new Error('This non-persistent OpenCode session cannot be restored. Start a new side chat.');
-      }
-      if (
         kernel
         && native
         && this.kernelConfigurationKey !== kernelConfigurationKey
@@ -342,7 +335,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
         prompt: buildPromptBlocks(
           request,
           !this.nativeConversationContextEstablished,
-          this.#resolveDatabasePath() === ':memory:',
         ),
         sessionId: native.sessionId,
       });
@@ -866,7 +858,6 @@ function buildKernelConfigurationKey(
 function buildPromptBlocks(
   request: ProviderExecutionRequest,
   bootstrapHistory: boolean,
-  preserveCapturedContext: boolean,
 ) {
   const text = request.input
     .filter((block): block is Extract<typeof block, { type: 'text' }> => (
@@ -888,7 +879,7 @@ function buildPromptBlocks(
     text,
   }, bootstrapHistory
     ? [...(request.conversationHistory ?? [])] as ChatMessage[]
-    : [], preserveCapturedContext);
+    : []);
 }
 
 function formatError(error: unknown): string {

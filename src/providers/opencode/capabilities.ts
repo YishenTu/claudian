@@ -6,6 +6,7 @@ export const OPENCODE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Ob
   supportsEphemeralSessions: true,
   supportsRewind: false,
   supportsFork: true,
+  supportsEphemeralFork: false,
   forkMode: 'full-session',
   supportsProviderCommands: true,
   supportsImageAttachments: true,
