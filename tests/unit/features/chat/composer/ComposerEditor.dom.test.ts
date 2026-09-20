@@ -387,3 +387,22 @@ it('retains Canvas selection while typing into the composer', () => {
     jest.useRealTimers();
   }
 });
+
+it('upgrades to the editor when a focusin reaches the composer host', () => {
+  const parent = document.body.createDiv();
+  const outside = document.body.createDiv();
+  outside.tabIndex = 0;
+  const editor = createEditor(parent);
+  try {
+    // Chromium skips an element's `focusin` when its `focus` handler moves focus
+    // elsewhere, so the lazy upgrade hangs off `focusin` instead; otherwise the
+    // ancestors tracking the note-to-composer handoff never observe it.
+    editor.element.dispatchEvent(new FocusEvent('focusin', { bubbles: true, relatedTarget: outside }));
+
+    expect(document.activeElement).toBe(parent.querySelector('.cm-content'));
+  } finally {
+    editor.destroy();
+    parent.remove();
+    outside.remove();
+  }
+});
