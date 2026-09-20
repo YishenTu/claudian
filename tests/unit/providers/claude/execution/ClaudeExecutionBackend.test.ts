@@ -1871,6 +1871,39 @@ describe('ClaudeExecutionBackend', () => {
     }));
   });
 
+  it.each([
+    ['persistent', 'enabled'],
+    ['ephemeral', 'disabled-if-supported'],
+  ] as const)('cancels %s background output through the native query', async (lifecycle, nativePersistence) => {
+    const query = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Background started' }] } },
+      deferredMessage(),
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Cancelled late output' }] } },
+      { type: 'result', subtype: 'success' },
+    ]]);
+    jest.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSdk'),
+      'loadClaudeAgentQuery',
+    ).mockResolvedValueOnce((() => query) as never);
+    const { services } = createServices();
+    const session = new ClaudeExecutionBackend(createHost(), services)
+      .createSession({ ...createConfig(), lifecycle, nativePersistence });
+    const events: ProviderSessionEvent[] = [];
+    session.onEvent(event => events.push(event));
+    await collectEvents(session.execute(createRequest()).events);
+    await waitFor(() => events.some(event => event.type === 'background_turn_started'));
+    session.cancel();
+    expect(query.interrupt).toHaveBeenCalled();
+    expect(session.getSnapshot().status).toBe('cancelling');
+    releaseDeferredMessage();
+    await query.finished;
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Cancelled late output' }));
+    expect(events.filter(event => event.type === 'background_turn_completed')).toHaveLength(1);
+    await session.dispose();
+  });
+
   it('cancels one active run, fences late output, and rejects execution after disposal', async () => {
     const query = createScriptedPersistentQuery([[
       { type: 'system', subtype: 'init', session_id: 'session-1' },

@@ -63,7 +63,8 @@ export interface SideChatSessionDeps {
   readonly interactionPort: ProviderInteractionPort;
   readonly warmExecution?: SideChatWarmExecution;
   readonly onRequestedEvent?: (event: ProviderExecutionEvent) => void | Promise<void>;
-  readonly onSessionEvent?: (event: ProviderSessionEvent) => void | Promise<void>;
+  readonly onSessionEvent?: (event: ProviderSessionEvent, isCurrent: () => boolean) => void | Promise<void>;
+  readonly onBackgroundWorkChanged?: () => void;
   readonly onInvalidated?: (reason: ProviderExecutionInvalidationReason) => void;
   readonly onError?: (error: unknown) => void;
 }
@@ -94,6 +95,7 @@ export class SideChatSession {
   #active: ActiveSideExecution | null = null;
   #executionController: AbortController | null = null;
   #pendingWorkCount = 0;
+  #sessionEventWork: Promise<void> = Promise.resolve();
   #preparing = false;
   #disposed = false;
   #invalidated = false;
@@ -120,6 +122,10 @@ export class SideChatSession {
 
   get isDisposed(): boolean {
     return this.#disposed;
+  }
+
+  get hasBackgroundWork(): boolean {
+    return this.#backgroundTurnIds.size > 0 || this.#pendingWorkCount > 0;
   }
 
   get hasPendingInteractions(): boolean {
@@ -194,7 +200,10 @@ export class SideChatSession {
   cancel(): void {
     this.#executionController?.abort();
     const active = this.#active;
-    if (!active) return;
+    if (!active) {
+      if (this.#backgroundTurnIds.size > 0) this.#supervisor.current?.session.cancel();
+      return;
+    }
     active.terminationOverride = 'cancelled';
     active.controller.abort();
     this.#dismissInteractionsForTurn(active.run.turnId, 'cancelled');
@@ -212,6 +221,7 @@ export class SideChatSession {
       && this.#active === null
       && this.#pendingInteractions.size === 0
       && this.#pendingWorkCount === 0
+      && this.#backgroundTurnIds.size === 0
       // A child without a verified native identity cannot be resumed safely.
       && this.#providerSessionId !== undefined,
     );
@@ -265,6 +275,7 @@ export class SideChatSession {
           `Side chat backend provider mismatch: expected ${this.deps.providerId}, got ${backend.providerId}`,
         );
       }
+      this.#lastSnapshotRevision = -1;
       const supervised = this.#supervisor.acquire(
         backend,
         {
@@ -383,15 +394,25 @@ export class SideChatSession {
       this.#backgroundTurnIds.add(event.scope.turnId);
     } else if (event.type === 'background_turn_completed') {
       this.#backgroundTurnIds.delete(event.scope.turnId);
+      this.#dismissInteractionsForTurn(event.scope.turnId, 'native-rejected');
+    } else if (event.type === 'session_error') {
+      this.#backgroundTurnIds.clear();
+      this.#dismissAllInteractions('native-rejected');
     }
     if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
       this.#applySnapshot(event.snapshot);
     }
-    this.#trackWork(Promise.resolve(this.deps.onSessionEvent?.(event)));
+    const isCurrent = () => !this.#disposed && this.#supervisor.current === current;
+    const work = this.#sessionEventWork.then(async () => {
+      if (isCurrent()) await this.deps.onSessionEvent?.(event, isCurrent);
+    });
+    this.#sessionEventWork = work.catch(() => undefined);
+    this.#trackWork(work);
   }
 
   #handleInvalidation(reason: ProviderExecutionInvalidationReason): void {
     this.#invalidated = this.deps.ephemeral;
+    this.#backgroundTurnIds.clear();
     const active = this.#active;
     if (active) {
       active.terminationOverride = 'invalidated';
@@ -401,6 +422,7 @@ export class SideChatSession {
     this.#dismissAllInteractions('provider-transition');
     this.#releaseWarmSlot();
     this.deps.onInvalidated?.(reason);
+    this.deps.onBackgroundWorkChanged?.();
   }
 
   #captureSnapshot(): void {
@@ -432,15 +454,18 @@ export class SideChatSession {
 
   #trackWork(work: Promise<unknown>): void {
     this.#pendingWorkCount += 1;
+    this.deps.onBackgroundWorkChanged?.();
     void work
       .catch(error => this.deps.onError?.(toError(error, 'Side chat session event failed')))
       .finally(() => {
         this.#pendingWorkCount = Math.max(0, this.#pendingWorkCount - 1);
+        this.deps.onBackgroundWorkChanged?.();
         if (this.#pendingWorkCount === 0) this.#notifyMayCool();
       });
   }
 
   async #releaseSession(): Promise<void> {
+    this.#backgroundTurnIds.clear();
     try {
       await this.#supervisor.release();
     } finally {

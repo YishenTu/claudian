@@ -28,6 +28,7 @@ export class FakeSideSession implements ProviderExecutionSession {
   private providerState: Record<string, unknown> | undefined;
   private readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
   private sessionSequence = 0;
+  private readonly backgrounds = new Map<string, number>();
 
   constructor(readonly config: ProviderSessionConfig) {}
 
@@ -60,6 +61,18 @@ export class FakeSideSession implements ProviderExecutionSession {
     for (const listener of this.listeners) listener(scoped);
   }
 
+  emitBackgroundEvent(event: WithoutScope<ProviderSessionEvent>, turnId = 'background-1'): void {
+    const sequence = (this.backgrounds.get(turnId) ?? 0) + 1;
+    this.backgrounds.set(turnId, sequence);
+    if (event.type === 'background_turn_completed') this.backgrounds.delete(turnId);
+    const scoped = { ...event, scope: { kind: 'background', turnId, sequence, sessionInstanceId: this.sessionInstanceId } } as ProviderSessionEvent;
+    for (const listener of this.listeners) listener(scoped);
+  }
+
+  emitOutput(event: WithoutScope<ProviderExecutionEvent>): void {
+    this.active?.emit(event);
+  }
+
   emitText(text: string): void {
     this.active?.emit({ text, type: 'text_delta' });
   }
@@ -78,6 +91,9 @@ export class FakeSideSession implements ProviderExecutionSession {
 
   cancel(): void {
     this.cancelCalls += 1;
+    for (const turnId of [...this.backgrounds.keys()]) {
+      this.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'provider-ended' }, turnId);
+    }
     this.status = 'idle';
     this.active?.finish({ reason: 'Cancelled', type: 'cancelled' });
     this.active = null;

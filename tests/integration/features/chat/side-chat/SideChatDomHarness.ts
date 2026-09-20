@@ -47,6 +47,8 @@ export async function releaseSideChatHarnesses(): Promise<void> {
 }
 
 export function createHarness(options: {
+  subagentAdapter?: ProviderRegistration['subagentAdapter'];
+  taskResultInterpreter?: ProviderRegistration['taskResultInterpreter'];
   supportsFork?: boolean;
   checkpoint?: string | null;
   settings?: Record<string, unknown>;
@@ -61,6 +63,8 @@ export function createHarness(options: {
     capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, forkMode: options.forkMode },
     chatUIConfig: ProviderRegistry.getChatUIConfig('claude'),
     createExecutionBackend: () => backend,
+    subagentAdapter: options.subagentAdapter,
+    taskResultInterpreter: options.taskResultInterpreter,
     historyService: {
       buildForkProviderState: options.buildForkProviderState ?? (() => forkState),
       hydrateConversationHistory: async () => undefined,

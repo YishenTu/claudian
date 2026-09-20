@@ -105,6 +105,24 @@ describe('SideChatSession', () => {
     await harness.session.dispose();
   });
 
+  it('retains newer child state when snapshot revisions restart after cooling', async () => {
+    const harness = createSession();
+    for (const [index, value] of ['first', 'second'].entries()) {
+      const running = harness.session.execute(turn('Continue'));
+      await waitFor(() => harness.backend.sessions.length === index + 1);
+      harness.backend.latest.establishChild('child-session', { childKey: value });
+      harness.backend.latest.complete();
+      await running;
+      await harness.session.cool();
+    }
+    const resumed = harness.session.execute(turn('Continue'));
+    await waitFor(() => harness.backend.sessions.length === 3);
+    expect(harness.backend.latest.config.resumeSeed?.providerState).toMatchObject({ childKey: 'second' });
+    harness.backend.latest.complete();
+    await resumed;
+    await harness.session.dispose();
+  });
+
   it('protects an executing owner from cooling and reports capacity errors without losing the turn', async () => {
     const pool = new WarmExecutionPool(() => 5);
     const harness = createSession({ warmExecution: { ownerId: 'side-1', pool } });

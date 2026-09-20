@@ -1,20 +1,23 @@
 import type { Component } from 'obsidian';
 
 import type {
+  ProviderBackgroundOutputEvent,
   ProviderExecutionBackend,
   ProviderExecutionContext,
   ProviderExecutionLifecycleRegistry,
   ProviderInteractionPort,
+  ProviderSessionEvent,
 } from '../../../core/execution';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '../../../core/providers/types';
-import type { ChatMessage, ImageAttachment } from '../../../core/types';
+import type { ChatMessage, ImageAttachment, StreamChunk } from '../../../core/types';
 import type { FeatureHost } from '../../FeatureHost';
 import {
   providerOutputEventToStreamChunk,
   StreamController,
 } from '../controllers/StreamController';
 import type { WarmExecutionPool } from '../execution/WarmExecutionPool';
+import { renderAutoTriggeredTurn } from '../rendering/BackgroundTurnRenderer';
 import { InlineInteractionPrompts } from '../rendering/InlineInteractionPrompts';
 import { MessageRenderer } from '../rendering/MessageRenderer';
 import { SubagentManager } from '../services/SubagentManager';
@@ -67,6 +70,8 @@ export class SideChatRuntime {
   #lastError: string | null = null;
   #disposed = false;
   #draining = false;
+  #requestedSettlement: Promise<void> | null = null;
+  readonly #backgroundTurns = new Map<string, ProviderBackgroundOutputEvent[]>();
   readonly #queuedSubmissions: SideChatSubmission[] = [];
   #title: string | null = null;
   #titleService: TitleGenerationService | null = null;
@@ -108,12 +113,20 @@ export class SideChatRuntime {
       onError: error => deps.onError?.(error),
       onInvalidated: () => {
         this.#queuedSubmissions.length = 0;
+        this.#backgroundTurns.clear();
         this.#lastError = ephemeral
           ? 'This side chat has ended. Discard it and start a new side chat.'
           : 'The provider session was replaced. Send again to resume the side chat.';
         this.#refreshStatus();
       },
       onRequestedEvent: event => this.#handleExecutionEvent(event),
+      onSessionEvent: (event, isCurrent) => this.#handleSessionEvent(event, isCurrent),
+      onBackgroundWorkChanged: () => {
+        this.#refreshStatus();
+        if (!this.#disposed && !this.isWorking && this.#queuedSubmissions.length > 0) {
+          void this.submit(this.#queuedSubmissions.shift()!).catch(error => deps.onError?.(error));
+        }
+      },
       providerId: deps.source.providerId,
       ephemeral,
       resolveBackend: deps.resolveBackend,
@@ -147,7 +160,7 @@ export class SideChatRuntime {
   }
 
   get isWorking(): boolean {
-    return this.#draining;
+    return this.#draining || Boolean(this.#session?.hasBackgroundWork);
   }
 
   get queuedCount(): number {
@@ -193,7 +206,7 @@ export class SideChatRuntime {
       let next: SideChatSubmission | undefined = submission;
       while (next && !this.#disposed) {
         await this.#submitTurn(next);
-        next = this.#queuedSubmissions.shift();
+        next = this.#session.hasBackgroundWork ? undefined : this.#queuedSubmissions.shift();
       }
     } finally {
       this.#draining = false;
@@ -202,6 +215,17 @@ export class SideChatRuntime {
   }
 
   async #submitTurn(submission: SideChatSubmission): Promise<void> {
+    let settle!: () => void;
+    this.#requestedSettlement = new Promise(resolve => { settle = resolve; });
+    try {
+      await this.#runRequestedTurn(submission);
+    } finally {
+      this.#requestedSettlement = null;
+      settle();
+    }
+  }
+
+  async #runRequestedTurn(submission: SideChatSubmission): Promise<void> {
     if (this.#disposed) return;
     const content = submission.content.trim();
     const images = [...(submission.images ?? [])];
@@ -318,8 +342,7 @@ export class SideChatRuntime {
   cancel(): void {
     this.#queuedSubmissions.length = 0;
     this.#refreshStatus();
-    if (!this.state.isStreaming) return;
-    this.state.cancelRequested = true;
+    if (this.state.isStreaming) this.state.cancelRequested = true;
     this.#session.cancel();
   }
 
@@ -330,6 +353,7 @@ export class SideChatRuntime {
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#backgroundTurns.clear();
     this.#queuedSubmissions.length = 0;
     this.#titleService?.cancel();
     this.#titleService = null;
@@ -361,6 +385,51 @@ export class SideChatRuntime {
       // Title generation is best effort; retain the initial-prompt fallback.
     } finally {
       this.#titleService = null;
+    }
+  }
+
+  async #handleSessionEvent(event: ProviderSessionEvent, isCurrent: () => boolean): Promise<void> {
+    if (this.#disposed || !isCurrent()) return;
+    await this.#requestedSettlement;
+    if (this.#disposed || !isCurrent()) return;
+    if (event.type === 'permission_mode_changed') {
+      this.#settings.permissionMode = event.permissionMode;
+      this.#refreshStatus();
+      return;
+    }
+    if (event.type === 'async_subagent_completed') {
+      const providerSessionId = event.providerSessionId ?? this.#session.providerSessionId;
+      if (providerSessionId) await this.#stream.handleAsyncSubagentCompletion({
+        type: 'async_subagent_completion', providerSessionId,
+        taskId: event.subagentId, status: event.status,
+        ...(event.result !== undefined ? { result: event.result } : {}),
+      });
+      return;
+    }
+    if (event.type === 'session_error') {
+      this.#queuedSubmissions.length = 0;
+      this.#lastError = event.message;
+      this.#backgroundTurns.clear();
+      this.#refreshStatus();
+      return;
+    }
+    if (event.scope.kind !== 'background') return;
+    const turnId = event.scope.turnId;
+    if (event.type === 'background_turn_started') {
+      this.#backgroundTurns.set(turnId, []);
+    } else if (event.type === 'background_turn_completed') {
+      const events = this.#backgroundTurns.get(turnId);
+      this.#backgroundTurns.delete(turnId);
+      if (!events) return;
+      await renderAutoTriggeredTurn({
+        state: this.state, renderer: this.renderer, stream: this.#stream, subagents: this.#subagents,
+        isConnected: () => this.deps.messagesEl.isConnected, createMessageId: createSideMessageId,
+      }, {
+        chunks: events.map(providerOutputEventToStreamChunk).filter((chunk): chunk is StreamChunk => chunk !== null),
+        metadata: { assistantMessageId: event.nativeAssistantId },
+      }, () => !this.#disposed && isCurrent());
+    } else {
+      this.#backgroundTurns.get(turnId)?.push(event as ProviderBackgroundOutputEvent);
     }
   }
 
