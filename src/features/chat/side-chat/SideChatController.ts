@@ -322,6 +322,7 @@ export class SideChatController {
             settings: this.deps.plugin.settings,
             vaultPath,
           },
+          { ephemeral: ProviderRegistry.getCapabilities(source.providerId).supportsEphemeralSessions },
         ),
       component: this.deps.component,
       getPromptParentEl: () => panel.promptsEl,
@@ -446,6 +447,8 @@ function describeUnavailable(reason: ForkSourceUnavailableReason): string {
     case 'no-messages':
     case 'no-checkpoint':
       return t('chat.sideChat.unavailableNoCheckpoint');
+    case 'not-latest-reply':
+      return 'This provider can fork only from the latest reply.';
     case 'no-session':
       return t('chat.sideChat.unavailableNoSession');
   }

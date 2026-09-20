@@ -416,3 +416,17 @@ it.each(['discard', 'cancel', 'replace main'] as const)(
     ]);
   },
 );
+
+it('prepares an ephemeral child before handing captured context to execution', async () => {
+  const harness = createHarness({
+    buildForkProviderState: (_sessionId, _checkpoint, _state, _vault, _context, options) => {
+      if (!options?.ephemeral) throw new Error('A temporary child must not persist a native fork');
+      return {};
+    },
+  });
+  const { started } = await startSideChat(harness);
+  expect(harness.backend.latest.config.nativePersistence).toBe('disabled-if-supported');
+  expect(harness.backend.latest.requests[0].conversationHistory).toEqual(harness.tab.state.messages);
+  harness.backend.latest.complete();
+  expect(await started).toBe(true);
+});

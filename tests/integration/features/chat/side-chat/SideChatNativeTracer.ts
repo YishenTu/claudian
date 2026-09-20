@@ -62,6 +62,8 @@ export async function traceSideChild(
       captured.resumeAt,
       captured.sourceProviderState,
       env.root,
+      undefined,
+      { ephemeral: supportsEphemeralSessions },
     );
   const registry = options.lifecycleRegistry
     ?? (env.host as unknown as { executionLifecycleRegistry: ProviderExecutionLifecycleRegistry })

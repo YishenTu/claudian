@@ -1,6 +1,7 @@
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
   ProviderConversationHistoryService,
+  ProviderForkOptions,
   ProviderHistoryPathContext,
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
@@ -136,7 +137,10 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     sourceProviderState?: Record<string, unknown>,
     vaultPath?: string | null,
     pathContext?: ProviderHistoryPathContext,
+    options?: ProviderForkOptions,
   ): Promise<Record<string, unknown>> {
+    // Native forks stay in the source database. Memory children bootstrap once from captured context.
+    if (options?.ephemeral) return {};
     const cwd = vaultPath ?? pathContext?.vaultPath;
     if (!cwd) throw new Error('OpenCode fork requires a workspace directory.');
     const source = getOpencodeState(sourceProviderState);

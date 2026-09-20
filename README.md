@@ -27,7 +27,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **`@mention`** — Type `@` to reference vault files, folders, and Collab member changes. Type `#` to reference Collab tickets.
 
-**Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged. OpenCode is temporarily unsupported.
+**Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
 
 **Instruction Mode (`/instruction`)** — Refined custom instructions added from the chat input.
 

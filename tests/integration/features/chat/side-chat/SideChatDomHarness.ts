@@ -2,7 +2,7 @@ import { waitFor } from '@testing-library/dom';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ProviderRegistration } from '@/core/providers/types';
+import type { ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
 import { WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
@@ -46,7 +46,7 @@ export async function releaseSideChatHarnesses(): Promise<void> {
   jest.clearAllMocks();
 }
 
-export function createHarness(options: { supportsFork?: boolean; checkpoint?: string | null; settings?: Record<string, unknown> } = {}) {
+export function createHarness(options: { supportsFork?: boolean; checkpoint?: string | null; settings?: Record<string, unknown>; buildForkProviderState?: ProviderConversationHistoryService['buildForkProviderState'] } = {}) {
   const backend = new FakeSideBackend();
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const forkState = { forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } };
@@ -55,7 +55,7 @@ export function createHarness(options: { supportsFork?: boolean; checkpoint?: st
     chatUIConfig: ProviderRegistry.getChatUIConfig('claude'),
     createExecutionBackend: () => backend,
     historyService: {
-      buildForkProviderState: () => forkState,
+      buildForkProviderState: options.buildForkProviderState ?? (() => forkState),
       hydrateConversationHistory: async () => undefined,
       isPendingForkConversation: () => false,
       resolveSessionIdForConversation: () => 'main-session',

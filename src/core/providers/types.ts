@@ -418,6 +418,11 @@ export interface ProviderWorkspaceRegistration<
   initialize(context: ProviderWorkspaceInitContext): Promise<TServices>;
 }
 
+export interface ProviderForkOptions {
+  /** Prepare a child without creating durable native history. */
+  ephemeral?: boolean;
+}
+
 /**
  * Mutation callbacks receive a detached repository-owned draft. Only the repository
  * may publish its history/session fields after validating the captured binding.
@@ -470,13 +475,14 @@ export interface ProviderConversationHistoryService {
   ): Promise<void>;
   resolveSessionIdForConversation(conversation: Conversation | null): string | null;
   isPendingForkConversation(conversation: Conversation): boolean;
-  /** Builds opaque provider state for a forked conversation. */
+  /** Builds opaque child state; ephemeral providers may use initial captured context. */
   buildForkProviderState(
     sourceSessionId: string,
     resumeAt: string,
     sourceProviderState?: Record<string, unknown>,
     vaultPath?: string | null,
     pathContext?: ProviderHistoryPathContext,
+    options?: ProviderForkOptions,
   ): Record<string, unknown> | Promise<Record<string, unknown>>;
   /** Adds provider-owned persisted metadata to Conversation.providerState before session save. */
   buildPersistedProviderState?(conversation: Conversation): Record<string, unknown> | undefined;
