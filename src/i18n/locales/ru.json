@@ -680,7 +680,7 @@
     "customModels": {
       "name": "Пользовательские модели",
       "desc": "Добавьте дополнительные ID моделей Claude в список выбора, по одному на строку. Переопределения модели из окружения по-прежнему заменяют список.",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Включить расширение Chrome",

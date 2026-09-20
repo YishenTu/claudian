@@ -680,7 +680,7 @@
     "customModels": {
       "name": "カスタムモデル",
       "desc": "追加の Claude モデル ID を1行に1つずつピッカーに追加します。環境変数によるモデル上書きは引き続きピッカーを置き換えます。",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Chrome拡張機能を有効化",

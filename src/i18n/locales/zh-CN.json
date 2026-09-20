@@ -680,7 +680,7 @@
     "customModels": {
       "name": "自定义模型",
       "desc": "向选择器追加额外的 Claude 模型 ID，每行一个。环境中的模型覆盖仍会替换选择器。",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "启用 Chrome 扩展",

@@ -680,7 +680,7 @@
     "customModels": {
       "name": "自訂模型",
       "desc": "向選擇器追加額外的 Claude 模型 ID，每行一個。環境中的模型覆寫仍會取代選擇器。",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "啟用 Chrome 擴充功能",

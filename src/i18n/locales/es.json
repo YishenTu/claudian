@@ -680,7 +680,7 @@
     "customModels": {
       "name": "Modelos personalizados",
       "desc": "Añade IDs de modelos de Claude al selector, uno por línea. Las sobrescrituras de modelo desde el entorno siguen reemplazando el selector.",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Habilitar extensión de Chrome",

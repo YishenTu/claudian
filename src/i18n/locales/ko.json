@@ -680,7 +680,7 @@
     "customModels": {
       "name": "사용자 지정 모델",
       "desc": "추가 Claude 모델 ID를 한 줄에 하나씩 선택기에 추가합니다. 환경 모델 재정의는 계속 선택기를 대체합니다.",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Chrome 확장 프로그램 활성화",

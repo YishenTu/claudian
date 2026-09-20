@@ -680,7 +680,7 @@
     "customModels": {
       "name": "Custom models",
       "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
-      "placeholder": "claude-opus-4-6\nclaude-opus-4-5-20251101"
+      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Enable Chrome extension",
