@@ -36,7 +36,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
   private discovery: ProviderCommandDiscoverySource<ProviderCommandEntry> | null;
   private discoveryUnsubscribe: (() => void) | null = null;
   private hiddenCommands: ReadonlySet<string>;
-  private readonly includeBuiltIns: boolean;
+  private includeBuiltIns: boolean;
   private readonly listeners = new Set<() => void>();
   private readonly onSelect: ((command: SlashCommand) => void) | undefined;
   private providerConfig: ProviderCommandDropdownConfig | null;
@@ -156,6 +156,13 @@ export class SlashCommandSource implements ComposerDropdownSource {
       text: item.replacement,
       onApplied: () => this.onSelect?.(value.command),
     };
+  }
+
+  /** Destinations without Claudian built-in commands hide them entirely. */
+  setBuiltInsEnabled(enabled: boolean): void {
+    if (this.includeBuiltIns === enabled) return;
+    this.includeBuiltIns = enabled;
+    this.notify();
   }
 
   setHiddenCommands(commands: ReadonlySet<string>): void {

@@ -18,6 +18,7 @@ import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordin
 import type { LinkedContentController } from '../linked-content';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import type { SubagentManager } from '../services/SubagentManager';
+import type { SideChatController } from '../side-chat/SideChatController';
 import type { ChatState } from '../state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '../state/types';
 import type { ComposerContextTray } from '../ui/ComposerContextTray';
@@ -96,6 +97,8 @@ export interface TabControllers {
   readonly streamController: StreamController;
   readonly inputController: InputController;
   readonly navigationController: NavigationController;
+  /** Owner of this tab's single temporary side chat and composer destination. */
+  readonly sideChatController: SideChatController;
 }
 
 /**

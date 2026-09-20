@@ -13,7 +13,8 @@ export type BuiltInCommandAction =
   | 'resume'
   | 'fork'
   | 'fast'
-  | 'instruction';
+  | 'instruction'
+  | 'side';
 type BuiltInCommandCapability =
   | 'supportsNativeHistory'
   | 'supportsFork'
@@ -68,6 +69,14 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     description: 'Toggle fast mode',
     action: 'fast',
     supportedProviderIds: ['codex'],
+  },
+  {
+    name: 'side',
+    aliases: ['btw'],
+    description: 'Ask a temporary side question from the latest reply',
+    action: 'side',
+    argumentHint: 'prompt',
+    requiredCapability: 'supportsFork',
   },
   {
     name: 'instruction',
@@ -161,6 +170,52 @@ export function detectBuiltInCommand(
   if (command.exact && args.length > 0) return null;
 
   return { command, args };
+}
+
+const SIDE_CHAT_COMMAND_PATTERN = /^\/(side|btw)(?:[ \t]+([\s\S]*))?$/i;
+
+export interface SideChatCommandMatch {
+  /** Alias exactly as typed, lowercased. */
+  readonly alias: string;
+  /** Trimmed argument; empty when the alias was submitted on its own. */
+  readonly argument: string;
+}
+
+/**
+ * Recognizes a complete leading side-chat command token, including multiline
+ * arguments that the single-line built-in matcher deliberately rejects.
+ */
+export function detectSideChatCommand(
+  input: string,
+  context?: BuiltInCommandSupportContext,
+): SideChatCommandMatch | null {
+  const match = SIDE_CHAT_COMMAND_PATTERN.exec(input.trim());
+  if (!match) return null;
+  const command = commandMap.get(match[1].toLowerCase());
+  if (!command || command.action !== 'side') return null;
+  if (context && !isBuiltInCommandProviderSupported(command, context)) return null;
+  return { alias: match[1].toLowerCase(), argument: (match[2] ?? '').trim() };
+}
+
+/**
+ * Leading built-in command token that Claudian owns for the main chat only,
+ * regardless of provider capability. Side-chat aliases are excluded because
+ * they are the side feature's own controls.
+ */
+export function detectMainOnlyBuiltInCommand(input: string): BuiltInCommand | null {
+  const match = /^\/([a-zA-Z0-9_-]+)(?:[\s]([\s\S]*))?$/.exec(input.trim());
+  if (!match) return null;
+  const command = commandMap.get(match[1].toLowerCase());
+  if (!command || command.action === 'side') return null;
+  return command;
+}
+
+/** Whether the current provider exposes the side-chat command at all. */
+export function isSideChatCommandSupported(
+  context?: BuiltInCommandSupportContext,
+): boolean {
+  const command = commandMap.get('side');
+  return Boolean(command && isBuiltInCommandSupported(command, context));
 }
 
 /**

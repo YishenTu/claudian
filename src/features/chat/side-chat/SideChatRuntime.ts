@@ -1,0 +1,453 @@
+import type { Component } from 'obsidian';
+
+import type {
+  ProviderExecutionBackend,
+  ProviderExecutionContext,
+  ProviderExecutionLifecycleRegistry,
+  ProviderInteractionPort,
+} from '../../../core/execution';
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
+import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '../../../core/providers/types';
+import type { ChatMessage, ImageAttachment } from '../../../core/types';
+import type { FeatureHost } from '../../FeatureHost';
+import {
+  providerOutputEventToStreamChunk,
+  StreamController,
+} from '../controllers/StreamController';
+import type { WarmExecutionPool } from '../execution/WarmExecutionPool';
+import { InlineInteractionPrompts } from '../rendering/InlineInteractionPrompts';
+import { MessageRenderer } from '../rendering/MessageRenderer';
+import { SubagentManager } from '../services/SubagentManager';
+import { ChatState } from '../state/ChatState';
+import { SideChatSession } from './SideChatSession';
+import type {
+  SideChatSettingsProjection,
+  SideChatSource,
+  SideChatStatus,
+} from './SideChatTypes';
+
+export interface SideChatRuntimeDeps {
+  readonly plugin: FeatureHost;
+  readonly component: Component;
+  readonly source: SideChatSource;
+  readonly settings: SideChatSettingsProjection;
+  readonly messagesEl: HTMLElement;
+  /** Host for this side chat's own inline approval and question prompts. */
+  readonly getPromptParentEl: () => HTMLElement | null;
+  readonly lifecycleRegistry: ProviderExecutionLifecycleRegistry;
+  readonly resolveBackend: (providerId: ProviderId) => ProviderExecutionBackend;
+  readonly buildChildResumeState: () => Promise<Readonly<Record<string, unknown>>>;
+  readonly vaultWorkingDirectory: string;
+  readonly warmExecution?: { readonly ownerId: string; readonly pool: WarmExecutionPool };
+  readonly onStatusChanged: () => void;
+  readonly onError?: (error: unknown) => void;
+}
+
+export interface SideChatSubmission {
+  readonly content: string;
+  readonly images?: readonly ImageAttachment[];
+  readonly context?: ProviderExecutionContext;
+}
+
+/**
+ * One temporary side conversation: its own messages, rendering, settings
+ * projection and execution owner. Nothing here writes a Claudian conversation,
+ * accepted-input record, or tab shell.
+ */
+export class SideChatRuntime {
+  readonly state: ChatState;
+  readonly renderer: MessageRenderer;
+  readonly #stream: StreamController;
+  readonly #subagents: SubagentManager;
+  readonly #session: SideChatSession;
+  readonly #prompts: InlineInteractionPrompts;
+  readonly #settings: SideChatSettingsProjection;
+  #activeAssistant: ChatMessage | null = null;
+  #status: SideChatStatus = 'preparing';
+  #lastError: string | null = null;
+  #disposed = false;
+  #draining = false;
+  readonly #queuedSubmissions: SideChatSubmission[] = [];
+  #title: string | null = null;
+  #titleService: TitleGenerationService | null = null;
+
+  constructor(private readonly deps: SideChatRuntimeDeps) {
+    this.#settings = { ...deps.settings };
+    this.state = new ChatState({
+      onAttentionChanged: () => this.#refreshStatus(),
+      onStreamingStateChanged: () => this.#refreshStatus(),
+    });
+    this.renderer = new MessageRenderer(
+      deps.plugin,
+      deps.component,
+      deps.messagesEl,
+      undefined,
+      undefined,
+      () => this.capabilities,
+    );
+    this.#subagents = new SubagentManager(() => undefined);
+    this.#prompts = new InlineInteractionPrompts({
+      getPromptParentEl: () => deps.getPromptParentEl(),
+      onBeforeShow: () => this.#stream.hideThinkingIndicator(),
+    });
+    this.#stream = new StreamController({
+      getMessagesEl: () => deps.messagesEl,
+      getProviderId: () => deps.source.providerId,
+      getProviderSessionId: () => this.#session.providerSessionId ?? null,
+      plugin: deps.plugin,
+      renderer: this.renderer,
+      state: this.state,
+      subagentManager: this.#subagents,
+      updateQueueIndicator: () => undefined,
+    });
+    this.#session = new SideChatSession({
+      buildChildResumeState: deps.buildChildResumeState,
+      interactionPort: this.#createInteractionPort(),
+      lifecycleRegistry: deps.lifecycleRegistry,
+      onError: error => deps.onError?.(error),
+      onInvalidated: () => {
+        this.#queuedSubmissions.length = 0;
+        // The child cannot outlive a provider transition; recovery needs a new turn.
+        this.#lastError = 'The provider session was replaced. Send again to rebuild the side chat.';
+        this.#refreshStatus();
+      },
+      onRequestedEvent: event => this.#handleExecutionEvent(event),
+      providerId: deps.source.providerId,
+      resolveBackend: deps.resolveBackend,
+      vaultWorkingDirectory: deps.vaultWorkingDirectory,
+      ...(deps.warmExecution ? { warmExecution: deps.warmExecution } : {}),
+    });
+  }
+
+  get source(): SideChatSource {
+    return this.deps.source;
+  }
+
+  get providerId(): ProviderId {
+    return this.deps.source.providerId;
+  }
+
+  get capabilities(): ProviderCapabilities {
+    return ProviderRegistry.getCapabilities(this.deps.source.providerId);
+  }
+
+  get status(): SideChatStatus {
+    return this.#status;
+  }
+
+  get title(): string | null {
+    return this.#title;
+  }
+
+  get lastError(): string | null {
+    return this.#lastError;
+  }
+
+  get isWorking(): boolean {
+    return this.#draining;
+  }
+
+  get queuedCount(): number {
+    return this.#queuedSubmissions.length;
+  }
+
+  get settings(): Readonly<SideChatSettingsProjection> {
+    return this.#settings;
+  }
+
+  /** Latest completed assistant answer, used by Copy to main. */
+  get latestAssistantAnswer(): string | null {
+    for (let index = this.state.messages.length - 1; index >= 0; index -= 1) {
+      const message = this.state.messages[index];
+      if (message.role === 'assistant' && message.content.trim()) {
+        return message.content;
+      }
+    }
+    return null;
+  }
+
+  updateSettings(patch: SideChatSettingsProjection): void {
+    Object.assign(this.#settings, patch);
+  }
+
+  setTabActive(active: boolean): void {
+    this.#stream.setTabActive(active);
+  }
+
+  /** Accept a detached snapshot without changing the shared composer's destination. */
+  enqueue(submission: SideChatSubmission): boolean {
+    if (this.#disposed || !this.isWorking || !submission.content.trim()) return false;
+    // Submission data contains only text, image metadata and plain selection context.
+    this.#queuedSubmissions.push(JSON.parse(JSON.stringify(submission)) as SideChatSubmission);
+    this.#refreshStatus();
+    return true;
+  }
+
+  async submit(submission: SideChatSubmission): Promise<void> {
+    if (this.#disposed || this.isWorking) return;
+    this.#draining = true;
+    try {
+      let next: SideChatSubmission | undefined = submission;
+      while (next && !this.#disposed) {
+        await this.#submitTurn(next);
+        next = this.#queuedSubmissions.shift();
+      }
+    } finally {
+      this.#draining = false;
+      this.#refreshStatus();
+    }
+  }
+
+  async #submitTurn(submission: SideChatSubmission): Promise<void> {
+    if (this.#disposed) return;
+    const content = submission.content.trim();
+    const images = [...(submission.images ?? [])];
+    if (!content && images.length === 0) return;
+    if (this.state.isStreaming) return;
+
+    this.#lastError = null;
+    const userMessage: ChatMessage = {
+      content,
+      displayContent: content,
+      id: createSideMessageId(),
+      images: images.length > 0 ? images : undefined,
+      role: 'user',
+      timestamp: Date.now(),
+    };
+    this.state.addMessage(userMessage);
+    this.renderer.addMessage(userMessage);
+    if (this.state.messages.length === 1 && this.deps.plugin.settings.enableAutoTitleGeneration) {
+      void this.#generateTitle(userMessage);
+    }
+
+    const assistantMessage: ChatMessage = {
+      content: '',
+      contentBlocks: [],
+      id: createSideMessageId(),
+      role: 'assistant',
+      timestamp: Date.now(),
+      toolCalls: [],
+    };
+    this.state.addMessage(assistantMessage);
+    this.#activeAssistant = assistantMessage;
+    this.#activateAssistantMessage(assistantMessage);
+    this.state.isStreaming = true;
+    this.state.cancelRequested = false;
+    this.state.autoScrollEnabled = true;
+    this.#stream.showThinkingIndicator();
+    this.state.responseStartTime = performance.now();
+    this.#refreshStatus();
+
+    let interrupted = false;
+    let failed = false;
+    try {
+      const result = await this.#session.execute({
+        ...(submission.context ? { context: submission.context } : {}),
+        configuration: {
+          ...(this.#settings.model ? { model: this.#settings.model } : {}),
+          ...(this.#settings.permissionMode
+            ? { permissionMode: this.#settings.permissionMode }
+            : {}),
+          ...(this.#settings.reasoning ? { reasoning: this.#settings.reasoning } : {}),
+          ...(this.#settings.serviceTier ? { serviceTier: this.#settings.serviceTier } : {}),
+          systemInstructions: { kind: 'provider-default' },
+        },
+        conversationHistory: [
+          ...this.deps.source.messages,
+          ...this.state.messages.slice(0, -2),
+        ],
+        images,
+        text: content,
+        // Side chat uses the same normal chat tool policy as its parent.
+        toolPolicy: { kind: 'provider-default' },
+      });
+
+      if (result.status === 'completed') {
+        assistantMessage.completedAt = Date.now();
+        if (result.checkpointId) assistantMessage.assistantMessageId = result.checkpointId;
+      }
+      if (result.status === 'cancelled') {
+        interrupted = true;
+      } else if (result.status === 'error' || result.status === 'missing-session') {
+        failed = true;
+        this.#lastError = result.error?.message
+          ?? 'The side chat provider session is no longer available.';
+        await this.#stream.appendText(`\n\n**Error:** ${this.#lastError}`);
+      }
+    } catch (error) {
+      failed = true;
+      this.#lastError = error instanceof Error ? error.message : String(error);
+      await this.#stream.appendText(`\n\n**Error:** ${this.#lastError}`);
+    } finally {
+      this.state.clearFlavorTimerInterval();
+      this.#stream.hideThinkingIndicator();
+      const wasCancelled = interrupted || this.state.cancelRequested;
+      if (wasCancelled) {
+        this.#queuedSubmissions.length = 0;
+        assistantMessage.isInterrupt = true;
+        if (this.state.currentContentEl) {
+          this.renderer.appendInterruptIndicator(this.state.currentContentEl);
+        }
+      }
+      const hasCompactBoundary = assistantMessage.contentBlocks?.some(block => block.type === 'context_compacted');
+      if (!wasCancelled && !failed && assistantMessage.completedAt !== undefined && !hasCompactBoundary) {
+        assistantMessage.durationSeconds = this.state.responseStartTime !== null
+          ? Math.floor((performance.now() - this.state.responseStartTime) / 1000)
+          : 0;
+      }
+      this.state.responseStartTime = null;
+      this.state.isStreaming = false;
+      this.state.cancelRequested = false;
+      this.state.currentContentEl = null;
+      await this.#stream.finalizeCurrentThinkingBlock(assistantMessage);
+      await this.#stream.finalizeCurrentTextBlock(assistantMessage);
+      this.renderer.finalizeResponse(
+        assistantMessage,
+        this.state.messages,
+        !wasCancelled && !failed,
+      );
+      this.#subagents.resetStreamingState();
+      this.#activeAssistant = null;
+      this.#refreshStatus();
+    }
+  }
+
+  cancel(): void {
+    this.#queuedSubmissions.length = 0;
+    this.#refreshStatus();
+    if (!this.state.isStreaming) return;
+    this.state.cancelRequested = true;
+    this.#session.cancel();
+  }
+
+  dismissPendingPrompts(): void {
+    this.#prompts.dismissAll();
+  }
+
+  async dispose(): Promise<void> {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#queuedSubmissions.length = 0;
+    this.#titleService?.cancel();
+    this.#titleService = null;
+    this.state.cancelRequested = true;
+    this.#session.cancel();
+    this.#prompts.dismissAll();
+    await this.#session.dispose();
+    this.state.clearFlavorTimerInterval();
+    this.state.clearThinkingIndicatorTimeout();
+    this.#stream.dispose();
+    this.renderer.dispose();
+    this.#subagents.resetStreamingState();
+  }
+
+  async #generateTitle(initialMessage: ChatMessage): Promise<void> {
+    const firstSentence = initialMessage.content.split(/[.!?\n]/)[0].trim();
+    this.#title = (firstSentence.slice(0, 50) + (firstSentence.length > 50 ? '...' : '')) || null;
+    this.#refreshStatus();
+    try {
+      // Own a separate routed service so discarding Side cannot cancel main titles.
+      const service = ProviderRegistry.createTitleGenerationService(this.deps.plugin.providerHost);
+      this.#titleService = service;
+      await service.generateTitle(initialMessage.id, initialMessage.content, async (_id, result) => {
+        if (this.#disposed || !result.success) return;
+        this.#title = result.title;
+        this.#refreshStatus();
+      });
+    } catch {
+      // Title generation is best effort; retain the initial-prompt fallback.
+    } finally {
+      this.#titleService = null;
+    }
+  }
+
+  #handleExecutionEvent(event: Parameters<
+    NonNullable<ConstructorParameters<typeof SideChatSession>[0]['onRequestedEvent']>
+  >[0]): void | Promise<void> {
+    const assistant = this.#activeAssistant;
+    if (!assistant) return;
+    const chunk = providerOutputEventToStreamChunk(event);
+    if (!chunk) return;
+    return this.#stream.handleStreamChunk(chunk, assistant);
+  }
+
+  #activateAssistantMessage(message: ChatMessage): void {
+    const messageEl = this.renderer.addMessage(message);
+    const contentEl = messageEl.querySelector<HTMLElement>('.claudian-message-content');
+    if (!contentEl) return;
+    if (!this.state.currentContentEl) this.state.toolCallElements.clear();
+    this.state.currentContentEl = contentEl;
+    this.state.currentTextEl = null;
+    this.state.currentTextContent = '';
+    this.state.currentThinkingState = null;
+  }
+
+  #createInteractionPort(): ProviderInteractionPort {
+    const kinds = new Map<string, 'approval' | 'question'>();
+    return {
+      askUserQuestion: async (request, signal) => {
+        kinds.set(request.interactionId, request.kind);
+        this.state.beginActionRequired(request.interactionId);
+        try {
+          const answers = await this.#prompts.askUserQuestion({ ...request.input }, signal);
+          return { answers, interactionId: request.interactionId };
+        } finally {
+          kinds.delete(request.interactionId);
+          this.state.endActionRequired(request.interactionId);
+        }
+      },
+      dismissInteraction: (interactionId) => {
+        const kind = kinds.get(interactionId);
+        if (!kind) return;
+        this.#prompts.dismiss(kind);
+        kinds.delete(interactionId);
+        this.state.endActionRequired(interactionId);
+      },
+      requestApproval: async (request) => {
+        kinds.set(request.interactionId, request.kind);
+        this.state.beginActionRequired(request.interactionId);
+        try {
+          const decision = await this.#prompts.requestApproval(
+            request.toolName,
+            { ...request.input },
+            request.description,
+            {
+              ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
+              ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
+              ...(request.decisionOptions
+                ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) }
+                : {}),
+              ...(request.additionalPermissions !== undefined
+                ? { additionalPermissions: request.additionalPermissions }
+                : {}),
+            },
+          );
+          return { decision, interactionId: request.interactionId };
+        } finally {
+          kinds.delete(request.interactionId);
+          this.state.endActionRequired(request.interactionId);
+        }
+      },
+    };
+  }
+
+  #refreshStatus(): void {
+    this.#status = this.state.requiresAction
+      ? 'action-required'
+      : this.isWorking
+        ? 'working'
+        : this.#lastError
+          ? 'error'
+          : this.state.messages.length === 0
+            ? 'preparing'
+            : 'idle';
+    this.deps.onStatusChanged();
+  }
+}
+
+let sideMessageSequence = 0;
+
+function createSideMessageId(): string {
+  sideMessageSequence += 1;
+  return `side-${Date.now().toString(36)}-${sideMessageSequence}`;
+}

@@ -1,4 +1,5 @@
 import {
+  cancelSelectedDestinationTurn,
   sendTabInputMessageFromEnterKey,
   sendTabInputMessageFromExplicitEnterShortcut,
 } from '../TabInputEvents';
@@ -40,10 +41,11 @@ export function buildTabRuntimeInputBindings(
       return;
     }
 
-    if (event.key === 'Escape' && !event.isComposing && state.isStreaming) {
-      event.preventDefault();
-      controllers.inputController.cancelStreaming();
-      return;
+    if (event.key === 'Escape' && !event.isComposing) {
+      if (cancelSelectedDestinationTurn(tab)) {
+        event.preventDefault();
+        return;
+      }
     }
 
     if (sendTabInputMessageFromEnterKey(tab, plugin.settings, event)) {
@@ -57,8 +59,10 @@ export function buildTabRuntimeInputBindings(
   );
 
   const inputHandler = () => {
-    commitProvisionalTab(runtimeRef.requirePublished());
+    const tab = runtimeRef.requirePublished();
+    commitProvisionalTab(tab);
     ui.instructionModeManager.handleInputChange();
+    controllers.sideChatController.handleComposerInput();
     if (!ui.instructionModeManager.isActive()) {
       ui.composerDropdown.handleInputChange();
     } else {

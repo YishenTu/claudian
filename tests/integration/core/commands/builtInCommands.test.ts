@@ -18,12 +18,13 @@ describe('getBuiltInCommandsForDropdown - provider filtering', () => {
 
   it('returns only commands supported by codex capabilities', () => {
     const commands = getBuiltInCommandsForDropdown('codex');
-    expect(commands.length).toBe(5);
+    expect(commands.length).toBe(6);
     expect(commands.map(c => c.name)).toEqual([
       'clear',
       'resume',
       'fork',
       'fast',
+      'side',
       'instruction',
     ]);
   });

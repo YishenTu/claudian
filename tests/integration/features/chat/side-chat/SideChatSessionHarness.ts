@@ -1,0 +1,212 @@
+import { randomUUID } from 'node:crypto';
+
+import type {
+  ProviderExecutionBackend,
+  ProviderExecutionEvent,
+  ProviderExecutionRequest,
+  ProviderExecutionRun,
+  ProviderExecutionSession,
+  ProviderSessionConfig,
+  ProviderSessionEvent,
+  ProviderSessionSnapshot,
+  ProviderSessionStatus,
+} from '@/core/execution';
+
+type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
+
+/** Narrow provider boundary with controllable snapshots and session-level events. */
+export class FakeSideSession implements ProviderExecutionSession {
+  readonly providerId = 'claude' as const;
+  readonly sessionInstanceId = randomUUID();
+  readonly requests: ProviderExecutionRequest[] = [];
+  disposeCalls = 0;
+  cancelCalls = 0;
+  private active: FakeRun | null = null;
+  private status: Exclude<ProviderSessionStatus, 'invalidated'> = 'idle';
+  private revision = 0;
+  private providerSessionId: string | undefined;
+  private providerState: Record<string, unknown> | undefined;
+  private readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
+  private sessionSequence = 0;
+
+  constructor(readonly config: ProviderSessionConfig) {}
+
+  execute(request: ProviderExecutionRequest): ProviderExecutionRun {
+    if (this.active) throw new Error('A side execution is already active');
+    this.requests.push(request);
+    this.status = 'executing';
+    const run = new FakeRun(this.sessionInstanceId, () => this.cancel());
+    this.active = run;
+    run.emit({ accepted: true, type: 'turn_started' });
+    return run;
+  }
+
+  establishChild(providerSessionId: string, providerState?: Record<string, unknown>): void {
+    this.providerSessionId = providerSessionId;
+    this.providerState = providerState;
+    this.revision += 1;
+  }
+
+  emitSessionEvent(event: WithoutScope<ProviderSessionEvent>): void {
+    this.sessionSequence += 1;
+    const scoped = {
+      ...event,
+      scope: {
+        kind: 'session' as const,
+        sequence: this.sessionSequence,
+        sessionInstanceId: this.sessionInstanceId,
+      },
+    } as ProviderSessionEvent;
+    for (const listener of this.listeners) listener(scoped);
+  }
+
+  emitText(text: string): void {
+    this.active?.emit({ text, type: 'text_delta' });
+  }
+
+  complete(nativeAssistantId = `assistant-${this.revision}`): void {
+    this.status = 'idle';
+    this.active?.finish({ nativeAssistantId, reason: 'completed', type: 'turn_completed' });
+    this.active = null;
+  }
+
+  fail(message: string, category: 'provider' | 'provider-session-missing' = 'provider'): void {
+    this.status = 'idle';
+    this.active?.finish({ category, message, recoverable: true, type: 'execution_error' });
+    this.active = null;
+  }
+
+  cancel(): void {
+    this.cancelCalls += 1;
+    this.status = 'idle';
+    this.active?.finish({ reason: 'Cancelled', type: 'cancelled' });
+    this.active = null;
+  }
+
+  getSnapshot(): ProviderSessionSnapshot {
+    return {
+      providerId: this.providerId,
+      ...(this.providerSessionId ? { providerSessionId: this.providerSessionId } : {}),
+      ...(this.providerState ? { providerState: this.providerState } : {}),
+      revision: this.revision,
+      status: this.status,
+    } as ProviderSessionSnapshot;
+  }
+
+  get activeTurnId(): string {
+    if (!this.active) throw new Error('No active side run');
+    return this.active.turnId;
+  }
+
+  getStatus(): ProviderSessionStatus {
+    return this.status;
+  }
+
+  onEvent(listener: (event: ProviderSessionEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  async dispose(): Promise<void> {
+    this.disposeCalls += 1;
+    this.cancel();
+    this.status = 'disposed';
+    this.listeners.clear();
+  }
+}
+
+export class FakeSideBackend implements ProviderExecutionBackend {
+  readonly providerId = 'claude' as const;
+  readonly sessions: FakeSideSession[] = [];
+
+  createSession(config: ProviderSessionConfig): ProviderExecutionSession {
+    const session = new FakeSideSession(config);
+    this.sessions.push(session);
+    return session;
+  }
+
+  get latest(): FakeSideSession {
+    const session = this.sessions.at(-1);
+    if (!session) throw new Error('No side session was created');
+    return session;
+  }
+}
+
+export async function waitFor(
+  predicate: () => boolean,
+  message = 'side chat condition',
+): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return;
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  throw new Error(`Timed out waiting for ${message}`);
+}
+
+class FakeRun implements ProviderExecutionRun {
+  readonly executionId = randomUUID();
+  readonly turnId = randomUUID();
+  readonly events: AsyncIterable<ProviderExecutionEvent>;
+  private readonly queue = new EventQueue<ProviderExecutionEvent>();
+  private sequence = 0;
+
+  constructor(
+    private readonly sessionInstanceId: string,
+    private readonly onCancel: () => void,
+  ) {
+    this.events = this.queue;
+  }
+
+  emit(event: WithoutScope<ProviderExecutionEvent>): void {
+    this.queue.push({ ...event, scope: this.scope() } as ProviderExecutionEvent);
+  }
+
+  finish(event: WithoutScope<ProviderExecutionEvent>): void {
+    this.emit(event);
+    this.queue.close();
+  }
+
+  cancel(): void {
+    this.onCancel();
+  }
+
+  private scope() {
+    return {
+      executionId: this.executionId,
+      kind: 'requested' as const,
+      sequence: ++this.sequence,
+      sessionInstanceId: this.sessionInstanceId,
+      turnId: this.turnId,
+    };
+  }
+}
+
+class EventQueue<T> implements AsyncIterable<T>, AsyncIterator<T> {
+  private closed = false;
+  private readonly values: T[] = [];
+  private readonly waiters: Array<(result: IteratorResult<T>) => void> = [];
+
+  [Symbol.asyncIterator](): AsyncIterator<T> {
+    return this;
+  }
+
+  next(): Promise<IteratorResult<T>> {
+    const value = this.values.shift();
+    if (value !== undefined) return Promise.resolve({ done: false, value });
+    if (this.closed) return Promise.resolve({ done: true, value: undefined });
+    return new Promise(resolve => this.waiters.push(resolve));
+  }
+
+  push(value: T): void {
+    const waiter = this.waiters.shift();
+    if (waiter) waiter({ done: false, value });
+    else this.values.push(value);
+  }
+
+  close(): void {
+    this.closed = true;
+    for (const waiter of this.waiters.splice(0)) {
+      waiter({ done: true, value: undefined });
+    }
+  }
+}
