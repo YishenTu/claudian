@@ -1679,6 +1679,7 @@ export class InputController {
         rawInstruction,
         {
           onAccept: (finalInstruction) => {
+            instructionRefineService.cancel();
             void (async (): Promise<void> => {
               await plugin.mutateSettings((settings) => {
                 settings.systemPrompt = appendMarkdownSnippet(
@@ -1708,6 +1709,7 @@ export class InputController {
               if (result.error === 'Cancelled') {
                 return;
               }
+              instructionRefineService.cancel();
               new Notice(result.error || 'Failed to process response');
               modal?.showError(result.error || 'Failed to process response');
               return;
@@ -1739,6 +1741,7 @@ export class InputController {
           instructionModeManager?.clear();
           return;
         }
+        instructionRefineService.cancel();
         new Notice(result.error || 'Failed to refine instruction');
         modal.showError(result.error || 'Failed to refine instruction');
         instructionModeManager?.clear();
@@ -1750,11 +1753,13 @@ export class InputController {
       } else if (result.refinedInstruction) {
         modal.showConfirmation(result.refinedInstruction);
       } else {
+        instructionRefineService.cancel();
         new Notice('No instruction received');
         modal.showError('No instruction received');
         instructionModeManager?.clear();
       }
     } catch (error) {
+      instructionRefineService.cancel();
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
       new Notice(`Error: ${errorMsg}`);
       modal?.showError(errorMsg);
