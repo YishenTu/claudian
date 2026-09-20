@@ -227,6 +227,7 @@ describe('InlineEditModal - openAndWait', () => {
       });
       const editorView = {
         state: {
+          field: jest.fn(() => undefined),
           doc: {
             line: jest.fn(() => ({ from: 0 })),
             lineAt: jest.fn(() => ({ from: 0 })),
@@ -366,6 +367,7 @@ describe('InlineEditModal - openAndWait', () => {
       });
       const editorView = {
         state: {
+          field: jest.fn(() => undefined),
           doc: {
             line: jest.fn(() => ({ from: 0 })),
             lineAt: jest.fn(() => ({ from: 0 })),
@@ -485,6 +487,7 @@ describe('InlineEditModal - openAndWait', () => {
       });
       const editorView = {
         state: {
+          field: jest.fn(() => undefined),
           doc: {
             line: jest.fn(() => ({ from: 0 })),
             lineAt: jest.fn(() => ({ from: 0 })),
@@ -583,6 +586,7 @@ describe('InlineEditModal - openAndWait', () => {
       });
       const editorView = {
         state: {
+          field: jest.fn(() => undefined),
           doc: {
             line: jest.fn(() => ({ from: 0 })),
             lineAt: jest.fn(() => ({ from: 0, number: 1 })),
@@ -692,6 +696,7 @@ describe('InlineEditModal - openAndWait', () => {
       });
       const editorView = {
         state: {
+          field: jest.fn(() => undefined),
           doc: {
             line: jest.fn(() => ({ from: 0 })),
             lineAt: jest.fn(() => ({ from: 0, number: 1 })),
@@ -799,6 +804,7 @@ describe('InlineEditModal - openAndWait', () => {
       });
       const editorView = {
         state: {
+          field: jest.fn(() => undefined),
           doc: {
             line: jest.fn(() => ({ from: 0 })),
             lineAt: jest.fn(() => ({ from: 0, number: 1 })),
@@ -901,6 +907,7 @@ describe('InlineEditModal - openAndWait', () => {
       });
       const editorView = {
         state: {
+          field: jest.fn(() => undefined),
           doc: {
             line: jest.fn(() => ({ from: 0 })),
             lineAt: jest.fn(() => ({ from: 0, number: 1 })),
@@ -1022,6 +1029,7 @@ describe('InlineEditModal - openAndWait', () => {
       });
       const editorView = {
         state: {
+          field: jest.fn(() => undefined),
           doc: {
             line: jest.fn(() => ({ from: 0 })),
             lineAt: jest.fn(() => ({ from: 0, number: 1 })),
@@ -1150,6 +1158,7 @@ describe('InlineEditModal - openAndWait', () => {
       });
       const editorView = {
         state: {
+          field: jest.fn(() => undefined),
           doc: {
             line: jest.fn(() => ({ from: 0 })),
             lineAt: jest.fn(() => ({ from: 0, number: 1 })),

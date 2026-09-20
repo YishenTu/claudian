@@ -37,26 +37,25 @@ function createSelectionHighlighter(): SelectionHighlighter {
     provide: (f) => EditorView.decorations.from(f),
   });
 
-  const installedEditors = new WeakSet<EditorView>();
-
-  function ensureHighlightField(editorView: EditorView): void {
-    if (!installedEditors.has(editorView)) {
-      editorView.dispatch({
-        effects: StateEffect.appendConfig.of(selectionHighlightField),
-      });
-      installedEditors.add(editorView);
-    }
+  // Obsidian reuses one EditorView per leaf and swaps in a fresh state when
+  // another note is opened, so installation is tracked on the state itself.
+  function isFieldInstalled(editorView: EditorView): boolean {
+    return editorView.state.field(selectionHighlightField, false) !== undefined;
   }
 
   function show(editorView: EditorView, from: number, to: number): void {
-    ensureHighlightField(editorView);
+    if (!isFieldInstalled(editorView)) {
+      editorView.dispatch({
+        effects: StateEffect.appendConfig.of(selectionHighlightField),
+      });
+    }
     editorView.dispatch({
       effects: showHighlight.of({ from, to }),
     });
   }
 
   function hide(editorView: EditorView): void {
-    if (installedEditors.has(editorView)) {
+    if (isFieldInstalled(editorView)) {
       editorView.dispatch({
         effects: hideHighlight.of(null),
       });
