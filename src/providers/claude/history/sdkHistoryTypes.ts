@@ -18,6 +18,7 @@ export interface SDKNativeMessage {
     role?: string;
     content?: string | SDKNativeContentBlock[];
     model?: string;
+    stop_reason?: string | null;
   };
   subtype?: string;
   durationMs?: number;

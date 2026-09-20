@@ -94,6 +94,7 @@ export type ContentBlock =
   | { type: 'thinking'; content: string; durationSeconds?: number }
   | { type: 'subagent'; subagentId: string; mode?: SubagentMode }
   | { type: 'citations'; citations: CitationGroup }
+  | { type: 'task_notification'; content: string }
   | { type: 'context_compacted' };
 
 /** Chat message with content, tool calls, and attachments. */
@@ -106,6 +107,8 @@ export interface ChatMessage {
   timestamp: number;
   /** Assistant completion time; absent until the response finishes. */
   completedAt?: number;
+  /** Provider-triggered response without a new user request. */
+  isAutomaticResponse?: boolean;
   toolCalls?: ToolCallInfo[];
   contentBlocks?: ContentBlock[];
   linkedContentPath?: string;
@@ -266,6 +269,7 @@ export type StreamChunk =
   | { type: 'done' }
   | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
   | { type: 'context_compacted' }
+  | { type: 'task_notification'; content: string }
   | { type: 'subagent_tool_use'; subagentId: string; id: string; name: string; input: Record<string, unknown> }
   | {
       type: 'subagent_tool_result';

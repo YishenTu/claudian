@@ -497,7 +497,8 @@ button.claudian-text-copy-btn.copied {
 }
 
 /* Completed turn history and message actions */
-.claudian-work {
+.claudian-work,
+.claudian-task-notification {
   margin-bottom: 10px;
 }
 

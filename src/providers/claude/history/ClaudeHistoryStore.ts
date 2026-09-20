@@ -18,6 +18,7 @@ import {
   isSystemInjectedMessage,
   mergeAssistantMessage,
   parseSDKMessageToChat,
+  parseTaskNotification,
 } from './sdkMessageParsing';
 import {
   encodeVaultPathForSDK,
@@ -152,6 +153,7 @@ export async function loadSDKSessionMessages(
   let pendingAssistant: ChatMessage | null = null;
   let turnStartedAt: number | undefined;
   let lastAssistantAt: number | undefined;
+  let requestedResponsePending = false;
   const taskToolNormalizer = new ClaudeTaskToolNormalizer();
 
   const flushPendingAssistant = (includeDuration: boolean): void => {
@@ -164,7 +166,9 @@ export async function loadSDKSessionMessages(
         ? Math.floor((lastAssistantAt - turnStartedAt) / 1_000)
         : undefined;
       if (includeDuration) {
-        pendingAssistant.durationSeconds = nativeDuration ?? inferredDuration;
+        if (!pendingAssistant.isAutomaticResponse) {
+          pendingAssistant.durationSeconds = nativeDuration ?? inferredDuration;
+        }
         pendingAssistant.completedAt = lastAssistantAt;
       }
       chatMessages.push(pendingAssistant);
@@ -172,10 +176,31 @@ export async function loadSDKSessionMessages(
     pendingAssistant = null;
     lastAssistantAt = undefined;
     turnStartedAt = undefined;
+    requestedResponsePending = false;
   };
 
-  // Merge consecutive assistant messages until an actual user message appears
+  // Preserve task notification boundaries without ending an unfinished requested response.
   for (const sdkMsg of filteredEntries) {
+    const notification = parseTaskNotification(sdkMsg);
+    if (notification !== null) {
+      if (pendingAssistant && requestedResponsePending) {
+        pendingAssistant.contentBlocks?.push({ type: 'task_notification', content: notification });
+        continue;
+      }
+      const requestedStartedAt: number | undefined = pendingAssistant ? undefined : turnStartedAt;
+      flushPendingAssistant(true);
+      turnStartedAt = requestedStartedAt;
+      requestedResponsePending = requestedStartedAt !== undefined;
+      pendingAssistant = {
+        id: sdkMsg.uuid ?? `task-notification-${chatMessages.length}`,
+        role: 'assistant',
+        isAutomaticResponse: requestedStartedAt === undefined,
+        content: '',
+        timestamp: parseNativeTimestamp(sdkMsg.timestamp) ?? 0,
+        contentBlocks: [{ type: 'task_notification', content: notification }],
+      };
+      continue;
+    }
     if (isSystemInjectedMessage(sdkMsg)) continue;
 
     // Skip synthetic assistant messages (e.g., "No response requested." after /compact)
@@ -198,6 +223,8 @@ export async function loadSDKSessionMessages(
           pendingAssistant = chatMsg;
         }
         lastAssistantAt = parseNativeTimestamp(sdkMsg.timestamp);
+        requestedResponsePending = turnStartedAt !== undefined
+          && sdkMsg.message?.stop_reason === 'tool_use';
       }
     } else {
       flushPendingAssistant(!chatMsg.isInterrupt);

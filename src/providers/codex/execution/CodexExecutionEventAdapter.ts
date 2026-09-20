@@ -94,6 +94,7 @@ export function adaptCodexStreamChunk(
       };
     case 'error':
     case 'done':
+    case 'task_notification':
       return null;
   }
 }

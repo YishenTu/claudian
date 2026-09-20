@@ -5,6 +5,7 @@ import type {
   ProviderCitationsEvent,
   ProviderContextCompactedEvent,
   ProviderNoticeEvent,
+  ProviderTaskNotificationEvent,
   ProviderTextDeltaEvent,
   ProviderThinkingDeltaEvent,
   ProviderToolCompletedEvent,
@@ -38,6 +39,7 @@ type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
 export type ClaudeNormalizedOutputEvent = WithoutScope<
   | ProviderUserMessageStartedEvent
   | ProviderAssistantMessageStartedEvent
+  | ProviderTaskNotificationEvent
   | ProviderTextDeltaEvent
   | ProviderThinkingDeltaEvent
   | ProviderCitationsEvent
@@ -137,6 +139,13 @@ export class ClaudeExecutionEventNormalizer {
           type: 'async_subagent_completion',
           event,
         });
+        if (message.type === 'system' && message.subtype === 'task_notification'
+          && !message.skip_transcript && event.result) {
+          normalized.push({
+            type: 'output',
+            event: { type: 'task_notification', content: event.result },
+          });
+        }
         continue;
       }
       if (isContextWindowEvent(event)) {
@@ -404,6 +413,8 @@ function toOutputEvent(
       return {
         type: 'context_compacted',
       };
+    case 'task_notification':
+      return { type: 'task_notification', content: chunk.content };
     case 'notice':
       return {
         type: 'notice',

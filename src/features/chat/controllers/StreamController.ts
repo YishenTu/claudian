@@ -279,6 +279,20 @@ export class StreamController {
         this.#flushPendingTools();
         break;
 
+      case 'task_notification': {
+        this.#flushPendingTools();
+        if (state.currentThinkingState) {
+          await this.finalizeCurrentThinkingBlock(msg);
+        }
+        await this.finalizeCurrentTextBlock(msg);
+        msg.contentBlocks = msg.contentBlocks || [];
+        msg.contentBlocks.push({ type: 'task_notification', content: chunk.content });
+        if (state.currentContentEl) {
+          this.deps.renderer.renderTaskNotification(state.currentContentEl, chunk.content);
+        }
+        break;
+      }
+
       case 'context_compacted': {
         this.#flushPendingTools();
         if (state.currentThinkingState) {
@@ -1984,6 +1998,8 @@ export function providerOutputEventToStreamChunk(
       return { type: 'usage', usage: event.usage };
     case 'context_compacted':
       return { type: 'context_compacted' };
+    case 'task_notification':
+      return { type: 'task_notification', content: event.content };
     case 'notice':
       return {
         content: event.message,

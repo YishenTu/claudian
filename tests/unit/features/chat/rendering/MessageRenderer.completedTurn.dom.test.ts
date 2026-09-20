@@ -218,3 +218,126 @@ it('offers full-session fork only on the latest reply and removes it when anothe
   expect(within(messagesEl).queryByRole('button', { name: 'Fork conversation' })).toBeNull();
   renderer.dispose();
 });
+
+it('shows one task notification disclosure between the initial and automatic replies', async () => {
+  const { renderer, messagesEl } = setup();
+  renderer.renderMessages([
+    { id: 'initial', role: 'assistant', content: 'Waiting for completion.', timestamp: 1,
+      durationSeconds: 5, contentBlocks: [{ type: 'text', content: 'Waiting for completion.' }] },
+    { id: 'automatic', role: 'assistant', isAutomaticResponse: true, content: 'The sleep finished successfully.', timestamp: 25,
+      contentBlocks: [
+        { type: 'task_notification', content: 'Background command completed (exit code 0).' },
+        { type: 'thinking', content: 'Check the completed task.' },
+        { type: 'text', content: 'The sleep finished successfully.' },
+      ] },
+  ], () => 'Hello');
+  await Promise.resolve();
+
+  const header = within(messagesEl).getByRole('button', { name: 'Task notification' });
+  expect(header.getAttribute('type')).toBe('button');
+  expect(header.getAttribute('aria-expanded')).toBe('false');
+  const result = within(messagesEl).getByText('Background command completed (exit code 0).');
+  expect(result.closest('[hidden]')).not.toBeNull();
+  expect(within(messagesEl).getByText('Waiting for completion.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('The sleep finished successfully.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getAllByRole('button', { name: /^Worked/ })).toHaveLength(1);
+  expect(within(messagesEl).getByRole('button', { name: 'Worked for 00:05' })).toBeDefined();
+  fireEvent.click(header);
+  expect(result.closest('[hidden]')).toBeNull();
+  expect(header.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.click(header);
+  expect(result.closest('[hidden]')).not.toBeNull();
+  header.focus();
+  expect(document.activeElement).toBe(header);
+  expect((await axe(messagesEl)).violations).toEqual([]);
+  renderer.dispose();
+});
+
+it('preserves requested work before a notification arriving in the same response', async () => {
+  const { renderer, messagesEl } = setup();
+  renderer.renderStoredMessage({
+    id: 'requested-with-notification', role: 'assistant', timestamp: 1,
+    content: 'Initial reply.\n\nFollow-up reply.', durationSeconds: 5,
+    contentBlocks: [
+      { type: 'thinking', content: 'Initial reasoning.' },
+      { type: 'text', content: 'Initial reply.' },
+      { type: 'task_notification', content: 'The background result.' },
+      { type: 'text', content: 'Follow-up reply.' },
+    ],
+  });
+  await Promise.resolve();
+  const work = within(messagesEl).getByRole('button', { name: 'Worked for 00:05' });
+  expect(within(messagesEl).getByRole('button', { name: 'Task notification' }).closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Initial reply.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Follow-up reply.').closest('[hidden]')).toBeNull();
+  fireEvent.click(work);
+  expect(within(messagesEl).getByText('Initial reasoning.').closest('[hidden]')).toBeNull();
+  renderer.dispose();
+});
+
+it('keeps a requested response disclosure separate when a notification precedes its first output', async () => {
+  const { renderer, messagesEl } = setup();
+  renderer.renderStoredMessage({
+    id: 'requested-after-notification', role: 'assistant', timestamp: 1,
+    content: 'The requested answer.', durationSeconds: 5,
+    contentBlocks: [
+      { type: 'task_notification', content: 'Old task result.' },
+      { type: 'thinking', content: 'Reasoning about the new request.' },
+      { type: 'text', content: 'The requested answer.' },
+    ],
+  });
+  await Promise.resolve();
+  const notification = within(messagesEl).getByRole('button', { name: 'Task notification' });
+  const work = within(messagesEl).getByRole('button', { name: 'Worked for 00:05' });
+  fireEvent.click(notification);
+  expect(within(messagesEl).getByText('Old task result.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Reasoning about the new request.').closest('[hidden]')).not.toBeNull();
+  fireEvent.click(work);
+  expect(within(messagesEl).getByText('Reasoning about the new request.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('The requested answer.').closest('[hidden]')).toBeNull();
+  renderer.dispose();
+});
+
+it('finalizes each automatic response when multiple task notifications arrive consecutively', async () => {
+  const { renderer, messagesEl } = setup();
+  renderer.renderMessages([
+    { id: 'first-automatic', role: 'assistant', isAutomaticResponse: true, timestamp: 1, content: 'First follow-up.',
+      contentBlocks: [
+        { type: 'task_notification', content: 'First result.' },
+        { type: 'thinking', content: 'Processing the first result.' },
+        { type: 'text', content: 'First follow-up.' },
+      ] },
+    { id: 'second-automatic', role: 'assistant', isAutomaticResponse: true, timestamp: 2, content: 'Second follow-up.',
+      contentBlocks: [
+        { type: 'task_notification', content: 'Second result.' },
+        { type: 'text', content: 'Second follow-up.' },
+      ] },
+  ], () => 'Hello');
+  await Promise.resolve();
+  expect(within(messagesEl).getAllByRole('button', { name: 'Task notification' })).toHaveLength(2);
+  expect(within(messagesEl).getByText('Processing the first result.').closest('[hidden]')).not.toBeNull();
+  expect(within(messagesEl).getByText('First follow-up.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Second follow-up.').closest('[hidden]')).toBeNull();
+  renderer.dispose();
+});
+
+it('keeps requested work on both sides of a mid-response notification in its own disclosure', async () => {
+  const { renderer, messagesEl } = setup();
+  renderer.renderStoredMessage({
+    id: 'requested-mid-response', role: 'assistant', timestamp: 1,
+    content: 'The requested answer.', durationSeconds: 5,
+    contentBlocks: [
+      { type: 'thinking', content: 'Work before notification.' },
+      { type: 'task_notification', content: 'Old task result.' },
+      { type: 'thinking', content: 'Work after notification.' },
+      { type: 'text', content: 'The requested answer.' },
+    ],
+  });
+  await Promise.resolve();
+  fireEvent.click(within(messagesEl).getByRole('button', { name: 'Task notification' }));
+  expect(within(messagesEl).getByText('Work after notification.').closest('[hidden]')).not.toBeNull();
+  fireEvent.click(within(messagesEl).getByRole('button', { name: 'Worked for 00:05' }));
+  expect(within(messagesEl).getByText('Work before notification.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Work after notification.').closest('[hidden]')).toBeNull();
+  renderer.dispose();
+});
