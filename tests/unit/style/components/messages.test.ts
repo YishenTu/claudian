@@ -56,6 +56,31 @@ describe('Long conversation message styles', () => {
 
 
 describe('Message action row visibility', () => {
+  function revealSelectors(): string[] {
+    const style = document.createElement('style');
+    style.textContent = readFileSync(path.resolve('src/style/components/messages.css'), 'utf8');
+    document.head.appendChild(style);
+    try {
+      const rules = Array.from(style.sheet?.cssRules ?? []) as CSSStyleRule[];
+      return rules
+        .filter(rule => rule.style?.getPropertyValue('opacity') === '1')
+        .flatMap(rule => rule.selectorText.split(',').map(selector => selector.trim()))
+        .filter(selector => /\.claudian-message-actions(:[\w-]+)?$/.test(selector));
+    } finally {
+      style.remove();
+    }
+  }
+
+  it('reveals the row on hover, and on focus only from its own controls', () => {
+    const selectors = revealSelectors();
+
+    expect(selectors).toContain('.claudian-message-actions:focus-within');
+    // Focus on a collapsible header elsewhere in the turn must not reveal the row.
+    expect(selectors.filter(selector => /:focus/.test(selector)
+      && !selector.startsWith('.claudian-message-actions:focus'))).toEqual([]);
+    expect(selectors.filter(selector => !/:hover|:focus/.test(selector))).toEqual([]);
+  });
+
   it.each(['user', 'assistant', 'images'])('keeps the %s row hidden in its hover area at rest', (kind) => {
     const style = document.createElement('style');
     style.textContent = readFileSync(path.resolve('src/style/components/messages.css'), 'utf8');

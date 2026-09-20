@@ -569,10 +569,11 @@ button.claudian-work-header:disabled {
   pointer-events: none;
 }
 
+/* Focus reveals the row only from its own buttons: collapsible headers elsewhere in
+   the turn keep DOM focus after a click and would otherwise pin the row open. */
 .claudian-message:hover > .claudian-message-actions,
-.claudian-message:focus-within > .claudian-message-actions,
 .claudian-message-images:hover > .claudian-message-actions,
-.claudian-message-images:focus-within > .claudian-message-actions {
+.claudian-message-actions:focus-within {
   opacity: 1;
   pointer-events: auto;
 }
