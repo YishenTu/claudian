@@ -43,6 +43,27 @@ function match(trigger: string, query = '', atInputStart = true) {
 }
 
 describe('SlashCommandSource', () => {
+  it.each(['bt', 'btw', 'BTW'])('finds the side command through alias query %s', query => {
+    const source = new SlashCommandSource();
+    const trigger = match('/', query);
+    const items = source.load(trigger, new AbortController().signal);
+    expect(items).toEqual([
+      expect.objectContaining({ id: 'builtin:side', label: '/side', replacement: '/side ' }),
+    ]);
+    const item = items[0];
+    if (item.kind !== 'value') throw new Error('Expected a selectable side command');
+    expect(source.select(item, trigger)).toEqual(expect.objectContaining({ kind: 'replace', text: '/side ' }));
+    source.destroy();
+  });
+
+  it('keeps alias matches unavailable when built-ins are disabled or the slash is embedded', () => {
+    const source = new SlashCommandSource();
+    expect(source.load(match('/', 'btw', false), new AbortController().signal)).toEqual([]);
+    source.setBuiltInsEnabled(false);
+    expect(source.load(match('/', 'btw'), new AbortController().signal)).toEqual([]);
+    source.destroy();
+  });
+
   it('preserves provider trigger characters and provider insertion prefixes', async () => {
     const source = new SlashCommandSource({
       includeBuiltIns: false,

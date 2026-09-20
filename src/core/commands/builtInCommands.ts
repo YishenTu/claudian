@@ -225,6 +225,7 @@ export function isSideChatCommandSupported(
 export function getBuiltInCommandsForDropdown(context?: BuiltInCommandSupportContext): Array<{
   id: string;
   name: string;
+  aliases?: readonly string[];
   description: string;
   content: string;
   argumentHint?: string;
@@ -234,6 +235,7 @@ export function getBuiltInCommandsForDropdown(context?: BuiltInCommandSupportCon
     .map((cmd) => ({
       id: `builtin:${cmd.name}`,
       name: cmd.name,
+      aliases: cmd.aliases,
       description: cmd.description,
       content: '', // Built-in commands don't have prompt content
       argumentHint: cmd.argumentHint,
