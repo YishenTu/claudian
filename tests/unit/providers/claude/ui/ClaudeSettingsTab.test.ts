@@ -16,7 +16,6 @@ const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockSlashCommandSettings = jest.fn();
 const mockCliResolverReset = jest.fn();
-const mockAgentManagerLoadAgents = jest.fn().mockResolvedValue(undefined);
 const mockVaultCommandRepository = {};
 
 jest.mock('fs');
@@ -124,16 +123,8 @@ function createSettingsRenderer() {
     },
     commandCatalog: {},
     vaultCommandRepository: mockVaultCommandRepository,
-    agentManager: {
-      loadAgents: mockAgentManagerLoadAgents,
-    },
-    agentStorage: {},
   } as unknown as Parameters<typeof createClaudeSettingsTabRenderer>[0]);
 }
-
-jest.mock('@/providers/claude/ui/AgentSettings', () => ({
-  AgentSettings: jest.fn(),
-}));
 
 jest.mock('@/providers/claude/ui/SlashCommandSettings', () => ({
   SlashCommandSettings: class MockSlashCommandSettings {

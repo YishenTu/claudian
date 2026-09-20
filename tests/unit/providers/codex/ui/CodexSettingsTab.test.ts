@@ -125,7 +125,6 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
 function createSettingsRenderer() {
   return createCodexSettingsTabRenderer({
     commandCatalog: null,
-    subagentStorage: {},
     refreshModelCatalog: mockRefreshModelCatalog,
     cliResolver: { reset: mockCodexCliResolverReset },
   } as unknown as Parameters<typeof createCodexSettingsTabRenderer>[0]);
@@ -137,10 +136,6 @@ jest.mock('@/providers/codex/ui/CodexModelPicker', () => ({
     context: { notifyProviderModelOptionsChanged: (providerId: string) => void },
     workspace: unknown,
   ) => mockRenderCodexModelPicker(container, context, workspace),
-}));
-
-jest.mock('@/providers/codex/ui/CodexSubagentSettings', () => ({
-  CodexSubagentSettings: jest.fn(),
 }));
 
 jest.mock('@/utils/env', () => ({

@@ -3,7 +3,6 @@ import * as path from 'node:path';
 
 import * as sdk from '@anthropic-ai/claude-agent-sdk';
 
-import { type ClaudeWorkspaceServices, createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 
 import { createForkTestEnvironment, type ForkTestEnvironment } from '../tabs/ProviderForkTestHarness';
@@ -106,16 +105,14 @@ function createToolingClaude(sideEffect: () => Promise<void>) {
 
 describe('Claude side-chat native child', () => {
   let env: ForkTestEnvironment;
-  let services: ClaudeWorkspaceServices;
   beforeEach(async () => {
     env = await createForkTestEnvironment();
-    services = await createClaudeWorkspaceServices(env.host, env.adapter);
   });
-  afterEach(async () => { await env.dispose(); await services.dispose(); jest.restoreAllMocks(); });
+  afterEach(async () => { await env.dispose(); jest.restoreAllMocks(); });
 
   it('answers from source context and its own turns while the parent keeps its own history and Claudian record', async () => {
     const native = createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host, services);
+    const backend = new ClaudeExecutionBackend(env.host);
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
@@ -144,7 +141,7 @@ describe('Claude side-chat native child', () => {
 
   it('does not refork or resume the parent when the child continues after a later main turn', async () => {
     const native = createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host, services);
+    const backend = new ClaudeExecutionBackend(env.host);
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const child = await traceSideChild(env, source, checkpoint, backend, {
@@ -166,7 +163,7 @@ describe('Claude side-chat native child', () => {
 
   it('reports an unavailable captured checkpoint without starting the child or changing the source', async () => {
     const native = createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host, services);
+    const backend = new ClaudeExecutionBackend(env.host);
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const child = await traceSideChild(env, source, checkpoint, backend, {
@@ -182,7 +179,7 @@ describe('Claude side-chat native child', () => {
 
   it('runs a benign fixture tool under the copied permission policy and keeps its effect after disposal', async () => {
     createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host, services);
+    const backend = new ClaudeExecutionBackend(env.host);
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const written = path.join(env.root, 'side-note.md');
@@ -205,7 +202,7 @@ describe('Claude side-chat native child', () => {
 
   it('denies a fixture tool when the side owner rejects the approval', async () => {
     createNativeClaude();
-    const backend = new ClaudeExecutionBackend(env.host, services);
+    const backend = new ClaudeExecutionBackend(env.host);
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     const written = path.join(env.root, 'denied-note.md');

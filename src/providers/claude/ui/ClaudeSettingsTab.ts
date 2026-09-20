@@ -16,7 +16,6 @@ import type { ProviderEnablementSettingOptions } from '../../../shared/settings/
 import { renderLastEnabledProviderWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCliPath } from '../../../utils/path';
-import type { AgentManager } from '../agents/AgentManager';
 import {
   getClaudeModelOptions,
   resolveClaudeModelEnvironmentTypePreference,
@@ -28,13 +27,11 @@ import {
   getClaudeProviderSettings,
   updateClaudeProviderSettings,
 } from '../settings';
-import type { AgentVaultStorage } from '../storage/AgentVaultStorage';
-import { AgentSettings } from './AgentSettings';
 import { claudeChatUIConfig } from './ClaudeChatUIConfig';
 import { SlashCommandSettings } from './SlashCommandSettings';
 
 export function createClaudeSettingsTabRenderer(
-  claudeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; agentManager: AgentManager; agentStorage: AgentVaultStorage; vaultCommandRepository: ProviderVaultEntryRepository; },
+  claudeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; vaultCommandRepository: ProviderVaultEntryRepository; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -91,7 +88,7 @@ export function createClaudeSettingsTabRenderer(
         },
       };
 
-      const installationContainer = container.createDiv();
+      const installationContainer = container.createDiv({ cls: 'claudian-claude-installation' });
       const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
       const hostnameKey = getHostnameKey();
@@ -160,6 +157,24 @@ export function createClaudeSettingsTabRenderer(
       new Setting(container).setName(t('settings.models')).setHeading();
 
       new Setting(container)
+        .setName(t('settings.claude.responseStyle.name'))
+        .setDesc(t('settings.claude.responseStyle.desc'))
+        .addDropdown((dropdown) => {
+          dropdown.selectEl.setAttribute('aria-label', t('settings.claude.responseStyle.name'));
+          dropdown
+            .addOption('Default', t('settings.claude.responseStyle.default'))
+            .addOption('Concise', t('settings.claude.responseStyle.concise'))
+            .setValue(claudeSettings.responseStyle)
+            .onChange(async (value) => {
+              await context.plugin.mutateSettings((settings) => {
+                updateClaudeProviderSettings(settings, {
+                  responseStyle: value === 'Concise' ? 'Concise' : 'Default',
+                });
+              });
+            });
+        });
+
+      new Setting(container)
         .setName('Default model')
         .setDesc('Used when a new conversation needs a Claude fallback model.')
         .addDropdown((dropdown) => {
@@ -215,24 +230,6 @@ export function createClaudeSettingsTabRenderer(
           text.inputEl.addEventListener('blur', () => {
             void commitCustomModels();
           });
-        });
-
-      new Setting(container)
-        .setName(t('settings.claude.responseStyle.name'))
-        .setDesc(t('settings.claude.responseStyle.desc'))
-        .addDropdown((dropdown) => {
-          dropdown.selectEl.setAttribute('aria-label', t('settings.claude.responseStyle.name'));
-          dropdown
-            .addOption('Default', t('settings.claude.responseStyle.default'))
-            .addOption('Concise', t('settings.claude.responseStyle.concise'))
-            .setValue(claudeSettings.responseStyle)
-            .onChange(async (value) => {
-              await context.plugin.mutateSettings((settings) => {
-                updateClaudeProviderSettings(settings, {
-                  responseStyle: value === 'Concise' ? 'Concise' : 'Default',
-                });
-              });
-            });
         });
 
       // --- Safety ---
@@ -294,23 +291,6 @@ export function createClaudeSettingsTabRenderer(
         name: t('settings.hiddenSlashCommands.name'),
         desc: t('settings.hiddenSlashCommands.desc'),
         placeholder: t('settings.hiddenSlashCommands.placeholder'),
-      });
-
-      // --- Subagents ---
-
-      new Setting(container).setName(t('settings.subagents.name')).setHeading();
-
-      const agentsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
-      agentsDesc.createEl('p', {
-        text: t('settings.subagents.desc'),
-        cls: 'setting-item-description',
-      });
-
-      const agentsContainer = container.createDiv({ cls: 'claudian-agents-container' });
-      new AgentSettings(agentsContainer, {
-        app: context.plugin.app,
-        agentManager: claudeWorkspace.agentManager,
-        agentStorage: claudeWorkspace.agentStorage,
       });
 
       // --- Environment ---

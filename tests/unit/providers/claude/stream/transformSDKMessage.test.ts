@@ -23,7 +23,6 @@ describe('transformSDKMessage', () => {
         {
           type: 'session_init',
           sessionId: 'test-session-123',
-          agents: undefined,
           permissionMode: 'default',
         },
       ]);
@@ -75,27 +74,6 @@ describe('transformSDKMessage', () => {
       expect(results).toEqual([
         { type: 'context_compacted' },
       ]);
-    });
-
-    it('captures agents from init message', () => {
-      const message = msg({
-        type: 'system',
-        subtype: 'init',
-        session_id: 'test-session-456',
-        agents: ['Explore', 'Plan', 'custom-agent'],
-        skills: ['commit', 'review-pr'],
-        slash_commands: ['clear', 'compact'],
-      });
-
-      const results = [...transformSDKMessage(message)];
-
-      expect(results).toHaveLength(1);
-      expect(results[0]).toEqual({
-        type: 'session_init',
-        sessionId: 'test-session-456',
-        agents: ['Explore', 'Plan', 'custom-agent'],
-        permissionMode: 'default',
-      });
     });
 
     it('captures permissionMode from init message', () => {

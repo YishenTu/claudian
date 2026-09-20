@@ -628,44 +628,6 @@
       "desc": "ドロップダウンから特定のコマンドとスキルを非表示にします。Claudian に関係のない Claude Code の項目を隠すのに便利です。先頭のスラッシュなしで名前を1行に1つ入力してください。",
       "placeholder": "commit\nbuild\ntest"
     },
-    "subagents": {
-      "name": "サブエージェント",
-      "desc": ".claude/agents/ に保存された Vault レベルのサブエージェントを管理します。各 Markdown ファイルがカスタムエージェントを1つ定義します。",
-      "noAgents": "サブエージェントが設定されていません。+ をクリックして作成してください。",
-      "deleteConfirm": "サブエージェント「{name}」を削除しますか？",
-      "saveFailed": "サブエージェントの保存に失敗しました: {message}",
-      "refreshFailed": "サブエージェントを更新できませんでした: {message}",
-      "deleteFailed": "サブエージェントの削除に失敗しました: {message}",
-      "renameCleanupFailed": "警告: 「{name}」の古いファイルを削除できませんでした",
-      "created": "サブエージェント「{name}」を作成しました",
-      "updated": "サブエージェント「{name}」を更新しました",
-      "deleted": "サブエージェント「{name}」を削除しました",
-      "duplicateName": "「{name}」という名前のエージェントは既に存在します",
-      "descriptionRequired": "説明は必須です",
-      "promptRequired": "システムプロンプトは必須です",
-      "modal": {
-        "titleEdit": "サブエージェントを編集",
-        "titleAdd": "サブエージェントを追加",
-        "name": "名前",
-        "nameDesc": "小文字、数字、ハイフンのみ使用できます",
-        "namePlaceholder": "code-reviewer",
-        "description": "説明",
-        "descriptionDesc": "このエージェントの簡単な説明",
-        "descriptionPlaceholder": "コードのバグやスタイルをレビューします",
-        "advancedOptions": "詳細オプション",
-        "model": "モデル",
-        "modelDesc": "このエージェントのモデル上書き",
-        "tools": "ツール",
-        "toolsDesc": "許可するツールのカンマ区切りリスト（空欄 = すべて）",
-        "disallowedTools": "禁止ツール",
-        "disallowedToolsDesc": "禁止するツールのカンマ区切りリスト",
-        "skills": "スキル",
-        "skillsDesc": "スキルのカンマ区切りリスト",
-        "prompt": "システムプロンプト",
-        "promptDesc": "エージェントへの指示",
-        "promptPlaceholder": "あなたはコードレビュアーです。与えられたコードを分析して..."
-      }
-    },
     "safety": "セキュリティ",
     "loadUserSettings": {
       "name": "ユーザーClaude設定を読み込む",
@@ -888,10 +850,6 @@
         "hiddenDesc": "特定の Codex スキルをドロップダウンから非表示にします。先頭の $ なしでスキル名を1行に1つ入力してください。",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
       },
-      "subagents": {
-        "name": "Codex サブエージェント",
-        "desc": ".codex/agents/ に保存された Vault レベルの Codex サブエージェントを管理します。各 TOML ファイルがカスタムエージェントを1つ定義します。"
-      },
       "environment": {
         "name": "Codex 環境",
         "desc": "Codex が所有するランタイム変数のみ。OPENAI_* と CODEX_* 設定に使用します。Codex の自動検出に補助が必要な場合は、このプロバイダー環境ではなく共有 PATH にインストールディレクトリを追加してください。"
@@ -932,52 +890,6 @@
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
       }
-    },
-    "codexSubagents": {
-      "modal": {
-        "titleEdit": "Codex サブエージェントを編集",
-        "titleAdd": "Codex サブエージェントを追加",
-        "nameDesc": "Codex が起動時に使用するエージェント名（小文字、ハイフン、アンダースコア）",
-        "descriptionDesc": "Codex がこのエージェントを使うべきタイミング",
-        "modelDesc": "モデル上書き（空欄で継承）",
-        "namePlaceholder": "code_reviewer"
-      },
-      "reasoningEffort": {
-        "name": "推論強度",
-        "desc": "モデル推論強度レベル",
-        "inherit": "継承",
-        "low": "低",
-        "medium": "中",
-        "high": "高",
-        "xhigh": "非常に高い"
-      },
-      "sandboxMode": {
-        "name": "サンドボックスモード",
-        "desc": "このエージェントのサンドボックス制限",
-        "inherit": "継承",
-        "readOnly": "読み取り専用",
-        "dangerFullAccess": "完全アクセス",
-        "workspaceWrite": "ワークスペース書き込み"
-      },
-      "nicknameCandidates": {
-        "name": "ニックネーム候補",
-        "desc": "表示ニックネームをカンマ区切りで指定（例: atlas, delta, echo）"
-      },
-      "developerInstructions": {
-        "name": "開発者指示",
-        "desc": "エージェントの動作を定義する中核の指示",
-        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
-        "required": "開発者指示は必須です"
-      },
-      "validation": {
-        "nameRequired": "サブエージェント名は必須です",
-        "nameTooLong": "サブエージェント名は {count} 文字以内にしてください",
-        "nameInvalid": "サブエージェント名には小文字、数字、ハイフン、アンダースコアのみ使用できます",
-        "nicknameInvalid": "ニックネーム候補には ASCII 文字、数字、スペース、ハイフン、アンダースコアのみ使用できます",
-        "nicknameDuplicate": "ニックネーム候補は一意である必要があります"
-      },
-      "header": "Codex サブエージェント",
-      "noAgents": "Vault に Codex サブエージェントがありません。+ をクリックして作成してください。"
     }
   }
 }

@@ -628,44 +628,6 @@
       "desc": "드롭다운에서 특정 명령어와 스킬을 숨깁니다. Claudian과 관련 없는 Claude Code 항목을 숨기는 데 유용합니다. 앞의 슬래시 없이 이름을 한 줄에 하나씩 입력하세요.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "subagents": {
-      "name": "서브에이전트",
-      "desc": ".claude/agents/에 저장된 Vault 수준의 서브에이전트를 관리합니다. 각 Markdown 파일이 하나의 커스텀 에이전트를 정의합니다.",
-      "noAgents": "구성된 서브에이전트가 없습니다. +를 클릭해 새로 만드세요.",
-      "deleteConfirm": "서브에이전트 \"{name}\"을 삭제하시겠습니까?",
-      "saveFailed": "서브에이전트를 저장하지 못했습니다: {message}",
-      "refreshFailed": "서브에이전트를 새로고침하지 못했습니다: {message}",
-      "deleteFailed": "서브에이전트를 삭제하지 못했습니다: {message}",
-      "renameCleanupFailed": "경고: \"{name}\"의 이전 파일을 제거하지 못했습니다",
-      "created": "서브에이전트 \"{name}\"를 생성했습니다",
-      "updated": "서브에이전트 \"{name}\"를 업데이트했습니다",
-      "deleted": "서브에이전트 \"{name}\"를 삭제했습니다",
-      "duplicateName": "\"{name}\"이라는 이름의 에이전트가 이미 있습니다",
-      "descriptionRequired": "설명은 필수입니다",
-      "promptRequired": "시스템 프롬프트는 필수입니다",
-      "modal": {
-        "titleEdit": "서브에이전트 편집",
-        "titleAdd": "서브에이전트 추가",
-        "name": "이름",
-        "nameDesc": "소문자, 숫자, 하이픈만 사용할 수 있습니다",
-        "namePlaceholder": "code-reviewer",
-        "description": "설명",
-        "descriptionDesc": "이 에이전트에 대한 간단한 설명",
-        "descriptionPlaceholder": "코드의 버그와 스타일을 검토합니다",
-        "advancedOptions": "고급 옵션",
-        "model": "모델",
-        "modelDesc": "이 에이전트에 사용할 모델 재정의",
-        "tools": "도구",
-        "toolsDesc": "허용할 도구를 쉼표로 구분해 입력하세요 (비워두면 모두 허용)",
-        "disallowedTools": "금지 도구",
-        "disallowedToolsDesc": "금지할 도구를 쉼표로 구분해 입력하세요",
-        "skills": "스킬",
-        "skillsDesc": "스킬 목록을 쉼표로 구분해 입력하세요",
-        "prompt": "시스템 프롬프트",
-        "promptDesc": "에이전트용 지침",
-        "promptPlaceholder": "당신은 코드 리뷰어입니다. 주어진 코드를 분석하여..."
-      }
-    },
     "safety": "보안",
     "loadUserSettings": {
       "name": "사용자 Claude 설정 로드",
@@ -888,10 +850,6 @@
         "hiddenDesc": "드롭다운에서 특정 Codex 스킬을 숨깁니다. 앞의 $ 없이 스킬 이름을 한 줄에 하나씩 입력하세요.",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
       },
-      "subagents": {
-        "name": "Codex 하위 에이전트",
-        "desc": ".codex/agents/에 저장된 vault 수준 Codex 하위 에이전트를 관리합니다. 각 TOML 파일은 사용자 지정 에이전트 하나를 정의합니다."
-      },
       "environment": {
         "name": "Codex 환경",
         "desc": "Codex 전용 런타임 변수만 입력하세요. OPENAI_* 및 CODEX_* 설정에 사용합니다. Codex 자동 감지에 도움이 필요하면 이 공급자 섹션 대신 공유 PATH에 설치 디렉터리를 추가하세요."
@@ -932,52 +890,6 @@
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
       }
-    },
-    "codexSubagents": {
-      "modal": {
-        "titleEdit": "Codex 하위 에이전트 편집",
-        "titleAdd": "Codex 하위 에이전트 추가",
-        "nameDesc": "Codex가 생성할 때 사용하는 에이전트 이름(소문자, 하이픈, 밑줄)",
-        "descriptionDesc": "Codex가 이 에이전트를 사용해야 하는 시점",
-        "modelDesc": "모델 재정의(비워 두면 상속)",
-        "namePlaceholder": "code_reviewer"
-      },
-      "reasoningEffort": {
-        "name": "추론 강도",
-        "desc": "모델 추론 강도 수준",
-        "inherit": "상속",
-        "low": "낮음",
-        "medium": "중간",
-        "high": "높음",
-        "xhigh": "매우 높음"
-      },
-      "sandboxMode": {
-        "name": "샌드박스 모드",
-        "desc": "이 에이전트의 샌드박스 제한",
-        "inherit": "상속",
-        "readOnly": "읽기 전용",
-        "dangerFullAccess": "전체 액세스",
-        "workspaceWrite": "작업공간 쓰기"
-      },
-      "nicknameCandidates": {
-        "name": "닉네임 후보",
-        "desc": "표시 닉네임을 쉼표로 구분합니다(예: atlas, delta, echo)"
-      },
-      "developerInstructions": {
-        "name": "개발자 지침",
-        "desc": "에이전트 동작을 정의하는 핵심 지침",
-        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
-        "required": "개발자 지침은 필수입니다"
-      },
-      "validation": {
-        "nameRequired": "하위 에이전트 이름은 필수입니다",
-        "nameTooLong": "하위 에이전트 이름은 {count}자 이하여야 합니다",
-        "nameInvalid": "하위 에이전트 이름은 소문자, 숫자, 하이픈, 밑줄만 포함할 수 있습니다",
-        "nicknameInvalid": "닉네임 후보는 ASCII 문자, 숫자, 공백, 하이픈, 밑줄만 포함할 수 있습니다",
-        "nicknameDuplicate": "닉네임 후보는 고유해야 합니다"
-      },
-      "header": "Codex 하위 에이전트",
-      "noAgents": "Vault에 Codex 하위 에이전트가 없습니다. +를 클릭해 만드세요."
     }
   }
 }

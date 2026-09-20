@@ -8,18 +8,15 @@ import type {
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
-import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
 import { CodexCliResolver } from '../runtime/CodexCliResolver';
 import { CodexModelCatalogCoordinator } from '../runtime/CodexModelCatalogCoordinator';
 import { CodexModelDiscoveryService } from '../runtime/CodexModelDiscoveryService';
 import { getCodexProviderSettings } from '../settings';
 import { CodexSkillListingService } from '../skills/CodexSkillListingService';
-import { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
 import { createCodexSettingsTabRenderer } from '../ui/CodexSettingsTab';
 
 export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
-  subagentStorage: CodexSubagentStorage;
   commandCatalog: ProviderCommandCatalog;
   cliResolver: ProviderCliResolver;
   modelCatalogCoordinator: CodexModelCatalogCoordinator;
@@ -36,11 +33,8 @@ export interface CodexWorkspaceServicesOptions {
 
 export async function createCodexWorkspaceServices(
   plugin: ProviderHost,
-  vaultAdapter: VaultFileAdapter,
   options: CodexWorkspaceServicesOptions = {},
 ): Promise<CodexWorkspaceServices> {
-  const subagentStorage = new CodexSubagentStorage(vaultAdapter);
-
   const skillListProvider = options.skillListingService
     ?? new CodexSkillListingService(plugin);
   const modelCatalogCoordinator = options.modelCatalogCoordinator
@@ -74,11 +68,10 @@ export async function createCodexWorkspaceServices(
 
   const cliResolver = new CodexCliResolver();
   return {
-    subagentStorage,
     commandCatalog,
     cliResolver,
     modelCatalogCoordinator,
-    settingsTabRenderer: createCodexSettingsTabRenderer({ cliResolver, subagentStorage, modelCatalogCoordinator, refreshModelCatalog: context => modelCatalogCoordinator.refreshModelCatalog(context) }),
+    settingsTabRenderer: createCodexSettingsTabRenderer({ cliResolver, modelCatalogCoordinator, refreshModelCatalog: context => modelCatalogCoordinator.refreshModelCatalog(context) }),
     refreshModelCatalog: async context => modelCatalogCoordinator.refreshModelCatalog(context),
     dispose() {
       if (disposePromise) return disposePromise;
@@ -93,10 +86,7 @@ export async function createCodexWorkspaceServices(
 }
 
 export const codexWorkspaceRegistration: ProviderWorkspaceRegistration<CodexWorkspaceServices> = {
-  initialize: async ({ plugin, vaultAdapter }) => createCodexWorkspaceServices(
-    plugin,
-    vaultAdapter,
-  ),
+  initialize: async ({ plugin }) => createCodexWorkspaceServices(plugin),
 };
 
 export function maybeGetCodexWorkspaceServices(): CodexWorkspaceServices | null {

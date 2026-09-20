@@ -5,8 +5,6 @@ import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import type { ClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 
 const sdkMock = sdkModule as unknown as {
   getLastOptions(): sdkModule.Options | undefined;
@@ -40,10 +38,6 @@ function createContext() {
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
   } as unknown as ProviderHost;
-  const services = {
-    agentManager: { setBuiltinAgentNames: jest.fn() },
-  } as unknown as ClaudeWorkspaceServices;
-  ProviderWorkspaceRegistry.setServices('claude', services);
   return { host, lifecycleRegistry };
 }
 

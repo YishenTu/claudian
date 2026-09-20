@@ -49,10 +49,6 @@ describe('provider execution registration', () => {
 
   it('constructs every registered backend without creating a provider session', () => {
     const host = createHost();
-    ProviderWorkspaceRegistry.setServices('claude', {
-      agentManager: {},
-      commandCatalog: {},
-    } as any);
     ProviderWorkspaceRegistry.setServices('codex', {} as any);
     ProviderWorkspaceRegistry.setServices('grok', {
       commandCatalog: new GrokCommandCatalog(),

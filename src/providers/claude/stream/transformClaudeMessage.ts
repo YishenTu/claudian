@@ -424,7 +424,6 @@ export function* transformSDKMessage(
         yield {
           type: 'session_init',
           sessionId: message.session_id,
-          agents: message.agents,
           permissionMode: message.permissionMode,
         };
       } else if (message.subtype === 'compact_boundary') {

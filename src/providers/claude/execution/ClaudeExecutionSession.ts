@@ -28,7 +28,6 @@ import {
   getMissingSessionId,
   isSessionMissingError,
 } from '../../../utils/session';
-import type { ClaudeWorkspaceServices } from '../app/ClaudeWorkspaceServices';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
 import { getClaudeState } from '../types/providerState';
 import { ClaudeExecutionEventNormalizer } from './ClaudeExecutionEventNormalizer';
@@ -68,11 +67,6 @@ interface BackgroundTurn {
   readonly turnId: string;
   sequence: number;
 }
-
-type ClaudeExecutionSessionServices = Pick<
-  ClaudeWorkspaceServices,
-  'agentManager'
->;
 
 export class ClaudeExecutionSession
 implements
@@ -123,7 +117,6 @@ ClaudeExecutionStrategySink {
 
   constructor(
     private readonly host: ProviderHost,
-    private readonly services: ClaudeExecutionSessionServices,
     private readonly config: ProviderSessionConfig,
   ) {
     const state = {
@@ -477,9 +470,6 @@ ClaudeExecutionStrategySink {
       if (normalized.type === 'session_init') {
         const event = normalized.event;
         this.#captureProviderSession(event.sessionId);
-        if (event.agents) {
-          this.services.agentManager.setBuiltinAgentNames(event.agents);
-        }
         this.#emitStateForCurrentTurn();
         if (event.permissionMode !== undefined) {
           this.#emitPermissionModeForCurrentTurn(

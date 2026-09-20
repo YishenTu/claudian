@@ -1,5 +1,6 @@
 /* Brand & semantic color tokens */
-.claudian-container {
+.claudian-container,
+.claudian-settings {
   --claudian-brand: #D97757;
   --claudian-brand-rgb: 217, 119, 87;
   --claudian-brand-claude: #D97757;

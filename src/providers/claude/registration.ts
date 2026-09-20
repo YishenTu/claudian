@@ -2,10 +2,7 @@ import { getProviderConfig } from '../../core/providers/providerConfig';
 import { hasStoredConfigNormalization } from '../../core/providers/settings/storedSettings';
 import type { ProviderModule } from '../../core/providers/types';
 import { parseEnvironmentVariables } from '../../utils/env';
-import {
-  claudeWorkspaceRegistration,
-  getClaudeWorkspaceServices,
-} from './app/ClaudeWorkspaceServices';
+import { claudeWorkspaceRegistration } from './app/ClaudeWorkspaceServices';
 import { CLAUDE_PROVIDER_CAPABILITIES } from './capabilities';
 import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
@@ -53,10 +50,7 @@ export const claudeProviderRegistration: ProviderModule = {
       );
     },
   },
-  createExecutionBackend: (plugin) => {
-    const workspace = getClaudeWorkspaceServices();
-    return new ClaudeExecutionBackend(plugin, workspace);
-  },
+  createExecutionBackend: plugin => new ClaudeExecutionBackend(plugin),
   createSubagentHistoryService: plugin => new ClaudeSubagentHistoryService(plugin),
   resolveTitleGenerationModel: (plugin) => {
     const titleModel = plugin.settings.titleGenerationModel;

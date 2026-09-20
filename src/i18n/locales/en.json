@@ -628,44 +628,6 @@
       "desc": "Hide specific commands and skills from the dropdown. Useful for hiding Claude Code entries that are not relevant to Claudian. Enter names without the leading slash, one per line.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "subagents": {
-      "name": "Subagents",
-      "desc": "Manage vault-level subagents stored in .claude/agents/. Each Markdown file defines one custom agent.",
-      "noAgents": "No subagents configured. Click + to create one.",
-      "deleteConfirm": "Delete subagent \"{name}\"?",
-      "saveFailed": "Failed to save subagent: {message}",
-      "refreshFailed": "Failed to refresh subagents: {message}",
-      "deleteFailed": "Failed to delete subagent: {message}",
-      "renameCleanupFailed": "Warning: could not remove old file for \"{name}\"",
-      "created": "Subagent \"{name}\" created",
-      "updated": "Subagent \"{name}\" updated",
-      "deleted": "Subagent \"{name}\" deleted",
-      "duplicateName": "An agent named \"{name}\" already exists",
-      "descriptionRequired": "Description is required",
-      "promptRequired": "System prompt is required",
-      "modal": {
-        "titleEdit": "Edit Subagent",
-        "titleAdd": "Add Subagent",
-        "name": "Name",
-        "nameDesc": "Lowercase letters, numbers, and hyphens only",
-        "namePlaceholder": "code-reviewer",
-        "description": "Description",
-        "descriptionDesc": "Brief description of this agent",
-        "descriptionPlaceholder": "Reviews code for bugs and style",
-        "advancedOptions": "Advanced options",
-        "model": "Model",
-        "modelDesc": "Model override for this agent",
-        "tools": "Tools",
-        "toolsDesc": "Comma-separated list of allowed tools (empty = all)",
-        "disallowedTools": "Disallowed tools",
-        "disallowedToolsDesc": "Comma-separated list of tools to disallow",
-        "skills": "Skills",
-        "skillsDesc": "Comma-separated list of skills",
-        "prompt": "System prompt",
-        "promptDesc": "Instructions for the agent",
-        "promptPlaceholder": "You are a code reviewer. Analyze the given code for..."
-      }
-    },
     "safety": "Safety",
     "loadUserSettings": {
       "name": "Load user Claude settings",
@@ -888,10 +850,6 @@
         "hiddenDesc": "Hide specific Codex skills from the dropdown. Enter skill names without the leading $, one per line.",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
       },
-      "subagents": {
-        "name": "Codex subagents",
-        "desc": "Manage vault-level Codex subagents stored in .codex/agents/. Each TOML file defines one custom agent."
-      },
       "environment": {
         "name": "Codex environment",
         "desc": "Codex-owned runtime variables only. Use this for OPENAI_* and CODEX_* settings. If Codex auto-detection needs help, add its install directory to shared PATH instead of this provider section."
@@ -932,52 +890,6 @@
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
       }
-    },
-    "codexSubagents": {
-      "modal": {
-        "titleEdit": "Edit Codex Subagent",
-        "titleAdd": "Add Codex Subagent",
-        "nameDesc": "Agent name Codex uses when spawning (lowercase, hyphens, underscores)",
-        "descriptionDesc": "When Codex should use this agent",
-        "modelDesc": "Model override (leave empty to inherit)",
-        "namePlaceholder": "code_reviewer"
-      },
-      "reasoningEffort": {
-        "name": "Reasoning effort",
-        "desc": "Model reasoning effort level",
-        "inherit": "Inherit",
-        "low": "Low",
-        "medium": "Medium",
-        "high": "High",
-        "xhigh": "Extra High"
-      },
-      "sandboxMode": {
-        "name": "Sandbox mode",
-        "desc": "Sandbox restriction for this agent",
-        "inherit": "Inherit",
-        "readOnly": "Read only",
-        "dangerFullAccess": "Danger full access",
-        "workspaceWrite": "Workspace write"
-      },
-      "nicknameCandidates": {
-        "name": "Nickname candidates",
-        "desc": "Comma-separated display nicknames (e.g., atlas, delta, echo)"
-      },
-      "developerInstructions": {
-        "name": "Developer instructions",
-        "desc": "Core instructions that define the agent's behavior",
-        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
-        "required": "Developer instructions are required"
-      },
-      "validation": {
-        "nameRequired": "Subagent name is required",
-        "nameTooLong": "Subagent name must be {count} characters or fewer",
-        "nameInvalid": "Subagent name can only contain lowercase letters, numbers, hyphens, and underscores",
-        "nicknameInvalid": "Nickname candidates can only contain ASCII letters, numbers, spaces, hyphens, and underscores",
-        "nicknameDuplicate": "Nickname candidates must be unique"
-      },
-      "header": "Codex Subagents",
-      "noAgents": "No Codex subagents in vault. Click + to create one."
     }
   }
 }

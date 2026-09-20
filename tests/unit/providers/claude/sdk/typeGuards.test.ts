@@ -8,12 +8,6 @@ describe('isSessionInitEvent', () => {
     expect(isSessionInitEvent(event)).toBe(true);
   });
 
-  it('should return true for session_init with agents', () => {
-    const event: TransformEvent = { type: 'session_init', sessionId: 'abc', agents: ['agent1'] };
-
-    expect(isSessionInitEvent(event)).toBe(true);
-  });
-
   it('should return false for stream chunk events', () => {
     const textChunk: TransformEvent = { type: 'text', content: 'hello' };
     const doneChunk: TransformEvent = { type: 'done' };

@@ -22,12 +22,10 @@ import { isWindowsStyleCliReference } from '../runtime/CodexBinaryLocator';
 import { inspectCodexInstallation } from '../runtime/CodexCliInstallation';
 import type { CodexModelCatalogCoordinator } from '../runtime/CodexModelCatalogCoordinator';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
-import type { CodexSubagentStorage } from '../storage/CodexSubagentStorage';
 import { renderCodexModelPicker } from './CodexModelPicker';
-import { CodexSubagentSettings } from './CodexSubagentSettings';
 
 export function createCodexSettingsTabRenderer(
-  codexWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; subagentStorage: CodexSubagentStorage; modelCatalogCoordinator: Pick<CodexModelCatalogCoordinator, 'ensureFresh'>; refreshModelCatalog: CodexModelCatalogCoordinator['refreshModelCatalog']; },
+  codexWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; modelCatalogCoordinator: Pick<CodexModelCatalogCoordinator, 'ensureFresh'>; refreshModelCatalog: CodexModelCatalogCoordinator['refreshModelCatalog']; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -330,19 +328,6 @@ export function createCodexSettingsTabRenderer(
         desc: t('settings.codex.skills.hiddenDesc'),
         placeholder: t('settings.codex.skills.hiddenPlaceholder'),
       });
-
-      // --- Subagents ---
-
-      new Setting(container).setName(t('settings.codex.subagents.name')).setHeading();
-
-      const subagentDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
-      subagentDesc.createEl('p', {
-        cls: 'setting-item-description',
-        text: t('settings.codex.subagents.desc'),
-      });
-
-      const subagentContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
-      new CodexSubagentSettings(subagentContainer, codexWorkspace.subagentStorage, context.plugin.app);
 
       // --- Environment ---
 

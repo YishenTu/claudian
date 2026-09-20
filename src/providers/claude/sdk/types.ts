@@ -12,7 +12,6 @@ export interface ClaudeAsyncSubagentCompletionEvent {
 export interface SessionInitEvent {
   type: 'session_init';
   sessionId: string;
-  agents?: string[];
   permissionMode?: string;
 }
 

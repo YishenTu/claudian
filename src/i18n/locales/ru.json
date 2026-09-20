@@ -628,44 +628,6 @@
       "desc": "Скрыть определённые команды и навыки из выпадающего списка. Полезно для скрытия записей Claude Code, которые не актуальны для Claudian. Вводите имена без начального слэша, по одному на строку.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "subagents": {
-      "name": "Субагенты",
-      "desc": "Управление субагентами на уровне хранилища в .claude/agents/. Каждый Markdown-файл определяет одного пользовательского агента.",
-      "noAgents": "Субагенты не настроены. Нажмите +, чтобы создать одного.",
-      "deleteConfirm": "Удалить субагента \"{name}\"?",
-      "saveFailed": "Не удалось сохранить субагента: {message}",
-      "refreshFailed": "Не удалось обновить субагентов: {message}",
-      "deleteFailed": "Не удалось удалить субагента: {message}",
-      "renameCleanupFailed": "Предупреждение: не удалось удалить старый файл для \"{name}\"",
-      "created": "Субагент \"{name}\" создан",
-      "updated": "Субагент \"{name}\" обновлён",
-      "deleted": "Субагент \"{name}\" удалён",
-      "duplicateName": "Агент с именем \"{name}\" уже существует",
-      "descriptionRequired": "Описание обязательно",
-      "promptRequired": "Системный промпт обязателен",
-      "modal": {
-        "titleEdit": "Редактировать субагента",
-        "titleAdd": "Добавить субагента",
-        "name": "Имя",
-        "nameDesc": "Только строчные буквы, цифры и дефисы",
-        "namePlaceholder": "code-reviewer",
-        "description": "Описание",
-        "descriptionDesc": "Краткое описание этого агента",
-        "descriptionPlaceholder": "Проверяет код на ошибки и стиль",
-        "advancedOptions": "Дополнительные параметры",
-        "model": "Модель",
-        "modelDesc": "Переопределение модели для этого агента",
-        "tools": "Инструменты",
-        "toolsDesc": "Список разрешённых инструментов через запятую (пусто = все)",
-        "disallowedTools": "Запрещённые инструменты",
-        "disallowedToolsDesc": "Список инструментов, которые нужно запретить, через запятую",
-        "skills": "Навыки",
-        "skillsDesc": "Список навыков через запятую",
-        "prompt": "Системный промпт",
-        "promptDesc": "Инструкции для агента",
-        "promptPlaceholder": "Вы специалист по проверке кода. Проанализируйте предоставленный код на предмет..."
-      }
-    },
     "safety": "Безопасность",
     "loadUserSettings": {
       "name": "Загружать пользовательские настройки Claude",
@@ -888,10 +850,6 @@
         "hiddenDesc": "Скрыть отдельные навыки Codex из списка. Введите имена навыков без начального $, по одному на строку.",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
       },
-      "subagents": {
-        "name": "Субагенты Codex",
-        "desc": "Управляйте субагентами Codex уровня vault, сохраненными в .codex/agents/. Каждый TOML-файл задает одного пользовательского агента."
-      },
       "environment": {
         "name": "Окружение Codex",
         "desc": "Только переменные среды выполнения, принадлежащие Codex. Используйте для настроек OPENAI_* и CODEX_*. Если автоопределению Codex нужна помощь, добавьте каталог установки в общий PATH, а не в этот раздел провайдера."
@@ -932,52 +890,6 @@
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
       }
-    },
-    "codexSubagents": {
-      "modal": {
-        "titleEdit": "Редактировать субагента Codex",
-        "titleAdd": "Добавить субагента Codex",
-        "nameDesc": "Имя агента, которое Codex использует при запуске (строчные буквы, дефисы, подчеркивания)",
-        "descriptionDesc": "Когда Codex должен использовать этого агента",
-        "modelDesc": "Переопределение модели (пусто = наследовать)",
-        "namePlaceholder": "code_reviewer"
-      },
-      "reasoningEffort": {
-        "name": "Усилие рассуждения",
-        "desc": "Уровень усилия рассуждения модели",
-        "inherit": "Наследовать",
-        "low": "Низкий",
-        "medium": "Средний",
-        "high": "Высокий",
-        "xhigh": "Очень высокий"
-      },
-      "sandboxMode": {
-        "name": "Режим песочницы",
-        "desc": "Ограничение песочницы для этого агента",
-        "inherit": "Наследовать",
-        "readOnly": "Только чтение",
-        "dangerFullAccess": "Полный доступ",
-        "workspaceWrite": "Запись в рабочую область"
-      },
-      "nicknameCandidates": {
-        "name": "Варианты псевдонимов",
-        "desc": "Отображаемые псевдонимы через запятую (например: atlas, delta, echo)"
-      },
-      "developerInstructions": {
-        "name": "Инструкции разработчика",
-        "desc": "Основные инструкции, определяющие поведение агента",
-        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
-        "required": "Инструкции разработчика обязательны"
-      },
-      "validation": {
-        "nameRequired": "Имя субагента обязательно",
-        "nameTooLong": "Имя субагента должно быть не длиннее {count} символов",
-        "nameInvalid": "Имя субагента может содержать только строчные буквы, цифры, дефисы и подчеркивания",
-        "nicknameInvalid": "Варианты псевдонимов могут содержать только ASCII-буквы, цифры, пробелы, дефисы и подчеркивания",
-        "nicknameDuplicate": "Варианты псевдонимов должны быть уникальными"
-      },
-      "header": "Субагенты Codex",
-      "noAgents": "В vault нет субагентов Codex. Нажмите +, чтобы создать одного."
     }
   }
 }

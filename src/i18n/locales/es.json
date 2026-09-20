@@ -628,44 +628,6 @@
       "desc": "Oculta comandos y habilidades específicos del menú desplegable. Útil para ocultar entradas de Claude Code que no son relevantes para Claudian. Ingresa los nombres sin la barra inicial, uno por línea.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "subagents": {
-      "name": "Subagentes",
-      "desc": "Administra subagentes a nivel de vault almacenados en .claude/agents/. Cada archivo Markdown define un agente personalizado.",
-      "noAgents": "No hay subagentes configurados. Haz clic en + para crear uno.",
-      "deleteConfirm": "¿Eliminar el subagente \"{name}\"?",
-      "saveFailed": "No se pudo guardar el subagente: {message}",
-      "refreshFailed": "No se pudieron actualizar los subagentes: {message}",
-      "deleteFailed": "No se pudo eliminar el subagente: {message}",
-      "renameCleanupFailed": "Advertencia: no se pudo eliminar el archivo anterior de \"{name}\"",
-      "created": "Se creó el subagente \"{name}\"",
-      "updated": "Se actualizó el subagente \"{name}\"",
-      "deleted": "Se eliminó el subagente \"{name}\"",
-      "duplicateName": "Ya existe un agente con el nombre \"{name}\"",
-      "descriptionRequired": "La descripción es obligatoria",
-      "promptRequired": "El prompt del sistema es obligatorio",
-      "modal": {
-        "titleEdit": "Editar subagente",
-        "titleAdd": "Agregar subagente",
-        "name": "Nombre",
-        "nameDesc": "Solo letras minúsculas, números y guiones",
-        "namePlaceholder": "code-reviewer",
-        "description": "Descripción",
-        "descriptionDesc": "Descripción breve de este agente",
-        "descriptionPlaceholder": "Revisa código en busca de errores y estilo",
-        "advancedOptions": "Opciones avanzadas",
-        "model": "Modelo",
-        "modelDesc": "Modelo alternativo para este agente",
-        "tools": "Herramientas",
-        "toolsDesc": "Lista separada por comas de las herramientas permitidas (vacío = todas)",
-        "disallowedTools": "Herramientas no permitidas",
-        "disallowedToolsDesc": "Lista separada por comas de herramientas no permitidas",
-        "skills": "Habilidades",
-        "skillsDesc": "Lista separada por comas de habilidades",
-        "prompt": "Prompt del sistema",
-        "promptDesc": "Instrucciones para el agente",
-        "promptPlaceholder": "Eres un revisor de código. Analiza el código proporcionado para..."
-      }
-    },
     "safety": "Seguridad",
     "loadUserSettings": {
       "name": "Cargar configuración de usuario Claude",
@@ -888,10 +850,6 @@
         "hiddenDesc": "Oculta habilidades Codex específicas del desplegable. Introduce nombres de habilidad sin el $ inicial, uno por línea.",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
       },
-      "subagents": {
-        "name": "Subagentes de Codex",
-        "desc": "Gestiona subagentes Codex de nivel vault guardados en .codex/agents/. Cada archivo TOML define un agente personalizado."
-      },
       "environment": {
         "name": "Entorno de Codex",
         "desc": "Solo variables de ejecución propiedad de Codex. Úsalo para ajustes OPENAI_* y CODEX_*. Si la autodetección de Codex necesita ayuda, añade su directorio de instalación al PATH compartido en lugar de esta sección del proveedor."
@@ -932,52 +890,6 @@
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
       }
-    },
-    "codexSubagents": {
-      "modal": {
-        "titleEdit": "Editar subagente de Codex",
-        "titleAdd": "Añadir subagente de Codex",
-        "nameDesc": "Nombre de agente que Codex usa al generarlo (minúsculas, guiones y guiones bajos)",
-        "descriptionDesc": "Cuándo debería usar Codex este agente",
-        "modelDesc": "Sobrescritura de modelo (vacío = heredar)",
-        "namePlaceholder": "code_reviewer"
-      },
-      "reasoningEffort": {
-        "name": "Esfuerzo de razonamiento",
-        "desc": "Nivel de esfuerzo de razonamiento del modelo",
-        "inherit": "Heredar",
-        "low": "Bajo",
-        "medium": "Medio",
-        "high": "Alto",
-        "xhigh": "Muy alto"
-      },
-      "sandboxMode": {
-        "name": "Modo sandbox",
-        "desc": "Restricción de sandbox para este agente",
-        "inherit": "Heredar",
-        "readOnly": "Solo lectura",
-        "dangerFullAccess": "Acceso total",
-        "workspaceWrite": "Escritura en espacio de trabajo"
-      },
-      "nicknameCandidates": {
-        "name": "Candidatos de apodo",
-        "desc": "Apodos visibles separados por comas (p. ej., atlas, delta, echo)"
-      },
-      "developerInstructions": {
-        "name": "Instrucciones de desarrollador",
-        "desc": "Instrucciones centrales que definen el comportamiento del agente",
-        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
-        "required": "Las instrucciones de desarrollador son obligatorias"
-      },
-      "validation": {
-        "nameRequired": "El nombre del subagente es obligatorio",
-        "nameTooLong": "El nombre del subagente debe tener {count} caracteres o menos",
-        "nameInvalid": "El nombre del subagente solo puede contener letras minúsculas, números, guiones y guiones bajos",
-        "nicknameInvalid": "Los candidatos de apodo solo pueden contener letras ASCII, números, espacios, guiones y guiones bajos",
-        "nicknameDuplicate": "Los candidatos de apodo deben ser únicos"
-      },
-      "header": "Subagentes de Codex",
-      "noAgents": "No hay subagentes Codex en el vault. Haz clic en + para crear uno."
     }
   }
 }

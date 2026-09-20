@@ -256,7 +256,7 @@
   width: 200px;
 }
 
-/* ── Shared settings panel layout (used by slash-settings + agent-settings) ── */
+/* ── Shared settings panel layout (used by command, skill, and provider agent settings) ── */
 
 .claudian-sp-header {
   display: flex;

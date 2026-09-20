@@ -30,10 +30,6 @@ jest.mock('@/providers/codex/skills/CodexSkillListingService', () => ({
   })),
 }));
 
-jest.mock('@/providers/codex/storage/CodexSubagentStorage', () => ({
-  CodexSubagentStorage: jest.fn(),
-}));
-
 import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import { getCodexProviderSettings } from '@/providers/codex/settings';
@@ -114,7 +110,7 @@ describe('CodexWorkspaceServices', () => {
     const sol = makeDiscoveredModel('gpt-5.6-sol');
     mockDiscoverModels.mockResolvedValue({ kind: 'completed', models: [sol] });
 
-    const services = await createCodexWorkspaceServices(plugin, {} as any);
+    const services = await createCodexWorkspaceServices(plugin);
 
     expect(mockDiscoverModels).not.toHaveBeenCalled();
     expect(plugin.saveSettings).not.toHaveBeenCalled();
@@ -135,7 +131,7 @@ describe('CodexWorkspaceServices', () => {
     });
     mockNormalizeAllModelVariants.mockReturnValueOnce(true);
 
-    const services = await createCodexWorkspaceServices(plugin, {} as any);
+    const services = await createCodexWorkspaceServices(plugin);
     await services.refreshModelCatalog!();
 
     expect(plugin.saveSettings).toHaveBeenCalledTimes(1);
@@ -145,7 +141,7 @@ describe('CodexWorkspaceServices', () => {
     const plugin = createPlugin(true);
     const sol = makeDiscoveredModel('gpt-5.6-sol');
     mockDiscoverModels.mockResolvedValue({ kind: 'completed', models: [sol] });
-    await createCodexWorkspaceServices(plugin, {} as any);
+    await createCodexWorkspaceServices(plugin);
     const layoutReadyCallback = plugin.app.workspace.onLayoutReady.mock.calls[0][0];
 
     layoutReadyCallback();
@@ -158,7 +154,7 @@ describe('CodexWorkspaceServices', () => {
   it('does not start app-server for a disabled provider', async () => {
     const plugin = createPlugin(false);
 
-    await createCodexWorkspaceServices(plugin, {} as any);
+    await createCodexWorkspaceServices(plugin);
 
     expect(mockDiscoverModels).not.toHaveBeenCalled();
     expect(plugin.saveSettings).not.toHaveBeenCalled();
@@ -170,7 +166,7 @@ describe('CodexWorkspaceServices', () => {
       kind: 'completed',
       models: [makeDiscoveredModel('gpt-5.6-sol')],
     });
-    const services = await createCodexWorkspaceServices(plugin, {} as any);
+    const services = await createCodexWorkspaceServices(plugin);
     const layoutReadyCallback = plugin.app.workspace.onLayoutReady.mock.calls[0][0];
 
     await services.dispose?.();
@@ -188,7 +184,7 @@ describe('CodexWorkspaceServices', () => {
       kind: 'skipped',
       reason: 'provider-disabled',
     });
-    const services = await createCodexWorkspaceServices(plugin, {} as any);
+    const services = await createCodexWorkspaceServices(plugin);
 
     await expect(services.refreshModelCatalog!()).resolves.toEqual({ changed: false });
     expect(getCodexProviderSettings(plugin.settings).discoveredModels).toEqual([cached]);
@@ -203,7 +199,7 @@ describe('CodexWorkspaceServices', () => {
       kind: 'completed',
       models: [],
     });
-    const services = await createCodexWorkspaceServices(plugin, {} as any);
+    const services = await createCodexWorkspaceServices(plugin);
 
     await expect(services.refreshModelCatalog!()).resolves.toEqual({
       changed: false,
@@ -217,7 +213,7 @@ describe('CodexWorkspaceServices', () => {
     const currentModel = makeDiscoveredModel('gpt-5.5');
     const plugin = createPlugin(false, [oldModel, currentModel], ['gpt-5.4', 'gpt-5.5']);
     mockDiscoverModels.mockResolvedValue({ kind: 'completed', models: [currentModel] });
-    const services = await createCodexWorkspaceServices(plugin, {} as any);
+    const services = await createCodexWorkspaceServices(plugin);
 
     await services.refreshModelCatalog!();
 
@@ -242,7 +238,7 @@ describe('CodexWorkspaceServices', () => {
       endEnvironmentTransition: jest.fn(),
       quiesceForEnvironmentChange: jest.fn(() => skillQuiescence),
     };
-    await createCodexWorkspaceServices(plugin, {} as any, {
+    await createCodexWorkspaceServices(plugin, {
       modelCatalogCoordinator: modelCatalogCoordinator as any,
       skillListingService: skillListingService as any,
     });
@@ -311,7 +307,7 @@ describe('CodexWorkspaceServices', () => {
         enabled: true,
       }];
     });
-    const services = await createCodexWorkspaceServices(plugin, {} as any, {
+    const services = await createCodexWorkspaceServices(plugin, {
       modelCatalogCoordinator,
       skillListingService,
     });
@@ -366,7 +362,7 @@ describe('CodexWorkspaceServices', () => {
       endEnvironmentTransition: jest.fn(),
       quiesceForEnvironmentChange: jest.fn().mockResolvedValue(undefined),
     };
-    const services = await createCodexWorkspaceServices(plugin, {} as any, {
+    const services = await createCodexWorkspaceServices(plugin, {
       modelCatalogCoordinator: modelCatalogCoordinator as any,
       skillListingService: skillListingService as any,
     });

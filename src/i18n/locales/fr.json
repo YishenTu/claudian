@@ -628,44 +628,6 @@
       "desc": "Masquez des commandes et compétences spécifiques du menu déroulant. Utile pour masquer les entrées Claude Code qui ne sont pas pertinentes pour Claudian. Saisissez les noms sans le slash initial, un par ligne.",
       "placeholder": "commit\nbuild\ntest"
     },
-    "subagents": {
-      "name": "Sous-agents",
-      "desc": "Gérez les sous-agents au niveau du vault stockés dans .claude/agents/. Chaque fichier Markdown définit un agent personnalisé.",
-      "noAgents": "Aucun sous-agent configuré. Cliquez sur + pour en créer un.",
-      "deleteConfirm": "Supprimer le sous-agent \"{name}\" ?",
-      "saveFailed": "Échec de l’enregistrement du sous-agent : {message}",
-      "refreshFailed": "Échec de l’actualisation des subagents : {message}",
-      "deleteFailed": "Échec de la suppression du sous-agent : {message}",
-      "renameCleanupFailed": "Avertissement : impossible de supprimer l’ancien fichier pour \"{name}\"",
-      "created": "Sous-agent \"{name}\" créé",
-      "updated": "Sous-agent \"{name}\" mis à jour",
-      "deleted": "Sous-agent \"{name}\" supprimé",
-      "duplicateName": "Un agent nommé \"{name}\" existe déjà",
-      "descriptionRequired": "La description est obligatoire",
-      "promptRequired": "Le prompt système est obligatoire",
-      "modal": {
-        "titleEdit": "Modifier le sous-agent",
-        "titleAdd": "Ajouter un sous-agent",
-        "name": "Nom",
-        "nameDesc": "Lettres minuscules, chiffres et tirets uniquement",
-        "namePlaceholder": "code-reviewer",
-        "description": "Description",
-        "descriptionDesc": "Brève description de cet agent",
-        "descriptionPlaceholder": "Examine le code pour détecter les bugs et les problèmes de style",
-        "advancedOptions": "Options avancées",
-        "model": "Modèle",
-        "modelDesc": "Modèle à utiliser pour cet agent",
-        "tools": "Outils",
-        "toolsDesc": "Liste des outils autorisés, séparés par des virgules (vide = tous)",
-        "disallowedTools": "Outils non autorisés",
-        "disallowedToolsDesc": "Liste des outils à interdire, séparés par des virgules",
-        "skills": "Compétences",
-        "skillsDesc": "Liste des compétences, séparées par des virgules",
-        "prompt": "Prompt système",
-        "promptDesc": "Instructions pour l’agent",
-        "promptPlaceholder": "Vous êtes un relecteur de code. Analysez le code fourni pour..."
-      }
-    },
     "safety": "Sécurité",
     "loadUserSettings": {
       "name": "Charger les paramètres utilisateur Claude",
@@ -888,10 +850,6 @@
         "hiddenDesc": "Masquez certaines compétences Codex dans le menu déroulant. Entrez les noms sans le $ initial, un par ligne.",
         "hiddenPlaceholder": "analyze\nexplain\nfix"
       },
-      "subagents": {
-        "name": "Sous-agents Codex",
-        "desc": "Gérez les sous-agents Codex de niveau vault stockés dans .codex/agents/. Chaque fichier TOML définit un agent personnalisé."
-      },
       "environment": {
         "name": "Environnement Codex",
         "desc": "Variables d’exécution appartenant uniquement à Codex. Utilisez ceci pour les réglages OPENAI_* et CODEX_*. Si l’auto-détection de Codex a besoin d’aide, ajoutez son répertoire d’installation au PATH partagé plutôt qu’à cette section fournisseur."
@@ -932,52 +890,6 @@
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
       }
-    },
-    "codexSubagents": {
-      "modal": {
-        "titleEdit": "Modifier le sous-agent Codex",
-        "titleAdd": "Ajouter un sous-agent Codex",
-        "nameDesc": "Nom d’agent utilisé par Codex au lancement (minuscules, traits d’union, underscores)",
-        "descriptionDesc": "Quand Codex doit utiliser cet agent",
-        "modelDesc": "Remplacement de modèle (vide = hériter)",
-        "namePlaceholder": "code_reviewer"
-      },
-      "reasoningEffort": {
-        "name": "Effort de raisonnement",
-        "desc": "Niveau d’effort de raisonnement du modèle",
-        "inherit": "Hériter",
-        "low": "Faible",
-        "medium": "Moyen",
-        "high": "Élevé",
-        "xhigh": "Très élevé"
-      },
-      "sandboxMode": {
-        "name": "Mode sandbox",
-        "desc": "Restriction sandbox pour cet agent",
-        "inherit": "Hériter",
-        "readOnly": "Lecture seule",
-        "dangerFullAccess": "Accès complet",
-        "workspaceWrite": "Écriture dans l’espace de travail"
-      },
-      "nicknameCandidates": {
-        "name": "Surnoms candidats",
-        "desc": "Surnoms d’affichage séparés par des virgules (ex. atlas, delta, echo)"
-      },
-      "developerInstructions": {
-        "name": "Instructions développeur",
-        "desc": "Instructions centrales qui définissent le comportement de l’agent",
-        "placeholder": "Review code like an owner.\nPrioritize correctness, security, and missing test coverage.",
-        "required": "Les instructions développeur sont obligatoires"
-      },
-      "validation": {
-        "nameRequired": "Le nom du sous-agent est obligatoire",
-        "nameTooLong": "Le nom du sous-agent doit contenir {count} caractères ou moins",
-        "nameInvalid": "Le nom du sous-agent ne peut contenir que des minuscules, chiffres, traits d’union et underscores",
-        "nicknameInvalid": "Les surnoms candidats ne peuvent contenir que des lettres ASCII, chiffres, espaces, traits d’union et underscores",
-        "nicknameDuplicate": "Les surnoms candidats doivent être uniques"
-      },
-      "header": "Sous-agents Codex",
-      "noAgents": "Aucun sous-agent Codex dans le vault. Cliquez sur + pour en créer un."
     }
   }
 }
