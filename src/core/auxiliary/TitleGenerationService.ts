@@ -46,6 +46,7 @@ export class TitleGenerationService implements TitleGenerationServiceContract {
       await controller.startRoot();
       const text = await controller.execute({
         model: this.options.resolveModel?.(),
+        reasoning: null,
         prompt: buildTitleGenerationPrompt(userMessage),
         systemPrompt: buildTitleGenerationSystemPrompt(
           this.options.resolveLocale?.(),

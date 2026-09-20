@@ -42,6 +42,7 @@ function createHarness() {
   ProviderWorkspaceRegistry.clear();
   ProviderWorkspaceRegistry.setServices('claude', {});
   ProviderRegistry.register('claude', {
+    capabilities: { supportsEphemeralSessions: true },
     createExecutionBackend: () => backend,
     isEnabled: () => true,
   } as unknown as ProviderRegistration);

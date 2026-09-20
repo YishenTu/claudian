@@ -2,7 +2,6 @@ import type {
   ProviderExecutionRequest,
   ProviderExecutionRun,
   ProviderExecutionSessionLease,
-  ProviderNativePersistence,
   ProviderToolPolicy,
 } from '../execution';
 import type { AuxiliaryExecutionContext } from './AuxiliaryExecutionContext';
@@ -10,21 +9,13 @@ import { TextResponseCollector } from './TextResponseCollector';
 
 export interface AuxiliaryRequest {
   readonly model?: string;
+  readonly reasoning?: string | null;
   readonly onProgress?: (text: string) => void;
   readonly prompt: string;
   readonly systemPrompt: string;
 }
 
 type AuxiliaryExecutionOwner = 'title' | 'instruction' | 'inline-edit';
-
-const NATIVE_PERSISTENCE_BY_OWNER = {
-  title: 'disabled-if-supported',
-  instruction: 'provider-default',
-  'inline-edit': 'provider-default',
-} as const satisfies Record<
-  AuxiliaryExecutionOwner,
-  ProviderNativePersistence
->;
 
 export class AuxiliarySessionController {
   private abortController: AbortController | null = null;
@@ -64,7 +55,7 @@ export class AuxiliarySessionController {
       {
         interactionPort: this.context.interactionPort,
         lifecycle: 'ephemeral',
-        nativePersistence: NATIVE_PERSISTENCE_BY_OWNER[this.owner],
+        nativePersistence: this.context.nativePersistence,
         vaultWorkingDirectory: this.context.vaultWorkingDirectory,
       },
       this.owner,
@@ -96,6 +87,7 @@ export class AuxiliarySessionController {
     const abortController = new AbortController();
     const executionRequest: ProviderExecutionRequest = {
       configuration: {
+        ...(request.reasoning !== undefined ? { reasoning: request.reasoning } : {}),
         ...(request.model ? { model: request.model } : {}),
         systemInstructions: {
           instructions: request.systemPrompt,

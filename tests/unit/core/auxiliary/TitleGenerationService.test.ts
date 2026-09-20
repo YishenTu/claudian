@@ -19,6 +19,7 @@ function createService() {
     lifecycleRegistry,
     resolveLocale: () => 'ja',
     resolveModel: () => 'title-model',
+    nativePersistence: 'disabled-if-supported',
     vaultWorkingDirectory: '/vault',
   });
   return { backend, lifecycleRegistry, service };

@@ -83,6 +83,7 @@ ClaudeExecutionStrategySink {
 
   private readonly encoder: ClaudeExecutionRequestEncoder;
   private readonly strategy: ClaudeExecutionStrategy;
+  private readonly usesPersistentQuery: boolean;
   private readonly interactionHandler: ClaudeInteractionHandler;
   private readonly sessionListeners = new Set<
     (event: ProviderSessionEvent) => void
@@ -162,7 +163,9 @@ ClaudeExecutionStrategySink {
         );
       },
     });
-    this.strategy = config.lifecycle === 'persistent'
+    this.usesPersistentQuery = config.lifecycle === 'persistent'
+      || config.nativePersistence === 'disabled-if-supported';
+    this.strategy = this.usesPersistentQuery
       ? new ClaudePersistentExecutionStrategy(this)
       : new ClaudeEphemeralExecutionStrategy(this);
   }
@@ -228,7 +231,7 @@ ClaudeExecutionStrategySink {
     active.abortController.abort();
     this.interactionHandler.dismissAll('cancelled');
     if (active.nativeHandedOff) {
-      if (this.config.lifecycle === 'persistent') {
+      if (this.usesPersistentQuery) {
         this.suppressedPersistentQueryTokens.add(active.queryToken);
       } else {
         this.suppressedEphemeralQueryTokens.add(active.queryToken);
@@ -757,7 +760,7 @@ ClaudeExecutionStrategySink {
   ): boolean {
     if (!request.conversationHistory?.length) return false;
     if (this.config.nativePersistence === 'disabled-if-supported') {
-      return true;
+      return this.nativeQuery === null;
     }
     return !this.#getNativeResumeSessionId()
       || this.replayHistoryOnNextTurn;

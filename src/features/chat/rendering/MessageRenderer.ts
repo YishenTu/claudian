@@ -97,6 +97,7 @@ export class MessageRenderer {
     this.getCapabilities = getCapabilities ?? (() => ({
       providerId: DEFAULT_CHAT_PROVIDER_ID,
       supportsNativeHistory: false,
+      supportsEphemeralSessions: false,
       supportsRewind: false,
       supportsFork: false,
       supportsProviderCommands: false,

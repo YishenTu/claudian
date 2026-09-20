@@ -750,7 +750,7 @@ RewindableExecutionSession {
       // ensureSession has published the live model catalog.
       const reasoningEffort = this.#resolveReasoningEffort(
         rawModel,
-        request.configuration.reasoning,
+        request.configuration.reasoning ?? undefined,
       );
       const response = await native.setModel({
         ...(reasoningEffort

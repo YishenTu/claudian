@@ -77,6 +77,7 @@ implements ClaudeExecutionStrategy {
     readonly promise: Promise<void>;
   } | null = null;
   private preparingTurnToken: number | null = null;
+  private hasNonPersistentContext = false;
   private disposed = false;
 
   constructor(private readonly sink: ClaudeExecutionStrategySink) {}
@@ -119,6 +120,7 @@ implements ClaudeExecutionStrategy {
       const query = this.query;
       this.messageChannel.enqueue(message);
       this.activeNativeTurn = createPersistentNativeTurn(query, queryToken);
+      this.hasNonPersistentContext ||= request.options.persistSession === false;
       this.sink.markNativeTurnHandedOff(queryToken);
     } finally {
       if (this.preparingTurnToken === queryToken) {
@@ -194,6 +196,17 @@ implements ClaudeExecutionStrategy {
     requestSignal?.throwIfAborted();
     if (this.disposed) {
       throw new Error('Claude persistent strategy is disposed');
+    }
+    if (
+      this.hasNonPersistentContext
+      && (
+        !this.query
+        || this.currentConfig?.restartKey !== request.restartKey
+      )
+    ) {
+      throw new Error(
+        'This non-persistent Claude session cannot be restored after its configuration or process changes. Start a new request.',
+      );
     }
     if (
       this.query

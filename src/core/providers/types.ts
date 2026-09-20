@@ -25,6 +25,8 @@ export type { ProviderId } from '../types/provider';
 export interface ProviderCapabilities {
   providerId: ProviderId;
   supportsNativeHistory: boolean;
+  /** Can execute without saving native conversation history, including clarification turns. */
+  supportsEphemeralSessions: boolean;
   supportsRewind: boolean;
   supportsFork: boolean;
   supportsProviderCommands: boolean;

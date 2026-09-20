@@ -191,12 +191,12 @@ export class ClaudeExecutionRequestEncoder {
 
     if (sessionConfig.nativePersistence === 'disabled-if-supported') {
       options.persistSession = false;
-      if (request.toolPolicy.kind === 'passive') {
-        delete options.thinking;
-        delete options.effort;
-      }
     } else if (sessionConfig.nativePersistence === 'enabled') {
       options.persistSession = true;
+    }
+    if (request.configuration.reasoning === null) {
+      delete options.thinking;
+      delete options.effort;
     }
 
     return {

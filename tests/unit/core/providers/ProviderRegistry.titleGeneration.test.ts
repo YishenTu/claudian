@@ -13,6 +13,7 @@ function createReadyService() {
   ProviderWorkspaceRegistry.setServices('claude', {});
   ProviderRegistry.register('claude', {
     isEnabled: () => true,
+    capabilities: { supportsEphemeralSessions: true },
     createExecutionBackend: () => backend,
   } as unknown as ProviderRegistration);
   const host = {
@@ -39,6 +40,7 @@ it('does not submit a title request after cancellation during provider initializ
   });
   ProviderRegistry.register('claude', {
     isEnabled: () => true,
+    capabilities: { supportsEphemeralSessions: true },
     createExecutionBackend: () => backend,
   } as unknown as ProviderRegistration);
   const host = {

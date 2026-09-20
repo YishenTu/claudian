@@ -17,6 +17,7 @@ function createService() {
       requestApproval: jest.fn(),
     },
     lifecycleRegistry,
+    nativePersistence: 'provider-default',
     vaultWorkingDirectory: '/vault',
   });
   return { backend, lifecycleRegistry, service };

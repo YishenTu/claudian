@@ -441,6 +441,7 @@ describe('ClaudeExecutionBackend', () => {
     }));
     await collectEvents(oneShot.execute(createRequest({
       configuration: {
+        reasoning: null,
         systemInstructions: {
           kind: 'explicit',
           instructions: 'Generate a title.',
@@ -456,6 +457,70 @@ describe('ClaudeExecutionBackend', () => {
     expect(sdkMock.getLastOptions()?.thinking).toBeUndefined();
     expect(oneShot.getSnapshot().providerSessionId).toBeUndefined();
   });
+
+  it.each(['configuration change', 'process exit'] as const)(
+    'requires a new auxiliary request after a non-persistent %s',
+    async (reason) => {
+      const messages = [
+        { type: 'system', subtype: 'init', session_id: 'auxiliary-session' },
+        { type: 'result', subtype: 'success' },
+      ];
+      const closedQuery = reason === 'process exit'
+        ? createScriptedPersistentQuery([messages])
+        : null;
+      if (closedQuery) {
+        jest.spyOn(
+          await import('@/providers/claude/loadClaudeAgentSdk'),
+          'loadClaudeAgentQuery',
+        ).mockResolvedValueOnce((() => closedQuery) as never);
+      } else {
+        sdkMock.setMockMessages(messages, { appendResult: false });
+      }
+      const { services } = createServices();
+      const session = new ClaudeExecutionBackend(createHost(), services)
+        .createSession(createConfig({
+          lifecycle: 'ephemeral',
+          nativePersistence: 'disabled-if-supported',
+        }));
+      const request = createRequest({
+        configuration: {
+          systemInstructions: { kind: 'explicit', instructions: 'Edit the draft.' },
+        },
+        toolPolicy: { kind: 'read-only' },
+      });
+
+      try {
+        const first = await collectEvents(session.execute(request).events);
+        expect(first.at(-1)).toMatchObject({ type: 'turn_completed' });
+        if (closedQuery) {
+          await closedQuery.finished;
+          await waitFor(() => session.getStatus() === 'invalidated');
+        }
+
+        const continuation = await collectEvents(session.execute({
+          ...request,
+          input: [{ type: 'text', text: 'Make it more formal.' }],
+          ...(reason === 'configuration change'
+            ? {
+                configuration: {
+                  systemInstructions: {
+                    kind: 'explicit' as const,
+                    instructions: 'Edit the draft with new guidance.',
+                  },
+                },
+              }
+            : {}),
+        }).events);
+
+        expect(continuation.at(-1)).toMatchObject({
+          type: 'execution_error',
+          message: expect.any(String),
+        });
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
 
   it('maps images and structured context without injecting legacy MCP configuration', async () => {
     const { services } = createServices();
@@ -1802,7 +1867,10 @@ describe('ClaudeExecutionBackend', () => {
     );
   });
 
-  it('keeps a cancelled native turn quarantined while an immediate retry is active', async () => {
+  it.each([
+    ['persistent', 'enabled'],
+    ['ephemeral', 'disabled-if-supported'],
+  ] as const)('keeps a cancelled %s native turn quarantined while an immediate retry is active', async (lifecycle, nativePersistence) => {
     const query = createScriptedPersistentQuery([[
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       deferredMessage(),
@@ -1823,7 +1891,7 @@ describe('ClaudeExecutionBackend', () => {
     ).mockResolvedValueOnce((() => query) as never);
     const { services } = createServices();
     const session = new ClaudeExecutionBackend(createHost(), services)
-      .createSession(createConfig());
+      .createSession(createConfig({ lifecycle, nativePersistence }));
     const cancelledRun = session.execute(createRequest());
     const cancelledEventsPromise = collectEvents(cancelledRun.events);
 
