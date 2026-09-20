@@ -303,6 +303,10 @@
   border-end-end-radius: 4px;
 }
 
+.claudian-message-user ol {
+  list-style-position: inside;
+}
+
 .claudian-message-user ol > li::marker {
   color: inherit;
 }

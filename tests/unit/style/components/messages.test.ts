@@ -54,6 +54,30 @@ describe('Long conversation message styles', () => {
   });
 });
 
+describe('User message list containment', () => {
+  it('keeps ordered-list markers inside the message bubble', () => {
+    const style = document.createElement('style');
+    style.textContent = readFileSync(path.resolve('src/style/components/messages.css'), 'utf8');
+    document.head.appendChild(style);
+
+    const message = document.createElement('div');
+    message.className = 'claudian-message claudian-message-user';
+    message.innerHTML = `
+      <div class="claudian-message-content">
+        <ol start="9"><li></li><li></li></ol>
+      </div>
+    `;
+    document.body.appendChild(message);
+
+    try {
+      const list = message.querySelector('ol')!;
+      expect(window.getComputedStyle(list).listStylePosition).toBe('inside');
+    } finally {
+      message.remove();
+      style.remove();
+    }
+  });
+});
 
 describe('Message action row visibility', () => {
   function revealSelectors(): string[] {
