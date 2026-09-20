@@ -126,7 +126,8 @@ describe('Claude side-chat native child', () => {
     expect(first.accepted).toBe(true);
     expect(native.launches.at(-1)).toMatchObject({ forkSession: true, resume: 'claude-source', resumeSessionAt: 'claude-assistant-1' });
     expect(native.prompts.at(-1)).toMatchObject({ context: ['claude-assistant-1'], sessionId: 'claude-child' });
-    expect(child!.providerSessionId()).toBe('claude-child');
+    expect(native.launches.at(-1)?.persistSession).toBe(false);
+    expect(child!.session.canCool()).toBe(false);
 
     const second = await child!.send('Use A and B');
     expect(second.accepted).toBe(true);

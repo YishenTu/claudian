@@ -17,14 +17,17 @@ function createNativeCodex(env: ForkTestEnvironment) {
   const sourceFile = path.join(env.root, 'codex-source.jsonl');
   let ordinal = 0;
   const result = (id: string) => ({
-    thread: { id, path: sourceFile, turns: (threads.get(id) ?? []).map(turnId => ({ id: turnId, items: [], status: 'completed' })) },
+    thread: { id, path: id === 'codex-child' ? null : sourceFile, ephemeral: id === 'codex-child', turns: (threads.get(id) ?? []).map(turnId => ({ id: turnId, items: [], status: 'completed' })) },
   });
   jest.mocked(spawn).mockImplementation(() => createNativeRpcProcess(async (method, params, notify) => {
     operations.push({ method, params });
     if (method === 'initialize') return { codexHome: env.root, platformFamily: process.platform === 'win32' ? 'windows' : 'unix', platformOs: process.platform === 'darwin' ? 'macos' : process.platform, userAgent: 'test' };
     if (method === 'thread/start') return result('codex-source');
     if (method === 'thread/fork') {
-      threads.set('codex-child', [...threads.get(params.threadId)!]);
+      if (params.ephemeral && !params.excludeTurns) throw new Error('ephemeral paginated thread/fork requires excludeTurns: true');
+      const source = threads.get(params.threadId)!;
+      const end = params.lastTurnId ? source.indexOf(params.lastTurnId) + 1 : source.length;
+      threads.set('codex-child', source.slice(0, end));
       return result('codex-child');
     }
     if (method === 'thread/resume') return result(params.threadId);
@@ -67,7 +70,7 @@ describe('Codex side-chat native child', () => {
   beforeEach(async () => { env = await createForkTestEnvironment(); });
   afterEach(async () => { await env.dispose(); jest.mocked(spawn).mockReset(); });
 
-  it('rolls back only the child thread and keeps main history and the Claudian record untouched', async () => {
+  it('forks an ephemeral child at the captured checkpoint and keeps main history untouched', async () => {
     const native = createNativeCodex(env);
     const source = await env.open(native.backend);
     const checkpoint = await env.send(source, 'Remember A');
@@ -78,8 +81,8 @@ describe('Codex side-chat native child', () => {
 
     const child = await traceSideChild(env, source, checkpoint, native.backend);
     await child!.send('Also remember B');
-    expect(native.operations).toContainEqual({ method: 'thread/fork', params: { threadId: 'codex-source' } });
-    expect(native.operations).toContainEqual({ method: 'thread/rollback', params: { numTurns: 1, threadId: 'codex-child' } });
+    expect(native.operations).toContainEqual({ method: 'thread/fork', params: expect.objectContaining({ threadId: 'codex-source', ephemeral: true, excludeTurns: true, lastTurnId: 'codex-turn-1' }) });
+    expect(child!.session.canCool()).toBe(false);
     expect(native.prompts.at(-1)).toEqual({ context: ['codex-turn-1'], threadId: 'codex-child' });
 
     await child!.send('Use A and B');

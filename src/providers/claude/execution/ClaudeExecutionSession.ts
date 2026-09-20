@@ -737,7 +737,7 @@ ClaudeExecutionStrategySink {
   }
 
   #getNativeResume(): ClaudeNativeResume {
-    if (this.config.nativePersistence === 'disabled-if-supported') {
+    if (this.config.nativePersistence === 'disabled-if-supported' && !this.pendingFork) {
       return {};
     }
     const nativeResumeSessionId = this.#getNativeResumeSessionId();
@@ -760,7 +760,7 @@ ClaudeExecutionStrategySink {
   ): boolean {
     if (!request.conversationHistory?.length) return false;
     if (this.config.nativePersistence === 'disabled-if-supported') {
-      return this.nativeQuery === null;
+      return !this.pendingFork && this.nativeQuery === null;
     }
     return !this.#getNativeResumeSessionId()
       || this.replayHistoryOnNextTurn;
@@ -769,6 +769,9 @@ ClaudeExecutionStrategySink {
   #captureProviderSession(sessionId: string): void {
     this.#bumpRevision();
     if (this.config.nativePersistence === 'disabled-if-supported') {
+      this.pendingFork = false;
+      this.resumeAt = undefined;
+      this.#deleteProviderStateValue('forkSource');
       return;
     }
     const liveProviderSessionId = this.providerSessionId;

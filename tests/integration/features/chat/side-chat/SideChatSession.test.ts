@@ -21,6 +21,7 @@ function createSession(overrides: Partial<ConstructorParameters<typeof SideChatS
     onRequestedEvent: event => { requestedEvents.push(event.type); },
     onSessionEvent: event => { sessionEvents.push(event.type); },
     providerId: 'claude',
+    supportsEphemeralSessions: false,
     resolveBackend: () => backend,
     vaultWorkingDirectory: '/vault',
     ...overrides,
@@ -59,6 +60,23 @@ describe('SideChatSession', () => {
     await second;
     expect(harness.backend.sessions).toHaveLength(1);
     expect(harness.buildChildResumeState).toHaveBeenCalledTimes(1);
+    await harness.session.dispose();
+  });
+
+  it('ends an ephemeral child when a provider transition replaces its session', async () => {
+    const harness = createSession({ supportsEphemeralSessions: true });
+    const first = harness.session.execute(turn('Explore B'));
+    await waitFor(() => harness.backend.sessions.length === 1);
+    harness.backend.latest.complete();
+    await first;
+    await harness.lifecycleRegistry.runTransition(['claude'], async () => undefined);
+    let outcome: unknown;
+    const continuation = harness.session.execute(turn('Continue')).then(result => { outcome = result; }, error => { outcome = error; });
+    await waitFor(() => outcome !== undefined || harness.backend.sessions.length > 1);
+    if (harness.backend.sessions.length > 1) harness.backend.latest.complete();
+    await continuation;
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/start a new side chat/i);
     await harness.session.dispose();
   });
 

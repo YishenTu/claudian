@@ -12,7 +12,7 @@
 - First canonical input freezes Linked content for both creation and provider context. Create failure restores the draft; post-create failure leaves a locked conversation whose retry is still the first turn. Later/steered/compact turns must not resend it through a mutable sent flag.
 - Blank-tab provider transitions serialize and roll back to the last stable draft. Model-picker intents affect only the selected tab/conversation and the future-tab seed; existing tabs must not subscribe to that seed.
 - Conversation authority is revalidated after accepted-input staging and session preparation immediately before provider handoff. Superseded warm preparation cannot install or publish resources.
-- A temporary child conversation owns execution, rendering and settings in memory only; it never reaches conversation persistence, the accepted-input ledger, or view-scoped tab state. Its native child is seeded with the returned fork state alone, because seeding the parent's provider session id bypasses pending-fork handling and can resume the source. After the first turn it resumes its own normalized snapshot; an unresumable child stays protected from cooling instead of losing context.
+- A temporary child conversation owns execution, rendering and settings in memory only; it never reaches conversation persistence, the accepted-input ledger, or view-scoped tab state. Seed it with returned fork state alone, never the parent's established provider session id. Providers own native ephemeral fork support and any initial context fallback. Keep ephemeral children protected from cooling; lost native context requires a new side chat, never transcript rehydration.
 
 ## Surface and input behavior
 

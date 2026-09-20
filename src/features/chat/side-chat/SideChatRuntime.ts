@@ -107,12 +107,14 @@ export class SideChatRuntime {
       onError: error => deps.onError?.(error),
       onInvalidated: () => {
         this.#queuedSubmissions.length = 0;
-        // The child cannot outlive a provider transition; recovery needs a new turn.
-        this.#lastError = 'The provider session was replaced. Send again to rebuild the side chat.';
+        this.#lastError = this.capabilities.supportsEphemeralSessions
+          ? 'This side chat has ended. Discard it and start a new side chat.'
+          : 'The provider session was replaced. Send again to resume the side chat.';
         this.#refreshStatus();
       },
       onRequestedEvent: event => this.#handleExecutionEvent(event),
       providerId: deps.source.providerId,
+      supportsEphemeralSessions: this.capabilities.supportsEphemeralSessions,
       resolveBackend: deps.resolveBackend,
       vaultWorkingDirectory: deps.vaultWorkingDirectory,
       ...(deps.warmExecution ? { warmExecution: deps.warmExecution } : {}),

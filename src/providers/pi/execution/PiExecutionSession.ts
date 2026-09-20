@@ -38,6 +38,7 @@ import { parseEnvironmentVariables } from '../../../utils/env';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
+  getHistoryImages,
 } from '../../../utils/session';
 import type { PiWorkspaceServices } from '../app/PiWorkspaceServices';
 import {
@@ -524,9 +525,13 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       && !hasNativeSession
       && this.#canReuseKernel(launchSpec),
     );
+    if (this.#shouldDisableNativePersistence() && this.nativeConversationContextEstablished && !hasAcceptedCompatibleLiveContext) {
+      throw new PiConfigurationError('This non-persistent Pi session cannot be restored after its configuration or process changes. Start a new side chat.');
+    }
     const prompt = encodePrompt(
       request,
       !hasNativeSession && !hasAcceptedCompatibleLiveContext,
+      this.#shouldDisableNativePersistence(),
     );
     return {
       images: prompt.images,
@@ -885,7 +890,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.processKey = null;
     this.kernelResumeValidationTarget = null;
     this.kernelSessionTargets.clear();
-    if (!this.#hasNativeSessionState()) {
+    if (!this.#hasNativeSessionState() && !this.#shouldDisableNativePersistence()) {
       this.nativeConversationContextEstablished = false;
     }
     const active = this.activeRun;
@@ -1293,7 +1298,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.kernelResumeValidationTarget = null;
     this.kernelSessionTargets.clear();
     this.kernelGeneration += 1;
-    if (!this.#hasNativeSessionState()) {
+    if (!this.#hasNativeSessionState() && !this.#shouldDisableNativePersistence()) {
       this.nativeConversationContextEstablished = false;
     }
     if (!kernel) return Promise.resolve();
@@ -1553,6 +1558,7 @@ function resolveSystemPrompt(
 function encodePrompt(
   request: ProviderExecutionRequest,
   replayConversationHistory: boolean,
+  preserveCapturedContext = false,
 ): {
   images: PiPromptImage[];
   text: string;
@@ -1573,7 +1579,7 @@ function encodePrompt(
   }
   if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];
-    const historyContext = buildContextFromHistory(history);
+    const historyContext = buildContextFromHistory(history, { preserveCapturedContext });
     const recoveredPrompt = buildPromptWithHistoryContext(
       historyContext,
       text,
@@ -1585,15 +1591,19 @@ function encodePrompt(
       recoveredPrompt === historyContext ? null : text,
     );
   }
+  const historyImages: PiPromptImage[] = replayConversationHistory && preserveCapturedContext
+    ? getHistoryImages(request.conversationHistory ?? []).map(image => ({
+        data: image.data, mimeType: image.mediaType, type: 'image',
+      })) : [];
   return {
-    images: request.input.flatMap((block): PiPromptImage[] => {
+    images: [...historyImages, ...request.input.flatMap((block): PiPromptImage[] => {
       if (block.type !== 'image' || !block.image.data) return [];
       return [{
         data: block.image.data,
         mimeType: block.image.mediaType,
         type: 'image',
       }];
-    }),
+    })],
     text,
   };
 }

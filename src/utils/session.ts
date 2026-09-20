@@ -4,8 +4,11 @@
  * Session recovery and history reconstruction.
  */
 
-import type { ChatMessage, ToolCallInfo } from '../core/types';
-import { extractUserQuery, formatLinkedContent } from './context';
+import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../core/types';
+import { appendBrowserContext } from './browser';
+import { appendCanvasContext } from './canvas';
+import { appendLinkedContent, appendLinkedContentBody, extractUserQuery, formatLinkedContent } from './context';
+import { appendEditorContext } from './editor';
 
 // ============================================
 // Session Recovery
@@ -101,17 +104,24 @@ function formatToolInput(input: Record<string, unknown>, maxLength = 200): strin
  *
  * Strategy:
  * - Always include tool name and input (so Claude knows what was attempted)
- * - Only include results for failed tools (errors are important to remember)
- * - Successful tools can be re-executed if needed
+ * - By default, only include results for failed tools during compact recovery
+ * - Ephemeral context retains complete results that cannot be read again
  */
-export function formatToolCallForContext(toolCall: ToolCallInfo, maxErrorLength = 500): string {
+export function formatToolCallForContext(
+  toolCall: ToolCallInfo,
+  maxErrorLength = 500,
+  preserveToolContext = false,
+): string {
   const status = toolCall.status ?? 'completed';
   const isFailed = status === 'error' || status === 'blocked';
-  const inputStr = formatToolInput(toolCall.input);
+  const inputStr = preserveToolContext ? JSON.stringify(toolCall.input) : formatToolInput(toolCall.input);
   const inputPart = inputStr ? ` input: ${inputStr}` : '';
 
   if (!isFailed) {
-    return `[Tool ${toolCall.name}${inputPart} status=${status}]`;
+    const result = preserveToolContext && typeof toolCall.result === 'string' && toolCall.result.trim()
+      ? `\n${toolCall.result}`
+      : '';
+    return `[Tool ${toolCall.name}${inputPart} status=${status}]${result}`;
   }
 
   const hasResult = typeof toolCall.result === 'string' && toolCall.result.trim().length > 0;
@@ -119,7 +129,9 @@ export function formatToolCallForContext(toolCall: ToolCallInfo, maxErrorLength 
     return `[Tool ${toolCall.name}${inputPart} status=${status}]`;
   }
 
-  const errorMsg = truncateToolResult(toolCall.result as string, maxErrorLength);
+  const errorMsg = preserveToolContext
+    ? toolCall.result as string
+    : truncateToolResult(toolCall.result as string, maxErrorLength);
   return `[Tool ${toolCall.name}${inputPart} status=${status}] error: ${errorMsg}`;
 }
 
@@ -161,7 +173,33 @@ function formatThinkingBlocks(message: ChatMessage): string[] {
   return [`[Thinking: ${thinkingBlocks.length} block(s)${durationPart}]`];
 }
 
-export function buildContextFromHistory(messages: ChatMessage[]): string {
+/** Available captured images, in the same order as the textual history. */
+export function getHistoryImages(messages: readonly ChatMessage[]): ImageAttachment[] {
+  return messages.flatMap(message => message.role === 'user' && !message.isInterrupt
+    ? (message.images ?? []).filter(image => Boolean(image.data))
+    : []);
+}
+
+function formatCapturedUserContent(message: ChatMessage): string {
+  const snapshot = message.executionInput;
+  if (!snapshot) return message.content?.trim() ?? '';
+  let content = snapshot.canonicalText;
+  const context = snapshot.context;
+  if (context?.linkedContent) {
+    content = context.linkedContent.content === undefined
+      ? appendLinkedContent(content, context.linkedContent.path)
+      : appendLinkedContentBody(content, context.linkedContent.path, context.linkedContent.content);
+  }
+  if (context?.editorSelection) content = appendEditorContext(content, context.editorSelection);
+  if (context?.browserSelection) content = appendBrowserContext(content, context.browserSelection);
+  if (context?.canvasSelection) content = appendCanvasContext(content, context.canvasSelection);
+  return content;
+}
+
+export function buildContextFromHistory(
+  messages: ChatMessage[],
+  options: { preserveCapturedContext?: boolean } = {},
+): string {
   const parts: string[] = [];
 
   for (const message of messages) {
@@ -184,8 +222,10 @@ export function buildContextFromHistory(messages: ChatMessage[]): string {
 
     const role = message.role === 'user' ? 'User' : 'Assistant';
     const lines: string[] = [];
-    const content = message.content?.trim();
-    const contextLine = formatContextLine(message);
+    const capturedUser = options.preserveCapturedContext && message.role === 'user';
+    const content = capturedUser ? formatCapturedUserContent(message) : message.content?.trim();
+    const contextLine = capturedUser && message.executionInput?.context?.linkedContent
+      ? null : formatContextLine(message);
 
     const userPayload = contextLine
       ? content
@@ -194,6 +234,10 @@ export function buildContextFromHistory(messages: ChatMessage[]): string {
       : content;
 
     lines.push(userPayload ? `${role}: ${userPayload}` : `${role}:`);
+    if (capturedUser) {
+      const images = getHistoryImages([message]);
+      if (images.length > 0) lines.push(`[Images attached in history order: ${images.map(image => image.name).join(', ')}]`);
+    }
 
     if (message.role === 'assistant') {
       const thinkingLines = formatThinkingBlocks(message);
@@ -204,7 +248,7 @@ export function buildContextFromHistory(messages: ChatMessage[]): string {
 
     if (message.role === 'assistant' && message.toolCalls?.length) {
       const toolLines = message.toolCalls
-        .map(tc => formatToolCallForContext(tc))
+        .map(tc => formatToolCallForContext(tc, undefined, options.preserveCapturedContext))
         .filter(Boolean);
       if (toolLines.length > 0) {
         lines.push(...toolLines);
@@ -228,7 +272,7 @@ export function getLastUserMessage(messages: ChatMessage[]): ChatMessage | undef
 
 /**
  * Builds a prompt with history context for session recovery.
- * Avoids duplicating the current prompt if it's already the last user message.
+ * Avoids duplicating an unanswered current prompt already present in history.
  */
 export function buildPromptWithHistoryContext(
   historyContext: string | null,
@@ -245,7 +289,10 @@ export function buildPromptWithHistoryContext(
     ?? extractUserQuery(lastUserMessage?.content ?? '');
   const currentUserQuery = extractUserQuery(actualPrompt);
 
-  const shouldAppendPrompt = !lastUserMessage ||
+  const laterContext = lastUserMessage
+    ? buildContextFromHistory(conversationHistory.slice(conversationHistory.lastIndexOf(lastUserMessage) + 1))
+    : '';
+  const shouldAppendPrompt = !lastUserMessage || laterContext.length > 0 ||
     lastUserQuery.trim() !== currentUserQuery.trim();
 
   return shouldAppendPrompt

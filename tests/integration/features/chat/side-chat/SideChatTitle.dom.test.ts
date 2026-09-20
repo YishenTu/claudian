@@ -1,7 +1,6 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
-import { FakeAuxiliaryBackend } from '@test/unit/core/auxiliary/AuxiliaryExecutionTestHarness';
 import { screen, waitFor } from '@testing-library/dom';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -15,8 +14,12 @@ afterEach(async () => {
 });
 
 it('generates a side title from its initial prompt without blocking chat or changing destination', async () => {
-  const titles = new FakeAuxiliaryBackend();
-  const harness = createHarness({ auxiliaryBackend: titles, settings: { enableAutoTitleGeneration: true } });
+  const harness = createHarness({ settings: { enableAutoTitleGeneration: true } });
+  const titles = {
+    get sessions() {
+      return harness.backend.sessions.filter(session => session.requests[0]?.toolPolicy.kind === 'passive');
+    },
+  };
   const { started } = await startSideChat(harness, 'Explain the alternate design');
   await waitFor(() => expect(titles.sessions[0]?.requests).toHaveLength(1));
   expect(titles.sessions[0].requests[0].input).toEqual([
@@ -47,8 +50,12 @@ it('generates a side title from its initial prompt without blocking chat or chan
 });
 
 it('keeps the generic title without launching title generation when disabled', async () => {
-  const titles = new FakeAuxiliaryBackend();
-  const harness = createHarness({ auxiliaryBackend: titles, settings: { enableAutoTitleGeneration: false } });
+  const harness = createHarness({ settings: { enableAutoTitleGeneration: false } });
+  const titles = {
+    get sessions() {
+      return harness.backend.sessions.filter(session => session.requests[0]?.toolPolicy.kind === 'passive');
+    },
+  };
   const { started } = await startSideChat(harness);
   harness.backend.latest.complete();
   await started;
@@ -57,8 +64,12 @@ it('keeps the generic title without launching title generation when disabled', a
 });
 
 it('retains the initial prompt fallback if the title request fails', async () => {
-  const titles = new FakeAuxiliaryBackend();
-  const harness = createHarness({ auxiliaryBackend: titles, settings: { enableAutoTitleGeneration: true } });
+  const harness = createHarness({ settings: { enableAutoTitleGeneration: true } });
+  const titles = {
+    get sessions() {
+      return harness.backend.sessions.filter(session => session.requests[0]?.toolPolicy.kind === 'passive');
+    },
+  };
   const { started } = await startSideChat(harness, 'Explore storage. Consider a log.');
   await waitFor(() => expect(titles.sessions[0]?.requests).toHaveLength(1));
   titles.sessions[0].fail('Title provider unavailable');
@@ -69,8 +80,12 @@ it('retains the initial prompt fallback if the title request fails', async () =>
 });
 
 it('cancels a discarded side title without disturbing its replacement', async () => {
-  const titles = new FakeAuxiliaryBackend();
-  const harness = createHarness({ auxiliaryBackend: titles, settings: { enableAutoTitleGeneration: true } });
+  const harness = createHarness({ settings: { enableAutoTitleGeneration: true } });
+  const titles = {
+    get sessions() {
+      return harness.backend.sessions.filter(session => session.requests[0]?.toolPolicy.kind === 'passive');
+    },
+  };
   const { started } = await startSideChat(harness, 'First question');
   await waitFor(() => expect(titles.sessions[0]?.requests).toHaveLength(1));
   await harness.controller.discard();

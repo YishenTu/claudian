@@ -3,18 +3,23 @@ import { Notice } from 'obsidian';
 import type {
   ProviderExecutionBackend,
   ProviderExecutionEvent,
-  ProviderExecutionSession,
   ProviderInteractionPort,
   ProviderToolPolicy,
 } from '@/core/execution';
 import type { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ChatMessage, ProviderId } from '@/core/types';
+import type { ChatMessage, ImageAttachment, ProviderId } from '@/core/types';
+import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
 import { handleForkRequest } from '@/features/chat/tabs/TabForking';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import type { FeatureHost } from '@/features/FeatureHost';
 
 import type { ForkTestEnvironment } from '../tabs/ProviderForkTestHarness';
+
+export const capturedImage: ImageAttachment = {
+  id: 'captured-image', name: 'captured.png', mediaType: 'image/png', source: 'paste', size: 68,
+  data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3S8AAAAASUVORK5CYII=',
+};
 
 export interface TracedSideTurn {
   readonly accepted: boolean;
@@ -25,18 +30,13 @@ export interface TracedSideTurn {
 }
 
 export interface TracedSideChild {
-  readonly session: ProviderExecutionSession;
+  readonly session: SideChatSession;
   send(text: string, toolPolicy?: ProviderToolPolicy): Promise<TracedSideTurn>;
   providerSessionId(): string | undefined;
   dispose(): Promise<void>;
 }
 
-/**
- * Minimal neutral tracer for the selected side-chat native recipe: build the
- * opaque child fork state from a captured checkpoint, then run an independently
- * supervised persistent session seeded with that state alone. It intentionally
- * has no Claudian conversation, repository record, or accepted-input ledger.
- */
+/** Runs the production side owner against a native provider boundary. */
 export async function traceSideChild(
   env: ForkTestEnvironment,
   chat: Awaited<ReturnType<ForkTestEnvironment['open']>>,
@@ -54,6 +54,7 @@ export async function traceSideChild(
   if (!captured) return null;
   await options.beforeStart?.();
 
+  const supportsEphemeralSessions = ProviderRegistry.getCapabilities(captured.providerId).supportsEphemeralSessions;
   const providerState = await ProviderRegistry
     .getConversationHistoryService(captured.providerId)
     .buildForkProviderState(
@@ -62,41 +63,46 @@ export async function traceSideChild(
       captured.sourceProviderState,
       env.root,
     );
-
   const registry = options.lifecycleRegistry
     ?? (env.host as unknown as { executionLifecycleRegistry: ProviderExecutionLifecycleRegistry })
       .executionLifecycleRegistry;
-  const lease = registry.acquire(
-    backend,
-    {
-      interactionPort: options.interactionPort ?? rejectingInteractionPort(),
-      lifecycle: 'persistent',
-      nativePersistence: 'enabled',
-      // Child fork state only. The parent's provider session id is never seeded.
-      resumeSeed: { providerState },
-      vaultWorkingDirectory: env.root,
-    },
-    'chat',
-  );
+  let responseText = '';
+  const session = new SideChatSession({
+    providerId: captured.providerId,
+    supportsEphemeralSessions,
+    buildChildResumeState: async () => providerState,
+    resolveBackend: () => backend,
+    lifecycleRegistry: registry,
+    interactionPort: options.interactionPort ?? rejectingInteractionPort(),
+    vaultWorkingDirectory: env.root,
+    onRequestedEvent: event => { if (event.type === 'text_delta') responseText += event.text; },
+  });
 
   const history: ChatMessage[] = [...captured.messages];
   return {
-    session: lease.session,
-    providerSessionId: () => lease.session.getSnapshot().providerSessionId,
+    session,
+    providerSessionId: () => session.providerSessionId,
     async send(text, toolPolicy) {
-      const controller = new AbortController();
-      const run = lease.session.execute({
+      responseText = '';
+      const result = await session.execute({
         configuration: {
           model: options.model ?? captured.sourceSelectedModel,
           permissionMode: 'normal',
           systemInstructions: { instructions: 'Answer the user.', kind: 'explicit' },
         },
         conversationHistory: history,
-        input: [{ text, type: 'text' }],
-        signal: controller.signal,
+        text,
+        images: [],
         toolPolicy: toolPolicy ?? { kind: 'provider-default' },
       });
-      const turn = await consumeRun(run);
+      const turn: TracedSideTurn = {
+        accepted: result.accepted,
+        checkpointId: result.checkpointId,
+        errorMessage: result.error?.message,
+        terminal: result.status === 'completed' ? 'turn_completed'
+          : result.status === 'cancelled' ? 'cancelled' : 'execution_error',
+        text: responseText,
+      };
       history.push(
         { content: text, id: `side-user-${history.length}`, role: 'user', timestamp: history.length },
         {
@@ -109,7 +115,7 @@ export async function traceSideChild(
       );
       return turn;
     },
-    dispose: () => lease.release(),
+    dispose: () => session.dispose(),
   };
 }
 
@@ -177,33 +183,4 @@ export function collectNotices(): { messages: string[] } {
     });
   }
   return { messages: collected };
-}
-
-async function consumeRun(
-  run: ReturnType<ProviderExecutionSession['execute']>,
-): Promise<TracedSideTurn> {
-  let accepted = false;
-  let text = '';
-  let checkpointId: string | undefined;
-  let terminal: ProviderExecutionEvent['type'] = 'cancelled';
-  let errorMessage: string | undefined;
-  for await (const event of run.events) {
-    if (event.type === 'turn_started' && event.accepted) accepted = true;
-    if (event.type === 'text_delta') text += event.text;
-    if (event.type === 'turn_completed') {
-      terminal = event.type;
-      checkpointId = event.nativeAssistantId ?? event.nativeCheckpointId;
-      break;
-    }
-    if (event.type === 'execution_error') {
-      terminal = event.type;
-      errorMessage = event.message;
-      break;
-    }
-    if (event.type === 'cancelled') {
-      terminal = event.type;
-      break;
-    }
-  }
-  return { accepted, checkpointId, errorMessage, terminal, text };
 }

@@ -112,6 +112,12 @@ it('starts a side chat from a submitted command instead of sending it to main', 
     { text: 'Explore an append-only log', type: 'text' },
   ]);
 
+  expect(harness.backend.latest.config).toMatchObject({
+    lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported',
+  });
+  expect(harness.backend.latest.config.resumeSeed).toMatchObject({ providerState: expect.any(Object) });
+  expect(harness.backend.latest.requests[0].conversationHistory).toEqual(harness.tab.state.messages);
+
   harness.backend.latest.establishChild('child-session');
   harness.backend.latest.complete();
   await sent;

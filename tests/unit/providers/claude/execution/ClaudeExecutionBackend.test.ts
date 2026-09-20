@@ -522,6 +522,50 @@ describe('ClaudeExecutionBackend', () => {
     },
   );
 
+  it.each(['configuration change', 'process exit'] as const)(
+    'requires a new non-persistent session after %s even with supplied history',
+    async (reason) => {
+      const messages = [
+        { type: 'system', subtype: 'init', session_id: 'memory-session' },
+        { type: 'result', subtype: 'success' },
+      ];
+      const closedQuery = reason === 'process exit' ? createScriptedPersistentQuery([messages]) : null;
+      if (closedQuery) {
+        jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+          .mockResolvedValueOnce((() => closedQuery) as never);
+      }
+      sdkMock.setMockMessages(messages, { appendResult: false });
+      const { services } = createServices();
+      const session = new ClaudeExecutionBackend(createHost(), services).createSession(createConfig({
+        lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported',
+      }));
+      try {
+        await collectEvents(session.execute(createRequest()).events);
+        if (closedQuery) {
+          await closedQuery.finished;
+          await waitFor(() => session.getStatus() === 'invalidated');
+        }
+        const request = createRequest({
+          conversationHistory: [
+            { id: 'u1', role: 'user', content: 'Remember A', timestamp: 1, images: [{
+              id: 'captured', name: 'captured.png', data: 'aW1hZ2U=',
+              mediaType: 'image/png', source: 'paste', size: 5,
+            }] },
+            { id: 'a1', role: 'assistant', content: 'Noted A', timestamp: 2 },
+          ],
+          input: [{ type: 'text', text: 'Continue with B' }],
+          ...(reason === 'configuration change' ? {
+            configuration: { systemInstructions: { kind: 'explicit', instructions: 'New guidance' } },
+          } : {}),
+        });
+        const events = await collectEvents(session.execute(request).events);
+        expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('cannot be restored') });
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
+
   it('maps images and structured context without injecting legacy MCP configuration', async () => {
     const { services } = createServices();
     sdkMock.setMockMessages([

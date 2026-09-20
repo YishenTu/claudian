@@ -1,6 +1,6 @@
 import { waitFor } from '@testing-library/dom';
 
-import { type ProviderExecutionBackend, ProviderExecutionLifecycleRegistry } from '@/core/execution';
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderRegistration } from '@/core/providers/types';
 import { WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
@@ -46,19 +46,14 @@ export async function releaseSideChatHarnesses(): Promise<void> {
   jest.clearAllMocks();
 }
 
-export function createHarness(options: { supportsFork?: boolean; checkpoint?: string | null; settings?: Record<string, unknown>; auxiliaryBackend?: ProviderExecutionBackend } = {}) {
+export function createHarness(options: { supportsFork?: boolean; checkpoint?: string | null; settings?: Record<string, unknown> } = {}) {
   const backend = new FakeSideBackend();
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const forkState = { forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } };
   ProviderRegistry.register('claude', {
     capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true },
     chatUIConfig: ProviderRegistry.getChatUIConfig('claude'),
-    createExecutionBackend: () => ({
-      providerId: 'claude',
-      createSession: config => config.lifecycle === 'ephemeral' && options.auxiliaryBackend
-        ? options.auxiliaryBackend.createSession(config)
-        : backend.createSession(config),
-    } satisfies ProviderExecutionBackend),
+    createExecutionBackend: () => backend,
     historyService: {
       buildForkProviderState: () => forkState,
       hydrateConversationHistory: async () => undefined,
@@ -141,7 +136,9 @@ export async function startSideChat(
   prompt = 'Explore B',
 ): Promise<{ started: Promise<boolean> }> {
   const started = harness.controller.handleCommandSubmission(prompt, []);
-  await waitFor(() => expect(harness.backend.sessions).toHaveLength(1));
+  await waitFor(() => expect(harness.backend.sessions.some(
+    session => session.requests[0]?.toolPolicy.kind === 'provider-default',
+  )).toBe(true));
   return { started };
 }
 

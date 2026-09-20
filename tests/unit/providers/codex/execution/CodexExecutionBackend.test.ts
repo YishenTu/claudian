@@ -2882,6 +2882,54 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('requires a new non-persistent session after its process exits', async () => {
+    let currentThread = '';
+    let ordinal = 0;
+    const submitted: Array<{ threadId: string; input: unknown }> = [];
+    mockTransportRequest.mockImplementation(async (method: string, params: any) => {
+      if (method === 'initialize') return {
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+      };
+      if (method === 'thread/start') {
+        currentThread = `memory-thread-${++ordinal}`;
+        const result = createThreadResult(currentThread);
+        return { ...result, thread: { ...result.thread, ephemeral: true, path: null } };
+      }
+      if (method === 'thread/resume') throw new Error('Thread not found: ephemeral process exited');
+      if (method === 'turn/start') {
+        submitted.push({ threadId: params.threadId, input: params.input });
+        const turnId = `turn-${ordinal}`;
+        queueMicrotask(() => completeTurn(currentThread, turnId));
+        return createTurnResult(turnId);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin()).createSession(createSessionConfig({
+      lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported',
+    }));
+    try {
+      await collectEvents(session.execute(createRequest()).events);
+      exitHandler?.();
+      const events = await collectEvents(session.execute(createRequest(new AbortController().signal, {
+        conversationHistory: [
+          { id: 'u1', role: 'user', content: 'Remember A', timestamp: 1, images: [{
+              id: 'captured', name: 'captured.png', data: 'aW1hZ2U=',
+              mediaType: 'image/png', source: 'paste', size: 5,
+            }] },
+          { id: 'a1', role: 'assistant', content: 'Noted A', timestamp: 2 },
+        ],
+        input: [{ type: 'text', text: 'Continue with B' }],
+      })).events);
+      expect(mockTransportRequest).toHaveBeenCalledWith('thread/start', expect.objectContaining({
+        ephemeral: true, persistExtendedHistory: false,
+      }));
+      expect(events.at(-1)).toMatchObject({ type: 'execution_error', message: expect.stringContaining('cannot be restored') });
+      expect(submitted).toHaveLength(1);
+    } finally {
+      await session.dispose();
+    }
+  });
+
   it('normalizes process death into a terminal execution error and fences late output', async () => {
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {

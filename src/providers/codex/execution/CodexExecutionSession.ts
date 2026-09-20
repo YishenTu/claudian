@@ -621,6 +621,9 @@ export class CodexExecutionSession
       return;
     }
 
+    if (this.#resolveNativePersistence() === false && this.threadId) {
+      throw new Error('This non-persistent Codex session cannot be restored after its process ends. Start a new side chat.');
+    }
     await this.#shutdownDeadProcess();
     if (this.disposed || generation !== this.lifecycleGeneration) {
       throw new Error('Codex execution session has been disposed.');
@@ -1109,6 +1112,9 @@ export class CodexExecutionSession
         || this.loadedThreadBaseInstructions !== baseInstructions
       )
     ) {
+      if (persistExtendedHistory === false) {
+        throw new Error('This non-persistent Codex session cannot be restored after its configuration changes. Start a new side chat.');
+      }
       const result = await this.transport!.request<ThreadResumeResult>(
         'thread/resume',
         {
@@ -1242,11 +1248,32 @@ export class CodexExecutionSession
 
     let target = this.pendingForkTarget;
     if (!target) {
-      target = await this.#resolveForkIdentity(run, fork, transport);
+      target = await this.#resolveForkIdentity(run, fork, transport, persistExtendedHistory === false ? {
+        ephemeral: true,
+        excludeTurns: true,
+        lastTurnId: fork.resumeAt,
+        model,
+        approvalPolicy: policy.approvalPolicy,
+        sandbox: policy.sandbox,
+        serviceTier: resolveCodexServiceTier(request.configuration.serviceTier ?? settings.serviceTier, model, settings),
+        baseInstructions: `${baseInstructions}\n\n${LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS}`,
+        experimentalRawEvents: true,
+        persistExtendedHistory: false,
+      } : {});
     }
 
     if (!this.#isRunCurrent(run, generation)) {
       throw new Error('Codex fork setup was interrupted after child adoption.');
+    }
+
+    if (persistExtendedHistory === false) {
+      // thread/fork already loaded the ephemeral child at the captured checkpoint.
+      this.loadedThreadId = target.threadId;
+      this.loadedThreadBaseInstructions = baseInstructions;
+      this.#consumePendingForkState();
+      this.#updateSnapshot('idle');
+      this.#emitSnapshot(run);
+      return { threadId: target.threadId, sessionFilePath: null };
     }
 
     const resumeResult = await transport.request<ThreadResumeResult>(
@@ -1314,13 +1341,14 @@ export class CodexExecutionSession
     run: CodexExecutionRun,
     fork: NonNullable<CodexProviderState['forkSource']>,
     transport: CodexRpcTransport,
+    overrides: Record<string, unknown> = {},
   ): Promise<CodexPendingForkTarget> {
     if (this.forkIdentityPromise) return this.forkIdentityPromise;
 
     const pathMapper = this.launchSpec?.pathMapper;
     const identity = transport.request<ThreadForkResult>(
       'thread/fork',
-      { threadId: fork.sessionId },
+      { threadId: fork.sessionId, ...overrides },
     ).then((forkResult) => {
       const threadId = normalizeString(forkResult.thread.id);
       if (!threadId) {

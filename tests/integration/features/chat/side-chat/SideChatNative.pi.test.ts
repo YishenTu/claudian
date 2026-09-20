@@ -8,7 +8,7 @@ import { PiCommandCatalog } from '@/providers/pi/commands/PiCommandCatalog';
 import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
 
 import { createForkTestEnvironment, type ForkTestEnvironment } from '../tabs/ProviderForkTestHarness';
-import { traceSideChild } from './SideChatNativeTracer';
+import { capturedImage, traceSideChild } from './SideChatNativeTracer';
 
 async function readRecords(file: string) {
   return (await fs.readFile(file, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
@@ -35,11 +35,22 @@ describe('Pi side-chat native child', () => {
   beforeEach(async () => { env = await createForkTestEnvironment(); });
   afterEach(async () => { await env.dispose(); jest.mocked(spawn).mockReset(); });
 
-  it('continues an isolated native child file from the captured checkpoint without touching the source', async () => {
+  it('continues in a no-session process from captured context without writing a child file', async () => {
     const native = await createNativePi(env);
     const source = await env.open(native.backend);
     const checkpoint = await env.send(source, 'Remember A');
+    checkpoint.content = 'Reply 1';
+    source.conversation.messages[0].images = [capturedImage];
+    source.conversation.messages[0].executionInput = {
+      schemaVersion: 1, canonicalText: 'Remember A with expanded instructions',
+      context: { browserSelection: { source: 'browser', selectedText: 'Captured passage 48271' } },
+    };
+    checkpoint.toolCalls = [{
+      id: 'read-capture', name: 'Read', input: { path: 'transient.txt' },
+      status: 'completed', result: 'Unique captured value: project-48271',
+    }];
     await env.send(source, 'Remember A2');
+    const filesBefore = await fs.readdir(env.root);
     const sourceBytes = await fs.readFile(native.sourceFile, 'utf8');
     const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     const conversationsBefore = env.repository.list().map(conversation => conversation.id);
@@ -47,13 +58,23 @@ describe('Pi side-chat native child', () => {
     const child = await traceSideChild(env, source, checkpoint, native.backend);
     await child!.send('Also remember B');
     const afterFirst = (await native.contexts()).at(-1);
-    expect(afterFirst?.ids).toEqual(['pi-user-1', 'pi-assistant-1']);
-    expect(afterFirst?.file).not.toBe(native.sourceFile);
+    expect(afterFirst).toMatchObject({ ids: [], file: null });
+    expect(afterFirst?.text).toContain('Remember A');
+    expect(afterFirst?.text).toContain('Reply 1');
+    expect(afterFirst?.text).toContain('project-48271');
+    expect(afterFirst?.text).toContain('expanded instructions');
+    expect(afterFirst?.text).toContain('Captured passage 48271');
+    expect(afterFirst?.images).toEqual([{ type: 'image', mimeType: 'image/png', data: capturedImage.data }]);
+    expect(afterFirst?.text).not.toContain('Remember A2');
+    expect(child!.session.canCool()).toBe(false);
 
     await child!.send('Use A and B');
     const afterSecond = (await native.contexts()).at(-1);
     expect(afterSecond?.file).toBe(afterFirst?.file);
-    expect(afterSecond?.ids).toEqual(['pi-user-1', 'pi-assistant-1', 'pi-user-3', 'pi-assistant-3']);
+    expect(afterSecond?.ids).toEqual(['pi-user-3', 'pi-assistant-3']);
+    expect(afterSecond?.text).toBe('Use A and B');
+    expect(afterSecond?.images).toEqual([]);
+    expect(await fs.readdir(env.root)).toEqual(filesBefore);
     expect(await fs.readFile(native.sourceFile, 'utf8')).toBe(sourceBytes);
     expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
     expect(env.repository.list().map(conversation => conversation.id)).toEqual(conversationsBefore);
@@ -66,18 +87,20 @@ describe('Pi side-chat native child', () => {
     await child!.dispose();
   });
 
-  it('reports an unavailable captured checkpoint without sending the child prompt', async () => {
+  it('uses captured messages after the native source checkpoint disappears', async () => {
     const native = await createNativePi(env);
     const source = await env.open(native.backend);
     const checkpoint = await env.send(source, 'Remember A');
+    checkpoint.content = 'Reply 1';
     const [header] = await readRecords(native.sourceFile);
     const child = await traceSideChild(env, source, checkpoint, native.backend, {
       beforeStart: async () => { await fs.writeFile(native.sourceFile, JSON.stringify(header) + '\n'); },
     });
-    const turn = await child!.send('Cannot start');
-    expect(turn.terminal).toBe('execution_error');
-    expect(turn.errorMessage).toMatch(/checkpoint/i);
-    expect(await native.contexts()).toHaveLength(1);
+    const turn = await child!.send('Continue from the capture');
+    expect(turn.terminal).toBe('turn_completed');
+    expect((await native.contexts()).at(-1)?.text).toContain('Remember A');
+    expect((await native.contexts()).at(-1)?.text).toContain('Reply 1');
+    expect(await readRecords(native.sourceFile)).toEqual([header]);
     await child!.dispose();
   });
 });

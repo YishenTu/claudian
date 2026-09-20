@@ -51,11 +51,12 @@ export interface SideChatWarmExecution {
 
 export interface SideChatSessionDeps {
   readonly providerId: ProviderId;
+  readonly supportsEphemeralSessions: boolean;
   readonly lifecycleRegistry: ProviderExecutionLifecycleRegistry;
   readonly resolveBackend: (providerId: ProviderId) => ProviderExecutionBackend;
   /**
-   * Produces the opaque child fork state exactly once for this owner. Retries
-   * reuse the captured result instead of refolding a newer source checkpoint.
+   * Produces the captured fork state once; the provider owns how it is materialized.
+   * Retries reuse it instead of refolding a newer source checkpoint.
    */
   readonly buildChildResumeState: () => Promise<Readonly<Record<string, unknown>>>;
   readonly vaultWorkingDirectory: string;
@@ -95,6 +96,7 @@ export class SideChatSession {
   #pendingWorkCount = 0;
   #preparing = false;
   #disposed = false;
+  #invalidated = false;
   #disposePromise: Promise<void> | null = null;
   #lastSnapshotRevision = -1;
 
@@ -203,6 +205,8 @@ export class SideChatSession {
     return Boolean(
       !this.#disposed
       && this.#supervisor.current
+      // An ephemeral native id cannot survive eviction of its process.
+      && !this.deps.supportsEphemeralSessions
       && !this.#preparing
       && this.#executionController === null
       && this.#active === null
@@ -265,9 +269,9 @@ export class SideChatSession {
         backend,
         {
           interactionPort: this.#fencedInteractionPort,
-          lifecycle: 'persistent',
-          nativePersistence: 'enabled',
-          resumeSeed: seed,
+          lifecycle: this.deps.supportsEphemeralSessions ? 'ephemeral' : 'persistent',
+          nativePersistence: this.deps.supportsEphemeralSessions ? 'disabled-if-supported' : 'enabled',
+          ...(seed ? { resumeSeed: seed } : {}),
           vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
         },
         reason => this.#handleInvalidation(reason),
@@ -387,6 +391,7 @@ export class SideChatSession {
   }
 
   #handleInvalidation(reason: ProviderExecutionInvalidationReason): void {
+    this.#invalidated = this.deps.supportsEphemeralSessions;
     const active = this.#active;
     if (active) {
       active.terminationOverride = 'invalidated';
@@ -573,6 +578,9 @@ export class SideChatSession {
   #assertAvailable(): void {
     if (this.#disposed) {
       throw new Error('Side chat session is disposed');
+    }
+    if (this.#invalidated) {
+      throw new Error('This side chat has ended. Discard it and start a new side chat.');
     }
   }
 }
