@@ -1164,11 +1164,12 @@ describe('CodexExecutionBackend', () => {
   });
 
   it.each([
-    ['persistent', true],
-    ['ephemeral', false],
+    ['persistent', 'provider-default', true, undefined],
+    ['ephemeral', 'provider-default', false, true],
+    ['ephemeral', 'enabled', true, undefined],
   ] as const)(
-    'resolves provider-default persistence for %s sessions',
-    async (lifecycle, expectedPersistence) => {
+    'resolves native persistence for %s sessions with %s policy',
+    async (lifecycle, nativePersistence, expectedPersistence, expectedEphemeral) => {
       const threadId = `thread-provider-default-${lifecycle}`;
       const turnId = `turn-provider-default-${lifecycle}`;
       mockTransportRequest.mockImplementation(async (method: string) => {
@@ -1191,7 +1192,7 @@ describe('CodexExecutionBackend', () => {
       const session = new CodexExecutionBackend(createPlugin()).createSession(
         createSessionConfig({
           lifecycle,
-          nativePersistence: 'provider-default',
+          nativePersistence,
         }),
       );
 
@@ -1203,6 +1204,10 @@ describe('CodexExecutionBackend', () => {
           persistExtendedHistory: expectedPersistence,
         }),
       );
+      const startParams = mockTransportRequest.mock.calls.find(
+        ([method]) => method === 'thread/start',
+      )?.[1];
+      expect(startParams.ephemeral).toBe(expectedEphemeral);
 
       await session.dispose();
     },
@@ -1764,7 +1769,11 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('retains an ephemeral thread for clarification continuation', async () => {
+  it.each([
+    ['explicitly disabled', 'disabled-if-supported', { kind: 'passive' }],
+    ['instruction refinement', 'provider-default', { kind: 'passive' }],
+    ['inline edit', 'provider-default', { kind: 'read-only' }],
+  ] as const)('retains a non-persistent %s thread for clarification', async (_name, nativePersistence, toolPolicy) => {
     let turnIndex = 0;
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
@@ -1775,7 +1784,10 @@ describe('CodexExecutionBackend', () => {
           platformOs: 'macos',
         };
       }
-      if (method === 'thread/start') return createThreadResult('thread-continuation');
+      if (method === 'thread/start') {
+        const result = createThreadResult('thread-continuation');
+        return { ...result, thread: { ...result.thread, ephemeral: true, path: null } };
+      }
       if (method === 'turn/start') {
         turnIndex += 1;
         const turnId = `turn-continuation-${turnIndex}`;
@@ -1787,22 +1799,41 @@ describe('CodexExecutionBackend', () => {
     const session = new CodexExecutionBackend(createPlugin()).createSession(
       createSessionConfig({
         lifecycle: 'ephemeral',
-        nativePersistence: 'disabled-if-supported',
+        nativePersistence,
       }),
     );
 
-    await collectEvents(session.execute(createRequest(
+    const firstEvents = await collectEvents(session.execute(createRequest(
       new AbortController().signal,
-      { toolPolicy: { kind: 'passive' } },
+      { toolPolicy },
     )).events);
-    await collectEvents(session.execute(createRequest(
+    const secondEvents = await collectEvents(session.execute(createRequest(
       new AbortController().signal,
       {
         input: [{ type: 'text', text: 'clarification' }],
-        toolPolicy: { kind: 'passive' },
+        toolPolicy,
       },
     )).events);
 
+    expect(mockTransportRequest).toHaveBeenCalledWith(
+      'thread/start',
+      expect.objectContaining({
+        ephemeral: true,
+        persistExtendedHistory: false,
+        approvalPolicy: 'never',
+        sandbox: 'read-only',
+      }),
+    );
+    expect(firstEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
+    expect(secondEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
+    expect(session.getSnapshot().providerState?.sessionFilePath).toBeUndefined();
+    expect(mockTransportRequest).toHaveBeenCalledWith(
+      'turn/start',
+      expect.objectContaining({
+        threadId: 'thread-continuation',
+        input: [expect.objectContaining({ type: 'text', text: 'clarification' })],
+      }),
+    );
     expect(
       mockTransportRequest.mock.calls.filter(call => call[0] === 'thread/start'),
     ).toHaveLength(1);
