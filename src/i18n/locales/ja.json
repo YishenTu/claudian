@@ -60,14 +60,9 @@
     },
     "sideChat": {
       "title": "サイドチャット",
-      "info": "以前の返信から分岐した一時的なサイド会話です。メッセージはメインチャットに入りません。ツールは同じワークスペースを使い、破棄後も変更は残ります。プロバイダーはセッション履歴を保持する場合があります。",
-      "infoLabel": "サイドチャットについて",
       "collapse": "折りたたむ",
-      "expand": "展開",
       "discard": "破棄",
-      "copyToMain": "メインにコピー",
       "statusPreparing": "準備中",
-      "statusIdle": "待機中",
       "statusQueued": "{count} 件待機中",
       "statusWorking": "実行中",
       "statusError": "要確認",
@@ -84,8 +79,6 @@
       "mainOnlyCommand": "/{command} はメインチャットでのみ使用できます。",
       "instructionModeActive": "サイドチャットを使う前に、インストラクションモードを完了またはキャンセルしてください。",
       "startFailed": "サイドチャットを開始できませんでした：{error}",
-      "copiedToMain": "サイドの回答をメインの下書きにコピーしました。",
-      "copyUnavailable": "コピーできるサイドの回答がまだありません。",
       "queued": "サイドチャットのキューに追加しました。",
       "busySide": "サイドチャットが応答中です。完了までお待ちください。"
     }

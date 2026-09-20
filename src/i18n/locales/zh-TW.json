@@ -60,14 +60,9 @@
     },
     "sideChat": {
       "title": "側邊對話",
-      "info": "以稍早回覆為起點的暫時側邊對話。訊息不會進入主對話。工具使用同一工作區，捨棄後所做變更仍會保留。提供者可能保留工作階段紀錄。",
-      "infoLabel": "關於側邊對話",
       "collapse": "收合",
-      "expand": "展開",
       "discard": "捨棄",
-      "copyToMain": "複製到主對話",
       "statusPreparing": "準備中",
-      "statusIdle": "就緒",
       "statusQueued": "{count} 則排隊中",
       "statusWorking": "處理中",
       "statusError": "需要處理",
@@ -84,8 +79,6 @@
       "mainOnlyCommand": "/{command} 僅能在主對話中使用。",
       "instructionModeActive": "請先完成或取消指令模式，再使用側邊對話。",
       "startFailed": "側邊對話啟動失敗：{error}",
-      "copiedToMain": "已將側邊回答複製到主對話草稿。",
-      "copyUnavailable": "尚無可複製的側邊回答。",
       "queued": "已加入側聊佇列。",
       "busySide": "側邊對話仍在回覆，請稍候。"
     }

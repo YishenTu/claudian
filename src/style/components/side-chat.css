@@ -139,7 +139,11 @@
 }
 
 .claudian-side-chat-actions button.claudian-side-chat-icon-button {
-  height: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -163,14 +167,6 @@
   box-shadow: none;
   color: var(--text-faint);
   cursor: default;
-}
-
-.claudian-side-chat-actions button.claudian-side-chat-icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
 }
 
 .claudian-side-chat-actions button.claudian-side-chat-icon-button svg {

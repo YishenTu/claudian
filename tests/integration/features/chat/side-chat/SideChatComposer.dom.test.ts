@@ -95,25 +95,6 @@ it('keeps separate main and side drafts across expansion changes', async () => {
   expect(harness.inputEl.value).toBe('main draft');
 });
 
-it('appends the side answer to the preserved main draft and collapses without sending', async () => {
-  const harness = createHarness();
-  const { started } = await startSideChat(harness);
-  harness.backend.latest.establishChild('child-session');
-  harness.backend.latest.emitText('Alternative: use an append-only log.');
-  harness.backend.latest.complete();
-  await started;
-
-  harness.controller.collapse();
-  harness.inputEl.value = 'existing main draft';
-  harness.controller.expand();
-
-  harness.controller.copyToMain();
-  expect(harness.controller.destination).toBe('main');
-  expect(harness.inputEl.value).toContain('existing main draft');
-  expect(harness.inputEl.value).toContain('Alternative: use an append-only log.');
-  expect(harness.backend.latest.requests).toHaveLength(1);
-});
-
 it('preserves a saved side draft when a slash follow-up resumes the collapsed child', async () => {
   const harness = createHarness();
   const { started } = await startSideChat(harness);

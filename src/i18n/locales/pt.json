@@ -60,14 +60,9 @@
     },
     "sideChat": {
       "title": "Conversa lateral",
-      "info": "Conversa lateral temporária a partir de uma resposta anterior. As mensagens ficam fora da conversa principal. As ferramentas usam o mesmo espaço de trabalho; as alterações permanecem após descartar. O provedor pode manter o histórico da sessão.",
-      "infoLabel": "Sobre a conversa lateral",
       "collapse": "Recolher",
-      "expand": "Expandir",
       "discard": "Descartar",
-      "copyToMain": "Copiar para a principal",
       "statusPreparing": "Preparando",
-      "statusIdle": "Pronta",
       "statusQueued": "{count} na fila",
       "statusWorking": "Trabalhando",
       "statusError": "Requer atenção",
@@ -84,8 +79,6 @@
       "mainOnlyCommand": "/{command} está disponível apenas na conversa principal.",
       "instructionModeActive": "Conclua ou cancele o modo de instrução antes de usar a conversa lateral.",
       "startFailed": "Não foi possível iniciar a conversa lateral: {error}",
-      "copiedToMain": "A resposta lateral foi copiada para o rascunho principal.",
-      "copyUnavailable": "Ainda não há resposta lateral para copiar.",
       "queued": "Adicionado à fila da conversa lateral.",
       "busySide": "A conversa lateral ainda está respondendo. Aguarde a conclusão."
     }

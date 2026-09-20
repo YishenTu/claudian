@@ -172,8 +172,6 @@ export function detectBuiltInCommand(
   return { command, args };
 }
 
-const SIDE_CHAT_COMMAND_PATTERN = /^\/(side|btw)(?:[ \t]+([\s\S]*))?$/i;
-
 export interface SideChatCommandMatch {
   /** Alias exactly as typed, lowercased. */
   readonly alias: string;
@@ -189,7 +187,7 @@ export function detectSideChatCommand(
   input: string,
   context?: BuiltInCommandSupportContext,
 ): SideChatCommandMatch | null {
-  const match = SIDE_CHAT_COMMAND_PATTERN.exec(input.trim());
+  const match = /^\/([a-zA-Z0-9_-]+)(?:[ \t]+([\s\S]*))?$/.exec(input.trim());
   if (!match) return null;
   const command = commandMap.get(match[1].toLowerCase());
   if (!command || command.action !== 'side') return null;

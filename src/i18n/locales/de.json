@@ -60,14 +60,9 @@
     },
     "sideChat": {
       "title": "Nebenchat",
-      "info": "Temporäre Nebenunterhaltung ab einer früheren Antwort. Nachrichten bleiben außerhalb des Hauptchats. Werkzeuge nutzen denselben Arbeitsbereich; Änderungen bleiben nach dem Verwerfen bestehen. Der Anbieter kann den Sitzungsverlauf behalten.",
-      "infoLabel": "Über den Nebenchat",
       "collapse": "Einklappen",
-      "expand": "Ausklappen",
       "discard": "Verwerfen",
-      "copyToMain": "In Hauptchat kopieren",
       "statusPreparing": "Wird vorbereitet",
-      "statusIdle": "Bereit",
       "statusQueued": "{count} in Warteschlange",
       "statusWorking": "Arbeitet",
       "statusError": "Benötigt Aufmerksamkeit",
@@ -84,8 +79,6 @@
       "mainOnlyCommand": "/{command} ist nur im Hauptchat verfügbar.",
       "instructionModeActive": "Beende oder brich den Anweisungsmodus ab, bevor du den Nebenchat nutzt.",
       "startFailed": "Nebenchat konnte nicht gestartet werden: {error}",
-      "copiedToMain": "Die Nebenantwort wurde in den Hauptentwurf kopiert.",
-      "copyUnavailable": "Es gibt noch keine Nebenantwort zum Kopieren.",
       "queued": "Für den Nebenchat eingereiht.",
       "busySide": "Der Nebenchat antwortet noch. Warte, bis er fertig ist."
     }

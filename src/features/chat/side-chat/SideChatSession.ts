@@ -116,14 +116,6 @@ export class SideChatSession {
     return this.#providerSessionId;
   }
 
-  get isExecuting(): boolean {
-    return this.#active !== null;
-  }
-
-  get isDisposed(): boolean {
-    return this.#disposed;
-  }
-
   get hasBackgroundWork(): boolean {
     return this.#backgroundTurnIds.size > 0 || this.#pendingWorkCount > 0;
   }

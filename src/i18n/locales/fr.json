@@ -60,14 +60,9 @@
     },
     "sideChat": {
       "title": "Conversation annexe",
-      "info": "Conversation annexe temporaire issue d'une réponse antérieure. Les messages restent hors de la conversation principale. Les outils utilisent le même espace de travail ; les modifications subsistent après l'abandon. Le fournisseur peut conserver l'historique de session.",
-      "infoLabel": "À propos de la conversation annexe",
       "collapse": "Réduire",
-      "expand": "Développer",
       "discard": "Abandonner",
-      "copyToMain": "Copier vers la principale",
       "statusPreparing": "Préparation",
-      "statusIdle": "Prête",
       "statusQueued": "{count} en attente",
       "statusWorking": "En cours",
       "statusError": "Attention requise",
@@ -84,8 +79,6 @@
       "mainOnlyCommand": "/{command} n'est disponible que dans la conversation principale.",
       "instructionModeActive": "Termine ou annule le mode instruction avant d'utiliser la conversation annexe.",
       "startFailed": "Impossible de démarrer la conversation annexe : {error}",
-      "copiedToMain": "Réponse annexe copiée dans le brouillon principal.",
-      "copyUnavailable": "Aucune réponse annexe à copier pour l'instant.",
       "queued": "Ajouté à la file de la discussion secondaire.",
       "busySide": "La conversation annexe répond encore. Attends la fin."
     }

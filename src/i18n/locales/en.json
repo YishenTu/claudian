@@ -60,14 +60,9 @@
     },
     "sideChat": {
       "title": "Side chat",
-      "info": "Temporary side conversation from an earlier reply. Messages stay out of the main chat. Tools use the same workspace; changes remain after discard. The provider may retain session history.",
-      "infoLabel": "About side chat",
       "collapse": "Collapse",
-      "expand": "Expand",
       "discard": "Discard",
-      "copyToMain": "Copy to main",
       "statusPreparing": "Preparing",
-      "statusIdle": "Ready",
       "statusQueued": "{count} queued",
       "statusWorking": "Working",
       "statusError": "Needs attention",
@@ -84,8 +79,6 @@
       "mainOnlyCommand": "/{command} is available in the main chat only.",
       "instructionModeActive": "Finish or cancel instruction mode before using the side chat.",
       "startFailed": "Side chat could not start: {error}",
-      "copiedToMain": "Copied the side answer into the main draft.",
-      "copyUnavailable": "There is no side answer to copy yet.",
       "queued": "Queued for the side chat.",
       "busySide": "The side chat is still responding. Wait for it to finish."
     }

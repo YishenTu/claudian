@@ -10,7 +10,6 @@ import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ImageAttachment } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
-import { appendMarkdownSnippet } from '../../../utils/markdown';
 import { getVaultPath } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
 import {
@@ -181,21 +180,6 @@ export class SideChatController {
   collapse(): void {
     if (!this.#runtime) return;
     this.#setExpanded(false);
-  }
-
-  copyToMain(): void {
-    const answer = this.#runtime?.latestAssistantAnswer;
-    if (!answer) {
-      new Notice(t('chat.sideChat.copyUnavailable'));
-      return;
-    }
-    // Collapse first so the preserved main draft is the one being appended to.
-    this.#setExpanded(false);
-    const inputEl = this.deps.getInputEl();
-    const existing = inputEl.value.trim();
-    inputEl.value = existing ? appendMarkdownSnippet(answer, existing) : answer;
-    this.#mainDraft = { content: inputEl.value, images: this.#mainDraft.images };
-    new Notice(t('chat.sideChat.copiedToMain'));
   }
 
   async discard(): Promise<void> {

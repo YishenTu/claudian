@@ -60,14 +60,9 @@
     },
     "sideChat": {
       "title": "侧边对话",
-      "info": "基于此前回复的临时侧边对话。消息不会进入主对话。工具使用同一工作区，放弃后所做更改仍会保留。提供方可能保留会话历史。",
-      "infoLabel": "关于侧边对话",
       "collapse": "收起",
-      "expand": "展开",
       "discard": "放弃",
-      "copyToMain": "复制到主对话",
       "statusPreparing": "准备中",
-      "statusIdle": "就绪",
       "statusQueued": "{count} 条排队中",
       "statusWorking": "处理中",
       "statusError": "需要处理",
@@ -84,8 +79,6 @@
       "mainOnlyCommand": "/{command} 仅可在主对话中使用。",
       "instructionModeActive": "请先完成或取消指令模式，再使用侧边对话。",
       "startFailed": "侧边对话启动失败：{error}",
-      "copiedToMain": "已将侧边回答复制到主对话草稿。",
-      "copyUnavailable": "暂无可复制的侧边回答。",
       "queued": "已加入侧聊队列。",
       "busySide": "侧边对话仍在回复，请等待其完成。"
     }

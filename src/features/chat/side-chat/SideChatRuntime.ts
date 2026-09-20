@@ -171,17 +171,6 @@ export class SideChatRuntime {
     return this.#settings;
   }
 
-  /** Latest completed assistant answer, used by Copy to main. */
-  get latestAssistantAnswer(): string | null {
-    for (let index = this.state.messages.length - 1; index >= 0; index -= 1) {
-      const message = this.state.messages[index];
-      if (message.role === 'assistant' && message.content.trim()) {
-        return message.content;
-      }
-    }
-    return null;
-  }
-
   updateSettings(patch: SideChatSettingsProjection): void {
     Object.assign(this.#settings, patch);
   }
@@ -344,10 +333,6 @@ export class SideChatRuntime {
     this.#refreshStatus();
     if (this.state.isStreaming) this.state.cancelRequested = true;
     this.#session.cancel();
-  }
-
-  dismissPendingPrompts(): void {
-    this.#prompts.dismissAll();
   }
 
   async dispose(): Promise<void> {
