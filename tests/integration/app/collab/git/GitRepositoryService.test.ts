@@ -464,18 +464,20 @@ describe('GitRepositoryService integration', () => {
     });
     const bundlePath = path.join(root, 'authority.bundle');
     await runner.run({ args: ['bundle', 'create', bundlePath, 'refs/heads/main'], cwd: sourcePath });
-    // Reproduce the packed-object overflow without exceeding Git's separate GIT_DIR limit.
+    // Git for Windows caps GIT_DIR at MAX_PATH - 40; only packed-object paths should overflow.
     const repositoryName = '.repository-00000000-0000-4000-8000-000000000001.tmp';
-    const parentName = 'authority-'.padEnd(230 - root.length - repositoryName.length - 2, 'x');
+    const parentName = 'authority-'.padEnd(210 - root.length - repositoryName.length - 2, 'x');
     const parentPath = path.join(root, parentName);
     await mkdir(parentPath);
     const repositoryPath = path.join(parentPath, repositoryName);
-    await runner.run({
+    const clone = await runner.run({
+      acceptedExitCodes: [0, 128],
       args: ['clone', '--bare', '--no-local', bundlePath, repositoryPath],
       cwd: parentPath,
       suppressHooks: true,
     });
 
+    if (clone.exitCode !== 0) throw new Error(`Bundle installation failed: ${clone.stderr}`);
     await service.assertHealthy(repositoryPath);
     expect(await service.resolveRef(repositoryPath, 'refs/heads/main')).toBe(mainOid);
     const restored = await runner.run({ args: ['show', 'refs/heads/main:content.md'], cwd: repositoryPath });
