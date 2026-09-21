@@ -25,14 +25,24 @@ export function projectUpdateMilestoneFixture() {
   const features: CollabFeatureService[] = [];
 
   beforeAll(async () => { SQL = await initSqlJs(); });
+  const closing = new Set<string>();
+  async function traceClose(label: string, operation: () => Promise<void>): Promise<void> {
+    closing.add(label);
+    try { await operation(); } finally { closing.delete(label); }
+  }
   async function closeParticipants(): Promise<void> {
-    await Promise.all(features.splice(0).map(feature => feature.close()));
-    await Promise.all(foundations.splice(0).map(foundation => foundation.close()));
+    await Promise.all(features.splice(0).map((feature, index) => traceClose(`feature-${index}`, () => feature.close())));
+    await Promise.all(foundations.splice(0).map((foundation, index) => traceClose(`foundation-${index}`, () => foundation.close())));
   }
 
   async function cleanup(): Promise<void> {
-    await closeParticipants();
-    if (root) await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    const diagnostic = setTimeout(() => {
+      process.stderr.write(`Fixture cleanup pending: ${[...closing].join(',')}\n`);
+    }, 60_000);
+    try {
+      await closeParticipants();
+      if (root) await traceClose('remove-root', () => rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }));
+    } finally { clearTimeout(diagnostic); }
   }
   afterEach(cleanup);
   afterAll(cleanup);
