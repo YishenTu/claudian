@@ -3,12 +3,20 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import type * as environmentModule from '@/utils/env';
+
 import {
   loadOpencodeSessionMessages,
   loadOpencodeSessionModel,
   mapOpencodeMessages,
   OPENCODE_MESSAGE_ROW_SQL,
 } from '../../../../src/providers/opencode/history/OpencodeHistoryStore';
+
+// Exercise real SQLite subprocesses without discovering the runner's other Node installations.
+jest.mock('@/utils/env', () => ({
+  ...jest.requireActual<typeof environmentModule>('@/utils/env'),
+  findNodeExecutables: () => [process.execPath],
+}));
 
 describe('mapOpencodeMessages', () => {
   it('preserves Windows paths as literal code in hydration diagnostics', () => {
@@ -429,6 +437,7 @@ describe('loadOpencodeSessionMessages', () => {
     rmSync(tmpRoot, { force: true, recursive: true });
   });
 
+  // Both history queries exercise native fallback failures, whose process deadlines are 10 seconds.
   it('shows the underlying SQLite failure as a history diagnostic', async () => {
     const dbPath = path.join(tmpRoot, 'empty.db');
     new DatabaseSync(dbPath).close();
@@ -438,7 +447,7 @@ describe('loadOpencodeSessionMessages', () => {
       content: expect.stringContaining('no such table: message'),
     })]);
     await expect(loadOpencodeSessionModel('ses-empty', { databasePath: dbPath })).resolves.toBeNull();
-  });
+  }, 30_000);
 
   it('loads conversation content without selecting raw message metadata', async () => {
     expect(OPENCODE_MESSAGE_ROW_SQL).toContain("json_extract(data, '$.role')");

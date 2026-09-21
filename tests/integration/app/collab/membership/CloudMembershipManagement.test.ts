@@ -105,6 +105,9 @@ describe('Cloud membership management', () => {
       await waitUntil(() => fixture.acknowledgements.length === 2);
       expect(fixture.acknowledgements).toEqual([receipt.request, receipt.request]);
       await waitForDocument(fixture.receiptPath, value => value.phase === 'settled');
+      await expect(client.feature.listManagerResponsibilityOffers(PROJECT_ID)).resolves.toMatchObject({
+        status: 'success', value: [{ offerId: 'offer-created', status: 'acknowledged' }],
+      });
       expect(JSON.parse(await readFile(fixture.receiptPath, 'utf8'))).toMatchObject({ phase: 'settled', offer: { state: 'acknowledged', revision: 2 } });
       expect(await readFile(fixture.intentPath, 'utf8')).toBe(userIntent);
       const firstResume = await client.feature.resumeManagementOperation(PROJECT_ID);
@@ -1121,7 +1124,8 @@ async function createFixture(options: { provedStaleDemotion?: boolean; blockRead
           return;
         }
         if (acknowledgements.length === 1) { request.socket.destroy(); return; }
-        response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, { offer: { ...offered, acknowledgedAt: createdAt, state: 'acknowledged', revision: 2 } })));
+        responsibilityOffer = { ...offered, acknowledgedAt: createdAt, state: 'acknowledged', revision: 2 };
+        response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, { offer: responsibilityOffer })));
         return;
       }
       if (target === collabCloudProjectOperationRoute(PROJECT_ID, 'revokeTransferredMembershipClaim').target) {
@@ -1163,7 +1167,7 @@ async function createFixture(options: { provedStaleDemotion?: boolean; blockRead
         if (decoded.status !== 'ok') throw decoded.error;
         const offer = decoded.value.offerId === 'offer-acknowledged'
           ? { ...offered, offerId: 'offer-acknowledged', acknowledgedAt: createdAt, state: 'acknowledged', revision: 2 }
-          : offered;
+          : responsibilityOffer;
         response.end(JSON.stringify(collabCloudSuccessEnvelope(envelope.value.requestId, { offer })));
         return;
       }
@@ -1450,14 +1454,16 @@ async function waitForDocument(
   predicate: (value: Record<string, unknown>) => boolean,
 ): Promise<void> {
   const deadline = Date.now() + 10_000;
+  let lastValue: Record<string, unknown> | undefined;
   while (Date.now() < deadline) {
     try {
       const value = JSON.parse(await readFile(documentPath, 'utf8')) as Record<string, unknown>;
+      lastValue = value;
       if (predicate(value)) return;
     } catch {
       // The lifecycle transition may not have created its document yet.
     }
     await new Promise<void>(resolve => setTimeout(resolve, 10));
   }
-  throw new Error('Timed out waiting for fixture document');
+  throw new Error(`Timed out waiting for fixture document (phase: ${String(lastValue?.phase ?? 'unreadable')})`);
 }

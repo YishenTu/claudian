@@ -4,8 +4,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import type * as environmentModule from '@/utils/env';
+
 import type { Conversation } from '../../../../src/core/types';
 import { OpencodeConversationHistoryService } from '../../../../src/providers/opencode/history/OpencodeConversationHistoryService';
+
+// Exercise real SQLite subprocesses without discovering the runner's other Node installations.
+jest.mock('@/utils/env', () => ({
+  ...jest.requireActual<typeof environmentModule>('@/utils/env'),
+  findNodeExecutables: () => [process.execPath],
+}));
 
 describe('OpencodeConversationHistoryService', () => {
   const originalPlatform = process.platform;
@@ -20,6 +28,7 @@ describe('OpencodeConversationHistoryService', () => {
     rmSync(tmpRoot, { force: true, recursive: true });
   });
 
+  // This case loads an isolated provider graph and runs a native child with a 10-second deadline.
   it('passes the configured environment to the external history reader', async () => {
     const dbPath = path.join(tmpRoot, 'opencode.db');
     seedDatabase(dbPath, 'session-env', 'Configured history');
@@ -52,7 +61,7 @@ describe('OpencodeConversationHistoryService', () => {
       jest.dontMock('node:sqlite');
       jest.restoreAllMocks();
     }
-  });
+  }, 20_000);
 
   it('retries after a session-level hydration diagnostic', async () => {
     const dbPath = path.join(tmpRoot, 'opencode.db');
