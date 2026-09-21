@@ -15,7 +15,6 @@ import {
   writeGitFixtureBlob,
   writeGitFixtureTree,
 } from '@test/helpers/collabGitObjects';
-import type crossSpawn from 'cross-spawn';
 
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
@@ -24,25 +23,6 @@ import {
   GitRepositoryService,
 } from '@/app/collab/git/GitRepositoryService';
 import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
-
-// Temporary diagnostics restricted to this test's credential-free long-path repository.
-jest.mock('cross-spawn', () => {
-  const actual = jest.requireActual<typeof crossSpawn>('cross-spawn');
-  return Object.assign((...args: Parameters<typeof actual>) => {
-    const child = actual(...args);
-    const argv = args[1];
-    const cwd = args[2]?.cwd?.toString();
-    if (cwd?.includes('nested-authority-')
-      || (Array.isArray(argv) && argv.some(arg => arg.includes('nested-authority-')))) {
-      let stderr = '';
-      child.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-8192); });
-      child.on('close', code => {
-        if (code !== 0) process.stderr.write(`Long-path Git failed: ${JSON.stringify({ argv, cwd, code, stderr })}\n`);
-      });
-    }
-    return child;
-  }, actual);
-});
 
 jest.setTimeout(30_000);
 
@@ -463,7 +443,7 @@ describe('GitRepositoryService integration', () => {
       .resolves.toEqual({ leftOnly: 1, rightOnly: 1 });
   });
 
-  it('installs a bundle into a repository beyond the Windows legacy path limit', async () => {
+  it('installs a bundle whose packed-object paths exceed the Windows legacy limit', async () => {
     const sourcePath = path.join(root, 'source');
     await mkdir(sourcePath);
     await service.initializeWorkingRepository(sourcePath);
@@ -484,10 +464,12 @@ describe('GitRepositoryService integration', () => {
     });
     const bundlePath = path.join(root, 'authority.bundle');
     await runner.run({ args: ['bundle', 'create', bundlePath, 'refs/heads/main'], cwd: sourcePath });
-    // Keep each component portable while forcing Git's packed-object paths past MAX_PATH.
-    const parentPath = path.join(root, 'nested-authority-'.repeat(5), 'nested-installation-'.repeat(5));
-    await mkdir(parentPath, { recursive: true });
-    const repositoryPath = path.join(parentPath, '.repository-00000000-0000-4000-8000-000000000001.tmp');
+    // Reproduce the packed-object overflow without exceeding Git's separate GIT_DIR limit.
+    const repositoryName = '.repository-00000000-0000-4000-8000-000000000001.tmp';
+    const parentName = 'authority-'.padEnd(230 - root.length - repositoryName.length - 2, 'x');
+    const parentPath = path.join(root, parentName);
+    await mkdir(parentPath);
+    const repositoryPath = path.join(parentPath, repositoryName);
     await runner.run({
       args: ['clone', '--bare', '--no-local', bundlePath, repositoryPath],
       cwd: parentPath,
