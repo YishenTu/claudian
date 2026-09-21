@@ -1,4 +1,3 @@
-import { NOOP_TASK_RESULT_INTERPRETER } from '../../core/providers/NoopTaskResultInterpreter';
 import { getProviderConfig } from '../../core/providers/providerConfig';
 import { hasStoredConfigNormalization } from '../../core/providers/settings/storedSettings';
 import type { ProviderModule } from '../../core/providers/types';
@@ -11,6 +10,7 @@ import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
 import { decodeOpencodeModelId } from './models';
+import { opencodeTaskResultInterpreter } from './runtime/OpencodeTaskResultInterpreter';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeSubagentAdapter } from './subagentAdapter';
 import { opencodeChatUIConfig } from './ui/OpencodeChatUIConfig';
@@ -53,7 +53,7 @@ export const opencodeProviderRegistration: ProviderModule = {
       );
     },
   },
-  taskResultInterpreter: NOOP_TASK_RESULT_INTERPRETER,
+  taskResultInterpreter: opencodeTaskResultInterpreter,
   subagentAdapter: opencodeSubagentAdapter,
   workspace: opencodeWorkspaceRegistration,
 };

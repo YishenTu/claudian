@@ -1833,6 +1833,8 @@ describe('Tab provider execution ownership', () => {
       scrollToBottom: jest.fn(),
     } as any;
     tab.controllers.streamController = {
+      createBackgroundStream() { return this; },
+      dispose: jest.fn(),
       appendText: jest.fn(),
       finalizeCurrentTextBlock: jest.fn(),
       finalizeCurrentThinkingBlock: jest.fn(),
@@ -1898,6 +1900,8 @@ describe('Tab provider execution ownership', () => {
       scrollToBottom: jest.fn(),
     } as any;
     tab.controllers.streamController = {
+      createBackgroundStream() { return this; },
+      dispose: jest.fn(),
       appendText: jest.fn(),
       finalizeCurrentTextBlock: jest.fn(),
       finalizeCurrentThinkingBlock: jest.fn(),
@@ -1989,7 +1993,12 @@ describe('Tab provider execution ownership', () => {
     Object.defineProperty(tab.dom.contentEl, 'isConnected', { value: true });
     const handleStreamChunk = jest.fn();
     const save = jest.fn().mockResolvedValue(undefined);
-    tab.controllers.streamController = { handleStreamChunk } as any;
+    tab.controllers.streamController = {
+      createBackgroundStream() { return this; },
+      dispose: jest.fn(),
+      hideThinkingIndicator: jest.fn(),
+      handleStreamChunk,
+    } as any;
     tab.controllers.conversationController = { save } as any;
     const backgroundScope = {
       kind: 'background' as const,
@@ -2040,6 +2049,8 @@ describe('Tab provider execution ownership', () => {
     } as any;
     const handleStreamChunk = jest.fn();
     tab.controllers.streamController = {
+      createBackgroundStream() { return this; },
+      dispose: jest.fn(),
       appendText: jest.fn(),
       finalizeCurrentTextBlock: jest.fn(),
       finalizeCurrentThinkingBlock: jest.fn(),
@@ -2169,6 +2180,8 @@ describe('Tab provider execution ownership', () => {
     });
     const handleStreamChunk = jest.fn().mockReturnValue(renderBlocked);
     tab.controllers.streamController = {
+      createBackgroundStream() { return this; },
+      dispose: jest.fn(),
       appendText: jest.fn(),
       finalizeCurrentTextBlock: jest.fn(),
       finalizeCurrentThinkingBlock: jest.fn(),

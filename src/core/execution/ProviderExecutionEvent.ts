@@ -298,9 +298,13 @@ export type ProviderAsyncSubagentCompletedEvent = ProviderEventBase<
 
 export type ProviderTaskNotificationEvent = ProviderEventBase<
   'task_notification',
-  ProviderTurnEventScope
+  ProviderExecutionEventScope
 > & {
   readonly content: string;
+  /** Latest requested event emitted before this independent notification. */
+  readonly afterRequestedEvent?: ProviderRequestedEventScope;
+  /** Latest automatic event emitted before this independent notification. */
+  readonly afterBackgroundEvent?: ProviderBackgroundEventScope;
 };
 
 export type ProviderSessionErrorEvent = ProviderEventBase<
@@ -335,6 +339,7 @@ export type ProviderCommandsChangedEvent = ProviderEventBase<
 
 export type ProviderSessionEvent =
   | ProviderCommandsChangedEvent
+  | (ProviderTaskNotificationEvent & { readonly scope: ProviderSessionEventScope })
   | ProviderBackgroundTurnStartedEvent
   | ProviderBackgroundOutputEvent
   | ProviderBackgroundTurnCompletedEvent

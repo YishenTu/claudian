@@ -1,29 +1,17 @@
-import type {
-  ProviderTaskResultInterpreter,
-  ProviderTaskTerminalStatus,
-} from './types';
+import { extractToolResultContent } from '../tools/toolResultContent';
+import type { ProviderTaskResultInterpreter } from './types';
 
+/** Providers without managed-task semantics retain their output as plain content. */
 export const NOOP_TASK_RESULT_INTERPRETER: ProviderTaskResultInterpreter = Object.freeze({
-  hasAsyncLaunchMarker(): boolean {
-    return false;
-  },
-
-  extractAgentId(): string | null {
-    return null;
-  },
-
-  extractStructuredResult(): string | null {
-    return null;
-  },
-
-  resolveTerminalStatus(
-    _toolUseResult: unknown,
-    fallbackStatus: ProviderTaskTerminalStatus,
-  ): ProviderTaskTerminalStatus {
-    return fallbackStatus;
-  },
-
-  extractTagValue(): string | null {
-    return null;
-  },
+  describeTask: () => ({ mode: null }),
+  interpretLaunch: (result: unknown) => ({
+    mode: 'sync' as const,
+    agentId: null,
+    result: extractToolResultContent(result, { fallbackIndent: 2 }),
+  }),
+  getOutputTaskId: () => null,
+  interpretResult: (result: unknown, isError: boolean) => ({
+    status: isError ? 'error' as const : 'completed' as const,
+    result: extractToolResultContent(result, { fallbackIndent: 2 }),
+  }),
 });

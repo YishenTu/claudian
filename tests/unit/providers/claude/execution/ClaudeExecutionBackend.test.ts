@@ -1776,6 +1776,370 @@ describe('ClaudeExecutionBackend', () => {
     }));
   });
 
+  it.each([false, true])('keeps main execution available around a text-only async child with streaming=%s', async childStreaming => {
+    const childReached = createDeferred<null>();
+    const resume = createDeferred<unknown>();
+    const keepOpen = createDeferred<unknown>();
+    const childEnd = [
+      { type: 'stream_event', parent_tool_use_id: 'async-agent', event: { type: 'message_stop' } },
+      { type: 'assistant', uuid: 'child-checkpoint', parent_tool_use_id: 'async-agent',
+        message: { id: 'child-message', content: [{ type: 'text', text: 'Child answer' }] } },
+    ];
+    const query = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'assistant', message: { id: 'parent-message', content: [
+        { type: 'tool_use', id: 'async-agent', name: 'Agent', input: { prompt: 'Compute a result', run_in_background: true } },
+      ] } },
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'async-agent', content: 'Running in background' }] } },
+      { type: 'result', subtype: 'success' },
+      { type: 'stream_event', parent_tool_use_id: 'async-agent', event: {
+        type: 'message_start', message: { id: 'child-message', usage: {} },
+      } },
+      { type: 'stream_event', parent_tool_use_id: 'async-agent', event: {
+        type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Child answer' },
+      } },
+      ...(!childStreaming ? childEnd : []),
+      { then: (resolve: (value: null) => void) => { childReached.resolve(null); resolve(null); } },
+      resume.promise,
+      { type: 'assistant', uuid: 'next-checkpoint', message: { id: 'next-message', content: [{ type: 'text', text: 'Next answer' }] } },
+      ...(childStreaming ? childEnd : []),
+      { type: 'result', subtype: 'success' },
+      keepOpen.promise,
+    ]]);
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+      .mockResolvedValueOnce((() => query) as never);
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    const background: ProviderSessionEvent[] = [];
+    session.onEvent(event => background.push(event));
+    let next: Promise<ProviderExecutionEvent[]> | undefined;
+    try {
+      await collectEvents(session.execute(createRequest()).events);
+      await childReached.promise;
+      expect(session.getStatus()).toBe('idle');
+      expect(background.filter(event => event.type === 'background_turn_started')).toEqual([]);
+      next = collectEvents(session.execute(createRequest({ input: [{ type: 'text', text: 'Next request' }] })).events);
+      await waitFor(() => getEncodedPrompts().includes('Next request'));
+      resume.resolve(null);
+      const events = await next;
+      expect(events.filter(event => event.type === 'text_delta')).toEqual([
+        expect.objectContaining({ text: 'Next answer' }),
+      ]);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+      expect(session.getStatus()).toBe('idle');
+    } finally {
+      resume.resolve(null); keepOpen.resolve(null);
+      await next; await session.dispose();
+    }
+  });
+
+  it.each(['requested', 'idle', 'background'] as const)(
+    'publishes task notifications independently while %s', async (phase) => {
+      const pause = createDeferred<unknown>();
+      const query = createScriptedPersistentQuery([[
+        { type: 'system', subtype: 'init', session_id: 'session-1' },
+        ...(phase === 'requested' ? [] : [{ type: 'result', subtype: 'success' }]),
+        ...(phase === 'background' ? [{ type: 'assistant', message: { content: [{ type: 'text', text: 'Automatic work' }] } }] : []),
+        { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task-1',
+          status: 'completed', summary: 'Task finished' },
+        pause.promise,
+        { type: 'result', subtype: 'success' },
+      ]]);
+      jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+        .mockResolvedValueOnce((() => query) as never);
+      const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+      const events: ProviderSessionEvent[] = [];
+      session.onEvent(event => events.push(event));
+      const requested = collectEvents(session.execute(createRequest()).events);
+      try {
+        await waitFor(() => events.some(event => event.type === 'async_subagent_completed'));
+        expect(events).toContainEqual(expect.objectContaining({
+          type: 'task_notification', content: 'Task finished', scope: expect.objectContaining({ kind: 'session' }),
+        }));
+      } finally {
+        pause.resolve(null);
+        await requested;
+        await query.finished;
+        await session.dispose();
+      }
+    },
+  );
+
+  it.each(['before-tool', 'during-input'] as const)(
+    'keeps an automatic native message and tool round together when input arrives %s', async (phase) => {
+      const continuation = createDeferred<unknown>();
+      const keepOpen = createDeferred<unknown>();
+      const toolStart = { type: 'stream_event', parent_tool_use_id: null, event: {
+        type: 'content_block_start', index: 0,
+        content_block: { type: 'tool_use', id: 'read-background', name: 'Read', input: {} },
+      } };
+      const query = createScriptedPersistentQuery([[
+        { type: 'system', subtype: 'init', session_id: 'session-1' },
+        { type: 'result', subtype: 'success' },
+        { type: 'stream_event', parent_tool_use_id: null, event: {
+          type: 'message_start', message: { id: 'native-background', usage: {} },
+        } },
+        { type: 'stream_event', parent_tool_use_id: null, event: {
+          type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Checking task output.' },
+        } },
+        ...(phase === 'during-input' ? [toolStart] : []),
+        continuation.promise,
+        ...(phase === 'before-tool' ? [toolStart] : []),
+        { type: 'stream_event', parent_tool_use_id: null, event: {
+          type: 'content_block_delta', index: 0,
+          delta: { type: 'input_json_delta', partial_json: '{"file_path":"/tmp/task-output"}' },
+        } },
+        { type: 'stream_event', parent_tool_use_id: null, event: { type: 'message_stop' } },
+        { type: 'assistant', uuid: 'background-checkpoint', message: { id: 'native-background', content: [
+          { type: 'text', text: 'Checking task output.' },
+          { type: 'tool_use', id: 'read-background', name: 'Read', input: { file_path: '/tmp/task-output' } },
+          { type: 'tool_use', id: 'read-second', name: 'Read', input: { file_path: '/tmp/second' } },
+          { type: 'tool_use', id: 'task-create', name: 'TaskCreate', input: { subject: 'Inspect output', activeForm: 'Inspecting output' } },
+        ] } },
+        { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task-1',
+          status: 'completed', output_file: '/tmp/task-output', summary: 'Task finished' },
+        { type: 'user', message: { content: [
+          { type: 'tool_result', tool_use_id: 'read-background', content: 'First output' },
+          { type: 'tool_result', tool_use_id: 'read-second', content: 'Second output' },
+        ] } },
+        { type: 'user', tool_use_result: { task: { id: '1', subject: 'Inspect output' } }, message: { content: [
+          { type: 'tool_result', tool_use_id: 'task-create', content: 'Task #1 created successfully: Inspect output' },
+        ] } },
+        { type: 'assistant', uuid: 'requested-checkpoint', message: { id: 'native-requested', content: [
+          { type: 'text', text: 'Follow-up received.' },
+        ] } },
+        { type: 'result', subtype: 'success' },
+        keepOpen.promise,
+      ]]);
+      jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+        .mockResolvedValueOnce((() => query) as never);
+      const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+      const background: ProviderSessionEvent[] = [];
+      session.onEvent(event => background.push(event));
+      await collectEvents(session.execute(createRequest()).events);
+      await waitFor(() => background.some(event => phase === 'during-input'
+        ? event.type === 'tool_started' : event.type === 'text_delta'));
+      const requested = collectEvents(session.execute(createRequest({ input: [{ type: 'text', text: 'Follow up' }] })).events);
+      try {
+        await waitFor(() => getEncodedPrompts().includes('Follow up'));
+        continuation.resolve(null);
+        const events = await requested;
+        const started = background.find(event => event.type === 'background_turn_started')!;
+        expect(background).toContainEqual(expect.objectContaining({
+          type: 'tool_started', toolCallId: 'read-background', input: { file_path: '/tmp/task-output' },
+          scope: expect.objectContaining({ kind: 'background', turnId: (started.scope as { turnId: string }).turnId }),
+        }));
+        expect(background.filter(event => event.type === 'tool_completed')).toEqual([
+          expect.objectContaining({ toolCallId: 'read-background', content: 'First output' }),
+          expect.objectContaining({ toolCallId: 'read-second', content: 'Second output' }),
+          expect.objectContaining({ toolCallId: 'task-create' }),
+        ]);
+        expect(background).toContainEqual(expect.objectContaining({
+          type: 'tool_started', toolCallId: 'task-create', name: 'TodoWrite',
+          input: { todos: [{ id: '1', content: 'Inspect output', activeForm: 'Inspecting output', status: 'pending' }] },
+        }));
+        expect(background.filter(event => event.type === 'text_delta')).toEqual([
+          expect.objectContaining({ text: 'Checking task output.' }),
+        ]);
+        expect(background).toContainEqual(expect.objectContaining({
+          type: 'task_notification', scope: expect.objectContaining({ kind: 'session' }),
+        }));
+        expect(background).toContainEqual(expect.objectContaining({
+          type: 'background_turn_completed', nativeAssistantId: 'background-checkpoint',
+        }));
+        expect(events.filter(event => event.type === 'text_delta')).toEqual([
+          expect.objectContaining({ text: 'Follow-up received.' }),
+        ]);
+        expect(events.at(-1)).toEqual(expect.objectContaining({
+          type: 'turn_completed', nativeAssistantId: 'requested-checkpoint',
+        }));
+        expect(session.getStatus()).toBe('idle');
+      } finally {
+        continuation.resolve(null);
+        keepOpen.resolve(null);
+        await requested;
+        await session.dispose();
+      }
+    },
+  );
+
+  it.each(['single', 'batch'] as const)('uses the native %s input echo while earlier tools still own their results', async echo => {
+    const resume = createDeferred<unknown>();
+    const echoed = createDeferred<unknown>();
+    const keepOpen = createDeferred<unknown>();
+    let options: sdkModule.Options | undefined;
+    const query = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+      { type: 'assistant', message: { id: 'background', content: [
+        { type: 'tool_use', id: 'old-tool', name: 'Read', input: { file_path: '/tmp/output' } },
+      ] } },
+      resume.promise,
+      echoed.promise,
+      { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'old-tool', content: 'Denied', is_error: true }] } },
+      { type: 'assistant', message: { id: 'new-final', content: [{ type: 'text', text: 'New response ends.' }] } },
+      { type: 'result', subtype: 'success' },
+      keepOpen.promise,
+    ]]);
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+      .mockResolvedValueOnce(((params: { options: sdkModule.Options }) => { options = params.options; return query; }) as never);
+    const interactionPort = createInteractionPort();
+    interactionPort.requestApproval.mockImplementation(async request => ({ interactionId: request.interactionId, decision: 'deny' }));
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig({ interactionPort }));
+    const background: ProviderSessionEvent[] = [];
+    session.onEvent(event => background.push(event));
+    await collectEvents(session.execute(createRequest()).events);
+    await waitFor(() => background.some(event => event.type === 'tool_started'));
+    const requested = collectEvents(session.execute(createRequest({ input: [{ type: 'text', text: 'Follow up' }] })).events);
+    try {
+      await waitFor(() => getEncodedPrompts().includes('Follow up'));
+      const nativeInput = mockBuildClaudeSDKUserMessage.mock.results.at(-1)!.value;
+      const approval = await options!.canUseTool!('Read', { file_path: '/tmp/output' }, {
+        signal: new AbortController().signal, toolUseID: 'old-tool', requestId: 'approve-old-tool',
+      });
+      expect(approval?.behavior).toBe('deny');
+      const backgroundTurn = background.find(event => event.type === 'background_turn_started')!;
+      expect(interactionPort.requestApproval.mock.calls[0][0].turnId).toBe((backgroundTurn.scope as { turnId: string }).turnId);
+      resume.resolve(null);
+      echoed.resolve({ type: 'assistant',
+        ...(echo === 'single' ? { user_message_uuid: nativeInput.uuid }
+          : { user_message_uuid: 'another-batched-input', user_message_uuids: [nativeInput.uuid, 'another-batched-input'] }),
+        message: { id: 'new-response', content: [{ type: 'text', text: 'New response starts.' }] },
+      });
+      const events = await requested;
+      expect(events.filter(event => event.type === 'text_delta')).toEqual([
+        expect.objectContaining({ text: 'New response starts.' }),
+        expect.objectContaining({ text: 'New response ends.' }),
+      ]);
+      expect(background).toContainEqual(expect.objectContaining({
+        type: 'tool_completed', toolCallId: 'old-tool', isBlocked: true,
+        scope: expect.objectContaining({ kind: 'background', turnId: (backgroundTurn.scope as { turnId: string }).turnId }),
+      }));
+      expect(background.filter(event => event.type === 'background_turn_completed')).toHaveLength(1);
+    } finally {
+      resume.resolve(null); echoed.resolve(null); keepOpen.resolve(null);
+      await requested; await session.dispose();
+    }
+  });
+
+  it.each(['echo', 'queued-count'] as const)('retains a queued request across automatic output identified by %s', async evidence => {
+    const resume = createDeferred<unknown>();
+    const answer = createDeferred<unknown>();
+    const keepOpen = createDeferred<unknown>();
+    const query = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Automatic response.' }] } },
+      resume.promise,
+      { type: 'stream_event', parent_tool_use_id: null, user_message_uuid: 'automatic-input', event: {
+        type: 'message_start', message: { id: 'automatic-stream', usage: {} },
+      } },
+      { type: 'stream_event', parent_tool_use_id: null, event: {
+        type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Automatic continuation.' },
+      } },
+      { type: 'stream_event', parent_tool_use_id: null, event: { type: 'message_stop' } },
+      { type: 'assistant', message: { id: 'automatic-stream', content: [{ type: 'text', text: 'Automatic continuation.' }] } },
+      { type: 'result', subtype: 'success', ...(evidence === 'echo' ? { user_message_uuid: 'automatic-input' } : {}), queued_turn_count: 1 },
+      answer.promise,
+      { type: 'result', subtype: 'success' },
+      keepOpen.promise,
+    ]]);
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+      .mockResolvedValueOnce((() => query) as never);
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    const background: ProviderSessionEvent[] = [];
+    session.onEvent(event => background.push(event));
+    await collectEvents(session.execute(createRequest()).events);
+    await waitFor(() => background.some(event => event.type === 'text_delta'));
+    const requested = collectEvents(session.execute(createRequest({ input: [{ type: 'text', text: 'Follow up' }] })).events);
+    try {
+      await waitFor(() => getEncodedPrompts().includes('Follow up'));
+      const nativeInput = mockBuildClaudeSDKUserMessage.mock.results.at(-1)!.value;
+      resume.resolve(null);
+      await waitFor(() => background.some(event => event.type === 'background_turn_completed'));
+      expect(session.getStatus()).toBe('executing');
+      answer.resolve({ type: 'assistant', user_message_uuid: nativeInput.uuid,
+        message: { id: 'requested', content: [{ type: 'text', text: 'Requested response.' }] },
+      });
+      const events = await requested;
+      expect(events.filter(event => event.type === 'text_delta')).toEqual([
+        expect.objectContaining({ text: 'Requested response.' }),
+      ]);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+    } finally {
+      resume.resolve(null); answer.resolve(null); keepOpen.resolve(null);
+      await requested; await session.dispose();
+    }
+  });
+
+  it.each(['cancel', 'end', 'failure'] as const)('settles retained background ownership on %s', async ending => {
+    const resume = createDeferred<unknown>();
+    const messages = [
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+      { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'old-tool', name: 'Read', input: {} }] } },
+      resume.promise,
+    ];
+    const query = ending === 'failure' ? createFailingPersistentQuery(messages, new Error('transport closed'))
+      : createScriptedPersistentQuery([messages]);
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+      .mockResolvedValueOnce((() => query) as never);
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    const background: ProviderSessionEvent[] = [];
+    session.onEvent(event => background.push(event));
+    await collectEvents(session.execute(createRequest()).events);
+    await waitFor(() => background.some(event => event.type === 'tool_started'));
+    const run = session.execute(createRequest({ input: [{ type: 'text', text: 'Follow up' }] }));
+    const requested = collectEvents(run.events);
+    try {
+      await waitFor(() => getEncodedPrompts().includes('Follow up'));
+      if (ending === 'cancel') run.cancel();
+      resume.resolve(null);
+      const events = await requested;
+      await query.finished;
+      expect(events.at(-1)?.type).toBe(ending === 'cancel' ? 'cancelled' : 'execution_error');
+      expect(background.filter(event => event.type === 'background_turn_completed')).toEqual([
+        expect.objectContaining({ reason: 'provider-ended' }),
+      ]);
+    } finally {
+      resume.resolve(null); await requested; await session.dispose();
+    }
+  });
+
+  it('settles prior automatic output when a user request is absorbed into its continuation', async () => {
+    const continuation = createDeferred<unknown>();
+    const keepQueryOpen = createDeferred<unknown>();
+    const query = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Reading background result.' }] } },
+      continuation.promise,
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Task finished; follow-up received.' }] } },
+      { type: 'result', subtype: 'success' },
+      keepQueryOpen.promise,
+    ]]);
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+      .mockResolvedValueOnce((() => query) as never);
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    const events: ProviderSessionEvent[] = [];
+    session.onEvent(event => events.push(event));
+    await collectEvents(session.execute(createRequest()).events);
+    await waitFor(() => events.some(event => event.type === 'text_delta'));
+    const followup = collectEvents(session.execute(createRequest({ input: [{ type: 'text', text: 'testing follow up' }] })).events);
+    try {
+      await waitFor(() => mockBuildClaudeSDKUserMessage.mock.calls.some(([input]) => input === 'testing follow up'));
+      continuation.resolve(null);
+      const requested = await followup;
+      expect(events).toContainEqual(expect.objectContaining({ type: 'background_turn_completed' }));
+      expect(requested).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Task finished; follow-up received.' }));
+      expect(session.getStatus()).toBe('idle');
+    } finally {
+      continuation.resolve(null);
+      keepQueryOpen.resolve(null);
+      await followup;
+      await session.dispose();
+    }
+  });
+
   it('emits provider-triggered turns and async subagent completion only on the session channel', async () => {
     const query = createScriptedPersistentQuery([
       [
@@ -2592,3 +2956,90 @@ function createIdlePersistentQuery(): ReturnType<
     new Promise<void>(() => undefined),
   );
 }
+
+it('preserves the main checkpoint when an async child finishes during automatic output', async () => {
+  const keepOpen = createDeferred<unknown>();
+  const query = createScriptedPersistentQuery([[
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    { type: 'result', subtype: 'success' },
+    { type: 'assistant', uuid: 'main-checkpoint', parent_tool_use_id: null,
+      message: { id: 'main-message', content: [{ type: 'text', text: 'Automatic answer' }] } },
+    { type: 'assistant', uuid: 'child-checkpoint', parent_tool_use_id: 'async-agent',
+      message: { id: 'child-message', content: [{ type: 'text', text: 'Child answer' }] } },
+    { type: 'result', subtype: 'success' },
+    keepOpen.promise,
+  ]]);
+  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+    .mockResolvedValueOnce((() => query) as never);
+  const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+  const background: ProviderSessionEvent[] = [];
+  session.onEvent(event => background.push(event));
+  try {
+    await collectEvents(session.execute(createRequest()).events);
+    await waitFor(() => background.some(event => event.type === 'background_turn_completed'));
+    expect(background.find(event => event.type === 'background_turn_completed'))
+      .toMatchObject({ nativeAssistantId: 'main-checkpoint' });
+  } finally {
+    keepOpen.resolve(null);
+    await session.dispose();
+    jest.restoreAllMocks();
+  }
+});
+
+it.each([false, true])('anchors session notifications after emitted events with native turn completed=%s', async completed => {
+  const keepOpen = createDeferred<unknown>();
+  const query = createScriptedPersistentQuery([[
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    { type: 'assistant', uuid: 'before-checkpoint', message: { id: 'before', content: [{ type: 'text', text: 'Before notification' }] } },
+    ...(completed ? [{ type: 'result', subtype: 'success' }] : []),
+    { type: 'system', subtype: 'task_notification', task_id: 'task', session_id: 'session-1', status: 'completed', summary: 'Task finished', uuid: 'notification' },
+    ...(!completed ? [{ type: 'result', subtype: 'success' }] : []),
+    keepOpen.promise,
+  ]]);
+  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+    .mockResolvedValueOnce((() => query) as never);
+  const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+  const sessionEvents: ProviderSessionEvent[] = [];
+  session.onEvent(event => sessionEvents.push(event));
+  try {
+    const events = await collectEvents(session.execute(createRequest()).events);
+    const text = events.find(event => event.type === 'text_delta');
+    expect(text).toMatchObject({ text: 'Before notification' });
+    await waitFor(() => sessionEvents.some(event => event.type === 'task_notification'));
+    expect(sessionEvents.find(event => event.type === 'task_notification'))
+      .toMatchObject({ afterRequestedEvent: completed ? events.at(-1)?.scope : text?.scope });
+  } finally {
+    keepOpen.resolve(null);
+    await session.dispose();
+    jest.restoreAllMocks();
+  }
+});
+
+it.each([false, true])('anchors notifications after automatic events with native turn completed=%s', async completed => {
+  const keepOpen = createDeferred<unknown>();
+  const query = createScriptedPersistentQuery([[
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    { type: 'result', subtype: 'success' },
+    { type: 'assistant', uuid: 'automatic-checkpoint', message: { id: 'automatic', content: [{ type: 'text', text: 'Automatic answer' }] } },
+    ...(completed ? [{ type: 'result', subtype: 'success' }] : []),
+    { type: 'system', subtype: 'task_notification', task_id: 'task', session_id: 'session-1', status: 'completed', summary: 'Task finished', uuid: 'notification' },
+    ...(!completed ? [{ type: 'result', subtype: 'success' }] : []),
+    keepOpen.promise,
+  ]]);
+  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+    .mockResolvedValueOnce((() => query) as never);
+  const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+  const events: ProviderSessionEvent[] = [];
+  session.onEvent(event => events.push(event));
+  try {
+    await collectEvents(session.execute(createRequest()).events);
+    await waitFor(() => events.some(event => event.type === 'task_notification'));
+    const predecessor = events.find(event => event.type === (completed ? 'background_turn_completed' : 'text_delta'));
+    expect(predecessor?.scope.kind).toBe('background');
+    expect(events.find(event => event.type === 'task_notification')).toMatchObject({ afterBackgroundEvent: predecessor?.scope });
+  } finally {
+    keepOpen.resolve(null);
+    await session.dispose();
+    jest.restoreAllMocks();
+  }
+});

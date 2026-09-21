@@ -186,7 +186,7 @@ export class ClaudeExecutionEventNormalizer {
       }
     }
 
-    if (message.type === 'assistant' && message.uuid) {
+    if (message.type === 'assistant' && message.uuid && message.parent_tool_use_id == null) {
       normalized.push({
         type: 'assistant_checkpoint',
         nativeAssistantId: message.uuid,

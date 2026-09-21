@@ -152,6 +152,7 @@ function createFixture(overrides: Record<string, unknown> = {}) {
       updateLiveUserMessage: jest.fn(),
     },
     streamController: {
+      resetSubagentStreamingState: jest.fn(),
       appendText: jest.fn(),
       finalizeCurrentTextBlock: jest.fn(),
       finalizeCurrentThinkingBlock: jest.fn(),

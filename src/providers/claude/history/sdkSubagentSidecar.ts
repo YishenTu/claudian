@@ -4,7 +4,6 @@ import * as path from 'path';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ToolCallInfo } from '../../../core/types';
-import { extractFinalResultFromSubagentJsonl } from '../../../utils/subagentJsonl';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type { SDKNativeMessage } from './sdkHistoryTypes';
 import {
@@ -13,6 +12,7 @@ import {
   isPathSafeId,
   isValidSessionId,
 } from './sdkSessionPaths';
+import { extractFinalResultFromSubagentJsonl } from './subagentJsonl';
 
 export function isValidAgentId(agentId: string): boolean {
   return isPathSafeId(agentId);

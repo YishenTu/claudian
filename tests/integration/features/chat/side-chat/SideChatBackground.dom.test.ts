@@ -135,3 +135,157 @@ it('settles the requested response before background output arriving in the same
   native.complete();
   await waitFor(() => expect(harness.controller.runtime?.status).toBe('idle'));
 });
+
+it.each(['requested', 'idle', 'background'] as const)('shows task notifications without waiting for %s side work', async (phase) => {
+  const harness = phase === 'requested' ? createHarness() : await finishedSide();
+  const pending = phase === 'requested' ? (await startSideChat(harness)).started : Promise.resolve(true);
+  const native = harness.backend.latest;
+  if (phase !== 'idle') {
+    // This earlier session event may wait for the requested response to settle.
+    native.emitBackgroundEvent({ type: 'background_turn_started' });
+  }
+  try {
+    native.emitSessionEvent({ type: 'task_notification', content: 'Independent task result' });
+    expect(await screen.findByRole('button', { name: 'Task notification' })).toBeDefined();
+    expect(harness.controller.runtime?.state.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ contentBlocks: [{ type: 'task_notification', content: 'Independent task result' }] }),
+    ]));
+  } finally {
+    native.complete();
+    if (phase !== 'idle') native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' });
+    await pending;
+  }
+});
+
+it('keeps background output before a later independent notification in the same native batch', async () => {
+  const harness = await finishedSide();
+  const native = harness.backend.latest;
+  native.emitBackgroundEvent({ type: 'background_turn_started' });
+  native.emitBackgroundEvent({ type: 'text_delta', text: 'Earlier automatic response' });
+  native.emitSessionEvent({ type: 'task_notification', content: 'Later task result' });
+  native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' });
+  const earlier = await screen.findByText('Earlier automatic response');
+  const notification = screen.getByRole('button', { name: 'Task notification' });
+  expect(earlier.compareDocumentPosition(notification) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('retains the order of automatic responses queued in one native batch', async () => {
+  const harness = await finishedSide();
+  const native = harness.backend.latest;
+  for (const [id, text] of [['first', 'First result'], ['second', 'Second result']]) {
+    native.emitBackgroundEvent({ type: 'background_turn_started' }, id);
+    native.emitBackgroundEvent({ type: 'text_delta', text }, id);
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' }, id);
+  }
+  const second = await screen.findByText('Second result');
+  expect(screen.getByText('First result').compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('keeps a session notification before requested continuation text and preserves the final checkpoint', async () => {
+  const harness = createHarness();
+  const { started } = await startSideChat(harness);
+  const native = harness.backend.latest;
+  native.establishChild('side-session');
+  native.emitText('Before notification.');
+  await screen.findByText('Before notification.');
+  native.emitSessionEvent({ type: 'task_notification', content: 'Task finished.' });
+  const notification = await screen.findByRole('button', { name: 'Task notification' });
+  native.emitText('After notification.');
+  native.complete('final-checkpoint');
+  await started;
+  const answer = screen.getByText(/After notification\./);
+  expect(notification.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(harness.controller.runtime?.state.messages.at(-1)).toMatchObject({
+    content: 'After notification.', assistantMessageId: 'final-checkpoint',
+  });
+});
+
+it.each([false, true])('keeps queued requested output before a notification with native turn completed=%s', async completed => {
+  const harness = createHarness();
+  const { started } = await startSideChat(harness);
+  const native = harness.backend.latest;
+  native.establishChild('side-session');
+  native.emitText('Earlier requested answer');
+  if (completed) native.complete('requested-checkpoint');
+  native.emitSessionEvent({ type: 'task_notification', content: 'Later task result' });
+  if (!completed) native.complete('requested-checkpoint');
+  await started;
+  const earlier = screen.getByText('Earlier requested answer');
+  const notification = screen.getByRole('button', { name: 'Task notification' });
+  expect(earlier.compareDocumentPosition(notification) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it('preserves all requested text positions across two notifications in one batch', async () => {
+  const harness = createHarness();
+  const { started } = await startSideChat(harness);
+  const native = harness.backend.latest;
+  native.establishChild('side-session');
+  native.emitText('First segment.');
+  native.emitSessionEvent({ type: 'task_notification', content: 'First task.' });
+  native.emitText('Middle segment.');
+  native.emitSessionEvent({ type: 'task_notification', content: 'Second task.' });
+  native.emitText('Last segment.');
+  native.complete('last-checkpoint');
+  await started;
+  const notifications = screen.getAllByRole('button', { name: 'Task notification' });
+  const elements = [screen.getByText(/First segment\./), notifications[0], screen.getByText(/Middle segment\./), notifications[1], screen.getByText(/Last segment\./)];
+  for (let index = 1; index < elements.length; index++) {
+    expect(elements[index - 1].compareDocumentPosition(elements[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+});
+
+it('preserves a notification between automatic work and its subsequent answer', async () => {
+  const harness = createHarness({ taskResultInterpreter });
+  const { started } = await startSideChat(harness);
+  const native = harness.backend.latest;
+  native.establishChild('side-session');
+  native.emitText('Requested answer');
+  native.complete();
+  await started;
+  native.emitSessionEvent({ type: 'task_notification', content: 'First task finished.' });
+  native.emitBackgroundEvent({ type: 'background_turn_started' });
+  native.emitBackgroundEvent({ type: 'tool_started', toolCallId: 'read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: 'task.output' } });
+  native.emitBackgroundEvent({ type: 'tool_completed', toolCallId: 'read', toolScope: { kind: 'main' }, content: 'First task result' });
+  native.emitSessionEvent({ type: 'task_notification', content: 'Second task finished.' });
+  native.emitBackgroundEvent({ type: 'text_delta', text: 'After notification.' });
+  native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' });
+  await waitFor(() => expect(harness.controller.runtime?.status).toBe('idle'));
+  const notification = screen.getAllByRole('button', { name: 'Task notification' })[1];
+  const answer = await screen.findByText(/After notification\./);
+  expect(notification.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+
+it('preserves automatic text across multiple notifications in one native batch', async () => {
+  const harness = await finishedSide();
+  const native = harness.backend.latest;
+  native.emitBackgroundEvent({ type: 'background_turn_started' });
+  native.emitBackgroundEvent({ type: 'text_delta', text: 'First automatic segment.' });
+  native.emitSessionEvent({ type: 'task_notification', content: 'First task.' });
+  native.emitBackgroundEvent({ type: 'text_delta', text: 'Middle automatic segment.' });
+  native.emitSessionEvent({ type: 'task_notification', content: 'Second task.' });
+  native.emitBackgroundEvent({ type: 'text_delta', text: 'Last automatic segment.' });
+  native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed', nativeAssistantId: 'automatic-checkpoint' });
+  const last = await screen.findByText('Last automatic segment.');
+  const notifications = screen.getAllByRole('button', { name: 'Task notification' });
+  const ordered = [screen.getByText('First automatic segment.'), notifications[0], screen.getByText('Middle automatic segment.'), notifications[1], last];
+  for (let index = 1; index < ordered.length; index++) {
+    expect(ordered[index - 1].compareDocumentPosition(ordered[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+  await waitFor(() => expect(harness.controller.runtime?.state.messages.at(-1)).toMatchObject({ content: 'Last automatic segment.', assistantMessageId: 'automatic-checkpoint' }));
+});
+
+it('keeps completed automatic turns before a later notification while their rendering is queued', async () => {
+  const harness = await finishedSide();
+  const native = harness.backend.latest;
+  for (const [id, text] of [['first', 'First completed response'], ['second', 'Second completed response']]) {
+    native.emitBackgroundEvent({ type: 'background_turn_started' }, id);
+    native.emitBackgroundEvent({ type: 'text_delta', text }, id);
+    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' }, id);
+  }
+  native.emitSessionEvent({ type: 'task_notification', content: 'Later notification.' });
+  const second = await screen.findByText('Second completed response');
+  const notification = screen.getByRole('button', { name: 'Task notification' });
+  expect(screen.getByText('First completed response').compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(second.compareDocumentPosition(notification) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});

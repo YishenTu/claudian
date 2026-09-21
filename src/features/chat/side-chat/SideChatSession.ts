@@ -95,7 +95,6 @@ export class SideChatSession {
   #active: ActiveSideExecution | null = null;
   #executionController: AbortController | null = null;
   #pendingWorkCount = 0;
-  #sessionEventWork: Promise<void> = Promise.resolve();
   #preparing = false;
   #disposed = false;
   #invalidated = false;
@@ -395,11 +394,11 @@ export class SideChatSession {
       this.#applySnapshot(event.snapshot);
     }
     const isCurrent = () => !this.#disposed && this.#supervisor.current === current;
-    const work = this.#sessionEventWork.then(async () => {
+    const deliver = async () => {
       if (isCurrent()) await this.deps.onSessionEvent?.(event, isCurrent);
-    });
-    this.#sessionEventWork = work.catch(() => undefined);
-    this.#trackWork(work);
+    };
+    // The renderer admits events synchronously, then owns its rendering queue.
+    this.#trackWork(deliver());
   }
 
   #handleInvalidation(reason: ProviderExecutionInvalidationReason): void {

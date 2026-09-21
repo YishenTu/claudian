@@ -16,7 +16,7 @@ import { buildPersistentPermissionUpdates } from '../security/ClaudePermissionUp
 export interface ClaudeExecutionInteractionDeps {
   readonly interactionPort: ProviderInteractionPort;
   readonly sessionInstanceId: string;
-  readonly getTurnId: () => string | null;
+  readonly getTurnId: (toolId: string) => string | null;
   readonly isToolAllowed: (toolName: string) => boolean;
   readonly onToolBlocked: (toolUseId: string) => void;
 }
@@ -38,7 +38,7 @@ export class ClaudeInteractionHandler {
       };
     }
 
-    const turnId = this.deps.getTurnId();
+    const turnId = this.deps.getTurnId(options.toolUseID);
     if (!turnId) {
       return {
         behavior: 'deny',

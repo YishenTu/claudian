@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
+  ProviderBackgroundEventScope,
   ProviderExecutionBackend,
   ProviderExecutionEvent,
   ProviderExecutionRequest,
@@ -22,6 +23,8 @@ export class FakeSideSession implements ProviderExecutionSession {
   disposeCalls = 0;
   cancelCalls = 0;
   private active: FakeRun | null = null;
+  private lastBackgroundScope?: ProviderBackgroundEventScope;
+  private latestRun: FakeRun | null = null;
   private status: Exclude<ProviderSessionStatus, 'invalidated'> = 'idle';
   private revision = 0;
   private providerSessionId: string | undefined;
@@ -38,6 +41,7 @@ export class FakeSideSession implements ProviderExecutionSession {
     this.status = 'executing';
     const run = new FakeRun(this.sessionInstanceId, () => this.cancel());
     this.active = run;
+    this.latestRun = run;
     run.emit({ accepted: true, type: 'turn_started' });
     return run;
   }
@@ -52,6 +56,8 @@ export class FakeSideSession implements ProviderExecutionSession {
     this.sessionSequence += 1;
     const scoped = {
       ...event,
+      ...(event.type === 'task_notification' ? { afterBackgroundEvent: this.lastBackgroundScope } : {}),
+      ...(event.type === 'task_notification' && this.latestRun ? { afterRequestedEvent: this.latestRun.currentScope() } : {}),
       scope: {
         kind: 'session' as const,
         sequence: this.sessionSequence,
@@ -65,7 +71,8 @@ export class FakeSideSession implements ProviderExecutionSession {
     const sequence = (this.backgrounds.get(turnId) ?? 0) + 1;
     this.backgrounds.set(turnId, sequence);
     if (event.type === 'background_turn_completed') this.backgrounds.delete(turnId);
-    const scoped = { ...event, scope: { kind: 'background', turnId, sequence, sessionInstanceId: this.sessionInstanceId } } as ProviderSessionEvent;
+    this.lastBackgroundScope = { kind: 'background', turnId, sequence, sessionInstanceId: this.sessionInstanceId };
+    const scoped = { ...event, scope: this.lastBackgroundScope } as ProviderSessionEvent;
     for (const listener of this.listeners) listener(scoped);
   }
 
@@ -187,10 +194,15 @@ class FakeRun implements ProviderExecutionRun {
   }
 
   private scope() {
+    this.sequence++;
+    return this.currentScope();
+  }
+
+  currentScope() {
     return {
       executionId: this.executionId,
       kind: 'requested' as const,
-      sequence: ++this.sequence,
+      sequence: this.sequence,
       sessionInstanceId: this.sessionInstanceId,
       turnId: this.turnId,
     };

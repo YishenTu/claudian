@@ -50,6 +50,7 @@ import {
   InlineInteractionPrompts,
 } from '../rendering/InlineInteractionPrompts';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
+import { continueResponseAfterNotification } from '../rendering/ResponseContinuation';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { SideChatController } from '../side-chat/SideChatController';
 import type { ChatState } from '../state/ChatState';
@@ -249,6 +250,10 @@ export class InputController {
     }
     const chunk = providerOutputEventToStreamChunk(event);
     if (chunk) {
+      this.activeStreamingAssistantMessage = await continueResponseAfterNotification({
+        state: this.deps.state, renderer: this.deps.renderer, stream: this.deps.streamController,
+        createMessageId: () => this.deps.generateId(),
+      }, this.activeStreamingAssistantMessage ?? assistant, chunk, event.scope);
       await this.deps.streamController.handleStreamChunk(
         chunk,
         this.activeStreamingAssistantMessage ?? assistant,
@@ -664,7 +669,7 @@ export class InputController {
           await streamController.finalizeCurrentThinkingBlock(finalAssistantMsg);
           await streamController.finalizeCurrentTextBlock(finalAssistantMsg);
           renderer.finalizeResponse(finalAssistantMsg, state.messages, !didCancelThisTurn && !hadExecutionError);
-          this.deps.getSubagentManager().resetStreamingState();
+          streamController.resetSubagentStreamingState();
           this.#syncScrollToBottomAfterRenderUpdates();
 
           const saveExtras = didEnqueueToSdk ? { resumeAtMessageId: undefined } : undefined;
@@ -1578,7 +1583,7 @@ export class InputController {
     state.currentTextContent = '';
     state.currentThinkingState = null;
     state.responseStartTime = null;
-    this.deps.getSubagentManager().resetStreamingState();
+    streamController.resetSubagentStreamingState();
   }
 
   // ============================================

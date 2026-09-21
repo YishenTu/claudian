@@ -84,6 +84,7 @@ function createRouting(
     selectionController: { getContext: () => context.editorSelection ?? null },
     state,
     streamController: {
+      resetSubagentStreamingState: () => undefined,
       appendText: async () => undefined,
       finalizeCurrentTextBlock: async () => undefined,
       finalizeCurrentThinkingBlock: async () => undefined,

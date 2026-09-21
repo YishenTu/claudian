@@ -111,3 +111,69 @@ it('keeps a user response active across a notification received between its nati
     ],
   });
 });
+
+it('replays a user prompt absorbed into an automatic response from its queued-command attachment', async () => {
+  const entries = [
+    { type: 'user', uuid: 'u', message: { content: 'testing follow up' } },
+    { type: 'assistant', uuid: 'a', parentUuid: 'u', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Still waiting.' }] } },
+    { type: 'user', uuid: 'n', parentUuid: 'a', message: { content: '<task-notification><task-id>task</task-id><status>completed</status><summary>Task finished</summary></task-notification>' } },
+    { type: 'assistant', uuid: 'read', parentUuid: 'n', message: { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'read-tool', name: 'Read', input: { file_path: '/task.output' } }] } },
+    { type: 'user', uuid: 'result', parentUuid: 'read', toolUseResult: { content: '186' }, message: { content: [{ type: 'tool_result', tool_use_id: 'read-tool', content: '186' }] } },
+    { type: 'attachment', uuid: 'attachment', parentUuid: 'result', timestamp: '2026-09-21T03:16:06.961Z',
+      attachment: { type: 'queued_command', prompt: 'testing follow up', source_uuid: 'followup', commandMode: 'prompt' } },
+    { type: 'assistant', uuid: 'final', parentUuid: 'attachment', message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Bash complete: 186 files.' }] } },
+  ];
+  readFile.mockResolvedValue(entries.map((entry, index) => JSON.stringify({ timestamp: new Date(Date.parse('2026-09-21T03:16:01.961Z') + index * 1000).toISOString(), ...entry })).join('\n'));
+
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+
+  expect(result.messages.map(message => [message.role, message.content])).toEqual([
+    ['user', 'testing follow up'],
+    ['assistant', 'Still waiting.'],
+    ['assistant', ''],
+    ['user', 'testing follow up'],
+    ['assistant', 'Bash complete: 186 files.'],
+  ]);
+  expect(result.messages[3]).toMatchObject({
+    id: 'followup', userMessageId: 'followup', timestamp: Date.parse('2026-09-21T03:16:06.961Z'),
+  });
+  expect(result.messages[2].contentBlocks).toEqual([
+    { type: 'task_notification', content: 'Task finished' }, { type: 'tool_use', toolId: 'read-tool' },
+  ]);
+});
+
+it.each([
+  ['<summary>Background command completed (exit code 0)</summary>', 'Background command completed (exit code 0)'],
+  ['<summary>Agent finished</summary><result>PROBE_CHILD_DONE</result>', 'PROBE_CHILD_DONE'],
+])('replays a notification absorbed during a tool call from its queued-command attachment (%s)', async (payload, content) => {
+  // Shape captured with SDK 0.3.267 / CLI 2.1.278 while a foreground tool was active.
+  const notification = `<task-notification><task-id>background-task</task-id><tool-use-id>background-tool</tool-use-id><status>completed</status>${payload}</task-notification>`;
+  const entries = [
+    { type: 'user', uuid: 'u', timestamp: '2026-09-21T07:29:10Z', message: { content: 'Run the foreground task' } },
+    { type: 'assistant', uuid: 'tool', parentUuid: 'u', timestamp: '2026-09-21T07:29:11Z',
+      message: { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'foreground-tool', name: 'Bash', input: { command: 'node gate.cjs fg' } }] } },
+    { type: 'queue-operation', operation: 'enqueue', content: notification },
+    { type: 'user', uuid: 'tool-result', parentUuid: 'tool', timestamp: '2026-09-21T07:29:12Z',
+      toolUseResult: { stdout: 'PROBE_FG_DONE', stderr: '', interrupted: false, isImage: false },
+      message: { content: [{ type: 'tool_result', tool_use_id: 'foreground-tool', content: 'PROBE_FG_DONE' }] } },
+    { type: 'attachment', uuid: 'notification-attachment', parentUuid: 'tool-result', timestamp: '2026-09-21T07:29:13Z',
+      attachment: { type: 'queued_command', prompt: notification, source_uuid: 'notification-source', commandMode: 'task-notification' } },
+    { type: 'assistant', uuid: 'answer', parentUuid: 'notification-attachment', timestamp: '2026-09-21T07:29:15Z',
+      message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'PROBE_FOLLOWUP_ACK' }] } },
+  ];
+  readFile.mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
+
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+
+  expect(result.error).toBeUndefined();
+  expect(result.messages).toHaveLength(2);
+  expect(result.messages[1]).toMatchObject({
+    role: 'assistant', content: 'PROBE_FOLLOWUP_ACK', durationSeconds: 5,
+    toolCalls: [{ id: 'foreground-tool', status: 'completed', result: 'PROBE_FG_DONE' }],
+    contentBlocks: [
+      { type: 'tool_use', toolId: 'foreground-tool' },
+      { type: 'task_notification', content },
+      { type: 'text', content: 'PROBE_FOLLOWUP_ACK' },
+    ],
+  });
+});

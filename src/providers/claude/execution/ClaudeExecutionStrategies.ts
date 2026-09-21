@@ -10,6 +10,7 @@ import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
 import { MessageChannel } from '../runtime/ClaudeMessageChannel';
 import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
 import type { ClaudeEncodedExecutionRequest } from './ClaudeExecutionRequestEncoder';
+import { getClaudeInputMatch } from './ClaudeResponseOwnership';
 
 export interface ClaudeExecutionStrategySink {
   readonly sessionInstanceId: string;
@@ -52,6 +53,7 @@ type PersistentNativeTurnOutcome =
   | { readonly type: 'failed'; readonly error: unknown };
 
 interface PersistentNativeTurn {
+  readonly nativeInputId?: string;
   readonly query: Query;
   readonly queryToken: number;
   readonly completion: Promise<PersistentNativeTurnOutcome>;
@@ -119,7 +121,7 @@ implements ClaudeExecutionStrategy {
       requestSignal?.throwIfAborted();
       const query = this.query;
       this.messageChannel.enqueue(message);
-      this.activeNativeTurn = createPersistentNativeTurn(query, queryToken);
+      this.activeNativeTurn = createPersistentNativeTurn(query, queryToken, message.uuid);
       this.hasNonPersistentContext ||= request.options.persistSession === false;
       this.sink.markNativeTurnHandedOff(queryToken);
     } finally {
@@ -351,7 +353,7 @@ implements ClaudeExecutionStrategy {
           message,
           nativeTurn?.queryToken ?? queryToken,
         );
-        if (message.type === 'result') {
+        if (message.type === 'result' && getClaudeInputMatch(message, nativeTurn?.nativeInputId) !== false) {
           this.#finishNativeTurn(query, { type: 'completed' });
         }
       }
@@ -543,6 +545,7 @@ async function* toSingleMessagePrompt(
 function createPersistentNativeTurn(
   query: Query,
   queryToken: number,
+  nativeInputId?: string,
 ): PersistentNativeTurn {
   let resolve!: (outcome: PersistentNativeTurnOutcome) => void;
   const completion = new Promise<PersistentNativeTurnOutcome>(
@@ -554,6 +557,7 @@ function createPersistentNativeTurn(
   return {
     query,
     queryToken,
+    nativeInputId,
     completion,
     settle: (outcome) => {
       if (settled) return;

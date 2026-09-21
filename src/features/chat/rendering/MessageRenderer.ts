@@ -401,9 +401,17 @@ export class MessageRenderer {
       && !blocks.some(block => block.type === 'context_compacted');
 
     const notificationIndex = blocks.findIndex(block => block.type === 'task_notification');
-    const automaticNotification = notificationIndex !== -1 && msg.isAutomaticResponse === true;
+    const previous = messages[messages.indexOf(msg) - 1];
+    const precedingNotificationHistory = notificationIndex === -1
+      && msg.isAutomaticResponse === true && isStandaloneTaskNotification(previous)
+      ? this.messagesEl.querySelector<HTMLElement>(
+        `[data-message-id="${previous.id}"] .claudian-task-notification .claudian-work-history`,
+      )
+      : null;
+    const automaticNotification = msg.isAutomaticResponse === true
+      && (notificationIndex !== -1 || precedingNotificationHistory !== null);
     if (automaticNotification && canCollapse) {
-      let history: HTMLElement | null = null;
+      let history: HTMLElement | null = precedingNotificationHistory;
       for (const child of Array.from(contentEl.children) as HTMLElement[]) {
         if (child.classList.contains('claudian-task-notification')) {
           history = child.querySelector<HTMLElement>('.claudian-work-history');
@@ -1101,4 +1109,11 @@ export class MessageRenderer {
     }
   }
 
+}
+
+/** Live session notifications are separate from the automatic response they precede. */
+export function isStandaloneTaskNotification(message: ChatMessage | undefined): message is ChatMessage {
+  return message?.role === 'assistant' && message.isAutomaticResponse === true
+    && Boolean(message.contentBlocks?.length)
+    && message.contentBlocks?.every(block => block.type === 'task_notification') === true;
 }

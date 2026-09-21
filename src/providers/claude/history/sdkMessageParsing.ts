@@ -159,6 +159,17 @@ export function parseSDKMessageToChat(
   sdkMsg: SDKNativeMessage,
   toolResults?: Map<string, { content: string; isError: boolean }>,
 ): ChatMessage | null {
+  if (sdkMsg.type === 'attachment') {
+    const attachment = sdkMsg.attachment;
+    if (attachment?.type !== 'queued_command' || attachment.commandMode !== 'prompt'
+      || (typeof attachment.prompt !== 'string' && !Array.isArray(attachment.prompt))) return null;
+    return parseSDKMessageToChat({
+      type: 'user',
+      uuid: attachment.source_uuid ?? sdkMsg.uuid,
+      timestamp: sdkMsg.timestamp,
+      message: { content: attachment.prompt },
+    }, toolResults);
+  }
   if (sdkMsg.type === 'file-history-snapshot') {
     return null;
   }
@@ -355,8 +366,14 @@ export function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
 }
 
 export function parseTaskNotification(sdkMsg: SDKNativeMessage): string | null {
-  if (sdkMsg.type !== 'user') return null;
-  const text = extractTextContent(sdkMsg.message?.content);
+  const attachment = sdkMsg.attachment;
+  const content = sdkMsg.type === 'user'
+    ? sdkMsg.message?.content
+    : sdkMsg.type === 'attachment' && attachment?.type === 'queued_command'
+      && attachment.commandMode === 'task-notification'
+      ? attachment.prompt
+      : undefined;
+  const text = extractTextContent(content);
   if (!text?.trimStart().startsWith('<task-notification>')) return null;
   if (!extractXmlTag(text, 'task-id')) return null;
   const status = extractXmlTag(text, 'status');

@@ -511,15 +511,35 @@ export type ProviderConversationSessionAvailability =
 
 export type ProviderTaskTerminalStatus = Extract<ToolCallInfo['status'], 'completed' | 'error'>;
 
+export interface ProviderTaskDescription {
+  mode: 'sync' | 'async' | null;
+  description?: string;
+  prompt?: string;
+}
+
+export interface ProviderTaskLaunch {
+  mode: 'sync' | 'async';
+  agentId: string | null;
+  result: string;
+}
+
+export interface ProviderTaskResult {
+  status: 'running' | ProviderTaskTerminalStatus;
+  result: string;
+}
+
+export interface ProviderTaskResultContext {
+  mode: 'sync' | 'async';
+  agentId?: string;
+}
+
+/** Native task formats and output recovery stay behind this provider boundary. */
 export interface ProviderTaskResultInterpreter {
-  hasAsyncLaunchMarker(toolUseResult: unknown): boolean;
-  extractAgentId(toolUseResult: unknown): string | null;
-  extractStructuredResult(toolUseResult: unknown): string | null;
-  resolveTerminalStatus(
-    toolUseResult: unknown,
-    fallbackStatus: ProviderTaskTerminalStatus,
-  ): ProviderTaskTerminalStatus;
-  extractTagValue(payload: string, tagName: string): string | null;
+  describeTask(input: Readonly<Record<string, unknown>>): ProviderTaskDescription;
+  interpretLaunch(result: unknown, isError: boolean, toolUseResult?: unknown): ProviderTaskLaunch;
+  /** Correlate native input/output without recovering result files. */
+  getOutputTaskId(input: Readonly<Record<string, unknown>> | undefined, result?: unknown): string | null;
+  interpretResult(result: unknown, isError: boolean, context: ProviderTaskResultContext, toolUseResult?: unknown): ProviderTaskResult;
 }
 
 export interface ProviderSubagentLaunchResult {

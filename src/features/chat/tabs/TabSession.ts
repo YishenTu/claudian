@@ -63,13 +63,15 @@ export class TabSession {
     await this.coordinatorDisposal;
   }
 
-  enqueueBackgroundWork(work: () => Promise<void>): Promise<void> | null {
+  enqueueBackgroundWork(work: () => Promise<void>, independent = false): Promise<void> | null {
     if (this.backgroundWorkPauseDepth > 0) return null;
 
-    const pending = this.backgroundWork
-      .catch(() => undefined)
-      .then(work);
-    this.backgroundWork = pending;
+    const previous = this.backgroundWork.catch(() => undefined);
+    // Independent notifications must precede reservations from later native events.
+    const pending = independent ? (async () => work())() : previous.then(work);
+    this.backgroundWork = independent
+      ? Promise.allSettled([previous, pending]).then(() => undefined)
+      : pending;
     return pending;
   }
 
