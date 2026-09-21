@@ -4369,5 +4369,148 @@ describe('StreamController - Tool completion', () => {
 
       expect(msg.toolCalls![0].status).toBe('blocked');
     });
+
+    it('publishes a successful Write diff for editor highlighting', async () => {
+      const onAgentEditDiffs = jest.fn();
+      deps.onAgentEditDiffs = onAgentEditDiffs;
+      controller = new StreamController(deps);
+      const msg = createTestMessage();
+      msg.toolCalls = [{
+        id: 'write-1',
+        name: 'Write',
+        input: { file_path: 'notes/test.md', content: 'New content' },
+        status: 'running',
+      }];
+
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'write-1',
+        content: 'Wrote file',
+        toolUseResult: {
+          filePath: 'notes/test.md',
+          structuredPatch: [{
+            lines: ['+New content'],
+            newLines: 1,
+            newStart: 1,
+            oldLines: 0,
+            oldStart: 1,
+          }],
+        },
+      }, msg);
+
+      expect(onAgentEditDiffs).toHaveBeenCalledWith([
+        expect.objectContaining({
+          filePath: 'notes/test.md',
+          stats: { added: 1, removed: 0 },
+        }),
+      ]);
+    });
+
+    it('publishes every successful apply_patch file diff for editor highlighting', async () => {
+      const onAgentEditDiffs = jest.fn();
+      deps.onAgentEditDiffs = onAgentEditDiffs;
+      controller = new StreamController(deps);
+      const msg = createTestMessage();
+      msg.toolCalls = [{
+        id: 'patch-1',
+        name: TOOL_APPLY_PATCH,
+        input: {
+          patch: [
+            '*** Begin Patch',
+            '*** Update File: notes/first.md',
+            ' old',
+            '-value',
+            '+updated',
+            '*** Update File: notes/second.md',
+            '+added',
+            '*** End Patch',
+          ].join('\n'),
+        },
+        status: 'running',
+      }];
+
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'patch-1',
+        content: 'Patch applied',
+      }, msg);
+
+      expect(onAgentEditDiffs).toHaveBeenCalledWith([
+        expect.objectContaining({ filePath: 'notes/first.md' }),
+        expect.objectContaining({ filePath: 'notes/second.md' }),
+      ]);
+    });
+
+    it('preserves document coordinates for a context-free native deletion', async () => {
+      const onAgentEditDiffs = jest.fn();
+      deps.onAgentEditDiffs = onAgentEditDiffs;
+      controller = new StreamController(deps);
+      const msg = createTestMessage();
+      await controller.handleStreamChunk({
+        type: 'tool_use', id: 'native-delete', name: TOOL_APPLY_PATCH,
+        input: { changes: [{ path: 'notes/test.md', kind: 'update', diff: '@@ -7 +6,0 @@\n-123' }] },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result', id: 'native-delete', content: 'Patch applied',
+      }, msg);
+      expect(onAgentEditDiffs).toHaveBeenCalledWith([expect.objectContaining({
+        filePath: 'notes/test.md',
+        lineNumbersAreDocumentRelative: true,
+        diffLines: [{ type: 'delete', text: '123', oldLineNum: 7 }],
+      })]);
+    });
+
+    it.each(['Bash', TOOL_APPLY_PATCH])(
+      'captures open editors around a successful %s tool for editor highlighting',
+      async (name) => {
+        const onAgentEditCaptureStart = jest.fn();
+        const onAgentEditCaptureFinish = jest.fn();
+        deps.onAgentEditCaptureStart = onAgentEditCaptureStart;
+        deps.onAgentEditCaptureFinish = onAgentEditCaptureFinish;
+        controller = new StreamController(deps);
+        const msg = createTestMessage();
+
+        await controller.handleStreamChunk({
+          type: 'tool_use',
+          id: 'bash-edit-1',
+          name,
+          input: { command: 'edit note' },
+        }, msg);
+        await controller.handleStreamChunk({
+          type: 'tool_result',
+          id: 'bash-edit-1',
+          content: 'Command completed',
+        }, msg);
+
+        expect(onAgentEditCaptureStart).toHaveBeenCalledTimes(1);
+        const captureId = onAgentEditCaptureStart.mock.calls[0][0];
+        expect(onAgentEditCaptureFinish).toHaveBeenCalledWith(captureId, true);
+      },
+    );
+
+    it('discards a Bash editor capture when the tool fails', async () => {
+      const onAgentEditCaptureStart = jest.fn();
+      const onAgentEditCaptureFinish = jest.fn();
+      deps.onAgentEditCaptureStart = onAgentEditCaptureStart;
+      deps.onAgentEditCaptureFinish = onAgentEditCaptureFinish;
+      controller = new StreamController(deps);
+      const msg = createTestMessage();
+
+      await controller.handleStreamChunk({
+        type: 'tool_use',
+        id: 'bash-edit-1',
+        name: 'Bash',
+        input: { command: 'edit note' },
+      }, msg);
+      await controller.handleStreamChunk({
+        type: 'tool_result',
+        id: 'bash-edit-1',
+        content: 'Command failed',
+        isError: true,
+      }, msg);
+
+      const captureId = onAgentEditCaptureStart.mock.calls[0][0];
+      expect(onAgentEditCaptureFinish).toHaveBeenCalledWith(captureId, false);
+    });
   });
 });

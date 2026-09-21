@@ -127,6 +127,16 @@ export function parseFileUpdateChangeDiffs(changes: unknown): ApplyPatchFileDiff
     .filter((diff): diff is ApplyPatchFileDiff => diff !== null);
 }
 
+export function extractApplyPatchFileDiffs(
+  input: Record<string, unknown>,
+): ApplyPatchFileDiff[] {
+  const canonicalDiffs = parseFileUpdateChangeDiffs(input.changes);
+  if (canonicalDiffs.length > 0) return canonicalDiffs;
+
+  const patchText = typeof input.patch === 'string' ? input.patch : '';
+  return patchText ? parseApplyPatchDiffs(patchText) : [];
+}
+
 export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo): ToolDiffData | undefined {
   const filePath = getNonEmptyStringValue(toolCall.input.file_path)
     ?? getNonEmptyStringValue(toolCall.input.path)
@@ -139,7 +149,12 @@ export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo):
       const hunks = result.structuredPatch as StructuredPatchHunk[];
       const diffLines = structuredPatchToDiffLines(hunks);
       const stats = countLineChanges(diffLines);
-      return { filePath: resultFilePath, diffLines, stats };
+      return {
+        filePath: resultFilePath,
+        diffLines,
+        lineNumbersAreDocumentRelative: true,
+        stats,
+      };
     }
 
     const unifiedDiff = getUnifiedDiffText(result);
@@ -149,7 +164,12 @@ export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo):
         const resultFilePath = (typeof result.filePath === 'string' ? result.filePath : null)
           || (typeof result.path === 'string' ? result.path : null)
           || filePath;
-        return { filePath: resultFilePath, diffLines, stats: countLineChanges(diffLines) };
+        return {
+          filePath: resultFilePath,
+          diffLines,
+          lineNumbersAreDocumentRelative: true,
+          stats: countLineChanges(diffLines),
+        };
       }
     }
 
@@ -331,6 +351,7 @@ function parseFileUpdateChangeDiff(change: unknown): ApplyPatchFileDiff | null {
     operation: kindInfo.operation,
     ...(kindInfo.movedTo ? { movedTo: kindInfo.movedTo } : {}),
     diffLines,
+    lineNumbersAreDocumentRelative: true,
     stats: countLineChanges(diffLines),
   };
 }

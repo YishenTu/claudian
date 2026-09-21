@@ -23,6 +23,8 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Inline Edit** — Select text or start at the cursor position + hotkey to edit directly in notes with word-level diff preview.
 
+**AI Edit Reviews** (Experimental) — Enable AI edit highlights in General settings to review added, changed, and deleted Markdown directly in the editor with Accept and Revert actions. This is a local review aid for understanding agent changes, not a replacement for Git history, attribution, branching, merging, or recovery.
+
 **Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
 
 **`@mention`** — Type `@` to reference vault files, folders, and Collab member changes. Type `#` to reference Collab tickets.

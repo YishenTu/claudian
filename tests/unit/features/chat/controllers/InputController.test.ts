@@ -109,6 +109,8 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     steer: jest.fn().mockResolvedValue(true),
   };
   const plugin = {
+    beginAgentEditCapture: jest.fn(),
+    completeAgentEditCapture: jest.fn(),
     createConversation: jest.fn(),
     getConversationById: jest.fn().mockResolvedValue(null),
     getConversationList: jest.fn().mockReturnValue([]),
@@ -300,6 +302,39 @@ describe('InputController approval details', () => {
 });
 
 describe('InputController coordinator execution', () => {
+  it('does not hand off a task cancelled while its file baseline is being prepared', async () => {
+    const fixture = createFixture();
+    fixture.input.value = 'Edit notes';
+    fixture.plugin.beginAgentEditCapture.mockImplementation(async () => {
+      await Promise.resolve();
+      fixture.state.cancelRequested = true;
+    });
+    await fixture.controller.sendMessage();
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.state.isStreaming).toBe(false);
+    expect(fixture.input.value).toBe('Edit notes');
+  });
+
+  it('captures editor state before provider handoff even without tool notifications', async () => {
+    const fixture = createFixture();
+    fixture.input.value = 'Add test content';
+    const events: string[] = [];
+    fixture.plugin.beginAgentEditCapture.mockImplementation(async () => {
+      await Promise.resolve();
+      events.push('capture');
+    });
+    fixture.coordinator.execute.mockImplementation(async () => {
+      events.push('execute');
+      return { accepted: true, status: 'completed' };
+    });
+    fixture.plugin.completeAgentEditCapture.mockImplementation(async () => {
+      await Promise.resolve();
+      events.push('complete');
+    });
+    await fixture.controller.sendMessage();
+    expect(events).toEqual(['capture', 'execute', 'complete']);
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     jest.mocked(ProviderRegistry.getCapabilities).mockReturnValue({

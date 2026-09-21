@@ -1,0 +1,152 @@
+/* Compact, editor-only red/green revisions. Markdown content stays untouched. */
+.markdown-source-view.mod-cm6 .cm-line.claudian-ai-edit-highlight,
+.markdown-source-view.mod-cm6 .cm-embed-block.claudian-ai-edit-highlight--rendered {
+  position: relative;
+  padding-inline-start: 24px;
+  background: rgba(var(--color-green-rgb), 0.1);
+  box-shadow: inset 2px 0 rgba(var(--color-green-rgb), 0.5);
+}
+
+.markdown-source-view.mod-cm6 .cm-line.claudian-ai-edit-highlight::before,
+.markdown-source-view.mod-cm6 .cm-embed-block.claudian-ai-edit-highlight--rendered::before {
+  position: absolute;
+  inset-inline-start: 7px;
+  color: var(--color-green);
+  font-family: var(--font-monospace);
+  content: '+';
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-normal);
+  font: inherit;
+  line-height: inherit;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-original {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(var(--color-red-rgb), 0.08);
+  box-shadow: inset 2px 0 rgba(var(--color-red-rgb), 0.5);
+  font: inherit;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-deleted-line {
+  position: relative;
+  display: block;
+  min-height: 1lh;
+  padding: 0 64px 0 24px;
+  color: var(--text-muted);
+  text-decoration-color: rgba(var(--color-red-rgb), 0.5);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-deleted-line[hidden] {
+  display: none;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-deleted-line::before {
+  position: absolute;
+  inset-inline-start: 7px;
+  color: var(--color-red);
+  font-family: var(--font-monospace);
+  content: '−';
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-actions {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 0;
+  inset-inline-end: 4px;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  opacity: 0;
+}
+
+/* Inline additions anchor controls to their containing CodeMirror line. */
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review--added {
+  position: static;
+  display: inline;
+  width: auto;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review--added .claudian-ai-edit-review-actions {
+  inset-block-start: 0;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review--hovered .claudian-ai-edit-review-actions,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review:hover .claudian-ai-edit-review-actions,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review:focus-within .claudian-ai-edit-review-actions {
+  opacity: 1;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-action,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-expand {
+  min-height: 24px;
+  margin: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-family: var(--font-interface);
+  font-size: var(--font-smallest);
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-action {
+  width: 24px;
+  font-size: 16px;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-expand {
+  margin-inline-start: 18px;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-action:hover,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-action:focus-visible,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-action:active,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-expand:hover,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-expand:focus-visible,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-expand:active {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-action:focus-visible,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-expand:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-action:disabled,
+.markdown-source-view.mod-cm6 .claudian-ai-edit-review-expand:disabled {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: default;
+}
+
+@media (hover: none) {
+  .markdown-source-view.mod-cm6 .claudian-ai-edit-review-actions {
+    opacity: 1;
+  }
+}

@@ -565,6 +565,10 @@
     "setup": "Einrichtung",
     "models": "Modelle",
     "experimental": "Experimentell",
+    "experimentalAiEditHighlights": {
+      "name": "KI-Bearbeitungsmarkierungen",
+      "desc": "Markiert KI-Änderungen an Markdown im Editor mit dauerhaften Annehmen- und Zurücksetzen-Aktionen. Experimentell. Beim Deaktivieren bleiben ausstehende Prüfungen erhalten."
+    },
     "userName": {
       "name": "Wie soll Claudian dich nennen?",
       "desc": "Dein Name für personalisierte Begrüßungen (leer lassen für allgemeine Begrüßungen)"

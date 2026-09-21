@@ -196,6 +196,11 @@ export function buildTabRuntimeControllers(
         await tab.controllers.conversationController.save(false);
       }
     },
+    onAgentEditDiffs: diffs => plugin.recordAgentEditDiffs?.(diffs),
+    onAgentEditCaptureStart: captureId => { void plugin.beginAgentEditCapture?.(captureId); },
+    onAgentEditCaptureFinish: (captureId, succeeded) => {
+      void plugin.completeAgentEditCapture?.(captureId, succeeded);
+    },
   });
   options.registerCleanup('tab stream controller', () => streamController.dispose());
   streamController.setTabActive(!dom.contentEl.hasClass('claudian-hidden'));

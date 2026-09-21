@@ -38,6 +38,7 @@ import {
   SettingsCoordinator,
   type SettingsMutation,
 } from './app/settings/SettingsCoordinator';
+import { AiEditReviewStorage } from './app/storage/AiEditReviewStorage';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import { TabWorkspaceMigrationCoordinator } from './app/storage/TabWorkspaceMigrationCoordinator';
 import type { SessionMetadataReadResult } from './core/bootstrap/SessionStorage';
@@ -66,17 +67,23 @@ import type {
   ProviderId,
 } from './core/providers/types';
 import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
+import { VaultFileAdapter } from './core/storage/VaultFileAdapter';
 import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
   ConversationMutablePatch,
   SessionMetadata,
+  ToolDiffData,
 } from './core/types';
 import {
   VIEW_TYPE_CLAUDIAN,
 } from './core/types';
 import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings';
+import {
+  AiEditHighlightController,
+  aiEditHighlightExtension,
+} from './features/ai-edit-highlights/AiEditHighlightController';
 import { ClaudianView } from './features/chat/ClaudianView';
 import type { ChatExecutionPersistence } from './features/chat/execution/ChatExecutionCoordinator';
 import {
@@ -138,6 +145,9 @@ export default class ClaudianPlugin extends Plugin {
   readonly providerHost = new ClaudianProviderHost(this);
   readonly warmExecutionPool = new WarmExecutionPool(
     () => this.settings?.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES,
+  );
+  private readonly aiEditHighlights = new AiEditHighlightController(
+    this.app, new AiEditReviewStorage(new VaultFileAdapter(this.app)),
   );
   readonly collabSurfaceFactory: CollabSidebarSurfaceFactory = {
     create: (hostEl, leaf) => this.createCollabSurface(hostEl, leaf),
@@ -217,19 +227,31 @@ export default class ClaudianPlugin extends Plugin {
           preparedReviews: this.collabPreparedReviews,
         }),
       );
+      this.registerEditorExtension(aiEditHighlightExtension);
+      this.aiEditHighlights.setEnabled(this.settings.experimentalAiEditHighlights);
+      await this.aiEditHighlights.initialize();
       registerFileMenu(this);
       this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+        if (file instanceof TFile) this.aiEditHighlights.handleFileRenamed(file, oldPath);
         if (file instanceof TFolder) void this.handleCollabFolderRename(oldPath, file.path);
         void this.handleLinkedContentRename(file, oldPath).catch(() => {
           new Notice('Failed to update linked content paths');
         });
       }));
       this.registerEvent(this.app.vault.on('delete', (file) => {
+        if (file instanceof TFile) this.aiEditHighlights.handleFileDeleted(file);
         void this.handlePinnedLinkedContentDeleted(file).catch(() => {
           new Notice('Failed to update pinned linked content');
         });
       }));
+      this.registerEvent(this.app.vault.on('modify', (file) => {
+        if (file instanceof TFile) this.aiEditHighlights.handleFileModified(file);
+      }));
+      this.registerEvent(this.app.workspace.on('file-open', (file) => {
+        this.aiEditHighlights.handleFileOpened(file);
+      }));
       this.registerEvent(this.app.vault.on('create', (file) => {
+        if (file instanceof TFile) this.aiEditHighlights.handleFileModified(file);
         for (const view of this.getAllViews()) {
           view.handleLinkedContentCreated(file.path);
         }
@@ -392,6 +414,19 @@ export default class ClaudianPlugin extends Plugin {
       });
 
       this.addCommand({
+        id: 'clear-ai-edit-highlights',
+        name: 'Clear AI edit highlights',
+        checkCallback: checking => {
+          if (!this.aiEditHighlights.hasHighlights()) return false;
+          if (!checking) {
+            this.aiEditHighlights.clearAll();
+            new Notice('AI edit highlights cleared');
+          }
+          return true;
+        },
+      });
+
+      this.addCommand({
         id: 'copy-startup-diagnostics',
         name: 'Copy startup diagnostics',
         callback: async () => {
@@ -412,6 +447,7 @@ export default class ClaudianPlugin extends Plugin {
   onunload(): void {
     this.isUnloading = true;
     this.inlineEditSessions.dispose();
+    this.aiEditHighlights.dispose();
     this.collabTransientSurfaces.closeAll();
     if (this.sessionMetadataLoadTimer !== null) {
       window.clearTimeout(this.sessionMetadataLoadTimer);
@@ -426,7 +462,24 @@ export default class ClaudianPlugin extends Plugin {
     void this.applicationShutdownPromise.catch(() => undefined);
   }
 
+  recordAgentEditDiffs(diffs: readonly ToolDiffData[]): void {
+    this.aiEditHighlights.recordDiffs(diffs);
+  }
+
+  beginAgentEditCapture(captureId: string, fallbackOnly = false): void | Promise<void> {
+    if (fallbackOnly) return this.aiEditHighlights.beginVaultCapture(captureId);
+    this.aiEditHighlights.beginOpenEditorCapture(captureId, fallbackOnly);
+  }
+
+  completeAgentEditCapture(captureId: string, succeeded: boolean): Promise<void> {
+    this.aiEditHighlights.completeOpenEditorCapture(captureId, succeeded);
+    return this.aiEditHighlights.completeVaultCapture(captureId).catch(() => {
+      new Notice('Could not save pending AI reviews. Keep Obsidian open and try again.');
+    });
+  }
+
   private async shutdownApplication(): Promise<void> {
+    const reviewFlush = this.aiEditHighlights.flush().catch(() => undefined);
     const detailClose = this.getCollabDetailViewCoordinator().close();
     const featureConstruction = this.collabFeatureServicePromise;
     const featureClose = this.collabFeatureService?.close();
@@ -461,6 +514,7 @@ export default class ClaudianPlugin extends Plugin {
     await featureClose?.catch(() => undefined);
     await this.collabHostRestore?.catch(() => undefined);
     this.collabPreparedReviews.clear();
+    await reviewFlush;
     try {
       await this.collabFoundation?.close();
     } catch {
@@ -1658,6 +1712,14 @@ export default class ClaudianPlugin extends Plugin {
     onCommitted?: SettingsCommit<ClaudianSettings>,
   ): Promise<void> {
     await this.settingsCoordinator.mutate(mutation, onCommitted);
+  }
+
+  async setAiEditHighlightsEnabled(enabled: boolean): Promise<void> {
+    await this.mutateSettings(settings => {
+      settings.experimentalAiEditHighlights = enabled;
+    }, () => {
+      this.aiEditHighlights.setEnabled(enabled);
+    });
   }
 
   isCollabEnabled(): boolean {

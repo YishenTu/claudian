@@ -5,6 +5,8 @@ export interface ToolDiffData {
   filePath: string;
   diffLines: DiffLine[];
   stats: DiffStats;
+  /** True when diff line numbers refer to the complete document, not an edit snippet. */
+  lineNumbersAreDocumentRelative?: boolean;
 }
 
 /** Parsed option for AskUserQuestion tool. */

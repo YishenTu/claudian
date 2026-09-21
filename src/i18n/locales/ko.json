@@ -565,6 +565,10 @@
     "setup": "설정",
     "models": "모델",
     "experimental": "실험적 기능",
+    "experimentalAiEditHighlights": {
+      "name": "AI 편집 강조 표시",
+      "desc": "AI가 Markdown에 적용한 변경을 편집기에서 강조하고 영구적인 수락 및 되돌리기 작업을 제공합니다. 실험적 기능이며, 꺼도 보류 중인 검토는 유지됩니다."
+    },
     "userName": {
       "name": "Claudian이 당신을 어떻게 불러야 합니까?",
       "desc": "개인화된 인사에 사용할 이름 (비워두면 일반 인사)"

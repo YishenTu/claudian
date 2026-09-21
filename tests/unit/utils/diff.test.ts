@@ -1,5 +1,10 @@
 import type { ToolCallInfo } from '../../../src/core/types/tools';
-import { diffFromToolInput, extractDiffData, parseApplyPatchDiffs } from '../../../src/utils/diff';
+import {
+  diffFromToolInput,
+  extractApplyPatchFileDiffs,
+  extractDiffData,
+  parseApplyPatchDiffs,
+} from '../../../src/utils/diff';
 
 /** Helper to create a ToolCallInfo for testing. */
 function makeToolCall(name: string, input: Record<string, unknown>): ToolCallInfo {
@@ -296,6 +301,30 @@ describe('diffFromToolInput', () => {
 });
 
 describe('parseApplyPatchDiffs', () => {
+  it('prefers canonical file-change diffs with document line numbers over a raw patch', () => {
+    const [result] = extractApplyPatchFileDiffs({
+      patch: [
+        '*** Begin Patch',
+        '*** Update File: notes/test.md',
+        '@@',
+        '-old',
+        '+new',
+        '*** End Patch',
+      ].join('\n'),
+      changes: [{
+        path: 'notes/test.md',
+        kind: 'update',
+        diff: '@@ -8 +8 @@\n-old\n+new',
+      }],
+    });
+
+    expect(result.lineNumbersAreDocumentRelative).toBe(true);
+    expect(result.diffLines).toEqual([
+      { type: 'delete', text: 'old', oldLineNum: 8 },
+      { type: 'insert', text: 'new', newLineNum: 8 },
+    ]);
+  });
+
   it('parses update hunks into diff lines', () => {
     const patch = [
       '*** Begin Patch',

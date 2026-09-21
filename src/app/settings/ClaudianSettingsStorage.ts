@@ -128,6 +128,12 @@ function normalizeRestoreTabsOnStartup(value: unknown): boolean {
     : DEFAULT_CLAUDIAN_SETTINGS.restoreTabsOnStartup;
 }
 
+function normalizeExperimentalAiEditHighlights(value: unknown): boolean {
+  return typeof value === 'boolean'
+    ? value
+    : DEFAULT_CLAUDIAN_SETTINGS.experimentalAiEditHighlights;
+}
+
 function normalizeCollabGitPath(value: unknown): string {
   if (typeof value !== 'string') return DEFAULT_CLAUDIAN_SETTINGS.collabGitPath;
   const trimmed = value.trim();
@@ -488,6 +494,9 @@ export class ClaudianSettingsStorage {
     const restoreTabsOnStartup = normalizeRestoreTabsOnStartup(
       stored.restoreTabsOnStartup,
     );
+    const experimentalAiEditHighlights = normalizeExperimentalAiEditHighlights(
+      stored.experimentalAiEditHighlights,
+    );
     const collabEnabled = normalizeCollabEnabled(stored.collabEnabled);
     const collabProjectsFolder = normalizeCollabProjectsFolder(stored.collabProjectsFolder);
     const collabGitPath = normalizeCollabGitPath(stored.collabGitPath);
@@ -523,6 +532,7 @@ export class ClaudianSettingsStorage {
       enableDualPane,
       dualPaneSide,
       restoreTabsOnStartup,
+      experimentalAiEditHighlights,
       collabEnabled,
       collabProjectsFolder,
       collabGitPath,
@@ -567,6 +577,10 @@ export class ClaudianSettingsStorage {
         enableDualPane,
         dualPaneSide,
         restoreTabsOnStartup,
+      )
+      || (
+        'experimentalAiEditHighlights' in stored
+        && stored.experimentalAiEditHighlights !== experimentalAiEditHighlights
       )
       || (
         'collabEnabled' in stored

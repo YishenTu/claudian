@@ -565,6 +565,10 @@
     "setup": "设置",
     "models": "模型",
     "experimental": "实验性功能",
+    "experimentalAiEditHighlights": {
+      "name": "AI 修改标注",
+      "desc": "在编辑器中标注 AI 对 Markdown 的修改，并提供持久的接受和撤销操作。此功能处于实验阶段；关闭后会保留尚未处理的审阅记录。"
+    },
     "userName": {
       "name": "Claudian 应该如何称呼你？",
       "desc": "用于个性化问候的用户名（留空使用通用问候）"

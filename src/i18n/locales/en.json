@@ -565,6 +565,10 @@
     "setup": "Setup",
     "models": "Models",
     "experimental": "Experimental",
+    "experimentalAiEditHighlights": {
+      "name": "AI edit highlights",
+      "desc": "Highlight AI-made Markdown changes in the editor with persistent Accept and Revert controls. Experimental. Turning it off preserves pending reviews."
+    },
     "userName": {
       "name": "What should Claudian call you?",
       "desc": "Your name for personalized greetings (leave empty for generic greetings)"

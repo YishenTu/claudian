@@ -565,6 +565,10 @@
     "setup": "セットアップ",
     "models": "モデル",
     "experimental": "実験的機能",
+    "experimentalAiEditHighlights": {
+      "name": "AI 編集ハイライト",
+      "desc": "AI による Markdown の変更をエディターで強調表示し、承認と元に戻す操作を保持します。実験的機能です。無効にしても保留中のレビューは保持されます。"
+    },
     "userName": {
       "name": "Claudian はどのように呼びますか？",
       "desc": "パーソナライズされた挨拶に使用する名前（空欄で一般の挨拶）"

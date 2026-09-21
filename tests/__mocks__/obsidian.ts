@@ -12,6 +12,7 @@ export class Plugin {
   addRibbonIcon = jest.fn();
   addCommand = jest.fn();
   addSettingTab = jest.fn();
+  registerEditorExtension = jest.fn();
   registerView = jest.fn();
   registerEvent = jest.fn();
   loadData = jest.fn().mockResolvedValue({});
@@ -111,6 +112,8 @@ export class Scope {
 export const Platform = {
   isMacOS: true,
 };
+
+export const normalizePath = (path: string): string => path.replace(/\\/g, '/');
 
 export class App {
   vault: any = {

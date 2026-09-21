@@ -537,8 +537,21 @@ export class InputController {
     }
 
     const dynamicSystemPromptSections = await this.#resolveMainAgentDynamicSystemPromptSections();
+    const editCaptureId = `turn:${userMsg.id}`;
 
     try {
+      await this.deps.plugin.beginAgentEditCapture?.(editCaptureId, true);
+      if (state.cancelRequested || this.deps.canStartTurn?.() === false
+        || state.streamGeneration !== streamGeneration) {
+        didRollbackUnsentTurn = true;
+        if (state.streamGeneration === streamGeneration) {
+          this.#restoreMessageToInput(this.#createQueuedMessage(displayContent, admittedTurnRequest));
+          this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+        } else {
+          wasInvalidated = true;
+        }
+        return;
+      }
       userMsg.content = admittedTurnRequest.text;
       userMsg.linkedContentPath = admittedTurnRequest.linkedContentPath;
       const result = await coordinator.execute(this.#createExecutionSubmission(
@@ -628,6 +641,7 @@ export class InputController {
       }
     } finally {
       const finalAssistantMsg = this.activeStreamingAssistantMessage ?? assistantMsg;
+      await this.deps.plugin.completeAgentEditCapture?.(editCaptureId, !didRollbackUnsentTurn);
 
       // ALWAYS clear the timer interval, even on stream invalidation (prevents memory leaks)
       state.clearFlavorTimerInterval();

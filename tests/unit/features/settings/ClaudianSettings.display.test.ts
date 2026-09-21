@@ -158,6 +158,9 @@ function createTab(enableDualPane: boolean): {
     setCollabEnabled: jest.fn(async (enabled: boolean) => {
       settings.collabEnabled = enabled;
     }),
+    setAiEditHighlightsEnabled: jest.fn(async (enabled: boolean) => {
+      settings.experimentalAiEditHighlights = enabled;
+    }),
     setCollabProjectsFolder: jest.fn(async (raw: string) => {
       if (raw === '../outside') {
         return { message: 'Projects folder must stay inside the Vault.', ok: false as const };
@@ -358,6 +361,20 @@ describe('ClaudianSettingTab display settings', () => {
     await mockToggleChanges.get(t('settings.restoreTabsOnStartup.name'))?.(false);
 
     expect(plugin.settings.restoreTabsOnStartup).toBe(false);
+  });
+
+  it('renders the experimental AI edit highlight toggle and applies it live', async () => {
+    const { tab, plugin } = createTab(true);
+    (tab as any).renderGeneralTab(createContainer());
+
+    expect(plugin.settings.experimentalAiEditHighlights).toBe(false);
+    expect(mockRenderedSettingNames).toContain(t('settings.experimental'));
+    expect(mockRenderedSettingNames).toContain(t('settings.experimentalAiEditHighlights.name'));
+
+    await mockToggleChanges.get(t('settings.experimentalAiEditHighlights.name'))?.(true);
+
+    expect(plugin.setAiEditHighlightsEnabled).toHaveBeenCalledWith(true);
+    expect(plugin.settings.experimentalAiEditHighlights).toBe(true);
   });
 
   it('keeps Collab controls out of General settings', () => {

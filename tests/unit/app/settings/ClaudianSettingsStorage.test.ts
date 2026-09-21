@@ -118,3 +118,29 @@ describe('ClaudianSettingsStorage Linked content migration', () => {
     expect(persisted).not.toHaveProperty('pinnedLinkedNotePaths');
   });
 });
+
+describe('ClaudianSettingsStorage experimental AI edit highlights', () => {
+  it.each([
+    [true, true],
+    [false, false],
+    ['enabled', false],
+    [1, false],
+  ])('normalizes %p to %p', async (storedValue, expected) => {
+    const adapter = createAdapter({ experimentalAiEditHighlights: storedValue });
+    const storage = new ClaudianSettingsStorage(adapter);
+
+    const settings = await storage.load();
+
+    expect(settings.experimentalAiEditHighlights).toBe(expected);
+  });
+
+  it.each(['enabled', 1])('persists invalid value %p as disabled', async (storedValue) => {
+    const adapter = createAdapter({ experimentalAiEditHighlights: storedValue });
+    const storage = new ClaudianSettingsStorage(adapter);
+
+    await storage.load();
+
+    const persisted = JSON.parse(adapter.write.mock.calls.at(-1)![1]);
+    expect(persisted.experimentalAiEditHighlights).toBe(false);
+  });
+});

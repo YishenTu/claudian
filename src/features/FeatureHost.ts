@@ -10,6 +10,7 @@ import type {
   ConversationMeta,
   ConversationMutablePatch,
   StoredChatModelSelection,
+  ToolDiffData,
 } from '../core/types';
 import type { ChatExecutionPersistence } from './chat/execution/ChatExecutionCoordinator';
 import type { WarmExecutionPool } from './chat/execution/WarmExecutionPool';
@@ -86,6 +87,7 @@ export interface FeatureHost {
   checkCollabGitInstallation(rescan?: boolean): Promise<CollabGitInstallationStatus>;
   isCollabEnabled(): boolean;
   setCollabEnabled(enabled: boolean): Promise<void>;
+  setAiEditHighlightsEnabled(enabled: boolean): Promise<void>;
   setCollabProjectsFolder(raw: string): Promise<
     { readonly ok: true; readonly value: string }
     | { readonly message: string; readonly ok: false }
@@ -98,6 +100,9 @@ export interface FeatureHost {
   getAgentSkillResourceGeneration(): number;
   notifyAgentSkillsChanged(): Promise<void>;
   notifyProviderChatOptionsChanged(providerId: ProviderId): void;
+  beginAgentEditCapture?(captureId: string, fallbackOnly?: boolean): void | Promise<void>;
+  completeAgentEditCapture?(captureId: string, succeeded: boolean): void | Promise<void>;
+  recordAgentEditDiffs?(diffs: readonly ToolDiffData[]): void;
 
   createConversation(options?: {
     providerId?: ProviderId;

@@ -751,6 +751,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
       });
 
+    // --- Experimental ---
+
+    new Setting(container).setName(t('settings.experimental')).setHeading();
+
+    new Setting(container)
+      .setName(t('settings.experimentalAiEditHighlights.name'))
+      .setDesc(t('settings.experimentalAiEditHighlights.desc'))
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.experimentalAiEditHighlights)
+        .onChange(async value => {
+          await this.plugin.setAiEditHighlightsEnabled(value);
+        }));
+
   }
 
   private renderCollabTab(container: HTMLElement): () => void {

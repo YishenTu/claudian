@@ -57,6 +57,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   enableDualPane: true,
   dualPaneSide: 'right',
   restoreTabsOnStartup: true,
+  experimentalAiEditHighlights: false,
   collabEnabled: false,
   collabProjectsFolder: DEFAULT_COLLAB_PROJECTS_FOLDER,
   collabGitPath: '',

@@ -565,6 +565,10 @@
     "setup": "Configuração",
     "models": "Modelos",
     "experimental": "Experimental",
+    "experimentalAiEditHighlights": {
+      "name": "Destaques de edições por IA",
+      "desc": "Destaca no editor as alterações de IA em Markdown com ações persistentes para aceitar ou reverter. Experimental. Desativar preserva as revisões pendentes."
+    },
     "userName": {
       "name": "Como o Claudian deve chamá-lo?",
       "desc": "Seu nome para saudações personalizadas (deixe vazio para saudações genéricas)"

@@ -18,6 +18,7 @@ import {
   isWriteEditTool,
   TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
+  TOOL_BASH,
   TOOL_SUBAGENT,
 } from '../../../core/tools/toolNames';
 import {
@@ -30,6 +31,7 @@ import type {
   StreamChunk,
   SubagentInfo,
   ToolCallInfo,
+  ToolDiffData,
 } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import {
@@ -38,7 +40,7 @@ import {
   type ScheduledAnimationFrame,
 } from '../../../utils/animationFrame';
 import { formatDurationMmSs } from '../../../utils/date';
-import { extractDiffData } from '../../../utils/diff';
+import { extractApplyPatchFileDiffs, extractDiffData } from '../../../utils/diff';
 import { hasStreamingMathDelimiters } from '../../../utils/markdownMath';
 import { getVaultPath, normalizePathForVault } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
@@ -92,6 +94,9 @@ export interface StreamControllerDeps {
   ) => Promise<string | null | undefined>;
   enqueueBackgroundWork?: (work: () => Promise<void>) => Promise<void> | null;
   persistConversation?: () => Promise<void>;
+  onAgentEditDiffs?: (diffs: readonly ToolDiffData[]) => void;
+  onAgentEditCaptureStart?: (captureId: string) => void;
+  onAgentEditCaptureFinish?: (captureId: string, succeeded: boolean) => void;
 }
 
 export interface SubagentHistoryRecoveryRequest {
@@ -107,6 +112,7 @@ interface StreamingContentSnapshot {
 }
 
 const STREAMING_RENDER_MIN_INTERVAL_MS = 150;
+let nextAgentEditCaptureScope = 1;
 
 export class StreamController {
   private static readonly ASYNC_SUBAGENT_RESULT_RETRY_DELAYS_MS = [
@@ -122,6 +128,8 @@ export class StreamController {
   private viewportVisible = true;
   private pendingToolOutputFrames = new Map<string, ScheduledAnimationFrame>();
   private pendingScrollFrame: ScheduledAnimationFrame | null = null;
+  private readonly agentEditCaptureScope = `stream-${nextAgentEditCaptureScope++}`;
+  private readonly activeAgentEditCaptures = new Map<string, string>();
 
   // Provider lifecycle agent tracking (spawn → wait/close lifecycle)
   private lifecycleSubagentStates = new Map<string, SubagentState | AsyncSubagentState>(); // spawn callId → rendered state
@@ -348,6 +356,9 @@ export class StreamController {
     msg: ChatMessage
   ): void {
     const { state } = this.deps;
+    if (chunk.name === TOOL_BASH || chunk.name === TOOL_APPLY_PATCH) {
+      this.#beginAgentEditCapture(chunk.id);
+    }
 
     // Check if this is an update to an existing tool call
     const existingToolCall = msg.toolCalls?.find(tc => tc.id === chunk.id);
@@ -986,6 +997,10 @@ export class StreamController {
       }
       existingToolCall.result = normalizedContent;
 
+      if (existingToolCall.name === TOOL_BASH || existingToolCall.name === TOOL_APPLY_PATCH) {
+        this.#finishAgentEditCapture(chunk.id, !chunk.isError && !isBlocked);
+      }
+
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION) {
         const answers =
           extractResolvedAnswers(chunk.toolUseResult) ??
@@ -994,15 +1009,21 @@ export class StreamController {
       }
 
       const writeEditState = state.writeEditStates.get(chunk.id);
-      if (writeEditState && isWriteEditTool(existingToolCall.name)) {
+      if (isWriteEditTool(existingToolCall.name)) {
         if (!chunk.isError && !isBlocked) {
           const diffData = extractDiffData(chunk.toolUseResult, existingToolCall);
           if (diffData) {
             existingToolCall.diffData = diffData;
-            updateWriteEditWithDiff(writeEditState, diffData);
+            if (writeEditState) updateWriteEditWithDiff(writeEditState, diffData);
+            this.deps.onAgentEditDiffs?.([diffData]);
           }
         }
-        finalizeWriteEditBlock(writeEditState, chunk.isError || isBlocked);
+        if (writeEditState) {
+          finalizeWriteEditBlock(writeEditState, chunk.isError || isBlocked);
+        } else {
+          this.#cancelPendingToolOutputRender(chunk.id);
+          updateToolCallResult(chunk.id, existingToolCall, state.toolCallElements);
+        }
       } else {
         this.#cancelPendingToolOutputRender(chunk.id);
         updateToolCallResult(chunk.id, existingToolCall, state.toolCallElements);
@@ -1015,6 +1036,15 @@ export class StreamController {
 
       // Runtime apply_patch: refresh each changed file path
       if (!chunk.isError && !isBlocked && existingToolCall.name === TOOL_APPLY_PATCH) {
+        const fileDiffs: ToolDiffData[] = extractApplyPatchFileDiffs(existingToolCall.input)
+          .filter(fileDiff => fileDiff.operation !== 'delete')
+          .map(fileDiff => ({
+            diffLines: fileDiff.diffLines,
+            filePath: fileDiff.movedTo ?? fileDiff.filePath,
+            lineNumbersAreDocumentRelative: fileDiff.lineNumbersAreDocumentRelative,
+            stats: fileDiff.stats,
+          }));
+        if (fileDiffs.length > 0) this.deps.onAgentEditDiffs?.(fileDiffs);
         this.#notifyApplyPatchFileChanges(existingToolCall.input);
       }
     }
@@ -1940,10 +1970,27 @@ export class StreamController {
   }
 
   dispose(): void {
+    for (const toolCallId of this.activeAgentEditCaptures.keys()) {
+      this.#finishAgentEditCapture(toolCallId, false);
+    }
     this.textRenderCoordinator.dispose();
     this.thinkingRenderCoordinator.dispose();
     this.#cancelPendingToolOutputRenders();
     this.#cancelPendingScroll();
+  }
+
+  #beginAgentEditCapture(toolCallId: string): void {
+    if (this.activeAgentEditCaptures.has(toolCallId)) return;
+    const captureId = `${this.agentEditCaptureScope}:${toolCallId}`;
+    this.activeAgentEditCaptures.set(toolCallId, captureId);
+    this.deps.onAgentEditCaptureStart?.(captureId);
+  }
+
+  #finishAgentEditCapture(toolCallId: string, succeeded: boolean): void {
+    const captureId = this.activeAgentEditCaptures.get(toolCallId);
+    if (!captureId) return;
+    this.activeAgentEditCaptures.delete(toolCallId);
+    this.deps.onAgentEditCaptureFinish?.(captureId, succeeded);
   }
 }
 
