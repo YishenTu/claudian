@@ -29,6 +29,8 @@ import { createAuthorityTransferRecord } from '@/app/collab/authority-transfer/A
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
 import { isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { ManagerResponsibilityReceiptStore } from '@/app/collab/exit/LocalExitStores';
+import type { CloudManagerResponsibilityReceiptRecord } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
 import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import { decodeCloudProjectInvitation } from '@/app/collab/project/CloudProjectInvitation';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
@@ -40,23 +42,6 @@ const MEMBER_ID = 'member-manager';
 const MAIN_OID = 'a'.repeat(40);
 
 jest.setTimeout(30_000);
-
-const receiptRenameFailures: string[] = [];
-const actualRename = fs.rename;
-beforeEach(() => {
-  receiptRenameFailures.length = 0;
-  jest.spyOn(fs, 'rename').mockImplementation(async (...args) => {
-    try {
-      return await actualRename(...args);
-    } catch (error) {
-      if (String(args[1]).endsWith('manager-responsibility-receipt.json')) {
-        receiptRenameFailures.push(String((error as NodeJS.ErrnoException).code));
-      }
-      throw error;
-    }
-  });
-});
-afterEach(() => jest.restoreAllMocks());
 
 describe('Cloud membership management', () => {
   it.each([false, true])('preserves acknowledged member removal with catalog fault=%s', async injectFault => {
@@ -121,7 +106,7 @@ describe('Cloud membership management', () => {
       await expect(client.feature.readSnapshot(PROJECT_ID)).resolves.toMatchObject({ status: 'success', value: { source: 'online', snapshot: { currentMember: { role: 'member' } } } });
       await waitUntil(() => fixture.acknowledgements.length === 2);
       expect(fixture.acknowledgements).toEqual([receipt.request, receipt.request]);
-      await waitForDocument(fixture.receiptPath, value => value.phase === 'settled');
+      await waitForReceipt(client.receipts, value => value.phase === 'settled');
       await expect(client.feature.listManagerResponsibilityOffers(PROJECT_ID)).resolves.toMatchObject({
         status: 'success', value: [{ offerId: 'offer-created', status: 'acknowledged' }],
       });
@@ -163,7 +148,7 @@ describe('Cloud membership management', () => {
       await fixture.seed(client.foundation);
       await client.feature.readSnapshot(PROJECT_ID);
       await waitUntil(() => fixture.acknowledgements.length === 1);
-      await waitForDocument(fixture.receiptPath, value => {
+      await waitForReceipt(client.receipts, value => {
         const offer = value.offer;
         return value.phase === 'settled'
           && typeof offer === 'object'
@@ -1320,7 +1305,7 @@ async function createFixture(options: { provedStaleDemotion?: boolean; blockRead
       const foundation = new ClaudianCollabService({ getConfiguredGitPath: () => '', installationKey: TEST_INSTALLATION_A, obsidianConfigDirectory: '.obsidian', vaultRoot });
       const projectSetup = new CollabProjectSetupService(foundation, { installationKey: TEST_INSTALLATION_A, vaultRoot });
       const feature = createCollabFeatureSubcomposition({ cloudAuthority: new CloudAuthorityAdapter(vaultRoot), foundation, projectSetup, vaultRoot }).feature;
-      return { foundation, feature, close: async () => { await feature.close(); await foundation.close(); } };
+      return { foundation, feature, receipts: new ManagerResponsibilityReceiptStore(foundation.local.projects), close: async () => { await feature.close(); await foundation.close(); } };
     },
     seed: async (foundation: ClaudianCollabService) => {
       await foundation.local.projects.saveMembership({
@@ -1466,21 +1451,21 @@ async function seedCompletedLanToCloudClaimOwner(
   });
 }
 
-async function waitForDocument(
-  documentPath: string,
-  predicate: (value: Record<string, unknown>) => boolean,
+async function waitForReceipt(
+  receipts: ManagerResponsibilityReceiptStore,
+  predicate: (value: CloudManagerResponsibilityReceiptRecord) => boolean,
 ): Promise<void> {
   const deadline = Date.now() + 10_000;
-  let lastValue: Record<string, unknown> | undefined;
+  let lastPhase: string | undefined;
   while (Date.now() < deadline) {
-    try {
-      const value = JSON.parse(await readFile(documentPath, 'utf8')) as Record<string, unknown>;
-      lastValue = value;
+    // Read through the receipt owner so polling shares the repository's write
+    // queue instead of holding a native file handle during atomic replacement.
+    const value = await receipts.load(PROJECT_ID);
+    if (value?.schemaVersion === 3) {
+      lastPhase = value.phase;
       if (predicate(value)) return;
-    } catch {
-      // The lifecycle transition may not have created its document yet.
     }
     await new Promise<void>(resolve => setTimeout(resolve, 10));
   }
-  throw new Error(`Timed out waiting for fixture document (phase: ${String(lastValue?.phase ?? 'unreadable')}; receipt rename errors: ${receiptRenameFailures.join(',') || 'none'})`);
+  throw new Error(`Timed out waiting for fixture receipt (phase: ${lastPhase ?? 'missing'})`);
 }

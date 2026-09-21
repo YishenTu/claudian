@@ -385,14 +385,16 @@ describe('TicketService', () => {
     // Control characters are valid title content and expand sixfold in JSON,
     // forcing the count-maximal result across multiple byte-bounded pages.
     const title = '\u0001'.repeat(COLLAB_LIMITS.maxTicketTitleUtf16);
-    for (let index = 1; index <= 100; index += 1) {
-      await service.create('member-author', {
-        body: `Body ${index}`,
-        idempotencyKey: `create-${index}`,
+    // Queue independent fixture writes together so the real database can batch
+    // durable image promotion, as it does for concurrent production mutations.
+    await Promise.all(Array.from({ length: 100 }, (_, index) => (
+      service.create('member-author', {
+        body: `Body ${index + 1}`,
+        idempotencyKey: `create-${index + 1}`,
         projectId: 'project-alpha',
         title,
-      });
-    }
+      })
+    )));
 
     const numbers: number[] = [];
     let cursor: string | undefined;

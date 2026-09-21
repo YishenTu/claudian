@@ -32,7 +32,7 @@ export function projectUpdateMilestoneFixture() {
 
   async function cleanup(): Promise<void> {
     await closeParticipants();
-    if (root) await rm(root, { recursive: true, force: true });
+    if (root) await rm(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
   afterEach(cleanup);
   afterAll(cleanup);

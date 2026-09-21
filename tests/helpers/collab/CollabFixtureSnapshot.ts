@@ -15,17 +15,17 @@ export class CollabFixtureSnapshot {
       await cp(directory, snapshotDirectory, { recursive: true });
       return new CollabFixtureSnapshot(directory, snapshotDirectory);
     } catch (error) {
-      await rm(snapshotDirectory, { recursive: true, force: true });
+      await rm(snapshotDirectory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       throw error;
     }
   }
 
   async restore(): Promise<void> {
-    await rm(this.directory, { recursive: true, force: true });
+    await rm(this.directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     await cp(this.snapshotDirectory, this.directory, { recursive: true });
   }
 
   dispose(): Promise<void> {
-    return rm(this.snapshotDirectory, { recursive: true, force: true });
+    return rm(this.snapshotDirectory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
 }
