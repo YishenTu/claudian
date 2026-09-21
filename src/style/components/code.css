@@ -104,3 +104,76 @@ body.theme-light .claudian-message-content pre {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
+
+.claudian-container .claudian-mermaid img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.claudian-container .claudian-mermaid {
+  position: relative;
+  padding: 32px 8px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.claudian-container .claudian-mermaid > img[hidden],
+.claudian-container .claudian-mermaid-toggle[hidden] {
+  display: none;
+}
+
+.claudian-container .claudian-mermaid-toggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  height: 24px;
+  width: 24px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.claudian-container .claudian-mermaid-toggle:hover,
+.claudian-container .claudian-mermaid-toggle:focus-visible {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-normal);
+}
+
+.claudian-container .claudian-mermaid-toggle:disabled {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.claudian-container .claudian-mermaid-toggle svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+.claudian-mermaid-staging {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Match Obsidian's treatment of its bundled Mermaid renderer's light palette. */
+.theme-dark .claudian-container .claudian-mermaid img {
+  filter: invert(100%) hue-rotate(180deg) saturate(1.25);
+}
+
+.claudian-container .claudian-mermaid--source {
+  padding: 0;
+  border: none;
+}

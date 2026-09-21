@@ -301,6 +301,8 @@ export const MarkdownRenderer = {
   renderMarkdown: renderMarkdownMock,
 };
 
+export const loadMermaid = jest.fn();
+
 export const loadPrism = jest.fn().mockResolvedValue({
   highlightElement: jest.fn(),
 });

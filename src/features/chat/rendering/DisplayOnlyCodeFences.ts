@@ -87,3 +87,9 @@ export async function restoreDisplayOnlyCodeFences(
     // Language restoration is authoritative; highlighting is best-effort.
   }
 }
+
+/** Shares fence parsing with the inert rendering pass, including nested fences. */
+export function hasMermaidFence(markdown: string): boolean {
+  return prepareDisplayOnlyCodeFences(markdown).fences
+    .some(fence => fence.originalLanguage.toLowerCase() === 'mermaid');
+}

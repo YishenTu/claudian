@@ -43,6 +43,7 @@ import { hasStreamingMathDelimiters } from '../../../utils/markdownMath';
 import { getVaultPath, normalizePathForVault } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
 import { FLAVOR_TEXTS } from '../constants';
+import { hasMermaidFence } from '../rendering/DisplayOnlyCodeFences';
 import type { MessageRenderer, RenderContentOptions } from '../rendering/MessageRenderer';
 import { resolveSubagentAdapter } from '../rendering/subagentAdapterResolution';
 import {
@@ -505,9 +506,13 @@ export class StreamController {
   }
 
   #getStreamingRenderOptions(content: string): RenderContentOptions | undefined {
-    return this.#shouldDeferMathRendering() && hasStreamingMathDelimiters(content)
-      ? { deferMath: true }
-      : undefined;
+    const deferMath = this.#shouldDeferMathRendering() && hasStreamingMathDelimiters(content);
+    const deferDiagrams = hasMermaidFence(content);
+    if (!deferMath && !deferDiagrams) return undefined;
+    return {
+      ...(deferMath ? { deferMath: true } : {}),
+      ...(deferDiagrams ? { deferDiagrams: true } : {}),
+    };
   }
 
   /**
@@ -1051,8 +1056,7 @@ export class StreamController {
 
     if (
       textEl
-      && this.#shouldDeferMathRendering()
-      && hasStreamingMathDelimiters(content)
+      && this.#getStreamingRenderOptions(content)
     ) {
       this.textRenderCoordinator.request({ el: textEl, content });
     }

@@ -83,4 +83,15 @@ describe('Chat code styles', () => {
       padding: '',
     });
   });
+  it('keeps Mermaid readable when the app switches to dark mode', () => {
+    renderCodeSamples();
+    const diagram = document.querySelector('.claudian-message-content')!.createDiv({ cls: 'claudian-mermaid' });
+    const image = diagram.createEl('img', { attr: { alt: 'Mermaid diagram' } });
+    expect(window.getComputedStyle(image).filter).toBe('');
+    document.body.classList.add('theme-dark');
+    expect(window.getComputedStyle(image).filter).toBe('invert(100%) hue-rotate(180deg) saturate(1.25)');
+    document.body.classList.remove('theme-dark');
+    expect(window.getComputedStyle(image).filter).toBe('');
+  });
+
 });

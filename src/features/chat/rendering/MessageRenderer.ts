@@ -40,6 +40,7 @@ import {
   prepareDisplayOnlyCodeFences,
   restoreDisplayOnlyCodeFences,
 } from './DisplayOnlyCodeFences';
+import { renderMermaidDiagrams } from './MermaidRenderer';
 import { resolveSubagentAdapter } from './subagentAdapterResolution';
 import {
   renderStoredAsyncSubagent,
@@ -52,6 +53,7 @@ import { renderStoredWriteEdit } from './WriteEditRenderer';
 
 export interface RenderContentOptions {
   deferMath?: boolean;
+  deferDiagrams?: boolean;
 }
 
 export type RenderContentFn = (
@@ -79,6 +81,7 @@ export class MessageRenderer {
   private removeFileLinkHandler: () => void;
   private readonly imagePreviewModal = new ImagePreviewModal();
   private isDisposed = false;
+  private readonly contentRenders = new WeakMap<HTMLElement, object>();
 
   constructor(
     plugin: FeatureHost,
@@ -865,6 +868,9 @@ export class MessageRenderer {
     markdown: string,
     options?: RenderContentOptions
   ): Promise<void> {
+    const renderToken = {};
+    this.contentRenders.set(el, renderToken);
+    const isCurrent = () => !this.isDisposed && this.contentRenders.get(el) === renderToken;
     el.empty();
 
     try {
@@ -891,7 +897,12 @@ export class MessageRenderer {
       );
       await restoreDisplayOnlyCodeFences(el, displayOnlyCodeFences.fences);
 
+      if (!isCurrent()) return;
       el.querySelectorAll('pre').forEach(enhanceRenderedCodeFence);
+      if (!options?.deferDiagrams
+        && displayOnlyCodeFences.fences.some(fence => fence.originalLanguage.toLowerCase() === 'mermaid')) {
+        await renderMermaidDiagrams(el, isCurrent);
+      }
 
       // Process wikilinks only when the source can contain them; the DOM pass is expensive.
       if (processedMarkdown.includes('[[')) {
