@@ -31,7 +31,7 @@ describe('findClaudeCLIPath', () => {
     });
 
     function mockExistingFile(...paths: string[]) {
-      const pathSet = new Set(paths);
+      const pathSet = new Set(paths.map(value => path.normalize(value)));
       jest.spyOn(fs, 'existsSync').mockImplementation((p: any) => pathSet.has(p));
       jest.spyOn(fs, 'statSync').mockImplementation((p: any) => ({
         isFile: () => pathSet.has(String(p)),
@@ -42,7 +42,7 @@ describe('findClaudeCLIPath', () => {
       jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
       mockExistingFile('/home/test/.local/bin/claude');
 
-      expect(findClaudeCLIPath()).toBe('/home/test/.local/bin/claude');
+      expect(findClaudeCLIPath()).toBe(path.normalize('/home/test/.local/bin/claude'));
     });
 
     it('should return null when Claude CLI is not found', () => {
@@ -56,14 +56,14 @@ describe('findClaudeCLIPath', () => {
       jest.spyOn(os, 'homedir').mockReturnValue('/home/test');
       mockExistingFile('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs');
 
-      expect(findClaudeCLIPath()).toBe('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs');
+      expect(findClaudeCLIPath()).toBe(path.normalize('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs'));
     });
 
     it('should resolve Claude CLI from custom PATH', () => {
       mockExistingFile('/custom/bin/claude');
 
       const customPath = '/custom/bin:/usr/bin';
-      expect(findClaudeCLIPath(customPath)).toBe('/custom/bin/claude');
+      expect(findClaudeCLIPath(customPath)).toBe(path.normalize('/custom/bin/claude'));
     });
 
     it('should expand home directory in custom PATH', () => {
@@ -71,7 +71,7 @@ describe('findClaudeCLIPath', () => {
       mockExistingFile('/home/test/bin/claude');
 
       const customPath = '~/bin:/usr/bin';
-      expect(findClaudeCLIPath(customPath)).toBe('/home/test/bin/claude');
+      expect(findClaudeCLIPath(customPath)).toBe(path.normalize('/home/test/bin/claude'));
     });
 
     it('should not return a directory path even if it exists', () => {
@@ -238,7 +238,7 @@ describe('native platform CLI discovery', () => {
 
   it('falls back to npm cli-wrapper.cjs paths when binary not found', () => {
     const cliWrapperPath = path.join(
-      os.homedir(), '.npm-global', 'lib', 'node_modules',
+      os.homedir(), ...(isWindows ? ['AppData', 'Roaming', 'npm'] : ['.npm-global', 'lib']), 'node_modules',
       '@anthropic-ai', 'claude-code', 'cli-wrapper.cjs'
     );
 
@@ -255,7 +255,7 @@ describe('native platform CLI discovery', () => {
 
   it('keeps legacy npm cli.js fallback when cli-wrapper.cjs is absent', () => {
     const legacyCliPath = path.join(
-      os.homedir(), '.npm-global', 'lib', 'node_modules',
+      os.homedir(), ...(isWindows ? ['AppData', 'Roaming', 'npm'] : ['.npm-global', 'lib']), 'node_modules',
       '@anthropic-ai', 'claude-code', 'cli.js'
     );
 
@@ -271,9 +271,10 @@ describe('native platform CLI discovery', () => {
   });
 
   it('falls back to PATH environment when common and npm paths fail', () => {
-    const envClaudePath = '/env/specific/bin/claude';
+    const envBin = isWindows ? 'C:\\env\\specific\\bin' : '/env/specific/bin';
+    const envClaudePath = path.join(envBin, isWindows ? 'claude.exe' : 'claude');
     const originalPath = process.env.PATH;
-    process.env.PATH = `/env/specific/bin:${originalPath}`;
+    process.env.PATH = [envBin, originalPath ?? ''].join(path.delimiter);
 
     jest.spyOn(fs, 'existsSync').mockImplementation(
       p => String(p) === envClaudePath

@@ -20,7 +20,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
   });
   jest.mocked(spawn).mockImplementation(() => createNativeRpcProcess(async (method, params, notify) => {
     operations.push({ method, params });
-    if (method === 'initialize') return { userAgent: 'test', codexHome: env.root, platformFamily: process.platform === 'win32' ? 'windows' : 'unix', platformOs: process.platform === 'darwin' ? 'macos' : process.platform };
+    if (method === 'initialize') return { userAgent: 'test', codexHome: env.root, platformFamily: process.platform === 'win32' ? 'windows' : 'unix', platformOs: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux' };
     if (method === 'thread/start') return result('codex-source');
     if (method === 'thread/fork') {
       threads.set('codex-child', [...threads.get(params.threadId)!]);

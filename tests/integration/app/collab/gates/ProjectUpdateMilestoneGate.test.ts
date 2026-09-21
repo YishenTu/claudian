@@ -168,7 +168,7 @@ describe('Project Update recovery milestone gate', () => {
       let saveFailed = false;
       const realRename = fs.rename;
       const stateFault = stateSaveFailure ? jest.spyOn(fs, 'rename').mockImplementation(async (source, target) => {
-        if (!saveFailed && String(target).startsWith(memberRoot) && String(target).endsWith('/publication-state.json')) {
+        if (!saveFailed && String(target).startsWith(memberRoot) && path.basename(String(target)) === 'publication-state.json') {
           const record = JSON.parse(await readFile(source, 'utf8'));
           if (record.operation?.intent === 'update' && record.operation.phase === 'applied') {
             saveFailed = true;

@@ -26,7 +26,7 @@ import {
 } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 
-const GIT_EXECUTABLE = '/usr/bin/git';
+const GIT_EXECUTABLE = 'git';
 const NOW = '2026-09-01T00:00:00.000Z';
 const PROJECT_ID = 'project-cloud-relocate';
 const MEMBER_ID = 'member-alice';

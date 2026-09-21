@@ -1249,7 +1249,7 @@ describe('Obsidian CLI path integration', () => {
 
     expect(segments).not.toContain(appImageDir);
     expect(segments).toContain('/usr/local/bin');
-    expect(segments).toContain('/home/test/.local/bin');
+    expect(segments).toContain(path.join('/home/test', '.local', 'bin'));
   });
 });
 

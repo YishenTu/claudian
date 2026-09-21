@@ -2388,7 +2388,7 @@ describe('PiExecutionBackend', () => {
     expect(forkFile).not.toBe(sourceFile);
     expect(path.dirname(forkFile)).toBe(tempDir);
     expect(await fs.readFile(forkFile, 'utf8')).toContain(
-      `"parentSession":"${sourceFile}"`,
+      `"parentSession":${JSON.stringify(sourceFile)}`,
     );
     const snapshot = harness.session.getSnapshot();
     expect(snapshot.providerState).toMatchObject({

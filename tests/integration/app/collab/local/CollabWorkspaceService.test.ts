@@ -71,9 +71,9 @@ describe('CollabWorkspaceService', () => {
       path.join(vaultRoot, 'Shared', 'Projects', 'keep.txt'),
       'utf8',
     )).resolves.toBe('owned');
-    expect((await stat(path.join(vaultRoot, 'Shared'))).mode & 0o777).toBe(0o700);
+    expect((await stat(path.join(vaultRoot, 'Shared'))).mode & 0o777).toBe(process.platform === 'win32' ? 0o666 : 0o700);
     expect((await stat(path.join(vaultRoot, 'Shared', 'Projects'))).mode & 0o777)
-      .toBe(0o700);
+      .toBe(process.platform === 'win32' ? 0o666 : 0o700);
   });
 
   it('resolves only Project paths under an owned root and adopts the guarded legacy root', async () => {
@@ -110,9 +110,9 @@ describe('CollabWorkspaceService', () => {
       path.join(vaultRoot, 'Shared', 'Projects', '.claudian-collab-root.json'),
       'utf8',
     )).rejects.toMatchObject({ code: 'ENOENT' });
-    expect((await stat(path.join(vaultRoot, 'Shared'))).mode & 0o777).toBe(0o700);
+    expect((await stat(path.join(vaultRoot, 'Shared'))).mode & 0o777).toBe(process.platform === 'win32' ? 0o666 : 0o700);
     expect((await stat(path.join(vaultRoot, 'Shared', 'Projects'))).mode & 0o777)
-      .toBe(0o700);
+      .toBe(process.platform === 'win32' ? 0o666 : 0o700);
   });
 
   it('rejects invalid or symlinked ownership files without overwriting them', async () => {

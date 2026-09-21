@@ -44,7 +44,7 @@ import type { CollabAuthoritySession } from '@/app/collab/remote-authority/Colla
 jest.setTimeout(30_000);
 
 const execFileAsync = promisify(execFile);
-const GIT_EXECUTABLE = '/usr/bin/git';
+const GIT_EXECUTABLE = 'git';
 const PROJECT_ID = 'project-cloud-publish-gate';
 const CREATED_AT = '2026-08-23T00:00:00.000Z';
 const ACTORS = ['member-alice', 'member-bob'] as const;

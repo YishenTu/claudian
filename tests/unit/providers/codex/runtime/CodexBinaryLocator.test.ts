@@ -53,11 +53,11 @@ describe('CodexBinaryLocator', () => {
 
   it('finds a codex executable on PATH', () => {
     const pathDir = path.join(tempDir, 'bin');
-    const pathBinary = path.join(pathDir, 'codex');
+    const pathBinary = path.join(pathDir, process.platform === 'win32' ? 'codex.exe' : 'codex');
     fs.mkdirSync(pathDir, { recursive: true });
     fs.writeFileSync(pathBinary, '');
 
-    expect(findCodexBinaryPath(pathDir, 'darwin')).toBe(pathBinary);
+    expect(findCodexBinaryPath(pathDir, process.platform)).toBe(pathBinary);
   });
 
   it('finds a Windows codex.cmd shim on PATH', () => {
@@ -210,14 +210,14 @@ describe('CodexBinaryLocator', () => {
   it('honors an explicit runtime PATH before preferred macOS Codex locations', () => {
     process.env.HOME = tempDir;
     const explicitDir = path.join(tempDir, 'explicit-bin');
-    const explicitBinary = path.join(explicitDir, 'codex');
+    const explicitBinary = path.join(explicitDir, process.platform === 'win32' ? 'codex.exe' : 'codex');
     const appDir = path.join(tempDir, 'Applications', 'Codex.app', 'Contents', 'Resources');
     fs.mkdirSync(explicitDir, { recursive: true });
     fs.mkdirSync(appDir, { recursive: true });
     fs.writeFileSync(explicitBinary, '');
     fs.writeFileSync(path.join(appDir, 'codex'), '');
 
-    expect(findCodexBinaryPath(explicitDir, 'darwin')).toBe(explicitBinary);
+    expect(findCodexBinaryPath(explicitDir, process.platform)).toBe(explicitBinary);
   });
 
   it('prefers a user-local Codex binary before generic Unix PATH auto-detection', () => {
@@ -248,7 +248,7 @@ describe('CodexBinaryLocator', () => {
 
   it('falls back to PATH lookup when no configured file exists', () => {
     const pathDir = path.join(tempDir, 'bin');
-    const pathBinary = path.join(pathDir, 'codex');
+    const pathBinary = path.join(pathDir, process.platform === 'win32' ? 'codex.exe' : 'codex');
     fs.mkdirSync(pathDir, { recursive: true });
     fs.writeFileSync(pathBinary, '');
 

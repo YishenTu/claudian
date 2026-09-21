@@ -3078,7 +3078,8 @@ describe('AuthorityTransferPersistence', () => {
       PROJECT_ID,
       'authority-transfer-claims.json',
     );
-    expect((await stat(claimPath)).mode & 0o777).toBe(0o600);
+    // Windows exposes the writable bit without POSIX owner/group permissions.
+    expect((await stat(claimPath)).mode & 0o777).toBe(process.platform === 'win32' ? 0o666 : 0o600);
     expect(await readFile(claimPath, 'utf8')).not.toContain(rotated.claims[1].claim);
     const summary = await readFile(path.join(
       vaultRoot,

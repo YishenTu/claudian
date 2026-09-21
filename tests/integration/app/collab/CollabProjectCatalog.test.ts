@@ -403,7 +403,7 @@ it('commits queued A to B to C selections as coherent catalog revisions', async 
     const gate = new Promise<void>(resolve => { release = resolve; });
     let blocked = false;
     const delayed = jest.spyOn(filesystem, 'rename').mockImplementation(async (...args) => {
-      if (!blocked && String(args[1]).endsWith('/index.json')) {
+      if (!blocked && path.basename(String(args[1])) === 'index.json') {
         blocked = true;
         entered();
         await gate;

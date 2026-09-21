@@ -136,6 +136,7 @@ jobs:
       test-shards: ${{ steps.scope.outputs.test-shards }}
       script-tests: ${{ steps.scope.outputs.script-tests }}
       cross-platform-tests: ${{ steps.scope.outputs.cross-platform-tests }}
+      cross-platform-shards: ${{ steps.scope.outputs.cross-platform-shards }}
       pi-windows: ${{ steps.scope.outputs.pi-windows }}
       has-tests: ${{ steps.scope.outputs.has-tests }}
       lan: ${{ steps.scope.outputs.lan }}
@@ -164,7 +165,11 @@ jobs:
   lan-compatibility:
     needs: test-scope
     if: needs.test-scope.outputs.lan == 'true'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -205,11 +210,12 @@ jobs:
   cross-platform-smoke:
     needs: test-scope
     if: needs.test-scope.outputs.cross-platform == 'true'
-    name: Cross-platform Collab smoke (${{ matrix.os }})
+    name: Cross-platform tests (${{ matrix.os }}, ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest]
+        shard: ${{ fromJSON(needs.test-scope.outputs.cross-platform-shards) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     steps:
@@ -231,14 +237,15 @@ jobs:
       - name: Build production plugin
         run: npm run build
 
-      - name: Run OS-sensitive Collab tests
+      - name: Run affected OS-sensitive tests
         id: native-tests
         shell: bash
         env:
           TEST_SELECTION: ${{ needs.test-scope.outputs.cross-platform-tests }}
+          TEST_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p test-results
-          npm run test:cross-platform-collab -- --selection "$TEST_SELECTION" --maxWorkers=3 --json --outputFile=test-results/native.json
+          npm run test:cross-platform-collab -- --selection "$TEST_SELECTION" --shard="$TEST_SHARD" --maxWorkers=3 --json --outputFile=test-results/native.json
 
       - name: Summarize native test timings
         if: always() && steps.native-tests.outcome != 'skipped' && needs.test-scope.outputs.cross-platform-tests != '[]'
@@ -248,13 +255,13 @@ jobs:
         if: always() && steps.native-tests.outcome != 'skipped' && needs.test-scope.outputs.cross-platform-tests != '[]'
         uses: actions/upload-artifact@v7
         with:
-          name: jest-native-timings-${{ runner.os }}
+          name: jest-native-timings-${{ runner.os }}-${{ strategy.job-index }}
           path: test-results/native-timings/
           if-no-files-found: error
           retention-days: 14
 
       - name: Run Windows Pi launch integration
-        if: runner.os == 'Windows' && needs.test-scope.outputs.pi-windows == 'true'
+        if: runner.os == 'Windows' && matrix.shard != '2/2' && needs.test-scope.outputs.pi-windows == 'true'
         run: npm run test:unit -- --runInBand tests/integration/providers/pi/PiSubprocess.windows.test.ts
 
   build-artifacts:

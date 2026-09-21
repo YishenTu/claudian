@@ -22,6 +22,8 @@ import { NodeCloudAuthorityHttpTransport } from '@/app/collab/remote-authority/N
 import type { CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
+jest.mock('bonjour-service', () => jest.requireActual('./BonjourFixture').BonjourFixture);
+
 const current = {
   ClaudianCollabService, CollabProjectSetupService, InvitationCodec, ProjectEventClient,
   SqlJsProjectDatabase, createCollabFeatureSubcomposition,

@@ -7,6 +7,7 @@ import suites from './testSuites.cjs';
 
 const fullSelection = {
   testFiles: null, scriptTests: null, crossPlatformTests: null,
+  crossPlatformShards: ['1/2', '2/2'],
   lanCompatibility: true, crossPlatform: true, piWindows: true,
 };
 const docsTest = 'tests/unit/docs/CollabDocumentation.test.ts';
@@ -87,6 +88,7 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   const piWindows = files.has(piTest);
   return {
     testFiles, scriptTests: [...scripts], crossPlatformTests,
+    crossPlatformShards: crossPlatformTests.length > 1 ? ['1/2', '2/2'] : ['1/1'],
     lanCompatibility: paths.some(file => isCollabRuntime(file) && !isDocumentation(file))
       || paths.some(file => file.startsWith('tests/compatibility/')),
     crossPlatform: crossPlatformTests.length > 0 || piWindows,
@@ -139,6 +141,7 @@ function main() {
     `test-shards=${JSON.stringify(selection.testFiles === null ? ['1/2', '2/2'] : ['1/1'])}`,
     `script-tests=${JSON.stringify(selection.scriptTests)}`,
     `cross-platform-tests=${JSON.stringify(selection.crossPlatformTests)}`,
+    `cross-platform-shards=${JSON.stringify(selection.crossPlatformShards)}`,
     `lan=${selection.lanCompatibility}`,
     `cross-platform=${selection.crossPlatform}`,
     `pi-windows=${selection.piWindows}`,

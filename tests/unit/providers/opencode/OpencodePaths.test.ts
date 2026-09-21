@@ -19,7 +19,7 @@ describe('OpencodePaths', () => {
     expect(resolveOpencodeDataDir({
       HOME: '/home/tester',
       XDG_DATA_HOME: '/tmp/xdg-data',
-    } as NodeJS.ProcessEnv)).toBe('/tmp/xdg-data/opencode');
+    } as NodeJS.ProcessEnv)).toBe(path.join('/tmp/xdg-data', 'opencode'));
   });
 
   it('uses the home data directory on Windows even when AppData paths are available', () => {

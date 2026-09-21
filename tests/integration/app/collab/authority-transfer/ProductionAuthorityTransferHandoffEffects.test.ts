@@ -117,7 +117,7 @@ describe('production authority-transfer hosting handoff effects', () => {
       })).resolves.toMatchObject({ memberId: MEMBER_ID });
       const actualRename = fsPromises.rename;
       const retentionWrite = jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
-        if (String(to).includes('/authority-transfer-history/')) throw new Error('simulated retention persistence failure');
+        if (String(to).split(path.sep).includes('authority-transfer-history')) throw new Error('simulated retention persistence failure');
         return actualRename(from, to);
       });
       await expect(target.restartedComposition.feature.createHostTransfer({
@@ -193,7 +193,7 @@ describe('production authority-transfer hosting handoff effects', () => {
       const interruptedRequest = { ...target.claimRequest, idempotencyKey: 'claim-before-physical-handoff' };
       const actualRename = fsPromises.rename;
       const receiptWrite = jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
-        if (String(to).endsWith('/target-private.json')) {
+        if (path.basename(String(to)) === 'target-private.json') {
           const partial = JSON.parse(await readFile(from, 'utf8')) as { receipts: Record<string, { operationIntentId: string }> };
           if (Object.values(partial.receipts).some(receipt => receipt.operationIntentId === interruptedRequest.idempotencyKey)) {
             throw new Error('simulated receipt persistence failure');
@@ -804,7 +804,7 @@ describe('production authority-transfer hosting handoff effects', () => {
           const actualRename = fsPromises.rename;
           const interruptedSettlement = interruptManagerSettlement
             ? jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
-              if (String(to).endsWith('/manager.json')) {
+              if (path.basename(String(to)) === 'manager.json') {
                 const entry = JSON.parse(await readFile(from, 'utf8'));
                 if (entry.phase === 'settled') throw new Error('process stopped after target archival');
               }

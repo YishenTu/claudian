@@ -152,10 +152,8 @@ describe('parsePathEntries', () => {
 
   it('splits on platform separator', () => {
     const sep = isWindows ? ';' : ':';
-    const result = parsePathEntries(`/a${sep}/b${sep}/c`);
-    expect(result).toContain('/a');
-    expect(result).toContain('/b');
-    expect(result).toContain('/c');
+    const entries = isWindows ? ['C:\\alpha', 'D:\\beta', 'E:\\gamma'] : ['/alpha', '/beta', '/gamma'];
+    expect(parsePathEntries(entries.join(sep))).toEqual(entries);
   });
 
   it('filters out empty segments', () => {
@@ -238,22 +236,22 @@ describe('normalizePathForFilesystem', () => {
 
   it('normalizes a regular path', () => {
     const result = normalizePathForFilesystem('/usr/local/bin');
-    expect(result).toBe('/usr/local/bin');
+    expect(result).toBe(path.join('/', 'usr', 'local', 'bin'));
   });
 
   it('normalizes path with redundant separators', () => {
     const result = normalizePathForFilesystem('/usr//local///bin');
-    expect(result).toBe('/usr/local/bin');
+    expect(result).toBe(path.join('/', 'usr', 'local', 'bin'));
   });
 
   it('normalizes path with . segments', () => {
     const result = normalizePathForFilesystem('/usr/./local/./bin');
-    expect(result).toBe('/usr/local/bin');
+    expect(result).toBe(path.join('/', 'usr', 'local', 'bin'));
   });
 
   it('normalizes path with .. segments', () => {
     const result = normalizePathForFilesystem('/usr/local/../bin');
-    expect(result).toBe('/usr/bin');
+    expect(result).toBe(path.join('/', 'usr', 'bin'));
   });
 
   it('expands ~ in path', () => {
@@ -543,8 +541,8 @@ describe('filesystem path expansion and Windows prefixes', () => {
 
   it('handles non-existent environment variables', () => {
     // Non-existent env vars should be left as-is
-    expect(normalizePathForFilesystem('$NONEXISTENT/path')).toBe('$NONEXISTENT/path');
-    expect(normalizePathForFilesystem('%NONEXISTENT%/path')).toBe('%NONEXISTENT%/path');
+    expect(normalizePathForFilesystem('$NONEXISTENT/path')).toBe(path.join('$NONEXISTENT', 'path'));
+    expect(normalizePathForFilesystem('%NONEXISTENT%/path')).toBe(path.join('%NONEXISTENT%', 'path'));
   });
 
   it('handles chained home and environment variable expansions', () => {

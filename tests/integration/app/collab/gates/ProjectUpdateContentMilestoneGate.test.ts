@@ -129,7 +129,7 @@ describe('Project Update content milestone gate', () => {
       let interrupted = false;
       const realRename = fs.rename;
       const fault = jest.spyOn(fs, 'rename').mockImplementation(async (source, target) => {
-        if (!interrupted && String(target).startsWith(memberRoot) && String(target).endsWith('/publication-state.json')) {
+        if (!interrupted && String(target).startsWith(memberRoot) && path.basename(String(target)) === 'publication-state.json') {
           const record = JSON.parse(await readFile(source, 'utf8'));
           if (record.operation?.intent === 'update' && record.operation.phase === 'confirmed') {
             interrupted = true;

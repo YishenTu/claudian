@@ -21,7 +21,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
   });
   jest.mocked(spawn).mockImplementation(() => createNativeRpcProcess(async (method, params, notify) => {
     operations.push({ method, params });
-    if (method === 'initialize') return { codexHome: env.root, platformFamily: process.platform === 'win32' ? 'windows' : 'unix', platformOs: process.platform === 'darwin' ? 'macos' : process.platform, userAgent: 'test' };
+    if (method === 'initialize') return { codexHome: env.root, platformFamily: process.platform === 'win32' ? 'windows' : 'unix', platformOs: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux', userAgent: 'test' };
     if (method === 'thread/start') return result('codex-source');
     if (method === 'thread/fork') {
       if (params.ephemeral && !params.excludeTurns) throw new Error('ephemeral paginated thread/fork requires excludeTurns: true');

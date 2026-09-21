@@ -619,7 +619,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
     const interruptedRequest = { ...claimRequest, idempotencyKey: 'claim-interrupted-before-receipt' };
     const actualRename = fsPromises.rename;
     const receiptWrite = jest.spyOn(fsPromises, 'rename').mockImplementation(async (from, to) => {
-      if (String(to).endsWith('/target-private.json')) {
+      if (path.basename(String(to)) === 'target-private.json') {
         const partial = JSON.parse(await readFile(from, 'utf8')) as { receipts: Record<string, { operationIntentId: string }> };
         if (Object.values(partial.receipts).some(receipt => receipt.operationIntentId === interruptedRequest.idempotencyKey)) {
           throw new Error('simulated receipt persistence failure');
