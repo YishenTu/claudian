@@ -15,6 +15,7 @@ import {
   writeGitFixtureBlob,
   writeGitFixtureTree,
 } from '@test/helpers/collabGitObjects';
+import type crossSpawn from 'cross-spawn';
 
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
@@ -23,6 +24,25 @@ import {
   GitRepositoryService,
 } from '@/app/collab/git/GitRepositoryService';
 import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
+
+// Temporary diagnostics restricted to this test's credential-free long-path repository.
+jest.mock('cross-spawn', () => {
+  const actual = jest.requireActual<typeof crossSpawn>('cross-spawn');
+  return Object.assign((...args: Parameters<typeof actual>) => {
+    const child = actual(...args);
+    const argv = args[1];
+    const cwd = args[2]?.cwd?.toString();
+    if (cwd?.includes('nested-authority-')
+      || (Array.isArray(argv) && argv.some(arg => arg.includes('nested-authority-')))) {
+      let stderr = '';
+      child.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-8192); });
+      child.on('close', code => {
+        if (code !== 0) process.stderr.write(`Long-path Git failed: ${JSON.stringify({ argv, cwd, code, stderr })}\n`);
+      });
+    }
+    return child;
+  }, actual);
+});
 
 jest.setTimeout(30_000);
 
