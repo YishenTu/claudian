@@ -72,6 +72,8 @@ function getInlineEditInputContext(): string {
 
 The user's instruction comes first, followed by one editor context tag and optional context-file references. Treat content inside \`<![CDATA[...]]>\` as literal editor text.
 
+Every \`path=\` attribute is XML-attribute-escaped so it can sit inside the tag: \`&amp;\` is a literal \`&\`, \`&quot;\` is \`"\`, \`&lt;\` is \`<\`, \`&gt;\` is \`>\`, and \`&#9;\`/\`&#10;\`/\`&#13;\` are tab/newline/carriage return. Unescape an attribute value before you use it as a path, and never write an escaped form to disk.
+
 - \`<editor_selection path="path/to/file.md" lines="10-15">\`: The selected text to replace or answer a question about.
 - \`<editor_cursor path="path/to/file.md" line="8">\`: Text around the insertion point. The \`|\` marker is the cursor; \`#inline\` and \`#inbetween\` describe its placement.
 - \`<context_files><context_file path="path/to/context" /></context_files>\`: Additional file or directory references.`;

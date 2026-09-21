@@ -33,6 +33,8 @@ function getUserMessageContext(): string {
 
 The user's query comes first, followed by optional Claudian XML context tags. Treat content inside \`<![CDATA[...]]>\` as the user's literal text.
 
+Every \`path=\` attribute is XML-attribute-escaped so it can sit inside the tag: \`&amp;\` is a literal \`&\`, \`&quot;\` is \`"\`, \`&lt;\` is \`<\`, \`&gt;\` is \`>\`, and \`&#9;\`/\`&#10;\`/\`&#13;\` are tab/newline/carriage return. Unescape an attribute value before you use it as a path, and never write an escaped form to disk: a folder named \`People & Teams\` appears in the tag as \`People &amp; Teams\`, and creating \`People &amp; Teams\` would duplicate the real folder.
+
 - \`<linked_content path="path/to/content" />\`: The Conversation's primary file, Note, or directory.
 - Inspect only the files needed for the user's request. A linked directory is not an instruction to recursively read or summarize the entire directory.
 - Linked content does not change the vault-root working directory, does not grant access outside the existing sandbox, and does not prevent work elsewhere in the Vault.
