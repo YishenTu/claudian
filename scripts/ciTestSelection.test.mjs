@@ -37,13 +37,11 @@ test('shared dependencies retain affected native consumers and LAN checks', () =
   assert.equal(result.lanCompatibility, true);
 });
 
-test('path, provider and recovery regressions run on native platforms when affected', () => {
+test('native smoke consumers run on native platforms when affected', () => {
   for (const consumer of [
-    'tests/unit/utils/sdkSession.test.ts',
-    'tests/unit/providers/codex/runtime/CodexCliResolver.test.ts',
-    'tests/integration/features/chat/tabs/TabForking.codex.test.ts',
-    'tests/integration/app/collab/authority-transfer/ProductionAuthorityTransferHandoffEffects.test.ts',
-    'tests/integration/app/collab/gates/CloudPublishGate.test.ts',
+    'tests/unit/utils/windowsCmdShim.test.ts',
+    'tests/unit/core/process/ManagedStdioProcess.test.ts',
+    'tests/integration/app/collab/git/GitRepositoryService.test.ts',
   ]) {
     const result = select(['src/utils/path.ts'], [consumer]);
     assert.deepEqual(result.crossPlatformTests, [consumer]);
@@ -53,8 +51,8 @@ test('path, provider and recovery regressions run on native platforms when affec
 });
 
 test('native selection uses only nonempty shards and retains a Pi-only job', () => {
-  const paths = 'tests/unit/utils/path.test.ts';
-  const sdk = 'tests/unit/utils/sdkSession.test.ts';
+  const paths = 'tests/unit/app/collab/local/CollabPathPolicy.test.ts';
+  const sdk = 'tests/unit/core/process/ManagedStdioProcess.test.ts';
   assert.deepEqual(select([paths]).crossPlatformShards, ['1/1']);
   assert.deepEqual(select([paths, sdk]).crossPlatformShards, ['1/2', '2/2']);
   assert.deepEqual(select(['tests/integration/providers/pi/PiSubprocess.windows.test.ts']).crossPlatformShards, ['1/1']);
