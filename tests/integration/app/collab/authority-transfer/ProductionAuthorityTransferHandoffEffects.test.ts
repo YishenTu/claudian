@@ -140,6 +140,8 @@ describe('production authority-transfer hosting handoff effects', () => {
     }
   });
 
+  // This workflow combines native Git/SQL transfer, restart and recovery; its
+  // Windows execution exceeds the ordinary 30-second isolated-test budget.
   it.each(['absent', 'older', 'interrupted', 'projection-interrupted', 'activation-interrupted', 'same', 'newer'] as const)('completes or safely rejects physical Host handoff after Cloud import (former local authority: %s)', async formerState => {
     const target = await restoreImportedHost();
     const receiverRoot = await mkdtemp(path.join(tmpdir(), 'claudian-after-cloud-handoff-'));
@@ -404,8 +406,10 @@ describe('production authority-transfer hosting handoff effects', () => {
       await target.restartedComposition.feature.close();
       await rm(receiverRoot, { recursive: true, force: true });
     }
-  });
+  }, 90_000);
 
+  // This workflow combines native Git/SQL transfer, restart and recovery; its
+  // Windows execution exceeds the ordinary 30-second isolated-test budget.
   it.each([[false, false], [true, false], [true, true]])('moves Cloud authority through the composed feature facade (single Member: %s, interrupted Manager settlement: %s)', async (singleMember, interruptManagerSettlement) => {
     const {
       artifactBytes,
@@ -961,5 +965,5 @@ describe('production authority-transfer hosting handoff effects', () => {
       await sourceFoundation.close();
       await rm(managerRoot, { force: true, recursive: true });
     }
-  });
+  }, 90_000);
 });

@@ -249,6 +249,8 @@ describe('G3 local Project milestone gate', () => {
     await reopenedFoundation.close();
   });
 
+  // Two real Git publications plus listener teardown/rebind need a separate
+  // end-to-end budget on Windows; keep ordinary gate tests at 30 seconds.
   it('publishes through the universal LAN lane after the owning Host address rebinds', async () => {
     const reboundAddress = listPrivateIpv4Addresses()[0];
     if (!reboundAddress) return;
@@ -327,7 +329,7 @@ describe('G3 local Project milestone gate', () => {
       await feature.close();
       await foundation.close();
     }
-  });
+  }, 60_000);
 
   it('recovers a completed LAN-to-Cloud source and converges its old Host membership', async () => {
     const foundation = createFoundation();
