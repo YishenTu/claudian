@@ -41,6 +41,23 @@ const MAIN_OID = 'a'.repeat(40);
 
 jest.setTimeout(30_000);
 
+const receiptRenameFailures: string[] = [];
+const actualRename = fs.rename;
+beforeEach(() => {
+  receiptRenameFailures.length = 0;
+  jest.spyOn(fs, 'rename').mockImplementation(async (...args) => {
+    try {
+      return await actualRename(...args);
+    } catch (error) {
+      if (String(args[1]).endsWith('manager-responsibility-receipt.json')) {
+        receiptRenameFailures.push(String((error as NodeJS.ErrnoException).code));
+      }
+      throw error;
+    }
+  });
+});
+afterEach(() => jest.restoreAllMocks());
+
 describe('Cloud membership management', () => {
   it.each([false, true])('preserves acknowledged member removal with catalog fault=%s', async injectFault => {
     const fixture = await createFixture();
@@ -1465,5 +1482,5 @@ async function waitForDocument(
     }
     await new Promise<void>(resolve => setTimeout(resolve, 10));
   }
-  throw new Error(`Timed out waiting for fixture document (phase: ${String(lastValue?.phase ?? 'unreadable')})`);
+  throw new Error(`Timed out waiting for fixture document (phase: ${String(lastValue?.phase ?? 'unreadable')}; receipt rename errors: ${receiptRenameFailures.join(',') || 'none'})`);
 }
