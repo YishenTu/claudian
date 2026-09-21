@@ -36,6 +36,8 @@ export function projectUpdateMilestoneFixture() {
   }
 
   async function cleanup(): Promise<void> {
+    // Identify the pending owner before Jest reports its teardown timeout.
+    // Keep awaiting the real close operations; never replace their settlement.
     const diagnostic = setTimeout(() => {
       process.stderr.write(`Fixture cleanup pending: ${[...closing].join(',')}\n`);
     }, 60_000);
