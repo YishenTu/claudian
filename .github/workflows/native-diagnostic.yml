@@ -1,6 +1,9 @@
 name: Native cleanup diagnostic
 on:
   workflow_dispatch:
+  push:
+    branches: [check-failed-scheduled-run]
+    paths: ['.github/workflows/native-diagnostic.yml']
 permissions:
   contents: read
 jobs:
