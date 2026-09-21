@@ -5,7 +5,6 @@ import path from 'node:path';
 
 import { collabCloudProjectOperationRoute } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
-import type crossSpawn from 'cross-spawn';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
@@ -24,24 +23,6 @@ import type { CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 jest.mock('bonjour-service', () => jest.requireActual('./BonjourFixture').BonjourFixture);
-
-// Temporary native-runner diagnostics for the local handoff bundle installation.
-jest.mock('cross-spawn', () => {
-  const actual = jest.requireActual<typeof crossSpawn>('cross-spawn');
-  return Object.assign((...args: Parameters<typeof actual>) => {
-    const child = actual(...args);
-    const argv = args[1];
-    if (Array.isArray(argv) && argv.includes('--bare') && argv.includes('--no-local')) {
-      let stderr = '';
-      child.stderr?.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString()).slice(-8192); });
-      child.on('close', code => {
-        if (code !== 0) process.stderr.write(`Local handoff clone failed: ${JSON.stringify({ argv, code, stderr })}\n`);
-      });
-    }
-    return child;
-  }, actual);
-});
-
 
 const current = {
   ClaudianCollabService, CollabProjectSetupService, InvitationCodec, ProjectEventClient,

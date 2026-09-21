@@ -157,6 +157,10 @@ export function buildIsolatedGitEnvironment(
     { key: 'fetch.fsckObjects', value: 'true' },
     { key: 'transfer.fsckObjects', value: 'true' },
   ];
+  if ((options.platform ?? process.platform) === 'win32') {
+    // Private authority staging and packed-object paths can exceed MAX_PATH.
+    runtimeConfig.push({ key: 'core.longpaths', value: 'true' });
+  }
   if (options.suppressHooks) {
     runtimeConfig.push({ key: 'core.hooksPath', value: options.emptyConfigPath });
   }

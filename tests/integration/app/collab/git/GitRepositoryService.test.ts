@@ -443,6 +443,43 @@ describe('GitRepositoryService integration', () => {
       .resolves.toEqual({ leftOnly: 1, rightOnly: 1 });
   });
 
+  it('installs a bundle into a repository beyond the Windows legacy path limit', async () => {
+    const sourcePath = path.join(root, 'source');
+    await mkdir(sourcePath);
+    await service.initializeWorkingRepository(sourcePath);
+    await service.configureLocalRepository(sourcePath, {
+      memberId: 'member-host',
+      personalRef: 'refs/heads/members/member-host',
+      projectId: 'project-host',
+      userDisplayName: 'Host',
+    });
+    const contents = 'Content retained across a long-path authority installation\n';
+    await writeFile(path.join(sourcePath, 'content.md'), contents);
+    await service.stageAll(sourcePath);
+    const mainOid = await service.createCommitFromIndex(sourcePath, {
+      expectedRefOid: null,
+      message: 'Initial project',
+      parents: [],
+      ref: 'refs/heads/main',
+    });
+    const bundlePath = path.join(root, 'authority.bundle');
+    await runner.run({ args: ['bundle', 'create', bundlePath, 'refs/heads/main'], cwd: sourcePath });
+    // Keep each component portable while forcing Git's packed-object paths past MAX_PATH.
+    const parentPath = path.join(root, 'nested-authority-'.repeat(5), 'nested-installation-'.repeat(5));
+    await mkdir(parentPath, { recursive: true });
+    const repositoryPath = path.join(parentPath, '.repository-00000000-0000-4000-8000-000000000001.tmp');
+    await runner.run({
+      args: ['clone', '--bare', '--no-local', bundlePath, repositoryPath],
+      cwd: parentPath,
+      suppressHooks: true,
+    });
+
+    await service.assertHealthy(repositoryPath);
+    expect(await service.resolveRef(repositoryPath, 'refs/heads/main')).toBe(mainOid);
+    const restored = await runner.run({ args: ['show', 'refs/heads/main:content.md'], cwd: repositoryPath });
+    expect(restored.stdout.toString('utf8')).toBe(contents);
+  });
+
   it('initializes a bare authority, installs an executable hook, and clones refs', async () => {
     const sourcePath = path.join(root, 'source');
     const barePath = path.join(root, 'authority.git');
