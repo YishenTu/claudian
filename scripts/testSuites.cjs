@@ -27,6 +27,7 @@ const crossPlatformTests = [
   'tests/integration/app/collab/reconciliation/NativeGitAcceptedStateIntegrator.test.ts',
   'tests/integration/app/collab/reconnect/CloudRelocationRecovery.test.ts',
   'tests/integration/app/collab/remote-authority/CloudProjectCredentialStore.test.ts',
+  'tests/integration/app/collab/retirement/CloudRetirementLostResponseRecovery.test.ts',
   'tests/integration/app/collab/review/NativeGitReviewRepository.test.ts',
   'tests/integration/features/chat/side-chat/SideChatNative.codex.test.ts',
   'tests/integration/features/chat/tabs/TabForking.codex.test.ts',

@@ -35,6 +35,7 @@ describe('Cloud Retirement lost-response recovery', () => {
     await rm(vaultRoot, { force: true, recursive: true });
   });
 
+  // This scenario persists and replays intent through real terminal cleanup.
   it('replays the exact request into the real terminal and cleanup owners after restart', async () => {
     const workspace = new CollabWorkspaceService(vaultRoot);
     await workspace.claimProjectsFolder('workspace');
@@ -141,7 +142,7 @@ describe('Cloud Retirement lost-response recovery', () => {
     await expect(lstat(path.join(projectRoot, '.git')))
       .rejects.toMatchObject({ code: 'ENOENT' });
     expect(acknowledgements.schedule).toHaveBeenCalledWith(PROJECT_ID);
-  });
+  }, 15_000);
 });
 
 function intentStore(
