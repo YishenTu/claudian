@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import path from 'node:path';
 import test from 'node:test';
 
 import { selectCiTests } from './ciTestSelection.mjs';
@@ -93,6 +94,17 @@ test('script edits select their script tests without unrelated Jest work', () =>
   assert.equal(result.crossPlatform, false);
 });
 
+test('native script regressions retain a Windows job without selecting unrelated Jest suites', () => {
+  for (const script of ['scripts/ciTestSelection.test.mjs', 'scripts/run-tests.test.mjs']) {
+    const result = select([script]);
+    assert.deepEqual(result.scriptTests, [script]);
+    assert.deepEqual(result.testFiles, []);
+    assert.deepEqual(result.crossPlatformTests, []);
+    assert.deepEqual(result.crossPlatformShards, ['1/1']);
+    assert.equal(result.crossPlatform, true);
+  }
+});
+
 test('unsafe deletions and global or unknown changes retain full verification', () => {
   for (const change of [
     { status: 'D', path: 'src/core/prompt/mainAgent.ts' },
@@ -118,7 +130,7 @@ test('scheduled and reusable verification retain full coverage', () => {
 test('real dependency graph preserves prompt and provider coverage without Collab suites', () => {
   const relatedTests = JSON.parse(execFileSync(process.execPath, [
     'scripts/run-jest.js', '--listTests', '--json', '--findRelatedTests', 'src/core/prompt/mainAgent.ts',
-  ], { encoding: 'utf8' }));
+  ], { encoding: 'utf8' })).map(file => file.split(path.sep).join('/'));
   assert.ok(relatedTests.some(file => file.endsWith('/core/prompt/mainAgent.systemPrompt.test.ts')));
   assert.ok(relatedTests.some(file => file.includes('/providers/')));
   assert.equal(relatedTests.some(file => /collab/i.test(file)), false);

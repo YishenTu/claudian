@@ -41,7 +41,7 @@ test('the runner executes only selected Jest and script suites, and handles empt
 });
 
 test('full Jest shards cover every suite once and propagate failures from either shard', () => {
-  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'claudian-sharded-tests-')));
+  const root = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), 'claudian-sharded-tests-')));
   try {
     mkdirSync(path.join(root, 'scripts'));
     mkdirSync(path.join(root, 'tests/unit'), { recursive: true });

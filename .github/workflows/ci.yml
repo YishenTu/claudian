@@ -234,6 +234,13 @@ jobs:
         if: runner.os == 'Windows'
         run: npm run test:architecture
 
+      - name: Run affected Windows script checks
+        if: runner.os == 'Windows' && startsWith(matrix.shard, '1/')
+        shell: bash
+        env:
+          SCRIPT_SELECTION: ${{ needs.test-scope.outputs.script-tests }}
+        run: npm run test -- --selection '[]' --script-selection "$SCRIPT_SELECTION"
+
       - name: Build production plugin
         run: npm run build
 

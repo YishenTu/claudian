@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -91,7 +91,8 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
     crossPlatformShards: crossPlatformTests.length > 1 ? ['1/2', '2/2'] : ['1/1'],
     lanCompatibility: paths.some(file => isCollabRuntime(file) && !isDocumentation(file))
       || paths.some(file => file.startsWith('tests/compatibility/')),
-    crossPlatform: crossPlatformTests.length > 0 || piWindows,
+    crossPlatform: crossPlatformTests.length > 0 || piWindows
+      || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs'),
     piWindows,
   };
 }
@@ -104,7 +105,7 @@ export function selectRelatedCiTests({ changes, eventName = 'pull_request' }) {
     const relatedTests = JSON.parse(execFileSync(process.execPath, [
       'scripts/run-jest.js', '--listTests', '--json', '--findRelatedTests', ...inputs,
     ], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }))
-      .map(file => path.relative(process.cwd(), file).split(path.sep).join('/'));
+      .map(file => path.relative(realpathSync.native(process.cwd()), realpathSync.native(file)).split(path.sep).join('/'));
     selection = selectCiTests({ changes, relatedTests, eventName });
   }
   return selection;
