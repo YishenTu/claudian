@@ -1,8 +1,7 @@
 # LAN transfer-binding constraints
 
-- This binding's version and security policy are independent from control, Git, and physical handoff. Adapt package DTO meaning without copying its operation/codec registry.
 - Source routes accept Member proposals/status, never local Host acceptance/cancellation merely because a caller presents Host Member credentials.
-- Staged targets deny ordinary control, Git, Host start, and claim redemption. Transfer discovery and credential-free route identity verification grant no ordinary authority. Only exact source relinquishment permits promotion; target claims bind imported identities, never Join or membership creation.
+- Staged targets deny ordinary control, Git, Host start, and claim redemption until exact source relinquishment permits promotion. Transfer discovery and credential-free route verification grant no ordinary authority; target claims bind imported identities, never Join or membership creation.
 - Terminal sources serve only the authenticated former Member's claim/status/receipt work. They cannot reopen Host service or mint replacement claims.
 - Reuse the Host listener's registration lifecycle; no hidden listener or parallel provisional router.
 - Staged targets and retained responders may advertise the current listener location. A discovered candidate must prove the accepted CA and exact Project/generation or transfer route before receiving credentials; ambiguity fails closed. Signed historical URLs remain unchanged across listener replacement.

@@ -5,8 +5,7 @@
 - Host Member identity is not local Host authority. A synchronized installation with a foreign marker remains a client. Local authority access, TLS, locks, recovery, and deletion require installation admission; marker inspection itself is read-only.
 - Physical effects retain the admitted resource incarnation through queued work and complete child/stream settlement. A matching Project, installation, generation, or copied database cannot authorize a replacement directory; cleanup must persist its exact resource before detaching it. Resource admission permits nested SQL/Git work; detach and marker changes fail retryably while effects remain active, without waiting inside the repository queue.
 - Legacy global CA files are claim-time migration input, never runtime ownership evidence. Marker failures block Host control but must not break unrelated Projects or ordinary client routing.
-- Installation ownership applies to physical effects, not ordinary synchronized client state. The different-device Cloud-to-LAN Manager and its exact claimant successor are the nonphysical exception; synchronization must not transfer that cleanup authority.
-- Persist owner-bound target intent before TLS/listener/staging effects. Cloud-to-LAN canonical authority retains only provisional resource ownership until relinquishment proof; never activate an incomplete import.
+- Installation ownership applies to physical effects, not ordinary synchronized client state. The nonphysical Cloud-to-LAN Manager/claimant exception is defined in `authority-transfer/AGENTS.md`.
 - Published/removed/rebound Host routes invalidate retained local clients after visibility changes. All origin/membership writers share one per-Project transition lane and revalidate membership inside it; parallel LAN/Cloud queues would permit conflicting writes.
 - Reconnect proves one uniquely trusted same-Project endpoint before credentials. Discovery is not trust; ambiguous candidates, proof forks, or mixed success/authority rejection block. Persist endpoint/origin rotation before resetting clients, then retry only the same idempotent operation.
 - Invitation/Member secrets never enter URLs, process arguments, logs, events, or diagnostics.
@@ -29,7 +28,7 @@
 - Startup may inspect existing local working-copy identities to recover user directory renames without a pending journal; this is an exception to the application startup I/O rule. It must not contact an authority or rewrite Git state.
 - Keep ordinary-operation admission separate from irreversible lifecycle arbitration. Every public operation declares admission explicitly; operation-ID-only conflict reads are global, while Project-ID operations require active admission except explicit local Retired actions.
 - A session-owned snapshot/event/inspection must never await lifecycle work that closes or drains that same session. Schedule it outside the read and revalidate generation. Shutdown still owns both admitted operations and scheduled transitions.
-- Projection reset detaches stale results but does not abandon their settlement. Leave drains before cleanup; terminal Retirement must separate close from drain to avoid reentrant deadlock.
+- Projection reset detaches stale results but does not abandon their settlement. Terminal Retirement must separate close from drain to avoid reentrant deadlock.
 - Persist membership changes before invalidating its authority session. Cache, Member role/cursor, and responsibility receipt publish in that order; reject lower-sequence or wrong-Member snapshots before any of those writes.
 - Project observation is explicit and independent of selection. One-shot reads cannot retain event/retry demand; closing a view releases only that view’s demand. Background maintenance for selected Projects survives subsequent selection/visibility changes, and suspension preserves demand for the resumed session.
 - Queries must not publish feature state: subscribers can issue queries and create refresh loops. Register accepted-state maintenance before announcing selection/readiness, without making the ready shell await maintenance.
@@ -39,7 +38,7 @@
 
 ## Membership and publication policy
 
-- Manager and Host responsibilities are independent. There is no primary Manager; demotion/removal preserves at least one. Manager succession acknowledgement is protocol synchronization, not another user confirmation. Physical Host handoff still requires explicit target consent.
+- Manager and Host responsibilities are independent. There is no primary Manager; demotion/removal preserves at least one. Manager succession acknowledgement is protocol synchronization, not another user confirmation. Physical Host handoff requires explicit target consent.
 - Project lifecycle, membership, and authority-transfer journals have distinct owners. Changes crossing these boundaries must consult their scoped guides; do not infer cancellation or completion from another owner's files.
 - Publish confirmation is durable and bound to exact candidate/current-main OIDs. Human Publish also binds to the displayed working snapshot and verifies the immutable captured result; explicit Agent publication of current contents retains its separate meaning. Never infer consent from a UI flag, force-push, silently reset a personal ref, or ensure a request before its confirmed head reaches the authority.
 - Description drafts survive offline/recovery failures until exact head/description acknowledgement. Ticket relations derive from description text, never a parallel selection store.

@@ -1,6 +1,5 @@
 # Grok constraints
 
-- Share ACP primitives, not a generic runtime superclass that absorbs provider policy.
 - Authentication is native: never automatically call ACP authenticate or persist xAI credentials. Preserve session identity across prompt/CLI/environment changes by reloading it after process replacement.
 - Native fork requests omit system-prompt metadata. Load the child with the complete current replacement before its first prompt; mark configuration applied only after successful load.
 - Keep Grok/xAI tools enabled except native plan entry/exit, which Claudian blocks without replacing native or user agent profiles. Preserve unknown tool data and native task names/payloads while adapting subagent presentation.

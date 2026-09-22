@@ -10,8 +10,7 @@
 
 - Device metadata and host-scoped provider settings use one durable filesystem-safe installation key. Do not derive another identity or initialize the namespace before the seed is durable.
 - Unscoped metadata remains writable until explicit assignment. Never auto-assign or copy between live authorities. Very old Claude metadata migrates into unscoped state.
-- Native provider history owns persisted messages. Do not add input copies or permanent assignment/deletion sidecars; rare stale sync conflicts are an accepted tradeoff.
+- Do not add input copies or permanent assignment/deletion sidecars; rare stale sync conflicts are an accepted tradeoff of native-history ownership.
 - Historical provider ownership does not imply enabled-model availability. Readers expose the stored model until the repository durably adopts `modelToPersist`.
 - Alias canonicalization cannot choose a fallback. Fallback uses explicit registry blank-tab display order, not registration order, alphabetic order, or current settings projection.
 - Title generation uses the global title-model selection independently from chat. Auxiliary continuation remains provider-owned even when core owns orchestration/parsing.
-- Discovery caches contain non-secret fingerprints and generations; stale resource generations must not publish cached commands or metadata.
