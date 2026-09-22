@@ -6,6 +6,7 @@ import {
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import {
   AcpClientConnection,
   AcpInteractionController,
@@ -20,11 +21,13 @@ import {
   AcpSubprocess,
   type AcpWriteTextFileRequest,
   JsonRpcErrorResponse,
+  mapAcpApprovalDecision,
   resolveAcpLoadSessionId,
 } from '@/providers/acp';
 import { getEnhancedPath } from '@/utils/env';
 
-import { AUX_AGENT_IDS, buildAgentConfig, getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
+import { OPENCODE_YOLO_MODE_ID } from '../modes';
+import { getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
 import {
   prepareOpencodeLaunchArtifacts,
 } from '../runtime/OpencodeLaunchArtifacts';
@@ -82,6 +85,7 @@ export class DefaultOpencodeAcpSessionKernel
   private databasePath: string | null = null;
   private profile: OpencodeExecutionProfile = 'managed';
   private disposed = false;
+  private autoApprove = false;
   private connectPromise: Promise<void> | null = null;
   private disposePromise: Promise<void> | null = null;
 
@@ -126,14 +130,9 @@ export class DefaultOpencodeAcpSessionKernel
       this.#assertNotDisposed();
       assertOpencodeSessionCompatibility(this.options.nativeVersion, this.nativeVersion);
       const artifacts = await prepareOpencodeLaunchArtifacts({
-        artifactsSubdir: this.options.artifactsSubdir
-          ?? `opencode/execution/${this.options.sessionInstanceId}`,
-        ...(options.profile === 'managed'
-          ? {}
-          : {
-            defaultAgentId: AUX_AGENT_IDS[options.profile],
-            managedAgents: [buildAgentConfig(options.profile)],
-          }),
+        profile: options.profile,
+        settings: getSystemPromptSettings(this.options.plugin, this.options.config.vaultWorkingDirectory),
+        titleLocale: resolveTitleGenerationLocale(this.options.plugin.settings),
         runtimeEnv,
         nativeVersion: this.nativeVersion,
         ...(options.systemInstructions.kind === 'explicit'
@@ -142,10 +141,6 @@ export class DefaultOpencodeAcpSessionKernel
             systemPromptText: options.systemInstructions.instructions,
           }
           : {
-            settings: getSystemPromptSettings(
-              this.options.plugin,
-              this.options.config.vaultWorkingDirectory,
-            ),
             dynamicSystemPromptSections: options.systemInstructions.dynamicSections,
           }),
         workspaceRoot: this.options.config.vaultWorkingDirectory,
@@ -263,12 +258,16 @@ export class DefaultOpencodeAcpSessionKernel
     };
   }
 
-  setConfigOption(request: Record<string, unknown>): Promise<{
+  async setConfigOption(request: Record<string, unknown>): Promise<{
     configOptions?: AcpSessionConfigOption[] | null;
   }> {
-    return this.#requireConnection().setConfigOption(
+    const response = await this.#requireConnection().setConfigOption(
       request as Parameters<AcpClientConnection['setConfigOption']>[0],
     );
+    if (request.configId === 'mode') {
+      this.autoApprove = this.profile === 'managed' && request.value === OPENCODE_YOLO_MODE_ID;
+    }
+    return response;
   }
 
   prompt(request: AcpPromptRequest): Promise<AcpPromptResponse> {
@@ -388,8 +387,13 @@ export class DefaultOpencodeAcpSessionKernel
   #handlePermissionRequest(
     request: AcpRequestPermissionRequest,
   ): Promise<AcpRequestPermissionResponse> {
-    if (this.profile !== 'managed') {
+    if (this.disposed || this.profile !== 'managed') {
       return Promise.resolve(selectDeniedPermission(request));
+    }
+    if (this.autoApprove) {
+      return Promise.resolve(normalizePermissionId(request.toolCall.title) === 'plan_enter'
+        ? selectDeniedPermission(request)
+        : mapAcpApprovalDecision('allow', request.options));
     }
     return this.interactionController?.requestPermission(request)
       ?? Promise.resolve({ outcome: { outcome: 'cancelled' } });

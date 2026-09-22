@@ -55,6 +55,7 @@ export function createHarness(options: {
   supportsEphemeralFork?: boolean;
   forkMode?: ProviderCapabilities['forkMode'];
   buildForkProviderState?: ProviderConversationHistoryService['buildForkProviderState'];
+  getMainAgentDynamicSystemPromptSections?: () => Promise<string[]>;
 } = {}) {
   const backend = new FakeSideBackend();
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
@@ -113,6 +114,7 @@ export function createHarness(options: {
   const plugin = {
     app,
     getConversationSync: () => null,
+    getMainAgentDynamicSystemPromptSections: options.getMainAgentDynamicSystemPromptSections,
     providerHost: { app, settings, executionLifecycleRegistry: lifecycleRegistry },
     settings,
     warmExecutionPool: new WarmExecutionPool(() => 5),

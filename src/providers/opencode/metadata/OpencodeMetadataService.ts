@@ -269,7 +269,6 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
     signal?.throwIfAborted();
     if (this.native) return this.native;
     const kernel = new DefaultOpencodeAcpSessionKernel({
-      artifactsSubdir: 'opencode/metadata',
       config: {
         interactionPort: DENY_INTERACTION_PORT,
         lifecycle: 'ephemeral',

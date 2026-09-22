@@ -259,6 +259,13 @@ export class SideChatRuntime {
     let interrupted = false;
     let failed = false;
     try {
+      let dynamicSections: readonly string[] = [];
+      try {
+        dynamicSections = await this.deps.plugin.getMainAgentDynamicSystemPromptSections?.() ?? [];
+      } catch {
+        // Dynamic system context is best-effort, as it is for main chat.
+      }
+      if (this.#disposed || this.state.cancelRequested) return;
       const result = await this.#session.execute({
         ...(submission.context ? { context: submission.context } : {}),
         configuration: {
@@ -268,7 +275,10 @@ export class SideChatRuntime {
             : {}),
           ...(this.#settings.reasoning ? { reasoning: this.#settings.reasoning } : {}),
           ...(this.#settings.serviceTier ? { serviceTier: this.#settings.serviceTier } : {}),
-          systemInstructions: { kind: 'provider-default' },
+          systemInstructions: {
+            kind: 'provider-default',
+            ...(dynamicSections.length ? { dynamicSections: [...dynamicSections] } : {}),
+          },
         },
         conversationHistory: [
           ...this.deps.source.messages,

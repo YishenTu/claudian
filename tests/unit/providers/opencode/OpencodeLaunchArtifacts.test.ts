@@ -1,4 +1,4 @@
-import * as fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -12,8 +12,30 @@ import {
 } from '../../../../src/providers/opencode/runtime/OpencodeLaunchArtifacts';
 
 describe('buildOpencodeManagedConfig', () => {
+  it.each([1, 2] as const)('overrides user approval rules for YOLO under native v%s configuration', (nativeVersion) => {
+    const config = buildOpencodeManagedConfig({
+      agent: { 'claudian-yolo': { permission: { bash: 'ask', read: { '*.env': 'ask' } }, model: 'test/model' } },
+      ...(nativeVersion === 2 ? { agents: { 'claudian-yolo': {
+        model: 'test/model', permissions: [{ action: 'shell', resource: '*', effect: 'ask' }],
+      } } } : {}),
+    }, '/vault/main.md', undefined, undefined, nativeVersion);
+    expect(config).toMatchObject({
+      agent: { 'claudian-yolo': {
+        model: 'test/model', permission: { '*': 'allow', plan_enter: 'deny' },
+      } },
+      ...(nativeVersion === 2 ? { agents: { 'claudian-yolo': {
+        model: 'test/model', permissions: [
+          { action: 'shell', resource: '*', effect: 'ask' },
+          { action: '*', resource: '*', effect: 'allow' },
+          { action: 'plan_enter', resource: '*', effect: 'deny' },
+          { action: 'question', resource: '*', effect: 'allow' },
+        ],
+      } } } : {}),
+    });
+  });
+
   it('pins OpenCode build, YOLO, and safe prompts to the managed prompt file', () => {
-    expect(buildOpencodeManagedConfig({}, '/vault/.claudian/opencode/system.md', 'Yishen')).toEqual({
+    expect(buildOpencodeManagedConfig({}, '/vault/.claudian/opencode/system.md')).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
         plan: { disable: true },
@@ -23,6 +45,7 @@ describe('buildOpencodeManagedConfig', () => {
         [OPENCODE_YOLO_MODE_ID]: {
           mode: 'primary',
           permission: {
+            '*': 'allow',
             plan_enter: 'deny',
             question: 'allow',
           },
@@ -39,7 +62,6 @@ describe('buildOpencodeManagedConfig', () => {
           prompt: '{file:/vault/.claudian/opencode/system.md}',
         },
       },
-      username: 'Yishen',
     });
   });
 
@@ -47,7 +69,6 @@ describe('buildOpencodeManagedConfig', () => {
     expect(buildOpencodeManagedConfig(
       {},
       '/vault/.claudian/opencode/auxiliary/system.md',
-      undefined,
       [{
         definition: {
           mode: 'primary',
@@ -91,7 +112,6 @@ describe('buildOpencodeManagedConfig', () => {
     const config = buildOpencodeManagedConfig(
       baseConfig,
       '/vault/.claudian/opencode/system.md',
-      undefined,
       managedAgents,
     );
 
@@ -136,6 +156,7 @@ describe('buildOpencodeManagedConfig', () => {
         [OPENCODE_YOLO_MODE_ID]: {
           mode: 'primary',
           permission: {
+            '*': 'allow',
             plan_enter: 'deny',
             question: 'allow',
           },
@@ -164,6 +185,47 @@ describe('buildOpencodeManagedConfig', () => {
 });
 
 describe('prepareOpencodeLaunchArtifacts', () => {
+  it.each([true, false])('shares configuration and distinct prompts with hard-link support: %s', async (supportsLinks) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-prompts-'));
+    const base = { workspaceRoot: root, runtimeEnv: { HOME: root }, settings: { vaultPath: root } };
+    const link = supportsLinks ? undefined : jest.spyOn(fs, 'link').mockRejectedValue(
+      Object.assign(new Error('Hard links are unsupported'), { code: 'ENOTSUP' }),
+    );
+    try {
+      const main = await prepareOpencodeLaunchArtifacts({ ...base, systemPromptText: 'Main instructions' });
+      const config = await fs.readFile(main.configPath, 'utf8');
+      const inlineParams = { ...base, profile: 'readonly' as const, systemPromptText: 'Inline edit instructions' };
+      const titleParams = { ...base, profile: 'passive' as const, systemPromptText: 'Title instructions' };
+      const [inline, title] = await Promise.all([
+        prepareOpencodeLaunchArtifacts(inlineParams),
+        prepareOpencodeLaunchArtifacts(titleParams),
+      ]);
+
+      expect(inline.configPath).toBe(main.configPath);
+      expect(title.configPath).toBe(main.configPath);
+      expect(await fs.readFile(main.configPath, 'utf8')).toBe(config);
+      const prompts = path.join(root, '.claudian', 'opencode', 'prompts');
+      expect(await fs.readFile(path.join(prompts, 'main.md'), 'utf8')).toBe('Main instructions\n');
+      expect(await fs.readFile(path.join(prompts, 'inline-edit.md'), 'utf8')).toBe('Inline edit instructions\n');
+      expect(await fs.readFile(path.join(prompts, 'title.md'), 'utf8')).toBe('Title instructions\n');
+      expect(JSON.parse(config)).toMatchObject({
+        default_agent: 'claudian-safe',
+        agent: {
+          build: { prompt: `{file:${path.join(prompts, 'main.md')}}` },
+          'claudian-safe': { prompt: `{file:${path.join(prompts, 'main.md')}}` },
+          'claudian-yolo': { prompt: `{file:${path.join(prompts, 'main.md')}}` },
+          'claudian-inline-edit': { prompt: `{file:${path.join(prompts, 'inline-edit.md')}}` },
+          'claudian-title': { prompt: `{file:${path.join(prompts, 'title.md')}}` },
+        },
+      });
+      expect(JSON.parse(inline.configContent).default_agent).toBe('claudian-inline-edit');
+      expect(JSON.parse(title.configContent).default_agent).toBe('claudian-title');
+    } finally {
+      link?.mockRestore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('layers the managed prompt config on top of OPENCODE_CONFIG', async () => {
     const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-artifacts-'));
     const baseConfigPath = path.join(tmpRoot, 'opencode.base.json');
@@ -189,14 +251,14 @@ describe('prepareOpencodeLaunchArtifacts', () => {
       settings: {
         customPrompt: '',
         mediaFolder: '',
-        userName: 'Yishen',
+        userName: 'Test User',
         vaultPath: tmpRoot,
       },
       workspaceRoot: tmpRoot,
     });
 
     expect(result.configPath).toBe(path.join(tmpRoot, '.claudian', 'opencode', 'config.json'));
-    expect(result.systemPromptPath).toBe(path.join(tmpRoot, '.claudian', 'opencode', 'system.md'));
+    expect(result.systemPromptPath).toBe(path.join(tmpRoot, '.claudian', 'opencode', 'prompts', 'main.md'));
     expect(result.configContent).toContain(`"prompt": ${JSON.stringify(`{file:${result.systemPromptPath}}`)}`);
     const generatedConfig = JSON.parse(await fs.readFile(result.configPath, 'utf8'));
     // The original user document is loaded natively; the generated file owns only the overlay.
@@ -210,7 +272,6 @@ describe('prepareOpencodeLaunchArtifacts', () => {
         },
       },
     });
-    expect(generatedConfig.username).toBe('Yishen');
     expect(generatedConfig.agent).toMatchObject({
       build: {
         prompt: `{file:${result.systemPromptPath}}`,
@@ -218,6 +279,7 @@ describe('prepareOpencodeLaunchArtifacts', () => {
       [OPENCODE_YOLO_MODE_ID]: {
         mode: 'primary',
         permission: {
+          '*': 'allow',
           plan_enter: 'deny',
           question: 'allow',
         },
@@ -322,7 +384,7 @@ it('layers v2 native agent policies after user rules and pins the native system 
     'claudian-safe': { system: 'old', model: 'test/model', permissions: [{ action: '*', resource: '*', effect: 'allow' }] },
     plan: { disabled: false },
     reviewer: { description: 'Keep this' },
-  } }, '/vault/system.md', undefined, [{ id: 'claudian-safe', definition: {
+  } }, '/vault/system.md', [{ id: 'claudian-safe', definition: {
     mode: 'primary', permission: { '*': 'deny', read: { '*': 'allow', '*.env': 'deny' }, bash: 'ask' },
   } }], 'claudian-safe', 2);
   expect(config).toMatchObject({
@@ -347,7 +409,7 @@ it('layers v2 native agent policies after user rules and pins the native system 
 it('preserves legacy user agent semantics under v2 native-over-legacy precedence', () => {
   const config = buildOpencodeManagedConfig({
     agent: { build: { model: 'test/user-model', permission: { read: 'deny' }, temperature: 0.2 } },
-  }, '/vault/system.md', undefined, undefined, undefined, 2);
+  }, '/vault/system.md', undefined, undefined, 2);
   // v2 normalizes each map, then chooses the entire native entry for colliding IDs.
   const definitions = { ...(config.agent as Record<string, unknown>), ...(config.agents as Record<string, unknown>) };
   expect(definitions.build).toMatchObject({
@@ -363,6 +425,7 @@ it('preserves custom JSONC and inline settings as separate native configuration 
   try {
     const result = await prepareOpencodeLaunchArtifacts({
       workspaceRoot: root, nativeVersion: 2, systemPromptText: 'Managed instructions',
+      settings: { userName: 'Test User' },
       runtimeEnv: {
         OPENCODE_DB: ':memory:', OPENCODE_CONFIG: customPath,
         OPENCODE_CONFIG_CONTENT: '{ /* Inline override */ "username": "inline-user", "providers": {"example": {"settings": {"apiKey": "inline-test-key"}}}, }',

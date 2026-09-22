@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
+import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import type { AcpPromptRequest, AcpSessionConfigOption } from '@/providers/acp';
 
 import { isRecord, OpencodeHttpClient, OpencodeHttpError, type OpencodeHttpEvent } from '../http/OpencodeHttpClient';
 import { projectOpencodeFormQuestions } from '../http/OpencodeHttpForms';
+import { OPENCODE_YOLO_MODE_ID } from '../modes';
 import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolUseResult } from '../normalization/opencodeToolNormalization';
-import { AUX_AGENT_IDS, buildAgentConfig, getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
+import { AUX_AGENT_IDS, getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
 import { prepareOpencodeLaunchArtifacts } from '../runtime/OpencodeLaunchArtifacts';
 import {
   type OpencodeKernelConnectOptions,
@@ -25,6 +27,7 @@ interface NativeTool { name: string; input: Record<string, unknown> }
 export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
   private client: OpencodeHttpClient | null = null;
   private disposed = false;
+  private autoApprove = false;
   private readonly controller = new AbortController();
   private sessionId: string | null = null;
   private databasePath: string | null = null;
@@ -45,12 +48,13 @@ export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
   async connect(options: OpencodeKernelConnectOptions): Promise<void> {
     this.profile = options.profile;
     const artifacts = await prepareOpencodeLaunchArtifacts({
-      artifactsSubdir: this.options.artifactsSubdir ?? `opencode/execution/${this.options.sessionInstanceId}`,
-      ...(options.profile === 'managed' ? {} : { defaultAgentId: AUX_AGENT_IDS[options.profile], managedAgents: [buildAgentConfig(options.profile)] }),
+      profile: options.profile,
+      settings: getSystemPromptSettings(this.options.plugin, this.options.config.vaultWorkingDirectory),
+      titleLocale: resolveTitleGenerationLocale(this.options.plugin.settings),
       runtimeEnv: this.environment, nativeVersion: 2,
       ...(options.systemInstructions.kind === 'explicit'
         ? { systemPromptKey: options.systemInstructions.instructions, systemPromptText: options.systemInstructions.instructions }
-        : { settings: getSystemPromptSettings(this.options.plugin, this.options.config.vaultWorkingDirectory), dynamicSystemPromptSections: options.systemInstructions.dynamicSections }),
+        : { dynamicSystemPromptSections: options.systemInstructions.dynamicSections }),
       workspaceRoot: this.options.config.vaultWorkingDirectory,
     });
     this.controller.signal.throwIfAborted();
@@ -89,6 +93,7 @@ export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
     const value = String(request.value);
     if (request.configId === 'mode') {
       await this.requireClient().request(`${route}/agent`, { method: 'POST', body: { agent: value } });
+      this.autoApprove = this.profile === 'managed' && value === OPENCODE_YOLO_MODE_ID;
     } else if (request.configId === 'model') {
       const slash = value.indexOf('/');
       if (slash < 1) throw new Error('Invalid OpenCode model selection.');
@@ -315,6 +320,10 @@ export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
         }
         await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { answer } });
       } else {
+        if (this.autoApprove) {
+          await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { decision: data.action === 'plan_enter' ? 'reject' : 'once' } });
+          return;
+        }
         const response = await this.options.config.interactionPort.requestApproval({
           ...identity, kind: 'approval', toolName: data.action === 'shell' ? 'bash' : String(data.action), input: { resources: data.resources, ...(isRecord(data.metadata) ? data.metadata : {}) }, description: typeof data.message === 'string' ? data.message : `${data.action}: ${Array.isArray(data.resources) ? data.resources.join(', ') : ''}`,
         }, signal);

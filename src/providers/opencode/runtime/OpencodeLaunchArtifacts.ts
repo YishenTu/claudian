@@ -6,17 +6,20 @@ import * as path from 'node:path';
 import { parse, type ParseError } from 'jsonc-parser';
 
 import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/storagePaths';
+import { getInlineEditSystemPrompt } from '../../../core/prompt/inlineEdit';
 import {
   buildSystemPrompt,
-  computeSystemPromptKey,
   type SystemPromptSettings,
 } from '../../../core/prompt/mainAgent';
+import { buildTitleGenerationSystemPrompt } from '../../../core/prompt/titleGeneration';
 import { expandHomePath } from '../../../utils/path';
+import type { OpencodeExecutionProfile } from '../execution/OpencodeSessionContract';
 import {
   OPENCODE_BUILD_MODE_ID,
   OPENCODE_SAFE_MODE_ID,
   OPENCODE_YOLO_MODE_ID,
 } from '../modes';
+import { AUX_AGENT_IDS, buildAgentConfig } from './OpencodeExecutionAgents';
 import { resolveOpencodeDatabasePath } from './OpencodePaths';
 
 export interface OpencodeLaunchArtifacts {
@@ -31,6 +34,7 @@ export interface OpencodeLaunchArtifacts {
 export interface OpencodeManagedAgentConfig {
   definition?: Record<string, unknown>;
   id: string;
+  promptPath?: string;
 }
 
 const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfig[] = [
@@ -39,6 +43,7 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
     definition: {
       mode: 'primary',
       permission: {
+        '*': 'allow',
         plan_enter: 'deny',
         question: 'allow',
       },
@@ -60,75 +65,79 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
 ];
 
 export interface PrepareOpencodeLaunchArtifactsParams {
-  artifactsSubdir?: string;
+  profile?: OpencodeExecutionProfile;
+  titleLocale?: string;
   nativeVersion?: 1 | 2;
-  defaultAgentId?: string;
-  managedAgents?: readonly OpencodeManagedAgentConfig[];
   runtimeEnv: NodeJS.ProcessEnv;
   settings?: SystemPromptSettings;
   dynamicSystemPromptSections?: readonly string[];
   systemPromptKey?: string;
   systemPromptText?: string;
-  userName?: string;
   workspaceRoot: string;
 }
 
 export async function prepareOpencodeLaunchArtifacts(
   params: PrepareOpencodeLaunchArtifactsParams,
 ): Promise<OpencodeLaunchArtifacts> {
-  const artifactsDir = path.join(
-    params.workspaceRoot,
-    CLAUDIAN_STORAGE_PATH,
-    params.artifactsSubdir ?? 'opencode',
-  );
-  const systemPromptPath = path.join(artifactsDir, 'system.md');
+  const artifactsDir = path.join(params.workspaceRoot, CLAUDIAN_STORAGE_PATH, 'opencode');
+  const promptsDir = path.join(artifactsDir, 'prompts');
+  const promptPaths = {
+    managed: path.join(promptsDir, 'main.md'),
+    readonly: path.join(promptsDir, 'inline-edit.md'),
+    passive: path.join(promptsDir, 'title.md'),
+  };
+  const profile = params.profile ?? 'managed';
+  const systemPromptPath = promptPaths[profile];
   const configPath = path.join(artifactsDir, 'config.json');
-  const systemPrompt = normalizeSystemPrompt(
-    params.systemPromptText ?? buildSystemPrompt(requireSettings(params), {
-      dynamicSections: params.dynamicSystemPromptSections
-        ? [...params.dynamicSystemPromptSections]
-        : undefined,
+  const promptTexts = {
+    managed: buildSystemPrompt(params.settings ?? {}, {
+      dynamicSections: params.dynamicSystemPromptSections ? [...params.dynamicSystemPromptSections] : undefined,
     }),
-  );
-  const promptKey = params.systemPromptKey
-    ?? (params.systemPromptText !== undefined
-      ? params.systemPromptText
-      : computeSystemPromptKey(requireSettings(params), {
-          dynamicSections: params.dynamicSystemPromptSections
-            ? [...params.dynamicSystemPromptSections]
-            : undefined,
-        }));
+    readonly: getInlineEditSystemPrompt(params.workspaceRoot),
+    passive: buildTitleGenerationSystemPrompt(params.titleLocale),
+  };
+  if (params.systemPromptText !== undefined) promptTexts[profile] = params.systemPromptText;
+  const promptKey = params.systemPromptKey ?? promptTexts[profile];
   const customConfigPath = resolveOpencodeConfigPath(params.runtimeEnv.OPENCODE_CONFIG, params.workspaceRoot);
   const customConfigText = await readOpencodeConfig(customConfigPath, params.runtimeEnv);
   const inlineConfig = params.runtimeEnv.OPENCODE_CONFIG_CONTENT?.trim();
-  const serializeManagedConfig = (config: Record<string, unknown>, promptPath = systemPromptPath): string => `${JSON.stringify(
-    buildOpencodeManagedConfig(
-      config,
-      promptPath,
-      params.userName ?? params.settings?.userName,
-      params.managedAgents,
-      params.defaultAgentId,
-      params.nativeVersion,
-    ),
-    null,
-    2,
-  )}\n`;
+  const serializeManagedConfig = (
+    config: Record<string, unknown>,
+    paths = promptPaths,
+    defaultAgentId = OPENCODE_SAFE_MODE_ID,
+  ): string => `${JSON.stringify(buildOpencodeManagedConfig(
+    config,
+    paths.managed,
+    [
+      ...DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS,
+      { ...buildAgentConfig('readonly'), promptPath: paths.readonly },
+      { ...buildAgentConfig('passive'), promptPath: paths.passive },
+    ],
+    defaultAgentId,
+    params.nativeVersion,
+  ), null, 2)}\n`;
   const fileContent = serializeManagedConfig({});
-  // Native configuration layers have their own precedence and merge semantics.
-  // Keep inline user settings in memory, separate from the custom file layer.
-  // Substituted user text is literal on the next native parse. Only the managed
-  // prompt reference still needs native expansion; protect it with a temporary marker.
-  const promptMarker = randomUUID();
-  const configContent = serializeManagedConfig(inlineConfig
+  // Preserve native user layers, protecting substituted user text from expansion
+  // a second time. Only our prompt file references still need native expansion.
+  const promptMarkers = { managed: randomUUID(), readonly: randomUUID(), passive: randomUUID() };
+  let configContent = serializeManagedConfig(inlineConfig
     ? await parseOpencodeConfig(inlineConfig, 'OPENCODE_CONFIG_CONTENT', params.runtimeEnv, params.workspaceRoot)
-    : {}, promptMarker)
-    .replace(/\{(env|file):/g, '\\u007b$1:')
-    .replaceAll(`"\\u007bfile:${promptMarker}}"`, JSON.stringify(`{file:${systemPromptPath}}`));
+    : {}, promptMarkers, profile === 'managed' ? OPENCODE_SAFE_MODE_ID : AUX_AGENT_IDS[profile])
+    .replace(/\{(env|file):/g, '\\u007b$1:');
+  for (const key of Object.keys(promptPaths) as OpencodeExecutionProfile[]) {
+    configContent = configContent.replaceAll(
+      `"\\u007bfile:${promptMarkers[key]}}"`, JSON.stringify(`{file:${promptPaths[key]}}`),
+    );
+  }
   const databasePath = resolveOpencodeDatabasePath(params.runtimeEnv);
 
-  await fs.mkdir(artifactsDir, { recursive: true });
+  await fs.mkdir(promptsDir, { recursive: true });
   await ensureOpencodeDatabaseDirectory(databasePath);
-  await writeIfChanged(systemPromptPath, systemPrompt);
+  // Every referenced file must exist before native config parsing, but auxiliary
+  // launches must not overwrite an existing main prompt (including Collab context).
+  for (const key of Object.keys(promptPaths) as OpencodeExecutionProfile[]) {
+    await writeIfChanged(promptPaths[key], normalizeSystemPrompt(promptTexts[key]), key !== profile);
+  }
   await writeIfChanged(configPath, fileContent);
 
   return {
@@ -160,7 +169,6 @@ async function ensureOpencodeDatabaseDirectory(databasePath: string | null): Pro
 export function buildOpencodeManagedConfig(
   baseConfig: Record<string, unknown>,
   systemPromptPath: string,
-  userName?: string,
   managedAgents: readonly OpencodeManagedAgentConfig[] = DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS,
   defaultAgentId?: string,
   nativeVersion: 1 | 2 = 1,
@@ -187,7 +195,7 @@ export function buildOpencodeManagedConfig(
     nextAgents[agentConfig.id] = {
       ...existingAgent,
       ...(isPlainObject(agentConfig.definition) ? agentConfig.definition : {}),
-      prompt: `{file:${systemPromptPath}}`,
+      prompt: `{file:${agentConfig.promptPath ?? systemPromptPath}}`,
     };
   }
 
@@ -198,7 +206,7 @@ export function buildOpencodeManagedConfig(
   config.agent = nextAgents;
   if (nativeVersion === 2) {
     const nativeAgents = isPlainObject(baseConfig.agents) ? { ...baseConfig.agents } : {};
-    for (const { id, definition } of agentConfigs) {
+    for (const { id, definition, promptPath } of agentConfigs) {
       // A native entry replaces the entire migrated legacy entry within a document.
       // Only override an existing native entry; otherwise let OpenCode migrate agent[id].
       const existing = nativeAgents[id];
@@ -208,7 +216,7 @@ export function buildOpencodeManagedConfig(
       nativeAgents[id] = {
         ...existing,
         ...(typeof managed.mode === 'string' ? { mode: managed.mode } : {}),
-        system: `{file:${systemPromptPath}}`,
+        system: `{file:${promptPath ?? systemPromptPath}}`,
         ...(permissions.length ? { permissions: [
           ...(Array.isArray(existing.permissions) ? existing.permissions as unknown[] : []),
           ...permissions,
@@ -225,25 +233,55 @@ export function buildOpencodeManagedConfig(
     config.default_agent = trimmedDefaultAgentId;
   }
 
-  const trimmedUserName = userName?.trim();
-  if (trimmedUserName) {
-    config.username = trimmedUserName;
-  }
-
   return config;
 }
 
-async function writeIfChanged(filePath: string, content: string): Promise<void> {
+const pendingFileWrites = new Map<string, Promise<void>>();
+
+async function writeIfChanged(filePath: string, content: string, onlyIfMissing = false): Promise<void> {
+  // An exclusive copy is portable but not atomic. Other launches in this plugin
+  // must wait until the file is complete before checking or updating it.
+  const previous = pendingFileWrites.get(filePath) ?? Promise.resolve();
+  const pending = previous.catch(() => undefined).then(() => writeFileIfChanged(filePath, content, onlyIfMissing));
+  pendingFileWrites.set(filePath, pending);
+  try {
+    await pending;
+  } finally {
+    if (pendingFileWrites.get(filePath) === pending) pendingFileWrites.delete(filePath);
+  }
+}
+
+async function writeFileIfChanged(filePath: string, content: string, onlyIfMissing: boolean): Promise<void> {
   try {
     const existing = await fs.readFile(filePath, 'utf-8');
-    if (existing === content) {
-      return;
-    }
-  } catch {
-    // Missing file; write below.
+    if (onlyIfMissing || existing === content) return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
 
-  await fs.writeFile(filePath, content, 'utf-8');
+  const temporaryPath = `${filePath}.${randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(temporaryPath, content, 'utf-8');
+    if (onlyIfMissing) {
+      try {
+        await fs.link(temporaryPath, filePath);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== 'EEXIST') {
+          if (!['ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV'].includes(code ?? '')) throw error;
+          try {
+            await fs.copyFile(temporaryPath, filePath, fs.constants.COPYFILE_EXCL);
+          } catch (copyError) {
+            if ((copyError as NodeJS.ErrnoException).code !== 'EEXIST') throw copyError;
+          }
+        }
+      }
+    } else {
+      await fs.rename(temporaryPath, filePath);
+    }
+  } finally {
+    await fs.rm(temporaryPath, { force: true });
+  }
 }
 
 function resolveOpencodeConfigPath(configuredPath: string | undefined, workspaceRoot: string): string | undefined {
@@ -310,16 +348,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function normalizeSystemPrompt(systemPrompt: string): string {
   return systemPrompt.endsWith('\n') ? systemPrompt : `${systemPrompt}\n`;
-}
-
-function requireSettings(
-  params: PrepareOpencodeLaunchArtifactsParams,
-): SystemPromptSettings {
-  if (params.settings) {
-    return params.settings;
-  }
-
-  throw new Error('prepareOpencodeLaunchArtifacts requires settings when no systemPromptText is provided');
 }
 
 function nativePermissionRules(value: unknown): Array<{ action: string; resource: string; effect: string }> {

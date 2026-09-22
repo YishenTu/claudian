@@ -184,6 +184,19 @@ function request(text = '/review changes'): ProviderExecutionRequest {
   };
 }
 
+it('runs YOLO with automatic native approvals while still answering questions', async () => {
+  const f = createFixture(false, async () => { throw new Error('Manual approvals are unavailable'); });
+  try {
+    const turn = request();
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute({
+      ...turn, configuration: { ...turn.configuration, permissionMode: 'yolo' },
+    }).events) events.push(event);
+    expect(events.at(-1)?.type).toBe('turn_completed');
+    expect(f.questions).toEqual([expect.objectContaining({ kind: 'question' })]);
+  } finally { await f.dispose(); }
+});
+
 it('uses HTTP for v2 commands, waits for execution completion, and answers native interactions', async () => {
   const f = createFixture();
   const { session, approvals, questions } = f;

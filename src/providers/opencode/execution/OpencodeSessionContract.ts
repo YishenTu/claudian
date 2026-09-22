@@ -27,7 +27,6 @@ export interface OpencodeSessionKernelOptions {
   readonly onNativeTaskCompleted?: (event: Omit<ProviderAsyncSubagentCompletedEvent, 'scope'>) => void;
   readonly onNativeOutput?: (event: OpencodeNativeOutput, childSessionId?: string) => void;
   readonly onNativeTurn?: (status: 'started' | 'completed', error?: string, requested?: boolean) => void;
-  readonly artifactsSubdir?: string;
   readonly config: ProviderSessionConfig;
   readonly databasePath?: string;
   readonly nativeVersion?: 1 | 2;

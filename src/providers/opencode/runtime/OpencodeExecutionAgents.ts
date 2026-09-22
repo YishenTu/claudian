@@ -5,8 +5,8 @@ import type { OpencodeExecutionProfile } from '../execution/OpencodeSessionContr
 import type { OpencodeManagedAgentConfig } from './OpencodeLaunchArtifacts';
 
 export const AUX_AGENT_IDS: Record<Exclude<OpencodeExecutionProfile, 'managed'>, string> = {
-  passive: 'claudian-execution-passive',
-  readonly: 'claudian-execution-readonly',
+  passive: 'claudian-title',
+  readonly: 'claudian-inline-edit',
 };
 
 const READ_PERMISSION = Object.freeze({
