@@ -1,0 +1,76 @@
+{
+  "result": {
+    "currentModelId": "grok-4.6",
+    "availableModels": [
+      {
+        "modelId": "grok-4.6",
+        "name": "Grok 4.6",
+        "_meta": {
+          "supportsReasoningEffort": true,
+          "reasoningEffort": "high",
+          "reasoningEfforts": [
+            {
+              "id": "xhigh",
+              "value": "xhigh",
+              "label": "Extra High Effort",
+              "description": "Highest effort and reasoning level",
+              "default": false
+            },
+            {
+              "id": "high",
+              "value": "high",
+              "label": "High Effort",
+              "description": "Higher implementation quality with extensive reasoning",
+              "default": true
+            },
+            {
+              "id": "medium",
+              "value": "medium",
+              "label": "Medium Effort",
+              "description": "Balanced effort with standard implementation and testing",
+              "default": false
+            },
+            {
+              "id": "low",
+              "value": "low",
+              "label": "Low Effort",
+              "description": "Quick, fast implementations",
+              "default": false
+            }
+          ]
+        }
+      },
+      {
+        "modelId": "grok-4.5",
+        "name": "Grok 4.5",
+        "_meta": {
+          "supportsReasoningEffort": true,
+          "reasoningEffort": "high",
+          "reasoningEfforts": [
+            {
+              "id": "high",
+              "value": "high",
+              "label": "High Effort",
+              "description": "Highest implementation quality with extensive reasoning",
+              "default": true
+            },
+            {
+              "id": "medium",
+              "value": "medium",
+              "label": "Medium Effort",
+              "description": "Balanced effort with standard implementation and testing",
+              "default": false
+            },
+            {
+              "id": "low",
+              "value": "low",
+              "label": "Low Effort",
+              "description": "Quick, fast implementations",
+              "default": false
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

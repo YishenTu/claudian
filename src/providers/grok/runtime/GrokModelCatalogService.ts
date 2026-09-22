@@ -16,6 +16,7 @@ import {
   normalizeGrokDiscoveredModels,
 } from '../models';
 import { getGrokProviderSettings } from '../settings';
+import { GrokModelCatalogProbe, type GrokModelCatalogProbeLike } from './GrokModelCatalogProbe';
 import { buildGrokRuntimeEnv } from './GrokRuntimeEnvironment';
 
 const FINGERPRINT_VERSION = '1';
@@ -73,6 +74,7 @@ export interface GrokModelCatalogServiceLike {
 
 export interface GrokModelCatalogServiceOptions {
   modelCommandTimeoutMs?: number;
+  probe?: GrokModelCatalogProbeLike;
   runner?: GrokCatalogCommandRunner;
   versionCommandTimeoutMs?: number;
 }
@@ -145,12 +147,14 @@ export function parseGrokModelsOutput(output: string): {
 
 export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
   private readonly runner: GrokCatalogCommandRunner;
+  private readonly probe: GrokModelCatalogProbeLike;
 
   constructor(
     private readonly plugin: ProviderHost,
     private readonly options: GrokModelCatalogServiceOptions = {},
   ) {
     this.runner = options.runner ?? new SpawnGrokCatalogCommandRunner();
+    this.probe = options.probe ?? new GrokModelCatalogProbe();
   }
 
   async getCatalogFingerprint(
@@ -172,6 +176,33 @@ export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
     try {
       const context = await this.#resolveCommandContext(ownerContext);
       const fingerprint = await this.#resolveFingerprint(context, signal);
+      try {
+        const catalog = await this.probe.discover({
+          command: context.command,
+          cwd: context.cwd,
+          env: context.env,
+          signal,
+          timeoutMs: this.options.modelCommandTimeoutMs ?? MODEL_COMMAND_TIMEOUT_MS,
+          version: this.plugin.manifest?.version ?? '0.0.0',
+        });
+        return {
+          defaultModelId: catalog.currentModelId,
+          fingerprint,
+          kind: 'completed',
+          models: catalog.models,
+        };
+      } catch {
+        if (signal?.aborted) {
+          return {
+            defaultModelId: null,
+            diagnostics: 'Grok models was cancelled',
+            fingerprint,
+            kind: 'completed',
+            models: [],
+          };
+        }
+        // Older runtimes may not expose the session-independent ACP catalog.
+      }
       const commandResult = await this.runner.run({
         args: ['models'],
         command: context.command,

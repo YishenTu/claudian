@@ -2450,7 +2450,10 @@ describe('ClaudianPlugin', () => {
             }
         )),
       };
-      const service = new GrokModelCatalogService(plugin as any, { runner });
+      const service = new GrokModelCatalogService(plugin as any, {
+        runner,
+        probe: { discover: async () => { throw new Error('Method not found'); } },
+      });
       const coordinator = new GrokModelCatalogCoordinator(plugin as any, service);
       const cliResolver = new GrokCliResolver();
       ProviderWorkspaceRegistry.setServices('grok', {
