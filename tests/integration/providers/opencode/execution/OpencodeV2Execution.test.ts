@@ -205,7 +205,7 @@ it('uses HTTP for v2 commands, waits for execution completion, and answers nativ
     for await (const event of session.execute(request()).events) events.push(event);
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text_delta' })]));
     expect(events.filter(e => e.type === 'text_delta').map(e => e.text).join('')).toBe('Finished review');
-    expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'usage_updated', usage: expect.objectContaining({ contextTokens: 165, contextWindow: 1000 }) })]));
+    expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'usage_updated', usage: expect.objectContaining({ contextTokens: 165, contextWindow: 1000, percentage: 17 }) })]));
     expect(events.at(-1)?.type).toBe('turn_completed');
     expect(approvals).toEqual([expect.objectContaining({ kind: 'approval' })]);
     expect(questions).toEqual([expect.objectContaining({ kind: 'question', input: expect.objectContaining({ questions: expect.any(Array) }) })]);

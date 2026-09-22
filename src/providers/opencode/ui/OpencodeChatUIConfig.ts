@@ -1,3 +1,5 @@
+import { formatReasoningValueLabel } from '@/core/providers/reasoning';
+
 import type {
   ProviderChatUIConfig,
   ProviderPermissionModeToggleConfig,
@@ -82,7 +84,7 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
     return getOpencodeThinkingOptions(model, settings)
       .map((variant) => ({
         description: variant.description,
-        label: variant.label,
+        label: formatReasoningValueLabel(variant.label),
         value: variant.value,
       }));
   },
