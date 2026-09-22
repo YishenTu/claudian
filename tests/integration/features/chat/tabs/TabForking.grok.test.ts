@@ -66,10 +66,8 @@ describe('Grok fork integration', () => {
     await env.send(source, 'Remember pears');
     expect(selected.assistantMessageId).toBe('grok-assistant-1');
     const original = await fs.readFile(native.sourceFile, 'utf8');
-    const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     const child = await env.fork(source, selected);
     expect(child?.messages).toHaveLength(2);
-    expect((await env.repository.getConversationInputLedger(child!.id))?.records.map(record => record.canonicalText)).toEqual(['Remember apples']);
     const fork = await env.open(native.backend, child!);
     await env.send(fork, 'Continue here');
     expect(native.operations.find(operation => operation.method === '_x.ai/session/fork')?.params).toEqual({
@@ -81,7 +79,6 @@ describe('Grok fork integration', () => {
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'grok-child', context: ['grok-assistant-1'] });
     expect(child!.sessionId).toBe('grok-child');
     expect(await fs.readFile(native.sourceFile, 'utf8')).toBe(original);
-    expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
     await env.send(source, 'Keep original going');
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'grok-source', context: ['grok-assistant-1', 'grok-assistant-2'] });
   });

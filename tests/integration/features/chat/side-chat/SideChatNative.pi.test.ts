@@ -52,7 +52,6 @@ describe('Pi side-chat native child', () => {
     await env.send(source, 'Remember A2');
     const filesBefore = await fs.readdir(env.root);
     const sourceBytes = await fs.readFile(native.sourceFile, 'utf8');
-    const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     const conversationsBefore = env.repository.list().map(conversation => conversation.id);
 
     const child = await traceSideChild(env, source, checkpoint, native.backend);
@@ -76,7 +75,6 @@ describe('Pi side-chat native child', () => {
     expect(afterSecond?.images).toEqual([]);
     expect(await fs.readdir(env.root)).toEqual(filesBefore);
     expect(await fs.readFile(native.sourceFile, 'utf8')).toBe(sourceBytes);
-    expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
     expect(env.repository.list().map(conversation => conversation.id)).toEqual(conversationsBefore);
 
     await env.send(source, 'Continue main');

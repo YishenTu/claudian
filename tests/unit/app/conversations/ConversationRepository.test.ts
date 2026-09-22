@@ -35,16 +35,10 @@ function createRepository(conversation = createConversation()) {
       }),
       listMetadata: jest.fn().mockResolvedValue([]),
     },
-    loadInputLedger: jest.fn().mockResolvedValue({ status: 'missing' }),
-    saveInputLedger: jest.fn().mockResolvedValue(undefined),
     saveMetadata: jest.fn().mockResolvedValue(undefined),
     deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
     deleteLegacyMetadata: jest.fn().mockResolvedValue(undefined),
-    deleteInputLedger: jest.fn().mockResolvedValue(undefined),
     assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
-    isDeleted: jest.fn().mockResolvedValue(false),
-    assertMetadataWriteAuthority: jest.fn().mockResolvedValue(undefined),
-    markDeleted: jest.fn().mockResolvedValue(undefined),
   };
   const repository = new ConversationRepository({
     getSettings: () => ({}),
@@ -1120,15 +1114,13 @@ describe('ConversationRepository hydration', () => {
     )).resolves.toBe(false);
     expect(repository.getCachedConversation(shell.id)).toBeNull();
     expect(persistence.saveMetadata).not.toHaveBeenCalled();
-    expect(persistence.markDeleted).not.toHaveBeenCalled();
     expect(persistence.deleteCurrentMetadata).not.toHaveBeenCalled();
     expect(persistence.deleteLegacyMetadata).not.toHaveBeenCalled();
-    expect(persistence.deleteInputLedger).not.toHaveBeenCalled();
   });
 
   it('allows a discarded unresolved shell ID to be published again', () => {
     const shell = createConversation('temporarily-unresolved');
-    const { repository, persistence } = createRepository(shell);
+    const { repository } = createRepository(shell);
 
     repository.discardUnresolvedMetadataShells([shell]);
     const replacement = createConversation(shell.id);
@@ -1136,8 +1128,6 @@ describe('ConversationRepository hydration', () => {
 
     expect(merged).toEqual([replacement]);
     expect(repository.getCachedConversation(shell.id)).toBe(replacement);
-    expect(persistence.isDeleted).not.toHaveBeenCalled();
-    expect(persistence.markDeleted).not.toHaveBeenCalled();
   });
 
   it('does not discard or invalidate a replacement object with the same conversation ID', async () => {

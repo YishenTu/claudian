@@ -49,12 +49,8 @@ export function createProviderRecoveryTestHarness(
       return true;
     }),
     releaseExecutionBinding: jest.fn(),
-    stageConversationInput: jest.fn(async () => undefined),
+    recordConversationActivity: jest.fn(async () => undefined),
     assertConversationExecutionAuthority: jest.fn(async () => undefined),
-    acceptConversationInput: jest.fn(async () => undefined),
-    discardStagedConversationInput: jest.fn(async () => undefined),
-    copyConversationInputsForFork: jest.fn(async () => undefined),
-    truncateConversationInputsFrom: jest.fn(async () => undefined),
   };
   const interactionPort = {
     askUserQuestion: jest.fn(),
@@ -97,8 +93,7 @@ export function createProviderRecoveryTestHarness(
         },
       });
       return coordinator.execute({
-        inputRecordId: 'provider-recovery-input',
-        userTurnOrdinal: 1,
+        submissionId: 'provider-recovery-input',
         timestamp: 1,
         rawDisplayText: 'Retry this turn',
         canonicalText: 'Retry this turn',

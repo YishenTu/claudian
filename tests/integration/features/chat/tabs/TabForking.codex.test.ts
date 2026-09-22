@@ -73,10 +73,8 @@ describe('Codex fork integration', () => {
     await env.send(source, 'Remember pears');
     expect(selected.assistantMessageId).toBe('codex-turn-1');
     const original = await fs.readFile(native.sourceFile, 'utf8');
-    const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     const child = await env.fork(source, selected);
     expect(child?.messages).toHaveLength(2);
-    expect((await env.repository.getConversationInputLedger(child!.id))?.records.map(record => record.canonicalText)).toEqual(['Remember apples']);
     const fork = await env.open(native.backend, child!);
     await env.send(fork, 'Continue here');
     expect(native.prompts.at(-1)).toEqual({ threadId: 'codex-child', context: ['codex-turn-1'] });
@@ -84,7 +82,6 @@ describe('Codex fork integration', () => {
     expect(native.operations).toContainEqual({ method: 'thread/rollback', params: { threadId: 'codex-child', numTurns: 1 } });
     expect(native.threads.get('codex-source')).toEqual(['codex-turn-1', 'codex-turn-2']);
     expect(await fs.readFile(native.sourceFile, 'utf8')).toBe(original);
-    expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
     expect(child!.sessionId).toBe('codex-child');
     await env.send(source, 'Keep original going');
     expect(native.prompts.at(-1)).toEqual({ threadId: 'codex-source', context: ['codex-turn-1', 'codex-turn-2'] });

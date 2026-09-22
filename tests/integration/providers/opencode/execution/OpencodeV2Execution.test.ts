@@ -328,7 +328,7 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
   try {
     await coordinator.bindConversation({ conversationId: conversation.id, providerId: 'opencode' });
     const result = await coordinator.execute({
-      inputRecordId: 'user-child', userTurnOrdinal: 1, timestamp: 1,
+      submissionId: 'user-child', timestamp: 1,
       rawDisplayText: text, canonicalText: text, images: [],
       configuration: request().configuration, toolPolicy: { kind: 'provider-default' },
     });

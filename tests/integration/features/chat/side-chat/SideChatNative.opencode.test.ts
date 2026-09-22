@@ -57,7 +57,6 @@ it('forks native disk history and resumes the side child independently after coo
     const backend = new OpencodeExecutionBackend(env.host);
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
-    const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     child = await traceSideChild(env, source, checkpoint, backend);
     expect(child).not.toBeNull();
     expect((await child!.send('Also remember B')).terminal).toBe('turn_completed');
@@ -73,7 +72,6 @@ it('forks native disk history and resumes the side child independently after coo
       sessionId: 'ses-2', context: ['Remember A', 'Reply 1', 'Also remember B', 'Reply 2', 'Use A and B', 'Reply 3'], text: 'Continue the side',
     });
     expect(sessions.get('ses-1')).toEqual(['Remember A', 'Reply 1']);
-    expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
     expect(env.repository.list().map(conversation => conversation.id)).toEqual([source.conversation.id]);
     await child!.dispose();
     expect(sessions.has('ses-2')).toBe(true);

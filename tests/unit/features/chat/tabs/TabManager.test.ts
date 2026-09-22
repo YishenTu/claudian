@@ -52,7 +52,6 @@ function createMockTab(options: Record<string, any>): any {
     draftModel: options.conversation ? null : 'claude-default',
     executionCoordinator: {
       getCommandSnapshot: () => undefined,
-      copyInputsForFork: jest.fn().mockResolvedValue(undefined),
       hasBackgroundWork: false,
       notifyMayCool: jest.fn(),
       prepare: jest.fn().mockResolvedValue(undefined),
@@ -1940,7 +1939,7 @@ describe('TabManager provider execution orchestration', () => {
     expect(tab!.executionCoordinator.prepare).not.toHaveBeenCalled();
   });
 
-  it.each(['checkpoint', 'full-session'] as const)('copies the accepted input ledger for a %s fork', async (forkMode) => {
+  it.each(['checkpoint', 'full-session'] as const)('preserves linked content and provider state for a %s fork', async (forkMode) => {
     const sourceConversation = {
         id: 'source-conversation',
         linkedContentPath: 'Projects',
@@ -1962,12 +1961,6 @@ describe('TabManager provider execution orchestration', () => {
       sourceConversationId: 'source-conversation',
       sourceSessionId: 'native-session',
     });
-
-    expect((source!.executionCoordinator!.copyInputsForFork as jest.Mock)).toHaveBeenCalledWith(
-      'source-conversation',
-      'forked',
-      forkMode === 'full-session' ? undefined : 'assistant-checkpoint',
-    );
     expect(plugin.createConversation).toHaveBeenCalledWith(expect.objectContaining({
       linkedContentPath: 'Projects',
       providerId: 'claude',
@@ -2005,7 +1998,6 @@ describe('TabManager provider execution orchestration', () => {
     forkState.resolve({ fork: true });
 
     await expect(fork).resolves.toBeNull();
-    expect(source!.executionCoordinator.copyInputsForFork).not.toHaveBeenCalled();
     expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
     expect(manager.getAllTabs()).toEqual([source]);
   });
@@ -2017,7 +2009,7 @@ describe('TabManager provider execution orchestration', () => {
     const source = await manager.createTab('conversation-a');
     const conversationChanged = mockCreateTabRuntime.mock.calls[0]?.[0]
       .onConversationIdChanged as (runtime: any, conversationId: string) => void;
-    source!.executionCoordinator.copyInputsForFork = jest.fn().mockImplementationOnce(() => ({
+    (plugin.updateConversation as jest.Mock).mockImplementationOnce(() => ({
       then: (resolve: (value?: void) => void) => {
         resolve();
         queueMicrotask(() => conversationChanged(source, 'conversation-b'));
@@ -2064,7 +2056,6 @@ describe('TabManager provider execution orchestration', () => {
     await fork;
 
     expect(plugin.createConversation).not.toHaveBeenCalled();
-    expect(source!.executionCoordinator.copyInputsForFork).not.toHaveBeenCalled();
     expect(source!.controllers.conversationController.switchTo).not.toHaveBeenCalled();
   });
 
@@ -2634,16 +2625,16 @@ describe('TabManager provider execution orchestration', () => {
     expect(Notice).toHaveBeenCalled();
   });
 
-  it('deletes a partial fork if ledger copy fails', async () => {
+  it('deletes a partial fork if metadata save fails', async () => {
     const { manager, plugin } = createManager(createPlugin({
       getCachedConversation: jest.fn().mockReturnValue({
         id: 'source-conversation',
         providerId: 'claude',
       }),
     }));
-    const source = await manager.createTab('source-conversation');
-    (source!.executionCoordinator!.copyInputsForFork as jest.Mock).mockRejectedValueOnce(
-      new Error('ledger copy failed'),
+    await manager.createTab('source-conversation');
+    (plugin.updateConversation as jest.Mock).mockRejectedValueOnce(
+      new Error('metadata save failed'),
     );
 
     await expect(manager.forkToNewTab({
@@ -2652,7 +2643,7 @@ describe('TabManager provider execution orchestration', () => {
       resumeAt: 'assistant-checkpoint',
       sourceConversationId: 'source-conversation',
       sourceSessionId: 'native-session',
-    })).rejects.toThrow('ledger copy failed');
+    })).rejects.toThrow('metadata save failed');
 
     expect(plugin.deleteConversation).toHaveBeenCalledWith('forked');
   });

@@ -132,7 +132,7 @@ type PendingSteerProviderDisposition =
 interface PendingSteerState {
   readonly conversationId: string;
   readonly coordinator: ChatExecutionCoordinator;
-  readonly inputRecordId: string;
+  readonly submissionId: string;
   readonly message: QueuedMessage;
   readonly expectedProviderMessage: PendingProviderUserMessage;
   providerDisposition: PendingSteerProviderDisposition;
@@ -1044,7 +1044,6 @@ export class InputController {
       ? settings.serviceTier
       : undefined;
     const images = [...(request.images ?? [])];
-    const existingUserTurns = this.deps.state.messages.filter(isCanonicalUserMessage).length;
 
     return {
       canonicalText: request.text,
@@ -1080,13 +1079,11 @@ export class InputController {
         ? this.deps.state.messages.slice(0, -2)
         : [...this.deps.state.messages],
       images,
-      inputRecordId: this.deps.generateId(),
-      ...(user ? { localMessageId: user.id } : {}),
+      submissionId: this.deps.generateId(),
       ...(user && assistant ? { messages: { assistant, user } } : {}),
       rawDisplayText: displayContent,
       timestamp: user?.timestamp ?? Date.now(),
       toolPolicy: { kind: 'provider-default' },
-      userTurnOrdinal: user ? existingUserTurns : existingUserTurns + 1,
     };
   }
 
@@ -1204,7 +1201,7 @@ export class InputController {
   #releasePendingSteer(pending: PendingSteerState): void {
     if (this.#isPendingSteerRegistered(pending)) {
       this.pendingSteersByConversation.delete(pending.conversationId);
-      pending.coordinator.releaseSteerCorrelation(pending.inputRecordId);
+      pending.coordinator.releaseSteerCorrelation(pending.submissionId);
     }
   }
 
@@ -1335,7 +1332,7 @@ export class InputController {
           : request.linkedContentPath,
         images: request.images,
       },
-      inputRecordId: submission.inputRecordId,
+      submissionId: submission.submissionId,
       message: queuedMessage,
       providerDisposition: 'awaiting-result',
       retryState: 'blocked',
@@ -1434,7 +1431,7 @@ export class InputController {
       this.#clearPendingSteerUi(pendingSteer);
       try {
         await pendingSteer.coordinator.acceptSteerFromProviderEvent(
-          pendingSteer.inputRecordId,
+          pendingSteer.submissionId,
           chunk.itemId,
         );
       } catch (error) {

@@ -1,6 +1,7 @@
-import type { Plugin } from 'obsidian';
+import { Notice, type Plugin } from 'obsidian';
 
 import { ConversationPersistenceStore } from '../../core/bootstrap/ConversationPersistenceStore';
+import { migrateSessionSidecars } from '../../core/bootstrap/migrateSessionSidecars';
 import { SessionStorage } from '../../core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from '../../core/bootstrap/storage';
 import { normalizeTabManagerState } from '../../core/bootstrap/tabManagerState';
@@ -31,6 +32,11 @@ export class SharedStorageService implements SharedAppStorage {
   }
 
   async initialize(): Promise<{ claudian: Record<string, unknown> }> {
+    try {
+      await migrateSessionSidecars(this.adapter);
+    } catch {
+      new Notice('Failed to clean up obsolete session files; will retry next launch');
+    }
     const claudian = await this.claudianSettings.load();
     return { claudian };
   }

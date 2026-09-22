@@ -38,16 +38,10 @@ function createRepository(conversation = createConversation()) {
       }),
       listMetadata: jest.fn().mockResolvedValue([]),
     },
-    loadInputLedger: jest.fn().mockResolvedValue({ status: 'missing' }),
-    saveInputLedger: jest.fn().mockResolvedValue(undefined),
     saveMetadata: jest.fn().mockResolvedValue(undefined),
     deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
     deleteLegacyMetadata: jest.fn().mockResolvedValue(undefined),
-    deleteInputLedger: jest.fn().mockResolvedValue(undefined),
     assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
-    isDeleted: jest.fn().mockResolvedValue(false),
-    assertMetadataWriteAuthority: jest.fn().mockResolvedValue(undefined),
-    markDeleted: jest.fn().mockResolvedValue(undefined),
   };
   const repository = new ConversationRepository({
     getSettings: () => ({}),
@@ -92,7 +86,7 @@ test('a superseded native history read cannot overwrite the current conversation
   expect(repository.getCachedConversation(conversation.id)?.messages).toEqual(newMessages);
 });
 
-test('does not publish recovered identity when its metadata becomes unwritable', async () => {
+test('does not publish recovered identity after concurrent deletion', async () => {
   const conversation = createConversation();
   const { repository, persistence } = createRepository(conversation);
   jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
@@ -102,12 +96,12 @@ test('does not publish recovered identity when its metadata becomes unwritable',
     buildForkProviderState: () => ({}),
     recoverConversationSessionReference: async draft => {
       draft.sessionId = 'recovered-session';
-      persistence.isDeleted.mockResolvedValue(true);
+      await repository.delete(conversation.id);
       return true;
     },
   });
   expect(await repository.ensureHydrated(conversation.id)).toBeNull();
-  expect(repository.getCachedConversation(conversation.id)?.sessionId).toBe('session-1');
+  expect(repository.getCachedConversation(conversation.id)).toBeNull();
   expect(persistence.saveMetadata).not.toHaveBeenCalled();
 });
 
@@ -145,7 +139,7 @@ test('OpenCode hydrates a fresh projection after another projection was discarde
   expect(fresh.messages).toEqual(nativeMessages);
 });
 
-test('surfaces cleanup failure after missing-session deletion has committed', async () => {
+test('restores the conversation when missing-session metadata removal fails', async () => {
   const conversation = createConversation();
   const { repository, persistence } = createRepository(conversation);
   jest.spyOn(claudeHistory, 'locateSDKSessions').mockResolvedValue(new Map([
@@ -157,7 +151,7 @@ test('surfaces cleanup failure after missing-session deletion has committed', as
 
   await expect(repository.handleMissingProviderSession(conversation.id, 'session-1'))
     .rejects.toThrow('Metadata cleanup failed');
-  expect(repository.getCachedConversation(conversation.id)).toBeNull();
+  expect(repository.getCachedConversation(conversation.id)).toBe(conversation);
 });
 
 test('surfaces a failed missing-session reset save while preserving live identity', async () => {

@@ -1,10 +1,3 @@
-import {
-  computeConversationInputDigest,
-  CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION,
-  type ConversationInputLedger,
-  type ConversationInputLedgerReadResult,
-  type ConversationInputRecord,
-} from '../../core/bootstrap/ConversationInputLedgerStorage';
 import type { ConversationPersistence } from '../../core/bootstrap/ConversationPersistenceStore';
 import type {
   SessionMetadataAuthority,
@@ -32,12 +25,10 @@ import {
   type ProviderId,
 } from '../../core/providers/types';
 import {
-  type ChatMessage,
   type Conversation,
   type ConversationMeta,
   type ConversationModelRecoverySource,
   type ConversationMutablePatch,
-  isCanonicalUserMessage,
   type SessionMetadata,
 } from '../../core/types';
 import { mapWithConcurrency } from '../../utils/concurrency';
@@ -53,22 +44,6 @@ interface ConversationRepositoryBaseDeps {
 export type ConversationRepositoryDeps = ConversationRepositoryBaseDeps & {
   persistence: ConversationPersistence;
 };
-
-interface LoadedLedgerState {
-  status: 'loaded';
-  ledger: ConversationInputLedger;
-  needsMigration: boolean;
-}
-
-interface UnavailableLedgerState {
-  status: 'unavailable';
-  reason: Extract<
-    ConversationInputLedgerReadResult,
-    { status: 'unavailable' }
-  >['reason'];
-}
-
-type LedgerState = LoadedLedgerState | UnavailableLedgerState;
 
 interface ExecutionBindingState {
   readonly bindingId: string;
@@ -88,11 +63,6 @@ interface LinkedContentPathRename {
   oldPath: string;
   newPath: string;
   includeDescendants: boolean;
-}
-
-interface InputLedgerCorrelationResult {
-  ledgerChanged: boolean;
-  lastAcceptedInputAt: number | null;
 }
 
 type HistoricalModelRecoveryResult =
@@ -176,23 +146,6 @@ function applyModelRecoverySource(
   };
 }
 
-export class ConversationInputLedgerUnavailableError extends Error {
-  constructor(
-    readonly conversationId: string,
-    readonly reason: UnavailableLedgerState['reason'],
-  ) {
-    super(`Conversation input ledger is unavailable: ${conversationId} (${reason})`);
-    this.name = 'ConversationInputLedgerUnavailableError';
-  }
-}
-
-export class ConversationInputStageRejectedError extends Error {
-  constructor(readonly conversationId: string) {
-    super(`Conversation input was not durably staged: ${conversationId}`);
-    this.name = 'ConversationInputStageRejectedError';
-  }
-}
-
 export class ConversationRepository {
   private conversations: Conversation[] = [];
   private hydratedConversationIds = new Set<string>();
@@ -200,8 +153,6 @@ export class ConversationRepository {
   private conversationGenerations = new Map<string, number>();
   private deletedConversationIds = new Set<string>();
   private deletingConversationIds = new Set<string>();
-  private readonly ledgerStates = new Map<string, LedgerState>();
-  private readonly ledgerLoadPromises = new Map<string, Promise<LedgerState>>();
   private readonly persistenceQueues = new Map<string, Promise<void>>();
   private readonly executionBindings = new Map<string, ExecutionBindingState>();
   private readonly deletionStates = new Map<string, ConversationDeletionState>();
@@ -250,8 +201,6 @@ export class ConversationRepository {
     this.hydrationPromises.clear();
     this.historicalModelRecoveryPromises.clear();
     this.historicalModelRecoverySources.clear();
-    this.ledgerStates.clear();
-    this.ledgerLoadPromises.clear();
     this.executionBindings.clear();
     this.deletionStates.clear();
   }
@@ -264,8 +213,10 @@ export class ConversationRepository {
     }>,
   ): Promise<void> {
     for (const { conversation, source } of entries) {
-      const target = source === 'legacy' ? 'unscoped' : source;
-      this.metadataTargets.set(conversation.id, target);
+      if (!this.metadataTargets.has(conversation.id)) {
+        const target = source === 'legacy' ? 'unscoped' : source;
+        this.metadataTargets.set(conversation.id, target);
+      }
     }
     const linkedContentPathCorrectedIds = new Set<string>();
     for (const { conversation } of entries) {
@@ -380,8 +331,6 @@ export class ConversationRepository {
       this.conversations.splice(index, 1);
       this.hydratedConversationIds.delete(shell.id);
       this.hydrationPromises.delete(shell.id);
-      this.ledgerStates.delete(shell.id);
-      this.ledgerLoadPromises.delete(shell.id);
       this.executionBindings.delete(shell.id);
       this.linkedContentPathsByConversationId.delete(shell.id);
       this.metadataTargets.delete(shell.id);
@@ -404,11 +353,8 @@ export class ConversationRepository {
     const providerId = options?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
     const sessionId = options?.sessionId;
     const id = sessionId ?? this.generateId();
-    if (
-      this.deletedConversationIds.has(id)
-      || await this.persistence.isDeleted(id)
-    ) {
-      throw new Error(`Conversation ID is permanently deleted: ${id}`);
+    if (this.deletedConversationIds.has(id)) {
+      throw new Error(`Conversation was deleted in this session: ${id}`);
     }
     const providerSettings =
       ProviderSettingsCoordinator.getProviderSettingsSnapshot(
@@ -476,10 +422,7 @@ export class ConversationRepository {
       (conversation) => conversation.id === id,
     );
     if (index === -1) {
-      if (
-        this.deletedConversationIds.has(id)
-        || await this.#isDeletedInAnyMetadataTarget(id)
-      ) {
+      if (this.deletedConversationIds.has(id)) {
         await this.retryDeletedConversationCleanup(id);
       }
       return;
@@ -503,22 +446,22 @@ export class ConversationRepository {
       await Promise.allSettled([pendingHydration]);
     }
 
-    let markerDurable = false;
+    let metadataRemoved = false;
     try {
       await this.#enqueuePersistence(id, async () => {
-        await this.persistence.markDeleted(
-          id,
-          Date.now(),
-          this.#requireMetadataTarget(id),
-        );
-        markerDurable = true;
+        await this.persistence.deleteLegacyMetadata(id);
+        const target = this.#requireMetadataTarget(id);
+        await (target === 'device'
+          ? this.persistence.deleteCurrentMetadata(id)
+          : this.persistence.deleteCurrentMetadata(id, target));
+        metadataRemoved = true;
         this.deletingConversationIds.delete(id);
         this.deletionStates.delete(id);
         this.executionBindings.delete(id);
         await this.#finalizeDeletedConversation(id);
       });
     } catch (error) {
-      if (!markerDurable) {
+      if (!metadataRemoved) {
         this.deletingConversationIds.delete(id);
         this.deletedConversationIds.delete(id);
         this.deletionStates.delete(id);
@@ -538,10 +481,7 @@ export class ConversationRepository {
   }
 
   async retryDeletedConversationCleanup(id: string): Promise<void> {
-    if (
-      !this.deletedConversationIds.has(id)
-      && !await this.#isDeletedInAnyMetadataTarget(id)
-    ) {
+    if (!this.deletedConversationIds.has(id)) {
       return;
     }
     this.deletedConversationIds.add(id);
@@ -997,147 +937,19 @@ export class ConversationRepository {
     }
   }
 
-  async assertConversationExecutionAuthority(
-    conversationId: string,
-  ): Promise<void> {
+  async assertConversationExecutionAuthority(conversationId: string): Promise<void> {
     const conversation = this.getSync(conversationId);
-    if (!conversation) {
-      throw new ConversationInputStageRejectedError(conversationId);
-    }
-    const target = this.#requireMetadataTarget(conversationId);
-    if (!await this.#canWriteConversation(conversation)) {
-      throw new ConversationInputStageRejectedError(conversationId);
-    }
-    await this.persistence.assertMetadataWriteAuthority(conversationId, target);
-    if (
-      this.getSync(conversationId) !== conversation
-      || this.#requireMetadataTarget(conversationId) !== target
-    ) {
-      throw new ConversationInputStageRejectedError(conversationId);
+    if (!conversation || !await this.#canWriteConversation(conversation)
+      || this.getSync(conversationId) !== conversation) {
+      throw new Error(`Conversation is no longer available: ${conversationId}`);
     }
   }
 
-  async stageConversationInput(
-    conversationId: string,
-    record: ConversationInputRecord,
-  ): Promise<void> {
-    const ledger = await this.#requireInputLedger(conversationId);
-    await this.#enqueuePersistence(conversationId, async () => {
-      if (!await this.#canWriteLedger(conversationId, ledger)) {
-        throw new ConversationInputStageRejectedError(conversationId);
-      }
-      const existing = ledger.records.find(({ id }) => id === record.id);
-      let insertedRecord: ConversationInputRecord | null = null;
-      if (!existing) {
-        insertedRecord = cloneJson(record);
-        ledger.records.push(insertedRecord);
-      }
-      try {
-        await this.#writeInputLedger(conversationId, ledger);
-        this.#markInputLedgerCanonical(conversationId, ledger);
-      } catch (error) {
-        if (insertedRecord) {
-          const insertedIndex = ledger.records.indexOf(insertedRecord);
-          if (insertedIndex !== -1) {
-            ledger.records.splice(insertedIndex, 1);
-          }
-        }
-        throw error;
-      }
-    });
-  }
-
-  async acceptConversationInput(
-    conversationId: string,
-    recordId: string,
-    nativeIds: {
-      providerUserMessageId?: string;
-      providerAssistantMessageId?: string;
-    } = {},
-  ): Promise<void> {
-    const ledger = await this.#requireInputLedger(conversationId);
-    const record = ledger.records.find(({ id }) => id === recordId);
-    if (!record) {
-      throw new Error(`Conversation input record not found: ${recordId}`);
-    }
-    record.state = 'accepted';
-    if (nativeIds.providerUserMessageId !== undefined) {
-      record.providerUserMessageId = nativeIds.providerUserMessageId;
-    }
-    if (nativeIds.providerAssistantMessageId !== undefined) {
-      record.providerAssistantMessageId = nativeIds.providerAssistantMessageId;
-    }
+  async recordConversationActivity(conversationId: string, timestamp: number): Promise<void> {
     const conversation = this.getSync(conversationId);
-    if (conversation) {
-      this.#attachRecordToInMemoryMessages(conversation, record);
-      conversation.lastActivityAt = Math.max(
-        conversation.lastActivityAt,
-        record.timestamp,
-      );
-    }
-
-    await this.#enqueuePersistence(conversationId, async () => {
-      if (!await this.#canWriteLedger(conversationId, ledger)) return;
-      await this.#writeInputLedger(conversationId, ledger);
-      this.#markInputLedgerCanonical(conversationId, ledger);
-      const current = this.getSync(conversationId);
-      if (current && await this.#canWriteConversation(current)) {
-        await this.#writeMetadata(current);
-      }
-    });
-  }
-
-  async discardStagedConversationInput(
-    conversationId: string,
-    recordId: string,
-  ): Promise<void> {
-    const ledger = await this.#requireInputLedger(conversationId);
-    const index = ledger.records.findIndex(({ id }) => id === recordId);
-    if (index === -1 || ledger.records[index].state !== 'staged') return;
-    ledger.records.splice(index, 1);
-    await this.#persistLedgerOnly(conversationId, ledger);
-  }
-
-  async getConversationInputLedger(
-    conversationId: string,
-  ): Promise<ConversationInputLedger | null> {
-    const state = await this.loadInputLedger(conversationId);
-    return state.status === 'loaded' ? cloneJson(state.ledger) : null;
-  }
-
-  async copyConversationInputsForFork(
-    sourceConversationId: string,
-    targetConversationId: string,
-    throughAssistantCheckpointId?: string,
-  ): Promise<void> {
-    const source = await this.#requireInputLedger(sourceConversationId);
-    let records = source.records;
-    if (throughAssistantCheckpointId !== undefined) {
-      const checkpointIndex = records.findIndex(
-        ({ providerAssistantMessageId }) =>
-          providerAssistantMessageId === throughAssistantCheckpointId,
-      );
-      records = checkpointIndex === -1 ? [] : records.slice(0, checkpointIndex + 1);
-    }
-    const target = await this.#requireInputLedger(targetConversationId);
-    target.records = cloneJson(records);
-    await this.#persistLedgerOnly(targetConversationId, target);
-  }
-
-  async truncateConversationInputsFrom(
-    conversationId: string,
-    inputIdentity: string,
-  ): Promise<void> {
-    const ledger = await this.#requireInputLedger(conversationId);
-    const index = ledger.records.findIndex(
-      (record) =>
-        record.id === inputIdentity
-        || record.localMessageId === inputIdentity
-        || record.providerUserMessageId === inputIdentity,
-    );
-    if (index === -1) return;
-    ledger.records.splice(index);
-    await this.#persistLedgerOnly(conversationId, ledger);
+    if (!conversation) return;
+    conversation.lastActivityAt = Math.max(conversation.lastActivityAt, timestamp);
+    await this.save(conversation);
   }
 
   async flushPersistence(conversationId: string): Promise<void> {
@@ -1205,7 +1017,6 @@ export class ConversationRepository {
   ): Promise<Conversation | null> {
     await this.ensureSelectedModel(conversation);
     if (!this.#isConversationCurrent(conversation, generation)) return null;
-    await this.#hydrateInputLedger(conversation);
     return this.#isConversationCurrent(conversation, generation)
       ? conversation
       : null;
@@ -1226,7 +1037,6 @@ export class ConversationRepository {
     if (!this.#isConversationCurrent(conversation, generation)) return null;
     if (!await this.#hydrateProviderHistory(conversation)) return null;
     if (!this.#isConversationCurrent(conversation, generation)) return null;
-    await this.#hydrateInputLedger(conversation);
     if (!this.#isConversationCurrent(conversation, generation)) return null;
     this.hydratedConversationIds.add(id);
     return conversation;
@@ -1500,10 +1310,6 @@ export class ConversationRepository {
         this.getSync(conversation.id)
         || this.deletedConversationIds.has(conversation.id)
         || this.deletingConversationIds.has(conversation.id)
-        || await this.persistence.isDeleted(
-          conversation.id,
-          this.#requireMetadataTarget(conversation.id),
-        )
       ) {
         return false;
       }
@@ -1615,263 +1421,6 @@ export class ConversationRepository {
     return { current: true, value };
   }
 
-  async #hydrateInputLedger(
-    conversation: Conversation,
-  ): Promise<void> {
-    const state = await this.loadInputLedger(conversation.id);
-    if (state.status !== 'loaded') return;
-    const correlation = this.#correlateInputLedger(conversation, state.ledger);
-    if (correlation.ledgerChanged) {
-      try {
-        await this.#persistLedgerOnly(conversation.id, state.ledger);
-      } catch {
-        // Native history remains usable; the accepted promotion stays dirty.
-      }
-    }
-    if (
-      correlation.lastAcceptedInputAt !== null
-      && correlation.lastAcceptedInputAt > conversation.lastActivityAt
-    ) {
-      conversation.lastActivityAt = correlation.lastAcceptedInputAt;
-      try {
-        await this.save(conversation);
-      } catch {
-        // The repaired activity remains in memory for the next metadata write.
-      }
-    }
-  }
-
-  private async loadInputLedger(conversationId: string): Promise<LedgerState> {
-    const existing = this.ledgerStates.get(conversationId);
-    if (existing) return existing;
-    const pending = this.ledgerLoadPromises.get(conversationId);
-    if (pending) return pending;
-
-    const load = this.persistence.loadInputLedger(conversationId).then(
-      (result): LedgerState => {
-        let state: LedgerState;
-        if (result.status === 'loaded') {
-          state = {
-            status: 'loaded',
-            ledger: result.ledger,
-            needsMigration: result.needsMigration,
-          };
-        } else if (result.status === 'missing') {
-          state = {
-            status: 'loaded',
-            ledger: {
-              schemaVersion: CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION,
-              conversationId,
-              records: [],
-            },
-            needsMigration: false,
-          };
-        } else {
-          state = {
-            status: 'unavailable',
-            reason: result.reason,
-          };
-        }
-        this.ledgerStates.set(conversationId, state);
-        return state;
-      },
-    );
-    this.ledgerLoadPromises.set(conversationId, load);
-    try {
-      return await load;
-    } finally {
-      if (this.ledgerLoadPromises.get(conversationId) === load) {
-        this.ledgerLoadPromises.delete(conversationId);
-      }
-    }
-  }
-
-  async #requireInputLedger(
-    conversationId: string,
-  ): Promise<ConversationInputLedger> {
-    const conversation = this.getSync(conversationId);
-    if (
-      !conversation
-      || this.deletedConversationIds.has(conversationId)
-      || this.deletingConversationIds.has(conversationId)
-    ) {
-      throw new Error(`Conversation not found: ${conversationId}`);
-    }
-    const state = await this.loadInputLedger(conversationId);
-    if (state.status === 'unavailable') {
-      throw new ConversationInputLedgerUnavailableError(
-        conversationId,
-        state.reason,
-      );
-    }
-    return state.ledger;
-  }
-
-  #correlateInputLedger(
-    conversation: Conversation,
-    ledger: ConversationInputLedger,
-  ): InputLedgerCorrelationResult {
-    const usedRecordIds = new Set<string>();
-    let ledgerChanged = false;
-    let lastAcceptedInputAt: number | null = null;
-    let userTurnOrdinal = 0;
-    for (
-      let messageIndex = 0;
-      messageIndex < conversation.messages.length;
-      messageIndex += 1
-    ) {
-      const message = conversation.messages[messageIndex];
-      if (!isCanonicalUserMessage(message)) continue;
-      userTurnOrdinal += 1;
-
-      let candidates: ConversationInputRecord[] = [];
-      if (message.userMessageId) {
-        candidates = ledger.records.filter(
-          (record) =>
-            record.providerUserMessageId === message.userMessageId
-            && !usedRecordIds.has(record.id),
-        );
-      }
-      if (candidates.length === 0) {
-        const visibleText = message.displayContent
-          ?? extractUserDisplayContent(message.content)
-          ?? message.content;
-        const digest = computeConversationInputDigest({
-          visibleText,
-          images: message.images ?? [],
-        });
-        candidates = ledger.records.filter(
-          (record) =>
-            record.userTurnOrdinal === userTurnOrdinal
-            && record.contentDigest === digest
-            && !usedRecordIds.has(record.id),
-        );
-      }
-      if (candidates.length !== 1) continue;
-
-      const record = candidates[0];
-      usedRecordIds.add(record.id);
-      if (
-        message.userMessageId
-        && record.providerUserMessageId !== message.userMessageId
-      ) {
-        record.providerUserMessageId = message.userMessageId;
-        ledgerChanged = true;
-      }
-      if (!record.providerAssistantMessageId) {
-        const assistant = findAssistantForCanonicalUserTurn(
-          conversation.messages,
-          messageIndex,
-        );
-        if (assistant?.assistantMessageId) {
-          record.providerAssistantMessageId = assistant.assistantMessageId;
-          ledgerChanged = true;
-        }
-      }
-      this.#attachRecordToMessage(message, record);
-      if (record.state === 'staged') {
-        record.state = 'accepted';
-        ledgerChanged = true;
-      }
-      lastAcceptedInputAt = lastAcceptedInputAt === null
-        ? record.timestamp
-        : Math.max(lastAcceptedInputAt, record.timestamp);
-    }
-    return { ledgerChanged, lastAcceptedInputAt };
-  }
-
-  #attachRecordToInMemoryMessages(
-    conversation: Conversation,
-    record: ConversationInputRecord,
-  ): void {
-    const userIndex = conversation.messages.findIndex(
-      (message) =>
-        message.role === 'user'
-        && (
-          message.id === record.localMessageId
-          || (
-            record.providerUserMessageId !== undefined
-            && message.userMessageId === record.providerUserMessageId
-          )
-        ),
-    );
-    if (userIndex === -1) return;
-    const userMessage = conversation.messages[userIndex];
-    this.#attachRecordToMessage(userMessage, record);
-    if (record.providerUserMessageId) {
-      userMessage.userMessageId = record.providerUserMessageId;
-    }
-    if (record.providerAssistantMessageId) {
-      const assistant = findAssistantForCanonicalUserTurn(
-        conversation.messages,
-        userIndex,
-      );
-      if (assistant) {
-        assistant.assistantMessageId = record.providerAssistantMessageId;
-      }
-    }
-  }
-
-  #attachRecordToMessage(
-    message: ChatMessage,
-    record: ConversationInputRecord,
-  ): void {
-    message.displayContent = record.rawDisplayText;
-    message.images = cloneJson(record.images);
-    message.executionInput = {
-      schemaVersion: CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION,
-      canonicalText: record.canonicalText,
-      ...(record.context ? { context: cloneJson(record.context) } : {}),
-    };
-  }
-
-  async #persistLedgerOnly(
-    conversationId: string,
-    ledger: ConversationInputLedger,
-  ): Promise<void> {
-    await this.#enqueuePersistence(conversationId, async () => {
-      if (!await this.#canWriteLedger(conversationId, ledger)) return;
-      await this.#writeInputLedger(conversationId, ledger);
-      this.#markInputLedgerCanonical(conversationId, ledger);
-    });
-  }
-
-  #markInputLedgerCanonical(
-    conversationId: string,
-    ledger: ConversationInputLedger,
-  ): void {
-    const state = this.ledgerStates.get(conversationId);
-    if (state?.status === 'loaded' && state.ledger === ledger) {
-      state.needsMigration = false;
-    }
-  }
-
-  async #canWriteLedger(
-    conversationId: string,
-    ledger: ConversationInputLedger,
-  ): Promise<boolean> {
-    const isCurrent = (): boolean => {
-      const state = this.ledgerStates.get(conversationId);
-      return (
-        state?.status === 'loaded'
-        && state.ledger === ledger
-        && !!this.getSync(conversationId)
-        && !this.deletedConversationIds.has(conversationId)
-        && !this.deletingConversationIds.has(conversationId)
-      );
-    };
-    if (
-      !isCurrent()
-      || await this.persistence.isDeleted(
-        conversationId,
-        this.#requireMetadataTarget(conversationId),
-      )
-    ) {
-      return false;
-    }
-    return isCurrent();
-  }
-
   #applySnapshot(
     conversation: Conversation,
     snapshot: ProviderSessionSnapshot,
@@ -1935,10 +1484,6 @@ export class ConversationRepository {
       this.getSync(conversation.id) === conversation
       && !this.deletedConversationIds.has(conversation.id)
       && !this.deletingConversationIds.has(conversation.id)
-      && !await this.persistence.isDeleted(
-        conversation.id,
-        this.#requireMetadataTarget(conversation.id),
-      )
     );
   }
 
@@ -1951,26 +1496,6 @@ export class ConversationRepository {
     return target === 'device'
       ? this.persistence.saveMetadata(metadata)
       : this.persistence.saveMetadata(metadata, target);
-  }
-
-  #writeInputLedger(
-    conversationId: string,
-    ledger: ConversationInputLedger,
-  ): Promise<void> {
-    const target = this.#requireMetadataTarget(conversationId);
-    return target === 'device'
-      ? this.persistence.saveInputLedger(conversationId, ledger)
-      : this.persistence.saveInputLedger(conversationId, ledger, target);
-  }
-
-  async #isDeletedInAnyMetadataTarget(
-    conversationId: string,
-  ): Promise<boolean> {
-    const [deviceDeleted, unscopedDeleted] = await Promise.all([
-      this.persistence.isDeleted(conversationId, 'device'),
-      this.persistence.isDeleted(conversationId, 'unscoped'),
-    ]);
-    return deviceDeleted || unscopedDeleted;
   }
 
   #requireMetadataTarget(conversationId: string): SessionMetadataAuthority {
@@ -2026,23 +1551,6 @@ export class ConversationRepository {
     };
   }
 
-  async #cleanupDeletedConversation(id: string): Promise<void> {
-    const target = this.metadataTargets.get(id);
-    if (target === 'device') {
-      await this.persistence.deleteCurrentMetadata(id);
-    } else if (target === 'unscoped') {
-      await this.persistence.deleteCurrentMetadata(id, target);
-    } else if (!target) {
-      await this.persistence.deleteCurrentMetadata(id, 'device');
-      await this.persistence.deleteCurrentMetadata(id, 'unscoped');
-    }
-    await this.persistence.deleteLegacyMetadata(id);
-    await this.persistence.deleteInputLedger(id);
-    this.ledgerStates.delete(id);
-    this.ledgerLoadPromises.delete(id);
-    this.linkedContentPathsByConversationId.delete(id);
-  }
-
   async #finalizeDeletedConversation(id: string): Promise<void> {
     let callbackError: unknown;
     try {
@@ -2051,7 +1559,7 @@ export class ConversationRepository {
       callbackError = error;
     }
 
-    await this.#cleanupDeletedConversation(id);
+    this.linkedContentPathsByConversationId.delete(id);
     if (callbackError !== undefined) {
       throw toError(callbackError);
     }
@@ -2147,18 +1655,6 @@ export class ConversationRepository {
       + (previewText.length > 50 ? '...' : '')
     );
   }
-}
-
-function findAssistantForCanonicalUserTurn(
-  messages: readonly ChatMessage[],
-  userIndex: number,
-): ChatMessage | undefined {
-  for (let index = userIndex + 1; index < messages.length; index += 1) {
-    const message = messages[index];
-    if (isCanonicalUserMessage(message)) return undefined;
-    if (message.role === 'assistant') return message;
-  }
-  return undefined;
 }
 
 function cloneJson<T>(value: T): T {

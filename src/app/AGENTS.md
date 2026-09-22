@@ -1,6 +1,6 @@
 # Application constraints
 
-- Cached conversations are projections, not independent mutation authority. Route changes through the repository's application APIs; retain binding/generation fences across hydration, deletion, accepted-input staging, and snapshot writes.
+- Cached conversations are projections, not independent mutation authority. Route changes through the repository's application APIs; retain binding/generation fences across hydration, deletion, provider handoff, and snapshot writes.
 - Historical model locators are recovery-only, never resumable bindings. Recovery is best-effort and must not overwrite a newer selection. Persist availability reconciliation before exposing recovered or fallback models; safe model-less shells may remain readable during deferred adoption.
 - Linked content is creation-only conversation identity. Ordinary patches, saves, forks after creation, and deletion cannot replace or clear it. Only explicit Vault-rename reconciliation rewrites it, including folder descendants; deletion preserves identity for Missing content.
 - Archive clears pin state and is independent of closing a tab.

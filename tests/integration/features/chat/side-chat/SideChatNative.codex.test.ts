@@ -76,7 +76,6 @@ describe('Codex side-chat native child', () => {
     const checkpoint = await env.send(source, 'Remember A');
     await env.send(source, 'Remember A2');
     const sourceBytes = await fs.readFile(native.sourceFile, 'utf8');
-    const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     const conversationsBefore = env.repository.list().map(conversation => conversation.id);
 
     const child = await traceSideChild(env, source, checkpoint, native.backend);
@@ -90,7 +89,6 @@ describe('Codex side-chat native child', () => {
     expect(native.operations.filter(operation => operation.method === 'thread/fork')).toHaveLength(1);
     expect(native.threads.get('codex-source')).toEqual(['codex-turn-1', 'codex-turn-2']);
     expect(await fs.readFile(native.sourceFile, 'utf8')).toBe(sourceBytes);
-    expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
     expect(env.repository.list().map(conversation => conversation.id)).toEqual(conversationsBefore);
 
     await env.send(source, 'Continue main');

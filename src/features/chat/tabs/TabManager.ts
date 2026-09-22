@@ -1610,10 +1610,8 @@ export class TabManager implements TabManagerInterface {
         latestMessageId: context.forkMode === 'full-session' ? context.messages.at(-1)?.id ?? null : undefined }
       : null;
     if (!this.#isForkSourceCurrent(sourceLease)) return null;
-    const sourceCoordinator = sourceTab?.executionCoordinator ?? null;
     const conversationId = await this.#createForkConversation(
       context,
-      sourceCoordinator,
       sourceLease,
     );
     if (!conversationId) return null;
@@ -1665,7 +1663,6 @@ export class TabManager implements TabManagerInterface {
     if (!this.#isForkSourceCurrent(sourceLease)) return false;
     const conversationId = await this.#createForkConversation(
       context,
-      sourceTab.executionCoordinator,
       sourceLease,
     );
     if (!conversationId) return false;
@@ -1691,7 +1688,6 @@ export class TabManager implements TabManagerInterface {
 
   async #createForkConversation(
     context: ForkContext,
-    sourceCoordinator: AssembledTabRuntime['executionCoordinator'] | null,
     sourceLease: ForkSourceLease | null,
   ): Promise<string | null> {
     const conversation = await this.plugin.createConversation({
@@ -1740,17 +1736,6 @@ export class TabManager implements TabManagerInterface {
         providerState: forkProviderState,
         ...(title && { title }),
       });
-      if (!this.#isForkSourceCurrent(sourceLease)) {
-        await deleteForkConversation();
-        return null;
-      }
-      if (sourceCoordinator && sourceLease?.conversationId) {
-        await sourceCoordinator.copyInputsForFork(
-          sourceLease.conversationId,
-          conversation.id,
-          context.forkMode === 'full-session' ? undefined : context.resumeAt,
-        );
-      }
       if (!this.#isForkSourceCurrent(sourceLease)) {
         await deleteForkConversation();
         return null;

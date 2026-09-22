@@ -1,8 +1,3 @@
-import {
-  computeConversationInputDigest,
-  CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION,
-  type ConversationInputRecord,
-} from '@/core/bootstrap/ConversationInputLedgerStorage';
 import type {
   ChatRewindMode,
   ChatRewindPreview,
@@ -58,9 +53,7 @@ export interface ChatTurnMessageBinding {
 }
 
 export interface ChatTurnSubmission {
-  readonly inputRecordId: string;
-  readonly localMessageId?: string;
-  readonly userTurnOrdinal: number;
+  readonly submissionId: string;
   readonly timestamp: number;
   readonly rawDisplayText: string;
   readonly canonicalText: string;
@@ -85,32 +78,8 @@ export interface ChatExecutionPersistence {
     snapshot: ProviderSessionSnapshot,
   ): Promise<boolean>;
   releaseExecutionBinding(conversationId: string, bindingId: string): void;
-  stageConversationInput(
-    conversationId: string,
-    record: ConversationInputRecord,
-  ): Promise<void>;
   assertConversationExecutionAuthority(conversationId: string): Promise<void>;
-  acceptConversationInput(
-    conversationId: string,
-    recordId: string,
-    nativeIds?: {
-      providerUserMessageId?: string;
-      providerAssistantMessageId?: string;
-    },
-  ): Promise<void>;
-  discardStagedConversationInput(
-    conversationId: string,
-    recordId: string,
-  ): Promise<void>;
-  copyConversationInputsForFork(
-    sourceConversationId: string,
-    targetConversationId: string,
-    throughAssistantCheckpointId?: string,
-  ): Promise<void>;
-  truncateConversationInputsFrom(
-    conversationId: string,
-    inputIdentity: string,
-  ): Promise<void>;
+  recordConversationActivity(conversationId: string, timestamp: number): Promise<void>;
 }
 
 export type MissingProviderSessionResolution =
@@ -124,7 +93,7 @@ export interface ChatExecutionEventContext {
   readonly bindingId: string;
   readonly providerGeneration: number;
   readonly session: ProviderExecutionSession;
-  readonly inputRecordId?: string;
+  readonly submissionId?: string;
 }
 
 export interface ChatExecutionCoordinatorDeps {
@@ -186,9 +155,8 @@ interface SessionBinding {
 interface ActiveExecution {
   readonly binding: SessionBinding;
   readonly run: ProviderExecutionRun;
+  readonly submission: ChatTurnSubmission;
   readonly requestController: AbortController;
-  readonly inputRecordId: string;
-  readonly messages?: ChatTurnMessageBinding;
   terminationOverride: 'cancelled' | 'invalidated' | null;
 }
 
@@ -199,10 +167,9 @@ interface PendingInteraction {
 
 interface PendingSteerAttempt {
   readonly conversationId: string;
-  readonly inputRecordId: string;
   acceptedByProviderEvent: boolean;
   acceptancePromise: Promise<void> | null;
-  nativeUserMessageAcceptancePromise: Promise<void> | null;
+  readonly submission: ChatTurnSubmission;
 }
 
 export class ChatExecutionInteractionStaleError extends Error {
@@ -397,23 +364,10 @@ export class ChatExecutionCoordinator {
       throw new Error('A chat execution is already active');
     }
     const conversation = this.#requireConversation();
-    const record = createInputRecord(submission);
-    try {
-      await this.deps.persistence.stageConversationInput(
-        conversation.conversationId,
-        record,
-      );
-    } catch (error) {
-      throw new ChatExecutionPreHandoffError(error);
-    }
-
     const requestController = new AbortController();
     let binding: SessionBinding;
     let run: ProviderExecutionRun;
     try {
-      if (!sameConversationBinding(conversation, this.#conversation)) {
-        throw new Error('Chat execution binding changed before provider handoff');
-      }
       await this.prepare();
       if (!sameConversationBinding(conversation, this.#conversation)) {
         throw new Error('Chat execution binding changed before provider handoff');
@@ -429,11 +383,6 @@ export class ChatExecutionCoordinator {
         createExecutionRequest(submission, requestController.signal),
       );
     } catch (error) {
-      try {
-        await this.#discardPreSendRecord(conversation.conversationId, record.id);
-      } catch (discardError) {
-        throw new ChatExecutionPreHandoffError(discardError);
-      }
       throw new ChatExecutionPreHandoffError(error);
     }
 
@@ -441,8 +390,7 @@ export class ChatExecutionCoordinator {
       binding,
       run,
       requestController,
-      inputRecordId: record.id,
-      messages: submission.messages,
+      submission,
       terminationOverride: null,
     };
     this.#activeExecution = active;
@@ -475,12 +423,9 @@ export class ChatExecutionCoordinator {
     await this.#touchWarmSlot();
     const binding = this.#requireCurrentSessionBinding();
     if (!isSteerableExecutionSession(binding.session)) return false;
-    const record = createInputRecord(submission);
     try {
-      await this.deps.persistence.stageConversationInput(
-        binding.conversation.conversationId,
-        record,
-      );
+      await this.deps.persistence.assertConversationExecutionAuthority(binding.conversation.conversationId);
+      if (!this.#isBindingCurrent(binding)) throw new Error('Conversation binding changed before steering');
     } catch (error) {
       throw new ChatExecutionPreHandoffError(error);
     }
@@ -488,10 +433,9 @@ export class ChatExecutionCoordinator {
       acceptedByProviderEvent: false,
       acceptancePromise: null,
       conversationId: binding.conversation.conversationId,
-      inputRecordId: record.id,
-      nativeUserMessageAcceptancePromise: null,
+      submission,
     };
-    this.#pendingSteerAttempts.set(record.id, attempt);
+    this.#pendingSteerAttempts.set(submission.submissionId, attempt);
     const controller = new AbortController();
     let retainForReconciliation = false;
     try {
@@ -513,35 +457,25 @@ export class ChatExecutionCoordinator {
         await this.#acceptPendingSteerAttempt(attempt);
         return true;
       }
-      if (!accepted) {
-        try {
-          await this.deps.persistence.discardStagedConversationInput(
-            binding.conversation.conversationId,
-            record.id,
-          );
-        } catch (error) {
-          throw new ChatExecutionPreHandoffError(error);
-        }
-        return false;
-      }
+      if (!accepted) return false;
       retainForReconciliation = true;
       await this.#acceptPendingSteerAttempt(attempt);
       return true;
     } finally {
       if (
         !retainForReconciliation
-        && this.#pendingSteerAttempts.get(record.id) === attempt
+        && this.#pendingSteerAttempts.get(submission.submissionId) === attempt
       ) {
-        this.#pendingSteerAttempts.delete(record.id);
+        this.#pendingSteerAttempts.delete(submission.submissionId);
       }
     }
   }
 
   async acceptSteerFromProviderEvent(
-    inputRecordId: string,
+    submissionId: string,
     nativeUserMessageId?: string,
   ): Promise<boolean> {
-    const attempt = this.#pendingSteerAttempts.get(inputRecordId);
+    const attempt = this.#pendingSteerAttempts.get(submissionId);
     if (!attempt) return false;
 
     attempt.acceptedByProviderEvent = true;
@@ -549,15 +483,15 @@ export class ChatExecutionCoordinator {
       await this.#acceptPendingSteerAttempt(attempt, nativeUserMessageId);
       return true;
     } finally {
-      if (this.#pendingSteerAttempts.get(inputRecordId) === attempt) {
-        this.#pendingSteerAttempts.delete(inputRecordId);
+      if (this.#pendingSteerAttempts.get(submissionId) === attempt) {
+        this.#pendingSteerAttempts.delete(submissionId);
         this.notifyMayCool();
       }
     }
   }
 
-  releaseSteerCorrelation(inputRecordId: string): void {
-    this.#pendingSteerAttempts.delete(inputRecordId);
+  releaseSteerCorrelation(submissionId: string): void {
+    this.#pendingSteerAttempts.delete(submissionId);
     this.notifyMayCool();
   }
 
@@ -614,10 +548,6 @@ export class ChatExecutionCoordinator {
       mode,
     );
     if (!result.canRewind) return result;
-    await this.deps.persistence.truncateConversationInputsFrom(
-      binding.conversation.conversationId,
-      userMessageId,
-    );
     if (!this.#isBindingCurrent(binding)) return result;
     if (result.sessionStrategy === 'checkpoint-resume') {
       await this.#releaseSessionBinding();
@@ -639,22 +569,6 @@ export class ChatExecutionCoordinator {
     return sessionId
       ? { sessionId, resumeAt: assistantCheckpointId }
       : null;
-  }
-
-  async copyInputsForFork(
-    sourceConversationId: string,
-    targetConversationId: string,
-    throughAssistantCheckpointId?: string,
-  ): Promise<void> {
-    const conversation = this.#requireConversation();
-    if (conversation.conversationId !== sourceConversationId) {
-      throw new Error('Fork source conversation binding is stale');
-    }
-    await this.deps.persistence.copyConversationInputsForFork(
-      sourceConversationId,
-      targetConversationId,
-      throughAssistantCheckpointId,
-    );
   }
 
   dispose(): Promise<void> {
@@ -740,25 +654,19 @@ export class ChatExecutionCoordinator {
 
       if (event.type === 'turn_started' && event.accepted) {
         accepted = true;
+        attachSubmittedContent(active.submission);
         nativeUserMessageId = event.nativeUserMessageId ?? nativeUserMessageId;
-        attachUserMessageId(active.messages, nativeUserMessageId);
-        await this.deps.persistence.acceptConversationInput(
-          active.binding.conversation.conversationId,
-          active.inputRecordId,
-          { providerUserMessageId: nativeUserMessageId },
+        attachUserMessageId(active.submission.messages, nativeUserMessageId);
+        await this.deps.persistence.recordConversationActivity(
+          active.binding.conversation.conversationId, active.submission.timestamp,
         );
       } else if (event.type === 'user_message_started' && accepted) {
         nativeUserMessageId = event.nativeUserMessageId ?? nativeUserMessageId;
-        attachUserMessageId(active.messages, nativeUserMessageId);
-        await this.deps.persistence.acceptConversationInput(
-          active.binding.conversation.conversationId,
-          active.inputRecordId,
-          { providerUserMessageId: nativeUserMessageId },
-        );
+        attachUserMessageId(active.submission.messages, nativeUserMessageId);
       } else if (event.type === 'assistant_message_started') {
         nativeAssistantMessageId =
           event.nativeAssistantId ?? nativeAssistantMessageId;
-        attachAssistantMessageId(active.messages, nativeAssistantMessageId);
+        attachAssistantMessageId(active.submission.messages, nativeAssistantMessageId);
       } else if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
         await this.#persistSnapshot(active.binding, event.snapshot);
       } else if (event.type === 'turn_completed') {
@@ -768,20 +676,9 @@ export class ChatExecutionCoordinator {
         nativeCheckpointId =
           event.nativeCheckpointId ?? nativeCheckpointId;
         attachAssistantMessageId(
-          active.messages,
+          active.submission.messages,
           nativeAssistantMessageId ?? nativeCheckpointId,
         );
-        if (accepted) {
-          await this.deps.persistence.acceptConversationInput(
-            active.binding.conversation.conversationId,
-            active.inputRecordId,
-            {
-              providerUserMessageId: nativeUserMessageId,
-              providerAssistantMessageId:
-                nativeAssistantMessageId ?? nativeCheckpointId,
-            },
-          );
-        }
       } else if (event.type === 'cancelled' || event.type === 'execution_error') {
         terminal = event;
       }
@@ -789,7 +686,7 @@ export class ChatExecutionCoordinator {
       try {
         await this.deps.onRequestedEvent?.(
           event,
-          this.#createEventContext(active.binding, active.inputRecordId),
+          this.#createEventContext(active.binding, active.submission.submissionId),
         );
       } catch (error) {
         if (!terminal) throw error;
@@ -799,10 +696,6 @@ export class ChatExecutionCoordinator {
     }
 
     if (isDefinitePreHandoffRejection(terminal, accepted)) {
-      await this.#discardPreSendRecord(
-        active.binding.conversation.conversationId,
-        active.inputRecordId,
-      );
       throw new ChatExecutionPreHandoffError(
         terminalSinkFailure?.error ?? terminal,
       );
@@ -810,16 +703,6 @@ export class ChatExecutionCoordinator {
     const unacceptedMissingSession = isUnacceptedMissingSession(terminal, accepted);
     const missingSessionTerminal = terminal?.type === 'execution_error'
       && terminal.category === 'provider-session-missing';
-    if (unacceptedMissingSession) {
-      try {
-        await this.#discardPreSendRecord(
-          active.binding.conversation.conversationId,
-          active.inputRecordId,
-        );
-      } catch (error) {
-        throw new ChatExecutionPreHandoffError(error);
-      }
-    }
     if (terminalSinkFailure && !missingSessionTerminal) {
       throw terminalSinkFailure.error;
     }
@@ -1129,39 +1012,12 @@ export class ChatExecutionCoordinator {
     attempt: PendingSteerAttempt,
     nativeUserMessageId?: string,
   ): Promise<void> {
-    if (!attempt.acceptancePromise) {
-      if (nativeUserMessageId) {
-        attempt.nativeUserMessageAcceptancePromise =
-          this.deps.persistence.acceptConversationInput(
-            attempt.conversationId,
-            attempt.inputRecordId,
-            { providerUserMessageId: nativeUserMessageId },
-          );
-        attempt.acceptancePromise = attempt.nativeUserMessageAcceptancePromise;
-      } else {
-        attempt.acceptancePromise = this.deps.persistence.acceptConversationInput(
-          attempt.conversationId,
-          attempt.inputRecordId,
-        );
-      }
-    }
-    if (!nativeUserMessageId) return attempt.acceptancePromise;
-    if (attempt.nativeUserMessageAcceptancePromise) {
-      return attempt.nativeUserMessageAcceptancePromise;
-    }
-
-    const persistNativeUserMessageId = (): Promise<void> => (
-      this.deps.persistence.acceptConversationInput(
-        attempt.conversationId,
-        attempt.inputRecordId,
-        { providerUserMessageId: nativeUserMessageId },
-      )
+    attachSubmittedContent(attempt.submission);
+    attachUserMessageId(attempt.submission.messages, nativeUserMessageId);
+    attempt.acceptancePromise ??= this.deps.persistence.recordConversationActivity(
+      attempt.conversationId, attempt.submission.timestamp,
     );
-    attempt.nativeUserMessageAcceptancePromise = attempt.acceptancePromise.then(
-      persistNativeUserMessageId,
-      persistNativeUserMessageId,
-    );
-    return attempt.nativeUserMessageAcceptancePromise;
+    return attempt.acceptancePromise;
   }
 
   #requireCurrentSessionBinding(): SessionBinding {
@@ -1187,14 +1043,14 @@ export class ChatExecutionCoordinator {
 
   #createEventContext(
     binding: SessionBinding,
-    inputRecordId?: string,
+    submissionId?: string,
   ): ChatExecutionEventContext {
     return {
       conversationId: binding.conversation.conversationId,
       bindingId: binding.bindingId,
       providerGeneration: binding.generation,
       session: binding.session,
-      inputRecordId,
+      submissionId,
     };
   }
 
@@ -1294,19 +1150,21 @@ export class ChatExecutionCoordinator {
     this.notifyMayCool();
   }
 
-  async #discardPreSendRecord(
-    conversationId: string,
-    recordId: string,
-  ): Promise<void> {
-    await this.deps.persistence.discardStagedConversationInput(
-      conversationId,
-      recordId,
-    );
-  }
-
   #fireAndReport(promise: Promise<unknown>): void {
     void promise.catch((error) => this.deps.onError?.(error));
   }
+}
+
+function attachSubmittedContent(submission: ChatTurnSubmission): void {
+  const user = submission.messages?.user;
+  if (!user) return;
+  user.displayContent = submission.rawDisplayText;
+  user.images = [...submission.images];
+  user.executionInput = {
+    schemaVersion: 1,
+    canonicalText: submission.canonicalText,
+    ...(submission.context ? { context: submission.context } : {}),
+  };
 }
 
 function createExecutionRequest(
@@ -1328,29 +1186,6 @@ function createExecutionRequest(
     configuration: submission.configuration,
     toolPolicy: submission.toolPolicy,
     signal,
-  };
-}
-
-function createInputRecord(
-  submission: ChatTurnSubmission,
-): ConversationInputRecord {
-  const context = submission.context ?? {};
-  const ledgerContext = Object.keys(context).length > 0 ? context : undefined;
-  return {
-    schemaVersion: CONVERSATION_INPUT_LEDGER_SCHEMA_VERSION,
-    id: submission.inputRecordId,
-    userTurnOrdinal: submission.userTurnOrdinal,
-    state: 'staged',
-    localMessageId: submission.localMessageId,
-    timestamp: submission.timestamp,
-    rawDisplayText: submission.rawDisplayText,
-    canonicalText: submission.canonicalText,
-    context: ledgerContext,
-    images: [...submission.images],
-    contentDigest: computeConversationInputDigest({
-      visibleText: submission.rawDisplayText,
-      images: submission.images,
-    }),
   };
 }
 

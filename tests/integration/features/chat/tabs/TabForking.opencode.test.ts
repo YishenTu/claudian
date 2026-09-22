@@ -98,17 +98,14 @@ describe('OpenCode fork integration', () => {
     await env.send(source, 'Remember apples');
     const selected = await env.send(source, 'Remember pears');
     const sourceHistory = structuredClone(native.sessions.get('ses-source'));
-    const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     const child = await env.fork(source, selected);
     expect(child).toBeDefined();
     expect(child!.messages).toHaveLength(4);
-    expect((await env.repository.getConversationInputLedger(child!.id))?.records.map(record => record.canonicalText)).toEqual(['Remember apples', 'Remember pears']);
     const fork = await env.open(native.backend, child!);
     await env.send(fork, 'Continue here');
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'ses-child-1', context: ['Remember apples', 'Reply 1', 'Remember pears', 'Reply 2'] });
     expect(child!.sessionId).toBe('ses-child-1');
     expect(native.sessions.get('ses-source')).toEqual(sourceHistory);
-    expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
     await env.send(source, 'Keep original going');
     expect(native.prompts.at(-1)?.context).toEqual(['Remember apples', 'Reply 1', 'Remember pears', 'Reply 2']);
   });
@@ -125,7 +122,6 @@ describe('OpenCode fork integration', () => {
     const fork = await env.open(native.backend, restored);
     const nested = await env.fork(fork, restored.messages[1]);
     expect(nested).toBeDefined();
-    expect((await env.repository.getConversationInputLedger(nested!.id))?.records.map(record => record.canonicalText)).toEqual(['Remember apples']);
     const nestedTab = await env.open(native.backend, nested!);
     await env.send(nestedTab, 'Continue nested');
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'ses-child-2', context: ['Remember apples', 'Reply 1'] });

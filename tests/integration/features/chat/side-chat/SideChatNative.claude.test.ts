@@ -115,7 +115,6 @@ describe('Claude side-chat native child', () => {
     const backend = new ClaudeExecutionBackend(env.host);
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
-    const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     const conversationsBefore = env.repository.list().map(conversation => conversation.id);
 
     const child = await traceSideChild(env, source, checkpoint, backend);
@@ -129,8 +128,6 @@ describe('Claude side-chat native child', () => {
     const second = await child!.send('Use A and B');
     expect(second.accepted).toBe(true);
     expect(native.prompts.at(-1)).toMatchObject({ context: ['claude-assistant-1', 'claude-assistant-2'], sessionId: 'claude-child' });
-
-    expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
 
     await env.send(source, 'Continue with A only');
     expect(native.prompts.at(-1)).toMatchObject({ context: ['claude-assistant-1'], sessionId: 'claude-source' });

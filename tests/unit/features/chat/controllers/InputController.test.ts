@@ -414,11 +414,9 @@ describe('InputController coordinator execution', () => {
       canonicalText: 'first',
       context: { linkedContent: { path: 'Projects' } },
       rawDisplayText: 'first',
-      userTurnOrdinal: 1,
       toolPolicy: { kind: 'provider-default' },
     });
     expect(first.conversationHistory).toEqual([]);
-    expect(second.userTurnOrdinal).toBe(2);
     expect(second.context).not.toHaveProperty('linkedContent');
     expect(second.conversationHistory).toHaveLength(2);
     expect(fixture.deps.conversationController.save).toHaveBeenCalledTimes(2);
@@ -541,7 +539,6 @@ describe('InputController coordinator execution', () => {
         editorSelection: editorContext,
       },
       rawDisplayText: 'B',
-      userTurnOrdinal: 2,
     });
     expect(submission.conversationHistory?.map(message => message.id)).toEqual([
       'user-a',
@@ -1303,7 +1300,7 @@ describe('InputController coordinator execution', () => {
       await mainTurn;
 
       expect(fixture.coordinator.acceptSteerFromProviderEvent).toHaveBeenCalledWith(
-        submission.inputRecordId,
+        submission.submissionId,
         'native-steer-user',
       );
       expect(fixture.state.messages.filter(message => (
@@ -1317,7 +1314,7 @@ describe('InputController coordinator execution', () => {
       expect((fixture.controller as any).pendingSteersByConversation.has('conversation-1'))
         .toBe(false);
       expect(fixture.coordinator.releaseSteerCorrelation).toHaveBeenCalledWith(
-        submission.inputRecordId,
+        submission.submissionId,
       );
     },
   );
@@ -1347,7 +1344,7 @@ describe('InputController coordinator execution', () => {
     ));
 
     expect(fixture.coordinator.acceptSteerFromProviderEvent).toHaveBeenCalledWith(
-      submission.inputRecordId,
+      submission.submissionId,
       'native-after-ack',
     );
     expect(fixture.state.messages.find(message => (
@@ -1386,7 +1383,7 @@ describe('InputController coordinator execution', () => {
     expect((fixture.controller as any).pendingSteersByConversation.has('conversation-1'))
       .toBe(false);
     expect(fixture.coordinator.releaseSteerCorrelation).toHaveBeenCalledWith(
-      submission.inputRecordId,
+      submission.submissionId,
     );
   });
 
@@ -1905,7 +1902,6 @@ describe('InputController coordinator execution', () => {
       context: expect.objectContaining({
         linkedContent: { path: 'Projects/Plan.md' },
       }),
-      userTurnOrdinal: 1,
     }));
   });
 
@@ -1975,11 +1971,9 @@ describe('InputController coordinator execution', () => {
     expect(submissions).toHaveLength(2);
     expect(submissions[0]).toMatchObject({
       context: { linkedContent: { path: 'Projects/Plan.md' } },
-      userTurnOrdinal: 1,
     });
     expect(submissions[1]).toMatchObject({
       context: { linkedContent: { path: 'Projects/Plan.md' } },
-      userTurnOrdinal: 1,
     });
     expect(fixture.plugin.createConversation).toHaveBeenCalledTimes(1);
   });
@@ -2012,7 +2006,6 @@ describe('InputController coordinator execution', () => {
     expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
       context: { linkedContent: { path: 'Projects/Plan.md' } },
       rawDisplayText: 'Promoted queued turn',
-      userTurnOrdinal: 1,
     }));
   });
 
@@ -2052,7 +2045,6 @@ describe('InputController coordinator execution', () => {
     }));
     expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
       context: { linkedContent: { path: 'Projects/Old' } },
-      userTurnOrdinal: 1,
     }));
     expect(linkedContentController.getSnapshot()).toMatchObject({
       mode: 'locked',

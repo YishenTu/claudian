@@ -44,12 +44,9 @@ describe('Pi fork integration', () => {
     expect(first.assistantMessageId).toBe('pi-assistant-1');
     expect(second.assistantMessageId).toBe('pi-assistant-2');
     const sourceBefore = await fs.readFile(native.sourceFile, 'utf8');
-    const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     const child = await env.fork(source, checkpoint === 1 ? first : second);
     expect(child).toBeDefined();
     expect(child!.messages.map(message => message.id)).toEqual(source.conversation.messages.slice(0, checkpoint * 2).map(message => message.id));
-    expect((await env.repository.getConversationInputLedger(child!.id))?.records.map(record => record.canonicalText))
-      .toEqual(['Remember apples', 'Remember pears'].slice(0, checkpoint));
     const fork = await env.open(native.backend, child!);
     await env.send(fork, 'Continue here');
     expect((await native.contexts()).at(-1)?.ids).toEqual(
@@ -58,7 +55,6 @@ describe('Pi fork integration', () => {
     expect((await native.contexts()).at(-1)?.file).not.toBe(native.sourceFile);
     expect(child!.sessionId).not.toBe(source.conversation.sessionId);
     expect(await fs.readFile(native.sourceFile, 'utf8')).toBe(sourceBefore);
-    expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
     await env.send(source, 'Keep original going');
     expect((await native.contexts()).at(-1)).toEqual({ file: native.sourceFile, ids: ['pi-user-1', 'pi-assistant-1', 'pi-user-2', 'pi-assistant-2'] });
   });

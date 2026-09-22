@@ -90,8 +90,7 @@ export async function createForkTestEnvironment() {
     const history = [...chat.conversation.messages];
     chat.conversation.messages.push(user, assistant);
     const result = await chat.coordinator.execute({
-      inputRecordId: user.id, localMessageId: user.id,
-      userTurnOrdinal: history.filter(message => message.role === 'user').length + 1,
+      submissionId: user.id,
       timestamp: user.timestamp, rawDisplayText: text, canonicalText: text, images: [],
       conversationHistory: history, messages: { user, assistant },
       configuration: { model: { claude: 'claude-sonnet-4-5', codex: 'gpt-5', grok: 'grok/grok-code-fast-1', pi: 'pi:anthropic/claude-sonnet-4', opencode: 'opencode:test/model' }[chat.conversation.providerId], permissionMode: 'normal', systemInstructions: { kind: 'explicit', instructions: 'Answer the user.' } },
@@ -116,7 +115,6 @@ export async function createForkTestEnvironment() {
         .buildForkProviderState(context.sourceSessionId, context.resumeAt, context.sourceProviderState, root);
       child = await repository.create({ providerId });
       await repository.update(child.id, { messages: context.messages, providerState });
-      await chat.coordinator.copyInputsForFork(chat.conversation.id, child.id, context.forkMode === 'full-session' ? undefined : context.resumeAt);
     }, () => true);
     return child;
   }

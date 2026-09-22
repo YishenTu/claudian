@@ -65,17 +65,14 @@ describe('Claude fork integration', () => {
     const selected = await env.send(source, 'Remember apples');
     await env.send(source, 'Remember pears');
     expect(selected.assistantMessageId).toBe('claude-assistant-1');
-    const sourceLedger = await env.repository.getConversationInputLedger(source.conversation.id);
     const child = await env.fork(source, selected);
     expect(child?.messages).toHaveLength(2);
-    expect((await env.repository.getConversationInputLedger(child!.id))?.records.map(record => record.canonicalText)).toEqual(['Remember apples']);
     const fork = await env.open(backend, child!);
     await env.send(fork, 'Continue here');
     expect(native.launches.at(-1)).toMatchObject({ resume: 'claude-source', resumeSessionAt: 'claude-assistant-1', forkSession: true });
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'claude-child', context: ['claude-assistant-1'] });
     expect(child!.sessionId).toBe('claude-child');
     expect(native.sessions.get('claude-source')).toEqual(['claude-assistant-1', 'claude-assistant-2']);
-    expect(await env.repository.getConversationInputLedger(source.conversation.id)).toEqual(sourceLedger);
     await env.send(source, 'Keep original going');
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'claude-source', context: ['claude-assistant-1', 'claude-assistant-2'] });
   });
