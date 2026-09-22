@@ -15,7 +15,9 @@ export interface OpencodeSessionForkOptions {
 export async function forkOpencodeSession(options: OpencodeSessionForkOptions): Promise<string> {
   const subprocess = new AcpSubprocess({
     command: options.cliPath,
-    args: ['acp', `--cwd=${options.cwd}`],
+    // OpenCode V2 removed the `acp --cwd` flag; the working directory is
+    // conveyed through the spawned process cwd and the session params.
+    args: ['acp'],
     cwd: options.cwd,
     env: options.environment,
   });

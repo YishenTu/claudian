@@ -26,6 +26,7 @@ export interface ManagedStdioProcessOptions {
   killProcessTree?: boolean;
   sigkillTimeoutMs?: number;
   stderrBufferLimit?: number;
+  onStdoutData?: (chunk: Buffer | string) => void;
   windowsVerbatimArguments?: boolean;
   stdio?: 'pipe' | ['pipe', 'pipe', 'pipe'];
 }
@@ -53,6 +54,7 @@ export class ManagedStdioProcess {
   private startAttempted = false;
   private stderrBuffer = '';
   private stderrDataListener: ((chunk: Buffer | string) => void) | null = null;
+  private stdoutDataListener: ((chunk: Buffer | string) => void) | null = null;
 
   constructor(private readonly options: ManagedStdioProcessOptions) {}
 
@@ -111,6 +113,10 @@ export class ManagedStdioProcess {
       const limit = this.options.stderrBufferLimit ?? DEFAULT_STDERR_BUFFER_LIMIT;
       this.stderrBuffer = `${this.stderrBuffer}${text}`.slice(-limit);
     };
+    if (this.options.onStdoutData) {
+      this.stdoutDataListener = this.options.onStdoutData;
+      proc.stdout.on('data', this.stdoutDataListener);
+    }
     proc.stderr.on('data', this.stderrDataListener);
     proc.on('spawn', this.handleSpawn);
     proc.on('error', this.handleError);
@@ -286,6 +292,10 @@ export class ManagedStdioProcess {
     if (this.stderrDataListener) {
       proc.stderr.off('data', this.stderrDataListener);
       this.stderrDataListener = null;
+    }
+    if (this.stdoutDataListener) {
+      proc.stdout.off('data', this.stdoutDataListener);
+      this.stdoutDataListener = null;
     }
   }
 

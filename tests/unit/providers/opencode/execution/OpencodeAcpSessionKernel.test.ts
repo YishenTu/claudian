@@ -1,3 +1,35 @@
+const mockAcpSubprocessCtor = jest.fn();
+const mockPrepareLaunchArtifacts = jest.fn();
+
+jest.mock('@/providers/acp', () => {
+  const actual = jest.requireActual('@/providers/acp');
+  return {
+    ...actual,
+    AcpClientConnection: jest.fn().mockImplementation(() => ({
+      dispose: jest.fn(),
+      initialize: jest.fn().mockResolvedValue({}),
+    })),
+    AcpJsonRpcTransport: jest.fn().mockImplementation(() => ({
+      dispose: jest.fn(),
+      onClose: jest.fn().mockReturnValue(jest.fn()),
+      start: jest.fn(),
+    })),
+    AcpSubprocess: mockAcpSubprocessCtor,
+  };
+});
+
+jest.mock('@/providers/opencode/runtime/OpencodeLaunchArtifacts', () => {
+  const actual = jest.requireActual(
+    '@/providers/opencode/runtime/OpencodeLaunchArtifacts',
+  );
+  return {
+    ...actual,
+    prepareOpencodeLaunchArtifacts: (...args: unknown[]) => (
+      mockPrepareLaunchArtifacts(...args)
+    ),
+  };
+});
+
 import {
   mkdirSync,
   mkdtempSync,
@@ -9,12 +41,14 @@ import {
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import type { ProviderHost } from '@/core/providers/ProviderHost';
 import {
   type AcpRequestPermissionRequest,
   JsonRpcErrorResponse,
 } from '@/providers/acp';
 import {
   classifyOpencodeSessionLoadError,
+  DefaultOpencodeAcpSessionKernel,
   OpencodeSessionMissingError,
   presentOpencodePermission,
   resolveOpencodeReadPath,
@@ -166,5 +200,72 @@ describe('OpenCode session/load errors', () => {
     new JsonRpcErrorResponse('session/prompt', -32000, 'Session not found'),
   ])('preserves non-missing or uncorrelated failures: %p', (error) => {
     expect(classifyOpencodeSessionLoadError(error, 'valid-session')).toBe(error);
+  });
+});
+
+describe('OpencodeAcpSessionKernel launch compatibility', () => {
+  // Unit level: launch-spec regression at the mocked provider subprocess
+  // boundary, covering OpenCode V2 which removed the `acp --cwd` flag.
+  const vaultWorkingDirectory = path.join(tmpdir(), 'claudian-opencode-launch');
+  let capturedSpec: { args: string[]; command: string; cwd: string } | null;
+
+  beforeEach(() => {
+    capturedSpec = null;
+    mockAcpSubprocessCtor.mockImplementation((spec: {
+      args: string[];
+      command: string;
+      cwd: string;
+    }) => {
+      capturedSpec = spec;
+      return {
+        stdin: {},
+        stdout: {},
+        onClose: jest.fn().mockReturnValue(jest.fn()),
+        shutdown: jest.fn().mockResolvedValue(undefined),
+        start: jest.fn(),
+      };
+    });
+    mockPrepareLaunchArtifacts.mockResolvedValue({
+      configContent: '{}',
+      configPath: path.join(vaultWorkingDirectory, 'config.json'),
+      databasePath: ':memory:',
+    });
+  });
+
+  it('starts `opencode acp` without the removed `--cwd` flag', async () => {
+    const plugin = {
+      getResolvedProviderCliPath: jest.fn().mockResolvedValue('/usr/bin/opencode'),
+      manifest: { version: '0.0.0-test' },
+      settings: {},
+    } as unknown as ProviderHost;
+    const kernel = new DefaultOpencodeAcpSessionKernel({
+      config: {
+        interactionPort: {
+          askUserQuestion: jest.fn(),
+          dismissInteraction: jest.fn(),
+          requestApproval: jest.fn(),
+        },
+        lifecycle: 'ephemeral',
+        nativePersistence: 'disabled-if-supported',
+        vaultWorkingDirectory,
+      },
+      getActiveTurnId: () => null,
+      onClosed: jest.fn(),
+      onNotification: jest.fn(),
+      plugin,
+      sessionInstanceId: 'launch-compat-test',
+    });
+
+    await kernel.connect({
+      profile: 'passive',
+      systemInstructions: { kind: 'explicit', instructions: 'test instructions' },
+    });
+
+    expect(mockAcpSubprocessCtor).toHaveBeenCalledTimes(1);
+    expect(capturedSpec).not.toBeNull();
+    expect(capturedSpec?.args).toEqual(['acp']);
+    expect(capturedSpec?.cwd).toBe(vaultWorkingDirectory);
+
+    await kernel.dispose();
   });
 });

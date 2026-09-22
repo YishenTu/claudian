@@ -71,6 +71,20 @@ describe('process probe bounds', () => {
     expect(await result).toBe('x'.repeat(8_192) + 'y'.repeat(8_192));
   });
 
+  it('captures stdout produced immediately when stdin closes', async () => {
+    const child = childProcess();
+    child.stdin.end = jest.fn(() => {
+      child.stdout.write('immediate output');
+      child.emit('exit', 0, null);
+      child.emit('close', 0, null);
+      return child.stdin;
+    }) as typeof child.stdin.end;
+    jest.mocked(spawn).mockReturnValueOnce(child as never);
+
+    await expect(runProcessProbe({ command: 'test', args: [], cwd: '/tmp', env: {} }))
+      .resolves.toBe('immediate output');
+  });
+
   it('bounds output by UTF-8 bytes rather than character count', async () => {
     const child = childProcess();
     jest.mocked(spawn).mockReturnValueOnce(child as never);

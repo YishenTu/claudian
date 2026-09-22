@@ -18,6 +18,7 @@ import {
   type AcpSessionNotification,
   type AcpUsageUpdate,
   buildAcpUsageInfo,
+  extractAcpSessionModeState,
   extractAcpSessionThoughtLevelState,
 } from '@/providers/acp';
 
@@ -25,6 +26,7 @@ import type { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog'
 import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection';
 import { decodeOpencodeModelId } from '../models';
 import {
+  resolveOpencodeModeForAvailableValues,
   resolveOpencodeModeForPermissionMode,
   resolvePermissionModeForManagedOpencodeMode,
 } from '../modes';
@@ -539,12 +541,21 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
             request.configuration.permissionMode,
             getOpencodeProviderSettings(this.plugin.settings).availableModes,
           );
-    if (mode) {
+    const nativeModeState = extractAcpSessionModeState({
+      configOptions,
+      modes: native.modes,
+    });
+    const resolvedMode = resolveOpencodeModeForAvailableValues(
+      profile === 'managed' ? request.configuration.permissionMode : 'normal',
+      nativeModeState.availableModes.map(({ id }) => id),
+      mode,
+    );
+    if (resolvedMode) {
       await kernel.setConfigOption({
         configId: 'mode',
         sessionId: native.sessionId,
         type: 'select',
-        value: mode,
+        value: resolvedMode,
       });
     }
   }

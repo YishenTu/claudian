@@ -8,6 +8,7 @@ import {
   OPENCODE_FALLBACK_MODES,
   OPENCODE_SAFE_MODE_ID,
   OPENCODE_YOLO_MODE_ID,
+  resolveOpencodeModeForAvailableValues,
   resolveOpencodeModeForPermissionMode,
   resolvePermissionModeForManagedOpencodeMode,
 } from '../../../../src/providers/opencode/modes';
@@ -62,6 +63,24 @@ describe('OpenCode mode settings', () => {
     expect(resolveOpencodeModeForPermissionMode('normal')).toBe(OPENCODE_SAFE_MODE_ID);
     expect(resolveOpencodeModeForPermissionMode('plan')).toBe(OPENCODE_SAFE_MODE_ID);
     expect(resolveOpencodeModeForPermissionMode('danger-full-access')).toBe(OPENCODE_SAFE_MODE_ID);
+  });
+
+  it('maps managed permission modes onto the native values advertised by ACP', () => {
+    expect(resolveOpencodeModeForAvailableValues(
+      'yolo',
+      ['build', 'plan'],
+      OPENCODE_YOLO_MODE_ID,
+    )).toBe('build');
+    expect(resolveOpencodeModeForAvailableValues(
+      'normal',
+      ['build', 'plan'],
+      OPENCODE_SAFE_MODE_ID,
+    )).toBe('plan');
+    expect(resolveOpencodeModeForAvailableValues(
+      'yolo',
+      ['claudian-yolo', 'claudian-safe'],
+      OPENCODE_YOLO_MODE_ID,
+    )).toBe(OPENCODE_YOLO_MODE_ID);
   });
 
   it('maps managed OpenCode modes back to shared permission modes', () => {

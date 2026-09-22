@@ -964,6 +964,43 @@ describe('OpencodeExecutionBackend', () => {
     ]));
   });
 
+  it('maps managed permission modes to the modes advertised by OpenCode V2 ACP', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest({
+      configuration: {
+        systemInstructions: { kind: 'provider-default' },
+        model: 'opencode:anthropic/claude',
+        permissionMode: 'yolo',
+      },
+    }));
+    await waitForCondition(() => harness.kernels.length > 0);
+    harness.kernels[0].sessionInfo.configOptions?.push({
+      category: 'mode',
+      currentValue: 'build',
+      id: 'mode',
+      name: 'Session Mode',
+      options: [
+        { name: 'Build', value: 'build' },
+        { name: 'Plan', value: 'plan' },
+      ],
+      type: 'select',
+    });
+    await waitForPrompt(harness.kernels[0]);
+    harness.kernels[0].notify({
+      content: { type: 'text', text: 'ok' },
+      sessionUpdate: 'agent_message_chunk',
+    });
+    harness.kernels[0].completePrompt();
+    await collect(run.events);
+
+    expect(harness.kernels[0].configCalls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ configId: 'mode', value: 'build' }),
+    ]));
+    expect(harness.kernels[0].configCalls).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ configId: 'mode', value: 'claudian-yolo' }),
+    ]));
+  });
+
   it('publishes immutable command snapshots outside the execution-session API', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest());

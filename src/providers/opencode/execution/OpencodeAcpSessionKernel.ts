@@ -219,7 +219,9 @@ export class DefaultOpencodeAcpSessionKernel
         ),
       };
       const subprocess = new AcpSubprocess({
-        args: ['acp', `--cwd=${this.options.config.vaultWorkingDirectory}`],
+        // OpenCode V2 removed the `acp --cwd` flag; the working directory is
+        // conveyed through the spawned process cwd and the session params.
+        args: ['acp'],
         command: cliPath,
         cwd: this.options.config.vaultWorkingDirectory,
         env: processEnv,

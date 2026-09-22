@@ -20,7 +20,7 @@ interface CliInstallationProbeOptions {
 }
 
 export function parseCliVersion(output: string | null): string | null {
-  return output?.match(/\b\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?\b/u)?.[0] ?? null;
+  return output?.match(/\bv?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?\b/u)?.[0] ?? null;
 }
 
 export async function probeCliInstallation(options: CliInstallationProbeOptions): Promise<CliInstallation> {

@@ -3,6 +3,7 @@ import { parseCliVersion } from '@/core/providers/cli/CliInstallationProbe';
 describe('parseCliVersion', () => {
   it.each([
     ['cli 1.2.3\n', '1.2.3'],
+    ['opencode v2.0.11\n', 'v2.0.11'],
     ['cli 1.2.3-beta.4+build.7\n', '1.2.3-beta.4+build.7'],
     ['warning: runtime 24\ncli 2.3.4', '2.3.4'],
     ['version unavailable', null],

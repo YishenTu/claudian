@@ -134,6 +134,29 @@ export function resolveOpencodeModeForPermissionMode(
   return managedModes[0]?.id ?? '';
 }
 
+export function resolveOpencodeModeForAvailableValues(
+  permissionMode: unknown,
+  availableModeIds: readonly string[],
+  preferredMode: string,
+): string {
+  if (availableModeIds.length === 0) {
+    return preferredMode;
+  }
+
+  const available = new Set(availableModeIds);
+  if (available.has(preferredMode)) {
+    return preferredMode;
+  }
+  if (permissionMode === 'yolo' && available.has(OPENCODE_BUILD_MODE_ID)) {
+    return OPENCODE_BUILD_MODE_ID;
+  }
+  if (permissionMode !== 'yolo' && available.has('plan')) {
+    return 'plan';
+  }
+
+  return availableModeIds[0] ?? '';
+}
+
 export function resolvePermissionModeForManagedOpencodeMode(
   modeId: unknown,
 ): PermissionMode | null {
