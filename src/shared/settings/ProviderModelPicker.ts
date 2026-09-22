@@ -89,10 +89,6 @@ export function renderProviderModelPicker(
     cls: 'claudian-provider-model-picker-catalog-summary',
   });
   catalogSummaryEl.createSpan({
-    cls: 'claudian-provider-model-picker-catalog-caret',
-    text: '▸',
-  });
-  catalogSummaryEl.createSpan({
     cls: 'claudian-provider-model-picker-catalog-title',
     text: 'Browse models',
   });

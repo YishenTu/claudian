@@ -1,10 +1,18 @@
 import {
   createOpencodeToolStreamAdapter,
   normalizeOpencodeToolInput,
+  normalizeOpencodeToolName,
   resolveOpencodeRawToolName,
 } from '../../../../src/providers/opencode/normalization/opencodeToolNormalization';
 
 describe('normalizeOpencodeToolInput', () => {
+  it.each([{ name: 'probe-skill' }, { id: 'probe-skill' }])(
+    'preserves native skill identity for the Skill renderer: %j',
+    input => {
+      expect(normalizeOpencodeToolInput('skill', input)).toEqual({ skill: 'probe-skill' });
+    },
+  );
+
   it('maps websearch payloads to the WebSearch renderer shape', () => {
     expect(normalizeOpencodeToolInput('websearch', {
       action: {
@@ -321,6 +329,26 @@ describe('resolveOpencodeRawToolName', () => {
     expect(resolveOpencodeRawToolName(known, { title: 'bash' })).toEqual({
       provenance: 'title',
       rawName: 'bash',
+    });
+  });
+});
+
+
+describe('OpenCode v2 tools', () => {
+  it('normalizes native shell identity even when its title becomes the command', () => {
+    const identity = resolveOpencodeRawToolName(undefined, { title: 'shell', kind: 'execute' });
+    expect(normalizeOpencodeToolName(identity.rawName)).toBe('Bash');
+    expect(resolveOpencodeRawToolName(identity, { title: 'pwd' })).toEqual(identity);
+  });
+
+  it('maps native paths and subagent fields', () => {
+    expect(normalizeOpencodeToolInput('read', { path: '/vault/note.md', offset: 2 }))
+      .toEqual({ file_path: '/vault/note.md', offset: 2 });
+    expect(normalizeOpencodeToolName('subagent')).toBe('Agent');
+    expect(normalizeOpencodeToolInput('subagent', {
+      agent: 'explore', prompt: 'Find tests', sessionID: 'ses_child', background: true,
+    })).toEqual({
+      subagent_type: 'explore', prompt: 'Find tests', task_id: 'ses_child', run_in_background: true,
     });
   });
 });

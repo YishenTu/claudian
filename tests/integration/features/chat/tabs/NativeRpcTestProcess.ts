@@ -35,3 +35,14 @@ export function createNativeRpcProcess(
   });
   return proc as unknown as ChildProcessWithoutNullStreams;
 }
+
+/** A CLI version probe exits without opening an RPC session. */
+export function createNativeVersionProcess(version: string): ChildProcessWithoutNullStreams {
+  const proc = createNativeRpcProcess(() => undefined);
+  queueMicrotask(() => {
+    (proc.stdout as PassThrough).write(`${version}\n`);
+    proc.emit('exit', 0, null);
+    proc.emit('close', 0, null);
+  });
+  return proc;
+}

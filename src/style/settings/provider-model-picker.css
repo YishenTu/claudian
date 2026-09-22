@@ -283,9 +283,6 @@
 }
 
 .claudian-provider-model-picker-catalog {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   padding: 10px 12px;
   background: var(--background-secondary);
   border-radius: 6px;
@@ -302,20 +299,6 @@
 
 .claudian-provider-model-picker-catalog-summary::-webkit-details-marker {
   display: none;
-}
-
-.claudian-provider-model-picker-catalog-caret {
-  font-size: 16px;
-  color: var(--text-muted);
-  transition: transform 0.12s ease;
-  display: inline-flex;
-  width: 18px;
-  justify-content: center;
-  line-height: 1;
-}
-
-.claudian-provider-model-picker-catalog[open] .claudian-provider-model-picker-catalog-caret {
-  transform: rotate(90deg);
 }
 
 .claudian-provider-model-picker-catalog-title {
@@ -335,6 +318,7 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+  margin-top: 8px;
 }
 
 .claudian-provider-model-picker-search {

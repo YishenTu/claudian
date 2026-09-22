@@ -60,30 +60,33 @@ export async function projectOpencodeMetadata(
       value: level.id,
     })),
   );
-  const current = getOpencodeProviderSettings(plugin.settings);
   const rawModelId = input.selectedRawModelId
     ?? modelState.currentModelId
     ?? null;
-  const baseRawModelId = rawModelId
-    ? resolveOpencodeBaseModelRawId(
-      rawModelId,
-      discoveredModels.length > 0 ? discoveredModels : current.discoveredModels,
-    )
-    : null;
-  const nextThinking = { ...current.thinkingOptionsByModel };
-  if (baseRawModelId && thinkingOptions.length > 0) {
-    nextThinking[baseRawModelId] = thinkingOptions;
-  }
-  const hasUpdate = discoveredModels.length > 0
-    || availableModes.length > 0
-    || (baseRawModelId !== null && thinkingOptions.length > 0);
+  // Omitted metadata is a partial update; a supplied empty snapshot clears it.
+  // ACP selectors retain currentValue (including '') even when their options are empty.
+  const hasModels = input.models != null || modelState.currentModelId !== null || discoveredModels.length > 0;
+  const hasModes = input.modes != null || modeState.currentModeId !== null || availableModes.length > 0;
+  const hasThinking = rawModelId !== null && thoughtState.configId !== null;
+  const hasUpdate = hasModels || hasModes || hasThinking;
   if (!hasUpdate) return false;
 
   await plugin.mutateSettings((settings) => {
+    const current = getOpencodeProviderSettings(settings);
+    const baseRawModelId = rawModelId
+      ? resolveOpencodeBaseModelRawId(
+        rawModelId,
+        discoveredModels.length > 0 ? discoveredModels : current.discoveredModels,
+      )
+      : null;
+    const nextThinking = { ...current.thinkingOptionsByModel };
+    if (baseRawModelId && hasThinking) {
+      nextThinking[baseRawModelId] = thinkingOptions;
+    }
     updateOpencodeProviderSettings(settings, {
-      ...(availableModes.length > 0 ? { availableModes } : {}),
-      ...(discoveredModels.length > 0 ? { discoveredModels } : {}),
-      ...(baseRawModelId && thinkingOptions.length > 0
+      ...(hasModes ? { availableModes } : {}),
+      ...(hasModels ? { discoveredModels } : {}),
+      ...(baseRawModelId && hasThinking
         ? { thinkingOptionsByModel: nextThinking }
         : {}),
     });

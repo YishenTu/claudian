@@ -34,6 +34,7 @@ jest.mock('@/providers/opencode/execution/OpencodeAcpSessionKernel', () => ({
 
 function createPlugin(): any {
   const plugin: any = {
+    getResolvedProviderCliPath: async () => '/not-installed/opencode',
     app: {
       vault: {
         adapter: { basePath: '/vault' },

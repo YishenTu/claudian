@@ -50,6 +50,8 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 - Desktop only (macOS, Linux, Windows)
 - Collab Mode requires [Git](https://git-scm.com/install/). If you plan to self-host a Cloud server, see the [Claudian Cloud Server repository](https://github.com/YishenTu/claudian-cloud-server) for deployment requirements.
 
+Claudian now supports OpenCode v2 through its native HTTP API, with a local server managed by the plugin. OpenCode v1 continues to use ACP. OpenCode v1 support will end on October 30, 2026. See the [OpenCode v2 migration guide](https://opencode.ai/v2/docs/migrate-v1).
+
 ## Installation
 
 ### From Obsidian Community Plugins (recommended)

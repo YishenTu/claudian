@@ -8,7 +8,7 @@ import spawn from 'cross-spawn';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 
-import { createNativeRpcProcess } from './NativeRpcTestProcess';
+import { createNativeRpcProcess, createNativeVersionProcess } from './NativeRpcTestProcess';
 import { createForkTestEnvironment, type ForkTestEnvironment } from './ProviderForkTestHarness';
 
 interface NativeMessage {
@@ -26,7 +26,8 @@ async function createNativeOpencode(env: ForkTestEnvironment) {
   let forkOrdinal = 0;
   let rejectFork = false;
   let supportsFork = true;
-  jest.mocked(spawn).mockImplementation(() => {
+  jest.mocked(spawn).mockImplementation((_command, args) => {
+    if (args?.includes('--version')) return createNativeVersionProcess('1.18.31');
     const proc = createNativeRpcProcess((method, params, notify) => {
       if (method === 'initialize') return { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: supportsFork ? { fork: {} } : {} } };
       if (method === 'session/fork') {

@@ -3,10 +3,7 @@ import { applyTextInput } from '@test/helpers/settingsControls';
 import * as fs from 'fs';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
-import {
-  getOpencodeProviderSettings,
-  OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
-} from '@/providers/opencode/settings';
+import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { createOpencodeSettingsTabRenderer } from '@/providers/opencode/ui/OpencodeSettingsTab';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
@@ -15,13 +12,6 @@ const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockCliResolverReset = jest.fn();
 const mockMetadataLoadCatalog = jest.fn().mockResolvedValue(false);
 const mockMetadataWarmModel = jest.fn().mockResolvedValue(false);
-const mockAgentStorage = {};
-const mockCreatedAgentSettings: Array<{
-  app: unknown;
-  containerEl: unknown;
-  onChanged?: () => Promise<void> | void;
-  storage: unknown;
-}> = [];
 
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
@@ -86,27 +76,8 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
 
-jest.mock('@/providers/opencode/ui/OpencodeAgentSettings', () => ({
-  OpencodeAgentSettings: class MockOpencodeAgentSettings {
-    constructor(
-      containerEl: unknown,
-      storage: unknown,
-      app: unknown,
-      onChanged?: () => Promise<void> | void,
-    ) {
-      mockCreatedAgentSettings.push({
-        app,
-        containerEl,
-        onChanged,
-        storage,
-      });
-    }
-  },
-}));
-
 function createSettingsRenderer() {
   return createOpencodeSettingsTabRenderer({
-    agentStorage: mockAgentStorage,
     cliResolver: {
       reset: mockCliResolverReset,
     },
@@ -114,7 +85,7 @@ function createSettingsRenderer() {
       loadCatalog: mockMetadataLoadCatalog,
       warmModelMetadata: mockMetadataWarmModel,
     },
-  } as unknown as Parameters<typeof createOpencodeSettingsTabRenderer>[0]);
+  });
 }
 
 jest.mock('@/utils/env', () => ({
@@ -153,14 +124,7 @@ type MockSettingRecord = {
   toggleComponents: MockToggleComponent[];
 };
 
-type MockElementRecord = {
-  cls?: string;
-  tag?: string;
-  text?: string;
-};
-
 const createdSettings: MockSettingRecord[] = [];
-const createdElements: MockElementRecord[] = [];
 const createdDomElements: any[] = [];
 
 function createTextComponent(): MockTextComponent {
@@ -285,11 +249,6 @@ function createElement(): any {
       if (attrs && typeof attrs.type === 'string') {
         child.type = attrs.type;
       }
-      createdElements.push({
-        cls: child.cls,
-        tag: child.tag,
-        text: child.text,
-      });
       createdDomElements.push(child);
       return child;
     }),
@@ -299,11 +258,6 @@ function createElement(): any {
       if (attrs && typeof attrs.cls === 'string') {
         child.cls = attrs.cls;
       }
-      createdElements.push({
-        cls: child.cls,
-        tag: child.tag,
-        text: child.text,
-      });
       createdDomElements.push(child);
       return child;
     }),
@@ -321,11 +275,6 @@ function createContainer(): any {
       if (attrs && typeof attrs.cls === 'string') {
         child.cls = attrs.cls;
       }
-      createdElements.push({
-        cls: child.cls,
-        tag: child.tag,
-        text: child.text,
-      });
       createdDomElements.push(child);
       return child;
     }),
@@ -338,11 +287,6 @@ function createContainer(): any {
       if (attrs && typeof attrs.text === 'string') {
         child.text = attrs.text;
       }
-      createdElements.push({
-        cls: child.cls,
-        tag: child.tag,
-        text: child.text,
-      });
       createdDomElements.push(child);
       return child;
     }),
@@ -359,7 +303,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
           cliPathsByHost: {},
           discoveredModels: [],
           enabled: true,
-          environmentVariables: OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
+          environmentVariables: '',
           modelAliases: {},
           preferredThinkingByModel: {},
           selectedMode: '',
@@ -449,9 +393,7 @@ describe('OpencodeSettingsTab', () => {
 
   beforeEach(() => {
     createdSettings.length = 0;
-    createdElements.length = 0;
     createdDomElements.length = 0;
-    mockCreatedAgentSettings.length = 0;
     jest.clearAllMocks();
     mockMetadataLoadCatalog.mockResolvedValue(false);
     mockMetadataWarmModel.mockResolvedValue(false);
@@ -654,37 +596,14 @@ describe('OpencodeSettingsTab', () => {
     );
   });
 
-  it('reloads native subagents inside an execution transition', async () => {
-    const plugin = createPlugin();
-
-    createSettingsRenderer().render(createContainer(), createContext(plugin));
-
-    expect(findSetting('Subagents').heading).toBe(true);
-    expect(createdElements).toContainEqual({
-      cls: 'setting-item-description',
-      tag: 'p',
-      text: 'Manage vault-level OpenCode subagents from .opencode/agent/ and legacy .opencode/agents/. New entries are saved as subagent-only files.',
-    });
-
-    expect(mockCreatedAgentSettings).toHaveLength(1);
-    expect(mockCreatedAgentSettings[0].storage).toBe(mockAgentStorage);
-
-    await mockCreatedAgentSettings[0].onChanged?.();
-
-    expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
-      ['opencode'],
-      expect.any(Function),
-    );
-  });
-
-  it('passes the default Exa env var into the environment section copy', () => {
+  it('passes OpenCode environment guidance into the environment section', () => {
     const plugin = createPlugin();
 
     createSettingsRenderer().render(createContainer(), createContext(plugin));
 
     expect(mockRenderEnvironmentSettingsSection).toHaveBeenCalledWith(expect.objectContaining({
-      desc: expect.stringContaining(OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES),
-      placeholder: `${OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES}\nOPENCODE_DB=/path/to/opencode.db`,
+      desc: 'Extra environment variables passed to OpenCode.',
+      placeholder: 'OPENCODE_DB=/path/to/opencode.db',
     }));
   });
 
@@ -697,7 +616,7 @@ describe('OpencodeSettingsTab', () => {
           cliPathsByHost: {},
           discoveredModels: [],
           enabled: true,
-          environmentVariables: OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
+          environmentVariables: '',
           modelAliases: {},
           preferredThinkingByModel: {},
           selectedMode: '',
@@ -733,7 +652,7 @@ describe('OpencodeSettingsTab', () => {
           cliPathsByHost: {},
           discoveredModels: [],
           enabled: true,
-          environmentVariables: OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
+          environmentVariables: '',
           modelAliases: {},
           preferredThinkingByModel: {},
           selectedMode: '',
@@ -766,7 +685,7 @@ describe('OpencodeSettingsTab', () => {
           cliPathsByHost: {},
           discoveredModels: [],
           enabled: true,
-          environmentVariables: OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
+          environmentVariables: '',
           modelAliases: {},
           preferredThinkingByModel: {},
           selectedMode: '',
@@ -802,7 +721,7 @@ describe('OpencodeSettingsTab', () => {
             { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
           ],
           enabled: true,
-          environmentVariables: OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
+          environmentVariables: '',
           modelAliases: {},
           preferredThinkingByModel: {},
           selectedMode: '',

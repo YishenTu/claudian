@@ -1,5 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
+
+import { parse, type ParseError } from 'jsonc-parser';
 
 import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/storagePaths';
 import {
@@ -17,6 +21,7 @@ import { resolveOpencodeDatabasePath } from './OpencodePaths';
 
 export interface OpencodeLaunchArtifacts {
   configPath: string;
+  nativeConfigPath: string;
   configContent: string;
   databasePath: string | null;
   launchKey: string;
@@ -56,6 +61,7 @@ const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfi
 
 export interface PrepareOpencodeLaunchArtifactsParams {
   artifactsSubdir?: string;
+  nativeVersion?: 1 | 2;
   defaultAgentId?: string;
   managedAgents?: readonly OpencodeManagedAgentConfig[];
   runtimeEnv: NodeJS.ProcessEnv;
@@ -92,34 +98,49 @@ export async function prepareOpencodeLaunchArtifacts(
             ? [...params.dynamicSystemPromptSections]
             : undefined,
         }));
-  const baseConfig = await loadOpencodeBaseConfig(
-    params.runtimeEnv.OPENCODE_CONFIG,
-    params.workspaceRoot,
-  );
-  const configContent = `${JSON.stringify(
+  const customConfigPath = resolveOpencodeConfigPath(params.runtimeEnv.OPENCODE_CONFIG, params.workspaceRoot);
+  const customConfigText = await readOpencodeConfig(customConfigPath, params.runtimeEnv);
+  const inlineConfig = params.runtimeEnv.OPENCODE_CONFIG_CONTENT?.trim();
+  const serializeManagedConfig = (config: Record<string, unknown>, promptPath = systemPromptPath): string => `${JSON.stringify(
     buildOpencodeManagedConfig(
-      baseConfig,
-      systemPromptPath,
+      config,
+      promptPath,
       params.userName ?? params.settings?.userName,
       params.managedAgents,
       params.defaultAgentId,
+      params.nativeVersion,
     ),
     null,
     2,
   )}\n`;
+  const fileContent = serializeManagedConfig({});
+  // Native configuration layers have their own precedence and merge semantics.
+  // Keep inline user settings in memory, separate from the custom file layer.
+  // Substituted user text is literal on the next native parse. Only the managed
+  // prompt reference still needs native expansion; protect it with a temporary marker.
+  const promptMarker = randomUUID();
+  const configContent = serializeManagedConfig(inlineConfig
+    ? await parseOpencodeConfig(inlineConfig, 'OPENCODE_CONFIG_CONTENT', params.runtimeEnv, params.workspaceRoot)
+    : {}, promptMarker)
+    .replace(/\{(env|file):/g, '\\u007b$1:')
+    .replaceAll(`"\\u007bfile:${promptMarker}}"`, JSON.stringify(`{file:${systemPromptPath}}`));
   const databasePath = resolveOpencodeDatabasePath(params.runtimeEnv);
 
   await fs.mkdir(artifactsDir, { recursive: true });
   await ensureOpencodeDatabaseDirectory(databasePath);
   await writeIfChanged(systemPromptPath, systemPrompt);
-  await writeIfChanged(configPath, configContent);
+  await writeIfChanged(configPath, fileContent);
 
   return {
     configPath,
+    nativeConfigPath: customConfigPath ?? configPath,
     configContent,
     databasePath,
     launchKey: [
       promptKey,
+      customConfigPath ?? '',
+      customConfigText ?? '',
+      fileContent,
       configContent,
       databasePath ?? '',
       params.runtimeEnv.XDG_DATA_HOME ?? '',
@@ -142,6 +163,7 @@ export function buildOpencodeManagedConfig(
   userName?: string,
   managedAgents: readonly OpencodeManagedAgentConfig[] = DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS,
   defaultAgentId?: string,
+  nativeVersion: 1 | 2 = 1,
 ): Record<string, unknown> {
   const config: Record<string, unknown> = {
     ...baseConfig,
@@ -174,6 +196,30 @@ export function buildOpencodeManagedConfig(
     disable: true,
   };
   config.agent = nextAgents;
+  if (nativeVersion === 2) {
+    const nativeAgents = isPlainObject(baseConfig.agents) ? { ...baseConfig.agents } : {};
+    for (const { id, definition } of agentConfigs) {
+      // A native entry replaces the entire migrated legacy entry within a document.
+      // Only override an existing native entry; otherwise let OpenCode migrate agent[id].
+      const existing = nativeAgents[id];
+      if (!isPlainObject(existing)) continue;
+      const managed = definition ?? {};
+      const permissions = nativePermissionRules(managed.permission);
+      nativeAgents[id] = {
+        ...existing,
+        ...(typeof managed.mode === 'string' ? { mode: managed.mode } : {}),
+        system: `{file:${systemPromptPath}}`,
+        ...(permissions.length ? { permissions: [
+          ...(Array.isArray(existing.permissions) ? existing.permissions as unknown[] : []),
+          ...permissions,
+        ] } : {}),
+      };
+    }
+    if (isPlainObject(nativeAgents.plan)) {
+      nativeAgents.plan = { ...nativeAgents.plan, disabled: true };
+    }
+    if (Object.keys(nativeAgents).length) config.agents = nativeAgents;
+  }
   const trimmedDefaultAgentId = defaultAgentId?.trim();
   if (trimmedDefaultAgentId) {
     config.default_agent = trimmedDefaultAgentId;
@@ -200,27 +246,62 @@ async function writeIfChanged(filePath: string, content: string): Promise<void> 
   await fs.writeFile(filePath, content, 'utf-8');
 }
 
-async function loadOpencodeBaseConfig(
-  configuredPath: string | undefined,
-  workspaceRoot: string,
-): Promise<Record<string, unknown>> {
+function resolveOpencodeConfigPath(configuredPath: string | undefined, workspaceRoot: string): string | undefined {
   const trimmedPath = configuredPath?.trim();
-  if (!trimmedPath) {
-    return {};
-  }
-
+  if (!trimmedPath) return undefined;
   const expandedPath = expandHomePath(trimmedPath);
-  const resolvedPath = path.isAbsolute(expandedPath)
-    ? expandedPath
-    : path.resolve(workspaceRoot, expandedPath);
+  return path.isAbsolute(expandedPath) ? expandedPath : path.resolve(workspaceRoot, expandedPath);
+}
 
+async function readOpencodeConfig(resolvedPath: string | undefined, environment: NodeJS.ProcessEnv): Promise<string | undefined> {
+  if (!resolvedPath) return undefined;
+  let rawConfig: string;
   try {
-    const rawConfig = await fs.readFile(resolvedPath, 'utf8');
-    const parsedConfig = JSON.parse(rawConfig) as unknown;
-    return isPlainObject(parsedConfig) ? parsedConfig : {};
+    rawConfig = await fs.readFile(resolvedPath, 'utf8');
   } catch {
-    return {};
+    throw new Error(`Could not read OpenCode config: ${resolvedPath}`);
   }
+  await parseOpencodeConfig(rawConfig, resolvedPath, environment, path.dirname(resolvedPath));
+  return rawConfig;
+}
+
+async function parseOpencodeConfig(
+  content: string,
+  source: string,
+  environment: NodeJS.ProcessEnv,
+  directory: string,
+): Promise<Record<string, unknown>> {
+  // Native OpenCode substitutes environment, then file expressions before JSONC,
+  // including expressions used as unquoted booleans or objects.
+  const substituted = content.replace(/\{env:([^}]+)\}/g, (_, name: string) => environment[name] || '');
+  let expanded = '';
+  let cursor = 0;
+  for (const match of substituted.matchAll(/\{file:([^}]+)\}/g)) {
+    expanded += substituted.slice(cursor, match.index);
+    cursor = match.index + match[0].length;
+    const lineStart = substituted.lastIndexOf('\n', match.index - 1) + 1;
+    if (substituted.slice(lineStart, match.index).trimStart().startsWith('//')) {
+      expanded += match[0];
+      continue;
+    }
+    const nativeHome = (process.platform === 'win32' ? environment.USERPROFILE : environment.HOME) || os.homedir();
+    const filePath = match[1].startsWith('~/') ? path.join(nativeHome, match[1].slice(2)) : match[1];
+    const referencePath = path.resolve(directory, filePath);
+    let fileContent: string;
+    try {
+      fileContent = await fs.readFile(referencePath, 'utf8');
+    } catch {
+      throw new Error(`Could not read OpenCode config file reference in ${source}: ${referencePath}`);
+    }
+    expanded += JSON.stringify(fileContent.trim()).slice(1, -1);
+  }
+  expanded += substituted.slice(cursor);
+  const errors: ParseError[] = [];
+  const config: unknown = parse(expanded, errors, { allowTrailingComma: true });
+  if (errors.length || !isPlainObject(config)) {
+    throw new Error(`Invalid OpenCode config: ${source}. Expected a JSON or JSONC object.`);
+  }
+  return config;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -239,4 +320,16 @@ function requireSettings(
   }
 
   throw new Error('prepareOpencodeLaunchArtifacts requires settings when no systemPromptText is provided');
+}
+
+function nativePermissionRules(value: unknown): Array<{ action: string; resource: string; effect: string }> {
+  if (!isPlainObject(value)) return [];
+  const aliases: Record<string, string> = { bash: 'shell', task: 'subagent', write: 'edit', patch: 'edit' };
+  return Object.entries(value).flatMap(([tool, permissions]) => {
+    const action = aliases[tool] ?? tool;
+    return Object.entries(isPlainObject(permissions) ? permissions : { '*': permissions })
+      .flatMap(([resource, effect]) => effect === 'allow' || effect === 'deny' || effect === 'ask'
+        ? [{ action, resource, effect }]
+        : []);
+  });
 }

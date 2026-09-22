@@ -38,14 +38,12 @@ import {
 import {
   getOpencodeProviderSettings,
   normalizeOpencodeVisibleModels,
-  OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES,
   updateOpencodeProviderSettings,
 } from '../settings';
-import type { OpencodeAgentStorage } from '../storage/OpencodeAgentStorage';
-import { OpencodeAgentSettings } from './OpencodeAgentSettings';
+import { renderOpencodeMigrationNotice } from './OpencodeMigrationNotice';
 
 export function createOpencodeSettingsTabRenderer(
-  opencodeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; agentStorage: OpencodeAgentStorage; metadataService: Pick<OpencodeMetadataService, 'loadCatalog' | 'warmModelMetadata'>; },
+  opencodeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; metadataService: Pick<OpencodeMetadataService, 'loadCatalog' | 'warmModelMetadata'>; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -85,6 +83,7 @@ export function createOpencodeSettingsTabRenderer(
       };
 
       const installationContainer = container.createDiv();
+      const updateMigrationNotice = renderOpencodeMigrationNotice(container);
       const lastProviderWarning = renderLastEnabledProviderWarning(container);
 
       const modelWarning = renderProviderModelEnablementWarning(container, context, {
@@ -100,12 +99,14 @@ export function createOpencodeSettingsTabRenderer(
         inspect: async () => {
           const settings = context.plugin.settings as unknown as Record<string, unknown>;
           const config = getOpencodeProviderSettings(settings);
-          return probeCliInstallation({
+          const installation = await probeCliInstallation({
             path: await context.plugin.getResolvedProviderCliPath('opencode'),
             configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
             args: ['--version'],
             env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'opencode') },
           });
+          updateMigrationNotice(installation.version);
+          return installation;
         },
         container: installationContainer,
         enablement,
@@ -152,36 +153,14 @@ export function createOpencodeSettingsTabRenderer(
         placeholder: 'compact\nreview\nfix',
       });
 
-      if (opencodeWorkspace?.agentStorage) {
-        new Setting(container).setName('Subagents').setHeading();
-
-        const subagentsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
-        subagentsDesc.createEl('p', {
-          cls: 'setting-item-description',
-          text: 'Manage vault-level OpenCode subagents from .opencode/agent/ and legacy .opencode/agents/. New entries are saved as subagent-only files.',
-        });
-
-        const subagentsContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
-        new OpencodeAgentSettings(
-          subagentsContainer,
-          opencodeWorkspace.agentStorage,
-          context.plugin.app,
-          async () => {
-            await context.plugin.runProviderExecutionTransition(['opencode'], async () => {
-              // Restart execution so native agent definitions are reloaded.
-            });
-          },
-        );
-      }
-
       renderEnvironmentSettingsSection({
         container,
         plugin: context.plugin,
         scope: 'provider:opencode',
         heading: 'Environment',
         name: 'Environment Variables',
-        desc: 'Extra environment variables passed to OpenCode. `OPENCODE_ENABLE_EXA=1` is enabled by default.',
-        placeholder: `${OPENCODE_DEFAULT_ENVIRONMENT_VARIABLES}\nOPENCODE_DB=/path/to/opencode.db`,
+        desc: 'Extra environment variables passed to OpenCode.',
+        placeholder: 'OPENCODE_DB=/path/to/opencode.db',
         renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'opencode'),
       });
     },

@@ -154,8 +154,9 @@ export class InlineAskUserQuestion {
   #deduplicateOptions(options: AskUserQuestionOption[]): AskUserQuestionOption[] {
     const seen = new Set<string>();
     return options.filter((o) => {
-      if (seen.has(o.label)) return false;
-      seen.add(o.label);
+      const value = this.#getOptionValue(o);
+      if (seen.has(value)) return false;
+      seen.add(value);
       return true;
     });
   }
@@ -307,6 +308,7 @@ export class InlineAskUserQuestion {
         value: customText,
       });
       inputEl.setAttribute('type', q.isSecret ? 'password' : 'text');
+      inputEl.setAttribute('aria-label', q.question);
       inputEl.setAttribute('placeholder', q.isSecret ? 'Enter secret.' : 'Type something.');
 
       inputEl.addEventListener('input', () => {

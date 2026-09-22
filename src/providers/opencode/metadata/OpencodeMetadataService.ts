@@ -14,10 +14,13 @@ import {
   type OpencodeNativeSessionInfo,
 } from '../execution/OpencodeAcpSessionKernel';
 import { decodeOpencodeModelId } from '../models';
+import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
+import { detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
 import {
   type OpencodeMetadataProjectionInput,
   projectOpencodeMetadata,
 } from './OpencodeMetadataProjection';
+import { OpencodeV2MetadataProbe } from './OpencodeV2MetadataProbe';
 
 export interface OpencodeMetadataCatalogResult
   extends OpencodeMetadataProjectionInput {
@@ -44,7 +47,7 @@ export interface OpencodeMetadataServiceOptions {
 }
 
 export class OpencodeMetadataService {
-  private readonly createProbe: () => OpencodeMetadataProbe;
+  private readonly createProbe: (signal: AbortSignal) => OpencodeMetadataProbe | Promise<OpencodeMetadataProbe>;
   private readonly probes: OwnedProbeRegistry<OpencodeMetadataProbe>;
   private readonly transitionFence = new ProviderTransitionFence({
     abortMessage: 'OpenCode metadata probe aborted',
@@ -58,7 +61,15 @@ export class OpencodeMetadataService {
     private readonly options: OpencodeMetadataServiceOptions = {},
   ) {
     this.createProbe = options.createProbe
-      ?? (() => new DefaultOpencodeMetadataProbe(plugin));
+      ?? (async (signal) => {
+        const cliPath = await plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
+        const environment = buildOpencodeRuntimeEnv(plugin.settings, cliPath);
+        const version = await detectOpencodeNativeVersion(cliPath, environment);
+        signal.throwIfAborted();
+        return version === 2
+          ? new OpencodeV2MetadataProbe(cliPath, resolveVaultPath(plugin), environment)
+          : new DefaultOpencodeMetadataProbe(plugin);
+      });
     this.probes = new OwnedProbeRegistry({
       abortMessage: 'OpenCode metadata probe aborted',
       dispose: probe => probe.dispose(),
@@ -170,7 +181,7 @@ export class OpencodeMetadataService {
         if (!available) return null;
       }
       return await this.probes.run({
-        create: () => this.createProbe(),
+        create: signal => this.createProbe(signal),
         query: operation,
       }, signal);
     } catch {

@@ -159,6 +159,10 @@
 }
 
 /* Custom section descriptions - align with items */
+.claudian-opencode-migration-notice {
+  margin-bottom: var(--size-4-5);
+}
+
 .claudian-sp-settings-desc {
   padding: 0 12px;
 }

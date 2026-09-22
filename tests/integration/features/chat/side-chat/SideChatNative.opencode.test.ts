@@ -6,7 +6,7 @@ import spawn from 'cross-spawn';
 
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 
-import { createNativeRpcProcess } from '../tabs/NativeRpcTestProcess';
+import { createNativeRpcProcess, createNativeVersionProcess } from '../tabs/NativeRpcTestProcess';
 import { createForkTestEnvironment } from '../tabs/ProviderForkTestHarness';
 import { traceSideChild } from './SideChatNativeTracer';
 
@@ -18,7 +18,8 @@ it('forks native disk history and resumes the side child independently after coo
   const prompts: Array<{ sessionId: string; context: string[]; text: string }> = [];
   let sessionOrdinal = 0;
   let turnId = 0;
-  jest.mocked(spawn).mockImplementation((_command, _args, options) => {
+  jest.mocked(spawn).mockImplementation((_command, args, options) => {
+    if (args?.includes('--version')) return createNativeVersionProcess('1.18.31');
     // Disk sessions are shared between native processes; memory sessions are not.
     const localSessions = options?.env?.OPENCODE_DB === ':memory:' ? new Map<string, string[]>() : sessions;
     return createNativeRpcProcess((method, params, notify) => {

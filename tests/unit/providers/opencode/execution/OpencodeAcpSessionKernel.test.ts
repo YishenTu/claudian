@@ -168,3 +168,12 @@ describe('OpenCode session/load errors', () => {
     expect(classifyOpencodeSessionLoadError(error, 'valid-session')).toBe(error);
   });
 });
+
+
+it('presents a v2 command-title approval as shell execution', () => {
+  const request = permissionRequest('pwd', { command: 'pwd' });
+  request.toolCall.kind = 'execute';
+  expect(presentOpencodePermission(request, { command: 'pwd' })).toMatchObject({
+    decisionReason: 'Command execution permission required', toolName: 'bash',
+  });
+});

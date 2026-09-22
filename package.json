@@ -81,6 +81,7 @@
     "@modelcontextprotocol/sdk": "~1.30.0",
     "bonjour-service": "1.4.4",
     "cross-spawn": "7.0.6",
+    "jsonc-parser": "3.3.1",
     "node-forge": "1.4.0",
     "smol-toml": "1.7.1",
     "sql.js": "1.14.1",

@@ -6,16 +6,13 @@ import type {
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
-import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import { OpencodeCliResolver } from '../runtime/OpencodeCliResolver';
-import { OpencodeAgentStorage } from '../storage/OpencodeAgentStorage';
 import { createOpencodeSettingsTabRenderer } from '../ui/OpencodeSettingsTab';
 import { OpencodeCommandLoader } from './OpencodeCommandLoader';
 
 export interface OpencodeWorkspaceServices extends ProviderWorkspaceServices {
-  agentStorage: OpencodeAgentStorage;
   commandCatalog: ProviderCommandCatalog;
   metadataService: OpencodeMetadataService;
 }
@@ -27,29 +24,26 @@ const opencodeTabWarmupPolicy: ProviderTabWarmupPolicy = {
 };
 
 export async function createOpencodeWorkspaceServices(
-  vaultAdapter: VaultFileAdapter,
   plugin: ProviderHost,
 ): Promise<OpencodeWorkspaceServices> {
-  const agentStorage = new OpencodeAgentStorage(vaultAdapter);
   const commandCatalog = new OpencodeCommandCatalog();
   const metadataService = new OpencodeMetadataService(plugin, { commandCatalog });
 
   const cliResolver = new OpencodeCliResolver();
   return {
-    agentStorage,
     commandCatalog,
     cliResolver,
     metadataService,
     commandLoader: new OpencodeCommandLoader(metadataService),
-    settingsTabRenderer: createOpencodeSettingsTabRenderer({ cliResolver, agentStorage, metadataService }),
+    settingsTabRenderer: createOpencodeSettingsTabRenderer({ cliResolver, metadataService }),
     tabWarmupPolicy: opencodeTabWarmupPolicy,
     dispose: async () => metadataService.dispose(),
   };
 }
 
 export const opencodeWorkspaceRegistration: ProviderWorkspaceRegistration<OpencodeWorkspaceServices> = {
-  initialize: async ({ plugin, vaultAdapter }) => (
-    createOpencodeWorkspaceServices(vaultAdapter, plugin)
+  initialize: async ({ plugin }) => (
+    createOpencodeWorkspaceServices(plugin)
   ),
 };
 

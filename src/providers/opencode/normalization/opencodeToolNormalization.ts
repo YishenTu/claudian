@@ -21,6 +21,7 @@ import {
 
 const TOOL_NAME_MAP: Record<string, string> = {
   bash: TOOL_BASH,
+  shell: TOOL_BASH,
   edit: TOOL_EDIT,
   glob: TOOL_GLOB,
   grep: TOOL_GREP,
@@ -28,6 +29,7 @@ const TOOL_NAME_MAP: Record<string, string> = {
   read: TOOL_READ,
   skill: TOOL_SKILL,
   task: TOOL_SUBAGENT,
+  subagent: TOOL_SUBAGENT,
   todowrite: TOOL_TODO_WRITE,
   webfetch: TOOL_WEB_FETCH,
   websearch: TOOL_WEB_SEARCH,
@@ -338,18 +340,18 @@ export function normalizeOpencodeToolInput(
       return { questions: normalizeQuestionItems(input.questions) };
     case 'read':
       return {
-        ...(firstString(input.file_path, input.filePath) ? { file_path: firstString(input.file_path, input.filePath) } : {}),
+        ...(firstString(input.file_path, input.filePath, input.path) ? { file_path: firstString(input.file_path, input.filePath, input.path) } : {}),
         ...(typeof input.limit === 'number' ? { limit: input.limit } : {}),
         ...(typeof input.offset === 'number' ? { offset: input.offset } : {}),
       };
     case 'write':
       return {
         ...(typeof input.content === 'string' ? { content: input.content } : {}),
-        ...(firstString(input.file_path, input.filePath) ? { file_path: firstString(input.file_path, input.filePath) } : {}),
+        ...(firstString(input.file_path, input.filePath, input.path) ? { file_path: firstString(input.file_path, input.filePath, input.path) } : {}),
       };
     case 'edit':
       return {
-        ...(firstString(input.file_path, input.filePath) ? { file_path: firstString(input.file_path, input.filePath) } : {}),
+        ...(firstString(input.file_path, input.filePath, input.path) ? { file_path: firstString(input.file_path, input.filePath, input.path) } : {}),
         ...(firstString(input.old_string, input.oldString) ? { old_string: firstString(input.old_string, input.oldString) } : {}),
         ...(firstString(input.new_string, input.newString) ? { new_string: firstString(input.new_string, input.newString) } : {}),
         ...(typeof input.replace_all === 'boolean'
@@ -358,6 +360,7 @@ export function normalizeOpencodeToolInput(
           ? { replace_all: input.replaceAll }
           : {}),
       };
+    case 'subagent':
     case 'task':
       return {
         ...(firstTrimmedString(input.command) ? { command: firstTrimmedString(input.command) } : {}),
@@ -365,15 +368,17 @@ export function normalizeOpencodeToolInput(
         ...(firstTrimmedString(input.prompt) ? { prompt: firstTrimmedString(input.prompt) } : {}),
         ...(input.run_in_background === true || input.run_in_background === false
           ? { run_in_background: input.run_in_background }
+          : typeof input.background === 'boolean'
+          ? { run_in_background: input.background }
           : {}),
-        ...(firstTrimmedString(input.subagent_type) ? { subagent_type: firstTrimmedString(input.subagent_type) } : {}),
-        ...(firstTrimmedString(input.task_id) ? { task_id: firstTrimmedString(input.task_id) } : {}),
+        ...(firstTrimmedString(input.subagent_type, input.agent) ? { subagent_type: firstTrimmedString(input.subagent_type, input.agent) } : {}),
+        ...(firstTrimmedString(input.task_id, input.sessionID) ? { task_id: firstTrimmedString(input.task_id, input.sessionID) } : {}),
       };
     case 'todowrite':
       return { todos: normalizeTodos(input.todos) };
     case 'skill':
-      return firstTrimmedString(input.skill, input.name)
-        ? { skill: firstTrimmedString(input.skill, input.name) }
+      return firstTrimmedString(input.skill, input.name, input.id)
+        ? { skill: firstTrimmedString(input.skill, input.name, input.id) }
         : {};
     case 'websearch':
       return normalizeWebSearchInput(input);
@@ -393,9 +398,9 @@ export function normalizeOpencodeToolUseResult(
 
   if (
     (knownName === 'write' || knownName === 'edit')
-    && firstString(input.file_path, input.filePath, metadata?.filepath, metadata?.filePath)
+    && firstString(input.file_path, input.filePath, input.path, metadata?.filepath, metadata?.filePath)
   ) {
-    normalized.filePath = firstString(input.file_path, input.filePath, metadata?.filepath, metadata?.filePath);
+    normalized.filePath = firstString(input.file_path, input.filePath, input.path, metadata?.filepath, metadata?.filePath);
   }
 
   if (knownName === 'question') {

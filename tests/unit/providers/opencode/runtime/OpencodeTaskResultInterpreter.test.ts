@@ -11,3 +11,9 @@ it('preserves OpenCode task descriptions and plain output through its registered
   expect(interpreter.interpretResult('<result>Literal tool output</result>', false, { mode: 'sync' })).toEqual({ status: 'completed', result: '<result>Literal tool output</result>' });
   expect(interpreter.interpretResult('Task failed', true, { mode: 'sync' }).status).toBe('error');
 });
+
+it('binds a native v2 background launch to the child session used by completion events', () => {
+  const interpreter = ProviderRegistry.getTaskResultInterpreter('opencode');
+  const result = 'The subagent is working in the background (sessionID: ses_child). You will be notified automatically when it finishes.';
+  expect(interpreter.interpretLaunch(result, false)).toEqual({ mode: 'async', agentId: 'ses_child', result });
+});

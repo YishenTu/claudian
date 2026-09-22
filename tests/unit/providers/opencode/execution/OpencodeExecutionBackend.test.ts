@@ -460,6 +460,20 @@ describe('OpencodeExecutionBackend', () => {
     },
   );
 
+  it('persists the native generation and reports provider cancellation', async () => {
+    const harness = createHarness();
+    const run = harness.session.execute(createRequest());
+    const kernel = harness.kernels[0];
+    kernel.sessionInfo = { ...kernel.sessionInfo, nativeVersion: 2 };
+    kernel.promptResult = { stopReason: 'cancelled' };
+    await waitForPrompt(kernel);
+    kernel.completePrompt();
+    const events = await collect(run.events);
+    expect(harness.session.getSnapshot()).toMatchObject({ providerState: { nativeVersion: 2 } });
+    expect(events).toContainEqual(expect.objectContaining({ type: 'cancelled', reason: 'provider-cancelled' }));
+    await harness.session.dispose();
+  });
+
   it('is cheap and binds the persisted database/session only when execution starts', async () => {
     const harness = createHarness(createConfig({
       resumeSeed: {
