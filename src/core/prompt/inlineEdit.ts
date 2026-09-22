@@ -72,7 +72,7 @@ function getInlineEditInputContext(): string {
 
 The user's instruction comes first, followed by one editor context tag and optional context-file references. Treat content inside \`<![CDATA[...]]>\` as literal editor text.
 
-Every \`path=\` attribute is XML-attribute-escaped so it can sit inside the tag: \`&amp;\` is a literal \`&\`, \`&quot;\` is \`"\`, \`&lt;\` is \`<\`, \`&gt;\` is \`>\`, and \`&#9;\`/\`&#10;\`/\`&#13;\` are tab/newline/carriage return. Unescape an attribute value before you use it as a path, and never write an escaped form to disk.
+Paths in Claudian XML context attributes are XML-escaped. Decode them exactly once before use: \`A &amp; B.md\` means \`A & B.md\`, while \`A &amp;amp; B.md\` means the literal filename \`A &amp; B.md\`. Paths outside these attributes are not subject to this decoding rule.
 
 - \`<editor_selection path="path/to/file.md" lines="10-15">\`: The selected text to replace or answer a question about.
 - \`<editor_cursor path="path/to/file.md" line="8">\`: Text around the insertion point. The \`|\` marker is the cursor; \`#inline\` and \`#inbetween\` describe its placement.

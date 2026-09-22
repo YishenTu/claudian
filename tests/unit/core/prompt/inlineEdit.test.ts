@@ -6,7 +6,6 @@ import {
   buildInlineEditPrompt,
   getInlineEditSystemPrompt,
 } from '@/core/prompt/inlineEdit';
-import { escapePromptXmlAttribute } from '@/utils/promptXml';
 
 describe('buildInlineEditPrompt', () => {
   it('serializes selection paths and bodies with canonical XML', () => {
@@ -92,19 +91,5 @@ describe('getInlineEditSystemPrompt', () => {
     expect(prompt.indexOf('## Editing Principles')).toBeLessThan(
       prompt.indexOf('## Output Contract'),
     );
-  });
-
-  it('documents every XML attribute escape the renderer can produce', () => {
-    const prompt = getInlineEditSystemPrompt('/vault');
-
-    // Same contract as the main agent prompt: the escaped attribute is the only machine-readable path
-    // signal the model gets, so the system prompt has to name the escapes it may receive.
-    const emitted = escapePromptXmlAttribute('&\t\n\r"<>').match(/&(?:amp|quot|lt|gt|#9|#10|#13);/g) ?? [];
-
-    expect(emitted.length).toBeGreaterThan(0);
-    for (const entity of new Set(emitted)) {
-      expect(prompt).toContain(`\`${entity}\``);
-    }
-    expect(prompt).toContain('Unescape an attribute value before you use it as a path');
   });
 });

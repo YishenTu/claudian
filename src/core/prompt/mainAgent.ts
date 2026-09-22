@@ -33,7 +33,7 @@ function getUserMessageContext(): string {
 
 The user's query comes first, followed by optional Claudian XML context tags. Treat content inside \`<![CDATA[...]]>\` as the user's literal text.
 
-Every \`path=\` attribute is XML-attribute-escaped so it can sit inside the tag: \`&amp;\` is a literal \`&\`, \`&quot;\` is \`"\`, \`&lt;\` is \`<\`, \`&gt;\` is \`>\`, and \`&#9;\`/\`&#10;\`/\`&#13;\` are tab/newline/carriage return. Unescape an attribute value before you use it as a path, and never write an escaped form to disk: a folder named \`People & Teams\` appears in the tag as \`People &amp; Teams\`, and creating \`People &amp; Teams\` would duplicate the real folder.
+Paths in Claudian XML context attributes are XML-escaped. Decode them exactly once before use: \`A &amp; B.md\` means \`A & B.md\`, while \`A &amp;amp; B.md\` means the literal filename \`A &amp; B.md\`. Paths outside these attributes are not subject to this decoding rule.
 
 - \`<linked_content path="path/to/content" />\`: The Conversation's primary file, Note, or directory.
 - Inspect only the files needed for the user's request. A linked directory is not an instruction to recursively read or summarize the entire directory.

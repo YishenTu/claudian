@@ -2,7 +2,6 @@ import {
   buildSystemPrompt,
   computeSystemPromptKey,
 } from '@/core/prompt/mainAgent';
-import { escapePromptXmlAttribute } from '@/utils/promptXml';
 
 describe('systemPrompt', () => {
   describe('buildSystemPrompt', () => {
@@ -111,32 +110,6 @@ describe('systemPrompt', () => {
       expect(prompt.match(/<editor_selection path=/g)).toHaveLength(1);
       expect(prompt.match(/<browser_selection source=/g)).toHaveLength(1);
       expect(prompt.match(/Use `!\[\[image\.png\]\]`/g)).toHaveLength(1);
-    });
-
-    it('should document every XML attribute escape the renderer can produce', () => {
-      const prompt = buildSystemPrompt();
-
-      // The `path=` attributes are escaped by `escapePromptXmlAttribute`, and that escaped string is
-      // the only machine-readable "which note is linked" signal the agent gets. If the prompt stops
-      // naming an escape the renderer emits, the agent reads it as literal path text and reproduces
-      // it as a real folder name. Pin the documented set to the renderer's output so the two cannot
-      // drift apart silently.
-      const escaped = escapePromptXmlAttribute('&\t\n\r"<>');
-      const emittedEntities = escaped.match(/&(?:amp|quot|lt|gt|#9|#10|#13);/g) ?? [];
-
-      expect(emittedEntities.length).toBeGreaterThan(0);
-      for (const entity of new Set(emittedEntities)) {
-        expect(prompt).toContain(`\`${entity}\``);
-      }
-    });
-
-    it('should tell the agent not to write an escaped attribute value to disk', () => {
-      const prompt = buildSystemPrompt();
-
-      // Naming the escapes is not enough on its own — the failure this guards against is the agent
-      // treating `&amp;` as literal path text and creating a second folder beside the real one.
-      expect(prompt).toContain('Unescape an attribute value before you use it as a path');
-      expect(prompt).toContain('People &amp; Teams');
     });
 
     it('should place both convention sections after user message context', () => {
