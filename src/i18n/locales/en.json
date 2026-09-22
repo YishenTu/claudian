@@ -77,7 +77,6 @@
       "alreadyExists": "A side chat already exists for this conversation. Discard it to start another.",
       "nestedUnavailable": "Side chat cannot start another side chat. Collapse to Main first.",
       "mainOnlyCommand": "/{command} is available in the main chat only.",
-      "instructionModeActive": "Finish or cancel instruction mode before using the side chat.",
       "startFailed": "Side chat could not start: {error}",
       "queued": "Queued for the side chat.",
       "busySide": "The side chat is still responding. Wait for it to finish."

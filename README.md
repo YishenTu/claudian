@@ -29,8 +29,6 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
 
-**Instruction Mode (`/instruction`)** — Refined custom instructions added from the chat input.
-
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
 
 **Tabs & Session Management** — Use multiple tabs in single-panel mode or a persistent session manager beside the chat in dual-pane mode.

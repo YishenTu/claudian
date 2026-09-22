@@ -8,7 +8,6 @@ export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   supportsFork: true,
   supportsProviderCommands: true,
   supportsImageAttachments: true,
-  supportsInstructionMode: true,
   supportsTurnSteer: true,
   reasoningControl: 'effort',
 });

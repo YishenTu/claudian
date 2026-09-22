@@ -55,7 +55,6 @@ describe('ProviderRegistry', () => {
     const caps = ProviderRegistry.getCapabilities('codex');
     expect(caps.providerId).toBe('codex');
     expect(caps.supportsFork).toBe(true);
-    expect(caps.supportsInstructionMode).toBe(true);
     expect(caps.supportsRewind).toBe(false);
     expect(caps.reasoningControl).toBe('effort');
   });
@@ -64,7 +63,6 @@ describe('ProviderRegistry', () => {
     const caps = ProviderRegistry.getCapabilities('opencode');
     expect(caps.providerId).toBe('opencode');
     expect(caps.supportsProviderCommands).toBe(true);
-    expect(caps.supportsInstructionMode).toBe(true);
     expect(caps.supportsFork).toBe(true);
   });
 

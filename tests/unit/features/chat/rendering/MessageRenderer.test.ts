@@ -62,7 +62,6 @@ function mockCapabilities(providerId: 'claude' | 'codex' | 'grok' = 'claude') {
     supportsFork: true,
     supportsProviderCommands: true,
     supportsImageAttachments: true,
-    supportsInstructionMode: true,
     reasoningControl: 'effort' as const,
   });
 }

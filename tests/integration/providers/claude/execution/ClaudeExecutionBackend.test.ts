@@ -47,21 +47,17 @@ describe('Claude auxiliary execution', () => {
     sdkMock.resetMockMessages();
   });
 
-  it.each(['instruction', 'inline edit'] as const)(
-    'keeps %s clarification in one non-persistent query and releases it on reset',
-    async (kind) => {
+  it(
+    'keeps inline edit clarification in one non-persistent query and releases it on reset',
+    async () => {
       const context = createContext();
-      const service = kind === 'instruction'
-        ? ProviderRegistry.createInstructionRefineService(context.host, 'claude')
-        : ProviderRegistry.createInlineEditService(context.host, 'claude');
-      const start = () => 'refineInstruction' in service
-        ? service.refineInstruction('Prefer concise prose', '')
-        : service.editText({
-          instruction: 'Improve this draft',
-          mode: 'selection',
-          notePath: 'note.md',
-          selectedText: 'Draft',
-        });
+      const service = ProviderRegistry.createInlineEditService(context.host, 'claude');
+      const start = () => service.editText({
+        instruction: 'Improve this draft',
+        mode: 'selection',
+        notePath: 'note.md',
+        selectedText: 'Draft',
+      });
 
       try {
         respond('Which tone?');
@@ -76,14 +72,10 @@ describe('Claude auxiliary execution', () => {
         expect(firstOptions?.thinking).toEqual({ type: 'adaptive' });
         expect(firstOptions?.effort).toBe('medium');
 
-        respond(kind === 'instruction'
-          ? '<instruction>Use concise formal prose.</instruction>'
-          : '<replacement>A concise formal draft.</replacement>');
-        await expect(service.continueConversation('Formal')).resolves.toMatchObject(
-          kind === 'instruction'
-            ? { success: true, refinedInstruction: 'Use concise formal prose.' }
-            : { success: true, editedText: 'A concise formal draft.' },
-        );
+        respond('<replacement>A concise formal draft.</replacement>');
+        await expect(service.continueConversation('Formal')).resolves.toMatchObject({
+          success: true, editedText: 'A concise formal draft.',
+        });
         expect(sdkMock.getLastResponse()).toBe(firstQuery);
 
         service.resetConversation();

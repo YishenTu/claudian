@@ -18,28 +18,25 @@ it.each([true, false])('selects auxiliary persistence from ephemeral support (%s
     executionLifecycleRegistry: lifecycle,
   } as unknown as ProviderHost;
   const title = ProviderRegistry.createTitleGenerationService(host, 'claude');
-  const instruction = ProviderRegistry.createInstructionRefineService(host, 'claude');
   const inlineEdit = ProviderRegistry.createInlineEditService(host, 'claude');
   try {
     const results = [
       title.generateTitle('conversation', 'Draft', jest.fn()),
-      instruction.refineInstruction('Improve this', ''),
       inlineEdit.editText({ instruction: 'Improve', mode: 'selection', notePath: 'note.md', selectedText: 'Draft' }),
     ];
-    await waitFor(() => backend.sessions.length === 3 && backend.sessions.every(session => session.requests.length === 1));
+    await waitFor(() => backend.sessions.length === 2 && backend.sessions.every(session => session.requests.length === 1));
     const configs = [...backend.configs];
     for (const session of backend.sessions) {
       session.emitText('Which tone?');
       session.complete();
     }
     await Promise.all(results);
-    expect(configs).toEqual(Array.from({ length: 3 }, () => expect.objectContaining({
+    expect(configs).toEqual(Array.from({ length: 2 }, () => expect.objectContaining({
       lifecycle: 'ephemeral',
       nativePersistence: supported ? 'disabled-if-supported' : 'provider-default',
     })));
   } finally {
     title.cancel();
-    instruction.cancel();
     inlineEdit.cancel();
     await lifecycle.dispose();
   }

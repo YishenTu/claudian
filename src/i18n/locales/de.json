@@ -77,7 +77,6 @@
       "alreadyExists": "Für diese Konversation existiert bereits ein Nebenchat. Verwirf ihn, um einen neuen zu starten.",
       "nestedUnavailable": "Ein Nebenchat kann keinen weiteren Nebenchat starten. Klappe zuerst zum Hauptchat ein.",
       "mainOnlyCommand": "/{command} ist nur im Hauptchat verfügbar.",
-      "instructionModeActive": "Beende oder brich den Anweisungsmodus ab, bevor du den Nebenchat nutzt.",
       "startFailed": "Nebenchat konnte nicht gestartet werden: {error}",
       "queued": "Für den Nebenchat eingereiht.",
       "busySide": "Der Nebenchat antwortet noch. Warte, bis er fertig ist."

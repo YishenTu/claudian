@@ -302,7 +302,6 @@ export class ComposerDropdownController {
     if (action.kind === 'replace') {
       this.replaceRange(match, action.text);
       this.hide();
-      action.onApplied?.();
       this.inputEl.focus();
     }
   }

@@ -8,7 +8,6 @@ import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   AuxiliaryContinuityReset,
   Conversation,
-  InstructionRefineResult,
   SessionMetadata,
   SlashCommand,
   SubagentInfo,
@@ -35,7 +34,6 @@ export interface ProviderCapabilities {
   forkMode?: 'checkpoint' | 'full-session';
   supportsProviderCommands: boolean;
   supportsImageAttachments: boolean;
-  supportsInstructionMode: boolean;
   supportsTurnSteer?: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
 }
@@ -617,25 +615,6 @@ export interface TitleGenerationService {
     userMessage: string,
     callback: TitleGenerationCallback
   ): Promise<void>;
-  cancel(): void;
-}
-
-// -- Instruction refinement --
-
-export type RefineProgressCallback = (update: InstructionRefineResult) => void;
-
-export interface InstructionRefineService {
-  setModelOverride?(model?: string): void;
-  resetConversation(): void;
-  refineInstruction(
-    rawInstruction: string,
-    existingInstructions: string,
-    onProgress?: RefineProgressCallback
-  ): Promise<InstructionRefineResult>;
-  continueConversation(
-    message: string,
-    onProgress?: RefineProgressCallback
-  ): Promise<InstructionRefineResult>;
   cancel(): void;
 }
 

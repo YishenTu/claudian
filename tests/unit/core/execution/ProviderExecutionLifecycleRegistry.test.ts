@@ -203,7 +203,7 @@ describe('ProviderExecutionLifecycleRegistry', () => {
     const barrier = deferred();
     const registry = new ProviderExecutionLifecycleRegistry();
     const backend = new TestBackend('pi', barrier.promise);
-    const lease = registry.acquire(backend, createSessionConfig(), 'instruction');
+    const lease = registry.acquire(backend, createSessionConfig(), 'inline-edit');
 
     const release = lease.release();
     const disposal = registry.dispose();
@@ -267,7 +267,7 @@ describe('ProviderExecutionLifecycleRegistry', () => {
     const registry = new ProviderExecutionLifecycleRegistry();
     const backend = new TestBackend('grok');
     const first = registry.acquire(backend, createSessionConfig(), 'chat');
-    const second = registry.acquire(backend, createSessionConfig('ephemeral'), 'instruction');
+    const second = registry.acquire(backend, createSessionConfig('ephemeral'), 'inline-edit');
     const observations: Array<{ current: boolean; kind: string; generation: number }> = [];
 
     first.onInvalidated((reason) => {

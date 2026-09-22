@@ -126,7 +126,6 @@ export function createHarness(options: {
     getInputEl: () => inputEl as never,
     getTab: () => tab,
     inputWrapperEl,
-    isInstructionModeActive: () => false,
     isRuntimeLive: () => true,
     onDestinationChanged: () => { destinationChanges.push(controller.destination); },
     plugin,

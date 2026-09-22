@@ -260,7 +260,7 @@ export function buildTabRuntimeControllers(
         tab.providerId = nextProviderId;
 
         if (providerChanged) {
-          syncTabProviderServices(tab, services, plugin);
+          syncTabProviderServices(tab, services);
         }
 
         tab.conversationId = nextConversationId;
@@ -297,7 +297,7 @@ export function buildTabRuntimeControllers(
         tab.providerId = nextModel?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
         options.onDraftModelChanged?.(tab, tab.draftModel);
         if (tab.providerId !== previousProviderId) {
-          syncTabProviderServices(tab, services, plugin);
+          syncTabProviderServices(tab, services);
         }
         refreshTabProviderUI(tab);
         applyProviderUIGating(tab, plugin);
@@ -323,7 +323,6 @@ export function buildTabRuntimeControllers(
     getInputEl: () => dom.inputEl,
     getTab: () => runtimeRef.requirePublished(),
     inputWrapperEl: dom.inputWrapper,
-    isInstructionModeActive: () => ui.instructionModeManager.isActive(),
     isRuntimeLive,
     onDestinationChanged: () => {
       const tab = runtimeRef.current();
@@ -353,8 +352,6 @@ export function buildTabRuntimeControllers(
     getMessagesEl: () => dom.messagesEl,
     getLinkedContentController: () => ui.linkedContentController,
     getImageContextManager: () => ui.imageContextManager,
-    getInstructionModeManager: () => ui.instructionModeManager,
-    getInstructionRefineService: () => services.instructionRefineService,
     getTitleGenerationService: () => services.titleGenerationService,
     generateId: createTabMessageId,
     getAuxiliaryModel: () => getTabSelectedModel(runtimeRef.requirePublished(), plugin),
@@ -395,7 +392,6 @@ export function buildTabRuntimeControllers(
     getSettings: () => plugin.settings.keyboardNavigation,
     isStreaming: () => state.isStreaming,
     shouldSkipEscapeHandling: () => {
-      if (ui.instructionModeManager.isActive()) return true;
       if (inputController.isResumeDropdownVisible()) return true;
       if (ui.composerDropdown.isVisible()) return true;
       return false;

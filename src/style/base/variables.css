@@ -16,7 +16,7 @@
   --claudian-error: #dc3545;
   --claudian-error-rgb: 220, 53, 69;
   --claudian-compact: #5bc0de;
-  /* Shared side-chat accent; formerly the instruction-mode border colour. */
+  /* Shared side-chat accent. */
   --claudian-side-chat: #60a5fa;
 }
 

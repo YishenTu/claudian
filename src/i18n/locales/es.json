@@ -77,7 +77,6 @@
       "alreadyExists": "Ya existe un chat lateral para esta conversación. Descártalo para iniciar otro.",
       "nestedUnavailable": "Un chat lateral no puede iniciar otro. Contráelo al principal primero.",
       "mainOnlyCommand": "/{command} solo está disponible en el chat principal.",
-      "instructionModeActive": "Finaliza o cancela el modo de instrucción antes de usar el chat lateral.",
       "startFailed": "No se pudo iniciar el chat lateral: {error}",
       "queued": "Añadido a la cola del chat lateral.",
       "busySide": "El chat lateral aún está respondiendo. Espera a que termine."

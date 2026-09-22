@@ -34,7 +34,6 @@ export {
   type EnvironmentScope,
   type EnvSnippet,
   type HostnameCliPaths,
-  type InstructionRefineResult,
   type KeyboardNavigationSettings,
   type LegacyLinkedContentSettingsInput,
   type PermissionMode,

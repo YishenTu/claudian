@@ -10,7 +10,6 @@ export const OPENCODE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Ob
   forkMode: 'full-session',
   supportsProviderCommands: true,
   supportsImageAttachments: true,
-  supportsInstructionMode: true,
   supportsTurnSteer: false,
   reasoningControl: 'effort',
 });

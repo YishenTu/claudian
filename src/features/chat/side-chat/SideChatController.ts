@@ -38,7 +38,6 @@ export interface SideChatControllerDeps {
   readonly getImageContextManager: () => ImageContextManager | null;
   readonly getTab: () => AssembledTabRuntime;
   readonly isRuntimeLive: (tab: AssembledTabRuntime) => boolean;
-  readonly isInstructionModeActive: () => boolean;
   readonly onDestinationChanged: () => void;
   readonly onStatusChanged?: () => void;
 }
@@ -90,7 +89,6 @@ export class SideChatController {
   /** Draft-only colour preview; it never captures a source or starts work. */
   handleComposerInput(): void {
     const isPreview = this.destination === 'main'
-      && !this.deps.isInstructionModeActive()
       && detectSideChatCommand(this.deps.getInputEl().value) !== null;
     if (isPreview === this.#previewActive) return;
     this.#previewActive = isPreview;
@@ -108,10 +106,6 @@ export class SideChatController {
   ): Promise<boolean> {
     if (this.destination === 'side') {
       new Notice(t('chat.sideChat.nestedUnavailable'));
-      return false;
-    }
-    if (this.deps.isInstructionModeActive()) {
-      new Notice(t('chat.sideChat.instructionModeActive'));
       return false;
     }
     if (!argument) {

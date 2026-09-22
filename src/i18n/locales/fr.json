@@ -77,7 +77,6 @@
       "alreadyExists": "Une conversation annexe existe déjà ici. Abandonne-la pour en démarrer une autre.",
       "nestedUnavailable": "Une conversation annexe ne peut pas en démarrer une autre. Réduis d'abord vers la principale.",
       "mainOnlyCommand": "/{command} n'est disponible que dans la conversation principale.",
-      "instructionModeActive": "Termine ou annule le mode instruction avant d'utiliser la conversation annexe.",
       "startFailed": "Impossible de démarrer la conversation annexe : {error}",
       "queued": "Ajouté à la file de la discussion secondaire.",
       "busySide": "La conversation annexe répond encore. Attends la fin."

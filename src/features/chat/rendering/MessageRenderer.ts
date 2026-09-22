@@ -105,7 +105,6 @@ export class MessageRenderer {
       supportsFork: false,
       supportsProviderCommands: false,
       supportsImageAttachments: false,
-      supportsInstructionMode: false,
       supportsTurnSteer: false,
       reasoningControl: 'none' as const,
     }));

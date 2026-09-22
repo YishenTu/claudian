@@ -77,7 +77,6 @@
       "alreadyExists": "该对话已有侧边对话。请先放弃后再新建。",
       "nestedUnavailable": "侧边对话中无法再开启侧边对话。请先收起回到主对话。",
       "mainOnlyCommand": "/{command} 仅可在主对话中使用。",
-      "instructionModeActive": "请先完成或取消指令模式，再使用侧边对话。",
       "startFailed": "侧边对话启动失败：{error}",
       "queued": "已加入侧聊队列。",
       "busySide": "侧边对话仍在回复，请等待其完成。"

@@ -65,7 +65,6 @@ export type ComposerSelectionAction =
   | {
     readonly kind: 'replace';
     readonly text: string;
-    readonly onApplied?: () => void;
   };
 
 export interface ComposerDropdownSource {

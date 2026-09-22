@@ -187,8 +187,6 @@ function createFixture(overrides: Record<string, unknown> = {}) {
       hasImages: jest.fn().mockReturnValue(false),
       setImages: jest.fn(),
     }) as any,
-    getInstructionModeManager: () => null,
-    getInstructionRefineService: () => null,
     getTitleGenerationService: () => null,
     generateId: () => `id-${++id}`,
     getAuxiliaryModel: () => 'claude-model',

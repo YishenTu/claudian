@@ -24,11 +24,6 @@ export function buildTabRuntimeInputBindings(
   const keydownHandler = (event: KeyboardEvent) => {
     if ((event.target as HTMLElement | null)?.closest?.('button, a')) return;
     const tab = runtimeRef.requirePublished();
-    if (ui.instructionModeManager.isActive()) {
-      ui.instructionModeManager.handleKeydown(event);
-      return;
-    }
-
     if (sendTabInputMessageFromExplicitEnterShortcut(tab, event)) {
       return;
     }
@@ -61,13 +56,8 @@ export function buildTabRuntimeInputBindings(
   const inputHandler = () => {
     const tab = runtimeRef.requirePublished();
     commitProvisionalTab(tab);
-    ui.instructionModeManager.handleInputChange();
     controllers.sideChatController.handleComposerInput();
-    if (!ui.instructionModeManager.isActive()) {
-      ui.composerDropdown.handleInputChange();
-    } else {
-      ui.composerDropdown.hide();
-    }
+    ui.composerDropdown.handleInputChange();
   };
   dom.inputEl.addEventListener('input', inputHandler);
   options.registerCleanup(

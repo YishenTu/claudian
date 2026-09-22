@@ -8,7 +8,6 @@ export const GROK_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object
   supportsFork: true,
   supportsProviderCommands: true,
   supportsImageAttachments: true,
-  supportsInstructionMode: true,
   supportsTurnSteer: true,
   reasoningControl: 'effort',
 });

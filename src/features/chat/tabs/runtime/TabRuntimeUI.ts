@@ -20,7 +20,6 @@ import { ComposerContextTray } from '../../ui/ComposerContextTray';
 import { FileContextManager } from '../../ui/FileContext';
 import { ImageContextManager } from '../../ui/ImageContext';
 import { createInputToolbar } from '../../ui/InputToolbar';
-import { InstructionModeManager as InstructionModeManagerClass } from '../../ui/InstructionModeManager';
 import { NavigationSidebar } from '../../ui/NavigationSidebar';
 import { installTextareaSizing } from '../../ui/textareaSizing';
 import { recalculateUsageForModel } from '../../utils/usageInfo';
@@ -100,7 +99,6 @@ function buildComposerDropdown(
   providerId: ProviderId,
   fileContextManager: FileContextManager,
   options: TabRuntimeConstructionContext,
-  runtimeRef: PublishedTabRuntimeRef,
   getHiddenCommands?: () => Set<string>,
   catalogInfo?: ProviderCatalogInfo,
 ): MainChatComposerDropdown {
@@ -115,46 +113,10 @@ function buildComposerDropdown(
       hiddenCommands: getHiddenCommands?.() ?? new Set(),
       providerConfig: catalogInfo?.config,
       providerDiscovery: catalogInfo?.discovery,
-      onSlashCommandSelected: command => {
-        if (command.id !== 'builtin:instruction') return;
-        dom.inputEl.value = '';
-        runtimeRef.requirePublished().ui.instructionModeManager.enter();
-      },
     },
   );
   options.registerCleanup('tab composer dropdown', () => dropdown.destroy());
   return dropdown;
-}
-
-function buildInstructionComponents(
-  shell: TabRuntimeShellBundle,
-  options: TabRuntimeConstructionContext,
-  runtimeRef: PublishedTabRuntimeRef,
-  composerDropdown: MainChatComposerDropdown,
-): Pick<
-  TabUIComponents,
-  'instructionModeManager'
-> {
-  const { dom } = shell;
-  const instructionModeManager = new InstructionModeManagerClass(
-    dom.inputEl,
-    {
-      onSubmit: async (rawInstruction) => {
-        await runtimeRef.requirePublished().controllers.inputController
-          .handleInstructionSubmit(rawInstruction);
-      },
-      getInputWrapper: () => dom.inputWrapper,
-      onActiveChange: active => {
-        if (active) composerDropdown.hide();
-      },
-    },
-  );
-  options.registerCleanup(
-    'tab instruction mode manager',
-    () => instructionModeManager.destroy(),
-  );
-
-  return { instructionModeManager };
 }
 
 function buildInputToolbar(
@@ -194,14 +156,14 @@ function buildInputToolbar(
     applyProviderTarget: ({ providerId, model }) => {
       shell.draftModel = model;
       shell.providerId = providerId;
-      syncTabProviderServices(shell, services, plugin);
+      syncTabProviderServices(shell, services);
       runtimeRef.requirePublished().ui.composerDropdown.clearProviderCatalog();
     },
     restoreDraft: ({ providerId, model }) => {
       const tab = runtimeRef.requirePublished();
       shell.draftModel = model;
       shell.providerId = providerId;
-      syncTabProviderServices(shell, services, plugin);
+      syncTabProviderServices(shell, services);
       syncComposerDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
       refreshTabProviderUI(tab);
       applyProviderUIGating(tab, plugin);
@@ -481,15 +443,8 @@ export function buildTabRuntimeUI(
     getTabProviderId(shell, plugin),
     contextManagers.fileContextManager,
     options,
-    runtimeRef,
     () => getTabHiddenCommands(shell, plugin),
     catalogInfo,
-  );
-  const instructionComponents = buildInstructionComponents(
-    shell,
-    options,
-    runtimeRef,
-    composerDropdown,
   );
   const navigationSidebar = new NavigationSidebar(
     dom.messagesWrapperEl,
@@ -506,7 +461,6 @@ export function buildTabRuntimeUI(
     permissionToggle: toolbar.permissionToggle,
     serviceTierToggle: toolbar.serviceTierToggle,
     composerDropdown,
-    ...instructionComponents,
     contextUsageMeter: toolbar.contextUsageMeter,
     navigationSidebar,
   };

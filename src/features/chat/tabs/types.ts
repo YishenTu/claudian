@@ -5,7 +5,7 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 import type { ProviderCommandDropdownConfig } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandDiscoveryController } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
-import type { InstructionRefineService, ProviderId, TitleGenerationService } from '../../../core/providers/types';
+import type { ProviderId, TitleGenerationService } from '../../../core/providers/types';
 import type { MainChatComposerDropdown } from '../composer/MainChatComposerDropdown';
 import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import type { CanvasSelectionController } from '../controllers/CanvasSelectionController';
@@ -32,7 +32,6 @@ import type {
   ServiceTierToggle,
   ThinkingBudgetSelector,
 } from '../ui/InputToolbar';
-import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { NavigationSidebar } from '../ui/NavigationSidebar';
 import type { TabSession } from './TabSession';
 
@@ -106,7 +105,6 @@ export interface TabControllers {
  */
 export interface TabServices {
   readonly subagentManager: SubagentManager;
-  instructionRefineService: InstructionRefineService | null;
   readonly titleGenerationService: TitleGenerationService;
 }
 
@@ -124,7 +122,6 @@ export interface TabUIComponents {
   readonly permissionToggle: PermissionToggle;
   readonly serviceTierToggle: ServiceTierToggle;
   readonly composerDropdown: MainChatComposerDropdown;
-  readonly instructionModeManager: InstructionModeManager;
   readonly contextUsageMeter: ContextUsageMeter;
   readonly navigationSidebar: NavigationSidebar;
 }

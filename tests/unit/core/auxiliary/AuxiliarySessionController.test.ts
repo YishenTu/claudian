@@ -45,7 +45,7 @@ function createController() {
       nativePersistence: 'provider-default',
       vaultWorkingDirectory: '/vault',
     },
-    'instruction',
+    'inline-edit',
     { kind: 'passive' },
   );
   return { backend, controller };

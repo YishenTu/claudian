@@ -77,7 +77,6 @@
       "alreadyExists": "此對話已有側邊對話。請先捨棄後再新建。",
       "nestedUnavailable": "側邊對話中無法再開啟側邊對話。請先收合回到主對話。",
       "mainOnlyCommand": "/{command} 僅能在主對話中使用。",
-      "instructionModeActive": "請先完成或取消指令模式，再使用側邊對話。",
       "startFailed": "側邊對話啟動失敗：{error}",
       "queued": "已加入側聊佇列。",
       "busySide": "側邊對話仍在回覆，請稍候。"

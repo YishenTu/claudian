@@ -77,7 +77,6 @@
       "alreadyExists": "Já existe uma conversa lateral aqui. Descarte-a para iniciar outra.",
       "nestedUnavailable": "Uma conversa lateral não pode iniciar outra. Recolha para a principal primeiro.",
       "mainOnlyCommand": "/{command} está disponível apenas na conversa principal.",
-      "instructionModeActive": "Conclua ou cancele o modo de instrução antes de usar a conversa lateral.",
       "startFailed": "Não foi possível iniciar a conversa lateral: {error}",
       "queued": "Adicionado à fila da conversa lateral.",
       "busySide": "A conversa lateral ainda está respondendo. Aguarde a conclusão."

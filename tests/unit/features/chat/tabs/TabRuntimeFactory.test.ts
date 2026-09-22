@@ -84,7 +84,6 @@ jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
     createExecutionBackend: jest.fn(),
-    createInstructionRefineService: jest.fn().mockReturnValue(null),
     createSubagentHistoryService: jest.fn().mockReturnValue(null),
     createTitleGenerationService: jest.fn().mockImplementation(() => {
       const service = {
@@ -846,7 +845,6 @@ describe('Tab provider execution ownership', () => {
       expect(tab?.ui.permissionToggle).not.toBeNull();
       expect(tab?.ui.serviceTierToggle).not.toBeNull();
       expect(tab?.ui.composerDropdown).not.toBeNull();
-      expect(tab?.ui.instructionModeManager).not.toBeNull();
       expect(tab?.ui.contextUsageMeter).not.toBeNull();
       const contentChildren = Array.from(tab!.dom.contentEl.children);
       const messagesIndex = contentChildren.indexOf(tab!.dom.messagesWrapperEl);
@@ -1169,12 +1167,10 @@ describe('Tab provider execution ownership', () => {
     }
   });
 
-  it('does not rebuild provider services when failed selection settles after teardown', async () => {
+  it('does not restore provider selection when failed selection settles after teardown', async () => {
     const getChatUIConfig = ProviderRegistry.getChatUIConfig as jest.Mock;
     const getEnabledProviderIds = ProviderRegistry.getEnabledProviderIds as jest.Mock;
     const resolveProviderForModel = ProviderRegistry.resolveProviderForModel as jest.Mock;
-    const createInstructionRefineService = ProviderRegistry
-      .createInstructionRefineService as jest.Mock;
     const getIfInitialized = ProviderWorkspaceRegistry.getIfInitialized as jest.Mock;
     const claudeConfig = getChatUIConfig('claude');
     const codexConfig = {
@@ -1191,10 +1187,6 @@ describe('Tab provider execution ownership', () => {
       model.startsWith('codex-') ? 'codex' : 'claude'
     ));
     getIfInitialized.mockReturnValue({});
-    createInstructionRefineService.mockImplementation(() => ({
-      cancel: jest.fn(),
-      resetConversation: jest.fn(),
-    }));
     const initialization = deferred<void>();
     const onProviderChanged = jest.fn(() => initialization.promise);
 
@@ -1219,15 +1211,13 @@ describe('Tab provider execution ownership', () => {
         await Promise.resolve();
       }
       await destroyTab(tab);
-      const serviceCreationsAtTeardown = createInstructionRefineService.mock.calls.length;
+      expect(tab.providerId).toBe('codex');
       initialization.reject(new Error('Codex initialization failed'));
       await new Promise<void>(resolve => setImmediate(resolve));
 
-      expect(createInstructionRefineService).toHaveBeenCalledTimes(
-        serviceCreationsAtTeardown,
-      );
+      expect(tab.providerId).toBe('codex');
+      expect(plugin.settings.lastSelectedChatModel).toBeUndefined();
     } finally {
-      createInstructionRefineService.mockReturnValue(null);
       getIfInitialized.mockReturnValue(null);
       getChatUIConfig.mockReturnValue(claudeConfig);
       getEnabledProviderIds.mockReturnValue(['claude']);

@@ -1771,7 +1771,7 @@ describe('CodexExecutionBackend', () => {
 
   it.each([
     ['explicitly disabled', 'disabled-if-supported', { kind: 'passive' }],
-    ['instruction refinement', 'provider-default', { kind: 'passive' }],
+    ['passive auxiliary', 'provider-default', { kind: 'passive' }],
     ['inline edit', 'provider-default', { kind: 'read-only' }],
   ] as const)('retains a non-persistent %s thread for clarification', async (_name, nativePersistence, toolPolicy) => {
     let turnIndex = 0;

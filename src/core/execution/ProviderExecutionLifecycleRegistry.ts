@@ -11,7 +11,6 @@ declare const providerExecutionTransitionScopeBrand: unique symbol;
 export type ProviderExecutionOwnerKind =
   | 'chat'
   | 'title'
-  | 'instruction'
   | 'inline-edit'
   | 'warmup';
 

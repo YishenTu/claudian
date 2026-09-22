@@ -74,7 +74,6 @@ function createBlankModelRefreshTab(providerId: 'codex' | 'grok') {
     draftModel: null,
     lifecycleState: 'cold',
     services: {
-      instructionRefineService: null,
       subagentManager: {
         setTaskResultInterpreter: jest.fn(),
       },
@@ -110,8 +109,6 @@ describe('ClaudianView model refresh routing', () => {
       supportsImageAttachments: false,
     } as any));
     jest.spyOn(ProviderRegistry, 'getEnabledProviderIds').mockReturnValue(['codex', 'grok']);
-    jest.spyOn(ProviderRegistry, 'createInstructionRefineService')
-      .mockReturnValue(null as any);
     jest.spyOn(ProviderRegistry, 'getTaskResultInterpreter')
       .mockReturnValue(null as any);
 

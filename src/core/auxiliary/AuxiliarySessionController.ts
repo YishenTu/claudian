@@ -10,12 +10,11 @@ import { TextResponseCollector } from './TextResponseCollector';
 export interface AuxiliaryRequest {
   readonly model?: string;
   readonly reasoning?: string | null;
-  readonly onProgress?: (text: string) => void;
   readonly prompt: string;
   readonly systemPrompt: string;
 }
 
-type AuxiliaryExecutionOwner = 'title' | 'instruction' | 'inline-edit';
+type AuxiliaryExecutionOwner = 'title' | 'inline-edit';
 
 export class AuxiliarySessionController {
   private abortController: AbortController | null = null;
@@ -102,7 +101,7 @@ export class AuxiliarySessionController {
     const run = lease.session.execute(executionRequest);
     this.activeRun = run;
     try {
-      return await this.collector.collect(run, request.onProgress);
+      return await this.collector.collect(run);
     } finally {
       if (this.activeRun === run) {
         this.activeRun = null;

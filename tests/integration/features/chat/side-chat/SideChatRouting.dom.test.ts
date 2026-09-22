@@ -173,7 +173,7 @@ it('keeps main-only commands and nested side commands out of the child', async (
   harness.backend.latest.complete();
   await started;
 
-  for (const command of ['/clear', '/fork', '/instruction', '/side nested', '/btw nested']) {
+  for (const command of ['/clear', '/fork', '/side nested', '/btw nested']) {
     harness.inputEl.value = command;
     await routing.controller.sendMessage();
   }

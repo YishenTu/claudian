@@ -94,18 +94,6 @@ describe('builtInCommands', () => {
       expect(detectBuiltInCommand('/fast', 'claude')).toBeNull();
       expect(detectBuiltInCommand('/fast', 'codex')?.command.action).toBe('fast');
     });
-
-    it('detects only the exact argument-free instruction command', () => {
-      expect(detectBuiltInCommand('/instruction', {
-        supportsInstructionMode: true,
-      })?.command.action).toBe('instruction');
-      expect(detectBuiltInCommand('/instruction remember this', {
-        supportsInstructionMode: true,
-      })).toBeNull();
-      expect(detectBuiltInCommand('/instruction', {
-        supportsInstructionMode: false,
-      })).toBeNull();
-    });
   });
 
   describe('getBuiltInCommandsForDropdown', () => {

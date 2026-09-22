@@ -13,12 +13,10 @@ export type BuiltInCommandAction =
   | 'resume'
   | 'fork'
   | 'fast'
-  | 'instruction'
   | 'side';
 type BuiltInCommandCapability =
   | 'supportsNativeHistory'
-  | 'supportsFork'
-  | 'supportsInstructionMode';
+  | 'supportsFork';
 type BuiltInCommandCapabilityContext =
   Partial<Pick<ProviderCapabilities, BuiltInCommandCapability>>
   & Partial<Pick<ProviderCapabilities, 'providerId'>>;
@@ -35,8 +33,6 @@ export interface BuiltInCommand {
   requiredCapability?: BuiltInCommandCapability;
   /** When set, only these providers expose and execute the command. */
   supportedProviderIds?: ProviderId[];
-  /** When true, any submitted arguments leave the text for normal provider handling. */
-  exact?: boolean;
 }
 
 export interface BuiltInCommandResult {
@@ -77,13 +73,6 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     action: 'side',
     argumentHint: 'prompt',
     requiredCapability: 'supportsFork',
-  },
-  {
-    name: 'instruction',
-    description: 'Save a reusable custom instruction',
-    action: 'instruction',
-    exact: true,
-    requiredCapability: 'supportsInstructionMode',
   },
 ];
 
@@ -167,7 +156,6 @@ export function detectBuiltInCommand(
   if (!isBuiltInCommandSupported(command, context)) return null;
 
   const args = (match[2] || '').trim();
-  if (command.exact && args.length > 0) return null;
 
   return { command, args };
 }

@@ -15,7 +15,6 @@ import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
-  type InstructionRefineService,
   type ProviderCapabilities,
   type ProviderId,
   type TitleGenerationService,
@@ -28,7 +27,6 @@ import {
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
-import { InstructionModal } from '../../../shared/modals/InstructionConfirmModal';
 import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
 import { extractUserDisplayContent } from '../../../utils/context';
@@ -56,7 +54,6 @@ import type { SideChatController } from '../side-chat/SideChatController';
 import type { ChatState } from '../state/ChatState';
 import type { ChatTurnRequest, QueuedMessage, TabReviewOutcome } from '../state/types';
 import type { ImageContextManager } from '../ui/ImageContext';
-import type { InstructionModeManager } from '../ui/InstructionModeManager';
 import type { BrowserSelectionController } from './BrowserSelectionController';
 import type { CanvasSelectionController } from './CanvasSelectionController';
 import type { ConversationController } from './ConversationController';
@@ -84,8 +81,6 @@ export interface InputControllerDeps {
   getMessagesEl: () => HTMLElement;
   getLinkedContentController: () => LinkedContentController;
   getImageContextManager: () => ImageContextManager | null;
-  getInstructionModeManager: () => InstructionModeManager | null;
-  getInstructionRefineService: () => InstructionRefineService | null;
   getTitleGenerationService: () => TitleGenerationService | null;
   getInputContainerEl: () => HTMLElement;
   generateId: () => string;
@@ -180,12 +175,6 @@ export class InputController {
 
   #getAuxiliaryModel(): string | null {
     return this.deps.getAuxiliaryModel?.() ?? null;
-  }
-
-  #syncInstructionRefineModelOverride(
-    instructionRefineService: InstructionRefineService,
-  ): void {
-    instructionRefineService.setModelOverride?.(this.#getAuxiliaryModel() ?? undefined);
   }
 
   #getActiveProviderId(): ProviderId {
@@ -1735,123 +1724,6 @@ export class InputController {
   }
 
   // ============================================
-  // Instruction Mode
-  // ============================================
-
-  async handleInstructionSubmit(rawInstruction: string): Promise<void> {
-    const { plugin } = this.deps;
-
-    if (this.deps.ensureExecutionInitialized) {
-      const ready = await this.deps.ensureExecutionInitialized();
-      if (!ready) {
-        new Notice('Failed to initialize instruction refinement. Please try again.');
-        return;
-      }
-    }
-    const instructionRefineService = this.deps.getInstructionRefineService();
-    const instructionModeManager = this.deps.getInstructionModeManager();
-
-    if (!instructionRefineService) return;
-
-    const existingPrompt = plugin.settings.systemPrompt;
-    let modal: InstructionModal | null = null;
-    let wasCancelled = false;
-
-    try {
-      modal = new InstructionModal(
-        plugin.app,
-        rawInstruction,
-        {
-          onAccept: (finalInstruction) => {
-            instructionRefineService.cancel();
-            void (async (): Promise<void> => {
-              await plugin.mutateSettings((settings) => {
-                settings.systemPrompt = appendMarkdownSnippet(
-                  settings.systemPrompt,
-                  finalInstruction,
-                );
-              });
-
-              new Notice('Instruction added to custom system prompt');
-              instructionModeManager?.clear();
-            })();
-          },
-          onReject: () => {
-            wasCancelled = true;
-            instructionRefineService.cancel();
-            instructionModeManager?.clear();
-          },
-          onClarificationSubmit: async (response) => {
-            this.#syncInstructionRefineModelOverride(instructionRefineService);
-            const result = await instructionRefineService.continueConversation(response);
-
-            if (wasCancelled) {
-              return;
-            }
-
-            if (!result.success) {
-              if (result.error === 'Cancelled') {
-                return;
-              }
-              instructionRefineService.cancel();
-              new Notice(result.error || 'Failed to process response');
-              modal?.showError(result.error || 'Failed to process response');
-              return;
-            }
-
-            if (result.clarification) {
-              modal?.showClarification(result.clarification);
-            } else if (result.refinedInstruction) {
-              modal?.showConfirmation(result.refinedInstruction);
-            }
-          }
-        }
-      );
-      modal.open();
-
-      this.#syncInstructionRefineModelOverride(instructionRefineService);
-      instructionRefineService.resetConversation();
-      const result = await instructionRefineService.refineInstruction(
-        rawInstruction,
-        existingPrompt
-      );
-
-      if (wasCancelled) {
-        return;
-      }
-
-      if (!result.success) {
-        if (result.error === 'Cancelled') {
-          instructionModeManager?.clear();
-          return;
-        }
-        instructionRefineService.cancel();
-        new Notice(result.error || 'Failed to refine instruction');
-        modal.showError(result.error || 'Failed to refine instruction');
-        instructionModeManager?.clear();
-        return;
-      }
-
-      if (result.clarification) {
-        modal.showClarification(result.clarification);
-      } else if (result.refinedInstruction) {
-        modal.showConfirmation(result.refinedInstruction);
-      } else {
-        instructionRefineService.cancel();
-        new Notice('No instruction received');
-        modal.showError('No instruction received');
-        instructionModeManager?.clear();
-      }
-    } catch (error) {
-      instructionRefineService.cancel();
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      new Notice(`Error: ${errorMsg}`);
-      modal?.showError(errorMsg);
-      instructionModeManager?.clear();
-    }
-  }
-
-  // ============================================
   // Approval Dialogs
   // ============================================
 
@@ -1948,13 +1820,6 @@ export class InputController {
           return;
         }
         await sideChat.handleCommandSubmission('', []);
-        break;
-      }
-      case 'instruction': {
-        const manager = this.deps.getInstructionModeManager();
-        if (!manager?.enter()) {
-          new Notice('Instruction mode is not available.');
-        }
         break;
       }
       default: {

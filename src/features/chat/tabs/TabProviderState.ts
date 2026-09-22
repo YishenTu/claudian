@@ -251,16 +251,7 @@ export function refreshTabWorkspaceServices(
 export function syncTabProviderServices(
   tab: TabProviderContext,
   services: TabServices,
-  plugin: FeatureHost,
 ): void {
-  services.instructionRefineService?.cancel();
-  services.instructionRefineService?.resetConversation();
-  services.instructionRefineService = ProviderWorkspaceRegistry.getIfInitialized(tab.providerId)
-    ? ProviderRegistry.createInstructionRefineService(
-      plugin.providerHost,
-      tab.providerId,
-    )
-    : null;
   services.subagentManager.setTaskResultInterpreter(
     ProviderRegistry.getTaskResultInterpreter(tab.providerId),
   );
@@ -346,7 +337,7 @@ export function onProviderAvailabilityChanged(
 
   tab.providerId = nextProviderId;
 
-  syncTabProviderServices(tab, tab.services, plugin);
+  syncTabProviderServices(tab, tab.services);
   syncComposerDropdownForProvider(tab, plugin);
   invalidateTabProviderCommands(tab);
   refreshTabProviderUI(tab);
@@ -407,7 +398,7 @@ export async function initializeTabExecution(
     return;
   }
   refreshTabWorkspaceServices(tab, plugin);
-  syncTabProviderServices(tab, tab.services, plugin);
+  syncTabProviderServices(tab, tab.services);
   await tab.executionCoordinator.bindConversation(conversation
     ? createConversationExecutionBinding(conversation)
     : null);

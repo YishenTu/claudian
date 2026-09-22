@@ -1,7 +1,6 @@
 import { getVaultPath } from '../../utils/path';
 import type { AuxiliaryExecutionContext } from '../auxiliary/AuxiliaryExecutionContext';
 import { InlineEditService as SharedInlineEditService } from '../auxiliary/InlineEditService';
-import { InstructionRefineService as SharedInstructionRefineService } from '../auxiliary/InstructionRefineService';
 import { RoutedTitleGenerationService } from '../auxiliary/RoutedTitleGenerationService';
 import { TitleGenerationService as SharedTitleGenerationService } from '../auxiliary/TitleGenerationService';
 import type {
@@ -15,7 +14,6 @@ import { ProviderWorkspaceRegistry } from './ProviderWorkspaceRegistry';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
   type InlineEditService,
-  type InstructionRefineService,
   type ProviderCapabilities,
   type ProviderChatUIConfig,
   type ProviderConversationHistoryService,
@@ -105,12 +103,6 @@ export class ProviderRegistry {
       fallbackProviderId: DEFAULT_CHAT_PROVIDER_ID,
       onlyEnabledProviders: true,
     });
-  }
-
-  static createInstructionRefineService(plugin: ProviderHost, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InstructionRefineService {
-    return new SharedInstructionRefineService(
-      this.createAuxiliaryExecutionContext(plugin, providerId),
-    );
   }
 
   static createInlineEditService(plugin: ProviderHost, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InlineEditService {

@@ -3,7 +3,6 @@ import type { ProviderCommandDropdownConfig } from '@/core/providers/commands/Pr
 import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import type { ProviderId } from '@/core/providers/types';
-import type { SlashCommand } from '@/core/types';
 import { normalizeArgumentHint } from '@/utils/slashCommand';
 
 import type {
@@ -14,12 +13,7 @@ import type {
   ComposerTriggerMatch,
 } from './types';
 
-type SlashValue =
-  | {
-    readonly command: SlashCommand;
-    readonly kind: 'command';
-  }
-  | { readonly kind: 'retry' };
+type SlashValue = { readonly kind: 'command' | 'retry' };
 
 type SlashCommandDropdownItem = ComposerDropdownValueItem & {
   readonly aliases?: readonly string[];
@@ -28,7 +22,6 @@ type SlashCommandDropdownItem = ComposerDropdownValueItem & {
 export interface SlashCommandSourceOptions {
   readonly hiddenCommands?: ReadonlySet<string>;
   readonly includeBuiltIns?: boolean;
-  readonly onSelect?: (command: SlashCommand) => void;
   readonly providerConfig?: ProviderCommandDropdownConfig;
   readonly providerDiscovery?: ProviderCommandDiscoverySource<ProviderCommandEntry>;
   readonly providerId?: ProviderId;
@@ -42,7 +35,6 @@ export class SlashCommandSource implements ComposerDropdownSource {
   private hiddenCommands: ReadonlySet<string>;
   private includeBuiltIns: boolean;
   private readonly listeners = new Set<() => void>();
-  private readonly onSelect: ((command: SlashCommand) => void) | undefined;
   private providerConfig: ProviderCommandDropdownConfig | null;
   private providerId: ProviderId | null;
 
@@ -50,7 +42,6 @@ export class SlashCommandSource implements ComposerDropdownSource {
     this.discovery = options.providerDiscovery ?? null;
     this.hiddenCommands = options.hiddenCommands ?? new Set();
     this.includeBuiltIns = options.includeBuiltIns ?? true;
-    this.onSelect = options.onSelect;
     this.providerConfig = options.providerConfig ?? null;
     this.providerId = options.providerId ?? options.providerConfig?.providerId ?? null;
     this.#bindDiscovery();
@@ -159,7 +150,6 @@ export class SlashCommandSource implements ComposerDropdownSource {
     return {
       kind: 'replace',
       text: item.replacement,
-      onApplied: () => this.onSelect?.(value.command),
     };
   }
 
@@ -219,7 +209,6 @@ export class SlashCommandSource implements ComposerDropdownSource {
         const key = command.name.toLocaleLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
-        const slashCommand: SlashCommand = command;
         items.push({
           aliases: command.aliases,
           detail: command.argumentHint
@@ -229,7 +218,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
           kind: 'value',
           label: `/${command.name}`,
           replacement: `/${command.name} `,
-          value: { command: slashCommand, kind: 'command' } satisfies SlashValue,
+          value: { kind: 'command' } satisfies SlashValue,
         });
       }
     }
@@ -238,22 +227,6 @@ export class SlashCommandSource implements ComposerDropdownSource {
       const key = entry.name.toLocaleLowerCase();
       if (seen.has(key) || this.hiddenCommands.has(key)) continue;
       seen.add(key);
-      const command: SlashCommand = {
-        agent: entry.agent,
-        allowedTools: entry.allowedTools,
-        argumentHint: entry.argumentHint,
-        content: entry.content,
-        context: entry.context,
-        description: entry.description,
-        disableModelInvocation: entry.disableModelInvocation,
-        hooks: entry.hooks,
-        id: entry.id,
-        kind: entry.kind,
-        model: entry.model,
-        name: entry.name,
-        source: entry.source,
-        userInvocable: entry.userInvocable,
-      };
       items.push({
         detail: entry.argumentHint
           ? `${entry.description ?? ''} · ${normalizeArgumentHint(entry.argumentHint)}`.trim()
@@ -262,7 +235,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
         kind: 'value',
         label: `${entry.displayPrefix}${entry.name}`,
         replacement: `${entry.insertPrefix}${entry.name} `,
-        value: { command, kind: 'command' } satisfies SlashValue,
+        value: { kind: 'command' } satisfies SlashValue,
       });
     }
     return items;
