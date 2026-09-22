@@ -16,7 +16,7 @@ import type {
   ToolExecutionScope,
 } from '../../../core/execution';
 import type { StreamChunk, TurnStats, UsageInfo } from '../../../core/types';
-import { createTurnStats } from '../../../core/types/turnStats';
+import { createTurnStats } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import {
   isAsyncSubagentCompletion,

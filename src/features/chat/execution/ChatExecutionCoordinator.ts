@@ -707,7 +707,8 @@ export class ChatExecutionCoordinator {
       throw terminalSinkFailure.error;
     }
 
-    if (active.terminationOverride) {
+    if (active.terminationOverride
+      && !(active.terminationOverride === 'cancelled' && terminal?.type === 'turn_completed')) {
       return createInterruptedResult(active.terminationOverride, accepted);
     }
     if (!this.#isBindingCurrent(active.binding)) {

@@ -3,9 +3,9 @@ import * as path from 'node:path';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
-import { createTurnStats, isTokenCount } from '../../../core/types/turnStats';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
+import { ClaudeTurnStats } from './ClaudeTurnStats';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
 import { filterActiveBranch } from './sdkBranchFilter';
 import type { SDKNativeMessage, SDKSessionLoadResult } from './sdkHistoryTypes';
@@ -16,6 +16,7 @@ import {
   extractXmlTag,
   hydrateFallbackAskUserAnswers,
   hydrateStructuredToolResults,
+  isCanonicalSdkUserMessage,
   isSystemInjectedMessage,
   mergeAssistantMessage,
   parseSDKMessageToChat,
@@ -155,9 +156,7 @@ export async function loadSDKSessionMessages(
   let turnStartedAt: number | undefined;
   let lastAssistantAt: number | undefined;
   let requestedResponsePending = false;
-  const responseTokens = new Map<string, number>();
-  let usageComplete = true;
-  let finalStopReason: string | null | undefined;
+  let turnStats = new ClaudeTurnStats();
   const taskToolNormalizer = new ClaudeTaskToolNormalizer();
 
   const flushPendingAssistant = (includeDuration: boolean): void => {
@@ -174,14 +173,7 @@ export async function loadSDKSessionMessages(
           pendingAssistant.durationSeconds = nativeDuration !== undefined ? Math.floor(nativeDuration / 1000) : inferredDuration;
         }
         pendingAssistant.completedAt = lastAssistantAt;
-        if (usageComplete && responseTokens.size > 0
-          && (finalStopReason === 'end_turn' || finalStopReason === 'max_tokens' || finalStopReason === 'stop_sequence')) {
-          pendingAssistant.turnStats = createTurnStats(
-            [...responseTokens.values()].reduce((sum, count) => sum + count, 0),
-            turnStartedAt !== undefined && lastAssistantAt !== undefined
-              ? lastAssistantAt - turnStartedAt : undefined,
-          );
-        }
+        pendingAssistant.turnStats = turnStats.finish(turnStartedAt, lastAssistantAt);
       }
       chatMessages.push(pendingAssistant);
     }
@@ -189,9 +181,7 @@ export async function loadSDKSessionMessages(
     lastAssistantAt = undefined;
     turnStartedAt = undefined;
     requestedResponsePending = false;
-    responseTokens.clear();
-    usageComplete = true;
-    finalStopReason = undefined;
+    turnStats = new ClaudeTurnStats();
   };
 
   // Preserve task notification boundaries without ending an unfinished requested response.
@@ -217,9 +207,6 @@ export async function loadSDKSessionMessages(
       continue;
     }
     if (isSystemInjectedMessage(sdkMsg)) continue;
-    if (sdkMsg.type === 'user' && Array.isArray(sdkMsg.message?.content)
-      && sdkMsg.message.content.length > 0
-      && sdkMsg.message.content.every(block => block.type === 'tool_result')) continue;
 
     // Skip synthetic assistant messages (e.g., "No response requested." after /compact)
     if (sdkMsg.type === 'assistant' && sdkMsg.message?.model === '<synthetic>') continue;
@@ -240,21 +227,14 @@ export async function loadSDKSessionMessages(
         } else {
           pendingAssistant = chatMsg;
         }
-        const responseId = sdkMsg.message?.id;
-        const outputTokens = sdkMsg.message?.usage?.output_tokens;
-        if (!responseId || !isTokenCount(outputTokens)) {
-          usageComplete = false;
-        } else {
-          responseTokens.set(responseId, outputTokens);
-        }
-        finalStopReason = sdkMsg.message?.stop_reason;
+        turnStats.add(sdkMsg);
         lastAssistantAt = parseNativeTimestamp(sdkMsg.timestamp);
         requestedResponsePending = turnStartedAt !== undefined
           && sdkMsg.message?.stop_reason === 'tool_use';
       }
     } else {
       flushPendingAssistant(!chatMsg.isInterrupt);
-      if (!chatMsg.isInterrupt && !chatMsg.isRebuiltContext) {
+      if (isCanonicalSdkUserMessage(sdkMsg)) {
         turnStartedAt = parseNativeTimestamp(sdkMsg.timestamp);
       }
       chatMessages.push(chatMsg);

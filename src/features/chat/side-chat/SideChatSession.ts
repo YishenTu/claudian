@@ -347,7 +347,8 @@ export class SideChatSession {
       await this.#deliverRequestedEvent(event);
       if (terminal) break;
     }
-    if (active.terminationOverride) {
+    if (active.terminationOverride
+      && !(active.terminationOverride === 'cancelled' && terminal?.type === 'turn_completed')) {
       return { accepted, status: active.terminationOverride };
     }
     if (!terminal) {

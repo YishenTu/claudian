@@ -50,7 +50,7 @@ import {
   type CreatedPiForkSessionFile,
   type createPiForkSessionFile,
   findPiSessionFile,
-  parsePiSessionContent,
+  getPiTurnStats,
   parsePiSessionEntries,
   resolvePiActivePath,
   type rollbackCreatedPiForkSessionFile,
@@ -1021,9 +1021,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       active.nativeAssistantId =
         findLastRoleId(entries, 'assistant')
         ?? getPiState(this.providerState).leafEntryId;
-      const latest = parsePiSessionContent(content).at(-1);
-      if (latest && latest.assistantMessageId === active.nativeAssistantId
-        && entries.some(entry => entry.id === latest.assistantMessageId)) active.turnStats = latest.turnStats;
+      active.turnStats = getPiTurnStats(entries, active.nativeAssistantId);
     } catch {
       active.nativeAssistantId = getPiState(this.providerState).leafEntryId;
     }

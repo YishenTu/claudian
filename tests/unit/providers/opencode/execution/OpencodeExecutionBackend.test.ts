@@ -1348,3 +1348,25 @@ describe('OpencodeExecutionBackend', () => {
     ]);
   });
 });
+
+it('keeps native completion when cancellation arrives during stats acquisition', async () => {
+  const harness = createHarness();
+  try {
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = (async () => {
+      const events: ProviderExecutionEvent[] = [];
+      for await (const event of run.events) {
+        events.push(event);
+        // With no streamed output, acceptance is published by the completed prompt response.
+        if (event.type === 'turn_started') run.cancel();
+      }
+      return events;
+    })();
+    await waitForCondition(() => harness.kernels.length > 0);
+    await waitForPrompt(harness.kernels[0]);
+    harness.kernels[0].completePrompt();
+    expect((await eventsPromise).at(-1)?.type).toBe('turn_completed');
+  } finally {
+    await harness.session.dispose();
+  }
+});

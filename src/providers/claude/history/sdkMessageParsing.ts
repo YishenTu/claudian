@@ -329,6 +329,16 @@ export function extractXmlTag(content: string, tagName: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+export function isCanonicalSdkUserMessage(record: SDKNativeMessage): boolean {
+  const queuedPrompt = record.type === 'attachment'
+    && record.attachment?.type === 'queued_command' && record.attachment.commandMode === 'prompt';
+  if ((!queuedPrompt && record.type !== 'user') || isSystemInjectedMessage(record)) return false;
+  const content = queuedPrompt ? record.attachment?.prompt : record.message?.content;
+  const text = extractTextContent(content);
+  if (!text && (!content || typeof content === 'string')) return false;
+  return !isInterruptSignalText(text) && !isRebuiltContextContent(text);
+}
+
 export function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
   if (sdkMsg.type !== 'user') {
     return false;
@@ -337,7 +347,11 @@ export function isSystemInjectedMessage(sdkMsg: SDKNativeMessage): boolean {
     return true;
   }
 
-  const text = extractTextContent(sdkMsg.message?.content);
+  const content = sdkMsg.message?.content;
+  if (Array.isArray(content) && content.length > 0
+    && content.every(block => block.type === 'tool_result')) return true;
+
+  const text = extractTextContent(content);
   if (!text) {
     return false;
   }

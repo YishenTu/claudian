@@ -64,3 +64,4 @@ export {
   type ToolDiffData,
   type ToolProviderPayload,
 } from './tools';
+export { createTurnStats, isTokenCount } from './turnStats';

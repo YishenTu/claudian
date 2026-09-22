@@ -1032,6 +1032,16 @@ describe('ChatExecutionCoordinator', () => {
     );
   });
 
+  it('honors queued native completion when cancellation arrives before it is consumed', async () => {
+    const harness = createHarness();
+    const { session, run, resultPromise } = await beginExecution(harness);
+    run.events.push({ type: 'turn_started', scope: requestedScope(session, run, 1), accepted: true });
+    run.events.push({ type: 'turn_completed', scope: requestedScope(session, run, 2), reason: 'completed' });
+    run.events.end();
+    harness.coordinator.cancel();
+    await expect(resultPromise).resolves.toMatchObject({ status: 'completed', accepted: true });
+  });
+
   it('cancels only the active run and reports cancellation', async () => {
     const harness = createHarness();
     const { session, run, resultPromise } = await beginExecution(harness);

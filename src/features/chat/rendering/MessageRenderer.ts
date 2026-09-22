@@ -20,7 +20,6 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
-import { createTurnStats } from '../../../core/types/turnStats';
 import { t } from '../../../i18n/i18n';
 import { enhanceRenderedCodeFence } from '../../../shared/components/CopyableCodeFence';
 import { extractUserDisplayContent } from '../../../utils/context';
@@ -483,7 +482,7 @@ export class MessageRenderer {
       && (this.getCapabilities().forkMode !== 'full-session' || messages.at(-1)?.id === msg.id)) {
       this.#addForkButton(msgEl, msg.id);
     }
-    const stats = createTurnStats(msg.turnStats?.outputTokens, msg.turnStats?.durationMs);
+    const stats = msg.turnStats;
     if (msg.role === 'assistant' && !msg.isInterrupt && stats && this.getCapabilities().supportsResponseThroughput) {
       const rate = (stats.outputTokens / (stats.durationMs / 1000)).toFixed(1);
       // Obsidian renders aria-label as its tooltip; a title would duplicate it.

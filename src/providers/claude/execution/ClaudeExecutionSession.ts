@@ -29,7 +29,7 @@ import {
   getMissingSessionId,
   isSessionMissingError,
 } from '../../../utils/session';
-import { loadSDKSessionMessages } from '../history/ClaudeHistoryStore';
+import { loadClaudeTurnStats } from '../history/ClaudeTurnStats';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
 import { getClaudeState } from '../types/providerState';
 import { ClaudeExecutionEventNormalizer } from './ClaudeExecutionEventNormalizer';
@@ -59,6 +59,7 @@ interface ActiveRequestedRun {
   accepted: boolean;
   nativeFork: boolean;
   nativeHandedOff: boolean;
+  nativeCompleted?: boolean;
   historyReplayGeneration: number | null;
   nativeUserMessageId?: string;
   nativeAssistantId?: string;
@@ -229,6 +230,7 @@ ClaudeExecutionStrategySink {
 
   cancel(): void {
     const active = this.activeRun;
+    if (active?.nativeCompleted) return;
     if (!active || active.terminal) {
       if (!this.backgroundTurn || this.cancelledBackgroundQueryToken !== null) return;
       this.cancelledBackgroundQueryToken = this.backgroundTurn.queryToken;
@@ -313,7 +315,9 @@ ClaudeExecutionStrategySink {
 
   async dispose(): Promise<void> {
     if (this.disposed) return;
-    if (this.activeRun) {
+    if (this.activeRun?.nativeCompleted) {
+      this.#finishCompleted(this.activeRun, 'completed');
+    } else if (this.activeRun) {
       this.cancel();
     }
     this.#finishBackgroundTurn('provider-ended');
@@ -573,6 +577,7 @@ ClaudeExecutionStrategySink {
         this.#finishBackgroundTurn('completed');
         const active = this.activeRun;
         if (active?.nativeHandedOff && inputMatch !== false) {
+          active.nativeCompleted = true;
           let turnStats = normalized.turnStats;
           if (turnStats && this.lastEncodedRequest?.options.persistSession !== false) {
             // Persisted timestamps define the rate both now and on replay. SDK result
@@ -580,11 +585,10 @@ ClaudeExecutionStrategySink {
             turnStats = undefined;
             const sessionId = this.providerSessionId;
             if (sessionId && active.nativeAssistantId) {
-              const history = await loadSDKSessionMessages(
-                this.config.vaultWorkingDirectory, sessionId, active.nativeAssistantId, undefined,
+              turnStats = await loadClaudeTurnStats(
+                this.config.vaultWorkingDirectory, sessionId, active.nativeAssistantId,
                 { environment: this.lastEncodedRequest?.options.env ?? process.env },
               ).catch(() => undefined);
-              turnStats = history?.messages.find(message => message.assistantMessageId === active.nativeAssistantId)?.turnStats;
             }
           }
           if (this.activeRun === active && !active.terminal) this.#finishCompleted(active, 'completed', turnStats);

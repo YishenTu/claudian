@@ -11,7 +11,7 @@ import type {
   ImageAttachment,
   ToolCallInfo,
 } from '../../../core/types';
-import { createTurnStats, isTokenCount } from '../../../core/types/turnStats';
+import { createTurnStats, isTokenCount } from '../../../core/types';
 import { extractUserDisplayContent } from '../../../utils/context';
 import {
   buildImageAttachmentFromBase64,

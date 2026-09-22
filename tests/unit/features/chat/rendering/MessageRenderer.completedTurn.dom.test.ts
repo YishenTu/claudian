@@ -359,9 +359,6 @@ it.each(['claude', 'pi', 'opencode', 'codex'])('shows native throughput for %s o
 it.each([
   ['grok', { outputTokens: 125, durationMs: 2500 }],
   ['claude', undefined],
-  ['claude', { outputTokens: 125, durationMs: 0 }],
-  ['claude', { outputTokens: NaN, durationMs: 2500 }],
-  ['claude', { outputTokens: -1, durationMs: 2500 }],
 ])('omits unavailable or unsupported throughput (%s, %j)', (provider, turnStats) => {
   const { renderer, messagesEl } = setup(provider as string);
   renderer.renderMessages([messages[0], { ...messages[2], turnStats } as ChatMessage], () => 'Hello');

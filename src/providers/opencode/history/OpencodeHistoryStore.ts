@@ -3,7 +3,6 @@ import * as fs from 'node:fs';
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
-import { createTurnStats, isTokenCount } from '../../../core/types/turnStats';
 import { extractUserQuery } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
 import {
@@ -23,6 +22,7 @@ import {
   type StoredRow,
   type StoredSessionRows,
 } from './OpencodeSqliteReader';
+import { getMessageCompletedAt, getMessageCreatedAt, OpencodeTurnStats } from './OpencodeTurnStats';
 
 export { OPENCODE_MESSAGE_ROW_SQL } from './OpencodeSqliteReader';
 
@@ -97,16 +97,23 @@ export function mapOpencodeMessages(
 ): ChatMessage[] {
   const mappedMessages: ChatMessage[] = [];
   const stats = new OpencodeTurnStats();
+  let previousAssistant: ChatMessage | undefined;
 
   for (const message of messages) {
     try {
       const mappedMessage = mapStoredMessage(message, context);
       if (mappedMessage) {
-        stats.add(message.info, mappedMessage, 1);
+        if (mappedMessage.role === 'user') previousAssistant = undefined;
+        else {
+          if (previousAssistant) previousAssistant.turnStats = undefined;
+          previousAssistant = mappedMessage;
+        }
+        mappedMessage.turnStats = stats.add(message.info, 1);
         mappedMessages.push(mappedMessage);
       }
     } catch (error) {
       stats.reset();
+      previousAssistant = undefined;
       mappedMessages.push(createOpencodeHydrationDiagnosticMessage({
         ...context,
         messageId: getString(message.info.id) ?? undefined,
@@ -286,17 +293,6 @@ function getMessageCompletionTime(message: ChatMessage): number | null {
   }
 
   return message.timestamp + (message.durationSeconds * 1_000);
-}
-
-function getMessageCreatedAt(info: StoredRow): number | null {
-  return getNestedNumber(info, ['time', 'created'])
-    ?? getNumber(info.data_time_created)
-    ?? getNumber(info.time_created);
-}
-
-function getMessageCompletedAt(info: StoredRow): number | null {
-  return getNestedNumber(info, ['time', 'completed'])
-    ?? getNumber(info.data_time_completed);
 }
 
 function isInvalidStoredMessageData(info: StoredRow): boolean {
@@ -584,10 +580,12 @@ function mapV2Messages(
   const result: ChatMessage[] = [];
   let segment: ChatMessage[] = [];
   const stats = new OpencodeTurnStats();
+  let previousAssistant: ChatMessage | undefined;
   const flush = () => {
     result.push(...mergeAdjacentAssistantMessages(segment));
     segment = [];
     stats.reset();
+    previousAssistant = undefined;
   };
   for (const { row, data } of messages) {
     if (!data) {
@@ -614,47 +612,15 @@ function mapV2Messages(
       parts,
     }, context, 2);
     if (message) {
-      stats.add(info, message, 2);
+      if (message.role === 'user') previousAssistant = undefined;
+      else {
+        if (previousAssistant) previousAssistant.turnStats = undefined;
+        previousAssistant = message;
+      }
+      message.turnStats = stats.add(info, 2);
       segment.push(message);
     }
   }
   flush();
   return result;
-}
-
-
-/** Session-scoped native records; v1 additionally links every step to its user. */
-class OpencodeTurnStats {
-  private userId: string | undefined;
-  private startedAt: number | null = null;
-  private outputTokens: number | undefined = 0;
-  private previousAssistant: ChatMessage | undefined;
-
-  reset(): void {
-    this.userId = undefined;
-    this.startedAt = null;
-    this.outputTokens = 0;
-    this.previousAssistant = undefined;
-  }
-
-  add(info: StoredRow, message: ChatMessage, version: 1 | 2): void {
-    if (message.role === 'user') {
-      this.reset();
-      this.userId = message.id;
-      this.startedAt = getMessageCreatedAt(info);
-      return;
-    }
-    if (this.previousAssistant) this.previousAssistant.turnStats = undefined;
-    this.previousAssistant = message;
-    const tokens = getObject(info.tokens);
-    const output = tokens?.output;
-    const reasoning = tokens?.reasoning;
-    if (!isTokenCount(output) || !isTokenCount(reasoning) || info.error
-      || (version === 1 && info.parentID !== this.userId)) this.outputTokens = undefined;
-    else if (this.outputTokens !== undefined) this.outputTokens += output + reasoning;
-    const completedAt = getMessageCompletedAt(info);
-    if ((info.finish === 'stop' || info.finish === 'length') && this.startedAt !== null && completedAt !== null) {
-      message.turnStats = createTurnStats(this.outputTokens, completedAt - this.startedAt);
-    }
-  }
 }

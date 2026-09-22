@@ -1,3 +1,4 @@
+import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 
 import type {
@@ -58,6 +59,7 @@ jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => {
 });
 
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
+import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
 import { CodexRpcResponseError } from '@/providers/codex/runtime/CodexRpcTransport';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 
@@ -418,6 +420,21 @@ describe('CodexExecutionBackend', () => {
         canRepresentHostPath: () => true,
       },
     });
+  });
+
+  it('matches live TurnStats to the rollout from a captured native Codex turn', async () => {
+    configureSteerTransport('thread', 'turn', () => ({}));
+    const { session, run } = await createActiveSteerSession();
+    try {
+      for (const notification of pair.notifications) emitNotification(notification.method, notification.params);
+      const completion = (await collectEvents(run.events)).at(-1);
+      const replay = parseCodexSessionContent(pair.rollout.map(record => JSON.stringify(record)).join('\n'));
+      expect(completion).toMatchObject({ type: 'turn_completed', turnStats: { outputTokens: 5, durationMs: 4862 } });
+      expect(replay.at(-1)?.turnStats).toEqual({ outputTokens: 5, durationMs: 4862 });
+      expect(completion).toMatchObject({ turnStats: replay.at(-1)?.turnStats });
+    } finally {
+      await session.dispose();
+    }
   });
 
   it('counts raw native responses once and excludes child-thread output', async () => {

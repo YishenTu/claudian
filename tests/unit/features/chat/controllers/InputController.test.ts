@@ -2080,3 +2080,17 @@ it('attaches completed turn statistics to the final assistant after native messa
   await fixture.controller.sendMessage({ content: 'Work' });
   expect(fixture.state.messages.at(-1)?.turnStats).toEqual({ outputTokens: 125, durationMs: 2500 });
 });
+
+it('keeps a completed answer when cancellation loses to native completion', async () => {
+  const fixture = createFixture();
+  fixture.coordinator.execute.mockImplementationOnce(async () => {
+    fixture.controller.cancelStreaming();
+    await fixture.controller.handleExecutionEvent({
+      type: 'turn_completed', reason: 'completed',
+      scope: { kind: 'requested', executionId: 'e', turnId: 't', sessionInstanceId: 's', sequence: 1 },
+    });
+    return { accepted: true, status: 'completed' };
+  });
+  await fixture.controller.sendMessage({ content: 'Work' });
+  expect(fixture.state.messages.at(-1)?.isInterrupt).not.toBe(true);
+});

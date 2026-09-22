@@ -1,0 +1,153 @@
+{
+  "source": {
+    "cliVersion": "0.155.1",
+    "capturedAt": "2026-09-23",
+    "description": "One local app-server turn. IDs anonymized; unrelated notifications, instructions and metadata omitted. Token counts and millisecond durations unchanged."
+  },
+  "notifications": [
+    {
+      "method": "rawResponse/completed",
+      "params": {
+        "threadId": "thread",
+        "turnId": "turn",
+        "responseId": "response",
+        "usage": {
+          "totalTokens": 13003,
+          "inputTokens": 12998,
+          "cachedInputTokens": 0,
+          "cacheWriteInputTokens": 0,
+          "outputTokens": 5,
+          "reasoningOutputTokens": 0
+        }
+      },
+      "emittedAtMs": 1790098334062
+    },
+    {
+      "method": "turn/completed",
+      "params": {
+        "threadId": "thread",
+        "turn": {
+          "id": "turn",
+          "items": [],
+          "itemsView": "summary",
+          "status": "completed",
+          "error": null,
+          "startedAt": 1790098329,
+          "completedAt": 1790098334,
+          "durationMs": 4862
+        }
+      }
+    }
+  ],
+  "rollout": [
+    {
+      "type": "session_meta",
+      "payload": {
+        "id": "thread"
+      }
+    },
+    {
+      "timestamp": "2026-09-22T17:32:09.217Z",
+      "ordinal": 1,
+      "type": "event_msg",
+      "payload": {
+        "type": "task_started",
+        "turn_id": "turn",
+        "started_at": 1790098329,
+        "model_context_window": 258400,
+        "collaboration_mode_kind": "default"
+      }
+    },
+    {
+      "type": "turn_context",
+      "timestamp": "2026-09-22T17:32:11.809Z",
+      "payload": {
+        "turn_id": "turn",
+        "model": "gpt-6-astra"
+      }
+    },
+    {
+      "timestamp": "2026-09-22T17:32:11.820Z",
+      "ordinal": 8,
+      "type": "response_item",
+      "payload": {
+        "type": "message",
+        "id": "user-message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "Reply OK."
+          }
+        ]
+      }
+    },
+    {
+      "timestamp": "2026-09-22T17:32:13.999Z",
+      "ordinal": 11,
+      "type": "response_item",
+      "payload": {
+        "type": "message",
+        "id": "assistant-message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "OK"
+          }
+        ],
+        "phase": "final_answer"
+      }
+    },
+    {
+      "timestamp": "2026-09-22T17:32:14.062Z",
+      "ordinal": 12,
+      "type": "token_usage_record",
+      "payload": {
+        "thread_id": "thread",
+        "turn_id": "turn",
+        "session_id": "thread",
+        "root_turn_id": "turn",
+        "response_id": "response",
+        "usage": {
+          "input_tokens": 12998,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 13003
+        },
+        "turn_token_usage": {
+          "input_tokens": 12998,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 13003
+        },
+        "thread_token_usage": {
+          "input_tokens": 12998,
+          "cached_input_tokens": 0,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 5,
+          "reasoning_output_tokens": 0,
+          "total_tokens": 13003
+        }
+      }
+    },
+    {
+      "timestamp": "2026-09-22T17:32:14.067Z",
+      "ordinal": 14,
+      "type": "event_msg",
+      "payload": {
+        "type": "task_complete",
+        "turn_id": "turn",
+        "last_agent_message": "OK",
+        "started_at": 1790098329,
+        "completed_at": 1790098334,
+        "duration_ms": 4862,
+        "time_to_first_token_ms": 4662
+      }
+    }
+  ]
+}

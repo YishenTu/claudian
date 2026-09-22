@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import {
   createPiForkSessionFile,
+  getPiTurnStats,
   parsePiSessionContent,
   parsePiSessionEntries,
   type PiSessionEntry,
@@ -11,6 +12,7 @@ import {
   resolvePiEntryPath,
   rollbackCreatedPiForkSessionFile,
 } from '@/providers/pi/history/PiHistoryStore';
+import { encodePiRecoveryPrompt } from '@/providers/pi/history/PiRecoveryPromptCodec';
 
 describe('PiHistoryStore', () => {
   it('parses linear user and assistant messages', () => {
@@ -764,4 +766,17 @@ it.each([false, true])('restores Pi turn output across tool loops (missing usage
         timestamp: Date.parse('2026-09-20T11:00:02Z'), content: [{ type: 'text', text: 'Done' }] } },
   ].map(entry => JSON.stringify(entry)).join('\n');
   expect(parsePiSessionContent(content).at(-1)?.turnStats).toEqual(missing ? undefined : { outputTokens: 125, durationMs: 2500 });
+});
+
+
+it('keeps live and replay stats unavailable for a hidden recovery-only input', () => {
+  const content = [
+    { type: 'message', id: 'recovery', timestamp: '2026-09-20T11:00:00Z',
+      message: { role: 'user', content: encodePiRecoveryPrompt('User: Previous question', null) } },
+    { type: 'message', id: 'answer', parentId: 'recovery', timestamp: '2026-09-20T11:00:02.500Z',
+      message: { role: 'assistant', content: 'Answer', stopReason: 'stop', usage: { output: 125 } } },
+  ].map(record => JSON.stringify(record)).join('\n');
+  const entries = resolvePiActivePath(parsePiSessionEntries(content).entries);
+  expect(getPiTurnStats(entries, 'answer')).toBeUndefined();
+  expect(parsePiSessionContent(content).at(-1)?.turnStats).toBeUndefined();
 });

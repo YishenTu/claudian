@@ -470,6 +470,7 @@ export class SideChatRuntime {
     const assistant = this.#activeAssistant;
     if (!assistant) return;
     if (event.type === 'turn_completed') {
+      this.state.cancelRequested = false;
       assistant.turnStats = event.turnStats;
       return;
     }

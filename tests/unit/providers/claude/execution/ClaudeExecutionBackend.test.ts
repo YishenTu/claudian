@@ -157,6 +157,60 @@ describe('ClaudeExecutionBackend', () => {
     jest.restoreAllMocks();
   });
 
+  it('keeps native success when cancellation arrives during stats loading', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-throughput-'));
+    const directory = path.join(home, 'projects', '-vault');
+    await fs.mkdir(directory, { recursive: true });
+    const sessionFile = path.join(directory, 'session-1.jsonl');
+    await fs.writeFile(sessionFile, [
+      { type: 'user', uuid: 'u', timestamp: '2026-09-20T11:00:00Z', message: { content: 'Work' } },
+      { type: 'assistant', uuid: 'a', parentUuid: 'u', timestamp: '2026-09-20T11:00:02.500Z',
+        message: { id: 'response', stop_reason: 'end_turn', usage: { output_tokens: 125 }, content: [{ type: 'text', text: 'Done' }] } },
+    ].map(record => JSON.stringify(record)).join('\n'));
+    const host = createHost();
+    jest.mocked(host.getActiveEnvironmentVariables).mockReturnValue(`CLAUDE_CONFIG_DIR=${home}`);
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'assistant', uuid: 'a', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'Done' }] } },
+      { type: 'result', subtype: 'success', duration_ms: 3000, usage: { output_tokens: 125 } },
+    ], { appendResult: false });
+    const session = new ClaudeExecutionBackend(host).createSession(createConfig());
+    const readStarted = createDeferred<void>();
+    const releaseRead = createDeferred<void>();
+    const nativeRead = fs.readFile;
+    jest.spyOn(jest.requireActual<typeof fs>('node:fs/promises'), 'readFile').mockImplementation((async (...args: Parameters<typeof fs.readFile>) => {
+      if (String(args[0]) === sessionFile) {
+        readStarted.resolve();
+        await releaseRead.promise;
+      }
+      return nativeRead(...args);
+    }) as typeof fs.readFile);
+    const nativeOpen = fs.open;
+    jest.spyOn(jest.requireActual<typeof fs>('node:fs/promises'), 'open').mockImplementation(async (...args) => {
+      if (String(args[0]) === sessionFile) {
+        readStarted.resolve();
+        await releaseRead.promise;
+      }
+      return nativeOpen(...args);
+    });
+    try {
+      const run = session.execute(createRequest());
+      const eventPromise = collectEvents(run.events);
+      await readStarted.promise;
+      expect(session.getSnapshot().status).toBe('executing');
+      run.cancel();
+      releaseRead.resolve();
+      const events = await eventPromise;
+      const replay = await historyStore.loadSDKSessionMessages('/vault', 'session-1', undefined, sessionFile);
+      expect(events.at(-1)).toMatchObject({ type: 'turn_completed', turnStats: { outputTokens: 125, durationMs: 2500 } });
+      expect(events.at(-1)).toMatchObject({ turnStats: replay.messages.at(-1)?.turnStats });
+    } finally {
+      releaseRead.resolve();
+      await session.dispose();
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
   it('uses persisted counts and timing for the live toolbar and replay', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-throughput-'));
     const directory = path.join(home, 'projects', '-vault');

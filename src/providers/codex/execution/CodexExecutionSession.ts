@@ -24,7 +24,7 @@ import {
 } from '../../../core/prompt/mainAgent';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ChatMessage, ImageAttachment, StreamChunk } from '../../../core/types';
-import { createTurnStats, isTokenCount } from '../../../core/types/turnStats';
+import { createTurnStats, isTokenCount } from '../../../core/types';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import {

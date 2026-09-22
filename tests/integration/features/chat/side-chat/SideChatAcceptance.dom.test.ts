@@ -198,3 +198,14 @@ it('refreshes side completion timestamps when the view timestamp setting changes
     mainRenderer.dispose();
   }
 });
+
+it('keeps the side answer completed when cancellation follows native completion', async () => {
+  const harness = createHarness();
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.emitText('Completed answer');
+  harness.backend.latest.complete();
+  harness.controller.cancelSide();
+  await started;
+  expect(screen.getByRole('button', { name: /Worked for/ })).toBeTruthy();
+  expect(screen.queryByText('Interrupted')).toBeNull();
+});

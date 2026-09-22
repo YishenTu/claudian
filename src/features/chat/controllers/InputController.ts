@@ -223,6 +223,7 @@ export class InputController {
     const assistant = this.activeStreamingAssistantMessage;
     if (!assistant) return;
     if (event.type === 'turn_completed') {
+      this.deps.state.cancelRequested = false;
       assistant.turnStats = event.turnStats;
       return;
     }

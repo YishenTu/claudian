@@ -75,6 +75,65 @@ export async function loadOpencodeSessionRows(
   return rows;
 }
 
+export interface OpencodeTurnSelector {
+  userMessageId?: string | null;
+  startedAt: number;
+}
+
+/** Select only the requested turn's scalar metadata, through the same SQLite fallbacks as replay. */
+export async function loadOpencodeTurnRows(
+  databasePath: string,
+  sessionId: string,
+  selector: OpencodeTurnSelector,
+  dependencies: OpencodeSqliteReaderDependencies = {},
+): Promise<StoredSessionRows> {
+  let version = dependencies.nativeVersion ?? 'auto';
+  if (version === 'auto') {
+    const schema = await querySessionRows(databasePath, sessionId, dependencies,
+      id => `SELECT name FROM sqlite_master WHERE name = 'session_v2' AND ${id} IS NOT NULL`,
+      id => `SELECT 1 WHERE ${id} IS NULL`);
+    version = schema.messageRows.length > 0 ? 2 : 1;
+  }
+  const rows = await querySessionRows(databasePath, sessionId, dependencies,
+    id => buildTurnRowsSql(id, selector, version === 2 ? 2 : 1),
+    id => `SELECT 1 WHERE ${id} IS NULL`);
+  return version === 2 ? { ...rows, nativeVersion: 2 } : rows;
+}
+
+function buildTurnRowsSql(sessionId: string, selector: OpencodeTurnSelector, version: 1 | 2): string {
+  const table = version === 2 ? 'session_message' : 'message';
+  const userRole = version === 2 ? "type = 'user'" : "json_valid(data) AND json_extract(data, '$.role') = 'user'";
+  const selectedUser = selector.userMessageId
+    ? `id = '${escapeSqlLiteral(selector.userMessageId)}'`
+    : `${userRole} AND time_created >= ${Number.isFinite(selector.startedAt) ? Math.floor(selector.startedAt) : 'NULL'}`;
+  const order = version === 2 ? 'seq' : 'time_created, id';
+  const columns = `id, session_id, time_created${version === 2 ? ', seq' : ''}`;
+  const range = `(${order}) >= (SELECT ${order} FROM selected_user)
+    AND (NOT EXISTS (SELECT 1 FROM next_user) OR (${order}) < (SELECT ${order} FROM next_user))`;
+  return `WITH selected_user AS (
+    SELECT ${columns} FROM ${table} WHERE session_id = ${sessionId} AND ${selectedUser}
+    ORDER BY ${version === 2 ? 'seq' : 'time_created'} DESC, id DESC LIMIT 1
+  ), next_user AS (
+    SELECT ${columns} FROM ${table}
+    WHERE session_id = (SELECT session_id FROM selected_user) AND ${userRole}
+      AND (${order}) > (SELECT ${order} FROM selected_user)
+    ORDER BY ${order} LIMIT 1
+  ), turn_rows AS (
+    SELECT *, json_valid(data) AS data_valid FROM ${table}
+    WHERE session_id = (SELECT session_id FROM selected_user) AND ${range}
+  )
+  SELECT id, time_created, data_valid,
+    ${version === 2 ? 'type' : "CASE WHEN data_valid THEN json_extract(data, '$.role') END"} AS role,
+    CASE WHEN data_valid THEN json_extract(data, '$.time.created') END AS data_time_created,
+    CASE WHEN data_valid THEN json_extract(data, '$.time.completed') END AS data_time_completed,
+    CASE WHEN data_valid THEN json_extract(data, '$.parentID') END AS parent_id,
+    CASE WHEN data_valid THEN json_extract(data, '$.tokens.output') END AS output_tokens,
+    CASE WHEN data_valid THEN json_extract(data, '$.tokens.reasoning') END AS reasoning_tokens,
+    CASE WHEN data_valid THEN json_extract(data, '$.finish') END AS finish,
+    CASE WHEN data_valid THEN json_extract(data, '$.error') END AS error
+  FROM turn_rows ORDER BY ${version === 2 ? 'seq' : 'time_created'}, id;`;
+}
+
 async function querySessionRows(
   databasePath: string,
   sessionId: string,
