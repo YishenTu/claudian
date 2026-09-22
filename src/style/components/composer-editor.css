@@ -1,5 +1,7 @@
 /* The wrapper owns composer chrome; CodeMirror owns document layout and scrolling. */
 .claudian-input-wrapper .claudian-composer-editor {
+  --no-tooltip: true;
+
   width: 100%;
   min-width: 0;
   min-height: 60px;
