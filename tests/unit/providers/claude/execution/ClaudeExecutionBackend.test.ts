@@ -1,5 +1,9 @@
 import '@/providers';
 
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
 import { createProviderRecoveryTestHarness } from '@test/unit/features/chat/execution/ProviderRecoveryTestHarness';
 
@@ -151,6 +155,35 @@ describe('ClaudeExecutionBackend', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('uses persisted counts and timing for the live toolbar and replay', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'claude-throughput-'));
+    const directory = path.join(home, 'projects', '-vault');
+    await fs.mkdir(directory, { recursive: true });
+    const sessionFile = path.join(directory, 'session-1.jsonl');
+    await fs.writeFile(sessionFile, [
+      { type: 'user', uuid: 'u', timestamp: '2026-09-20T11:00:00Z', message: { content: 'Work' } },
+      { type: 'assistant', uuid: 'a', parentUuid: 'u', timestamp: '2026-09-20T11:00:02.500Z',
+        message: { id: 'response', stop_reason: 'end_turn', usage: { output_tokens: 125 }, content: [{ type: 'text', text: 'Done' }] } },
+    ].map(record => JSON.stringify(record)).join('\n'));
+    const host = createHost();
+    jest.mocked(host.getActiveEnvironmentVariables).mockReturnValue(`CLAUDE_CONFIG_DIR=${home}`);
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'assistant', uuid: 'a', parent_tool_use_id: null, message: { content: [{ type: 'text', text: 'Done' }] } },
+      { type: 'result', subtype: 'success', duration_ms: 3000, usage: { output_tokens: 125 } },
+    ], { appendResult: false });
+    const session = new ClaudeExecutionBackend(host).createSession(createConfig());
+    try {
+      const events = await collectEvents(session.execute(createRequest()).events);
+      const replay = await historyStore.loadSDKSessionMessages('/vault', 'session-1', undefined, sessionFile);
+      expect(events.at(-1)).toMatchObject({ type: 'turn_completed', turnStats: { outputTokens: 125, durationMs: 2500 } });
+      expect(events.at(-1)).toMatchObject({ turnStats: replay.messages.at(-1)?.turnStats });
+    } finally {
+      await session.dispose();
+      await fs.rm(home, { recursive: true, force: true });
+    }
   });
 
   it('disables native mode-switching and task-list tools in the SDK execution policy', async () => {

@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import type {
   ProviderExecutionEvent,
   ProviderExecutionRequest,
@@ -539,6 +544,33 @@ describe('OpencodeExecutionBackend', () => {
 
     harness.kernels[0].completePrompt();
     await collect(run.events);
+  });
+
+  it('publishes finalized statistics from the current native session on completion', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'opencode-throughput-'));
+    const databasePath = path.join(root, 'opencode.db');
+    const db = new DatabaseSync(databasePath);
+    db.exec(`CREATE TABLE session_v2(id TEXT);
+      CREATE TABLE session_message(id TEXT, session_id TEXT, seq INTEGER, type TEXT, time_created INTEGER, data TEXT);`);
+    const insert = db.prepare('INSERT INTO session_message VALUES(?, ?, ?, ?, ?, ?)');
+    insert.run('native-user', 'native-session', 1, 'user', 1000, JSON.stringify({ text: 'Work', time: { created: 1000 } }));
+    insert.run('answer', 'native-session', 2, 'assistant', 1200, JSON.stringify({
+      content: [{ type: 'text', text: 'Done' }], time: { created: 1200, completed: 3500 },
+      finish: 'stop', tokens: { output: 100, reasoning: 25 },
+    }));
+    db.close();
+    const harness = createHarness();
+    try {
+      const run = harness.session.execute(createRequest());
+      harness.kernels[0].sessionInfo = { ...harness.kernels[0].sessionInfo, databasePath };
+      await waitForPrompt(harness.kernels[0]);
+      harness.kernels[0].completePrompt();
+      expect((await collect(run.events)).at(-1)).toMatchObject({ type: 'turn_completed',
+        turnStats: { outputTokens: 125, durationMs: 2500 } });
+    } finally {
+      await harness.session.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('encodes path-only Linked content without changing the Vault-root kernel CWD', async () => {

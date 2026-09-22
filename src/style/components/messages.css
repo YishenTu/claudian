@@ -480,11 +480,15 @@ button.claudian-text-copy-btn.copied {
   background: var(--background-modifier-border-hover);
 }
 
-/* Message timestamps */
+/* Message timestamps and throughput share the toolbar's text size. */
+.claudian-message-timestamp,
+.claudian-response-throughput {
+  font-size: 11px;
+}
+
 .claudian-message-timestamp {
   margin-top: 6px;
   color: var(--text-faint);
-  font-size: 11px;
   line-height: 1.2;
   user-select: none;
   -webkit-user-select: none;
@@ -584,6 +588,17 @@ button.claudian-work-header:disabled {
 
 .claudian-message-actions .claudian-message-timestamp {
   margin-top: 0;
+}
+
+/* Toolbar text sits in the same 16px box as the action icons. */
+.claudian-message-actions .claudian-message-timestamp,
+.claudian-message-actions .claudian-response-throughput {
+  font-size: var(--font-ui-small);
+  line-height: 16px;
+}
+
+.claudian-message-assistant > .claudian-message-actions .claudian-message-timestamp {
+  margin-inline-start: auto;
 }
 
 .claudian-message-actions button.claudian-text-copy-btn {
@@ -703,4 +718,9 @@ button.claudian-work-header:disabled {
 .claudian-message-images > .claudian-message-actions {
   flex-basis: 100%;
   justify-content: flex-end;
+}
+
+.claudian-response-throughput {
+  color: var(--text-muted);
+  white-space: nowrap;
 }

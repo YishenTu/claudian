@@ -280,6 +280,31 @@ function createHarness(
 }
 
 describe('PiExecutionBackend', () => {
+  it('publishes the same native turn statistics live and after reload', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-throughput-'));
+    const sessionFile = path.join(tempDir, 'session.jsonl');
+    const content = [
+      { type: 'session', version: 3, id: 'pi-session-1', cwd: tempDir },
+      { type: 'message', id: 'u', parentId: null, timestamp: '2026-09-20T11:00:00Z', message: { role: 'user', content: 'Work' } },
+      { type: 'message', id: 'a', parentId: 'u', timestamp: '2026-09-20T11:00:02.500Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'Done' }], stopReason: 'stop', usage: { output: 125 } } },
+    ].map(record => JSON.stringify(record)).join('\n');
+    const harness = createHarness(createConfig({ vaultWorkingDirectory: tempDir }));
+    harness.responses.set('get_state', { sessionId: 'pi-session-1', sessionFile });
+    try {
+      const eventsPromise = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => harness.kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
+      await fs.writeFile(sessionFile, content);
+      harness.kernels[0].emit({ type: 'agent_start' });
+      harness.kernels[0].emit({ type: 'agent_end' });
+      expect((await eventsPromise).at(-1)).toMatchObject({ type: 'turn_completed',
+        turnStats: { outputTokens: 125, durationMs: 2500 } });
+    } finally {
+      await harness.session.dispose();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it.each([true, false])('advances the Pi assistant checkpoint (stored leaf: %s)', async storedLeaf => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-review-'));
     const sessionFile = path.join(tempDir, 'session.jsonl');

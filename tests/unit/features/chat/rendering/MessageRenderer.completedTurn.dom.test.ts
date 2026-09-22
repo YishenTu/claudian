@@ -341,3 +341,64 @@ it('keeps requested work on both sides of a mid-response notification in its own
   expect(within(messagesEl).getByText('Work after notification.').closest('[hidden]')).toBeNull();
   renderer.dispose();
 });
+
+
+it.each(['claude', 'pi', 'opencode', 'codex'])('shows native throughput for %s on replay', async (provider) => {
+  const { renderer, messagesEl } = setup(provider);
+  const response = { ...messages[2], turnStats: { outputTokens: 125, durationMs: 2500 } };
+  renderer.renderMessages([messages[0], response], () => 'Hello');
+  const stat = within(messagesEl).getByText('50.0 tok/s');
+  expect(stat.parentElement).toBe(within(messagesEl).getAllByRole('button', { name: 'Copy message' }).at(-1)!.parentElement);
+  // Obsidian renders aria-label tooltips; a title would add a duplicate browser tooltip.
+  expect(stat.getAttribute('aria-label')).toBe('125 tokens · 2.5s');
+  expect(stat.hasAttribute('title')).toBe(false);
+  expect((await axe(messagesEl)).violations).toEqual([]);
+  renderer.dispose();
+});
+
+it.each([
+  ['grok', { outputTokens: 125, durationMs: 2500 }],
+  ['claude', undefined],
+  ['claude', { outputTokens: 125, durationMs: 0 }],
+  ['claude', { outputTokens: NaN, durationMs: 2500 }],
+  ['claude', { outputTokens: -1, durationMs: 2500 }],
+])('omits unavailable or unsupported throughput (%s, %j)', (provider, turnStats) => {
+  const { renderer, messagesEl } = setup(provider as string);
+  renderer.renderMessages([messages[0], { ...messages[2], turnStats } as ChatMessage], () => 'Hello');
+  expect(within(messagesEl).queryByText(/tok\/s/)).toBeNull();
+  renderer.dispose();
+});
+
+it.each([
+  [2888, 118846, '24.3 tok/s', '2,888 tokens · 1m 58.8s'],
+  [300, 119960, '2.5 tok/s', '300 tokens · 2m 0s'],
+  [90, 3000, '30.0 tok/s', '90 tokens · 3s'],
+])('summarizes %i tokens over %ims in the tooltip', (outputTokens, durationMs, rate, tooltip) => {
+  const { renderer, messagesEl } = setup();
+  renderer.renderMessages([messages[0], { ...messages[2], turnStats: { outputTokens, durationMs } }], () => 'Hello');
+  expect(within(messagesEl).getByText(rate).getAttribute('aria-label')).toBe(tooltip);
+  renderer.dispose();
+});
+
+it('keeps time after throughput when timestamps are refreshed or toggled', () => {
+  const { renderer, messagesEl, settings } = setup();
+  renderer.renderMessages([messages[0], { ...messages[2], turnStats: { outputTokens: 158, durationMs: 10000 } }], () => 'Hello');
+  const stat = within(messagesEl).getByText('15.8 tok/s');
+  const toolbar = stat.parentElement!;
+  const copy = within(toolbar).getByRole('button', { name: 'Copy message' });
+  const fork = within(toolbar).getByRole('button', { name: 'Fork conversation' });
+  const expectOrder = () => {
+    expect(Array.from(toolbar.children)).toEqual([copy, fork, stat, toolbar.querySelector('.claudian-message-timestamp')]);
+  };
+  expectOrder();
+  renderer.refreshMessageTimestamps();
+  expectOrder();
+  settings.showMessageTimestamps = false;
+  renderer.refreshMessageTimestamps();
+  expect(Array.from(toolbar.children)).toEqual([copy, fork, stat]);
+  settings.showMessageTimestamps = true;
+  renderer.refreshMessageTimestamps();
+  renderer.refreshMessageTimestamps();
+  expectOrder();
+  renderer.dispose();
+});

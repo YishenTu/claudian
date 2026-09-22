@@ -2,6 +2,7 @@ import type { ProviderCapabilities } from '../../core/providers/types';
 
 export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object.freeze({
   providerId: 'codex',
+  supportsResponseThroughput: true,
   supportsNativeHistory: true,
   supportsEphemeralSessions: true,
   supportsRewind: false,

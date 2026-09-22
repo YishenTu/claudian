@@ -3,6 +3,7 @@ import * as path from 'node:path';
 
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
+import { createTurnStats, isTokenCount } from '../../../core/types/turnStats';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
@@ -142,7 +143,7 @@ export async function loadSDKSessionMessages(
     return { messages: [], skippedLines: result.skippedLines, error: result.error };
   }
 
-  const filteredEntries = filterActiveBranch(result.messages, resumeAtMessageId);
+  const filteredEntries = filterActiveBranch(result.messages.filter(entry => !entry.isSidechain), resumeAtMessageId);
 
   const toolResults = collectToolResults(filteredEntries);
   const toolUseResults = collectStructuredPatchResults(filteredEntries);
@@ -154,6 +155,9 @@ export async function loadSDKSessionMessages(
   let turnStartedAt: number | undefined;
   let lastAssistantAt: number | undefined;
   let requestedResponsePending = false;
+  const responseTokens = new Map<string, number>();
+  let usageComplete = true;
+  let finalStopReason: string | null | undefined;
   const taskToolNormalizer = new ClaudeTaskToolNormalizer();
 
   const flushPendingAssistant = (includeDuration: boolean): void => {
@@ -167,9 +171,17 @@ export async function loadSDKSessionMessages(
         : undefined;
       if (includeDuration) {
         if (!pendingAssistant.isAutomaticResponse) {
-          pendingAssistant.durationSeconds = nativeDuration ?? inferredDuration;
+          pendingAssistant.durationSeconds = nativeDuration !== undefined ? Math.floor(nativeDuration / 1000) : inferredDuration;
         }
         pendingAssistant.completedAt = lastAssistantAt;
+        if (usageComplete && responseTokens.size > 0
+          && (finalStopReason === 'end_turn' || finalStopReason === 'max_tokens' || finalStopReason === 'stop_sequence')) {
+          pendingAssistant.turnStats = createTurnStats(
+            [...responseTokens.values()].reduce((sum, count) => sum + count, 0),
+            turnStartedAt !== undefined && lastAssistantAt !== undefined
+              ? lastAssistantAt - turnStartedAt : undefined,
+          );
+        }
       }
       chatMessages.push(pendingAssistant);
     }
@@ -177,6 +189,9 @@ export async function loadSDKSessionMessages(
     lastAssistantAt = undefined;
     turnStartedAt = undefined;
     requestedResponsePending = false;
+    responseTokens.clear();
+    usageComplete = true;
+    finalStopReason = undefined;
   };
 
   // Preserve task notification boundaries without ending an unfinished requested response.
@@ -202,6 +217,9 @@ export async function loadSDKSessionMessages(
       continue;
     }
     if (isSystemInjectedMessage(sdkMsg)) continue;
+    if (sdkMsg.type === 'user' && Array.isArray(sdkMsg.message?.content)
+      && sdkMsg.message.content.length > 0
+      && sdkMsg.message.content.every(block => block.type === 'tool_result')) continue;
 
     // Skip synthetic assistant messages (e.g., "No response requested." after /compact)
     if (sdkMsg.type === 'assistant' && sdkMsg.message?.model === '<synthetic>') continue;
@@ -222,6 +240,14 @@ export async function loadSDKSessionMessages(
         } else {
           pendingAssistant = chatMsg;
         }
+        const responseId = sdkMsg.message?.id;
+        const outputTokens = sdkMsg.message?.usage?.output_tokens;
+        if (!responseId || !isTokenCount(outputTokens)) {
+          usageComplete = false;
+        } else {
+          responseTokens.set(responseId, outputTokens);
+        }
+        finalStopReason = sdkMsg.message?.stop_reason;
         lastAssistantAt = parseNativeTimestamp(sdkMsg.timestamp);
         requestedResponsePending = turnStartedAt !== undefined
           && sdkMsg.message?.stop_reason === 'tool_use';
@@ -332,8 +358,7 @@ function collectNativeTurnDurations(
     );
     if (!assistantUuid) continue;
 
-    const durationSeconds = Math.floor(entry.durationMs / 1_000);
-    durations.set(assistantUuid, durationSeconds);
+    durations.set(assistantUuid, entry.durationMs);
   }
   return durations;
 }

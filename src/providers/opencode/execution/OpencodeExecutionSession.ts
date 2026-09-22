@@ -24,6 +24,7 @@ import {
 } from '@/providers/acp';
 
 import type { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
+import { loadOpencodeSessionMessages } from '../history/OpencodeHistoryStore';
 import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection';
 import { decodeOpencodeModelId } from '../models';
 import {
@@ -395,6 +396,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
 
       this.#getRunNormalizer(run).reset();
       run.acceptingLiveOutput = true;
+      const promptStartedAt = Date.now();
       const response = await kernel.prompt({
         prompt: buildPromptBlocks(
           request,
@@ -413,6 +415,17 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
         });
         if (usage) run.emit({ type: 'usage_updated', scope: run.scope(), usage });
       }
+      // Reuse native history accounting so live completion and replay have identical totals and timing.
+      const history = response.stopReason !== 'cancelled' && native.databasePath
+        ? await loadOpencodeSessionMessages(native.sessionId, {
+          databasePath: native.databasePath, ...(native.nativeVersion ? { nativeVersion: native.nativeVersion } : {}),
+        }).catch(() => []) : [];
+      if (!this.#isRunCurrent(run, generation)) return;
+      const user = [...history].reverse().find(message => message.role === 'user');
+      const final = history.at(-1);
+      const turnStats = user && (response.userMessageId
+        ? user.userMessageId === response.userMessageId : user.timestamp >= promptStartedAt)
+        && final?.role === 'assistant' ? final.turnStats : undefined;
       this.snapshot = this.#createSnapshot(this.backgroundTurn || this.backgroundScopes.size ? 'executing' : 'idle');
       run.emit({
         scope: run.scope(),
@@ -421,7 +434,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       });
       run.finish(response.stopReason === 'cancelled'
         ? { reason: 'provider-cancelled', scope: run.scope(), type: 'cancelled' }
-        : { reason: 'completed', scope: run.scope(), type: 'turn_completed' });
+        : { reason: 'completed', scope: run.scope(), type: 'turn_completed', ...(turnStats ? { turnStats } : {}) });
       this.activeRun = null;
     } catch (error) {
       if (!this.#isRunCurrent(run, generation)) return;

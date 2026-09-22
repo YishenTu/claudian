@@ -21,6 +21,8 @@ export interface SDKNativeMessage {
   timestamp?: string;
   requestId?: string;
   message?: {
+    id?: string;
+    usage?: { output_tokens?: unknown };
     role?: string;
     content?: string | SDKNativeContentBlock[];
     model?: string;
@@ -34,6 +36,7 @@ export interface SDKNativeMessage {
   sourceToolAssistantUUID?: string;
   sourceToolUseID?: string;
   isMeta?: boolean;
+  isSidechain?: boolean;
   operation?: string;
   content?: string;
 }

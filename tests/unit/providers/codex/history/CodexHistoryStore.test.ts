@@ -2934,3 +2934,52 @@ describe('CodexHistoryStore', () => {
     });
   });
 });
+
+it.each([false, true])('restores direct main-thread turn usage without counting child snapshots (aborted: %s)', (aborted) => {
+  const records = [
+    { type: 'session_meta', payload: { id: 'main' } },
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } },
+    { type: 'event_msg', payload: { type: 'user_message', message: 'Work' } },
+    { type: 'token_usage_record', payload: { thread_id: 'main', turn_id: 'turn', turn_token_usage: { output_tokens: 100 } } },
+    { type: 'token_usage_record', payload: { thread_id: 'main', turn_id: 'turn', turn_token_usage: { output_tokens: 125 } } },
+    { type: 'token_usage_record', payload: { thread_id: 'child', turn_id: 'turn', session_id: 'main', root_turn_id: 'turn', turn_token_usage: { output_tokens: 900 } } },
+    { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done' }] } },
+    { type: 'event_msg', payload: { type: aborted ? 'turn_aborted' : 'task_complete', turn_id: 'turn', duration_ms: 2500 } },
+  ].map((record, i) => JSON.stringify({ timestamp: new Date(1000 + i * 400).toISOString(), ...record })).join('\n');
+  const messages = parseCodexSessionContent(records);
+  expect(messages.at(-1)?.turnStats).toEqual(aborted ? undefined : { outputTokens: 125, durationMs: 2500 });
+});
+
+
+it('retains native turn usage when response-item user records replace the initial parser turn', () => {
+  const content = [
+    { type: 'session_meta', payload: { id: 'main' } },
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn' } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Work' }] } },
+    { type: 'token_usage_record', payload: { thread_id: 'main', turn_id: 'turn', turn_token_usage: { output_tokens: 125 } } },
+    { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done' }] } },
+    { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn', duration_ms: 2500 } },
+  ].map((record, i) => JSON.stringify({ timestamp: new Date(1000 + i * 500).toISOString(), ...record })).join('\n');
+  expect(parseCodexSessionContent(content).at(-1)?.turnStats).toEqual({ outputTokens: 125, durationMs: 2500 });
+});
+
+it('keeps fork ownership when the rollout contains inherited parent metadata', () => {
+  const content = [
+    { type: 'session_meta', payload: { id: 'fork', forked_from_id: 'parent' } },
+    { type: 'session_meta', payload: { id: 'parent' } },
+    ...['first', 'later'].flatMap(turnId => [
+      { type: 'event_msg', payload: { type: 'task_started', turn_id: turnId } },
+      { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Work' }] } },
+      { type: 'token_usage_record', payload: { thread_id: 'fork', turn_id: turnId, turn_token_usage: { output_tokens: 125 } } },
+      { type: 'token_usage_record', payload: { thread_id: 'parent', turn_id: turnId, turn_token_usage: { output_tokens: 900 } } },
+      { type: 'token_usage_record', payload: { thread_id: 'child', turn_id: turnId, turn_token_usage: { output_tokens: 700 } } },
+      { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done' }] } },
+      { type: 'event_msg', payload: { type: 'task_complete', turn_id: turnId, duration_ms: 2500 } },
+    ]),
+  ].map((record, i) => JSON.stringify({ timestamp: new Date(1000 + i * 500).toISOString(), ...record })).join('\n');
+  const replies = parseCodexSessionContent(content).filter(message => message.role === 'assistant');
+  expect(replies.map(message => message.turnStats)).toEqual([
+    { outputTokens: 125, durationMs: 2500 },
+    { outputTokens: 125, durationMs: 2500 },
+  ]);
+});

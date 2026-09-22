@@ -21,6 +21,7 @@ export {
   isCanonicalUserMessage,
   type SessionMetadata,
   type StreamChunk,
+  type TurnStats,
   type UsageInfo,
   VIEW_TYPE_CLAUDIAN,
 } from './chat';

@@ -420,6 +420,24 @@ describe('CodexExecutionBackend', () => {
     });
   });
 
+  it('counts raw native responses once and excludes child-thread output', async () => {
+    configureSteerTransport('thread', 'turn', () => ({}));
+    const { session, run } = await createActiveSteerSession();
+    try {
+      for (const [threadId, responseId, outputTokens] of [
+        ['thread', 'response1', 100], ['thread', 'response1', 100],
+        ['thread', 'response2', 25], ['child', 'response3', 900],
+      ] as const) emitNotification('rawResponse/completed', {
+        threadId, turnId: 'turn', responseId, usage: { outputTokens, reasoningOutputTokens: 20 },
+      });
+      emitNotification('turn/completed', { threadId: 'thread', turn: {
+        id: 'turn', items: [], status: 'completed', error: null, durationMs: 2500,
+      } });
+      expect((await collectEvents(run.events)).at(-1)).toMatchObject({ type: 'turn_completed',
+        turnStats: { outputTokens: 125, durationMs: 2500 } });
+    } finally { await session.dispose(); }
+  });
+
   it('starts a persistent thread and emits correlated lifecycle and output events', async () => {
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {

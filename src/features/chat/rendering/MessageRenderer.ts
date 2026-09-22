@@ -20,6 +20,7 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
+import { createTurnStats } from '../../../core/types/turnStats';
 import { t } from '../../../i18n/i18n';
 import { enhanceRenderedCodeFence } from '../../../shared/components/CopyableCodeFence';
 import { extractUserDisplayContent } from '../../../utils/context';
@@ -481,6 +482,15 @@ export class MessageRenderer {
     if (this.forkCallback && msg.assistantMessageId
       && (this.getCapabilities().forkMode !== 'full-session' || messages.at(-1)?.id === msg.id)) {
       this.#addForkButton(msgEl, msg.id);
+    }
+    const stats = createTurnStats(msg.turnStats?.outputTokens, msg.turnStats?.durationMs);
+    if (msg.role === 'assistant' && !msg.isInterrupt && stats && this.getCapabilities().supportsResponseThroughput) {
+      const rate = (stats.outputTokens / (stats.durationMs / 1000)).toFixed(1);
+      // Obsidian renders aria-label as its tooltip; a title would duplicate it.
+      toolbar.createSpan({
+        cls: 'claudian-response-throughput', text: `${rate} tok/s`,
+        attr: { 'aria-label': `${stats.outputTokens.toLocaleString()} tokens · ${formatTurnDuration(stats.durationMs)}` },
+      });
     }
     this.#appendMessageTimestamp(msgEl, msg.role === 'user' ? msg.timestamp : msg.completedAt);
   }
@@ -1126,4 +1136,11 @@ export function isStandaloneTaskNotification(message: ChatMessage | undefined): 
   return message?.role === 'assistant' && message.isAutomaticResponse === true
     && Boolean(message.contentBlocks?.length)
     && message.contentBlocks?.every(block => block.type === 'task_notification') === true;
+}
+
+/** Rounds to tenths before splitting so 119.96s reads "2m 0s", not "1m 60s". */
+function formatTurnDuration(durationMs: number): string {
+  const tenths = Math.round(durationMs / 100);
+  const seconds = `${(tenths % 600) / 10}s`;
+  return tenths < 600 ? seconds : `${Math.floor(tenths / 600)}m ${seconds}`;
 }

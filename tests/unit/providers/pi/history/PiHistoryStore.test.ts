@@ -748,3 +748,20 @@ describe('PiHistoryStore', () => {
     expect(parsePiSessionContent(content)[0].contentBlocks).toEqual([{ type: 'context_compacted' }]);
   });
 });
+
+it.each([false, true])('restores Pi turn output across tool loops (missing usage: %s)', (missing) => {
+  const content = [
+    { type: 'session', id: 'session' },
+    { type: 'message', id: 'u', parentId: null, timestamp: '2026-09-20T11:00:00.010Z',
+      message: { role: 'user', content: 'Work', timestamp: Date.parse('2026-09-20T11:00:00Z') } },
+    { type: 'message', id: 'a', parentId: 'u', timestamp: '2026-09-20T11:00:01Z',
+      message: { role: 'assistant', stopReason: 'toolUse', usage: missing ? undefined : { output: 100 },
+        content: [{ type: 'toolCall', id: 'tool', name: 'read', arguments: {} }] } },
+    { type: 'message', id: 'r', parentId: 'a', timestamp: '2026-09-20T11:00:02Z',
+      message: { role: 'toolResult', toolCallId: 'tool', content: [{ type: 'text', text: 'Result' }] } },
+    { type: 'message', id: 'final', parentId: 'r', timestamp: '2026-09-20T11:00:02.500Z',
+      message: { role: 'assistant', stopReason: 'stop', usage: { output: 25 },
+        timestamp: Date.parse('2026-09-20T11:00:02Z'), content: [{ type: 'text', text: 'Done' }] } },
+  ].map(entry => JSON.stringify(entry)).join('\n');
+  expect(parsePiSessionContent(content).at(-1)?.turnStats).toEqual(missing ? undefined : { outputTokens: 125, durationMs: 2500 });
+});

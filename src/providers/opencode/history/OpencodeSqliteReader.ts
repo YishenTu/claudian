@@ -65,7 +65,14 @@ export async function loadOpencodeSessionRows(
       (id) => `SELECT 1 WHERE ${id} IS NULL`);
     return { ...rows, nativeVersion: 2 };
   }
-  return querySessionRows(databasePath, sessionId, dependencies, buildOpencodeMessageRowsSql, buildOpencodePartRowsSql);
+  const rows = await querySessionRows(databasePath, sessionId, dependencies, buildOpencodeMessageRowsSql, buildOpencodePartRowsSql);
+  // Usage metadata is optional. Preserve the existing row shape where it is absent.
+  for (const row of rows.messageRows) {
+    for (const key of ['parent_id', 'output_tokens', 'reasoning_tokens', 'finish', 'error']) {
+      if (row[key] === null) delete row[key];
+    }
+  }
+  return rows;
 }
 
 async function querySessionRows(
@@ -275,7 +282,12 @@ select
   case when data_valid then json_extract(data, '$.providerID') end as provider_id,
   case when data_valid then json_extract(data, '$.modelID') end as model_id,
   case when data_valid then json_extract(data, '$.time.created') end as data_time_created,
-  case when data_valid then json_extract(data, '$.time.completed') end as data_time_completed
+  case when data_valid then json_extract(data, '$.time.completed') end as data_time_completed,
+  case when data_valid then json_extract(data, '$.parentID') end as parent_id,
+  case when data_valid then json_extract(data, '$.tokens.output') end as output_tokens,
+  case when data_valid then json_extract(data, '$.tokens.reasoning') end as reasoning_tokens,
+  case when data_valid then json_extract(data, '$.finish') end as finish,
+  case when data_valid then json_extract(data, '$.error') end as error
 from message_json
 order by time_created asc, id asc;`.trim();
 }

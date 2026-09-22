@@ -24,11 +24,12 @@ import {
   type RewindableExecutionSession,
 } from '../../../core/execution';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import type { PermissionMode, SlashCommand } from '../../../core/types';
+import type { PermissionMode, SlashCommand, TurnStats } from '../../../core/types';
 import {
   getMissingSessionId,
   isSessionMissingError,
 } from '../../../utils/session';
+import { loadSDKSessionMessages } from '../history/ClaudeHistoryStore';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
 import { getClaudeState } from '../types/providerState';
 import { ClaudeExecutionEventNormalizer } from './ClaudeExecutionEventNormalizer';
@@ -570,8 +571,23 @@ ClaudeExecutionStrategySink {
       }
       if (normalized.type === 'result') {
         this.#finishBackgroundTurn('completed');
-        if (this.activeRun?.nativeHandedOff && inputMatch !== false) {
-          this.#finishCompleted(this.activeRun, 'completed');
+        const active = this.activeRun;
+        if (active?.nativeHandedOff && inputMatch !== false) {
+          let turnStats = normalized.turnStats;
+          if (turnStats && this.lastEncodedRequest?.options.persistSession !== false) {
+            // Persisted timestamps define the rate both now and on replay. SDK result
+            // duration ends later and cannot be reconstructed from every JSONL version.
+            turnStats = undefined;
+            const sessionId = this.providerSessionId;
+            if (sessionId && active.nativeAssistantId) {
+              const history = await loadSDKSessionMessages(
+                this.config.vaultWorkingDirectory, sessionId, active.nativeAssistantId, undefined,
+                { environment: this.lastEncodedRequest?.options.env ?? process.env },
+              ).catch(() => undefined);
+              turnStats = history?.messages.find(message => message.assistantMessageId === active.nativeAssistantId)?.turnStats;
+            }
+          }
+          if (this.activeRun === active && !active.terminal) this.#finishCompleted(active, 'completed', turnStats);
         }
       }
     }
@@ -1030,6 +1046,7 @@ ClaudeExecutionStrategySink {
   #finishCompleted(
     active: ActiveRequestedRun,
     reason: 'completed' | 'provider-ended',
+    turnStats?: TurnStats,
   ): void {
     if (active.terminal) return;
     this.#setStatus('idle');
@@ -1037,6 +1054,7 @@ ClaudeExecutionStrategySink {
     this.#emitRequested(active, {
       type: 'turn_completed',
       nativeAssistantId: active.nativeAssistantId,
+      ...(turnStats ? { turnStats } : {}),
       reason,
     });
     this.#endActiveRun(active);

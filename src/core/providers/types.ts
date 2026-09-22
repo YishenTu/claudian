@@ -35,6 +35,8 @@ export interface ProviderCapabilities {
   supportsProviderCommands: boolean;
   supportsImageAttachments: boolean;
   supportsTurnSteer?: boolean;
+  /** Can report authoritative main-agent output tokens and elapsed turn time. */
+  supportsResponseThroughput?: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
 }
 

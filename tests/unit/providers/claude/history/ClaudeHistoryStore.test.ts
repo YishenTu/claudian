@@ -177,3 +177,22 @@ it.each([
     ],
   });
 });
+
+it.each([false, true])('counts each main response once across blocks and tools (missing usage: %s)', async (missing) => {
+  const entries = [
+    { type: 'user', uuid: 'u', timestamp: '2026-09-20T11:00:00Z', message: { content: 'Work' } },
+    { type: 'assistant', uuid: 'a1', parentUuid: 'u', timestamp: '2026-09-20T11:00:01Z',
+      message: { id: 'response1', usage: missing ? undefined : { output_tokens: 100 }, stop_reason: 'tool_use',
+        content: [{ type: 'thinking', thinking: 'Plan' }] } },
+    { type: 'assistant', uuid: 'a2', parentUuid: 'a1', timestamp: '2026-09-20T11:00:01Z',
+      message: { id: 'response1', usage: missing ? undefined : { output_tokens: 100 }, stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'tool', name: 'Read', input: {} }] } },
+    { type: 'user', uuid: 'tool-result', parentUuid: 'a2', timestamp: '2026-09-20T11:00:02Z',
+      message: { content: [{ type: 'tool_result', tool_use_id: 'tool', content: 'Result' }] } },
+    { type: 'assistant', uuid: 'final', parentUuid: 'tool-result', timestamp: '2026-09-20T11:00:02.500Z',
+      message: { id: 'response2', usage: { output_tokens: 25 }, stop_reason: 'end_turn', content: [{ type: 'text', text: 'Done' }] } },
+  ];
+  readFile.mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
+  const result = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  expect(result.messages.at(-1)?.turnStats).toEqual(missing ? undefined : { outputTokens: 125, durationMs: 2500 });
+});

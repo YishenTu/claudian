@@ -97,6 +97,13 @@ export type ContentBlock =
   | { type: 'task_notification'; content: string }
   | { type: 'context_compacted' };
 
+/** Authoritative main-agent output across a completed turn, including reasoning. */
+export interface TurnStats {
+  outputTokens: number;
+  /** Total elapsed turn time, including tools and waits. */
+  durationMs: number;
+}
+
 /** Chat message with content, tool calls, and attachments. */
 export interface ChatMessage {
   id: string;
@@ -123,6 +130,7 @@ export interface ChatMessage {
   isRebuiltContext?: boolean;
   /** Duration in seconds from user send to response completion. */
   durationSeconds?: number;
+  turnStats?: TurnStats;
   /** Flavor word used for duration display (e.g., "Baked", "Cooked"). */
   durationFlavorWord?: string;
   /** Provider-native user message identifier used for rewind. */

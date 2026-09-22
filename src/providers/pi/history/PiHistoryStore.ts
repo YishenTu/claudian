@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { isWriteEditTool } from '../../../core/tools/toolNames';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import { createTurnStats, isTokenCount } from '../../../core/types/turnStats';
 import { extractUserQuery } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
 import { buildImageAttachmentFromBase64 } from '../../../utils/imageAttachment';
@@ -436,6 +437,7 @@ function mapPiSessionEntries(
 ): ChatMessage[] {
   const messages: ChatMessage[] = [];
   let turnStartedAt: number | undefined;
+  let outputTokens: number | undefined = 0;
 
   for (const entry of entries) {
     const mapped = mapPiSessionEntry(entry, messages, syntheticIdNamespace);
@@ -449,15 +451,20 @@ function mapPiSessionEntries(
 
       const nativeMessage = entry.message ?? entry.raw;
       if (mapped.role === 'user') {
+        outputTokens = 0;
         turnStartedAt = parseTimestamp(nativeMessage.timestamp) ?? parseTimestamp(entry.raw.timestamp);
       } else if (isBoundaryMessage(mapped)) {
         turnStartedAt = undefined;
       } else if (isAssistantMessageEntry(entry)) {
+        const output = getRecord(nativeMessage.usage)?.output;
+        outputTokens = outputTokens !== undefined && isTokenCount(output)
+          ? outputTokens + output : undefined;
         const stopReason = getString(nativeMessage.stopReason);
         // Pi's inner assistant timestamp is generation start; the entry is written on completion.
         const completedAt = parseTimestamp(entry.raw.timestamp);
         if ((stopReason === 'stop' || stopReason === 'length')
           && turnStartedAt !== undefined && completedAt !== undefined && completedAt >= turnStartedAt) {
+          messages[messages.length - 1].turnStats = createTurnStats(outputTokens, completedAt - turnStartedAt);
           messages[messages.length - 1].completedAt = completedAt;
           messages[messages.length - 1].durationSeconds = Math.floor((completedAt - turnStartedAt) / 1_000);
         }

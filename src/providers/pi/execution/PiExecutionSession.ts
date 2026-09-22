@@ -27,6 +27,7 @@ import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type {
   ChatMessage,
   StreamChunk,
+  TurnStats,
 } from '../../../core/types';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
@@ -49,6 +50,7 @@ import {
   type CreatedPiForkSessionFile,
   type createPiForkSessionFile,
   findPiSessionFile,
+  parsePiSessionContent,
   parsePiSessionEntries,
   resolvePiActivePath,
   type rollbackCreatedPiForkSessionFile,
@@ -122,6 +124,7 @@ interface ActiveRun {
   assistantStarted: boolean;
   nativeRequestDispatched: boolean;
   nativeAssistantId?: string;
+  turnStats?: TurnStats;
   nativeUserMessageId?: string;
   pendingTerminalError: Error | null;
   sequence: number;
@@ -439,6 +442,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.#finishRequested(active, {
         nativeAssistantId: active.nativeAssistantId,
         nativeCheckpointId: getPiState(this.providerState).leafEntryId,
+        ...(active.turnStats ? { turnStats: active.turnStats } : {}),
         reason: 'completed',
         type: 'turn_completed',
       });
@@ -1002,7 +1006,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const sessionFile = getPiState(this.providerState).sessionFile;
     if (!sessionFile) return;
     try {
-      const parsed = parsePiSessionEntries(await fsp.readFile(sessionFile, 'utf8'));
+      const content = await fsp.readFile(sessionFile, 'utf8');
+      const parsed = parsePiSessionEntries(content);
       if (!this.isActive(active)) return;
       // Live completion follows the appended native branch, not the saved resume leaf.
       const path = resolvePiActivePath(parsed.entries);
@@ -1016,6 +1021,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       active.nativeAssistantId =
         findLastRoleId(entries, 'assistant')
         ?? getPiState(this.providerState).leafEntryId;
+      const latest = parsePiSessionContent(content).at(-1);
+      if (latest && latest.assistantMessageId === active.nativeAssistantId
+        && entries.some(entry => entry.id === latest.assistantMessageId)) active.turnStats = latest.turnStats;
     } catch {
       active.nativeAssistantId = getPiState(this.providerState).leafEntryId;
     }

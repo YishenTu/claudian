@@ -222,6 +222,10 @@ export class InputController {
   async handleExecutionEvent(event: ProviderExecutionEvent): Promise<void> {
     const assistant = this.activeStreamingAssistantMessage;
     if (!assistant) return;
+    if (event.type === 'turn_completed') {
+      assistant.turnStats = event.turnStats;
+      return;
+    }
     if (event.type === 'user_message_started') {
       await this.#handleProviderMessageBoundaryChunk({
         content: event.content ?? '',

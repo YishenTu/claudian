@@ -24,6 +24,7 @@ import {
 } from '../../../core/prompt/mainAgent';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ChatMessage, ImageAttachment, StreamChunk } from '../../../core/types';
+import { createTurnStats, isTokenCount } from '../../../core/types/turnStats';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import {
@@ -133,6 +134,7 @@ interface TurnCompletion {
   readonly status: 'completed' | 'failed' | 'interrupted';
   readonly nativeTurnId: string;
   readonly errorMessage?: string;
+  readonly durationMs?: number | null;
 }
 
 interface CompletionRecovery {
@@ -165,6 +167,7 @@ class CodexExecutionRun implements ProviderExecutionRun {
   nativeThreadId: string | null = null;
   nativeTurnId: string | null = null;
   completion: TurnCompletion | null = null;
+  readonly responseTokens = new Map<string, number | undefined>();
 
   constructor(
     private readonly sessionInstanceId: string,
@@ -701,6 +704,7 @@ export class CodexExecutionSession
       'item/fileChange/outputDelta',
       'item/fileChange/patchUpdated',
       'rawResponseItem/completed',
+      'rawResponse/completed',
       'event_msg',
     ];
     for (const method of notificationMethods) {
@@ -797,6 +801,7 @@ export class CodexExecutionSession
       return;
     }
 
+    this.#captureResponseUsage(run, method, params);
     if (method === 'turn/completed') {
       this.#cancelMissedTurnCompletionRecovery();
       const completed = params as TurnCompletedNotification;
@@ -805,6 +810,7 @@ export class CodexExecutionSession
           ? 'failed'
           : completed.turn.status,
         nativeTurnId: completed.turn.id,
+        durationMs: completed.turn.durationMs,
         ...(completed.turn.error?.message
           ? { errorMessage: completed.turn.error.message }
           : {}),
@@ -1021,6 +1027,7 @@ export class CodexExecutionSession
       ) {
         continue;
       }
+      this.#captureResponseUsage(run, notification.method, notification.params);
       if (notification.method === 'turn/completed') {
         const completed = notification.params as TurnCompletedNotification;
         run.completion = {
@@ -1028,6 +1035,7 @@ export class CodexExecutionSession
             ? 'failed'
             : completed.turn.status,
           nativeTurnId: completed.turn.id,
+        durationMs: completed.turn.durationMs,
           ...(completed.turn.error?.message
             ? { errorMessage: completed.turn.error.message }
             : {}),
@@ -1438,14 +1446,27 @@ export class CodexExecutionSession
     ]).then(() => this.#finishCancelled(run));
   }
 
+  #captureResponseUsage(run: CodexExecutionRun, method: string, params: unknown): void {
+    if (method !== 'rawResponse/completed' || !params || typeof params !== 'object') return;
+    const response = params as { threadId?: string; turnId?: string; responseId?: string; usage?: { outputTokens?: unknown } };
+    if (response.threadId !== run.nativeThreadId || response.turnId !== run.nativeTurnId || !response.responseId) return;
+    run.responseTokens.set(response.responseId, isTokenCount(response.usage?.outputTokens) ? response.usage.outputTokens : undefined);
+  }
+
   #finishCompleted(
     run: CodexExecutionRun,
     nativeCheckpointId?: string,
   ): void {
     if (this.activeRun !== run || run.isTerminal) return;
     this.#finishRunState(run);
+    const counts = [...run.responseTokens.values()];
+    const turnStats = createTurnStats(
+      counts.length > 0 && counts.every(isTokenCount) ? counts.reduce((sum, count) => sum + count, 0) : undefined,
+      run.completion?.durationMs,
+    );
     run.finish({
       type: 'turn_completed',
+      ...(turnStats ? { turnStats } : {}),
       scope: run.createScope(),
       reason: 'completed',
       // Codex forks resume at turn IDs, not streaming agent-message item IDs.

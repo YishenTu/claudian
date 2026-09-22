@@ -84,6 +84,7 @@ export interface GitInfo {
 
 export interface Turn {
   id: string;
+  durationMs?: number | null;
   items: ThreadItem[];
   status: 'inProgress' | 'completed' | 'failed' | 'interrupted';
   error: TurnError | null;

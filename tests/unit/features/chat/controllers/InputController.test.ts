@@ -2065,3 +2065,18 @@ describe('InputController coordinator execution', () => {
     expect(submission.context).not.toHaveProperty('linkedContent');
   });
 });
+
+
+it('attaches completed turn statistics to the final assistant after native message boundaries', async () => {
+  const fixture = createFixture();
+  const scope = { kind: 'requested' as const, executionId: 'e', turnId: 't', sessionInstanceId: 's', sequence: 1 };
+  fixture.coordinator.execute.mockImplementationOnce(async () => {
+    await fixture.controller.handleExecutionEvent({ type: 'assistant_message_started', scope });
+    await fixture.controller.handleExecutionEvent({ type: 'assistant_message_started', scope: { ...scope, sequence: 2 } });
+    await fixture.controller.handleExecutionEvent({ type: 'turn_completed', scope: { ...scope, sequence: 3 },
+      reason: 'completed', ...{ turnStats: { outputTokens: 125, durationMs: 2500 } } });
+    return { accepted: true, status: 'completed' };
+  });
+  await fixture.controller.sendMessage({ content: 'Work' });
+  expect(fixture.state.messages.at(-1)?.turnStats).toEqual({ outputTokens: 125, durationMs: 2500 });
+});
