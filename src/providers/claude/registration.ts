@@ -1,13 +1,13 @@
 import { getProviderConfig } from '../../core/providers/providerConfig';
 import { hasStoredConfigNormalization } from '../../core/providers/settings/storedSettings';
 import type { ProviderModule } from '../../core/providers/types';
-import { parseEnvironmentVariables } from '../../utils/env';
 import { claudeWorkspaceRegistration } from './app/ClaudeWorkspaceServices';
 import { CLAUDE_PROVIDER_CAPABILITIES } from './capabilities';
 import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';
 import { ClaudeSubagentHistoryService } from './history/ClaudeSubagentHistoryService';
+import { findClaudeModelOption, getClaudeModelOptions } from './modelOptions';
 import { toClaudeRuntimeModelId } from './modelSelection';
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
@@ -57,10 +57,10 @@ export const claudeProviderRegistration: ProviderModule = {
     if (titleModel && claudeChatUIConfig.ownsModel(titleModel, plugin.settings)) {
       return toClaudeRuntimeModelId(titleModel);
     }
-    const envVars = parseEnvironmentVariables(
-      plugin.getActiveEnvironmentVariables('claude'),
-    );
-    return envVars.ANTHROPIC_DEFAULT_HAIKU_MODEL || 'claude-haiku-4-5';
+    const options = getClaudeModelOptions(plugin.settings);
+    const model = findClaudeModelOption(options, 'haiku') ?? options[0];
+    if (!model) throw new Error('No Claude model is enabled. Open Claudian settings → Claude to load models and choose one.');
+    return toClaudeRuntimeModelId(model.value);
   },
   historyService: new ClaudeConversationHistoryService(),
   taskResultInterpreter: new ClaudeTaskResultInterpreter(),

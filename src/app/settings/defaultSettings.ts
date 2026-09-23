@@ -46,8 +46,6 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   savedProviderPermissionMode: {},
   pendingProviderSessionInvalidations: {},
 
-  lastCustomModel: '',
-
   maxWarmAgentProcesses: 5,
   enableAutoScroll: true,
   showMessageTimestamps: false,

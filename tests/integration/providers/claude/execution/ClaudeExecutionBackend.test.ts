@@ -1,6 +1,7 @@
 import '@/providers';
 
 import * as sdkModule from '@anthropic-ai/claude-agent-sdk';
+import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -27,6 +28,7 @@ function createContext() {
     app: { vault: { adapter: { basePath: '/vault' } } },
     executionLifecycleRegistry: lifecycleRegistry,
     settings: {
+      providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5', 'claude-opus-4-6', 'claude-haiku-4-5', 'custom-model', 'custom-model-a', 'custom-model-b']) },
       model: 'claude-sonnet-4-5',
       permissionMode: 'normal',
       effortLevel: 'medium',

@@ -36,6 +36,7 @@ import {
   buildPromptWithHistoryContext,
 } from '../../../utils/session';
 import { getMissingNodeError } from '../cli/claudeLaunchValidation';
+import { findClaudeModelOption, getClaudeModelCatalog, getClaudeModelOptions } from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import {
@@ -118,7 +119,12 @@ export class ClaudeExecutionRequestEncoder {
 
     const settings = this.#resolveSettings(request);
     const claudeSettings = getClaudeProviderSettings(settings);
-    const model = toClaudeRuntimeModelId(settings.model);
+    const selected = findClaudeModelOption(getClaudeModelCatalog(this.deps.host.settings), settings.model);
+    if (!getClaudeProviderSettings(this.deps.host.settings).enabled || !selected
+      || !getClaudeModelOptions(this.deps.host.settings).some(option => option.value === selected.value)) {
+      throw new Error('The selected Claude model is unavailable. Open Claudian settings → Claude to load models and choose one.');
+    }
+    const model = toClaudeRuntimeModelId(selected.value);
     const effort = resolveEffortLevel(
       model,
       isEffortLevel(request.configuration.reasoning)

@@ -1,0 +1,159 @@
+/** @jest-environment jsdom */
+
+import '@test/helpers/ObsidianSettingsDom';
+
+import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { axe } from 'jest-axe';
+
+import type { ProviderSettingsTabRendererContext } from '@/core/providers/types';
+import { ModelSelector, type ToolbarCallbacks } from '@/features/chat/ui/InputToolbar';
+import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
+import { renderClaudeModelPicker } from '@/providers/claude/ui/ClaudeModelPicker';
+
+jest.mock('obsidian', () => ({
+  Setting: class {
+    settingEl: HTMLElement;
+    constructor(container: HTMLElement) { this.settingEl = container.createDiv(); }
+    setName(value: string) { this.settingEl.createDiv({ text: value }); return this; }
+    setDesc(value: string) { this.settingEl.createDiv({ text: value }); return this; }
+  },
+}));
+
+HTMLElement.prototype.createEl = function <K extends keyof HTMLElementTagNameMap>(
+  this: HTMLElement, tag: K, info?: DomElementInfo | string, callback?: (element: HTMLElementTagNameMap[K]) => void,
+): HTMLElementTagNameMap[K] {
+  const element = document.createElement(tag);
+  if (typeof info === 'string') element.className = info;
+  else if (info) {
+    if (info.cls) element.className = Array.isArray(info.cls) ? info.cls.join(' ') : info.cls;
+    if (info.text) element.append(info.text);
+    if (typeof info.type === 'string') element.setAttribute('type', info.type);
+    for (const [name, value] of Object.entries(info.attr ?? {})) element.setAttribute(name, String(value));
+  }
+  this.appendChild(element);
+  callback?.(element);
+  return element;
+};
+HTMLElement.prototype.toggleClass = function (names, value) {
+  for (const name of typeof names === 'string' ? [names] : names) this.classList.toggle(name, value);
+};
+HTMLElement.prototype.appendText = function (text) { this.append(text); };
+
+describe('Claude model picker', () => {
+  afterEach(async () => {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    document.body.replaceChildren();
+  });
+
+  it('loads on opening the panel, refreshes manually, and uses selected order as default', async () => {
+    const container = document.body.createDiv();
+    const config = { discoveredModels: [] as Array<{value: string; label: string; description: string}>, visibleModels: [] as string[] };
+    const settings = { providerConfigs: { claude: config } };
+    const context = {
+      plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
+      notifyProviderModelOptionsChanged: jest.fn(),
+    } as unknown as ProviderSettingsTabRendererContext;
+    const catalog = { refresh: jest.fn(async () => {
+      settings.providerConfigs.claude.discoveredModels = [
+        { value: 'gateway-model', label: 'Gateway model', description: 'From SDK' },
+        { value: 'sonnet', label: 'Sonnet', description: 'From SDK' },
+      ];
+      return { changed: true };
+    }) };
+    renderClaudeModelPicker(container, context, catalog);
+    await waitFor(() => expect((within(container).getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(catalog.refresh).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(container).getByRole('checkbox', { name: /Gateway model/ }));
+    await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual(['gateway-model']));
+    fireEvent.click(within(container).getByRole('checkbox', { name: /Sonnet/ }));
+    await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual(['gateway-model', 'sonnet']));
+    expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('claude-code/gateway-model');
+    fireEvent.keyDown(within(container).getByRole('button', { name: /Reorder Sonnet/ }), { key: 'ArrowUp' });
+    await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual(['sonnet', 'gateway-model']));
+    expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('sonnet');
+    expect(catalog.refresh).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(container).getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(catalog.refresh).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect((within(container).getByRole('button', { name: /Refresh|Discover/ }) as HTMLButtonElement).disabled).toBe(false));
+    expect((await axe(container)).violations).toEqual([]);
+  });
+
+  it('keeps chat order aligned with panel order before and after a reorder', async () => {
+    const container = document.body.createDiv();
+    const settings = { model: 'opus', providerConfigs: { claude: {
+      visibleModels: ['sonnet', 'opus', 'gateway-model'],
+      discoveredModels: [
+        { value: 'opus', label: 'Opus' },
+        { value: 'gateway-model', label: 'Gateway model' },
+        { value: 'sonnet', label: 'Sonnet' },
+      ],
+    } } };
+    const context = {
+      plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
+      notifyProviderModelOptionsChanged: jest.fn(),
+    } as unknown as ProviderSettingsTabRendererContext;
+    renderClaudeModelPicker(container, context, { refresh: jest.fn() });
+    const toolbar = document.body.createDiv();
+    const selector = new ModelSelector(toolbar, {
+      getSettings: () => settings,
+      getUIConfig: () => claudeChatUIConfig,
+    } as unknown as ToolbarCallbacks);
+    const chatLabels = () => [...toolbar.querySelectorAll('.claudian-model-option')].map(el => el.textContent);
+    expect(chatLabels()).toEqual(['Sonnet', 'Opus', 'Gateway model']);
+    fireEvent.keyDown(within(container).getByRole('button', { name: /Reorder Opus/ }), { key: 'ArrowUp' });
+    await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual(['opus', 'sonnet', 'gateway-model']));
+    selector.renderOptions();
+    expect(chatLabels()).toEqual(['Opus', 'Sonnet', 'Gateway model']);
+    expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('opus');
+  });
+
+  it('shows manual refresh guidance and clears it when the selected model becomes available', () => {
+    const toolbar = document.body.createDiv();
+    const settings = { model: 'sonnet', providerConfigs: { claude: {
+      visibleModels: ['sonnet'], discoveredModels: [] as Array<{ value: string; label: string }>,
+    } } };
+    const selector = new ModelSelector(toolbar, {
+      getSettings: () => settings,
+      getUIConfig: () => claudeChatUIConfig,
+    } as unknown as ToolbarCallbacks);
+    expect(within(toolbar).getByText('Model unavailable').parentElement?.title).toMatch(/refresh/i);
+    expect(within(toolbar).getByRole('status').textContent).toMatch(/refresh/i);
+    settings.providerConfigs.claude.discoveredModels = [{ value: 'sonnet', label: 'Sonnet' }];
+    selector.updateDisplay();
+    expect(within(toolbar).getByText('Sonnet').parentElement?.title).toBe('');
+  });
+
+  it('projects a saved native ID onto its SDK row without rewriting the saved choice', async () => {
+    const container = document.body.createDiv();
+    const settings = { providerConfigs: { claude: {
+      visibleModels: ['gateway-model'],
+      discoveredModels: [{ value: 'sonnet', label: 'Sonnet', description: '', resolvedModel: 'gateway-model' }],
+    } } };
+    const context = {
+      plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
+      notifyProviderModelOptionsChanged: jest.fn(),
+    } as unknown as ProviderSettingsTabRendererContext;
+    const catalog = { refresh: jest.fn().mockResolvedValue({ changed: true }) };
+    renderClaudeModelPicker(container, context, catalog);
+    const checkbox = within(container).getByRole('checkbox', { name: /Sonnet/ }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+    expect(settings.providerConfigs.claude.visibleModels).toEqual(['gateway-model']);
+    expect(catalog.refresh).not.toHaveBeenCalled();
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual([]));
+    expect(claudeChatUIConfig.getModelOptions(settings)).toEqual([]);
+  });
+
+  it('offers manual recovery after failure without retrying automatically', async () => {
+    const container = document.body.createDiv();
+    const context = { plugin: { settings: { providerConfigs: { claude: { visibleModels: [] } } } } } as unknown as ProviderSettingsTabRendererContext;
+    const catalog = { refresh: jest.fn().mockResolvedValue({ changed: false, diagnostics: 'Unavailable' }) };
+    renderClaudeModelPicker(container, context, catalog);
+    await waitFor(() => expect(within(container).getByText(/Couldn’t load Claude models/)).not.toBeNull());
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(catalog.refresh).toHaveBeenCalledTimes(1);
+    fireEvent.click(within(container).getByRole('button', { name: 'Discover' }));
+    await waitFor(() => expect(catalog.refresh).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect((within(container).getByRole('button', { name: /Refresh|Discover/ }) as HTMLButtonElement).disabled).toBe(false));
+  });
+});

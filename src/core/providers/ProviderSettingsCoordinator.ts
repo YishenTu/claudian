@@ -141,10 +141,6 @@ export class ProviderSettingsCoordinator {
     model: string,
   ): void {
     settings.titleGenerationModel = model;
-    for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
-      ProviderRegistry.getChatUIConfig(providerId)
-        .applyTitleGenerationModelSelection?.(model, settings);
-    }
   }
 
   static projectModelSelection(
@@ -195,9 +191,10 @@ export class ProviderSettingsCoordinator {
       const isValid = normalizedModel !== undefined
         && uiConfig.getModelOptions(settings).some((option) =>
           option.value === normalizedModel
-          && toProviderRuntimeModelId(providerId, option.value) === currentRuntimeModel
+          && (uiConfig.preserveUnavailableModelSelection || toProviderRuntimeModelId(providerId, option.value) === currentRuntimeModel)
         );
       if (!isValid) {
+        if (uiConfig.preserveUnavailableModelSelection) return false;
         continue;
       }
 
@@ -366,7 +363,7 @@ export class ProviderSettingsCoordinator {
     const savedModelValue = normalizeProviderModel(uiConfig, settings, savedModel?.[providerId]);
     const isSavedModelValid = savedModelValue !== undefined
       && modelOptions.some(option => option.value === savedModelValue);
-    const model = (isSavedModelValid ? savedModelValue : undefined) ?? fallbackModel;
+    const model = (isSavedModelValid || uiConfig.preserveUnavailableModelSelection ? savedModelValue : undefined) ?? fallbackModel;
     const canReuseCurrentProjection = canReuseCurrentModel && model === currentModel;
 
     if (model) {

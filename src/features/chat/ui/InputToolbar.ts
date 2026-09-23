@@ -101,7 +101,8 @@ export class ModelSelector {
       });
     }
     const labelEl = this.buttonEl.createSpan({ cls: 'claudian-model-label' });
-    labelEl.setText(displayModel?.label || 'Unknown');
+    labelEl.setText(modelInfo?.label || (currentModel ? 'Model unavailable' : 'Set up models'));
+    this.buttonEl.title = modelInfo ? '' : 'Choose an enabled model in provider settings. If discovery failed, refresh the model list.';
   }
 
   renderOptions() {
@@ -110,6 +111,9 @@ export class ModelSelector {
 
     const currentModel = this.callbacks.getSettings().model;
     const models = this.#getAvailableModels();
+    if (!models.length) {
+      this.dropdownEl.createDiv({ text: 'No models available. Check provider settings and refresh the model list if discovery failed.', attr: { role: 'status' } });
+    }
     const reversed = [...models].reverse();
 
     let lastGroup: string | undefined;

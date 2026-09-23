@@ -13,46 +13,29 @@ import type { ProviderSettingsTabRenderer } from '../../../core/providers/types'
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
-import { renderLastEnabledProviderWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
+import { renderLastEnabledProviderWarning, renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCliPath } from '../../../utils/path';
 import {
   getClaudeModelOptions,
-  resolveClaudeModelEnvironmentTypePreference,
-  resolveClaudeModelSelection,
 } from '../modelOptions';
+import type { ClaudeModelCatalog } from '../runtime/ClaudeModelCatalog';
 import {
   CLAUDE_SAFE_MODES,
   type ClaudeSafeMode,
   getClaudeProviderSettings,
   updateClaudeProviderSettings,
 } from '../settings';
-import { claudeChatUIConfig } from './ClaudeChatUIConfig';
+import { renderClaudeModelPicker } from './ClaudeModelPicker';
 import { SlashCommandSettings } from './SlashCommandSettings';
 
 export function createClaudeSettingsTabRenderer(
-  claudeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; vaultCommandRepository: ProviderVaultEntryRepository; },
+  claudeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; vaultCommandRepository: ProviderVaultEntryRepository; modelCatalog: ClaudeModelCatalog; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
       const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
       const claudeSettings = getClaudeProviderSettings(settingsBag);
-
-      const reconcileActiveClaudeModelSelection = (settings: Record<string, unknown>): void => {
-        const activeProvider = settings.settingsProvider;
-        if (activeProvider !== undefined && activeProvider !== 'claude') {
-          return;
-        }
-
-        const currentModel = typeof settings.model === 'string' ? settings.model : '';
-        const nextModel = resolveClaudeModelSelection(settings, currentModel);
-        if (!nextModel || nextModel === currentModel) {
-          return;
-        }
-
-        settings.model = nextModel;
-        claudeChatUIConfig.applyModelDefaults(nextModel, settings);
-      };
 
       // --- Setup ---
 
@@ -78,18 +61,25 @@ export function createClaudeSettingsTabRenderer(
                 value,
               );
             });
+            if (accepted && !value) await claudeWorkspace.modelCatalog.cancel();
           });
           if (accepted) {
             lastProviderWarning.hide();
           } else {
             lastProviderWarning.showFor();
           }
-          context.notifyProviderModelOptionsChanged('claude');
+          modelWarning.context.notifyProviderModelOptionsChanged('claude');
         },
       };
 
       const installationContainer = container.createDiv({ cls: 'claudian-claude-installation' });
       const lastProviderWarning = renderLastEnabledProviderWarning(container);
+      const modelWarning = renderProviderModelEnablementWarning(container, context, {
+        getHasEnabledModels: () => getClaudeModelOptions(settingsBag).length > 0,
+        getIsEnabled: () => getClaudeProviderSettings(settingsBag).enabled,
+        providerId: 'claude',
+        providerName: 'Claude',
+      });
 
       const hostnameKey = getHostnameKey();
       const validatePath = (value: string): string | null => {
@@ -143,7 +133,10 @@ export function createClaudeSettingsTabRenderer(
             (settings) => {
               updateClaudeProviderSettings(settings, { cliPathsByHost, cliPath: '' });
             },
-            () => claudeWorkspace.cliResolver.reset(),
+            async () => {
+              claudeWorkspace.cliResolver.reset();
+              await claudeWorkspace.modelCatalog.invalidate();
+            },
           );
         },
         placeholder: process.platform === 'win32'
@@ -155,6 +148,11 @@ export function createClaudeSettingsTabRenderer(
       // --- Models ---
 
       new Setting(container).setName(t('settings.models')).setHeading();
+      const modelPicker = renderClaudeModelPicker(container, modelWarning.context, claudeWorkspace.modelCatalog);
+      claudeWorkspace.modelCatalog.onChange = () => {
+        modelPicker.refresh();
+        modelWarning.refresh();
+      };
 
       new Setting(container)
         .setName(t('settings.claude.responseStyle.name'))
@@ -172,64 +170,6 @@ export function createClaudeSettingsTabRenderer(
                 });
               });
             });
-        });
-
-      new Setting(container)
-        .setName('Default model')
-        .setDesc('Used when a new conversation needs a Claude fallback model.')
-        .addDropdown((dropdown) => {
-          for (const option of getClaudeModelOptions(settingsBag)) {
-            dropdown.addOption(option.value, option.label);
-          }
-          dropdown
-            .setValue(claudeChatUIConfig.getDefaultModel?.(settingsBag) ?? '')
-            .onChange(async (value) => {
-              await context.plugin.mutateSettings((settings) => {
-                const preference = resolveClaudeModelEnvironmentTypePreference(
-                  getClaudeModelOptions(settings),
-                  value,
-                );
-                updateClaudeProviderSettings(settings, {
-                  defaultModel: preference ?? value,
-                });
-              });
-            });
-        });
-
-      new Setting(container)
-        .setName(t('settings.customModels.name'))
-        .setDesc(t('settings.customModels.desc'))
-        .setClass('claudian-settings-textarea')
-        .addTextArea((text) => {
-          let pendingCustomModels = claudeSettings.customModels;
-          let savedCustomModels = claudeSettings.customModels;
-
-          const commitCustomModels = async (): Promise<void> => {
-            if (pendingCustomModels === savedCustomModels) {
-              return;
-            }
-
-            const nextCustomModels = pendingCustomModels;
-            await context.plugin.mutateSettings((settings) => {
-              updateClaudeProviderSettings(settings, { customModels: nextCustomModels });
-              reconcileActiveClaudeModelSelection(settings);
-              ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings);
-            });
-            savedCustomModels = nextCustomModels;
-            context.notifyProviderModelOptionsChanged('claude');
-          };
-
-          text
-            .setPlaceholder(t('settings.customModels.placeholder'))
-            .setValue(claudeSettings.customModels)
-            .onChange((value) => {
-              pendingCustomModels = value;
-            });
-          text.inputEl.rows = 6;
-          text.inputEl.cols = 40;
-          text.inputEl.addEventListener('blur', () => {
-            void commitCustomModels();
-          });
         });
 
       // --- Safety ---
@@ -262,8 +202,10 @@ export function createClaudeSettingsTabRenderer(
           toggle
             .setValue(claudeSettings.loadUserSettings)
             .onChange(async (value) => {
-              await context.plugin.mutateSettings((settings) => {
+              await context.plugin.applyProviderRuntimeSettings(['claude'], settings => {
                 updateClaudeProviderSettings(settings, { loadUserSettings: value });
+              }, async () => {
+                await claudeWorkspace.modelCatalog.invalidate();
               });
             })
         );

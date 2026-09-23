@@ -292,11 +292,16 @@
 
 .claudian-message-user {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   padding: 0;
   align-self: flex-end;
 }
 
 .claudian-message-user > .claudian-message-content {
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 10px 14px;
   background: rgba(0, 0, 0, 0.3);
   border-radius: 8px;

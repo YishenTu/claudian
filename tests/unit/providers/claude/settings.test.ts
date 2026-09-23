@@ -11,7 +11,8 @@ describe('Claude settings normalization', () => {
   it.each(['Default', 'Concise'] as const)('persists the %s response style while preserving other settings', (responseStyle) => {
     const settings = { providerConfigs: { claude: { customModels: 'custom' } } };
     updateClaudeProviderSettings(settings, { responseStyle });
-    expect(getClaudeProviderSettings(settings)).toMatchObject({ responseStyle, customModels: 'custom' });
+    expect(getClaudeProviderSettings(settings)).toMatchObject({ responseStyle });
+    expect(settings.providerConfigs.claude.customModels).toBe('custom');
   });
 
   it.each([undefined, null, '', 'invalid', 42, {}, []])('normalizes invalid response style %p to Default', (responseStyle) => {

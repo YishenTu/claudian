@@ -159,9 +159,6 @@ export interface ClaudianSettings {
   // Internal lifecycle state. Entries remain until all affected session metadata is durable.
   pendingProviderSessionInvalidations: Partial<Record<string, number>>;
 
-  // State (provider-specific, round-tripped opaquely)
-  lastCustomModel?: string;
-
   // UI preferences
   maxWarmAgentProcesses: number;
   enableAutoScroll: boolean;

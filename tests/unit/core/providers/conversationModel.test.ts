@@ -7,6 +7,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderChatUIConfig, ProviderId } from '@/core/providers/types';
 
 interface TestProviderConfig {
+  preserveUnavailableModelSelection?: boolean;
   defaultModel?: string | null;
   normalizations?: Record<string, string>;
   options: string[];
@@ -15,6 +16,7 @@ interface TestProviderConfig {
 
 function createUiConfig(config: TestProviderConfig): ProviderChatUIConfig {
   return {
+    preserveUnavailableModelSelection: config.preserveUnavailableModelSelection,
     getModelOptions: () => config.options.map(value => ({ label: value, value })),
     getCustomModelIds: () => new Set(),
     getDefaultModel: () => config.defaultModel ?? null,
@@ -57,6 +59,14 @@ describe('conversation model resolution', () => {
         ((settings.displayOrder as string[] | undefined) ?? [])
           .filter(providerId => ProviderRegistry.isEnabled(providerId, settings))
       ));
+  });
+
+  it('does not replace the last selected model for a provider that preserves unavailable selections', () => {
+    providers.claude.preserveUnavailableModelSelection = true;
+    expect(resolveNewConversationModel({
+      enabledProviders: ['claude', 'codex'], displayOrder: ['claude', 'codex'],
+      lastSelectedChatModel: { providerId: 'claude', model: 'retired' },
+    })).toEqual({ providerId: 'claude', model: 'retired', source: 'last-selected' });
   });
 
   afterEach(() => {

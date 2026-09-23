@@ -122,6 +122,10 @@ export function resolveNewConversationModel(
       };
     }
 
+    if (ProviderRegistry.getChatUIConfig(lastSelected.providerId).preserveUnavailableModelSelection) {
+      return { ...lastSelected, source: 'last-selected' };
+    }
+
     const providerDefault = resolveProviderDefaultModel(lastSelected.providerId, settings);
     if (providerDefault) {
       return {
@@ -212,7 +216,7 @@ export function resolveConversationModel(
   }
 
   if (rawSelectedModel) {
-    if (modelOptions.length === 0) {
+    if (modelOptions.length === 0 || ProviderRegistry.getChatUIConfig(providerId).preserveUnavailableModelSelection) {
       return {
         model: rawSelectedModel,
         source: 'selected',
@@ -275,7 +279,10 @@ export function getProviderSettingsSnapshotWithModel<T extends Record<string, un
     settings,
     providerId,
   );
-  const normalizedModel = normalizeProviderModelSelection(providerId, snapshot, model);
+  const normalizedModel = normalizeProviderModelSelection(providerId, snapshot, model)
+    ?? (ProviderRegistry.getChatUIConfig(providerId).preserveUnavailableModelSelection
+      ? trimModel(model)
+      : null);
   if (normalizedModel) {
     ProviderSettingsCoordinator.projectModelSelection(snapshot, providerId, normalizedModel);
   }

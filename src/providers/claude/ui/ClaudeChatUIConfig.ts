@@ -9,12 +9,12 @@ import { CLAUDE_PROVIDER_ICON } from '../../../shared/icons';
 import { getCustomModelIds } from '../env/claudeModelEnv';
 import {
   findClaudeModelOption,
+  getClaudeModelCatalog,
   getClaudeModelOptions,
-  resolveClaudeModelEnvironmentTypePreference,
+  getClaudeVisibleModelIds,
 } from '../modelOptions';
-import { toClaudeRuntimeModelId } from '../modelSelection';
+import { isClaudeModelSelectionId, toClaudeRuntimeModelId } from '../modelSelection';
 import { isClaudeModelTier } from '../modelTiers';
-import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_EFFORT_LEVEL,
@@ -33,23 +33,21 @@ const CLAUDE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
 };
 
 export const claudeChatUIConfig: ProviderChatUIConfig = {
+  preserveUnavailableModelSelection: true,
   getModelOptions(settings) {
-    return getClaudeModelOptions(settings);
+    // The chat dropdown renders options in reverse order, as for other providers.
+    return getClaudeModelOptions(settings).reverse();
   },
 
   getDefaultModel(settings) {
-    const options = getClaudeModelOptions(settings);
-    const preference = getClaudeProviderSettings(settings).defaultModel;
-    return findClaudeModelOption(options, preference)?.value
-      ?? options[0]?.value
-      ?? null;
+    return getClaudeModelOptions(settings)[0]?.value ?? null;
   },
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
     const runtimeModel = toClaudeRuntimeModelId(model);
-    return getClaudeModelOptions(settings).some((option: ProviderUIOption) =>
-      option.value === model || toClaudeRuntimeModelId(option.value) === runtimeModel
-    );
+    return isClaudeModelSelectionId(model) || isClaudeModelTier(normalizeLegacyClaudeModelAlias(model))
+      || getClaudeVisibleModelIds(settings).some(id => toClaudeRuntimeModelId(id) === runtimeModel)
+      || Boolean(findClaudeModelOption(getClaudeModelCatalog(settings), model));
   },
 
   isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
@@ -80,28 +78,11 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
   applyModelDefaults(model: string, settings: unknown): void {
     const target = settings as Record<string, unknown>;
 
-    const runtimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
-    const claudeSettings = getClaudeProviderSettings(target);
-    const modelEnvironmentType = resolveClaudeModelEnvironmentTypePreference(
-      getClaudeModelOptions(target),
-      model,
-      claudeSettings.modelEnvironmentType,
-    );
-    if (modelEnvironmentType && isClaudeModelTier(modelEnvironmentType)) {
-      target.effortLevel = runtimeModel === modelEnvironmentType
-        ? DEFAULT_EFFORT_LEVEL[modelEnvironmentType] ?? DEFAULT_REASONING_VALUE
-        : normalizeEffortLevel(runtimeModel, target.effortLevel);
-      updateClaudeProviderSettings(target, {
-        lastModel: modelEnvironmentType,
-        modelEnvironmentType,
-      });
-    } else {
-      target.lastCustomModel = model;
-      target.effortLevel = normalizeEffortLevel(runtimeModel, target.effortLevel);
-      updateClaudeProviderSettings(target, {
-        modelEnvironmentType: modelEnvironmentType ?? '',
-      });
-    }
+    const modelId = toClaudeRuntimeModelId(model);
+    const runtimeModel = normalizeLegacyClaudeModelAlias(modelId);
+    target.effortLevel = isClaudeModelTier(modelId)
+      ? DEFAULT_EFFORT_LEVEL[modelId] ?? DEFAULT_REASONING_VALUE
+      : normalizeEffortLevel(runtimeModel, target.effortLevel);
   },
 
   applyModelProjectionDefaults(model: string, settings: unknown): void {
@@ -114,29 +95,12 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     target.effortLevel = normalizeEffortLevel(runtimeModel, target.effortLevel);
   },
 
-  applyTitleGenerationModelSelection(model: string, settings: unknown): void {
-    const target = settings as Record<string, unknown>;
-    const claudeSettings = getClaudeProviderSettings(target);
-    const environmentType = model
-      ? resolveClaudeModelEnvironmentTypePreference(
-        getClaudeModelOptions(target),
-        model,
-        claudeSettings.titleModelEnvironmentType,
-      )
-      : null;
-    updateClaudeProviderSettings(target, {
-      titleModelEnvironmentType: environmentType ?? '',
-    });
-  },
-
   normalizeModelVariant(model: string, settings) {
-    const normalizedRuntimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
-    const option = findClaudeModelOption(getClaudeModelOptions(settings), model);
-    return option?.value ?? normalizedRuntimeModel;
+    return findClaudeModelOption(getClaudeModelCatalog(settings), model)?.value ?? model;
   },
 
   normalizeAvailableModelSelection(model: string, settings) {
-    return findClaudeModelOption(getClaudeModelOptions(settings), model)?.value ?? model;
+    return findClaudeModelOption(getClaudeModelCatalog(settings), model)?.value ?? model;
   },
 
   getCustomModelIds(envVars: Record<string, string>): Set<string> {

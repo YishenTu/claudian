@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { App } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
@@ -35,6 +36,7 @@ export async function createForkTestEnvironment() {
   const settings = {
     model: 'claude-sonnet-4-5', permissionMode: 'ask', mediaFolder: 'media',
     providerConfigs: {
+      claude: claudeCatalogFixture(['claude-sonnet-4-5']),
       pi: { enabled: true, visibleModels: ['pi:anthropic/claude-sonnet-4'], discoveredModels: [{
         encodedId: 'pi:anthropic/claude-sonnet-4', id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'],
       }] },

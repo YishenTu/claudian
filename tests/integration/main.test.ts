@@ -220,6 +220,15 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('onload', () => {
+    it.each([true, false])('does not discover Claude models during plugin startup (enabled: %s)', async enabled => {
+      const initialize = jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined);
+      await plugin.onload();
+      plugin.settings.providerConfigs.claude = { ...plugin.settings.providerConfigs.claude, enabled };
+      const ready = mockApp.workspace.onLayoutReady.mock.calls[0][0];
+      ready();
+      expect(initialize.mock.calls.filter(([, id, reason]) => id === 'claude' && reason === 'startup')).toHaveLength(0);
+    });
+
     it('should initialize settings with defaults', async () => {
       await plugin.onload();
 
@@ -986,7 +995,7 @@ describe('ClaudianPlugin', () => {
       expect(afterBackgroundLoad?.title).toBe(backgroundMetadata.title);
     });
 
-    it('publishes deferred model fallbacks only after their metadata write is durable', async () => {
+    it('publishes an unavailable Claude selection without silently persisting a fallback', async () => {
       const deferredMetadata = {
         id: 'deferred-retired-model',
         providerId: 'claude' as const,
@@ -1010,30 +1019,10 @@ describe('ClaudianPlugin', () => {
       jest.spyOn(plugin, 'getAllViews').mockReturnValue([{
         notifyConversationListChanged,
       } as any]);
-      let markWriteStarted!: () => void;
-      const writeStarted = new Promise<void>(resolve => {
-        markWriteStarted = resolve;
-      });
-      let releaseWrite!: () => void;
-      const writeRelease = new Promise<void>(resolve => {
-        releaseWrite = resolve;
-      });
-      const saveSpy = jest.spyOn(getConversationPersistence(plugin), 'saveMetadata')
-        .mockImplementation(async (metadata) => {
-          if (metadata.id === deferredMetadata.id) {
-            markWriteStarted();
-            await writeRelease;
-          }
-        });
-
-      const load = (plugin as any).loadRemainingSessionMetadata();
-      await writeStarted;
-      expect(notifyConversationListChanged).not.toHaveBeenCalled();
-
-      releaseWrite();
-      await load;
-
-      expect(plugin.getCachedConversation(deferredMetadata.id)?.selectedModel).toBe('opus');
+      const saveSpy = jest.spyOn(getConversationPersistence(plugin), 'saveMetadata');
+      await (plugin as any).loadRemainingSessionMetadata();
+      expect(plugin.getCachedConversation(deferredMetadata.id)?.selectedModel).toBe('claude-code/retired-model');
+      expect(saveSpy).not.toHaveBeenCalled();
       expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
       scanSpy.mockRestore();
       loadSourceSpy.mockRestore();
@@ -2231,7 +2220,8 @@ describe('ClaudianPlugin', () => {
 
       await plugin.loadSettings();
 
-      expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
+      // Compare persisted values; provider discovery may attach transient symbol metadata.
+      expect(JSON.parse(JSON.stringify(plugin.settings))).toEqual(DEFAULT_SETTINGS);
     });
 
     it('should use defaults when loadData returns empty object', async () => {
@@ -2241,7 +2231,8 @@ describe('ClaudianPlugin', () => {
 
       await plugin.loadSettings();
 
-      expect(plugin.settings).toEqual(DEFAULT_SETTINGS);
+      // Compare persisted values; provider discovery may attach transient symbol metadata.
+      expect(JSON.parse(JSON.stringify(plugin.settings))).toEqual(DEFAULT_SETTINGS);
     });
 
     it('should migrate legacy openInMainTab true to main-tab placement', async () => {
@@ -2267,7 +2258,7 @@ describe('ClaudianPlugin', () => {
       expect(content).not.toHaveProperty('openInMainTab');
     });
 
-    it('should reconcile model from environment and persist when changed', async () => {
+    it('preserves the saved model while applying environment configuration', async () => {
       // Mock claudian-settings.json with environment variables
       mockApp.vault.adapter.exists.mockImplementation(async (path: string) => {
         return path === '.claudian/claudian-settings.json';
@@ -2285,7 +2276,7 @@ describe('ClaudianPlugin', () => {
       const saveSpy = jest.spyOn(plugin, 'saveSettings');
       await plugin.loadSettings();
 
-      expect(plugin.settings.model).toBe('claude-code/custom-model');
+      expect(plugin.settings.model).toBe(DEFAULT_SETTINGS.model);
       expect(saveSpy).toHaveBeenCalled();
     });
   });
@@ -2310,8 +2301,6 @@ describe('ClaudianPlugin', () => {
       const content = JSON.parse(writeCall[1]);
       expect(content).not.toHaveProperty('activeConversationId');
       expect(content).toHaveProperty('providerConfigs.claude.environmentHash');
-      expect(content).toHaveProperty('providerConfigs.claude.lastModel');
-      expect(content).toHaveProperty('lastCustomModel');
       expect(content).not.toHaveProperty('enableBlocklist');
       expect(content).not.toHaveProperty('blockedCommands');
       // Permissions are now in .claude/settings.json (CC format), not claudian-settings.json

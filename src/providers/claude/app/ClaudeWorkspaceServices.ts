@@ -13,6 +13,7 @@ import {
 } from '../commands/ClaudeCommandCatalog';
 import { probeRuntimeCommands } from '../commands/probeRuntimeCommands';
 import { ClaudeCliResolver } from '../runtime/ClaudeCliResolver';
+import { ClaudeModelCatalog } from '../runtime/ClaudeModelCatalog';
 import { SkillStorage } from '../storage/SkillStorage';
 import { SlashCommandStorage } from '../storage/SlashCommandStorage';
 import { createClaudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
@@ -26,6 +27,7 @@ export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
 
 export interface ClaudeWorkspaceServicesOptions {
   readonly commandProbe?: CommandProbe;
+  readonly modelProbe?: ConstructorParameters<typeof ClaudeModelCatalog>[1];
 }
 
 export async function createClaudeWorkspaceServices(
@@ -34,6 +36,7 @@ export async function createClaudeWorkspaceServices(
   options: ClaudeWorkspaceServicesOptions = {},
 ): Promise<ClaudeWorkspaceServices> {
   const cliResolver = new ClaudeCliResolver();
+  const modelCatalog = new ClaudeModelCatalog(plugin, options.modelProbe);
 
   const commandCatalog = new ClaudeCommandCatalog(
     new SlashCommandStorage(adapter),
@@ -51,11 +54,12 @@ export async function createClaudeWorkspaceServices(
     cliResolver,
     commandCatalog,
     vaultCommandRepository: commandCatalog,
-    settingsTabRenderer: createClaudeSettingsTabRenderer({ cliResolver, vaultCommandRepository: commandCatalog }),
+    settingsTabRenderer: createClaudeSettingsTabRenderer({ cliResolver, vaultCommandRepository: commandCatalog, modelCatalog }),
+    refreshModelCatalog: () => modelCatalog.invalidate(),
     dispose() {
       if (disposePromise) return disposePromise;
       unregisterTransitionHook();
-      disposePromise = commandCatalog.dispose();
+      disposePromise = Promise.all([commandCatalog.dispose(), modelCatalog.dispose()]).then(() => undefined);
       return disposePromise;
     },
   };

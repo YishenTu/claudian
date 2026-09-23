@@ -51,6 +51,29 @@ function createRepository(conversation = createConversation()) {
 }
 
 describe('ConversationRepository hydration', () => {
+  beforeEach(() => {
+    // Exercise repository fallback persistence against a provider that opts into fallback.
+    // Claude's preservation policy has a separate regression below.
+    const getConfig = ProviderRegistry.getChatUIConfig.bind(ProviderRegistry);
+    jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockImplementation(id => {
+      const config = getConfig(id);
+      return id === 'claude' ? {
+        ...config,
+        preserveUnavailableModelSelection: false,
+        getModelOptions: () => ['haiku', 'sonnet', 'opus', 'fable'].map(value => ({ value, label: value })),
+        getDefaultModel: () => 'opus',
+      } : config;
+    });
+  });
+
+  it('preserves an unavailable Claude selection without persisting a replacement', async () => {
+    jest.restoreAllMocks();
+    const conversation = { ...createConversation(), selectedModel: 'claude-code/retired' };
+    const { repository, persistence } = createRepository(conversation);
+    await repository.reconcileSelectedModels('claude');
+    expect(conversation.selectedModel).toBe('claude-code/retired');
+    expect(persistence.saveMetadata).not.toHaveBeenCalled();
+  });
   afterEach(() => {
     jest.restoreAllMocks();
   });

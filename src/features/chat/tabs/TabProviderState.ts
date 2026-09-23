@@ -5,6 +5,7 @@ import {
   getProviderSettingsSnapshotWithModel,
   normalizeProviderModelSelection,
   resolveConversationModel,
+  resolveProviderDefaultModel,
 } from '../../../core/providers/conversationModel';
 import { getEnabledProviderForModel } from '../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
@@ -269,20 +270,10 @@ function resolveBlankTabFallback(
   ];
 
   for (const providerId of providerIds) {
-    const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
-    const modelOptions = uiConfig.getModelOptions(settings);
-    if (modelOptions.length === 0) {
-      continue;
-    }
-
-    const defaultModel = uiConfig.getDefaultModel?.(settings);
-    const availableDefault = defaultModel
-      ? findProviderModelOption(providerId, defaultModel, settings)
-      : null;
-    return {
-      model: availableDefault ?? modelOptions[0].value,
-      providerId,
-    };
+    const model = resolveProviderDefaultModel(providerId, settings);
+    if (model) return { model, providerId };
+    if (providerId === preferredProviderId
+      && ProviderRegistry.getChatUIConfig(providerId).preserveUnavailableModelSelection) return null;
   }
 
   return null;
@@ -309,7 +300,9 @@ export function onProviderAvailabilityChanged(
     const availableDraftModel = enabledProviderIds.includes(draftProvider)
       ? findProviderModelOption(draftProvider, tab.draftModel, settingsSnapshot)
       : null;
-    if (!availableDraftModel) {
+    const preserveUnavailable = enabledProviderIds.includes(tab.providerId)
+      && ProviderRegistry.getChatUIConfig(tab.providerId).preserveUnavailableModelSelection;
+    if (!availableDraftModel && !preserveUnavailable) {
       const fallback = resolveBlankTabFallback(
         settingsSnapshot,
         enabledProviderIds,
@@ -319,7 +312,7 @@ export function onProviderAvailabilityChanged(
         tab.draftModel = fallback.model;
         nextProviderId = fallback.providerId;
       }
-    } else {
+    } else if (availableDraftModel) {
       tab.draftModel = availableDraftModel;
       nextProviderId = draftProvider;
     }

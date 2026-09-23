@@ -1,192 +1,45 @@
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 
 describe('claudeChatUIConfig', () => {
-  describe('getDefaultModel', () => {
-    it('prefers Opus for fresh Claude settings', () => {
-      expect(claudeChatUIConfig.getDefaultModel?.({})).toBe('opus');
-    });
+  it('has no default until the SDK reports an enabled model', () => {
+    expect(claudeChatUIConfig.getDefaultModel?.({})).toBeNull();
+  });
 
-    it('follows the Opus environment slot when it overrides the model id', () => {
-      expect(claudeChatUIConfig.getDefaultModel?.({
-        providerConfigs: {
-          claude: {
-            defaultModel: 'opus',
-            environmentVariables: 'ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-enterprise',
-          },
-        },
-      })).toBe('claude-code/claude-opus-enterprise');
-    });
+  it('uses the selected SDK row without resolving it through environment variables', () => {
+    const settings = { providerConfigs: { claude: {
+      discoveredModels: [{ value: 'opus', label: 'SDK Opus', description: '', resolvedModel: 'gateway-opus' }],
+      visibleModels: ['opus'], defaultModel: 'opus',
+      environmentVariables: 'ANTHROPIC_DEFAULT_OPUS_MODEL=another-model',
+    } } };
+    expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('opus');
+    expect(claudeChatUIConfig.getModelOptions(settings)[0].label).toBe('SDK Opus');
+  });
 
-    it('supports a custom model selected as the Claude provider default', () => {
-      expect(claudeChatUIConfig.getDefaultModel?.({
-        providerConfigs: {
-          claude: {
-            customModels: 'claude-opus-4-6',
-            defaultModel: 'claude-code/claude-opus-4-6',
-          },
-        },
-      })).toBe('claude-code/claude-opus-4-6');
-    });
+  it('uses enabled panel order instead of the retired default setting', () => {
+    const config = {
+      discoveredModels: ['opus', 'sonnet'].map(value => ({ value, label: value, description: '' })),
+      visibleModels: ['sonnet', 'opus'], defaultModel: 'opus',
+    };
+    const settings = { providerConfigs: { claude: config } };
+    expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('sonnet');
+    config.visibleModels = ['opus', 'sonnet'];
+    expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('opus');
+    config.visibleModels = [];
+    expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBeNull();
+  });
 
-    it('falls back to the first dynamic option when the preference is unavailable', () => {
-      expect(claudeChatUIConfig.getDefaultModel?.({
-        providerConfigs: {
-          claude: {
-            defaultModel: 'retired-model',
-            environmentVariables: 'ANTHROPIC_MODEL=claude-sonnet-gateway',
-          },
-        },
-      })).toBe('claude-code/claude-sonnet-gateway');
-    });
+  it('never normalizes a deselected SDK variant to its enabled sibling', () => {
+    const settings = { providerConfigs: { claude: {
+      discoveredModels: ['sonnet', 'sonnet[1m]'].map(value => ({ value, label: value, resolvedModel: 'same-model' })),
+      visibleModels: ['sonnet[1m]'],
+    } } };
+    expect(claudeChatUIConfig.normalizeAvailableModelSelection?.('sonnet', settings)).toBe('sonnet');
+    expect(claudeChatUIConfig.getModelOptions(settings).map(row => row.value)).toEqual(['claude-code/sonnet[1m]']);
   });
 
   it('defaults Claude models to high effort', () => {
     expect(claudeChatUIConfig.getDefaultReasoningValue('haiku', {})).toBe('high');
     expect(claudeChatUIConfig.getDefaultReasoningValue('custom-model', {})).toBe('high');
-  });
-
-  describe('getModelOptions', () => {
-    it('appends settings-defined custom models after the built-in options', () => {
-      const options = claudeChatUIConfig.getModelOptions({
-        providerConfigs: {
-          claude: {
-            customModels: 'claude-opus-4-6\nclaude-opus-4-6[1m]',
-          },
-        },
-      });
-
-      expect(options.map(option => option.value)).toEqual([
-        'haiku',
-        'sonnet',
-        'opus',
-        'fable',
-        'claude-code/claude-opus-4-6',
-        'claude-code/claude-opus-4-6[1m]',
-      ]);
-      expect(options.slice(-2)).toEqual([
-        {
-          value: 'claude-code/claude-opus-4-6',
-          label: 'Opus 4.6',
-          description: 'Custom model',
-        },
-        {
-          value: 'claude-code/claude-opus-4-6[1m]',
-          label: 'Opus 4.6 (1M)',
-          description: 'Custom model',
-        },
-      ]);
-    });
-
-    it('deduplicates settings-defined custom models against exact duplicates', () => {
-      const options = claudeChatUIConfig.getModelOptions({
-        providerConfigs: {
-          claude: {
-            customModels: 'haiku\nclaude-fable-5\nclaude-opus-4-6\nclaude-opus-4-6\n',
-          },
-        },
-      });
-
-      expect(options.map(option => option.value)).toEqual([
-        'haiku',
-        'sonnet',
-        'opus',
-        'fable',
-        'claude-code/claude-opus-4-6',
-      ]);
-    });
-
-    it('formats dated settings-defined custom models with shortened date tags', () => {
-      const options = claudeChatUIConfig.getModelOptions({
-        providerConfigs: {
-          claude: {
-            customModels: 'claude-opus-4-5-20251101',
-          },
-        },
-      });
-
-      expect(options.at(-1)).toEqual({
-        value: 'claude-code/claude-opus-4-5-20251101',
-        label: 'Opus 4.5 (2511)',
-        description: 'Custom model',
-      });
-    });
-
-    it('formats a future fable custom model id without the built-in default', () => {
-      const options = claudeChatUIConfig.getModelOptions({
-        providerConfigs: {
-          claude: {
-            customModels: 'claude-fable-6',
-          },
-        },
-      });
-
-      expect(options.at(-1)).toEqual({
-        value: 'claude-code/claude-fable-6',
-        label: 'Fable 6',
-        description: 'Custom model',
-      });
-    });
-
-    it('uses custom model aliases for settings-defined custom model labels', () => {
-      const options = claudeChatUIConfig.getModelOptions({
-        customModelAliases: {
-          'claude-opus-4-6': 'Work Opus',
-        },
-        providerConfigs: {
-          claude: {
-            customModels: 'claude-opus-4-6',
-          },
-        },
-      });
-
-      expect(options.at(-1)).toEqual({
-        value: 'claude-code/claude-opus-4-6',
-        label: 'Work Opus',
-        description: 'Custom model',
-      });
-    });
-
-    it('keeps environment-defined custom models as a full override', () => {
-      const options = claudeChatUIConfig.getModelOptions({
-        providerConfigs: {
-          claude: {
-            customModels: 'claude-opus-4-6',
-            environmentVariables: 'ANTHROPIC_MODEL=claude-sonnet-4-5',
-          },
-        },
-      });
-
-      expect(options).toEqual([
-        {
-          value: 'claude-code/claude-sonnet-4-5',
-          label: 'Sonnet 4.5',
-          description: 'Custom model (model)',
-          environmentTypes: ['model'],
-        },
-      ]);
-    });
-
-    it('uses custom model aliases for environment-defined custom model labels', () => {
-      const options = claudeChatUIConfig.getModelOptions({
-        customModelAliases: {
-          'claude-sonnet-4-5': 'Gateway Sonnet',
-        },
-        providerConfigs: {
-          claude: {
-            environmentVariables: 'ANTHROPIC_MODEL=claude-sonnet-4-5',
-          },
-        },
-      });
-
-      expect(options).toEqual([
-        {
-          value: 'claude-code/claude-sonnet-4-5',
-          label: 'Gateway Sonnet',
-          description: 'Custom model (model)',
-          environmentTypes: ['model'],
-        },
-      ]);
-    });
   });
 
   describe('getReasoningOptions', () => {
@@ -225,53 +78,6 @@ describe('claudeChatUIConfig', () => {
   });
 
   describe('applyModelDefaults', () => {
-    it('persists the tier identity of an environment-mapped model', () => {
-      const settings: Record<string, unknown> = {
-        effortLevel: 'high',
-        providerConfigs: {
-          claude: {
-            lastModel: 'haiku',
-            environmentVariables: [
-              'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku',
-              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
-            ].join('\n'),
-          },
-        },
-      };
-
-      claudeChatUIConfig.applyModelDefaults('claude-code/gpt-4.1', settings);
-
-      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude.lastModel)
-        .toBe('fable');
-      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude.modelEnvironmentType)
-        .toBe('fable');
-      expect(settings.lastCustomModel).toBeUndefined();
-    });
-
-    it('preserves the environment tier of a concrete legacy Fable ID', () => {
-      const settings: Record<string, unknown> = {
-        effortLevel: 'high',
-        providerConfigs: {
-          claude: {
-            lastModel: 'fable',
-            modelEnvironmentType: 'fable',
-            environmentVariables: [
-              'ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-fable-5',
-              'ANTHROPIC_DEFAULT_FABLE_MODEL=gpt-4.1',
-            ].join('\n'),
-          },
-        },
-      };
-
-      claudeChatUIConfig.applyModelDefaults('claude-code/claude-fable-5', settings);
-
-      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude)
-        .toMatchObject({
-          lastModel: 'haiku',
-          modelEnvironmentType: 'haiku',
-        });
-    });
-
     it('clamps stale xhigh effort when switching to a custom sonnet model', () => {
       const settings: Record<string, unknown> = {
         effortLevel: 'xhigh',
@@ -281,7 +87,6 @@ describe('claudeChatUIConfig', () => {
       claudeChatUIConfig.applyModelDefaults('claude-sonnet-4-5', settings);
 
       expect(settings.effortLevel).toBe('high');
-      expect(settings.lastCustomModel).toBe('claude-sonnet-4-5');
     });
 
     it('preserves xhigh on custom opus models that support it', () => {

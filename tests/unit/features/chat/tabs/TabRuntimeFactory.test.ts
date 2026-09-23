@@ -360,6 +360,7 @@ describe('Tab provider execution ownership', () => {
   const originalResizeObserver = globalThis.ResizeObserver;
 
   beforeEach(() => {
+    ProviderRegistry.getChatUIConfig('claude').preserveUnavailableModelSelection = false;
     coordinatorInstances.length = 0;
     coordinatorDeps.length = 0;
     titleServiceInstances.length = 0;
@@ -1059,6 +1060,32 @@ describe('Tab provider execution ownership', () => {
     expect(existing.draftModel).toBe('claude-default');
     expect(next.draftModel).toBe('claude-alternate');
     expect(next.providerId).toBe('claude');
+  });
+
+  it('keeps an explicit blank-tab selection through loading and changed catalog publications', async () => {
+    const plugin = createPlugin();
+    const uiConfig = ProviderRegistry.getChatUIConfig('claude');
+    uiConfig.preserveUnavailableModelSelection = true;
+    plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'claude-default' };
+    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
+    (uiConfig.getModelOptions as jest.Mock).mockReturnValue([]);
+    onProviderAvailabilityChanged(tab, plugin);
+    expect(tab.draftModel).toBe('claude-default');
+    expect(tab.providerId).toBe('claude');
+    (uiConfig.getModelOptions as jest.Mock).mockReturnValue([{ value: 'claude-alternate', label: 'Alternate' }]);
+    (uiConfig.getDefaultModel as jest.Mock).mockReturnValue('claude-alternate');
+    onProviderAvailabilityChanged(tab, plugin);
+    expect(tab.draftModel).toBe('claude-default');
+  });
+
+  it('preserves an unavailable last-selected model when creating a blank tab and publishing availability', async () => {
+    const plugin = createPlugin();
+    ProviderRegistry.getChatUIConfig('claude').preserveUnavailableModelSelection = true;
+    plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'retired' };
+    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
+    onProviderAvailabilityChanged(tab, plugin);
+    expect(tab.providerId).toBe('claude');
+    expect(tab.draftModel).toBe('retired');
   });
 
   it('adopts a provider default when a model-less blank tab gains available options', async () => {

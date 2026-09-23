@@ -531,6 +531,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
             for (const model of ProviderRegistry.getTitleGenerationModelOptions(settingsBag)) {
               dropdown.addOption(model.value, model.label);
             }
+            const selected = this.plugin.settings.titleGenerationModel;
+            if (selected && !Array.from(dropdown.selectEl.options).some(option => option.value === selected)) {
+              dropdown.addOption(selected, `Unavailable: ${selected}`);
+              dropdown.selectEl.options[dropdown.selectEl.options.length - 1].disabled = true;
+            }
             dropdown.setValue(this.plugin.settings.titleGenerationModel || '');
           };
 
@@ -863,6 +868,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
       checkTimer = null;
       void runGitCheck(false);
     };
+  }
+
+  refreshModelOptions(): void {
+    this.refreshTitleModelOptions?.();
   }
 
   private notifyProviderModelOptionsChanged(providerId: ProviderId): void {

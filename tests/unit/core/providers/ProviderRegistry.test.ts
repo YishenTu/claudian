@@ -201,6 +201,7 @@ describe('ProviderRegistry', () => {
   it('prefixes title generation model labels with their provider names', () => {
     const options = ProviderRegistry.getTitleGenerationModelOptions({
       providerConfigs: {
+        claude: { discoveredModels: [{ value: 'sonnet', label: 'Sonnet', description: '' }], visibleModels: ['sonnet'] },
         codex: {
           discoveredModels: TEST_CODEX_CATALOG,
           enabled: true,

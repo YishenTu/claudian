@@ -246,7 +246,7 @@ describe('ModelSelector', () => {
     expect(icon?.getAttribute('viewBox')).toBe(selectedProviderIcon.viewBox);
   });
 
-  it('should display first model when current model not found', () => {
+  it('shows an unavailable selection instead of displaying another model', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'nonexistent',
       thinkingBudget: 'low',
@@ -257,7 +257,7 @@ describe('ModelSelector', () => {
     });
     selector.updateDisplay();
     const label = parentEl.querySelector('.claudian-model-label');
-    expect(label?.textContent).toBe('Haiku');
+    expect(label?.textContent).toBe('Model unavailable');
   });
 
   it('should render model options in reverse order', () => {

@@ -135,6 +135,7 @@ export default class ClaudianPlugin extends Plugin {
   settings!: ClaudianSettings;
   storage!: SharedAppStorage;
   readonly executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
+  private settingsTab: ClaudianSettingTab | null = null;
   readonly providerHost = new ClaudianProviderHost(this);
   readonly warmExecutionPool = new WarmExecutionPool(
     () => this.settings?.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES,
@@ -400,7 +401,8 @@ export default class ClaudianPlugin extends Plugin {
         },
       });
 
-      this.addSettingTab(new ClaudianSettingTab(this.app, this));
+      this.settingsTab = new ClaudianSettingTab(this.app, this);
+      this.addSettingTab(this.settingsTab);
       this.initializeCollabLayoutLifecycle();
       if (this.isCollabEnabled()) void this.startAgentRuntime();
       this.scheduleRemainingSessionMetadataLoad();
@@ -2076,6 +2078,8 @@ export default class ClaudianPlugin extends Plugin {
     const reconcileAndRefresh = async (): Promise<void> => {
       let didReconcile = false;
       try {
+        await this.mutateSettingsConditionally(settings => ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings));
+        this.settingsTab?.refreshModelOptions();
         const changedConversations = this.conversationRepository
           ? await this.conversationRepository.reconcileSelectedModels(providerId)
           : [];

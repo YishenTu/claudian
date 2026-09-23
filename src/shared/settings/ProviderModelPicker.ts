@@ -101,6 +101,7 @@ export function renderProviderModelPicker(
     cls: 'claudian-provider-model-picker-search',
     type: 'search',
   });
+  searchInput.setAttribute('aria-label', `Filter ${options.providerName} models`);
   searchInput.placeholder = options.searchPlaceholder ?? 'Filter by model, provider, or ID...';
   searchInput.addEventListener('input', () => {
     searchQuery = searchInput.value.trim().toLowerCase();
@@ -110,6 +111,7 @@ export function renderProviderModelPicker(
   const providerSelectEl = controlsEl.createEl('select', {
     cls: 'claudian-provider-model-picker-provider',
   });
+  providerSelectEl.setAttribute('aria-label', 'Filter model providers');
   providerSelectEl.addEventListener('change', () => {
     providerFilter = providerSelectEl.value;
     renderList();
@@ -529,7 +531,7 @@ export function renderProviderModelPicker(
 
   renderAll();
   catalogEl.addEventListener('toggle', () => {
-    if (catalogEl.open) {
+    if (catalogEl.open && !options.loadCatalogOnRender) {
       void loadCatalog(false);
     }
   });

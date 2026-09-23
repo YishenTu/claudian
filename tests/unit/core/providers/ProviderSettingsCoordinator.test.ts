@@ -452,7 +452,7 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('reconcileTitleGenerationModelSelection', () => {
-    it('persists Claude environment provenance when selecting a title model', () => {
+    it('stores a Claude title model without inferring environment provenance', () => {
       const settings: Record<string, unknown> = {
         titleGenerationModel: '',
         providerConfigs: {
@@ -469,8 +469,6 @@ describe('ProviderSettingsCoordinator', () => {
       );
 
       expect(settings.titleGenerationModel).toBe('claude-code/gpt-4.1');
-      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude)
-        .toMatchObject({ titleModelEnvironmentType: 'fable' });
     });
 
     it('migrates available Claude custom title models to provider-qualified ids', () => {
@@ -479,7 +477,8 @@ describe('ProviderSettingsCoordinator', () => {
         providerConfigs: {
           claude: {
             ...DEFAULT_CLAUDE_PROVIDER_SETTINGS,
-            customModels: 'claude-opus-4-6',
+            discoveredModels: [{ value: 'claude-opus-4-6', label: 'Opus', description: '' }],
+            visibleModels: ['claude-opus-4-6'],
           },
         },
       };
@@ -560,7 +559,7 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('Claude environment reconciliation', () => {
-    it('preserves Fable provenance while projecting an inactive Claude provider', () => {
+    it('preserves an inactive Claude selection across environment changes', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',
         model: TEST_CODEX_MODEL,
@@ -574,8 +573,6 @@ describe('ProviderSettingsCoordinator', () => {
         providerConfigs: {
           claude: {
             ...DEFAULT_CLAUDE_PROVIDER_SETTINGS,
-            lastModel: 'fable',
-            modelEnvironmentType: 'fable',
             environmentVariables: [
               'ANTHROPIC_DEFAULT_HAIKU_MODEL=haiku-v2',
               'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-v2',
@@ -595,16 +592,11 @@ describe('ProviderSettingsCoordinator', () => {
       ProviderSettingsCoordinator.reconcileProviders(settings, [], ['claude']);
 
       expect(settings.savedProviderModel).toMatchObject({
-        claude: 'claude-code/fable-v2',
+        claude: 'claude-code/fable-v1',
       });
-      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude)
-        .toMatchObject({
-          lastModel: 'fable',
-          modelEnvironmentType: 'fable',
-        });
     });
 
-    it('migrates legacy inactive Fable state before provider projection replaces it', () => {
+    it('keeps the saved inactive model instead of remapping it from environment', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',
         model: TEST_CODEX_MODEL,
@@ -618,8 +610,6 @@ describe('ProviderSettingsCoordinator', () => {
         providerConfigs: {
           claude: {
             ...DEFAULT_CLAUDE_PROVIDER_SETTINGS,
-            lastModel: 'fable',
-            modelEnvironmentType: '',
             environmentVariables: [
               'ANTHROPIC_DEFAULT_HAIKU_MODEL=haiku-new',
               'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-new',
@@ -636,16 +626,11 @@ describe('ProviderSettingsCoordinator', () => {
       ProviderSettingsCoordinator.reconcileProviders(settings, [], ['claude']);
 
       expect(settings.savedProviderModel).toMatchObject({
-        claude: 'claude-code/fable-new',
+        claude: 'claude-code/fable-old',
       });
-      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude)
-        .toMatchObject({
-          lastModel: 'fable',
-          modelEnvironmentType: 'fable',
-        });
     });
 
-    it('restores a title model after its environment source returns', () => {
+    it('preserves a title model while environment configuration changes', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
         model: 'claude-code/custom-haiku',
@@ -653,9 +638,6 @@ describe('ProviderSettingsCoordinator', () => {
         providerConfigs: {
           claude: {
             ...DEFAULT_CLAUDE_PROVIDER_SETTINGS,
-            lastModel: 'haiku',
-            modelEnvironmentType: 'haiku',
-            titleModelEnvironmentType: 'fable',
             environmentVariables: 'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku',
             environmentHash: [
               'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-old',
@@ -667,9 +649,7 @@ describe('ProviderSettingsCoordinator', () => {
 
       ProviderSettingsCoordinator.reconcileProviders(settings, [], ['claude']);
 
-      expect(settings.titleGenerationModel).toBe('');
-      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude)
-        .toMatchObject({ titleModelEnvironmentType: 'fable' });
+      expect(settings.titleGenerationModel).toBe('claude-code/fable-old');
 
       (settings.providerConfigs as Record<string, Record<string, unknown>>).claude.environmentVariables = [
         'ANTHROPIC_DEFAULT_HAIKU_MODEL=custom-haiku',
@@ -678,9 +658,7 @@ describe('ProviderSettingsCoordinator', () => {
 
       ProviderSettingsCoordinator.reconcileProviders(settings, [], ['claude']);
 
-      expect(settings.titleGenerationModel).toBe('claude-code/fable-new');
-      expect((settings.providerConfigs as Record<string, Record<string, unknown>>).claude)
-        .toMatchObject({ titleModelEnvironmentType: 'fable' });
+      expect(settings.titleGenerationModel).toBe('claude-code/fable-old');
     });
   });
 

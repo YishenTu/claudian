@@ -222,6 +222,8 @@ export interface ProviderModeSelectorConfig {
 
 /** Synchronous UI projection owned by the provider and backed by provider-owned metadata. */
 export interface ProviderChatUIConfig {
+  /** Keep unavailable saved selections for explicit user correction instead of choosing a fallback. */
+  preserveUnavailableModelSelection?: boolean;
   /** Model options for the selector dropdown. Provider extracts what it needs from the settings bag. */
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[];
 
@@ -252,9 +254,6 @@ export interface ProviderChatUIConfig {
 
   /** Apply model change side effects to settings (defaults, tracking). */
   applyModelDefaults(model: string, settings: unknown): void;
-
-  /** Track provider-owned metadata when the global title-generation model changes. */
-  applyTitleGenerationModelSelection?(model: string, settings: unknown): void;
 
   /** Apply model-scoped defaults to an ephemeral conversation settings projection. */
   applyModelProjectionDefaults?(model: string, settings: unknown): void;

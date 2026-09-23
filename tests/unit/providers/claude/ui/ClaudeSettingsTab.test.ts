@@ -16,7 +16,10 @@ const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockSlashCommandSettings = jest.fn();
 const mockCliResolverReset = jest.fn();
+const mockModelCatalogRefresh = jest.fn().mockResolvedValue({ changed: true });
 const mockVaultCommandRepository = {};
+const mockModelCatalog = { refresh: mockModelCatalogRefresh, invalidate: mockModelCatalogRefresh, cancel: jest.fn(), onChange: null as (() => void) | null };
+const mockRenderModelPicker = jest.fn((..._args: unknown[]) => ({ refresh: jest.fn() }));
 
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
@@ -30,17 +33,6 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
       const providerConfigs = settings.providerConfigs as Record<string, { enabled: boolean }>;
       providerConfigs[providerId].enabled = enabled;
       return true;
-    }),
-    reconcileTitleGenerationModelSelection: jest.fn((settings: Record<string, unknown>) => {
-      const titleGenerationModel = settings.titleGenerationModel;
-      const customModels = (
-        settings.providerConfigs as { claude?: { customModels?: string } } | undefined
-      )?.claude?.customModels ?? '';
-      if (titleGenerationModel === 'claude-opus-4-6' && customModels !== 'claude-opus-4-6') {
-        settings.titleGenerationModel = '';
-        return true;
-      }
-      return false;
     }),
   },
 }));
@@ -123,8 +115,13 @@ function createSettingsRenderer() {
     },
     commandCatalog: {},
     vaultCommandRepository: mockVaultCommandRepository,
+    modelCatalog: mockModelCatalog,
   } as unknown as Parameters<typeof createClaudeSettingsTabRenderer>[0]);
 }
+
+jest.mock('@/providers/claude/ui/ClaudeModelPicker', () => ({
+  renderClaudeModelPicker: (...args: unknown[]) => mockRenderModelPicker(...args),
+}));
 
 jest.mock('@/providers/claude/ui/SlashCommandSettings', () => ({
   SlashCommandSettings: class MockSlashCommandSettings {
@@ -368,8 +365,8 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       providerConfigs: {
         claude: {
           ...DEFAULT_CLAUDE_PROVIDER_SETTINGS,
-          customModels: 'claude-opus-4-6',
-          lastModel: 'sonnet',
+          discoveredModels: [{ value: 'opus', label: 'Opus', description: '' }, { value: 'claude-opus-4-6', label: 'Opus 4.6', description: '' }],
+          visibleModels: ['opus', 'claude-opus-4-6'],
         },
       },
       ...overrides,
@@ -504,6 +501,11 @@ describe('ClaudeSettingsTab', () => {
     await toggle.onChangeCallback?.(false);
 
     expect(plugin.settings.providerConfigs.claude.enabled).toBe(false);
+    expect(mockModelCatalog.cancel).toHaveBeenCalled();
+    expect(mockModelCatalogRefresh).not.toHaveBeenCalled();
+    await toggle.onChangeCallback?.(true);
+    expect(plugin.settings.providerConfigs.claude.enabled).toBe(true);
+    expect(mockModelCatalogRefresh).not.toHaveBeenCalled();
     expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('claude');
   });
 
@@ -628,44 +630,44 @@ describe('ClaudeSettingsTab', () => {
     );
   });
 
-  it('renders and persists the Claude provider default from dynamic model options', async () => {
+  it('shows the shared no-model warning and updates it after selection and discovery', async () => {
     const plugin = createPlugin();
-    plugin.settings.providerConfigs.claude.defaultModel = 'claude-code/claude-opus-4-6';
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-
-    const setting = findSetting('Default model');
-    const dropdown = setting.dropdownComponents[0];
-    expect(dropdown.value).toBe('claude-code/claude-opus-4-6');
-    expect(dropdown.options).toEqual(expect.arrayContaining([
-      { value: 'opus', label: 'Opus' },
-      { value: 'claude-code/claude-opus-4-6', label: 'Opus 4.6' },
-    ]));
-
-    await dropdown.onChangeCallback?.('opus');
-
-    expect(plugin.settings.providerConfigs.claude.defaultModel).toBe('opus');
-    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
-    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
+    plugin.settings.providerConfigs.claude.visibleModels = [];
+    function domElement(tag = 'div', info: any = {}): any {
+      const element = document.createElement(tag);
+      if (info.cls) element.className = info.cls;
+      if (info.text) element.textContent = info.text;
+      for (const [name, value] of Object.entries(info.attr ?? {})) element.setAttribute(name, String(value));
+      return Object.assign(element, {
+        createDiv: (options: any) => element.appendChild(domElement('div', options)),
+        createSpan: (options: any) => element.appendChild(domElement('span', options)),
+        appendText: (value: string) => element.append(value),
+        createEl: (name: string, options: any) => element.appendChild(domElement(name, options)),
+        empty: () => element.replaceChildren(),
+        toggleClass: (name: string, value: boolean) => element.classList.toggle(name, value),
+      });
+    }
+    const container = domElement();
+    createSettingsRenderer().render(container, createContext(plugin));
+    const warning = within(container).getByText('settings.providerEnablement.noModelsWarning');
+    expect(warning.classList.contains('claudian-hidden')).toBe(false);
+    const pickerContext = mockRenderModelPicker.mock.calls[0][1] as ReturnType<typeof createContext>;
+    plugin.settings.providerConfigs.claude.visibleModels = ['opus'];
+    pickerContext.notifyProviderModelOptionsChanged('claude');
+    expect(warning.classList.contains('claudian-hidden')).toBe(true);
+    plugin.settings.providerConfigs.claude.discoveredModels = [];
+    mockModelCatalog.onChange?.();
+    expect(warning.classList.contains('claudian-hidden')).toBe(false);
+    await findSetting('settings.providerEnablement.name').toggleComponents[0].onChangeCallback?.(false);
+    expect(warning.classList.contains('claudian-hidden')).toBe(true);
+    const warningRegion = document.createElement('main');
+    warningRegion.append(warning);
+    expect(await axe(warningRegion)).toHaveNoViolations();
   });
 
-  it('stores an unambiguous Claude environment slot as the provider default', async () => {
-    const plugin = createPlugin();
-    plugin.settings.providerConfigs.claude.environmentVariables = [
-      'ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-enterprise',
-      'ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-enterprise',
-    ].join('\n');
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-
-    const dropdown = findSetting('Default model').dropdownComponents[0];
-    expect(dropdown.value).toBe('claude-code/claude-opus-enterprise');
-
-    await dropdown.onChangeCallback?.('claude-code/claude-sonnet-enterprise');
-
-    expect(plugin.settings.providerConfigs.claude.defaultModel).toBe('sonnet');
+  it('uses the model panel without a separate default-model setting', () => {
+    createSettingsRenderer().render(createContainer(), createContext(createPlugin()));
+    expect(createdSettings.map(setting => setting.name)).not.toContain('Default model');
   });
 
   it('keeps Claude CRUD on its explicit vault repository without the shared manager', () => {
@@ -698,23 +700,6 @@ describe('ClaudeSettingsTab', () => {
     expect(context.renderCustomContextLimits).toHaveBeenCalledWith(target, 'claude');
   });
 
-  it('does not switch the active model while the custom models textarea is mid-edit', async () => {
-    const plugin = createPlugin();
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-
-    const customModelsSetting = findSetting('settings.customModels.name');
-    const customModelsTextArea = customModelsSetting.textAreaComponents[0];
-
-    await customModelsTextArea.onChangeCallback?.('claude-opus-4-7');
-
-    expect(plugin.settings.providerConfigs.claude.customModels).toBe('claude-opus-4-6');
-    expect(plugin.settings.model).toBe('claude-opus-4-6');
-    expect(mockSaveSettings).not.toHaveBeenCalled();
-    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
-  });
-
   it('offers auto as a Claude safe mode and persists it', async () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
@@ -736,24 +721,8 @@ describe('ClaudeSettingsTab', () => {
     expect(mockSaveSettings).toHaveBeenCalledTimes(1);
   });
 
-  it('reconciles removed custom models on blur and clears stale title model selections', async () => {
-    const plugin = createPlugin({
-      titleGenerationModel: 'claude-opus-4-6',
-    });
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-
-    const customModelsSetting = findSetting('settings.customModels.name');
-    const customModelsTextArea = customModelsSetting.textAreaComponents[0];
-
-    await customModelsTextArea.onChangeCallback?.('claude-opus-4-7');
-    await customModelsTextArea.trigger('blur');
-
-    expect(plugin.settings.providerConfigs.claude.customModels).toBe('claude-opus-4-7');
-    expect(plugin.settings.model).toBe('sonnet');
-    expect(plugin.settings.titleGenerationModel).toBe('');
-    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('claude');
+  it('removes the manual custom model field', () => {
+    createSettingsRenderer().render(createContainer(), createContext(createPlugin()));
+    expect(createdSettings.some(setting => setting.name === 'settings.customModels.name')).toBe(false);
   });
 });
