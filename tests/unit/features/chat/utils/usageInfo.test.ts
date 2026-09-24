@@ -68,6 +68,18 @@ describe('usageInfo', () => {
       )).toMatchObject({ contextWindow: 100_000, percentage: 50 });
     });
 
+    it('uses provider-supplied aliases only for custom-limit matching', () => {
+      const displayContext = {
+        ...context({ 'model-a': 100_000 }, 'openai-codex/old-model-a'),
+        normalizeCustomContextLimitModel: (model: string) => model === 'old-model-a' ? 'model-a' : model,
+      };
+
+      expect(projectContextUsageDisplay(usage(), displayContext))
+        .toMatchObject({ contextWindow: 100_000, percentage: 50 });
+      expect(projectContextUsageDisplay(usage({ contextWindow: 200_000 }), displayContext))
+        .toMatchObject({ contextWindow: 100_000, percentage: 50 });
+    });
+
     it.each<Record<string, number>>([{}, { 'opencode:anthropic/claude-sonnet-5': 100_000 }])(
       'uses the native OpenCode report with its selected model ID and fallback %j',
       customContextLimits => {

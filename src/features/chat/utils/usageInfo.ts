@@ -6,6 +6,7 @@ export interface ContextUsageDisplayContext {
   providerId: ProviderId | null;
   model: string | null | undefined;
   customContextLimits?: Record<string, number>;
+  normalizeCustomContextLimitModel?: (model: string) => string;
 }
 
 export function isValidContextWindow(value: unknown): value is number {
@@ -43,10 +44,9 @@ function isSameModel(
 }
 
 function resolveCustomContextLimit(
-  providerId: ProviderId | null,
-  model: string | null | undefined,
-  customLimits: Record<string, number> | undefined,
+  context: ContextUsageDisplayContext,
 ): number | null {
+  const { providerId, model, customContextLimits: customLimits, normalizeCustomContextLimitModel } = context;
   if (!model || !customLimits) return null;
 
   const exact = customLimits[model];
@@ -56,10 +56,14 @@ function resolveCustomContextLimit(
   const runtimeExact = customLimits[runtimeModel];
   if (isValidContextWindow(runtimeExact)) return runtimeExact;
 
-  const normalizedModel = runtimeModel.toLowerCase();
+  const normalize = (id: string): string => {
+    const runtimeId = toRuntimeModelId(providerId, id);
+    return (normalizeCustomContextLimitModel?.(runtimeId) ?? runtimeId).toLowerCase();
+  };
+  const normalizedModel = normalize(runtimeModel);
   const matches = Object.entries(customLimits)
     .filter(([key, limit]) =>
-      toRuntimeModelId(providerId, key).toLowerCase() === normalizedModel
+      normalize(key) === normalizedModel
       && isValidContextWindow(limit)
     )
     .map(([, limit]) => limit);
@@ -82,7 +86,7 @@ export function projectContextUsageDisplay(
     ? usage.contextWindow
     : null;
   const contextWindow = reportedWindow
-    ?? resolveCustomContextLimit(context.providerId, context.model, context.customContextLimits);
+    ?? resolveCustomContextLimit(context);
   return contextWindow === null ? null : withContextWindow(usage, contextWindow);
 }
 

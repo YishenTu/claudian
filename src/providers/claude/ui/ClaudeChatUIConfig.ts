@@ -64,20 +64,16 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     return resolveClaudeEffortSetting(model, settings);
   },
 
+  normalizeCustomContextLimitModel: normalizeLegacyClaudeModelAlias,
+
   isDefaultModel(model: string): boolean {
     const runtimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
     return DEFAULT_CLAUDE_MODELS.some(m => m.value === runtimeModel);
   },
 
-  applyModelDefaults(model: string, settings: unknown): void {
-    const target = settings as Record<string, unknown>;
-    target.effortLevel = resolveClaudeEffortSetting(model, target);
-  },
+  applyModelDefaults: applyClaudeEffortSetting,
 
-  applyModelProjectionDefaults(model: string, settings: unknown): void {
-    const target = settings as Record<string, unknown>;
-    target.effortLevel = resolveClaudeEffortSetting(model, target);
-  },
+  applyModelProjectionDefaults: applyClaudeEffortSetting,
 
   normalizeModelVariant(model: string, settings) {
     return findClaudeModelOption(getClaudeModelCatalog(settings), model)?.value ?? model;
@@ -99,6 +95,11 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     return CLAUDE_PROVIDER_ICON;
   },
 };
+
+function applyClaudeEffortSetting(model: string, settings: unknown): void {
+  const target = settings as Record<string, unknown>;
+  target.effortLevel = resolveClaudeEffortSetting(model, target);
+}
 
 /**
  * Normalizes the saved effort preference against reported capabilities. While

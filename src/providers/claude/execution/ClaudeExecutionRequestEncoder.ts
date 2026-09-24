@@ -41,7 +41,6 @@ import {
   findClaudeModelOption,
   getClaudeModelCatalog,
   getClaudeModelOptions,
-  getClaudeSupportedEffortLevels,
 } from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
@@ -129,7 +128,7 @@ export class ClaudeExecutionRequestEncoder {
     const effort = request.configuration.reasoning === null
       ? null
       : resolveSupportedEffortLevel(
-        getClaudeSupportedEffortLevels(this.deps.host.settings, selected.value),
+        selected.supportedEffortLevels ?? [],
         isEffortLevel(request.configuration.reasoning)
           ? request.configuration.reasoning
           : settings.effortLevel,
