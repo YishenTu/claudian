@@ -1020,7 +1020,7 @@ describe('ClaudianPlugin', () => {
         notifyConversationListChanged,
       } as any]);
       const saveSpy = jest.spyOn(getConversationPersistence(plugin), 'saveMetadata');
-      await (plugin as any).loadRemainingSessionMetadata();
+      await (plugin as any).sessionMetadata.loadRemaining();
       expect(plugin.getCachedConversation(deferredMetadata.id)?.selectedModel).toBe('claude-code/retired-model');
       expect(saveSpy).not.toHaveBeenCalled();
       expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
@@ -1065,7 +1065,7 @@ describe('ClaudianPlugin', () => {
           events.push('delete-legacy');
         });
 
-      await (plugin as any).loadRemainingSessionMetadata();
+      await (plugin as any).sessionMetadata.loadRemaining();
 
       expect(events).toEqual(['save-unscoped', 'delete-legacy']);
       expect(plugin.getCachedConversation(legacyMetadata.id)?.title)
@@ -1089,7 +1089,7 @@ describe('ClaudianPlugin', () => {
       const recoverySpy = jest.spyOn(repository, 'recoverMissingSelectedModels')
         .mockResolvedValue([]);
 
-      await (plugin as any).loadRemainingSessionMetadata();
+      await (plugin as any).sessionMetadata.loadRemaining();
 
       expect(recoverySpy).toHaveBeenCalledTimes(1);
 
@@ -1140,7 +1140,7 @@ describe('ClaudianPlugin', () => {
           persistedRecoverySources.push(conversations[0]?.modelRecoverySource);
         });
 
-      await (plugin as any).loadRemainingSessionMetadata();
+      await (plugin as any).sessionMetadata.loadRemaining();
 
       expect(registeredSources).toContainEqual(expect.objectContaining({
         id: metadata.id,
@@ -1220,7 +1220,7 @@ describe('ClaudianPlugin', () => {
       );
 
       await plugin.onload();
-      await (plugin as any).loadRemainingSessionMetadata();
+      await (plugin as any).sessionMetadata.loadRemaining();
 
       const restored = plugin.getCachedConversation(restoredMetadata.id);
       const deferred = plugin.getCachedConversation(deferredMetadata.id);
@@ -1291,7 +1291,7 @@ describe('ClaudianPlugin', () => {
 
       try {
         await plugin.onload();
-        await (plugin as any).loadRemainingSessionMetadata();
+        await (plugin as any).sessionMetadata.loadRemaining();
       } finally {
         delete claudeReconciler.environmentSessionPolicy;
         reconcileSpy.mockRestore();
@@ -1354,7 +1354,7 @@ describe('ClaudianPlugin', () => {
         });
       const loadSourceSpy = mockMetadataSources(firstMetadata, laterMetadata);
 
-      const load = (plugin as any).loadRemainingSessionMetadata();
+      const load = (plugin as any).sessionMetadata.loadRemaining();
       await firstBatchPublished;
       await plugin.applyEnvironmentVariables(
         'provider:claude',
@@ -1441,7 +1441,7 @@ describe('ClaudianPlugin', () => {
           }
         });
 
-      const load = (plugin as any).loadRemainingSessionMetadata();
+      const load = (plugin as any).sessionMetadata.loadRemaining();
       await firstBatchPublished;
       const apply = plugin.applyEnvironmentVariables(
         'provider:claude',
@@ -1499,16 +1499,16 @@ describe('ClaudianPlugin', () => {
             invalidMetadataCount: 0,
           };
         });
-      (plugin as any).pendingSessionMetadataScan = false;
+      (plugin as any).sessionMetadata.pendingScan = false;
 
-      await (plugin as any).loadRemainingSessionMetadata();
+      await (plugin as any).sessionMetadata.loadRemaining();
 
       const persistedSettings = JSON.parse(files.get(settingsPath) ?? '{}');
       scanSpy.mockRestore();
 
       expect(persistedSettings.pendingProviderSessionInvalidations?.claude)
         .toBe(pendingGeneration);
-      expect((plugin as any).hasLoadedAllSessionMetadata).toBe(false);
+      expect((plugin as any).sessionMetadata.loadedAll).toBe(false);
     });
 
     it('does not persist a background metadata shell deleted before reconciliation', async () => {
@@ -1545,7 +1545,7 @@ describe('ClaudianPlugin', () => {
       ).mockImplementation((conversations) => [...conversations]);
       const saveMetadataSpy = jest.spyOn(getConversationPersistence(plugin), 'saveMetadata');
 
-      const load = (plugin as any).loadRemainingSessionMetadata();
+      const load = (plugin as any).sessionMetadata.loadRemaining();
       await batchPublished;
       await plugin.deleteConversation(backgroundMetadata.id);
       saveMetadataSpy.mockClear();
@@ -1584,7 +1584,7 @@ describe('ClaudianPlugin', () => {
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue(null);
 
-      await (plugin as any).loadRemainingSessionMetadata();
+      await (plugin as any).sessionMetadata.loadRemaining();
 
       expect(loadSpy).toHaveBeenCalledWith(tombstonedMetadata.id);
       expect(plugin.getCachedConversation(tombstonedMetadata.id)).toBeNull();
@@ -1603,7 +1603,7 @@ describe('ClaudianPlugin', () => {
       };
 
       await plugin.onload();
-      const shell = (plugin as any).createConversationMetadataShell(
+      const shell = (plugin as any).sessionMetadata.createShell(
         tombstonedMetadata,
       );
       (plugin as any).conversationRepository.mergeMetadataConversations([shell]);
@@ -1619,7 +1619,7 @@ describe('ClaudianPlugin', () => {
       const loadSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue(null);
 
-      await (plugin as any).loadRemainingSessionMetadata();
+      await (plugin as any).sessionMetadata.loadRemaining();
 
       expect(plugin.getCachedConversation(tombstonedMetadata.id)).toBeNull();
 
@@ -1674,7 +1674,7 @@ describe('ClaudianPlugin', () => {
       const loadSourceSpy = mockMetadataSources(deferredMetadata);
 
       await restartedPlugin.onload();
-      await (restartedPlugin as any).loadRemainingSessionMetadata();
+      await (restartedPlugin as any).sessionMetadata.loadRemaining();
 
       const restartedConversation = restartedPlugin.getCachedConversation(deferredMetadata.id);
       const persistedMetadata = JSON.parse(
@@ -1739,11 +1739,11 @@ describe('ClaudianPlugin', () => {
       const loadSourceSpy = mockMetadataSources(deferredMetadata);
       const saveMetadataSpy = jest.spyOn(getConversationPersistence(plugin), 'saveMetadata')
         .mockRejectedValueOnce(new Error('metadata write failed'));
-      (plugin as any).pendingSessionMetadataScan = false;
+      (plugin as any).sessionMetadata.pendingScan = false;
 
       let loadError: unknown;
       try {
-        await (plugin as any).loadRemainingSessionMetadata();
+        await (plugin as any).sessionMetadata.loadRemaining();
       } catch (error) {
         loadError = error;
       }
@@ -2567,7 +2567,7 @@ describe('ClaudianPlugin', () => {
 
     it('retains a committed invalidation generation when publication fails before invalidation', async () => {
       await plugin.onload();
-      (plugin as any).hasLoadedAllSessionMetadata = true;
+      (plugin as any).sessionMetadata.loadedAll = true;
       const conversation = await plugin.createConversation({
         providerId: 'claude',
         sessionId: 'pre-invalidation-session',
@@ -2625,7 +2625,7 @@ describe('ClaudianPlugin', () => {
 
     it('keeps invalidation pending until every invalidated metadata write succeeds', async () => {
       await plugin.onload();
-      (plugin as any).hasLoadedAllSessionMetadata = true;
+      (plugin as any).sessionMetadata.loadedAll = true;
       const first = await plugin.createConversation({
         providerId: 'claude',
         sessionId: 'partial-write-first',
@@ -2812,7 +2812,7 @@ describe('ClaudianPlugin', () => {
         'ANTHROPIC_BASE_URL=https://failed.example.com',
       ).catch(error => error);
       await writeStarted;
-      const scan = (plugin as any).loadRemainingSessionMetadata();
+      const scan = (plugin as any).sessionMetadata.loadRemaining();
       await batchPublished;
       rejectWrite(writeError);
       expect(await apply).toBe(writeError);
@@ -2921,7 +2921,7 @@ describe('ClaudianPlugin', () => {
 
     it('serializes overlapping environment invalidation writes', async () => {
       await plugin.onload();
-      (plugin as any).hasLoadedAllSessionMetadata = true;
+      (plugin as any).sessionMetadata.loadedAll = true;
       await plugin.createConversation({ sessionId: 'overlapping-session' });
       let finishFirstWrite!: () => void;
       const firstWriteRelease = new Promise<void>((resolve) => {
@@ -2970,7 +2970,7 @@ describe('ClaudianPlugin', () => {
 
     it('flushes already-invalidated sessions after an earlier environment write fails', async () => {
       await plugin.onload();
-      (plugin as any).hasLoadedAllSessionMetadata = true;
+      (plugin as any).sessionMetadata.loadedAll = true;
       await plugin.createConversation({ sessionId: 'failed-overlap-session' });
       const saveMetadataSpy = jest.spyOn(getConversationPersistence(plugin), 'saveMetadata')
         .mockRejectedValueOnce(new Error('metadata write failed'));
@@ -3207,7 +3207,7 @@ describe('ClaudianPlugin', () => {
       });
 
       await plugin.onload();
-      (plugin as any).hasLoadedAllSessionMetadata = false;
+      (plugin as any).sessionMetadata.loadedAll = false;
       const hostnameKey = getHostnameKey();
       await plugin.applyProviderRuntimeSettings(['codex'], (settings) => {
         updateCodexProviderSettings(settings, {
@@ -3243,7 +3243,7 @@ describe('ClaudianPlugin', () => {
       const loadSourceSpy = mockMetadataSources(deferredMetadata);
 
       await restartedPlugin.onload();
-      await (restartedPlugin as any).loadRemainingSessionMetadata();
+      await (restartedPlugin as any).sessionMetadata.loadRemaining();
 
       const restartedConversation = restartedPlugin.getCachedConversation(deferredMetadata.id);
       const persistedMetadata = JSON.parse(
@@ -3305,7 +3305,7 @@ describe('ClaudianPlugin', () => {
 
     it('finishes durable invalidation when a post-commit apply hook fails', async () => {
       await plugin.onload();
-      (plugin as any).hasLoadedAllSessionMetadata = true;
+      (plugin as any).sessionMetadata.loadedAll = true;
       const conversation = await plugin.createConversation({
         providerId: 'codex',
         sessionId: 'post-commit-thread',

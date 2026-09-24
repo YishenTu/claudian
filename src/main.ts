@@ -25,6 +25,7 @@ import type {
 } from './app/collab/git/GitRuntimeResolver';
 import { CollabComposerReferenceService } from './app/CollabComposerReferenceService';
 import { ConversationRepository } from './app/conversations/ConversationRepository';
+import { SessionMetadataLoader } from './app/conversations/SessionMetadataLoader';
 import { ClaudianProviderHost } from './app/providers/ClaudianProviderHost';
 import { ChatModelSelectionCoordinator } from './app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
@@ -40,7 +41,6 @@ import {
 } from './app/settings/SettingsCoordinator';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import { TabWorkspaceMigrationCoordinator } from './app/storage/TabWorkspaceMigrationCoordinator';
-import type { SessionMetadataReadResult } from './core/bootstrap/SessionStorage';
 import type { SharedAppStorage } from './core/bootstrap/storage';
 import {
   type CollabCoordinationSnapshot,
@@ -65,13 +65,11 @@ import type {
   ProviderCliResolutionContext,
   ProviderId,
 } from './core/providers/types';
-import { DEFAULT_CHAT_PROVIDER_ID } from './core/providers/types';
 import type {
   ClaudianSettings,
   Conversation,
   ConversationMeta,
   ConversationMutablePatch,
-  SessionMetadata,
 } from './core/types';
 import {
   VIEW_TYPE_CLAUDIAN,
@@ -167,14 +165,10 @@ export default class ClaudianPlugin extends Plugin {
   private chatModelSelectionCoordinator!: ChatModelSelectionCoordinator;
   private pinnedLinkedContentPaths!: PinnedLinkedContentPathCoordinator;
   private conversationRepository!: ConversationRepository;
-  private pendingSessionMetadataScan = false;
   private runtimeSettings!: RuntimeSettingsCoordinator;
   private environmentUpdateTail: Promise<void> = Promise.resolve();
   private agentSkillResourceGeneration = 0;
-  private isLoadingRemainingSessionMetadata = false;
-  private hasLoadedAllSessionMetadata = false;
-  private sessionMetadataLoadTimer: number | null = null;
-  private remainingSessionMetadataLoad: Promise<void> | null = null;
+  private sessionMetadata!: SessionMetadataLoader;
   private providerChatOptionsChangeTail: Promise<void> = Promise.resolve();
   private readonly inlineEditSessions = new InlineEditSessionOwner();
   private isUnloading = false;
@@ -405,7 +399,7 @@ export default class ClaudianPlugin extends Plugin {
       this.addSettingTab(this.settingsTab);
       this.initializeCollabLayoutLifecycle();
       if (this.isCollabEnabled()) void this.startAgentRuntime();
-      this.scheduleRemainingSessionMetadataLoad();
+      this.sessionMetadata.scheduleRemainingLoad();
     } finally {
       StartupProfiler.finishOnload();
     }
@@ -415,10 +409,7 @@ export default class ClaudianPlugin extends Plugin {
     this.isUnloading = true;
     this.inlineEditSessions.dispose();
     this.collabTransientSurfaces.closeAll();
-    if (this.sessionMetadataLoadTimer !== null) {
-      window.clearTimeout(this.sessionMetadataLoadTimer);
-      this.sessionMetadataLoadTimer = null;
-    }
+    this.sessionMetadata?.cancelScheduledLoad();
     if (this.collabHostRestoreTimer !== null) {
       window.clearTimeout(this.collabHostRestoreTimer);
       this.collabHostRestoreTimer = null;
@@ -1158,7 +1149,6 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   async loadSettings(options: { deferNonRestoredSessionMetadata?: boolean } = {}) {
-    this.hasLoadedAllSessionMetadata = false;
     const sharedStorage = new SharedStorageService(this);
     this.storage = sharedStorage;
     this.tabWorkspaceMigrationCoordinator = new TabWorkspaceMigrationCoordinator(
@@ -1206,7 +1196,21 @@ export default class ClaudianPlugin extends Plugin {
       settings: this.settingsCoordinator,
       conversations: this.conversationRepository,
       getSettings: () => this.settings,
-      canCompleteInvalidations: () => this.hasLoadedAllSessionMetadata && !this.isUnloading,
+      canCompleteInvalidations: () => this.sessionMetadata.hasLoadedAll && !this.isUnloading,
+    });
+    this.sessionMetadata = new SessionMetadataLoader({
+      sessions: sharedStorage.sessions,
+      conversations: this.conversationRepository,
+      runtimeSettings: this.runtimeSettings,
+      isUnloading: () => this.isUnloading,
+      whenLayoutReady: (callback) => {
+        if (typeof this.app.workspace.onLayoutReady === 'function') {
+          this.app.workspace.onLayoutReady(callback);
+        } else {
+          callback();
+        }
+      },
+      onConversationListChanged: () => this.notifyConversationViewsChanged(),
     });
     const didNormalizePendingSessionInvalidations = this.runtimeSettings.syncPendingSessionInvalidations();
 
@@ -1224,13 +1228,13 @@ export default class ClaudianPlugin extends Plugin {
         }
       : await StartupProfiler.runAsync(
           'session-metadata-load',
-          () => this.loadSessionMetadataWithSources(),
+          () => this.sessionMetadata.readInitialMetadata(),
         );
     const initialModelRecoverySources = initialMetadataScan.records.map(({ metadata }) => (
-      this.createConversationMetadataShell(metadata)
+      this.sessionMetadata.createShell(metadata)
     ));
     const initialEntries = initialMetadataScan.records.map(({ metadata, needsMigration, source }) => ({
-      conversation: this.createConversationMetadataShell(metadata),
+      conversation: this.sessionMetadata.createShell(metadata),
       needsMigration,
       source,
     }));
@@ -1288,32 +1292,7 @@ export default class ClaudianPlugin extends Plugin {
       Array.from(conversationsToSave),
     );
     await this.runtimeSettings.completePendingSessionInvalidations(completedInvalidationGenerations);
-    this.hasLoadedAllSessionMetadata = initialMetadataScan.complete;
-    this.pendingSessionMetadataScan = deferRemainingMetadata;
-  }
-
-  private async loadSessionMetadataWithSources(): Promise<{
-    records: SessionMetadataReadResult[];
-    complete: boolean;
-    invalidMetadataCount: number;
-  }> {
-    const scan = await this.storage.sessions.scanMetadata();
-    return {
-      records: await this.resolveMetadataSources(scan.metadata),
-      complete: scan.complete,
-      invalidMetadataCount: scan.invalidMetadataCount,
-    };
-  }
-
-  private async resolveMetadataSources(
-    metadata: SessionMetadata[],
-  ): Promise<SessionMetadataReadResult[]> {
-    const records = await Promise.all(
-      metadata.map(({ id }) => this.storage.sessions.load(id)),
-    );
-    return records.filter(
-      (record): record is SessionMetadataReadResult => record !== null,
-    );
+    this.sessionMetadata.finishStartup(initialMetadataScan.complete, deferRemainingMetadata);
   }
 
   private async applyCollabEnabled(enabled: boolean): Promise<void> {
@@ -1421,228 +1400,6 @@ export default class ClaudianPlugin extends Plugin {
       }
     });
     this.collabHostRestore = restore;
-  }
-
-  private scheduleRemainingSessionMetadataLoad(): void {
-    if (!this.pendingSessionMetadataScan || this.isUnloading) {
-      return;
-    }
-
-    const schedule = (): void => {
-      if (!this.pendingSessionMetadataScan || this.isUnloading) {
-        return;
-      }
-      this.sessionMetadataLoadTimer = window.setTimeout(() => {
-        this.sessionMetadataLoadTimer = null;
-        this.startRemainingSessionMetadataLoad();
-      }, 0);
-    };
-
-    if (typeof this.app.workspace.onLayoutReady === 'function') {
-      this.app.workspace.onLayoutReady(schedule);
-    } else {
-      schedule();
-    }
-  }
-
-  private startRemainingSessionMetadataLoad(): void {
-    if (
-      !this.pendingSessionMetadataScan
-      || this.isUnloading
-      || this.remainingSessionMetadataLoad
-    ) {
-      return;
-    }
-
-    this.pendingSessionMetadataScan = false;
-    const load = StartupProfiler.runAsync(
-      'session-metadata-background-load',
-      () => this.loadRemainingSessionMetadata(),
-    ).catch(() => {
-      StartupProfiler.increment('session-metadata-background-failures');
-    }).finally(() => {
-      if (this.remainingSessionMetadataLoad === load) {
-        this.remainingSessionMetadataLoad = null;
-      }
-    });
-    this.remainingSessionMetadataLoad = load;
-  }
-
-  private async loadRemainingSessionMetadata(): Promise<void> {
-    this.isLoadingRemainingSessionMetadata = true;
-    try {
-      const addedConversations: Conversation[] = [];
-      const invalidatedConversations: Conversation[] = [];
-      let didChangeConversationList = false;
-      const publishBatch = (records: SessionMetadataReadResult[]): void => {
-        if (this.isUnloading || records.length === 0) return;
-
-        const recoverySources = records.map(({ metadata }) => (
-          this.createConversationMetadataShell(metadata)
-        ));
-        const publishable = records
-          .map(record => ({
-            conversation: this.createConversationMetadataShell(record.metadata),
-            source: record.source,
-          }))
-          .filter(({ conversation }) => (
-            this.conversationRepository.isSelectedModelPublicationSafe(conversation)
-          ));
-        const shells = publishable.map(({ conversation }) => conversation);
-        const publishedIds = new Set(shells.map(({ id }) => id));
-        const invalidatedShells = ProviderSettingsCoordinator
-          .invalidateConversationSessions(
-            shells,
-            this.runtimeSettings.getPendingProviderIds(),
-          );
-        const invalidatedIds = new Set(
-          invalidatedShells.map(({ id }) => id),
-        );
-        const added = publishable.flatMap(({ conversation, source }) => (
-          this.conversationRepository.mergeMetadataConversations(
-            [conversation],
-            source === 'legacy' ? 'unscoped' : source,
-          )
-        ));
-        this.conversationRepository.registerHistoricalModelRecoverySources(
-          recoverySources.filter(({ id }) => publishedIds.has(id)),
-        );
-        if (added.length === 0) return;
-
-        addedConversations.push(...added);
-        invalidatedConversations.push(
-          ...added.filter(({ id }) => invalidatedIds.has(id)),
-        );
-        didChangeConversationList = true;
-      };
-      const scan = await this.storage.sessions.scan({
-        onBatch: publishBatch,
-      });
-      if (this.isUnloading) {
-        return;
-      }
-
-      StartupProfiler.recordCount('session-metadata-count', scan.records.length);
-      StartupProfiler.recordCount(
-        'invalid-session-metadata-count',
-        scan.invalidMetadataCount,
-      );
-      const scannedShells = scan.records
-        .map(({ metadata }) => this.conversationRepository.getCachedConversation(metadata.id))
-        .filter((shell): shell is Conversation => shell !== null);
-      const records = await this.resolveMetadataSources(
-        scan.records.map(({ metadata }) => metadata),
-      );
-      const resolvedIds = new Set(records.map(({ metadata }) => metadata.id));
-      const unresolvedShells = scannedShells.filter(
-        ({ id }) => !resolvedIds.has(id),
-      );
-      this.conversationRepository.discardUnresolvedMetadataShells(
-        unresolvedShells,
-      );
-      if (unresolvedShells.length > 0) {
-        didChangeConversationList = true;
-      }
-      publishBatch(records);
-      const entries = records.map(({ metadata, needsMigration, source }) => ({
-        conversation: this.createConversationMetadataShell(metadata),
-        needsMigration,
-        source,
-      }));
-      const shells = entries.map(({ conversation }) => conversation);
-      const invalidatedEntries = ProviderSettingsCoordinator
-        .invalidateConversationSessions(
-          shells,
-          this.runtimeSettings.getPendingProviderIds(),
-        );
-      const invalidatedIds = new Set(
-        invalidatedEntries.map(({ id }) => id),
-      );
-      const existingIds = new Set(
-        this.conversationRepository.getAll().map(({ id }) => id),
-      );
-      await this.conversationRepository.adoptMetadataConversations(entries);
-      this.conversationRepository.registerHistoricalModelRecoverySources(
-        shells,
-      );
-      const adoptedConversations = shells.filter((conversation) => (
-        !existingIds.has(conversation.id)
-        && this.conversationRepository.getCachedConversation(conversation.id)
-          === conversation
-      ));
-      if (adoptedConversations.length > 0) {
-        addedConversations.push(...adoptedConversations);
-        invalidatedConversations.push(
-          ...adoptedConversations.filter(({ id }) => invalidatedIds.has(id)),
-        );
-        didChangeConversationList = true;
-      }
-      const currentAddedConversations = addedConversations.filter((conversation) => (
-        this.conversationRepository.getCachedConversation(conversation.id)
-          === conversation
-      ));
-      const currentInvalidatedConversations = invalidatedConversations.filter(
-        (conversation) => (
-          this.conversationRepository.getCachedConversation(conversation.id)
-            === conversation
-        ),
-      );
-      const uniqueCurrentInvalidatedConversations = currentInvalidatedConversations.filter(
-        ({ id }, index, conversations) => (
-          conversations.findIndex(conversation => conversation.id === id) === index
-        ),
-      );
-      StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
-      let recoveredModels: Conversation[] = [];
-      if (!this.isUnloading) {
-        recoveredModels = await this.conversationRepository
-          .recoverMissingSelectedModels();
-        StartupProfiler.recordCount(
-          'recovered-session-model-count',
-          recoveredModels.length,
-        );
-      }
-      await this.conversationRepository.persistConversations(
-        uniqueCurrentInvalidatedConversations,
-      );
-      if (
-        !this.isUnloading
-        && (didChangeConversationList || recoveredModels.length > 0)
-      ) {
-        this.notifyConversationViewsChanged();
-      }
-      if (scan.complete) {
-        this.hasLoadedAllSessionMetadata = true;
-        if (!this.isUnloading) {
-          await this.runtimeSettings.completePendingSessionInvalidations(
-            this.runtimeSettings.getCompletablePendingSessionInvalidations(),
-          );
-        }
-      }
-    } finally {
-      this.isLoadingRemainingSessionMetadata = false;
-    }
-  }
-
-  private createConversationMetadataShell(meta: SessionMetadata): Conversation {
-    return {
-      id: meta.id,
-      providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
-      title: meta.title,
-      createdAt: meta.createdAt,
-      lastActivityAt: meta.lastActivityAt,
-      sessionId: meta.sessionId !== undefined ? meta.sessionId : meta.id,
-      selectedModel: meta.selectedModel,
-      providerState: meta.providerState,
-      modelRecoverySource: meta.modelRecoverySource,
-      messages: [],
-      linkedContentPath: meta.linkedContentPath,
-      isPinned: meta.isPinned,
-      isArchived: meta.isArchived,
-      usage: meta.usage,
-      titleGenerationStatus: meta.titleGenerationStatus,
-      resumeAtMessageId: meta.resumeAtMessageId,
-    };
   }
 
   normalizeModelVariantSettings(): boolean {
@@ -2106,35 +1863,7 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   async ensureConversationMetadataLoaded(conversationIds: readonly string[]): Promise<void> {
-    const missingIds = Array.from(new Set(conversationIds)).filter(
-      id => !this.conversationRepository.getCachedConversation(id),
-    );
-    if (missingIds.length === 0) return;
-
-    const records = (await Promise.all(
-      missingIds.map(id => this.storage.sessions.load(id)),
-    )).filter((record): record is SessionMetadataReadResult => record !== null);
-    if (records.length === 0) return;
-
-    const entries = records.map(({ metadata, needsMigration, source }) => ({
-      conversation: this.createConversationMetadataShell(metadata),
-      needsMigration,
-      source,
-    }));
-    const shells = entries.map(({ conversation }) => conversation);
-    const invalidatedIds = new Set(
-      ProviderSettingsCoordinator.invalidateConversationSessions(
-        shells,
-        this.runtimeSettings.getPendingProviderIds(),
-      ).map(({ id }) => id),
-    );
-    await this.conversationRepository.adoptMetadataConversations(entries);
-    this.conversationRepository.registerHistoricalModelRecoverySources(shells);
-    await this.conversationRepository.persistConversations(
-      Array.from(invalidatedIds)
-        .map(id => this.conversationRepository.getCachedConversation(id))
-        .filter((conversation): conversation is Conversation => conversation !== null),
-    );
+    await this.sessionMetadata.ensureLoaded(conversationIds);
   }
 
   registerTabWorkspaceStateDelivery(
