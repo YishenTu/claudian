@@ -2391,6 +2391,38 @@ describe('ClaudeExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('keeps background output running when the consumer stops iterating after the requested turn ends', async () => {
+    const query = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Background started' }] } },
+      deferredMessage(),
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'Background finished' }] } },
+      { type: 'result', subtype: 'success' },
+    ]]);
+    jest.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSdk'),
+      'loadClaudeAgentQuery',
+    ).mockResolvedValueOnce((() => query) as never);
+    const session = new ClaudeExecutionBackend(createHost())
+      .createSession(createConfig());
+    const events: ProviderSessionEvent[] = [];
+    session.onEvent(event => events.push(event));
+
+    for await (const event of session.execute(createRequest()).events) {
+      if (event.type !== 'turn_completed') continue;
+      await waitFor(() => events.some(({ type }) => type === 'background_turn_started'));
+      break;
+    }
+
+    expect(query.interrupt).not.toHaveBeenCalled();
+    expect(session.getSnapshot().status).not.toBe('cancelling');
+    releaseDeferredMessage();
+    await query.finished;
+    expect(events).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Background finished' }));
+    await session.dispose();
+  });
+
   it('cancels one active run, fences late output, and rejects execution after disposal', async () => {
     const query = createScriptedPersistentQuery([[
       { type: 'system', subtype: 'init', session_id: 'session-1' },

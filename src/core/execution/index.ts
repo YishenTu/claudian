@@ -1,3 +1,4 @@
+export { ExecutionEventQueue } from './ExecutionEventQueue';
 export {
   type ProviderExecutionBackend,
   type ProviderNativePersistence,

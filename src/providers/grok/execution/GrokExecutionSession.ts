@@ -1,20 +1,21 @@
 import { randomUUID } from 'node:crypto';
 
-import type {
-  ChatRewindMode,
-  ChatRewindPreview,
-  ChatRewindResult,
-  ProviderExecutionEvent,
-  ProviderExecutionRequest,
-  ProviderExecutionRun,
-  ProviderExecutionSession,
-  ProviderRequestedEventScope,
-  ProviderSessionConfig,
-  ProviderSessionEvent,
-  ProviderSessionSnapshot,
-  ProviderSessionStatus,
-  RewindableExecutionSession,
-  SteerableExecutionSession,
+import {
+  type ChatRewindMode,
+  type ChatRewindPreview,
+  type ChatRewindResult,
+  ExecutionEventQueue,
+  type ProviderExecutionEvent,
+  type ProviderExecutionRequest,
+  type ProviderExecutionRun,
+  type ProviderExecutionSession,
+  type ProviderRequestedEventScope,
+  type ProviderSessionConfig,
+  type ProviderSessionEvent,
+  type ProviderSessionSnapshot,
+  type ProviderSessionStatus,
+  type RewindableExecutionSession,
+  type SteerableExecutionSession,
 } from '../../../core/execution';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
@@ -94,48 +95,9 @@ interface GrokExecutionSessionOptions {
   ) => Promise<number | null>;
 }
 
-class ExecutionEventQueue implements AsyncIterable<ProviderExecutionEvent> {
-  private closed = false;
-  private readonly items: ProviderExecutionEvent[] = [];
-  private readonly waiters: Array<(result: IteratorResult<ProviderExecutionEvent>) => void> = [];
-
-  constructor(private readonly onReturn: () => void) {}
-
-  push(event: ProviderExecutionEvent): void {
-    if (this.closed) return;
-    const waiter = this.waiters.shift();
-    if (waiter) waiter({ done: false, value: event });
-    else this.items.push(event);
-  }
-
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    while (this.waiters.length > 0) {
-      this.waiters.shift()?.({ done: true, value: undefined });
-    }
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<ProviderExecutionEvent> {
-    return {
-      next: async () => {
-        const item = this.items.shift();
-        if (item) return { done: false, value: item };
-        if (this.closed) return { done: true, value: undefined };
-        return new Promise(resolve => this.waiters.push(resolve));
-      },
-      return: async () => {
-        this.onReturn();
-        this.close();
-        return { done: true, value: undefined };
-      },
-    };
-  }
-}
-
 class GrokExecutionRunState implements ProviderExecutionRun {
   readonly events: AsyncIterable<ProviderExecutionEvent>;
-  private readonly queue: ExecutionEventQueue;
+  private readonly queue: ExecutionEventQueue<ProviderExecutionEvent>;
   private terminal = false;
   private settle!: () => void;
   readonly settled = new Promise<void>(resolve => { this.settle = resolve; });
@@ -145,7 +107,7 @@ class GrokExecutionRunState implements ProviderExecutionRun {
     readonly turnId: string,
     private readonly cancelCallback: () => void,
   ) {
-    this.queue = new ExecutionEventQueue(cancelCallback);
+    this.queue = new ExecutionEventQueue<ProviderExecutionEvent>(cancelCallback);
     this.events = this.queue;
   }
 

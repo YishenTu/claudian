@@ -9,6 +9,7 @@ import {
   type ChatRewindMode,
   type ChatRewindPreview,
   type ChatRewindResult,
+  ExecutionEventQueue,
   type ProviderBackgroundEventScope,
   type ProviderExecutionEvent,
   type ProviderExecutionRequest,
@@ -52,7 +53,7 @@ import { ClaudeResponseOwnership, getClaudeInputMatch } from './ClaudeResponseOw
 interface ActiveRequestedRun {
   readonly executionId: string;
   readonly turnId: string;
-  readonly events: AsyncEventStream<ProviderExecutionEvent>;
+  readonly events: ExecutionEventQueue<ProviderExecutionEvent>;
   readonly abortController: AbortController;
   readonly requestSignal: AbortSignal;
   readonly onRequestAbort: () => void;
@@ -190,7 +191,7 @@ ClaudeExecutionStrategySink {
     const abortController = new AbortController();
     const queryToken = ++this.queryToken;
     const onRequestAbort = (): void => this.cancel();
-    const events = new AsyncEventStream<ProviderExecutionEvent>(() => {
+    const events = new ExecutionEventQueue<ProviderExecutionEvent>(() => {
       this.cancel();
     });
     const active: ActiveRequestedRun = {
@@ -1145,7 +1146,7 @@ ClaudeExecutionStrategySink {
       'abort',
       active.onRequestAbort,
     );
-    active.events.end();
+    active.events.close();
     if (this.activeRun === active) {
       this.activeRun = null;
     }
@@ -1241,56 +1242,6 @@ function isRequestedTurnEvidence(message: SDKMessage): boolean {
     || message.type === 'assistant'
     || message.type === 'stream_event'
     || message.type === 'result';
-}
-
-class AsyncEventStream<T> implements AsyncIterable<T> {
-  private readonly values: T[] = [];
-  private readonly waiters: Array<
-    (result: IteratorResult<T>) => void
-  > = [];
-  private done = false;
-
-  constructor(private readonly onReturn: () => void) {}
-
-  push(value: T): void {
-    if (this.done) return;
-    const waiter = this.waiters.shift();
-    if (waiter) {
-      waiter({ value, done: false });
-    } else {
-      this.values.push(value);
-    }
-  }
-
-  end(): void {
-    if (this.done) return;
-    this.done = true;
-    for (const waiter of this.waiters.splice(0)) {
-      waiter({ value: undefined, done: true });
-    }
-  }
-
-  [Symbol.asyncIterator](): AsyncIterator<T> {
-    return {
-      next: () => {
-        const value = this.values.shift();
-        if (value !== undefined) {
-          return Promise.resolve({ value, done: false });
-        }
-        if (this.done) {
-          return Promise.resolve({ value: undefined, done: true });
-        }
-        return new Promise((resolve) => {
-          this.waiters.push(resolve);
-        });
-      },
-      return: () => {
-        this.onReturn();
-        this.end();
-        return Promise.resolve({ value: undefined, done: true });
-      },
-    };
-  }
 }
 
 function classifyClaudeError(

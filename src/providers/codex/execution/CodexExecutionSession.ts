@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 import {
+  ExecutionEventQueue,
   type ProviderExecutionErrorCategory,
   type ProviderExecutionEvent,
   type ProviderExecutionRequest,
@@ -158,7 +159,7 @@ class CodexExecutionRun implements ProviderExecutionRun {
   readonly turnId = randomUUID();
   readonly events: AsyncIterable<ProviderExecutionEvent>;
 
-  private readonly queue = new AsyncEventQueue<ProviderExecutionEvent>(
+  private readonly queue = new ExecutionEventQueue<ProviderExecutionEvent>(
     () => this.cancel(),
   );
   private sequence = 0;
@@ -226,52 +227,6 @@ class CodexExecutionRun implements ProviderExecutionRun {
   #detachAbortSignal(): void {
     this.abortListener?.();
     this.abortListener = null;
-  }
-}
-
-class AsyncEventQueue<T> implements AsyncIterable<T>, AsyncIterator<T> {
-  private readonly values: T[] = [];
-  private readonly waiters: Array<(result: IteratorResult<T>) => void> = [];
-  private closed = false;
-
-  constructor(private readonly onEarlyReturn: () => void) {}
-
-  [Symbol.asyncIterator](): AsyncIterator<T> {
-    return this;
-  }
-
-  next(): Promise<IteratorResult<T>> {
-    const value = this.values.shift();
-    if (value !== undefined) {
-      return Promise.resolve({ done: false, value });
-    }
-    if (this.closed) {
-      return Promise.resolve({ done: true, value: undefined });
-    }
-    return new Promise(resolve => this.waiters.push(resolve));
-  }
-
-  return(): Promise<IteratorResult<T>> {
-    if (!this.closed) this.onEarlyReturn();
-    return Promise.resolve({ done: true, value: undefined });
-  }
-
-  push(value: T): void {
-    if (this.closed) return;
-    const waiter = this.waiters.shift();
-    if (waiter) {
-      waiter({ done: false, value });
-      return;
-    }
-    this.values.push(value);
-  }
-
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    for (const waiter of this.waiters.splice(0)) {
-      waiter({ done: true, value: undefined });
-    }
   }
 }
 
