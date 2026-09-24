@@ -1,5 +1,3 @@
-import { setIcon } from 'obsidian';
-
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 const MESSAGE_SELECTOR = '.claudian-message';
@@ -131,7 +129,16 @@ export class MessageQuoteController {
       cls: 'claudian-message-quote-btn',
       attr: { type: 'button' },
     });
-    setIcon(button.createSpan({ cls: 'claudian-message-quote-btn-icon' }), 'text-quote');
+    const icon = button.createSvg('svg', {
+      cls: 'claudian-message-quote-btn-icon',
+      attr: { 'aria-hidden': 'true', viewBox: '0 0 24 24', fill: 'currentColor' },
+    });
+    icon.createSvg('path', {
+      attr: {
+        d: 'M9 2 11 5C7 7 5.5 9.5 5.5 13H10.5V22H1V13C1 8.5 3.5 5 9 2Z'
+          + 'M21 2 23 5C19 7 17.5 9.5 17.5 13H22.5V22H13V13C13 8.5 15.5 5 21 2Z',
+      },
+    });
     button.createSpan({ text: this.#label });
     // Pressing the button must not move focus, which would clear the selection.
     button.addEventListener('mousedown', event => event.preventDefault());

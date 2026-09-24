@@ -772,10 +772,7 @@ button.claudian-work-header:disabled {
 }
 
 .claudian-message-quote-btn-icon {
-  display: flex;
-}
-
-.claudian-message-quote-btn-icon svg {
-  width: 14px;
-  height: 14px;
+  display: block;
+  width: 20px;
+  height: 20px;
 }
