@@ -14,7 +14,7 @@ export interface ClaudeModelOption extends ProviderUIOption {
 
 export function getClaudeModelCatalog(settings: Record<string, unknown>): ClaudeModelOption[] {
   const aliases = getClaudeProviderSettings(settings).modelAliases;
-  return getClaudeProviderSettings(settings).discoveredModels.map(model => ({
+  return getClaudeProviderSettings(settings).discoveredModels.filter(model => isSelectableClaudeModel(model.value)).map(model => ({
     ...model,
     value: isClaudeModelTier(model.value) ? model.value : encodeClaudeModelSelectionId(model.value),
     label: aliases?.[model.value] || model.label,
@@ -24,13 +24,13 @@ export function getClaudeModelCatalog(settings: Record<string, unknown>): Claude
 /** Legacy configuration only seeds enablement; it never creates catalog entries. */
 export function getClaudeVisibleModelIds(settings: Record<string, unknown>): string[] {
   const config = getClaudeProviderSettings(settings);
-  if (config.visibleModels !== null) return config.visibleModels;
+  if (config.visibleModels !== null) return config.visibleModels.filter(isSelectableClaudeModel);
   const environmentIds = [...getCustomModelIds(getRuntimeEnvironmentVariables(settings, 'claude'))];
   const oldManualModels = getProviderConfig(settings, 'claude').customModels;
   return [...new Set([
     ...(environmentIds.length ? environmentIds : DEFAULT_CLAUDE_MODELS.map(model => model.value)),
     ...(typeof oldManualModels === 'string' ? oldManualModels.split(/\r?\n/).map(id => id.trim()).filter(Boolean) : []),
-  ])];
+  ])].filter(isSelectableClaudeModel);
 }
 
 /** Match exact SDK identities first. A resolved ID is usable only when unambiguous. */
@@ -59,4 +59,8 @@ export function getClaudeSupportedEffortLevels(
   model: string,
 ): EffortLevel[] {
   return findClaudeModelOption(getClaudeModelCatalog(settings), model)?.supportedEffortLevels ?? [];
+}
+
+function isSelectableClaudeModel(model: string): boolean {
+  return toClaudeRuntimeModelId(model) !== 'default';
 }

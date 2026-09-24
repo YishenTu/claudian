@@ -54,6 +54,29 @@ describe('Claude model picker', () => {
     document.body.replaceChildren();
   });
 
+  it.each(['default', 'claude-code/default'])('hides saved %s from management and chat choices', async (savedId) => {
+    const container = document.body.createDiv();
+    const settings = { model: 'opus', providerConfigs: { claude: {
+      visibleModels: [savedId, 'opus'],
+      discoveredModels: [
+        { value: 'default', label: 'Default (recommended)', resolvedModel: 'claude-opus-5-5' },
+        { value: 'opus', label: 'Opus', resolvedModel: 'claude-opus-5-5' },
+      ],
+    } } };
+    const context = {
+      plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
+    } as unknown as ProviderSettingsTabRendererContext;
+    renderModels(container, context, { refresh: jest.fn().mockResolvedValue({ changed: false }) });
+    await waitFor(() => expect((within(container).getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(within(container).queryByRole('checkbox', { name: /default/i })).toBeNull();
+    expect(within(container).getAllByRole('checkbox')).toEqual([within(container).getByRole('checkbox', { name: /Opus/ })]);
+    expect(within(container).queryByRole('button', { name: /Reorder .*default/i })).toBeNull();
+    expect(claudeChatUIConfig.getModelOptions(settings).map(model => model.value)).toEqual(['opus']);
+    expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBe('opus');
+    expect(settings.providerConfigs.claude.visibleModels).toEqual([savedId, 'opus']);
+    expect((await axe(container)).violations).toEqual([]);
+  });
+
   it('loads on opening the panel, refreshes manually, and uses selected order as default', async () => {
     const container = document.body.createDiv();
     const config = { discoveredModels: [] as Array<{value: string; label: string; description: string}>, visibleModels: [] as string[] };

@@ -54,13 +54,15 @@ describe('Claude panel model discovery', () => {
     expect(settings.titleGenerationModel).toBe('claude-fable-5');
   });
 
-  it('does not claim a raw title identity shared by multiple SDK choices', () => {
-    const { settings } = setup();
-    updateClaudeProviderSettings(settings, {
-      discoveredModels: [...rows, { value: 'default', label: 'Default', description: '', resolvedModel: 'gateway-model' }],
-    });
-    expect(claudeChatUIConfig.ownsModel('gateway-model', settings)).toBe(false);
-  });
+  it.each([['opus', false], ['default', true]] as const)(
+    'claims a shared raw title identity only when the other SDK choice (%s) is hidden', (value, expected) => {
+      const { settings } = setup();
+      updateClaudeProviderSettings(settings, {
+        discoveredModels: [...rows, { value, label: value, description: '', resolvedModel: 'gateway-model' }],
+      });
+      expect(claudeChatUIConfig.ownsModel('gateway-model', settings)).toBe(expected);
+    },
+  );
 
   it('skips disabled providers and fetches when enabled', async () => {
     const { settings, host } = setup(false);

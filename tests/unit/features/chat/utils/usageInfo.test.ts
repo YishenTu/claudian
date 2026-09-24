@@ -68,6 +68,19 @@ describe('usageInfo', () => {
       )).toMatchObject({ contextWindow: 100_000, percentage: 50 });
     });
 
+    it.each<Record<string, number>>([{}, { 'opencode:anthropic/claude-sonnet-5': 100_000 }])(
+      'uses the native OpenCode report with its selected model ID and fallback %j',
+      customContextLimits => {
+        const raw = usage({ model: 'anthropic/claude-sonnet-5', contextWindow: 200_000 });
+        const model = 'opencode:anthropic/claude-sonnet-5';
+        expect(projectContextUsageDisplay(raw, { providerId: 'opencode', model, customContextLimits }))
+          .toMatchObject({ contextWindow: 200_000, percentage: 25 });
+        expect(clearReportedContextWindowForModel(raw, model, 'opencode')).toBe(raw);
+        expect(projectContextUsageDisplay(raw, { providerId: 'opencode', model: 'opencode:other/model' }))
+          .toBeNull();
+      },
+    );
+
     it('ignores invalid custom limits and reported windows', () => {
       for (const invalid of [0, -1, NaN, Infinity]) {
         expect(projectContextUsageDisplay(

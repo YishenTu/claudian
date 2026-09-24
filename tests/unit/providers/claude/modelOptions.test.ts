@@ -10,7 +10,7 @@ describe('Claude SDK model catalog', () => {
     }))).toEqual([]);
   });
 
-  it('adopts SDK rows including default and custom models, preserving distinct variants', () => {
+  it('omits the SDK default while preserving custom models and distinct variants', () => {
     expect(getClaudeModelOptions(settings({
       discoveredModels: [
         { value: 'default', label: 'Default', description: 'SDK default' },
@@ -20,7 +20,6 @@ describe('Claude SDK model catalog', () => {
       ],
       visibleModels: ['default', 'sonnet[1m]', 'custom'],
     }))).toEqual([
-      expect.objectContaining({ value: 'claude-code/default', label: 'Default' }),
       expect.objectContaining({ value: 'claude-code/sonnet[1m]', label: 'Sonnet 1M' }),
       expect.objectContaining({ value: 'claude-code/custom', label: 'Gateway' }),
     ]);
