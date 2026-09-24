@@ -1857,14 +1857,16 @@ export class CodexNotificationRouter {
   #onTokenUsageUpdated(params: TokenUsageUpdatedNotification): void {
     const last = params.tokenUsage.last;
     const contextTokens = last.inputTokens;
-    const contextWindow = params.tokenUsage.modelContextWindow;
+    const reportedWindow = params.tokenUsage.modelContextWindow;
+    const contextWindow = typeof reportedWindow === 'number' && Number.isFinite(reportedWindow) && reportedWindow > 0
+      ? reportedWindow
+      : 0;
 
     const usage: UsageInfo = {
       inputTokens: last.inputTokens,
       cacheCreationInputTokens: 0,
       cacheReadInputTokens: last.cachedInputTokens,
       contextWindow,
-      contextWindowIsAuthoritative: contextWindow > 0,
       contextTokens,
       percentage: contextWindow > 0 ? Math.min(100, Math.max(0, Math.round((contextTokens / contextWindow) * 100))) : 0,
     };

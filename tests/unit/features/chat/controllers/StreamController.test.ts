@@ -1436,12 +1436,11 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.usage).toEqual(usage);
     });
 
-    it('uses authoritative usage chunks directly', async () => {
+    it('uses reported usage chunks directly', async () => {
       const msg = createTestMessage();
       const usage = createMockUsage({
         model: TEST_CODEX_MODEL,
         contextWindow: 258400,
-        contextWindowIsAuthoritative: true,
         contextTokens: 129200,
         percentage: 50,
       });
@@ -1449,6 +1448,19 @@ describe('StreamController - Text Content', () => {
       await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
 
       expect(deps.state.usage).toEqual(usage);
+    });
+
+    it('retains the same-model reported window when a partial update omits it', async () => {
+      const msg = createTestMessage();
+      await controller.handleStreamChunk({ type: 'usage', usage: createMockUsage({
+        model: TEST_CODEX_MODEL, contextWindow: 200_000, contextTokens: 50_000, percentage: 25,
+      }), sessionId: 'session-1' }, msg);
+
+      await controller.handleStreamChunk({ type: 'usage', usage: createMockUsage({
+        model: TEST_CODEX_MODEL, contextWindow: 0, contextTokens: 100_000, percentage: 0,
+      }), sessionId: 'session-1' }, msg);
+
+      expect(deps.state.usage).toMatchObject({ contextWindow: 200_000, contextTokens: 100_000, percentage: 50 });
     });
 
     it('should not update usage when ignoreUsageUpdates is true', async () => {

@@ -1033,6 +1033,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
             settings.customContextLimits[modelId] = parseContextLimit(trimmed)!;
           }
         });
+        for (const view of this.plugin.getAllViews()) {
+          view.refreshModelSelector(providerId);
+        }
       };
 
       inputEl.addEventListener('input', () => {

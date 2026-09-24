@@ -854,8 +854,7 @@ describe('ClaudeExecutionBackend', () => {
         model: 'custom-model',
         contextTokens: 250_000,
         contextWindow: 1_000_000,
-        contextWindowIsAuthoritative: true,
-        percentage: 25,
+                percentage: 25,
       }),
     }));
   });
@@ -895,13 +894,12 @@ describe('ClaudeExecutionBackend', () => {
 
     await waitFor(() => collected.some((event) => (
       event.type === 'usage_updated'
-      && event.usage.contextWindow === 200_000
+      && event.usage.contextWindow === 0
     )));
     contextUsage.resolve({ rawMaxTokens: 1_000_000 });
     await waitFor(() => collected.some((event) => (
       event.type === 'usage_updated'
       && event.usage.contextWindow === 1_000_000
-      && event.usage.contextWindowIsAuthoritative === true
     )));
     resultBarrier.resolve(null);
     await collection;
@@ -1130,8 +1128,7 @@ describe('ClaudeExecutionBackend', () => {
         model: 'custom-model',
         contextTokens: 250_000,
         contextWindow: 1_000_000,
-        contextWindowIsAuthoritative: true,
-        percentage: 25,
+                percentage: 25,
       }),
     }));
   });
@@ -1171,8 +1168,7 @@ describe('ClaudeExecutionBackend', () => {
       .toEqual(expect.objectContaining({
         usage: expect.objectContaining({
           contextWindow: 1_000_000,
-          contextWindowIsAuthoritative: true,
-          percentage: 25,
+                    percentage: 25,
         }),
       }));
     expect(events.at(-1)).toEqual(expect.objectContaining({
@@ -1257,7 +1253,12 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
-    const session = new ClaudeExecutionBackend(createHost())
+    const host = createHost();
+    host.settings.providerConfigs = { claude: claudeCatalogFixture(
+      ['claude-sonnet-4-5', 'claude-opus-4-6'],
+      ['low', 'medium', 'high'],
+    ) };
+    const session = new ClaudeExecutionBackend(host)
       .createSession(createConfig());
 
     await collectEvents(session.execute(createRequest()).events);
@@ -1276,6 +1277,66 @@ describe('ClaudeExecutionBackend', () => {
     expect(query?.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: 'high' });
     expect(query?.setPermissionMode).toHaveBeenCalledWith('bypassPermissions');
     expect(query?.setMcpServers).not.toHaveBeenCalled();
+  });
+
+  it('sends only reported effort levels, normalizing unsupported choices', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const host = createHost();
+    host.settings.providerConfigs = { claude: claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'high']) };
+    const session = new ClaudeExecutionBackend(host).createSession(createConfig());
+    const request = createRequest();
+
+    await collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, reasoning: 'xhigh' },
+    }).events);
+
+    expect(sdkMock.getLastOptions()?.effort).toBe('high');
+    await session.dispose();
+  });
+
+  it('sends no explicit effort without reported capabilities', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+
+    await collectEvents(session.execute(createRequest()).events);
+
+    expect(sdkMock.getLastOptions()).not.toHaveProperty('effort');
+    await session.dispose();
+  });
+
+  it('clears a live effort override when the next model reports no capabilities', async () => {
+    sdkMock.setMockMessages([
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'result', subtype: 'success' },
+    ], { appendResult: false });
+    const host = createHost();
+    const withEffort = claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']);
+    host.settings.providerConfigs = { claude: {
+      visibleModels: ['claude-sonnet-4-5', 'claude-opus-4-6'],
+      discoveredModels: [
+        ...withEffort.discoveredModels,
+        { value: 'claude-opus-4-6', label: 'claude-opus-4-6', description: 'SDK model' },
+      ],
+    } };
+    const session = new ClaudeExecutionBackend(host).createSession(createConfig());
+
+    await collectEvents(session.execute(createRequest()).events);
+    expect(sdkMock.getLastOptions()?.effort).toBe('medium');
+    const query = sdkMock.getLastResponse();
+    const request = createRequest();
+    await collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, model: 'claude-opus-4-6' },
+    }).events);
+
+    expect(sdkMock.getQueryCallCount()).toBe(1);
+    expect(query?.applyFlagSettings).toHaveBeenCalledWith({ effortLevel: null });
+    await session.dispose();
   });
 
   it('switches into auto safe mode on the same persistent query', async () => {

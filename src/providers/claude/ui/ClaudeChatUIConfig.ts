@@ -1,4 +1,4 @@
-import { DEFAULT_REASONING_VALUE } from '../../../core/providers/reasoning';
+import { formatReasoningValueLabel } from '../../../core/providers/reasoning';
 import type {
   ProviderChatUIConfig,
   ProviderPermissionModeToggleConfig,
@@ -11,6 +11,7 @@ import {
   findClaudeModelOption,
   getClaudeModelCatalog,
   getClaudeModelOptions,
+  getClaudeSupportedEffortLevels,
   getClaudeVisibleModelIds,
 } from '../modelOptions';
 import { isClaudeModelSelectionId, toClaudeRuntimeModelId } from '../modelSelection';
@@ -18,12 +19,8 @@ import { isClaudeModelTier } from '../modelTiers';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
   DEFAULT_CLAUDE_MODELS,
-  DEFAULT_EFFORT_LEVEL,
-  EFFORT_LEVELS,
-  getContextWindowSize,
-  normalizeEffortLevel,
   normalizeLegacyClaudeModelAlias,
-  supportsXHighEffort,
+  resolveSupportedEffortLevel,
 } from '../types/models';
 
 const CLAUDE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
@@ -58,20 +55,13 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     return true;
   },
 
-  getReasoningOptions(model: string, _settings: Record<string, unknown>): ProviderReasoningOption[] {
-    const runtimeModel = toClaudeRuntimeModelId(model);
-    const levels = supportsXHighEffort(runtimeModel)
-      ? EFFORT_LEVELS
-      : EFFORT_LEVELS.filter(e => e.value !== 'xhigh');
-    return levels.map(e => ({ value: e.value, label: e.label }));
+  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
+    return getClaudeSupportedEffortLevels(settings, model)
+      .map(value => ({ value, label: formatReasoningValueLabel(value) }));
   },
 
-  getDefaultReasoningValue(model: string, _settings: Record<string, unknown>): string {
-    return DEFAULT_EFFORT_LEVEL[toClaudeRuntimeModelId(model)] ?? DEFAULT_REASONING_VALUE;
-  },
-
-  getContextWindowSize(model: string, customLimits?: Record<string, number>): number {
-    return getContextWindowSize(toClaudeRuntimeModelId(model), customLimits);
+  getDefaultReasoningValue(model: string, settings: Record<string, unknown>): string {
+    return resolveClaudeEffortSetting(model, settings);
   },
 
   isDefaultModel(model: string): boolean {
@@ -81,22 +71,12 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
 
   applyModelDefaults(model: string, settings: unknown): void {
     const target = settings as Record<string, unknown>;
-
-    const modelId = toClaudeRuntimeModelId(model);
-    const runtimeModel = normalizeLegacyClaudeModelAlias(modelId);
-    target.effortLevel = isClaudeModelTier(modelId)
-      ? DEFAULT_EFFORT_LEVEL[modelId] ?? DEFAULT_REASONING_VALUE
-      : normalizeEffortLevel(runtimeModel, target.effortLevel);
+    target.effortLevel = resolveClaudeEffortSetting(model, target);
   },
 
   applyModelProjectionDefaults(model: string, settings: unknown): void {
     const target = settings as Record<string, unknown>;
-    const runtimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
-    // Projection is read-only display of the live effort. Preserve the user's
-    // selection (clamped to what the model supports) instead of resetting it to
-    // the tier default, which previously discarded effort changes for every
-    // default tier model except environment-mapped ones like Fable.
-    target.effortLevel = normalizeEffortLevel(runtimeModel, target.effortLevel);
+    target.effortLevel = resolveClaudeEffortSetting(model, target);
   },
 
   normalizeModelVariant(model: string, settings) {
@@ -119,6 +99,15 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     return CLAUDE_PROVIDER_ICON;
   },
 };
+
+/**
+ * Normalizes the saved effort preference against reported capabilities. While
+ * the model has no reported levels, the preference is kept for later use.
+ */
+function resolveClaudeEffortSetting(model: string, settings: Record<string, unknown>): string {
+  const saved = typeof settings.effortLevel === 'string' ? settings.effortLevel : '';
+  return resolveSupportedEffortLevel(getClaudeSupportedEffortLevels(settings, model), saved) ?? saved;
+}
 
 /** Re-export for type-only use in provider registration. */
 export type { ProviderUIOption };

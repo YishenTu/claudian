@@ -20,6 +20,7 @@ import type { ClaudianSettings, Conversation } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import type { FeatureHost } from '../../FeatureHost';
 import { toggleServiceTier } from '../actions/toggleServiceTier';
+import { projectContextUsageDisplay } from '../utils/usageInfo';
 import { getTabProviderId, requireTabProviderId } from './providerResolution';
 import { isClosingLifecycleState } from './TabLifecycle';
 import type {
@@ -240,7 +241,20 @@ export function applyProviderUIGating(
   tab.ui.permissionToggle.setVisible(hasPermissionToggle);
 
   tab.ui.imageContextManager.setEnabled(capabilities.supportsImageAttachments);
-  tab.ui.contextUsageMeter.update(tab.state.usage);
+  refreshTabContextUsage(tab, plugin);
+}
+
+/** Renders the tab's raw usage through the shared reported-window/custom-limit projection. */
+export function refreshTabContextUsage(
+  tab: AssembledTabRuntime,
+  plugin: FeatureHost,
+): void {
+  const settings = getTabSettingsSnapshot(tab, plugin);
+  tab.ui.contextUsageMeter.update(projectContextUsageDisplay(tab.state.usage, {
+    providerId: getTabProviderId(tab, plugin),
+    model: settings.model,
+    customContextLimits: settings.customContextLimits,
+  }));
 }
 
 export function refreshTabWorkspaceServices(

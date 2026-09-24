@@ -21,7 +21,6 @@ import {
 } from '../settings';
 
 const DEFAULT_PI_REASONING_LEVELS = getPiSupportedThinkingLevels({ reasoning: true });
-const DEFAULT_CONTEXT_WINDOW = 200_000;
 const PI_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveValue: 'normal',
   inactiveLabel: 'Read-only',
@@ -75,17 +74,6 @@ export const piChatUIConfig: ProviderChatUIConfig = {
   },
 
   getDefaultReasoningValue: getPiDefaultReasoningValue,
-
-  getContextWindowSize(
-    model: string,
-    customLimits?: Record<string, number>,
-    settings?: Record<string, unknown>,
-  ): number {
-    const metadataContextWindow = settings
-      ? getCachedModel(model, settings)?.contextWindow
-      : undefined;
-    return metadataContextWindow ?? customLimits?.[model] ?? DEFAULT_CONTEXT_WINDOW;
-  },
 
   isDefaultModel(model: string): boolean {
     return isPiModelSelectionId(model);

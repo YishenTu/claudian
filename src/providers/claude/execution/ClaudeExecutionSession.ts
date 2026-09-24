@@ -467,7 +467,7 @@ ClaudeExecutionStrategySink {
 
     const active = this.activeRun;
     const intendedModel = this.lastEncodedRequest?.model;
-    const authoritativeContextWindow = intendedModel
+    const reportedContextWindow = intendedModel
       && this.authoritativeContextWindow?.model === intendedModel
       ? this.authoritativeContextWindow.contextWindow
       : undefined;
@@ -482,8 +482,7 @@ ClaudeExecutionStrategySink {
       channel,
       {
         intendedModel: this.lastEncodedRequest?.model,
-        customContextLimits: this.host.settings.customContextLimits,
-        authoritativeContextWindow,
+        reportedContextWindow,
       },
     );
     this.responseOwnership.observe(message, channel, normalizedEvents);
@@ -751,7 +750,6 @@ ClaudeExecutionStrategySink {
     const correctedUsage = this.eventNormalizer.updateContextWindow(
       channel,
       model,
-      this.host.settings.customContextLimits,
       contextWindow,
     );
     const target = channel === 'requested' ? this.activeRun : this.backgroundTurn;

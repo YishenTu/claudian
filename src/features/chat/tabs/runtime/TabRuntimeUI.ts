@@ -22,7 +22,7 @@ import { ImageContextManager } from '../../ui/ImageContext';
 import { createInputToolbar } from '../../ui/InputToolbar';
 import { NavigationSidebar } from '../../ui/NavigationSidebar';
 import { installTextareaSizing } from '../../ui/textareaSizing';
-import { recalculateUsageForModel } from '../../utils/usageInfo';
+import { clearReportedContextWindowForModel } from '../../utils/usageInfo';
 import { getTabProviderId } from '../providerResolution';
 import { commitProvisionalTab } from '../TabLifecycle';
 import { TabModelSelectionCoordinator } from '../TabModelSelectionCoordinator';
@@ -345,15 +345,10 @@ function buildInputToolbar(
 
       const currentUsage = tab.state.usage;
       if (currentUsage) {
-        const newContextWindow = uiConfig.getContextWindowSize(
-          normalizedModel,
-          providerSettings.customContextLimits,
-          providerSettings,
-        );
-        tab.state.usage = recalculateUsageForModel(
+        tab.state.usage = clearReportedContextWindowForModel(
           currentUsage,
           normalizedModel,
-          newContextWindow,
+          boundProvider,
         );
       }
     },

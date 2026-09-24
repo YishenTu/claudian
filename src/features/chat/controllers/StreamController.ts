@@ -74,6 +74,7 @@ import {
 import type { SubagentManager } from '../services/SubagentManager';
 import type { AsyncSubagentCompletion } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
+import { mergeReportedUsage } from '../utils/usageInfo';
 import { StreamingRenderCoordinator } from './StreamingRenderCoordinator';
 
 export interface StreamControllerDeps {
@@ -339,9 +340,12 @@ export class StreamController {
         }
         if (!state.ignoreUsageUpdates) {
           const activeModel = this.#getActiveProviderModel();
-          state.usage = activeModel && !chunk.usage.model
-            ? { ...chunk.usage, model: activeModel }
-            : chunk.usage;
+          state.usage = mergeReportedUsage(
+            state.usage,
+            activeModel && !chunk.usage.model
+              ? { ...chunk.usage, model: activeModel }
+              : chunk.usage,
+          );
         }
         break;
       }

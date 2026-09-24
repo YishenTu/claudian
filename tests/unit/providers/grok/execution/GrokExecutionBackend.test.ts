@@ -444,7 +444,7 @@ describe('GrokExecutionBackend', () => {
         expect(events.filter(event => event.type === 'usage_updated').at(-1)).toMatchObject({
           usage: {
             inputTokens: 10327, cacheReadInputTokens: 1280, contextTokens: 10377,
-            contextWindow: 200_000, contextWindowIsAuthoritative: true, percentage: 5,
+            contextWindow: 200_000, percentage: 5,
           },
         });
       } finally {

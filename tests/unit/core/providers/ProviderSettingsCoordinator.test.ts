@@ -1,5 +1,6 @@
 import '@/providers';
 
+import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 
 import { getProviderSettingsSnapshotWithModel } from '@/core/providers/conversationModel';
@@ -823,6 +824,7 @@ describe('ProviderSettingsCoordinator', () => {
     it('normalizes saved effort values that the projected Claude model no longer supports', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
+        providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']) },
         model: 'claude-sonnet-4-5',
         effortLevel: 'xhigh',
         serviceTier: 'default',
@@ -835,7 +837,7 @@ describe('ProviderSettingsCoordinator', () => {
 
       ProviderSettingsCoordinator.projectActiveProviderState(settings);
 
-      expect(settings.model).toBe('claude-sonnet-4-5');
+      expect(settings.model).toBe('claude-code/claude-sonnet-4-5');
       expect(settings.effortLevel).toBe('high');
     });
 

@@ -18,7 +18,6 @@ export const UNRESOLVED_TAB_UI: ProviderChatUIConfig = {
   isAdaptiveReasoningModel: () => false,
   getReasoningOptions: () => [],
   getDefaultReasoningValue: () => 'off',
-  getContextWindowSize: () => 0,
   isDefaultModel: () => false,
   applyModelDefaults: () => {},
   normalizeModelVariant: model => model,

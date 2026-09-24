@@ -4246,7 +4246,6 @@ describe('CodexNotificationRouter', () => {
           cacheReadInputTokens: 5000,
           cacheCreationInputTokens: 0,
           contextWindow: 200000,
-          contextWindowIsAuthoritative: true,
           contextTokens: 9000,
           percentage: 5,
         },

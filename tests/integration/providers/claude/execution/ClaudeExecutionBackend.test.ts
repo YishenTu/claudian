@@ -28,7 +28,10 @@ function createContext() {
     app: { vault: { adapter: { basePath: '/vault' } } },
     executionLifecycleRegistry: lifecycleRegistry,
     settings: {
-      providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5', 'claude-opus-4-6', 'claude-haiku-4-5', 'custom-model', 'custom-model-a', 'custom-model-b']) },
+      providerConfigs: { claude: claudeCatalogFixture(
+        ['claude-sonnet-4-5', 'claude-opus-4-6', 'claude-haiku-4-5', 'custom-model', 'custom-model-a', 'custom-model-b'],
+        ['low', 'medium', 'high'],
+      ) },
       model: 'claude-sonnet-4-5',
       titleGenerationModel: 'claude-haiku-4-5',
       permissionMode: 'normal',

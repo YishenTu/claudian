@@ -1,6 +1,23 @@
-import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+import type { UsageInfo } from '@/core/types';
+import {
+  calculateUsagePercentage,
+  clearReportedContextWindowForModel,
+  mergeReportedUsage,
+  projectContextUsageDisplay,
+} from '@/features/chat/utils/usageInfo';
 
-import { calculateUsagePercentage, recalculateUsageForModel } from '@/features/chat/utils/usageInfo';
+function usage(overrides: Partial<UsageInfo> = {}): UsageInfo {
+  return {
+    model: 'model-a',
+    inputTokens: 50_000,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+    contextWindow: 0,
+    contextTokens: 50_000,
+    percentage: 0,
+    ...overrides,
+  };
+}
 
 describe('usageInfo', () => {
   describe('calculateUsagePercentage', () => {
@@ -11,47 +28,113 @@ describe('usageInfo', () => {
     });
   });
 
-  describe('recalculateUsageForModel', () => {
-    it('preserves an authoritative context window for the same model', () => {
-      const usage = {
-        model: TEST_CODEX_MODEL,
-        inputTokens: 1000,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        contextWindow: 258400,
-        contextWindowIsAuthoritative: true,
-        contextTokens: 129200,
-        percentage: 50,
-      };
-
-      expect(recalculateUsageForModel(usage, TEST_CODEX_MODEL, 200000)).toEqual({
-        ...usage,
-        model: TEST_CODEX_MODEL,
-        contextWindow: 258400,
-        contextWindowIsAuthoritative: true,
-        percentage: 50,
-      });
+  describe('projectContextUsageDisplay', () => {
+    const context = (customContextLimits: Record<string, number> = {}, model = 'model-a') => ({
+      providerId: 'codex' as const,
+      model,
+      customContextLimits,
     });
 
-    it('falls back to the UI context window when the model changes', () => {
-      const usage = {
-        model: TEST_CODEX_MODEL,
-        inputTokens: 1000,
-        cacheCreationInputTokens: 0,
-        cacheReadInputTokens: 0,
-        contextWindow: 258400,
-        contextWindowIsAuthoritative: true,
-        contextTokens: 100000,
-        percentage: 39,
-      };
+    it('uses a reported window even when a custom limit exists', () => {
+      const display = projectContextUsageDisplay(
+        usage({ contextWindow: 200_000 }),
+        context({ 'model-a': 100_000 }),
+      );
 
-      expect(recalculateUsageForModel(usage, 'gpt-5.4-mini', 200000)).toEqual({
-        ...usage,
-        model: 'gpt-5.4-mini',
-        contextWindow: 200000,
-        contextWindowIsAuthoritative: false,
-        percentage: 50,
-      });
+      expect(display).toMatchObject({ contextWindow: 200_000, contextTokens: 50_000, percentage: 25 });
+    });
+
+    it('falls back to the custom limit without a reported window', () => {
+      expect(projectContextUsageDisplay(usage(), context({ 'model-a': 100_000 })))
+        .toMatchObject({ contextWindow: 100_000, percentage: 50 });
+    });
+
+    it('hides the meter without a reported window or custom limit', () => {
+      expect(projectContextUsageDisplay(usage(), context())).toBeNull();
+    });
+
+    it('hides the meter without token usage', () => {
+      expect(projectContextUsageDisplay(
+        usage({ contextTokens: 0, contextWindow: 200_000 }),
+        context({ 'model-a': 100_000 }),
+      )).toBeNull();
+      expect(projectContextUsageDisplay(null, context({ 'model-a': 100_000 }))).toBeNull();
+    });
+
+    it('matches custom limits by runtime model id for provider selection ids', () => {
+      expect(projectContextUsageDisplay(
+        usage({ model: 'openai-codex/model-a' }),
+        context({ 'model-a': 100_000 }, 'openai-codex/model-a'),
+      )).toMatchObject({ contextWindow: 100_000, percentage: 50 });
+    });
+
+    it('ignores invalid custom limits and reported windows', () => {
+      for (const invalid of [0, -1, NaN, Infinity]) {
+        expect(projectContextUsageDisplay(
+          usage({ contextWindow: invalid }),
+          context({ 'model-a': invalid }),
+        )).toBeNull();
+      }
+    });
+
+    it('does not apply another model’s reported window', () => {
+      expect(projectContextUsageDisplay(
+        usage({ contextWindow: 200_000 }),
+        context({ 'model-b': 100_000 }, 'model-b'),
+      )).toMatchObject({ contextWindow: 100_000, percentage: 50 });
+      expect(projectContextUsageDisplay(usage({ contextWindow: 200_000 }), context({}, 'model-b')))
+        .toBeNull();
+    });
+
+    it('keeps the raw usage unchanged', () => {
+      const raw = usage();
+      projectContextUsageDisplay(raw, context({ 'model-a': 100_000 }));
+      expect(raw).toEqual(usage());
+    });
+  });
+
+  describe('mergeReportedUsage', () => {
+    it('retains a valid same-model window when a partial update omits it', () => {
+      const merged = mergeReportedUsage(
+        usage({ contextWindow: 200_000, percentage: 25 }),
+        usage({ contextTokens: 100_000 }),
+      );
+
+      expect(merged).toMatchObject({ contextWindow: 200_000, contextTokens: 100_000, percentage: 50 });
+    });
+
+    it('replaces the window with a new valid report', () => {
+      expect(mergeReportedUsage(
+        usage({ contextWindow: 200_000 }),
+        usage({ contextWindow: 400_000, percentage: 13 }),
+      )).toMatchObject({ contextWindow: 400_000, percentage: 13 });
+    });
+
+    it('does not carry a window across models or from missing usage', () => {
+      expect(mergeReportedUsage(
+        usage({ contextWindow: 200_000 }),
+        usage({ model: 'model-b' }),
+      )).toMatchObject({ contextWindow: 0, percentage: 0 });
+      expect(mergeReportedUsage(null, usage())).toMatchObject({ contextWindow: 0 });
+    });
+
+    it('normalizes invalid reported windows to zero', () => {
+      expect(mergeReportedUsage(null, usage({ contextWindow: NaN, percentage: 50 })))
+        .toMatchObject({ contextWindow: 0, percentage: 0 });
+    });
+  });
+
+  describe('clearReportedContextWindowForModel', () => {
+    it('clears the previous model’s reported window on a model change', () => {
+      expect(clearReportedContextWindowForModel(
+        usage({ contextWindow: 200_000, percentage: 25 }),
+        'model-b',
+      )).toEqual(usage({ model: 'model-b', contextWindow: 0, percentage: 0 }));
+    });
+
+    it('keeps usage for the same model', () => {
+      const current = usage({ contextWindow: 200_000, percentage: 25 });
+      expect(clearReportedContextWindowForModel(current, 'model-a')).toBe(current);
     });
   });
 });

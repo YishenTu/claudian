@@ -324,22 +324,6 @@ describe('GrokChatUIConfig', () => {
     });
   });
 
-  it('resolves model context before custom limits and the provider fallback', () => {
-    const settings = makeSettings();
-
-    expect(grokChatUIConfig.getContextWindowSize(
-      'grok/grok-4',
-      { 'grok/grok-4': 100_000 },
-      settings,
-    )).toBe(256_000);
-    expect(grokChatUIConfig.getContextWindowSize(
-      'grok/unknown',
-      { 'grok/unknown': 123_000 },
-      settings,
-    )).toBe(123_000);
-    expect(grokChatUIConfig.getContextWindowSize('grok/unknown', undefined, settings)).toBe(200_000);
-  });
-
   it('normalizes explicit ids without replacing hidden current selections', () => {
     const settings = makeSettings({ model: 'grok/kimi-coding' });
 

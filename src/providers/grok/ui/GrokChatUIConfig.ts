@@ -11,7 +11,6 @@ import {
   findGrokModel,
   getGrokAvailableReasoningEfforts,
   isGrokModelSelectionId,
-  resolveGrokContextWindow,
   resolveGrokDefaultReasoningEffort,
 } from '../models';
 import {
@@ -83,15 +82,6 @@ export const grokChatUIConfig: ProviderChatUIConfig = {
     return resolveGrokDefaultReasoningEffort(
       selectedModel ? { ...selectedModel, reasoningEfforts: [...efforts] } : null,
       grokSettings.preferredReasoningByModel[rawId],
-    );
-  },
-
-  getContextWindowSize(model, customLimits = {}, settings = {}): number {
-    const rawId = resolveSelectedGrokRawModelId(model, settings);
-    return resolveGrokContextWindow(
-      rawId ? encodeGrokModelId(rawId) : model,
-      getGrokProviderSettings(settings).currentCatalog?.models ?? [],
-      customLimits,
     );
   },
 
@@ -204,13 +194,6 @@ function normalizeSelection(model: string): string {
   const normalized = model.trim();
   const rawId = decodeGrokModelId(normalized);
   return rawId ? encodeGrokModelId(rawId) : model;
-}
-
-function resolveSelectedGrokRawModelId(
-  model: string,
-  settings: Record<string, unknown>,
-): string | null {
-  return decodeGrokModelId(model);
 }
 
 function getExplicitlySelectedGrokModel(

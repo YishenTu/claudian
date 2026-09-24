@@ -3,14 +3,14 @@ import type { UsageInfo } from '../../../core/types';
 export function buildPiUsageInfo(
   response: unknown,
   model: string | null,
-  fallbackContextWindow = 200_000,
+  catalogContextWindow?: number,
 ): UsageInfo | null {
   const stats = getRecord(response);
   const contextUsage = getRecord(stats.contextUsage ?? stats.context_usage ?? stats);
-  const providerContextWindow = getNumber(contextUsage.contextWindow)
-    ?? getNumber(contextUsage.context_window)
-    ?? getNumber(contextUsage.window);
-  const contextWindow = providerContextWindow ?? fallbackContextWindow;
+  const providerContextWindow = getPositiveNumber(contextUsage.contextWindow)
+    ?? getPositiveNumber(contextUsage.context_window)
+    ?? getPositiveNumber(contextUsage.window);
+  const contextWindow = providerContextWindow ?? getPositiveNumber(catalogContextWindow) ?? 0;
   const contextTokens = getNumber(contextUsage.contextTokens)
     ?? getNumber(contextUsage.context_tokens)
     ?? getNumber(contextUsage.tokens)
@@ -33,7 +33,6 @@ export function buildPiUsageInfo(
       ?? 0,
     contextTokens,
     contextWindow,
-    contextWindowIsAuthoritative: providerContextWindow !== null,
     inputTokens,
     ...(model ? { model } : {}),
     percentage: normalizePiUsagePercentage(
@@ -66,4 +65,9 @@ function getRecord(value: unknown): Record<string, unknown> {
 
 function getNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function getPositiveNumber(value: unknown): number | null {
+  const number = getNumber(value);
+  return number !== null && number > 0 ? number : null;
 }

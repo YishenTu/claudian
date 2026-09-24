@@ -24,7 +24,6 @@ import {
 } from '../modes';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '../settings';
 
-const DEFAULT_CONTEXT_WINDOW = 200_000;
 const OPENCODE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
   inactiveValue: 'normal',
   inactiveLabel: 'Safe',
@@ -90,10 +89,6 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
     const opencodeSettings = getOpencodeProviderSettings(settings);
     const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
     return getDefaultThinkingLevelForModel(baseRawId, settings);
-  },
-
-  getContextWindowSize(model: string, customLimits?: Record<string, number>): number {
-    return customLimits?.[model] ?? DEFAULT_CONTEXT_WINDOW;
   },
 
   isDefaultModel(model: string): boolean {

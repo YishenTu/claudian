@@ -23,7 +23,6 @@ export interface GrokDiscoveredModel {
 }
 
 export const GROK_MODEL_PREFIX = 'grok/';
-export const GROK_CONTEXT_WINDOW_FALLBACK = 200_000;
 const GROK_REASONING_EFFORT_ORDER = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 const GROK_FALLBACK_REASONING_EFFORTS: readonly GrokReasoningEffort[] = Object.freeze(
   STANDARD_REASONING_VALUES.map(value => Object.freeze({
@@ -146,24 +145,6 @@ export function resolveGrokDefaultReasoningEffort(
   }
 
   return resolvePreferredReasoningDefault(availableValues, 'high');
-}
-
-export function resolveGrokContextWindow(
-  modelId: string,
-  models: GrokDiscoveredModel[],
-  customContextLimits: Record<string, number> = {},
-): number {
-  const model = findGrokModel(models, modelId);
-  if (model?.contextWindow !== undefined) {
-    return model.contextWindow;
-  }
-
-  const rawModelId = decodeGrokModelId(modelId);
-  const customLimit = customContextLimits[modelId]
-    ?? (rawModelId ? customContextLimits[rawModelId] : undefined);
-  return isPositiveFiniteNumber(customLimit)
-    ? customLimit
-    : GROK_CONTEXT_WINDOW_FALLBACK;
 }
 
 export function normalizeGrokReasoningMetadata(value: unknown): Pick<

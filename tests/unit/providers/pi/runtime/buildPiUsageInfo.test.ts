@@ -52,7 +52,7 @@ describe('buildPiUsageInfo', () => {
     expect(usage?.percentage).toBe(6);
   });
 
-  it('uses a fallback context window without marking it provider-authoritative', () => {
+  it('uses discovered model metadata when stats omit the window', () => {
     const usage = buildPiUsageInfo({
       contextUsage: {
         contextTokens: 50_000,
@@ -62,8 +62,19 @@ describe('buildPiUsageInfo', () => {
 
     expect(usage).toMatchObject({
       contextWindow: 1_000_000,
-      contextWindowIsAuthoritative: false,
       percentage: 5,
     });
+  });
+
+  it('reports an unknown window without stats or metadata', () => {
+    const usage = buildPiUsageInfo({
+      contextUsage: {
+        contextTokens: 50_000,
+        contextWindow: 0,
+        inputTokens: 1200,
+      },
+    }, 'pi:anthropic/claude-sonnet-4');
+
+    expect(usage).toMatchObject({ contextWindow: 0, percentage: 0 });
   });
 });

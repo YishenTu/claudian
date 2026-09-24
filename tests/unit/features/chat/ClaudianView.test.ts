@@ -62,6 +62,7 @@ function createModelRefreshTab(providerId: 'codex' | 'grok') {
       },
       permissionToggle: { updateDisplay: jest.fn() },
       serviceTierToggle: { updateDisplay: jest.fn() },
+      contextUsageMeter: { update: jest.fn() },
       thinkingBudgetSelector: { updateDisplay: jest.fn() },
     },
   };
@@ -101,7 +102,6 @@ describe('ClaudianView model refresh routing', () => {
         permissionMode: 'normal',
       }));
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
-      getContextWindowSize: jest.fn().mockReturnValue(200_000),
       getPermissionModeToggle: jest.fn().mockReturnValue(null),
     } as any);
     jest.spyOn(ProviderRegistry, 'getCapabilities').mockImplementation(providerId => ({

@@ -40,6 +40,22 @@ describe('Claude SDK model probe', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('retains reported effort levels and drops malformed ones', async () => {
+    mockQuery.mockReturnValue({
+      supportedModels: async () => [
+        { value: 'opus', displayName: 'Opus', description: '', supportedEffortLevels: ['low', 'high', 'max'] },
+        { value: 'haiku', displayName: 'Haiku', description: '', supportedEffortLevels: [] },
+        { value: 'other', displayName: 'Other', description: '', supportedEffortLevels: ['low', 'turbo', 7] },
+      ],
+      close: jest.fn(),
+    });
+    expect(await probeClaudeModels(host())).toEqual([
+      { value: 'opus', label: 'Opus', description: '', supportedEffortLevels: ['low', 'high', 'max'] },
+      { value: 'haiku', label: 'Haiku', description: '', supportedEffortLevels: [] },
+      { value: 'other', label: 'Other', description: '', supportedEffortLevels: ['low'] },
+    ]);
+  });
+
   it('cancels and closes an in-flight SDK process', async () => {
     const close = jest.fn();
     mockQuery.mockReturnValue({ supportedModels: () => new Promise(() => {}), close });

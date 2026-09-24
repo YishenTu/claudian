@@ -488,12 +488,6 @@ describe('CodexChatUIConfig', () => {
     });
   });
 
-  describe('getContextWindowSize', () => {
-    it('should return 200000 for all models', () => {
-      expect(codexChatUIConfig.getContextWindowSize(TEST_CODEX_MODEL)).toBe(200_000);
-    });
-  });
-
   describe('applyModelDefaults', () => {
     it('sets reasoning summary off for GPT-5.3 Codex Spark', () => {
       const settings: Record<string, unknown> = {

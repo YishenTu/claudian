@@ -37,94 +37,98 @@ describe('claudeChatUIConfig', () => {
     expect(claudeChatUIConfig.getModelOptions(settings).map(row => row.value)).toEqual(['claude-code/sonnet[1m]']);
   });
 
-  it('defaults Claude models to high effort', () => {
-    expect(claudeChatUIConfig.getDefaultReasoningValue('haiku', {})).toBe('high');
-    expect(claudeChatUIConfig.getDefaultReasoningValue('custom-model', {})).toBe('high');
-  });
-
-  describe('getReasoningOptions', () => {
-    it('hides xhigh on models that do not support it', () => {
-      const options = claudeChatUIConfig.getReasoningOptions('claude-sonnet-4-5', {});
-
-      expect(options.map(option => option.value)).toEqual(['low', 'medium', 'high', 'max']);
+  describe('reported effort capabilities', () => {
+    const settingsWith = (
+      models: Array<{ value: string; resolvedModel?: string; supportedEffortLevels?: string[] }>,
+      extra: Record<string, unknown> = {},
+    ): Record<string, unknown> => ({
+      ...extra,
+      providerConfigs: { claude: {
+        discoveredModels: models.map(model => ({ label: model.value, description: '', ...model })),
+        visibleModels: models.map(model => model.value),
+      } },
     });
 
-    it('keeps xhigh on supported opus models', () => {
-      const options = claudeChatUIConfig.getReasoningOptions('claude-opus-4-7', {});
-
-      expect(options.map(option => option.value)).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
-      expect(options.find(option => option.value === 'medium')?.label).toBe('Medium');
-      expect(options.find(option => option.value === 'xhigh')?.label).toBe('xHigh');
-    });
-
-    it('keeps xhigh on fable models', () => {
-      const options = claudeChatUIConfig.getReasoningOptions('fable', {});
-
-      expect(options.map(option => option.value)).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
-    });
-
-    it('uses effort options for custom model ids', () => {
-      const options = claudeChatUIConfig.getReasoningOptions('custom-model', {});
-
-      expect(options.map(option => option.value)).toEqual([
-        'low',
-        'medium',
-        'high',
-        'xhigh',
-        'max',
+    it('lists exactly the reported levels for the selected model', () => {
+      const settings = settingsWith([
+        { value: 'opus', supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+        { value: 'haiku', supportedEffortLevels: ['low', 'high'] },
       ]);
-      expect(options.some(option => option.tokens !== undefined)).toBe(false);
-    });
-  });
 
-  describe('applyModelDefaults', () => {
-    it('clamps stale xhigh effort when switching to a custom sonnet model', () => {
-      const settings: Record<string, unknown> = {
-        effortLevel: 'xhigh',
-        providerConfigs: {},
-      };
-
-      claudeChatUIConfig.applyModelDefaults('claude-sonnet-4-5', settings);
-
-      expect(settings.effortLevel).toBe('high');
+      expect(claudeChatUIConfig.getReasoningOptions('opus', settings).map(option => option.value))
+        .toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+      expect(claudeChatUIConfig.getReasoningOptions('haiku', settings).map(option => option.value))
+        .toEqual(['low', 'high']);
+      expect(claudeChatUIConfig.getReasoningOptions('opus', settings)
+        .find(option => option.value === 'xhigh')?.label).toBe('xHigh');
     });
 
-    it('preserves xhigh on custom opus models that support it', () => {
-      const settings: Record<string, unknown> = {
-        effortLevel: 'xhigh',
-        providerConfigs: {},
-      };
+    it('returns no options when metadata is missing or empty, regardless of model name', () => {
+      const settings = settingsWith([
+        { value: 'opus' },
+        { value: 'claude-opus-4-7', supportedEffortLevels: [] },
+      ]);
 
-      claudeChatUIConfig.applyModelDefaults('claude-opus-4-7', settings);
+      expect(claudeChatUIConfig.getReasoningOptions('opus', settings)).toEqual([]);
+      expect(claudeChatUIConfig.getReasoningOptions('claude-opus-4-7', settings)).toEqual([]);
+      expect(claudeChatUIConfig.getReasoningOptions('fable', {})).toEqual([]);
+    });
 
+    it('matches capabilities through an unambiguous resolved model', () => {
+      const settings = settingsWith([
+        { value: 'opus', resolvedModel: 'claude-opus-5', supportedEffortLevels: ['low', 'max'] },
+      ]);
+
+      expect(claudeChatUIConfig.getReasoningOptions('claude-opus-5', settings).map(option => option.value))
+        .toEqual(['low', 'max']);
+    });
+
+    it('does not merge distinct normal and [1m] selections', () => {
+      const settings = settingsWith([
+        { value: 'sonnet', supportedEffortLevels: ['low', 'high'] },
+        { value: 'sonnet[1m]' },
+      ]);
+
+      expect(claudeChatUIConfig.getReasoningOptions('sonnet[1m]', settings)).toEqual([]);
+    });
+
+    it('defaults to high when reported, otherwise the first reported level', () => {
+      expect(claudeChatUIConfig.getDefaultReasoningValue('opus', settingsWith([
+        { value: 'opus', supportedEffortLevels: ['low', 'high', 'max'] },
+      ]))).toBe('high');
+      expect(claudeChatUIConfig.getDefaultReasoningValue('opus', settingsWith([
+        { value: 'opus', supportedEffortLevels: ['medium', 'max'] },
+      ]))).toBe('medium');
+    });
+
+    it('keeps a supported saved choice and normalizes an unsupported one', () => {
+      const supported = settingsWith([
+        { value: 'opus', supportedEffortLevels: ['low', 'high', 'xhigh'] },
+      ], { effortLevel: 'xhigh' });
+      claudeChatUIConfig.applyModelDefaults('opus', supported);
+      expect(supported.effortLevel).toBe('xhigh');
+
+      const unsupported = settingsWith([
+        { value: 'haiku', supportedEffortLevels: ['low', 'high'] },
+      ], { effortLevel: 'xhigh' });
+      claudeChatUIConfig.applyModelProjectionDefaults?.('haiku', unsupported);
+      expect(unsupported.effortLevel).toBe('high');
+
+      const withoutHigh = settingsWith([
+        { value: 'haiku', supportedEffortLevels: ['low', 'medium'] },
+      ], { effortLevel: 'max' });
+      claudeChatUIConfig.applyModelDefaults('haiku', withoutHigh);
+      expect(withoutHigh.effortLevel).toBe('low');
+    });
+
+    it('preserves the saved preference while metadata is unavailable', () => {
+      const settings = settingsWith([{ value: 'opus' }], { effortLevel: 'xhigh' });
+
+      claudeChatUIConfig.applyModelDefaults('opus', settings);
       expect(settings.effortLevel).toBe('xhigh');
-    });
-  });
-
-  describe('applyModelProjectionDefaults', () => {
-    it('preserves a user-selected effort for default tier models', () => {
-      const settings: Record<string, unknown> = { effortLevel: 'low' };
-
       claudeChatUIConfig.applyModelProjectionDefaults?.('opus', settings);
-
-      expect(settings.effortLevel).toBe('low');
-    });
-
-    it('preserves xhigh on the opus alias that supports it', () => {
-      const settings: Record<string, unknown> = { effortLevel: 'xhigh' };
-
-      claudeChatUIConfig.applyModelProjectionDefaults?.('opus', settings);
-
       expect(settings.effortLevel).toBe('xhigh');
-    });
-
-    it('clamps an effort the projected model cannot use', () => {
-      const settings: Record<string, unknown> = { effortLevel: 'xhigh' };
-
-      // The haiku alias does not support xhigh -> fall back to the default.
-      claudeChatUIConfig.applyModelProjectionDefaults?.('haiku', settings);
-
-      expect(settings.effortLevel).toBe('high');
+      expect(claudeChatUIConfig.getDefaultReasoningValue('opus', settings)).toBe('xhigh');
     });
   });
 });

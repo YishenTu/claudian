@@ -22,7 +22,6 @@ function createUiConfig(config: TestProviderConfig): ProviderChatUIConfig {
     isAdaptiveReasoningModel: () => false,
     getReasoningOptions: () => [],
     getDefaultReasoningValue: () => 'off',
-    getContextWindowSize: () => 200_000,
     isDefaultModel: () => false,
     applyModelDefaults: () => undefined,
     normalizeAvailableModelSelection: model => config.normalizations?.[model] ?? model,

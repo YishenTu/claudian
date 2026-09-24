@@ -3,6 +3,7 @@ import { hasStoredConfigNormalization } from '../../core/providers/settings/stor
 import type { ProviderModule } from '../../core/providers/types';
 import { claudeWorkspaceRegistration } from './app/ClaudeWorkspaceServices';
 import { CLAUDE_PROVIDER_CAPABILITIES } from './capabilities';
+import { migrateClaudeEffortMetadata } from './effortMetadataMigration';
 import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';
@@ -45,8 +46,17 @@ export const claudeProviderRegistration: ProviderModule = {
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'claude');
       const removedLegacy1MSettings = LEGACY_CLAUDE_1M_SETTINGS.some(key => key in storedConfig);
-      updateClaudeProviderSettings(target, { ...getClaudeProviderSettings(stored), visibleModels: getClaudeVisibleModelIds(stored) });
-      return removedLegacy1MSettings || hasStoredConfigNormalization(
+      const storedSettings = getClaudeProviderSettings(stored);
+      const migrateEffortMetadata = !storedSettings.effortMetadataMigrated;
+      updateClaudeProviderSettings(target, {
+        ...storedSettings,
+        visibleModels: getClaudeVisibleModelIds(stored),
+        ...(migrateEffortMetadata ? {
+          discoveredModels: migrateClaudeEffortMetadata(storedSettings.discoveredModels),
+          effortMetadataMigrated: true,
+        } : {}),
+      });
+      return removedLegacy1MSettings || migrateEffortMetadata || hasStoredConfigNormalization(
         storedConfig,
         getProviderConfig(target, 'claude'),
       );

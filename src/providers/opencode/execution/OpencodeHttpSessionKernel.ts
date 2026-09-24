@@ -353,7 +353,7 @@ export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
     this.emit({ type: 'usage_updated', usage: {
       model: this.model ? `${this.model.providerID}/${this.model.id}` : undefined,
       inputTokens, cacheReadInputTokens, cacheCreationInputTokens, contextTokens, contextWindow,
-      contextWindowIsAuthoritative: contextWindow > 0, percentage: contextWindow > 0 ? Math.min(100, Math.max(0, Math.round(contextTokens / contextWindow * 100))) : 0,
+      percentage: contextWindow > 0 ? Math.min(100, Math.max(0, Math.round(contextTokens / contextWindow * 100))) : 0,
     } });
   }
 

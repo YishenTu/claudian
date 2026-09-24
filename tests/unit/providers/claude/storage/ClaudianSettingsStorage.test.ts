@@ -208,7 +208,11 @@ describe('ClaudianSettingsStorage', () => {
       const result = await storage.load();
 
       expect(result.lastSelectedChatModel).toBeNull();
-      expect(mockAdapter.write).not.toHaveBeenCalled();
+      // The only write records the one-time Claude effort metadata migration.
+      expect(mockAdapter.write).toHaveBeenCalledTimes(1);
+      const written = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+      expect(written.lastSelectedChatModel).toBeNull();
+      expect(written.providerConfigs.claude.effortMetadataMigrated).toBe(true);
     });
 
     it('normalizes a malformed stored chat model selection to null', async () => {
@@ -1134,7 +1138,7 @@ describe('ClaudianSettingsStorage', () => {
 
       await storage.update({ model: 'claude-opus-4-5' });
 
-      const writeCall = mockAdapter.write.mock.calls[0];
+      const writeCall = mockAdapter.write.mock.calls.at(-1)!;
       const writtenContent = JSON.parse(writeCall[1]);
       expect(writtenContent.model).toBe('claude-opus-4-5');
       expect(writtenContent.userName).toBe('ExistingUser');

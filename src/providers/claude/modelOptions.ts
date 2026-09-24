@@ -5,10 +5,11 @@ import { getCustomModelIds } from './env/claudeModelEnv';
 import { encodeClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { isClaudeModelTier } from './modelTiers';
 import { getClaudeProviderSettings } from './settings';
-import { DEFAULT_CLAUDE_MODELS } from './types/models';
+import { DEFAULT_CLAUDE_MODELS, type EffortLevel } from './types/models';
 
 export interface ClaudeModelOption extends ProviderUIOption {
   resolvedModel?: string;
+  supportedEffortLevels?: EffortLevel[];
 }
 
 export function getClaudeModelCatalog(settings: Record<string, unknown>): ClaudeModelOption[] {
@@ -50,4 +51,12 @@ export function getClaudeModelOptions(settings: Record<string, unknown>): Claude
     const option = findClaudeModelOption(catalog, id);
     return option ? [option] : [];
   }))];
+}
+
+/** Effort levels Claude Code reported for the model; empty when unknown. */
+export function getClaudeSupportedEffortLevels(
+  settings: Record<string, unknown>,
+  model: string,
+): EffortLevel[] {
+  return findClaudeModelOption(getClaudeModelCatalog(settings), model)?.supportedEffortLevels ?? [];
 }

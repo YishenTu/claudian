@@ -23,6 +23,8 @@ export interface ClaudeProviderSettings {
   loadUserSettings: boolean;
   enableChrome: boolean;
   discoveredModels: ClaudeDiscoveredModel[];
+  /** Records that the one-time selected-model effort metadata migration completed. */
+  effortMetadataMigrated: boolean;
   visibleModels: string[] | null;
   modelAliases: Record<string, string>;
   environmentVariables: string;
@@ -38,6 +40,9 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   loadUserSettings: true,
   enableChrome: false,
   discoveredModels: [],
+  // Fresh configurations have no saved selections to migrate. A stored config
+  // without the field predates the migration and still needs it.
+  effortMetadataMigrated: true,
   visibleModels: [],
   modelAliases: {},
   environmentVariables: '',
@@ -99,6 +104,7 @@ export function getClaudeProviderSettings(
     ),
     modelAliases: decodeModelAliases(config.modelAliases ?? settings.customModelAliases),
     discoveredModels: decodeClaudeModels(config.discoveredModels ?? config.selectedModels),
+    effortMetadataMigrated: config.effortMetadataMigrated === true,
     visibleModels: config.visibleModels == null ? null : Array.isArray(config.visibleModels)
       ? [...new Set(config.visibleModels.filter((id): id is string => typeof id === 'string' && Boolean(id.trim())))]
       : [],

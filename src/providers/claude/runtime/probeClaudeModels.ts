@@ -60,6 +60,7 @@ export async function probeClaudeModels(
       resolvedModel: model.resolvedModel,
       label: model.displayName,
       description: model.description,
+      supportedEffortLevels: model.supportedEffortLevels,
     })));
   };
   try {

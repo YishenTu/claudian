@@ -38,13 +38,12 @@ import {
 } from './tabs/TabInputEvents';
 import { commitProvisionalTab } from './tabs/TabLifecycle';
 import { TabManager } from './tabs/TabManager';
-import { getTabChatUIConfig, getTabSettingsSnapshot } from './tabs/TabProviderState';
+import { refreshTabContextUsage } from './tabs/TabProviderState';
 import type { AssembledTabRuntime, TabId } from './tabs/types';
 import {
   HorizontalPanelPager,
   type HorizontalPanelPagerPanel,
 } from './ui/HorizontalPanelPager';
-import { recalculateUsageForModel } from './utils/usageInfo';
 
 type LoadableView = {
   containerEl?: HTMLElement;
@@ -254,18 +253,7 @@ export class ClaudianView extends ItemView {
       ) {
         continue;
       }
-      const providerSettings = getTabSettingsSnapshot(tab, this.plugin);
-      const model = providerSettings.model;
-      const uiConfig = getTabChatUIConfig(tab, this.plugin);
-      const contextWindow = uiConfig.getContextWindowSize(
-        model,
-        providerSettings.customContextLimits,
-        providerSettings,
-      );
-
-      if (tab.state.usage) {
-        tab.state.usage = recalculateUsageForModel(tab.state.usage, model, contextWindow);
-      }
+      refreshTabContextUsage(tab, this.plugin);
 
       tab.ui.modelSelector.updateDisplay();
       tab.ui.modelSelector.renderOptions();

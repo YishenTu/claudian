@@ -22,7 +22,6 @@ describe('buildAcpUsageInfo', () => {
       cacheReadInputTokens: 300,
       contextTokens: 50_000,
       contextWindow: 200_000,
-      contextWindowIsAuthoritative: true,
       inputTokens: 1200,
       model: 'gemini-2.5-pro',
       percentage: 25,

@@ -11,6 +11,7 @@ import { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinat
 import { cleanupThinkingBlock } from '../../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement } from '../../rendering/WelcomeRenderer';
 import { ChatState } from '../../state/ChatState';
+import { refreshTabContextUsage } from '../TabProviderState';
 import { TabSession } from '../TabSession';
 import {
   createTabMessageId,
@@ -49,7 +50,7 @@ export function buildTabRuntimeShell(
     onConversationChanged: conversationId => {
       options.onConversationIdChanged?.(runtimeRef.requirePublished(), conversationId);
     },
-    onUsageChanged: usage => runtimeRef.requirePublished().ui.contextUsageMeter.update(usage),
+    onUsageChanged: () => refreshTabContextUsage(runtimeRef.requirePublished(), plugin),
     onAutoScrollChanged: () => runtimeRef.requirePublished().ui.navigationSidebar.updateVisibility(),
   });
   state.queueIndicatorEl = dom.queueIndicatorEl;

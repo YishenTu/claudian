@@ -37,7 +37,12 @@ import {
   buildPromptWithHistoryContext,
 } from '../../../utils/session';
 import { getMissingNodeError } from '../cli/claudeLaunchValidation';
-import { findClaudeModelOption, getClaudeModelCatalog, getClaudeModelOptions } from '../modelOptions';
+import {
+  findClaudeModelOption,
+  getClaudeModelCatalog,
+  getClaudeModelOptions,
+  getClaudeSupportedEffortLevels,
+} from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import {
@@ -52,16 +57,10 @@ import {
 } from '../settings';
 import {
   type EffortLevel,
-  resolveEffortLevel,
+  isEffortLevel,
+  resolveSupportedEffortLevel,
 } from '../types/models';
 
-const EFFORT_LEVELS = new Set<EffortLevel>([
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-]);
 const PERMISSION_MODES = new Set<PermissionMode>([
   'normal',
   'yolo',
@@ -82,7 +81,8 @@ export interface ClaudeEncodedExecutionRequest {
   readonly images: ImageAttachment[];
   readonly options: Options;
   readonly model: string;
-  readonly effort: EffortLevel;
+  /** Explicit effort, or null when Claude Code reported no capabilities for the model. */
+  readonly effort: EffortLevel | null;
   readonly responseStyle: ClaudeResponseStyle;
   readonly sdkPermissionMode: SDKPermissionMode;
   readonly restartKey: string;
@@ -126,12 +126,14 @@ export class ClaudeExecutionRequestEncoder {
       throw new ProviderModelUnavailableError('Claude');
     }
     const model = toClaudeRuntimeModelId(selected.value);
-    const effort = resolveEffortLevel(
-      model,
-      isEffortLevel(request.configuration.reasoning)
-        ? request.configuration.reasoning
-        : settings.effortLevel,
-    );
+    const effort = request.configuration.reasoning === null
+      ? null
+      : resolveSupportedEffortLevel(
+        getClaudeSupportedEffortLevels(this.deps.host.settings, selected.value),
+        isEffortLevel(request.configuration.reasoning)
+          ? request.configuration.reasoning
+          : settings.effortLevel,
+      );
     const sdkPermissionMode = settings.permissionMode === 'yolo'
       ? 'bypassPermissions'
       : claudeSettings.safeMode;
@@ -160,7 +162,7 @@ export class ClaudeExecutionRequestEncoder {
         snapshot: false,
       },
       model,
-      effort,
+      ...(effort ? { effort } : {}),
       settings: { outputStyle: claudeSettings.responseStyle },
       thinking: { type: 'adaptive' },
       abortController,
@@ -203,7 +205,6 @@ export class ClaudeExecutionRequestEncoder {
     }
     if (request.configuration.reasoning === null) {
       delete options.thinking;
-      delete options.effort;
     }
 
     return {
@@ -353,11 +354,6 @@ function createReadOnlyHook(): HookCallbackMatcher {
 function isPermissionMode(value: unknown): value is PermissionMode {
   return typeof value === 'string'
     && PERMISSION_MODES.has(value as PermissionMode);
-}
-
-function isEffortLevel(value: unknown): value is EffortLevel {
-  return typeof value === 'string'
-    && EFFORT_LEVELS.has(value as EffortLevel);
 }
 
 function uniqueStrings(values: readonly string[]): string[] {

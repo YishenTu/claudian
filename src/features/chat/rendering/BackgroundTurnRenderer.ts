@@ -3,6 +3,7 @@ import { TOOL_AGENT_OUTPUT } from '../../../core/tools/toolNames';
 import type { ChatMessage, StreamChunk } from '../../../core/types';
 import { providerOutputEventToStreamChunk, type StreamController } from '../controllers/StreamController';
 import { ChatState } from '../state/ChatState';
+import { mergeReportedUsage } from '../utils/usageInfo';
 import { isStandaloneTaskNotification, type MessageRenderer } from './MessageRenderer';
 import { recordNotificationPredecessors } from './NotificationBoundaries';
 import { continueResponseAfterNotification } from './ResponseContinuation';
@@ -133,7 +134,9 @@ export async function renderAutoTriggeredTurn(
 
   const state = new ChatState({
     onUsageChanged: usage => {
-      if (isCurrent() && !host.state.isStreaming) host.state.usage = usage;
+      if (isCurrent() && !host.state.isStreaming) {
+        host.state.usage = usage ? mergeReportedUsage(host.state.usage, usage) : usage;
+      }
     },
   });
   state.currentConversationId = host.state.currentConversationId;

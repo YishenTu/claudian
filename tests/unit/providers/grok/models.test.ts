@@ -3,11 +3,9 @@ import {
   encodeGrokModelId,
   findGrokModel,
   getGrokAvailableReasoningEfforts,
-  GROK_CONTEXT_WINDOW_FALLBACK,
   isGrokModelSelectionId,
   mergeGrokDiscoveredModels,
   normalizeGrokDiscoveredModels,
-  resolveGrokContextWindow,
   resolveGrokDefaultReasoningEffort,
 } from '@/providers/grok/models';
 
@@ -190,21 +188,4 @@ describe('Grok model metadata', () => {
     })).toBe('low');
   });
 
-  it('resolves context from metadata, custom limits, then the shared fallback', () => {
-    const models = normalizeGrokDiscoveredModels([{
-      contextWindow: 300_000,
-      displayName: 'Known',
-      rawId: 'known',
-    }]);
-
-    expect(resolveGrokContextWindow('grok/known', models, {
-      'grok/known': 150_000,
-    })).toBe(300_000);
-    expect(resolveGrokContextWindow('grok/custom', models, {
-      'grok/custom': 123_000,
-    })).toBe(123_000);
-    expect(resolveGrokContextWindow('grok/other', models)).toBe(
-      GROK_CONTEXT_WINDOW_FALLBACK,
-    );
-  });
 });

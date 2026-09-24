@@ -45,7 +45,6 @@ const CODEX_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
 
 const DEFAULT_SERVICE_TIER_LABEL = 'Standard';
 
-const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 function getVisibleDiscoveredModels(settings: Record<string, unknown>) {
   const codexSettings = getCodexProviderSettings(settings);
@@ -114,10 +113,6 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
       ? getCodexDefaultReasoningEffort(model, codexSettings.enableUltraEffort)
         ?? DEFAULT_REASONING_VALUE
       : DEFAULT_REASONING_VALUE;
-  },
-
-  getContextWindowSize(): number {
-    return DEFAULT_CONTEXT_WINDOW;
   },
 
   isDefaultModel(model: string): boolean {

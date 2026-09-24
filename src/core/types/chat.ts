@@ -307,9 +307,8 @@ export interface UsageInfo {
   cacheCreationInputTokens?: number;
   /** Prompt caching: tokens read from cache. Claude-specific; 0 if omitted. */
   cacheReadInputTokens?: number;
+  /** Provider-reported window size, or 0 when the provider has not reported one. */
   contextWindow: number;
-  /** True when `contextWindow` came from provider runtime data instead of a local heuristic. */
-  contextWindowIsAuthoritative?: boolean;
   contextTokens: number;
   percentage: number;
 }

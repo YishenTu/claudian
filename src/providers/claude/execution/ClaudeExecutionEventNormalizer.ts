@@ -31,8 +31,8 @@ import type {
 import {
   createTransformStreamState,
   createTransformUsageState,
-  recalculateClaudeUsageContextWindow,
   transformSDKMessage,
+  withReportedContextWindow,
 } from '../stream/transformClaudeMessage';
 
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
@@ -118,8 +118,7 @@ export class ClaudeExecutionEventNormalizer {
     channel: ClaudeExecutionEventChannel,
     options: {
       readonly intendedModel?: string;
-      readonly customContextLimits?: Record<string, number>;
-      readonly authoritativeContextWindow?: number;
+      readonly reportedContextWindow?: number;
     } = {},
   ): ClaudeNormalizedExecutionEvent[] {
     const state = this.states[channel];
@@ -152,12 +151,12 @@ export class ClaudeExecutionEventNormalizer {
       }
       if (isContextWindowEvent(event)) {
         const model = options.intendedModel ?? state.lastUsage?.model ?? 'sonnet';
-        const authoritativeContextWindow = isFinitePositiveNumber(
-          options.authoritativeContextWindow,
+        const reportedContextWindow = isFinitePositiveNumber(
+          options.reportedContextWindow,
         )
-          ? options.authoritativeContextWindow
+          ? options.reportedContextWindow
           : undefined;
-        if (authoritativeContextWindow === undefined) {
+        if (reportedContextWindow === undefined) {
           normalized.push({
             type: 'context_window',
             model,
@@ -167,8 +166,7 @@ export class ClaudeExecutionEventNormalizer {
         const correctedUsage = this.updateContextWindow(
           channel,
           model,
-          options.customContextLimits,
-          authoritativeContextWindow ?? event.contextWindow,
+          reportedContextWindow ?? event.contextWindow,
         );
         if (correctedUsage) {
           normalized.push({
@@ -204,17 +202,16 @@ export class ClaudeExecutionEventNormalizer {
   updateContextWindow(
     channel: ClaudeExecutionEventChannel,
     model: string,
-    customContextLimits: Record<string, number> | undefined,
-    runtimeContextWindow: number,
+    reportedContextWindow: number,
   ): UsageInfo | null {
     const state = this.states[channel];
-    if (!state.lastUsage || state.lastUsage.model !== model) {
+    if (!state.lastUsage || state.lastUsage.model !== model
+      || !isFinitePositiveNumber(reportedContextWindow)) {
       return null;
     }
-    const correctedUsage = recalculateClaudeUsageContextWindow(
+    const correctedUsage = withReportedContextWindow(
       state.lastUsage,
-      customContextLimits,
-      runtimeContextWindow,
+      reportedContextWindow,
     );
     if (sameUsageWindow(state.lastUsage, correctedUsage)) {
       return null;
@@ -429,7 +426,6 @@ function toOutputEvent(
 
 function sameUsageWindow(current: UsageInfo, next: UsageInfo): boolean {
   return current.contextWindow === next.contextWindow
-    && current.contextWindowIsAuthoritative === next.contextWindowIsAuthoritative
     && current.percentage === next.percentage;
 }
 

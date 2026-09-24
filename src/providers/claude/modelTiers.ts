@@ -1,8 +1,3 @@
-interface ClaudeModelVersion {
-  major: number;
-  minor: number;
-}
-
 export const CLAUDE_MODEL_TIER_DEFINITIONS = [
   {
     id: 'haiku',
@@ -12,10 +7,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
     environmentKey: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
     legacyAliases: [],
     supportsOneMillionSuffix: false,
-    aliasHasOneMillionContext: false,
-    versionedOneMillionContextFrom: null,
-    aliasSupportsXHigh: false,
-    versionedXHighFrom: null,
   },
   {
     id: 'sonnet',
@@ -25,10 +16,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
     environmentKey: 'ANTHROPIC_DEFAULT_SONNET_MODEL',
     legacyAliases: ['sonnet[1m]'],
     supportsOneMillionSuffix: true,
-    aliasHasOneMillionContext: true,
-    versionedOneMillionContextFrom: { major: 4, minor: 6 },
-    aliasSupportsXHigh: true,
-    versionedXHighFrom: { major: 5, minor: 0 },
   },
   {
     id: 'opus',
@@ -38,10 +25,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
     environmentKey: 'ANTHROPIC_DEFAULT_OPUS_MODEL',
     legacyAliases: ['opus[1m]'],
     supportsOneMillionSuffix: true,
-    aliasHasOneMillionContext: true,
-    versionedOneMillionContextFrom: { major: 4, minor: 6 },
-    aliasSupportsXHigh: true,
-    versionedXHighFrom: { major: 4, minor: 7 },
   },
   {
     id: 'fable',
@@ -51,10 +34,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
     environmentKey: 'ANTHROPIC_DEFAULT_FABLE_MODEL',
     legacyAliases: ['claude-fable-5'],
     supportsOneMillionSuffix: false,
-    aliasHasOneMillionContext: true,
-    versionedOneMillionContextFrom: { major: 0, minor: 0 },
-    aliasSupportsXHigh: true,
-    versionedXHighFrom: { major: 0, minor: 0 },
   },
 ] as const;
 
@@ -81,15 +60,4 @@ export function resolveClaudeModelTierAlias(value: string): ClaudeModelTier | nu
     || (candidate.legacyAliases as readonly string[]).includes(normalized)
   );
   return definition?.id ?? null;
-}
-
-export function isVersionAtLeast(
-  major: number,
-  minor: number,
-  minimum: ClaudeModelVersion | null,
-): boolean {
-  if (!minimum) {
-    return false;
-  }
-  return major > minimum.major || (major === minimum.major && minor >= minimum.minor);
 }

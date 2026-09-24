@@ -29,14 +29,9 @@ describe('Claude model tiers', () => {
     expect(resolveClaudeModelTierAlias('claude-fable-6')).toBeNull();
   });
 
-  it('keeps tier-specific capabilities explicit in the descriptor', () => {
-    const fable = getClaudeModelTierDefinition('fable');
-    const haiku = getClaudeModelTierDefinition('haiku');
-
-    expect(fable.aliasHasOneMillionContext).toBe(true);
-    expect(fable.supportsOneMillionSuffix).toBe(false);
-    expect(fable.aliasSupportsXHigh).toBe(true);
-    expect(haiku.aliasHasOneMillionContext).toBe(false);
-    expect(haiku.aliasSupportsXHigh).toBe(false);
+  it('keeps [1m] suffix compatibility explicit in the descriptor', () => {
+    expect(getClaudeModelTierDefinition('fable').supportsOneMillionSuffix).toBe(false);
+    expect(getClaudeModelTierDefinition('opus').supportsOneMillionSuffix).toBe(true);
+    expect(getClaudeModelTierDefinition('haiku').supportsOneMillionSuffix).toBe(false);
   });
 });
