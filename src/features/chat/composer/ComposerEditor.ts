@@ -85,7 +85,10 @@ export class ComposerEditor {
         ]),
         EditorView.lineWrapping,
         this.placeholderConfig.of(placeholder(this.placeholderText)),
-        EditorView.contentAttributes.of({ 'aria-label': 'Message', 'aria-multiline': 'true', role: 'textbox' }),
+        // CodeMirror turns off native spellcheck and autocorrect, which also disables macOS text replacements.
+        EditorView.contentAttributes.of({
+          'aria-label': 'Message', 'aria-multiline': 'true', role: 'textbox', spellcheck: 'true', autocorrect: 'on',
+        }),
         EditorView.domEventHandlers({ input: event => { event.stopPropagation(); return false; } }),
         EditorView.updateListener.of(update => {
           this.state = update.state;
