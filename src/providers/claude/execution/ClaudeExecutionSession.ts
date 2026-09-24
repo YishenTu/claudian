@@ -23,6 +23,7 @@ import {
   type ProviderSessionStatus,
   type RewindableExecutionSession,
 } from '../../../core/execution';
+import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { PermissionMode, SlashCommand, TurnStats } from '../../../core/types';
 import {
@@ -30,6 +31,7 @@ import {
   isSessionMissingError,
 } from '../../../utils/session';
 import { loadClaudeTurnStats } from '../history/ClaudeTurnStats';
+import { assertClaudeModelAvailable } from '../runtime/ClaudeModelAvailability';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
 import { getClaudeState } from '../types/providerState';
 import { ClaudeExecutionEventNormalizer } from './ClaudeExecutionEventNormalizer';
@@ -412,6 +414,10 @@ ClaudeExecutionStrategySink {
       : result;
   }
 
+  assertModelAvailable(model: string): void {
+    assertClaudeModelAvailable(this.host.settings, model);
+  }
+
   getProviderSessionId(): string | null {
     return this.#getNativeResumeSessionId();
   }
@@ -782,6 +788,7 @@ ClaudeExecutionStrategySink {
       if (this.activeRun !== active || active.terminal) return;
       this.lastEncodedRequest = encoded;
       this.lastAllowedTools = encoded.allowedTools;
+      assertClaudeModelAvailable(this.host.settings, request.configuration.model);
       await this.strategy.startTurn(encoded, active.queryToken);
     } catch (error) {
       if (this.activeRun === active && !active.terminal) {
@@ -1335,7 +1342,8 @@ function classifyClaudeError(
     };
   }
   if (
-    normalized.includes('cli not found')
+    error instanceof ProviderModelUnavailableError
+    || normalized.includes('cli not found')
     || normalized.includes('node.js')
     || normalized.includes('could not determine')
   ) {

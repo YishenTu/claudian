@@ -2,6 +2,8 @@ import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 
+import { getHostnameKey } from '@/utils/env';
+
 jest.mock('cross-spawn', () => jest.fn());
 
 import fixture from '@test/fixtures/providers/grok/extensions/plan-mode-hook.json';
@@ -174,7 +176,7 @@ it.each([false, true])('terminates on native exit after prompt settled: %s', asy
   native.onRequest('session/prompt', () => { started = true; return prompt; });
   native.onRequest('_x.ai/interject', () => ({ result: { status: 'queued' } }));
   native.start();
-  const session = new GrokExecutionBackend({ settings: {} } as ProviderHost, {
+  const session = new GrokExecutionBackend({ settings: { model: 'grok/grok-4', providerConfigs: { grok: { enabled: true, visibleModels: ['grok-4'], selectedModelsByHost: { [getHostnameKey()]: { fingerprint: 'test', refreshedAt: 1, defaultModelId: 'grok-4', models: [{ rawId: 'grok-4', displayName: 'Grok 4', supportsReasoning: false, reasoningEfforts: [] }] } } } } } } as unknown as ProviderHost, {
     nativeFactory: { create: options => new GrokExecutionNativeConnectionImpl(options) },
   }).createSession({
     vaultWorkingDirectory: '/tmp', lifecycle: 'persistent', nativePersistence: 'enabled',

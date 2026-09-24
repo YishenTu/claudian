@@ -1,5 +1,8 @@
+import '@/providers';
+
+import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { createMockEl } from '@test/helpers/MockElement';
-import { Menu, setIcon } from 'obsidian';
+import { Menu, Notice, setIcon } from 'obsidian';
 
 import type { TitleGenerationService } from '@/core/providers/types';
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
@@ -55,6 +58,8 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
       settings: {
         userName: '',
         enableAutoTitleGeneration: true,
+        titleGenerationModel: 'haiku',
+        providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
         permissionMode: 'yolo',
       },
     } as any,
@@ -2751,6 +2756,14 @@ describe('SessionBrowser', () => {
   });
 
   describe('regenerateTitle', () => {
+    it.each(['', 'removed-model'])('gives settings guidance without pending status for title model %s', async model => {
+      deps.plugin.settings.titleGenerationModel = model;
+      await controller.regenerateTitle('conv-1');
+      expect(mockTitleService.generateTitle).not.toHaveBeenCalled();
+      expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
+      expect(Notice).toHaveBeenCalledWith(expect.stringContaining('Select an available title model'));
+    });
+
     it('should not regenerate if titleService is null', async () => {
       const depsNoService = createMockDeps({
         getTitleGenerationService: () => null,

@@ -10,6 +10,7 @@ function createHost(): ProviderHost {
   return {
     settings,
     mutateSettings: coordinator.mutate.bind(coordinator),
+    mutateSettingsConditionally: coordinator.mutateConditionally.bind(coordinator),
     notifyProviderChatOptionsChanged() {},
   } as unknown as ProviderHost;
 }

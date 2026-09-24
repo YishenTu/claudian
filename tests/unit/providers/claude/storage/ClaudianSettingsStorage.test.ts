@@ -545,7 +545,7 @@ describe('ClaudianSettingsStorage', () => {
         'host-a': '/custom/pi-a',
         'host-b': '/custom/pi-b',
       });
-      expect(mockAdapter.write).not.toHaveBeenCalled();
+      expect(mockAdapter.write).toHaveBeenCalledTimes(1);
     });
 
     it('migrates current-device provider maps from the colon key to the portable key', async () => {
@@ -682,7 +682,7 @@ describe('ClaudianSettingsStorage', () => {
         'host-a': '/custom/grok-a',
         'host-b': '/custom/grok-b',
       });
-      expect(writtenContent.providerConfigs.grok.catalogsByHost).toEqual(expect.objectContaining({
+      expect(writtenContent.providerConfigs.grok.selectedModelsByHost).toEqual(expect.objectContaining({
         'host-a': expect.objectContaining({ fingerprint: 'current' }),
         'host-b': expect.objectContaining({ fingerprint: 'other' }),
       }));
@@ -945,13 +945,14 @@ describe('ClaudianSettingsStorage', () => {
       const result = await storage.load();
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
-      expect(result.customModelAliases).toEqual({
+      expect(result).not.toHaveProperty('customModelAliases');
+      expect(result.providerConfigs.claude?.modelAliases).toEqual({
         'custom-model': 'Friendly model',
       });
       expect(result.envSnippets[0].modelAliases).toEqual({
         'custom-model': 'Snippet model',
       });
-      expect(writtenContent.customModelAliases).toEqual({
+      expect(writtenContent.providerConfigs.claude.modelAliases).toEqual({
         'custom-model': 'Friendly model',
       });
       expect(writtenContent.envSnippets[0].modelAliases).toEqual({
@@ -1009,7 +1010,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent).not.toHaveProperty('slashCommands');
     });
 
-    it('persists the Codex catalog with hand-picked model IDs', async () => {
+    it('persists only selected Codex metadata with hand-picked model IDs', async () => {
       const settings = {
         ...DEFAULT_SETTINGS,
         providerConfigs: {
@@ -1025,7 +1026,7 @@ describe('ClaudianSettingsStorage', () => {
       await storage.save(settings);
 
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-      expect(writtenContent.providerConfigs.codex.discoveredModels).toEqual(TEST_CODEX_CATALOG);
+      expect(writtenContent.providerConfigs.codex.selectedModels).toEqual([TEST_CODEX_CATALOG[1]]);
       expect(writtenContent.providerConfigs.codex.visibleModels).toEqual(['gpt-5.4-mini']);
       expect(getCodexProviderSettings(settings).discoveredModels).toEqual(TEST_CODEX_CATALOG);
     });
@@ -1049,7 +1050,7 @@ describe('ClaudianSettingsStorage', () => {
       await storage.save(settings);
       const persistedContent = mockAdapter.write.mock.calls[0][1];
       const persistedSettings = JSON.parse(persistedContent);
-      expect(persistedSettings.providerConfigs.codex.discoveredModels).toEqual(TEST_CODEX_CATALOG);
+      expect(persistedSettings.providerConfigs.codex.selectedModels).toEqual(TEST_CODEX_CATALOG);
       expect(persistedSettings.providerConfigs.codex.modelAliases).toEqual({
         'gpt-5.5': 'Primary',
       });

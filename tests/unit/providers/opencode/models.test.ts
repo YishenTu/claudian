@@ -222,7 +222,7 @@ describe('opencodeChatUIConfig', () => {
     })).toBe('opencode:anthropic/claude-sonnet-4');
   });
 
-  it('shows configured base model ids even before discovery finishes', () => {
+  it('requires metadata before offering configured base models', () => {
     expect(opencodeChatUIConfig.getModelOptions({
       providerConfigs: {
         opencode: {
@@ -231,13 +231,7 @@ describe('opencodeChatUIConfig', () => {
           ],
         },
       },
-    })).toEqual([
-      {
-        description: 'Configured model',
-        label: 'google/gemini-2.5-pro',
-        value: 'opencode:google/gemini-2.5-pro',
-      },
-    ]);
+    })).toEqual([]);
   });
 
   it('has no model fallback when no models are enabled', () => {

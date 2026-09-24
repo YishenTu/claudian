@@ -1,11 +1,13 @@
 import { Menu, Notice, setIcon } from 'obsidian';
 
+import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderIconSvg, TitleGenerationService } from '../../../core/providers/types';
 import type {
   ConversationMeta,
   SessionManagerOrganization,
   SessionManagerSort,
 } from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import { createProviderIconSvg } from '../../../shared/icons';
 import { extractUserDisplayContent } from '../../../utils/context';
 import type { FeatureHost } from '../../FeatureHost';
@@ -1629,8 +1631,12 @@ export class SessionBrowser {
   async regenerateTitle(conversationId: string): Promise<void> {
     const { plugin } = this.deps;
     if (!plugin.settings.enableAutoTitleGeneration) return;
+    if (!ProviderRegistry.resolveTitleGenerationSelection(plugin.settings)) {
+      new Notice(t('chat.selectAvailableTitleModel'));
+      return;
+    }
 
-    // Title generation is delegated to the active provider service
+    // Title generation uses the global explicit model selection.
     const fullConv = await plugin.getConversationById(conversationId);
     if (!fullConv || fullConv.messages.length < 1) return;
 

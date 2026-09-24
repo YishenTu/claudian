@@ -116,7 +116,7 @@ export class EnvSnippetModal extends Modal {
       contextLimitsContainer.removeClass('claudian-hidden');
 
       const existingLimits = this.snippet?.contextLimits ?? this.plugin.settings.customContextLimits ?? {};
-      const existingAliases = this.snippet?.modelAliases ?? this.plugin.settings.customModelAliases ?? {};
+      const existingAliases = this.snippet?.modelAliases ?? (ProviderRegistry.getChatUIConfig('claude').customModelAliases?.get(this.plugin.settings) ?? {});
 
       contextLimitsContainer.createDiv({
         text: t('settings.customModelOverrides.name'),
@@ -363,7 +363,8 @@ export class EnvSnippetManager {
       // with alias fields clear aliases for their own model IDs when left empty.
       if (snippet.modelAliases) {
         const modelIds = ProviderRegistry.getCustomModelIds(parseEnvironmentVariables(snippet.envVars));
-        const nextAliases = { ...(settings.customModelAliases ?? {}) };
+        const modelAliases = ProviderRegistry.getChatUIConfig('claude').customModelAliases;
+        const nextAliases = modelAliases?.get(settings) ?? {};
         for (const modelId of modelIds) {
           const alias = snippet.modelAliases[modelId]?.trim();
           if (alias) {
@@ -372,7 +373,7 @@ export class EnvSnippetManager {
             delete nextAliases[modelId];
           }
         }
-        settings.customModelAliases = nextAliases;
+        modelAliases?.update(settings, nextAliases);
       }
     });
 

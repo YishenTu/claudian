@@ -7,7 +7,7 @@ export interface TabSessionState {
   draftModel: string | null;
   id: string;
   lifecycleState: TabLifecycleState;
-  providerId: ProviderId;
+  providerId: ProviderId | null;
 }
 
 export class TabSession {
@@ -27,8 +27,8 @@ export class TabSession {
   get id(): string { return this.state.id; }
   get lifecycleState(): TabLifecycleState { return this.state.lifecycleState; }
   set lifecycleState(value: TabLifecycleState) { this.state.lifecycleState = value; }
-  get providerId(): ProviderId { return this.state.providerId; }
-  set providerId(value: ProviderId) { this.state.providerId = value; }
+  get providerId(): ProviderId | null { return this.state.providerId; }
+  set providerId(value: ProviderId | null) { this.state.providerId = value; }
   get conversationId(): string | null { return this.state.conversationId; }
   set conversationId(value: string | null) { this.state.conversationId = value; }
   get draftModel(): string | null { return this.state.draftModel; }

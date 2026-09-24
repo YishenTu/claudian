@@ -11,6 +11,7 @@ import type {
 import { PiCommandCatalog } from '../commands/PiCommandCatalog';
 import { PiCommandMetadataProbe } from '../execution/PiCommandMetadataProbe';
 import { PiCliResolver } from '../runtime/PiCliResolver';
+import { createPiModels } from '../runtime/PiModels';
 import { createPiSettingsTabRenderer } from '../ui/PiSettingsTab';
 import { PiCommandLoader } from './PiCommandLoader';
 
@@ -35,17 +36,20 @@ export async function createPiWorkspaceServices(
 ): Promise<PiWorkspaceServices> {
   const commandMetadataProbe = options.commandMetadataProbe
     ?? new PiCommandMetadataProbe(plugin);
+  const modelCatalog = createPiModels(plugin);
   const unregisterTransitionHook = plugin.executionLifecycleRegistry
     .registerTransitionHook('pi', {
-      beforeTransition: () => {
+      beforeTransition: async () => {
+        modelCatalog.beginTransition();
         commandMetadataProbe.beginEnvironmentTransition();
-        return commandMetadataProbe.quiesceForEnvironmentChange();
+        await Promise.all([modelCatalog.quiesce(), commandMetadataProbe.quiesceForEnvironmentChange()]);
       },
       afterTransition: async () => {
         try {
           await commandMetadataProbe.quiesceForEnvironmentChange();
         } finally {
           commandMetadataProbe.endEnvironmentTransition();
+          modelCatalog.endTransition();
         }
       },
     });
@@ -53,13 +57,14 @@ export async function createPiWorkspaceServices(
   const cliResolver = new PiCliResolver();
   return {
     cliResolver,
+    modelCatalog,
     commandCatalog: new PiCommandCatalog(),
     commandLoader: new PiCommandLoader(commandMetadataProbe),
-    settingsTabRenderer: createPiSettingsTabRenderer({ cliResolver }),
+    settingsTabRenderer: createPiSettingsTabRenderer({ cliResolver, modelCatalog }),
     tabWarmupPolicy: piTabWarmupPolicy,
     async dispose() {
       unregisterTransitionHook();
-      await commandMetadataProbe.dispose();
+      await Promise.all([commandMetadataProbe.dispose(), modelCatalog.dispose()]);
     },
   };
 }

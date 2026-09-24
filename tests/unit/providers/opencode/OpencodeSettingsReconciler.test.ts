@@ -40,17 +40,17 @@ describe('opencodeSettingsReconciler.normalizeModelVariantSettings', () => {
 });
 
 describe('opencodeSettingsReconciler.handleEnvironmentChange', () => {
-  it('clears provider-owned discovery state when environment changes', () => {
+  it('retains provider-owned discovery state when environment changes', () => {
     const settings: Record<string, unknown> = {};
     updateOpencodeDiscoveryState(settings, {
       availableModes: [{ id: 'build', name: 'Build' }],
       discoveredModels: [{ label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' }],
     });
 
-    expect(opencodeSettingsReconciler.handleEnvironmentChange?.(settings)).toBe(true);
+    expect(opencodeSettingsReconciler.handleEnvironmentChange?.(settings)).toBeUndefined();
     expect(getOpencodeDiscoveryState(settings)).toEqual({
-      availableModes: [],
-      discoveredModels: [],
+      availableModes: [{ id: 'build', name: 'Build' }],
+      discoveredModels: [{ label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' }],
       thinkingOptionsByModel: {},
     });
   });

@@ -22,15 +22,6 @@ npm run typecheck && npm run lint && npm run test && npm run build && npm run ch
 - Shared ACP code contains protocol mechanics and protocol-level normalization only; provider launch policy, extensions, provider-specific normalization, and history stay provider-owned.
 - `@claudian-collab/protocol` is an exact registry dependency owned by its standalone repository. Import only its package root; do not vendor its source, add source aliases/core re-exports, or copy package-owned registries or compatibility policy. Claudian's LAN compatibility policy remains local.
 
-## Provider policy
-
-- Do not assume provider parity. Check the owning capabilities, registration, and UI config before sharing behavior; use `ProviderRegistry` and `ProviderWorkspaceRegistry`.
-- App/features may store opaque provider state but may not interpret native session/checkpoint fields. Providers normalize native payloads at the core boundary.
-- Live output and history replay remain separate. Application metadata changes never edit or delete native history files; explicit native session operations belong to providers.
-- Persisted provider settings require runtime decoding; invalid permission/tool/sandbox modes fail closed. Writers merge provider-owned configuration.
-- Chat offers only explicitly enabled models from enabled providers; an empty model selection stays empty. No synthetic entry, hidden session model, or default fallback may bypass provider or model enablement.
-- Runtime-discovered commands are read-only. Auxiliary queries own processes/sessions independently from chat.
-
 ## Local conventions
 
 - Use English for code/comments/identifiers/commits/code blocks. Soft-wrap Markdown. Put uncommitted notes, traces, and throwaway scripts in `.context/`. No production `console.*`.

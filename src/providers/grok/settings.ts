@@ -44,7 +44,7 @@ export const DEFAULT_GROK_PROVIDER_SETTINGS: Readonly<PersistedGrokProviderSetti
   environmentVariables: '',
   modelAliases: {},
   preferredReasoningByModel: {},
-  visibleModels: null,
+  visibleModels: [],
 });
 
 export function getOrderedGrokVisibleModelIds(
@@ -93,11 +93,12 @@ export function getGrokProviderSettings(
   const config = getProviderConfig(settings, 'grok');
   const currentHostKey = getHostnameKey();
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
-  const catalogsByHost = normalizeGrokCatalogsByHost(config.catalogsByHost);
+  const catalogsByHost = normalizeGrokCatalogsByHost(config.catalogsByHost ?? config.selectedModelsByHost);
   const currentCatalog = catalogsByHost[currentHostKey] ?? null;
   const selectedModelIds = collectSelectedGrokRawModelIds(settings);
   const catalogModels = currentCatalog?.models ?? [];
   const allowedModelIds = new Set(catalogModels.map(model => model.rawId));
+  for (const id of normalizeGrokVisibleModels(config.visibleModels) ?? []) allowedModelIds.add(id);
   for (const modelId of selectedModelIds) {
     allowedModelIds.add(modelId);
   }
@@ -169,6 +170,7 @@ export function updateGrokProviderSettings(
   const currentCatalog = catalogsByHost[currentHostKey] ?? null;
   const catalogModels = currentCatalog?.models ?? [];
   const allowedModelIds = new Set(catalogModels.map(model => model.rawId));
+  for (const id of normalizeGrokVisibleModels(updates.visibleModels ?? current.visibleModels) ?? []) allowedModelIds.add(id);
   for (const modelId of collectSelectedGrokRawModelIds(settings)) {
     allowedModelIds.add(modelId);
   }
@@ -300,7 +302,6 @@ export function normalizeGrokVisibleModels(
     if (
       !rawModelId
       || seen.has(rawModelId)
-      || (restrictToAllowed && !allowedModelIds.has(rawModelId))
     ) {
       continue;
     }
@@ -426,4 +427,26 @@ function readTrimmedString(value: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function projectGrokModelSettings(settings: Record<string, unknown>): Record<string, unknown> {
+  const current = getGrokProviderSettings(settings);
+  const visibleModels = getGrokMigratedVisibleModelIds(current);
+  const selected = new Set(visibleModels);
+  const selectedModelsByHost = Object.fromEntries(Object.entries(current.catalogsByHost).map(([host, catalog]) => [host, {
+    ...catalog,
+    models: catalog.models.filter(model => selected.has(model.rawId)),
+    defaultModelId: catalog.defaultModelId && selected.has(catalog.defaultModelId) ? catalog.defaultModelId : null,
+  }]));
+  const config: Record<string, unknown> = { ...getProviderConfig(settings, 'grok'), visibleModels, selectedModelsByHost };
+  delete config.catalogsByHost;
+  delete config.currentCatalog;
+  return config;
+}
+
+export function getGrokMigratedVisibleModelIds(current: GrokProviderSettings): string[] {
+  return current.visibleModels ?? [...new Set([
+    ...getOrderedGrokVisibleModelIds(current),
+    ...Object.values(current.catalogsByHost).flatMap(catalog => catalog.models.map(model => model.rawId)),
+  ])];
 }

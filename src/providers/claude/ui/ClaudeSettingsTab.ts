@@ -8,29 +8,29 @@ import type { ProviderCliResolver } from '@/core/providers/types';
 import { CLAUDE_PROVIDER_ICON } from '@/shared/icons';
 import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
 
+import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
 import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import { renderLastEnabledProviderWarning, renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
+import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCliPath } from '../../../utils/path';
 import {
   getClaudeModelOptions,
 } from '../modelOptions';
-import type { ClaudeModelCatalog } from '../runtime/ClaudeModelCatalog';
 import {
   CLAUDE_SAFE_MODES,
   type ClaudeSafeMode,
   getClaudeProviderSettings,
   updateClaudeProviderSettings,
 } from '../settings';
-import { renderClaudeModelPicker } from './ClaudeModelPicker';
 import { SlashCommandSettings } from './SlashCommandSettings';
 
 export function createClaudeSettingsTabRenderer(
-  claudeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; vaultCommandRepository: ProviderVaultEntryRepository; modelCatalog: ClaudeModelCatalog; },
+  claudeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; vaultCommandRepository: ProviderVaultEntryRepository; modelCatalog: ProviderModelCatalog; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -61,7 +61,6 @@ export function createClaudeSettingsTabRenderer(
                 value,
               );
             });
-            if (accepted && !value) await claudeWorkspace.modelCatalog.cancel();
           });
           if (accepted) {
             lastProviderWarning.hide();
@@ -135,7 +134,6 @@ export function createClaudeSettingsTabRenderer(
             },
             async () => {
               claudeWorkspace.cliResolver.reset();
-              await claudeWorkspace.modelCatalog.invalidate();
             },
           );
         },
@@ -148,11 +146,7 @@ export function createClaudeSettingsTabRenderer(
       // --- Models ---
 
       new Setting(container).setName(t('settings.models')).setHeading();
-      const modelPicker = renderClaudeModelPicker(container, modelWarning.context, claudeWorkspace.modelCatalog);
-      claudeWorkspace.modelCatalog.onChange = () => {
-        modelPicker.refresh();
-        modelWarning.refresh();
-      };
+      const modelPicker = renderProviderModelsSection(container, 'claude', 'Claude', claudeWorkspace.modelCatalog, () => modelWarning.refresh());
 
       new Setting(container)
         .setName(t('settings.claude.responseStyle.name'))
@@ -204,8 +198,6 @@ export function createClaudeSettingsTabRenderer(
             .onChange(async (value) => {
               await context.plugin.applyProviderRuntimeSettings(['claude'], settings => {
                 updateClaudeProviderSettings(settings, { loadUserSettings: value });
-              }, async () => {
-                await claudeWorkspace.modelCatalog.invalidate();
               });
             })
         );
@@ -265,6 +257,7 @@ export function createClaudeSettingsTabRenderer(
             })
         );
 
+      return modelPicker;
     },
   };
 }

@@ -6,18 +6,18 @@ jest.mock('../../../../src/utils/env', () => ({
 }));
 
 import {
-clearCurrentGrokCatalog,
-getCurrentGrokCatalog,
-getGrokProviderSettings,
-normalizeGrokCatalogSnapshot,
-updateCurrentGrokCatalog,
-updateGrokProviderSettings,
-updateGrokVisibleModels
+  clearCurrentGrokCatalog,
+  getCurrentGrokCatalog,
+  getGrokProviderSettings,
+  normalizeGrokCatalogSnapshot,
+  updateCurrentGrokCatalog,
+  updateGrokProviderSettings,
+  updateGrokVisibleModels
 } from '@/providers/grok/settings';
 import {
-buildGrokProviderState,
-buildPersistedGrokProviderState,
-parseGrokProviderState,
+  buildGrokProviderState,
+  buildPersistedGrokProviderState,
+  parseGrokProviderState,
 } from '@/providers/grok/types';
 
 describe('Grok settings', () => {
@@ -214,10 +214,10 @@ describe('Grok settings', () => {
       },
     });
 
-    expect(settings.visibleModels).toEqual(['kimi-coding', 'legacy-model']);
+    expect(settings.visibleModels).toEqual(['kimi-coding', 'legacy-model', 'unknown']);
     expect(settings.modelAliases).toEqual({
       'kimi-coding': 'Kimi',
-      'legacy-model': 'Legacy',
+      'legacy-model': 'Legacy', unknown: 'Drop me',
     });
     expect(settings.preferredReasoningByModel).toEqual({
       'kimi-coding': 'medium',

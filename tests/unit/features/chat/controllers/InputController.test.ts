@@ -18,6 +18,7 @@ import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
+    resolveTitleGenerationSelection: jest.fn().mockReturnValue(null),
     getCapabilities: jest.fn().mockReturnValue({
       providerId: 'claude',
       supportsFork: true,
@@ -120,6 +121,7 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     rewriteLinkedContentPaths: jest.fn().mockResolvedValue(undefined),
     settings: {
       enableAutoTitleGeneration: false,
+      titleGenerationModel: '',
       permissionMode: 'normal',
     },
     updateConversation: jest.fn().mockResolvedValue(undefined),
@@ -313,6 +315,18 @@ describe('InputController coordinator execution', () => {
       permissionMode: 'normal',
       serviceTier: 'standard',
     });
+  });
+
+  it('preserves input and blocks execution for an unresolved tab provider', async () => {
+    const fixture = createFixture({ getTabProviderId: () => null });
+    fixture.state.currentConversationId = null;
+    fixture.input.value = 'keep this draft';
+    await fixture.controller.sendMessage();
+    expect(fixture.input.value).toBe('keep this draft');
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.deps.ensureExecutionInitialized).not.toHaveBeenCalled();
+    expect(fixture.state.messages).toEqual([]);
+    expect(Notice).toHaveBeenCalledWith('Select an available model before sending.');
   });
 
   it('does not start a turn when its tab session has closed intent admission', async () => {
@@ -617,7 +631,15 @@ describe('InputController coordinator execution', () => {
   });
 
   it('restores the unsent turn after an asynchronous unaccepted configuration rejection', async () => {
-    const fixture = createFixture();
+    const image: ImageAttachment = { id: 'retry-image', name: 'retry.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste' };
+    let attachedImages = [image];
+    const imageContextManager = {
+      clearImages: () => { attachedImages = []; },
+      getAttachedImages: () => attachedImages,
+      hasImages: () => attachedImages.length > 0,
+      setImages: (images: ImageAttachment[]) => { attachedImages = images; },
+    };
+    const fixture = createFixture({ getImageContextManager: () => imageContextManager });
     const rejection: ProviderExecutionEvent = {
       type: 'execution_error',
       category: 'configuration',
@@ -639,6 +661,7 @@ describe('InputController coordinator execution', () => {
     await fixture.controller.sendMessage();
 
     expect(fixture.input.value).toBe('retry after configuration');
+    expect(attachedImages).toEqual([image]);
     expect(fixture.state.messages).toEqual([]);
     expect(fixture.deps.renderer.removeMessage).toHaveBeenCalledTimes(2);
     expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
@@ -1849,12 +1872,27 @@ describe('InputController coordinator execution', () => {
     expect(fixture.state.attention).toBeNull();
   });
 
+  it.each(['', 'removed-title-model'])('skips unusable title model %s without a failed status', async titleGenerationModel => {
+    const generateTitle = jest.fn();
+    const fixture = createFixture({ getTitleGenerationService: () => ({ generateTitle }) as any });
+    fixture.plugin.settings.enableAutoTitleGeneration = true;
+    fixture.plugin.settings.titleGenerationModel = titleGenerationModel;
+    await fixture.controller.sendMessage({ content: 'keep this fallback' });
+    expect(generateTitle).not.toHaveBeenCalled();
+    expect(fixture.plugin.updateConversation).not.toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ titleGenerationStatus: 'pending' }),
+    );
+    expect(fixture.plugin.renameConversation).toHaveBeenCalled();
+  });
+
   it('starts title generation independently of the execution session', async () => {
+    jest.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce({ providerId: 'claude', model: 'sonnet' });
     const generateTitle = jest.fn().mockResolvedValue(undefined);
     const fixture = createFixture({
       getTitleGenerationService: () => ({ generateTitle }) as any,
     });
     fixture.plugin.settings.enableAutoTitleGeneration = true;
+    fixture.plugin.settings.titleGenerationModel = 'sonnet';
 
     await fixture.controller.sendMessage({ content: 'title this' });
 
@@ -2065,7 +2103,6 @@ describe('InputController coordinator execution', () => {
     expect(submission.context).not.toHaveProperty('linkedContent');
   });
 });
-
 
 it('attaches completed turn statistics to the final assistant after native message boundaries', async () => {
   const fixture = createFixture();

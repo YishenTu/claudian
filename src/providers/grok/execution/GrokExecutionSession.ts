@@ -16,6 +16,7 @@ import type {
   RewindableExecutionSession,
   SteerableExecutionSession,
 } from '../../../core/execution';
+import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ChatMessage, PermissionMode } from '../../../core/types';
 import { appendBrowserContext } from '../../../utils/browser';
@@ -65,6 +66,7 @@ import {
   type GrokSystemPromptSettings,
 } from '../prompt/GrokSystemPrompt';
 import { waitForGrokCancelDelivery } from '../runtime/GrokCancelDelivery';
+import { assertGrokModelAvailable } from '../runtime/GrokModelAvailability';
 import type { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
 import { buildGrokRuntimeEnv } from '../runtime/GrokRuntimeEnvironment';
 import { GrokSessionNotificationMirrorDeduplicator } from '../runtime/GrokSessionNotificationMirrorDeduplicator';
@@ -349,6 +351,8 @@ RewindableExecutionSession {
   }
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
+    try { assertGrokModelAvailable(this.plugin.settings, request.configuration.model); }
+    catch (error) { if (error instanceof ProviderModelUnavailableError) return false; throw error; }
     const active = this.active;
     const native = this.nativeOwner?.initialized ? this.nativeOwner.native : null;
     if (
@@ -417,6 +421,7 @@ RewindableExecutionSession {
     }
     let unsubscribeClose: (() => void) | undefined;
     try {
+      assertGrokModelAvailable(this.plugin.settings, active.request.configuration.model);
       if (this.cancellationFlight) await this.cancellationFlight;
       if (this.#isCancellationRequested(active)) return;
       const native = await this.#ensureNative(active);
@@ -425,6 +430,7 @@ RewindableExecutionSession {
       if (this.#isCancellationRequested(active)) return;
       await this.#applyConfiguration(native, sessionId, active.request, active);
       if (this.#isCancellationRequested(active)) return;
+      assertGrokModelAvailable(this.plugin.settings, active.request.configuration.model);
       active.normalizer.reset();
       active.acceptingLiveOutput = true;
       const closed = new Promise<never>((_resolve, reject) => {
@@ -1451,6 +1457,7 @@ function classifyError(
   error: unknown,
 ): 'authentication' | 'configuration' | 'provider-session-missing' | 'transport' | 'unknown' {
   const message = error instanceof Error ? error.message.toLowerCase() : '';
+  if (error instanceof ProviderModelUnavailableError) return 'configuration';
   if (message.includes('auth')) return 'authentication';
   if (message.includes('session') && (message.includes('missing') || message.includes('not found'))) {
     return 'provider-session-missing';

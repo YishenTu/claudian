@@ -21,7 +21,7 @@ export interface MainChatComposerDropdownOptions {
   readonly collabReferences?: CollabComposerReferencePort;
   readonly providerConfig?: ProviderCommandDropdownConfig;
   readonly providerDiscovery?: ProviderCommandDiscoverySource<ProviderCommandEntry>;
-  readonly providerId: ProviderId;
+  readonly providerId: ProviderId | null;
 }
 
 export class MainChatComposerDropdown {
@@ -110,7 +110,7 @@ export class MainChatComposerDropdown {
     this.slashSource.setProviderCatalog(config, discovery);
   }
 
-  setProviderId(providerId: ProviderId): void {
+  setProviderId(providerId: ProviderId | null): void {
     this.slashSource.setProviderId(providerId);
   }
 }

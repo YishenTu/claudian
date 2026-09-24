@@ -1,3 +1,4 @@
+import { decodeModelAliases } from '../../core/providers/models/modelAliases';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
@@ -23,6 +24,7 @@ export interface ClaudeProviderSettings {
   enableChrome: boolean;
   discoveredModels: ClaudeDiscoveredModel[];
   visibleModels: string[] | null;
+  modelAliases: Record<string, string>;
   environmentVariables: string;
   environmentHash: string;
 }
@@ -37,6 +39,7 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   enableChrome: false,
   discoveredModels: [],
   visibleModels: [],
+  modelAliases: {},
   environmentVariables: '',
   environmentHash: '',
 });
@@ -94,7 +97,8 @@ export function getClaudeProviderSettings(
       config.enableChrome,
       readStoredBoolean(settings.enableChrome, DEFAULT_CLAUDE_PROVIDER_SETTINGS.enableChrome),
     ),
-    discoveredModels: decodeClaudeModels(config.discoveredModels),
+    modelAliases: decodeModelAliases(config.modelAliases ?? settings.customModelAliases),
+    discoveredModels: decodeClaudeModels(config.discoveredModels ?? config.selectedModels),
     visibleModels: config.visibleModels == null ? null : Array.isArray(config.visibleModels)
       ? [...new Set(config.visibleModels.filter((id): id is string => typeof id === 'string' && Boolean(id.trim())))]
       : [],
@@ -131,6 +135,7 @@ export function updateClaudeProviderSettings(
     ...stored,
     ...current,
     ...updates,
+    modelAliases: decodeModelAliases(updates.modelAliases ?? current.modelAliases),
     safeMode: 'safeMode' in updates
       ? normalizeClaudeSafeMode(updates.safeMode) ?? current.safeMode
       : current.safeMode,

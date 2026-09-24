@@ -2,7 +2,7 @@ import { Notice } from 'obsidian';
 
 import type { ProviderInteractionPort } from '../../../../core/execution';
 import { resolveNewConversationModel } from '../../../../core/providers/conversationModel';
-import { getEnabledProviderForModel } from '../../../../core/providers/modelRouting';
+import { getProviderForModel } from '../../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
 import { getVaultPath } from '../../../../utils/path';
@@ -69,10 +69,14 @@ export function buildTabRuntimeShell(
   const draftModel = isBound
     ? null
     : (restoredDraftModel || newConversationModel?.model || null);
+  const restoredProviderId = options.providerId === undefined
+    ? (restoredDraftModel ? getProviderForModel(restoredDraftModel, plugin.settings) : null)
+    : options.providerId;
   const initialProviderId = conversation?.providerId
     ?? newConversationModel?.providerId
     ?? (draftModel
-      ? getEnabledProviderForModel(draftModel, plugin.settings)
+      ? restoredProviderId && ProviderRegistry.getRegisteredProviderIds().includes(restoredProviderId)
+        ? restoredProviderId : null
       : DEFAULT_CHAT_PROVIDER_ID);
   const sessionState = {
     id,

@@ -8,6 +8,8 @@ import type {
   ProviderInteractionPort,
 } from '../execution';
 import { resolveTitleGenerationLocale } from '../prompt/titleGeneration';
+import { findAvailableModelOption } from './models/modelOptions';
+import { ProviderModelUnavailableError } from './models/ProviderModelUnavailableError';
 import { decodeProviderModelSelectionId } from './modelSelection';
 import type { ProviderHost } from './ProviderHost';
 import { ProviderWorkspaceRegistry } from './ProviderWorkspaceRegistry';
@@ -71,7 +73,7 @@ export class ProviderRegistry {
   static createTitleGenerationService(plugin: ProviderHost, providerId?: ProviderId): TitleGenerationService {
     if (!providerId) {
       return new RoutedTitleGenerationService({
-        resolveProviderId: () => this.resolveTitleGenerationProviderId(plugin.settings),
+        resolveProviderId: () => this.resolveTitleGenerationSelection(plugin.settings)?.providerId ?? null,
         initializeProvider: provider => ProviderWorkspaceRegistry.ensureInitialized(
           plugin, provider, 'title-generation',
         ),
@@ -82,27 +84,28 @@ export class ProviderRegistry {
     return new SharedTitleGenerationService({
       ...this.createAuxiliaryExecutionContext(plugin, providerId),
       resolveLocale: () => resolveTitleGenerationLocale(plugin.settings),
-      resolveModel: registration.resolveTitleGenerationModel
-        ? () => registration.resolveTitleGenerationModel?.(plugin)
-        : undefined,
+      resolveModel: () => {
+        const selection = this.resolveTitleGenerationSelection(plugin.settings);
+        if (!selection || selection.providerId !== providerId) {
+          throw new ProviderModelUnavailableError(registration.displayName);
+        }
+        return selection.model;
+      },
     });
   }
 
-  static resolveTitleGenerationProviderId(settings: Record<string, unknown>): ProviderId {
+  static resolveTitleGenerationSelection(settings: Record<string, unknown>): { providerId: ProviderId; model: string } | null {
     const titleModel = typeof settings.titleGenerationModel === 'string'
       ? settings.titleGenerationModel.trim()
       : '';
+    if (!titleModel) return null;
 
-    if (!titleModel) {
-      return this.isEnabled(DEFAULT_CHAT_PROVIDER_ID, settings)
-        ? DEFAULT_CHAT_PROVIDER_ID
-        : this.resolveSettingsProviderId(settings);
-    }
-
-    return this.resolveProviderForModel(titleModel, settings, {
-      fallbackProviderId: DEFAULT_CHAT_PROVIDER_ID,
-      onlyEnabledProviders: true,
+    const candidates = this.getRegisteredProviderIds().flatMap(providerId => {
+      if (!this.isEnabled(providerId, settings)) return [];
+      const model = findAvailableModelOption(providerId, this.getChatUIConfig(providerId), titleModel, settings);
+      return model ? [{ providerId, model }] : [];
     });
+    return candidates.length === 1 ? candidates[0] : null;
   }
 
   static createInlineEditService(plugin: ProviderHost, providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): InlineEditService {
@@ -259,20 +262,11 @@ export class ProviderRegistry {
     settings: Record<string, unknown> = {},
     options: {
       onlyEnabledProviders?: boolean;
-      fallbackProviderId?: ProviderId;
     } = {},
-  ): ProviderId {
+  ): ProviderId | null {
     const providerIds = options.onlyEnabledProviders
       ? this.getEnabledProviderIds(settings)
       : this.getRegisteredProviderIds();
-    const fallbackProviderId = (
-      options.fallbackProviderId
-      && (!options.onlyEnabledProviders || this.isEnabled(options.fallbackProviderId, settings))
-    )
-      ? options.fallbackProviderId
-      : (options.onlyEnabledProviders
-        ? this.resolveSettingsProviderId(settings)
-        : DEFAULT_CHAT_PROVIDER_ID);
     const decodedSelection = decodeProviderModelSelectionId(model);
 
     if (
@@ -283,17 +277,9 @@ export class ProviderRegistry {
       return decodedSelection.providerId;
     }
 
-    for (const providerId of providerIds) {
-      if (providerId === fallbackProviderId) {
-        continue;
-      }
-
-      if (this.getChatUIConfig(providerId).ownsModel(model, settings)) {
-        return providerId;
-      }
-    }
-
-    return fallbackProviderId;
+    if (decodedSelection) return null;
+    const owners = providerIds.filter(providerId => this.getChatUIConfig(providerId).ownsModel(model, settings));
+    return owners.length === 1 ? owners[0] : null;
   }
 
   static getCustomModelIds(envVars: Record<string, string>): Set<string> {

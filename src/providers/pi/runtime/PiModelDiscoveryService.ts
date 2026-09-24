@@ -25,7 +25,7 @@ export type PiModelDiscoveryResult =
 export class PiModelDiscoveryService {
   constructor(private readonly plugin: ProviderHost) {}
 
-  async discoverModels(): Promise<PiModelDiscoveryResult> {
+  async discoverModels(signal?: AbortSignal): Promise<PiModelDiscoveryResult> {
     const settings = getPiProviderSettings(this.plugin.settings);
     if (!settings.enabled) {
       return { kind: 'skipped', reason: 'provider-disabled' };
@@ -50,7 +50,10 @@ export class PiModelDiscoveryService {
     let transport: PiRpcTransport | null = null;
     let removeEventListener: (() => void) | null = null;
 
+    const abort = () => { transport?.dispose(); void subprocess.shutdown().catch(() => {}); };
+    signal?.addEventListener('abort', abort, { once: true });
     try {
+      signal?.throwIfAborted();
       subprocess.start();
       transport = new PiRpcTransport({
         input: subprocess.stdout,
@@ -84,6 +87,7 @@ export class PiModelDiscoveryService {
         models: [],
       };
     } finally {
+      signal?.removeEventListener('abort', abort);
       removeEventListener?.();
       transport?.dispose();
       await subprocess.shutdown().catch(() => {});

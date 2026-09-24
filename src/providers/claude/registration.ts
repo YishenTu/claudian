@@ -7,8 +7,8 @@ import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';
 import { ClaudeSubagentHistoryService } from './history/ClaudeSubagentHistoryService';
-import { findClaudeModelOption, getClaudeModelOptions } from './modelOptions';
-import { toClaudeRuntimeModelId } from './modelSelection';
+import { getClaudeVisibleModelIds } from './modelOptions';
+import { projectClaudeModelSettings } from './modelPersistence';
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
 import { claudeSubagentAdapter } from './subagentAdapter';
@@ -27,8 +27,10 @@ export const claudeProviderRegistration: ProviderModule = {
   chatUIConfig: claudeChatUIConfig,
   settingsReconciler: claudeSettingsReconciler,
   settingsStorage: {
+    projectPersistedConfig: projectClaudeModelSettings,
     hostScopedFields: ['cliPathsByHost'],
     legacyTopLevelFields: [
+      'customModelAliases',
       'claudeSafeMode',
       'claudeCliPath',
       'claudeCliPathsByHost',
@@ -43,7 +45,7 @@ export const claudeProviderRegistration: ProviderModule = {
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'claude');
       const removedLegacy1MSettings = LEGACY_CLAUDE_1M_SETTINGS.some(key => key in storedConfig);
-      updateClaudeProviderSettings(target, getClaudeProviderSettings(stored));
+      updateClaudeProviderSettings(target, { ...getClaudeProviderSettings(stored), visibleModels: getClaudeVisibleModelIds(stored) });
       return removedLegacy1MSettings || hasStoredConfigNormalization(
         storedConfig,
         getProviderConfig(target, 'claude'),
@@ -52,16 +54,7 @@ export const claudeProviderRegistration: ProviderModule = {
   },
   createExecutionBackend: plugin => new ClaudeExecutionBackend(plugin),
   createSubagentHistoryService: plugin => new ClaudeSubagentHistoryService(plugin),
-  resolveTitleGenerationModel: (plugin) => {
-    const titleModel = plugin.settings.titleGenerationModel;
-    if (titleModel && claudeChatUIConfig.ownsModel(titleModel, plugin.settings)) {
-      return toClaudeRuntimeModelId(titleModel);
-    }
-    const options = getClaudeModelOptions(plugin.settings);
-    const model = findClaudeModelOption(options, 'haiku') ?? options[0];
-    if (!model) throw new Error('No Claude model is enabled. Open Claudian settings → Claude to load models and choose one.');
-    return toClaudeRuntimeModelId(model.value);
-  },
+
   historyService: new ClaudeConversationHistoryService(),
   taskResultInterpreter: new ClaudeTaskResultInterpreter(),
   subagentAdapter: claudeSubagentAdapter,

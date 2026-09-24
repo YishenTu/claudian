@@ -10,10 +10,6 @@ import {
 } from '../../core/bootstrap/tabManagerState';
 import { StartupProfiler } from '../../core/performance/StartupProfiler';
 import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
-import {
-  getProviderSettingsSnapshotWithModel,
-  resolveConversationModel,
-} from '../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { type AppTabManagerState, DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { type ConversationMeta, VIEW_TYPE_CLAUDIAN } from '../../core/types';
@@ -42,6 +38,7 @@ import {
 } from './tabs/TabInputEvents';
 import { commitProvisionalTab } from './tabs/TabLifecycle';
 import { TabManager } from './tabs/TabManager';
+import { getTabChatUIConfig, getTabSettingsSnapshot } from './tabs/TabProviderState';
 import type { AssembledTabRuntime, TabId } from './tabs/types';
 import {
   HorizontalPanelPager,
@@ -257,21 +254,9 @@ export class ClaudianView extends ItemView {
       ) {
         continue;
       }
-      const conversation = tab.conversationId
-        ? this.plugin.getConversationSync(tab.conversationId)
-        : null;
-      const modelOverride = conversation
-        ? resolveConversationModel(this.plugin.settings, providerId, conversation).model
-        : tab.conversationId === null
-        ? tab.draftModel
-        : null;
-      const providerSettings = getProviderSettingsSnapshotWithModel(
-        this.plugin.settings,
-        providerId,
-        modelOverride,
-      );
+      const providerSettings = getTabSettingsSnapshot(tab, this.plugin);
       const model = providerSettings.model;
-      const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+      const uiConfig = getTabChatUIConfig(tab, this.plugin);
       const contextWindow = uiConfig.getContextWindowSize(
         model,
         providerSettings.customContextLimits,
@@ -307,8 +292,11 @@ export class ClaudianView extends ItemView {
   /** Updates provider-scoped hidden commands on all tabs after settings changes. */
   updateHiddenProviderCommands(): void {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
+      const providerId = getTabProviderId(tab, this.plugin);
       tab.ui.composerDropdown.setHiddenCommands(
-        getHiddenProviderCommandSet(this.plugin.settings, getTabProviderId(tab, this.plugin)),
+        providerId
+          ? getHiddenProviderCommandSet(this.plugin.settings, providerId)
+          : new Set(),
       );
     }
   }
@@ -1006,7 +994,8 @@ export class ClaudianView extends ItemView {
     if (!this.viewContainerEl) return;
     const activeTab = this.tabManager?.getActiveTab();
     const providerId = activeTab ? getTabProviderId(activeTab, this.plugin) : DEFAULT_CHAT_PROVIDER_ID;
-    this.viewContainerEl.dataset.provider = providerId;
+    if (providerId) this.viewContainerEl.dataset.provider = providerId;
+    else delete this.viewContainerEl.dataset.provider;
   }
 
   // ============================================

@@ -83,26 +83,27 @@ describe('GrokWorkspaceServices', () => {
     expect(services.modelCatalogCoordinator.getCachedCatalog()).toEqual(
       expect.objectContaining({ fingerprint: 'cached-fingerprint' }),
     );
-    await expect(services.refreshModelCatalog()).resolves.toEqual({
+    await expect(services.modelCatalog!.refresh({ force: true })).resolves.toEqual({
       changed: false,
-      persistedSettingsChanged: true,
+      diagnostics: undefined,
     });
     expect(mockDiscoverCatalog).toHaveBeenCalledTimes(1);
   });
 
-  it('uses stale-while-revalidate preparation and disposes its catalog owner', async () => {
+  it('disposes its explicitly requested catalog discovery', async () => {
     let releaseRefresh!: (value: unknown) => void;
     mockGetCatalogFingerprint.mockResolvedValue('changed-fingerprint');
     mockDiscoverCatalog.mockReturnValue(new Promise(resolve => { releaseRefresh = resolve; }));
     const services = await createGrokWorkspaceServices(createPlugin());
     const dispose = jest.spyOn(services.modelCatalogCoordinator, 'dispose');
 
-    await services.prepareSettings();
+    const refresh = services.modelCatalog!.refresh();
     expect(mockDiscoverCatalog).toHaveBeenCalledTimes(1);
 
     const disposing = services.dispose();
     releaseRefresh({ kind: 'skipped', reason: 'provider-disabled' });
     await disposing;
+    await refresh;
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 
@@ -144,7 +145,7 @@ describe('GrokWorkspaceServices', () => {
         beforeTransition: expect.any(Function),
       },
     );
-    expect(quiesce).toHaveBeenCalledTimes(2);
+    expect(quiesce).toHaveBeenCalledTimes(1);
     expect(commandMetadataProbe.quiesceForEnvironmentChange).toHaveBeenCalledTimes(1);
     expect(commandMetadataProbe.dispose).toHaveBeenCalledTimes(1);
     expect(unregister).toHaveBeenCalledTimes(1);
@@ -197,7 +198,7 @@ describe('GrokWorkspaceServices', () => {
       conversation: null,
       plugin,
     });
-    const ensure = services.modelCatalogCoordinator.ensureFresh('settings');
+    const ensure = services.modelCatalogCoordinator.refresh();
     const refresh = services.modelCatalogCoordinator.refresh();
     const liveMerge = services.modelCatalogCoordinator.mergeLiveModels([{
       displayName: 'Live B',

@@ -201,7 +201,7 @@ export interface AssembledTabRuntime {
   draftModel: string | null;
 
   /** Active provider for this tab's current conversation/runtime. */
-  providerId: ProviderId;
+  providerId: ProviderId | null;
 
   /** Conversation ID bound to this tab (null for new/empty tabs). */
   conversationId: string | null;
@@ -295,7 +295,7 @@ export interface TabManagerCallbacks {
   onTabDraftChanged?: (tabId: TabId, draftModel: string | null) => void;
 
   /** Called when the active provider changes within a tab (blank tab model selection). */
-  onTabProviderChanged?: (tabId: TabId, providerId: ProviderId) => void;
+  onTabProviderChanged?: (tabId: TabId, providerId: ProviderId | null) => void;
 }
 
 /**

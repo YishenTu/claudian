@@ -23,6 +23,8 @@
     "rewind": "Retroceder"
   },
   "chat": {
+    "selectAvailableModel": "Selecione um modelo disponível antes de enviar.",
+    "selectAvailableTitleModel": "Selecione um modelo de título disponível nas configurações do Claudian.",
     "rewind": {
       "confirmMessage": "Retroceder até este ponto? As alterações de arquivos após esta mensagem podem ser sobrescritas ou removidas. Esta ação não pode ser desfeita.",
       "confirmMessageConflicts": "Retroceder até este ponto? {count} arquivo(s) modificados fora do agente serão sobrescritos:\n{files}",
@@ -592,7 +594,8 @@
     "titleModel": {
       "name": "Modelo de geração de título",
       "desc": "Modelo usado para gerar automaticamente títulos de conversa.",
-      "auto": "Automático (Haiku)"
+      "select": "Selecionar um modelo",
+      "unavailableWarning": "A geração automática de títulos está pausada. Selecione um modelo disponível para os títulos."
     },
     "navMappings": {
       "name": "Mapeamentos de navegação estilo Vim",
@@ -675,11 +678,6 @@
       "name": "Limites de contexto personalizados",
       "desc": "Defina tamanhos de janela de contexto para seus modelos personalizados. Deixe vazio para usar o padrão (200k tokens).",
       "invalid": "Formato inválido. Use: 256k, 1m ou número exato (1000-10000000)."
-    },
-    "customModels": {
-      "name": "Modelos personalizados",
-      "desc": "Adicione IDs de modelos Claude ao seletor, um por linha. Substituições de modelo por ambiente continuam substituindo o seletor.",
-      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Habilitar extensão do Chrome",
@@ -818,11 +816,6 @@
       "safeMode": {
         "workspaceWrite": "Gravação no workspace",
         "readOnly": "Somente leitura"
-      },
-      "customModels": {
-        "name": "Modelos personalizados",
-        "desc": "Adicione IDs de modelos Codex ao seletor, um por linha. `OPENAI_MODEL` continua tendo precedência quando definido.",
-        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
       "responseStyle": {
         "name": "Estilo de resposta",

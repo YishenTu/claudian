@@ -5,10 +5,13 @@ import '@test/helpers/ObsidianSettingsDom';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
+import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
 import type { ProviderSettingsTabRendererContext } from '@/core/providers/types';
 import { ModelSelector, type ToolbarCallbacks } from '@/features/chat/ui/InputToolbar';
+import type { ClaudeModelCatalog } from '@/providers/claude/runtime/ClaudeModelCatalog';
+import { createClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
-import { renderClaudeModelPicker } from '@/providers/claude/ui/ClaudeModelPicker';
+import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
 
 jest.mock('obsidian', () => ({
   Setting: class {
@@ -39,6 +42,12 @@ HTMLElement.prototype.toggleClass = function (names, value) {
 };
 HTMLElement.prototype.appendText = function (text) { this.append(text); };
 
+function renderModels(container: HTMLElement, context: ProviderSettingsTabRendererContext, native: Pick<ClaudeModelCatalog, 'refresh'>) {
+  context.plugin.notifyProviderChatOptionsChanged = jest.fn();
+  context.notifyProviderModelOptionsChanged ??= jest.fn();
+  return renderProviderModelsSection(container, 'claude', 'Claude', createClaudeModels(context.plugin, native as ClaudeModelCatalog));
+}
+
 describe('Claude model picker', () => {
   afterEach(async () => {
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -60,7 +69,7 @@ describe('Claude model picker', () => {
       ];
       return { changed: true };
     }) };
-    renderClaudeModelPicker(container, context, catalog);
+    renderModels(container, context, catalog);
     await waitFor(() => expect((within(container).getByRole('button', { name: 'Refresh' }) as HTMLButtonElement).disabled).toBe(false));
     expect(catalog.refresh).toHaveBeenCalledTimes(1);
     fireEvent.click(within(container).getByRole('checkbox', { name: /Gateway model/ }));
@@ -92,7 +101,7 @@ describe('Claude model picker', () => {
       plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
       notifyProviderModelOptionsChanged: jest.fn(),
     } as unknown as ProviderSettingsTabRendererContext;
-    renderClaudeModelPicker(container, context, { refresh: jest.fn() });
+    renderModels(container, context, { refresh: jest.fn().mockResolvedValue({ changed: false }) });
     const toolbar = document.body.createDiv();
     const selector = new ModelSelector(toolbar, {
       getSettings: () => settings,
@@ -134,11 +143,11 @@ describe('Claude model picker', () => {
       notifyProviderModelOptionsChanged: jest.fn(),
     } as unknown as ProviderSettingsTabRendererContext;
     const catalog = { refresh: jest.fn().mockResolvedValue({ changed: true }) };
-    renderClaudeModelPicker(container, context, catalog);
+    renderModels(container, context, catalog);
     const checkbox = within(container).getByRole('checkbox', { name: /Sonnet/ }) as HTMLInputElement;
     expect(checkbox.checked).toBe(true);
     expect(settings.providerConfigs.claude.visibleModels).toEqual(['gateway-model']);
-    expect(catalog.refresh).not.toHaveBeenCalled();
+    expect(catalog.refresh).toHaveBeenCalledTimes(1);
     fireEvent.click(checkbox);
     await waitFor(() => expect(settings.providerConfigs.claude.visibleModels).toEqual([]));
     expect(claudeChatUIConfig.getModelOptions(settings)).toEqual([]);
@@ -148,12 +157,47 @@ describe('Claude model picker', () => {
     const container = document.body.createDiv();
     const context = { plugin: { settings: { providerConfigs: { claude: { visibleModels: [] } } } } } as unknown as ProviderSettingsTabRendererContext;
     const catalog = { refresh: jest.fn().mockResolvedValue({ changed: false, diagnostics: 'Unavailable' }) };
-    renderClaudeModelPicker(container, context, catalog);
-    await waitFor(() => expect(within(container).getByText(/Couldn’t load Claude models/)).not.toBeNull());
+    renderModels(container, context, catalog);
+    await waitFor(() => expect(within(container).getByRole('status').textContent).toBe('Unavailable'));
+    expect(within(container).queryByText(/Could not load Claude models/)).toBeNull();
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(catalog.refresh).toHaveBeenCalledTimes(1);
     fireEvent.click(within(container).getByRole('button', { name: 'Discover' }));
     await waitFor(() => expect(catalog.refresh).toHaveBeenCalledTimes(2));
     await waitFor(() => expect((within(container).getByRole('button', { name: /Refresh|Discover/ }) as HTMLButtonElement).disabled).toBe(false));
   });
+});
+
+it('allows Discover after abort and detaches the closed settings observer', async () => {
+  let finishOld!: () => void;
+  const discover = jest.fn()
+    .mockImplementationOnce(() => new Promise(resolve => { finishOld = () => resolve({ changed: true }); }))
+    .mockResolvedValue({ changed: true });
+  const notify = jest.fn();
+  const catalog = new ProviderModelCatalogController({
+    providerId: 'claude', providerName: 'Claude',
+    read: () => ({ enabled: true, models: [{ id: 'sonnet', name: 'Sonnet' }], selectedIds: ['sonnet'], aliases: {} }),
+    discover, update: jest.fn(),
+    host: { mutateSettings: async mutate => { await mutate({} as any); }, notifyProviderChatOptionsChanged: notify },
+  });
+  const container = document.body.createDiv();
+  const context = { notifyProviderModelOptionsChanged: jest.fn() } as unknown as ProviderSettingsTabRendererContext;
+  const picker = renderProviderModelsSection(container, 'claude', 'Claude', catalog);
+  catalog.markStale();
+  container.querySelector('details')!.open = true;
+  const button = within(container).getByRole('button', { name: 'Refresh' }) as HTMLButtonElement;
+  expect(button.disabled).toBe(false);
+  fireEvent.click(button);
+  await waitFor(() => expect(discover).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(catalog.getSnapshot().status).toBe('ready'));
+  expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
+  expect(notify).not.toHaveBeenCalled();
+  expect('dispose' in picker).toBe(true);
+  if (!('dispose' in picker)) return;
+  (picker.dispose as () => void)();
+  const rendered = container.innerHTML;
+  catalog.markStale();
+  finishOld();
+  await catalog.dispose();
+  expect(container.innerHTML).toBe(rendered);
 });

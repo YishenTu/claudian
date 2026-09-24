@@ -12,6 +12,7 @@ import type {
   ChatExecutionCoordinatorDeps,
   ChatExecutionEventContext,
 } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { getTabProviderId } from '@/features/chat/tabs/providerResolution';
 import {
   destroyTab,
   drainTabForShutdownSnapshot,
@@ -120,7 +121,7 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
     }),
     getBlankTabProviderIds: jest.fn().mockReturnValue(['claude']),
     getEnabledProviderIds: jest.fn().mockReturnValue(['claude']),
-    getRegisteredProviderIds: jest.fn().mockReturnValue(['claude']),
+    getRegisteredProviderIds: jest.fn().mockReturnValue(['claude', 'codex']),
     getProviderDisplayName: jest.fn().mockReturnValue('Claude'),
     getTaskResultInterpreter: jest.fn(),
     isEnabled: jest.fn().mockReturnValue(true),
@@ -360,7 +361,6 @@ describe('Tab provider execution ownership', () => {
   const originalResizeObserver = globalThis.ResizeObserver;
 
   beforeEach(() => {
-    ProviderRegistry.getChatUIConfig('claude').preserveUnavailableModelSelection = false;
     coordinatorInstances.length = 0;
     coordinatorDeps.length = 0;
     titleServiceInstances.length = 0;
@@ -1065,7 +1065,6 @@ describe('Tab provider execution ownership', () => {
   it('keeps an explicit blank-tab selection through loading and changed catalog publications', async () => {
     const plugin = createPlugin();
     const uiConfig = ProviderRegistry.getChatUIConfig('claude');
-    uiConfig.preserveUnavailableModelSelection = true;
     plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'claude-default' };
     const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
     (uiConfig.getModelOptions as jest.Mock).mockReturnValue([]);
@@ -1080,12 +1079,78 @@ describe('Tab provider execution ownership', () => {
 
   it('preserves an unavailable last-selected model when creating a blank tab and publishing availability', async () => {
     const plugin = createPlugin();
-    ProviderRegistry.getChatUIConfig('claude').preserveUnavailableModelSelection = true;
     plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'retired' };
     const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
     onProviderAvailabilityChanged(tab, plugin);
     expect(tab.providerId).toBe('claude');
     expect(tab.draftModel).toBe('retired');
+  });
+
+  it('restores a draft on its recorded provider even when model ownership is unresolved', async () => {
+    const plugin = createPlugin();
+    (ProviderRegistry.resolveProviderForModel as jest.Mock).mockReturnValue(null);
+    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any,
+      draftModel: 'retired-endpoint', providerId: 'codex',
+    });
+    expect(tab.providerId).toBe('codex');
+    expect(tab.draftModel).toBe('retired-endpoint');
+  });
+
+  it('restores an ownerless legacy draft as a blocked tab', async () => {
+    const plugin = createPlugin();
+    (ProviderRegistry.resolveProviderForModel as jest.Mock).mockReturnValue(null);
+    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any, draftModel: 'retired-endpoint' });
+    expect(tab.providerId).toBeNull();
+    expect(tab.draftModel).toBe('retired-endpoint');
+    await expect(initializeTabExecution(tab, plugin)).rejects.toThrow(/select.*model/i);
+  });
+
+  it('persists and reopens an unresolved draft without starting provider services', async () => {
+    const plugin = createPlugin();
+    (ProviderRegistry.resolveProviderForModel as jest.Mock).mockReturnValue(null);
+    plugin.app.workspace.getActiveViewOfType = jest.fn().mockReturnValue(null);
+    const manager = createTabManager(plugin, createMockEl() as any);
+    await manager.restoreState({
+      openTabs: [{ tabId: 'blocked', conversationId: null, draftModel: 'retired-endpoint' }],
+      activeTabId: 'blocked',
+    });
+    const tab = manager.getActiveTab()!;
+    expect(tab.providerId).toBeNull();
+    expect(await manager.getSdkCommands(tab.id)).toEqual([]);
+    expect(ensureInitialized).not.toHaveBeenCalled();
+    const saved = manager.getPersistedState();
+    expect(saved.openTabs).toEqual([{
+      tabId: 'blocked', conversationId: null, draftModel: 'retired-endpoint', providerId: null,
+    }]);
+    await manager.destroy();
+    (ProviderRegistry.resolveProviderForModel as jest.Mock).mockReturnValue('claude');
+    const reopened = createTabManager(plugin, createMockEl() as any);
+    await reopened.restoreState(saved);
+    expect(reopened.getActiveTab()?.providerId).toBeNull();
+    expect(ensureInitialized).not.toHaveBeenCalled();
+    const active = reopened.getActiveTab()!;
+    const option = Array.from(active.dom.inputWrapper.querySelectorAll('.claudian-model-option'))
+      .find(el => Array.from(el.children).some(child => child.textContent === 'Claude Default')) as HTMLElement;
+    expect(option).toBeDefined();
+    option.click();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(active.providerId).toBe('claude');
+    expect(active.draftModel).toBe('claude-default');
+    expect(ensureInitialized).toHaveBeenCalled();
+    await reopened.destroy();
+  });
+
+  it('keeps a legacy Codex draft on its recorded provider when that provider is disabled', async () => {
+    const plugin = createPlugin();
+    const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
+    tab.providerId = 'codex';
+    tab.draftModel = 'gpt-5.4';
+    (ProviderRegistry.getEnabledProviderIds as jest.Mock).mockReturnValue(['claude']);
+    (ProviderRegistry.resolveProviderForModel as jest.Mock).mockReturnValue('claude');
+    onProviderAvailabilityChanged(tab, plugin);
+    expect(getTabProviderId(tab, plugin)).toBe('codex');
+    expect(tab.providerId).toBe('codex');
+    expect(tab.draftModel).toBe('gpt-5.4');
   });
 
   it('adopts a provider default when a model-less blank tab gains available options', async () => {

@@ -7,17 +7,14 @@ import {
 } from '../../core/providers/settings/storedSettings';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
-import { ensureProviderProjectionMap } from './internal/providerProjection';
 import {
   clampPiThinkingLevel,
   decodePiModelId,
   findPiModel,
-  isPiModelSelectionId,
   normalizePiDiscoveredModels,
   normalizePiThinkingLevel,
-  PI_DEFAULT_THINKING_LEVEL,
   type PiDiscoveredModel,
-  type PiThinkingLevel,
+  type PiThinkingLevel
 } from './models';
 
 export type PiToolMode = 'all' | 'readonly';
@@ -58,7 +55,6 @@ export function normalizePiVisibleModels(
     return [];
   }
 
-  const knownIds = new Set(discoveredModels.map(model => model.encodedId));
   const normalized: string[] = [];
   const seen = new Set<string>();
   for (const entry of value) {
@@ -68,9 +64,6 @@ export function normalizePiVisibleModels(
 
     const trimmed = entry.trim();
     if (!trimmed || !decodePiModelId(trimmed)) {
-      continue;
-    }
-    if (knownIds.size > 0 && !knownIds.has(trimmed)) {
       continue;
     }
     if (seen.has(trimmed)) {
@@ -124,7 +117,7 @@ export function normalizePiPreferredThinkingByModel(
 export function getPiProviderSettings(settings: Record<string, unknown>): PiProviderSettings {
   const config = getProviderConfig(settings, 'pi');
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
-  const discoveredModels = normalizePiDiscoveredModels(config.discoveredModels);
+  const discoveredModels = normalizePiDiscoveredModels(config.discoveredModels ?? config.selectedModels);
   const visibleModels = normalizePiVisibleModels(config.visibleModels, discoveredModels);
   const persistableIds = getPersistablePiModelIds(settings, visibleModels);
 
@@ -221,7 +214,6 @@ export function updatePiProviderSettings(
   };
 
   if (updates.visibleModels !== undefined) {
-    retargetRemovedPiSelections(settings, next);
     const retargetedPersistableIds = getPersistablePiModelIds(settings, next.visibleModels);
     next.modelAliases = pruneMapToPersistableIds(next.modelAliases, retargetedPersistableIds);
     next.preferredThinkingByModel = pruneMapToPersistableIds(
@@ -405,48 +397,11 @@ function pruneMapToPersistableIds<T extends string>(
   return pruned;
 }
 
-function retargetRemovedPiSelections(
-  settings: Record<string, unknown>,
-  next: PiProviderSettings,
-): void {
-  if (next.visibleModels.length === 0) {
-    if (typeof settings.titleGenerationModel === 'string' && isPiModelSelectionId(settings.titleGenerationModel)) {
-      settings.titleGenerationModel = '';
-    }
-    return;
-  }
-
-  const visibleSet = new Set(next.visibleModels);
-  const fallbackModelId = next.visibleModels[0];
-  const fallbackModel = findPiModel(next, fallbackModelId);
-  const fallbackEffort = next.preferredThinkingByModel[fallbackModelId]
-    ?? (fallbackModel
-      ? clampPiThinkingLevel(PI_DEFAULT_THINKING_LEVEL, fallbackModel.thinkingLevels)
-      : PI_DEFAULT_THINKING_LEVEL);
-
-  const maybeRetargetModel = (value: unknown): string | null => {
-    if (typeof value !== 'string' || !isPiModelSelectionId(value)) {
-      return null;
-    }
-
-    return visibleSet.has(value) ? null : fallbackModelId;
-  };
-
-  const savedProviderModel = ensureProviderProjectionMap(settings, 'savedProviderModel');
-  const nextSavedModel = maybeRetargetModel(savedProviderModel.pi);
-  if (nextSavedModel) {
-    savedProviderModel.pi = nextSavedModel;
-    ensureProviderProjectionMap(settings, 'savedProviderEffort').pi = fallbackEffort;
-  }
-
-  const nextTopLevelModel = maybeRetargetModel(settings.model);
-  if (nextTopLevelModel) {
-    settings.model = nextTopLevelModel;
-    settings.effortLevel = fallbackEffort;
-  }
-
-  const nextTitleGenerationModel = maybeRetargetModel(settings.titleGenerationModel);
-  if (nextTitleGenerationModel) {
-    settings.titleGenerationModel = nextTitleGenerationModel;
-  }
+export function projectPiModelSettings(settings: Record<string, unknown>): Record<string, unknown> {
+  const current = getPiProviderSettings(settings);
+  const visibleModels = current.visibleModels;
+  const selected = new Set(visibleModels);
+  const config = { ...getProviderConfig(settings, 'pi'), visibleModels, selectedModels: current.discoveredModels.filter(model => selected.has(model.encodedId)) };
+  for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes']) delete (config as Record<string, unknown>)[key];
+  return config;
 }

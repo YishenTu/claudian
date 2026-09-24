@@ -22,6 +22,7 @@ import {
   buildSystemPrompt,
   type SystemPromptSettings,
 } from '../../../core/prompt/mainAgent';
+import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ChatMessage, ImageAttachment, StreamChunk } from '../../../core/types';
 import { createTurnStats, isTokenCount } from '../../../core/types';
@@ -71,6 +72,7 @@ import type {
 } from '../runtime/codexAppServerTypes';
 import { CodexDynamicToolRegistry } from '../runtime/CodexDynamicToolRegistry';
 import type { CodexLaunchSpec } from '../runtime/codexLaunchTypes';
+import { assertCodexModelAvailable } from '../runtime/CodexModelAvailability';
 import { CodexNotificationRouter } from '../runtime/CodexNotificationRouter';
 import {
   CodexRpcResponseError,
@@ -383,6 +385,8 @@ export class CodexExecutionSession
   }
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
+    try { assertCodexModelAvailable(this.plugin.settings, request.configuration.model); }
+    catch (error) { if (error instanceof ProviderModelUnavailableError) return false; throw error; }
     const run = this.activeRun;
     const transport = this.transport;
     const nativeThreadId = run?.nativeThreadId;
@@ -466,6 +470,7 @@ export class CodexExecutionSession
   ): Promise<void> {
     const generation = this.lifecycleGeneration;
     try {
+      assertCodexModelAvailable(this.plugin.settings, request.configuration.model);
       const settings = this.#resolveProviderSettings();
       const model = this.#resolveModel(request, settings);
       if (!model) {
@@ -550,6 +555,7 @@ export class CodexExecutionSession
       this.notificationRouter.beginTurn();
       this.pendingTurnNotifications = [];
 
+      assertCodexModelAvailable(this.plugin.settings, request.configuration.model);
       if (isCompactRequest(request)) {
         await this.transport!.request<ThreadCompactStartResult>(
           'thread/compact/start',
@@ -1563,7 +1569,7 @@ export class CodexExecutionSession
       );
       return;
     }
-    const category = isTransportError(message) ? 'transport' : 'provider';
+    const category = error instanceof ProviderModelUnavailableError ? 'configuration' : isTransportError(message) ? 'transport' : 'provider';
     this.#finishError(run, category, message, category === 'transport');
   }
 

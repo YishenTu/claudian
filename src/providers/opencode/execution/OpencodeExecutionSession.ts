@@ -23,6 +23,7 @@ import {
   extractAcpSessionThoughtLevelState,
 } from '@/providers/acp';
 
+import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import { loadOpencodeTurnStats } from '../history/OpencodeTurnStats';
 import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection';
@@ -33,6 +34,7 @@ import {
 } from '../modes';
 import { createOpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
 import { buildOpencodePromptBlocks } from '../runtime/buildOpencodePrompt';
+import { assertOpencodeModelAvailable } from '../runtime/OpencodeModelAvailability';
 import { getOpencodeProviderSettings } from '../settings';
 import { getOpencodeState } from '../types';
 import {
@@ -279,6 +281,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     let phase: 'connect' | 'open' | 'run' = 'connect';
     let resumeAttempt: string | null = null;
     try {
+      assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
       const pendingDisposal = this.kernelDisposalPromise;
       if (pendingDisposal) {
         await pendingDisposal;
@@ -390,9 +393,11 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
         this.snapshot = this.#createSnapshot('executing');
         phase = 'run';
       }
+      assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
       await this.#applyConfiguration(kernel, native, request);
       if (!this.#isRunCurrent(run, generation)) return;
 
+      assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
       this.#getRunNormalizer(run).reset();
       run.acceptingLiveOutput = true;
       const promptStartedAt = Date.now();
@@ -444,7 +449,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       );
       this.#emitRunSnapshot(run);
       run.finish({
-        category: missing ? 'provider-session-missing' : 'provider',
+        category: error instanceof ProviderModelUnavailableError ? 'configuration' : missing ? 'provider-session-missing' : 'provider',
         message: formatError(error),
         ...(missing && resumeAttempt
           ? { missingProviderSessionId: resumeAttempt }

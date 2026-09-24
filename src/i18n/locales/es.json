@@ -23,6 +23,8 @@
     "rewind": "Rebobinar"
   },
   "chat": {
+    "selectAvailableModel": "Selecciona un modelo disponible antes de enviar.",
+    "selectAvailableTitleModel": "Selecciona un modelo de títulos disponible en los ajustes de Claudian.",
     "rewind": {
       "confirmMessage": "¿Rebobinar a este punto? Los cambios de archivos posteriores a este mensaje podrían sobrescribirse o eliminarse. Esta acción no se puede deshacer.",
       "confirmMessageConflicts": "¿Rebobinar a este punto? Se sobrescribirán {count} archivo(s) modificados fuera del agente:\n{files}",
@@ -592,7 +594,8 @@
     "titleModel": {
       "name": "Modelo de generación de títulos",
       "desc": "Modelo utilizado para generar automáticamente títulos de conversación.",
-      "auto": "Automático (Haiku)"
+      "select": "Seleccionar un modelo",
+      "unavailableWarning": "La generación automática de títulos está pausada. Selecciona un modelo disponible para los títulos."
     },
     "navMappings": {
       "name": "Mapeos de navegación estilo Vim",
@@ -675,11 +678,6 @@
       "name": "Límites de contexto personalizados",
       "desc": "Establezca tamaños de ventana de contexto para sus modelos personalizados. Deje vacío para usar el valor predeterminado (200k tokens).",
       "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000)."
-    },
-    "customModels": {
-      "name": "Modelos personalizados",
-      "desc": "Añade IDs de modelos de Claude al selector, uno por línea. Las sobrescrituras de modelo desde el entorno siguen reemplazando el selector.",
-      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Habilitar extensión de Chrome",
@@ -818,11 +816,6 @@
       "safeMode": {
         "workspaceWrite": "Escritura en espacio de trabajo",
         "readOnly": "Solo lectura"
-      },
-      "customModels": {
-        "name": "Modelos personalizados",
-        "desc": "Añade IDs de modelos Codex al selector, uno por línea. `OPENAI_MODEL` sigue teniendo prioridad cuando está definido.",
-        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
       "responseStyle": {
         "name": "Estilo de respuesta",

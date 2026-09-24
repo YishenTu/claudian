@@ -7,10 +7,10 @@ import type { ProviderCliResolver } from '@/core/providers/types';
 import { OPENCODE_PROVIDER_ICON } from '@/shared/icons';
 import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
 
+import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
-  ProviderSettingsTabRenderer,
-  ProviderSettingsTabRendererContext,
+  ProviderSettingsTabRenderer
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
@@ -19,31 +19,18 @@ import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
-import {
-  type ProviderModelPickerModel,
-  type ProviderModelPickerState,
-  renderProviderModelPicker,
-} from '../../../shared/settings/ProviderModelPicker';
+import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCliPath } from '../../../utils/path';
-import { clearOpencodeDiscoveryState } from '../discoveryState';
-import { sameStringList } from '../internal/compareCollections';
 import type { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import {
-  buildOpencodeBaseModels,
-  encodeOpencodeModelId,
-  type OpencodeDiscoveredModel,
-  splitOpencodeModelLabel,
-} from '../models';
-import {
   getOpencodeProviderSettings,
-  normalizeOpencodeVisibleModels,
-  updateOpencodeProviderSettings,
+  updateOpencodeProviderSettings
 } from '../settings';
 import { renderOpencodeMigrationNotice } from './OpencodeMigrationNotice';
 
 export function createOpencodeSettingsTabRenderer(
-  opencodeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; metadataService: Pick<OpencodeMetadataService, 'loadCatalog' | 'warmModelMetadata'>; },
+  opencodeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; metadataService: Pick<OpencodeMetadataService, 'loadCatalog' | 'warmModelMetadata'>; modelCatalog: ProviderModelCatalog; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -129,7 +116,6 @@ export function createOpencodeSettingsTabRenderer(
             ['opencode'],
             (settings) => {
               updateOpencodeProviderSettings(settings, { cliPathsByHost });
-              clearOpencodeDiscoveryState(settings);
             },
             () => opencodeWorkspace?.cliResolver?.reset(),
           );
@@ -141,7 +127,7 @@ export function createOpencodeSettingsTabRenderer(
       });
 
       new Setting(container).setName('Models').setHeading();
-      renderOpencodeModelPicker(container, modelWarning.context, settingsBag, opencodeWorkspace.metadataService);
+      const modelPicker = renderProviderModelsSection(container, 'opencode', 'OpenCode', opencodeWorkspace.modelCatalog, () => modelWarning.refresh());
 
       new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
       context.renderAgentSkillSettings(container, 'opencode');
@@ -163,83 +149,9 @@ export function createOpencodeSettingsTabRenderer(
         placeholder: 'OPENCODE_DB=/path/to/opencode.db',
         renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'opencode'),
       });
+      return modelPicker;
     },
   };
-}
-
-function renderOpencodeModelPicker(
-  container: HTMLElement,
-  context: ProviderSettingsTabRendererContext,
-  settingsBag: Record<string, unknown>,
-  metadataService: Pick<OpencodeMetadataService, 'loadCatalog' | 'warmModelMetadata'>,
-): void {
-  const getState = (): ProviderModelPickerState => {
-    const current = getOpencodeProviderSettings(settingsBag);
-    return {
-      aliases: current.modelAliases,
-      discoveredCount: current.discoveredModels.length,
-      models: buildOpencodePickerModels(current.discoveredModels, current.visibleModels),
-      selectedIds: current.visibleModels,
-    };
-  };
-
-  const warmModelMetadata = async (rawId: string): Promise<void> => {
-    try {
-      if (
-        await metadataService.warmModelMetadata(encodeOpencodeModelId(rawId))
-      ) {
-        context.notifyProviderModelOptionsChanged('opencode');
-      }
-    } catch {
-      // Metadata warmup is opportunistic; the first chat turn can still discover it.
-    }
-  };
-
-  renderProviderModelPicker({
-    container,
-    emptyCatalogText: 'Start OpenCode once to load its model catalog. Claudian will then let you pick visible models.',
-    failedCatalogText: 'Could not load the OpenCode model catalog. Check the CLI path and login state, then try again.',
-    getState,
-    async loadCatalog() {
-      try {
-        const loaded = await metadataService.loadCatalog();
-        const discoveredCount = getOpencodeProviderSettings(settingsBag).discoveredModels.length;
-        if (!loaded) {
-          return 'failed';
-        }
-        if (discoveredCount > 0) {
-          context.notifyProviderModelOptionsChanged('opencode');
-          return 'loaded';
-        }
-        return 'empty';
-      } catch {
-        return 'failed';
-      }
-    },
-    loadCatalogOnRender: true,
-    loadingCatalogText: 'Loading OpenCode model catalog...',
-    modifier: 'opencode',
-    async onAliasesChange(modelAliases) {
-      await context.plugin.mutateSettings((settings) => {
-        updateOpencodeProviderSettings(settings, { modelAliases });
-      });
-      context.notifyProviderModelOptionsChanged('opencode');
-    },
-    onModelSelected: async (model) => warmModelMetadata(model.id),
-    async onSelectedIdsChange(visibleModels) {
-      const current = getOpencodeProviderSettings(settingsBag);
-      const normalized = normalizeOpencodeVisibleModels(visibleModels, current.discoveredModels);
-      if (sameStringList(current.visibleModels, normalized)) {
-        return;
-      }
-
-      await context.plugin.mutateSettings((settings) => {
-        updateOpencodeProviderSettings(settings, { visibleModels: normalized });
-      });
-      context.notifyProviderModelOptionsChanged('opencode');
-    },
-    providerName: 'OpenCode',
-  });
 }
 
 function validateCliPath(value: string): string | null {
@@ -256,49 +168,4 @@ function validateCliPath(value: string): string | null {
     return 'Path must point to a file';
   }
   return null;
-}
-
-function buildOpencodePickerModels(
-  discoveredModels: OpencodeDiscoveredModel[],
-  visibleModels: string[],
-): ProviderModelPickerModel[] {
-  const models: ProviderModelPickerModel[] = [];
-  const discoveredIds = new Set<string>();
-
-  for (const model of buildOpencodeBaseModels(discoveredModels)) {
-    const { modelLabel, providerLabel } = splitOpencodeModelLabel(model.label || model.rawId);
-    discoveredIds.add(model.rawId);
-    models.push({
-      description: model.description ?? '',
-      id: model.rawId,
-      isAvailable: true,
-      name: modelLabel,
-      providerKey: providerLabel.toLowerCase(),
-      providerLabel,
-    });
-  }
-
-  for (const rawId of visibleModels) {
-    if (discoveredIds.has(rawId)) {
-      continue;
-    }
-
-    const { modelLabel, providerLabel } = splitOpencodeModelLabel(rawId);
-    models.push({
-      id: rawId,
-      isAvailable: false,
-      name: modelLabel,
-      providerKey: providerLabel.toLowerCase(),
-      providerLabel,
-      unavailableMessage: 'Not currently reported by OpenCode',
-    });
-  }
-
-  return models.sort((left, right) => {
-    const providerCmp = (left.providerLabel ?? '').localeCompare(right.providerLabel ?? '');
-    if (providerCmp !== 0) {
-      return providerCmp;
-    }
-    return left.name.localeCompare(right.name);
-  });
 }

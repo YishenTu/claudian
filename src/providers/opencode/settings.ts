@@ -9,19 +9,13 @@ import type { HostnameCliPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
   getOpencodeDiscoveryState,
-  seedOpencodeDiscoveryStateFromLegacyConfig,
   updateOpencodeDiscoveryState,
 } from './discoveryState';
-import { ensureProviderProjectionMap } from './internal/providerProjection';
 import {
-  decodeOpencodeModelId,
-  encodeOpencodeModelId,
-  isOpencodeModelSelectionId,
   normalizeOpencodeThinkingOptionsByModel,
   type OpencodeDiscoveredModel,
   type OpencodeThinkingOptionsByModel,
-  resolveOpencodeBaseModelRawId,
-  resolveOpencodeDefaultThinkingLevel,
+  resolveOpencodeBaseModelRawId
 } from './models';
 import {
   normalizeManagedOpencodeSelectedMode,
@@ -143,7 +137,6 @@ export function getOpencodeProviderSettings(
 ): OpencodeProviderSettings {
   const config = getProviderConfig(settings, 'opencode');
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
-  seedOpencodeDiscoveryStateFromLegacyConfig(settings, config);
   const discoveryState = getOpencodeDiscoveryState(settings);
   const availableModes = discoveryState.availableModes;
   const discoveredModels = discoveryState.discoveredModels;
@@ -259,16 +252,10 @@ export function updateOpencodeProviderSettings(
     visibleModels: nextVisibleModels,
   };
 
-  if (updates.visibleModels !== undefined) {
-    retargetRemovedOpencodeSelections(settings, next);
-  }
-
-  const persistedThinkingOptionsByModel = pruneThinkingOptionsToPersistedSelections(
-    settings,
-    next,
-  );
-
   setProviderConfig(settings, 'opencode', {
+    ...getProviderConfig(settings, 'opencode'),
+    availableModes: nextAvailableModes,
+    discoveredModels: nextDiscoveredModels,
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,
     enabled: next.enabled,
@@ -277,16 +264,11 @@ export function updateOpencodeProviderSettings(
     modelAliases: next.modelAliases,
     preferredThinkingByModel: next.preferredThinkingByModel,
     selectedMode: next.selectedMode,
-    thinkingOptionsByModel: persistedThinkingOptionsByModel,
+    thinkingOptionsByModel: nextThinkingOptionsByModel,
     visibleModels: next.visibleModels,
   });
 
   return next;
-}
-
-export function hasLegacyOpencodeDiscoveryFields(settings: Record<string, unknown>): boolean {
-  const config = getProviderConfig(settings, 'opencode');
-  return 'availableModes' in config || 'discoveredModels' in config;
 }
 
 function pruneModelAliasesToVisible(
@@ -308,22 +290,9 @@ function pruneModelAliasesToVisible(
 }
 
 function pruneThinkingOptionsToPersistedSelections(
-  settings: Record<string, unknown>,
   next: OpencodeProviderSettings,
 ): OpencodeThinkingOptionsByModel {
   const persistableRawIds = new Set(next.visibleModels);
-  addPersistableSelection(persistableRawIds, settings.model, next.discoveredModels);
-  addPersistableSelection(persistableRawIds, settings.titleGenerationModel, next.discoveredModels);
-
-  const savedProviderModel = settings.savedProviderModel;
-  if (savedProviderModel && typeof savedProviderModel === 'object' && !Array.isArray(savedProviderModel)) {
-    addPersistableSelection(
-      persistableRawIds,
-      (savedProviderModel as Record<string, unknown>).opencode,
-      next.discoveredModels,
-    );
-  }
-
   const pruned: OpencodeThinkingOptionsByModel = {};
   for (const rawId of persistableRawIds) {
     const options = next.thinkingOptionsByModel[rawId];
@@ -334,75 +303,11 @@ function pruneThinkingOptionsToPersistedSelections(
   return pruned;
 }
 
-function addPersistableSelection(
-  target: Set<string>,
-  value: unknown,
-  discoveredModels: OpencodeDiscoveredModel[],
-): void {
-  if (typeof value !== 'string' || !isOpencodeModelSelectionId(value)) {
-    return;
-  }
-
-  const rawModelId = decodeOpencodeModelId(value);
-  if (!rawModelId) {
-    return;
-  }
-
-  const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, discoveredModels);
-  if (baseRawId) {
-    target.add(baseRawId);
-  }
-}
-
-function retargetRemovedOpencodeSelections(
-  settings: Record<string, unknown>,
-  next: OpencodeProviderSettings,
-): void {
-  if (next.visibleModels.length === 0) {
-    if (
-      typeof settings.titleGenerationModel === 'string'
-      && isOpencodeModelSelectionId(settings.titleGenerationModel)
-    ) {
-      settings.titleGenerationModel = '';
-    }
-    return;
-  }
-
-  const visibleSet = new Set(next.visibleModels);
-  const fallbackRawId = next.visibleModels[0];
-  const fallbackModelId = encodeOpencodeModelId(fallbackRawId);
-  const fallbackEffort = resolveOpencodeDefaultThinkingLevel(
-    next.thinkingOptionsByModel[fallbackRawId] ?? [],
-    next.preferredThinkingByModel[fallbackRawId],
-  );
-
-  const maybeRetargetModel = (value: unknown): string | null => {
-    if (typeof value !== 'string' || !isOpencodeModelSelectionId(value)) {
-      return null;
-    }
-
-    const rawModelId = decodeOpencodeModelId(value);
-    if (!rawModelId) return null;
-
-    const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, next.discoveredModels);
-    return visibleSet.has(baseRawId) ? null : fallbackModelId;
-  };
-
-  const savedProviderModel = ensureProviderProjectionMap(settings, 'savedProviderModel');
-  const nextSavedModel = maybeRetargetModel(savedProviderModel.opencode);
-  if (nextSavedModel) {
-    savedProviderModel.opencode = nextSavedModel;
-    ensureProviderProjectionMap(settings, 'savedProviderEffort').opencode = fallbackEffort;
-  }
-
-  const nextTopLevelModel = maybeRetargetModel(settings.model);
-  if (nextTopLevelModel) {
-    settings.model = nextTopLevelModel;
-    settings.effortLevel = fallbackEffort;
-  }
-
-  const nextTitleGenerationModel = maybeRetargetModel(settings.titleGenerationModel);
-  if (nextTitleGenerationModel) {
-    settings.titleGenerationModel = nextTitleGenerationModel;
-  }
+export function projectOpencodeModelSettings(settings: Record<string, unknown>): Record<string, unknown> {
+  const current = getOpencodeProviderSettings(settings);
+  const visibleModels = current.visibleModels;
+  const selected = new Set(visibleModels);
+  const config = { ...getProviderConfig(settings, 'opencode'), visibleModels, thinkingOptionsByModel: pruneThinkingOptionsToPersistedSelections(current), selectedModels: current.discoveredModels.filter(model => selected.has(resolveOpencodeBaseModelRawId(model.rawId, current.discoveredModels))) };
+  for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes']) delete (config as Record<string, unknown>)[key];
+  return config;
 }

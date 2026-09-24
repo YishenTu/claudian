@@ -23,6 +23,8 @@
     "rewind": "Zurückspulen"
   },
   "chat": {
+    "selectAvailableModel": "Wähle vor dem Senden ein verfügbares Modell aus.",
+    "selectAvailableTitleModel": "Wähle in den Claudian-Einstellungen ein verfügbares Titelmodell aus.",
     "rewind": {
       "confirmMessage": "Zu diesem Punkt zurückspulen? Dateiänderungen nach dieser Nachricht können überschrieben oder entfernt werden. Dies kann nicht rückgängig gemacht werden.",
       "confirmMessageConflicts": "Zu diesem Punkt zurückspulen? {count} außerhalb des Agenten geänderte Datei(en) werden überschrieben:\n{files}",
@@ -592,7 +594,8 @@
     "titleModel": {
       "name": "Titel-Generierungsmodell",
       "desc": "Modell zur automatischen Generierung von Konversationstiteln.",
-      "auto": "Automatisch (Haiku)"
+      "select": "Modell auswählen",
+      "unavailableWarning": "Automatische Titel sind pausiert. Wählen Sie ein verfügbares Titelmodell."
     },
     "navMappings": {
       "name": "Vim-Style Navigationszuordnungen",
@@ -675,11 +678,6 @@
       "name": "Benutzerdefinierte Kontextlimits",
       "desc": "Legen Sie die Kontextfenstergrößen für Ihre benutzerdefinierten Modelle fest. Leer lassen für den Standardwert (200k Token).",
       "invalid": "Ungültiges Format. Verwenden Sie: 256k, 1m oder exakte Anzahl (1000-10000000)."
-    },
-    "customModels": {
-      "name": "Benutzerdefinierte Modelle",
-      "desc": "Füge zusätzliche Claude-Modell-IDs zur Auswahl hinzu, eine pro Zeile. Modellüberschreibungen aus der Umgebung ersetzen die Auswahl weiterhin.",
-      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Chrome-Erweiterung aktivieren",
@@ -818,11 +816,6 @@
       "safeMode": {
         "workspaceWrite": "Workspace schreiben",
         "readOnly": "Nur lesen"
-      },
-      "customModels": {
-        "name": "Benutzerdefinierte Modelle",
-        "desc": "Füge zusätzliche Codex-Modell-IDs zur Auswahl hinzu, eine pro Zeile. `OPENAI_MODEL` hat weiterhin Vorrang, wenn gesetzt.",
-        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
       "responseStyle": {
         "name": "Antwortstil",

@@ -8,9 +8,8 @@ import {
   encodeGrokModelId,
 } from '../models';
 import {
-  clearCurrentGrokCatalog,
   getGrokProviderSettings,
-  updateGrokProviderSettings,
+  updateGrokProviderSettings
 } from '../settings';
 
 export function computeGrokEnvironmentHash(settings: Record<string, unknown>): string {
@@ -44,7 +43,6 @@ export const grokSettingsReconciler: ProviderSettingsReconciler = {
       return { changed: false, invalidatedConversations: [] };
     }
 
-    clearCurrentGrokCatalog(settings);
     updateGrokProviderSettings(settings, { environmentHash });
     return { changed: true, invalidatedConversations: [] };
   },

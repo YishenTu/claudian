@@ -210,6 +210,7 @@ function createPlugin(): any {
     getResolvedProviderCliPath: jest.fn(async () => '/bin/opencode'),
     manifest: { version: 'test' },
     mutateSettings: jest.fn(async (mutation) => mutation(plugin.settings)),
+    mutateSettingsConditionally: jest.fn(async (mutation) => mutation(plugin.settings)),
     notifyProviderChatOptionsChanged: jest.fn(),
     settings: {
       effortLevel: 'high',
@@ -217,6 +218,7 @@ function createPlugin(): any {
       permissionMode: 'normal',
       providerConfigs: {
         opencode: {
+          enabled: true,
           availableModes: [
             { id: 'claudian-yolo', name: 'YOLO' },
             { id: 'claudian-safe', name: 'Safe' },
@@ -309,6 +311,18 @@ function createHarness(config = createConfig()) {
 }
 
 describe('OpencodeExecutionBackend', () => {
+  it('rejects an unavailable selected model before native startup with a configuration error', async () => {
+    const { session, kernels } = createHarness();
+    const selected = plugin.settings.providerConfigs.opencode.visibleModels;
+    plugin.settings.providerConfigs.opencode.visibleModels = [];
+    const events = await collect(session.execute(createRequest()).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', category: 'configuration' }));
+    expect(events.some(event => event.type === 'turn_started' && event.accepted)).toBe(false);
+    expect(kernels).toEqual([]);
+    plugin.settings.providerConfigs.opencode.visibleModels = selected;
+    await session.dispose();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockProcessShutdown.mockResolvedValue(undefined);

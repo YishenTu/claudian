@@ -239,11 +239,11 @@ function migrateCurrentDeviceProviderConfigKeys(
   return { changed, providerConfigs };
 }
 
-function projectPersistableProviderConfigs(value: unknown): {
+function normalizeLoadedProviderConfigs(settings: Record<string, unknown>): {
   changed: boolean;
   providerConfigs: ProviderConfigMap;
 } {
-  const providerConfigs = normalizeProviderConfigs(value);
+  const providerConfigs = normalizeProviderConfigs(settings.providerConfigs);
   let changed = false;
 
   for (const { adapter, providerId } of getProviderSettingsAdapters()) {
@@ -251,6 +251,11 @@ function projectPersistableProviderConfigs(value: unknown): {
     const config = providerConfigs[providerId];
     if (!config) {
       continue;
+    }
+
+    const projected = adapter.projectPersistedConfig?.(settings);
+    if (projected) {
+      changed = JSON.stringify(projected) !== JSON.stringify(config) || changed;
     }
 
     for (const field of fields) {
@@ -262,6 +267,18 @@ function projectPersistableProviderConfigs(value: unknown): {
   }
 
   return { changed, providerConfigs };
+}
+
+function projectPersistableProviderConfigs(settings: Record<string, unknown>): ProviderConfigMap {
+  const providerConfigs = normalizeProviderConfigs(settings.providerConfigs);
+  for (const { adapter, providerId } of getProviderSettingsAdapters()) {
+    const config = providerConfigs[providerId];
+    if (!config) continue;
+    const persisted = adapter.projectPersistedConfig?.(settings) ?? config;
+    for (const field of adapter.runtimeOnlyFields ?? []) delete persisted[field];
+    providerConfigs[providerId] = persisted;
+  }
+  return providerConfigs;
 }
 
 function hasHostScopedProviderConfigNormalization(
@@ -470,11 +487,10 @@ export class ClaudianSettingsStorage {
       stored.hiddenSlashCommands,
     );
     const envSnippets = normalizeEnvSnippets(stored.envSnippets);
-    const customModelAliases = normalizeModelAliases(stored.customModelAliases);
     const {
       changed: didStripRuntimeProviderConfig,
       providerConfigs: projectedProviderConfigs,
-    } = projectPersistableProviderConfigs(stored.providerConfigs);
+    } = normalizeLoadedProviderConfigs(stored);
     const {
       changed: didMigrateCurrentDeviceProviderConfigs,
       providerConfigs,
@@ -516,7 +532,6 @@ export class ClaudianSettingsStorage {
       ...storedWithoutLegacy,
       sharedEnvironmentVariables: getSharedEnvironmentVariables(legacyProviderSettings),
       envSnippets,
-      customModelAliases,
       hiddenProviderCommands,
       providerConfigs,
       chatViewPlacement,
@@ -591,10 +606,6 @@ export class ClaudianSettingsStorage {
           !== JSON.stringify(pinnedLinkedContentPaths)
       )
       || JSON.stringify(envSnippets) !== JSON.stringify(stored.envSnippets ?? [])
-      || (
-        'customModelAliases' in stored
-        && JSON.stringify(customModelAliases) !== JSON.stringify(stored.customModelAliases ?? {})
-      )
       || didNormalizeProviderSettings
       || didStripRuntimeProviderConfig
       || didMigrateCurrentDeviceProviderConfigs
@@ -609,7 +620,7 @@ export class ClaudianSettingsStorage {
   }
 
   async save(settings: StoredClaudianSettings): Promise<void> {
-    const { providerConfigs } = projectPersistableProviderConfigs(settings.providerConfigs);
+    const providerConfigs = projectPersistableProviderConfigs(settings);
     const content = JSON.stringify(
       stripLegacyFields({
         ...settings,

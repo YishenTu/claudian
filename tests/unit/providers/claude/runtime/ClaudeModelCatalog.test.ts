@@ -28,7 +28,7 @@ describe('Claude panel model discovery', () => {
     };
     await new ClaudeModelCatalog(host, async () => rows).refresh();
     expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['sonnet']);
-    expect(settings.titleGenerationModel).toBe('sonnet');
+    expect(settings.titleGenerationModel).toBe('gateway-model');
   });
 
   it('preserves explicitly saved choices and order when the SDK catalog changes', async () => {
@@ -44,14 +44,14 @@ describe('Claude panel model discovery', () => {
     updateClaudeProviderSettings(settings, { visibleModels: null, discoveredModels: [] });
     ProviderSettingsCoordinator.normalizeAllModelVariants(settings);
     expect(settings.titleGenerationModel).toBe('claude-fable-5');
-    expect(getClaudeModelOptions(settings)).toEqual([]);
+    expect(getClaudeModelOptions(settings)).toHaveLength(0);
     host.notifyProviderChatOptionsChanged = () => {
       ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings);
     };
     await new ClaudeModelCatalog(host, async () => [
       { value: 'fable', label: 'Fable', description: '', resolvedModel: 'claude-fable-5' },
     ]).refresh();
-    expect(settings.titleGenerationModel).toBe('fable');
+    expect(settings.titleGenerationModel).toBe('claude-fable-5');
   });
 
   it('does not claim a raw title identity shared by multiple SDK choices', () => {
@@ -74,7 +74,7 @@ describe('Claude panel model discovery', () => {
     expect(getClaudeModelOptions(settings)[0].label).toBe('SDK Sonnet');
   });
 
-  it('keeps cached rows during a manual refresh and clears them on configuration invalidation', async () => {
+  it('keeps cached rows during a manual refresh and retains them on configuration invalidation', async () => {
     const { settings, host } = setup();
     let release!: (value: typeof rows) => void;
     const probe = jest.fn(() => new Promise<typeof rows>(resolve => { release = resolve; }));
@@ -83,8 +83,8 @@ describe('Claude panel model discovery', () => {
     expect(getClaudeModelOptions(settings)).toHaveLength(1);
     release(rows);
     await refresh;
-    await catalog.invalidate();
-    expect(getClaudeModelOptions(settings)).toEqual([]);
+    await catalog.cancel();
+    expect(getClaudeModelOptions(settings)).toHaveLength(1);
     expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['sonnet']);
     expect(probe).toHaveBeenCalledTimes(1);
   });
@@ -112,12 +112,12 @@ describe('Claude panel model discovery', () => {
     const catalog = new ClaudeModelCatalog(host, probe);
     const startup = catalog.refresh();
     await Promise.resolve();
-    const invalidation = catalog.invalidate();
+    const invalidation = catalog.cancel();
     expect(oldSignal.aborted).toBe(true);
     release(rows);
     await Promise.all([startup, invalidation]);
     expect(probe).toHaveBeenCalledTimes(1);
-    expect(getClaudeProviderSettings(settings).discoveredModels).toEqual([]);
+    expect(getClaudeProviderSettings(settings).discoveredModels).toEqual(rows);
     await catalog.refresh();
     expect(getClaudeProviderSettings(settings).discoveredModels).toEqual(freshRows);
     expect(probe).toHaveBeenCalledTimes(2);
@@ -148,4 +148,29 @@ describe('Claude panel model discovery', () => {
     expect(getClaudeModelOptions(settings)[0].label).toBe('SDK Sonnet');
     await catalog.dispose();
   });
+});
+
+it('does not join an aborted native discovery and still drains it on dispose', async () => {
+  const { settings, host } = setup();
+  let finishOld!: (value: typeof rows) => void;
+  const fresh = [{ value: 'sonnet', label: 'Fresh catalog', description: '', resolvedModel: 'fresh' }];
+  const probe = jest.fn()
+    .mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }))
+    .mockResolvedValueOnce(fresh);
+  const catalog = new ClaudeModelCatalog(host, probe);
+  const controller = new AbortController();
+  const old = catalog.refresh(controller.signal);
+  controller.abort();
+  const replacement = catalog.refresh();
+  expect(probe).toHaveBeenCalledTimes(2);
+  await replacement;
+  expect(getClaudeProviderSettings(settings).discoveredModels).toEqual(fresh);
+  let disposed = false;
+  const disposal = catalog.dispose().then(() => { disposed = true; });
+  await Promise.resolve();
+  expect(disposed).toBe(false);
+  finishOld(rows);
+  await Promise.all([old, disposal]);
+  expect(getClaudeProviderSettings(settings).discoveredModels).toEqual(fresh);
+  expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledTimes(1);
 });

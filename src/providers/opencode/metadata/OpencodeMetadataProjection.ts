@@ -31,6 +31,7 @@ export interface OpencodeMetadataProjectionInput {
 export async function projectOpencodeMetadata(
   plugin: ProviderHost,
   input: OpencodeMetadataProjectionInput,
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const modelState = extractAcpSessionModelState({
     configOptions: input.configOptions,
@@ -71,7 +72,9 @@ export async function projectOpencodeMetadata(
   const hasUpdate = hasModels || hasModes || hasThinking;
   if (!hasUpdate) return false;
 
-  await plugin.mutateSettings((settings) => {
+  let published = false;
+  await plugin.mutateSettingsConditionally((settings) => {
+    if (signal?.aborted) return false;
     const current = getOpencodeProviderSettings(settings);
     const baseRawModelId = rawModelId
       ? resolveOpencodeBaseModelRawId(
@@ -90,7 +93,10 @@ export async function projectOpencodeMetadata(
         ? { thinkingOptionsByModel: nextThinking }
         : {}),
     });
+    published = true;
+    return true;
   });
+  if (!published || signal?.aborted) return false;
   plugin.notifyProviderChatOptionsChanged('opencode');
   return true;
 }

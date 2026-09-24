@@ -7,7 +7,6 @@ import {
   resolveConversationModel,
   resolveProviderDefaultModel,
 } from '../../../core/providers/conversationModel';
-import { getEnabledProviderForModel } from '../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -18,9 +17,10 @@ import type {
   ProviderUIOption,
 } from '../../../core/providers/types';
 import type { ClaudianSettings, Conversation } from '../../../core/types';
+import { t } from '../../../i18n/i18n';
 import type { FeatureHost } from '../../FeatureHost';
 import { toggleServiceTier } from '../actions/toggleServiceTier';
-import { getTabProviderId } from './providerResolution';
+import { getTabProviderId, requireTabProviderId } from './providerResolution';
 import { isClosingLifecycleState } from './TabLifecycle';
 import type {
   AssembledTabRuntime,
@@ -29,6 +29,7 @@ import type {
   TabProviderContext,
   TabServices,
 } from './types';
+import { UNRESOLVED_TAB_CAPABILITIES, UNRESOLVED_TAB_UI } from './UnresolvedTabUI';
 
 export type TabProviderSettings = Record<string, unknown> & {
   model: string;
@@ -58,7 +59,7 @@ export function getTabCapabilities(
   conversation?: Conversation | null,
 ): ProviderCapabilities {
   const providerId = getTabProviderId(tab, plugin, conversation);
-  return ProviderRegistry.getCapabilities(providerId);
+  return providerId ? ProviderRegistry.getCapabilities(providerId) : UNRESOLVED_TAB_CAPABILITIES;
 }
 
 export function getTabChatUIConfig(
@@ -66,7 +67,8 @@ export function getTabChatUIConfig(
   plugin: FeatureHost,
   conversation?: Conversation | null,
 ): ProviderChatUIConfig {
-  return ProviderRegistry.getChatUIConfig(getTabProviderId(tab, plugin, conversation));
+  const providerId = getTabProviderId(tab, plugin, conversation);
+  return providerId ? ProviderRegistry.getChatUIConfig(providerId) : UNRESOLVED_TAB_UI;
 }
 
 export function getTabSettingsSnapshot(
@@ -74,6 +76,7 @@ export function getTabSettingsSnapshot(
   plugin: FeatureHost,
 ): TabProviderSettings {
   const providerId = getTabProviderId(tab, plugin);
+  if (!providerId) return { ...plugin.settings, model: tab.draftModel ?? '' };
   return getProviderSettingsSnapshotWithModel(
     plugin.settings,
     providerId,
@@ -88,7 +91,7 @@ export function getWritableTabSettingsSnapshot(
 ): TabProviderSettings {
   return getProviderSettingsSnapshotWithModel(
     settings,
-    getTabProviderId(tab, plugin),
+    requireTabProviderId(tab, plugin),
     getTabSelectedModel(tab, plugin),
   );
 }
@@ -105,6 +108,7 @@ export function getTabSelectedModel(
   plugin: FeatureHost,
 ): string | null {
   const providerId = getTabProviderId(tab, plugin);
+  if (!providerId) return tab.draftModel;
   if (tab.conversationId === null) {
     return normalizeProviderModelSelection(providerId, plugin.settings, tab.draftModel)
       ?? tab.draftModel
@@ -124,10 +128,8 @@ export function getTabHiddenCommands(
   plugin: FeatureHost,
   conversation?: Conversation | null,
 ): Set<string> {
-  return getHiddenProviderCommandSet(
-    plugin.settings,
-    getTabProviderId(tab, plugin, conversation),
-  );
+  const providerId = getTabProviderId(tab, plugin, conversation);
+  return providerId ? getHiddenProviderCommandSet(plugin.settings, providerId) : new Set();
 }
 
 function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalogInfo {
@@ -155,7 +157,7 @@ export function syncComposerDropdownForProvider(
 
   const providerId = getTabProviderId(tab, plugin, conversation);
   const catalogInfo = (getProviderCatalogConfig ?? tab.providerCatalogResolver)?.()
-    ?? getRegistryProviderCatalogInfo(providerId);
+    ?? (providerId ? getRegistryProviderCatalogInfo(providerId) : null);
 
   dropdown.setProviderId(providerId);
 
@@ -181,7 +183,7 @@ export async function updateTabProviderSettings(
   plugin: FeatureHost,
   update: (settings: TabProviderSettings) => void,
 ): Promise<TabProviderSettings> {
-  const providerId = getTabProviderId(tab, plugin);
+  const providerId = requireTabProviderId(tab, plugin);
   let snapshot!: TabProviderSettings;
   await plugin.mutateSettings((settings) => {
     snapshot = getWritableTabSettingsSnapshot(tab, plugin, settings);
@@ -253,6 +255,7 @@ export function syncTabProviderServices(
   tab: TabProviderContext,
   services: TabServices,
 ): void {
+  if (!tab.providerId) return;
   services.subagentManager.setTaskResultInterpreter(
     ProviderRegistry.getTaskResultInterpreter(tab.providerId),
   );
@@ -261,10 +264,10 @@ export function syncTabProviderServices(
 function resolveBlankTabFallback(
   settings: Record<string, unknown>,
   enabledProviderIds: ProviderId[],
-  preferredProviderId: ProviderId,
+  preferredProviderId: ProviderId | null,
 ): { model: string; providerId: ProviderId } | null {
   const providerIds = [
-    ...(enabledProviderIds.includes(preferredProviderId) ? [preferredProviderId] : []),
+    ...(preferredProviderId && enabledProviderIds.includes(preferredProviderId) ? [preferredProviderId] : []),
     ...ProviderRegistry.getBlankTabProviderIds(settings)
       .filter(providerId => providerId !== preferredProviderId),
   ];
@@ -272,8 +275,6 @@ function resolveBlankTabFallback(
   for (const providerId of providerIds) {
     const model = resolveProviderDefaultModel(providerId, settings);
     if (model) return { model, providerId };
-    if (providerId === preferredProviderId
-      && ProviderRegistry.getChatUIConfig(providerId).preserveUnavailableModelSelection) return null;
   }
 
   return null;
@@ -292,30 +293,10 @@ export function onProviderAvailabilityChanged(
   let nextProviderId = tab.providerId;
 
   if (tab.draftModel) {
-    const draftProvider = getEnabledProviderForModel(
-      tab.draftModel,
-      settingsSnapshot,
-      tab.providerId,
-    );
-    const availableDraftModel = enabledProviderIds.includes(draftProvider)
-      ? findProviderModelOption(draftProvider, tab.draftModel, settingsSnapshot)
+    const availableDraftModel = tab.providerId && enabledProviderIds.includes(tab.providerId)
+      ? findProviderModelOption(tab.providerId, tab.draftModel, settingsSnapshot)
       : null;
-    const preserveUnavailable = enabledProviderIds.includes(tab.providerId)
-      && ProviderRegistry.getChatUIConfig(tab.providerId).preserveUnavailableModelSelection;
-    if (!availableDraftModel && !preserveUnavailable) {
-      const fallback = resolveBlankTabFallback(
-        settingsSnapshot,
-        enabledProviderIds,
-        draftProvider,
-      );
-      if (fallback) {
-        tab.draftModel = fallback.model;
-        nextProviderId = fallback.providerId;
-      }
-    } else if (availableDraftModel) {
-      tab.draftModel = availableDraftModel;
-      nextProviderId = draftProvider;
-    }
+    if (availableDraftModel) tab.draftModel = availableDraftModel;
   } else {
     const fallback = resolveBlankTabFallback(
       settingsSnapshot,
@@ -386,6 +367,7 @@ export async function initializeTabExecution(
     return;
   }
   const providerId = getTabProviderId(tab, plugin, conversation);
+  if (!providerId) throw new Error(t('chat.selectAvailableModel'));
   await ProviderWorkspaceRegistry.ensureInitialized(plugin.providerHost, providerId, 'tab-execution');
   if (isClosingLifecycleState(tab.lifecycleState)) {
     return;

@@ -1,10 +1,11 @@
 import * as fs from 'fs';
-import { Notice, Setting } from 'obsidian';
+import { Setting } from 'obsidian';
 
 import type { ProviderCliResolver } from '@/core/providers/types';
 import { OPENAI_PROVIDER_ICON } from '@/shared/icons';
 import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
 
+import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ProviderSettingsTabRenderer } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
@@ -14,18 +15,16 @@ import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
+import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCliPath, stripSurroundingQuotes } from '../../../utils/path';
 import { getCodexModelOptions } from '../modelOptions';
-import { getDefaultCodexModel } from '../models';
 import { isWindowsStyleCliReference } from '../runtime/CodexBinaryLocator';
 import { inspectCodexInstallation } from '../runtime/CodexCliInstallation';
-import type { CodexModelCatalogCoordinator } from '../runtime/CodexModelCatalogCoordinator';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
-import { renderCodexModelPicker } from './CodexModelPicker';
 
 export function createCodexSettingsTabRenderer(
-  codexWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; modelCatalogCoordinator: Pick<CodexModelCatalogCoordinator, 'ensureFresh'>; refreshModelCatalog: CodexModelCatalogCoordinator['refreshModelCatalog']; },
+  codexWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; modelCatalog: ProviderModelCatalog; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -34,15 +33,6 @@ export function createCodexSettingsTabRenderer(
       const hostnameKey = getHostnameKey();
       const isWindowsHost = process.platform === 'win32';
       let installationMethod = codexSettings.installationMethod;
-      const environmentModelPlaceholder = getDefaultCodexModel(codexSettings.discoveredModels)?.model
-        ?? 'model-id';
-
-      const refreshCodexModelCatalog = async (): Promise<void> => {
-        const result = await codexWorkspace.refreshModelCatalog?.();
-        if (result?.diagnostics) {
-          new Notice(`Codex model discovery failed: ${result.diagnostics}`);
-        }
-      };
 
       // --- Setup ---
 
@@ -108,7 +98,6 @@ export function createCodexSettingsTabRenderer(
                 );
                 refreshInstallationMethodUI();
                 void cliPathControl.refresh();
-                await refreshCodexModelCatalog();
               });
           });
       }
@@ -237,7 +226,7 @@ export function createCodexSettingsTabRenderer(
 
       new Setting(container).setName(t('settings.models')).setHeading();
 
-      const modelPicker = renderCodexModelPicker(container, modelWarning.context, codexWorkspace);
+      const modelPicker = renderProviderModelsSection(container, 'codex', 'Codex', codexWorkspace.modelCatalog, () => modelWarning.refresh());
 
       new Setting(container)
         .setName(t('settings.codex.ultraEffort.name'))
@@ -338,9 +327,10 @@ export function createCodexSettingsTabRenderer(
         heading: t('settings.environment'),
         name: t('settings.codex.environment.name'),
         desc: t('settings.codex.environment.desc'),
-        placeholder: `OPENAI_API_KEY=your-key\nOPENAI_BASE_URL=https://api.openai.com/v1\nOPENAI_MODEL=${environmentModelPlaceholder}\nCODEX_SANDBOX=workspace-write`,
+        placeholder: `OPENAI_API_KEY=your-key\nOPENAI_BASE_URL=https://api.openai.com/v1\nCODEX_SANDBOX=workspace-write`,
         renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'codex'),
       });
+      return modelPicker;
     },
   };
 }

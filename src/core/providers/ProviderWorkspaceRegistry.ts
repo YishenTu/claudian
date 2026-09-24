@@ -6,10 +6,8 @@ import type {
   ProviderCliResolver,
   ProviderCommandLoader,
   ProviderId,
-  ProviderModelCatalogRefreshResult,
   ProviderSettingsTabRenderer,
   ProviderTabWarmupPolicy,
-  ProviderTransitionOwnerContext,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from './types';
@@ -103,13 +101,6 @@ export class ProviderWorkspaceRegistry {
     return this.getServices(providerId)?.commandCatalog ?? null;
   }
 
-  static async refreshModelCatalog(
-    providerId: ProviderId,
-    context?: ProviderTransitionOwnerContext,
-  ): Promise<ProviderModelCatalogRefreshResult> {
-    return await this.getServices(providerId)?.refreshModelCatalog?.(context) ?? { changed: false };
-  }
-
   static getCliResolver(providerId: ProviderId): ProviderCliResolver | null {
     return this.getServices(providerId)?.cliResolver ?? null;
   }
@@ -124,9 +115,5 @@ export class ProviderWorkspaceRegistry {
 
   static getSettingsTabRenderer(providerId: ProviderId): ProviderSettingsTabRenderer | null {
     return this.getServices(providerId)?.settingsTabRenderer ?? null;
-  }
-
-  static async prepareSettings(providerId: ProviderId): Promise<void> {
-    await this.getServices(providerId)?.prepareSettings?.();
   }
 }

@@ -10,7 +10,7 @@ import { PI_PROVIDER_CAPABILITIES } from './capabilities';
 import { piSettingsReconciler } from './env/PiSettingsReconciler';
 import { PiExecutionBackend } from './execution/PiExecutionBackend';
 import { PiConversationHistoryService } from './history/PiConversationHistoryService';
-import { getPiProviderSettings, updatePiProviderSettings } from './settings';
+import { getPiProviderSettings, projectPiModelSettings, updatePiProviderSettings } from './settings';
 import { ObsidianPiExtensionUiRenderer } from './ui/ObsidianPiExtensionUiRenderer';
 import { piChatUIConfig } from './ui/PiChatUIConfig';
 
@@ -24,13 +24,7 @@ export const piProviderRegistration: ProviderModule = {
     getPiWorkspaceServices(),
     { extensionUiRenderer: new ObsidianPiExtensionUiRenderer(plugin.app) },
   ),
-  resolveTitleGenerationModel: (plugin) => {
-    const settings = plugin.settings as unknown as Record<string, unknown>;
-    const titleModel = typeof settings.titleGenerationModel === 'string'
-      ? settings.titleGenerationModel
-      : '';
-    return piChatUIConfig.ownsModel(titleModel, settings) ? titleModel : undefined;
-  },
+
   displayName: 'Pi',
   environmentKeyPatterns: [/^PI_/i],
   historyService: new PiConversationHistoryService(),
@@ -38,6 +32,7 @@ export const piProviderRegistration: ProviderModule = {
   setEnabled: (settings, enabled) => updatePiProviderSettings(settings, { enabled }),
   settingsReconciler: piSettingsReconciler,
   settingsStorage: {
+    projectPersistedConfig: projectPiModelSettings,
     hostScopedFields: ['cliPathsByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'pi');

@@ -4,7 +4,7 @@ import * as path from 'node:path';
 
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { OpencodeV2MetadataProbe } from '@/providers/opencode/metadata/OpencodeV2MetadataProbe';
-import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
+import { getOpencodeProviderSettings, projectOpencodeModelSettings } from '@/providers/opencode/settings';
 
 // External OpenCode boundary: its native catalog endpoints and stdio ownership lease.
 const cliFixture = `#!/usr/bin/env node
@@ -82,6 +82,7 @@ it('refreshes the native catalog and commands without persisting the catalog or 
         .map(([key, value]) => `${key}=${value}`).join('\n'),
     } } },
     mutateSettings: async (mutation: (settings: Record<string, unknown>) => void) => mutation(plugin.settings),
+    mutateSettingsConditionally: async (mutation: (settings: Record<string, unknown>) => void) => mutation(plugin.settings),
   };
   const service = new OpencodeMetadataService(plugin);
   try {
@@ -96,7 +97,7 @@ it('refreshes the native catalog and commands without persisting the catalog or 
     await expect(service.warmModelMetadata('opencode:deepseek/chat')).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel['deepseek/chat'])
       .toEqual(expect.arrayContaining([{ value: 'high', label: 'High' }, { value: 'default', label: 'Default' }]));
-    const stored = JSON.parse(JSON.stringify(plugin.settings)).providerConfigs.opencode;
+    const stored = projectOpencodeModelSettings(plugin.settings);
     expect(stored.discoveredModels).toBeUndefined();
     expect(stored.visibleModels).toEqual([]);
     await expect(fetch(readFileSync(environment.ENDPOINT_FILE!, 'utf8'))).rejects.toThrow();

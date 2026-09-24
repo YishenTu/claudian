@@ -11,6 +11,7 @@ function createPlugin(): any {
       registerTransitionHook: jest.fn(() => jest.fn()),
     },
     mutateSettings: jest.fn(async (mutation) => mutation(plugin.settings)),
+    mutateSettingsConditionally: jest.fn(async (mutation) => mutation(plugin.settings)),
     notifyProviderChatOptionsChanged: jest.fn(),
     settings: {
       providerConfigs: {
@@ -186,7 +187,7 @@ describe('OpencodeMetadataService', () => {
     });
 
     await beforeTransition();
-    transitionPlugin.mutateSettings.mockClear();
+    transitionPlugin.mutateSettingsConditionally.mockClear();
     commandCatalog.setCommandSnapshot.mockClear();
     const catalog = service.loadCatalog();
     const commands = service.discoverCommands();
@@ -194,7 +195,7 @@ describe('OpencodeMetadataService', () => {
     await Promise.resolve();
 
     expect(createProbeFactory).not.toHaveBeenCalled();
-    expect(transitionPlugin.mutateSettings).not.toHaveBeenCalled();
+    expect(transitionPlugin.mutateSettingsConditionally).not.toHaveBeenCalled();
     expect(commandCatalog.setCommandSnapshot).not.toHaveBeenCalled();
 
     environment = 'environment-b';
@@ -243,4 +244,42 @@ describe('OpencodeMetadataService', () => {
     expect(createProbeFactory).not.toHaveBeenCalled();
     await afterTransition();
   });
+});
+
+it('does not replace catalog rows during command warmup', async () => {
+  const host = createPlugin();
+  host.settings.providerConfigs.opencode.discoveredModels = [{ rawId: 'old/model', label: 'Old model' }];
+  const service = new OpencodeMetadataService(host, { createProbe });
+  await expect(service.loadCommands()).resolves.toHaveLength(1);
+  expect(getOpencodeProviderSettings(host.settings).discoveredModels).toEqual([{ rawId: 'old/model', label: 'Old model' }]);
+  expect(host.mutateSettingsConditionally).not.toHaveBeenCalled();
+  await service.dispose();
+});
+
+it.each(['catalog', 'warm'] as const)('does not publish canceled %s metadata queued behind a settings write', async kind => {
+  const host = createPlugin();
+  let release!: () => void;
+  let queued!: () => void;
+  const waiting = new Promise<void>(resolve => { queued = resolve; });
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const write = jest.fn(async (mutate: (settings: any) => unknown) => {
+    queued();
+    await gate;
+    return mutate(host.settings);
+  });
+  host.mutateSettings = write;
+  host.mutateSettingsConditionally = write;
+  const service = new OpencodeMetadataService(host, { createProbe: () => createProbe() });
+  const controller = new AbortController();
+  const pending = kind === 'catalog'
+    ? service.loadCatalog(controller.signal)
+    : service.warmModelMetadata('opencode:anthropic/claude', controller.signal);
+  await waiting;
+  controller.abort();
+  release();
+  await expect(pending).resolves.toBe(false);
+  expect(getOpencodeProviderSettings(host.settings).discoveredModels).toEqual([]);
+  expect(getOpencodeProviderSettings(host.settings).thinkingOptionsByModel).toEqual({});
+  expect(host.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
+  await service.dispose();
 });

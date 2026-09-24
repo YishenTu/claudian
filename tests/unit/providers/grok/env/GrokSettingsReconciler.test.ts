@@ -100,7 +100,7 @@ describe('GrokSettingsReconciler', () => {
     expect(getGrokProviderSettings(settings).environmentHash).toBe('');
   });
 
-  it('clears only the current host catalog when construction inputs become stale', () => {
+  it('retains the current host catalog when construction inputs become stale', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         codex: { enabled: true, marker: 'untouched' },
@@ -135,6 +135,7 @@ describe('GrokSettingsReconciler', () => {
 
     expect(result).toEqual({ changed: true, invalidatedConversations: [] });
     expect(getGrokProviderSettings(settings).catalogsByHost).toEqual({
+      'current-host': catalog('current-model'),
       'other-host': catalog('other-model'),
     });
     expect(getGrokProviderSettings(settings).environmentHash)

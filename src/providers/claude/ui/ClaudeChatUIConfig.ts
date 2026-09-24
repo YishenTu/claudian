@@ -15,6 +15,7 @@ import {
 } from '../modelOptions';
 import { isClaudeModelSelectionId, toClaudeRuntimeModelId } from '../modelSelection';
 import { isClaudeModelTier } from '../modelTiers';
+import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
   DEFAULT_CLAUDE_MODELS,
   DEFAULT_EFFORT_LEVEL,
@@ -33,7 +34,10 @@ const CLAUDE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
 };
 
 export const claudeChatUIConfig: ProviderChatUIConfig = {
-  preserveUnavailableModelSelection: true,
+  customModelAliases: {
+    get: settings => getClaudeProviderSettings(settings).modelAliases,
+    update: (settings, modelAliases) => { updateClaudeProviderSettings(settings, { modelAliases }); },
+  },
   getModelOptions(settings) {
     // The chat dropdown renders options in reverse order, as for other providers.
     return getClaudeModelOptions(settings).reverse();
@@ -45,7 +49,7 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
     const runtimeModel = toClaudeRuntimeModelId(model);
-    return isClaudeModelSelectionId(model) || isClaudeModelTier(normalizeLegacyClaudeModelAlias(model))
+    return /^claude-(?:haiku|sonnet|opus)-/.test(model) || isClaudeModelSelectionId(model) || isClaudeModelTier(normalizeLegacyClaudeModelAlias(model))
       || getClaudeVisibleModelIds(settings).some(id => toClaudeRuntimeModelId(id) === runtimeModel)
       || Boolean(findClaudeModelOption(getClaudeModelCatalog(settings), model));
   },

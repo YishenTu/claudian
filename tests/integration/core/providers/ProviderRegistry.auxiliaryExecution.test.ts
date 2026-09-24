@@ -11,9 +11,12 @@ it.each([true, false])('selects auxiliary persistence from ephemeral support (%s
   ProviderRegistry.register('claude', {
     capabilities: { supportsEphemeralSessions: supported },
     createExecutionBackend: () => backend,
+    displayName: 'Claude',
+    isEnabled: () => true,
+    chatUIConfig: { getModelOptions: () => [{ value: 'explicit-title-model', label: 'Title' }] },
   } as unknown as ProviderRegistration);
   const host = {
-    settings: {},
+    settings: { titleGenerationModel: 'explicit-title-model' },
     app: { vault: { adapter: { basePath: '/vault' } } },
     executionLifecycleRegistry: lifecycle,
   } as unknown as ProviderHost;

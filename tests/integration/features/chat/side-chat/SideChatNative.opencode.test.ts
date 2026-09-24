@@ -50,7 +50,7 @@ it('forks native disk history and resumes the side child independently after coo
     });
   });
   env.host.settings.providerConfigs.opencode = {
-    enabled: true, visibleModels: ['test/model'], environmentVariables: `OPENCODE_DB=${database}`,
+    enabled: true, visibleModels: ['test/model'], discoveredModels: [{ rawId: 'test/model', label: 'Test' }], environmentVariables: `OPENCODE_DB=${database}`,
   };
   let child: Awaited<ReturnType<typeof traceSideChild>> = null;
   try {

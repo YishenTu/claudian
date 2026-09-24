@@ -23,6 +23,8 @@
     "rewind": "Rembobiner"
   },
   "chat": {
+    "selectAvailableModel": "Sélectionnez un modèle disponible avant d’envoyer.",
+    "selectAvailableTitleModel": "Sélectionnez un modèle de titre disponible dans les paramètres de Claudian.",
     "rewind": {
       "confirmMessage": "Rembobiner jusqu'à ce point ? Les modifications de fichiers postérieures à ce message peuvent être écrasées ou supprimées. Cette action est irréversible.",
       "confirmMessageConflicts": "Rembobiner jusqu'à ce point ? {count} fichier(s) modifié(s) hors de l’agent seront écrasés :\n{files}",
@@ -592,7 +594,8 @@
     "titleModel": {
       "name": "Modèle de génération de titre",
       "desc": "Modèle utilisé pour générer automatiquement les titres de conversation.",
-      "auto": "Automatique (Haiku)"
+      "select": "Sélectionner un modèle",
+      "unavailableWarning": "La génération automatique des titres est suspendue. Sélectionnez un modèle disponible pour les titres."
     },
     "navMappings": {
       "name": "Mappages de navigation style Vim",
@@ -675,11 +678,6 @@
       "name": "Limites de contexte personnalisées",
       "desc": "Définissez les tailles de fenêtre de contexte pour vos modèles personnalisés. Laissez vide pour utiliser la valeur par défaut (200k tokens).",
       "invalid": "Format invalide. Utilisez : 256k, 1m ou nombre exact (1000-10000000)."
-    },
-    "customModels": {
-      "name": "Modèles personnalisés",
-      "desc": "Ajoutez des IDs de modèles Claude au sélecteur, un par ligne. Les remplacements de modèle par variables d'environnement remplacent toujours le sélecteur.",
-      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Activer l'extension Chrome",
@@ -818,11 +816,6 @@
       "safeMode": {
         "workspaceWrite": "Écriture dans l’espace de travail",
         "readOnly": "Lecture seule"
-      },
-      "customModels": {
-        "name": "Modèles personnalisés",
-        "desc": "Ajoutez des IDs de modèles Codex au sélecteur, un par ligne. `OPENAI_MODEL` reste prioritaire lorsqu’il est défini.",
-        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
       "responseStyle": {
         "name": "Style de réponse",

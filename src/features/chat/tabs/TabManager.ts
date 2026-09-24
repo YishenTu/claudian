@@ -56,6 +56,7 @@ function isTabManagerViewHost(value: unknown): value is TabManagerViewHost {
 type CreateTabOptions = {
   activate?: boolean;
   draftModel?: string;
+  providerId?: ProviderId | null;
   lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'cold'>;
 };
 
@@ -255,6 +256,7 @@ export class TabManager implements TabManagerInterface {
     const {
       activate = true,
       draftModel,
+      providerId,
       lifecycleState = 'cold',
     } = options;
 
@@ -271,6 +273,7 @@ export class TabManager implements TabManagerInterface {
         conversation: conversation ?? undefined,
         tabId: runtimeTabId,
         ...(typeof draftModel === 'string' ? { draftModel } : {}),
+        ...(providerId !== undefined ? { providerId } : {}),
         lifecycleState,
         getProviderCatalogConfig: runtime => this.getProviderCatalogConfig(runtime),
         isRuntimeLive: runtime => this.#isTabAlive(runtime),
@@ -1163,7 +1166,7 @@ export class TabManager implements TabManagerInterface {
         tabId: tab.id,
         conversationId: tab.conversationId,
         ...(tab.conversationId === null && tab.draftModel
-          ? { draftModel: tab.draftModel }
+          ? { draftModel: tab.draftModel, providerId: tab.providerId }
           : {}),
       });
       openTabIds.add(tab.id);
@@ -1193,6 +1196,7 @@ export class TabManager implements TabManagerInterface {
           ...(typeof tabState.draftModel === 'string'
             ? { draftModel: tabState.draftModel }
             : {}),
+          ...(tabState.providerId !== undefined ? { providerId: tabState.providerId } : {}),
         });
       } catch {
         // A malformed or unavailable shell must not prevent the remaining restore.
@@ -1534,7 +1538,7 @@ export class TabManager implements TabManagerInterface {
     const filter = new Set(ids);
     for (const tab of this.tabs.values()) {
       const providerId = getTabProviderId(tab, this.plugin);
-      if (!filter.has(providerId)) continue;
+      if (!providerId || !filter.has(providerId)) continue;
       this.#bumpTabCommandContextRevision(tab.id);
     }
   }
@@ -1547,7 +1551,7 @@ export class TabManager implements TabManagerInterface {
 
   *#filterTabsByProvider(
     providerIds: ProviderId | ProviderId[] | undefined,
-    resolve: (tab: AssembledTabRuntime) => ProviderId,
+    resolve: (tab: AssembledTabRuntime) => ProviderId | null,
   ): Iterable<AssembledTabRuntime> {
     const filter = providerIds
       ? new Set(Array.isArray(providerIds) ? providerIds : [providerIds])
@@ -1557,7 +1561,8 @@ export class TabManager implements TabManagerInterface {
       if (!this.#isTabAlive(tab)) {
         continue;
       }
-      if (filter && !filter.has(resolve(tab))) {
+      const providerId = resolve(tab);
+      if (!providerId || (filter && !filter.has(providerId))) {
         continue;
       }
       yield tab;
@@ -1802,6 +1807,7 @@ export class TabManager implements TabManagerInterface {
     if (!targetTab || !this.#isTabAlive(targetTab)) return { status: 'empty' };
 
     const providerId = getTabProviderId(targetTab, this.plugin);
+    if (!providerId) return { status: 'empty' };
     const discovery = await this.#getSdkCommandDiscovery(targetTab.id, signal);
     throwIfAborted(signal, 'Provider command discovery aborted');
     if (
@@ -1841,6 +1847,7 @@ export class TabManager implements TabManagerInterface {
     }
 
     const providerId = getTabProviderId(targetTab, this.plugin);
+    if (!providerId) return { result: { status: 'empty' } };
     if (!ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
       await ProviderWorkspaceRegistry.ensureInitialized(this.plugin.providerHost, providerId, 'command-picker');
       throwIfAborted(signal, 'Provider command discovery aborted');
@@ -1985,10 +1992,10 @@ export class TabManager implements TabManagerInterface {
 
   async #ensureTabWorkspaceServices(
     tab: AssembledTabRuntime,
-    providerId: ProviderId,
+    providerId: ProviderId | null,
     reason: string,
   ): Promise<boolean> {
-    if (!ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
+    if (providerId && !ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
       await ProviderWorkspaceRegistry.ensureInitialized(
         this.plugin.providerHost,
         providerId,
@@ -2012,7 +2019,7 @@ export class TabManager implements TabManagerInterface {
 
   async #prewarmProviderTab(tab: AssembledTabRuntime): Promise<void> {
     const providerId = tab.providerId;
-    if (tab.id !== this.activeTabId) {
+    if (!providerId || tab.id !== this.activeTabId) {
       return;
     }
     const context = await this.#buildProviderWarmupContext(tab, providerId);
@@ -2263,9 +2270,9 @@ export class TabManager implements TabManagerInterface {
         resolveTimeoutMs: () => {
           const tab = this.tabs.get(tabId);
           if (!tab || !this.#isTabAlive(tab)) return undefined;
-          const catalog = ProviderWorkspaceRegistry.getCommandCatalog(
-            getTabProviderId(tab, this.plugin),
-          );
+          const providerId = getTabProviderId(tab, this.plugin);
+          if (!providerId) return undefined;
+          const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
           return catalog
             ? resolveCommandDiscoveryTimeoutMs(catalog.getDropdownConfig())
             : undefined;
@@ -2280,6 +2287,7 @@ export class TabManager implements TabManagerInterface {
     if (this.destroyed || tab.lifecycleState === 'closing') return null;
 
     const providerId = getTabProviderId(tab, this.plugin);
+    if (!providerId) return null;
     const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
     if (!catalog) return null;
 

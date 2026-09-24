@@ -13,7 +13,7 @@ const mockCliResolverReset = jest.fn();
 const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
 const mockGetServices = jest.fn(() => ({
   cliResolver: { reset: mockCliResolverReset },
-  refreshModelCatalog: mockRefreshModelCatalog,
+  modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
 }));
 
 jest.mock('node:fs');
@@ -304,14 +304,6 @@ function findSetting(name: string): MockSetting {
   return setting;
 }
 
-function getPickerOptions(): any {
-  const call = mockRenderProviderModelPicker.mock.calls.at(-1);
-  if (!call) {
-    throw new Error('Model picker was not rendered');
-  }
-  return call[0];
-}
-
 describe('GrokSettingsTab', () => {
   const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;
   const mockedStatSync = fs.statSync as jest.MockedFunction<typeof fs.statSync>;
@@ -324,7 +316,7 @@ describe('GrokSettingsTab', () => {
     jest.clearAllMocks();
     mockGetServices.mockReturnValue({
       cliResolver: { reset: mockCliResolverReset },
-      refreshModelCatalog: mockRefreshModelCatalog,
+      modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
     });
     mockRefreshModelCatalog.mockResolvedValue({ changed: false });
     mockedExistsSync.mockReturnValue(true);
@@ -499,7 +491,7 @@ describe('GrokSettingsTab', () => {
     expect(mockedExistsSync).not.toHaveBeenCalled();
   });
 
-  it('clears the current catalog and resolver inside a provider execution transition', async () => {
+  it('retains the current catalog and resets the resolver inside a provider execution transition', async () => {
     const plugin = createPlugin();
     let transitionActive = false;
     plugin.runProviderExecutionTransition.mockImplementation(async (
@@ -523,7 +515,7 @@ describe('GrokSettingsTab', () => {
 
     await applyTextInput(findSetting('CLI path').textComponents[0], '/opt/grok');
 
-    expect(getGrokProviderSettings(plugin.settings).currentCatalog).toBeNull();
+    expect(getGrokProviderSettings(plugin.settings).currentCatalog?.models).toHaveLength(2);
     expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
       ['grok'],
@@ -552,65 +544,6 @@ describe('GrokSettingsTab', () => {
     }));
   });
 
-  it('delegates refresh and reports concise workspace diagnostics', async () => {
-    mockRefreshModelCatalog.mockResolvedValue({
-      changed: false,
-      diagnostics: 'Grok CLI is not logged in',
-    });
-    const plugin = createPlugin();
-    grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
-
-    expect(await getPickerOptions().loadCatalog(true)).toBe('failed');
-    expect(mockRefreshModelCatalog).toHaveBeenCalledTimes(1);
-    expect(notices).toEqual(['Grok model discovery failed: Grok CLI is not logged in']);
-  });
-
-  it('persists picker visibility and aliases for discovered raw model ids', async () => {
-    const plugin = createPlugin();
-    const context = createContext(plugin);
-    grokSettingsTabRenderer.render(createContainer(), context);
-    const picker = getPickerOptions();
-
-    expect(picker.getState()).toEqual(expect.objectContaining({
-      aliases: {},
-      discoveredCount: 2,
-      selectedIds: ['grok-4'],
-    }));
-    expect(picker.getState().models.map((model: { id: string }) => model.id)).toEqual([
-      'grok-4',
-      'kimi-coding',
-    ]);
-
-    await picker.onAliasesChange({ 'grok-4': 'Primary' });
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
-    context.notifyProviderModelOptionsChanged.mockClear();
-    await picker.onSelectedIdsChange(['grok-4', 'kimi-coding']);
-
-    expect(getGrokProviderSettings(plugin.settings).modelAliases).toEqual({ 'grok-4': 'Primary' });
-    expect(getGrokProviderSettings(plugin.settings).visibleModels).toEqual([
-      'grok-4',
-      'kimi-coding',
-    ]);
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('grok');
-  });
-
-  it('prunes reasoning metadata and preferences when a model is disabled', async () => {
-    const plugin = createPlugin();
-    grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
-
-    await getPickerOptions().onSelectedIdsChange(['kimi-coding']);
-
-    const settings = getGrokProviderSettings(plugin.settings);
-    expect(settings.preferredReasoningByModel).toEqual({});
-    expect(settings.currentCatalog?.models.find(model => model.rawId === 'grok-4'))
-      .toEqual(expect.objectContaining({
-        reasoningEfforts: [],
-        supportsReasoning: false,
-      }));
-    expect(settings.currentCatalog?.models.find(model => model.rawId === 'grok-4'))
-      .not.toHaveProperty('reasoningMetadataResolved');
-  });
-
   it('renders only native skills, hidden runtime commands, and the Grok environment scope', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
@@ -637,3 +570,5 @@ describe('GrokSettingsTab', () => {
     ]));
   });
 });
+
+jest.mock('@/shared/settings/ProviderModelsSection', () => ({ renderProviderModelsSection: jest.fn(() => ({ refresh: jest.fn() })) }));

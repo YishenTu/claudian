@@ -3,7 +3,6 @@ import { applyTextInput } from '@test/helpers/settingsControls';
 import * as fs from 'fs';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
-import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 import { createOpencodeSettingsTabRenderer } from '@/providers/opencode/ui/OpencodeSettingsTab';
 
 const mockGetHostnameKey = jest.fn(() => 'host-a');
@@ -81,6 +80,7 @@ function createSettingsRenderer() {
     cliResolver: {
       reset: mockCliResolverReset,
     },
+    modelCatalog: { markStale: jest.fn() } as any,
     metadataService: {
       loadCatalog: mockMetadataLoadCatalog,
       warmModelMetadata: mockMetadataWarmModel,
@@ -379,14 +379,6 @@ function findSetting(name: string): MockSettingRecord {
   return setting;
 }
 
-function findElement(tag: string, cls: string): any {
-  const element = createdDomElements.find((candidate) => candidate.tag === tag && candidate.cls === cls);
-  if (!element) {
-    throw new Error(`Element not found: ${tag}.${cls}`);
-  }
-  return element;
-}
-
 describe('OpencodeSettingsTab', () => {
   const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;
   const mockedStatSync = fs.statSync as jest.MockedFunction<typeof fs.statSync>;
@@ -606,175 +598,6 @@ describe('OpencodeSettingsTab', () => {
       placeholder: 'OPENCODE_DB=/path/to/opencode.db',
     }));
   });
-
-  it('loads the OpenCode model catalog when the model browser is expanded', async () => {
-    const plugin = createPlugin({
-      providerConfigs: {
-        opencode: {
-          availableModes: [],
-          cliPath: '',
-          cliPathsByHost: {},
-          discoveredModels: [],
-          enabled: true,
-          environmentVariables: '',
-          modelAliases: {},
-          preferredThinkingByModel: {},
-          selectedMode: '',
-          visibleModels: ['deepseek/deepseek-v4-pro'],
-        },
-      },
-    });
-    mockMetadataLoadCatalog.mockImplementation(async () => {
-      plugin.settings.providerConfigs.opencode.discoveredModels = [
-        { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
-      ];
-      return true;
-    });
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-
-    const catalogEl = findElement('details', 'claudian-provider-model-picker-catalog');
-    catalogEl.open = true;
-    await catalogEl.dispatchMockEvent('toggle');
-    await flushPromises();
-
-    expect(mockMetadataLoadCatalog).toHaveBeenCalledTimes(1);
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
-  });
-
-  it('loads the OpenCode model catalog immediately when a fresh picker starts expanded', async () => {
-    const plugin = createPlugin({
-      providerConfigs: {
-        opencode: {
-          availableModes: [],
-          cliPath: '',
-          cliPathsByHost: {},
-          discoveredModels: [],
-          enabled: true,
-          environmentVariables: '',
-          modelAliases: {},
-          preferredThinkingByModel: {},
-          selectedMode: '',
-          visibleModels: [],
-        },
-      },
-    });
-    mockMetadataLoadCatalog.mockImplementation(async () => {
-      plugin.settings.providerConfigs.opencode.discoveredModels = [
-        { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
-      ];
-      return true;
-    });
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(mockMetadataLoadCatalog).toHaveBeenCalledTimes(1);
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
-  });
-
-  it('loads the OpenCode catalog when saved models start with the browser collapsed', async () => {
-    const plugin = createPlugin({
-      providerConfigs: {
-        opencode: {
-          availableModes: [],
-          cliPath: '',
-          cliPathsByHost: {},
-          discoveredModels: [],
-          enabled: true,
-          environmentVariables: '',
-          modelAliases: {},
-          preferredThinkingByModel: {},
-          selectedMode: '',
-          visibleModels: ['deepseek/deepseek-v4-pro'],
-        },
-      },
-    });
-    mockMetadataLoadCatalog.mockImplementation(async () => {
-      plugin.settings.providerConfigs.opencode.discoveredModels = [
-        { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
-      ];
-      return true;
-    });
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(mockMetadataLoadCatalog).toHaveBeenCalledTimes(1);
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(1);
-  });
-
-  it('warms and persists thinking metadata when a model is added to the visible list', async () => {
-    mockMetadataWarmModel.mockResolvedValue(true);
-    const plugin = createPlugin({
-      providerConfigs: {
-        opencode: {
-          availableModes: [],
-          cliPath: '',
-          cliPathsByHost: {},
-          discoveredModels: [
-            { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
-          ],
-          enabled: true,
-          environmentVariables: '',
-          modelAliases: {},
-          preferredThinkingByModel: {},
-          selectedMode: '',
-          visibleModels: [],
-        },
-      },
-    });
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-
-    const checkboxEl = createdDomElements.find((element) => element.type === 'checkbox');
-    if (!checkboxEl) {
-      throw new Error('Expected model checkbox');
-    }
-
-    checkboxEl.checked = true;
-    await checkboxEl.dispatchMockEvent('change');
-    await flushPromises();
-
-    expect(plugin.settings.providerConfigs.opencode.visibleModels).toEqual([
-      'deepseek/deepseek-v4-pro',
-    ]);
-    expect(mockMetadataWarmModel).toHaveBeenCalledWith(
-      'opencode:deepseek/deepseek-v4-pro',
-    );
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('opencode');
-  });
-
-  it('persists aliases through the shared model picker', async () => {
-    const plugin = createPlugin({
-      providerConfigs: {
-        opencode: {
-          discoveredModels: [
-            { label: 'DeepSeek/DeepSeek V4 Pro', rawId: 'deepseek/deepseek-v4-pro' },
-          ],
-          modelAliases: {},
-          visibleModels: ['deepseek/deepseek-v4-pro'],
-        },
-      },
-    });
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-
-    const aliasInput = findElement('input', 'claudian-provider-model-picker-selected-alias');
-    aliasInput.value = 'V4 Pro';
-    await aliasInput.dispatchMockEvent('blur');
-    await flushPromises();
-
-    expect(getOpencodeProviderSettings(plugin.settings).modelAliases).toEqual({
-      'deepseek/deepseek-v4-pro': 'V4 Pro',
-    });
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('opencode');
-  });
 });
+
+jest.mock('@/shared/settings/ProviderModelsSection', () => ({ renderProviderModelsSection: jest.fn(() => ({ refresh: jest.fn() })) }));

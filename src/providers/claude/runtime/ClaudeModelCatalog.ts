@@ -1,6 +1,6 @@
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ProviderModelCatalogRefreshResult } from '../../../core/providers/types';
-import { findClaudeModelOption,getClaudeModelCatalog, getClaudeVisibleModelIds } from '../modelOptions';
+import { findClaudeModelOption, getClaudeModelCatalog, getClaudeVisibleModelIds } from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { probeClaudeModels } from './probeClaudeModels';
@@ -12,30 +12,34 @@ export class ClaudeModelCatalog {
   private controller: AbortController | null = null;
   private flight: Promise<ProviderModelCatalogRefreshResult> | null = null;
   private disposed = false;
-  // The settings tab has one active renderer. Replace its observer on each render.
-  onChange: (() => void) | null = null;
+  private generation = 0;
+  private readonly pending = new Set<Promise<ProviderModelCatalogRefreshResult>>();
 
   constructor(private readonly host: ProviderHost, private readonly probe = probeClaudeModels) {}
 
-  async refresh(): Promise<ProviderModelCatalogRefreshResult> {
-    if (this.disposed || !getClaudeProviderSettings(this.host.settings).enabled) return { changed: false };
-    if (this.flight) return this.flight;
+  async refresh(signal?: AbortSignal): Promise<ProviderModelCatalogRefreshResult> {
+    if (signal?.aborted || this.disposed || !getClaudeProviderSettings(this.host.settings).enabled) return { changed: false };
+    if (this.flight) return this.waitForRefresh(this.flight, this.generation, signal);
     const controller = new AbortController();
     this.controller = controller;
-    const flight = this.discover(controller).finally(() => {
+    const generation = ++this.generation;
+    const flight = this.discover(controller, generation).finally(() => {
+      this.pending.delete(flight);
       if (this.flight === flight) {
         this.flight = null;
         this.controller = null;
       }
     });
     this.flight = flight;
-    return flight;
+    this.pending.add(flight);
+    return this.waitForRefresh(flight, generation, signal);
   }
 
   private async discover(
     controller: AbortController,
+    generation: number,
   ): Promise<ProviderModelCatalogRefreshResult> {
-    const current = () => !controller.signal.aborted && !this.disposed
+    const current = () => !controller.signal.aborted && !this.disposed && generation === this.generation
       && getClaudeProviderSettings(this.host.settings).enabled;
     try {
       const models = await this.probe(this.host, controller.signal);
@@ -56,7 +60,7 @@ export class ClaudeModelCatalog {
         return true;
       });
       if (!current()) return { changed: false };
-      this.publish();
+      this.host.notifyProviderChatOptionsChanged('claude');
       return { changed: true, persistedSettingsChanged: true };
     } catch {
       if (!current()) return { changed: false };
@@ -64,30 +68,37 @@ export class ClaudeModelCatalog {
     }
   }
 
-  private publish(): void {
-    this.onChange?.();
-    this.host.notifyProviderChatOptionsChanged('claude');
+  private async waitForRefresh(
+    flight: Promise<ProviderModelCatalogRefreshResult>,
+    generation: number,
+    signal?: AbortSignal,
+  ): Promise<ProviderModelCatalogRefreshResult> {
+    const cancel = () => {
+      if (generation === this.generation) this.cancelCurrent();
+    };
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+    try {
+      return await flight;
+    } finally {
+      signal?.removeEventListener('abort', cancel);
+    }
+  }
+
+  private cancelCurrent(): void {
+    this.generation += 1;
+    this.controller?.abort();
+    this.controller = null;
+    this.flight = null;
   }
 
   async cancel(): Promise<void> {
-    this.controller?.abort();
-    await this.flight;
-  }
-
-  async invalidate(): Promise<ProviderModelCatalogRefreshResult> {
-    await this.cancel();
-    if (this.disposed) return { changed: false };
-    await this.host.mutateSettingsConditionally(settings => {
-      updateClaudeProviderSettings(settings, { discoveredModels: [] });
-      return true;
-    });
-    this.publish();
-    return { changed: true, persistedSettingsChanged: true };
+    this.cancelCurrent();
+    await Promise.allSettled(this.pending);
   }
 
   async dispose(): Promise<void> {
     this.disposed = true;
-    this.onChange = null;
     await this.cancel();
   }
 }

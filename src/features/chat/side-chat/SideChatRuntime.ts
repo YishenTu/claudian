@@ -371,6 +371,7 @@ export class SideChatRuntime {
     const firstSentence = initialMessage.content.split(/[.!?\n]/)[0].trim();
     this.#title = (firstSentence.slice(0, 50) + (firstSentence.length > 50 ? '...' : '')) || null;
     this.#refreshStatus();
+    if (!ProviderRegistry.resolveTitleGenerationSelection(this.deps.plugin.settings)) return;
     try {
       // Own a separate routed service so discarding Side cannot cancel main titles.
       const service = ProviderRegistry.createTitleGenerationService(this.deps.plugin.providerHost);

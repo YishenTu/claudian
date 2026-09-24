@@ -42,6 +42,7 @@ export interface TabRuntimeFactoryOptions {
   conversation?: Conversation;
   tabId?: TabId;
   draftModel?: string | null;
+  providerId?: ProviderId | null;
   lifecycleState?: Extract<
     AssembledTabRuntime['lifecycleState'],
     'provisional' | 'cold'

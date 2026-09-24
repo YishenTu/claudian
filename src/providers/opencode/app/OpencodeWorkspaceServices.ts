@@ -9,6 +9,7 @@ import type {
 import { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import { OpencodeCliResolver } from '../runtime/OpencodeCliResolver';
+import { createOpencodeModels } from '../runtime/OpencodeModels';
 import { createOpencodeSettingsTabRenderer } from '../ui/OpencodeSettingsTab';
 import { OpencodeCommandLoader } from './OpencodeCommandLoader';
 
@@ -29,15 +30,18 @@ export async function createOpencodeWorkspaceServices(
   const commandCatalog = new OpencodeCommandCatalog();
   const metadataService = new OpencodeMetadataService(plugin, { commandCatalog });
 
+  const modelCatalog = createOpencodeModels(plugin, metadataService);
+  const unregisterModels = plugin.executionLifecycleRegistry.registerTransitionHook('opencode', { beforeTransition: () => modelCatalog.beginTransition(), afterTransition: () => modelCatalog.endTransition() });
   const cliResolver = new OpencodeCliResolver();
   return {
     commandCatalog,
+    modelCatalog,
     cliResolver,
     metadataService,
     commandLoader: new OpencodeCommandLoader(metadataService),
-    settingsTabRenderer: createOpencodeSettingsTabRenderer({ cliResolver, metadataService }),
+    settingsTabRenderer: createOpencodeSettingsTabRenderer({ cliResolver, metadataService, modelCatalog }),
     tabWarmupPolicy: opencodeTabWarmupPolicy,
-    dispose: async () => metadataService.dispose(),
+    dispose: async () => { unregisterModels(); await Promise.all([metadataService.dispose(), modelCatalog.dispose()]); },
   };
 }
 

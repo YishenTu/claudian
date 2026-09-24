@@ -56,14 +56,15 @@ describe('ClaudeWorkspaceServices', () => {
     const services = await createClaudeWorkspaceServices(plugin, createAdapter(), { modelProbe });
     const ready = plugin.app.workspace.onLayoutReady as jest.Mock;
     expect(modelProbe).not.toHaveBeenCalled();
-    await services.refreshModelCatalog?.({ providerTransitionOwner: true });
+    await registry.runTransition(['claude'], async () => {});
+    expect(services.modelCatalog!.getSnapshot().stale).toBe(true);
     expect(ready).not.toHaveBeenCalled();
     expect(modelProbe).not.toHaveBeenCalled();
     await services.dispose();
     await registry.dispose();
   });
 
-  it.each([false, true])('preserves panel discovery across a prompt-only transition (start during transition: %s)', async startDuring => {
+  it.each([false, true])('fences panel discovery across a runtime transition (start during transition: %s)', async startDuring => {
     const registry = new ProviderExecutionLifecycleRegistry();
     const plugin = createPlugin(registry);
     plugin.settings.providerConfigs = { claude: { enabled: true, visibleModels: ['sonnet'] } };
@@ -92,10 +93,10 @@ describe('ClaudeWorkspaceServices', () => {
       plugin.settings.userName = 'Updated name';
     });
     await probeStarted;
-    expect(signal.aborted).toBe(false);
+    expect(signal.aborted).toBe(!startDuring);
     release();
     await discovery;
-    expect(getClaudeProviderSettings(plugin.settings).discoveredModels).toEqual(rows);
+    expect(getClaudeProviderSettings(plugin.settings).discoveredModels).toEqual(startDuring ? rows : []);
     expect(modelProbe).toHaveBeenCalledTimes(1);
     await services.dispose();
     await registry.dispose();

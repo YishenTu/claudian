@@ -1,20 +1,10 @@
-/**
- * Stale-while-revalidate coordinator for the Codex model catalog.
- *
- * The coordinator owns Codex model discovery lifecycle:
- *   - Load cached models immediately.
- *   - Complete plugin activation without launching Codex.
- *   - Schedule a background refresh after layout-ready.
- *   - Ensure freshness when the model picker opens.
- *   - Preserve cached models if refresh fails.
- */
+/** Provider-owned discovery and generation-fenced catalog publication. */
 
 import { StartupProfiler } from '../../../core/performance/StartupProfiler';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
-  ProviderModelCatalogRefreshResult,
-  ProviderTransitionOwnerContext,
+  ProviderTransitionOwnerContext
 } from '../../../core/providers/types';
 import { CodexMetadataTransitionGate } from '../metadata/CodexMetadataTransitionGate';
 import type { CodexDiscoveredModel } from '../models';
@@ -40,12 +30,6 @@ export interface CodexCatalogResult {
   diagnostics?: string;
 }
 
-export interface CodexCatalogEnsureResult extends CodexCatalogResult {
-  backgroundRefresh?: Promise<CodexCatalogResult>;
-}
-
-const CATALOG_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
 function sameCatalog(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -60,8 +44,8 @@ export class CodexModelCatalogCoordinator {
   private abortController: AbortController | null = null;
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
-  private environmentCacheInvalidated = false;
   private refreshGeneration = 0;
+  private readonly pendingRefreshes = new Set<Promise<CodexCatalogResult>>();
 
   constructor(
     private readonly plugin: ProviderHost,
@@ -77,107 +61,20 @@ export class CodexModelCatalogCoordinator {
     return this.state;
   }
 
-  async getStatus(
-    context?: ProviderTransitionOwnerContext,
-  ): Promise<'missing' | 'stale' | 'fresh'> {
+  async refresh(context?: ProviderTransitionOwnerContext, signal?: AbortSignal): Promise<CodexCatalogResult> {
     if (
       context?.providerTransitionOwner !== true
       && this.transitionGate.isUnavailable()
-      && !await this.transitionGate.waitUntilAvailable()
-    ) {
-      return 'missing';
-    }
-    const generation = this.refreshGeneration;
-    const settings = getCodexProviderSettings(this.plugin.settings);
-    if (
-      this.environmentCacheInvalidated
-      || settings.discoveredModels.length === 0
-      || !settings.catalogFingerprint
-    ) {
-      return 'missing';
-    }
-
-    const currentFingerprint = await computeCodexCatalogFingerprint(this.plugin, context);
-    if (
-      this.environmentCacheInvalidated
-      || generation !== this.refreshGeneration
-    ) {
-      return 'missing';
-    }
-    if (currentFingerprint !== settings.catalogFingerprint) {
-      return 'stale';
-    }
-
-    const ageMs = Date.now() - settings.catalogTimestamp;
-    if (ageMs > CATALOG_TTL_MS) {
-      return 'stale';
-    }
-
-    return 'fresh';
-  }
-
-  async ensureFresh(
-    _reason: string,
-    options: { force?: boolean } = {},
-  ): Promise<CodexCatalogEnsureResult> {
-    if (
-      this.transitionGate.isUnavailable()
-      && !await this.transitionGate.waitUntilAvailable()
+      && !await this.transitionGate.waitUntilAvailable(signal)
     ) {
       return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
     }
-    if (this.disposed) {
-      return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
-    }
-    const settings = getCodexProviderSettings(this.plugin.settings);
-    if (!settings.enabled) {
-      return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
-    }
-
-    if (options.force) {
-      const result = await this.refresh();
-      return { ...result, backgroundRefresh: undefined };
-    }
-
-    let status: 'missing' | 'stale' | 'fresh';
-    try {
-      status = await this.getStatus();
-    } catch {
-      status = this.getCachedCatalog().length > 0 ? 'stale' : 'missing';
-    }
-    if (status === 'fresh') {
-      return { kind: 'completed', models: this.getCachedCatalog(), refreshed: false };
-    }
-
-    if (status === 'missing') {
-      const result = await this.refresh();
-      return { ...result, backgroundRefresh: undefined };
-    }
-
-    // Stale: return cached immediately and refresh in the background.
-    const backgroundRefresh = this.refresh();
-    return {
-      kind: 'completed',
-      models: this.getCachedCatalog(),
-      refreshed: false,
-      backgroundRefresh,
-    };
-  }
-
-  async refresh(context?: ProviderTransitionOwnerContext): Promise<CodexCatalogResult> {
-    if (
-      context?.providerTransitionOwner !== true
-      && this.transitionGate.isUnavailable()
-      && !await this.transitionGate.waitUntilAvailable()
-    ) {
-      return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
-    }
-    if (this.disposed) {
+    if (this.disposed || signal?.aborted || !getCodexProviderSettings(this.plugin.settings).enabled) {
       return { kind: 'skipped', models: this.getCachedCatalog(), refreshed: false };
     }
     const transitionOwner = context?.providerTransitionOwner === true;
     if (this.inFlightRefresh && (!transitionOwner || this.inFlightRefresh.transitionOwner)) {
-      return this.inFlightRefresh.promise;
+      return this.#waitForRefresh(this.inFlightRefresh, signal);
     }
 
     if (this.inFlightRefresh) {
@@ -190,55 +87,39 @@ export class CodexModelCatalogCoordinator {
       transitionOwner,
     };
     this.inFlightRefresh = flight;
+    this.pendingRefreshes.add(flight.promise);
     try {
-      return await flight.promise;
+      return await this.#waitForRefresh(flight, signal);
     } finally {
+      this.pendingRefreshes.delete(flight.promise);
       if (this.inFlightRefresh === flight) {
         this.inFlightRefresh = null;
       }
     }
   }
 
-  async refreshModelCatalog(
-    context?: ProviderTransitionOwnerContext,
-  ): Promise<ProviderModelCatalogRefreshResult> {
-    let result = await this.refresh(context);
-    let changed = result.kind === 'completed' && result.refreshed;
-    if (result.retryable && !this.disposed) {
-      result = await this.refresh(context);
-      changed = changed || (result.kind === 'completed' && result.refreshed);
+  async #waitForRefresh(
+    flight: { generation: number; promise: Promise<CodexCatalogResult> },
+    signal?: AbortSignal,
+  ): Promise<CodexCatalogResult> {
+    const cancel = () => {
+      if (flight.generation === this.refreshGeneration) this.cancel();
+    };
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+    try {
+      return await flight.promise;
+    } finally {
+      signal?.removeEventListener('abort', cancel);
     }
-    if (
-      result.kind === 'completed'
-      && !result.diagnostics
-      && result.models.length > 0
-      && !this.disposed
-    ) {
-      let status: 'missing' | 'stale' | 'fresh' = 'fresh';
-      try {
-        status = await this.getStatus(context);
-      } catch {
-        // Keep the completed refresh result when fingerprint verification is unavailable.
-      }
-      if (status !== 'fresh') {
-        result = await this.refresh(context);
-        changed = changed || (result.kind === 'completed' && result.refreshed);
-      }
-    }
-    if (result.kind === 'skipped') {
-      return { changed };
-    }
-    if (result.diagnostics) {
-      return { changed: false, diagnostics: result.diagnostics };
-    }
-    if (result.models.length === 0) {
-      return { changed: false, diagnostics: 'Codex app-server returned no visible models' };
-    }
-    return { changed };
   }
 
   cancel(): void {
+    this.refreshGeneration += 1;
     this.abortController?.abort();
+    this.abortController = null;
+    this.inFlightRefresh = null;
+    this.state = 'idle';
   }
 
   beginEnvironmentTransition(): void {
@@ -250,16 +131,8 @@ export class CodexModelCatalogCoordinator {
   }
 
   async quiesceForEnvironmentChange(): Promise<void> {
-    const flight = this.inFlightRefresh;
-    this.environmentCacheInvalidated = true;
-    this.refreshGeneration += 1;
-    this.abortController?.abort();
-    if (flight) {
-      await flight.promise.catch(() => undefined);
-      if (this.inFlightRefresh === flight) {
-        this.inFlightRefresh = null;
-      }
-    }
+    this.cancel();
+    await Promise.allSettled(this.pendingRefreshes);
     this.state = 'idle';
   }
 
@@ -308,7 +181,7 @@ export class CodexModelCatalogCoordinator {
         return { kind: 'skipped', models: cached, refreshed: false };
       }
 
-      if (discoveryResult.diagnostics || discoveryResult.models.length === 0) {
+      if (discoveryResult.diagnostics) {
         this.state = 'failed';
         return {
           kind: 'completed',
@@ -329,6 +202,7 @@ export class CodexModelCatalogCoordinator {
         generation,
         context,
       );
+      if (!this.#isCurrentRefresh(generation)) return this.#supersededResult();
       if (!persistedResult.accepted) {
         if (!this.#isCurrentRefresh(generation)) {
           return this.#supersededResult();
@@ -342,7 +216,6 @@ export class CodexModelCatalogCoordinator {
         };
       }
       this.state = 'ready';
-      this.environmentCacheInvalidated = false;
       if (persistedResult.changed) {
         this.plugin.notifyProviderChatOptionsChanged('codex');
       }

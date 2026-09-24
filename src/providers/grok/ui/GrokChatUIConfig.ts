@@ -45,14 +45,12 @@ export const grokChatUIConfig: ProviderChatUIConfig = {
 
   getDefaultModel(settings): string | null {
     const grokSettings = getGrokProviderSettings(settings);
-    const firstVisibleModelId = getOrderedGrokVisibleModelIds(grokSettings)[0];
+    const firstVisibleModelId = getOrderedGrokVisibleModelIds(grokSettings).find(id => grokSettings.currentCatalog?.models.some(model => model.rawId === id));
     return firstVisibleModelId ? encodeGrokModelId(firstVisibleModelId) : null;
   },
 
   ownsModel(model, settings): boolean {
-    return isGrokModelSelectionId(model)
-      && this.getModelOptions(settings)
-        .some(option => option.value === model.trim());
+    return isGrokModelSelectionId(model);
   },
 
   isAdaptiveReasoningModel(model, settings): boolean {
@@ -194,6 +192,7 @@ function pushModelOption(
   }
   seen.add(value);
   const model = catalogById.get(rawId);
+  if (!model) return;
   options.push({
     value,
     label: aliases[rawId] ?? model?.displayName ?? rawId,

@@ -1,5 +1,6 @@
 import type { Conversation } from '../types';
 import type { StoredChatModelSelection } from '../types/settings';
+import { findAvailableModelOption } from './models/modelOptions';
 import { toProviderRuntimeModelId } from './modelSelection';
 import { ProviderRegistry } from './ProviderRegistry';
 import { ProviderSettingsCoordinator } from './ProviderSettingsCoordinator';
@@ -39,28 +40,7 @@ export function findProviderModelOption(
   model: string,
   settings: Record<string, unknown>,
 ): string | null {
-  const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
-  const options = uiConfig.getModelOptions(settings);
-  const findOption = (candidateModel: string): string | null => {
-    const runtimeModel = toProviderRuntimeModelId(providerId, candidateModel);
-    const option = options.find(candidate =>
-      candidate.value === candidateModel
-      || toProviderRuntimeModelId(providerId, candidate.value) === runtimeModel
-    );
-    return option?.value ?? null;
-  };
-  const exactOption = findOption(model);
-  if (exactOption) {
-    return exactOption;
-  }
-
-  const normalizedModel = trimModel(uiConfig.normalizeAvailableModelSelection?.(model, {
-    ...settings,
-    model,
-  }));
-  return normalizedModel && normalizedModel !== model
-    ? findOption(normalizedModel)
-    : null;
+  return findAvailableModelOption(providerId, ProviderRegistry.getChatUIConfig(providerId), model, settings);
 }
 
 export function resolveProviderDefaultModel(
@@ -122,18 +102,7 @@ export function resolveNewConversationModel(
       };
     }
 
-    if (ProviderRegistry.getChatUIConfig(lastSelected.providerId).preserveUnavailableModelSelection) {
-      return { ...lastSelected, source: 'last-selected' };
-    }
-
-    const providerDefault = resolveProviderDefaultModel(lastSelected.providerId, settings);
-    if (providerDefault) {
-      return {
-        providerId: lastSelected.providerId,
-        model: providerDefault,
-        source: 'provider-default',
-      };
-    }
+    return { ...lastSelected, source: 'last-selected' };
   }
 
   for (const providerId of ProviderRegistry.getBlankTabProviderIds(settings)) {
@@ -216,21 +185,7 @@ export function resolveConversationModel(
   }
 
   if (rawSelectedModel) {
-    if (modelOptions.length === 0 || ProviderRegistry.getChatUIConfig(providerId).preserveUnavailableModelSelection) {
-      return {
-        model: rawSelectedModel,
-        source: 'selected',
-        shouldPersist: false,
-      };
-    }
-
-    const providerDefault = resolveProviderDefaultModel(providerId, settings);
-    return {
-      model: rawSelectedModel,
-      ...(providerDefault ? { modelToPersist: providerDefault } : {}),
-      source: 'selected',
-      shouldPersist: Boolean(providerDefault && providerDefault !== rawSelectedModel),
-    };
+    return { model: rawSelectedModel, source: 'selected', shouldPersist: false };
   }
 
   const rawUsageModel = trimModel(conversation?.usage?.model);
@@ -280,9 +235,7 @@ export function getProviderSettingsSnapshotWithModel<T extends Record<string, un
     providerId,
   );
   const normalizedModel = normalizeProviderModelSelection(providerId, snapshot, model)
-    ?? (ProviderRegistry.getChatUIConfig(providerId).preserveUnavailableModelSelection
-      ? trimModel(model)
-      : null);
+    ?? trimModel(model);
   if (normalizedModel) {
     ProviderSettingsCoordinator.projectModelSelection(snapshot, providerId, normalizedModel);
   }

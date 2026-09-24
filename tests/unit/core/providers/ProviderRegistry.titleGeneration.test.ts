@@ -13,11 +13,12 @@ function createReadyService() {
   ProviderWorkspaceRegistry.setServices('claude', {});
   ProviderRegistry.register('claude', {
     isEnabled: () => true,
+    chatUIConfig: { getModelOptions: () => [{ value: 'test-title', label: 'Test title' }] },
     capabilities: { supportsEphemeralSessions: true },
     createExecutionBackend: () => backend,
   } as unknown as ProviderRegistration);
   const host = {
-    settings: {},
+    settings: { titleGenerationModel: 'test-title' },
     app: { vault: { adapter: { basePath: '/vault' } } },
     executionLifecycleRegistry: lifecycle,
   } as unknown as ProviderHost;
@@ -40,11 +41,12 @@ it('does not submit a title request after cancellation during provider initializ
   });
   ProviderRegistry.register('claude', {
     isEnabled: () => true,
+    chatUIConfig: { getModelOptions: () => [{ value: 'test-title', label: 'Test title' }] },
     capabilities: { supportsEphemeralSessions: true },
     createExecutionBackend: () => backend,
   } as unknown as ProviderRegistration);
   const host = {
-    settings: {},
+    settings: { titleGenerationModel: 'test-title' },
     app: { vault: { adapter: { basePath: '/vault' } } },
     storage: { getAdapter: () => ({}) },
     executionLifecycleRegistry: lifecycle,

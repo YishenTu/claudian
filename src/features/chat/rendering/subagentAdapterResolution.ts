@@ -6,6 +6,7 @@ export function resolveSubagentAdapter(
   activeProviderId: ProviderId,
   toolName?: string,
 ): ProviderSubagentAdapter | null {
+  if (!activeProviderId) return null;
   const activeAdapter = ProviderRegistry.getSubagentAdapter(activeProviderId);
   if (!activeAdapter || !toolName) return activeAdapter;
   return adapterOwnsTool(activeAdapter, toolName) ? activeAdapter : null;

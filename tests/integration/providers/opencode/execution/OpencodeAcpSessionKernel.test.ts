@@ -3,8 +3,9 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-jest.mock('cross-spawn', () => jest.fn());
 import spawn from 'cross-spawn';
+
+jest.mock('cross-spawn', () => jest.fn());
 
 import type { ProviderExecutionEvent } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
@@ -51,7 +52,7 @@ it.each([
     return proc;
   });
   const host = {
-    settings: { providerConfigs: { opencode: { enabled: true } } },
+    settings: { model: 'opencode:test/model', providerConfigs: { opencode: { enabled: true, visibleModels: ['test/model'], discoveredModels: [{ rawId: 'test/model', label: 'Test' }] } } },
     getResolvedProviderCliPath: async () => '/test/opencode',
     mutateSettings: async () => undefined,
     notifyProviderChatOptionsChanged: () => undefined,
