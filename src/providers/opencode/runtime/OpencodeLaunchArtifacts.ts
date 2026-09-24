@@ -238,7 +238,7 @@ export function buildOpencodeManagedConfig(
 
 const pendingFileWrites = new Map<string, Promise<void>>();
 
-async function writeIfChanged(filePath: string, content: string, onlyIfMissing = false): Promise<void> {
+export async function writeIfChanged(filePath: string, content: string, onlyIfMissing = false): Promise<void> {
   // An exclusive copy is portable but not atomic. Other launches in this plugin
   // must wait until the file is complete before checking or updating it.
   const previous = pendingFileWrites.get(filePath) ?? Promise.resolve();
@@ -284,7 +284,7 @@ async function writeFileIfChanged(filePath: string, content: string, onlyIfMissi
   }
 }
 
-function resolveOpencodeConfigPath(configuredPath: string | undefined, workspaceRoot: string): string | undefined {
+export function resolveOpencodeConfigPath(configuredPath: string | undefined, workspaceRoot: string): string | undefined {
   const trimmedPath = configuredPath?.trim();
   if (!trimmedPath) return undefined;
   const expandedPath = expandHomePath(trimmedPath);
@@ -303,7 +303,7 @@ async function readOpencodeConfig(resolvedPath: string | undefined, environment:
   return rawConfig;
 }
 
-async function parseOpencodeConfig(
+export async function parseOpencodeConfig(
   content: string,
   source: string,
   environment: NodeJS.ProcessEnv,

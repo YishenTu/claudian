@@ -22,6 +22,11 @@ const server = http.createServer(async (req, res) => {
   const route = new URL(req.url, 'http://localhost').pathname;
   res.setHeader('Content-Type', 'application/json');
   if (route === '/api/event') { feed = res; res.setHeader('Content-Type', 'text/event-stream'); emit('server.connected', {}); return; }
+  if (route === '/api/agent') {
+    const base = JSON.parse(require('node:fs').readFileSync(process.env.OPENCODE_CONFIG, 'utf8'));
+    const inline = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}');
+    res.end(JSON.stringify({ data: [...Object.entries(inline.agent || {}).map(([id, agent]) => ({ id, system: agent.prompt })), ...Object.entries(base.agents || {}).map(([id, agent]) => ({ id, ...agent }))] })); return;
+  }
   if (route === '/api/model') { res.end(JSON.stringify({ data: [{ id: 'chat', providerID: 'deepseek', name: 'Chat', enabled: true, variants: [], limit: { context: 1000 } }] })); return; }
   if (route === '/api/command') { res.end(JSON.stringify({ data: [{ name: 'review', description: 'Review' }] })); return; }
   if (route === '/api/form') {

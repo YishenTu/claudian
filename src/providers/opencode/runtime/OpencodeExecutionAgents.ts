@@ -53,7 +53,7 @@ export function buildAgentConfig(
 
 
 export function getSystemPromptSettings(
-  plugin: ProviderHost,
+  plugin: Pick<ProviderHost, 'settings'>,
   vaultPath: string,
 ): SystemPromptSettings {
   return {

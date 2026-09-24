@@ -2,10 +2,13 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { Conversation } from '@/core/types';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
+import { opencodeProviderRegistration } from '@/providers/opencode/registration';
 
-it('loads all v2 history pages, recovers the current model, and forks in the trusted native database over HTTP', async () => {
+it.each(['standalone', 'registered before workspace initialization'])('loads V2 history, recovers its model, and forks using %s history', async kind => {
+  expect(ProviderWorkspaceRegistry.getServices('opencode')).toBeNull();
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-http-history-')));
   const cliPath = path.join(root, 'opencode.cjs');
   const databasePath = path.join(root, 'data', 'opencode', 'native.db');
@@ -29,13 +32,13 @@ const server = http.createServer((req, res) => {
 server.listen(0, '127.0.0.1', () => console.log(JSON.stringify({ url: 'http://127.0.0.1:' + server.address().port })));
 process.stdin.resume(); process.stdin.on('end', () => server.close());
 `, { mode: 0o700 });
-  const history = new OpencodeConversationHistoryService();
+  const history = kind === 'standalone' ? new OpencodeConversationHistoryService() : opencodeProviderRegistration.historyService!;
   const conversation = { id: 'local', sessionId: 'ses_parent', messages: [], providerState: { nativeVersion: 2, databasePath } } as unknown as Conversation;
   const context = { settings: { providerConfigs: { opencode: { cliPath } } }, vaultPath: root, environment: { ...process.env, XDG_DATA_HOME: path.join(root, 'data'), OPENCODE_DB: path.join(root, 'untrusted.db') } };
   try {
+    await expect(history.recoverConversationModelSelection!(conversation, root, context)).resolves.toBe('opencode:deepseek/chat');
     await history.hydrateConversationHistory(conversation, root, context);
     expect(conversation.messages.map(message => message.content)).toEqual(['Native question', 'Native answer']);
-    await expect(history.recoverConversationModelSelection(conversation, root, context)).resolves.toBe('opencode:deepseek/chat');
     await expect(history.buildForkProviderState('ses_parent', '', conversation.providerState, root, context))
       .resolves.toMatchObject({ sessionId: 'ses_child', databasePath, nativeVersion: 2 });
   } finally { rmSync(root, { recursive: true, force: true }); }

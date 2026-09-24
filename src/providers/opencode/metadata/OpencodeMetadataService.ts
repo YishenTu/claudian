@@ -13,6 +13,7 @@ import {
   type OpencodeAcpSessionKernel,
   type OpencodeNativeSessionInfo,
 } from '../execution/OpencodeAcpSessionKernel';
+import { OpencodeServerService } from '../http/OpencodeServerService';
 import { decodeOpencodeModelId } from '../models';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
 import { detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
@@ -43,6 +44,7 @@ export interface OpencodeMetadataProbe {
 
 export interface OpencodeMetadataServiceOptions {
   readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setCommandSnapshot'>;
+  readonly serverService?: OpencodeServerService;
   readonly createProbe?: () => OpencodeMetadataProbe;
 }
 
@@ -53,6 +55,7 @@ export class OpencodeMetadataService {
     abortMessage: 'OpenCode metadata probe aborted',
   });
   private readonly unregisterTransitionHook: () => void;
+  private readonly serverService: OpencodeServerService;
   private disposed = false;
   private disposeFlight: Promise<void> | null = null;
 
@@ -60,15 +63,15 @@ export class OpencodeMetadataService {
     private readonly plugin: ProviderHost,
     private readonly options: OpencodeMetadataServiceOptions = {},
   ) {
+    this.serverService = options.serverService ?? new OpencodeServerService(plugin);
     this.createProbe = options.createProbe
       ?? (async (signal) => {
         const cliPath = await plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
         const environment = buildOpencodeRuntimeEnv(plugin.settings, cliPath);
         const version = await detectOpencodeNativeVersion(cliPath, environment);
         signal.throwIfAborted();
-        return version === 2
-          ? new OpencodeV2MetadataProbe(cliPath, resolveVaultPath(plugin), environment)
-          : new DefaultOpencodeMetadataProbe(plugin);
+        if (version !== 2) return new DefaultOpencodeMetadataProbe(plugin);
+        return new OpencodeV2MetadataProbe(await this.serverService.acquire(cliPath, resolveVaultPath(plugin), environment, signal));
       });
     this.probes = new OwnedProbeRegistry({
       abortMessage: 'OpenCode metadata probe aborted',
@@ -154,8 +157,13 @@ export class OpencodeMetadataService {
   }
 
   async invalidate(): Promise<void> {
-    this.options.commandCatalog?.setCommandSnapshot([]);
-    await this.probes.quiesce();
+    this.transitionFence.beginTransition();
+    try {
+      this.options.commandCatalog?.setCommandSnapshot([]);
+      await Promise.all([this.probes.quiesce(), this.options.serverService ? undefined : this.serverService.invalidate()]);
+    } finally {
+      this.transitionFence.endTransition();
+    }
   }
 
   dispose(): Promise<void> {
@@ -166,6 +174,7 @@ export class OpencodeMetadataService {
     this.disposeFlight = (async () => {
       await this.invalidate();
       await this.probes.dispose();
+      if (!this.options.serverService) await this.serverService.dispose();
     })();
     return this.disposeFlight;
   }

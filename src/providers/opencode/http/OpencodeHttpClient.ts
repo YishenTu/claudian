@@ -3,6 +3,7 @@ import { type IncomingMessage, request } from 'node:http';
 import { StringDecoder } from 'node:string_decoder';
 
 import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
+import { toAbortError } from '@/utils/abort';
 
 export interface OpencodeHttpEvent {
   readonly type: string;
@@ -29,6 +30,10 @@ export class OpencodeHttpClient {
 
   signal(signal?: AbortSignal): AbortSignal {
     return signal ? AbortSignal.any([signal, this.controller.signal]) : this.controller.signal;
+  }
+
+  isReusable(): boolean {
+    return !this.controller.signal.aborted && this.process.getExitState() === null;
   }
 
   async request<T = unknown>(route: string, options: {
@@ -106,8 +111,24 @@ export class OpencodeHttpClient {
   }): Promise<IncomingMessage> {
     const signal = this.signal(options.signal);
     signal.throwIfAborted();
-    this.endpoint ??= this.start();
-    const endpoint = await this.endpoint;
+    this.endpoint ??= this.start().catch(async error => {
+      this.controller.abort(error);
+      await this.dispose();
+      throw error;
+    });
+    // Cancelling a reader must not cancel the server startup shared by other readers.
+    const endpoint = await new Promise<string>((resolve, reject) => {
+      const onAbort = (): void => reject(toAbortError(signal, 'OpenCode HTTP request aborted.'));
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.endpoint!.then(
+        endpoint => { signal.removeEventListener('abort', onAbort); resolve(endpoint); },
+        error => { signal.removeEventListener('abort', onAbort); reject(error instanceof Error ? error : new Error(String(error))); },
+      );
+      if (signal.aborted) {
+        signal.removeEventListener('abort', onAbort);
+        onAbort();
+      }
+    });
     signal.throwIfAborted();
     const url = new URL(route, endpoint);
     // Callers provide paths, never credentials or arbitrary endpoints.
