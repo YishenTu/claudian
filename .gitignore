@@ -95,5 +95,7 @@ CLAUDE.local.md
 # yarn.lock
 # package-lock.json
 
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 .codex/
