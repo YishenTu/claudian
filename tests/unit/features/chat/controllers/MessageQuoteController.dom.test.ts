@@ -66,6 +66,7 @@ describe('MessageQuoteController', () => {
 
   afterEach(() => {
     controller.dispose();
+    jest.restoreAllMocks();
     document.getSelection()?.removeAllRanges();
     document.body.replaceChildren();
   });
@@ -135,6 +136,70 @@ describe('MessageQuoteController', () => {
     expect(getQuoteButton(dom.wrapperEl)).toBeNull();
   });
 
+  it.each([
+    ['paragraphs', '<p>First paragraph.</p><p>Second paragraph.</p>', 'First paragraph.\n\nSecond paragraph.'],
+    ['hard breaks', '<p>first<br>second</p>', 'first\nsecond'],
+  ])('quotes rendered text across %s', (_name, html, renderedText) => {
+    const message = dom.assistantText.parentElement!;
+    message.innerHTML = html;
+    const range = document.createRange();
+    range.selectNodeContents(message);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    // JSDOM has no layout; supply Chromium's rendered selection text at the browser boundary.
+    jest.spyOn(selection, 'toString').mockReturnValue(renderedText);
+    releaseMouse(message);
+
+    getQuoteButton(dom.wrapperEl)!.click();
+
+    expect(onQuote).toHaveBeenCalledWith(renderedText);
+  });
+
+  it('quotes the current selection after it changes without another mouseup', () => {
+    select(dom.assistantText, 0, 5);
+    releaseMouse(dom.assistantText.parentElement!);
+    select(dom.assistantText, 0, 10);
+    document.dispatchEvent(new Event('selectionchange'));
+
+    getQuoteButton(dom.wrapperEl)!.click();
+
+    expect(onQuote).toHaveBeenCalledWith('Start with');
+  });
+
+  it('hides when the selection moves outside messages', () => {
+    select(dom.assistantText, 0, 5);
+    releaseMouse(dom.assistantText.parentElement!);
+    const welcomeText = dom.messagesEl.querySelector('.claudian-welcome')!.firstChild!;
+    select(welcomeText, 0, 7);
+    document.dispatchEvent(new Event('selectionchange'));
+
+    expect(getQuoteButton(dom.wrapperEl)).toBeNull();
+  });
+
+  it('revalidates the selection on click before selectionchange is delivered', () => {
+    select(dom.assistantText, 0, 5);
+    releaseMouse(dom.assistantText.parentElement!);
+    const button = getQuoteButton(dom.wrapperEl)!;
+    select(dom.assistantText, 0, 0);
+
+    button.click();
+
+    expect(onQuote).not.toHaveBeenCalled();
+  });
+
+  it('preserves selected code indentation through composer insertion', () => {
+    dom.assistantText.textContent = '    if ready:\n        start()\n        finish()';
+    select(dom.assistantText, 0, dom.assistantText.length);
+    releaseMouse(dom.assistantText.parentElement!);
+    const input = document.createElement('textarea') as unknown as ComposerInputElement;
+    onQuote.mockImplementation((text: string) => appendQuoteToComposer(input, formatSelectionQuote(text)));
+
+    getQuoteButton(dom.wrapperEl)!.click();
+
+    expect(input.value).toBe('>     if ready:\n>         start()\n>         finish()\n\n');
+  });
+
   it('hides on Escape and on scroll', () => {
     select(dom.assistantText, 0, 24);
     releaseMouse(dom.assistantText.parentElement!);
@@ -173,7 +238,7 @@ describe('MessageQuoteController', () => {
 
 describe('formatSelectionQuote', () => {
   it('prefixes every line and keeps blank lines inside the quote', () => {
-    expect(formatSelectionQuote('  first line  \r\n\r\nsecond line\n')).toBe('> first line\n>\n> second line');
+    expect(formatSelectionQuote('  first line  \r\n\r\nsecond line\n')).toBe('>   first line  \n>\n> second line\n>');
   });
 });
 

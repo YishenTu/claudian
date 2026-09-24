@@ -16,9 +16,8 @@ export interface MessageQuoteControllerOptions {
 export function formatSelectionQuote(text: string): string {
   return text
     .replace(/\r\n?/g, '\n')
-    .trim()
     .split('\n')
-    .map(line => (line.trim() ? `> ${line.trim()}` : '>'))
+    .map(line => (line ? `> ${line}` : '>'))
     .join('\n');
 }
 
@@ -53,7 +52,6 @@ export class MessageQuoteController {
   readonly #label: string;
   readonly #onQuote: (text: string) => void;
   #buttonEl: HTMLButtonElement | null = null;
-  #range: Range | null = null;
   #disposed = false;
 
   readonly #onMouseUp = (): void => {
@@ -61,13 +59,11 @@ export class MessageQuoteController {
   };
 
   readonly #onSelectionChange = (): void => {
-    if (!this.#range) return;
-    const selection = this.#messagesEl.ownerDocument.getSelection();
-    if (!selection || selection.isCollapsed || selection.rangeCount === 0) this.#hide();
+    if (this.#buttonEl && !this.#buttonEl.hidden) this.#showForCurrentSelection();
   };
 
   readonly #onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === 'Escape' && this.#range) this.#hide();
+    if (event.key === 'Escape') this.#hide();
   };
 
   readonly #onScroll = (): void => {
@@ -96,7 +92,6 @@ export class MessageQuoteController {
     doc.removeEventListener('keydown', this.#onKeyDown);
     this.#buttonEl?.remove();
     this.#buttonEl = null;
-    this.#range = null;
   }
 
   #showForCurrentSelection(): void {
@@ -108,7 +103,6 @@ export class MessageQuoteController {
     const hostEl = this.#messagesEl.parentElement;
     if (!hostEl) return;
 
-    this.#range = range;
     const button = this.#ensureButton(hostEl);
     button.hidden = false;
     this.#position(button, hostEl, range);
@@ -170,19 +164,15 @@ export class MessageQuoteController {
   }
 
   #quote(): void {
-    const range = this.#range;
     const selection = this.#messagesEl.ownerDocument.getSelection();
-    // Streaming or history re-renders can detach the selected nodes before the click lands.
-    const text = range && this.#isInsideMessage(range.startContainer) && this.#isInsideMessage(range.endContainer)
-      ? range.toString().trim()
-      : '';
+    // Revalidate after selection changes or re-renders; Selection preserves rendered line breaks.
+    const text = this.#getMessageSelectionRange() ? selection!.toString() : '';
     selection?.removeAllRanges();
     this.#hide();
     if (text) this.#onQuote(text);
   }
 
   #hide(): void {
-    this.#range = null;
     if (this.#buttonEl) this.#buttonEl.hidden = true;
   }
 }
