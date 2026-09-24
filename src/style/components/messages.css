@@ -759,7 +759,7 @@ button.claudian-work-header:disabled {
 }
 
 .claudian-messages-wrapper button.claudian-message-quote-btn:hover {
-  background: var(--background-modifier-hover);
+  background: var(--background-secondary-alt);
 }
 
 .claudian-messages-wrapper button.claudian-message-quote-btn:focus-visible {
