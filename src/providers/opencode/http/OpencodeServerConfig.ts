@@ -33,6 +33,7 @@ export class OpencodeServerConfig {
   }
 
   async remove(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
     for (const id of ids) this.agents.delete(id);
     await this.write();
   }

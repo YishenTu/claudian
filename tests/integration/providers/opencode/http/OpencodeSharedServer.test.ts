@@ -196,6 +196,51 @@ it('fences new acquisitions during provider transitions and shuts down the previ
   } finally { await f.dispose(); }
 });
 
+it('keeps global forms and stream failures routed after the first subscriber closes', async () => {
+  const f = await createFixture();
+  try {
+    const first = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+    const peer = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+    const firstEvent = jest.fn(), firstError = jest.fn();
+    let receiveForm!: () => void, receiveError!: () => void;
+    const receivedForm = new Promise<void>(resolve => { receiveForm = resolve; });
+    const receivedError = new Promise<void>(resolve => { receiveError = resolve; });
+    await first.subscribe(firstEvent, firstError, () => true);
+    await peer.subscribe(event => {
+      if (event.type === 'form.created') receiveForm();
+    }, receiveError, () => true);
+    await first.dispose();
+    firstEvent.mockClear();
+    await peer.request('/fixture/event', { method: 'POST', body: {
+      type: 'form.created', data: { form: { id: 'form_owned', sessionID: 'global' } },
+    } });
+    await receivedForm;
+    expect(firstEvent).not.toHaveBeenCalled();
+    expect(f.processes()).toHaveLength(1);
+    await peer.request('/fixture/disconnect', { method: 'POST' }).catch(() => undefined);
+    await receivedError;
+    expect(firstError).not.toHaveBeenCalled();
+    await peer.dispose();
+  } finally { await f.dispose(); }
+});
+
+it('releases a reader without reprocessing user config references', async () => {
+  const f = await createFixture();
+  try {
+    const source = path.join(f.root, 'user.json'), prompt = path.join(f.root, 'instructions.md');
+    writeFileSync(prompt, 'User instructions');
+    writeFileSync(source, JSON.stringify({ agents: { user: { system: '{file:./instructions.md}' } } }));
+    const environment = { ...f.environment, OPENCODE_CONFIG: source };
+    const reader = await f.workspace.serverService.acquire(f.cli, f.root, environment);
+    const peer = await f.workspace.serverService.acquire(f.cli, f.root, environment);
+    const effective = await peer.request('/fixture/config');
+    rmSync(prompt);
+    await expect(reader.dispose()).resolves.toBeUndefined();
+    expect(await peer.request('/fixture/config')).toEqual(effective);
+    await peer.dispose();
+  } finally { await f.dispose(); }
+});
+
 
 it('preserves explicit user config references and watches edits without overwriting the user file', async () => {
   const f = await createFixture();

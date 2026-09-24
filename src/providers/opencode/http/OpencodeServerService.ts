@@ -15,7 +15,6 @@ interface Server {
   subscribers: Set<Subscriber>;
   forms: Map<string, Subscriber>;
   subscription?: Promise<void>;
-  references: number;
   close?: Promise<void>;
 }
 
@@ -59,9 +58,8 @@ export class OpencodeServerService {
         await this.close(server, new Error('OpenCode server is no longer available.'));
         continue;
       }
-      server.references++;
       return new OpencodeServerLease(server, async () => {
-        if (--server.references === 0 && ephemeral) {
+        if (ephemeral) {
           if (this.servers.get(key) === pending) this.servers.delete(key);
           await this.close(server);
         }
@@ -101,7 +99,7 @@ export class OpencodeServerService {
     signal.throwIfAborted();
     const config = await createOpencodeServerConfig(cwd, environment);
     const client = new OpencodeHttpClient(cliPath, cwd, { ...environment, OPENCODE_CONFIG: config.file, OPENCODE_CONFIG_CONTENT: artifacts.configContent });
-    const server: Server = { client, config, databasePath: artifacts.databasePath, references: 0, subscribers: new Set(), forms: new Map() };
+    const server: Server = { client, config, databasePath: artifacts.databasePath, subscribers: new Set(), forms: new Map() };
     try {
       await config.initialize(error => { void this.close(server, error); });
       signal.throwIfAborted();
@@ -143,16 +141,14 @@ export class OpencodeServerLease {
     const subscriber = { event, error, interactive };
     this.subscriber = subscriber;
     this.server.subscribers.add(subscriber);
-    this.server.subscription ??= this.server.client.subscribe(event => this.dispatch(event), error => { void this.failServer(error); });
-    try { await this.server.subscription; }
-    catch (error) { await this.failServer(error instanceof Error ? error : new Error(String(error))); throw error; }
+    await subscribeToServer(this.server, this.failServer);
     this.controller.signal.throwIfAborted();
   }
 
   async refreshGlobalForms(): Promise<void> {
     const inventory = await this.request<{ data: Record<string, unknown>[] }>('/api/form');
     for (const form of inventory.data) {
-      if (form.sessionID === 'global') this.dispatch({ type: 'form.created', data: { form } });
+      if (form.sessionID === 'global') dispatchServerEvent(this.server, { type: 'form.created', data: { form } });
     }
   }
 
@@ -192,26 +188,33 @@ export class OpencodeServerLease {
     })();
     return this.disposal;
   }
+}
 
-  private dispatch(event: OpencodeHttpEvent): void {
-    const form = isRecord(event.data.form) ? event.data.form : undefined;
-    const sessionId = form?.sessionID ?? event.data.sessionID;
-    if (sessionId === 'global') {
-      const id = String(form?.id ?? event.data.requestID ?? event.data.id);
-      if (event.type === 'form.created') {
-        if (this.server.forms.has(id)) return;
-        const owner = [...this.server.subscribers].find(subscriber => subscriber.interactive());
-        if (!owner) return;
-        this.server.forms.set(id, owner);
-        owner.event(event);
-      } else {
-        this.server.forms.get(id)?.event(event);
-        if (event.type === 'form.replied' || event.type === 'form.cancelled') this.server.forms.delete(id);
-      }
-      return;
+/** Shared stream callbacks retain the server, never the first subscribing lease. */
+async function subscribeToServer(server: Server, failServer: (error: Error) => Promise<void>): Promise<void> {
+  server.subscription ??= server.client.subscribe(event => dispatchServerEvent(server, event), error => { void failServer(error); });
+  try { await server.subscription; }
+  catch (error) { await failServer(error instanceof Error ? error : new Error(String(error))); throw error; }
+}
+
+function dispatchServerEvent(server: Server, event: OpencodeHttpEvent): void {
+  const form = isRecord(event.data.form) ? event.data.form : undefined;
+  const sessionId = form?.sessionID ?? event.data.sessionID;
+  if (sessionId === 'global') {
+    const id = String(form?.id ?? event.data.requestID ?? event.data.id);
+    if (event.type === 'form.created') {
+      if (server.forms.has(id)) return;
+      const owner = [...server.subscribers].find(subscriber => subscriber.interactive());
+      if (!owner) return;
+      server.forms.set(id, owner);
+      owner.event(event);
+    } else {
+      server.forms.get(id)?.event(event);
+      if (event.type === 'form.replied' || event.type === 'form.cancelled') server.forms.delete(id);
     }
-    for (const subscriber of this.server.subscribers) subscriber.event(event);
+    return;
   }
+  for (const subscriber of server.subscribers) subscriber.event(event);
 }
 
 /** Borrows the shared service when available; otherwise owns one for this call only. */
