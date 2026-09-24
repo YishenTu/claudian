@@ -60,6 +60,9 @@
       "commandNoMessages": "フォークできません: 会話にメッセージがありません",
       "commandNoAssistantUuid": "フォークできません: 識別子付きのアシスタント応答がありません"
     },
+    "quote": {
+      "buttonLabel": "引用"
+    },
     "sideChat": {
       "title": "サイドチャット",
       "collapse": "折りたたむ",

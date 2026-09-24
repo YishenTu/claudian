@@ -60,6 +60,9 @@
       "commandNoMessages": "Нельзя форкнуть: в диалоге нет сообщений",
       "commandNoAssistantUuid": "Нельзя форкнуть: нет ответа ассистента с идентификаторами"
     },
+    "quote": {
+      "buttonLabel": "Цитировать"
+    },
     "sideChat": {
       "title": "Побочный чат",
       "collapse": "Свернуть",

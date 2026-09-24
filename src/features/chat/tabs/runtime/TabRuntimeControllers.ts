@@ -4,11 +4,17 @@ import { Notice } from 'obsidian';
 import { resolveNewConversationModel } from '../../../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
+import { t } from '../../../../i18n/i18n';
 import { getVaultPath } from '../../../../utils/path';
 import { BrowserSelectionController } from '../../controllers/BrowserSelectionController';
 import { CanvasSelectionController } from '../../controllers/CanvasSelectionController';
 import { ConversationController } from '../../controllers/ConversationController';
 import { InputController } from '../../controllers/InputController';
+import {
+  appendQuoteToComposer,
+  formatSelectionQuote,
+  MessageQuoteController,
+} from '../../controllers/MessageQuoteController';
 import { NavigationController } from '../../controllers/NavigationController';
 import { SelectionController } from '../../controllers/SelectionController';
 import { StreamController } from '../../controllers/StreamController';
@@ -109,6 +115,16 @@ export function buildTabRuntimeControllers(
     () => getTabCapabilities(runtimeRef.requirePublished(), plugin),
   );
   options.registerCleanup('tab message renderer', () => renderer.dispose());
+
+  const messageQuoteController = new MessageQuoteController({
+    messagesEl: dom.messagesEl,
+    label: t('chat.quote.buttonLabel'),
+    onQuote: (text) => {
+      commitProvisionalTab(runtimeRef.requirePublished());
+      appendQuoteToComposer(dom.inputEl, formatSelectionQuote(text));
+    },
+  });
+  options.registerCleanup('tab message quote controller', () => messageQuoteController.dispose());
 
   const selectionController = new SelectionController(
     plugin.app,

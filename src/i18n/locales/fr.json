@@ -60,6 +60,9 @@
       "commandNoMessages": "Impossible de bifurquer : aucun message dans la conversation",
       "commandNoAssistantUuid": "Impossible de bifurquer : aucune réponse de l’assistant avec des identifiants"
     },
+    "quote": {
+      "buttonLabel": "Citer"
+    },
     "sideChat": {
       "title": "Conversation annexe",
       "collapse": "Réduire",

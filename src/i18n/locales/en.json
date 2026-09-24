@@ -60,6 +60,9 @@
       "commandNoMessages": "Cannot fork: no messages in conversation",
       "commandNoAssistantUuid": "Cannot fork: no assistant response with identifiers"
     },
+    "quote": {
+      "buttonLabel": "Quote"
+    },
     "sideChat": {
       "title": "Side chat",
       "collapse": "Collapse",

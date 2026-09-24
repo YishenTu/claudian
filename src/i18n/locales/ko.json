@@ -60,6 +60,9 @@
       "commandNoMessages": "포크할 수 없습니다: 대화에 메시지가 없습니다",
       "commandNoAssistantUuid": "포크할 수 없습니다: 식별자가 있는 어시스턴트 응답이 없습니다"
     },
+    "quote": {
+      "buttonLabel": "인용"
+    },
     "sideChat": {
       "title": "사이드 채팅",
       "collapse": "접기",

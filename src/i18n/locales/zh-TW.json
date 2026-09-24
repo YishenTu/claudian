@@ -60,6 +60,9 @@
       "commandNoMessages": "無法分叉：對話中沒有訊息",
       "commandNoAssistantUuid": "無法分叉：沒有帶識別碼的助手回覆"
     },
+    "quote": {
+      "buttonLabel": "引用"
+    },
     "sideChat": {
       "title": "側邊對話",
       "collapse": "收合",

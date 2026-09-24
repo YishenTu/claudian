@@ -60,6 +60,9 @@
       "commandNoMessages": "Verzweigung nicht möglich: keine Nachrichten in der Konversation",
       "commandNoAssistantUuid": "Verzweigung nicht möglich: keine Assistentenantwort mit Kennungen"
     },
+    "quote": {
+      "buttonLabel": "Zitieren"
+    },
     "sideChat": {
       "title": "Nebenchat",
       "collapse": "Einklappen",

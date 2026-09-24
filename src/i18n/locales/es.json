@@ -60,6 +60,9 @@
       "commandNoMessages": "No se puede bifurcar: no hay mensajes en la conversación",
       "commandNoAssistantUuid": "No se puede bifurcar: no hay respuesta del asistente con identificadores"
     },
+    "quote": {
+      "buttonLabel": "Citar"
+    },
     "sideChat": {
       "title": "Chat lateral",
       "collapse": "Contraer",
