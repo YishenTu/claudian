@@ -2277,7 +2277,7 @@ describe('SessionBrowser', () => {
         expect(
           legacyItem.querySelector('.claudian-history-item-actions')!.children
             .map((button: HTMLElement) => button.getAttribute('aria-label')),
-        ).toEqual(['Assign to this device', 'Pin', 'Archive']);
+        ).toEqual(['Generate title', 'Assign to this device', 'Pin', 'Archive']);
 
         assignButton.dispatchEvent({
           type: 'click',
@@ -2571,8 +2571,7 @@ describe('SessionBrowser', () => {
       const item = list.children[0];
       const actions = item.querySelector('.claudian-history-item-actions');
       expect(actions).toBeTruthy();
-      // For non-failed items: rename is children[0], delete is children[1]
-      const rBtn = actions!.children[0];
+      const rBtn = actions!.children.find((button: HTMLElement) => button.getAttribute('aria-label') === 'Rename');
       expect(rBtn).toBeTruthy();
       const clickHandlers = rBtn._eventListeners?.get('click');
       expect(clickHandlers).toBeDefined();
@@ -2622,7 +2621,7 @@ describe('SessionBrowser', () => {
       const item = container.querySelector('.claudian-history-item')!;
       const title = item.querySelector('.claudian-history-item-title')!;
       title.replaceWith = jest.fn();
-      item.querySelector('.claudian-history-item-actions')!.children[0].click();
+      item.querySelector('.claudian-history-item-actions')!.children.find((button: HTMLElement) => button.getAttribute('aria-label') === 'Rename')!.click();
       const input = item.querySelector('.claudian-rename-input')!;
       input.value = 'New title';
       input.blur();
@@ -2648,7 +2647,7 @@ describe('SessionBrowser', () => {
       const item = container.querySelector('.claudian-history-item')!;
       const title = item.querySelector('.claudian-history-item-title')!;
       title.replaceWith = jest.fn();
-      item.querySelector('.claudian-history-item-actions')!.children[0].click();
+      item.querySelector('.claudian-history-item-actions')!.children.find((button: HTMLElement) => button.getAttribute('aria-label') === 'Rename')!.click();
       const input = item.querySelector('.claudian-rename-input')!;
       input.value = '  Original title  ';
       input.blur();
@@ -2673,7 +2672,7 @@ describe('SessionBrowser', () => {
       const item = container.querySelector('.claudian-history-item')!;
       const title = item.querySelector('.claudian-history-item-title')!;
       title.replaceWith = jest.fn();
-      item.querySelector('.claudian-history-item-actions')!.children[0].click();
+      item.querySelector('.claudian-history-item-actions')!.children.find((button: HTMLElement) => button.getAttribute('aria-label') === 'Rename')!.click();
       const input = item.querySelector('.claudian-rename-input')!;
       input.value = 'Unsaved title';
 
@@ -2700,7 +2699,7 @@ describe('SessionBrowser', () => {
       const item = container.querySelector('.claudian-history-item')!;
       const title = item.querySelector('.claudian-history-item-title')!;
       title.replaceWith = jest.fn();
-      item.querySelector('.claudian-history-item-actions')!.children[0].click();
+      item.querySelector('.claudian-history-item-actions')!.children.find((button: HTMLElement) => button.getAttribute('aria-label') === 'Rename')!.click();
       const input = item.querySelector('.claudian-rename-input')!;
       input.value = 'Detached draft';
 

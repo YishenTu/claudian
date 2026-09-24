@@ -2,6 +2,7 @@ import { t } from '../../i18n/i18n';
 import type {
   ProviderId,
   TitleGenerationCallback,
+  TitleGenerationResult,
   TitleGenerationService,
 } from '../providers/types';
 
@@ -30,11 +31,17 @@ export class RoutedTitleGenerationService implements TitleGenerationService {
     const previous = this.activeGenerations.get(conversationId);
     this.activeGenerations.set(conversationId, generation);
     previous?.service?.cancel();
+    let resultDelivered = false;
+    const deliver = async (convId: string, result: TitleGenerationResult): Promise<void> => {
+      if (this.activeGenerations.get(conversationId) !== generation || resultDelivered) return;
+      resultDelivered = true;
+      await callback(convId, result);
+    };
 
     try {
       const providerId = this.options.resolveProviderId();
       if (!providerId) {
-        await callback(conversationId, {
+        await deliver(conversationId, {
           success: false,
           error: t('chat.selectAvailableTitleModel'),
         });
@@ -44,7 +51,7 @@ export class RoutedTitleGenerationService implements TitleGenerationService {
       if (this.activeGenerations.get(conversationId) !== generation) return;
 
       if (this.options.resolveProviderId() !== providerId) {
-        await callback(conversationId, {
+        await deliver(conversationId, {
           success: false,
           error: 'The title model became unavailable or changed during initialization.',
         });
@@ -52,9 +59,11 @@ export class RoutedTitleGenerationService implements TitleGenerationService {
       }
       const service = this.options.createService(providerId);
       generation.service = service;
-      await service.generateTitle(conversationId, userMessage, async (convId, result) => {
-        if (this.activeGenerations.get(conversationId) !== generation) return;
-        await callback(convId, result);
+      await service.generateTitle(conversationId, userMessage, deliver);
+    } catch (error) {
+      await deliver(conversationId, {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
     } finally {
       if (this.activeGenerations.get(conversationId) === generation) {

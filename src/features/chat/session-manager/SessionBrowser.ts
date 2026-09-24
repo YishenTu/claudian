@@ -836,15 +836,17 @@ export class SessionBrowser {
       });
       setIcon(loadingEl, 'loader-2');
       loadingEl.setAttribute('aria-label', 'Generating title...');
-    } else if (conversation.titleGenerationStatus === 'failed') {
-      const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn' });
+    } else if (conversation.titleGenerationStatus === 'failed'
+      || (!conversation.titleGenerationStatus && this.deps.plugin.settings.enableAutoTitleGeneration)) {
+      const regenerateBtn = actions.createEl('button', { cls: 'claudian-action-btn', attr: { type: 'button' } });
       setIcon(regenerateBtn, 'refresh-cw');
-      regenerateBtn.setAttribute('aria-label', 'Regenerate title');
+      regenerateBtn.setAttribute('aria-label', conversation.titleGenerationStatus === 'failed'
+        ? 'Regenerate title' : 'Generate title');
       regenerateBtn.addEventListener('click', (event) => {
         event.stopPropagation();
         runConversationAction(
           () => this.regenerateTitle(conversation.id),
-          'Failed to regenerate response',
+          'Failed to generate title',
         );
       });
     }
