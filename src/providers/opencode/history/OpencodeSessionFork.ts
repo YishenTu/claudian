@@ -1,15 +1,14 @@
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 import {
   AcpClientConnection,
   AcpJsonRpcTransport,
   AcpSubprocess,
 } from '@/providers/acp';
 
-import { OpencodeServerService } from '../http/OpencodeServerService';
+import { type OpencodeServerService, withOpencodeServerLease } from '../http/OpencodeServerService';
 import { assertOpencodeSessionCompatibility, detectOpencodeNativeVersion, parseOpencodeNativeVersion } from '../runtime/OpencodeVersion';
 
 export interface OpencodeSessionForkOptions {
-  serverService?: () => OpencodeServerService | undefined;
+  serverService?: OpencodeServerService | null;
   nativeVersion?: 1 | 2;
   onNativeVersion?: (version: 1 | 2 | undefined) => void;
   cliPath: string;
@@ -23,15 +22,12 @@ export async function forkOpencodeSession(options: OpencodeSessionForkOptions): 
   const version = await detectOpencodeNativeVersion(options.cliPath, options.environment);
   assertOpencodeSessionCompatibility(options.nativeVersion, version);
   if (version === 2) {
-    const shared = options.serverService?.();
-    const service = shared ?? new OpencodeServerService({ settings: {} as ProviderHost['settings'] });
-    const client = await service.acquire(options.cliPath, options.cwd, options.environment);
-    try {
+    return withOpencodeServerLease(options.serverService, options.cliPath, options.cwd, options.environment, async client => {
       const child = await client.request<{ data: { id: string } }>(`/api/session/${encodeURIComponent(options.sourceSessionId)}/fork`, { method: 'POST', body: {} });
       if (typeof child.data?.id !== 'string' || !child.data.id.trim() || child.data.id === options.sourceSessionId) throw new Error('OpenCode fork returned an invalid child session.');
       options.onNativeVersion?.(2);
       return child.data.id;
-    } finally { await client.dispose(); if (!shared) await service.dispose(); }
+    });
   }
   const subprocess = new AcpSubprocess({
     command: options.cliPath,

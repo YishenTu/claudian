@@ -5,6 +5,7 @@ jest.mock('cross-spawn', () => jest.fn());
 import spawn from 'cross-spawn';
 
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
+import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
 import { createNativeRpcProcess, createNativeVersionProcess } from '../tabs/NativeRpcTestProcess';
 import { createForkTestEnvironment } from '../tabs/ProviderForkTestHarness';
@@ -54,7 +55,7 @@ it('forks native disk history and resumes the side child independently after coo
   };
   let child: Awaited<ReturnType<typeof traceSideChild>> = null;
   try {
-    const backend = new OpencodeExecutionBackend(env.host);
+    const backend = new OpencodeExecutionBackend(env.host, { serverService: new OpencodeServerService() });
     const source = await env.open(backend);
     const checkpoint = await env.send(source, 'Remember A');
     child = await traceSideChild(env, source, checkpoint, backend);

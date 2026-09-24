@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
+import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import type { AcpPromptRequest, AcpSessionConfigOption } from '@/providers/acp';
 
-import { isRecord, OpencodeHttpError, type OpencodeHttpEvent } from '../http/OpencodeHttpClient';
+import { isRecord, OpencodeHttpError, type OpencodeHttpEvent, pollOpencodeUntil } from '../http/OpencodeHttpClient';
 import { projectOpencodeFormQuestions } from '../http/OpencodeHttpForms';
-import { type OpencodeServerLease,OpencodeServerService } from '../http/OpencodeServerService';
+import type { OpencodeServerLease, OpencodeServerService } from '../http/OpencodeServerService';
 import { OPENCODE_SAFE_MODE_ID, OPENCODE_YOLO_MODE_ID } from '../modes';
 import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolUseResult } from '../normalization/opencodeToolNormalization';
-import { AUX_AGENT_IDS } from '../runtime/OpencodeExecutionAgents';
+import { AUX_AGENT_IDS, buildOpencodeSystemPrompt, getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
 import {
   type OpencodeKernelConnectOptions,
   type OpencodeNativeOutput,
@@ -42,11 +43,8 @@ export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
   private pending: PendingPrompt | null = null;
   private cancellation: Promise<unknown> | null = null;
 
-  private readonly serverService: OpencodeServerService;
   private agents: Record<string, string> = {};
-  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly cliPath: string, private readonly environment: NodeJS.ProcessEnv, private readonly sharedService?: OpencodeServerService) {
-    this.serverService = sharedService ?? new OpencodeServerService(options.plugin);
-  }
+  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly cliPath: string, private readonly environment: NodeJS.ProcessEnv, private readonly serverService: OpencodeServerService) {}
 
   async connect(options: OpencodeKernelConnectOptions): Promise<void> {
     this.profile = options.profile;
@@ -55,14 +53,15 @@ export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
     this.controller.signal.throwIfAborted();
     this.databasePath = this.client.databasePath;
     await this.client.subscribe(event => this.handleEvent(event), error => this.fail(error), () => !this.disposed && !!this.sessionId && !!this.options.openNativeInteraction);
-    this.agents = await this.client.prepareAgents(options);
-    const deadline = Date.now() + 5000;
-    do {
-      const catalog = await this.client.request<{ data: Array<Record<string, unknown>> }>('/api/model');
-      this.models = catalog.data.filter(model => model.enabled === true);
-      if (this.models.length) break;
-      await this.delay(25);
-    } while (Date.now() < deadline);
+    this.agents = await this.client.registerAgents(
+      options.profile === 'managed' ? [OPENCODE_SAFE_MODE_ID, OPENCODE_YOLO_MODE_ID] : [AUX_AGENT_IDS[options.profile]],
+      this.resolveSystemPrompt(options),
+    );
+    const client = this.client;
+    this.models = await pollOpencodeUntil(
+      async () => (await client.request<{ data: Array<Record<string, unknown>> }>('/api/model')).data.filter(model => model.enabled === true),
+      models => models.length > 0, 5000, this.controller.signal,
+    );
     const catalog = await this.client.request<{ data: Array<{ name: string }> }>('/api/command');
     this.commands = new Set(catalog.data.map(command => command.name));
   }
@@ -160,7 +159,6 @@ export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
     this.pending = null;
     await Promise.all([this.cancellation, ...interruptions]);
     await this.client?.dispose();
-    if (!this.sharedService) await this.serverService.dispose();
   }
 
   private handleEvent(event: OpencodeHttpEvent): void {
@@ -380,12 +378,14 @@ export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
     if (!this.client || this.disposed) throw new Error('OpenCode HTTP session is not connected.');
     return this.client;
   }
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const signal = this.controller.signal;
-      const onAbort = (): void => { window.clearTimeout(timer); reject(new Error('OpenCode session disposed.')); };
-      const timer = window.setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
-      signal.addEventListener('abort', onAbort, { once: true });
+  private resolveSystemPrompt({ profile, systemInstructions }: OpencodeKernelConnectOptions): string {
+    if (systemInstructions.kind === 'explicit') return systemInstructions.instructions;
+    const workspaceRoot = this.options.config.vaultWorkingDirectory;
+    return buildOpencodeSystemPrompt(profile, {
+      settings: getSystemPromptSettings(this.options.plugin, workspaceRoot),
+      dynamicSections: systemInstructions.dynamicSections,
+      titleLocale: resolveTitleGenerationLocale(this.options.plugin.settings),
+      workspaceRoot,
     });
   }
 }

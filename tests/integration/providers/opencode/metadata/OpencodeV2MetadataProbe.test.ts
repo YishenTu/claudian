@@ -120,7 +120,7 @@ it('refreshes the native catalog and commands without persisting the catalog or 
 });
 
 it('rejects a non-loopback readiness endpoint before sending authorization', async () => {
-  const servers = new OpencodeServerService(createPlugin());
+  const servers = new OpencodeServerService();
   const probe = new OpencodeV2MetadataProbe(await servers.acquire(cliPath, root, { ...environment, INVALID_READY: '1' }));
   try {
     await expect(probe.loadCatalog()).rejects.toThrow('Invalid OpenCode catalog server readiness response');
@@ -129,7 +129,7 @@ it('rejects a non-loopback readiness endpoint before sending authorization', asy
 
 it('cancels a probe waiting for native catalog initialization and closes its server', async () => {
   writeFileSync(environment.CATALOG_FILE!, '[]');
-  const servers = new OpencodeServerService(createPlugin());
+  const servers = new OpencodeServerService();
   const probe = new OpencodeV2MetadataProbe(await servers.acquire(cliPath, root, environment));
   const controller = new AbortController();
   const pending = probe.loadCatalog(controller.signal);

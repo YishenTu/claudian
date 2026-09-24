@@ -6,12 +6,7 @@ import * as path from 'node:path';
 import { parse, type ParseError } from 'jsonc-parser';
 
 import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/storagePaths';
-import { getInlineEditSystemPrompt } from '../../../core/prompt/inlineEdit';
-import {
-  buildSystemPrompt,
-  type SystemPromptSettings,
-} from '../../../core/prompt/mainAgent';
-import { buildTitleGenerationSystemPrompt } from '../../../core/prompt/titleGeneration';
+import type { SystemPromptSettings } from '../../../core/prompt/mainAgent';
 import { expandHomePath } from '../../../utils/path';
 import type { OpencodeExecutionProfile } from '../execution/OpencodeSessionContract';
 import {
@@ -19,7 +14,7 @@ import {
   OPENCODE_SAFE_MODE_ID,
   OPENCODE_YOLO_MODE_ID,
 } from '../modes';
-import { AUX_AGENT_IDS, buildAgentConfig } from './OpencodeExecutionAgents';
+import { AUX_AGENT_IDS, buildAgentConfig, buildOpencodeSystemPrompt } from './OpencodeExecutionAgents';
 import { resolveOpencodeDatabasePath } from './OpencodePaths';
 
 export interface OpencodeLaunchArtifacts {
@@ -73,6 +68,8 @@ export interface PrepareOpencodeLaunchArtifactsParams {
   dynamicSystemPromptSections?: readonly string[];
   systemPromptKey?: string;
   systemPromptText?: string;
+  /** Only create missing prompt files, for launches whose sessions supply their own instructions. */
+  preserveExistingPrompts?: boolean;
   workspaceRoot: string;
 }
 
@@ -89,12 +86,16 @@ export async function prepareOpencodeLaunchArtifacts(
   const profile = params.profile ?? 'managed';
   const systemPromptPath = promptPaths[profile];
   const configPath = path.join(artifactsDir, 'config.json');
+  const promptParams = {
+    settings: params.settings,
+    dynamicSections: params.dynamicSystemPromptSections,
+    titleLocale: params.titleLocale,
+    workspaceRoot: params.workspaceRoot,
+  };
   const promptTexts = {
-    managed: buildSystemPrompt(params.settings ?? {}, {
-      dynamicSections: params.dynamicSystemPromptSections ? [...params.dynamicSystemPromptSections] : undefined,
-    }),
-    readonly: getInlineEditSystemPrompt(params.workspaceRoot),
-    passive: buildTitleGenerationSystemPrompt(params.titleLocale),
+    managed: buildOpencodeSystemPrompt('managed', promptParams),
+    readonly: buildOpencodeSystemPrompt('readonly', promptParams),
+    passive: buildOpencodeSystemPrompt('passive', promptParams),
   };
   if (params.systemPromptText !== undefined) promptTexts[profile] = params.systemPromptText;
   const promptKey = params.systemPromptKey ?? promptTexts[profile];
@@ -136,7 +137,7 @@ export async function prepareOpencodeLaunchArtifacts(
   // Every referenced file must exist before native config parsing, but auxiliary
   // launches must not overwrite an existing main prompt (including Collab context).
   for (const key of Object.keys(promptPaths) as OpencodeExecutionProfile[]) {
-    await writeIfChanged(promptPaths[key], normalizeSystemPrompt(promptTexts[key]), key !== profile);
+    await writeIfChanged(promptPaths[key], normalizeSystemPrompt(promptTexts[key]), params.preserveExistingPrompts || key !== profile);
   }
   await writeIfChanged(configPath, fileContent);
 

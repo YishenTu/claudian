@@ -1,8 +1,8 @@
 import { isRecord } from './OpencodeHttpClient';
-import type { OpencodeHttpTransport } from './OpencodeServerService';
+import type { OpencodeServerLease } from './OpencodeServerService';
 
 /** Native cursors carry order; do not repeat order when following a cursor. */
-export async function readOpencodeHttpMessages(client: OpencodeHttpTransport, sessionId: string): Promise<Array<Record<string, unknown>>> {
+export async function readOpencodeHttpMessages(client: Pick<OpencodeServerLease, 'request'>, sessionId: string): Promise<Array<Record<string, unknown>>> {
   const messages: Array<Record<string, unknown>> = [];
   const cursors = new Set<string>();
   let cursor: string | undefined;

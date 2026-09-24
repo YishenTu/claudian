@@ -30,7 +30,7 @@ export async function createOpencodeWorkspaceServices(
   plugin: ProviderHost,
 ): Promise<OpencodeWorkspaceServices> {
   const commandCatalog = new OpencodeCommandCatalog();
-  const serverService = new OpencodeServerService(plugin);
+  const serverService = new OpencodeServerService();
   const unregister = plugin.executionLifecycleRegistry.registerTransitionHook('opencode', {
     beforeTransition: () => serverService.beginTransition(),
     afterTransition: () => serverService.endTransition(),

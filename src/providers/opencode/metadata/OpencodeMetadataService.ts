@@ -63,7 +63,7 @@ export class OpencodeMetadataService {
     private readonly plugin: ProviderHost,
     private readonly options: OpencodeMetadataServiceOptions = {},
   ) {
-    this.serverService = options.serverService ?? new OpencodeServerService(plugin);
+    this.serverService = options.serverService ?? new OpencodeServerService();
     this.createProbe = options.createProbe
       ?? (async (signal) => {
         const cliPath = await plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';

@@ -10,6 +10,7 @@ jest.mock('cross-spawn', () => jest.fn());
 import type { ProviderExecutionEvent } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
+import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
 import { createNativeRpcProcess, createNativeVersionProcess } from '../../../features/chat/tabs/NativeRpcTestProcess';
 
@@ -57,7 +58,7 @@ it.each([
     mutateSettings: async () => undefined,
     notifyProviderChatOptionsChanged: () => undefined,
   } as unknown as ProviderHost;
-  const session = new OpencodeExecutionBackend(host).createSession({
+  const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession({
     lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', vaultWorkingDirectory: root,
     interactionPort: {
       requestApproval: async request => ({ interactionId: request.interactionId, decision: 'deny' }),

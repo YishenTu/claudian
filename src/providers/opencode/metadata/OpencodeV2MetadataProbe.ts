@@ -1,6 +1,7 @@
 import { formatReasoningValueLabel } from '@/core/providers/reasoning';
 import { normalizeAcpAvailableCommands } from '@/providers/acp';
 
+import { pollOpencodeUntil } from '../http/OpencodeHttpClient';
 import type { OpencodeServerLease } from '../http/OpencodeServerService';
 import type {
   OpencodeMetadataCatalogResult,
@@ -51,24 +52,17 @@ export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
 
   private async loadModels(signal: AbortSignal, rawModelId?: string): Promise<NativeModel[]> {
     // An initial snapshot may be partial. Later discovery re-reads the retained server.
-    const deadline = Date.now() + 5_000;
-    do {
-      const rows = await this.read('model', signal);
-      const models = rows.filter(isNamedRecord).flatMap(model => {
-        if (model.enabled !== true || typeof model.id !== 'string' || typeof model.providerID !== 'string') return [];
-        return [{
-          id: model.id, providerID: model.providerID, name: model.name,
-          variants: Array.isArray(model.variants)
-            ? model.variants.filter(isRecord).flatMap(variant => typeof variant.id === 'string' ? [variant.id] : [])
-            : [],
-        }];
-      });
-      if (rawModelId
-        ? models.some(model => `${model.providerID}/${model.id}` === rawModelId)
-        : models.length > 0) return models;
-      await delay(signal);
-    } while (Date.now() < deadline);
-    return [];
+    return pollOpencodeUntil(async () => (await this.read('model', signal)).filter(isNamedRecord).flatMap(model => {
+      if (model.enabled !== true || typeof model.id !== 'string' || typeof model.providerID !== 'string') return [];
+      return [{
+        id: model.id, providerID: model.providerID, name: model.name,
+        variants: Array.isArray(model.variants)
+          ? model.variants.filter(isRecord).flatMap(variant => typeof variant.id === 'string' ? [variant.id] : [])
+          : [],
+      }];
+    }), models => rawModelId
+      ? models.some(model => `${model.providerID}/${model.id}` === rawModelId)
+      : models.length > 0, 5_000, signal);
   }
 
   private async read(resource: 'model' | 'command', signal: AbortSignal): Promise<unknown[]> {
@@ -91,19 +85,4 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNamedRecord(value: unknown): value is Record<string, unknown> & { name: string } {
   return isRecord(value) && typeof value.name === 'string';
-}
-
-function delay(signal: AbortSignal): Promise<void> {
-  signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    const onAbort = (): void => {
-      window.clearTimeout(timer);
-      reject(new Error('OpenCode catalog probe aborted.'));
-    };
-    const timer = window.setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, 25);
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
 }

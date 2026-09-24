@@ -14,7 +14,7 @@ import {
 
 export interface OpencodeExecutionBackendOptions {
   readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setCommandSnapshot'>;
-  readonly serverService?: OpencodeServerService;
+  readonly serverService: OpencodeServerService;
   readonly createKernel?: OpencodeAcpSessionKernelFactory;
 }
 
@@ -23,7 +23,7 @@ export class OpencodeExecutionBackend implements ProviderExecutionBackend {
 
   constructor(
     private readonly plugin: ProviderHost,
-    private readonly options: OpencodeExecutionBackendOptions = {},
+    private readonly options: OpencodeExecutionBackendOptions,
   ) {}
 
   createSession(config: ProviderSessionConfig): ProviderExecutionSession {

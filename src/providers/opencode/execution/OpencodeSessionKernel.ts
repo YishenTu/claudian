@@ -10,7 +10,7 @@ export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
   private kernel: OpencodeSessionKernel | null = null;
   private disposed = false;
   private connecting: Promise<void> | null = null;
-  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly serverService?: OpencodeServerService) {}
+  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly serverService: OpencodeServerService) {}
 
   connect(options: OpencodeKernelConnectOptions): Promise<void> {
     if (this.disposed) return Promise.reject(new Error('OpenCode session is disposed'));

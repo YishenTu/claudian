@@ -69,6 +69,7 @@ import {
   OpencodeSessionMissingError,
 } from '@/providers/opencode/execution/OpencodeAcpSessionKernel';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
+import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -300,6 +301,7 @@ function createHarness(config = createConfig()) {
   } as unknown as OpencodeCommandCatalog;
   const backend = new OpencodeExecutionBackend(plugin, {
     commandCatalog,
+    serverService: new OpencodeServerService(),
     createKernel: (options) => {
       const kernel = new FakeKernel(options);
       kernels.push(kernel);
@@ -365,7 +367,7 @@ describe('OpencodeExecutionBackend', () => {
     const cliPath = createDeferred<string | null>();
     const host = createPlugin();
     host.getResolvedProviderCliPath = jest.fn(() => cliPath.promise);
-    const session = new OpencodeExecutionBackend(host).createSession(createConfig());
+    const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession(createConfig());
     const run = session.execute(createRequest());
     const events = collect(run.events);
     await waitForCondition(() => host.getResolvedProviderCliPath.mock.calls.length === 1);
@@ -391,7 +393,7 @@ describe('OpencodeExecutionBackend', () => {
     }>();
     mockPrepareLaunchArtifacts.mockReturnValueOnce(artifacts.promise);
     const host = createPlugin();
-    const session = new OpencodeExecutionBackend(host).createSession(createConfig());
+    const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession(createConfig());
     const run = session.execute(createRequest());
     const events = collect(run.events);
     await waitForCondition(() => mockPrepareLaunchArtifacts.mock.calls.length === 1);
@@ -417,7 +419,7 @@ describe('OpencodeExecutionBackend', () => {
     const initialize = createDeferred<Record<string, never>>();
     mockConnectionInitialize.mockReturnValueOnce(initialize.promise);
     const host = createPlugin();
-    const session = new OpencodeExecutionBackend(host).createSession(createConfig());
+    const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession(createConfig());
     const run = session.execute(createRequest());
     const events = collect(run.events);
     await waitForCondition(() => mockConnectionInitialize.mock.calls.length === 1);
@@ -462,7 +464,7 @@ describe('OpencodeExecutionBackend', () => {
       }
 
       const host = createPlugin();
-      const session = new OpencodeExecutionBackend(host).createSession(createConfig());
+      const session = new OpencodeExecutionBackend(host, { serverService: new OpencodeServerService() }).createSession(createConfig());
       const events = await collect(session.execute(createRequest()).events);
 
       expect(events).toEqual(expect.arrayContaining([

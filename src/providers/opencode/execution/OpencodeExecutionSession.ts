@@ -54,7 +54,7 @@ export type OpencodeAcpSessionKernelFactory = (
 
 export interface OpencodeExecutionSessionOptions {
   readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setCommandSnapshot'>;
-  readonly serverService?: OpencodeServerService;
+  readonly serverService: OpencodeServerService;
   readonly createKernel?: OpencodeAcpSessionKernelFactory;
 }
 
@@ -193,7 +193,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
   constructor(
     private readonly plugin: ProviderHost,
     private readonly config: ProviderSessionConfig,
-    private readonly options: OpencodeExecutionSessionOptions = {},
+    private readonly options: OpencodeExecutionSessionOptions,
   ) {
     this.createKernel = options.createKernel
       ?? ((kernelOptions) => new DefaultOpencodeSessionKernel(kernelOptions, options.serverService));

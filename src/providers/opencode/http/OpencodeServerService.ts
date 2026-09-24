@@ -1,17 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
-import { getInlineEditSystemPrompt } from '@/core/prompt/inlineEdit';
-import { buildSystemPrompt } from '@/core/prompt/mainAgent';
-import { buildTitleGenerationSystemPrompt, resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
 
-import type { OpencodeKernelConnectOptions } from '../execution/OpencodeSessionContract';
-import { OPENCODE_SAFE_MODE_ID, OPENCODE_YOLO_MODE_ID } from '../modes';
-import { AUX_AGENT_IDS, getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
 import { prepareOpencodeLaunchArtifacts } from '../runtime/OpencodeLaunchArtifacts';
 import { resolveOpencodeDatabasePath } from '../runtime/OpencodePaths';
-import { isRecord, OpencodeHttpClient, type OpencodeHttpEvent } from './OpencodeHttpClient';
+import { isRecord, OpencodeHttpClient, type OpencodeHttpEvent, pollOpencodeUntil } from './OpencodeHttpClient';
 import { createOpencodeServerConfig, type OpencodeServerConfig } from './OpencodeServerConfig';
 
 type Subscriber = { event: (event: OpencodeHttpEvent) => void; error: (error: Error) => void; interactive: () => boolean };
@@ -23,12 +16,7 @@ interface Server {
   forms: Map<string, Subscriber>;
   subscription?: Promise<void>;
   references: number;
-  ephemeral: boolean;
   close?: Promise<void>;
-}
-
-export interface OpencodeHttpTransport {
-  request<T = unknown>(route: string, options?: Parameters<OpencodeHttpClient['request']>[1]): Promise<T>;
 }
 
 /** Provider-owned native processes. Persistent consumers share by environment and database. */
@@ -37,8 +25,6 @@ export class OpencodeServerService {
   private readonly fence = new ProviderTransitionFence();
   private generation = new AbortController();
   private disposal: Promise<void> | null = null;
-
-  constructor(private readonly plugin: Pick<ProviderHost, 'settings'>) {}
 
   async acquire(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<OpencodeServerLease> {
     do {
@@ -55,7 +41,7 @@ export class OpencodeServerService {
       signal?.throwIfAborted();
       let pending = this.servers.get(key);
       if (!pending) {
-        pending = this.create(cliPath, cwd, normalized, ephemeral, generation);
+        pending = this.create(cliPath, cwd, normalized, generation);
         this.servers.set(key, pending);
         void pending.catch(() => { if (this.servers.get(key) === pending) this.servers.delete(key); });
       }
@@ -74,7 +60,7 @@ export class OpencodeServerService {
         continue;
       }
       server.references++;
-      return new OpencodeServerLease(server, this.plugin, cwd, async () => {
+      return new OpencodeServerLease(server, async () => {
         if (--server.references === 0 && ephemeral) {
           if (this.servers.get(key) === pending) this.servers.delete(key);
           await this.close(server);
@@ -109,15 +95,13 @@ export class OpencodeServerService {
     return this.disposal ??= this.invalidate();
   }
 
-  private async create(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, ephemeral: boolean, signal: AbortSignal): Promise<Server> {
-    const artifacts = await prepareOpencodeLaunchArtifacts({
-      workspaceRoot: cwd, runtimeEnv: environment, nativeVersion: 2,
-      settings: getSystemPromptSettings(this.plugin, cwd), titleLocale: resolveTitleGenerationLocale(this.plugin.settings),
-    });
+  private async create(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal): Promise<Server> {
+    // Leases register agents with their own instructions; base prompt files are placeholders.
+    const artifacts = await prepareOpencodeLaunchArtifacts({ workspaceRoot: cwd, runtimeEnv: environment, nativeVersion: 2, preserveExistingPrompts: true });
     signal.throwIfAborted();
     const config = await createOpencodeServerConfig(cwd, environment);
     const client = new OpencodeHttpClient(cliPath, cwd, { ...environment, OPENCODE_CONFIG: config.file, OPENCODE_CONFIG_CONTENT: artifacts.configContent });
-    const server: Server = { client, config, databasePath: artifacts.databasePath, ephemeral, references: 0, subscribers: new Set(), forms: new Map() };
+    const server: Server = { client, config, databasePath: artifacts.databasePath, references: 0, subscribers: new Set(), forms: new Map() };
     try {
       await config.initialize(error => { void this.close(server, error); });
       signal.throwIfAborted();
@@ -139,14 +123,13 @@ export class OpencodeServerService {
 }
 
 /** A consumer can release its requests and subscription without closing its peers' process. */
-export class OpencodeServerLease implements OpencodeHttpTransport {
+export class OpencodeServerLease {
   private readonly controller = new AbortController();
   private subscriber?: Subscriber;
   private readonly agentIds: string[] = [];
   private disposal?: Promise<void>;
 
-  constructor(private readonly server: Server, private readonly plugin: Pick<ProviderHost, 'settings'>, private readonly cwd: string,
-    private readonly release: () => Promise<void>, private readonly failServer: (error: Error) => Promise<void>) {}
+  constructor(private readonly server: Server, private readonly release: () => Promise<void>, private readonly failServer: (error: Error) => Promise<void>) {}
 
   get databasePath(): string | null { return this.server.databasePath; }
   signal(signal?: AbortSignal): AbortSignal { return this.server.client.signal(AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])])); }
@@ -173,21 +156,11 @@ export class OpencodeServerLease implements OpencodeHttpTransport {
     }
   }
 
-  async prepareAgents(options: OpencodeKernelConnectOptions): Promise<Record<string, string>> {
-    const profile = options.profile;
-    const instructions = options.systemInstructions;
-    const system = instructions.kind === 'explicit' ? instructions.instructions
-      : profile === 'readonly' ? getInlineEditSystemPrompt(this.cwd)
-      : profile === 'passive' ? buildTitleGenerationSystemPrompt(resolveTitleGenerationLocale(this.plugin.settings))
-      : buildSystemPrompt(getSystemPromptSettings(this.plugin, this.cwd), { dynamicSections: instructions.dynamicSections ? [...instructions.dynamicSections] : undefined });
-    const bases = profile === 'managed' ? [OPENCODE_SAFE_MODE_ID, OPENCODE_YOLO_MODE_ID] : [AUX_AGENT_IDS[profile]];
-    let catalog: { data: Record<string, unknown>[] };
-    const readyBy = Date.now() + 10_000;
-    do {
-      catalog = await this.request('/api/agent');
-      if (bases.every(base => catalog.data.some(agent => agent.id === base))) break;
-      await new Promise(resolve => window.setTimeout(resolve, 25));
-    } while (Date.now() < readyBy);
+  /** Copies native base agents under session-owned ids so instructions never leak across sessions. */
+  async registerAgents(bases: readonly string[], system: string): Promise<Record<string, string>> {
+    const signal = this.signal();
+    const read = (): Promise<{ data: Record<string, unknown>[] }> => this.request('/api/agent', { signal });
+    const catalog = await pollOpencodeUntil(read, current => bases.every(base => current.data.some(agent => agent.id === base)), 10_000, signal);
     const mapping: Record<string, string> = {}, definitions: Record<string, Record<string, unknown>> = {};
     for (const base of bases) {
       const agent = catalog.data.find(agent => agent.id === base);
@@ -199,13 +172,10 @@ export class OpencodeServerLease implements OpencodeHttpTransport {
       this.agentIds.push(id);
     }
     await this.server.config.add(definitions);
-    const deadline = Date.now() + 10_000;
-    do {
-      const current = await this.request<{ data: Record<string, unknown>[] }>('/api/agent');
-      if (Object.values(mapping).every(id => current.data.some(agent => agent.id === id && agent.system === system))) return mapping;
-      await new Promise(resolve => window.setTimeout(resolve, 25));
-    } while (Date.now() < deadline);
-    throw new Error('OpenCode did not load the session system instructions.');
+    const isLoaded = (current: { data: Record<string, unknown>[] }): boolean => Object.values(mapping)
+      .every(id => current.data.some(agent => agent.id === id && agent.system === system));
+    if (!isLoaded(await pollOpencodeUntil(read, isLoaded, 10_000, signal))) throw new Error('OpenCode did not load the session system instructions.');
+    return mapping;
   }
 
   dispose(): Promise<void> {
@@ -241,5 +211,19 @@ export class OpencodeServerLease implements OpencodeHttpTransport {
       return;
     }
     for (const subscriber of this.server.subscribers) subscriber.event(event);
+  }
+}
+
+/** Borrows the shared service when available; otherwise owns one for this call only. */
+export async function withOpencodeServerLease<T>(
+  shared: OpencodeServerService | null | undefined, cliPath: string, cwd: string, environment: NodeJS.ProcessEnv,
+  use: (lease: OpencodeServerLease) => Promise<T>,
+): Promise<T> {
+  const service = shared ?? new OpencodeServerService();
+  try {
+    const lease = await service.acquire(cliPath, cwd, environment);
+    try { return await use(lease); } finally { await lease.dispose(); }
+  } finally {
+    if (!shared) await service.dispose();
   }
 }

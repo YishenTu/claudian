@@ -185,6 +185,23 @@ describe('buildOpencodeManagedConfig', () => {
 });
 
 describe('prepareOpencodeLaunchArtifacts', () => {
+  it('creates missing prompts without replacing existing ones when sessions supply instructions', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-prompts-'));
+    const base = { workspaceRoot: root, runtimeEnv: { HOME: root }, settings: { vaultPath: root } };
+    const prompts = path.join(root, '.claudian', 'opencode', 'prompts');
+    try {
+      await prepareOpencodeLaunchArtifacts({ ...base, systemPromptText: 'Main instructions' });
+      await prepareOpencodeLaunchArtifacts({ ...base, systemPromptText: 'Replacement', preserveExistingPrompts: true });
+      expect(await fs.readFile(path.join(prompts, 'main.md'), 'utf8')).toBe('Main instructions\n');
+
+      await fs.rm(prompts, { recursive: true });
+      await prepareOpencodeLaunchArtifacts({ ...base, systemPromptText: 'Placeholder', preserveExistingPrompts: true });
+      expect(await fs.readFile(path.join(prompts, 'main.md'), 'utf8')).toBe('Placeholder\n');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it.each([true, false])('shares configuration and distinct prompts with hard-link support: %s', async (supportsLinks) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-opencode-prompts-'));
     const base = { workspaceRoot: root, runtimeEnv: { HOME: root }, settings: { vaultPath: root } };

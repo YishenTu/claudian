@@ -8,6 +8,7 @@ jest.mock('cross-spawn', () => jest.fn());
 
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
+import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
 import { createNativeRpcProcess, createNativeVersionProcess } from './NativeRpcTestProcess';
 import { createForkTestEnvironment, type ForkTestEnvironment } from './ProviderForkTestHarness';
@@ -82,7 +83,7 @@ async function createNativeOpencode(env: ForkTestEnvironment) {
     environmentVariables: `OPENCODE_DB=${path.join(env.root, 'opencode.db')}`,
   };
   return {
-    backend: new OpencodeExecutionBackend(env.host), sessions, prompts, processes,
+    backend: new OpencodeExecutionBackend(env.host, { serverService: new OpencodeServerService() }), sessions, prompts, processes,
     rejectFork: () => { rejectFork = true; },
     disableFork: () => { supportsFork = false; },
   };

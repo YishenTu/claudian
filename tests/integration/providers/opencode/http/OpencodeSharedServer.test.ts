@@ -123,7 +123,7 @@ it('shares native history and fork operations with catalog and chat transport', 
     const history = opencodeProviderRegistration.historyService!;
     const conversation: any = { sessionId: native.data.id, messages: [], providerState: { nativeVersion: 2, databasePath: f.environment.OPENCODE_DB } };
     expect(await history.recoverConversationModelSelection!(conversation, f.root, { settings: f.plugin.settings, environment: { ...f.environment, PATH: process.env.PATH }, vaultPath: f.root })).toBe('opencode:local/chat');
-    const child = await forkOpencodeSession({ cliPath: f.cli, cwd: f.root, environment: f.environment, nativeVersion: 2, sourceSessionId: native.data.id, serverService: () => service });
+    const child = await forkOpencodeSession({ cliPath: f.cli, cwd: f.root, environment: f.environment, nativeVersion: 2, sourceSessionId: native.data.id, serverService: service });
     expect(child).not.toBe(native.data.id);
     expect(await lease.request(`/api/session/${child}`)).toMatchObject({ data: { id: child } });
     expect(f.processes()).toHaveLength(1);

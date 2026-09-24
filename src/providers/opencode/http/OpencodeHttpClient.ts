@@ -194,3 +194,18 @@ export class OpencodeHttpClient {
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
+
+/** Re-reads native state that initializes asynchronously; returns the last value after the deadline. */
+export async function pollOpencodeUntil<T>(read: () => Promise<T>, done: (value: T) => boolean, timeoutMs: number, signal: AbortSignal): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const value = await read();
+    if (done(value) || Date.now() >= deadline) return value;
+    await new Promise<void>((resolve, reject) => {
+      signal.throwIfAborted();
+      const onAbort = (): void => { window.clearTimeout(timer); reject(toAbortError(signal, 'OpenCode request aborted.')); };
+      const timer = window.setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, 25);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+}
