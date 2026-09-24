@@ -773,6 +773,6 @@ button.claudian-work-header:disabled {
 
 .claudian-message-quote-btn-icon {
   display: block;
-  width: 20px;
-  height: 20px;
+  width: 1em;
+  height: 1em;
 }
