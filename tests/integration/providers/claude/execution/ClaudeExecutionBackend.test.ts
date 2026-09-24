@@ -30,6 +30,7 @@ function createContext() {
     settings: {
       providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5', 'claude-opus-4-6', 'claude-haiku-4-5', 'custom-model', 'custom-model-a', 'custom-model-b']) },
       model: 'claude-sonnet-4-5',
+      titleGenerationModel: 'claude-haiku-4-5',
       permissionMode: 'normal',
       effortLevel: 'medium',
       mediaFolder: '',

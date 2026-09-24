@@ -176,11 +176,11 @@ describe('ProviderRegistry', () => {
 
     expect(
       ProviderRegistry.getTitleGenerationModelOptions(disabledSettings)
-        .some(option => option.value === TEST_CODEX_MODEL),
+        .some(option => option.value === `openai-codex/${TEST_CODEX_MODEL}`),
     ).toBe(false);
     expect(
       ProviderRegistry.getTitleGenerationModelOptions(enabledSettings)
-        .some(option => option.value === TEST_CODEX_MODEL),
+        .some(option => option.value === `openai-codex/${TEST_CODEX_MODEL}`),
     ).toBe(true);
 
     const claudeDisabledSettings = {
@@ -209,7 +209,7 @@ describe('ProviderRegistry', () => {
       },
     });
 
-    expect(options.find(option => option.value === TEST_CODEX_MODEL)?.label)
+    expect(options.find(option => option.value === `openai-codex/${TEST_CODEX_MODEL}`)?.label)
       .toBe(`Codex: ${TEST_CODEX_MODEL_LABEL}`);
     expect(options.find(option => option.value === 'sonnet')?.label)
       .toBe('Claude: Sonnet');
@@ -221,7 +221,7 @@ describe('ProviderRegistry', () => {
     expect(ProviderRegistry.getProviderDisplayName('grok')).toBe('Grok');
   });
 
-  it('routes auto title generation to Claude independently of chat provider state', async () => {
+  it('requires an explicit title model instead of selecting Claude automatically', async () => {
     const providerCalls: ProviderId[] = [];
     const originalCreate = ProviderRegistry.createTitleGenerationService.bind(ProviderRegistry);
     jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
@@ -245,14 +245,15 @@ describe('ProviderRegistry', () => {
 
     await service.generateTitle('conv-1', 'hello', callback);
 
-    expect(providerCalls).toEqual(['claude']);
+    expect(providerCalls).toEqual([]);
+    expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
     expect(callback).toHaveBeenCalledWith('conv-1', {
-      success: true,
-      title: 'claude title',
+      success: false,
+      error: expect.stringContaining('Select an available title model'),
     });
   });
 
-  it('routes automatic title generation away from Claude when Claude is disabled', async () => {
+  it('does not select another provider when the title model is empty', async () => {
     const providerCalls: ProviderId[] = [];
     const originalCreate = ProviderRegistry.createTitleGenerationService.bind(ProviderRegistry);
     jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
@@ -275,9 +276,15 @@ describe('ProviderRegistry', () => {
       },
     } as any);
 
-    await service.generateTitle('conv-1', 'hello', jest.fn());
+    const callback = jest.fn();
+    await service.generateTitle('conv-1', 'hello', callback);
 
-    expect(providerCalls).toEqual(['codex']);
+    expect(providerCalls).toEqual([]);
+    expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
+    expect(callback).toHaveBeenCalledWith('conv-1', {
+      success: false,
+      error: expect.stringContaining('Select an available title model'),
+    });
   });
 
   it('routes explicit title model selections to the owning provider', async () => {
@@ -296,7 +303,7 @@ describe('ProviderRegistry', () => {
       settings: {
         titleGenerationModel: TEST_CODEX_MODEL,
         providerConfigs: {
-          codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL] },
+          codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL], discoveredModels: TEST_CODEX_CATALOG },
         },
       },
     } as any);
@@ -311,7 +318,7 @@ describe('ProviderRegistry', () => {
     });
   });
 
-  it('does not route title generation through a disabled model provider', async () => {
+  it('rejects a disabled title selection before initializing its provider', async () => {
     const providerCalls: ProviderId[] = [];
     const originalCreate = ProviderRegistry.createTitleGenerationService.bind(ProviderRegistry);
     jest.spyOn(ProviderRegistry, 'createTitleGenerationService')
@@ -335,11 +342,58 @@ describe('ProviderRegistry', () => {
       },
     } as any);
 
-    await service.generateTitle('conv-1', 'hello', jest.fn());
+    const callback = jest.fn();
+    await service.generateTitle('conv-1', 'hello', callback);
 
-    expect(providerCalls).toEqual(['claude']);
+    expect(providerCalls).toEqual([]);
+    expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
+    expect(callback).toHaveBeenCalledWith('conv-1', {
+      success: false,
+      error: expect.stringContaining('Select an available title model'),
+    });
   });
 
+  it.each(['unknown-title-model', TEST_CODEX_MODEL])(
+    'preserves an unavailable title selection without starting a provider: %s',
+    async titleGenerationModel => {
+      const settings = {
+        titleGenerationModel,
+        providerConfigs: {
+          codex: { enabled: true, visibleModels: [], discoveredModels: TEST_CODEX_CATALOG },
+        },
+      };
+      const callback = jest.fn();
+      const service = ProviderRegistry.createTitleGenerationService({ settings } as any);
+      await service.generateTitle('conversation', 'hello', callback);
+      expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
+      expect(settings.titleGenerationModel).toBe(titleGenerationModel);
+      expect(callback).toHaveBeenCalledWith('conversation', {
+        success: false,
+        error: expect.stringContaining('Select an available title model'),
+      });
+    },
+  );
+
+  it('rechecks title availability after provider initialization', async () => {
+    const settings = {
+      titleGenerationModel: TEST_CODEX_MODEL,
+      providerConfigs: {
+        codex: { enabled: true, visibleModels: [TEST_CODEX_MODEL], discoveredModels: TEST_CODEX_CATALOG },
+      },
+    };
+    jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation(async () => {
+      settings.providerConfigs.codex.enabled = false;
+    });
+    const createService = jest.spyOn(ProviderRegistry, 'createTitleGenerationService');
+    const service = ProviderRegistry.createTitleGenerationService({ settings } as any);
+    const callback = jest.fn();
+    await service.generateTitle('conversation', 'hello', callback);
+    expect(createService).toHaveBeenCalledTimes(1);
+    expect(callback).toHaveBeenCalledWith('conversation', {
+      success: false,
+      error: expect.stringContaining('became unavailable'),
+    });
+  });
 
 });
 

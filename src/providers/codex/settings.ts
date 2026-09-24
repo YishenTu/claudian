@@ -13,8 +13,7 @@ import {
   findCodexModel,
   getCodexDefaultReasoningEffort,
   getDefaultCodexModel,
-  isCodexModelAvailable,
-  normalizeCodexDiscoveredModels,
+  normalizeCodexDiscoveredModels
 } from './models';
 import { toCodexRuntimeModelId } from './modelSelection';
 import { CODEX_SPARK_MODEL } from './types/models';
@@ -33,7 +32,6 @@ export interface CodexProviderConfig {
   safeMode: CodexSafeMode;
   cliPath: string;
   cliPathsByHost: HostnameCliPaths;
-  customModels: string;
   discoveredModels: CodexDiscoveredModel[];
   modelAliases: Record<string, string>;
   visibleModels: string[] | null;
@@ -97,31 +95,11 @@ function omitCurrentHost<T>(entries: Record<string, T>, hostnameKey: string): Re
   return next;
 }
 
-type CodexProjectionKey =
-  | 'savedProviderEffort'
-  | 'savedProviderModel'
-  | 'savedProviderServiceTier';
-
-function ensureCodexProjectionMap(
-  settings: Record<string, unknown>,
-  key: CodexProjectionKey,
-): Record<string, string> {
-  const current = settings[key];
-  if (current && typeof current === 'object' && !Array.isArray(current)) {
-    return current as Record<string, string>;
-  }
-
-  const next: Record<string, string> = {};
-  settings[key] = next;
-  return next;
-}
-
 export interface CodexProviderSettings {
   enabled: CodexProviderConfig['enabled'];
   safeMode: CodexProviderConfig['safeMode'];
   cliPath: CodexProviderConfig['cliPath'];
   cliPathsByHost: CodexProviderConfig['cliPathsByHost'];
-  customModels: CodexProviderConfig['customModels'];
   discoveredModels: CodexProviderConfig['discoveredModels'];
   modelAliases: CodexProviderConfig['modelAliases'];
   visibleModels: CodexProviderConfig['visibleModels'];
@@ -143,10 +121,9 @@ export const DEFAULT_CODEX_PROVIDER_CONFIG: Readonly<CodexProviderConfig> = Obje
   safeMode: 'workspace-write',
   cliPath: '',
   cliPathsByHost: {},
-  customModels: '',
   discoveredModels: [],
   modelAliases: {},
-  visibleModels: null,
+  visibleModels: [],
   enableUltraEffort: false,
   responseStyle: 'pragmatic',
   reasoningSummary: 'detailed',
@@ -205,7 +182,6 @@ export function normalizeCodexVisibleModels(
     return null;
   }
 
-  const knownModelIds = new Set(discoveredModels.map(model => model.model));
   const visibleModels: string[] = [];
   const seen = new Set<string>();
   for (const entry of value) {
@@ -217,7 +193,6 @@ export function normalizeCodexVisibleModels(
     if (
       !modelId
       || seen.has(modelId)
-      || (knownModelIds.size > 0 && !knownModelIds.has(modelId))
     ) {
       continue;
     }
@@ -237,7 +212,6 @@ export function normalizeCodexModelAliases(
     return {};
   }
 
-  const knownModelIds = new Set(discoveredModels.map(model => model.model));
   const normalized: Record<string, string> = {};
   for (const [rawModelId, rawAlias] of Object.entries(value as Record<string, unknown>)) {
     if (typeof rawAlias !== 'string') {
@@ -246,7 +220,7 @@ export function normalizeCodexModelAliases(
 
     const modelId = rawModelId.trim();
     const alias = rawAlias.trim();
-    if (!modelId || !alias || (knownModelIds.size > 0 && !knownModelIds.has(modelId))) {
+    if (!modelId || !alias) {
       continue;
     }
     normalized[modelId] = alias;
@@ -304,73 +278,6 @@ function getCodexAliasModelIds(
   return getVisibleCodexModelIds(visibleModels, discoveredModels);
 }
 
-function retargetRemovedCodexSelections(
-  settings: Record<string, unknown>,
-  next: CodexProviderSettings,
-): void {
-  if (next.visibleModels === null) {
-    return;
-  }
-
-  const visibleModelIds = new Set(next.visibleModels);
-  if (visibleModelIds.size === 0) {
-    if (findCodexModel(next.discoveredModels, settings.titleGenerationModel as string | undefined)) {
-      settings.titleGenerationModel = '';
-    }
-    return;
-  }
-
-  const fallbackModel = next.visibleModels
-    .map(modelId => next.discoveredModels.find(model => model.model === modelId))
-    .find((model): model is CodexDiscoveredModel => Boolean(
-      model && isCodexModelAvailable(model, next.enableUltraEffort),
-    )) ?? null;
-  if (!fallbackModel) {
-    return;
-  }
-
-  const maybeRetarget = (value: unknown): string | null => {
-    if (typeof value !== 'string') {
-      return null;
-    }
-
-    const model = findCodexModel(next.discoveredModels, value);
-    return model && !visibleModelIds.has(model.model) ? fallbackModel.model : null;
-  };
-  const fallbackServiceTier = fallbackModel.defaultServiceTier ?? 'default';
-
-  const existingSavedModels = settings.savedProviderModel;
-  const savedCodexModel = existingSavedModels
-    && typeof existingSavedModels === 'object'
-    && !Array.isArray(existingSavedModels)
-    ? (existingSavedModels as Record<string, unknown>).codex
-    : undefined;
-  const nextSavedModel = maybeRetarget(savedCodexModel);
-  if (nextSavedModel) {
-    ensureCodexProjectionMap(settings, 'savedProviderModel').codex = nextSavedModel;
-    ensureCodexProjectionMap(settings, 'savedProviderEffort').codex = getCodexDefaultReasoningEffort(
-      fallbackModel,
-      next.enableUltraEffort,
-    ) ?? DEFAULT_REASONING_VALUE;
-    ensureCodexProjectionMap(settings, 'savedProviderServiceTier').codex = fallbackServiceTier;
-  }
-
-  const nextTopLevelModel = maybeRetarget(settings.model);
-  if (nextTopLevelModel) {
-    settings.model = nextTopLevelModel;
-    settings.effortLevel = getCodexDefaultReasoningEffort(
-      fallbackModel,
-      next.enableUltraEffort,
-    ) ?? DEFAULT_REASONING_VALUE;
-    settings.serviceTier = fallbackServiceTier;
-  }
-
-  const nextTitleGenerationModel = maybeRetarget(settings.titleGenerationModel);
-  if (nextTitleGenerationModel) {
-    settings.titleGenerationModel = nextTitleGenerationModel;
-  }
-}
-
 function normalizeInstallationMethodsByHost(value: unknown): HostnameInstallationMethods {
   const normalized = normalizeHostnameStringMap(value);
   const result: HostnameInstallationMethods = {};
@@ -402,7 +309,7 @@ function getCodexStoredConfig(
   const wslDistroOverridesByHost = normalizeHostnameStringMap(
     config.wslDistroOverridesByHost,
   );
-  const discoveredModels = normalizeCodexDiscoveredModels(config.discoveredModels);
+  const discoveredModels = normalizeCodexDiscoveredModels(config.discoveredModels ?? config.selectedModels);
   const visibleModels = normalizeCodexVisibleModels(config.visibleModels, discoveredModels);
 
   return {
@@ -419,7 +326,6 @@ function getCodexStoredConfig(
       readStoredString(settings.codexCliPath, DEFAULT_CODEX_PROVIDER_CONFIG.cliPath),
     ),
     cliPathsByHost,
-    customModels: readStoredString(config.customModels, DEFAULT_CODEX_PROVIDER_CONFIG.customModels),
     discoveredModels,
     modelAliases: pruneCodexModelAliases(
       normalizeCodexModelAliases(config.modelAliases, discoveredModels),
@@ -477,6 +383,7 @@ function projectStoredCodexConfigNormalization(
       projected[key] = normalizedConfig[key];
     }
   }
+  delete projected.customModels;
   delete projected.installationMethod;
   delete projected.wslDistroOverride;
   return projected;
@@ -517,6 +424,7 @@ export function normalizeCodexStoredConfig(
     installationMethodsByHost,
     wslDistroOverridesByHost,
   };
+  delete normalizedConfig.customModels;
   delete normalizedConfig.installationMethod;
   delete normalizedConfig.wslDistroOverride;
 
@@ -636,7 +544,6 @@ export function updateCodexProviderSettings(
     safeMode: next.safeMode,
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,
-    customModels: next.customModels,
     discoveredModels: next.discoveredModels,
     modelAliases: next.modelAliases,
     visibleModels: next.visibleModels,
@@ -650,8 +557,14 @@ export function updateCodexProviderSettings(
     installationMethodsByHost,
     wslDistroOverridesByHost,
   });
-  if ('visibleModels' in updates) {
-    retargetRemovedCodexSelections(settings, next);
-  }
   return next;
+}
+
+export function projectCodexModelSettings(settings: Record<string, unknown>): Record<string, unknown> {
+  const current = getCodexProviderSettings(settings);
+  const visibleModels = getVisibleCodexModelIds(current.visibleModels, current.discoveredModels);
+  const selected = new Set(visibleModels);
+  const config = { ...getProviderConfig(settings, 'codex'), visibleModels, selectedModels: current.discoveredModels.filter(model => selected.has(model.model)) };
+  for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes', 'customModels']) delete (config as Record<string, unknown>)[key];
+  return config;
 }

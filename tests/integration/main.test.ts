@@ -2447,10 +2447,9 @@ describe('ClaudianPlugin', () => {
       const cliResolver = new GrokCliResolver();
       ProviderWorkspaceRegistry.setServices('grok', {
         cliResolver,
-        refreshModelCatalog: context => coordinator.refreshModelCatalog(context),
       });
 
-      const refresh = ProviderWorkspaceRegistry.refreshModelCatalog('grok', {
+      const refresh = coordinator.refresh({
         providerTransitionOwner: true,
       });
       let refreshed = false;
@@ -2464,6 +2463,7 @@ describe('ClaudianPlugin', () => {
 
     it('computes an initialized Codex catalog fingerprint through owned CLI while gated', async () => {
       await plugin.onload();
+      updateCodexProviderSettings(plugin.settings, { enabled: true });
       const discoveredModel = {
         defaultReasoningEffort: 'medium',
         defaultServiceTier: null,
@@ -2488,10 +2488,9 @@ describe('ClaudianPlugin', () => {
       };
       ProviderWorkspaceRegistry.setServices('codex', {
         cliResolver,
-        refreshModelCatalog: context => coordinator.refreshModelCatalog(context),
       });
 
-      const refresh = ProviderWorkspaceRegistry.refreshModelCatalog('codex', {
+      const refresh = coordinator.refresh({
         providerTransitionOwner: true,
       });
       let refreshed = false;
@@ -2520,9 +2519,12 @@ describe('ClaudianPlugin', () => {
       ).mockImplementationOnce(() => {
         throw publicationError;
       });
-      const refreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
+      const markStale = jest.fn();
+      const unregister = plugin.executionLifecycleRegistry.registerTransitionHook('grok', {
+        beforeTransition: () => markStale(),
+      });
       ProviderWorkspaceRegistry.setServices('grok', {
-        refreshModelCatalog,
+        modelCatalog: { markStale } as any,
       });
       const invalidateProviderCommandCaches = jest.fn();
       const refreshModelSelector = jest.fn();
@@ -2541,10 +2543,8 @@ describe('ClaudianPlugin', () => {
 
         expect(plugin.getEnvironmentVariablesForScope('provider:grok'))
           .toBe('GROK_PROFILE=committed');
-        expect(refreshModelCatalog).toHaveBeenCalledTimes(1);
-        expect(refreshModelCatalog).toHaveBeenCalledWith({
-          providerTransitionOwner: true,
-        });
+        expect(markStale).toHaveBeenCalledTimes(1);
+        expect(markStale).toHaveBeenCalledWith();
         expect(invalidateProviderCommandCaches).toHaveBeenCalledWith(['grok']);
         expect(refreshModelSelector).toHaveBeenCalledTimes(1);
         expect(plugin.executionLifecycleRegistry.getProviderGeneration('grok'))
@@ -2555,11 +2555,12 @@ describe('ClaudianPlugin', () => {
         await plugin.applyEnvironmentVariables('provider:grok', 'GROK_PROFILE=next');
 
         expect(plugin.getEnvironmentVariablesForScope('provider:grok')).toBe('GROK_PROFILE=next');
-        expect(refreshModelCatalog).toHaveBeenCalledTimes(2);
+        expect(markStale).toHaveBeenCalledTimes(2);
         expect(plugin.executionLifecycleRegistry.getProviderGeneration('grok'))
           .toBe(initialGeneration + 2);
         expect(invalidateSpy).toHaveBeenCalledTimes(2);
       } finally {
+        unregister();
         invalidateSpy.mockRestore();
       }
     });
@@ -2730,7 +2731,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.getEnvironmentVariablesForScope('provider:grok')).toBe('GROK_PROFILE=new');
       expect(getGrokProviderSettings(plugin.settings).environmentHash)
         .not.toBe(committed.environmentHash);
-      expect(getGrokProviderSettings(plugin.settings).currentCatalog).toBeNull();
+      expect(getGrokProviderSettings(plugin.settings).currentCatalog?.models[0].rawId).toBe('old-model');
       unregister();
     });
 

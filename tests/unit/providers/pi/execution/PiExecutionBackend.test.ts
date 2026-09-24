@@ -280,6 +280,16 @@ function createHarness(
 }
 
 describe('PiExecutionBackend', () => {
+  it('rejects an unavailable selected model before native startup with a configuration error', async () => {
+    const { host, session, kernels } = createHarness();
+    host.settings.providerConfigs.pi.visibleModels = [];
+    const events = await collect(session.execute(createRequest()).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', category: 'configuration' }));
+    expect(events.some(event => event.type === 'turn_started' && event.accepted)).toBe(false);
+    expect(kernels).toEqual([]);
+    await session.dispose();
+  });
+
   it('publishes the same native turn statistics live and after reload', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-throughput-'));
     const sessionFile = path.join(tempDir, 'session.jsonl');
@@ -1671,6 +1681,31 @@ describe('PiExecutionBackend', () => {
       },
       type: 'set_model',
     });
+  });
+
+  it('rejects a model removed during asynchronous preparation before native input', async () => {
+    const harness = createHarness(createConfig(), () => {
+      harness.host.settings.providerConfigs.pi.visibleModels = [];
+    });
+    const events = await collect(harness.session.execute(createRequest()).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', category: 'configuration' }));
+    expect(events.some(event => event.type === 'turn_started' && event.accepted)).toBe(false);
+    expect(harness.kernels[0].requests.some(request => request.type === 'prompt')).toBe(false);
+    await harness.session.dispose();
+  });
+
+  it('rejects steering after the active model is deselected', async () => {
+    const harness = createHarness();
+    const session = harness.session;
+    if (!isSteerableExecutionSession(session)) throw new Error('Pi must expose steering');
+    const events = collect(session.execute(createRequest()).events);
+    await flush();
+    harness.host.settings.providerConfigs.pi.visibleModels = [];
+    await expect(session.steer(createRequest())).resolves.toBe(false);
+    expect(harness.kernels[0].requests.some(request => request.type === 'steer')).toBe(false);
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await events;
+    await session.dispose();
   });
 
   it('supports native steer with prompt images', async () => {

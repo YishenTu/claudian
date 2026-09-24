@@ -2,7 +2,6 @@ import type { Component } from 'obsidian';
 import { Notice } from 'obsidian';
 
 import { resolveNewConversationModel } from '../../../../core/providers/conversationModel';
-import { getEnabledProviderForModel } from '../../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
 import { getVaultPath } from '../../../../utils/path';
@@ -15,7 +14,7 @@ import { SelectionController } from '../../controllers/SelectionController';
 import { StreamController } from '../../controllers/StreamController';
 import { MessageRenderer } from '../../rendering/MessageRenderer';
 import { SideChatController } from '../../side-chat/SideChatController';
-import { getTabProviderId } from '../providerResolution';
+import { getTabProviderId, requireTabProviderId } from '../providerResolution';
 import {
   handleForkAll,
   handleForkRequest,
@@ -79,10 +78,6 @@ export function buildTabRuntimeControllers(
     }
 
     try {
-      if (tab.conversationId === null && tab.draftModel) {
-        tab.providerId = getEnabledProviderForModel(tab.draftModel, plugin.settings);
-      }
-
       await initializeTabExecution(tab, plugin);
       if (isClosingLifecycleState(tab.lifecycleState)) {
         return false;
@@ -159,7 +154,7 @@ export function buildTabRuntimeControllers(
     updateQueueIndicator: () => (
       runtimeRef.requirePublished().controllers.inputController.updateQueueIndicator()
     ),
-    getProviderId: () => getTabProviderId(runtimeRef.requirePublished(), plugin),
+    getProviderId: () => requireTabProviderId(runtimeRef.requirePublished(), plugin),
     getProviderSessionId: () => shell.executionCoordinator.snapshot?.providerSessionId ?? null,
     loadSubagentToolCalls: async (request) => {
       const vaultPath = getVaultPath(plugin.app);
@@ -242,7 +237,7 @@ export function buildTabRuntimeControllers(
       ),
       getExecutionCoordinator: () => shell.executionCoordinator,
       ensureExecutionInitialized,
-      getProviderId: () => getTabProviderId(runtimeRef.requirePublished(), plugin),
+      getProviderId: () => requireTabProviderId(runtimeRef.requirePublished(), plugin),
       getSelectedModel: () => getTabSelectedModel(runtimeRef.requirePublished(), plugin),
       dismissPendingInlinePrompts: () => (
         runtimeRef.requirePublished().controllers.inputController.dismissPendingApproval()

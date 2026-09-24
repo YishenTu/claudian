@@ -88,7 +88,7 @@ export interface InputControllerDeps {
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   getSubagentManager: () => SubagentManager;
   /** Authoritative tab/conversation provider, independent of runtime lifecycle. */
-  getTabProviderId?: () => ProviderId;
+  getTabProviderId?: () => ProviderId | null;
   /** Returns true if ready. */
   ensureExecutionInitialized?: () => Promise<boolean>;
   openConversation?: (conversationId: string) => Promise<void>;
@@ -179,6 +179,7 @@ export class InputController {
 
   #getActiveProviderId(): ProviderId {
     const tabProviderId = this.deps.getTabProviderId?.();
+    if (tabProviderId === null) throw new Error(t('chat.selectAvailableModel'));
     if (tabProviderId) {
       return tabProviderId;
     }
@@ -210,6 +211,10 @@ export class InputController {
 
   async sendMessage(options?: SendMessageOptions): Promise<void> {
     if (this.deps.canStartTurn?.() === false) return;
+    if (this.deps.getTabProviderId?.() === null) {
+      new Notice(t('chat.selectAvailableModel'));
+      return;
+    }
     await this.turnCoordinator.run(options);
   }
 
@@ -1609,7 +1614,8 @@ export class InputController {
     const fallbackTitle = conversationController.generateFallbackTitle(userContent);
     await plugin.renameConversation(state.currentConversationId, fallbackTitle);
 
-    if (!plugin.settings.enableAutoTitleGeneration) {
+    if (!plugin.settings.enableAutoTitleGeneration
+      || !ProviderRegistry.resolveTitleGenerationSelection(plugin.settings)) {
       return;
     }
 

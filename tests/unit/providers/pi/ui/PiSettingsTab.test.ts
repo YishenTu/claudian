@@ -131,6 +131,7 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
 }));
 function createSettingsRenderer() {
   return createPiSettingsTabRenderer({
+    modelCatalog: { markStale: jest.fn() },
     cliResolver: {
       reset: mockCliResolverReset,
     },
@@ -381,36 +382,12 @@ function render(settings: Record<string, unknown>) {
   return context;
 }
 
-async function flushPromises(): Promise<void> {
-  await new Promise<void>(resolve => setImmediate(resolve));
-}
-
 function findSetting(name: string): MockSetting {
   const setting = [...createdSettings].reverse().find(entry => entry.name === name);
   if (!setting) {
     throw new Error(`Setting not found: ${name}`);
   }
   return setting;
-}
-
-function findElement(tag: string, cls: string): any {
-  const element = [...createdDomElements].reverse().find(
-    candidate => candidate.tag === tag && candidate.cls === cls,
-  );
-  if (!element) {
-    throw new Error(`Element not found: ${tag}.${cls}`);
-  }
-  return element;
-}
-
-function findInputByType(type: string): any {
-  const element = [...createdDomElements].reverse().find(
-    candidate => candidate.tag === 'input' && candidate.type === type,
-  );
-  if (!element) {
-    throw new Error(`Input not found: ${type}`);
-  }
-  return element;
 }
 
 describe('PiSettingsTab', () => {
@@ -595,12 +572,12 @@ describe('PiSettingsTab', () => {
     });
   });
 
-  it('commits the Pi CLI path and clears discovery inside the execution transition', async () => {
+  it('commits the Pi CLI path and retains discovery inside the execution transition', async () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         pi: {
           cliPathsByHost: { 'current-host': '/old/pi' },
-          discoveredModels: [{ id: 'cached' }],
+          discoveredModels: [{ encodedId: 'pi:test/cached', id: 'cached', provider: 'test', label: 'Cached', input: ['text'], reasoning: false, thinkingLevels: ['off'] }],
         },
       },
     };
@@ -620,7 +597,7 @@ describe('PiSettingsTab', () => {
         .toBe('/old/pi');
       await mutation();
       order.push('settings-committed');
-      expect(getPiProviderSettings(settings).discoveredModels).toEqual([]);
+      expect(getPiProviderSettings(settings).discoveredModels).toHaveLength(1);
       expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
       order.push('transition-end');
     });
@@ -687,144 +664,6 @@ describe('PiSettingsTab', () => {
     expect(cliInput.inputEl.value).toBe('/new/pi');
     expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
   });
-
-  it('discovers models through PiModelDiscoveryService and reports failures', async () => {
-    mockDiscoverModels.mockResolvedValueOnce({
-      kind: 'completed',
-      models: [{
-        encodedId: 'pi:anthropic/claude-sonnet-4',
-        id: 'claude-sonnet-4',
-        input: ['text'],
-        label: 'Claude Sonnet 4',
-        provider: 'anthropic',
-        reasoning: true,
-        thinkingLevels: ['off', 'medium'],
-      }],
-    });
-    const settings: Record<string, unknown> = {
-      providerConfigs: {
-        pi: {
-          visibleModels: ['pi:anthropic/claude-sonnet-4'],
-        },
-      },
-    };
-    const context = render(settings);
-
-    await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
-    await flushPromises();
-
-    expect(mockDiscoverModels).toHaveBeenCalledTimes(1);
-    expect(getPiProviderSettings(settings).discoveredModels).toHaveLength(1);
-    expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('pi');
-
-    mockDiscoverModels.mockResolvedValueOnce({
-      diagnostics: 'not logged in',
-      kind: 'completed',
-      models: [],
-    });
-    await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
-    await flushPromises();
-    expect(mockNotices[0]).toContain('not logged in');
-  });
-
-  it('preserves cached models when discovery is skipped for a disabled provider', async () => {
-    const cachedModel = {
-      encodedId: 'pi:anthropic/claude-sonnet-4',
-      id: 'claude-sonnet-4',
-      input: ['text'],
-      label: 'Claude Sonnet 4',
-      provider: 'anthropic',
-      reasoning: true,
-      thinkingLevels: ['off', 'medium'],
-    };
-    const settings: Record<string, unknown> = {
-      providerConfigs: {
-        pi: {
-          discoveredModels: [cachedModel],
-          enabled: false,
-          visibleModels: [cachedModel.encodedId],
-        },
-      },
-    };
-    const context = render(settings);
-    mockDiscoverModels.mockResolvedValueOnce({
-      kind: 'skipped',
-      reason: 'provider-disabled',
-    });
-
-    await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
-    await flushPromises();
-
-    expect(getPiProviderSettings(settings).discoveredModels).toEqual([cachedModel]);
-    expect(context.plugin.saveSettings).not.toHaveBeenCalled();
-  });
-
-  it('does not publish unchanged model discovery', async () => {
-    const cachedModel = {
-      encodedId: 'pi:anthropic/claude-sonnet-4',
-      id: 'claude-sonnet-4',
-      input: ['text'] as Array<'text'>,
-      label: 'Claude Sonnet 4',
-      provider: 'anthropic',
-      reasoning: true,
-      thinkingLevels: ['off', 'medium'] as Array<'off' | 'medium'>,
-    };
-    const settings: Record<string, unknown> = {
-      providerConfigs: {
-        pi: {
-          discoveredModels: [cachedModel],
-          visibleModels: [cachedModel.encodedId],
-        },
-      },
-    };
-    const context = render(settings);
-    mockDiscoverModels.mockResolvedValueOnce({
-      kind: 'completed',
-      models: [cachedModel],
-    });
-
-    await findElement('button', 'claudian-provider-model-picker-action').dispatchMockEvent('click');
-    await flushPromises();
-
-    expect(context.plugin.saveSettings).not.toHaveBeenCalled();
-    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
-  });
-
-  it('persists visible model choices and aliases', async () => {
-    const settings: Record<string, unknown> = {
-      providerConfigs: {
-        pi: {
-          discoveredModels: [{
-            encodedId: 'pi:anthropic/claude-sonnet-4',
-            id: 'claude-sonnet-4',
-            input: ['text'],
-            label: 'Claude Sonnet 4',
-            provider: 'anthropic',
-            reasoning: true,
-            thinkingLevels: ['off', 'medium'],
-          }],
-          visibleModels: [],
-        },
-      },
-    };
-    const context = render(settings);
-    const checkboxEl = findInputByType('checkbox');
-
-    checkboxEl.checked = true;
-    await checkboxEl.dispatchMockEvent('change');
-    await flushPromises();
-    expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
-
-    const aliasInput = findElement('input', 'claudian-provider-model-picker-selected-alias');
-    aliasInput.value = 'Sonnet';
-    await aliasInput.dispatchMockEvent('blur');
-    await flushPromises();
-
-    expect(getPiProviderSettings(settings).modelAliases).toEqual({
-      'pi:anthropic/claude-sonnet-4': 'Sonnet',
-    });
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledTimes(2);
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('pi');
-  });
 });
+
+jest.mock('@/shared/settings/ProviderModelsSection', () => ({ renderProviderModelsSection: jest.fn(() => ({ refresh: jest.fn() })) }));

@@ -67,8 +67,9 @@ async function resolveForkSource(
     ? plugin.getConversationSync(tab.conversationId)
     : null;
 
+  if (!tab.providerId && !conversation?.providerId) return null;
   const fallback = async (): Promise<string | null> => ProviderRegistry
-    .getConversationHistoryService(conversation?.providerId ?? tab.providerId)
+    .getConversationHistoryService(conversation?.providerId ?? tab.providerId!)
     .resolveSessionIdForConversation(conversation);
   const coordinatedSource = await tab.executionCoordinator.resolveForkSource(
     assistantCheckpointId,
@@ -81,6 +82,7 @@ async function resolveForkSource(
   }
 
   const providerId = getTabProviderId(tab, plugin, conversation);
+  if (!providerId) return null;
 
   return {
     providerId,

@@ -186,147 +186,12 @@ describe('CodexModelCatalogCoordinator', () => {
     expect(FAKE_FINGERPRINT).toMatch(/^2:[a-f0-9]{64}$/);
   });
 
-  it('returns cached models immediately when cache is fresh', async () => {
-    const host = createFakeHost({
-      discoveredModels: [makeModel('gpt-4o')],
-    });
-    const discovery = createDiscovery({ kind: 'completed', models: [] });
-    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
-
-    const result = await coordinator.ensureFresh('test');
-
-    expect(result.refreshed).toBe(false);
-    expect(result.models).toEqual([makeModel('gpt-4o')]);
-    expect(discovery.discoverModels).not.toHaveBeenCalled();
-  });
-
-  it('runs blocking refresh when cache is missing', async () => {
-    const host = createFakeHost();
-    const discovery = createDiscovery({
-      kind: 'completed',
-      models: [makeModel('gpt-4o')],
-    });
-    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
-
-    const result = await coordinator.ensureFresh('test');
-
-    expect(result.refreshed).toBe(true);
-    expect(result.models).toEqual([makeModel('gpt-4o')]);
-    expect(discovery.discoverModels).toHaveBeenCalledTimes(1);
-  });
-
-  it('waits for an explicitly forced refresh even when cache is fresh', async () => {
-    const host = createFakeHost({
-      discoveredModels: [makeModel('gpt-4o')],
-    });
-    const discovery = createDiscovery({
-      kind: 'completed',
-      diagnostics: 'interactive failure',
-      models: [],
-    });
-    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
-
-    const result = await coordinator.ensureFresh('model-picker', { force: true });
-
-    expect(result.backgroundRefresh).toBeUndefined();
-    expect(result.diagnostics).toBe('interactive failure');
-    expect(discovery.discoverModels).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns cached models and refreshes in the background when cache is stale', async () => {
-    const host = createFakeHost({
-      discoveredModels: [makeModel('gpt-4o')],
-      catalogTimestamp: 1, // ancient, will be stale
-    });
-    const discovery = createDiscovery({
-      kind: 'completed',
-      models: [makeModel('gpt-4o-mini')],
-    });
-    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
-
-    const result = await coordinator.ensureFresh('test');
-
-    expect(result.refreshed).toBe(false);
-    expect(result.models).toEqual([makeModel('gpt-4o')]);
-    expect(result.backgroundRefresh).toBeDefined();
-    await result.backgroundRefresh;
-    expect(discovery.discoverModels).toHaveBeenCalledTimes(1);
-  });
-
-  it('refreshes mounted model selectors after a background catalog change commits', async () => {
-    const cachedModel = makeModel('gpt-4o');
-    const discoveredModel = makeModel('gpt-4o-mini');
-    const host = createFakeHost({
-      discoveredModels: [cachedModel],
-      catalogTimestamp: 1,
-    });
-    (host.mutateSettingsConditionally as jest.Mock).mockImplementation(async (mutation) => {
-      await mutation(host.settings);
-    });
-    const coordinator = new CodexModelCatalogCoordinator(host, createDiscovery({
-      kind: 'completed',
-      models: [discoveredModel],
-    }));
-
-    const result = await coordinator.ensureFresh('layout-ready');
-
-    expect(result.models).toEqual([cachedModel]);
-    expect(host.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
-
-    await result.backgroundRefresh;
-
-    expect(getCodexProviderSettings(host.settings).discoveredModels).toEqual([discoveredModel]);
-    expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('codex');
-  });
-
-  it('does not refresh mounted model selectors when only catalog freshness changes', async () => {
-    const cachedModel = makeModel('gpt-4o');
-    const host = createFakeHost({
-      discoveredModels: [cachedModel],
-      catalogTimestamp: 1,
-    });
-    (host.mutateSettingsConditionally as jest.Mock).mockImplementation(async (mutation) => {
-      await mutation(host.settings);
-    });
-    const coordinator = new CodexModelCatalogCoordinator(host, createDiscovery({
-      kind: 'completed',
-      models: [cachedModel],
-    }));
-
-    const result = await coordinator.ensureFresh('layout-ready');
-    const backgroundResult = await result.backgroundRefresh;
-
-    expect(backgroundResult?.refreshed).toBe(false);
-    expect(host.notifyProviderChatOptionsChanged).not.toHaveBeenCalled();
-  });
-
-  it('preserves cached models when cache fingerprint resolution fails', async () => {
-    const cachedModel = makeModel('gpt-4o');
-    const host = createFakeHost({ discoveredModels: [cachedModel] });
-    (host.getResolvedProviderCliPath as jest.Mock).mockRejectedValue(new Error('CLI lookup failed'));
-    const discovery = createDiscovery({
-      kind: 'completed',
-      diagnostics: 'app-server unavailable',
-      models: [],
-    });
-    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
-
-    const result = await coordinator.ensureFresh('layout-ready');
-
-    expect(result.models).toEqual([cachedModel]);
-    expect(result.backgroundRefresh).toBeDefined();
-    await expect(result.backgroundRefresh).resolves.toMatchObject({
-      diagnostics: 'app-server unavailable',
-      models: [cachedModel],
-    });
-  });
-
   it('skips refresh when provider is disabled', async () => {
     const host = createFakeHost({ enabled: false });
     const discovery = createDiscovery({ kind: 'completed', models: [] });
     const coordinator = new CodexModelCatalogCoordinator(host, discovery);
 
-    const result = await coordinator.ensureFresh('test');
+    const result = await coordinator.refresh();
 
     expect(result.kind).toBe('skipped');
     expect(discovery.discoverModels).not.toHaveBeenCalled();
@@ -477,61 +342,6 @@ describe('CodexModelCatalogCoordinator', () => {
     expect(ProviderSettingsCoordinator.normalizeAllModelVariants).not.toHaveBeenCalled();
   });
 
-  it('retries an explicit refresh when its discovery inputs change in flight', async () => {
-    const host = createFakeHost();
-    let signalFirstDiscoveryStarted!: () => void;
-    let resolveFirstDiscovery!: (result: CodexModelDiscoveryResult) => void;
-    const firstDiscoveryStarted = new Promise<void>((resolve) => {
-      signalFirstDiscoveryStarted = resolve;
-    });
-    const firstDiscoveryResult = new Promise<CodexModelDiscoveryResult>((resolve) => {
-      resolveFirstDiscovery = resolve;
-    });
-    const refreshedModel = makeModel('gpt-4o-mini');
-    const discovery: CodexModelDiscoveryServiceLike = {
-      discoverModels: jest.fn()
-        .mockImplementationOnce(async () => {
-          signalFirstDiscoveryStarted();
-          return firstDiscoveryResult;
-        })
-        .mockResolvedValueOnce({ kind: 'completed', models: [refreshedModel] }),
-    };
-    (host.mutateSettingsConditionally as jest.Mock).mockImplementation(async (mutation) => {
-      await mutation(host.settings);
-    });
-    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
-
-    const refresh = coordinator.refreshModelCatalog();
-    await firstDiscoveryStarted;
-    const codexConfig = (host.settings.providerConfigs as Record<string, Record<string, unknown>>).codex;
-    codexConfig.environmentVariables = 'OPENAI_API_KEY=rotated';
-    resolveFirstDiscovery({ kind: 'completed', models: [makeModel('gpt-4o')] });
-
-    await expect(refresh).resolves.toEqual({ changed: true });
-    expect(discovery.discoverModels).toHaveBeenCalledTimes(2);
-    expect(getCodexProviderSettings(host.settings).discoveredModels).toEqual([refreshedModel]);
-    await expect(coordinator.getStatus()).resolves.toBe('fresh');
-  });
-
-  it('invalidates cache when resolved CLI path changes', async () => {
-    const host = createFakeHost({
-      discoveredModels: [makeModel('gpt-4o')],
-      resolvedCliPath: '/other/codex',
-    });
-    const discovery = createDiscovery({
-      kind: 'completed',
-      models: [makeModel('gpt-4o')],
-    });
-    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
-
-    const result = await coordinator.ensureFresh('test');
-
-    expect(result.refreshed).toBe(false);
-    expect(result.backgroundRefresh).toBeDefined();
-    await result.backgroundRefresh;
-    expect(discovery.discoverModels).toHaveBeenCalledTimes(1);
-  });
-
   it('cancels an in-progress refresh', async () => {
     const host = createFakeHost();
     const { discovery } = createHangingDiscovery();
@@ -541,7 +351,8 @@ describe('CodexModelCatalogCoordinator', () => {
     coordinator.cancel();
 
     const result = await refreshPromise;
-    expect(result.diagnostics).toMatch(/cancelled/i);
+    expect(result).toMatchObject({ kind: 'skipped', refreshed: false });
+    expect(coordinator.getState()).toBe('idle');
   });
 
   it('aborts and awaits a held refresh while invalidating its environment cache', async () => {
@@ -576,7 +387,6 @@ describe('CodexModelCatalogCoordinator', () => {
     await refresh;
 
     expect(coordinator.getState()).toBe('idle');
-    await expect(coordinator.getStatus()).resolves.toBe('missing');
     expect(getCodexProviderSettings(host.settings).discoveredModels).toEqual([cachedModel]);
     expect(host.mutateSettingsConditionally).not.toHaveBeenCalled();
   });
@@ -639,7 +449,7 @@ describe('CodexModelCatalogCoordinator', () => {
     const coordinator = new CodexModelCatalogCoordinator(host, discovery);
 
     coordinator.dispose();
-    const result = await coordinator.ensureFresh('layout-ready');
+    const result = await coordinator.refresh();
 
     expect(result.kind).toBe('skipped');
     expect(discovery.discoverModels).not.toHaveBeenCalled();
@@ -680,4 +490,29 @@ describe('CodexModelCatalogCoordinator', () => {
     await refreshPromise;
     expect(resolved).toBe(true);
   });
+});
+
+it('does not join canceled discovery from a new native caller or publish its delayed result', async () => {
+  const host = createFakeHost();
+  jest.mocked(host.mutateSettingsConditionally).mockImplementation(async mutation => { await mutation(host.settings); });
+  const oldResult = deferred<CodexModelDiscoveryResult>();
+  const discoverModels = jest.fn()
+    .mockImplementationOnce(() => oldResult.promise)
+    .mockResolvedValueOnce({ kind: 'completed', models: [makeModel('fresh-model')] });
+  const catalog = new CodexModelCatalogCoordinator(host, { discoverModels });
+  const old = catalog.refresh();
+  await waitForCondition(() => discoverModels.mock.calls.length === 1);
+  catalog.cancel();
+  const replacement = catalog.refresh();
+  await waitForCondition(() => discoverModels.mock.calls.length === 2);
+  await replacement;
+  expect(getCodexProviderSettings(host.settings).discoveredModels.map(model => model.model)).toEqual(['fresh-model']);
+  let disposed = false;
+  const disposal = catalog.dispose().then(() => { disposed = true; });
+  await Promise.resolve();
+  expect(disposed).toBe(false);
+  oldResult.resolve({ kind: 'completed', models: [makeModel('obsolete-model')] });
+  await Promise.all([old, disposal]);
+  expect(getCodexProviderSettings(host.settings).discoveredModels.map(model => model.model)).toEqual(['fresh-model']);
+  expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledTimes(1);
 });

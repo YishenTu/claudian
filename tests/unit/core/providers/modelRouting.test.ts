@@ -20,8 +20,8 @@ describe('getProviderForModel', () => {
     expect(getProviderForModel(TEST_CODEX_MODEL)).toBe('codex');
   });
 
-  it('routes unknown models to claude (default)', () => {
-    expect(getProviderForModel('some-unknown-model')).toBe('claude');
+  it('leaves unknown models unresolved', () => {
+    expect(getProviderForModel('some-unknown-model')).toBeNull();
   });
 
   it('routes models starting with gpt- to codex', () => {
@@ -34,9 +34,9 @@ describe('getProviderForModel', () => {
     expect(getProviderForModel('o4-mini')).toBe('codex');
   });
 
-  it('routes custom OPENAI_MODEL to codex when settings are provided', () => {
+  it('does not claim a manual environment model', () => {
     const settings = { environmentVariables: 'OPENAI_MODEL=my-custom-model' };
-    expect(getProviderForModel('my-custom-model', settings)).toBe('codex');
+    expect(getProviderForModel('my-custom-model', settings)).toBeNull();
   });
 
   it('routes provider-qualified custom model ids without raw name collisions', () => {
@@ -56,7 +56,7 @@ describe('getProviderForModel', () => {
     expect(getProviderForModel('openai-codex/deepseek-v4-pro', settings)).toBe('codex');
   });
 
-  it('routes settings-defined custom Codex models to codex when settings are provided', () => {
+  it('does not claim retired manual model configuration', () => {
     const settings = {
       providerConfigs: {
         codex: {
@@ -66,14 +66,14 @@ describe('getProviderForModel', () => {
       },
     };
 
-    expect(getProviderForModel('my-custom-model', settings)).toBe('codex');
+    expect(getProviderForModel('my-custom-model', settings)).toBeNull();
   });
 
-  it('routes custom OPENAI_MODEL to claude without settings (no context)', () => {
-    expect(getProviderForModel('my-custom-model')).toBe('claude');
+  it('leaves an unknown raw model unresolved without settings', () => {
+    expect(getProviderForModel('my-custom-model')).toBeNull();
   });
 
-  it('can resolve blank-tab routing within enabled providers only', () => {
+  it('rejects ambiguous ownership and resolves within enabled providers only', () => {
     const settings = {
       settingsProvider: 'claude',
       providerConfigs: {
@@ -86,7 +86,13 @@ describe('getProviderForModel', () => {
       },
     };
 
-    expect(getProviderForModel(TEST_CODEX_MODEL, settings)).toBe('codex');
+    expect(getProviderForModel(TEST_CODEX_MODEL, settings)).toBeNull();
     expect(getEnabledProviderForModel(TEST_CODEX_MODEL, settings)).toBe('claude');
   });
+});
+
+it('leaves an unclaimed model unresolved instead of selecting the default provider', () => {
+  expect(getProviderForModel('retired-endpoint-model', {
+    providerConfigs: { claude: { enabled: true }, codex: { enabled: true, visibleModels: [] } },
+  })).toBeNull();
 });

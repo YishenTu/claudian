@@ -1784,7 +1784,6 @@ export default class ClaudianPlugin extends Plugin {
     const providersToQuiesce = this.getAffectedEnvironmentProviders(changedScopes);
     await this.runProviderExecutionTransition(providersToQuiesce, async () => {
       let affectedProviderIds: ProviderId[] = [];
-      const modelCatalogDiagnostics: string[] = [];
       await this.runtimeSettings.commit(
         providersToQuiesce,
         (settings) => {
@@ -1802,25 +1801,6 @@ export default class ClaudianPlugin extends Plugin {
         },
         {
           failureMessage: 'Environment change recovery failed.',
-          onSettingsCommitted: async () => {
-            if (affectedProviderIds.length === 0) {
-              return;
-            }
-            for (const providerId of affectedProviderIds) {
-              if (ProviderRegistry.isEnabled(providerId, this.settings)) {
-                const transitionOwner = { providerTransitionOwner: true } as const;
-                const result = await ProviderWorkspaceRegistry.refreshModelCatalog(
-                  providerId,
-                  transitionOwner,
-                );
-                if (result.diagnostics) {
-                  modelCatalogDiagnostics.push(
-                    `${ProviderRegistry.getProviderDisplayName(providerId)}: ${result.diagnostics}`,
-                  );
-                }
-              }
-            }
-          },
           onInvalidationsPersisted: async (reconciliation) => {
             if (affectedProviderIds.length === 0) {
               return;
@@ -1838,9 +1818,6 @@ export default class ClaudianPlugin extends Plugin {
               ? 'Environment variables applied. Sessions will be rebuilt on next message.'
               : 'Environment variables applied.';
             new Notice(noticeText);
-            if (modelCatalogDiagnostics.length > 0) {
-              new Notice(`Model catalog refresh failed:\n${modelCatalogDiagnostics.join('\n')}`);
-            }
           },
         },
       );

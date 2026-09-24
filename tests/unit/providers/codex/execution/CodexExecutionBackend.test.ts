@@ -181,6 +181,7 @@ function createPlugin(): ProviderHost {
       userName: '',
       providerConfigs: {
         codex: {
+          enabled: true,
           discoveredModels: [{
             model: TEST_CODEX_MODEL,
             displayName: 'Test Codex',
@@ -393,6 +394,17 @@ async function createActiveSteerSession() {
 }
 
 describe('CodexExecutionBackend', () => {
+  it('rejects an unavailable selected model before native startup with a configuration error', async () => {
+    const host = createPlugin();
+    host.settings.providerConfigs!.codex!.visibleModels = [];
+    const session = new CodexExecutionBackend(host).createSession(createSessionConfig());
+    const events = await collectEvents(session.execute(createRequest()).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', category: 'configuration' }));
+    expect(events.some(event => event.type === 'turn_started' && event.accepted)).toBe(false);
+    expect(mockProcessStart).not.toHaveBeenCalled();
+    await session.dispose();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     captureHandlers();
@@ -3068,7 +3080,7 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('validates saved ultra effort against the setting and auxiliary request model', async () => {
+  it.each([false, true])('validates saved ultra effort against the setting and auxiliary request model (qualified: %s)', async qualified => {
     let turnIndex = 0;
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
@@ -3124,7 +3136,7 @@ describe('CodexExecutionBackend', () => {
       new AbortController().signal,
       {
         configuration: {
-          model,
+          model: qualified ? `openai-codex/${model}` : model,
           permissionMode: 'normal',
           systemInstructions: { kind: 'explicit', instructions: 'Be concise.' },
         },

@@ -10,9 +10,8 @@ import { OPENCODE_PROVIDER_CAPABILITIES } from './capabilities';
 import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
-import { decodeOpencodeModelId } from './models';
 import { opencodeTaskResultInterpreter } from './runtime/OpencodeTaskResultInterpreter';
-import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from './settings';
+import { getOpencodeProviderSettings, projectOpencodeModelSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeSubagentAdapter } from './subagentAdapter';
 import { opencodeChatUIConfig } from './ui/OpencodeChatUIConfig';
 
@@ -28,15 +27,7 @@ export const opencodeProviderRegistration: ProviderModule = {
       serverService: workspace.serverService,
     });
   },
-  resolveTitleGenerationModel: (plugin) => {
-    const settings = plugin.settings as unknown as Record<string, unknown>;
-    const titleModel = typeof settings.titleGenerationModel === 'string'
-      ? settings.titleGenerationModel
-      : '';
-    return opencodeChatUIConfig.ownsModel(titleModel, settings)
-      ? decodeOpencodeModelId(titleModel) ?? undefined
-      : undefined;
-  },
+
   displayName: 'OpenCode',
   environmentKeyPatterns: [/^OPENCODE_/i],
   // History recovery can run before the workspace is initialized lazily.
@@ -45,6 +36,7 @@ export const opencodeProviderRegistration: ProviderModule = {
   setEnabled: (settings, enabled) => updateOpencodeProviderSettings(settings, { enabled }),
   settingsReconciler: opencodeSettingsReconciler,
   settingsStorage: {
+    projectPersistedConfig: projectOpencodeModelSettings,
     hostScopedFields: ['cliPathsByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'opencode');

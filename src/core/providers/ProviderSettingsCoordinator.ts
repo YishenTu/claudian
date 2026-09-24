@@ -176,36 +176,12 @@ export class ProviderSettingsCoordinator {
       return false;
     }
 
-    for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
-      if (!ProviderRegistry.isEnabled(providerId, settings)) {
-        continue;
-      }
-
-      const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
-      if (!uiConfig.ownsModel(currentModel, settings)) {
-        continue;
-      }
-
-      const normalizedModel = normalizeProviderModel(uiConfig, settings, currentModel);
-      const currentRuntimeModel = toProviderRuntimeModelId(providerId, currentModel);
-      const isValid = normalizedModel !== undefined
-        && uiConfig.getModelOptions(settings).some((option) =>
-          option.value === normalizedModel
-          && (uiConfig.preserveUnavailableModelSelection || toProviderRuntimeModelId(providerId, option.value) === currentRuntimeModel)
-        );
-      if (!isValid) {
-        if (uiConfig.preserveUnavailableModelSelection) return false;
-        continue;
-      }
-
-      if (normalizedModel !== currentModel) {
-        settings.titleGenerationModel = normalizedModel;
-        return true;
-      }
-      return false;
-    }
-
-    settings.titleGenerationModel = '';
+    const selection = ProviderRegistry.resolveTitleGenerationSelection(settings);
+    if (!selection) return false;
+    const { providerId, model: normalizedModel } = selection;
+    if (normalizedModel === currentModel
+      || toProviderRuntimeModelId(providerId, normalizedModel) !== toProviderRuntimeModelId(providerId, currentModel)) return false;
+    settings.titleGenerationModel = normalizedModel;
     return true;
   }
 
@@ -361,9 +337,7 @@ export class ProviderSettingsCoordinator {
       ? currentModel
       : (validProviderDefaultModel ?? modelOptions[0]?.value ?? currentModel);
     const savedModelValue = normalizeProviderModel(uiConfig, settings, savedModel?.[providerId]);
-    const isSavedModelValid = savedModelValue !== undefined
-      && modelOptions.some(option => option.value === savedModelValue);
-    const model = (isSavedModelValid || uiConfig.preserveUnavailableModelSelection ? savedModelValue : undefined) ?? fallbackModel;
+    const model = savedModelValue ?? fallbackModel;
     const canReuseCurrentProjection = canReuseCurrentModel && model === currentModel;
 
     if (model) {

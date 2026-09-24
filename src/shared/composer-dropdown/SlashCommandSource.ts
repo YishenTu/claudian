@@ -24,7 +24,7 @@ export interface SlashCommandSourceOptions {
   readonly includeBuiltIns?: boolean;
   readonly providerConfig?: ProviderCommandDropdownConfig;
   readonly providerDiscovery?: ProviderCommandDiscoverySource<ProviderCommandEntry>;
-  readonly providerId?: ProviderId;
+  readonly providerId?: ProviderId | null;
 }
 
 export class SlashCommandSource implements ComposerDropdownSource {
@@ -177,7 +177,7 @@ export class SlashCommandSource implements ComposerDropdownSource {
     this.notify();
   }
 
-  setProviderId(providerId: ProviderId): void {
+  setProviderId(providerId: ProviderId | null): void {
     this.providerId = providerId;
     this.notify();
   }

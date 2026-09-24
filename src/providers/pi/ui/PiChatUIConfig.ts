@@ -39,24 +39,16 @@ export const piChatUIConfig: ProviderChatUIConfig = {
     const options: ProviderUIOption[] = [];
     const seen = new Set<string>();
     for (const encodedId of [...piSettings.visibleModels].reverse()) {
-      pushOption(
-        options,
-        seen,
-        encodedId,
-        discoveredModels.get(encodedId)
-          ?? {
-            description: 'Configured model',
-            label: piSettings.modelAliases[encodedId] ?? formatFallbackLabel(encodedId),
-            value: encodedId,
-          },
-      );
+      const option = discoveredModels.get(encodedId);
+      if (option) pushOption(options, seen, encodedId, option);
     }
 
     return options;
   },
 
   getDefaultModel(settings: Record<string, unknown>): string | null {
-    return getPiProviderSettings(settings).visibleModels[0] ?? null;
+    const current = getPiProviderSettings(settings);
+    return current.visibleModels.find(id => current.discoveredModels.some(model => model.encodedId === id)) ?? null;
   },
 
   ownsModel(model: string): boolean {
@@ -129,6 +121,10 @@ export const piChatUIConfig: ProviderChatUIConfig = {
     updatePiProviderSettings(settingsBag, {
       preferredThinkingByModel: nextPreferredThinkingByModel,
     });
+  },
+
+  normalizeAvailableModelSelection(model: string): string {
+    return isPiModelSelectionId(model) ? model : `pi:${model}`;
   },
 
   normalizeModelVariant(model: string): string {
@@ -223,11 +219,6 @@ function buildModelOption(model: PiDiscoveredModel, alias: string | undefined): 
     label: alias ?? model.label,
     value: model.encodedId,
   };
-}
-
-function formatFallbackLabel(encodedId: string): string {
-  const decoded = decodePiModelId(encodedId);
-  return decoded ? `${decoded.provider}/${decoded.modelId}` : 'Pi';
 }
 
 function pushOption(

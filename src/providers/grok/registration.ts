@@ -10,9 +10,8 @@ import { GROK_PROVIDER_CAPABILITIES } from './capabilities';
 import { grokSettingsReconciler } from './env/GrokSettingsReconciler';
 import { GrokExecutionBackend } from './execution/GrokExecutionBackend';
 import { GrokConversationHistoryService } from './history/GrokConversationHistoryService';
-import { isGrokModelSelectionId } from './models';
 import { grokSubagentLifecycleAdapter } from './normalization/grokSubagentNormalization';
-import { getGrokProviderSettings, updateGrokProviderSettings } from './settings';
+import { getGrokMigratedVisibleModelIds, getGrokProviderSettings, projectGrokModelSettings, updateGrokProviderSettings } from './settings';
 import { grokChatUIConfig } from './ui/GrokChatUIConfig';
 
 export const grokProviderRegistration: ProviderModule = {
@@ -27,12 +26,7 @@ export const grokProviderRegistration: ProviderModule = {
       modelCatalogCoordinator: workspace.modelCatalogCoordinator,
     });
   },
-  resolveTitleGenerationModel: (plugin) => {
-    const model = typeof plugin.settings.titleGenerationModel === 'string'
-      ? plugin.settings.titleGenerationModel.trim()
-      : '';
-    return model && isGrokModelSelectionId(model) ? model : undefined;
-  },
+
   displayName: 'Grok',
   environmentKeyPatterns: [/^GROK_/i, /^XAI_/i],
   historyService: new GrokConversationHistoryService(),
@@ -40,10 +34,12 @@ export const grokProviderRegistration: ProviderModule = {
   setEnabled: (settings, enabled) => updateGrokProviderSettings(settings, { enabled }),
   settingsReconciler: grokSettingsReconciler,
   settingsStorage: {
-    hostScopedFields: ['cliPathsByHost', 'catalogsByHost'],
+    projectPersistedConfig: projectGrokModelSettings,
+    hostScopedFields: ['cliPathsByHost', 'catalogsByHost', 'selectedModelsByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'grok');
-      updateGrokProviderSettings(target, getGrokProviderSettings(stored));
+      const current = getGrokProviderSettings(stored);
+      updateGrokProviderSettings(target, { ...current, visibleModels: getGrokMigratedVisibleModelIds(current) });
       return hasStoredConfigNormalization(
         storedConfig,
         getProviderConfig(target, 'grok'),

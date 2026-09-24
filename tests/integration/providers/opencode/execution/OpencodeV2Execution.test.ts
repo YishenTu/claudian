@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
 import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 
@@ -163,9 +164,10 @@ function createFixture(resume = false, approval?: (signal: AbortSignal) => Promi
   const cliPath = path.join(root, 'opencode.cjs');
   writeFileSync(cliPath, fixture, { mode: 0o700 });
   const plugin: any = {
-    settings: { model: 'opencode:deepseek/chat', providerConfigs: { opencode: { enabled: true, visibleModels: ['deepseek/chat'], environmentVariables: [resume ? 'EXPECT_RESUME=1' : '', environmentVariables].join('\n') } } },
+    settings: { model: 'opencode:deepseek/chat', providerConfigs: { opencode: { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }], environmentVariables: [resume ? 'EXPECT_RESUME=1' : '', environmentVariables].join('\n') } } },
     getResolvedProviderCliPath: async () => cliPath,
     mutateSettings: async (fn: (settings: unknown) => void) => fn(plugin.settings),
+    mutateSettingsConditionally: async (fn: (settings: unknown) => void) => fn(plugin.settings),
     notifyProviderChatOptionsChanged() {},
   };
   const approvals: unknown[] = [], questions: unknown[] = [];
@@ -178,7 +180,7 @@ function createFixture(resume = false, approval?: (signal: AbortSignal) => Promi
       dismissInteraction() {},
     },
   });
-  return { session, approvals, questions, async dispose() { await session.dispose(); rmSync(root, { recursive: true, force: true }); } };
+  return { plugin, session, approvals, questions, async dispose() { await session.dispose(); rmSync(root, { recursive: true, force: true }); } };
 }
 
 function request(text = '/review changes'): ProviderExecutionRequest {
@@ -308,8 +310,9 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
   writeFileSync(cliPath, fixture, { mode: 0o700 });
   env.host.getResolvedProviderCliPath = async () => cliPath;
   env.host.mutateSettings = async mutate => { await mutate(env.host.settings); };
+  env.host.mutateSettingsConditionally = async mutate => { await mutate(env.host.settings); };
   env.host.notifyProviderChatOptionsChanged = () => undefined;
-  env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'] };
+  env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }] };
   const backend = new OpencodeExecutionBackend(env.host);
   const conversation = await env.repository.create({ providerId: 'opencode' });
   let release!: () => void, childAsked!: () => void, replied!: () => void;
@@ -466,7 +469,6 @@ it('replies with a selected native value even when it matches another option lab
   } finally { await f.dispose(); }
 }, 15000);
 
-
 it.each(['configuration', 'prompt'])('keeps an earlier child in its own scope during a later turn %s', async stage => {
   const f = createFixture(false, undefined, `LATE_CHILD_STAGE=${stage}`);
   const background: ProviderSessionEvent[] = [];
@@ -495,3 +497,21 @@ it.each(['configuration', 'prompt'])('keeps an earlier child in its own scope du
     expect(foreground.filter(event => event.type === 'tool_completed' && event.content === 'Late child result')).toEqual([]);
   } finally { await f.dispose(); }
 }, 15000);
+
+it('executes a selected title model through the real resolver and native backend', async () => {
+  const f = createFixture();
+  f.plugin.settings.titleGenerationModel = 'opencode:deepseek/chat';
+  const turn = request('Generate a title');
+  const selection = ProviderRegistry.resolveTitleGenerationSelection(f.plugin.settings)!;
+  const model = selection.model;
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute({
+      ...turn, configuration: { ...turn.configuration, model },
+    }).events) events.push(event);
+    expect(events.at(-1)?.type).toBe('turn_completed');
+    expect(events.filter(event => event.type === 'text_delta').map(event => event.text).join('')).toBe('Finished review');
+  } finally {
+    await f.dispose();
+  }
+});

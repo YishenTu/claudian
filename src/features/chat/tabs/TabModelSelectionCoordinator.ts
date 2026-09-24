@@ -1,7 +1,7 @@
 import type { ProviderId } from '../../../core/providers/types';
 
 export interface TabModelSelectionDraft {
-  providerId: ProviderId;
+  providerId: ProviderId | null;
   model: string | null;
 }
 
@@ -49,7 +49,7 @@ export class TabModelSelectionCoordinator {
 
   async selectBlank(
     request: TabModelSelectionRequest,
-    target: TabModelSelectionDraft & { model: string },
+    target: TabModelSelectionDraft & { model: string; providerId: ProviderId },
   ): Promise<TabModelSelectionResult> {
     if (!this.isCurrent(request)) {
       return { status: 'superseded' };

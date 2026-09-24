@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { screen, waitFor } from '@testing-library/dom';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -14,7 +15,11 @@ afterEach(async () => {
 });
 
 it('generates a side title from its initial prompt without blocking chat or changing destination', async () => {
-  const harness = createHarness({ settings: { enableAutoTitleGeneration: true } });
+  const harness = createHarness({ settings: {
+    enableAutoTitleGeneration: true,
+    titleGenerationModel: 'haiku',
+    providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
+  } });
   const titles = {
     get sessions() {
       return harness.backend.sessions.filter(session => session.requests[0]?.toolPolicy.kind === 'passive');
@@ -64,7 +69,11 @@ it('keeps the generic title without launching title generation when disabled', a
 });
 
 it('retains the initial prompt fallback if the title request fails', async () => {
-  const harness = createHarness({ settings: { enableAutoTitleGeneration: true } });
+  const harness = createHarness({ settings: {
+    enableAutoTitleGeneration: true,
+    titleGenerationModel: 'haiku',
+    providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
+  } });
   const titles = {
     get sessions() {
       return harness.backend.sessions.filter(session => session.requests[0]?.toolPolicy.kind === 'passive');
@@ -80,7 +89,11 @@ it('retains the initial prompt fallback if the title request fails', async () =>
 });
 
 it('cancels a discarded side title without disturbing its replacement', async () => {
-  const harness = createHarness({ settings: { enableAutoTitleGeneration: true } });
+  const harness = createHarness({ settings: {
+    enableAutoTitleGeneration: true,
+    titleGenerationModel: 'haiku',
+    providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
+  } });
   const titles = {
     get sessions() {
       return harness.backend.sessions.filter(session => session.requests[0]?.toolPolicy.kind === 'passive');
@@ -100,4 +113,18 @@ it('cancels a discarded side title without disturbing its replacement', async ()
   await waitFor(() => expect(screen.getByRole('heading', { name: 'Replacement title' })).toBeTruthy());
   harness.backend.latest.complete();
   await next;
+});
+
+it('keeps the prompt title without a provider request until a title model is selected', async () => {
+  const harness = createHarness({ settings: {
+    enableAutoTitleGeneration: true,
+    titleGenerationModel: '',
+    providerConfigs: { claude: claudeCatalogFixture(['haiku']) },
+  } });
+  const { started } = await startSideChat(harness, 'Explore storage. Consider a log.');
+  harness.backend.latest.complete();
+  await started;
+  expect(screen.getByRole('heading', { name: 'Explore storage' })).toBeTruthy();
+  expect(harness.backend.sessions.flatMap(session => session.requests)
+    .filter(request => request.toolPolicy.kind === 'passive')).toHaveLength(0);
 });

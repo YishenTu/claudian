@@ -1,17 +1,15 @@
 import { ProviderRegistry } from './ProviderRegistry';
 import type { ProviderId } from './types';
 
-export function getProviderForModel(model: string, settings?: Record<string, unknown>): ProviderId {
+export function getProviderForModel(model: string, settings?: Record<string, unknown>): ProviderId | null {
   return ProviderRegistry.resolveProviderForModel(model, settings);
 }
 
 export function getEnabledProviderForModel(
   model: string,
   settings: Record<string, unknown>,
-  fallbackProviderId?: ProviderId,
-): ProviderId {
+): ProviderId | null {
   return ProviderRegistry.resolveProviderForModel(model, settings, {
     onlyEnabledProviders: true,
-    fallbackProviderId,
   });
 }

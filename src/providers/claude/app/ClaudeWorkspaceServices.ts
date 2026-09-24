@@ -14,6 +14,7 @@ import {
 import { probeRuntimeCommands } from '../commands/probeRuntimeCommands';
 import { ClaudeCliResolver } from '../runtime/ClaudeCliResolver';
 import { ClaudeModelCatalog } from '../runtime/ClaudeModelCatalog';
+import { createClaudeModels } from '../runtime/ClaudeModels';
 import { SkillStorage } from '../storage/SkillStorage';
 import { SlashCommandStorage } from '../storage/SlashCommandStorage';
 import { createClaudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
@@ -36,7 +37,8 @@ export async function createClaudeWorkspaceServices(
   options: ClaudeWorkspaceServicesOptions = {},
 ): Promise<ClaudeWorkspaceServices> {
   const cliResolver = new ClaudeCliResolver();
-  const modelCatalog = new ClaudeModelCatalog(plugin, options.modelProbe);
+  const nativeCatalog = new ClaudeModelCatalog(plugin, options.modelProbe);
+  const modelCatalog = createClaudeModels(plugin, nativeCatalog);
 
   const commandCatalog = new ClaudeCommandCatalog(
     new SlashCommandStorage(adapter),
@@ -45,8 +47,12 @@ export async function createClaudeWorkspaceServices(
   );
   const unregisterTransitionHook = plugin.executionLifecycleRegistry
     .registerTransitionHook('claude', {
-      beforeTransition: () => commandCatalog.beginEnvironmentTransition(),
-      afterTransition: () => commandCatalog.endEnvironmentTransition(),
+      beforeTransition: async () => {
+        modelCatalog.beginTransition();
+        await nativeCatalog.cancel();
+        await commandCatalog.beginEnvironmentTransition();
+      },
+      afterTransition: () => { commandCatalog.endEnvironmentTransition(); modelCatalog.endTransition(); },
     });
   let disposePromise: Promise<void> | null = null;
 
@@ -55,11 +61,11 @@ export async function createClaudeWorkspaceServices(
     commandCatalog,
     vaultCommandRepository: commandCatalog,
     settingsTabRenderer: createClaudeSettingsTabRenderer({ cliResolver, vaultCommandRepository: commandCatalog, modelCatalog }),
-    refreshModelCatalog: () => modelCatalog.invalidate(),
+    modelCatalog,
     dispose() {
       if (disposePromise) return disposePromise;
       unregisterTransitionHook();
-      disposePromise = Promise.all([commandCatalog.dispose(), modelCatalog.dispose()]).then(() => undefined);
+      disposePromise = Promise.all([commandCatalog.dispose(), modelCatalog.dispose(), nativeCatalog.dispose()]).then(() => undefined);
       return disposePromise;
     },
   };

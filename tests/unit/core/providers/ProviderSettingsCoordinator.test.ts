@@ -292,7 +292,7 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.settingsProvider).toBe('claude');
     });
 
-    it('atomically disables a provider and clears dependent shared selections', () => {
+    it('atomically disables a provider and preserves dependent title selections', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',
         titleGenerationModel: TEST_CODEX_MODEL,
@@ -308,7 +308,7 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(ProviderRegistry.isEnabled('codex', settings)).toBe(false);
       expect(settings.settingsProvider).toBe('claude');
-      expect(settings.titleGenerationModel).toBe('');
+      expect(settings.titleGenerationModel).toBe(TEST_CODEX_MODEL);
     });
 
     it('disables Claude and selects another enabled provider', () => {
@@ -341,8 +341,8 @@ describe('ProviderSettingsCoordinator', () => {
       expect(accepted).toBe(true);
       expect(ProviderRegistry.isEnabled('claude', settings)).toBe(false);
       expect(settings.settingsProvider).toBe('codex');
-      expect(settings.model).toBe(TEST_CODEX_MODEL);
-      expect(settings.titleGenerationModel).toBe('');
+      expect(settings.model).toBe(`openai-codex/${TEST_CODEX_MODEL}`);
+      expect(settings.titleGenerationModel).toBe('sonnet');
     });
   });
 
@@ -435,7 +435,7 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('normalizeAllModelVariants', () => {
-    it('migrates the active Codex primary model when an older built-in value is persisted', () => {
+    it('preserves the active Codex model when it is absent from discovery', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'codex',
         model: 'gpt-5.4',
@@ -446,8 +446,8 @@ describe('ProviderSettingsCoordinator', () => {
       };
 
       expect(ProviderSettingsCoordinator.normalizeAllModelVariants(settings)).toBe(true);
-      expect(settings.model).toBe(TEST_CODEX_MODEL);
-      expect(settings.savedProviderModel).toEqual({ codex: TEST_CODEX_MODEL });
+      expect(settings.model).toBe('gpt-5.4');
+      expect(settings.savedProviderModel).toEqual({ codex: 'gpt-5.4' });
     });
   });
 
@@ -489,7 +489,7 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.titleGenerationModel).toBe('claude-code/claude-opus-4-6');
     });
 
-    it('clears titleGenerationModel when no provider exposes the saved model', () => {
+    it('preserves titleGenerationModel when no provider exposes the saved model', () => {
       const settings: Record<string, unknown> = {
         titleGenerationModel: 'claude-opus-4-6',
         providerConfigs: {
@@ -502,11 +502,11 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(
         ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
-      ).toBe(true);
-      expect(settings.titleGenerationModel).toBe('');
+      ).toBe(false);
+      expect(settings.titleGenerationModel).toBe('claude-opus-4-6');
     });
 
-    it('clears stale provider-qualified custom title models instead of retargeting to a fallback', () => {
+    it('preserves stale provider-qualified custom title models', () => {
       const settings: Record<string, unknown> = {
         titleGenerationModel: 'openai-codex/my-custom-model',
         providerConfigs: {
@@ -519,11 +519,11 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(
         ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
-      ).toBe(true);
-      expect(settings.titleGenerationModel).toBe('');
+      ).toBe(false);
+      expect(settings.titleGenerationModel).toBe('openai-codex/my-custom-model');
     });
 
-    it('clears title models owned by a disabled provider', () => {
+    it('preserves title models owned by a disabled provider', () => {
       const settings: Record<string, unknown> = {
         titleGenerationModel: TEST_CODEX_MODEL,
         providerConfigs: {
@@ -536,11 +536,11 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(
         ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
-      ).toBe(true);
-      expect(settings.titleGenerationModel).toBe('');
+      ).toBe(false);
+      expect(settings.titleGenerationModel).toBe(TEST_CODEX_MODEL);
     });
 
-    it('migrates available Codex custom title models to provider-qualified ids', () => {
+    it('preserves unavailable raw custom title IDs', () => {
       const settings: Record<string, unknown> = {
         titleGenerationModel: 'my-custom-model',
         providerConfigs: {
@@ -553,8 +553,8 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(
         ProviderSettingsCoordinator.reconcileTitleGenerationModelSelection(settings),
-      ).toBe(true);
-      expect(settings.titleGenerationModel).toBe('openai-codex/my-custom-model');
+      ).toBe(false);
+      expect(settings.titleGenerationModel).toBe('my-custom-model');
     });
   });
 
@@ -709,14 +709,14 @@ describe('ProviderSettingsCoordinator', () => {
 
       ProviderSettingsCoordinator.projectActiveProviderState(settings);
 
-      expect(settings.model).toBe(TEST_CODEX_MODEL);
+      expect(settings.model).toBe(`openai-codex/${TEST_CODEX_MODEL}`);
       expect(settings.effortLevel).toBe('medium');
       expect(settings.serviceTier).toBe('fast');
       expect(settings.thinkingBudget).toBe('off');
       expect(settings.permissionMode).toBe('normal');
     });
 
-    it('migrates a saved legacy Codex model before projecting provider state', () => {
+    it('preserves a saved unavailable Codex model when projecting provider state', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
         model: 'haiku',
@@ -734,7 +734,7 @@ describe('ProviderSettingsCoordinator', () => {
 
       const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, 'codex');
 
-      expect(snapshot.model).toBe(TEST_CODEX_MODEL);
+      expect(snapshot.model).toBe('gpt-5.4');
       expect(snapshot.serviceTier).toBe('fast');
     });
 
@@ -864,7 +864,7 @@ describe('ProviderSettingsCoordinator', () => {
 
       expect(settings.savedProviderModel).toEqual({
         claude: 'haiku',
-        codex: TEST_CODEX_MODEL,
+        codex: `openai-codex/${TEST_CODEX_MODEL}`,
       });
       expect(settings.savedProviderEffort).toEqual({
         claude: 'high',
@@ -905,7 +905,7 @@ describe('ProviderSettingsCoordinator', () => {
 
       ProviderSettingsCoordinator.projectProviderState(settings, 'codex');
 
-      expect(settings.model).toBe(TEST_CODEX_MODEL);
+      expect(settings.model).toBe(`openai-codex/${TEST_CODEX_MODEL}`);
       expect(settings.effortLevel).toBe('high');
       expect(settings.serviceTier).toBe('default');
     });
@@ -1023,7 +1023,7 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.model).toBe('haiku');
       expect(settings.savedProviderModel).toEqual({
         claude: 'haiku',
-        codex: TEST_CODEX_MODEL,
+        codex: `openai-codex/${TEST_CODEX_MODEL}`,
       });
       expect(settings.savedProviderServiceTier).toEqual({
         claude: 'default',

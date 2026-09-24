@@ -23,6 +23,8 @@
     "rewind": "巻き戻し"
   },
   "chat": {
+    "selectAvailableModel": "送信する前に利用可能なモデルを選択してください。",
+    "selectAvailableTitleModel": "Claudianの設定で利用可能なタイトル生成モデルを選択してください。",
     "rewind": {
       "confirmMessage": "この時点に巻き戻しますか？このメッセージ以降のファイル変更は上書きまたは削除される可能性があります。この操作は元に戻せません。",
       "confirmMessageConflicts": "この時点に巻き戻しますか？エージェント外で変更された {count} 個のファイルが上書きされます：\n{files}",
@@ -592,7 +594,8 @@
     "titleModel": {
       "name": "タイトル生成モデル",
       "desc": "会話タイトルを自動生成するために使用されるモデル。",
-      "auto": "自動 (Haiku)"
+      "select": "モデルを選択",
+      "unavailableWarning": "タイトルの自動生成は一時停止中です。利用可能なタイトル用モデルを選択してください。"
     },
     "navMappings": {
       "name": "Vimスタイルナビゲーションマッピング",
@@ -675,11 +678,6 @@
       "name": "カスタムコンテキスト制限",
       "desc": "カスタムモデルのコンテキストウィンドウサイズを設定します。デフォルト（200kトークン）を使用する場合は空欄のままにしてください。",
       "invalid": "無効な形式です。使用：256k、1m、または正確な数値（1000-10000000）。"
-    },
-    "customModels": {
-      "name": "カスタムモデル",
-      "desc": "追加の Claude モデル ID を1行に1つずつピッカーに追加します。環境変数によるモデル上書きは引き続きピッカーを置き換えます。",
-      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Chrome拡張機能を有効化",
@@ -818,11 +816,6 @@
       "safeMode": {
         "workspaceWrite": "ワークスペース書き込み",
         "readOnly": "読み取り専用"
-      },
-      "customModels": {
-        "name": "カスタムモデル",
-        "desc": "追加の Codex モデル ID を1行に1つずつピッカーに追加します。`OPENAI_MODEL` が設定されている場合は引き続き優先されます。",
-        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
       "responseStyle": {
         "name": "応答スタイル",

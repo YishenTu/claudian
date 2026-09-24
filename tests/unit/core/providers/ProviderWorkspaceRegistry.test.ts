@@ -204,15 +204,6 @@ describe('ProviderWorkspaceRegistry', () => {
     expect(ProviderWorkspaceRegistry.getIfInitialized('codex')).toBeNull();
   });
 
-  it('prepares provider settings through initialized workspace services', async () => {
-    const prepareSettings = jest.fn().mockResolvedValue(undefined);
-    ProviderWorkspaceRegistry.setServices('codex', { prepareSettings });
-
-    await ProviderWorkspaceRegistry.prepareSettings('codex');
-
-    expect(prepareSettings).toHaveBeenCalledTimes(1);
-  });
-
   it('runs cold provider initialization inside the execution lifecycle transition', async () => {
     const host = createProviderHost();
     const events: string[] = [];

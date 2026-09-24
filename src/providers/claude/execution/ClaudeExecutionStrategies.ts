@@ -15,6 +15,7 @@ import { getClaudeInputMatch } from './ClaudeResponseOwnership';
 export interface ClaudeExecutionStrategySink {
   readonly sessionInstanceId: string;
   getProviderSessionId(): string | null;
+  assertModelAvailable(model: string): void;
   setPendingNativeUserMessageId(
     nativeUserMessageId: string,
     queryToken: number,
@@ -120,6 +121,7 @@ implements ClaudeExecutionStrategy {
       }
       requestSignal?.throwIfAborted();
       const query = this.query;
+      this.sink.assertModelAvailable(request.model);
       this.messageChannel.enqueue(message);
       this.activeNativeTurn = createPersistentNativeTurn(query, queryToken, message.uuid);
       this.hasNonPersistentContext ||= request.options.persistSession === false;
@@ -467,6 +469,7 @@ implements ClaudeExecutionStrategy {
     try {
       const agentQuery = await loadClaudeAgentQuery();
       abortController.signal.throwIfAborted();
+      this.sink.assertModelAvailable(request.model);
       query = agentQuery({ options, prompt });
       this.activeQuery = query;
       this.sink.handleNativeQueryOpened(query);

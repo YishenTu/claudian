@@ -48,6 +48,7 @@ function createPlugin(): any {
     ): Promise<void> => {
       mutation(plugin.settings);
     }),
+    mutateSettingsConditionally: jest.fn(async (mutation) => { await mutation(plugin.settings); }),
     notifyProviderChatOptionsChanged: jest.fn(),
     settings: {
       providerConfigs: {

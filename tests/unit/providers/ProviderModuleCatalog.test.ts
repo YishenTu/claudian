@@ -91,10 +91,10 @@ describe('built-in ProviderModule catalog', () => {
       loadUserSettings: true,
       safeMode: 'default',
     });
+    expect(getProviderConfig(normalizedSettings, 'codex')).not.toHaveProperty('customModels');
     expect(getProviderConfig(normalizedSettings, 'codex')).toMatchObject({
       catalogFingerprint: expect.any(String),
       catalogTimestamp: 0,
-      customModels: expect.any(String),
       reasoningSummary: 'detailed',
       safeMode: 'read-only',
     });

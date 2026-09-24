@@ -82,16 +82,6 @@ function isCurrentLegacyPiFingerprint(
 }
 
 export const piSettingsReconciler: ProviderSettingsReconciler = {
-  handleEnvironmentChange(settings: Record<string, unknown>): boolean {
-    const current = getPiProviderSettings(settings);
-    if (current.discoveredModels.length === 0) {
-      return false;
-    }
-    updatePiProviderSettings(settings, {
-      discoveredModels: [],
-    });
-    return true;
-  },
 
   invalidateConversationSessions: invalidatePiConversationSessions,
 

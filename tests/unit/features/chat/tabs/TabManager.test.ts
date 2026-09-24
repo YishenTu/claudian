@@ -301,6 +301,7 @@ describe('TabManager provider execution orchestration', () => {
       openTabs: [{
         conversationId: null,
         draftModel: 'claude-default',
+        providerId: 'claude',
         tabId: 'inactive-tab',
       }],
     });
@@ -329,7 +330,7 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getPersistedState()).toEqual({
       activeTabId: initial!.id,
       openTabs: [
-        { conversationId: null, draftModel: 'claude-default', tabId: initial!.id },
+        { conversationId: null, draftModel: 'claude-default', providerId: 'claude', tabId: initial!.id },
         { conversationId: 'conversation-1', tabId: target!.id },
       ],
     });
@@ -897,6 +898,7 @@ describe('TabManager provider execution orchestration', () => {
       openTabs: [{
         conversationId: null,
         draftModel: 'claude-default',
+        providerId: 'claude',
         tabId: retained!.id,
       }],
     });
@@ -1364,8 +1366,8 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getPersistedState()).toEqual({
       activeTabId: null,
       openTabs: [
-        { conversationId: null, draftModel: 'claude-default', tabId: first!.id },
-        { conversationId: null, draftModel: 'claude-default', tabId: second!.id },
+        { conversationId: null, draftModel: 'claude-default', providerId: 'claude', tabId: first!.id },
+        { conversationId: null, draftModel: 'claude-default', providerId: 'claude', tabId: second!.id },
       ],
     });
     manager.sealShutdownSnapshot();
@@ -1593,6 +1595,7 @@ describe('TabManager provider execution orchestration', () => {
     const retained = await manager.createTab('conversation-1');
     const blank = await manager.createTab(null, undefined, { activate: false });
     blank!.draftModel = 'codex:gpt-5';
+    blank!.providerId = 'codex';
     const preview = await manager.createTab('conversation-2', undefined, {
       lifecycleState: 'provisional',
     });
@@ -1600,7 +1603,7 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.getPersistedState()).toEqual({
       openTabs: [
         { tabId: retained!.id, conversationId: 'conversation-1' },
-        { tabId: blank!.id, conversationId: null, draftModel: 'codex:gpt-5' },
+        { tabId: blank!.id, conversationId: null, draftModel: 'codex:gpt-5', providerId: 'codex' },
         { tabId: preview!.id, conversationId: 'conversation-2' },
       ],
       activeTabId: preview!.id,
@@ -1618,6 +1621,7 @@ describe('TabManager provider execution orchestration', () => {
       openTabs: [{
         conversationId: null,
         draftModel: 'claude-default',
+        providerId: 'claude',
         tabId: preview!.id,
       }],
     });
@@ -1631,6 +1635,7 @@ describe('TabManager provider execution orchestration', () => {
       openTabs: [{
         conversationId: null,
         draftModel: 'claude-default',
+        providerId: 'claude',
         tabId: preview!.id,
       }],
     });
@@ -1647,6 +1652,7 @@ describe('TabManager provider execution orchestration', () => {
       openTabs: [{
         conversationId: null,
         draftModel: 'claude-default',
+        providerId: 'claude',
         tabId: tab!.id,
       }],
     });

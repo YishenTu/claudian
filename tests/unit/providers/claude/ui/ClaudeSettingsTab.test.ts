@@ -18,8 +18,8 @@ const mockSlashCommandSettings = jest.fn();
 const mockCliResolverReset = jest.fn();
 const mockModelCatalogRefresh = jest.fn().mockResolvedValue({ changed: true });
 const mockVaultCommandRepository = {};
-const mockModelCatalog = { refresh: mockModelCatalogRefresh, invalidate: mockModelCatalogRefresh, cancel: jest.fn(), onChange: null as (() => void) | null };
-const mockRenderModelPicker = jest.fn((..._args: unknown[]) => ({ refresh: jest.fn() }));
+const mockModelCatalog = { refresh: mockModelCatalogRefresh, markStale: jest.fn() };
+const mockRenderModelPicker = jest.fn((..._args: unknown[]) => ({ refresh: jest.fn(), dispose: jest.fn() }));
 
 jest.mock('fs');
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
@@ -119,8 +119,8 @@ function createSettingsRenderer() {
   } as unknown as Parameters<typeof createClaudeSettingsTabRenderer>[0]);
 }
 
-jest.mock('@/providers/claude/ui/ClaudeModelPicker', () => ({
-  renderClaudeModelPicker: (...args: unknown[]) => mockRenderModelPicker(...args),
+jest.mock('@/shared/settings/ProviderModelsSection', () => ({
+  renderProviderModelsSection: (...args: unknown[]) => mockRenderModelPicker(...args),
 }));
 
 jest.mock('@/providers/claude/ui/SlashCommandSettings', () => ({
@@ -501,7 +501,7 @@ describe('ClaudeSettingsTab', () => {
     await toggle.onChangeCallback?.(false);
 
     expect(plugin.settings.providerConfigs.claude.enabled).toBe(false);
-    expect(mockModelCatalog.cancel).toHaveBeenCalled();
+    expect(mockModelCatalog.markStale).not.toHaveBeenCalled();
     expect(mockModelCatalogRefresh).not.toHaveBeenCalled();
     await toggle.onChangeCallback?.(true);
     expect(plugin.settings.providerConfigs.claude.enabled).toBe(true);
@@ -651,12 +651,12 @@ describe('ClaudeSettingsTab', () => {
     createSettingsRenderer().render(container, createContext(plugin));
     const warning = within(container).getByText('settings.providerEnablement.noModelsWarning');
     expect(warning.classList.contains('claudian-hidden')).toBe(false);
-    const pickerContext = mockRenderModelPicker.mock.calls[0][1] as ReturnType<typeof createContext>;
+    const onUpdate = mockRenderModelPicker.mock.calls[0][4] as () => void;
     plugin.settings.providerConfigs.claude.visibleModels = ['opus'];
-    pickerContext.notifyProviderModelOptionsChanged('claude');
+    onUpdate();
     expect(warning.classList.contains('claudian-hidden')).toBe(true);
     plugin.settings.providerConfigs.claude.discoveredModels = [];
-    mockModelCatalog.onChange?.();
+    onUpdate();
     expect(warning.classList.contains('claudian-hidden')).toBe(false);
     await findSetting('settings.providerEnablement.name').toggleComponents[0].onChangeCallback?.(false);
     expect(warning.classList.contains('claudian-hidden')).toBe(true);

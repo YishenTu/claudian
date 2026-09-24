@@ -2,8 +2,9 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-jest.mock('cross-spawn', () => jest.fn());
 import spawn from 'cross-spawn';
+
+jest.mock('cross-spawn', () => jest.fn());
 
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
@@ -77,7 +78,7 @@ async function createNativeOpencode(env: ForkTestEnvironment) {
     return proc;
   });
   env.host.settings.providerConfigs.opencode = {
-    enabled: true, visibleModels: ['test/model'],
+    enabled: true, visibleModels: ['test/model'], discoveredModels: [{ rawId: 'test/model', label: 'Test' }],
     environmentVariables: `OPENCODE_DB=${path.join(env.root, 'opencode.db')}`,
   };
   return {

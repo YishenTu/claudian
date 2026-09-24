@@ -9,6 +9,7 @@ import type {
   ProviderSessionConfig,
 } from '../../../core/execution';
 import { buildSystemPrompt } from '../../../core/prompt/mainAgent';
+import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
@@ -122,7 +123,7 @@ export class ClaudeExecutionRequestEncoder {
     const selected = findClaudeModelOption(getClaudeModelCatalog(this.deps.host.settings), settings.model);
     if (!getClaudeProviderSettings(this.deps.host.settings).enabled || !selected
       || !getClaudeModelOptions(this.deps.host.settings).some(option => option.value === selected.value)) {
-      throw new Error('The selected Claude model is unavailable. Open Claudian settings → Claude to load models and choose one.');
+      throw new ProviderModelUnavailableError('Claude');
     }
     const model = toClaudeRuntimeModelId(selected.value);
     const effort = resolveEffortLevel(

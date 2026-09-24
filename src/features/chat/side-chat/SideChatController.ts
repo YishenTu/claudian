@@ -241,6 +241,7 @@ export class SideChatController {
       }
 
       const providerId = capture.context.providerId ?? tab.providerId;
+      if (!providerId) return false;
       const source: SideChatSource = {
         conversationId: capture.context.sourceConversationId,
         linkedContentPath: capture.context.linkedContentPath,

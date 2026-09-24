@@ -47,6 +47,10 @@ export function decodeTabWorkspaceViewState(data: unknown): AppTabManagerState |
         typeof tab.conversationId === 'string'
         && 'draftModel' in tab
       )
+      || ('providerId' in tab && (
+        (!isNonBlankString(tab.providerId) && tab.providerId !== null)
+        || tab.conversationId !== null || !isNonBlankString(tab.draftModel)
+      ))
     ) {
       return null;
     }
@@ -55,6 +59,7 @@ export function decodeTabWorkspaceViewState(data: unknown): AppTabManagerState |
       tabId: tab.tabId,
       conversationId: tab.conversationId,
       ...(typeof tab.draftModel === 'string' ? { draftModel: tab.draftModel } : {}),
+      ...('providerId' in tab ? { providerId: tab.providerId as string | null } : {}),
     });
     openTabIds.add(tab.tabId);
   }
@@ -113,6 +118,9 @@ export function normalizeTabManagerState(data: unknown): AppTabManagerState | nu
       ...(typeof tab.draftModel === 'string'
         ? { draftModel: tab.draftModel }
         : {}),
+      ...(tab.conversationId === null && isNonBlankString(tab.draftModel)
+        && (isNonBlankString(tab.providerId) || tab.providerId === null)
+        ? { providerId: tab.providerId } : {}),
     });
     openTabIds.add(tab.tabId);
   }

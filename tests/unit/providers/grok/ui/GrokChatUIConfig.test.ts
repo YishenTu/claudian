@@ -57,10 +57,10 @@ jest.mock('@/utils/env', () => ({
 }));
 
 describe('GrokChatUIConfig', () => {
-  it('owns only enabled provider-qualified Grok models and resolves the enabled default', () => {
+  it('owns unavailable provider-qualified Grok models and resolves the enabled default', () => {
     expect(grokChatUIConfig.ownsModel('grok', {})).toBe(false);
     expect(grokChatUIConfig.ownsModel('grok/grok-4', makeSettings())).toBe(true);
-    expect(grokChatUIConfig.ownsModel('grok/kimi-coding', makeSettings())).toBe(false);
+    expect(grokChatUIConfig.ownsModel('grok/kimi-coding', makeSettings())).toBe(true);
     expect(grokChatUIConfig.ownsModel('grok/', {})).toBe(false);
     expect(grokChatUIConfig.ownsModel('grok-4', {})).toBe(false);
     expect(grokChatUIConfig.getDefaultModel?.({})).toBeNull();

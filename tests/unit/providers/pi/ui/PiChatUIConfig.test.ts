@@ -195,12 +195,7 @@ describe('PiChatUIConfig', () => {
       },
     };
 
-    expect(piChatUIConfig.getModelOptions(staleSettings)).toEqual([
-      expect.objectContaining({
-        label: 'custom/model',
-        value: 'pi:custom/model',
-      }),
-    ]);
+    expect(piChatUIConfig.getModelOptions(staleSettings)).toEqual([]);
     expect(piChatUIConfig.isAdaptiveReasoningModel('pi:custom/model', staleSettings)).toBe(true);
     expect(piChatUIConfig.getReasoningOptions('pi:custom/model', staleSettings)).toEqual([
       { label: 'Off', value: 'off' },

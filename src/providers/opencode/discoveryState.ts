@@ -1,3 +1,4 @@
+import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { sameDiscoveredModels, sameModes, sameThinkingOptionsByModel } from './internal/compareCollections';
 import {
   normalizeOpencodeDiscoveredModels,
@@ -10,34 +11,20 @@ import {
   type OpencodeMode,
 } from './modes';
 
-const OPENCODE_DISCOVERY_STATE = Symbol('opencodeDiscoveryState');
-
 interface OpencodeDiscoveryState {
   availableModes: OpencodeMode[];
   discoveredModels: OpencodeDiscoveredModel[];
   thinkingOptionsByModel: OpencodeThinkingOptionsByModel;
 }
 
-type SettingsBag = Record<string | symbol, unknown>;
-
 function ensureDiscoveryState(settings: Record<string, unknown>): OpencodeDiscoveryState {
-  const bag = settings as SettingsBag;
-  const existing = bag[OPENCODE_DISCOVERY_STATE];
-  if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
-    const state = existing as Partial<OpencodeDiscoveryState>;
-    state.availableModes ??= [];
-    state.discoveredModels ??= [];
-    state.thinkingOptionsByModel ??= {};
-    return state as OpencodeDiscoveryState;
-  }
-
-  const next: OpencodeDiscoveryState = {
-    availableModes: [],
-    discoveredModels: [],
-    thinkingOptionsByModel: {},
+  const config = getProviderConfig(settings, 'opencode');
+  const discoveredModels = normalizeOpencodeDiscoveredModels(config.discoveredModels ?? config.selectedModels);
+  return {
+    availableModes: normalizeOpencodeAvailableModes(config.availableModes),
+    discoveredModels,
+    thinkingOptionsByModel: normalizeOpencodeThinkingOptionsByModel(config.thinkingOptionsByModel, discoveredModels),
   };
-  bag[OPENCODE_DISCOVERY_STATE] = next;
-  return next;
 }
 
 function cloneModes(modes: OpencodeMode[]): OpencodeMode[] {
@@ -93,6 +80,7 @@ export function updateOpencodeDiscoveryState(
   state.availableModes = cloneModes(nextAvailableModes);
   state.discoveredModels = cloneDiscoveredModels(nextDiscoveredModels);
   state.thinkingOptionsByModel = cloneThinkingOptionsByModel(nextThinkingOptionsByModel);
+  setProviderConfig(settings, 'opencode', { ...getProviderConfig(settings, 'opencode'), ...state });
   return true;
 }
 
@@ -109,27 +97,6 @@ export function clearOpencodeDiscoveryState(settings: Record<string, unknown>): 
   state.availableModes = [];
   state.discoveredModels = [];
   state.thinkingOptionsByModel = {};
+  setProviderConfig(settings, 'opencode', { ...getProviderConfig(settings, 'opencode'), ...state });
   return true;
-}
-
-export function seedOpencodeDiscoveryStateFromLegacyConfig(
-  settings: Record<string, unknown>,
-  legacyConfig: Record<string, unknown>,
-): boolean {
-  const state = ensureDiscoveryState(settings);
-  const nextAvailableModes = state.availableModes.length > 0
-    ? state.availableModes
-    : normalizeOpencodeAvailableModes(legacyConfig.availableModes);
-  const nextDiscoveredModels = state.discoveredModels.length > 0
-    ? state.discoveredModels
-    : normalizeOpencodeDiscoveredModels(legacyConfig.discoveredModels);
-  const nextThinkingOptionsByModel = Object.keys(state.thinkingOptionsByModel).length > 0
-    ? state.thinkingOptionsByModel
-    : normalizeOpencodeThinkingOptionsByModel(legacyConfig.thinkingOptionsByModel, nextDiscoveredModels);
-
-  return updateOpencodeDiscoveryState(settings, {
-    availableModes: nextAvailableModes,
-    discoveredModels: nextDiscoveredModels,
-    thinkingOptionsByModel: nextThinkingOptionsByModel,
-  });
 }

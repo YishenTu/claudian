@@ -22,6 +22,7 @@ import {
   buildSystemPrompt,
   type SystemPromptSettings,
 } from '../../../core/prompt/mainAgent';
+import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type {
@@ -73,6 +74,7 @@ import {
   buildPiLaunchSpec,
   type PiLaunchSpec,
 } from '../runtime/PiLaunchSpec';
+import { assertPiModelAvailable } from '../runtime/PiModelAvailability';
 import { buildPiSetModelPayload } from '../runtime/PiRpcPayloads';
 import type { PiRpcRecord } from '../runtime/PiRpcTransport';
 import {
@@ -267,6 +269,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   }
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
+    try { assertPiModelAvailable(this.host.settings, request.configuration.model); }
+    catch (error) { if (error instanceof ProviderModelUnavailableError) return false; throw error; }
     const active = this.activeRun;
     const kernel = this.kernel;
     if (
@@ -386,6 +390,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     request: ProviderExecutionRequest,
   ): Promise<void> {
     try {
+      assertPiModelAvailable(this.host.settings, request.configuration.model);
       const encoded = await this.#encodeRequest(active, request);
       if (!this.isActive(active)) return;
       await this.#ensureKernel(encoded.launchSpec, active);
@@ -395,6 +400,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       if (!this.isActive(active) || !this.kernel) return;
       await this.#applyModelConfiguration(encoded, active.abortController.signal);
       if (!this.isActive(active)) return;
+      assertPiModelAvailable(this.host.settings, request.configuration.model);
       const previousLeafId = getPiState(this.providerState).leafEntryId ?? null;
       const compactInstructions = getCompactInstructions(encoded.prompt);
       if (compactInstructions !== null) {
@@ -1672,7 +1678,7 @@ function classifyError(
     ? `${baseMessage}\n\n${stderr.trim()}`
     : baseMessage;
   const resolvedCategory = category
-    ?? (error instanceof PiConfigurationError
+    ?? ((error instanceof PiConfigurationError || error instanceof ProviderModelUnavailableError)
       ? 'configuration'
       : /closed|transport/i.test(baseMessage)
         ? 'transport'

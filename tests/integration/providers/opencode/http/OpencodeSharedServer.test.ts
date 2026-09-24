@@ -73,6 +73,7 @@ async function createFixture(disableBuild = false) {
     executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
     getResolvedProviderCliPath: async () => cli,
     mutateSettings: async (fn: (settings: any) => void) => fn(plugin.settings),
+    mutateSettingsConditionally: async (fn: (settings: any) => boolean) => fn(plugin.settings),
     notifyProviderChatOptionsChanged() {},
   };
   const workspace = await createOpencodeWorkspaceServices(plugin);
@@ -261,6 +262,7 @@ it('runs safe and yolo chat when the unused native build agent is disabled', asy
   const f = await createFixture(true);
   const session = f.createSession();
   try {
+    await expect(f.workspace.modelCatalog!.refresh()).resolves.toEqual({ changed: true });
     for (const permissionMode of ['normal', 'yolo'] as const) {
       const request = turn(permissionMode);
       const events: ProviderExecutionEvent[] = [];

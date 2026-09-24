@@ -139,7 +139,7 @@ describe('codexSettingsReconciler', () => {
       },
     };
 
-    expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(false);
+    expect(codexSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
     expect(codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]))
       .toMatchObject({ changed: true, invalidatedConversations: [conversation] });
     expect(conversation.sessionId).toBeNull();
@@ -174,10 +174,10 @@ describe('codexSettingsReconciler', () => {
     expect(result.changed).toBe(true);
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toBeUndefined();
-    expect(settings.model).toBe(TEST_CODEX_MODEL);
+    expect(settings.model).toBe(`openai-codex/${TEST_CODEX_MODEL}`);
   });
 
-  it('persists a provider-qualified selection for custom OPENAI_MODEL values', () => {
+  it('preserves the selected model when OPENAI_MODEL changes', () => {
     const settings: Record<string, unknown> = {
       model: TEST_CODEX_MODEL,
       providerConfigs: {
@@ -192,7 +192,7 @@ describe('codexSettingsReconciler', () => {
     const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
 
     expect(result.changed).toBe(true);
-    expect(settings.model).toBe('openai-codex/deepseek-v4-pro');
+    expect(settings.model).toBe(TEST_CODEX_MODEL);
   });
 
   it('preserves an active settings-defined custom model across non-model env changes', () => {
@@ -224,13 +224,13 @@ describe('codexSettingsReconciler', () => {
     expect(result.invalidatedConversations).toEqual([conversation]);
     expect(conversation.sessionId).toBeNull();
     expect(conversation.providerState).toBeUndefined();
-    expect(settings.model).toBe('openai-codex/my-custom-model');
+    expect(settings.model).toBe('my-custom-model');
     const fingerprint = (settings.providerConfigs as any).codex.environmentHash;
     expect(isVersionedRuntimeInputFingerprint(fingerprint)).toBe(true);
     expect(fingerprint).not.toContain('https://api.example.com/v1');
   });
 
-  it('restores a built-in model when a settings-defined custom model is removed', () => {
+  it('preserves the selected custom model after its configuration is removed', () => {
     const settings: Record<string, unknown> = {
       model: 'my-custom-model',
       providerConfigs: {
@@ -247,7 +247,7 @@ describe('codexSettingsReconciler', () => {
     const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
 
     expect(result.changed).toBe(true);
-    expect(settings.model).toBe(TEST_CODEX_MODEL);
+    expect(settings.model).toBe('my-custom-model');
     expect(isVersionedRuntimeInputFingerprint(
       (settings.providerConfigs as any).codex.environmentHash,
     )).toBe(true);

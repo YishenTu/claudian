@@ -18,6 +18,7 @@ import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutio
 import { handleForkRequest } from '@/features/chat/tabs/TabForking';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import type { FeatureHost } from '@/features/FeatureHost';
+import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
 
 /** Real persistence/orchestration with only the Obsidian filesystem boundary supplied by the test. */
 export async function createForkTestEnvironment() {
@@ -40,9 +41,10 @@ export async function createForkTestEnvironment() {
       pi: { enabled: true, visibleModels: ['pi:anthropic/claude-sonnet-4'], discoveredModels: [{
         encodedId: 'pi:anthropic/claude-sonnet-4', id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'],
       }] },
-      codex: { enabled: true, visibleModels: ['gpt-5'], discoveredModels: [{ model: 'gpt-5', displayName: 'GPT-5', description: '', supportedReasoningEfforts: [{ value: 'medium', description: '' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], isDefault: true }] }, grok: { enabled: true, environmentVariables: `GROK_HOME=${path.join(root, 'grok')}` },
+      codex: { enabled: true, visibleModels: ['gpt-5'], discoveredModels: [{ model: 'gpt-5', displayName: 'GPT-5', description: '', supportedReasoningEfforts: [{ value: 'medium', description: '' }], defaultReasoningEffort: 'medium', inputModalities: ['text'], isDefault: true }] }, grok: { enabled: true, visibleModels: ['grok-code-fast-1'], environmentVariables: `GROK_HOME=${path.join(root, 'grok')}` },
     },
   };
+  updateCurrentGrokCatalog(settings, { fingerprint: 'test', refreshedAt: 1, defaultModelId: 'grok-code-fast-1', models: [{ rawId: 'grok-code-fast-1', displayName: 'Grok', supportsReasoning: false, reasoningEfforts: [] }] });
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const host = {
     app, settings, executionLifecycleRegistry: lifecycleRegistry,

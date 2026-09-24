@@ -96,7 +96,7 @@ function buildContextManagers(
 
 function buildComposerDropdown(
   shell: TabRuntimeShellBundle,
-  providerId: ProviderId,
+  providerId: ProviderId | null,
   fileContextManager: FileContextManager,
   options: TabRuntimeConstructionContext,
   getHiddenCommands?: () => Set<string>,
@@ -132,8 +132,7 @@ function buildInputToolbar(
   const inputToolbar = dom.inputWrapper.createDiv({ cls: 'claudian-input-toolbar' });
 
   const blankTabUIConfigProxy = (): ProviderChatUIConfig => {
-    const draftProvider = shell.providerId;
-    const baseConfig = ProviderRegistry.getChatUIConfig(draftProvider);
+    const baseConfig = getTabChatUIConfig(shell, plugin);
     return {
       ...baseConfig,
       getModelOptions: (settings: Record<string, unknown>) =>
@@ -242,6 +241,11 @@ function buildInputToolbar(
           model,
           plugin.settings,
         );
+        if (!newProvider) {
+          new Notice('Select an available model in Claudian settings.');
+          tab.ui.modelSelector.updateDisplay();
+          return;
+        }
         const result = await modelSelection.selectBlank(request, {
           providerId: newProvider,
           model,
@@ -286,7 +290,7 @@ function buildInputToolbar(
 
       const boundProvider = tab.providerId;
       const modelProvider = getProviderForModel(model, plugin.settings);
-      if (modelProvider !== boundProvider) {
+      if (!boundProvider || modelProvider !== boundProvider) {
         new Notice('Cannot switch provider on a bound session. Start a new conversation instead.');
         tab.ui.modelSelector.updateDisplay();
         return;

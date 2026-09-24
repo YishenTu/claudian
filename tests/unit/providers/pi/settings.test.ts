@@ -7,11 +7,11 @@ jest.mock('../../../../src/utils/env', () => ({
 
 import { piSettingsReconciler } from '@/providers/pi/env/PiSettingsReconciler';
 import {
-getPiProviderSettings,
-normalizePiModelAliases,
-normalizePiPreferredThinkingByModel,
-normalizePiVisibleModels,
-updatePiProviderSettings
+  getPiProviderSettings,
+  normalizePiModelAliases,
+  normalizePiPreferredThinkingByModel,
+  normalizePiVisibleModels,
+  updatePiProviderSettings
 } from '@/providers/pi/settings';
 
 describe('Pi settings normalization', () => {
@@ -78,7 +78,7 @@ describe('Pi settings normalization', () => {
       'pi:anthropic/claude-sonnet-4',
       'pi:missing/model',
       'openai/gpt-5',
-    ], discoveredModels)).toEqual(['pi:anthropic/claude-sonnet-4']);
+    ], discoveredModels)).toEqual(['pi:anthropic/claude-sonnet-4', 'pi:missing/model']);
   });
 
   it('normalizes aliases and clamps preferred thinking to model capabilities', () => {
@@ -175,7 +175,7 @@ describe('Pi settings normalization', () => {
     });
   });
 
-  it('retargets active and saved Pi selections when visible models change', () => {
+  it('preserves active and saved Pi selections when visible models change', () => {
     const settings: Record<string, unknown> = {
       effortLevel: 'high',
       model: 'pi:openai/gpt-5',
@@ -201,14 +201,14 @@ describe('Pi settings normalization', () => {
       visibleModels: ['pi:anthropic/claude-sonnet-4'],
     });
 
-    expect(settings.model).toBe('pi:anthropic/claude-sonnet-4');
+    expect(settings.model).toBe('pi:openai/gpt-5');
     expect(settings.effortLevel).toBe('high');
-    expect((settings.savedProviderModel as Record<string, string>).pi).toBe('pi:anthropic/claude-sonnet-4');
-    expect((settings.savedProviderEffort as Record<string, string>).pi).toBe('high');
-    expect(settings.titleGenerationModel).toBe('pi:anthropic/claude-sonnet-4');
+    expect((settings.savedProviderModel as Record<string, string>).pi).toBe('pi:openai/gpt-5');
+    expect((settings.savedProviderEffort as Record<string, string>).pi).toBe('medium');
+    expect(settings.titleGenerationModel).toBe('pi:openai/gpt-5');
   });
 
-  it('clears the Pi title model when all visible models are removed', () => {
+  it('preserves the Pi title model when all visible models are removed', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         pi: {
@@ -221,10 +221,10 @@ describe('Pi settings normalization', () => {
 
     updatePiProviderSettings(settings, { visibleModels: [] });
 
-    expect(settings.titleGenerationModel).toBe('');
+    expect(settings.titleGenerationModel).toBe('pi:openai/gpt-5');
   });
 
-  it('clears stale discovery metadata on environment change without dropping visible model choices', () => {
+  it('retains stale discovery metadata on environment change without dropping visible model choices', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         pi: {
@@ -234,9 +234,9 @@ describe('Pi settings normalization', () => {
       },
     };
 
-    expect(piSettingsReconciler.handleEnvironmentChange?.(settings)).toBe(true);
+    expect(piSettingsReconciler.handleEnvironmentChange?.(settings)).toBeUndefined();
 
-    expect(getPiProviderSettings(settings).discoveredModels).toEqual([]);
+    expect(getPiProviderSettings(settings).discoveredModels).toEqual(discoveredModels);
     expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
   });
 

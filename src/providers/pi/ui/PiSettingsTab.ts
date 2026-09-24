@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 
-import { Notice, Setting } from 'obsidian';
+import { Setting } from 'obsidian';
 
 import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
@@ -8,10 +8,10 @@ import type { ProviderCliResolver } from '@/core/providers/types';
 import { PI_PROVIDER_ICON } from '@/shared/icons';
 import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
 
+import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
-  ProviderSettingsTabRenderer,
-  ProviderSettingsTabRendererContext,
+  ProviderSettingsTabRenderer
 } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import { renderEnvironmentSettingsSection } from '../../../shared/settings/EnvironmentSettingsSection';
@@ -20,25 +20,17 @@ import {
   renderLastEnabledProviderWarning,
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
-import {
-  type ProviderModelPickerModel,
-  type ProviderModelPickerState,
-  renderProviderModelPicker,
-} from '../../../shared/settings/ProviderModelPicker';
+import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCliPath } from '../../../utils/path';
-import { sameDiscoveredModels, sameStringList } from '../internal/compareCollections';
-import { decodePiModelId, type PiDiscoveredModel } from '../models';
-import { PiModelDiscoveryService } from '../runtime/PiModelDiscoveryService';
 import { resolvePiProcessSpec } from '../runtime/PiSubprocess';
 import {
   getPiProviderSettings,
-  normalizePiVisibleModels,
-  updatePiProviderSettings,
+  updatePiProviderSettings
 } from '../settings';
 
 export function createPiSettingsTabRenderer(
-  workspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; },
+  workspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; modelCatalog: ProviderModelCatalog; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -123,7 +115,6 @@ export function createPiSettingsTabRenderer(
             (settings) => {
               updatePiProviderSettings(settings, {
                 cliPathsByHost,
-                discoveredModels: [],
               });
             },
             () => workspace?.cliResolver?.reset(),
@@ -137,7 +128,7 @@ export function createPiSettingsTabRenderer(
       });
 
       new Setting(container).setName('Models').setHeading();
-      renderPiModelPicker(container, modelWarning.context, settingsBag);
+      const modelPicker = renderProviderModelsSection(container, 'pi', 'Pi', workspace.modelCatalog, () => modelWarning.refresh());
 
       new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
       context.renderAgentSkillSettings(container, 'pi');
@@ -158,77 +149,9 @@ export function createPiSettingsTabRenderer(
         plugin: context.plugin,
         scope: 'provider:pi',
       });
+      return modelPicker;
     },
   };
-}
-
-function renderPiModelPicker(
-  container: HTMLElement,
-  context: ProviderSettingsTabRendererContext,
-  settingsBag: Record<string, unknown>,
-): void {
-  const getState = (): ProviderModelPickerState => {
-    const current = getPiProviderSettings(settingsBag);
-    return {
-      aliases: current.modelAliases,
-      discoveredCount: current.discoveredModels.length,
-      models: buildPiPickerModels(current.discoveredModels, current.visibleModels),
-      selectedIds: current.visibleModels,
-    };
-  };
-
-  renderProviderModelPicker({
-    container,
-    emptyCatalogText: 'No Pi models discovered yet. Click Discover to load models from Pi.',
-    failedCatalogText: 'Could not load the Pi model catalog. Check the CLI path and login state, then try again.',
-    getState,
-    async loadCatalog() {
-      const result = await new PiModelDiscoveryService(context.plugin).discoverModels();
-      if (result.kind === 'skipped') {
-        return getPiProviderSettings(settingsBag).discoveredModels.length > 0 ? 'loaded' : 'empty';
-      }
-      if (result.diagnostics) {
-        new Notice(`Pi discovery failed: ${result.diagnostics}`);
-        return 'failed';
-      }
-
-      const current = getPiProviderSettings(settingsBag);
-      const normalizedVisibleModels = normalizePiVisibleModels(current.visibleModels, result.models);
-      const catalogChanged = !sameDiscoveredModels(current.discoveredModels, result.models);
-      const visibilityChanged = !sameStringList(current.visibleModels, normalizedVisibleModels);
-      if (catalogChanged || visibilityChanged) {
-        await context.plugin.mutateSettings((settings) => {
-          updatePiProviderSettings(settings, {
-            discoveredModels: result.models,
-            visibleModels: normalizedVisibleModels,
-          });
-        });
-        context.notifyProviderModelOptionsChanged('pi');
-      }
-      return result.models.length > 0 ? 'loaded' : 'empty';
-    },
-    loadingCatalogText: 'Loading Pi model catalog...',
-    modifier: 'pi',
-    async onAliasesChange(modelAliases) {
-      await context.plugin.mutateSettings((settings) => {
-        updatePiProviderSettings(settings, { modelAliases });
-      });
-      context.notifyProviderModelOptionsChanged('pi');
-    },
-    async onSelectedIdsChange(visibleModels) {
-      const current = getPiProviderSettings(settingsBag);
-      const normalized = normalizePiVisibleModels(visibleModels, current.discoveredModels);
-      if (sameStringList(current.visibleModels, normalized)) {
-        return;
-      }
-
-      await context.plugin.mutateSettings((settings) => {
-        updatePiProviderSettings(settings, { visibleModels: normalized });
-      });
-      context.notifyProviderModelOptionsChanged('pi');
-    },
-    providerName: 'Pi',
-  });
 }
 
 function validateCliPath(value: string): string | null {
@@ -247,92 +170,4 @@ function validateCliPath(value: string): string | null {
   }
 
   return null;
-}
-
-function buildPiPickerModels(
-  discoveredModels: PiDiscoveredModel[],
-  visibleModels: string[],
-): ProviderModelPickerModel[] {
-  const models: ProviderModelPickerModel[] = [];
-  const discoveredIds = new Set<string>();
-
-  for (const model of discoveredModels) {
-    discoveredIds.add(model.encodedId);
-    models.push({
-      description: buildPiModelDescription(model),
-      id: model.encodedId,
-      isAvailable: true,
-      name: model.label || model.id,
-      providerKey: model.provider.toLowerCase(),
-      providerLabel: formatProviderLabel(model.provider),
-    });
-  }
-
-  for (const encodedId of visibleModels) {
-    if (discoveredIds.has(encodedId)) {
-      continue;
-    }
-
-    const decoded = decodePiModelId(encodedId);
-    const provider = decoded?.provider ?? 'pi';
-    models.push({
-      description: 'Configured model',
-      id: encodedId,
-      isAvailable: false,
-      name: decoded?.modelId ?? encodedId,
-      providerKey: provider.toLowerCase(),
-      providerLabel: formatProviderLabel(provider),
-      unavailableMessage: 'Not currently reported by Pi',
-    });
-  }
-
-  return models.sort((left, right) => {
-    const providerCmp = (left.providerLabel ?? '').localeCompare(right.providerLabel ?? '');
-    if (providerCmp !== 0) {
-      return providerCmp;
-    }
-    return left.name.localeCompare(right.name);
-  });
-}
-
-function buildPiModelDescription(model: PiDiscoveredModel): string {
-  const details: string[] = [];
-  if (model.api) {
-    details.push(`API: ${model.api}`);
-  }
-  if (model.contextWindow) {
-    details.push(`${model.contextWindow.toLocaleString()} context`);
-  }
-  if (model.maxTokens) {
-    details.push(`${model.maxTokens.toLocaleString()} output`);
-  }
-  if (model.input.includes('image')) {
-    details.push('image input');
-  }
-  details.push(model.reasoning
-    ? `thinking: ${model.thinkingLevels.join(', ')}`
-    : 'thinking: off');
-
-  return details.join(' | ');
-}
-
-function formatProviderLabel(provider: string): string {
-  const normalized = provider.trim();
-  const knownProviders: Record<string, string> = {
-    anthropic: 'Anthropic',
-    deepseek: 'DeepSeek',
-    google: 'Google',
-    openai: 'OpenAI',
-    xai: 'xAI',
-  };
-  const known = knownProviders[normalized.toLowerCase()];
-  if (known) {
-    return known;
-  }
-
-  return normalized
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || 'Pi';
 }

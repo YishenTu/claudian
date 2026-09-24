@@ -22,8 +22,6 @@ import type {
   GrokModelCatalogServiceLike,
 } from './GrokModelCatalogService';
 
-const CATALOG_TTL_MS = 5 * 60 * 1000;
-
 export type GrokCatalogState = 'failed' | 'idle' | 'ready' | 'refreshing';
 
 export interface GrokCatalogResult {
@@ -34,14 +32,11 @@ export interface GrokCatalogResult {
   persistedSettingsChanged: boolean;
 }
 
-export interface GrokCatalogEnsureResult extends GrokCatalogResult {
-  backgroundRefresh?: Promise<GrokCatalogResult>;
-}
-
 export class GrokModelCatalogCoordinator {
   private readonly activeMetadataOperations = new Set<Promise<unknown>>();
   private abortController: AbortController | null = null;
   private disposed = false;
+  private disposePromise: Promise<void> | null = null;
   private inFlightRefresh: {
     contextKey: string;
     generation: number;
@@ -75,79 +70,12 @@ export class GrokModelCatalogCoordinator {
     return this.state;
   }
 
-  getStatus(
-    context?: ProviderTransitionOwnerContext,
-  ): Promise<'fresh' | 'missing' | 'stale'> {
-    if (this.disposed) {
-      return Promise.resolve(this.getCachedCatalog() ? 'stale' : 'missing');
-    }
-    return this.runMetadataOperation(
-      () => this.#getStatusUnfenced(context),
-      context?.providerTransitionOwner === true,
-      () => this.getCachedCatalog() ? 'stale' : 'missing',
-    );
-  }
-
-  async #getStatusUnfenced(
-    context?: ProviderTransitionOwnerContext,
-  ): Promise<'fresh' | 'missing' | 'stale'> {
-    const catalog = this.getCachedCatalog();
-    if (!catalog || catalog.models.length === 0 || !catalog.fingerprint) {
-      return 'missing';
-    }
-    const fingerprint = await this.service.getCatalogFingerprint(undefined, context);
-    if (fingerprint !== catalog.fingerprint) {
-      return 'stale';
-    }
-    return Date.now() - catalog.refreshedAt > CATALOG_TTL_MS ? 'stale' : 'fresh';
-  }
-
-  ensureFresh(
-    _reason: string,
-    options: { force?: boolean } = {},
-  ): Promise<GrokCatalogEnsureResult> {
-    if (this.disposed || !getGrokProviderSettings(this.plugin.settings).enabled) {
+  refresh(context?: ProviderTransitionOwnerContext, signal?: AbortSignal): Promise<GrokCatalogResult> {
+    if (this.disposed || signal?.aborted || !getGrokProviderSettings(this.plugin.settings).enabled) {
       return Promise.resolve(this.#skippedResult());
     }
     return this.runMetadataOperation(
-      () => this.#ensureFreshUnfenced(options),
-      false,
-      () => this.#skippedResult(),
-    );
-  }
-
-  async #ensureFreshUnfenced(
-    options: { force?: boolean },
-  ): Promise<GrokCatalogEnsureResult> {
-    if (options.force) {
-      return this.#refreshUnfenced();
-    }
-
-    let status: 'fresh' | 'missing' | 'stale';
-    try {
-      status = await this.#getStatusUnfenced();
-    } catch {
-      status = this.getCachedCatalog() ? 'stale' : 'missing';
-    }
-    if (status === 'fresh') {
-      return this.#completedResult();
-    }
-    if (status === 'missing') {
-      return this.#refreshUnfenced();
-    }
-
-    return {
-      ...this.#completedResult(),
-      backgroundRefresh: this.#refreshUnfenced(),
-    };
-  }
-
-  refresh(context?: ProviderTransitionOwnerContext): Promise<GrokCatalogResult> {
-    if (this.disposed || !getGrokProviderSettings(this.plugin.settings).enabled) {
-      return Promise.resolve(this.#skippedResult());
-    }
-    return this.runMetadataOperation(
-      () => this.#refreshUnfenced(context),
+      () => this.#refreshUnfenced(context, signal),
       context?.providerTransitionOwner === true,
       () => this.#skippedResult(),
     );
@@ -155,7 +83,9 @@ export class GrokModelCatalogCoordinator {
 
   async #refreshUnfenced(
     context?: ProviderTransitionOwnerContext,
+    signal?: AbortSignal,
   ): Promise<GrokCatalogResult> {
+    if (signal?.aborted) return this.#skippedResult();
     if (
       this.transitionActive
       && context?.providerTransitionOwner !== true
@@ -169,7 +99,7 @@ export class GrokModelCatalogCoordinator {
       this.inFlightRefresh?.contextKey === contextKey
       && (!transitionOwner || this.inFlightRefresh.transitionOwner)
     ) {
-      return this.inFlightRefresh.promise;
+      return this.#waitForRefresh(this.inFlightRefresh, signal);
     }
     if (this.inFlightRefresh) this.abortController?.abort();
 
@@ -178,23 +108,10 @@ export class GrokModelCatalogCoordinator {
     const flight = { contextKey, generation, promise, transitionOwner };
     this.inFlightRefresh = flight;
     try {
-      return await promise;
+      return await this.#waitForRefresh(flight, signal);
     } finally {
       if (this.inFlightRefresh === flight) this.inFlightRefresh = null;
     }
-  }
-
-  async refreshModelCatalog(
-    context?: ProviderTransitionOwnerContext,
-  ): Promise<ProviderModelCatalogRefreshResult> {
-    const result = await this.refresh(context);
-    return {
-      changed: result.changed,
-      ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
-      ...(result.persistedSettingsChanged
-        ? { persistedSettingsChanged: true }
-        : {}),
-    };
   }
 
   mergeLiveModels(
@@ -273,8 +190,28 @@ export class GrokModelCatalogCoordinator {
     return persisted;
   }
 
+  async #waitForRefresh(
+    flight: { generation: number; promise: Promise<GrokCatalogResult> },
+    signal?: AbortSignal,
+  ): Promise<GrokCatalogResult> {
+    const cancel = () => {
+      if (flight.generation === this.refreshGeneration) this.cancel();
+    };
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) cancel();
+    try {
+      return await flight.promise;
+    } finally {
+      signal?.removeEventListener('abort', cancel);
+    }
+  }
+
   cancel(): void {
+    this.refreshGeneration += 1;
     this.abortController?.abort();
+    this.abortController = null;
+    this.inFlightRefresh = null;
+    this.state = 'idle';
   }
 
   beginEnvironmentTransition(): void {
@@ -288,15 +225,8 @@ export class GrokModelCatalogCoordinator {
   }
 
   async quiesceForEnvironmentChange(): Promise<void> {
-    const flight = this.inFlightRefresh;
-    const activeOperations = [...this.activeMetadataOperations];
-    this.refreshGeneration += 1;
-    this.abortController?.abort();
-    if (flight) {
-      await flight.promise.catch(() => undefined);
-      if (this.inFlightRefresh === flight) this.inFlightRefresh = null;
-    }
-    await Promise.all(activeOperations.map(operation => operation.catch(() => undefined)));
+    this.cancel();
+    await Promise.allSettled(this.activeMetadataOperations);
     this.liveContextKey = null;
     this.liveDefaultModelId = null;
     this.liveDefaultRevision = 0;
@@ -305,11 +235,14 @@ export class GrokModelCatalogCoordinator {
     this.state = 'idle';
   }
 
-  dispose(): void {
+  dispose(): Promise<void> {
+    if (this.disposePromise) return this.disposePromise;
     this.disposed = true;
     this.transitionActive = false;
     this.#releaseTransitionWaiters();
     this.cancel();
+    this.disposePromise = Promise.allSettled(this.activeMetadataOperations).then(() => undefined);
+    return this.disposePromise;
   }
 
   private runMetadataOperation<T>(
@@ -379,7 +312,7 @@ export class GrokModelCatalogCoordinator {
         this.state = this.getCachedCatalog() ? 'ready' : 'idle';
         return this.#skippedResult();
       }
-      if (discovery.diagnostics || discovery.models.length === 0) {
+      if (discovery.diagnostics) {
         this.state = 'failed';
         return {
           ...this.#completedResult(),

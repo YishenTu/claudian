@@ -23,6 +23,8 @@
     "rewind": "Rewind"
   },
   "chat": {
+    "selectAvailableModel": "Select an available model before sending.",
+    "selectAvailableTitleModel": "Select an available title model in Claudian settings.",
     "rewind": {
       "confirmMessage": "Rewind to this point? File changes after this message may be overwritten or removed. This cannot be undone.",
       "confirmMessageConflicts": "Rewind to this point? {count} file(s) were modified outside the agent and will be overwritten:\n{files}",
@@ -592,7 +594,8 @@
     "titleModel": {
       "name": "Title generation model",
       "desc": "Model used for auto-generating conversation titles.",
-      "auto": "Auto (Haiku)"
+      "select": "Select a model",
+      "unavailableWarning": "Automatic titles are paused. Select an available title model."
     },
     "navMappings": {
       "name": "Vim-style navigation mappings",
@@ -675,11 +678,6 @@
       "name": "Custom Context Limits",
       "desc": "Set context window sizes for your custom models. Leave empty to use the default (200k tokens).",
       "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000)."
-    },
-    "customModels": {
-      "name": "Custom models",
-      "desc": "Append additional Claude model IDs to the picker, one per line. Environment model overrides still replace the picker.",
-      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "Enable Chrome extension",
@@ -818,11 +816,6 @@
       "safeMode": {
         "workspaceWrite": "Workspace write",
         "readOnly": "Read only"
-      },
-      "customModels": {
-        "name": "Custom models",
-        "desc": "Append additional Codex model IDs to the picker, one per line. `OPENAI_MODEL` still takes precedence when set.",
-        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
       "responseStyle": {
         "name": "Response style",

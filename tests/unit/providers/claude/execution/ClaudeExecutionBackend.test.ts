@@ -170,6 +170,7 @@ describe('ClaudeExecutionBackend', () => {
     const events = await collectEvents(session.execute({
       ...request, configuration: { ...request.configuration, model: 'gateway-model' },
     }).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', category: 'configuration' }));
     expect(JSON.stringify(events)).toContain('selected Claude model is unavailable');
     expect(JSON.stringify(events)).toContain('Open Claudian settings → Claude');
     expect(sdkMock.getQueryCallCount()).toBe(0);

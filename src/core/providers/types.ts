@@ -17,6 +17,7 @@ import type { ProviderId } from '../types/provider';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 import type { ProviderCommandDiscoveryResult } from './commands/ProviderCommandDiscoveryResult';
 import type { ProviderVaultEntryRepository } from './commands/ProviderVaultEntryRepository';
+import type { ProviderModelCatalog } from './models/ProviderModelCatalog';
 import type { ProviderHost } from './ProviderHost';
 
 export type { ProviderId } from '../types/provider';
@@ -61,7 +62,6 @@ export interface ProviderRegistration {
   settingsReconciler: ProviderSettingsReconciler;
   createExecutionBackend: (plugin: ProviderHost) => ProviderExecutionBackend;
   createSubagentHistoryService?: (plugin: ProviderHost) => ProviderSubagentHistoryService;
-  resolveTitleGenerationModel?: (plugin: ProviderHost) => string | undefined;
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
   subagentAdapter?: ProviderSubagentAdapter;
@@ -77,6 +77,8 @@ export interface ProviderSettingsStorageAdapter {
   hostScopedFields?: string[];
   legacyTopLevelFields?: string[];
   runtimeOnlyFields?: string[];
+  /** Provider-owned durable projection; full discovery catalogs remain runtime-only. */
+  projectPersistedConfig?(settings: Record<string, unknown>): Record<string, unknown>;
   normalizeStored(
     target: Record<string, unknown>,
     stored: Record<string, unknown>,
@@ -107,7 +109,7 @@ export interface ProviderSettingsReconciler {
 
 /** Tab manager state persisted across restarts. */
 export interface AppTabManagerState {
-  openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string }>;
+  openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string; providerId?: ProviderId | null }>;
   activeTabId: string | null;
   expandedTitleTabIds?: string[];
 }
@@ -222,8 +224,6 @@ export interface ProviderModeSelectorConfig {
 
 /** Synchronous UI projection owned by the provider and backed by provider-owned metadata. */
 export interface ProviderChatUIConfig {
-  /** Keep unavailable saved selections for explicit user correction instead of choosing a fallback. */
-  preserveUnavailableModelSelection?: boolean;
   /** Model options for the selector dropdown. Provider extracts what it needs from the settings bag. */
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[];
 
@@ -279,6 +279,12 @@ export interface ProviderChatUIConfig {
 
   /** Extract custom model IDs from parsed environment variables. Used for per-model context limit UI. */
   getCustomModelIds(envVars: Record<string, string>): Set<string>;
+
+  /** Provider-owned aliases for custom models configured through environment snippets. */
+  customModelAliases?: {
+    get(settings: Record<string, unknown>): Record<string, string>;
+    update(settings: Record<string, unknown>, aliases: Record<string, string>): void;
+  };
 
   /** Optional permission-mode toggle descriptor. Return null when the provider exposes no permission toggle UI. */
   getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;
@@ -371,10 +377,7 @@ export interface ProviderWorkspaceServices {
   commandLoader?: ProviderCommandLoader | null;
   tabWarmupPolicy?: ProviderTabWarmupPolicy | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
-  refreshModelCatalog?(
-    context?: ProviderTransitionOwnerContext,
-  ): Promise<ProviderModelCatalogRefreshResult>;
-  prepareSettings?(): Promise<void>;
+  modelCatalog?: ProviderModelCatalog;
   dispose?(): Promise<void> | void;
 }
 
@@ -402,8 +405,13 @@ export interface ProviderSettingsTabRendererContext {
   renderCustomContextLimits(container: HTMLElement, providerId: ProviderId): void;
 }
 
+export interface ProviderSettingsTabRenderHandle {
+  refresh(): void;
+  dispose(): void;
+}
+
 export interface ProviderSettingsTabRenderer {
-  render(container: HTMLElement, context: ProviderSettingsTabRendererContext): void;
+  render(container: HTMLElement, context: ProviderSettingsTabRendererContext): ProviderSettingsTabRenderHandle | void;
 }
 
 export interface ProviderWorkspaceInitContext {

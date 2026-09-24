@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-
+import { TEST_CODEX_CATALOG, TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { createMockEl } from '@test/helpers/MockElement';
 import { applyTextInput } from '@test/helpers/settingsControls';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
@@ -19,11 +19,7 @@ const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockCodexCliResolverReset = jest.fn();
 const mockRefreshCodexModelPicker = jest.fn();
-const mockRenderCodexModelPicker = jest.fn((
-  _container: unknown,
-  _context: { notifyProviderModelOptionsChanged: (providerId: string) => void },
-  _workspace: unknown,
-) => ({ refresh: mockRefreshCodexModelPicker }));
+const mockRenderCodexModelPicker = jest.fn((..._args: unknown[]) => ({ refresh: mockRefreshCodexModelPicker, dispose: jest.fn() }));
 const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
 
 jest.mock('fs');
@@ -35,17 +31,7 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
       providerConfigs.codex.enabled = enabled;
       return true;
     }),
-    reconcileTitleGenerationModelSelection: jest.fn((settings: Record<string, unknown>) => {
-      const titleGenerationModel = settings.titleGenerationModel;
-      const customModels = (
-        settings.providerConfigs as { codex?: { customModels?: string } } | undefined
-      )?.codex?.customModels ?? '';
-      if (titleGenerationModel === 'my-custom-model' && customModels !== 'my-custom-model') {
-        settings.titleGenerationModel = '';
-        return true;
-      }
-      return false;
-    }),
+    reconcileTitleGenerationModelSelection: jest.fn(() => false),
     normalizeAllModelVariants: jest.fn(),
   },
 }));
@@ -125,17 +111,13 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
 function createSettingsRenderer() {
   return createCodexSettingsTabRenderer({
     commandCatalog: null,
-    refreshModelCatalog: mockRefreshModelCatalog,
+    modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
     cliResolver: { reset: mockCodexCliResolverReset },
   } as unknown as Parameters<typeof createCodexSettingsTabRenderer>[0]);
 }
 
-jest.mock('@/providers/codex/ui/CodexModelPicker', () => ({
-  renderCodexModelPicker: (
-    container: unknown,
-    context: { notifyProviderModelOptionsChanged: (providerId: string) => void },
-    workspace: unknown,
-  ) => mockRenderCodexModelPicker(container, context, workspace),
+jest.mock('@/shared/settings/ProviderModelsSection', () => ({
+  renderProviderModelsSection: (...args: unknown[]) => mockRenderCodexModelPicker(...args),
 }));
 
 jest.mock('@/utils/env', () => ({
@@ -652,8 +634,10 @@ describe('CodexSettingsTab', () => {
 
     expect(mockRenderCodexModelPicker).toHaveBeenCalledWith(
       container,
-      expect.objectContaining({ plugin }),
-      expect.objectContaining({ commandCatalog: null }),
+      'codex',
+      'Codex',
+      expect.objectContaining({ refresh: mockRefreshModelCatalog }),
+      expect.any(Function),
     );
   });
 
@@ -681,11 +665,12 @@ describe('CodexSettingsTab', () => {
     expect(warningCallIndex).toBeGreaterThanOrEqual(0);
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', false);
 
-    plugin.settings.providerConfigs.codex.customModels = 'gpt-custom';
-    const pickerContext = mockRenderCodexModelPicker.mock.calls[0][1];
-    pickerContext.notifyProviderModelOptionsChanged('codex');
+    plugin.settings.providerConfigs.codex.discoveredModels = TEST_CODEX_CATALOG;
+    plugin.settings.providerConfigs.codex.visibleModels = [TEST_CODEX_MODEL];
+    const onUpdate = mockRenderCodexModelPicker.mock.calls[0][4] as () => void;
+    onUpdate();
 
-    expect(context.notifyProviderModelOptionsChanged).toHaveBeenCalledWith('codex');
+    expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
     expect(warningEl.toggleClass).toHaveBeenLastCalledWith('claudian-hidden', true);
   });
 
@@ -701,7 +686,7 @@ describe('CodexSettingsTab', () => {
       fireEvent.change(select, { target: { value: option.value } });
       await waitFor(() => expect(plugin.settings.providerConfigs.codex.responseStyle).toBe(value));
     }
-    expect(plugin.settings.providerConfigs.codex.customModels).toBe('my-custom-model');
+    expect(plugin.settings.providerConfigs.codex).not.toHaveProperty('customModels');
     expect(await axe(subtree)).toHaveNoViolations();
   });
 
@@ -818,7 +803,7 @@ describe('CodexSettingsTab', () => {
     );
     expect(plugin.applyProviderRuntimeSettings).toHaveBeenCalledTimes(2);
     expect(mockCodexCliResolverReset).toHaveBeenCalledTimes(2);
-    expect(mockRefreshModelCatalog).toHaveBeenCalledTimes(1);
+    expect(mockRefreshModelCatalog).not.toHaveBeenCalled();
   });
 
   it('accepts a quoted Linux-side CLI path when installation method is WSL', async () => {

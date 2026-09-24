@@ -93,7 +93,7 @@ export class OpencodeMetadataService {
       async (probe, ownedSignal) => {
         const catalog = await probe.loadCatalog(ownedSignal);
         ownedSignal.throwIfAborted();
-        await projectOpencodeMetadata(this.plugin, catalog);
+        await projectOpencodeMetadata(this.plugin, catalog, ownedSignal);
         ownedSignal.throwIfAborted();
         if (catalog.commands !== null) {
           this.options.commandCatalog?.setCommandSnapshot(
@@ -118,8 +118,6 @@ export class OpencodeMetadataService {
     const result = await this.#runProbe(
       async (probe, ownedSignal) => {
         const catalog = await probe.loadCatalog(ownedSignal);
-        ownedSignal.throwIfAborted();
-        await projectOpencodeMetadata(this.plugin, catalog);
         ownedSignal.throwIfAborted();
         if (catalog.commands === null) {
           return { commands: [], loaded: false };
@@ -147,7 +145,7 @@ export class OpencodeMetadataService {
         await projectOpencodeMetadata(this.plugin, {
           ...metadata,
           selectedRawModelId: metadata.rawModelId,
-        });
+        }, ownedSignal);
         ownedSignal.throwIfAborted();
         return true;
       },

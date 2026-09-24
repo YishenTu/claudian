@@ -90,12 +90,12 @@ describe('CodexChatUIConfig', () => {
 
       expect(options).toEqual([
         {
-          value: 'gpt-5.6-luna',
+          value: 'openai-codex/gpt-5.6-luna',
           label: 'GPT-5.6-Luna',
           description: 'Fast and affordable agentic coding model.',
         },
         {
-          value: 'gpt-5.6-sol',
+          value: 'openai-codex/gpt-5.6-sol',
           label: 'GPT-5.6-Sol',
           description: 'Latest frontier agentic coding model.',
         },
@@ -113,10 +113,10 @@ describe('CodexChatUIConfig', () => {
         },
       }));
 
-      expect(options.find(option => option.value === TEST_CODEX_MODEL)?.label).toBe('Primary');
+      expect(options.find(option => option.value === `openai-codex/${TEST_CODEX_MODEL}`)?.label).toBe('Primary');
     });
 
-    it('appends settings-defined custom models after the built-in options', () => {
+    it('does not enable settings-defined custom models absent from discovery', () => {
       const options = codexChatUIConfig.getModelOptions(withDiscoveredModels({
         providerConfigs: {
           codex: {
@@ -127,38 +127,26 @@ describe('CodexChatUIConfig', () => {
 
       expect(options).toEqual([
         {
-          value: 'gpt-5.4-mini',
+          value: 'openai-codex/gpt-5.4-mini',
           label: 'GPT-5.4 Mini',
           description: 'Fast',
         },
         {
-          value: TEST_CODEX_MODEL,
+          value: `openai-codex/${TEST_CODEX_MODEL}`,
           label: 'GPT-5.5',
           description: 'Latest',
-        },
-        {
-          value: 'openai-codex/gpt-5.6-preview',
-          label: 'GPT-5.6 Preview',
-          description: 'Custom model',
-        },
-        {
-          value: 'openai-codex/my-custom-model',
-          label: 'my-custom-model',
-          description: 'Custom model',
         },
       ]);
     });
 
-    it('should prepend custom model from OPENAI_MODEL env var', () => {
+    it('does not enable an environment model absent from discovery', () => {
       const options = codexChatUIConfig.getModelOptions(withDiscoveredModels({
         environmentVariables: 'OPENAI_MODEL=my-custom-model',
       }));
-      expect(options[0].value).toBe('openai-codex/my-custom-model');
-      expect(options[0].description).toBe('Custom (env)');
-      expect(options.length).toBe(3);
+      expect(options.map(option => option.value)).toEqual(['openai-codex/gpt-5.4-mini', `openai-codex/${TEST_CODEX_MODEL}`]);
     });
 
-    it('deduplicates env and settings-defined custom models', () => {
+    it('ignores environment and retired manual model lists', () => {
       const options = codexChatUIConfig.getModelOptions(withDiscoveredModels({
         providerConfigs: {
           codex: {
@@ -169,10 +157,8 @@ describe('CodexChatUIConfig', () => {
       }));
 
       expect(options.map(option => option.value)).toEqual([
-        'openai-codex/my-custom-model',
-        'gpt-5.4-mini',
-        TEST_CODEX_MODEL,
-        'openai-codex/second-custom-model',
+        'openai-codex/gpt-5.4-mini',
+        `openai-codex/${TEST_CODEX_MODEL}`,
       ]);
     });
 
@@ -195,7 +181,7 @@ describe('CodexChatUIConfig', () => {
       });
 
       expect(codexChatUIConfig.getModelOptions(settings).map(option => option.value)).toEqual([
-        'gpt-5.4-mini',
+        'openai-codex/gpt-5.4-mini',
       ]);
     });
 
@@ -210,11 +196,11 @@ describe('CodexChatUIConfig', () => {
       });
 
       expect(codexChatUIConfig.getModelOptions(settings).map(option => option.value)).toEqual([
-        'gpt-5.4-mini',
+        'openai-codex/gpt-5.4-mini',
       ]);
     });
 
-    it('keeps hand-picked model IDs usable before the runtime catalog loads', () => {
+    it('requires selected metadata before offering hand-picked model IDs', () => {
       const options = codexChatUIConfig.getModelOptions({
         settingsProvider: 'claude',
         model: 'sonnet',
@@ -226,11 +212,7 @@ describe('CodexChatUIConfig', () => {
         },
       });
 
-      expect(options).toEqual([{
-        value: 'gpt-5.6-sol',
-        label: 'GPT-5.6 Sol',
-        description: 'Selected model',
-      }]);
+      expect(options).toEqual([]);
     });
 
     it('does not expose saved and current Codex selections when no models are enabled', () => {
@@ -269,7 +251,7 @@ describe('CodexChatUIConfig', () => {
       })).toEqual([]);
     });
 
-    it('deduplicates an unavailable current model against OPENAI_MODEL', () => {
+    it('does not synthesize an unavailable environment model', () => {
       const options = codexChatUIConfig.getModelOptions({
         model: 'gpt-env-model',
         providerConfigs: {
@@ -281,17 +263,13 @@ describe('CodexChatUIConfig', () => {
         },
       });
 
-      expect(options).toEqual([{
-        value: 'openai-codex/gpt-env-model',
-        label: 'GPT-env Model',
-        description: 'Custom (env)',
-      }]);
+      expect(options).toEqual([]);
     });
   });
 
   describe('getDefaultModel', () => {
     it('keeps the app-server default independent from reverse picker order', () => {
-      expect(codexChatUIConfig.getDefaultModel!(withDiscoveredModels())).toBe(TEST_CODEX_MODEL);
+      expect(codexChatUIConfig.getDefaultModel!(withDiscoveredModels())).toBe(`openai-codex/${TEST_CODEX_MODEL}`);
     });
 
     it('uses the first visible model when the app-server default is filtered out', () => {
@@ -301,7 +279,7 @@ describe('CodexChatUIConfig', () => {
             visibleModels: ['gpt-5.4-mini'],
           },
         },
-      }))).toBe('gpt-5.4-mini');
+      }))).toBe('openai-codex/gpt-5.4-mini');
     });
 
     it('has no default when no models are enabled', () => {
@@ -482,7 +460,7 @@ describe('CodexChatUIConfig', () => {
         },
       })).toEqual([
         {
-          value: 'gpt-ultra-only',
+          value: 'openai-codex/gpt-ultra-only',
           label: 'GPT Ultra Only',
           description: 'Ultra only',
         },
@@ -570,31 +548,31 @@ describe('CodexChatUIConfig', () => {
   });
 
   describe('normalizeModelVariant', () => {
-    it('falls back unavailable Codex models to the current primary model', () => {
+    it('preserves unavailable Codex models', () => {
       expect(codexChatUIConfig.normalizeModelVariant('gpt-5.4', withDiscoveredModels()))
-        .toBe(TEST_CODEX_MODEL);
+        .toBe('gpt-5.4');
     });
 
-    it('keeps visible models as-is', () => {
+    it('qualifies reported models and leaves manual configuration unclaimed', () => {
       expect(codexChatUIConfig.normalizeModelVariant(TEST_CODEX_MODEL, withDiscoveredModels()))
-        .toBe(TEST_CODEX_MODEL);
+        .toBe(`openai-codex/${TEST_CODEX_MODEL}`);
       expect(codexChatUIConfig.normalizeModelVariant('custom', {
         environmentVariables: 'OPENAI_MODEL=custom',
-      })).toBe('openai-codex/custom');
+      })).toBe('custom');
       expect(codexChatUIConfig.normalizeModelVariant('settings-custom', {
         providerConfigs: {
           codex: {
             customModels: 'settings-custom',
           },
         },
-      })).toBe('openai-codex/settings-custom');
+      })).toBe('settings-custom');
     });
   });
 
   describe('getCustomModelIds', () => {
-    it('should return custom model from env', () => {
+    it('does not expose environment models as custom options', () => {
       const ids = codexChatUIConfig.getCustomModelIds({ OPENAI_MODEL: 'my-model' });
-      expect(ids.has('my-model')).toBe(true);
+      expect(ids.size).toBe(0);
     });
 
     it('should not include default models', () => {
@@ -712,4 +690,16 @@ describe('CodexChatUIConfig', () => {
       expect(codexChatUIConfig.getServiceTierToggle!(settings)).toBeNull();
     });
   });
+});
+
+it('uses explicit provider IDs for chat options and recognizes all native catalog identities', () => {
+  const settings = withDiscoveredModels({ providerConfigs: { codex: { enabled: true, visibleModels: ['gpt-5.5'] } } });
+  const config = (settings.providerConfigs as any).codex;
+  config.discoveredModels = [
+    { ...DISCOVERED_MODELS[0], model: 'gpt-5.5' },
+    { ...DISCOVERED_MODELS[0], model: 'native-endpoint-model' },
+  ];
+  expect(codexChatUIConfig.getModelOptions(settings).map(option => option.value)).toEqual(['openai-codex/gpt-5.5']);
+  expect(codexChatUIConfig.ownsModel('native-endpoint-model', settings)).toBe(true);
+  expect(codexChatUIConfig.getModelOptions(settings)).toHaveLength(1);
 });

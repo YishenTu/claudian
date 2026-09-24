@@ -8,7 +8,6 @@ import { createRuntimeInputFingerprint } from '../../../core/providers/settings/
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
-import { clearOpencodeDiscoveryState } from '../discoveryState';
 import { sameStringList, sameStringMap } from '../internal/compareCollections';
 import { ensureProviderProjectionMap } from '../internal/providerProjection';
 import {
@@ -21,7 +20,6 @@ import {
 } from '../models';
 import {
   getOpencodeProviderSettings,
-  hasLegacyOpencodeDiscoveryFields,
   normalizeOpencodePreferredThinkingByModel,
   normalizeOpencodeVisibleModels,
   updateOpencodeProviderSettings,
@@ -72,9 +70,6 @@ function invalidateOpencodeConversationSessions(conversations: Conversation[]): 
 }
 
 export const opencodeSettingsReconciler: ProviderSettingsReconciler = {
-  handleEnvironmentChange(settings: Record<string, unknown>): boolean {
-    return clearOpencodeDiscoveryState(settings);
-  },
 
   invalidateConversationSessions: invalidateOpencodeConversationSessions,
 
@@ -112,13 +107,8 @@ export const opencodeSettingsReconciler: ProviderSettingsReconciler = {
   },
 
   normalizeModelVariantSettings(settings: Record<string, unknown>): boolean {
-    const hadLegacyDiscoveryFields = hasLegacyOpencodeDiscoveryFields(settings);
-    if (hadLegacyDiscoveryFields) {
-      updateOpencodeProviderSettings(settings, {});
-    }
-
     const opencodeSettings = getOpencodeProviderSettings(settings);
-    let changed = hadLegacyDiscoveryFields;
+    let changed = false;
 
     const normalizeSelection = (value: unknown): NormalizedSelection => {
       if (typeof value !== 'string' || !isOpencodeModelSelectionId(value)) {

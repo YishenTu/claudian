@@ -23,6 +23,8 @@
     "rewind": "回退"
   },
   "chat": {
+    "selectAvailableModel": "請先選擇可用的模型再傳送。",
+    "selectAvailableTitleModel": "請在 Claudian 設定中選擇可用的標題產生模型。",
     "rewind": {
       "confirmMessage": "回退到此處？此訊息之後的檔案變更可能被覆寫或刪除。此操作無法復原。",
       "confirmMessageConflicts": "回退到此處？偵測到 {count} 個檔案在代理之外被修改，繼續操作將覆寫這些變更：\n{files}",
@@ -592,7 +594,8 @@
     "titleModel": {
       "name": "標題生成模型",
       "desc": "用於自動生成對話標題的模型。",
-      "auto": "自動 (Haiku)"
+      "select": "選擇模型",
+      "unavailableWarning": "自動標題已暫停。請選擇一個可用的標題模型。"
     },
     "navMappings": {
       "name": "Vim 風格導航映射",
@@ -675,11 +678,6 @@
       "name": "自訂上下文限制",
       "desc": "為您的自訂模型設定上下文視窗大小。留空使用預設值（200k 權杖）。",
       "invalid": "格式無效。使用：256k、1m 或精確數量（1000-10000000）。"
-    },
-    "customModels": {
-      "name": "自訂模型",
-      "desc": "向選擇器追加額外的 Claude 模型 ID，每行一個。環境中的模型覆寫仍會取代選擇器。",
-      "placeholder": "claude-fable-5[1m]\nclaude-opus-4-8[1m]\nclaude-opus-4-6[1m]"
     },
     "enableChrome": {
       "name": "啟用 Chrome 擴充功能",
@@ -818,11 +816,6 @@
       "safeMode": {
         "workspaceWrite": "工作區可寫",
         "readOnly": "唯讀"
-      },
-      "customModels": {
-        "name": "自訂模型",
-        "desc": "向選擇器追加額外的 Codex 模型 ID，每行一個。設定 `OPENAI_MODEL` 時仍優先生效。",
-        "placeholder": "gpt-5.4\ngpt-5.3-codex-spark"
       },
       "responseStyle": {
         "name": "回覆風格",

@@ -1,3 +1,8 @@
+/** @jest-environment jsdom */
+
+import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { axe } from 'jest-axe';
+
 const mockRenderedSettingNames: string[] = [];
 const mockSettingDescriptionEls = new Map<string, MockContainer>();
 const mockToggleChanges = new Map<string, (value: boolean) => Promise<void>>();
@@ -10,7 +15,7 @@ const mockGitStatusElements: Array<{
 }> = [];
 
 type MockChainableComponent = Record<string, jest.Mock> & {
-  selectEl?: { replaceChildren: jest.Mock };
+  selectEl?: HTMLSelectElement;
 };
 
 jest.mock('obsidian', () => {
@@ -49,7 +54,24 @@ jest.mock('obsidian', () => {
 
     addDropdown(callback: (dropdown: MockChainableComponent) => void): this {
       const dropdown = createChainableComponent();
-      dropdown.selectEl = { replaceChildren: jest.fn() };
+      const label = document.createElement('label');
+      label.textContent = this.name;
+      const select = document.createElement('select');
+      label.append(select);
+      document.body.append(label);
+      dropdown.selectEl = select;
+      dropdown.addOption.mockImplementation((value: string, text: string) => {
+        select.add(new Option(text, value));
+        return dropdown;
+      });
+      dropdown.setValue.mockImplementation((value: string) => {
+        select.value = value;
+        return dropdown;
+      });
+      dropdown.onChange.mockImplementation((handler: (value: string) => Promise<void>) => {
+        select.addEventListener('change', () => { void handler(select.value); });
+        return dropdown;
+      });
       callback(dropdown);
       return this;
     }
@@ -276,11 +298,61 @@ function renderSettingsTab(
 
 describe('ClaudianSettingTab display settings', () => {
   beforeEach(() => {
+    document.body.replaceChildren();
     mockRenderedSettingNames.length = 0;
     mockSettingDescriptionEls.clear();
     mockGitStatusElements.length = 0;
     mockToggleChanges.clear();
     mockTextChanges.clear();
+  });
+
+  it('shows title eligibility guidance and updates it after selection and catalog changes', async () => {
+    jest.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([
+      { value: 'claude-code/sonnet', label: 'Claude: Sonnet' },
+    ]);
+    const eligibility = jest.spyOn(ProviderRegistry, 'resolveTitleGenerationSelection')
+      .mockImplementation(settings => settings.titleGenerationModel === 'claude-code/sonnet' ? { providerId: 'claude', model: 'claude-code/sonnet' } : null);
+    const { tab, plugin } = createTab(true);
+    plugin.settings.enableAutoTitleGeneration = true;
+    plugin.settings.titleGenerationModel = '';
+    renderSettingsTab(tab);
+    expect(within(document.body).getByRole('status').textContent).toBe(t('settings.titleModel.unavailableWarning'));
+    const menu = within(document.body).getByRole('combobox', { name: t('settings.titleModel.name') });
+    fireEvent.change(menu, { target: { value: 'claude-code/sonnet' } });
+    await waitFor(() => expect(within(document.body).queryByRole('status')).toBeNull());
+    eligibility.mockReturnValue(null);
+    tab.refreshModelOptions();
+    expect(within(document.body).getByRole('status').textContent).toBe(t('settings.titleModel.unavailableWarning'));
+    eligibility.mockReturnValue({ providerId: 'claude', model: 'claude-code/sonnet' });
+    tab.refreshModelOptions();
+    expect(within(document.body).queryByRole('status')).toBeNull();
+    expect(await axe(menu.parentElement!)).toHaveNoViolations();
+  });
+
+  it('does not show title guidance when automatic titles are disabled', () => {
+    const { tab, plugin } = createTab(true);
+    plugin.settings.enableAutoTitleGeneration = false;
+    renderSettingsTab(tab);
+    expect(within(document.body).queryByRole('status')).toBeNull();
+  });
+
+  it('requires a title model choice and persists an explicit selection', async () => {
+    jest.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([
+      { value: 'claude-code/sonnet', label: 'Claude: Sonnet' },
+    ]);
+    const { tab, plugin } = createTab(true);
+    plugin.settings.enableAutoTitleGeneration = true;
+    plugin.settings.titleGenerationModel = '';
+    renderSettingsTab(tab);
+    const menu = within(document.body).getByRole('combobox', { name: t('settings.titleModel.name') }) as HTMLSelectElement;
+    expect(within(menu).queryByRole('option', { name: /Auto/ })).toBeNull();
+    expect(menu.value).toBe('');
+    expect(menu.options[0].disabled).toBe(true);
+    expect(menu.required).toBe(true);
+    expect(plugin.mutateSettings).not.toHaveBeenCalled();
+    expect((await axe(menu.parentElement!)).violations).toEqual([]);
+    fireEvent.change(menu, { target: { value: 'claude-code/sonnet' } });
+    await waitFor(() => expect(plugin.settings.titleGenerationModel).toBe('claude-code/sonnet'));
   });
 
   it('renders the custom settings surface through a declarative definition', () => {
@@ -330,6 +402,7 @@ describe('ClaudianSettingTab display settings', () => {
 
     expect(mockRenderedSettingNames).toContain(t('settings.dualPaneSide.name'));
 
+    document.body.replaceChildren();
     mockRenderedSettingNames.length = 0;
     const disabled = createTab(false);
     (disabled.tab as any).renderGeneralTab(createContainer());
@@ -512,7 +585,6 @@ describe('ClaudianSettingTab display settings', () => {
     const ensureInitialized = jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockResolvedValue(undefined);
     ensureInitialized.mockClear();
-    jest.spyOn(ProviderWorkspaceRegistry, 'prepareSettings').mockResolvedValue(undefined);
     jest.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue(null);
     const { tab, plugin } = createTab(true);
     renderSettingsTab(tab);
@@ -540,7 +612,6 @@ describe('ClaudianSettingTab display settings', () => {
     const ensureInitialized = jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockResolvedValue(undefined);
     ensureInitialized.mockClear();
-    jest.spyOn(ProviderWorkspaceRegistry, 'prepareSettings').mockResolvedValue(undefined);
     jest.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue(null);
     const { tab } = createTab(true);
     const container = createContainer();

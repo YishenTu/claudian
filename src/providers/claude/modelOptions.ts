@@ -12,7 +12,7 @@ export interface ClaudeModelOption extends ProviderUIOption {
 }
 
 export function getClaudeModelCatalog(settings: Record<string, unknown>): ClaudeModelOption[] {
-  const aliases = settings.customModelAliases as Record<string, string> | undefined;
+  const aliases = getClaudeProviderSettings(settings).modelAliases;
   return getClaudeProviderSettings(settings).discoveredModels.map(model => ({
     ...model,
     value: isClaudeModelTier(model.value) ? model.value : encodeClaudeModelSelectionId(model.value),

@@ -177,3 +177,21 @@ describe('resolveTabRestorePlan', () => {
     });
   });
 });
+
+it('preserves a blank tab provider through versioned and legacy decoding', () => {
+  const state = {
+    activeTabId: 'draft',
+    openTabs: [{ tabId: 'draft', conversationId: null, draftModel: 'retired-endpoint', providerId: 'codex' }],
+  };
+  expect(decodeTabWorkspaceViewState({ ...state, version: 1 })).toEqual(state);
+  expect(normalizeTabManagerState(state)).toEqual(state);
+});
+
+it.each([null, 'codex'])('preserves explicit draft provider %s through snapshot decoding', providerId => {
+  const state = { openTabs: [{ tabId: 'draft', conversationId: null, draftModel: 'retired', providerId }], activeTabId: 'draft' };
+  expect(decodeTabWorkspaceViewState({ version: 1, ...state })).toEqual(state);
+});
+
+it.each([42, '', {}, undefined])('rejects a malformed explicit draft provider %s', providerId => {
+  expect(decodeTabWorkspaceViewState({ version: 1, openTabs: [{ tabId: 'draft', conversationId: null, draftModel: 'retired', providerId }], activeTabId: 'draft' })).toBeNull();
+});

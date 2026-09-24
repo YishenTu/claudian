@@ -5,7 +5,7 @@
 - Keep Grok/xAI tools enabled except native plan entry/exit, which Claudian blocks without replacing native or user agent profiles. Preserve unknown tool data and native task names/payloads while adapting subagent presentation.
 - Grok client-hook errors and timeouts fail open. Answer plan-hook callbacks with a native denial directly, including during cancellation; do not route them through user approval or throw on malformed callbacks.
 - Explicit enabled-model order supersedes discovered default. Chat options reverse persisted order only to compensate for the upward-opening toolbar; settings/default resolution must not reverse it.
-- Discover reasoning metadata through session-independent native queries or actual sessions, never a session created only for discovery. Clear device discovery on environment/CLI fingerprint change while preserving native conversation identifiers.
+- Discover reasoning metadata through session-independent native queries or actual sessions, never a session created only for discovery. Keep stale device discovery on environment/CLI fingerprint changes while preserving native conversation identifiers.
 - Do not rewrite native config, own BYOK endpoints, or source shell startup files.
 - Grok discovers user runtime AGENTS.md natively. Claudian must not create, rewrite, suppress, or explicitly inject those files.
 - Nonstandard xAI behavior requires sanitized native protocol evidence.
