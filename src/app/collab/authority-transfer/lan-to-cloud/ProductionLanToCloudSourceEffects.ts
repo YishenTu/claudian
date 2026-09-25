@@ -163,6 +163,7 @@ export interface ProductionLanToCloudSourceEffectsOptions {
   readonly cloudSession: CloudAuthorityConnection | null;
   readonly convergence: AuthorityTransferLocalConvergence;
   readonly foundation: ClaudianCollabService;
+  readonly now?: () => Date;
   readonly persistence: AuthorityTransferPersistence;
   readonly projectId: string;
   readonly retainCommittedTargetRedemptions?: (
@@ -366,7 +367,11 @@ function signEd25519(key: SourceProofKey, payload: string): string {
 }
 
 export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffects {
-  constructor(private readonly options: ProductionLanToCloudSourceEffectsOptions) {}
+  private readonly now: () => Date;
+
+  constructor(private readonly options: ProductionLanToCloudSourceEffectsOptions) {
+    this.now = options.now ?? (() => new Date());
+  }
 
   async sourceEndpoint(record: AuthorityTransferRecord): Promise<string> {
     const endpoint = await this.options.foundation.lanHost
@@ -412,7 +417,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     await this.options.foundation.detachTransferredLanSource(record);
     await this.options.persistence.settleCompletedTransfer(record);
     const service = await this.#terminalService(record);
-    if (isAuthorityTransferTerminalResponderExpired(record, new Date())) {
+    if (isAuthorityTransferTerminalResponderExpired(record, this.now())) {
       await service.expire();
       await this.options.foundation.lanHost.stopAuthorityTransferRoute(
         record.projectId,
@@ -439,7 +444,7 @@ export class ProductionLanToCloudSourceEffects implements LanToCloudSourceEffect
     }
     if (exact.terminalCleanupCompleted) return;
     const service = await this.#terminalService(exact);
-    if (isAuthorityTransferTerminalResponderExpired(exact, new Date())) {
+    if (isAuthorityTransferTerminalResponderExpired(exact, this.now())) {
       await service.expire();
       await this.options.foundation.lanHost.stopAuthorityTransferRoute(exact.projectId, 'terminal-source', exact.transferId);
       return;

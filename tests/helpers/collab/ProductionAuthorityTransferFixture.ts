@@ -9,7 +9,7 @@ import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabAutho
 import { CollabFixtureSnapshot } from '@test/helpers/collab/CollabFixtureSnapshot';
 import type { TEST_INSTALLATION_B } from '@test/helpers/installations';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
-import { testClock, testDate, testTime } from '@test/helpers/testClock';
+import { advancingTestClock, testClock, testDate, testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ClaudianCollabService, CollabProjectSetupService, createCollabFeatureSubcomposition as createProductionFeatureSubcomposition } from '@/app/collab';
@@ -895,7 +895,7 @@ export function productionAuthorityTransferFixture() {
       gitRuntimeResolver,
       installationKey,
       ...(lanHost ? { lanHost } : {}),
-      now: testClock({ days: 1, minutes: 3 }),
+      now: advancingTestClock({ days: 1, minutes: 3 }),
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });

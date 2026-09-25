@@ -118,6 +118,7 @@ export function createCollabFeatureSubcomposition(
   options: CollabFeatureSubcompositionOptions,
 ): CollabFeatureSubcomposition {
   const { foundation, projectSetup, vaultRoot } = options;
+  const { now } = foundation;
   const journals = new CollabLifecycleJournalStore(vaultRoot);
   const pendingLeaves = journals.pendingLeaves;
   const operationAdmission = new ProjectOperationAdmission();
@@ -135,6 +136,7 @@ export function createCollabFeatureSubcomposition(
   });
   const managerReceipts = new ManagerResponsibilityReceiptStore(
     foundation.local.projects,
+    now,
   );
   const managerResponsibilityOperations = new ManagerResponsibilityOperationCoordinator();
   const exitProjects = new LocalExitProjectStore(foundation.local.projects);
@@ -148,6 +150,7 @@ export function createCollabFeatureSubcomposition(
         foundation.local.workspace,
         git.repositories,
         leaveCleanupRecords,
+        { now },
       )
     ));
     leaveCleanupPromise = pending;
@@ -160,6 +163,7 @@ export function createCollabFeatureSubcomposition(
     foundation.local.workspace,
     new FilesystemLocalRepositoryIdentity(),
     retiredCleanupRecords,
+    { now },
   );
   const retiredFinalizer = new RetiredProjectFinalizer(
     retiredCleanup,
@@ -255,6 +259,7 @@ export function createCollabFeatureSubcomposition(
       cloudAuthority.connectPendingRetirement(binding, requestOptions)
     ),
     intents: retirementIntents,
+    now,
     terminal: {
       handle: (result, source) => {
         if (!terminalRetirementHandler) {
@@ -285,6 +290,7 @@ export function createCollabFeatureSubcomposition(
       }),
     },
     {
+      now,
       projectRecoveryAdmission: (projectId, operation) => requireLifecycle().runExclusive(
         projectId,
         'retirement',
@@ -305,6 +311,7 @@ export function createCollabFeatureSubcomposition(
     acknowledgementWorker,
     retiredCleanup,
     {
+      now,
       pendingLeaveCleanup: {
         resume: (...args) => leaveCleanup.resume(...args),
       },
@@ -419,7 +426,7 @@ export function createCollabFeatureSubcomposition(
       const record = await foundation.authorityTransfers.load(resource.projectId, resource.operation.transferId);
       if (!record || record.localRole !== 'target' || record.status.direction !== 'cloud-to-lan') return;
       await new ProductionCloudToLanTargetEffects({
-        cloudSession: null, convergence: authorityTransferConvergence, foundation,
+        cloudSession: null, convergence: authorityTransferConvergence, foundation, now,
         persistence: foundation.authorityTransfers, projectId: record.projectId,
       }).settleImportedClaims(record);
     },
@@ -463,6 +470,7 @@ export function createCollabFeatureSubcomposition(
         {
           managerReceipts,
           managerResponsibilityOperations,
+          now,
           retirement: retirementHandler,
         },
       );
@@ -694,6 +702,7 @@ export function createCollabFeatureSubcomposition(
     activateProject: async (membership, operationOptions) => { await requirePublication().readSnapshot(membership.project.id, operationOptions); },
     cloudAuthority,
     getProjectsFolder: options.getProjectsFolder ?? (() => 'workspace'),
+    now,
     vaultRoot,
   });
   lifecycle.registerDurableOwner({
@@ -732,6 +741,7 @@ export function createCollabFeatureSubcomposition(
         input,
       ),
     },
+    now,
     projects: foundation.local.projects,
     settleLocalAuthorityAdvance: identity => foundation.authorityTransfers.settleLocalAuthorityAdvance(identity),
     workspace: foundation.local.workspace,
@@ -746,14 +756,16 @@ export function createCollabFeatureSubcomposition(
       return cloudAuthority.connect(binding);
     },
     loadMembership: projectId => foundation.local.projects.loadMembership(projectId),
+    now,
   });
   const retainCommittedTargetRedemptions: NonNullable<
     ConstructorParameters<typeof ProductionLanToCloudSourceEffects>[0]['retainCommittedTargetRedemptions']
   > = (target, source, members) => new ProductionCloudToLanTargetEffects({
-    cloudSession: null, convergence: authorityTransferConvergence, foundation,
+    cloudSession: null, convergence: authorityTransferConvergence, foundation, now,
     persistence: foundation.authorityTransfers, projectId: target.projectId,
   }).retainCommittedRedemptions(target, source, members);
   const authorityTransfer = new AuthorityTransferModule({
+    now,
     observeProject: projectId => requirePublication().observeProject(projectId),
     createLanToCloudClaimantClient: createLanTransferClient,
     createLanToCloudConnection: async ({ allowCredentialCreation, ...input }, operationOptions) => {
@@ -805,6 +817,7 @@ export function createCollabFeatureSubcomposition(
         cloudSession,
         convergence: authorityTransferConvergence,
         foundation,
+        now,
         persistence: foundation.authorityTransfers,
         projectId,
       })
@@ -815,6 +828,7 @@ export function createCollabFeatureSubcomposition(
         cloudSession,
         convergence: authorityTransferConvergence,
         foundation,
+        now,
         persistence: foundation.authorityTransfers,
         projectId,
       })
@@ -841,7 +855,7 @@ export function createCollabFeatureSubcomposition(
     recoverClaimant: record => claimantBindingResolver.resolve(record),
     restoreRetained: async record => {
       const effectsOptions = {
-        cloudSession: null, convergence: authorityTransferConvergence, foundation,
+        cloudSession: null, convergence: authorityTransferConvergence, foundation, now,
         persistence: foundation.authorityTransfers, projectId: record.projectId,
       };
       if (record.localRole === 'source') {
@@ -877,6 +891,7 @@ export function createCollabFeatureSubcomposition(
                 cloudSession: null,
                 convergence: authorityTransferConvergence,
                 foundation,
+                now,
                 persistence: foundation.authorityTransfers,
                 projectId: record.projectId,
               });
@@ -918,6 +933,7 @@ export function createCollabFeatureSubcomposition(
                 cloudSession: null,
                 convergence: authorityTransferConvergence,
                 foundation,
+                now,
                 persistence: foundation.authorityTransfers,
                 projectId: record.projectId,
               }).cancelStaging(record);
@@ -942,6 +958,7 @@ export function createCollabFeatureSubcomposition(
                 cloudSession: null,
                 convergence: authorityTransferConvergence,
                 foundation,
+                now,
                 persistence: foundation.authorityTransfers,
                 projectId: record.projectId,
               }).restoreCompleted(record);
@@ -968,6 +985,7 @@ export function createCollabFeatureSubcomposition(
               cloudSession: null,
               convergence: authorityTransferConvergence,
               foundation,
+              now,
               persistence: foundation.authorityTransfers,
               projectId: record.projectId,
             }).restoreCompleted(record, operationOptions);

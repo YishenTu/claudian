@@ -176,7 +176,7 @@ export interface ClaudianCollabServiceOptions {
     | 'portCandidates'
     | 'tlsIdentity'
   >;
-  /** Clock for persisted authority-transfer and retirement expiry checks. */
+  /** Clock shared by Collab services; defaults to the real clock. */
   readonly now?: () => Date;
   readonly obsidianConfigDirectory: string;
   readonly onDiagnostic?: CollabFilesystemDiagnosticSink;
@@ -234,6 +234,8 @@ export class ClaudianCollabService {
   readonly join: JoinProjectCoordinator;
   readonly lanHost: LanHostCoordinator;
   readonly local: CollabLocalFoundation;
+  /** The clock every Collab service and feature collaborator shares. */
+  readonly now: () => Date;
   readonly reconnect: ReconnectProjectCoordinator;
   readonly #authorityProjectionTransitions = new AuthorityProjectionTransitionCoordinator();
   private readonly authorityFoundations = new Map<
@@ -256,6 +258,7 @@ export class ClaudianCollabService {
   >();
    readonly #retirementResponderExpiry = new RetirementResponderExpiryScheduler(
     projectId => this.#cleanupRetirementResponder(projectId),
+    { now: () => this.now() },
   );
    readonly #retirementResponderCleanupPending = new Set<CollabProjectId>();
   private readonly retiredAuthorityCleanupComplete = new Set<CollabProjectId>();
@@ -270,11 +273,13 @@ export class ClaudianCollabService {
 
   constructor(private readonly options: ClaudianCollabServiceOptions) {
     this.installationKey = options.installationKey;
+    this.now = options.now ?? (() => new Date());
     const pathPolicy = new CollabPathPolicy({
       obsidianConfigDirectory: options.obsidianConfigDirectory,
     });
     const projects = new CollabLocalProjectRepository(options.vaultRoot, {
       installationKey: options.installationKey,
+      now: this.now,
       onDiagnostic: options.onDiagnostic,
     });
     this.local = Object.freeze({
@@ -316,13 +321,13 @@ export class ClaudianCollabService {
       isRecoveryOwner: ownerInstallationKey => (
         this.hostInstallations.isRecoveryOwner(ownerInstallationKey)
       ),
-      ...(options.now ? { now: options.now } : {}),
+      now: this.now,
     });
     this.retirementTombstones = new RetirementTombstoneRepository(projects, {
       isRecoveryOwner: ownerInstallationKey => (
         this.hostInstallations.isRecoveryOwner(ownerInstallationKey)
       ),
-      ...(options.now ? { now: options.now } : {}),
+      now: this.now,
     });
     const hostTransitionProofClient = new LanHostTransitionProofClient();
     const hostTrustTransitions = new HostTrustTransitionService();
@@ -334,6 +339,7 @@ export class ClaudianCollabService {
     this.join = new JoinProjectCoordinator(this, {
       ...(options.invitationCodec ? { invitationCodec: options.invitationCodec } : {}),
       ...(options.getProjectsFolder ? { getProjectsFolder: options.getProjectsFolder } : {}),
+      now: this.now,
       vaultRoot: options.vaultRoot,
     });
     this.reconnect = new ReconnectProjectCoordinator(this, {
@@ -342,6 +348,7 @@ export class ClaudianCollabService {
       hostInstallation: this.hostInstallations,
       hostTrustTransitionVerifier: hostTrustTransitions,
       ...(options.invitationCodec ? { invitationCodec: options.invitationCodec } : {}),
+      now: this.now,
       vaultRoot: options.vaultRoot,
     });
     this.#retirementTerminalClient = new RetirementTerminalClient({
@@ -349,6 +356,7 @@ export class ClaudianCollabService {
       request: (trust, input) => this.#sendRetirementAcknowledgement(trust, input),
     });
     this.lanHost = new LanHostCoordinator({
+      now: this.now,
       ...options.lanHost,
       assertHostInstallationOwned: async projectId => {
         await this.hostInstallations.assertOwned(projectId, 'start');
@@ -1163,16 +1171,18 @@ export class ClaudianCollabService {
     const requestEnsure = new RequestEnsureService(
       authority.database,
       createRequestEnsureGitPolicy(repositoryPath, git.repositories, resourceAdmission),
+      { now: this.now },
     );
     const requestQuery = new RequestQueryService(
       authority.database,
       new RequestQueryGitPolicy(repositoryPath, git.repositories, resourceAdmission),
     );
-    const requestComments = new RequestCommentService(authority.database);
-    const ticketService = new TicketService(authority.database);
+    const requestComments = new RequestCommentService(authority.database, { now: this.now });
+    const ticketService = new TicketService(authority.database, { now: this.now });
     const accept = new AcceptCoordinator(
       authority.database,
       new AcceptGitRepository(repositoryPath, git.repositories, undefined, resourceAdmission),
+      { now: this.now },
     );
     try {
       await accept.recover();
@@ -1238,8 +1248,8 @@ export class ClaudianCollabService {
     const managerResponsibilities = new ManagerResponsibilityService({
       ...authority,
       presence: events,
-    });
-    const hostTransfers = new HostTransferAuthorityService(authority);
+    }, { now: this.now });
+    const hostTransfers = new HostTransferAuthorityService(authority, { now: this.now });
     const outgoingHostTransfer = this.#hostTransferModule?.createOutgoingRuntime({
       accept,
       authority,
@@ -1276,7 +1286,7 @@ export class ClaudianCollabService {
     const retirementAuthority = new ProjectRetirementAuthorityService(
       authority.database,
       tombstones,
-      { installationKey: this.installationKey, resourceId: authority.resource.resourceId },
+      { installationKey: this.installationKey, now: this.now, resourceId: authority.resource.resourceId },
     );
     const lifecycle: NonNullable<LanHostProjectRuntime['lifecycle']> = {
       acceptHostTransfer: (actorMemberId, request) => (
@@ -1439,7 +1449,7 @@ export class ClaudianCollabService {
       throw new CollabError({ code: 'operation-failed', safeContext: { reason: 'authority-resource-mismatch' } });
     }
     const authority = await this.#openOwnedAuthority(resource);
-    await new HostTransferAuthorityService(authority).assertSourceCleanupResource(record);
+    await new HostTransferAuthorityService(authority, { now: this.now }).assertSourceCleanupResource(record);
     if (record.sourceResourceId === undefined) {
       record = bindHostTransferSourceResource(record, resource.resourceId);
       await this.local.projects.hostTransferRecovery.save(record);
@@ -1467,7 +1477,7 @@ export class ClaudianCollabService {
     }
     const authority = await this.#openOwnedAuthority(resource);
     await new ProjectRetirementAuthorityService(authority.database, this.retirementTombstones, {
-      installationKey: this.installationKey, resourceId: resource.resourceId,
+      installationKey: this.installationKey, now: this.now, resourceId: resource.resourceId,
     }).assertCleanupResource(tombstone);
     await this.retirementTombstones.bindSourceResource(tombstone, resource.resourceId);
     await this.closeAuthority(projectId);
