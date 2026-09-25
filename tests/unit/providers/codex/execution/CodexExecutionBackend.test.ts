@@ -1636,6 +1636,40 @@ describe('CodexExecutionBackend', () => {
     await replacement.dispose();
   });
 
+  it('cancels the run when the consumer stops iterating while it is still open', async () => {
+    const turnStart = createDeferred<ReturnType<typeof createTurnResult>>();
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') {
+        return {
+          userAgent: 'test',
+          codexHome: '/tmp/.codex',
+          platformFamily: 'unix',
+          platformOs: 'macos',
+        };
+      }
+      if (method === 'thread/start') {
+        return createThreadResult('thread-early-return');
+      }
+      if (method === 'turn/start') return turnStart.promise;
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin())
+      .createSession(createSessionConfig());
+    const run = session.execute(createRequest());
+    await waitForCondition(() => mockTransportRequest.mock.calls.some(
+      ([method]) => method === 'turn/start',
+    ));
+    expect(session.getSnapshot().status).toBe('executing');
+
+    await run.events[Symbol.asyncIterator]().return?.();
+    await flushMicrotasks();
+
+    expect(session.getSnapshot().status).toBe('idle');
+    turnStart.resolve(createTurnResult('turn-early-return'));
+    await flushMicrotasks();
+    await session.dispose();
+  });
+
   it('publishes a late turn-start acknowledgement without resurrecting cancelled status', async () => {
     const turnStart = createDeferred<ReturnType<typeof createTurnResult>>();
     mockTransportRequest.mockImplementation(async (method: string) => {

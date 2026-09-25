@@ -1228,6 +1228,24 @@ describe('GrokExecutionBackend', () => {
     expect(secondEvents.at(-1)?.type).toBe('turn_completed');
   });
 
+  it('cancels the run when the consumer stops iterating while it is still open', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    const session = new GrokExecutionBackend(
+      createGrokHost(),
+      { nativeFactory: { create: () => native } },
+    ).createSession(sessionConfig);
+    const run = session.execute(executionRequest());
+    while (native.promptRequests.length === 0) await Promise.resolve();
+
+    await run.events[Symbol.asyncIterator]().return?.();
+    for (let attempt = 0; attempt < 20 && native.cancelCalls === 0; attempt += 1) {
+      await Promise.resolve();
+    }
+
+    expect(native.cancelCalls).toBe(1);
+  });
+
   it('quarantines native output as soon as cancellation begins', async () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});

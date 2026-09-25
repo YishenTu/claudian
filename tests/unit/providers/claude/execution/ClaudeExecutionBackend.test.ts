@@ -2391,6 +2391,28 @@ describe('ClaudeExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('cancels the requested run when the consumer stops iterating while it is still open', async () => {
+    const query = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      deferredMessage(),
+      { type: 'result', subtype: 'success' },
+    ]]);
+    jest.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSdk'),
+      'loadClaudeAgentQuery',
+    ).mockResolvedValueOnce((() => query) as never);
+    const session = new ClaudeExecutionBackend(createHost())
+      .createSession(createConfig());
+    const run = session.execute(createRequest());
+    await waitFor(() => query.supportedCommands.mock.calls.length > 0);
+
+    await run.events[Symbol.asyncIterator]().return?.();
+
+    expect(query.interrupt).toHaveBeenCalled();
+    releaseDeferredMessage();
+    await session.dispose();
+  });
+
   it('keeps background output running when the consumer stops iterating after the requested turn ends', async () => {
     const query = createScriptedPersistentQuery([[
       { type: 'system', subtype: 'init', session_id: 'session-1' },
