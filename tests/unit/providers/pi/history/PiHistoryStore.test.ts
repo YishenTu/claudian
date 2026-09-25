@@ -11,7 +11,6 @@ import {
   parsePiSessionEntries,
   type PiSessionEntry,
   resolvePiActivePath,
-  resolvePiEntryPath,
   rollbackCreatedPiForkSessionFile,
 } from '@/providers/pi/history/PiHistoryStore';
 import { encodePiRecoveryPrompt } from '@/providers/pi/history/PiRecoveryPromptCodec';
@@ -588,17 +587,6 @@ describe('PiHistoryStore', () => {
     }]);
   });
 
-  it('resolves a strict entry path for fork checkpoints without sibling branches', () => {
-    const entries = parsePiSessionEntries([
-      JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'First' } }),
-      JSON.stringify({ id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
-      JSON.stringify({ id: 'u2', parentId: 'a1', type: 'message', message: { role: 'user', content: 'Next branch' } }),
-      JSON.stringify({ id: 'a2', parentId: 'u2', type: 'message', message: { role: 'assistant', content: 'Later' } }),
-    ].join('\n')).entries;
-
-    expect(resolvePiEntryPath(entries, 'a1').map(entry => entry.id)).toEqual(['u1', 'a1']);
-  });
-
   it('truncates linear Pi sessions through the requested checkpoint', () => {
     const content = [
       JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'First' } }),
@@ -606,9 +594,6 @@ describe('PiHistoryStore', () => {
       JSON.stringify({ id: 'u2', type: 'message', message: { role: 'user', content: 'Later' } }),
       JSON.stringify({ id: 'a2', type: 'message', message: { role: 'assistant', content: 'Do not include' } }),
     ].join('\n');
-    const entries = parsePiSessionEntries(content).entries;
-
-    expect(resolvePiEntryPath(entries, 'a1').map(entry => entry.id)).toEqual(['u1', 'a1']);
     expect(parsePiSessionContent(content, { leafEntryId: 'a1' }).map(message => message.content)).toEqual([
       'First',
       'Done',

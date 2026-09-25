@@ -206,7 +206,7 @@ export function resolvePiActivePath(entries: PiSessionEntry[], leafId?: string):
     : includePiLinearPathEntries(entries, activePath);
 }
 
-export function resolvePiEntryPath(entries: PiSessionEntry[], leafId: string): PiSessionEntry[] {
+function resolvePiEntryPath(entries: PiSessionEntry[], leafId: string): PiSessionEntry[] {
   const entriesWithIds = entries.filter((entry): entry is PiSessionEntry & { id: string } => !!entry.id);
   const byId = new Map(entriesWithIds.map(entry => [entry.id, entry] as const));
   if (!byId.has(leafId)) {
@@ -420,15 +420,6 @@ export function findPiSessionFileInRoot(
     return direct;
   }
   return findSessionFileInRoot(root, trimmed);
-}
-
-export function derivePiSessionsRootFromSessionPath(sessionPath: string): string | null {
-  const normalized = sessionPath.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  return path.dirname(normalized);
 }
 
 function mapPiSessionEntries(

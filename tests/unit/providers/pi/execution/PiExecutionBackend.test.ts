@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import { createProviderRecoveryTestHarness } from '@test/unit/features/chat/execution/ProviderRecoveryTestHarness';
 
 import type {
@@ -51,10 +52,6 @@ class FakeKernel implements PiExecutionKernel {
 
   close(error = new Error('Pi process exited')): void {
     this.callbacks.onClose(error);
-  }
-
-  emitExtensionChunk(chunk: any): void {
-    this.callbacks.onExtensionChunk(chunk);
   }
 
   emitExtensionRequest(request: Record<string, unknown>): boolean {
@@ -313,13 +310,13 @@ describe('PiExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('publishes the same native turn statistics live and after reload', async () => {
+  it('publishes persisted native turn statistics at live completion', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-throughput-'));
     const sessionFile = path.join(tempDir, 'session.jsonl');
     const content = [
       { type: 'session', version: 3, id: 'pi-session-1', cwd: tempDir },
-      { type: 'message', id: 'u', parentId: null, timestamp: '2026-09-20T11:00:00Z', message: { role: 'user', content: 'Work' } },
-      { type: 'message', id: 'a', parentId: 'u', timestamp: '2026-09-20T11:00:02.500Z',
+      { type: 'message', id: 'u', parentId: null, timestamp: testTime(), message: { role: 'user', content: 'Work' } },
+      { type: 'message', id: 'a', parentId: 'u', timestamp: testTime({ milliseconds: 2500 }),
         message: { role: 'assistant', content: [{ type: 'text', text: 'Done' }], stopReason: 'stop', usage: { output: 125 } } },
     ].map(record => JSON.stringify(record)).join('\n');
     const harness = createHarness(createConfig({ vaultWorkingDirectory: tempDir }));

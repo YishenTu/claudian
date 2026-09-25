@@ -20,8 +20,6 @@ import type {
   CodexModelDiscoveryServiceLike,
 } from './CodexModelDiscoveryService';
 
-export type CodexCatalogState = 'idle' | 'refreshing' | 'ready' | 'failed';
-
 export interface CodexCatalogResult {
   kind: 'completed' | 'skipped';
   models: CodexDiscoveredModel[];
@@ -35,7 +33,6 @@ function sameCatalog(left: unknown, right: unknown): boolean {
 }
 
 export class CodexModelCatalogCoordinator {
-  private state: CodexCatalogState = 'idle';
   private inFlightRefresh: {
     generation: number;
     promise: Promise<CodexCatalogResult>;
@@ -55,10 +52,6 @@ export class CodexModelCatalogCoordinator {
 
   getCachedCatalog(): CodexDiscoveredModel[] {
     return getCodexProviderSettings(this.plugin.settings).discoveredModels;
-  }
-
-  getState(): CodexCatalogState {
-    return this.state;
   }
 
   async refresh(context?: ProviderTransitionOwnerContext, signal?: AbortSignal): Promise<CodexCatalogResult> {
@@ -119,7 +112,6 @@ export class CodexModelCatalogCoordinator {
     this.abortController?.abort();
     this.abortController = null;
     this.inFlightRefresh = null;
-    this.state = 'idle';
   }
 
   beginEnvironmentTransition(): void {
@@ -133,7 +125,6 @@ export class CodexModelCatalogCoordinator {
   async quiesceForEnvironmentChange(): Promise<void> {
     this.cancel();
     await Promise.allSettled(this.pendingRefreshes);
-    this.state = 'idle';
   }
 
   dispose(): Promise<void> {
@@ -151,7 +142,6 @@ export class CodexModelCatalogCoordinator {
     this.abortController?.abort();
     const abortController = new AbortController();
     this.abortController = abortController;
-    this.state = 'refreshing';
 
     const span = StartupProfiler.start('codex-model-discovery');
     try {
@@ -177,12 +167,10 @@ export class CodexModelCatalogCoordinator {
 
       if (discoveryResult.kind === 'skipped') {
         const cached = this.getCachedCatalog();
-        this.state = cached.length > 0 ? 'ready' : 'idle';
         return { kind: 'skipped', models: cached, refreshed: false };
       }
 
       if (discoveryResult.diagnostics) {
-        this.state = 'failed';
         return {
           kind: 'completed',
           models: this.getCachedCatalog(),
@@ -207,7 +195,6 @@ export class CodexModelCatalogCoordinator {
         if (!this.#isCurrentRefresh(generation)) {
           return this.#supersededResult();
         }
-        this.state = this.getCachedCatalog().length > 0 ? 'ready' : 'idle';
         return {
           kind: 'completed',
           models: discoveryResult.models,
@@ -215,7 +202,6 @@ export class CodexModelCatalogCoordinator {
           retryable: true,
         };
       }
-      this.state = 'ready';
       if (persistedResult.changed) {
         this.plugin.notifyProviderChatOptionsChanged('codex');
       }
@@ -229,7 +215,6 @@ export class CodexModelCatalogCoordinator {
         return this.#supersededResult();
       }
       const message = error instanceof Error ? error.message : 'Codex model discovery failed';
-      this.state = 'failed';
       return {
         kind: 'completed',
         models: this.getCachedCatalog(),
@@ -319,9 +304,6 @@ export class CodexModelCatalogCoordinator {
   }
 
   #supersededResult(): CodexCatalogResult {
-    if (this.disposed) {
-      this.state = 'idle';
-    }
     return {
       kind: 'skipped',
       models: this.getCachedCatalog(),

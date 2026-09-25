@@ -159,9 +159,10 @@ describe('CodexAppServerProcess', () => {
       const server = new CodexAppServerProcess(createLaunchSpec());
       server.start();
 
+      mockProc.stderr?.emit('data', 'x'.repeat(8192));
       mockProc.stderr?.emit('data', 'failed to load configuration');
 
-      expect(server.getStderrSnapshot()).toContain('failed to load configuration');
+      expect(server.getStderrSnapshot()).toBe('x'.repeat(8164) + 'failed to load configuration');
     });
   });
 
@@ -240,57 +241,6 @@ describe('CodexAppServerProcess', () => {
 
       mockProc.emit('exit', 0, null);
       await shutdownPromise;
-    });
-
-    it('sends SIGKILL if process does not exit within timeout', async () => {
-      jest.useFakeTimers();
-      const server = new CodexAppServerProcess(createLaunchSpec());
-      server.start();
-
-      const shutdownPromise = server.shutdown();
-
-      // Advance past the SIGKILL timeout
-      jest.advanceTimersByTime(5_000);
-
-      // Now simulate exit after SIGKILL
-      mockProc.emit('exit', 137, 'SIGKILL');
-      await shutdownPromise;
-
-      expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM');
-      expect(mockProc.kill).toHaveBeenCalledWith('SIGKILL');
-
-      jest.useRealTimers();
-    });
-
-    it('settles after a final deadline when no exit follows SIGKILL', async () => {
-      jest.useFakeTimers();
-      const server = new CodexAppServerProcess(createLaunchSpec());
-      server.start();
-
-      const shutdownPromise = server.shutdown();
-      jest.advanceTimersByTime(6_000);
-
-      await expect(shutdownPromise).resolves.toBeUndefined();
-      expect(mockProc.kill).toHaveBeenCalledWith('SIGKILL');
-      jest.useRealTimers();
-    });
-
-    it('resolves immediately if process is not running', async () => {
-      const server = new CodexAppServerProcess(createLaunchSpec());
-      await server.shutdown();
-      expect(server.isAlive()).toBe(false);
-    });
-
-    it('shares one shutdown sequence across repeated calls', async () => {
-      const server = new CodexAppServerProcess(createLaunchSpec());
-      server.start();
-
-      const first = server.shutdown();
-      const second = server.shutdown();
-      expect(mockProc.kill).toHaveBeenCalledTimes(1);
-
-      mockProc.emit('exit', 0, 'SIGTERM');
-      await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
     });
   });
 

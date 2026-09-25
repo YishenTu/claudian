@@ -1,7 +1,4 @@
-import {
-  buildSystemPrompt,
-  computeSystemPromptKey,
-} from '@/core/prompt/mainAgent';
+import { buildSystemPrompt } from '@/core/prompt/mainAgent';
 
 describe('systemPrompt', () => {
   describe('buildSystemPrompt', () => {
@@ -28,6 +25,7 @@ describe('systemPrompt', () => {
       );
 
       expect(prompt).not.toContain('## User Context');
+      expect(prompt).not.toContain('You are collaborating with');
       expect(prompt).toContain(
         "You are Claudian, operating inside **Alice**'s Obsidian Vault. The current working directory is the Vault root.",
       );
@@ -45,12 +43,6 @@ describe('systemPrompt', () => {
       expect(prompt).toContain('## Vault Media');
       expect(prompt).toContain('## Custom Instructions');
       expect(prompt).toContain('Use curl if the user explicitly asks for it.');
-    });
-
-    it('should append custom prompt section when provided', () => {
-      const prompt = buildSystemPrompt({ customPrompt: 'Always be concise.' });
-      expect(prompt).toContain('# Custom Instructions');
-      expect(prompt).toContain('Always be concise.');
     });
 
     it('should not append custom prompt section when empty', () => {
@@ -143,16 +135,6 @@ describe('systemPrompt', () => {
   });
 
   describe('userName in runtime context', () => {
-    it('should identify the named user as the Vault owner', () => {
-      const prompt = buildSystemPrompt({ userName: 'Alice' });
-      expect(prompt).toContain('## Runtime Context');
-      expect(prompt).not.toContain('## User Context');
-      expect(prompt).toContain(
-        "You are Claudian, operating inside **Alice**'s Obsidian Vault. The current working directory is the Vault root.",
-      );
-      expect(prompt).not.toContain('You are collaborating with');
-    });
-
     it('should use the generic user when userName is empty', () => {
       const prompt = buildSystemPrompt({ userName: '' });
       expect(prompt).toContain("operating inside the user's Obsidian Vault.");
@@ -207,45 +189,4 @@ describe('systemPrompt', () => {
     });
   });
 
-  describe('computeSystemPromptKey', () => {
-    it('includes dynamic sections in the prompt key', () => {
-      const settings = {
-        mediaFolder: 'attachments',
-        customPrompt: 'Be helpful',
-        vaultPath: '/vault',
-        userName: 'Alice',
-      };
-
-      const defaultKey = computeSystemPromptKey(settings);
-      const dynamicKey = computeSystemPromptKey(settings, {
-        dynamicSections: ['## Additional context\nRuntime guidance.'],
-      });
-
-      expect(dynamicKey).not.toBe(defaultKey);
-    });
-
-    it('computes key from all settings', () => {
-      const settings = {
-        mediaFolder: 'attachments',
-        customPrompt: 'Be helpful',
-        vaultPath: '/vault',
-        userName: 'Alice',
-      };
-
-      const key = computeSystemPromptKey(settings);
-
-      expect(key).toBe('attachments::Be helpful::/vault::Alice');
-    });
-
-    it('handles empty or undefined values', () => {
-      const key = computeSystemPromptKey({
-        mediaFolder: '',
-        customPrompt: '',
-        vaultPath: '',
-        userName: '',
-      });
-
-      expect(key).toBe('::::::');
-    });
-  });
 });

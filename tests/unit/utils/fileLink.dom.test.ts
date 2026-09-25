@@ -243,19 +243,6 @@ describe('processFileLinks', () => {
   });
 
   describe('image embed exclusion', () => {
-    it('does not convert image embeds to links', () => {
-      const app = createMockApp(['image.png']);
-      const container = document.createElement('div');
-      const span = document.createElement('span');
-      span.textContent = '![[image.png]]';
-      container.appendChild(span);
-
-      processFileLinks(app, container);
-
-      const link = container.querySelector('a.claudian-file-link');
-      expect(link).toBeNull();
-    });
-
     it('converts file link but not image embed in same text', () => {
       const app = createMockApp(['note.md', 'image.png']);
       const container = document.createElement('div');

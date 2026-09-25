@@ -6,7 +6,7 @@ export interface ApplyPatchFileDiff extends ToolDiffData {
   movedTo?: string;
 }
 
-export function structuredPatchToDiffLines(hunks: StructuredPatchHunk[]): DiffLine[] {
+function structuredPatchToDiffLines(hunks: StructuredPatchHunk[]): DiffLine[] {
   const result: DiffLine[] = [];
 
   for (const hunk of hunks) {
@@ -30,7 +30,7 @@ export function structuredPatchToDiffLines(hunks: StructuredPatchHunk[]): DiffLi
   return result;
 }
 
-export function countLineChanges(diffLines: DiffLine[]): DiffStats {
+function countLineChanges(diffLines: DiffLine[]): DiffStats {
   let added = 0;
   let removed = 0;
 
@@ -166,7 +166,7 @@ export function extractDiffData(toolUseResult: unknown, toolCall: ToolCallInfo):
   return diffFromToolInput(toolCall, filePath);
 }
 
-export function diffFromToolInput(toolCall: ToolCallInfo, filePath: string): ToolDiffData | undefined {
+function diffFromToolInput(toolCall: ToolCallInfo, filePath: string): ToolDiffData | undefined {
   if (toolCall.name === 'Edit') {
     const oldStr = toolCall.input.old_string;
     const newStr = toolCall.input.new_string;

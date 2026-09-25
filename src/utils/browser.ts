@@ -23,7 +23,7 @@ function buildAttributeList(context: BrowserSelectionContext): string {
   return attrs.join(' ');
 }
 
-export function formatBrowserContext(context: BrowserSelectionContext): string {
+function formatBrowserContext(context: BrowserSelectionContext): string {
   const selectedText = context.selectedText.trim();
   if (!selectedText) return '';
   const attrs = buildAttributeList(context);

@@ -20,18 +20,6 @@ export class GrokCLIResolver {
     return this.resolver.resolveFromSettings(settings);
   }
 
-  resolve(
-    hostnamePaths: Record<string, string> | undefined,
-    legacyPath: string,
-    environmentText: string,
-  ): string | null {
-    return this.resolver.resolve({
-      cliPathsByHost: hostnamePaths,
-      environmentText,
-      legacyCliPath: legacyPath,
-    });
-  }
-
   reset(): void {
     this.resolver.reset();
   }

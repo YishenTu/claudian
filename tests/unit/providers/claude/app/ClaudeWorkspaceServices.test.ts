@@ -12,7 +12,6 @@ jest.mock('@/providers/claude/ui/ClaudeSettingsTab', () => ({ createClaudeSettin
 
 function createAdapter(): VaultFileAdapter {
   return {
-    append: jest.fn(),
     delete: jest.fn(),
     deleteFolder: jest.fn(),
     ensureFolder: jest.fn(),

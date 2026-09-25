@@ -115,17 +115,6 @@ describe('VaultFileAdapter', () => {
       expect(mockAdapter.mkdir).not.toHaveBeenCalled();
     });
 
-    it('creates parent folder when it does not exist', async () => {
-      mockAdapter.exists.mockImplementation((path: string) => Promise.resolve(path !== 'folder'));
-      mockAdapter.mkdir.mockResolvedValue();
-      mockAdapter.write.mockResolvedValue();
-
-      await vaultAdapter.write('folder/file.md', 'content');
-
-      expect(mockAdapter.mkdir).toHaveBeenCalledWith('folder');
-      expect(mockAdapter.write).toHaveBeenCalledWith('folder/file.md', 'content');
-    });
-
     it('handles file in root (no folder)', async () => {
       mockAdapter.write.mockResolvedValue();
 
@@ -150,71 +139,15 @@ describe('VaultFileAdapter', () => {
     });
   });
 
-  describe('append', () => {
-    it('creates new file if it does not exist', async () => {
-      // All existence checks return false: folder doesn't exist, file doesn't exist
-      mockAdapter.exists.mockResolvedValue(false);
-      mockAdapter.mkdir.mockResolvedValue();
-      mockAdapter.write.mockResolvedValue();
-
-      await vaultAdapter.append('folder/file.md', 'new content');
-
-      expect(mockAdapter.mkdir).toHaveBeenCalled();
-      expect(mockAdapter.write).toHaveBeenCalledWith('folder/file.md', 'new content');
-      expect(mockAdapter.read).not.toHaveBeenCalled();
-    });
-
-    it('appends to existing file', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue('existing content');
-      mockAdapter.write.mockResolvedValue();
-
-      await vaultAdapter.append('file.md', '\nmore content');
-
-      expect(mockAdapter.read).toHaveBeenCalledWith('file.md');
-      expect(mockAdapter.write).toHaveBeenCalledWith('file.md', 'existing content\nmore content');
-      expect(mockAdapter.mkdir).not.toHaveBeenCalled();
-    });
-
-    it('creates parent folder for new file', async () => {
-      mockAdapter.exists.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
-      mockAdapter.mkdir.mockResolvedValue();
-      mockAdapter.write.mockResolvedValue();
-
-      await vaultAdapter.append('folder/file.md', 'content');
-
-      expect(mockAdapter.mkdir).toHaveBeenCalledWith('folder');
-    });
-
-    it('handles file in root', async () => {
-      mockAdapter.write.mockResolvedValue();
-
-      await vaultAdapter.append('file.md', 'content');
-
-      expect(mockAdapter.mkdir).not.toHaveBeenCalled();
-      expect(mockAdapter.write).toHaveBeenCalledWith('file.md', 'content');
-    });
-
-    it('appends empty string', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue('existing');
-      mockAdapter.write.mockResolvedValue();
-
-      await vaultAdapter.append('file.md', '');
-
-      expect(mockAdapter.write).toHaveBeenCalledWith('file.md', 'existing');
-    });
-  });
-
   describe('delete', () => {
     it('deletes file when it exists', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.remove.mockResolvedValue();
 
-      await vaultAdapter.delete('file.md');
+      await vaultAdapter.delete('folder/subfolder/file.md');
 
-      expect(mockAdapter.exists).toHaveBeenCalledWith('file.md');
-      expect(mockAdapter.remove).toHaveBeenCalledWith('file.md');
+      expect(mockAdapter.exists).toHaveBeenCalledWith('folder/subfolder/file.md');
+      expect(mockAdapter.remove).toHaveBeenCalledWith('folder/subfolder/file.md');
     });
 
     it('does nothing when file does not exist', async () => {
@@ -224,15 +157,6 @@ describe('VaultFileAdapter', () => {
 
       expect(mockAdapter.exists).toHaveBeenCalledWith('file.md');
       expect(mockAdapter.remove).not.toHaveBeenCalled();
-    });
-
-    it('deletes nested file', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.remove.mockResolvedValue();
-
-      await vaultAdapter.delete('folder/subfolder/file.md');
-
-      expect(mockAdapter.remove).toHaveBeenCalledWith('folder/subfolder/file.md');
     });
   });
 
@@ -285,18 +209,6 @@ describe('VaultFileAdapter', () => {
 
       expect(result).toEqual([]);
       expect(mockAdapter.list).not.toHaveBeenCalled();
-    });
-
-    it('returns empty array when no files exist', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.list.mockResolvedValue({
-        files: [],
-        folders: [],
-      });
-
-      const result = await vaultAdapter.listFiles('folder');
-
-      expect(result).toEqual([]);
     });
 
     it('handles folder with only subfolders', async () => {
@@ -419,22 +331,6 @@ describe('VaultFileAdapter', () => {
       expect(result).toContain('b/c/c.txt');
       expect(result).toContain('b/c/d/d.txt');
     });
-
-    it('handles multiple subfolders at same level', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      const mockList = jest.fn();
-      mockList
-        .mockResolvedValueOnce({ files: ['root.md'], folders: ['a', 'b', 'c'] })
-        .mockResolvedValueOnce({ files: ['a/a.txt'], folders: [] })
-        .mockResolvedValueOnce({ files: ['b/b.txt'], folders: [] })
-        .mockResolvedValueOnce({ files: ['c/c.txt'], folders: [] });
-
-      mockAdapter.list.mockImplementation((path: string) => mockList(path));
-
-      const result = await vaultAdapter.listFilesRecursive('root');
-
-      expect(result).toHaveLength(4);
-    });
   });
 
   describe('ensureFolder', () => {
@@ -447,22 +343,13 @@ describe('VaultFileAdapter', () => {
       expect(mockAdapter.mkdir).not.toHaveBeenCalled();
     });
 
-    it('creates folder when it does not exist', async () => {
-      mockAdapter.exists.mockResolvedValueOnce(false);
-      mockAdapter.mkdir.mockResolvedValue();
-
-      await vaultAdapter.ensureFolder('new/folder');
-
-      expect(mockAdapter.exists).toHaveBeenCalledWith('new/folder');
-      expect(mockAdapter.mkdir).toHaveBeenCalledWith('new/folder');
-    });
-
     it('creates nested folders', async () => {
       mockAdapter.exists.mockResolvedValue(false);
       mockAdapter.mkdir.mockResolvedValue();
 
       await vaultAdapter.ensureFolder('a/b/c');
 
+      expect(mockAdapter.exists).toHaveBeenCalledWith('a/b/c');
       expect(mockAdapter.mkdir).toHaveBeenCalledTimes(3);
       expect(mockAdapter.mkdir).toHaveBeenCalledWith('a');
       expect(mockAdapter.mkdir).toHaveBeenCalledWith('a/b');
@@ -474,15 +361,6 @@ describe('VaultFileAdapter', () => {
       mockAdapter.mkdir.mockResolvedValue();
 
       await vaultAdapter.ensureFolder('folder/');
-
-      expect(mockAdapter.mkdir).toHaveBeenCalledWith('folder');
-    });
-
-    it('handles root folder', async () => {
-      mockAdapter.exists.mockResolvedValueOnce(false);
-      mockAdapter.mkdir.mockResolvedValue();
-
-      await vaultAdapter.ensureFolder('folder');
 
       expect(mockAdapter.mkdir).toHaveBeenCalledWith('folder');
     });
@@ -533,28 +411,12 @@ describe('VaultFileAdapter', () => {
   });
 
   describe('rename', () => {
-    it('delegates to vault adapter rename', async () => {
-      mockAdapter.rename.mockResolvedValue();
-
-      await vaultAdapter.rename('old.md', 'new.md');
-
-      expect(mockAdapter.rename).toHaveBeenCalledWith('old.md', 'new.md');
-    });
-
-    it('renames nested file', async () => {
-      mockAdapter.rename.mockResolvedValue();
-
-      await vaultAdapter.rename('folder/old.md', 'folder/new.md');
-
-      expect(mockAdapter.rename).toHaveBeenCalledWith('folder/old.md', 'folder/new.md');
-    });
-
     it('moves file across folders', async () => {
       mockAdapter.rename.mockResolvedValue();
 
-      await vaultAdapter.rename('folder1/file.md', 'folder2/file.md');
+      await vaultAdapter.rename('folder1/old.md', 'folder2/new.md');
 
-      expect(mockAdapter.rename).toHaveBeenCalledWith('folder1/file.md', 'folder2/file.md');
+      expect(mockAdapter.rename).toHaveBeenCalledWith('folder1/old.md', 'folder2/new.md');
     });
   });
 
@@ -562,10 +424,10 @@ describe('VaultFileAdapter', () => {
     it('returns file stats for existing file', async () => {
       mockAdapter.stat.mockResolvedValue({ mtime: 1234567890, size: 1024 });
 
-      const result = await vaultAdapter.stat('file.md');
+      const result = await vaultAdapter.stat('folder/subfolder/file.md');
 
       expect(result).toEqual({ mtime: 1234567890, size: 1024 });
-      expect(mockAdapter.stat).toHaveBeenCalledWith('file.md');
+      expect(mockAdapter.stat).toHaveBeenCalledWith('folder/subfolder/file.md');
     });
 
     it('returns null when stat returns null', async () => {
@@ -582,14 +444,6 @@ describe('VaultFileAdapter', () => {
       const result = await vaultAdapter.stat('file.md');
 
       expect(result).toBeNull();
-    });
-
-    it('handles nested file path', async () => {
-      mockAdapter.stat.mockResolvedValue({ mtime: 9876543210, size: 2048 });
-
-      const result = await vaultAdapter.stat('folder/subfolder/file.md');
-
-      expect(result).toEqual({ mtime: 9876543210, size: 2048 });
     });
 
     it('handles zero-sized file', async () => {

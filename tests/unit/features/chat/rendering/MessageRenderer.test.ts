@@ -225,7 +225,7 @@ describe('MessageRenderer', () => {
     });
 
     const msgEl = messagesEl.children[0];
-    expect(msgEl.children.some((child: any) => child.hasClass('claudian-message-timestamp'))).toBe(false);
+    expect(msgEl.querySelector('.claudian-message-timestamp')).toBeNull();
   });
 
   it('renders persisted citation content blocks', () => {
@@ -1184,23 +1184,6 @@ describe('MessageRenderer', () => {
   });
 
   // ============================================
-  // setMessagesEl
-  // ============================================
-
-  it('setMessagesEl updates the container element', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl);
-    const newEl = createMockEl();
-
-    renderer.setMessagesEl(newEl);
-
-    // Verify by using scrollToBottom which references messagesEl
-    renderer.scrollToBottom();
-    // The new element should have been used (scrollTop set)
-    expect(newEl.scrollTop).toBe(newEl.scrollHeight);
-  });
-
-  // ============================================
   // Image rendering
   // ============================================
 
@@ -1273,24 +1256,6 @@ describe('MessageRenderer', () => {
   });
 
   // ============================================
-  // Copy button
-  // ============================================
-
-  it('addTextCopyButton adds a copy button element', () => {
-    const textEl = createMockEl();
-    const { renderer } = createRenderer();
-
-    renderer.addTextCopyButton(textEl, 'some markdown');
-
-    expect(textEl.children.length).toBe(1);
-    const copyBtn = textEl.children[0];
-    expect(copyBtn.hasClass('claudian-text-copy-btn')).toBe(true);
-    expect(copyBtn.tagName).toBe('BUTTON');
-    expect(copyBtn.getAttribute('type')).toBe('button');
-    expect(copyBtn.getAttribute('aria-label')).toBe('Copy message');
-  });
-
-  // ============================================
   // Scroll utilities
   // ============================================
 
@@ -1341,14 +1306,6 @@ describe('MessageRenderer', () => {
   // ============================================
   // renderContent
   // ============================================
-
-  it('renderContent should not throw on valid markdown', async () => {
-    const { renderer } = createRenderer();
-    const el = createMockEl();
-
-    // Should not throw even if internal rendering fails (graceful error handling)
-    await expect(renderer.renderContent(el, '**Hello** world')).resolves.not.toThrow();
-  });
 
   it('renderContent should empty the element before rendering', async () => {
     const { renderer } = createRenderer();
@@ -1452,33 +1409,6 @@ describe('MessageRenderer', () => {
       });
     });
 
-    it('click should copy and show feedback', async () => {
-      const { renderer } = createRenderer();
-      const textEl = createMockEl();
-
-      const writeTextMock = jest.fn().mockResolvedValue(undefined);
-      Object.defineProperty(globalThis, 'navigator', {
-        value: { clipboard: { writeText: writeTextMock } },
-        writable: true,
-        configurable: true,
-      });
-
-      renderer.addTextCopyButton(textEl, 'markdown content');
-
-      const copyBtn = textEl.children[0];
-      expect(copyBtn.hasClass('claudian-text-copy-btn')).toBe(true);
-
-      // Simulate click
-      const clickHandlers = copyBtn._eventListeners.get('click');
-      expect(clickHandlers).toBeDefined();
-
-      await clickHandlers![0]({ stopPropagation: jest.fn() });
-
-      expect(writeTextMock).toHaveBeenCalledWith('markdown content');
-      expect(copyBtn.textContent).toBe('Copied!');
-      expect(copyBtn.classList.contains('copied')).toBe(true);
-    });
-
     it('should handle clipboard API failure gracefully', async () => {
       const { renderer } = createRenderer();
       const textEl = createMockEl();
@@ -1493,36 +1423,22 @@ describe('MessageRenderer', () => {
       renderer.addTextCopyButton(textEl, 'content');
 
       const copyBtn = textEl.children[0];
+      const originalInnerHTML = copyBtn.innerHTML;
       const clickHandlers = copyBtn._eventListeners.get('click');
 
       // Should not throw
       await clickHandlers![0]({ stopPropagation: jest.fn() });
 
       // Should not show feedback on error
-      expect(copyBtn.textContent).not.toBe('copied!');
+      expect(copyBtn.textContent).not.toBe('Copied!');
+      expect(copyBtn.classList.contains('copied')).toBe(false);
+      expect(copyBtn.innerHTML).toBe(originalInnerHTML);
     });
   });
 
   // ============================================
   // renderMessages (entry point)
   // ============================================
-
-  it('renderMessages should render stored messages and return welcome element', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl);
-    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-    jest.spyOn(renderer, 'renderMessageImages');
-
-    const messages: ChatMessage[] = [
-      { id: 'u1', role: 'user', content: 'Hello', timestamp: Date.now() },
-      { id: 'a1', role: 'assistant', content: 'Hi there', timestamp: Date.now(), contentBlocks: [{ type: 'text', content: 'Hi there' }] as any },
-    ];
-
-    const welcomeEl = renderer.renderMessages(messages, () => 'Good morning!');
-
-    expect(welcomeEl).toBeDefined();
-    expect(welcomeEl!.hasClass('claudian-welcome')).toBe(true);
-  });
 
   it('renderMessages should store table-of-contents title from displayContent before content', () => {
     const messagesEl = createMockEl();
@@ -1543,32 +1459,6 @@ describe('MessageRenderer', () => {
 
     const msgEl = messagesEl.querySelector('.claudian-message-user');
     expect(msgEl?.getAttribute('data-toc-title')).toBe('Visible slash command');
-  });
-
-  it('renderMessages should hide welcome when messages exist', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl);
-    jest.spyOn(renderer, 'renderContent').mockResolvedValue(undefined);
-    jest.spyOn(renderer, 'renderMessageImages');
-
-    const messages: ChatMessage[] = [
-      { id: 'u1', role: 'user', content: 'Hello', timestamp: Date.now() },
-    ];
-
-    const welcomeEl = renderer.renderMessages(messages, () => 'Hello');
-
-    // When messages exist, welcome should be hidden
-    expect(welcomeEl).toBeDefined();
-  });
-
-  it('renderMessages should return welcome element when no messages', () => {
-    const messagesEl = createMockEl();
-    const { renderer } = createRenderer(messagesEl);
-
-    const welcomeEl = renderer.renderMessages([], () => 'Welcome');
-
-    expect(welcomeEl).toBeDefined();
-    expect(welcomeEl!.hasClass('claudian-welcome')).toBe(true);
   });
 
   // ============================================
@@ -1944,14 +1834,21 @@ describe('MessageRenderer', () => {
       const { renderer } = createRenderer();
       const textEl = createMockEl();
 
-      renderer.addTextCopyButton(textEl, 'content to copy');
+      renderer.addTextCopyButton(textEl, 'markdown content');
 
+      expect(textEl.children).toHaveLength(1);
       const copyBtn = textEl.children[0];
+      expect(copyBtn.hasClass('claudian-text-copy-btn')).toBe(true);
+      expect(copyBtn.tagName).toBe('BUTTON');
+      expect(copyBtn.getAttribute('type')).toBe('button');
+      expect(copyBtn.getAttribute('aria-label')).toBe('Copy message');
       const originalInnerHTML = copyBtn.innerHTML;
       const clickHandlers = copyBtn._eventListeners.get('click');
+      expect(clickHandlers).toBeDefined();
 
       // Click to copy
       await clickHandlers![0]({ stopPropagation: jest.fn() });
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('markdown content');
       expect(copyBtn.textContent).toBe('Copied!');
       expect(copyBtn.classList.contains('copied')).toBe(true);
 
@@ -1994,46 +1891,6 @@ describe('MessageRenderer', () => {
         expect.anything()
       );
       expect(processFileLinks).toHaveBeenCalledWith(expect.anything(), el);
-    });
-
-    it('should wrap pre elements in code wrapper divs', async () => {
-      const { MarkdownRenderer } = await import('obsidian');
-      const { renderer } = createRenderer();
-      const el = createMockEl();
-
-      // Mock renderMarkdown to create a pre element in the container
-      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
-        async (_md: string, container: any) => {
-          const pre = container.createEl('pre');
-          pre.createEl('code', { text: 'console.log("hello")' });
-        }
-      );
-
-      await renderer.renderContent(el, '```js\nconsole.log("hello")\n```');
-
-      // The pre should be wrapped in a claudian-code-wrapper
-      // Due to mock limitations, check that querySelectorAll was called on el
-      // The actual wrapping logic runs on real DOM, but the mock captures calls
-      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalled();
-    });
-
-    it('should skip wrapping already-wrapped pre elements', async () => {
-      const { MarkdownRenderer } = await import('obsidian');
-      const { renderer } = createRenderer();
-      const el = createMockEl();
-
-      // Mock renderMarkdown to create an already-wrapped pre element
-      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
-        async (_md: string, container: any) => {
-          const wrapper = container.createDiv({ cls: 'claudian-code-wrapper' });
-          wrapper.createEl('pre');
-        }
-      );
-
-      await renderer.renderContent(el, '```\nalready wrapped\n```');
-
-      // Should not throw and should complete normally
-      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalled();
     });
   });
 
@@ -2106,44 +1963,6 @@ describe('MessageRenderer', () => {
       expect(code?.hasClass('language-dataview')).toBe(true);
       expect(code?.hasClass('language-claudian-display-only-fence-0')).toBe(false);
       expect(highlightElement).toHaveBeenCalledWith(code);
-    });
-
-    it('should add language label when code block has language class', async () => {
-      const { MarkdownRenderer } = await import('obsidian');
-      const { renderer } = createRenderer();
-      const el = createMockEl();
-
-      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
-        async (_md: string, container: any) => {
-          const pre = container.createEl('pre');
-          const code = pre.createEl('code');
-          code.className = 'language-typescript';
-          code.textContent = 'const x = 1;';
-        }
-      );
-
-      await renderer.renderContent(el, '```typescript\nconst x = 1;\n```');
-
-      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalled();
-    });
-
-    it('should move copy-code-button outside pre into wrapper', async () => {
-      const { MarkdownRenderer } = await import('obsidian');
-      const { renderer } = createRenderer();
-      const el = createMockEl();
-
-      (MarkdownRenderer.renderMarkdown as jest.Mock).mockImplementationOnce(
-        async (_md: string, container: any) => {
-          const pre = container.createEl('pre');
-          pre.createEl('code', { text: 'some code' });
-          const copyBtn = pre.createEl('button');
-          copyBtn.className = 'copy-code-button';
-        }
-      );
-
-      await renderer.renderContent(el, '```\nsome code\n```');
-
-      expect(MarkdownRenderer.renderMarkdown).toHaveBeenCalled();
     });
   });
 

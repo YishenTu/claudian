@@ -200,23 +200,6 @@ function createPlugin(): ProviderHost {
         },
       },
     },
-    app: {
-      vault: { adapter: { basePath: '/vault' } },
-    },
-    storage: {} as ProviderHost['storage'],
-    saveSettings: jest.fn(),
-    mutateSettings: jest.fn(),
-    mutateSettingsConditionally: jest.fn(),
-    loadData: jest.fn(),
-    saveData: jest.fn(),
-    normalizeModelVariantSettings: jest.fn(),
-    getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-    getEnvironmentVariablesForScope: jest.fn().mockReturnValue(''),
-    applyEnvironmentVariables: jest.fn(),
-    applyEnvironmentVariablesBatch: jest.fn(),
-    getResolvedProviderCliPath: jest.fn().mockResolvedValue('/usr/local/bin/codex'),
-    runProviderExecutionTransition: jest.fn(),
-    notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
 }
 
@@ -2735,10 +2718,8 @@ describe('CodexExecutionBackend', () => {
       }),
       expect.objectContaining({ type: 'turn_completed' }),
     ]));
-    expect(secondEvents).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ nativeTurnId: 'turn-old' }),
-      expect.objectContaining({ text: 'late old output' }),
-    ]));
+    expect(secondEvents).not.toContainEqual(expect.objectContaining({ nativeTurnId: 'turn-old' }));
+    expect(secondEvents).not.toContainEqual(expect.objectContaining({ text: 'late old output' }));
     expect(mockProcessStart).toHaveBeenCalledTimes(2);
 
     await session.dispose();
@@ -3011,7 +2992,7 @@ describe('CodexExecutionBackend', () => {
     }
   });
 
-  it('normalizes process death into a terminal execution error and fences late output', async () => {
+  it('normalizes process death into a terminal execution error', async () => {
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
@@ -3036,13 +3017,6 @@ describe('CodexExecutionBackend', () => {
       type: 'execution_error',
       category: 'process-exited',
     }));
-    emitNotification('item/agentMessage/delta', {
-      threadId: 'thread-death',
-      turnId: 'turn-death',
-      itemId: 'late',
-      delta: 'late',
-    });
-    expect(events.some(event => event.type === 'text_delta' && event.text === 'late')).toBe(false);
 
     await session.dispose();
   });

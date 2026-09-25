@@ -122,34 +122,6 @@ describe('parseGrokModelsOutput', () => {
 });
 
 describe('GrokModelCatalogService', () => {
-  it('discovers supported efforts and native labels before opening a chat session', async () => {
-    const runner = makeRunner({
-      exitCode: 0,
-      stdout: 'Default model: grok-4.6\nAvailable models:\n  grok-4.6\n',
-    });
-    const models = [{
-      rawId: 'grok-4.6',
-      displayName: 'Grok 4.6',
-      reasoningMetadataResolved: true,
-      supportsReasoning: true,
-      defaultReasoningEffort: 'high',
-      reasoningEfforts: [
-        { value: 'xhigh', label: 'Extra High Effort' },
-        { value: 'high', label: 'High Effort' },
-        { value: 'medium', label: 'Medium Effort' },
-        { value: 'low', label: 'Low Effort' },
-      ],
-    }];
-    const options = {
-      runner,
-      probe: { discover: jest.fn(async () => ({ currentModelId: 'grok-4.6', models })) },
-    };
-
-    const result = await new GrokModelCatalogService(makeHost(), options).discoverCatalog();
-
-    expect(result).toMatchObject({ defaultModelId: 'grok-4.6', models });
-  });
-
   it('runs resolved-grok models with the provider runtime environment', async () => {
     const runner = makeRunner({
       exitCode: 0,

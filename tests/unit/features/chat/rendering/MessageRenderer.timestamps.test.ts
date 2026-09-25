@@ -79,12 +79,12 @@ describe('message timestamp refresh', () => {
     renderer.dispose();
   });
 
-  it('removes a stale timestamp when updating a live user message after disabling', () => {
+  it('removes a user timestamp on refresh after disabling', () => {
     const { renderer, messagesEl, settings } = createRenderer('codex');
     const msg: ChatMessage = { id: 'user', role: 'user', content: 'Hello', timestamp };
     renderer.addMessage(msg);
     settings.showMessageTimestamps = false;
-    renderer.updateLiveUserMessage(msg);
+    renderer.refreshMessageTimestamps();
     expect(messagesEl.querySelectorAll('.claudian-message-timestamp').length).toBe(0);
     renderer.dispose();
   });

@@ -125,7 +125,6 @@ type MockSettingRecord = {
 };
 
 const createdSettings: MockSettingRecord[] = [];
-const createdDOMElements: any[] = [];
 
 function createTextComponent(): MockTextComponent {
   const component = {} as MockTextComponent;
@@ -173,7 +172,6 @@ function createToggleComponent(): MockToggleComponent {
 
 function createElement(): any {
   const classes = new Set<string>();
-  const eventListeners = new Map<string, Array<(...args: unknown[]) => void>>();
   const element: any = {
     ...createMockEl('div'),
     value: '',
@@ -223,16 +221,6 @@ function createElement(): any {
     }),
     empty: jest.fn(),
     setAttribute: jest.fn(),
-    addEventListener: jest.fn((type: string, callback: (...args: unknown[]) => void) => {
-      const listeners = eventListeners.get(type) ?? [];
-      listeners.push(callback);
-      eventListeners.set(type, listeners);
-    }),
-    dispatchMockEvent: async (type: string, event?: unknown) => {
-      for (const listener of eventListeners.get(type) ?? []) {
-        await listener(event);
-      }
-    },
     blur: jest.fn(),
     createEl: jest.fn((_tag?: string, attrs?: Record<string, unknown>) => {
       const child = createElement();
@@ -249,7 +237,6 @@ function createElement(): any {
       if (attrs && typeof attrs.type === 'string') {
         child.type = attrs.type;
       }
-      createdDOMElements.push(child);
       return child;
     }),
     createDiv: jest.fn((attrs?: Record<string, unknown>) => {
@@ -258,7 +245,6 @@ function createElement(): any {
       if (attrs && typeof attrs.cls === 'string') {
         child.cls = attrs.cls;
       }
-      createdDOMElements.push(child);
       return child;
     }),
     createSpan: jest.fn((_attrs?: Record<string, unknown>) => createElement()),
@@ -275,7 +261,6 @@ function createContainer(): any {
       if (attrs && typeof attrs.cls === 'string') {
         child.cls = attrs.cls;
       }
-      createdDOMElements.push(child);
       return child;
     }),
     createEl: jest.fn((tag?: string, attrs?: Record<string, unknown>) => {
@@ -287,7 +272,6 @@ function createContainer(): any {
       if (attrs && typeof attrs.text === 'string') {
         child.text = attrs.text;
       }
-      createdDOMElements.push(child);
       return child;
     }),
   };
@@ -385,7 +369,6 @@ describe('OpencodeSettingsTab', () => {
 
   beforeEach(() => {
     createdSettings.length = 0;
-    createdDOMElements.length = 0;
     jest.clearAllMocks();
     mockMetadataLoadCatalog.mockResolvedValue(false);
     mockMetadataWarmModel.mockResolvedValue(false);
@@ -567,7 +550,7 @@ describe('OpencodeSettingsTab', () => {
     );
   });
 
-  it('renders the shared skill manager and keeps hidden runtime commands separate', () => {
+  it('renders shared skills, hidden commands, and environment guidance', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
@@ -586,13 +569,6 @@ describe('OpencodeSettingsTab', () => {
         desc: 'Hide specific OpenCode commands and skills from the dropdown. Enter names without the leading slash, one per line.',
       }),
     );
-  });
-
-  it('passes OpenCode environment guidance into the environment section', () => {
-    const plugin = createPlugin();
-
-    createSettingsRenderer().render(createContainer(), createContext(plugin));
-
     expect(mockRenderEnvironmentSettingsSection).toHaveBeenCalledWith(expect.objectContaining({
       desc: 'Extra environment variables passed to OpenCode.',
       placeholder: 'OPENCODE_DB=/path/to/opencode.db',

@@ -40,8 +40,6 @@ export function buildTitleGenerationSystemPrompt(locale: string = DEFAULT_LOCALE
 **Output**: Return ONLY the raw title text.`;
 }
 
-export const TITLE_GENERATION_SYSTEM_PROMPT = buildTitleGenerationSystemPrompt();
-
 export function buildTitleGenerationPrompt(userMessage: string): string {
   const truncated = userMessage.length > MAX_TITLE_INPUT_LENGTH
     ? `${userMessage.slice(0, MAX_TITLE_INPUT_LENGTH)}...`

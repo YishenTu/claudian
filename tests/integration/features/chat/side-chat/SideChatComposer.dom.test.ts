@@ -110,6 +110,8 @@ it('preserves a saved side draft when a slash follow-up resumes the collapsed ch
   harness.backend.latest.complete();
   await sent;
 
+  expect(harness.backend.sessions).toHaveLength(1);
+  expect(harness.controller.destination).toBe('side');
   expect(harness.inputEl.value).toBe('Unsent side draft');
   harness.controller.collapse();
   expect(harness.inputEl.value).toBe('');
@@ -134,23 +136,6 @@ it('discards the side chat, releases its session and restores the main composer'
   expect(harness.controller.destination).toBe('main');
   expect(harness.controller.hasSideChat).toBe(false);
   expect(harness.composerEl.classList.contains('claudian-side-chat-expanded')).toBe(false);
-});
-
-it('reuses a collapsed child instead of reforking when the command is submitted again', async () => {
-  const harness = createHarness();
-  const { started: first } = await startSideChat(harness);
-  harness.backend.latest.establishChild('child-session');
-  harness.backend.latest.complete();
-  await first;
-  harness.controller.collapse();
-
-  const second = harness.controller.handleCommandSubmission('Another angle', []);
-  await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(2));
-  harness.backend.latest.complete();
-  await second;
-
-  expect(harness.backend.sessions).toHaveLength(1);
-  expect(harness.controller.destination).toBe('side');
 });
 
 it('rejects a nested side command and an empty prompt without creating anything', async () => {

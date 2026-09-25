@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import type { HostnameCLIPaths } from '../../../core/types/settings';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
 import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import { findClaudeCLIPath } from '../cli/findClaudeCLIPath';
@@ -41,22 +40,6 @@ export class ClaudeCLIResolver {
 
     this.resolvedPath = resolveClaudeCLIPath(hostnamePath, normalizedLegacy, normalizedEnv);
     return this.resolvedPath;
-  }
-
-  resolve(
-    hostnamePaths: HostnameCLIPaths | undefined,
-    legacyPath: string | undefined,
-    envText: string,
-  ): string | null {
-    return this.resolveFromSettings({
-      sharedEnvironmentVariables: envText,
-      providerConfigs: {
-        claude: {
-          cliPath: legacyPath ?? '',
-          cliPathsByHost: hostnamePaths ?? {},
-        },
-      },
-    });
   }
 
   reset(): void {

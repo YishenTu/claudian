@@ -1,5 +1,4 @@
 import {
-  getLocale,
   getLocaleDisplayName,
   setLocale,
   t,
@@ -13,26 +12,24 @@ describe('i18n', () => {
   // Exercise each lazy dictionary loader with an actual translation. Returning
   // an untranslated key or the English fallback must not count as success.
   it.each<[Locale, string]>([
-    ['en', 'Save'],
-    ['zh-CN', '保存'],
-    ['zh-TW', '保存'],
-    ['ja', '保存'],
-    ['ko', '저장'],
-    ['de', 'Speichern'],
-    ['fr', 'Enregistrer'],
-    ['es', 'Guardar'],
-    ['ru', 'Сохранить'],
-    ['pt', 'Salvar'],
+    ['en', 'Delete'],
+    ['zh-CN', '删除'],
+    ['zh-TW', '刪除'],
+    ['ja', '削除'],
+    ['ko', '삭제'],
+    ['de', 'Löschen'],
+    ['fr', 'Supprimer'],
+    ['es', 'Eliminar'],
+    ['ru', 'Удалить'],
+    ['pt', 'Excluir'],
   ])('loads and selects the %s dictionary', (locale, expected) => {
     expect(setLocale(locale)).toBe(true);
-    expect(getLocale()).toBe(locale);
-    expect(t('common.save')).toBe(expected);
+    expect(t('common.delete')).toBe(expected);
   });
 
   it('keeps the current dictionary when an invalid locale is requested', () => {
     setLocale('de');
     expect(setLocale('invalid' as Locale)).toBe(false);
-    expect(getLocale()).toBe('de');
     expect(t('common.save')).toBe('Speichern');
   });
 

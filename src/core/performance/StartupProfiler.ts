@@ -89,15 +89,6 @@ export class StartupProfiler {
     finishSpan(span);
   }
 
-  static run<T>(name: string, fn: () => T): T {
-    const span = StartupProfiler.start(name);
-    try {
-      return fn();
-    } finally {
-      StartupProfiler.finish(span);
-    }
-  }
-
   static async runAsync<T>(name: string, fn: () => Promise<T>): Promise<T> {
     const span = StartupProfiler.start(name);
     try {
@@ -152,7 +143,7 @@ export class StartupProfiler {
     return report;
   }
 
-  static toJSON(): string {
+  private static toJSON(): string {
     return JSON.stringify(StartupProfiler.getReport(), null, 2);
   }
 

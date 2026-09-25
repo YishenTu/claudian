@@ -6,7 +6,6 @@ import { applyTextInput } from '@test/helpers/settingsControls';
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockCLIResolverReset = jest.fn();
 const mockDiscoverModels = jest.fn();
-const mockNotices: string[] = [];
 
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
@@ -41,28 +40,8 @@ interface MockTextComponent {
   onChange(callback: (value: string) => Promise<void> | void): MockTextComponent;
 }
 
-interface MockButtonComponent {
-  disabled: boolean;
-  onClickCallback: (() => Promise<void> | void) | null;
-  setButtonText: jest.Mock;
-  setDisabled: jest.Mock;
-  text: string;
-  onClick(callback: () => Promise<void> | void): MockButtonComponent;
-}
-
-interface MockDropdownComponent {
-  onChangeCallback: ((value: string) => Promise<void> | void) | null;
-  options: Record<string, string>;
-  setValue: jest.Mock;
-  value: string;
-  addOption(value: string, label: string): MockDropdownComponent;
-  onChange(callback: (value: string) => Promise<void> | void): MockDropdownComponent;
-}
-
 class MockSetting {
-  buttonComponents: MockButtonComponent[] = [];
   desc = '';
-  dropdownComponents: MockDropdownComponent[] = [];
   heading = false;
   name = '';
   settingEl = { addClass: jest.fn() };
@@ -101,29 +80,10 @@ class MockSetting {
     callback(component);
     return this;
   }
-
-  addButton(callback: (button: MockButtonComponent) => void): this {
-    const component = createButtonComponent();
-    this.buttonComponents.push(component);
-    callback(component);
-    return this;
-  }
-
-  addDropdown(callback: (dropdown: MockDropdownComponent) => void): this {
-    const component = createDropdownComponent();
-    this.dropdownComponents.push(component);
-    callback(component);
-    return this;
-  }
 }
 
 jest.mock('node:fs');
 jest.mock('obsidian', () => ({
-  Notice: class MockNotice {
-    constructor(message: string) {
-      mockNotices.push(message);
-    }
-  },
   Setting: MockSetting,
 }));
 jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
@@ -151,7 +111,6 @@ import { getPiProviderSettings } from '@/providers/pi/settings';
 import { createPiSettingsTabRenderer } from '@/providers/pi/ui/PiSettingsTab';
 
 const createdSettings: MockSetting[] = [];
-const createdDOMElements: any[] = [];
 const mockedExists = fs.existsSync as jest.Mock;
 const mockedStat = fs.statSync as jest.Mock;
 
@@ -195,49 +154,8 @@ function createTextComponent(): MockTextComponent {
   return component;
 }
 
-function createButtonComponent(): MockButtonComponent {
-  const component = {} as MockButtonComponent;
-  component.disabled = false;
-  component.onClickCallback = null;
-  component.text = '';
-  component.setButtonText = jest.fn((value: string) => {
-    component.text = value;
-    return component;
-  });
-  component.setDisabled = jest.fn((value: boolean) => {
-    component.disabled = value;
-    return component;
-  });
-  component.onClick = (callback: () => Promise<void> | void): MockButtonComponent => {
-    component.onClickCallback = callback;
-    return component;
-  };
-  return component;
-}
-
-function createDropdownComponent(): MockDropdownComponent {
-  const component = {} as MockDropdownComponent;
-  component.onChangeCallback = null;
-  component.options = {};
-  component.value = '';
-  component.addOption = (value: string, label: string): MockDropdownComponent => {
-    component.options[value] = label;
-    return component;
-  };
-  component.setValue = jest.fn((value: string) => {
-    component.value = value;
-    return component;
-  });
-  component.onChange = (callback: (value: string) => Promise<void> | void): MockDropdownComponent => {
-    component.onChangeCallback = callback;
-    return component;
-  };
-  return component;
-}
-
 function createElement(): any {
   const classes = new Set<string>();
-  const eventListeners = new Map<string, Array<(...args: unknown[]) => void>>();
   const element: any = {
     ...createMockEl('div'),
     checked: false,
@@ -286,36 +204,23 @@ function createElement(): any {
     }),
     empty: jest.fn(),
     setAttribute: jest.fn(),
-    addEventListener: jest.fn((type: string, callback: (...args: unknown[]) => void) => {
-      const listeners = eventListeners.get(type) ?? [];
-      listeners.push(callback);
-      eventListeners.set(type, listeners);
-    }),
-    dispatchMockEvent: async (type: string, event?: unknown) => {
-      for (const listener of eventListeners.get(type) ?? []) {
-        await listener(event);
-      }
-    },
     blur: jest.fn(),
     createEl: jest.fn((tag?: string, attrs?: Record<string, unknown>) => {
       const child = createElement();
       child.tag = tag;
       applyElementAttrs(child, attrs);
-      createdDOMElements.push(child);
       return child;
     }),
     createDiv: jest.fn((attrs?: Record<string, unknown>) => {
       const child = createElement();
       child.tag = 'div';
       applyElementAttrs(child, attrs);
-      createdDOMElements.push(child);
       return child;
     }),
     createSpan: jest.fn((attrs?: Record<string, unknown>) => {
       const child = createElement();
       child.tag = 'span';
       applyElementAttrs(child, attrs);
-      createdDOMElements.push(child);
       return child;
     }),
   };
@@ -364,7 +269,6 @@ function createContext(settings: Record<string, unknown>) {
   return {
     plugin: {
       applyProviderRuntimeSettings,
-      notifyProviderChatOptionsChanged: jest.fn(),
       runProviderExecutionTransition,
       saveSettings,
       settings,
@@ -394,8 +298,6 @@ describe('PiSettingsTab', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     createdSettings.length = 0;
-    createdDOMElements.length = 0;
-    mockNotices.length = 0;
     mockedExists.mockReturnValue(true);
     mockedStat.mockReturnValue({ isFile: () => true });
     mockDiscoverModels.mockResolvedValue({

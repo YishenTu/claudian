@@ -24,10 +24,6 @@ export class ProviderInitializationBoundary {
   private initAttempts: Partial<Record<ProviderId, ProviderInitializationAttempt>> = {};
   private generation = 0;
 
-  getRegisteredProviderIds(): ProviderId[] {
-    return Object.keys(this.registrations);
-  }
-
   setServices(
     providerId: ProviderId,
     services: ProviderWorkspaceServices | undefined,

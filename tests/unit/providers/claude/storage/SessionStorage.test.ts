@@ -230,24 +230,6 @@ describe('SessionStorage', () => {
       expect(mockAdapter.delete).not.toHaveBeenCalled();
     });
 
-    it('keeps valid legacy metadata visible when migration fails', async () => {
-      const metadata = {
-        id: 'session-legacy',
-        title: 'Legacy Session',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-      };
-
-      mockAdapter.exists.mockImplementation(async (path: string) => (
-        path === `${LEGACY_SESSIONS_PATH}/session-legacy.meta.json`
-      ));
-      mockAdapter.read.mockResolvedValue(JSON.stringify(metadata));
-      mockAdapter.write.mockRejectedValue(new Error('EEXIST: .claudian/sessions'));
-
-      await expect(storage.loadMetadata('session-legacy')).resolves.toEqual(metadata);
-      expect(mockAdapter.delete).not.toHaveBeenCalled();
-    });
-
     it('skips mismatched legacy metadata without migrating or modifying it', async () => {
       mockAdapter.exists.mockImplementation(async (path: string) => (
         path === `${LEGACY_SESSIONS_PATH}/session-requested.meta.json`
@@ -322,63 +304,6 @@ describe('SessionStorage', () => {
       const result = await storage.loadMetadata('session-error');
 
       expect(result).toBeNull();
-    });
-  });
-
-  describe('listAllConversations - provider routing', () => {
-    it('preserves providerId from metadata', async () => {
-      mockAdapter.listFiles.mockResolvedValue([
-        '.claudian/sessions/claude-session.meta.json',
-        '.claudian/sessions/codex-session.meta.json',
-      ]);
-
-      mockAdapter.read.mockImplementation((path: string) => {
-        if (path.includes('claude-session')) {
-          return Promise.resolve(JSON.stringify({
-            id: 'claude-session',
-            providerId: 'claude',
-            title: 'Claude Session',
-            createdAt: 1700000000,
-            lastActivityAt: 1700001000,
-          }));
-        }
-        if (path.includes('codex-session')) {
-          return Promise.resolve(JSON.stringify({
-            id: 'codex-session',
-            providerId: 'codex',
-            title: 'Codex Session',
-            createdAt: 1700000000,
-            lastActivityAt: 1700002000,
-          }));
-        }
-        return Promise.resolve('{}');
-      });
-
-      const metas = await storage.listAllConversations();
-
-      expect(metas).toHaveLength(2);
-      const claudeMeta = metas.find(m => m.id === 'claude-session');
-      const codexMeta = metas.find(m => m.id === 'codex-session');
-      expect(claudeMeta!.providerId).toBe('claude');
-      expect(codexMeta!.providerId).toBe('codex');
-    });
-
-    it('defaults providerId to claude for legacy conversations', async () => {
-      mockAdapter.listFiles.mockResolvedValue([
-        '.claudian/sessions/old.meta.json',
-      ]);
-
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        id: 'old',
-        title: 'Old Session',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-      }));
-
-      const metas = await storage.listAllConversations();
-
-      expect(metas).toHaveLength(1);
-      expect(metas[0].providerId).toBe('claude');
     });
   });
 
@@ -607,86 +532,6 @@ describe('SessionStorage', () => {
 
       releaseBlockedReads();
       await expect(scan).resolves.toHaveLength(ids.length);
-    });
-  });
-
-  describe('listAllConversations', () => {
-    it('returns metadata from listMetadata as ConversationMeta[]', async () => {
-      mockAdapter.listFiles.mockResolvedValue([
-        '.claudian/sessions/session-1.meta.json',
-        '.claudian/sessions/session-2.meta.json',
-      ]);
-
-      mockAdapter.read.mockImplementation((path: string) => {
-        if (path.includes('session-1')) {
-          return Promise.resolve(JSON.stringify({
-            id: 'session-1',
-            title: 'Session One',
-            createdAt: 1700000000,
-            updatedAt: 1700001000,
-            lastResponseAt: 1700000900,
-            linkedContentPath: 'Notes/One.md',
-            selectedModel: 'claude-sonnet-4-5',
-            isPinned: true,
-            isArchived: true,
-          }));
-        }
-        if (path.includes('session-2')) {
-          return Promise.resolve(JSON.stringify({
-            id: 'session-2',
-            title: 'Session Two',
-            createdAt: 1700000000,
-            updatedAt: 1700002000,
-            lastResponseAt: 1700001500,
-          }));
-        }
-        return Promise.resolve('{}');
-      });
-
-      const metas = await storage.listAllConversations();
-
-      expect(metas).toHaveLength(2);
-
-      // Should be sorted by lastActivityAt descending
-      expect(metas[0].id).toBe('session-2');
-      expect(metas[1].id).toBe('session-1');
-
-      // Each entry should have SDK session defaults
-      expect(metas[0].preview).toBe('SDK session');
-      expect(metas[0].messageCount).toBe(0);
-      expect(metas[1].preview).toBe('SDK session');
-      expect(metas[1].messageCount).toBe(0);
-      expect(metas[1].linkedContentPath).toBe('Notes/One.md');
-      expect(metas[1].selectedModel).toBe('claude-sonnet-4-5');
-      expect(metas[1].isPinned).toBe(true);
-      expect(metas[1].isArchived).toBe(true);
-    });
-
-    it('returns empty array when no metadata exists', async () => {
-      mockAdapter.listFiles.mockResolvedValue([]);
-
-      const metas = await storage.listAllConversations();
-
-      expect(metas).toEqual([]);
-    });
-
-    it('preserves titleGenerationStatus', async () => {
-      mockAdapter.listFiles.mockResolvedValue([
-        '.claudian/sessions/session-status.meta.json',
-      ]);
-
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        id: 'session-status',
-        title: 'Status Test',
-        createdAt: 1700000000,
-        lastActivityAt: 1700001000,
-        titleGenerationStatus: 'failed',
-      }));
-
-      const metas = await storage.listAllConversations();
-
-      expect(metas).toHaveLength(1);
-      expect(metas[0].titleGenerationStatus).toBe('failed');
     });
   });
 

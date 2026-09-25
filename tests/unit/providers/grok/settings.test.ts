@@ -6,16 +6,13 @@ jest.mock('../../../../src/utils/env', () => ({
 }));
 
 import {
-  clearCurrentGrokCatalog,
   getCurrentGrokCatalog,
   getGrokProviderSettings,
   normalizeGrokCatalogSnapshot,
   updateCurrentGrokCatalog,
   updateGrokProviderSettings,
-  updateGrokVisibleModels
 } from '@/providers/grok/settings';
 import {
-  buildGrokProviderState,
   buildPersistedGrokProviderState,
   parseGrokProviderState,
 } from '@/providers/grok/types';
@@ -116,10 +113,6 @@ describe('Grok settings', () => {
     expect(updateCurrentGrokCatalog(settings, replacement)).toEqual(replacement);
     expect(getCurrentGrokCatalog(settings)).toEqual(replacement);
     expect(getGrokProviderSettings(settings).catalogsByHost['other-host']).toEqual(otherCatalog);
-    expect(clearCurrentGrokCatalog(settings)).toBe(true);
-    expect(getCurrentGrokCatalog(settings)).toBeNull();
-    expect(getGrokProviderSettings(settings).catalogsByHost['other-host']).toEqual(otherCatalog);
-    expect(clearCurrentGrokCatalog(settings)).toBe(false);
   });
 
   it('whitelists catalog metadata and never persists opaque or secret fields', () => {
@@ -279,7 +272,7 @@ describe('Grok settings', () => {
       },
     };
 
-    updateGrokVisibleModels(settings, []);
+    updateGrokProviderSettings(settings, { visibleModels: [] });
 
     const grok = getGrokProviderSettings(settings);
     expect(grok.preferredReasoningByModel).toEqual({});
@@ -315,10 +308,10 @@ describe('Grok provider state', () => {
       sessionDirectory: '/tmp/.grok/sessions/vault/session-id',
     });
     expect(parseGrokProviderState({ sessionDirectory: '../outside' })).toEqual({});
-    expect(buildGrokProviderState('/tmp/.grok/sessions/vault/session-id')).toEqual({
+    expect(buildPersistedGrokProviderState({ sessionDirectory: '/tmp/.grok/sessions/vault/session-id' })).toEqual({
       sessionDirectory: '/tmp/.grok/sessions/vault/session-id',
     });
-    expect(buildGrokProviderState('../outside')).toBeUndefined();
+    expect(buildPersistedGrokProviderState({ sessionDirectory: '../outside' })).toBeUndefined();
   });
 
   it('sanitizes and persists pending native fork state without unrelated fields', () => {

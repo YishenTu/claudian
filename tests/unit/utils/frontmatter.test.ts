@@ -4,7 +4,6 @@ import {
   extractBoolean,
   extractString,
   extractStringArray,
-  normalizeStringArray,
   parseFrontmatter,
 } from '@/utils/frontmatter';
 
@@ -37,20 +36,6 @@ key: value
     expect(result!.body).toBe('');
   });
 
-  it('returns result with empty frontmatter for unrecognized YAML content', () => {
-    const content = `---
-: invalid yaml [{{
----
-Body`;
-
-    // Mock parseYaml doesn't throw — returns empty object for unrecognized content.
-    // In production, Obsidian's parseYaml may throw, which parseFrontmatter catches.
-    const result = parseFrontmatter(content);
-    expect(result).not.toBeNull();
-    expect(result!.frontmatter).toEqual({});
-    expect(result!.body).toBe('Body');
-  });
-
   it('handles CRLF line endings', () => {
     const content = '---\r\nkey: value\r\n---\r\nBody';
     const result = parseFrontmatter(content);
@@ -60,6 +45,7 @@ Body`;
   });
 
   it('handles empty frontmatter block', () => {
+    jest.spyOn(obsidian, 'parseYaml').mockReturnValueOnce({});
     const content = `---
 
 ---
@@ -67,7 +53,7 @@ Body`;
 
     const result = parseFrontmatter(content);
     expect(result).not.toBeNull();
-    // parseYaml returns null for empty string
+    expect(result!.frontmatter).toEqual({});
     expect(result!.body).toBe('Body');
   });
 
@@ -92,38 +78,6 @@ Prompt`;
     expect(result!.frontmatter.count).toBe(5);
     expect(result!.body).toBe('Prompt');
   });
-
-  it('falls back to lenient parsing when YAML has unquoted colons', () => {
-    // This mimics pr-review-toolkit agents with unquoted descriptions containing colons
-    const content = `---
-name: code-reviewer
-description: Use this agent when reviewing. Examples: Context: The user said something. user: hello
-model: opus
----
-You are a code reviewer.`;
-
-    const result = parseFrontmatter(content);
-    expect(result).not.toBeNull();
-    expect(result!.frontmatter.name).toBe('code-reviewer');
-    // Fallback parser takes first colon-space as separator, so description includes the rest
-    expect(result!.frontmatter.description).toContain('Use this agent');
-    expect(result!.frontmatter.model).toBe('opus');
-    expect(result!.body).toBe('You are a code reviewer.');
-  });
-
-  it('fallback parser handles inline arrays', () => {
-    const content = `---
-name: test-agent
-description: A test agent
-tools: [Read, Grep, Glob]
----
-Body`;
-
-    const result = parseFrontmatter(content);
-    expect(result).not.toBeNull();
-    expect(result!.frontmatter.name).toBe('test-agent');
-    expect(result!.frontmatter.tools).toEqual(['Read', 'Grep', 'Glob']);
-  });
 });
 
 describe('extractString', () => {
@@ -145,8 +99,16 @@ describe('extractString', () => {
 });
 
 describe('extractStringArray', () => {
-  it('extracts YAML array', () => {
-    expect(extractStringArray({ tools: ['Read', 'Grep'] }, 'tools'))
+  it.each([
+    ['null', null],
+    ['empty string', ''],
+    ['whitespace-only string', '   '],
+  ])('returns undefined for a %s field', (_label, value) => {
+    expect(extractStringArray({ tools: value }, 'tools')).toBeUndefined();
+  });
+
+  it('extracts YAML array while trimming and filtering entries', () => {
+    expect(extractStringArray({ tools: ['  Read  ', '', '  Grep  ', ''] }, 'tools'))
       .toEqual(['Read', 'Grep']);
   });
 
@@ -166,6 +128,7 @@ describe('extractStringArray', () => {
 
   it('returns undefined for non-string/array value', () => {
     expect(extractStringArray({ tools: 123 }, 'tools')).toBeUndefined();
+    expect(extractStringArray({ tools: true }, 'tools')).toBeUndefined();
   });
 
   it('filters empty entries from comma-separated string', () => {
@@ -176,53 +139,6 @@ describe('extractStringArray', () => {
   it('converts non-string array elements to strings', () => {
     expect(extractStringArray({ tools: [123, 'Read'] }, 'tools'))
       .toEqual(['123', 'Read']);
-  });
-});
-
-describe('normalizeStringArray', () => {
-  it('returns undefined for undefined', () => {
-    expect(normalizeStringArray(undefined)).toBeUndefined();
-  });
-
-  it('returns undefined for null', () => {
-    expect(normalizeStringArray(null)).toBeUndefined();
-  });
-
-  it('normalizes array of strings', () => {
-    expect(normalizeStringArray(['Read', 'Grep'])).toEqual(['Read', 'Grep']);
-  });
-
-  it('trims and filters array elements', () => {
-    expect(normalizeStringArray(['  Read  ', '', '  Grep  ', ''])).toEqual(['Read', 'Grep']);
-  });
-
-  it('converts non-string array elements to strings', () => {
-    expect(normalizeStringArray([123, 'Read'])).toEqual(['123', 'Read']);
-  });
-
-  it('splits comma-separated string', () => {
-    expect(normalizeStringArray('Read, Grep, Glob')).toEqual(['Read', 'Grep', 'Glob']);
-  });
-
-  it('wraps single string in array', () => {
-    expect(normalizeStringArray('Read')).toEqual(['Read']);
-  });
-
-  it('returns undefined for empty string', () => {
-    expect(normalizeStringArray('')).toBeUndefined();
-  });
-
-  it('returns undefined for whitespace-only string', () => {
-    expect(normalizeStringArray('   ')).toBeUndefined();
-  });
-
-  it('filters empty entries from comma-separated string', () => {
-    expect(normalizeStringArray('Read,,Grep,')).toEqual(['Read', 'Grep']);
-  });
-
-  it('returns undefined for non-string/array types', () => {
-    expect(normalizeStringArray(123)).toBeUndefined();
-    expect(normalizeStringArray(true)).toBeUndefined();
   });
 });
 

@@ -61,19 +61,6 @@ describe('ClaudeConversationHistoryService', () => {
       availabilitySpy.mockRestore();
     });
 
-    it('reports an available native session', async () => {
-      const availabilitySpy = jest.spyOn(historyStore, 'locateSDKSession')
-        .mockResolvedValue({ availability: 'available', sessionPath: '/vault/session-1.jsonl' });
-      const service = new ClaudeConversationHistoryService();
-
-      await expect(service.getConversationSessionAvailability(
-        createConversation(),
-        '/vault',
-      )).resolves.toBe('available');
-
-      availabilitySpy.mockRestore();
-    });
-
     it('uses the effective SDK environment when locating a native session', async () => {
       const availabilitySpy = jest.spyOn(historyStore, 'locateSDKSession')
         .mockResolvedValue({ availability: 'available', sessionPath: '/custom/session-1.jsonl' });
@@ -83,29 +70,13 @@ describe('ClaudeConversationHistoryService', () => {
         vaultPath: '/vault',
       };
 
-      await service.getConversationSessionAvailability(
-        createConversation(),
-        '/vault',
-        pathContext,
-      );
-
-      expect(availabilitySpy).toHaveBeenCalledWith('/vault', 'session-1', pathContext);
-      availabilitySpy.mockRestore();
-    });
-
-    it('reports a native session from a previous vault path as relocated', async () => {
-      const availabilitySpy = jest.spyOn(historyStore, 'locateSDKSession')
-        .mockResolvedValue({
-          availability: 'relocated',
-          sessionPath: '/old-vault/session-1.jsonl',
-        });
-      const service = new ClaudeConversationHistoryService();
-
       await expect(service.getConversationSessionAvailability(
         createConversation(),
         '/vault',
-      )).resolves.toBe('relocated');
+        pathContext,
+      )).resolves.toBe('available');
 
+      expect(availabilitySpy).toHaveBeenCalledWith('/vault', 'session-1', pathContext);
       availabilitySpy.mockRestore();
     });
 
@@ -530,7 +501,8 @@ describe('ClaudeConversationHistoryService', () => {
       const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
         .mockResolvedValue({ messages: [], skippedLines: 0 });
 
-      await service.getConversationSessionAvailability(conversation, '/vault');
+      await expect(service.getConversationSessionAvailability(conversation, '/vault'))
+        .resolves.toBe('relocated');
       await service.getConversationSessionAvailability(conversation, '/vault');
       await service.hydrateConversationHistory(conversation, '/vault');
 

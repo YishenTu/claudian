@@ -1,10 +1,8 @@
-const mockGetCatalogFingerprint = jest.fn();
 const mockDiscoverCatalog = jest.fn();
 
 jest.mock('@/providers/grok/runtime/GrokModelCatalogService', () => ({
   GrokModelCatalogService: jest.fn().mockImplementation(() => ({
     discoverCatalog: mockDiscoverCatalog,
-    getCatalogFingerprint: mockGetCatalogFingerprint,
   })),
 }));
 
@@ -55,7 +53,6 @@ jest.mock('@/utils/env', () => ({
 describe('GrokWorkspaceServices', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetCatalogFingerprint.mockResolvedValue('cached-fingerprint');
     mockDiscoverCatalog.mockResolvedValue({
       defaultModelId: 'grok-4.5',
       fingerprint: 'fresh-fingerprint',
@@ -92,7 +89,6 @@ describe('GrokWorkspaceServices', () => {
 
   it('disposes its explicitly requested catalog discovery', async () => {
     let releaseRefresh!: (value: unknown) => void;
-    mockGetCatalogFingerprint.mockResolvedValue('changed-fingerprint');
     mockDiscoverCatalog.mockReturnValue(new Promise(resolve => { releaseRefresh = resolve; }));
     const services = await createGrokWorkspaceServices(createPlugin());
     const dispose = jest.spyOn(services.modelCatalogCoordinator, 'dispose');
@@ -209,7 +205,6 @@ describe('GrokWorkspaceServices', () => {
     await Promise.resolve();
 
     expect(nativeCreate).not.toHaveBeenCalled();
-    expect(mockGetCatalogFingerprint).not.toHaveBeenCalled();
     expect(mockDiscoverCatalog).not.toHaveBeenCalled();
     expect(plugin.mutateSettingsConditionally).not.toHaveBeenCalled();
 

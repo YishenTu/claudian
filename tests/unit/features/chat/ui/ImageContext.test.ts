@@ -1,4 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
+import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 
 import type { ImageAttachment } from '@/core/types';
@@ -24,7 +25,6 @@ beforeAll(() => {
 
 function createMockCallbacks() {
   return {
-    onImagesChanged: jest.fn(),
     onUserImagesChanged: jest.fn(),
   };
 }
@@ -75,41 +75,6 @@ describe('ImageContextManager', () => {
     });
   });
 
-  describe('getAttachedImages', () => {
-    it('should return empty array when no images attached', () => {
-      expect(manager.getAttachedImages()).toEqual([]);
-    });
-
-    it('should return all attached images after setImages', () => {
-      const images = [
-        createImageAttachment({ id: 'img-1', name: 'a.png' }),
-        createImageAttachment({ id: 'img-2', name: 'b.jpg' }),
-      ];
-      manager.setImages(images);
-
-      const result = manager.getAttachedImages();
-      expect(result).toHaveLength(2);
-      expect(result[0].id).toBe('img-1');
-      expect(result[1].id).toBe('img-2');
-    });
-  });
-
-  describe('hasImages', () => {
-    it('should return false when no images', () => {
-      expect(manager.hasImages()).toBe(false);
-    });
-
-    it('should return true after setting images', () => {
-      manager.setImages([createImageAttachment()]);
-      expect(manager.hasImages()).toBe(true);
-    });
-
-    it('should return false after clearing images', () => {
-      manager.setImages([createImageAttachment()]);
-      manager.clearImages();
-      expect(manager.hasImages()).toBe(false);
-    });
-  });
 
   describe('clearImages', () => {
     it('should remove all images', () => {
@@ -119,17 +84,11 @@ describe('ImageContextManager', () => {
       ]);
       expect(manager.hasImages()).toBe(true);
 
+      expect(container.querySelector('.claudian-context-row').hasClass('has-content')).toBe(true);
       manager.clearImages();
       expect(manager.hasImages()).toBe(false);
       expect(manager.getAttachedImages()).toEqual([]);
-    });
-
-    it('should invoke onImagesChanged callback', () => {
-      manager.setImages([createImageAttachment()]);
-      callbacks.onImagesChanged.mockClear();
-
-      manager.clearImages();
-      expect(callbacks.onImagesChanged).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('.claudian-context-row').hasClass('has-content')).toBe(false);
     });
   });
 
@@ -147,11 +106,6 @@ describe('ImageContextManager', () => {
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('new-1');
       expect(result[1].id).toBe('new-2');
-    });
-
-    it('should invoke onImagesChanged callback', () => {
-      manager.setImages([createImageAttachment()]);
-      expect(callbacks.onImagesChanged).toHaveBeenCalledTimes(1);
     });
 
     it('should handle empty array', () => {
@@ -176,17 +130,6 @@ describe('ImageContextManager', () => {
   });
 
   describe('constructor with previewContainerEl', () => {
-    it('should use previewContainerEl when provided', () => {
-      const previewContainer = createMockEl();
-      const { container: c } = createContainerWithInputWrapper();
-      const input = createMockTextArea();
-      const cb = createMockCallbacks();
-
-      const mgr = new ImageContextManager(c, input, cb, previewContainer);
-      expect(mgr).toBeDefined();
-      const trayEl = previewContainer.querySelector('.claudian-context-row');
-      expect(trayEl).not.toBeNull();
-    });
 
     it('should preserve existing preview container content', () => {
       const previewContainer = createMockEl();
@@ -215,28 +158,6 @@ describe('ImageContextManager - Private Helpers', () => {
     const inputEl = createMockTextArea();
     callbacks = createMockCallbacks();
     manager = new ImageContextManager(container, inputEl, callbacks);
-  });
-
-  describe('formatSize', () => {
-    it('should format bytes', () => {
-      expect(manager['formatSize'](500)).toBe('500 B');
-    });
-
-    it('should format kilobytes', () => {
-      expect(manager['formatSize'](2048)).toBe('2.0 KB');
-    });
-
-    it('should format megabytes', () => {
-      expect(manager['formatSize'](5 * 1024 * 1024)).toBe('5.0 MB');
-    });
-
-    it('should format fractional KB', () => {
-      expect(manager['formatSize'](1536)).toBe('1.5 KB');
-    });
-
-    it('should format 0 bytes', () => {
-      expect(manager['formatSize'](0)).toBe('0 B');
-    });
   });
 
   describe('getMediaType', () => {
@@ -291,19 +212,6 @@ describe('ImageContextManager - Private Helpers', () => {
     it('should return false for image type but unsupported extension', () => {
       const file = { type: 'image/bmp', name: 'test.bmp' } as File;
       expect(manager['isImageFile'](file)).toBe(false);
-    });
-  });
-
-  describe('generateId', () => {
-    it('should generate unique IDs', () => {
-      const id1 = manager['generateId']();
-      const id2 = manager['generateId']();
-      expect(id1).not.toBe(id2);
-    });
-
-    it('should start with img- prefix', () => {
-      const id = manager['generateId']();
-      expect(id.startsWith('img-')).toBe(true);
     });
   });
 
@@ -365,30 +273,40 @@ describe('ImageContextManager - Private Helpers', () => {
     });
 
     it('should add valid image file and invoke callback', async () => {
-      const mockBuffer = new ArrayBuffer(4);
       const file = {
         name: 'test.png',
         type: 'image/png',
-        size: 1024,
-        arrayBuffer: jest.fn().mockResolvedValue(mockBuffer),
+        size: 5,
+        arrayBuffer: jest.fn().mockResolvedValue(new TextEncoder().encode('hello').buffer),
       } as unknown as File;
+      const now = jest.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
 
-      const callbacks = createMockCallbacks();
-      const { container } = createContainerWithInputWrapper();
-      const inputEl = createMockTextArea();
-      const mgr: any = new ImageContextManager(container, inputEl, callbacks);
+      try {
+        const result = await manager['addImageFromFile'](file, 'paste');
+        expect(result).toBe(true);
+        expect(manager.hasImages()).toBe(true);
+        expect(callbacks.onUserImagesChanged).toHaveBeenCalledTimes(1);
 
-      const result = await mgr['addImageFromFile'](file, 'paste');
-      expect(result).toBe(true);
-      expect(mgr.hasImages()).toBe(true);
-      expect(callbacks.onImagesChanged).toHaveBeenCalled();
+        const images = manager.getAttachedImages();
+        expect(images).toHaveLength(1);
+        expect(images[0]).toEqual({
+          id: expect.stringMatching(/^img-/),
+          name: 'test.png',
+          mediaType: 'image/png',
+          data: 'aGVsbG8=',
+          size: 5,
+          source: 'paste',
+        });
 
-      const images = mgr.getAttachedImages();
-      expect(images).toHaveLength(1);
-      expect(images[0].name).toBe('test.png');
-      expect(images[0].mediaType).toBe('image/png');
-      expect(images[0].size).toBe(1024);
-      expect(images[0].source).toBe('paste');
+        expect(await manager['addImageFromFile'](file, 'paste')).toBe(true);
+        const repeatedImages = manager.getAttachedImages();
+        expect(repeatedImages).toHaveLength(2);
+        expect(repeatedImages[1].id).toMatch(/^img-/);
+        expect(repeatedImages[1].id).not.toBe(images[0].id);
+        expect(callbacks.onUserImagesChanged).toHaveBeenCalledTimes(2);
+      } finally {
+        now.mockRestore();
+      }
     });
 
     it('should handle arrayBuffer failure gracefully', async () => {
@@ -554,10 +472,6 @@ describe('ImageContextManager - Private Helpers', () => {
   });
 
   describe('Paste handler', () => {
-    it('setupPasteHandler should register paste event on inputEl', () => {
-      const input = manager['inputEl'];
-      expect(input.getEventListenerCount('paste')).toBe(1);
-    });
 
     it('paste handler should process image items', async () => {
       const addImageSpy = jest.spyOn(manager as any, 'addImageFromFile').mockResolvedValue(true);
@@ -658,7 +572,6 @@ describe('ImageContextManager - Private Helpers', () => {
       }
 
       expect(manager.getAttachedImages()).toEqual([]);
-      expect(callbacks.onImagesChanged).not.toHaveBeenCalled();
       expect(callbacks.onUserImagesChanged).not.toHaveBeenCalled();
     });
   });
@@ -685,15 +598,6 @@ describe('ImageContextManager - Private Helpers', () => {
   });
 
   describe('Image context rendering', () => {
-    it('updateImagePreview should hide preview when no images', () => {
-      manager['updateImagePreview']();
-      expect(manager['contextTray']['containerEl'].hasClass('has-content')).toBe(false);
-    });
-
-    it('updateImagePreview should show preview when images exist', () => {
-      manager.setImages([createImageAttachment()]);
-      expect(manager['contextTray']['containerEl'].hasClass('has-content')).toBe(true);
-    });
 
     it('opens an image preview from the rendered attachment control and closes it on destroy', () => {
       const overlayEl = createMockEl();
@@ -725,12 +629,21 @@ describe('ImageContextManager - Private Helpers', () => {
       }
     });
 
-    it('renders a compact image pill without a thumbnail preview', () => {
-      manager.setImages([createImageAttachment({ id: 'img-1', name: 'photo.png', size: 2048 })]);
+    it.each([
+      [500, '500 B'],
+      [2048, '2.0 KB'],
+      [5 * 1024 * 1024, '5.0 MB'],
+      [1536, '1.5 KB'],
+      [0, '0 B'],
+    ])('renders a compact image pill with size %s and no thumbnail', (size, expectedSize) => {
+      manager.setImages([createImageAttachment({ id: 'img-1', name: 'photo.png', size })]);
 
       const trayEl = manager['contextTray']['containerEl'];
+      expect(trayEl.hasClass('has-content')).toBe(true);
       const chipEl = trayEl.querySelector('.claudian-context-chip--image');
       expect(chipEl).not.toBeNull();
+      expect(chipEl.querySelector('.claudian-context-chip-main').getAttribute('title'))
+        .toBe(`photo.png · ${expectedSize}`);
 
       const thumbEl = chipEl.querySelector('.claudian-context-chip-thumbnail');
       expect(thumbEl).toBeNull();
@@ -766,8 +679,6 @@ describe('ImageContextManager - Private Helpers', () => {
       ]);
       expect(mgr.getAttachedImages()).toHaveLength(2);
 
-      cb.onImagesChanged.mockClear();
-
       const trayEl = mgr['contextTray']['containerEl'];
       const firstChip = trayEl.querySelector('.claudian-context-chip--image');
       const removeEl = firstChip.querySelector('.claudian-context-chip-remove');
@@ -775,25 +686,8 @@ describe('ImageContextManager - Private Helpers', () => {
 
       expect(mgr.getAttachedImages()).toHaveLength(1);
       expect(mgr.getAttachedImages()[0].id).toBe('img-2');
-      expect(cb.onImagesChanged).toHaveBeenCalled();
+      expect(cb.onUserImagesChanged).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe('fileToBase64', () => {
-    it('should convert file to base64 string', async () => {
-      const textEncoder = new TextEncoder();
-      const bytes = textEncoder.encode('hello');
-      const mockBuffer = bytes.buffer;
-      const file = {
-        arrayBuffer: jest.fn().mockResolvedValue(mockBuffer),
-      } as unknown as File;
-
-      const result = await manager['fileToBase64'](file);
-      expect(typeof result).toBe('string');
-      expect(result.length).toBeGreaterThan(0);
-      // Verify it's valid base64
-      const decoded = Buffer.from(result, 'base64').toString();
-      expect(decoded).toBe('hello');
-    });
-  });
 });

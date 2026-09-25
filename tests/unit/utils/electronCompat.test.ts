@@ -3,14 +3,17 @@ import { patchSetMaxListenersForElectron } from '../../../src/utils/electronComp
 describe('patchSetMaxListenersForElectron', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const events = require('events');
+  let originalDefaultMaxListeners: number;
   let originalSetMaxListeners: typeof events.setMaxListeners;
 
   beforeEach(() => {
     originalSetMaxListeners = events.setMaxListeners;
+    originalDefaultMaxListeners = events.defaultMaxListeners;
   });
 
   afterEach(() => {
     events.setMaxListeners = originalSetMaxListeners;
+    events.defaultMaxListeners = originalDefaultMaxListeners;
   });
 
   it('should not throw when setMaxListeners receives a browser-like AbortSignal', () => {
@@ -44,7 +47,9 @@ describe('patchSetMaxListenersForElectron', () => {
   it('should still work when called without targets (sets default)', () => {
     patchSetMaxListenersForElectron();
 
-    expect(() => events.setMaxListeners(20)).not.toThrow();
+    events.setMaxListeners(20);
+
+    expect(events.defaultMaxListeners).toBe(20);
   });
 
   it('should re-throw errors unrelated to eventTargets', () => {

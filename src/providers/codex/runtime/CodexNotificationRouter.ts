@@ -45,9 +45,6 @@ import type {
 } from './codexAppServerTypes';
 
 type ChunkEmitter = (chunk: StreamChunk) => void;
-type TurnMetadataListener = (update: {
-  assistantMessageId?: string;
-}) => void;
 
 interface RawToolResult {
   content: string;
@@ -151,7 +148,6 @@ export class CodexNotificationRouter {
 
   constructor(
     private readonly emit: ChunkEmitter,
-    private readonly onTurnMetadata?: TurnMetadataListener,
     private readonly workingDirectory?: string,
   ) {}
 
@@ -1876,12 +1872,6 @@ export class CodexNotificationRouter {
 
   #onTurnCompleted(params: TurnCompletedNotification): void {
     const turn = params.turn;
-
-    if (turn.status === 'completed') {
-      this.onTurnMetadata?.({
-        assistantMessageId: turn.id,
-      });
-    }
 
     const terminalError = turn.status === 'failed';
     this.#flushDeferredRawExecCalls(terminalError);

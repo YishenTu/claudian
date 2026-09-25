@@ -2,7 +2,6 @@ import {
   extractACPSessionModelState,
   extractACPSessionModeState,
   extractACPSessionThoughtLevelState,
-  flattenACPSessionConfigSelectOptions,
   resolveACPLoadSessionId,
 } from '../../../../src/providers/acp';
 
@@ -15,29 +14,7 @@ describe('AcpSessionConfig', () => {
       .toThrow(/different session id/i);
   });
 
-  it('flattens grouped select options', () => {
-    expect(flattenACPSessionConfigSelectOptions([
-      {
-        group: 'Anthropic',
-        name: 'Anthropic',
-        options: [
-          { name: 'Claude Sonnet 4', value: 'anthropic/claude-sonnet-4' },
-        ],
-      },
-      {
-        group: 'OpenAI',
-        name: 'OpenAI',
-        options: [
-          { name: 'GPT-5', value: 'openai/gpt-5' },
-        ],
-      },
-    ])).toEqual([
-      { name: 'Claude Sonnet 4', value: 'anthropic/claude-sonnet-4' },
-      { name: 'GPT-5', value: 'openai/gpt-5' },
-    ]);
-  });
-
-  it('prefers ACP config model options over session model metadata', () => {
+  it('prefers grouped ACP config model options in order over session model metadata', () => {
     expect(extractACPSessionModelState({
       configOptions: [
         {
@@ -46,8 +23,19 @@ describe('AcpSessionConfig', () => {
           id: 'selected_model',
           name: 'Model',
           options: [
-            { name: 'Anthropic/Claude Sonnet 4', value: 'anthropic/claude-sonnet-4' },
-            { name: 'Anthropic/Claude Sonnet 4 (high)', value: 'anthropic/claude-sonnet-4/high' },
+            {
+              group: 'Anthropic',
+              name: 'Anthropic',
+              options: [
+                { name: 'Anthropic/Claude Sonnet 4', value: 'anthropic/claude-sonnet-4' },
+                { name: 'Anthropic/Claude Sonnet 4 (high)', value: 'anthropic/claude-sonnet-4/high' },
+              ],
+            },
+            {
+              group: 'OpenAI',
+              name: 'OpenAI',
+              options: [{ name: 'OpenAI/GPT-5', value: 'openai/gpt-5' }],
+            },
           ],
           type: 'select',
         },
@@ -62,6 +50,7 @@ describe('AcpSessionConfig', () => {
       availableModels: [
         { id: 'anthropic/claude-sonnet-4', name: 'Anthropic/Claude Sonnet 4' },
         { id: 'anthropic/claude-sonnet-4/high', name: 'Anthropic/Claude Sonnet 4 (high)' },
+        { id: 'openai/gpt-5', name: 'OpenAI/GPT-5' },
       ],
       currentModelId: 'anthropic/claude-sonnet-4/high',
     });

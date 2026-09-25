@@ -297,9 +297,16 @@ describe('ClaudianSettingTab display settings', () => {
     plugin.settings.titleGenerationModel = '';
     renderSettingsTab(tab);
     expect(within(document.body).getByRole('status').textContent).toBe(t('settings.titleModel.unavailableWarning'));
-    const menu = within(document.body).getByRole('combobox', { name: t('settings.titleModel.name') });
+    const menu = within(document.body).getByRole('combobox', { name: t('settings.titleModel.name') }) as HTMLSelectElement;
+    expect(within(menu).queryByRole('option', { name: /Auto/ })).toBeNull();
+    expect(menu.value).toBe('');
+    expect(menu.options[0].disabled).toBe(true);
+    expect(menu.required).toBe(true);
+    expect(plugin.mutateSettings).not.toHaveBeenCalled();
+    expect((await axe(menu.parentElement!)).violations).toEqual([]);
     fireEvent.change(menu, { target: { value: 'claude-code/sonnet' } });
     await waitFor(() => expect(within(document.body).queryByRole('status')).toBeNull());
+    await waitFor(() => expect(plugin.settings.titleGenerationModel).toBe('claude-code/sonnet'));
     eligibility.mockReturnValue(null);
     tab.refreshModelOptions();
     expect(within(document.body).getByRole('status').textContent).toBe(t('settings.titleModel.unavailableWarning'));
@@ -314,25 +321,6 @@ describe('ClaudianSettingTab display settings', () => {
     plugin.settings.enableAutoTitleGeneration = false;
     renderSettingsTab(tab);
     expect(within(document.body).queryByRole('status')).toBeNull();
-  });
-
-  it('requires a title model choice and persists an explicit selection', async () => {
-    jest.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([
-      { value: 'claude-code/sonnet', label: 'Claude: Sonnet' },
-    ]);
-    const { tab, plugin } = createTab(true);
-    plugin.settings.enableAutoTitleGeneration = true;
-    plugin.settings.titleGenerationModel = '';
-    renderSettingsTab(tab);
-    const menu = within(document.body).getByRole('combobox', { name: t('settings.titleModel.name') }) as HTMLSelectElement;
-    expect(within(menu).queryByRole('option', { name: /Auto/ })).toBeNull();
-    expect(menu.value).toBe('');
-    expect(menu.options[0].disabled).toBe(true);
-    expect(menu.required).toBe(true);
-    expect(plugin.mutateSettings).not.toHaveBeenCalled();
-    expect((await axe(menu.parentElement!)).violations).toEqual([]);
-    fireEvent.change(menu, { target: { value: 'claude-code/sonnet' } });
-    await waitFor(() => expect(plugin.settings.titleGenerationModel).toBe('claude-code/sonnet'));
   });
 
   it('renders the custom settings surface through a declarative definition', () => {

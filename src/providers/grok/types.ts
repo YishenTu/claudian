@@ -35,12 +35,6 @@ export function parseGrokProviderState(value: unknown): GrokProviderState {
   };
 }
 
-export function buildGrokProviderState(
-  sessionDirectory?: string | null,
-): GrokProviderState | undefined {
-  return buildPersistedGrokProviderState({ sessionDirectory: sessionDirectory ?? undefined });
-}
-
 export function buildPersistedGrokProviderState(
   state: GrokProviderState,
 ): GrokProviderState | undefined {

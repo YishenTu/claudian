@@ -14,16 +14,6 @@ describe('keyboardNavigation', () => {
   });
 
   describe('parseNavMappings', () => {
-    it('should parse valid mappings', () => {
-      const result = parseNavMappings('map w scrollUp\nmap s scrollDown\nmap i focusInput');
-
-      expect(result.settings).toEqual({
-        scrollUp: 'w',
-        scrollDown: 's',
-        focusInput: 'i',
-      });
-    });
-
     it('should ignore empty lines', () => {
       const result = parseNavMappings('\nmap w scrollUp\n\nmap s scrollDown\nmap i focusInput\n');
 

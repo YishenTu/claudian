@@ -788,7 +788,7 @@ function setGenericToolHeaderRight(statusEl: HTMLElement, toolCall: ToolCallInfo
   setToolStatus(statusEl, toolCall.status);
 }
 
-export function renderTodoWriteResult(
+function renderTodoWriteResult(
   container: HTMLElement,
   input: Record<string, unknown>
 ): void {

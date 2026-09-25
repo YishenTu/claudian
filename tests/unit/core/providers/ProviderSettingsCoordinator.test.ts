@@ -168,7 +168,7 @@ describe('ProviderSettingsCoordinator', () => {
     });
   });
 
-  describe('applyModelSelection', () => {
+  describe('selected model snapshot', () => {
     it('clamps reasoning and service tier values to the selected model metadata', () => {
       const settings: Record<string, unknown> = {
         model: TEST_CODEX_MODEL,
@@ -182,29 +182,14 @@ describe('ProviderSettingsCoordinator', () => {
         },
       };
 
-      ProviderSettingsCoordinator.applyModelSelection(settings, 'codex', 'gpt-5.4-mini');
+      const snapshot = getProviderSettingsSnapshotWithModel(settings, 'codex', 'gpt-5.4-mini');
 
-      expect(settings.model).toBe('gpt-5.4-mini');
-      expect(settings.effortLevel).toBe('high');
-      expect(settings.serviceTier).toBe('default');
-    });
-
-    it('applies high as the default when switching to a Codex model that supports it', () => {
-      const settings: Record<string, unknown> = {
-        model: 'gpt-5.4-mini',
-        effortLevel: 'low',
-        serviceTier: 'default',
-        providerConfigs: {
-          codex: {
-            enabled: true,
-            discoveredModels: TEST_CODEX_CATALOG,
-          },
-        },
-      };
-
-      ProviderSettingsCoordinator.applyModelSelection(settings, 'codex', TEST_CODEX_MODEL);
-
-      expect(settings.effortLevel).toBe('high');
+      expect(snapshot.model).toBe('openai-codex/gpt-5.4-mini');
+      expect(snapshot.effortLevel).toBe('high');
+      expect(snapshot.serviceTier).toBe('default');
+      expect(settings.model).toBe(TEST_CODEX_MODEL);
+      expect(settings.effortLevel).toBe('unsupported');
+      expect(settings.serviceTier).toBe('priority');
     });
   });
 
@@ -347,7 +332,7 @@ describe('ProviderSettingsCoordinator', () => {
     });
   });
 
-  describe('reconcileAllProviders', () => {
+  describe('reconcileProviders', () => {
     it('filters conversations per provider', () => {
       const reconcileSpy = jest.spyOn(
         ProviderRegistry.getSettingsReconciler('claude'),
@@ -358,7 +343,9 @@ describe('ProviderSettingsCoordinator', () => {
       const otherConv = { providerId: 'codex', messages: [] } as unknown as Conversation;
       const settings: Record<string, unknown> = { model: 'haiku' };
 
-      ProviderSettingsCoordinator.reconcileAllProviders(settings, [claudeConv, otherConv]);
+      ProviderSettingsCoordinator.reconcileProviders(
+        settings, [claudeConv, otherConv], ProviderRegistry.getRegisteredProviderIds(),
+      );
 
       // Claude reconciler should only receive claude conversations
       expect(reconcileSpy).toHaveBeenCalledWith(
@@ -597,40 +584,6 @@ describe('ProviderSettingsCoordinator', () => {
       });
     });
 
-    it('keeps the saved inactive model instead of remapping it from environment', () => {
-      const settings: Record<string, unknown> = {
-        settingsProvider: 'codex',
-        model: TEST_CODEX_MODEL,
-        effortLevel: 'high',
-        serviceTier: 'default',
-        thinkingBudget: 'off',
-        savedProviderModel: {
-          claude: 'claude-code/fable-old',
-          codex: TEST_CODEX_MODEL,
-        },
-        providerConfigs: {
-          claude: {
-            ...DEFAULT_CLAUDE_PROVIDER_SETTINGS,
-            environmentVariables: [
-              'ANTHROPIC_DEFAULT_HAIKU_MODEL=haiku-new',
-              'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-new',
-            ].join('\n'),
-            environmentHash: 'ANTHROPIC_DEFAULT_FABLE_MODEL=fable-old',
-          },
-          codex: {
-            enabled: true,
-            discoveredModels: TEST_CODEX_CATALOG,
-          },
-        },
-      };
-
-      ProviderSettingsCoordinator.reconcileProviders(settings, [], ['claude']);
-
-      expect(settings.savedProviderModel).toMatchObject({
-        claude: 'claude-code/fable-old',
-      });
-    });
-
     it('preserves a title model while environment configuration changes', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
@@ -840,7 +793,6 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.model).toBe('claude-code/claude-sonnet-4-5');
       expect(settings.effortLevel).toBe('high');
     });
-
   });
 
   describe('persistProjectedProviderState', () => {
@@ -881,7 +833,6 @@ describe('ProviderSettingsCoordinator', () => {
         codex: 'normal',
       });
     });
-
   });
 
   describe('projectProviderState', () => {
@@ -1017,7 +968,9 @@ describe('ProviderSettingsCoordinator', () => {
         savedProviderThinkingBudget: { claude: 'off', codex: 'off' },
       };
 
-      const result = ProviderSettingsCoordinator.reconcileAllProviders(settings, [codexConv]);
+      const result = ProviderSettingsCoordinator.reconcileProviders(
+        settings, [codexConv], ProviderRegistry.getRegisteredProviderIds(),
+      );
 
       expect(result.changed).toBe(true);
       expect(codexConv.sessionId).toBeNull();

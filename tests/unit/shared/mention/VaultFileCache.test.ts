@@ -26,31 +26,9 @@ describe('VaultFileCache', () => {
 
       expect(files).toEqual(mockFiles);
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
-    });
 
-    it('should return cached files on subsequent calls without re-fetching', () => {
-      const cache = new VaultFileCache(mockApp);
-      cache.getFiles();
-      cache.getFiles();
-
+      expect(cache.getFiles()).toBe(files);
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
-    });
-
-    it('should re-fetch when marked dirty', () => {
-      const cache = new VaultFileCache(mockApp);
-      cache.getFiles();
-      cache.markDirty();
-      cache.getFiles();
-
-      expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(2);
-    });
-
-    it('should return the same array reference (no defensive copy)', () => {
-      const cache = new VaultFileCache(mockApp);
-      const files1 = cache.getFiles();
-      const files2 = cache.getFiles();
-
-      expect(files1).toBe(files2);
     });
 
     it('should return stale files if reload fails', () => {
@@ -112,28 +90,13 @@ describe('VaultFileCache', () => {
       jest.runAllTimers();
 
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
-    });
-
-    it('should not re-initialize if already initialized', () => {
-      const cache = new VaultFileCache(mockApp);
-      cache.initializeInBackground();
-      jest.runAllTimers();
+      expect(cache.getFiles()).toEqual(mockFiles);
+      expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
 
       cache.initializeInBackground();
       jest.runAllTimers();
 
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
-    });
-
-    it('should handle errors gracefully', () => {
-      mockApp.vault.getFiles = jest.fn(() => {
-        throw new Error('Vault error');
-      });
-
-      const cache = new VaultFileCache(mockApp);
-      cache.initializeInBackground();
-
-      expect(() => jest.runAllTimers()).not.toThrow();
     });
 
     it('should invoke onLoadError callback when initialization fails', () => {
@@ -157,22 +120,11 @@ describe('VaultFileCache', () => {
 
       const cache = new VaultFileCache(mockApp);
       cache.initializeInBackground();
-      jest.runOnlyPendingTimers();
+      expect(() => jest.runAllTimers()).not.toThrow();
 
       cache.initializeInBackground();
       jest.runOnlyPendingTimers();
 
-      expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
-    });
-
-    it('should make cache available after initialization', () => {
-      const cache = new VaultFileCache(mockApp);
-      cache.initializeInBackground();
-      jest.runAllTimers();
-
-      const files = cache.getFiles();
-
-      expect(files).toEqual(mockFiles);
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
     });
   });
@@ -181,15 +133,16 @@ describe('VaultFileCache', () => {
     it('should force re-fetch on next getFiles call', () => {
       const cache = new VaultFileCache(mockApp);
       cache.getFiles();
+      expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
 
       const newFiles = [{ path: 'note3.md', name: 'note3.md' } as TFile];
-      mockApp.vault.getFiles = jest.fn().mockReturnValue(newFiles);
+      jest.mocked(mockApp.vault.getFiles).mockReturnValue(newFiles);
 
       cache.markDirty();
       const files = cache.getFiles();
 
       expect(files).toEqual(newFiles);
-      expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
+      expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(2);
     });
   });
 });

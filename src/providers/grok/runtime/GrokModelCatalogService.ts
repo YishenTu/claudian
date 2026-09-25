@@ -66,10 +66,6 @@ export interface GrokModelCatalogServiceLike {
     signal?: AbortSignal,
     context?: ProviderTransitionOwnerContext,
   ): Promise<GrokModelCatalogDiscoveryResult>;
-  getCatalogFingerprint(
-    signal?: AbortSignal,
-    context?: ProviderTransitionOwnerContext,
-  ): Promise<string>;
 }
 
 export interface GrokModelCatalogServiceOptions {
@@ -155,14 +151,6 @@ export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
   ) {
     this.runner = options.runner ?? new SpawnGrokCatalogCommandRunner();
     this.probe = options.probe ?? new GrokModelCatalogProbe();
-  }
-
-  async getCatalogFingerprint(
-    signal?: AbortSignal,
-    ownerContext?: ProviderTransitionOwnerContext,
-  ): Promise<string> {
-    const context = await this.#resolveCommandContext(ownerContext);
-    return this.#resolveFingerprint(context, signal);
   }
 
   async discoverCatalog(

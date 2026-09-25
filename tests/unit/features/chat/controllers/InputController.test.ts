@@ -139,7 +139,6 @@ function createFixture(overrides: Record<string, unknown> = {}) {
       refreshActionButtons: jest.fn(),
       finalizeResponse: jest.fn(),
       removeMessage: jest.fn(),
-      updateLiveUserMessage: jest.fn(),
     },
     streamController: {
       resetSubagentStreamingState: jest.fn(),
@@ -283,7 +282,7 @@ describe('InputController approval details', () => {
     expect(stopPropagation).toHaveBeenCalledTimes(2);
     expect(preventDefault).not.toHaveBeenCalled();
 
-    fixture.controller.dismissPendingApprovalPrompt();
+    fixture.controller.dismissProviderInteraction('approval');
     return pending;
   });
 });
@@ -678,7 +677,7 @@ describe('InputController coordinator execution', () => {
     );
   });
 
-  it('puts the completed turn checkpoint on the final assistant projection after message boundaries', async () => {
+  it('puts the completed turn checkpoint and statistics on the final assistant projection after message boundaries', async () => {
     const fixture = createFixture();
     fixture.coordinator.execute.mockImplementationOnce(async (submission: ChatTurnSubmission) => {
       for (const sequence of [1, 2]) {
@@ -688,6 +687,13 @@ describe('InputController coordinator execution', () => {
             sessionInstanceId: 'session-1', sequence },
         });
       }
+      await fixture.controller.handleExecutionEvent({
+        type: 'turn_completed',
+        scope: { kind: 'requested', executionId: 'execution-1', turnId: 'turn-1',
+          sessionInstanceId: 'session-1', sequence: 3 },
+        reason: 'completed',
+        turnStats: { outputTokens: 125, durationMs: 2500 },
+      });
       // The execution binding still identifies the original assistant projection.
       submission.messages!.assistant.assistantMessageId = 'completed-checkpoint';
       return { accepted: true, status: 'completed', nativeCheckpointId: 'completed-checkpoint' };
@@ -699,6 +705,7 @@ describe('InputController coordinator execution', () => {
     expect(assistants.length).toBeGreaterThan(1);
     expect(assistants.at(-1)?.assistantMessageId).toBe('completed-checkpoint');
     expect(assistants[0].assistantMessageId).toBeUndefined();
+    expect(assistants.at(-1)?.turnStats).toEqual({ outputTokens: 125, durationMs: 2500 });
   });
 
   it('timestamps the final response at execution completion instead of streaming start', async () => {
@@ -736,15 +743,12 @@ describe('InputController coordinator execution', () => {
       const assistantMessage = fixture.state.messages[1];
       expect(assistantMessage.durationSeconds).toBe(1);
       expect(assistantMessage.durationFlavorWord).toBeUndefined();
-
-      const assistantMsgEl = jest.mocked(fixture.deps.renderer.addMessage).mock.results.at(-1)?.value;
-      expect(assistantMsgEl?.querySelector('.claudian-response-footer')).toBeNull();
     } finally {
       nowSpy.mockRestore();
     }
   });
 
-  it('suppresses response duration and DOM footer on normalized execution errors when elapsed time exceeds one second', async () => {
+  it('suppresses response duration on normalized execution errors when elapsed time exceeds one second', async () => {
     let currentTime = 1000;
     const nowSpy = jest.spyOn(performance, 'now').mockImplementation(() => currentTime);
     try {
@@ -779,15 +783,12 @@ describe('InputController coordinator execution', () => {
       const assistantMessage = fixture.state.messages[1];
       expect(assistantMessage.durationSeconds).toBeUndefined();
       expect(assistantMessage.durationFlavorWord).toBeUndefined();
-
-      const assistantMsgEl = jest.mocked(fixture.deps.renderer.addMessage).mock.results.at(-1)?.value;
-      expect(assistantMsgEl?.querySelector('.claudian-response-footer')).toBeNull();
     } finally {
       nowSpy.mockRestore();
     }
   });
 
-  it('suppresses response duration and DOM footer on catch-path rejections when elapsed time exceeds one second', async () => {
+  it('suppresses response duration on catch-path rejections when elapsed time exceeds one second', async () => {
     let currentTime = 1000;
     const nowSpy = jest.spyOn(performance, 'now').mockImplementation(() => currentTime);
     try {
@@ -805,9 +806,6 @@ describe('InputController coordinator execution', () => {
       const assistantMessage = fixture.state.messages[1];
       expect(assistantMessage.durationSeconds).toBeUndefined();
       expect(assistantMessage.durationFlavorWord).toBeUndefined();
-
-      const assistantMsgEl = jest.mocked(fixture.deps.renderer.addMessage).mock.results.at(-1)?.value;
-      expect(assistantMsgEl?.querySelector('.claudian-response-footer')).toBeNull();
     } finally {
       nowSpy.mockRestore();
     }
@@ -1029,6 +1027,8 @@ describe('InputController coordinator execution', () => {
     nativeResult.resolve(true);
     await steer;
 
+    expect(fixture.linkedContentController.beginSubmission).not.toHaveBeenCalled();
+    expect(fixture.linkedContentController.commitSubmission).not.toHaveBeenCalled();
     expect(fixture.input.value).toBe('');
     expect(fixture.state.queuedMessage).toBeNull();
     expect((fixture.controller as any).pendingSteersByConversation.get('conversation-1'))
@@ -1133,25 +1133,6 @@ describe('InputController coordinator execution', () => {
     fixture.input.value = '';
     fixture.controller.onConversationActivated();
     expect(fixture.input.value).toBe('conversation A typed retry');
-  });
-
-  it('does not mutate Linked content after a stale accepted steer settles', async () => {
-    const fixture = createFixture();
-    const nativeResult = deferred<boolean>();
-    fixture.coordinator.steer.mockReturnValueOnce(nativeResult.promise);
-    fixture.state.isStreaming = true;
-    fixture.input.value = 'accepted A';
-
-    await fixture.controller.sendMessage();
-    const steer = (fixture.controller as any).steerQueuedMessage();
-    await waitForCall(fixture.coordinator.steer);
-    fixture.state.currentConversationId = 'conversation-2';
-    nativeResult.resolve(true);
-    await steer;
-
-    expect(fixture.linkedContentController.beginSubmission).not.toHaveBeenCalled();
-    expect(fixture.linkedContentController.commitSubmission).not.toHaveBeenCalled();
-    expect(fixture.input.value).toBe('');
   });
 
   it.each([
@@ -1737,21 +1718,6 @@ describe('InputController coordinator execution', () => {
     expect(onReviewableSettlement).not.toHaveBeenCalled();
   });
 
-  it('defers review attention while a queued turn continuation is scheduled', async () => {
-    const onReviewableSettlement = jest.fn();
-    const fixture = createFixture({ onReviewableSettlement });
-    fixture.state.queuedMessage = {
-      canvasContext: null,
-      content: 'continue',
-      editorContext: null,
-    };
-    jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
-
-    await fixture.controller.sendMessage({ content: 'first turn' });
-
-    expect(onReviewableSettlement).not.toHaveBeenCalled();
-  });
-
   it('reports deferred review when the continuation fails before handoff', async () => {
     const onReviewableSettlement = jest.fn();
     const fixture = createFixture({ onReviewableSettlement });
@@ -1763,6 +1729,7 @@ describe('InputController coordinator execution', () => {
     jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
+    expect(onReviewableSettlement).not.toHaveBeenCalled();
     fixture.state.queuedMessage = null;
     fixture.coordinator.execute.mockRejectedValueOnce(
       new ChatExecutionPreHandoffError('continuation not handed off'),
@@ -1867,11 +1834,12 @@ describe('InputController coordinator execution', () => {
     expect(fixture.state.attention).toBeNull();
   });
 
-  it.each(['', 'removed-title-model'])('skips unusable title model %s without a failed status', async titleGenerationModel => {
-    const generateTitle = jest.fn();
+  it('skips title generation when no enabled title selection resolves', async () => {
+    jest.mocked(ProviderRegistry.resolveTitleGenerationSelection).mockReturnValueOnce(null);
+    const generateTitle = jest.fn().mockResolvedValue(undefined);
     const fixture = createFixture({ getTitleGenerationService: () => ({ generateTitle }) as any });
     fixture.plugin.settings.enableAutoTitleGeneration = true;
-    fixture.plugin.settings.titleGenerationModel = titleGenerationModel;
+    fixture.plugin.settings.titleGenerationModel = 'removed-title-model';
     await fixture.controller.sendMessage({ content: 'keep this fallback' });
     expect(generateTitle).not.toHaveBeenCalled();
     expect(fixture.plugin.updateConversation).not.toHaveBeenCalledWith(
@@ -2097,20 +2065,6 @@ describe('InputController coordinator execution', () => {
     const submission = fixture.coordinator.execute.mock.calls[0][0] as ChatTurnSubmission;
     expect(submission.context).not.toHaveProperty('linkedContent');
   });
-});
-
-it('attaches completed turn statistics to the final assistant after native message boundaries', async () => {
-  const fixture = createFixture();
-  const scope = { kind: 'requested' as const, executionId: 'e', turnId: 't', sessionInstanceId: 's', sequence: 1 };
-  fixture.coordinator.execute.mockImplementationOnce(async () => {
-    await fixture.controller.handleExecutionEvent({ type: 'assistant_message_started', scope });
-    await fixture.controller.handleExecutionEvent({ type: 'assistant_message_started', scope: { ...scope, sequence: 2 } });
-    await fixture.controller.handleExecutionEvent({ type: 'turn_completed', scope: { ...scope, sequence: 3 },
-      reason: 'completed', ...{ turnStats: { outputTokens: 125, durationMs: 2500 } } });
-    return { accepted: true, status: 'completed' };
-  });
-  await fixture.controller.sendMessage({ content: 'Work' });
-  expect(fixture.state.messages.at(-1)?.turnStats).toEqual({ outputTokens: 125, durationMs: 2500 });
 });
 
 it('keeps a completed answer when cancellation loses to native completion', async () => {

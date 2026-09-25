@@ -1159,25 +1159,6 @@ describe('ChatExecutionCoordinator', () => {
     await expect(resultPromise).resolves.toMatchObject({ status: 'invalidated' });
   });
 
-  it('surfaces ambiguous steer errors for live-event reconciliation', async () => {
-    const harness = createHarness();
-    const { session, run, resultPromise } = await beginExecution(harness);
-    const steerError = new Error('steer transport closed');
-    jest.spyOn(session, 'steer').mockRejectedValueOnce(steerError);
-
-    await expect(harness.coordinator.steer(createSubmission({
-      submissionId: 'ambiguous-steer',
-    }))).rejects.toBe(steerError);
-
-    run.events.push({
-      type: 'turn_completed',
-      scope: requestedScope(session, run, 1),
-      reason: 'completed',
-    });
-    run.events.end();
-    await resultPromise;
-  });
-
   it('lets an early live provider event authoritatively accept a steer before delayed false', async () => {
     const harness = createHarness();
     const { session, resultPromise } = await beginExecution(harness);
@@ -1233,7 +1214,7 @@ describe('ChatExecutionCoordinator', () => {
     await expect(resultPromise).resolves.toMatchObject({ status: 'invalidated' });
   });
 
-  it('enriches an acknowledged steer with the later exact native user ID once', async () => {
+  it('retains acknowledged steer correlation until the first live event', async () => {
     const harness = createHarness();
     const { session, run, resultPromise } = await beginExecution(harness);
     jest.spyOn(session, 'steer').mockResolvedValueOnce(true);
@@ -1355,9 +1336,15 @@ describe('ChatExecutionCoordinator', () => {
       'event-before-never',
       'native-never-user',
     )).resolves.toBe(true);
+    expect(harness.repository.recordConversationActivity).toHaveBeenCalledTimes(1);
+    expect(harness.repository.recordConversationActivity).toHaveBeenCalledWith(
+      'conversation-1',
+      123,
+    );
     await expect(harness.coordinator.acceptSteerFromProviderEvent(
       'event-before-never',
     )).resolves.toBe(false);
+    expect(harness.repository.recordConversationActivity).toHaveBeenCalledTimes(1);
 
     run.events.push({
       type: 'turn_completed',
@@ -1371,11 +1358,12 @@ describe('ChatExecutionCoordinator', () => {
   it('upgrades an ambiguous native steer result when its exact live event arrives later', async () => {
     const harness = createHarness();
     const { session, run, resultPromise } = await beginExecution(harness);
-    jest.spyOn(session, 'steer').mockRejectedValueOnce(new Error('acknowledgement lost'));
+    const steerError = new Error('acknowledgement lost');
+    jest.spyOn(session, 'steer').mockRejectedValueOnce(steerError);
 
     await expect(harness.coordinator.steer(createSubmission({
       submissionId: 'event-after-error',
-    }))).rejects.toThrow('acknowledgement lost');
+    }))).rejects.toBe(steerError);
 
     await expect(harness.coordinator.acceptSteerFromProviderEvent(
       'event-after-error',

@@ -6,21 +6,8 @@ const fs = jest.requireActual<typeof fsType>('fs');
 const os = jest.requireActual<typeof osType>('os');
 const path = jest.requireActual<typeof pathType>('path');
 
-import type { ProviderConversationHistoryService } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
-
-async function resolveMissingConversationSession(
-  service: CodexConversationHistoryService,
-  conversation: Conversation,
-  missingProviderSessionId?: string,
-): Promise<'delete' | 'reset' | 'preserve' | 'unimplemented'> {
-  const resolver = (service as ProviderConversationHistoryService)
-    .resolveMissingConversationSession;
-  return resolver
-    ? resolver.call(service, conversation, null, missingProviderSessionId)
-    : 'unimplemented';
-}
 
 describe('CodexConversationHistoryService', () => {
   let homeDirSpy: jest.SpyInstance<string, []>;
@@ -119,7 +106,7 @@ describe('CodexConversationHistoryService', () => {
     };
 
     await expect(new CodexConversationHistoryService()
-      .recoverConversationModelSelection?.(conversation, null))
+      .recoverConversationModelSelection(conversation, null))
       .resolves.toBe('openai-codex/gpt-5.5');
   });
 
@@ -328,7 +315,7 @@ describe('CodexConversationHistoryService', () => {
     }));
   });
 
-  it('rehydrates when the same conversation id is restored with empty messages', async () => {
+  it('rehydrates the same conversation object after its messages are cleared', async () => {
     const threadId = 'thread-456';
     const sessionsDir = path.join(tempHome, '.codex', 'sessions', '2026', '03', '27');
     fs.mkdirSync(sessionsDir, { recursive: true });
@@ -758,9 +745,9 @@ describe('CodexConversationHistoryService', () => {
         messages: [],
       };
 
-      await expect(resolveMissingConversationSession(
-        new CodexConversationHistoryService(),
+      await expect(new CodexConversationHistoryService().resolveMissingConversationSession(
         conversation,
+        null,
         'thread-missing',
       )).resolves.toBe('reset');
 
@@ -801,9 +788,9 @@ describe('CodexConversationHistoryService', () => {
         messages: [],
       };
 
-      await expect(resolveMissingConversationSession(
-        new CodexConversationHistoryService(),
+      await expect(new CodexConversationHistoryService().resolveMissingConversationSession(
         conversation,
+        null,
         missingSessionId,
       )).resolves.toBe('preserve');
 

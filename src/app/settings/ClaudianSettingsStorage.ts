@@ -645,19 +645,6 @@ export class ClaudianSettingsStorage {
     await this.#deleteLegacyFileIfPresent();
   }
 
-  async exists(): Promise<boolean> {
-    if (await this.adapter.exists(CLAUDIAN_SETTINGS_PATH)) {
-      return true;
-    }
-
-    return this.adapter.exists(LEGACY_CLAUDIAN_SETTINGS_PATH);
-  }
-
-  async update(updates: Partial<StoredClaudianSettings>): Promise<void> {
-    const current = await this.load();
-    await this.save({ ...current, ...updates });
-  }
-
   #getDefaults(): StoredClaudianSettings {
     return DEFAULT_CLAUDIAN_SETTINGS;
   }

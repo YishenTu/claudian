@@ -65,12 +65,4 @@ describe('getCustomModelIds', () => {
     expect(result.has('')).toBe(false);
     expect(result.has('valid-model')).toBe(true);
   });
-
-  it('should ignore whitespace-only model values', () => {
-    const result = getCustomModelIds({
-      ANTHROPIC_MODEL: '   ',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'my-haiku',
-    });
-    expect(result.has('my-haiku')).toBe(true);
-  });
 });

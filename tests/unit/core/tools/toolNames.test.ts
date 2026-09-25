@@ -1,10 +1,7 @@
 import {
 isAgentLifecycleTool,
-isBashTool,
 // Type guards
 isEditTool,
-isFileTool,
-isMCPTool,
 isReadOnlyTool,
 isWriteEditTool,
 TOOL_BASH,
@@ -88,126 +85,6 @@ describe('isWriteEditTool', () => {
 
   it('should return false for unknown tool', () => {
     expect(isWriteEditTool('UnknownTool')).toBe(false);
-  });
-});
-
-describe('isFileTool', () => {
-  it('should return true for Read tool', () => {
-    expect(isFileTool('Read')).toBe(true);
-  });
-
-  it('should return true for Write tool', () => {
-    expect(isFileTool('Write')).toBe(true);
-  });
-
-  it('should return true for Edit tool', () => {
-    expect(isFileTool('Edit')).toBe(true);
-  });
-
-  it('should return true for Glob tool', () => {
-    expect(isFileTool('Glob')).toBe(true);
-  });
-
-  it('should return true for Grep tool', () => {
-    expect(isFileTool('Grep')).toBe(true);
-  });
-
-  it('should return true for LS tool', () => {
-    expect(isFileTool('LS')).toBe(true);
-  });
-
-  it('should return true for NotebookEdit tool', () => {
-    expect(isFileTool('NotebookEdit')).toBe(true);
-  });
-
-  it('should return true for Bash tool', () => {
-    expect(isFileTool('Bash')).toBe(true);
-  });
-
-  it('should return false for WebSearch tool', () => {
-    expect(isFileTool('WebSearch')).toBe(false);
-  });
-
-  it('should return false for Task tool', () => {
-    expect(isFileTool('Task')).toBe(false);
-  });
-
-  it('should return false for empty string', () => {
-    expect(isFileTool('')).toBe(false);
-  });
-
-  it('should return false for unknown tool', () => {
-    expect(isFileTool('UnknownTool')).toBe(false);
-  });
-});
-
-describe('isBashTool', () => {
-  it('should return true for Bash tool', () => {
-    expect(isBashTool('Bash')).toBe(true);
-  });
-
-  it('should return true for BashOutput tool', () => {
-    expect(isBashTool('BashOutput')).toBe(true);
-  });
-
-  it('should return true for KillShell tool', () => {
-    expect(isBashTool('KillShell')).toBe(true);
-  });
-
-  it('should return false for Read tool', () => {
-    expect(isBashTool('Read')).toBe(false);
-  });
-
-  it('should return false for Task tool', () => {
-    expect(isBashTool('Task')).toBe(false);
-  });
-
-  it('should return false for empty string', () => {
-    expect(isBashTool('')).toBe(false);
-  });
-
-  it('should return false for unknown tool', () => {
-    expect(isBashTool('UnknownTool')).toBe(false);
-  });
-
-  it('should be case-sensitive', () => {
-    expect(isBashTool('bash')).toBe(false);
-    expect(isBashTool('BASH')).toBe(false);
-  });
-});
-
-describe('isMCPTool', () => {
-  it('should return true for ListMcpResources tool', () => {
-    expect(isMCPTool('ListMcpResources')).toBe(true);
-  });
-
-  it('should return true for ReadMcpResource tool', () => {
-    expect(isMCPTool('ReadMcpResource')).toBe(true);
-  });
-
-  it('should return true for Mcp tool', () => {
-    expect(isMCPTool('Mcp')).toBe(true);
-  });
-
-  it('should return false for Read tool', () => {
-    expect(isMCPTool('Read')).toBe(false);
-  });
-
-  it('should return false for Bash tool', () => {
-    expect(isMCPTool('Bash')).toBe(false);
-  });
-
-  it('should return false for empty string', () => {
-    expect(isMCPTool('')).toBe(false);
-  });
-
-  it('should return false for unknown tool', () => {
-    expect(isMCPTool('UnknownTool')).toBe(false);
-  });
-
-  it('should return false for mcp-prefixed tool name (not in MCP_TOOLS)', () => {
-    // MCP tools invoked via SDK have mcp__ prefix but are not in MCP_TOOLS
-    expect(isMCPTool('mcp__server__tool')).toBe(false);
   });
 });
 

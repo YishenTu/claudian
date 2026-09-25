@@ -33,6 +33,8 @@ describe('ClaudianProviderHost', () => {
   it('delegates provider capabilities without exposing plugin lifecycle APIs', async () => {
     const trace: string[] = [];
     const plugin = createPlugin({
+      registerView: jest.fn(),
+      addCommand: jest.fn(),
       mutateSettings: jest.fn(async () => { trace.push('mutate'); }),
       applyEnvironmentVariables: jest.fn(async () => { trace.push('environment'); }),
       getResolvedProviderCliPath: jest.fn(() => {

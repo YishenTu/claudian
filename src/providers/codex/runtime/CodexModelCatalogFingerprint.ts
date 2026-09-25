@@ -13,7 +13,6 @@ import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ProviderTransitionOwnerContext } from '../../../core/providers/types';
 import { getVaultPath } from '../../../utils/path';
 import { computeCodexEnvHash } from '../env/CodexSettingsReconciler';
-import { getCodexProviderSettings } from '../settings';
 import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
 
 const CATALOG_FINGERPRINT_VERSION = '2';
@@ -66,16 +65,4 @@ export async function computeCodexCatalogFingerprint(
     executionTargetKey,
     envHash,
   });
-}
-
-export function getCodexCatalogFingerprintFromSettings(
-  settings: Record<string, unknown>,
-): string {
-  return getCodexProviderSettings(settings).catalogFingerprint;
-}
-
-export function getCodexCatalogTimestampFromSettings(
-  settings: Record<string, unknown>,
-): number {
-  return getCodexProviderSettings(settings).catalogTimestamp;
 }

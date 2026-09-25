@@ -73,10 +73,6 @@ export const piWorkspaceRegistration: ProviderWorkspaceRegistration<PiWorkspaceS
   initialize: async ({ plugin }) => createPiWorkspaceServices(plugin),
 };
 
-export function maybeGetPiWorkspaceServices(): PiWorkspaceServices | null {
-  return ProviderWorkspaceRegistry.getServices('pi') as PiWorkspaceServices | null;
-}
-
 export function getPiWorkspaceServices(): PiWorkspaceServices {
   return ProviderWorkspaceRegistry.requireServices('pi') as PiWorkspaceServices;
 }

@@ -210,22 +210,6 @@ export function updateGrokProviderSettings(
   return { ...next, currentCatalog };
 }
 
-export function updateGrokVisibleModels(
-  settings: Record<string, unknown>,
-  visibleModels: string[] | null,
-): GrokProviderSettings {
-  const current = getGrokProviderSettings(settings);
-  const normalizedVisibleModels = normalizeGrokVisibleModels(
-    visibleModels,
-    new Set(current.currentCatalog?.models.map(model => model.rawId) ?? []),
-    Boolean(current.currentCatalog?.models.length),
-  );
-  return updateGrokProviderSettings(settings, {
-    preferredReasoningByModel: current.preferredReasoningByModel,
-    visibleModels: normalizedVisibleModels,
-  });
-}
-
 export function getCurrentGrokCatalog(
   settings: Record<string, unknown>,
 ): GrokCatalogSnapshot | null {
@@ -248,19 +232,6 @@ export function updateCurrentGrokCatalog(
     },
   });
   return normalized;
-}
-
-export function clearCurrentGrokCatalog(settings: Record<string, unknown>): boolean {
-  const current = getGrokProviderSettings(settings);
-  const currentHostKey = getHostnameKey();
-  if (!current.catalogsByHost[currentHostKey]) {
-    return false;
-  }
-
-  const catalogsByHost = { ...current.catalogsByHost };
-  delete catalogsByHost[currentHostKey];
-  updateGrokProviderSettings(settings, { catalogsByHost });
-  return true;
 }
 
 export function normalizeGrokVisibleModels(

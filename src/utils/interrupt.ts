@@ -13,7 +13,7 @@ function normalize(text: string): string {
   return text.trim();
 }
 
-export function isBracketInterruptText(text: string): boolean {
+function isBracketInterruptText(text: string): boolean {
   return INTERRUPT_MARKERS.has(normalize(text));
 }
 

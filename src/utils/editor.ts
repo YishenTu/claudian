@@ -38,7 +38,7 @@ export interface EditorContextFormatOptions {
   includeCursorLine?: boolean;
 }
 
-export function findNearestNonEmptyLine(
+function findNearestNonEmptyLine(
   getLine: (line: number) => string,
   lineCount: number,
   startLine: number,

@@ -137,7 +137,7 @@ export function extractString(
   return undefined;
 }
 
-export function normalizeStringArray(val: unknown): string[] | undefined {
+function normalizeStringArray(val: unknown): string[] | undefined {
   if (val === undefined || val === null) return undefined;
 
   if (Array.isArray(val)) {

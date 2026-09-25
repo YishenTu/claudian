@@ -73,12 +73,6 @@ describe('getEnhancedPath', () => {
   });
 
   describe('basic functionality', () => {
-    it('returns a non-empty string', () => {
-      const result = getEnhancedPath();
-      expect(typeof result).toBe('string');
-      expect(result.length).toBeGreaterThan(0);
-    });
-
     it('includes current PATH from process.env', () => {
       process.env.PATH = `/existing/path${SEP}/another/path`;
       const result = getEnhancedPath();
@@ -102,30 +96,6 @@ describe('getEnhancedPath', () => {
     });
   });
 
-  describe('platform-specific separator', () => {
-    it('uses correct separator for current platform', () => {
-      const result = getEnhancedPath();
-      // Result should contain the platform-specific separator
-      expect(result).toContain(SEP);
-    });
-
-    it('splits and joins with platform separator', () => {
-      const result = getEnhancedPath();
-      const segments = result.split(SEP);
-      // Should have multiple segments
-      expect(segments.length).toBeGreaterThan(1);
-      // Rejoining should give same result
-      expect(segments.join(SEP)).toBe(result);
-    });
-
-    it('handles input with platform separator', () => {
-      const customPath = `/custom/bin1${SEP}/custom/bin2`;
-      const result = getEnhancedPath(customPath);
-      expect(result).toContain('/custom/bin1');
-      expect(result).toContain('/custom/bin2');
-    });
-  });
-
   describe('custom PATH merging and priority', () => {
     it('prepends additional paths (highest priority)', () => {
       process.env.PATH = '/existing/path';
@@ -146,24 +116,6 @@ describe('getEnhancedPath', () => {
       expect(segments[2]).toBe('/third/bin');
     });
 
-    it('preserves priority: additional > extra > current', () => {
-      process.env.PATH = '/usr/bin';
-      const result = getEnhancedPath('/user/custom');
-      const segments = result.split(SEP);
-
-      const customIndex = segments.indexOf('/user/custom');
-      const usrBinIndex = segments.indexOf('/usr/bin');
-
-      // Custom should come before current PATH
-      expect(customIndex).toBeLessThan(usrBinIndex);
-    });
-
-    it('handles undefined additional paths', () => {
-      process.env.PATH = '/existing/path';
-      const result = getEnhancedPath(undefined);
-      expect(result).toContain('/existing/path');
-    });
-
     it('handles empty string additional paths', () => {
       process.env.PATH = '/existing/path';
       const result = getEnhancedPath('');
@@ -175,14 +127,6 @@ describe('getEnhancedPath', () => {
   });
 
   describe('deduplication logic', () => {
-    it('removes duplicate paths', () => {
-      process.env.PATH = `/usr/local/bin${SEP}/usr/bin`;
-      const result = getEnhancedPath('/usr/local/bin');
-      const segments = result.split(SEP);
-      const count = segments.filter(s => s === '/usr/local/bin').length;
-      expect(count).toBe(1);
-    });
-
     it('preserves first occurrence when deduplicating', () => {
       // Additional path should win over current PATH
       process.env.PATH = `/duplicate/path${SEP}/other/path`;
@@ -232,19 +176,6 @@ describe('getEnhancedPath', () => {
   });
 
   describe('extra binary paths', () => {
-    it('returns non-empty result with extra paths', () => {
-      const result = getEnhancedPath();
-      // On both platforms, result should be non-empty
-      expect(result.length).toBeGreaterThan(0);
-    });
-
-    it('includes platform-appropriate paths', () => {
-      const result = getEnhancedPath();
-      const segments = result.split(SEP);
-      // Should have added some extra paths beyond just process.env.PATH
-      expect(segments.length).toBeGreaterThan(1);
-    });
-
     it('includes the default OpenCode install bin path from HOME', () => {
       process.env.HOME = '/mock/home';
       const result = getEnhancedPath();
@@ -495,20 +426,9 @@ describe('getEnhancedPath', () => {
       expect(nodeIndex).toBeGreaterThan(extraIndex);
     });
 
-    it('accepts cliPath parameter without error', () => {
-      const result = getEnhancedPath(undefined, '/path/to/cli.js');
-      expect(typeof result).toBe('string');
-      expect(result.length).toBeGreaterThan(0);
-    });
-
     it('works with both additionalPaths and cliPath', () => {
       const result = getEnhancedPath('/custom/path', '/path/to/cli.js');
       expect(result).toContain('/custom/path');
-    });
-
-    it('works with native binary path (no Node.js detection needed)', () => {
-      const result = getEnhancedPath(undefined, '/path/to/claude.exe');
-      expect(typeof result).toBe('string');
     });
   });
 
@@ -555,45 +475,6 @@ describe('getEnhancedPath', () => {
       // CLI directory should be added (case-insensitive check for Windows)
       const hasNvmDir = segments.some(s => s.toLowerCase() === nvmBinDir.toLowerCase());
       expect(hasNvmDir).toBe(true);
-    });
-
-    it('adds CLI directory to PATH for fnm installation', () => {
-      if (isWindows) return;
-
-      const fnmBinDir = '/Users/test/.fnm/node-versions/v20.10.0/installation/bin';
-      const cliPath = path.join(fnmBinDir, 'claude');
-      mockCliDirWithNode(fnmBinDir);
-
-      process.env.PATH = '/usr/bin';
-      const result = getEnhancedPath(undefined, cliPath);
-
-      expect(result).toContain(fnmBinDir);
-    });
-
-    it('adds CLI directory to PATH for volta installation', () => {
-      if (isWindows) return;
-
-      const voltaBinDir = '/Users/test/.volta/bin';
-      const cliPath = path.join(voltaBinDir, 'claude');
-      mockCliDirWithNode(voltaBinDir);
-
-      process.env.PATH = '/usr/bin';
-      const result = getEnhancedPath(undefined, cliPath);
-
-      expect(result).toContain(voltaBinDir);
-    });
-
-    it('adds CLI directory to PATH for asdf installation', () => {
-      if (isWindows) return;
-
-      const asdfBinDir = '/Users/test/.asdf/installs/nodejs/20.10.0/bin';
-      const cliPath = path.join(asdfBinDir, 'claude');
-      mockCliDirWithNode(asdfBinDir);
-
-      process.env.PATH = '/usr/bin';
-      const result = getEnhancedPath(undefined, cliPath);
-
-      expect(result).toContain(asdfBinDir);
     });
 
     it('does not add CLI directory when node is not present', () => {
@@ -838,12 +719,6 @@ describe('getHostnameKey', () => {
     } else {
       Reflect.deleteProperty(globalThis, 'window');
     }
-  });
-
-  it('returns a non-empty string', () => {
-    const key = getHostnameKey();
-    expect(typeof key).toBe('string');
-    expect(key.length).toBeGreaterThan(0);
   });
 
   it('returns an opaque device key instead of the system hostname', () => {

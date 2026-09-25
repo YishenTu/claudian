@@ -50,21 +50,24 @@ describe('SettingsCoordinator', () => {
     const settings: Record<string, unknown> = {
       nested: { committed: true },
     };
+    const writeError = new Error('write failed');
+    const commit = jest.fn();
     const persist = jest.fn()
-      .mockRejectedValueOnce(new Error('write failed'))
+      .mockRejectedValueOnce(writeError)
       .mockResolvedValueOnce(undefined);
     const coordinator = new SettingsCoordinator(settings, persist);
 
     const first = coordinator.mutate(current => {
       current.first = true;
       current.nested = { committed: false };
-    });
+    }, commit);
     const second = coordinator.mutate(current => {
       expect(current).toEqual({ nested: { committed: true } });
       current.second = true;
     });
 
-    await expect(first).rejects.toThrow('write failed');
+    await expect(first).rejects.toBe(writeError);
+    expect(commit).not.toHaveBeenCalled();
     await expect(second).resolves.toBeUndefined();
 
     expect(settings).toEqual({ nested: { committed: true }, second: true });
@@ -84,24 +87,6 @@ describe('SettingsCoordinator', () => {
 
     expect(settings).toEqual({ value: 'committed' });
     expect(persist).not.toHaveBeenCalled();
-  });
-
-  it('does not publish committed side effects when persistence rejects', async () => {
-    const writeError = new Error('write failed');
-    const settings: Record<string, unknown> = { value: 'old' };
-    const coordinator = new SettingsCoordinator(
-      settings,
-      jest.fn().mockRejectedValue(writeError),
-    );
-    const commit = jest.fn();
-
-    await expect(coordinator.mutate(
-      current => { current.value = 'new'; },
-      commit,
-    )).rejects.toBe(writeError);
-
-    expect(commit).not.toHaveBeenCalled();
-    expect(settings).toEqual({ value: 'old' });
   });
 
   it('reports post-commit publication separately and keeps the durable state for queued work', async () => {

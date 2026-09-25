@@ -1,13 +1,11 @@
 import { mapWithConcurrency } from '../../utils/concurrency';
 import { decodeLinkedContentPathFields } from '../path/LinkedContentPath';
 import {
-  DEFAULT_CHAT_PROVIDER_ID,
   type SessionMetadataListOptions,
   type SessionMetadataScanResult,
 } from '../providers/types';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
-  ConversationMeta,
   ConversationModelRecoverySource,
   SessionMetadata,
 } from '../types';
@@ -229,28 +227,6 @@ export class SessionStorage implements SessionMetadataReader {
     options: SessionMetadataListOptions = {},
   ): Promise<SessionMetadata[]> {
     return (await this.scanMetadata(options)).metadata;
-  }
-
-  async listAllConversations(): Promise<ConversationMeta[]> {
-    const nativeMetas = await this.listMetadata();
-    const metas: ConversationMeta[] = nativeMetas.map((meta) => ({
-      id: meta.id,
-      providerId: meta.providerId ?? DEFAULT_CHAT_PROVIDER_ID,
-      selectedModel: meta.selectedModel,
-      title: meta.title,
-      createdAt: meta.createdAt,
-      lastActivityAt: meta.lastActivityAt,
-      messageCount: 0,
-      preview: 'SDK session',
-      linkedContentPath: meta.linkedContentPath,
-      isPinned: meta.isPinned,
-      isArchived: meta.isArchived,
-      titleGenerationStatus: meta.titleGenerationStatus,
-    }));
-    return metas.sort(
-      (left, right) =>
-        right.lastActivityAt - left.lastActivityAt,
-    );
   }
 
   private async readMetadata(

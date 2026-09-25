@@ -23,11 +23,6 @@ export const OPENCODE_FALLBACK_MODES: ReadonlyArray<OpencodeMode> = Object.freez
   },
 ]);
 
-const OPENCODE_MANAGED_MODE_IDS = new Set([
-  OPENCODE_BUILD_MODE_ID,
-  ...OPENCODE_FALLBACK_MODES.map((mode) => mode.id),
-]);
-
 export function normalizeOpencodeAvailableModes(value: unknown): OpencodeMode[] {
   if (!Array.isArray(value)) {
     return [];
@@ -64,10 +59,6 @@ export function normalizeOpencodeAvailableModes(value: unknown): OpencodeMode[] 
 
 export function getEffectiveOpencodeModes(modes: OpencodeMode[]): OpencodeMode[] {
   return modes.length > 0 ? modes : [...OPENCODE_FALLBACK_MODES];
-}
-
-export function isManagedOpencodeModeId(value: string): boolean {
-  return OPENCODE_MANAGED_MODE_IDS.has(value);
 }
 
 export function getManagedOpencodeModes(modes: OpencodeMode[]): OpencodeMode[] {

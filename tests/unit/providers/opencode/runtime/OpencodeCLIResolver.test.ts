@@ -26,14 +26,15 @@ describe('OpencodeCLIResolver', () => {
     });
 
     const resolver = new OpencodeCLIResolver();
-    const resolved = resolver.resolve(
-      {
-        'other-host': '/other/opencode',
-        'current-host': '/current/opencode',
-      },
-      '/legacy/opencode',
-      '',
-    );
+    const resolved = resolver.resolveFromSettings({
+      providerConfigs: { opencode: {
+        cliPathsByHost: {
+          'other-host': '/other/opencode',
+          'current-host': '/current/opencode',
+        },
+        cliPath: '/legacy/opencode',
+      } },
+    });
 
     expect(resolved).toBe('/current/opencode');
   });
@@ -47,13 +48,12 @@ describe('OpencodeCLIResolver', () => {
     });
 
     const resolver = new OpencodeCLIResolver();
-    const resolved = resolver.resolve(
-      {
-        'other-host': '/other/opencode',
-      },
-      '/legacy/opencode',
-      '',
-    );
+    const resolved = resolver.resolveFromSettings({
+      providerConfigs: { opencode: {
+        cliPathsByHost: { 'other-host': '/other/opencode' },
+        cliPath: '/legacy/opencode',
+      } },
+    });
 
     expect(resolved).toBe('/legacy/opencode');
   });
@@ -64,13 +64,12 @@ describe('OpencodeCLIResolver', () => {
     });
 
     const resolver = new OpencodeCLIResolver();
-    const resolved = resolver.resolve(
-      {
-        'other-host': '/other/opencode',
-      },
-      '/legacy/opencode',
-      '',
-    );
+    const resolved = resolver.resolveFromSettings({
+      providerConfigs: { opencode: {
+        cliPathsByHost: { 'other-host': '/other/opencode' },
+        cliPath: '/legacy/opencode',
+      } },
+    });
 
     expect(resolved).toBeNull();
   });
@@ -86,7 +85,9 @@ describe('OpencodeCLIResolver', () => {
     });
 
     const resolver = new OpencodeCLIResolver();
-    const resolved = resolver.resolve({}, '', `PATH=${pathDir}`);
+    const resolved = resolver.resolveFromSettings({
+      providerConfigs: { opencode: { environmentVariables: `PATH=${pathDir}` } },
+    });
 
     expect(resolved).toBe(pathBinary);
   });

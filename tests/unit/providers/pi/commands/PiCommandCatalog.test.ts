@@ -9,14 +9,14 @@ describe('PiCommandCatalog', () => {
         content: '',
         description: 'Review changes',
         id: 'pi:prompt:review',
-        name: 'review',
+        name: 'skill:shared-review',
         source: 'sdk',
       },
       {
         content: '',
         description: 'Duplicate review',
         id: 'pi:prompt:review-duplicate',
-        name: 'review',
+        name: 'skill:shared-review',
         source: 'sdk',
       },
       {
@@ -27,6 +27,7 @@ describe('PiCommandCatalog', () => {
         name: 'test',
         source: 'sdk',
       },
+      { content: '', id: 'two', name: 'scope:qualified', source: 'sdk' },
     ]);
 
     await expect(catalog.listDropdownEntries({ includeBuiltIns: false })).resolves.toEqual([
@@ -39,20 +40,25 @@ describe('PiCommandCatalog', () => {
         isDeletable: false,
         isEditable: false,
         kind: 'command',
-        name: 'review',
+        name: 'skill:shared-review',
         providerId: 'pi',
         scope: 'runtime',
       }),
       expect.objectContaining({
         description: 'Duplicate review',
         id: 'pi:prompt:review-duplicate',
-        name: 'review',
+        name: 'skill:shared-review',
         providerId: 'pi',
       }),
       expect.objectContaining({
         id: 'pi:skill:test',
         kind: 'skill',
         name: 'test',
+        providerId: 'pi',
+      }),
+      expect.objectContaining({
+        id: 'two',
+        name: 'scope:qualified',
         providerId: 'pi',
       }),
     ]);
@@ -72,20 +78,5 @@ describe('PiCommandCatalog', () => {
     expect('listVaultEntries' in catalog).toBe(false);
     expect('saveVaultEntry' in catalog).toBe(false);
     expect('deleteVaultEntry' in catalog).toBe(false);
-  });
-
-  it('preserves provider-advertised names and order', async () => {
-    const catalog = new PiCommandCatalog();
-    catalog.setCommandSnapshot([
-      { content: '', id: 'one', name: 'skill:shared-review', source: 'sdk' },
-      { content: '', id: 'two', name: 'scope:qualified', source: 'sdk' },
-    ]);
-
-    const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
-
-    expect(entries.map((entry) => entry.name)).toEqual([
-      'skill:shared-review',
-      'scope:qualified',
-    ]);
   });
 });

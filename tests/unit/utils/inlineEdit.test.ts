@@ -1,6 +1,15 @@
 import { normalizeInsertionText } from '@/utils/inlineEdit';
 
 describe('normalizeInsertionText', () => {
+  it.each([
+    ['newline-only content', '\n\n', ''],
+    ['spaces', '  Content  ', '  Content  '],
+    ['markdown blocks', '\n\n# Title\n\nParagraph\n\n', '# Title\n\nParagraph'],
+    ['code blocks', '\n```js\nconst x = 1;\n```\n', '```js\nconst x = 1;\n```'],
+  ])('preserves %s while trimming surrounding newlines', (_name, input, expected) => {
+    expect(normalizeInsertionText(input)).toBe(expected);
+  });
+
   it('removes leading blank lines', () => {
     expect(normalizeInsertionText('\n\nHello')).toBe('Hello');
   });

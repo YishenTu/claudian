@@ -125,17 +125,6 @@ function normalizeModelDependentSettings(
 }
 
 export class ProviderSettingsCoordinator {
-  static applyModelSelection(
-    settings: Record<string, unknown>,
-    providerId: ProviderId,
-    model: string,
-  ): void {
-    const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
-    settings.model = model;
-    uiConfig.applyModelDefaults(model, settings);
-    normalizeModelDependentSettings(uiConfig, settings, model);
-  }
-
   static applyTitleGenerationModelSelection(
     settings: Record<string, unknown>,
     model: string,
@@ -423,18 +412,6 @@ export class ProviderSettingsCoordinator {
     if (projectedPermissionMode !== undefined) {
       settings.permissionMode = projectedPermissionMode;
     }
-  }
-
-  /** Each provider's reconciler only processes its own conversations. */
-  static reconcileAllProviders(
-    settings: Record<string, unknown>,
-    conversations: Conversation[],
-  ): SettingsReconciliationResult {
-    return this.reconcileProviders(
-      settings,
-      conversations,
-      ProviderRegistry.getRegisteredProviderIds(),
-    );
   }
 
   static reconcileProviders(

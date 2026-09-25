@@ -103,6 +103,8 @@ describe('LinkedContentController', () => {
     expect(() => harness.controller.selectExplicit('../outside')).toThrow(
       'Invalid Linked content path',
     );
+    expect(() => harness.controller.selectExplicit('.'))
+      .toThrow('Invalid Linked content path');
   });
 
   it('defaults only eligible Markdown Notes and respects excluded tags', () => {
@@ -298,15 +300,12 @@ describe('LinkedContentController', () => {
     });
   });
 
-  it('locks an existing zero-message Conversation by identity without owning history state', () => {
+  it('locks an existing conversation without linked content', () => {
     const harness = createHarness();
 
     harness.controller.lock(undefined);
 
     expect(harness.controller.getSnapshot()).toMatchObject({ mode: 'locked', path: null });
-    expect(harness.controller).not.toHaveProperty('currentNoteSent');
-    expect(harness.controller).not.toHaveProperty('ordinal');
-    expect(harness.controller).not.toHaveProperty('history');
   });
 
   it('ignores stale calls after destruction and rejects stale submission tokens', () => {

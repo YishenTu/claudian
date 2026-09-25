@@ -18,7 +18,6 @@ const IMAGE_EXTENSIONS: Record<string, ImageMediaType> = {
 };
 
 export interface ImageContextCallbacks {
-  onImagesChanged?: () => void;
   onUserImagesChanged?: () => void;
 }
 
@@ -89,7 +88,6 @@ export class ImageContextManager {
   clearImages() {
     this.attachedImages.clear();
     this.updateImagePreview();
-    this.callbacks.onImagesChanged?.();
   }
 
   /** Sets images directly (used for queued messages). */
@@ -99,7 +97,6 @@ export class ImageContextManager {
       this.attachedImages.set(image.id, image);
     }
     this.updateImagePreview();
-    this.callbacks.onImagesChanged?.();
   }
 
   destroy(): void {
@@ -272,7 +269,6 @@ export class ImageContextManager {
 
       this.attachedImages.set(attachment.id, attachment);
       this.updateImagePreview();
-      this.callbacks.onImagesChanged?.();
       this.callbacks.onUserImagesChanged?.();
       return true;
     } catch (error) {
@@ -309,7 +305,6 @@ export class ImageContextManager {
       onRemove: () => {
         this.attachedImages.delete(id);
         this.updateImagePreview();
-        this.callbacks.onImagesChanged?.();
         this.callbacks.onUserImagesChanged?.();
       },
     })));

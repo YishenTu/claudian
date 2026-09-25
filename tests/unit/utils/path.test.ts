@@ -131,10 +131,6 @@ describe('expandHomePath', () => {
     expect(expandHomePath('%NONEXISTENT_VAR_12345%/bin')).toBe('%NONEXISTENT_VAR_12345%/bin');
   });
 
-  it('returns path unchanged when no special patterns', () => {
-    expect(expandHomePath('/plain/path')).toBe('/plain/path');
-  });
-
   it('expands ~\\ backslash prefix', () => {
     const result = expandHomePath('~\\Documents');
     expect(result).toBe(path.join(os.homedir(), 'Documents'));
@@ -198,28 +194,6 @@ describe('parsePathEntries', () => {
   });
 });
 
-describe('translateMsysPath', () => {
-  if (!isWindows) {
-    it('returns value unchanged on non-Windows', () => {
-      expect(translateMsysPath('/c/Users/test')).toBe('/c/Users/test');
-    });
-  }
-
-  if (isWindows) {
-    it('translates /c/ to C:\\ on Windows', () => {
-      expect(translateMsysPath('/c/Users/test')).toBe('C:\\Users\\test');
-    });
-
-    it('translates uppercase drive letter', () => {
-      expect(translateMsysPath('/D/projects')).toBe('D:\\projects');
-    });
-
-    it('returns non-msys path unchanged', () => {
-      expect(translateMsysPath('C:\\Users\\test')).toBe('C:\\Users\\test');
-    });
-  }
-});
-
 describe('normalizePathForFilesystem', () => {
   it('returns empty string for empty input', () => {
     expect(normalizePathForFilesystem('')).toBe('');
@@ -280,12 +254,6 @@ describe('normalizePathForComparison', () => {
   it('returns empty string for null-like input', () => {
     expect(normalizePathForComparison(null as any)).toBe('');
     expect(normalizePathForComparison(undefined as any)).toBe('');
-  });
-
-  it('normalizes slashes to forward slash', () => {
-    // On any platform, result should use forward slashes
-    const result = normalizePathForComparison('/usr/local/bin');
-    expect(result).not.toContain('\\');
   });
 
   it('removes trailing slash', () => {
@@ -371,6 +339,18 @@ describe('isPathWithinDirectory', () => {
 describe('normalizePathForVault', () => {
   const vaultPath = path.resolve('/tmp/test-vault');
 
+  it('normalizes raw backslashes to vault-relative forward slashes', () => {
+    expect(normalizePathForVault('notes\\subfolder\\file.md', vaultPath)).toBe('notes/subfolder/file.md');
+  });
+
+  it('preserves spaces in vault-relative paths', () => {
+    expect(normalizePathForVault(path.join(vaultPath, 'my notes', 'file.md'), vaultPath)).toBe('my notes/file.md');
+  });
+
+  it('returns null when the path is the vault directory', () => {
+    expect(normalizePathForVault(vaultPath, vaultPath)).toBeNull();
+  });
+
   it('returns null for null/undefined input', () => {
     expect(normalizePathForVault(null, vaultPath)).toBeNull();
     expect(normalizePathForVault(undefined, vaultPath)).toBeNull();
@@ -388,18 +368,12 @@ describe('normalizePathForVault', () => {
 
   it('returns normalized path for file outside vault', () => {
     const result = normalizePathForVault('/other/path/file.md', vaultPath);
-    expect(result).toContain('file.md');
-  });
-
-  it('uses forward slashes in result', () => {
-    const fullPath = path.join(vaultPath, 'a', 'b', 'c.md');
-    const result = normalizePathForVault(fullPath, vaultPath);
-    expect(result).not.toContain('\\');
+    expect(result).toBe('/other/path/file.md');
   });
 
   it('handles null vaultPath', () => {
     const result = normalizePathForVault('/some/path.md', null);
-    expect(result).toContain('path.md');
+    expect(result).toBe('/some/path.md');
   });
 });
 

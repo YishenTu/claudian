@@ -9,17 +9,16 @@ import {
   filterActiveBranch,
   getLastSDKSessionModel,
   getSDKProjectsPath,
-  getSDKSessionAvailability,
   getSDKSessionPath,
   isValidSessionId,
   loadSDKSessionMessages,
   loadSubagentFinalResult,
   loadSubagentToolCalls,
+  locateSDKSession,
   parseSDKMessageToChat,
   readSDKSession,
   resolveToolUseResultStatus,
   type SDKNativeMessage,
-  sdkSessionExists,
 } from '@/providers/claude/history/ClaudeHistoryStore';
 import { extractToolResultContent } from '@/providers/claude/sdk/toolResultContent';
 
@@ -132,13 +131,6 @@ describe('sdkSession', () => {
       expect(encoded).not.toContain(')');
     });
 
-    it('produces consistent encoding', () => {
-      const path1 = fixturePath('/Users/test/my-vault');
-      const encoded1 = encodeVaultPathForSDK(path1);
-      const encoded2 = encodeVaultPathForSDK(path1);
-      expect(encoded1).toBe(encoded2);
-    });
-
     it('produces different encodings for different paths', () => {
       const encoded1 = encodeVaultPathForSDK(fixturePath('/Users/test/vault1'));
       const encoded2 = encodeVaultPathForSDK(fixturePath('/Users/test/vault2'));
@@ -150,13 +142,8 @@ describe('sdkSession', () => {
       // Note: path.resolve may modify the input, so we check the output contains no backslashes
       const encoded = encodeVaultPathForSDK('C:\\Users\\test\\vault');
       expect(encoded).not.toContain('\\');
-      expect(encoded).toContain('-Users-test-vault');
-    });
-
-    it('replaces colons for Windows drive letters', () => {
-      // Windows paths have colons after drive letter
-      const encoded = encodeVaultPathForSDK('C:\\Users\\test\\vault');
       expect(encoded).not.toContain(':');
+      expect(encoded).toContain('-Users-test-vault');
     });
   });
 
@@ -288,42 +275,14 @@ describe('sdkSession', () => {
     });
   });
 
-  describe('sdkSessionExists', () => {
-    it('returns true when session file exists', () => {
-      mockExistsSync.mockReturnValue(true);
-
-      const exists = sdkSessionExists(vaultPath, 'session-abc');
-
-      expect(exists).toBe(true);
-    });
-
-    it('returns false when session file does not exist', () => {
-      mockExistsSync.mockReturnValue(false);
-
-      const exists = sdkSessionExists(vaultPath, 'session-xyz');
-
-      expect(exists).toBe(false);
-    });
-
-    it('returns false on error', () => {
-      mockExistsSync.mockImplementation(() => {
-        throw new Error('Permission denied');
-      });
-
-      const exists = sdkSessionExists(vaultPath, 'session-err');
-
-      expect(exists).toBe(false);
-    });
-  });
-
-  describe('getSDKSessionAvailability', () => {
+  describe('locateSDKSession', () => {
     it('reports an available session', async () => {
       mockFsPromises.access.mockResolvedValue(undefined);
 
-      await expect(getSDKSessionAvailability(
+      await expect(locateSDKSession(
         vaultPath,
         'session-abc',
-      )).resolves.toBe('available');
+      )).resolves.toMatchObject({ availability: 'available' });
       expect(mockFsPromises.access).toHaveBeenCalledWith(
         fixturePath(`/Users/test/.claude/projects/${encodedDrive}-Users-test-vault/session-abc.jsonl`),
       );
@@ -335,10 +294,10 @@ describe('sdkSession', () => {
       );
       mockFsPromises.readdir.mockResolvedValue([]);
 
-      await expect(getSDKSessionAvailability(
+      await expect(locateSDKSession(
         vaultPath,
         'session-missing',
-      )).resolves.toBe('missing');
+      )).resolves.toMatchObject({ availability: 'missing' });
     });
 
     it('reports a session found under a previous vault project as relocated', async () => {
@@ -357,10 +316,10 @@ describe('sdkSession', () => {
           name: 'session-relocated.jsonl',
         }] as any);
 
-      await expect(getSDKSessionAvailability(
+      await expect(locateSDKSession(
         vaultPath,
         'session-relocated',
-      )).resolves.toBe('relocated');
+      )).resolves.toMatchObject({ availability: 'relocated' });
     });
 
     it('finds relocated sessions in nested project directories', async () => {
@@ -384,10 +343,10 @@ describe('sdkSession', () => {
           name: 'session-nested.jsonl',
         }] as any);
 
-      await expect(getSDKSessionAvailability(
+      await expect(locateSDKSession(
         vaultPath,
         'session-nested',
-      )).resolves.toBe('relocated');
+      )).resolves.toMatchObject({ availability: 'relocated' });
     });
 
     it('reports unknown when the local Claude projects root is absent', async () => {
@@ -398,10 +357,10 @@ describe('sdkSession', () => {
         Object.assign(new Error('Missing root'), { code: 'ENOENT' }),
       );
 
-      await expect(getSDKSessionAvailability(
+      await expect(locateSDKSession(
         vaultPath,
         'session-on-another-machine',
-      )).resolves.toBe('unknown');
+      )).resolves.toMatchObject({ availability: 'unknown' });
     });
 
     it('reports unknown for other filesystem failures', async () => {
@@ -409,10 +368,10 @@ describe('sdkSession', () => {
         Object.assign(new Error('Permission denied'), { code: 'EACCES' }),
       );
 
-      await expect(getSDKSessionAvailability(
+      await expect(locateSDKSession(
         vaultPath,
         'session-inaccessible',
-      )).resolves.toBe('unknown');
+      )).resolves.toMatchObject({ availability: 'unknown' });
     });
 
     it('reports unknown when an unscanned symlink could contain the transcript', async () => {
@@ -426,17 +385,17 @@ describe('sdkSession', () => {
         name: 'linked-project',
       }] as any);
 
-      await expect(getSDKSessionAvailability(
+      await expect(locateSDKSession(
         vaultPath,
         'session-in-linked-project',
-      )).resolves.toBe('unknown');
+      )).resolves.toMatchObject({ availability: 'unknown' });
     });
 
     it('reports unknown for an invalid session ID', async () => {
-      await expect(getSDKSessionAvailability(
+      await expect(locateSDKSession(
         vaultPath,
         '../invalid',
-      )).resolves.toBe('unknown');
+      )).resolves.toMatchObject({ availability: 'unknown' });
       expect(mockFsPromises.access).not.toHaveBeenCalled();
     });
   });
@@ -656,49 +615,10 @@ describe('sdkSession', () => {
       expect(chatMsg!.role).toBe('user');
       expect(chatMsg!.content).toBe('What is the weather?');
       expect(chatMsg!.timestamp).toBe(new Date('2024-01-15T10:30:00Z').getTime());
-    });
-
-    it('sets userMessageId on user messages with uuid', () => {
-      const sdkMsg: SDKNativeMessage = {
-        type: 'user',
-        uuid: 'user-rewind-123',
-        timestamp: '2024-01-15T10:30:00Z',
-        message: { content: 'Hello' },
-      };
-
-      const chatMsg = parseSDKMessageToChat(sdkMsg);
-
-      expect(chatMsg!.userMessageId).toBe('user-rewind-123');
+      expect(chatMsg!.userMessageId).toBe('user-123');
       expect(chatMsg!.assistantMessageId).toBeUndefined();
-    });
-
-    it('sets assistantMessageId on assistant messages with uuid', () => {
-      const sdkMsg: SDKNativeMessage = {
-        type: 'assistant',
-        uuid: 'asst-rewind-456',
-        timestamp: '2024-01-15T10:31:00Z',
-        message: {
-          content: [{ type: 'text', text: 'Hello back' }],
-        },
-      };
-
-      const chatMsg = parseSDKMessageToChat(sdkMsg);
-
-      expect(chatMsg!.assistantMessageId).toBe('asst-rewind-456');
-      expect(chatMsg!.userMessageId).toBeUndefined();
-    });
-
-    it('does not set SDK UUIDs when uuid is absent', () => {
-      const sdkMsg: SDKNativeMessage = {
-        type: 'user',
-        timestamp: '2024-01-15T10:30:00Z',
-        message: { content: 'No uuid' },
-      };
-
-      const chatMsg = parseSDKMessageToChat(sdkMsg);
-
-      expect(chatMsg!.userMessageId).toBeUndefined();
-      expect(chatMsg!.assistantMessageId).toBeUndefined();
+      expect(chatMsg!.isInterrupt).toBeUndefined();
+      expect(chatMsg!.displayContent).toBeUndefined();
     });
 
     it('converts assistant message with text content blocks', () => {
@@ -719,6 +639,8 @@ describe('sdkSession', () => {
       expect(chatMsg).not.toBeNull();
       expect(chatMsg!.id).toBe('asst-456');
       expect(chatMsg!.role).toBe('assistant');
+      expect(chatMsg!.assistantMessageId).toBe('asst-456');
+      expect(chatMsg!.userMessageId).toBeUndefined();
       expect(chatMsg!.content).toBe('The weather is sunny.\nTemperature is 72°F.');
     });
 
@@ -928,6 +850,8 @@ describe('sdkSession', () => {
 
       expect(chatMsg).not.toBeNull();
       expect(chatMsg!.id).toMatch(/^sdk-/);
+      expect(chatMsg!.userMessageId).toBeUndefined();
+      expect(chatMsg!.assistantMessageId).toBeUndefined();
     });
 
     it('uses current time when timestamp is missing', () => {
@@ -971,22 +895,6 @@ describe('sdkSession', () => {
         timestamp: '2024-01-15T10:30:00Z',
         message: {
           content: 'prefix [Request interrupted by user]',
-        },
-      };
-
-      const chatMsg = parseSDKMessageToChat(sdkMsg);
-
-      expect(chatMsg).not.toBeNull();
-      expect(chatMsg!.isInterrupt).toBeUndefined();
-    });
-
-    it('does not mark regular user messages as interrupt', () => {
-      const sdkMsg: SDKNativeMessage = {
-        type: 'user',
-        uuid: 'user-regular',
-        timestamp: '2024-01-15T10:30:00Z',
-        message: {
-          content: 'Hello, how are you?',
         },
       };
 
@@ -1091,22 +999,6 @@ describe('sdkSession', () => {
 
       expect(chatMsg).not.toBeNull();
       expect(chatMsg!.displayContent).toBe('Update this');
-    });
-
-    it('does not set displayContent for plain user messages without XML context', () => {
-      const sdkMsg: SDKNativeMessage = {
-        type: 'user',
-        uuid: 'user-plain',
-        timestamp: '2024-01-15T10:30:00Z',
-        message: {
-          content: 'Just a regular question',
-        },
-      };
-
-      const chatMsg = parseSDKMessageToChat(sdkMsg);
-
-      expect(chatMsg).not.toBeNull();
-      expect(chatMsg!.displayContent).toBeUndefined();
     });
   });
 
@@ -1330,6 +1222,8 @@ describe('sdkSession', () => {
 
       // Should have 2 messages (tool_result-only user skipped, assistant messages merged)
       expect(result.messages).toHaveLength(2);
+      expect(result.messages[0].role).toBe('user');
+      expect(result.messages[1].role).toBe('assistant');
       expect(result.messages[0].content).toBe('Search for cats');
       // Merged assistant message has tool calls and combined content
       expect(result.messages[1].toolCalls).toHaveLength(1);
@@ -1413,23 +1307,6 @@ describe('sdkSession', () => {
       expect(result.messages).toHaveLength(1);
       expect(result.messages[0].toolCalls).toHaveLength(1);
       expect(result.messages[0].toolCalls?.[0].resolvedAnswers).toEqual({ 'Color?': 'Blue' });
-    });
-
-    it('skips user messages that are tool results', async () => {
-      mockExistsSync.mockReturnValue(true);
-      mockFsPromises.readFile.mockResolvedValue([
-        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
-        '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}',
-        '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:02:00Z","toolUseResult":{},"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"done"}]}}',
-      ].join('\n'));
-
-      const result = await loadSDKSessionMessages(vaultPath, 'session-skip-tool-result');
-
-      // Should have 2 messages (tool_result user skipped)
-      expect(result.messages).toHaveLength(2);
-      expect(result.messages[0].role).toBe('user');
-      expect(result.messages[0].content).toBe('Hello');
-      expect(result.messages[1].role).toBe('assistant');
     });
 
     it('skips skill prompt injection messages (sourceToolUseID)', async () => {
@@ -1653,6 +1530,14 @@ describe('sdkSession', () => {
         message: {
           content: [
             { type: 'text', text: 'Here is a response' },
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: 'image/png',
+                data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk',
+              },
+            },
           ],
         },
       };
@@ -1663,7 +1548,7 @@ describe('sdkSession', () => {
       expect(chatMsg!.images).toBeUndefined();
     });
 
-    it('returns null for user message with only tool_result content blocks', () => {
+    it('retains user messages with only tool_result content at the parser boundary', () => {
       const sdkMsg: SDKNativeMessage = {
         type: 'user',
         uuid: 'user-tool-only',
@@ -2381,18 +2266,6 @@ describe('sdkSession', () => {
   });
 
   describe('loadSDKSessionMessages with resumeAtMessageId', () => {
-    it('returns identical behavior without resumeAtMessageId', async () => {
-      mockExistsSync.mockReturnValue(true);
-      mockFsPromises.readFile.mockResolvedValue([
-        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Hello"}}',
-        '{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"text","text":"Hi!"}]}}',
-      ].join('\n'));
-
-      const result = await loadSDKSessionMessages(vaultPath, 'session-no-resume');
-
-      expect(result.messages).toHaveLength(2);
-    });
-
     it('truncates messages at resumeAtMessageId on linear JSONL', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockResolvedValue([

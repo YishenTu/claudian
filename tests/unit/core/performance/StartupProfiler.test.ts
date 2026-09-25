@@ -51,17 +51,6 @@ describe('StartupProfiler', () => {
     expect(report.counts['provider-init-failures']).toBe(3);
   });
 
-  it('returns JSON report', () => {
-    StartupProfiler.startOnload();
-    StartupProfiler.finishOnload();
-    StartupProfiler.recordCount('restored-tab-count', 3);
-
-    const json = StartupProfiler.toJSON();
-    const parsed = JSON.parse(json);
-    expect(parsed.counts['restored-tab-count']).toBe(3);
-    expect(parsed.spans).toEqual([]);
-  });
-
   it('copies report to clipboard', async () => {
     const writeText = jest.fn().mockResolvedValue(undefined);
     Object.defineProperty(global.navigator, 'clipboard', {
@@ -75,7 +64,9 @@ describe('StartupProfiler', () => {
     expect(copied).toBe(true);
     expect(writeText).toHaveBeenCalledTimes(1);
     const written = writeText.mock.calls[0][0] as string;
-    expect(JSON.parse(written).counts['session-metadata-count']).toBe(5);
+    const report = JSON.parse(written);
+    expect(report.counts['session-metadata-count']).toBe(5);
+    expect(report.spans).toEqual([]);
   });
 
   it('returns false when clipboard write fails', async () => {
@@ -95,12 +86,6 @@ describe('StartupProfiler', () => {
 
     const report = StartupProfiler.getReport();
     expect(report.counts['ignored']).toBeUndefined();
-  });
-
-  it('run helper wraps synchronous functions', () => {
-    const result = StartupProfiler.run('sync-span', () => 42);
-    expect(result).toBe(42);
-    expect(StartupProfiler.getReport().spans[0].name).toBe('sync-span');
   });
 
   it('runAsync helper wraps asynchronous functions', async () => {

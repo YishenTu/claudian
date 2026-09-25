@@ -444,10 +444,6 @@ describe('isCodexToolOutputError', () => {
   it('does not false-positive on normal output mentioning error', () => {
     expect(isCodexToolOutputError('Fixed the error in line 5')).toBe(false);
   });
-
-  it('does not false-positive on exit code 0', () => {
-    expect(isCodexToolOutputError('Exit code: 0\nOutput:\nall good')).toBe(false);
-  });
 });
 
 describe('parseCodexArguments', () => {

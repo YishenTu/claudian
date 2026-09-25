@@ -140,13 +140,6 @@ export function setLocale(locale: Locale): boolean {
 }
 
 /**
- * Get the current locale
- */
-export function getLocale(): Locale {
-  return currentLocale;
-}
-
-/**
  * Get all available locales
  */
 export function getAvailableLocales(): Locale[] {

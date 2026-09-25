@@ -45,16 +45,9 @@ Run tests for $ARGUMENTS.`;
 
   beforeEach(() => {
     mockAdapter = {
-      exists: jest.fn().mockResolvedValue(true),
       read: jest.fn(),
       write: jest.fn(),
       delete: jest.fn(),
-      ensureFolder: jest.fn(),
-      rename: jest.fn(),
-      stat: jest.fn(),
-      append: jest.fn(),
-      listFiles: jest.fn(),
-      listFolders: jest.fn(),
       listFilesRecursive: jest.fn(),
     } as unknown as jest.Mocked<VaultFileAdapter>;
 
@@ -67,8 +60,10 @@ Run tests for $ARGUMENTS.`;
         '.claude/commands/review-code.md',
         '.claude/commands/test/coverage.md',
         '.claude/commands/deploy.sh',
+        '.claude/commands/config.json',
       ]);
       mockAdapter.read
+        .mockResolvedValue(validMarkdown)
         .mockResolvedValueOnce(validMarkdown)
         .mockResolvedValueOnce(nestedMarkdown);
 
@@ -76,7 +71,10 @@ Run tests for $ARGUMENTS.`;
 
       expect(commands).toHaveLength(2);
       expect(commands[0].name).toBe('review-code');
+      expect(commands[0].id).toBe('cmd-review-_code');
+      expect(commands[0].description).toBe('Review code for issues');
       expect(commands[1].name).toBe('test/coverage');
+      expect(commands[1].id).toBe('cmd-test--coverage');
     });
 
     it('handles empty command folder', async () => {
@@ -85,19 +83,6 @@ Run tests for $ARGUMENTS.`;
       const commands = await storage.loadAll();
 
       expect(commands).toHaveLength(0);
-    });
-
-    it('handles files that are not markdown', async () => {
-      mockAdapter.listFilesRecursive.mockResolvedValue([
-        '.claude/commands/review-code.md',
-        '.claude/commands/deploy.sh',
-        '.claude/commands/config.json',
-      ]);
-      mockAdapter.read.mockResolvedValue(validMarkdown);
-
-      const commands = await storage.loadAll();
-
-      expect(commands).toHaveLength(1);
     });
 
     it('continues loading if one file fails', async () => {
@@ -139,29 +124,6 @@ Run tests for $ARGUMENTS.`;
   });
 
   describe('loading single files (tested through loadAll)', () => {
-    it('loads a command from file path', async () => {
-      mockAdapter.listFilesRecursive.mockResolvedValue(['.claude/commands/review-code.md']);
-      mockAdapter.read.mockResolvedValue(validMarkdown);
-
-      const commands = await storage.loadAll();
-
-      expect(commands).toHaveLength(1);
-      expect(commands[0].name).toBe('review-code');
-      expect(commands[0].id).toBe('cmd-review-_code');
-      expect(commands[0].description).toBe('Review code for issues');
-    });
-
-    it('loads nested command correctly', async () => {
-      mockAdapter.listFilesRecursive.mockResolvedValue(['.claude/commands/test/coverage.md']);
-      mockAdapter.read.mockResolvedValue(nestedMarkdown);
-
-      const commands = await storage.loadAll();
-
-      expect(commands).toHaveLength(1);
-      expect(commands[0].name).toBe('test/coverage');
-      expect(commands[0].id).toBe('cmd-test--coverage');
-    });
-
     it('handles command without optional fields', async () => {
       const simpleMarkdown = `---
 description: Simple command
@@ -203,13 +165,6 @@ Do the thing`;
   });
 
   describe('save', () => {
-    it('saves command to correct file path', async () => {
-      await storage.save(mockCommand1);
-
-      const expectedPath = '.claude/commands/review-code.md';
-      expect(mockAdapter.write).toHaveBeenCalledWith(expectedPath, expect.stringContaining('description: Review code for issues'));
-    });
-
     it('saves nested command to correct nested path', async () => {
       await storage.save(mockCommand2);
 
@@ -222,27 +177,16 @@ Do the thing`;
 
       expect(mockAdapter.write).toHaveBeenCalledWith(
         '.claude/commands/review-code.md',
-        expect.stringContaining('---')
-      );
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        '.claude/commands/review-code.md',
-        expect.stringContaining('description: Review code for issues')
-      );
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        '.claude/commands/review-code.md',
-        expect.stringContaining('argument-hint: "[file] [focus]"')
-      );
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        '.claude/commands/review-code.md',
-        expect.stringContaining('allowed-tools:')
-      );
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        '.claude/commands/review-code.md',
-        expect.stringContaining('model: claude-sonnet-4-5')
-      );
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        '.claude/commands/review-code.md',
-        expect.stringContaining('Please review $ARGUMENTS')
+        `---
+name: review-code
+description: Review code for issues
+argument-hint: "[file] [focus]"
+allowed-tools:
+  - Read
+  - Grep
+model: claude-sonnet-4-5
+---
+Please review $ARGUMENTS for any issues.`
       );
     });
 
@@ -442,6 +386,7 @@ Do the thing`;
 
       const commands = await storage.loadAll();
       expect(commands[0].id).toBe('cmd-test');
+      expect(commands[0].name).toBe('test');
     });
 
     it('encodes path with slashes correctly', async () => {
@@ -478,14 +423,6 @@ Do the thing`;
   });
 
   describe('filePathToName (private method tested through loadAll)', () => {
-    it('extracts name from simple path', async () => {
-      mockAdapter.listFilesRecursive.mockResolvedValue(['.claude/commands/test.md']);
-      mockAdapter.read.mockResolvedValue(validMarkdown);
-
-      const commands = await storage.loadAll();
-      expect(commands[0].name).toBe('test');
-    });
-
     it('extracts name from nested path', async () => {
       mockAdapter.listFilesRecursive.mockResolvedValue(['.claude/commands/a/b/c.md']);
       mockAdapter.read.mockResolvedValue(validMarkdown);
@@ -551,19 +488,10 @@ Do the thing`;
         expect.stringContaining('description: text with "quotes"')
       );
     });
-
-    it('does not quote simple strings', async () => {
-      await storage.save(mockCommand1);
-
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.stringContaining('description: Review code for issues')
-      );
-    });
   });
 
   describe('empty metadata handling', () => {
-    it('adds blank line in frontmatter when no metadata exists', async () => {
+    it('round-trips a named command without optional metadata', async () => {
       const commandNoMetadata: SlashCommand = {
         id: 'cmd-simple',
         name: 'simple',
@@ -574,21 +502,7 @@ Do the thing`;
 
       const writeCall = mockAdapter.write.mock.calls[0];
       const writtenContent = writeCall[1] as string;
-
       expect(writtenContent).toBe('---\nname: simple\n---\nJust a prompt');
-    });
-
-    it('produces parseable frontmatter even with no metadata', async () => {
-      const commandNoMetadata: SlashCommand = {
-        id: 'cmd-simple',
-        name: 'simple',
-        content: 'Just a prompt',
-      };
-
-      await storage.save(commandNoMetadata);
-
-      const writeCall = mockAdapter.write.mock.calls[0];
-      const writtenContent = writeCall[1] as string;
 
       // Simulate loading it back - should parse correctly
       mockAdapter.read.mockResolvedValue(writtenContent);
@@ -597,16 +511,6 @@ Do the thing`;
 
       expect(loaded).toHaveLength(1);
       expect(loaded[0].content).toBe('Just a prompt');
-    });
-
-    it('does not add extra blank line when metadata exists', async () => {
-      await storage.save(mockCommand1);
-
-      const writeCall = mockAdapter.write.mock.calls[0];
-      const writtenContent = writeCall[1] as string;
-
-      // Should not have double newlines between description and ---
-      expect(writtenContent).not.toMatch(/description: .*\n\n---/);
     });
   });
 });

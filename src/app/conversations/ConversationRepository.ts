@@ -952,38 +952,12 @@ export class ConversationRepository {
     await this.save(conversation);
   }
 
-  async flushPersistence(conversationId: string): Promise<void> {
-    await this.persistenceQueues.get(conversationId);
-  }
-
   async getById(id: string): Promise<Conversation | null> {
     return this.ensureHydrated(id);
   }
 
   getCachedConversation(id: string): Conversation | null {
     return this.getSync(id);
-  }
-
-  getMetadata(id: string): ConversationMeta | null {
-    const conversation = this.getSync(id);
-    if (!conversation) {
-      return null;
-    }
-    return {
-      id: conversation.id,
-      providerId: conversation.providerId,
-      selectedModel: conversation.selectedModel,
-      title: conversation.title,
-      createdAt: conversation.createdAt,
-      lastActivityAt: conversation.lastActivityAt,
-      messageCount: conversation.messages.length,
-      preview: this.#getPreview(conversation),
-      linkedContentPath: conversation.linkedContentPath,
-      isPinned: conversation.isPinned,
-      isArchived: conversation.isArchived,
-      titleGenerationStatus: conversation.titleGenerationStatus,
-      isLegacySession: this.#isLegacyMetadataTarget(id),
-    };
   }
 
   async ensureHydrated(id: string): Promise<Conversation | null> {
@@ -1050,13 +1024,6 @@ export class ConversationRepository {
       this.#restoreLinkedContentIdentity(conversation);
     }
     return conversation;
-  }
-
-  findEmpty(): Conversation | null {
-    this.#restoreAllLinkedContentIdentities();
-    return this.conversations.find(
-      (conversation) => conversation.messages.length === 0,
-    ) ?? null;
   }
 
   list(): ConversationMeta[] {

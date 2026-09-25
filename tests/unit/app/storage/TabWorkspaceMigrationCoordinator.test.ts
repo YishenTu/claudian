@@ -61,6 +61,8 @@ describe('TabWorkspaceMigrationCoordinator', () => {
     await registration.waitUntilDeclarationsReady;
 
     await expect(coordinator.claimLegacyState()).resolves.toEqual(legacyState);
+    await expect(coordinator.claimLegacyState()).resolves.toBeNull();
+    expect(storage.getTabManagerState).toHaveBeenCalledTimes(1);
     expect(storage.clearTabManagerState).not.toHaveBeenCalled();
   });
 
@@ -135,32 +137,5 @@ describe('TabWorkspaceMigrationCoordinator', () => {
     await expect(coordinator.claimLegacyState()).resolves.toBeNull();
     expect(storage.getTabManagerState).not.toHaveBeenCalled();
     expect(storage.clearTabManagerState).toHaveBeenCalledTimes(1);
-  });
-
-  it('allows only one view to claim the legacy snapshot', async () => {
-    const legacyState = {
-      activeTabId: 'legacy-tab',
-      openTabs: [{ conversationId: null, tabId: 'legacy-tab' }],
-    };
-    const storage = {
-      clearTabManagerState: jest.fn().mockResolvedValue(undefined),
-      getTabManagerState: jest.fn().mockResolvedValue(legacyState),
-    };
-    const { leaves, markLayoutReady, workspace } = createWorkspaceHarness();
-    const liveView = { kind: 'claudian' };
-    leaves.push({ view: liveView, getViewState: jest.fn().mockReturnValue({ state: {} }) });
-    const coordinator = new TabWorkspaceMigrationCoordinator(
-      storage,
-      workspace as any,
-      view => view === liveView,
-    );
-
-    const registration = coordinator.registerStateDelivery(liveView, false);
-    markLayoutReady();
-    await registration.waitUntilDeclarationsReady;
-
-    await expect(coordinator.claimLegacyState()).resolves.toEqual(legacyState);
-    await expect(coordinator.claimLegacyState()).resolves.toBeNull();
-    expect(storage.getTabManagerState).toHaveBeenCalledTimes(1);
   });
 });

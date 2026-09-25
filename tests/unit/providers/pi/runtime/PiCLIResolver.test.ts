@@ -27,10 +27,17 @@ describe('PiCLIResolver', () => {
 
     const resolver = new PiCLIResolver();
 
-    expect(resolver.resolve({
-      'current-host': '/current/pi',
-      'other-host': '/other/pi',
-    }, '/legacy/pi')).toBe('/current/pi');
+    expect(resolver.resolveFromSettings({
+      providerConfigs: {
+        pi: {
+          cliPathsByHost: {
+            'current-host': '/current/pi',
+            'other-host': '/other/pi',
+          },
+          cliPath: '/legacy/pi',
+        },
+      },
+    })).toBe('/current/pi');
   });
 
   it('falls back to cliPath and returns null for invalid paths', () => {
@@ -42,13 +49,21 @@ describe('PiCLIResolver', () => {
     });
 
     const resolver = new PiCLIResolver();
-    expect(resolver.resolve({ 'other-host': '/other/pi' }, '/legacy/pi')).toBe('/legacy/pi');
+    const settings = {
+      providerConfigs: {
+        pi: {
+          cliPathsByHost: { 'other-host': '/other/pi' },
+          cliPath: '/legacy/pi',
+        },
+      },
+    };
+    expect(resolver.resolveFromSettings(settings)).toBe('/legacy/pi');
 
     mockedStat.mockImplementation(() => {
       throw new Error('ENOENT');
     });
     resolver.reset();
-    expect(resolver.resolve({ 'other-host': '/other/pi' }, '/legacy/pi')).toBeNull();
+    expect(resolver.resolveFromSettings(settings)).toBeNull();
   });
 
   it('falls back to PATH lookup when no Pi CLI path is configured', () => {
@@ -63,7 +78,11 @@ describe('PiCLIResolver', () => {
 
     const resolver = new PiCLIResolver();
 
-    expect(resolver.resolve({}, '', `PATH=${pathDir}`)).toBe(pathBinary);
+    expect(resolver.resolveFromSettings({
+      providerConfigs: {
+        pi: { environmentVariables: `PATH=${pathDir}` },
+      },
+    })).toBe(pathBinary);
   });
 
   it('invalidates cached resolutions when provider environment changes', () => {

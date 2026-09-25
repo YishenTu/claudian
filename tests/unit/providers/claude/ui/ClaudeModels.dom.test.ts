@@ -44,7 +44,6 @@ HTMLElement.prototype.appendText = function (text) { this.append(text); };
 
 function renderModels(container: HTMLElement, context: ProviderSettingsTabRendererContext, native: Pick<ClaudeModelCatalog, 'refresh'>) {
   context.plugin.notifyProviderChatOptionsChanged = jest.fn();
-  context.notifyProviderModelOptionsChanged ??= jest.fn();
   return renderProviderModelsSection(container, 'claude', 'Claude', createClaudeModels(context.plugin, native as ClaudeModelCatalog));
 }
 
@@ -83,7 +82,6 @@ describe('Claude model picker', () => {
     const settings = { providerConfigs: { claude: config } };
     const context = {
       plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
-      notifyProviderModelOptionsChanged: jest.fn(),
     } as unknown as ProviderSettingsTabRendererContext;
     const catalog = { refresh: jest.fn(async () => {
       settings.providerConfigs.claude.discoveredModels = [
@@ -122,7 +120,6 @@ describe('Claude model picker', () => {
     } } };
     const context = {
       plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
-      notifyProviderModelOptionsChanged: jest.fn(),
     } as unknown as ProviderSettingsTabRendererContext;
     renderModels(container, context, { refresh: jest.fn().mockResolvedValue({ changed: false }) });
     const toolbar = document.body.createDiv();
@@ -163,7 +160,6 @@ describe('Claude model picker', () => {
     } } };
     const context = {
       plugin: { settings, mutateSettings: async (fn: (value: unknown) => void) => fn(settings) },
-      notifyProviderModelOptionsChanged: jest.fn(),
     } as unknown as ProviderSettingsTabRendererContext;
     const catalog = { refresh: jest.fn().mockResolvedValue({ changed: true }) };
     renderModels(container, context, catalog);
@@ -204,7 +200,6 @@ it('allows Discover after abort and detaches the closed settings observer', asyn
     host: { mutateSettings: async mutate => { await mutate({} as any); }, notifyProviderChatOptionsChanged: notify },
   });
   const container = document.body.createDiv();
-  const context = { notifyProviderModelOptionsChanged: jest.fn() } as unknown as ProviderSettingsTabRendererContext;
   const picker = renderProviderModelsSection(container, 'claude', 'Claude', catalog);
   catalog.markStale();
   container.querySelector('details')!.open = true;
@@ -213,11 +208,8 @@ it('allows Discover after abort and detaches the closed settings observer', asyn
   fireEvent.click(button);
   await waitFor(() => expect(discover).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(catalog.getSnapshot().status).toBe('ready'));
-  expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
   expect(notify).not.toHaveBeenCalled();
-  expect('dispose' in picker).toBe(true);
-  if (!('dispose' in picker)) return;
-  (picker.dispose as () => void)();
+  picker.dispose();
   const rendered = container.innerHTML;
   catalog.markStale();
   finishOld();

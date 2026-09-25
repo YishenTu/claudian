@@ -98,6 +98,8 @@ describe('Message action row visibility', () => {
   it('reveals the row on hover, and on focus only from its own controls', () => {
     const selectors = revealSelectors();
 
+    expect(selectors).toContain('.claudian-message:hover > .claudian-message-actions');
+    expect(selectors).toContain('.claudian-message-images:hover > .claudian-message-actions');
     expect(selectors).toContain('.claudian-message-actions:focus-within');
     // Focus on a collapsible header elsewhere in the turn must not reveal the row.
     expect(selectors.filter(selector => /:focus/.test(selector)

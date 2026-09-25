@@ -61,15 +61,6 @@ export function createThinkingBlock(
   return state;
 }
 
-export async function appendThinkingContent(
-  state: ThinkingBlockState,
-  content: string,
-  renderContent: RenderContentFn
-) {
-  state.content += content;
-  await renderContent(state.contentEl, state.content);
-}
-
 export function finalizeThinkingBlock(state: ThinkingBlockState): number {
   // Stop the timer
   if (state.timerInterval) {

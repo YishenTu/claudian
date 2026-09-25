@@ -86,7 +86,6 @@ function toError(error: unknown): Error {
 }
 
 export class VaultFileAdapter {
-  private writeQueue: Promise<void> = Promise.resolve();
   private folderCreationPromises = new Map<string, Promise<void>>();
 
   constructor(private app: App) {}
@@ -111,21 +110,6 @@ export class VaultFileAdapter {
   async write(path: string, content: string): Promise<void> {
     await this.#ensureParentFolder(path);
     await this.app.vault.adapter.write(path, content);
-  }
-
-  async append(path: string, content: string): Promise<void> {
-    await this.#ensureParentFolder(path);
-    this.writeQueue = this.writeQueue.then(async () => {
-      if (await this.exists(path)) {
-        const existing = await this.read(path);
-        await this.app.vault.adapter.write(path, existing + content);
-      } else {
-        await this.app.vault.adapter.write(path, content);
-      }
-    }).catch(() => {
-      // prevent queue from getting stuck
-    });
-    await this.writeQueue;
   }
 
   async delete(path: string): Promise<void> {

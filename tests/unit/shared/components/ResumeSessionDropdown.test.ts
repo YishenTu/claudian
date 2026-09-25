@@ -85,20 +85,6 @@ describe('ResumeSessionDropdown', () => {
   });
 
   describe('constructor', () => {
-    it('creates dropdown with visible class', () => {
-      const dropdown = new ResumeSessionDropdown(
-        containerEl, inputEl, conversations, null, callbacks
-      );
-
-      const dropdownEl = containerEl.children.find(
-        (c: any) => c.hasClass('claudian-resume-dropdown')
-      );
-      expect(dropdownEl).toBeDefined();
-      expect(dropdownEl.hasClass('visible')).toBe(true);
-
-      dropdown.destroy();
-    });
-
     it('sorts conversations by lastActivityAt descending', () => {
       const dropdown = new ResumeSessionDropdown(
         containerEl, inputEl, conversations, null, callbacks
@@ -142,20 +128,17 @@ describe('ResumeSessionDropdown', () => {
       dropdown.destroy();
     });
 
-    it('adds input event listener for auto-dismiss', () => {
-      const dropdown = new ResumeSessionDropdown(
-        containerEl, inputEl, conversations, null, callbacks
-      );
-
-      expect(inputEl.addEventListener).toHaveBeenCalledWith('input', expect.any(Function));
-
-      dropdown.destroy();
-    });
-
     it('exposes the popup while preserving native textarea semantics', () => {
       const dropdown = new ResumeSessionDropdown(
         containerEl, inputEl, conversations, null, callbacks
       );
+
+      const dropdownEl = containerEl.children.find(
+        (c: any) => c.hasClass('claudian-resume-dropdown')
+      );
+      expect(dropdownEl).toBeDefined();
+      expect(dropdownEl.hasClass('visible')).toBe(true);
+      expect(dropdown.isVisible()).toBe(true);
 
       const listbox = containerEl.querySelector('.claudian-resume-list');
       const items = listbox?.querySelectorAll('.claudian-resume-item') ?? [];
@@ -205,20 +188,6 @@ describe('ResumeSessionDropdown', () => {
       dropdown.destroy();
     });
 
-    it('navigates down with ArrowDown', () => {
-      const dropdown = new ResumeSessionDropdown(
-        containerEl, inputEl, conversations, null, callbacks
-      );
-
-      const event = { key: 'ArrowDown', preventDefault: jest.fn() } as any;
-      const result = dropdown.handleKeydown(event);
-
-      expect(result).toBe(true);
-      expect(event.preventDefault).toHaveBeenCalled();
-
-      dropdown.destroy();
-    });
-
     it('keeps the active descendant and option selection in sync while navigating', () => {
       const dropdown = new ResumeSessionDropdown(
         containerEl, inputEl, conversations, null, callbacks
@@ -226,7 +195,9 @@ describe('ResumeSessionDropdown', () => {
       const listbox = containerEl.querySelector('.claudian-resume-list');
       const items = listbox?.querySelectorAll('.claudian-resume-item') ?? [];
 
-      dropdown.handleKeydown({ key: 'ArrowDown', preventDefault: jest.fn() } as any);
+      const event = { key: 'ArrowDown', preventDefault: jest.fn() } as any;
+      expect(dropdown.handleKeydown(event)).toBe(true);
+      expect(event.preventDefault).toHaveBeenCalled();
 
       expect(items[0]?.getAttribute('aria-selected')).toBe('false');
       expect(items[1]?.getAttribute('aria-selected')).toBe('true');
@@ -294,6 +265,7 @@ describe('ResumeSessionDropdown', () => {
       expect(result).toBe(true);
       expect(event.preventDefault).toHaveBeenCalled();
       expect(callbacks.onDismiss).toHaveBeenCalled();
+      expect(dropdown.isVisible()).toBe(false);
 
       dropdown.destroy();
     });
@@ -329,35 +301,13 @@ describe('ResumeSessionDropdown', () => {
     });
   });
 
-  describe('isVisible', () => {
-    it('returns true after construction', () => {
-      const dropdown = new ResumeSessionDropdown(
-        containerEl, inputEl, conversations, null, callbacks
-      );
-
-      expect(dropdown.isVisible()).toBe(true);
-
-      dropdown.destroy();
-    });
-
-    it('returns false after Escape', () => {
-      const dropdown = new ResumeSessionDropdown(
-        containerEl, inputEl, conversations, null, callbacks
-      );
-
-      dropdown.handleKeydown({ key: 'Escape', preventDefault: jest.fn() } as any);
-
-      expect(dropdown.isVisible()).toBe(false);
-
-      dropdown.destroy();
-    });
-  });
-
   describe('destroy', () => {
     it('removes input event listener', () => {
       const dropdown = new ResumeSessionDropdown(
         containerEl, inputEl, conversations, null, callbacks
       );
+
+      expect(inputEl.addEventListener).toHaveBeenCalledWith('input', expect.any(Function));
 
       dropdown.destroy();
 

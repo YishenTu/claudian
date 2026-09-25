@@ -40,7 +40,6 @@ jest.mock('@/features/chat/rendering/SubagentRenderer', () => ({
 }));
 
 jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({
-  appendThinkingContent: jest.fn(),
   createThinkingBlock: jest.fn().mockImplementation((_parentEl, options) => ({
     wrapperEl: {},
     contentEl: {},
@@ -136,7 +135,6 @@ function createMockDeps(): MockStreamControllerDeps {
       renderCitationGroup: jest.fn(),
     } as any,
     subagentManager: {
-      isAsyncTask: jest.fn().mockReturnValue(false),
       isPendingAsyncTask: jest.fn().mockReturnValue(false),
       isLinkedAgentOutputTool: jest.fn().mockReturnValue(false),
       handleAgentOutputToolResult: jest.fn().mockReturnValue(undefined),
@@ -154,7 +152,6 @@ function createMockDeps(): MockStreamControllerDeps {
       updateSyncToolResult: jest.fn(),
       finalizeSyncSubagent: jest.fn().mockReturnValue(null),
       resetStreamingState: jest.fn(),
-      resetSpawnedCount: jest.fn(),
       subagentsSpawnedThisStream: 0,
     } as any,
     getMessagesEl: () => messagesEl,
@@ -226,24 +223,13 @@ describe('StreamController - Text Content', () => {
   });
 
   afterEach(() => {
-    // Clean up any timers set by ChatState
-    deps.state.resetStreamingState();
+    deps.state.clearThinkingIndicatorTimeout();
+    deps.state.clearFlavorTimerInterval();
     restoreTestWindow();
     jest.useRealTimers();
   });
 
   describe('Text streaming', () => {
-    it('should append text content to message', async () => {
-      const msg = createTestMessage();
-
-      deps.state.currentTextEl = createMockEl();
-
-      await controller.handleStreamChunk({ type: 'text', content: 'Hello ' }, msg);
-      await controller.handleStreamChunk({ type: 'text', content: 'World' }, msg);
-
-      expect(msg.content).toBe('Hello World');
-    });
-
     it('should accumulate text across multiple chunks', async () => {
       const msg = createTestMessage();
       deps.state.currentTextEl = createMockEl();
@@ -398,6 +384,9 @@ describe('StreamController - Text Content', () => {
       await controller.appendText('Hello');
       await controller.finalizeCurrentTextBlock(msg);
 
+      expect(deps.state.currentTextEl).toBeNull();
+      expect(deps.state.currentTextContent).toBe('');
+
       expect(deps.renderer.renderContent).toHaveBeenCalledWith(
         expect.anything(),
         'Hello'
@@ -432,23 +421,6 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Text block finalization', () => {
-    it('should add copy button when finalizing text block with content', async () => {
-      const msg = createTestMessage();
-      deps.state.currentTextEl = createMockEl();
-      deps.state.currentTextContent = 'Hello World';
-
-      await controller.finalizeCurrentTextBlock(msg);
-
-      expect(deps.renderer.addTextCopyButton).toHaveBeenCalledWith(
-        expect.anything(),
-        'Hello World'
-      );
-      expect(msg.contentBlocks).toContainEqual({
-        type: 'text',
-        content: 'Hello World',
-      });
-    });
-
     it('should not add copy button when no text element exists', async () => {
       const msg = createTestMessage();
       deps.state.currentTextEl = null;
@@ -473,43 +445,6 @@ describe('StreamController - Text Content', () => {
 
       expect(deps.renderer.addTextCopyButton).not.toHaveBeenCalled();
       expect(msg.contentBlocks).toEqual([]);
-    });
-
-    it('should reset text state after finalization', async () => {
-      const msg = createTestMessage();
-      deps.state.currentTextEl = createMockEl();
-      deps.state.currentTextContent = 'Test content';
-
-      await controller.finalizeCurrentTextBlock(msg);
-
-      expect(deps.state.currentTextEl).toBeNull();
-      expect(deps.state.currentTextContent).toBe('');
-    });
-  });
-
-  describe('Error and notice handling', () => {
-    it('should append error message on error chunk', async () => {
-      const msg = createTestMessage();
-      deps.state.currentTextEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'error', content: 'Something went wrong' },
-        msg
-      );
-
-      expect(deps.state.currentTextContent).toContain('Error');
-    });
-
-    it('should append warning notice on notice chunk', async () => {
-      const msg = createTestMessage();
-      deps.state.currentTextEl = createMockEl();
-
-      await controller.handleStreamChunk(
-        { type: 'notice', content: 'Tool was blocked', level: 'warning' },
-        msg
-      );
-
-      expect(deps.state.currentTextContent).toContain('Blocked');
     });
   });
 
@@ -619,18 +554,6 @@ describe('StreamController - Text Content', () => {
         isError: true,
         isBlocked: true,
       });
-    });
-  });
-
-  describe('Done chunk handling', () => {
-    it('should handle done chunk without error', async () => {
-      const msg = createTestMessage();
-      deps.state.currentTextEl = createMockEl();
-
-      // Should not throw
-      await expect(
-        controller.handleStreamChunk({ type: 'done' }, msg)
-      ).resolves.not.toThrow();
     });
   });
 
@@ -1164,6 +1087,8 @@ describe('StreamController - Text Content', () => {
 
       await controller.handleStreamChunk({ type: 'notice', content: 'Command blocked', level: 'warning' }, msg);
 
+      expect(deps.state.currentTextContent).toContain('Blocked');
+
       expect(deps.state.pendingTools.size).toBe(0);
       expect(renderToolCall).toHaveBeenCalled();
     });
@@ -1180,6 +1105,8 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.pendingTools.size).toBe(1);
 
       await controller.handleStreamChunk({ type: 'error', content: 'Something went wrong' }, msg);
+
+      expect(deps.state.currentTextContent).toContain('Error');
 
       expect(deps.state.pendingTools.size).toBe(0);
       expect(renderToolCall).toHaveBeenCalled();
@@ -1273,15 +1200,6 @@ describe('StreamController - Text Content', () => {
       expect(messagesEl.scrollTop).toBe(0);
     });
 
-    it('should create timer interval when showing thinking indicator', () => {
-      deps.state.responseStartTime = performance.now();
-
-      controller.showThinkingIndicator();
-      jest.advanceTimersByTime(500); // Past the debounce delay
-
-      expect(deps.state.flavorTimerInterval).not.toBeNull();
-    });
-
     it('should clear timer interval when hiding thinking indicator', () => {
       deps.state.responseStartTime = performance.now();
 
@@ -1346,24 +1264,6 @@ describe('StreamController - Text Content', () => {
 
       expect(deps.state.flavorTimerInterval).toBeNull();
     });
-
-    it('should not create duplicate intervals on multiple showThinkingIndicator calls', () => {
-      deps.state.responseStartTime = performance.now();
-      const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
-
-      controller.showThinkingIndicator();
-      jest.advanceTimersByTime(500);
-      const firstInterval = deps.state.flavorTimerInterval;
-
-      // Second call while indicator exists should not create a new interval
-      controller.showThinkingIndicator();
-      jest.advanceTimersByTime(500);
-
-      // Should still have the same interval (no new one created since element exists)
-      expect(deps.state.flavorTimerInterval).toBe(firstInterval);
-
-      clearIntervalSpy.mockRestore();
-    });
   });
 
   describe('Tool handling - continued', () => {
@@ -1398,6 +1298,9 @@ describe('StreamController - Text Content', () => {
       expect(calls[0][1].id).toBe('read-1');
       expect(calls[1][1].id).toBe('grep-1');
       expect(calls[2][1].id).toBe('glob-1');
+
+      await controller.handleStreamChunk({ type: 'done' }, msg);
+      expect(renderToolCall).toHaveBeenCalledTimes(3);
     });
   });
 
@@ -1501,12 +1404,17 @@ describe('StreamController - Text Content', () => {
       jest.advanceTimersByTime(500);
 
       const thinkingEl = deps.state.thinkingEl;
+      const firstInterval = deps.state.flavorTimerInterval;
       expect(thinkingEl).not.toBeNull();
+      expect(firstInterval).not.toBeNull();
 
       controller.showThinkingIndicator();
 
       expect(deps.state.thinkingEl).toBe(thinkingEl);
       expect(deps.updateQueueIndicator).toHaveBeenCalled();
+
+      jest.advanceTimersByTime(500);
+      expect(deps.state.flavorTimerInterval).toBe(firstInterval);
     });
   });
 
@@ -1521,7 +1429,15 @@ describe('StreamController - Text Content', () => {
       deps.state.currentTextEl = createMockEl();
       await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
 
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
       expect(messagesEl.scrollTop).toBe(0);
+
+      (deps.plugin.settings as any).enableAutoScroll = true;
+      await controller.handleStreamChunk({ type: 'text', content: ' again' }, msg);
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+      expect(messagesEl.scrollTop).toBe(1000);
     });
 
     it('should not scroll when autoScrollEnabled state is false', async () => {
@@ -1534,7 +1450,15 @@ describe('StreamController - Text Content', () => {
       deps.state.currentTextEl = createMockEl();
       await controller.handleStreamChunk({ type: 'text', content: 'Hello' }, msg);
 
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
       expect(messagesEl.scrollTop).toBe(0);
+
+      deps.state.autoScrollEnabled = true;
+      await controller.handleStreamChunk({ type: 'text', content: ' again' }, msg);
+      jest.advanceTimersByTime(16);
+      await Promise.resolve();
+      expect(messagesEl.scrollTop).toBe(1000);
     });
   });
 
@@ -1774,31 +1698,6 @@ describe('StreamController - Text Content', () => {
       expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(contentEl, content);
     });
 
-    it('should defer math rendering during live thinking renders', async () => {
-      const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
-      const msg = createTestMessage();
-      const contentEl = createMockEl();
-      createThinkingBlock.mockReturnValueOnce({
-        wrapperEl: createMockEl(),
-        contentEl,
-        labelEl: createMockEl(),
-        content: '',
-        startTime: Date.now(),
-        isExpanded: true,
-      });
-
-      await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
-
-      jest.advanceTimersByTime(16);
-      await Promise.resolve();
-
-      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
-        contentEl,
-        'Reasoning $x^2$',
-        { deferMath: true }
-      );
-    });
-
     it('should render original math once when finalizing a collapsed thinking block', async () => {
       const { createThinkingBlock } = jest.requireMock('@/features/chat/rendering/ThinkingBlockRenderer');
       const msg = createTestMessage();
@@ -1842,6 +1741,13 @@ describe('StreamController - Text Content', () => {
       await controller.handleStreamChunk({ type: 'thinking', content: 'Reasoning $x^2$' }, msg);
       jest.advanceTimersByTime(16);
       await Promise.resolve();
+      expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+      expect(deps.renderer.renderContent).toHaveBeenCalledWith(
+        contentEl,
+        'Reasoning $x^2$',
+        { deferMath: true }
+      );
+
       await controller.finalizeCurrentThinkingBlock(msg);
 
       expect(deps.renderer.renderContent).toHaveBeenNthCalledWith(
@@ -4216,6 +4122,7 @@ describe('StreamController - Text Content', () => {
       // Get timerSpan and set isConnected to true for proper timer operation
       const timerSpan = deps.state.thinkingEl!.children[1];
       Object.defineProperty(timerSpan, 'isConnected', { value: true, configurable: true });
+      timerSpan.setText('Existing timer text');
 
       // Clear responseStartTime to trigger early return in updateTimer
       deps.state.responseStartTime = null;
@@ -4223,6 +4130,7 @@ describe('StreamController - Text Content', () => {
       // Advance time to trigger timer callback - should not throw
       jest.advanceTimersByTime(1000);
 
+      expect(timerSpan.textContent).toBe('Existing timer text');
       // Timer should still be set (interval not cleared by the null check)
       expect(deps.state.flavorTimerInterval).not.toBeNull();
     });
@@ -4243,7 +4151,8 @@ describe('StreamController - Tool completion', () => {
   });
 
   afterEach(() => {
-    deps.state.resetStreamingState();
+    deps.state.clearThinkingIndicatorTimeout();
+    deps.state.clearFlavorTimerInterval();
     restoreTestWindow();
     jest.useRealTimers();
   });

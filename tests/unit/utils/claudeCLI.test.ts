@@ -37,11 +37,10 @@ describe('ClaudeCLIResolver', () => {
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCLIResolver();
-      const resolved = resolver.resolve(
-        { 'test-host': '/hostname/claude' },
-        '/legacy/claude',
-        ''
-      );
+      const resolved = resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: { 'test-host': '/hostname/claude' }, cliPath: '/legacy/claude' } },
+        sharedEnvironmentVariables: '',
+      });
 
       expect(resolved).toBe('/hostname/claude');
     });
@@ -51,25 +50,10 @@ describe('ClaudeCLIResolver', () => {
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCLIResolver();
-      const resolved = resolver.resolve(
-        { 'other-host': '/other/claude' },
-        '/legacy/claude',
-        ''
-      );
-
-      expect(resolved).toBe('/legacy/claude');
-    });
-
-    it('should fall back to legacy path when hostname paths empty', () => {
-      mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
-      mockedStat.mockReturnValue({ isFile: () => true });
-
-      const resolver = new ClaudeCLIResolver();
-      const resolved = resolver.resolve(
-        {},
-        '/legacy/claude',
-        ''
-      );
+      const resolved = resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: { 'other-host': '/other/claude' }, cliPath: '/legacy/claude' } },
+        sharedEnvironmentVariables: '',
+      });
 
       expect(resolved).toBe('/legacy/claude');
     });
@@ -79,7 +63,10 @@ describe('ClaudeCLIResolver', () => {
       mockedFind.mockReturnValue('/auto/claude');
 
       const resolver = new ClaudeCLIResolver();
-      const resolved = resolver.resolve({}, '', '');
+      const resolved = resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: {}, cliPath: '' } },
+        sharedEnvironmentVariables: '',
+      });
 
       expect(resolved).toBe('/auto/claude');
       expect(mockedFind).toHaveBeenCalled();
@@ -92,16 +79,14 @@ describe('ClaudeCLIResolver', () => {
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCLIResolver();
-      const first = resolver.resolve(
-        { 'test-host': '/hostname/claude' },
-        '',
-        ''
-      );
-      const second = resolver.resolve(
-        { 'test-host': '/hostname/claude' },
-        '',
-        ''
-      );
+      const first = resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: { 'test-host': '/hostname/claude' }, cliPath: '' } },
+        sharedEnvironmentVariables: '',
+      });
+      const second = resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: { 'test-host': '/hostname/claude' }, cliPath: '' } },
+        sharedEnvironmentVariables: '',
+      });
 
       expect(first).toBe('/hostname/claude');
       expect(second).toBe('/hostname/claude');
@@ -114,16 +99,14 @@ describe('ClaudeCLIResolver', () => {
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCLIResolver();
-      const first = resolver.resolve(
-        { 'test-host': '/hostname/claude1' },
-        '',
-        ''
-      );
-      const second = resolver.resolve(
-        { 'test-host': '/hostname/claude2' },
-        '',
-        ''
-      );
+      const first = resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: { 'test-host': '/hostname/claude1' }, cliPath: '' } },
+        sharedEnvironmentVariables: '',
+      });
+      const second = resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: { 'test-host': '/hostname/claude2' }, cliPath: '' } },
+        sharedEnvironmentVariables: '',
+      });
 
       expect(first).toBe('/hostname/claude1');
       expect(second).toBe('/hostname/claude2');
@@ -134,19 +117,17 @@ describe('ClaudeCLIResolver', () => {
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCLIResolver();
-      resolver.resolve(
-        { 'test-host': '/hostname/claude' },
-        '',
-        ''
-      );
+      resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: { 'test-host': '/hostname/claude' }, cliPath: '' } },
+        sharedEnvironmentVariables: '',
+      });
 
       resolver.reset();
 
-      resolver.resolve(
-        { 'test-host': '/hostname/claude' },
-        '',
-        ''
-      );
+      resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: { 'test-host': '/hostname/claude' }, cliPath: '' } },
+        sharedEnvironmentVariables: '',
+      });
 
       // Should be called twice because cache was cleared
       expect(mockedExists).toHaveBeenCalledTimes(2);
@@ -160,7 +141,10 @@ describe('ClaudeCLIResolver', () => {
       mockedFind.mockReturnValue('/auto/claude');
 
       const resolver = new ClaudeCLIResolver();
-      const resolved = resolver.resolve({}, '/legacy/claude', '');
+      const resolved = resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: {}, cliPath: '/legacy/claude' } },
+        sharedEnvironmentVariables: '',
+      });
 
       expect(resolved).toBe('/legacy/claude');
       expect(mockedFind).not.toHaveBeenCalled();
@@ -172,7 +156,10 @@ describe('ClaudeCLIResolver', () => {
       mockedFind.mockReturnValue('/auto/claude');
 
       const resolver = new ClaudeCLIResolver();
-      const resolved = resolver.resolve(undefined, '/legacy/claude', '');
+      const resolved = resolver.resolveFromSettings({
+        providerConfigs: { claude: { cliPathsByHost: undefined, cliPath: '/legacy/claude' } },
+        sharedEnvironmentVariables: '',
+      });
 
       expect(resolved).toBe('/legacy/claude');
       expect(mockedFind).not.toHaveBeenCalled();

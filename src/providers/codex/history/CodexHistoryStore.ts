@@ -1629,17 +1629,6 @@ async function defaultPathExists(value: string): Promise<boolean> {
   }
 }
 
-export function parseCodexSessionFile(filePath: string): ChatMessage[] {
-  let content: string;
-  try {
-    content = fs.readFileSync(filePath, 'utf-8');
-  } catch {
-    return [];
-  }
-
-  return parseCodexSessionContent(content);
-}
-
 export async function parseCodexSessionFileAsync(
   filePath: string,
   timeoutMs = 10_000,

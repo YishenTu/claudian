@@ -20,18 +20,6 @@ export class OpencodeCLIResolver {
     return this.resolver.resolveFromSettings(settings);
   }
 
-  resolve(
-    hostnamePaths: Record<string, string> | undefined,
-    legacyPath: string,
-    envText: string,
-  ): string | null {
-    return this.resolver.resolve({
-      cliPathsByHost: hostnamePaths,
-      environmentText: envText,
-      legacyCliPath: legacyPath,
-    });
-  }
-
   reset(): void {
     this.resolver.reset();
   }

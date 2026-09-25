@@ -70,17 +70,12 @@ describe('Startup optimization', () => {
     StartupProfiler.reset();
   });
 
-  it('workspace registry initializeAll resolves before Codex discovery completes', async () => {
-    let discoveryResolved = false;
+  it('initializes the workspace without discovering Codex models until explicit refresh', async () => {
     const discovery: CodexModelDiscoveryServiceLike = {
-      discoverModels: jest.fn(async () => {
-        await new Promise((res) => setTimeout(res, 50));
-        discoveryResolved = true;
-        return {
-          kind: 'completed',
-          models: [makeModel('gpt-4o')],
-        } as CodexModelDiscoveryResult;
-      }),
+      discoverModels: jest.fn(async () => ({
+        kind: 'completed',
+        models: [makeModel('gpt-4o')],
+      } as CodexModelDiscoveryResult)),
     };
 
     ProviderWorkspaceRegistry.register('codex', {
@@ -90,30 +85,18 @@ describe('Startup optimization', () => {
     });
 
     const host = createFakeHost();
-    const initPromise = ProviderWorkspaceRegistry.initializeAll(host);
-    expect(discoveryResolved).toBe(false);
+    const initPromise = ProviderWorkspaceRegistry.ensureInitialized(host, 'codex', 'startup-test');
+    expect(discovery.discoverModels).not.toHaveBeenCalled();
 
     await initPromise;
-    expect(discoveryResolved).toBe(false);
+    expect(discovery.discoverModels).not.toHaveBeenCalled();
+    const report = StartupProfiler.getReport();
+    expect(report.spans.some((span) => span.name === 'provider-init:codex')).toBe(true);
 
     const services = ProviderWorkspaceRegistry.getServices('codex') as {
       modelCatalogCoordinator: CodexModelCatalogCoordinator;
     };
     await services.modelCatalogCoordinator.refresh();
-    expect(discoveryResolved).toBe(true);
-  });
-
-  it('profiler captures provider initialization span', async () => {
-    ProviderWorkspaceRegistry.register('codex', {
-      initialize: async () => ({
-        modelCatalogCoordinator: null,
-      } as unknown as ProviderWorkspaceServices),
-    });
-
-    const host = createFakeHost();
-    await ProviderWorkspaceRegistry.initializeAll(host);
-
-    const report = StartupProfiler.getReport();
-    expect(report.spans.some((span) => span.name === 'provider-init:codex')).toBe(true);
+    expect(discovery.discoverModels).toHaveBeenCalledTimes(1);
   });
 });

@@ -34,7 +34,6 @@ function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter
     }),
     ensureFolder: jest.fn(),
     rename: jest.fn(),
-    append: jest.fn(),
     stat: jest.fn(),
     deleteFolder: jest.fn(),
   } as unknown as VaultFileAdapter;

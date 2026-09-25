@@ -49,7 +49,6 @@ function createModelRefreshTab(providerId: 'codex' | 'grok') {
     },
     lifecycleState: 'cold',
     providerId,
-    service: null,
     state: { usage: null },
     ui: {
       modeSelector: {
@@ -272,8 +271,9 @@ describe('ClaudianView tab controls', () => {
     expect(focus).toHaveBeenCalledTimes(1);
   });
 
-  it('supports a directory as Linked content without changing workspace focus', async () => {
+  it('selects directory Linked content without focusing an inactive created tab', async () => {
     const selectExplicit = jest.fn();
+    const focus = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
     attachSessionBrowser(view);
     Object.assign(view, {
@@ -283,7 +283,7 @@ describe('ClaudianView tab controls', () => {
         closeTab: jest.fn().mockResolvedValue(true),
         createTab: jest.fn().mockResolvedValue({
           id: 'linked-content-tab',
-          dom: { inputEl: { focus: jest.fn() } },
+          dom: { inputEl: { focus } },
           ui: { linkedContentController: { selectExplicit } },
         }),
         getActiveTabId: jest.fn().mockReturnValue('initial-tab'),
@@ -296,6 +296,7 @@ describe('ClaudianView tab controls', () => {
     await view.startLinkedContentConversation('Projects');
 
     expect(selectExplicit).toHaveBeenCalledWith('Projects');
+    expect(focus).not.toHaveBeenCalled();
   });
 
   it('closes the provisional chat when selecting Linked content fails', async () => {
@@ -1050,25 +1051,6 @@ describe('ClaudianView tab controls', () => {
     expect(view.activeInputTabId).toBeNull();
   });
 
-  it('toggles the history dropdown when the history button is clicked', () => {
-    const historyDropdown = createMockEl();
-    const view = Object.create(ClaudianView.prototype) as any;
-    attachSessionBrowser(view);
-
-    view.historyDropdown = historyDropdown;
-    view.tabManager = {
-      getActiveTab: jest.fn().mockReturnValue(null),
-    };
-
-    view.toggleHistoryDropdown();
-
-    expect(historyDropdown.hasClass('visible')).toBe(true);
-
-    view.toggleHistoryDropdown();
-
-    expect(historyDropdown.hasClass('visible')).toBe(false);
-  });
-
   it('switches the single-mode history menu between Sessions and Archived', () => {
     const historyDropdown = createMockEl();
     historyDropdown.addClass('visible');
@@ -1132,6 +1114,7 @@ describe('ClaudianView tab controls', () => {
     const renderHistoryDropdown = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
     attachSessionBrowser(view);
+    view.sessionBrowser.renderHistoryDropdown = renderHistoryDropdown;
 
     view.historyDropdown = historyDropdown;
     view.historyDropdownDirty = true;
@@ -1139,7 +1122,7 @@ describe('ClaudianView tab controls', () => {
     view.tabManager = {
       getActiveTab: jest.fn().mockReturnValue({
         controllers: {
-          conversationController: { renderHistoryDropdown },
+          conversationController: {},
         },
       }),
     };
@@ -1149,9 +1132,9 @@ describe('ClaudianView tab controls', () => {
 
     expect(renderHistoryDropdown).not.toHaveBeenCalled();
 
-    view.sessionBrowser.renderHistoryDropdown = renderHistoryDropdown;
     view.toggleHistoryDropdown();
 
+    expect(historyDropdown.hasClass('visible')).toBe(true);
     expect(renderHistoryDropdown).toHaveBeenCalledTimes(1);
     const firstRenderSignal = renderHistoryDropdown.mock.calls[0][1].signal as AbortSignal;
     expect(firstRenderSignal.aborted).toBe(false);
@@ -1162,6 +1145,7 @@ describe('ClaudianView tab controls', () => {
     const secondRenderSignal = renderHistoryDropdown.mock.calls[1][1].signal as AbortSignal;
 
     view.toggleHistoryDropdown();
+    expect(historyDropdown.hasClass('visible')).toBe(false);
     expect(firstRenderSignal.aborted).toBe(true);
     expect(secondRenderSignal.aborted).toBe(true);
     view.updateHistoryDropdown();
@@ -1909,7 +1893,7 @@ describe('ClaudianView tab controls', () => {
     expect(getChatUIConfig).not.toHaveBeenCalled();
   });
 
-  it('adds an organization menu beside New and persists both menu choices', async () => {
+  it('renders session options and persists the selected organization', async () => {
     (Menu as typeof Menu & { instances: unknown[] }).instances.length = 0;
     const container = createMockEl();
     const list = container.createDiv({ cls: 'claudian-history-list' });
@@ -2189,9 +2173,6 @@ describe('ClaudianView runtime tab initialization', () => {
         registerTabWorkspaceStateDelivery: jest.fn()
           .mockReturnValue(readyTabWorkspaceStateDelivery()),
         settings: { restoreTabsOnStartup: true },
-        storage: {
-          getTabManagerState: jest.fn().mockResolvedValue(null),
-        },
       },
       sessionSidebarWidth: null,
       syncProviderBrandColor: jest.fn(),
@@ -2294,9 +2275,6 @@ describe('ClaudianView runtime tab initialization', () => {
         registerTabWorkspaceStateDelivery: jest.fn()
           .mockReturnValue(readyTabWorkspaceStateDelivery()),
         settings: { restoreTabsOnStartup: true },
-        storage: {
-          getTabManagerState: jest.fn(() => persistedState.promise),
-        },
       },
       restoreActiveInputToTabContent: jest.fn(),
       startSessionSidebarLayoutObserver: jest.fn(),
@@ -2368,10 +2346,6 @@ describe('ClaudianView runtime tab initialization', () => {
         completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
         settings: { restoreTabsOnStartup: true },
-        storage: {
-          getTabManagerState: jest.fn().mockResolvedValue(null),
-          setTabManagerState: jest.fn().mockResolvedValue(undefined),
-        },
       },
       notifyConversationNavigationChanged: jest.fn(),
       startSessionSidebarLayoutObserver: jest.fn(),
@@ -2453,10 +2427,6 @@ describe('ClaudianView runtime tab initialization', () => {
         completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
         settings: { restoreTabsOnStartup: false },
-        storage: {
-          getTabManagerState: jest.fn().mockResolvedValue(null),
-          setTabManagerState: jest.fn().mockResolvedValue(undefined),
-        },
       },
       notifyConversationNavigationChanged: jest.fn(),
       shutdownSnapshotPromise: shutdownSnapshot.promise,

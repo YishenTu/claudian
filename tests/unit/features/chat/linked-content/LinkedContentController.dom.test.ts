@@ -152,52 +152,6 @@ describe('LinkedContentController DOM', () => {
     expect(focus).toHaveBeenCalled();
   });
 
-  it('rejects Vault root as an explicit target', () => {
-    const harness = createHarness();
-
-    expect(() => harness.controller.selectExplicit('.'))
-      .toThrow('Invalid Linked content path');
-  });
-
-  it('navigates choices with arrows and closes with Escape', () => {
-    const harness = createHarness({ entries: [createFolder('Projects')] });
-    const welcome = createWelcomeElement(createMockEl(), 'Hello') as unknown as MockElement;
-    harness.controller.mountWelcome(welcome as unknown as HTMLElement);
-    const selector = welcome.querySelector('.claudian-linked-content-selector')!;
-    const focus = jest.spyOn(selector, 'focus');
-    selector.click();
-    const search = welcome.querySelector('.claudian-linked-content-picker-search')!;
-    search.value = 'Projects';
-    search.dispatchEvent({ type: 'input', target: search });
-
-    search.dispatchEvent({
-      type: 'keydown',
-      key: 'ArrowDown',
-      preventDefault: jest.fn(),
-      target: search,
-    });
-    search.dispatchEvent({
-      type: 'keydown',
-      key: 'Enter',
-      preventDefault: jest.fn(),
-      target: search,
-    });
-    expect(harness.controller.getSnapshot().path).toBe('Projects');
-
-    selector.click();
-    const searches = welcome.querySelectorAll('.claudian-linked-content-picker-search');
-    const reopenedSearch = searches[searches.length - 1];
-    reopenedSearch.dispatchEvent({
-      type: 'keydown',
-      key: 'Escape',
-      preventDefault: jest.fn(),
-      stopPropagation: jest.fn(),
-      target: reopenedSearch,
-    });
-    expect(selector.getAttribute('aria-expanded')).toBe('false');
-    expect(focus).toHaveBeenCalledTimes(2);
-  });
-
   it('closes the expanded picker with Escape from the picker boundary', () => {
     const harness = createHarness({ entries: [createFolder('Projects')] });
     const welcome = createWelcomeElement(createMockEl(), 'Hello') as unknown as MockElement;

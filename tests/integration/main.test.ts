@@ -249,26 +249,6 @@ describe('ClaudianPlugin', () => {
       );
     });
 
-    it('should add ribbon icon', async () => {
-      await plugin.onload();
-
-      expect((plugin.addRibbonIcon as jest.Mock)).toHaveBeenCalledWith(
-        'bot',
-        'Open Claudian',
-        expect.any(Function)
-      );
-    });
-
-    it('should add command to open view', async () => {
-      await plugin.onload();
-
-      expect((plugin.addCommand as jest.Mock)).toHaveBeenCalledWith({
-        id: 'open-view',
-        name: 'Open chat view',
-        callback: expect.any(Function),
-      });
-    });
-
     it('registers the file explorer context menu', async () => {
       await plugin.onload();
 
@@ -1290,23 +1270,6 @@ describe('ClaudianPlugin', () => {
       expect(focusActiveInput).toHaveBeenCalledTimes(1);
     });
 
-    it('should create new leaf in right sidebar by default if view does not exist', async () => {
-      const mockRightLeaf = {
-        setViewState: jest.fn().mockResolvedValue(undefined),
-      };
-      mockApp.workspace.getLeavesOfType.mockReturnValue([]);
-      mockApp.workspace.getRightLeaf.mockReturnValue(mockRightLeaf);
-
-      await plugin.onload();
-      await plugin.activateView();
-
-      expect(mockApp.workspace.getRightLeaf).toHaveBeenCalledWith(false);
-      expect(mockRightLeaf.setViewState).toHaveBeenCalledWith({
-        type: VIEW_TYPE_CLAUDIAN,
-        active: true,
-      });
-    });
-
     it('focuses a newly revealed right-sidebar chat even when the root editor stays most recent', async () => {
       const focusActiveInput = jest.fn();
       const mockRightLeaf = {
@@ -1323,6 +1286,11 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
       await plugin.activateView();
 
+      expect(mockApp.workspace.getRightLeaf).toHaveBeenCalledWith(false);
+      expect(mockRightLeaf.setViewState).toHaveBeenCalledWith({
+        type: VIEW_TYPE_CLAUDIAN,
+        active: true,
+      });
       expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockRightLeaf);
       expect(focusActiveInput).toHaveBeenCalledTimes(1);
       expect(mockApp.workspace.revealLeaf.mock.invocationCallOrder[0]).toBeLessThan(
@@ -2665,6 +2633,11 @@ describe('ClaudianPlugin', () => {
       const mockLeaf = { id: 'existing' };
       mockApp.workspace.getLeavesOfType.mockReturnValue([mockLeaf]);
 
+      expect(plugin.addRibbonIcon).toHaveBeenCalledWith(
+        'bot',
+        'Open Claudian',
+        expect.any(Function),
+      );
       const ribbonCallback = (plugin.addRibbonIcon as jest.Mock).mock.calls[0][2];
       await ribbonCallback();
 
@@ -2678,7 +2651,12 @@ describe('ClaudianPlugin', () => {
       const mockLeaf = { id: 'existing' };
       mockApp.workspace.getLeavesOfType.mockReturnValue([mockLeaf]);
 
-      const commandConfig = (plugin.addCommand as jest.Mock).mock.calls[0][0];
+      expect(plugin.addCommand).toHaveBeenCalledWith({
+        id: 'open-view',
+        name: 'Open chat view',
+        callback: expect.any(Function),
+      });
+      const commandConfig = getRegisteredCommand('open-view');
       await commandConfig.callback();
 
       expect(mockApp.workspace.revealLeaf).toHaveBeenCalledWith(mockLeaf);
@@ -2686,12 +2664,6 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('new-tab command', () => {
-    it('uses the layout-neutral New label', async () => {
-      await plugin.onload();
-
-      expect(getRegisteredCommand('new-tab').name).toBe('New');
-    });
-
     it('delegates New to the active dual-pane navigation policy', async () => {
       await plugin.onload();
 
@@ -2704,6 +2676,7 @@ describe('ClaudianPlugin', () => {
       } as any);
 
       const command = getRegisteredCommand('new-tab');
+      expect(command.name).toBe('New');
       expect(command.checkCallback(false)).toBe(true);
       await new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -2849,7 +2822,7 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('createConversation', () => {
-    it('should create a new conversation with unique ID', async () => {
+    it('creates a retrievable blank conversation with a default title', async () => {
       await plugin.onload();
 
       const conv = await plugin.createConversation();
@@ -2857,14 +2830,9 @@ describe('ClaudianPlugin', () => {
       expect(conv.id).toMatch(/^conv-\d+-[a-z0-9]+$/);
       expect(conv.messages).toEqual([]);
       expect(conv.sessionId).toBeNull();
-    });
-
-    it('should allow retrieving created conversation by ID', async () => {
-      await plugin.onload();
-
-      const conv = await plugin.createConversation();
+      expect(conv.title).toBeTruthy();
+      expect(conv.title.length).toBeGreaterThan(0);
       const fetched = await plugin.getConversationById(conv.id);
-
       expect(fetched?.id).toBe(conv.id);
     });
 
@@ -2926,16 +2894,6 @@ describe('ClaudianPlugin', () => {
 
       expect(fetched?.selectedModel).toBeUndefined();
       expect(saveMetadataSpy).not.toHaveBeenCalled();
-    });
-
-    it('should generate default title with timestamp', async () => {
-      await plugin.onload();
-
-      const conv = await plugin.createConversation();
-
-      // Title should contain month and time
-      expect(conv.title).toBeTruthy();
-      expect(conv.title.length).toBeGreaterThan(0);
     });
 
     // Note: Session management is now per-tab via TabManager
@@ -3443,25 +3401,12 @@ describe('ClaudianPlugin', () => {
       expect(notifyConversationListChanged).toHaveBeenCalledTimes(1);
     });
 
-    it('should update conversation messages', async () => {
-      await plugin.onload();
-
-      const conv = await plugin.createConversation();
-      const messages = [
-        { id: 'msg-1', role: 'user' as const, content: 'Hello', timestamp: Date.now() },
-      ];
-
-      await plugin.updateConversation(conv.id, { messages });
-
-      const updated = await plugin.getConversationById(conv.id);
-      expect(updated?.messages).toEqual(messages);
-    });
-
     it('should preserve image data when updating conversation messages', async () => {
       await plugin.onload();
 
       const conv = await plugin.createConversation();
       const messages = [
+        { id: 'msg-plain', role: 'user' as const, content: 'Hello', timestamp: Date.now() },
         {
           id: 'msg-1',
           role: 'user' as const,
@@ -3483,7 +3428,8 @@ describe('ClaudianPlugin', () => {
       await plugin.updateConversation(conv.id, { messages });
 
       const updated = await plugin.getConversationById(conv.id);
-      expect(updated?.messages[0].images?.[0].data).toBe('YmFzZTY0');
+      expect(updated?.messages).toEqual(messages);
+      expect(updated?.messages[1].images?.[0].data).toBe('YmFzZTY0');
     });
 
     it('should update conversation sessionId', async () => {
@@ -3511,24 +3457,16 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('getConversationList', () => {
-    it('should return conversation metadata', async () => {
-      await plugin.onload();
-
-      await plugin.createConversation();
-
-      const list = plugin.getConversationList();
-
-      expect(list.length).toBeGreaterThan(0);
-      expect(list[0]).toHaveProperty('id');
-      expect(list[0]).toHaveProperty('title');
-      expect(list[0]).toHaveProperty('messageCount');
-      expect(list[0]).toHaveProperty('preview');
-    });
-
     it('should return preview from first user message', async () => {
       await plugin.onload();
 
       const conv = await plugin.createConversation();
+      const initialList = plugin.getConversationList();
+      expect(initialList.length).toBeGreaterThan(0);
+      expect(initialList[0]).toHaveProperty('id');
+      expect(initialList[0]).toHaveProperty('title');
+      expect(initialList[0]).toHaveProperty('messageCount');
+      expect(initialList[0]).toHaveProperty('preview');
       await plugin.updateConversation(conv.id, {
         messages: [
           { id: 'msg-1', role: 'user', content: 'Hello Claude', timestamp: Date.now() },
@@ -3645,7 +3583,6 @@ describe('ClaudianPlugin', () => {
     });
 
     it('should load saved conversations from metadata files', async () => {
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const timestamp = Date.now();
       const sessionMeta = JSON.stringify({
         id: 'conv-saved-1',
@@ -3691,7 +3628,6 @@ describe('ClaudianPlugin', () => {
       const loaded = await plugin.getConversationById('conv-saved-1');
       expect(loaded?.id).toBe('conv-saved-1');
       expect(loaded?.title).toBe('Saved Chat');
-      existsSpy.mockRestore();
     });
 
     it('should clear session IDs when provider base URL changes', async () => {
@@ -3763,7 +3699,6 @@ describe('ClaudianPlugin', () => {
 
   describe('Multi-session message loading', () => {
     it('should load messages from previousProviderSessionIds when present', async () => {
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const timestamp = Date.now();
 
       // Setup conversation with previousProviderSessionIds
@@ -3807,7 +3742,6 @@ describe('ClaudianPlugin', () => {
       const loaded = await plugin.getConversationById('conv-multi-session');
       expect((loaded?.providerState as any)?.previousProviderSessionIds).toEqual(['session-A']);
       expect((loaded?.providerState as any)?.providerSessionId).toBe('session-B');
-      existsSpy.mockRestore();
     });
 
     it('should preserve previousProviderSessionIds through conversation updates', async () => {
@@ -3877,7 +3811,6 @@ describe('ClaudianPlugin', () => {
         ],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [
           {
@@ -3914,7 +3847,6 @@ describe('ClaudianPlugin', () => {
         size: 5,
       });
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
 
@@ -3931,7 +3863,6 @@ describe('ClaudianPlugin', () => {
         sessionId: null,
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [
           { id: 'sdk-msg-1', role: 'user', content: 'Hello', timestamp: 1000 },
@@ -3962,7 +3893,6 @@ describe('ClaudianPlugin', () => {
       // Messages should be loaded
       expect(loaded?.messages).toBeDefined();
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
 
@@ -3977,7 +3907,6 @@ describe('ClaudianPlugin', () => {
         },
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [],
         skippedLines: 0,
@@ -3992,7 +3921,6 @@ describe('ClaudianPlugin', () => {
         expect.any(Object),
       );
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
   });
@@ -4045,7 +3973,6 @@ describe('ClaudianPlugin', () => {
         ],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [],
         skippedLines: 0,
@@ -4074,7 +4001,6 @@ describe('ClaudianPlugin', () => {
         ])
       );
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
 
@@ -4118,7 +4044,6 @@ describe('ClaudianPlugin', () => {
         ],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [],
         skippedLines: 0,
@@ -4137,7 +4062,6 @@ describe('ClaudianPlugin', () => {
       expect(taskTool?.result).toBe('Full SDK result from queue-operation');
       expect(taskTool?.subagent?.result).toBe('Full SDK result from queue-operation');
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
 
@@ -4165,7 +4089,6 @@ describe('ClaudianPlugin', () => {
         messages: [],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [
           {
@@ -4206,7 +4129,6 @@ describe('ClaudianPlugin', () => {
       expect(taskTool?.result).toBe('Recovered final result with full details');
       expect(taskTool?.subagent?.result).toBe('Recovered final result with full details');
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
 
@@ -4250,7 +4172,6 @@ describe('ClaudianPlugin', () => {
         ],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [],
         skippedLines: 0,
@@ -4262,7 +4183,6 @@ describe('ClaudianPlugin', () => {
       expect(taskTool?.subagent?.mode).toBe('sync');
       expect(taskTool?.subagent?.asyncStatus).toBeUndefined();
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
 
@@ -4289,7 +4209,6 @@ describe('ClaudianPlugin', () => {
         messages: [],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [
           {
@@ -4332,7 +4251,6 @@ describe('ClaudianPlugin', () => {
       expect(taskTool?.subagent?.asyncStatus).toBe('completed');
       expect(taskTool?.subagent?.result).toBe('Full SDK final result');
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
 
@@ -4360,7 +4278,6 @@ describe('ClaudianPlugin', () => {
         messages: [],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [
           {
@@ -4403,7 +4320,6 @@ describe('ClaudianPlugin', () => {
       expect(taskTool?.subagent?.asyncStatus).toBe('completed');
       expect(taskTool?.subagent?.result).toBe('Recovered final result');
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
 
@@ -4447,7 +4363,6 @@ describe('ClaudianPlugin', () => {
         ],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [],
         skippedLines: 0,
@@ -4472,7 +4387,6 @@ describe('ClaudianPlugin', () => {
         expect.objectContaining({ type: 'subagent', subagentId: 'task-async-1', mode: 'async' })
       );
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
 
@@ -4517,7 +4431,6 @@ describe('ClaudianPlugin', () => {
         ],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [],
         skippedLines: 0,
@@ -4553,7 +4466,6 @@ describe('ClaudianPlugin', () => {
         ])
       );
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
       loadSubagentToolsSpy.mockRestore();
     });
@@ -4589,7 +4501,6 @@ describe('ClaudianPlugin', () => {
         ],
       });
 
-      const existsSpy = jest.spyOn(sdkSession, 'sdkSessionExists').mockReturnValue(true);
       const loadSpy = jest.spyOn(sdkSession, 'loadSDKSessionMessages').mockResolvedValue({
         messages: [],
         skippedLines: 0,
@@ -4620,7 +4531,6 @@ describe('ClaudianPlugin', () => {
         })
       );
 
-      existsSpy.mockRestore();
       loadSpy.mockRestore();
     });
   });

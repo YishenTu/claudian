@@ -25,14 +25,12 @@ import {
 import {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
-  getSDKSessionAvailability,
   getSDKSessionPath,
   isValidSessionId,
   locateSDKSession,
   locateSDKSessions,
   readSDKSession,
   readSDKSessionFile,
-  sdkSessionExists,
 } from './sdkSessionPaths';
 import {
   isValidAgentId,
@@ -62,7 +60,6 @@ export {
   extractXMLTag,
   filterActiveBranch,
   getSDKProjectsPath,
-  getSDKSessionAvailability,
   getSDKSessionPath,
   isValidSessionId,
   loadSubagentFinalResult,
@@ -72,7 +69,6 @@ export {
   parseSDKMessageToChat,
   readSDKSession,
   readSDKSessionFile,
-  sdkSessionExists,
 };
 export {
   extractAgentIdFromToolUseResult,

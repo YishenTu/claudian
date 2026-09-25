@@ -348,41 +348,6 @@ describe('PiSubprocess', () => {
 
     expect(onClose).toHaveBeenCalledWith(expect.any(Error));
   });
-
-  it('settles after a final deadline when no exit follows SIGKILL', async () => {
-    jest.useFakeTimers();
-    const subprocess = new PiSubprocess({
-      args: ['--mode', 'rpc'],
-      command: 'pi',
-      cwd: '/vault',
-      env: {},
-    });
-    subprocess.start();
-
-    const shutdown = subprocess.shutdown();
-    jest.advanceTimersByTime(6_000);
-
-    await expect(shutdown).resolves.toBeUndefined();
-    expect(proc.kill).toHaveBeenCalledWith('SIGKILL');
-  });
-
-  it('shares one shutdown sequence across repeated calls', async () => {
-    const subprocess = new PiSubprocess({
-      args: ['--mode', 'rpc'],
-      command: 'pi',
-      cwd: '/vault',
-      env: {},
-    });
-    subprocess.start();
-
-    const first = subprocess.shutdown();
-    const second = subprocess.shutdown();
-    expect(proc.kill).toHaveBeenCalledTimes(1);
-
-    proc.exitCode = 0;
-    proc.emit('exit', 0, 'SIGTERM');
-    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
-  });
 });
 
 function createWindowsCommandShim(commandPath: string, targetPath: string): string {

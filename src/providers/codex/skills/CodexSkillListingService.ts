@@ -59,29 +59,6 @@ export function compareCodexSkillPriority(
   return left.path.localeCompare(right.path);
 }
 
-export function extractExplicitCodexSkillNames(text: string): string[] {
-  const matches = text.matchAll(/(^|\s)\$([A-Za-z0-9_-]+)/g);
-  const names: string[] = [];
-  const seen = new Set<string>();
-
-  for (const match of matches) {
-    const name = match[2];
-    if (!name) {
-      continue;
-    }
-
-    const normalized = name.toLowerCase();
-    if (seen.has(normalized)) {
-      continue;
-    }
-
-    seen.add(normalized);
-    names.push(name);
-  }
-
-  return names;
-}
-
 export function getCodexSkillDescription(
   skill: Pick<SkillMetadata, 'description' | 'shortDescription' | 'interface'>,
 ): string | undefined {
@@ -89,18 +66,6 @@ export function getCodexSkillDescription(
     ?? skill.shortDescription
     ?? skill.description
     ?? undefined;
-}
-
-export function findPreferredCodexSkillByName(
-  skills: SkillMetadata[],
-  name: string,
-): SkillMetadata | null {
-  const normalized = name.toLowerCase();
-  const candidates = skills
-    .filter(skill => skill.enabled && skill.name.toLowerCase() === normalized)
-    .sort(compareCodexSkillPriority);
-
-  return candidates[0] ?? null;
 }
 
 export class CodexSkillListingService implements CodexSkillListProvider {

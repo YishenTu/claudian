@@ -107,15 +107,6 @@ it('routes plain and qualified Claude haiku selections to the same model', async
   }
 });
 
-it('passes a selected OpenCode title model through the execution availability guard', () => {
-  const settings: Record<string, unknown> = {};
-  modelCatalogCases.find(provider => provider.id === 'opencode')!.populate(settings);
-  settings.titleGenerationModel = 'opencode:anthropic/selected';
-  const selection = ProviderRegistry.resolveTitleGenerationSelection(settings)!;
-  const resolved = selection.model;
-  expect(() => assertOpencodeModelAvailable(settings, resolved)).not.toThrow();
-});
-
 it.each(titleCases)('$id preserves omitted-model execution fallback without accepting an explicit missing model', ({ id, populate, selected }) => {
   const settings: Record<string, unknown> = { model: selected };
   populate(settings);

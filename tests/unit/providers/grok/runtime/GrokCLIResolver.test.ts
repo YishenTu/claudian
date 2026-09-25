@@ -25,10 +25,15 @@ describe('GrokCLIResolver', () => {
       throw new Error(`ENOENT: ${filePath}`);
     });
 
-    expect(new GrokCLIResolver().resolve({
-      'current-host': '/current/grok',
-      'other-host': '/other/grok',
-    }, '/legacy/grok', '')).toBe('/current/grok');
+    expect(new GrokCLIResolver().resolveFromSettings({
+      providerConfigs: { grok: {
+        cliPathsByHost: {
+          'current-host': '/current/grok',
+          'other-host': '/other/grok',
+        },
+        cliPath: '/legacy/grok',
+      } },
+    })).toBe('/current/grok');
   });
 
   it('falls back through the legacy path and PATH binary named grok', () => {
@@ -38,7 +43,9 @@ describe('GrokCLIResolver', () => {
       }
       throw new Error(`ENOENT: ${filePath}`);
     });
-    expect(new GrokCLIResolver().resolve({}, '/legacy/grok', '')).toBe('/legacy/grok');
+    expect(new GrokCLIResolver().resolveFromSettings({
+      providerConfigs: { grok: { cliPath: '/legacy/grok' } },
+    })).toBe('/legacy/grok');
 
     const pathBinary = path.join('/provider/bin', 'grok');
     mockedStat.mockImplementation((filePath: string) => {
@@ -47,7 +54,9 @@ describe('GrokCLIResolver', () => {
       }
       throw new Error(`ENOENT: ${filePath}`);
     });
-    expect(new GrokCLIResolver().resolve({}, '', 'PATH=/provider/bin')).toBe(pathBinary);
+    expect(new GrokCLIResolver().resolveFromSettings({
+      providerConfigs: { grok: { environmentVariables: 'PATH=/provider/bin' } },
+    })).toBe(pathBinary);
   });
 
   it('uses merged provider settings, caches the result, and can be reset', () => {

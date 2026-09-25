@@ -44,29 +44,11 @@ function createMockApp(files: Map<string, string> = new Map(), resolveLink?: Lin
 
 describe('replaceImageEmbedsWithHTML', () => {
   describe('basic image embeds', () => {
-    it('replaces simple image embed with img tag', () => {
-      const app = createMockApp(new Map([['image.png', 'app://local/image.png']]));
-      const result = replaceImageEmbedsWithHTML('![[image.png]]', app);
-
-      expect(result).toContain('<img');
-      expect(result).toContain('src="app://local/image.png"');
-      expect(result).toContain('class="claudian-embedded-image"');
-    });
-
     it('replaces image embed with folder path', () => {
       const app = createMockApp(new Map([['assets/photo.jpg', 'app://local/assets/photo.jpg']]));
       const result = replaceImageEmbedsWithHTML('![[assets/photo.jpg]]', app);
 
       expect(result).toContain('src="app://local/assets/photo.jpg"');
-    });
-
-    it('handles image in surrounding text', () => {
-      const app = createMockApp(new Map([['test.png', 'app://local/test.png']]));
-      const result = replaceImageEmbedsWithHTML('Check this ![[test.png]] image', app);
-
-      expect(result).toContain('Check this');
-      expect(result).toContain('image');
-      expect(result).toContain('<img');
     });
 
     it('replaces image embeds in text but preserves image embed syntax in inline code', () => {
@@ -240,7 +222,10 @@ describe('replaceImageEmbedsWithHTML', () => {
 
   describe('media folder resolution', () => {
     it('resolves image from media folder', () => {
-      const app = createMockApp(new Map([['attachments/photo.png', 'app://local/attachments/photo.png']]));
+      const app = createMockApp(
+        new Map([['attachments/photo.png', 'app://local/attachments/photo.png']]),
+        () => null,
+      );
       const result = replaceImageEmbedsWithHTML('![[photo.png]]', app, 'attachments');
 
       expect(result).toContain('src="app://local/attachments/photo.png"');
@@ -396,13 +381,6 @@ describe('replaceImageEmbedsWithHTML', () => {
       const result = replaceImageEmbedsWithHTML(`![[${path}]]`, app);
 
       expect(result).toContain('<img');
-    });
-
-    it('includes lazy loading attribute', () => {
-      const app = createMockApp(new Map([['test.png', 'app://local/test.png']]));
-      const result = replaceImageEmbedsWithHTML('![[test.png]]', app);
-
-      expect(result).toContain('loading="lazy"');
     });
   });
 

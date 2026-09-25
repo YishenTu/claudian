@@ -1,8 +1,6 @@
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import type { ProviderCLIResolutionContext } from '../../../core/providers/types';
-import type { HostnameCLIPaths } from '../../../core/types/settings';
 import { getHostnameKey } from '../../../utils/env';
-import type { CodexInstallationMethod } from '../settings';
 import { getCodexProviderSettings } from '../settings';
 import { resolveCodexCLIPath } from './CodexBinaryLocator';
 import { resolveCodexExecutionTargetAsync } from './CodexExecutionTargetResolver';
@@ -32,21 +30,6 @@ export class CodexCLIResolver {
     return resolveCodexExecutionTargetAsync({ settings }).then((resolvedTarget) => (
       this.#resolveAndCache(hostnamePath, legacyPath, envText, resolvedTarget)
     ));
-  }
-
-  resolve(
-    hostnamePaths: HostnameCLIPaths | undefined,
-    legacyPath: string | undefined,
-    envText: string,
-    options: {
-      installationMethod?: CodexInstallationMethod;
-      executionTarget?: CodexExecutionTarget;
-      hostPlatform?: NodeJS.Platform;
-    } = {},
-  ): string | null {
-    const hostnamePath = (hostnamePaths?.[this.cachedHostname] ?? '').trim();
-    const normalizedLegacyPath = (legacyPath ?? '').trim();
-    return resolveCodexCLIPath(hostnamePath, normalizedLegacyPath, envText, options);
   }
 
   reset(): void {

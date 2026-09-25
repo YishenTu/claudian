@@ -157,8 +157,8 @@ describe('SessionListOrganizer', () => {
 
   it('returns one flat section for the chronological organization', () => {
     const sections = organizeSessionList([
-      createConversation('older', { lastActivityAt: 10 }),
-      createConversation('newer', { lastActivityAt: 20 }),
+      createConversation('older', { title: 'A older', createdAt: 2, lastActivityAt: 10 }),
+      createConversation('newer', { title: 'Z newer', createdAt: 1, lastActivityAt: 20 }),
     ], {
       organization: 'list',
       sort: 'last-updated',
@@ -170,26 +170,6 @@ describe('SessionListOrganizer', () => {
     expect(sections[0].conversations.map(conversation => conversation.id)).toEqual([
       'newer',
       'older',
-    ]);
-  });
-
-  it('uses lastActivityAt for the last-updated sort', () => {
-    const sections = organizeSessionList([
-      createConversation('older-update', {
-        lastActivityAt: 10,
-      }),
-      createConversation('newer-update', {
-        lastActivityAt: 20,
-      }),
-    ], {
-      organization: 'list',
-      sort: 'last-updated',
-      language: 'en',
-    });
-
-    expect(sections[0].conversations.map(conversation => conversation.id)).toEqual([
-      'newer-update',
-      'older-update',
     ]);
   });
 });

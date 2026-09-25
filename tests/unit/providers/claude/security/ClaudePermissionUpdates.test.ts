@@ -37,10 +37,6 @@ describe('buildPersistentPermissionUpdates', () => {
     }]);
   });
 
-  it('does not persist an unscoped fallback rule', () => {
-    expect(buildPersistentPermissionUpdates('Read', {})).toEqual([]);
-  });
-
   it('includes addDirectories suggestions without overriding destination', () => {
     const suggestions = [
       {

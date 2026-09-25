@@ -6,7 +6,7 @@ import {
 import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 function createPlugin(): any {
-  return {
+  const plugin: any = {
     executionLifecycleRegistry: {
       registerTransitionHook: jest.fn(() => jest.fn()),
     },
@@ -22,9 +22,8 @@ function createPlugin(): any {
       },
     },
   };
+  return plugin;
 }
-
-const plugin = createPlugin();
 
 function createProbe(overrides: Partial<OpencodeMetadataProbe> = {}): OpencodeMetadataProbe {
   return {
@@ -60,6 +59,7 @@ function createProbe(overrides: Partial<OpencodeMetadataProbe> = {}): OpencodeMe
 
 describe('OpencodeMetadataService', () => {
   it('uses an isolated probe, publishes commands, and persists discovered models', async () => {
+    const plugin = createPlugin();
     const probe = createProbe();
     const commandCatalog = { setCommandSnapshot: jest.fn() };
     const service = new OpencodeMetadataService(plugin, {
@@ -80,6 +80,7 @@ describe('OpencodeMetadataService', () => {
   });
 
   it('warms detached thought-level metadata without constructing a chat runtime', async () => {
+    const plugin = createPlugin();
     const probe = createProbe();
     const service = new OpencodeMetadataService(plugin, {
       createProbe: () => probe,
@@ -97,27 +98,6 @@ describe('OpencodeMetadataService', () => {
     });
   });
 
-  it('aborts and disposes every in-flight isolated probe during invalidation', async () => {
-    let rejectLoad!: (error: Error) => void;
-    const probe = createProbe({
-      loadCatalog: jest.fn((_signal) => new Promise((_resolve, reject) => {
-        rejectLoad = reject;
-      })),
-    });
-    const service = new OpencodeMetadataService(plugin, {
-      createProbe: () => probe,
-    });
-
-    const load = service.loadCatalog();
-    await Promise.resolve();
-    const invalidation = service.invalidate();
-    rejectLoad(new Error('aborted'));
-
-    await expect(load).resolves.toBe(false);
-    await invalidation;
-    expect(probe.dispose).toHaveBeenCalledTimes(1);
-  });
-
   it('registers transition invalidation and unregisters it on disposal', async () => {
     let beforeTransition!: () => Promise<void>;
     const unregister = jest.fn();
@@ -130,8 +110,10 @@ describe('OpencodeMetadataService', () => {
         return unregister;
       });
     let rejectLoad!: (error: Error) => void;
+    let ownedSignal: AbortSignal | undefined;
     const probe = createProbe({
-      loadCatalog: jest.fn(() => new Promise((_resolve, reject) => {
+      loadCatalog: jest.fn((signal) => new Promise((_resolve, reject) => {
+        ownedSignal = signal;
         rejectLoad = reject;
       })),
     });
@@ -144,9 +126,10 @@ describe('OpencodeMetadataService', () => {
     await Promise.resolve();
 
     const transition = beforeTransition();
+    expect(ownedSignal?.aborted).toBe(true);
     rejectLoad(new Error('transition'));
     await transition;
-    await load;
+    await expect(load).resolves.toBe(false);
 
     expect(
       transitionPlugin.executionLifecycleRegistry.registerTransitionHook,

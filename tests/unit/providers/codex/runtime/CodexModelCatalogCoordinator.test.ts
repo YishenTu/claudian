@@ -110,28 +110,6 @@ function createDiscovery(result: CodexModelDiscoveryResult): CodexModelDiscovery
   };
 }
 
-function createHangingDiscovery(): {
-  discovery: CodexModelDiscoveryServiceLike;
-} {
-  const discovery: CodexModelDiscoveryServiceLike = {
-    discoverModels: jest.fn(async (signal?: AbortSignal) => {
-      await new Promise<void>((resolve, reject) => {
-        const check = () => {
-          if (signal?.aborted) {
-            reject(new Error('Cancelled'));
-            return;
-          }
-          setTimeout(check, 5);
-        };
-        check();
-        signal?.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
-      });
-      return { kind: 'completed', models: [] } as CodexModelDiscoveryResult;
-    }),
-  };
-  return { discovery };
-}
-
 function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>(finish => { resolve = finish; });
@@ -213,7 +191,6 @@ describe('CodexModelCatalogCoordinator', () => {
 
     expect(result.models).toEqual([makeModel('gpt-4o')]);
     expect(result.diagnostics).toBe('app-server unreachable');
-    expect(coordinator.getState()).toBe('failed');
   });
 
   it('deduplicates concurrent refresh requests', async () => {
@@ -342,9 +319,9 @@ describe('CodexModelCatalogCoordinator', () => {
     expect(ProviderSettingsCoordinator.normalizeAllModelVariants).not.toHaveBeenCalled();
   });
 
-  it('cancels an in-progress refresh', async () => {
+  it('skips discovery when canceled before launch context resolves', async () => {
     const host = createFakeHost();
-    const { discovery } = createHangingDiscovery();
+    const discovery = createDiscovery({ kind: 'completed', models: [] });
     const coordinator = new CodexModelCatalogCoordinator(host, discovery);
 
     const refreshPromise = coordinator.refresh();
@@ -352,7 +329,7 @@ describe('CodexModelCatalogCoordinator', () => {
 
     const result = await refreshPromise;
     expect(result).toMatchObject({ kind: 'skipped', refreshed: false });
-    expect(coordinator.getState()).toBe('idle');
+    expect(discovery.discoverModels).not.toHaveBeenCalled();
   });
 
   it('aborts and awaits a held refresh while invalidating its environment cache', async () => {
@@ -386,7 +363,6 @@ describe('CodexModelCatalogCoordinator', () => {
     await quiesce;
     await refresh;
 
-    expect(coordinator.getState()).toBe('idle');
     expect(getCodexProviderSettings(host.settings).discoveredModels).toEqual([cachedModel]);
     expect(host.mutateSettingsConditionally).not.toHaveBeenCalled();
   });
@@ -470,25 +446,6 @@ describe('CodexModelCatalogCoordinator', () => {
     await expect(
       (host.mutateSettingsConditionally as jest.Mock).mock.results[0].value,
     ).resolves.toBe(true);
-  });
-
-  it('startup resolves before discovery resolves', async () => {
-    const host = createFakeHost();
-    let resolved = false;
-    const discovery: CodexModelDiscoveryServiceLike = {
-      discoverModels: jest.fn(async () => {
-        await new Promise((res) => setTimeout(res, 10));
-        resolved = true;
-        return { kind: 'completed', models: [makeModel('gpt-4o')] } as CodexModelDiscoveryResult;
-      }),
-    };
-    const coordinator = new CodexModelCatalogCoordinator(host, discovery);
-
-    const refreshPromise = coordinator.refresh();
-    expect(resolved).toBe(false);
-
-    await refreshPromise;
-    expect(resolved).toBe(true);
   });
 });
 

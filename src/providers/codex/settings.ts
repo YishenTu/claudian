@@ -229,13 +229,6 @@ export function normalizeCodexModelAliases(
   return normalized;
 }
 
-export function createCodexVisibleModelFilter(
-  value: unknown,
-  discoveredModels: CodexDiscoveredModel[],
-): string[] | null {
-  return normalizeCodexVisibleModels(value, discoveredModels);
-}
-
 export function getVisibleCodexModelIds(
   visibleModels: string[] | null,
   discoveredModels: CodexDiscoveredModel[],

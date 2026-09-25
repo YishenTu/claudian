@@ -113,15 +113,6 @@ export class MessageRenderer {
     this.removeFileLinkHandler = registerFileLinkHandler(this.app, this.messagesEl);
   }
 
-  /** Sets the messages container element. */
-  setMessagesEl(el: HTMLElement): void {
-    this.removeFileLinkHandler();
-    this.messagesEl = el;
-    this.removeFileLinkHandler = this.isDisposed
-      ? () => {}
-      : registerFileLinkHandler(this.app, this.messagesEl);
-  }
-
   dispose(): void {
     if (this.isDisposed) return;
     this.isDisposed = true;
@@ -234,44 +225,6 @@ export class MessageRenderer {
     this.#appendMessageTimestamp(msgEl, msg.role === 'user' ? msg.timestamp : msg.completedAt);
     this.scrollToBottom();
     return msgEl;
-  }
-
-  updateLiveUserMessage(msg: ChatMessage): void {
-    if (msg.role !== 'user') {
-      return;
-    }
-
-    const msgEl = this.liveMessageEls.get(msg.id)
-      ?? this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${msg.id}"]`);
-    if (!msgEl) {
-      return;
-    }
-
-    const contentEl = msgEl.querySelector<HTMLElement>('.claudian-message-content');
-    if (!contentEl) {
-      return;
-    }
-
-    contentEl.empty();
-
-    const textToShow = this.#getUserMessageTextToShow(msg);
-    if (textToShow) {
-      const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
-      void this.renderContent(textEl, textToShow);
-      this.#applyTocTitle(msgEl, textToShow);
-    } else {
-      msgEl.removeAttribute('data-toc-title');
-    }
-
-    const toolbar = msgEl.querySelector<HTMLElement>('.claudian-user-msg-actions');
-    if (toolbar) {
-      toolbar.querySelectorAll('.claudian-user-msg-copy-btn').forEach((el) => el.remove());
-    }
-
-    if (textToShow) {
-      this.#addUserCopyButton(msgEl, textToShow);
-    }
-    this.#appendMessageTimestamp(msgEl, msg.role === 'user' ? msg.timestamp : msg.completedAt);
   }
 
   removeMessage(messageId: string): void {

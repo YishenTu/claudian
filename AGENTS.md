@@ -19,7 +19,6 @@ npm run typecheck && npm run lint && npm run test && npm run build && npm run ch
 - `src/composition/` holds main-owned wiring that must reach both `app/` and `features/`. Only `main.ts` and other composition modules import it; it never imports `main.ts` or concrete providers, and `main.ts` still constructs, registers, and tears it down.
 - App repositories/settings/storage depend on core contracts, not feature orchestration or provider-native protocols. Concrete provider imports are confined to `main.ts` and provider-default assembly.
 - Features use `FeatureHost` and core registries, never concrete app/provider implementations. `FeatureHost` stays feature-neutral; chat-only capabilities belong in chat's `ChatFeatureHost` extension. Providers use `ProviderHost`, never feature orchestration. Core imports none of these implementations.
-- `src/providers/claude/storage/ClaudianSettingsStorage.ts`, a Claude-provider re-export of app settings storage, is the only allowed provider-to-app import. It is an exception, not precedent. Do not extend it; move shared contracts to core when materially changing that seam.
 - Shared ACP code contains protocol mechanics and protocol-level normalization only; provider launch policy, extensions, provider-specific normalization, and history stay provider-owned.
 
 ## Local conventions

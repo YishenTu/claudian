@@ -5,71 +5,29 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { registerFileLinkHandler } from '@/utils/fileLink';
 
 describe('registerFileLinkHandler', () => {
-  it('opens data-href target when present', () => {
+  it.each([
+    ['data-href="note#section" href="note"', 'note#section'],
+    ['href="note^block"', 'note^block'],
+  ])('opens the delegated target and removes the handler: %s', (attributes, expectedTarget) => {
     const app = {
       metadataCache: { getFirstLinkpathDest: jest.fn().mockReturnValue(null) },
-      workspace: {
-        openLinkText: jest.fn(),
-      },
+      workspace: { openLinkText: jest.fn() },
     };
-
-    const link: any = {
-      dataset: { href: 'note#section' },
-      getAttribute: jest.fn().mockReturnValue('note'),
-      closest: jest.fn(),
-    };
-    link.closest.mockReturnValue(link);
-
-    const event = {
-      target: link,
-      preventDefault: jest.fn(),
-    } as any;
-
-    const container = {
-      addEventListener: (_event: string, callback: (event: MouseEvent) => void) => {
-        callback(event);
-      },
-      removeEventListener: jest.fn(),
-    };
-
-    const cleanup = registerFileLinkHandler(app as any, container as any);
-    cleanup();
-
-    expect(event.preventDefault).toHaveBeenCalled();
-    expect(app.workspace.openLinkText).toHaveBeenCalledWith('note#section', '', 'tab');
-    expect(container.removeEventListener).toHaveBeenCalledWith('click', expect.any(Function));
-  });
-
-  it('falls back to href when data-href is missing', () => {
-    const app = {
-      metadataCache: { getFirstLinkpathDest: jest.fn().mockReturnValue(null) },
-      workspace: {
-        openLinkText: jest.fn(),
-      },
-    };
-
-    const link: any = {
-      dataset: {},
-      getAttribute: jest.fn().mockReturnValue('note^block'),
-      closest: jest.fn(),
-    };
-    link.closest.mockReturnValue(link);
-
-    const event = {
-      target: link,
-      preventDefault: jest.fn(),
-    } as any;
-
-    const container = {
-      addEventListener: (_event: string, callback: (event: MouseEvent) => void) => {
-        callback(event);
-      },
-      removeEventListener: jest.fn(),
-    };
-
-    registerFileLinkHandler(app as any, container as any);
-
-    expect(app.workspace.openLinkText).toHaveBeenCalledWith('note^block', '', 'tab');
+    const container = document.createElement('div');
+    container.innerHTML = `<a class="internal-link" ${attributes}><span>Note</span></a>`;
+    const link = within(container).getByRole('link', { name: 'Note' });
+    const cleanup = registerFileLinkHandler(app as any, container);
+    try {
+      expect(fireEvent.click(link.firstElementChild!)).toBe(false);
+      expect(app.workspace.openLinkText).toHaveBeenCalledWith(expectedTarget, '', 'tab');
+      cleanup();
+      // Prevent jsdom navigation after the application handler has been removed.
+      link.addEventListener('click', (event) => event.preventDefault(), { once: true });
+      fireEvent.click(link);
+      expect(app.workspace.openLinkText).toHaveBeenCalledTimes(1);
+    } finally {
+      cleanup();
+    }
   });
 });
 

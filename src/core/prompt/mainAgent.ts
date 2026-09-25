@@ -125,26 +125,3 @@ export function buildSystemPrompt(
     getCustomInstructions(settings.customPrompt),
   ].filter(Boolean).join('\n\n');
 }
-
-export function computeSystemPromptKey(
-  settings: SystemPromptSettings,
-  options: SystemPromptBuildOptions = {},
-): string {
-  const dynamicSectionsKey = (options.dynamicSections || [])
-    .map((section) => section.trim())
-    .filter(Boolean)
-    .join('||');
-
-  const parts = [
-    settings.mediaFolder || '',
-    settings.customPrompt || '',
-    settings.vaultPath || '',
-    (settings.userName || '').trim(),
-  ];
-
-  if (dynamicSectionsKey) {
-    parts.push(dynamicSectionsKey);
-  }
-
-  return parts.join('::');
-}

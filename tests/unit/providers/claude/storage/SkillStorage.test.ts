@@ -24,12 +24,7 @@ function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter
       }
       return Array.from(folders);
     }),
-    listFiles: jest.fn(),
-    listFilesRecursive: jest.fn(),
     ensureFolder: jest.fn(),
-    rename: jest.fn(),
-    append: jest.fn(),
-    stat: jest.fn(),
     deleteFolder: jest.fn(),
   } as unknown as VaultFileAdapter;
   return mockAdapter;
@@ -38,26 +33,6 @@ function createMockAdapter(files: Record<string, string> = {}): VaultFileAdapter
 describe('SkillStorage', () => {
 
   describe('loadAll', () => {
-    it('loads skills from subdirectories with SKILL.md', async () => {
-      const adapter = createMockAdapter({
-        '.claude/skills/my-skill/SKILL.md': `---
-description: A helpful skill
-userInvocable: true
----
-Do the thing`,
-      });
-      const storage = new SkillStorage(adapter);
-      const skills = await storage.loadAll();
-
-      expect(skills).toHaveLength(1);
-      expect(skills[0].id).toBe('skill-my-skill');
-      expect(skills[0].name).toBe('my-skill');
-      expect(skills[0].description).toBe('A helpful skill');
-      expect(skills[0].userInvocable).toBe(true);
-      expect(skills[0].content).toBe('Do the thing');
-      expect(skills[0].source).toBe('user');
-    });
-
     it('loads multiple skills', async () => {
       const adapter = createMockAdapter({
         '.claude/skills/skill-a/SKILL.md': `---
@@ -92,9 +67,8 @@ Prompt`,
       expect(skills[0].name).toBe('has-skill');
     });
 
-    it('returns empty array when skills directory does not exist', async () => {
+    it('returns an empty array when no skill folders are listed', async () => {
       const adapter = createMockAdapter({});
-      (adapter.exists as jest.Mock).mockResolvedValue(false);
       const storage = new SkillStorage(adapter);
       const skills = await storage.loadAll();
 
@@ -110,7 +84,7 @@ Prompt`,
       expect(skills).toEqual([]);
     });
 
-    it('skips malformed skill and continues loading valid ones', async () => {
+    it('skips an unreadable skill and continues loading valid ones', async () => {
       const adapter = createMockAdapter({
         '.claude/skills/good/SKILL.md': `---
 description: Valid
@@ -133,7 +107,7 @@ Prompt`,
 
     it('parses all skill frontmatter fields', async () => {
       const adapter = createMockAdapter({
-        '.claude/skills/full/SKILL.md': `---
+        '.claude/skills/my-skill/SKILL.md': `---
 description: Full skill
 disableModelInvocation: true
 userInvocable: true
@@ -151,6 +125,9 @@ Full prompt`,
 
       expect(skills).toHaveLength(1);
       const skill = skills[0];
+      expect(skill.id).toBe('skill-my-skill');
+      expect(skill.name).toBe('my-skill');
+      expect(skill.source).toBe('user');
       expect(skill.description).toBe('Full skill');
       expect(skill.disableModelInvocation).toBe(true);
       expect(skill.userInvocable).toBe(true);
@@ -174,6 +151,12 @@ Prompt`,
 
       // Invalid skill has no frontmatter but still loads (content only)
       expect(skills).toHaveLength(2);
+      expect(skills.find(skill => skill.id === 'skill-invalid')).toEqual(
+        expect.objectContaining({
+          id: 'skill-invalid',
+          content: 'No frontmatter at all',
+        })
+      );
     });
   });
 

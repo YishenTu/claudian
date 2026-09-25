@@ -90,9 +90,6 @@ export interface ACPClientConnectionOptions {
 }
 
 export class ACPClientConnection {
-  private agentInfo: ACPInitializeResponse['agentInfo'] | null = null;
-  private agentCapabilities: ACPInitializeResponse['agentCapabilities'] | null = null;
-  private authMethods: ACPInitializeResponse['authMethods'] | null = null;
   private readonly methodCache = new Map<ACPLogicalMethod, string>();
   private readonly sessionNotificationListeners = new Set<SessionNotificationListener>();
   private readonly unsubscribeHandlers: Array<() => void> = [];
@@ -103,18 +100,6 @@ export class ACPClientConnection {
 
   get signal(): AbortSignal {
     return this.options.transport.signal;
-  }
-
-  get negotiatedAgentInfo(): ACPInitializeResponse['agentInfo'] | null {
-    return this.agentInfo;
-  }
-
-  get negotiatedAgentCapabilities(): ACPInitializeResponse['agentCapabilities'] | null {
-    return this.agentCapabilities;
-  }
-
-  get negotiatedAuthMethods(): ACPInitializeResponse['authMethods'] | null {
-    return this.authMethods;
   }
 
   onSessionNotification(listener: SessionNotificationListener): () => void {
@@ -144,11 +129,7 @@ export class ACPClientConnection {
       protocolVersion: partialRequest.protocolVersion ?? 1,
     };
 
-    const response = await this.#requestWithFallback<ACPInitializeResponse>('initialize', request);
-    this.agentInfo = response.agentInfo ?? null;
-    this.agentCapabilities = response.agentCapabilities ?? null;
-    this.authMethods = response.authMethods ?? null;
-    return response;
+    return this.#requestWithFallback<ACPInitializeResponse>('initialize', request);
   }
 
   authenticate(request: ACPAuthenticateRequest): Promise<ACPAuthenticateResponse> {

@@ -12,9 +12,6 @@ export interface TabBarCallbacks {
   /** Called when the close button is clicked on a tab. */
   onTabClose: (tabId: TabId) => void;
 
-  /** Called when the new tab button is clicked. */
-  onNewTab: () => void;
-
   /** Called when badge title expansion state changes. */
   onTitleExpansionChanged?: (expandedTitleTabIds: TabId[]) => void;
 }

@@ -273,10 +273,14 @@ describe('TabManager provider execution orchestration', () => {
     const { manager } = createManager();
     const active = await manager.createTab();
     active!.providerId = 'codex';
+    active!.draftModel = 'codex:gpt-5';
 
     await manager.createTab();
 
-    expect(mockCreateTab.mock.calls[1]?.[0]).not.toHaveProperty('defaultProviderId');
+    const options = mockCreateTabRuntime.mock.calls[1]?.[0];
+    expect(options).not.toHaveProperty('providerId');
+    expect(options).not.toHaveProperty('draftModel');
+    expect(options).not.toHaveProperty('defaultProviderId');
   });
 
   it('acknowledges review attention when a tab becomes active', async () => {
@@ -316,16 +320,23 @@ describe('TabManager provider execution orchestration', () => {
       activate: false,
     });
     const hydration = deferred<void>();
-    target!.controllers.conversationController.switchTo = jest.fn(() => hydration.promise);
+    const hydrationStarted = deferred<void>();
+    target!.controllers.conversationController.switchTo = jest.fn(() => {
+      hydrationStarted.resolve(undefined);
+      return hydration.promise;
+    });
 
     const switching = manager.switchToTab(target!.id);
-    for (let attempt = 0;
-      attempt < 10
-        && (target!.controllers.conversationController.switchTo as jest.Mock).mock.calls.length === 0;
-      attempt += 1) {
-      await Promise.resolve();
-    }
+    await hydrationStarted.promise;
 
+    expect(target!.controllers.conversationController.switchTo)
+      .toHaveBeenCalledWith('conversation-1');
+    const switchingIdle = manager.waitForTabSwitchIdle();
+    let idleSettled = false;
+    void switchingIdle.then(() => { idleSettled = true; });
+    await Promise.resolve();
+
+    expect(idleSettled).toBe(false);
     expect(manager.getActiveTab()).toBe(target);
     expect(manager.getPersistedState()).toEqual({
       activeTabId: initial!.id,
@@ -337,24 +348,10 @@ describe('TabManager provider execution orchestration', () => {
 
     hydration.resolve(undefined);
     await switching;
+    await expect(switchingIdle).resolves.toBeUndefined();
 
+    expect(manager.getActiveTab()).toBe(target);
     expect(manager.getPersistedState().activeTabId).toBe(target!.id);
-  });
-
-  it('preserves the attention kind in tab bar items', async () => {
-    const { manager } = createManager();
-    const tab = await manager.createTab();
-    Object.defineProperty(tab!.state, 'attention', {
-      configurable: true,
-      value: { kind: 'review', outcome: 'completed', since: 123 },
-    });
-
-    expect(manager.getTabBarItems()).toEqual([
-      expect.objectContaining({
-        attention: { kind: 'review', outcome: 'completed', since: 123 },
-        id: tab!.id,
-      }),
-    ]);
   });
 
   it.each([
@@ -382,6 +379,13 @@ describe('TabManager provider execution orchestration', () => {
       configurable: true,
       value: { kind: 'review', outcome: 'completed', since: 123 },
     });
+    expect(manager.getTabBarItems()).toEqual([
+      expect.objectContaining({
+        attention: { kind: 'review', outcome: 'completed', since: 123 },
+        id: tab!.id,
+      }),
+    ]);
+
     Object.defineProperty(tab!.executionCoordinator, 'hasBackgroundWork', {
       configurable: true,
       value: true,
@@ -394,24 +398,6 @@ describe('TabManager provider execution orchestration', () => {
         isWorking: true,
       }),
     ]);
-  });
-
-  it('waits for prior tab switching to settle', async () => {
-    const { manager } = createManager();
-    const initial = await manager.createTab();
-    const managerInternals = manager as any;
-    managerInternals.isSwitchingTab = true;
-
-    const switchingIdle = managerInternals.waitForTabSwitchIdle();
-    await Promise.resolve();
-
-    expect(manager.getActiveTabId()).toBe(initial!.id);
-
-    managerInternals.isSwitchingTab = false;
-    managerInternals.resolveTabSwitchIdleWaitersIfIdle();
-
-    await expect(switchingIdle).resolves.toBeUndefined();
-    expect(manager.getActiveTabId()).toBe(initial!.id);
   });
 
   it('settles queued tab switches when shutdown begins during hydration', async () => {
@@ -522,24 +508,6 @@ describe('TabManager provider execution orchestration', () => {
     expect(manager.canCreateTab()).toBe(true);
   });
 
-  it('creates session selections as provisional runtime tabs', async () => {
-    const conversation = {
-      id: 'conversation-1',
-      providerId: 'claude',
-    };
-    const { manager } = createManager(createPlugin({
-      getCachedConversation: jest.fn().mockReturnValue(conversation),
-    }));
-
-    await manager.openConversation(conversation.id, {
-      activate: true,
-      preferNewTab: true,
-      provisional: true,
-    });
-
-    expect(manager.getActiveTab()?.lifecycleState).toBe('provisional');
-  });
-
   it('reuses the provisional preview while browsing unopened sessions', async () => {
     const getCachedConversation = jest.fn((id: string) => ({
       id,
@@ -548,9 +516,11 @@ describe('TabManager provider execution orchestration', () => {
     const { manager } = createManager(createPlugin({ getCachedConversation }));
 
     await manager.openConversation('conversation-1', {
+      activate: true,
       preferNewTab: true,
       provisional: true,
     });
+    expect(manager.getActiveTab()?.lifecycleState).toBe('provisional');
     const preview = manager.getActiveTab()!;
     await manager.openConversation('conversation-2', {
       preferNewTab: true,

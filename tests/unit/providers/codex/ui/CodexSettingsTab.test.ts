@@ -31,7 +31,6 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
       providerConfigs.codex.enabled = enabled;
       return true;
     }),
-    reconcileTitleGenerationModelSelection: jest.fn(() => false),
     normalizeAllModelVariants: jest.fn(),
   },
 }));
@@ -41,7 +40,6 @@ jest.mock('obsidian', () => {
     public desc = '';
     public heading = false;
     public textComponents: MockTextComponent[] = [];
-    public textAreaComponents: MockTextAreaComponent[] = [];
     public dropdownComponents: MockDropdownComponent[] = [];
     public toggleComponents: MockToggleComponent[] = [];
     public settingEl = {
@@ -77,13 +75,6 @@ jest.mock('obsidian', () => {
       return this;
     }
 
-    addTextArea(callback: (text: MockTextAreaComponent) => void) {
-      const component = createTextAreaComponent();
-      this.textAreaComponents.push(component);
-      callback(component);
-      return this;
-    }
-
     addDropdown(callback: (dropdown: MockDropdownComponent) => void) {
       const component = createDropdownComponent();
       this.dropdownComponents.push(component);
@@ -110,7 +101,6 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
 
 function createSettingsRenderer() {
   return createCodexSettingsTabRenderer({
-    commandCatalog: null,
     modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
     cliResolver: { reset: mockCodexCLIResolverReset },
   } as unknown as Parameters<typeof createCodexSettingsTabRenderer>[0]);
@@ -135,10 +125,6 @@ interface MockTextComponent {
   inputEl: MockInputEl;
 }
 
-interface MockTextAreaComponent extends MockTextComponent {
-  trigger: (event: string) => Promise<void>;
-}
-
 interface MockDropdownComponent {
   selectEl: HTMLSelectElement;
   value: string;
@@ -161,7 +147,6 @@ const createdSettings: Array<{
   desc: string;
   heading: boolean;
   textComponents: MockTextComponent[];
-  textAreaComponents: MockTextAreaComponent[];
   dropdownComponents: MockDropdownComponent[];
   toggleComponents: MockToggleComponent[];
 }> = [];
@@ -216,18 +201,6 @@ function createTextComponent(): MockTextComponent {
     return component;
   });
 
-  return component;
-}
-
-function createTextAreaComponent(): MockTextAreaComponent {
-  const component = createTextComponent() as MockTextAreaComponent;
-  component.trigger = async (event: string) => {
-    const handlers = (component.inputEl as ReturnType<typeof createInputEl>)._listeners.get(event) ?? [];
-    for (const handler of handlers) {
-      handler();
-    }
-    await new Promise<void>((resolve) => setImmediate(resolve));
-  };
   return component;
 }
 
@@ -463,16 +436,6 @@ describe('CodexSettingsTab', () => {
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost).toEqual({ 'other-host': '/keep/codex' });
   });
 
-  it('renders installation method and WSL distro override controls on Windows', () => {
-    Object.defineProperty(process, 'platform', { value: 'win32' });
-    const plugin = createPlugin();
-
-    createSettingsRenderer().render(createContainer(), createContext(plugin));
-
-    expect(findSetting('Installation method').dropdownComponents).toHaveLength(1);
-    expect(findSetting('WSL distro override').textComponents).toHaveLength(1);
-  });
-
   it('checks the newly selected WSL distro after its setting is applied', async () => {
     Object.defineProperty(process, 'platform', { value: 'win32' });
     const plugin = createPlugin();
@@ -492,23 +455,27 @@ describe('CodexSettingsTab', () => {
     expect(checkedDistro).toBe('Debian');
   });
 
-  it('hides Windows-only installation controls on non-Windows platforms', () => {
+  it('renders the default Codex settings layout and model controls', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin();
-
-    createSettingsRenderer().render(createContainer(), createContext(plugin));
+    const context = createContext(plugin);
+    const container = createContainer();
+    createSettingsRenderer().render(container, context);
 
     expect(findOptionalSetting('Installation method')).toBeUndefined();
     expect(findOptionalSetting('WSL distro override')).toBeUndefined();
-  });
-
-  it('renders Models before Safety', () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-
-    createSettingsRenderer().render(createContainer(), createContext(createPlugin()));
-
     const headings = createdSettings.filter(setting => setting.heading).map(setting => setting.name);
+    expect(headings).toEqual(expect.arrayContaining(['Models', 'Safety']));
     expect(headings.indexOf('Models')).toBeLessThan(headings.indexOf('Safety'));
+    expect(mockRenderCodexModelPicker).toHaveBeenCalledWith(
+      container,
+      'codex',
+      'Codex',
+      expect.objectContaining({ refresh: mockRefreshModelCatalog }),
+      expect.any(Function),
+    );
+    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(container, 'codex');
+    expect(createdSettings.some(setting => setting.name === 'Custom models')).toBe(false);
   });
 
   it('renders a default-off ultra effort toggle and publishes changes to chat consumers', async () => {
@@ -624,23 +591,6 @@ describe('CodexSettingsTab', () => {
     },
   );
 
-  it('renders the app-server model visibility picker', () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-    const plugin = createPlugin();
-    const context = createContext(plugin);
-    const container = createContainer();
-
-    createSettingsRenderer().render(container, context);
-
-    expect(mockRenderCodexModelPicker).toHaveBeenCalledWith(
-      container,
-      'codex',
-      'Codex',
-      expect.objectContaining({ refresh: mockRefreshModelCatalog }),
-      expect.any(Function),
-    );
-  });
-
   it('warns when Codex is enabled without any enabled models', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const plugin = createPlugin({
@@ -688,20 +638,6 @@ describe('CodexSettingsTab', () => {
     }
     expect(plugin.settings.providerConfigs.codex).not.toHaveProperty('customModels');
     expect(await axe(subtree)).toHaveNoViolations();
-  });
-
-  it('renders the fixed-root shared skill manager', () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-    const plugin = createPlugin();
-    const context = createContext(plugin);
-    const container = createContainer();
-
-    createSettingsRenderer().render(container, context);
-
-    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
-      container,
-      'codex',
-    );
   });
 
   it('uses host-native CLI path behavior on non-Windows even when WSL is saved', async () => {
@@ -786,6 +722,8 @@ describe('CodexSettingsTab', () => {
 
     createSettingsRenderer().render(createContainer(), createContext(plugin));
 
+    expect(findSetting('Installation method').dropdownComponents).toHaveLength(1);
+    expect(findSetting('WSL distro override').textComponents).toHaveLength(1);
     const installationMethodSetting = findSetting('Installation method');
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
 
@@ -843,15 +781,26 @@ describe('CodexSettingsTab', () => {
 
     const installationMethodSetting = findSetting('Installation method');
     await installationMethodSetting.dropdownComponents[0].onChangeCallback?.('wsl');
+    mockSaveSettings.mockClear();
+    plugin.applyProviderRuntimeSettings.mockClear();
+    plugin.runProviderExecutionTransition.mockClear();
+    mockCodexCLIResolverReset.mockClear();
 
     const cliPathSetting = findSetting('Codex CLI path');
-    await applyTextInput(cliPathSetting.textComponents[0], 'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe');
+    await applyTextInput(cliPathSetting.textComponents[0], 'C:\\Other\\codex.exe');
 
     expect(plugin.settings.providerConfigs.codex.installationMethodsByHost).toEqual({
       'host-a': 'wsl',
     });
     expect(plugin.settings.providerConfigs.codex.cliPathsByHost['host-a']).toBe(
       'C:\\Users\\me\\AppData\\Roaming\\npm\\codex.exe',
+    );
+    expect(mockSaveSettings).not.toHaveBeenCalled();
+    expect(plugin.applyProviderRuntimeSettings).not.toHaveBeenCalled();
+    expect(plugin.runProviderExecutionTransition).not.toHaveBeenCalled();
+    expect(mockCodexCLIResolverReset).not.toHaveBeenCalled();
+    expect(cliPathSetting.textComponents[0].inputEl.toggleClass).toHaveBeenLastCalledWith(
+      'claudian-input-error', true,
     );
   });
 
@@ -878,14 +827,5 @@ describe('CodexSettingsTab', () => {
       'claudian-input-error',
       true,
     );
-  });
-
-  it('does not render the legacy custom models textarea', () => {
-    Object.defineProperty(process, 'platform', { value: 'darwin' });
-    const plugin = createPlugin();
-
-    createSettingsRenderer().render(createContainer(), createContext(plugin));
-
-    expect(createdSettings.some(setting => setting.name === 'Custom models')).toBe(false);
   });
 });

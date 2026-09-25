@@ -60,6 +60,7 @@ it('discovers distinct native effort menus without a chat session and closes the
       expect.objectContaining({
         rawId: 'grok-4.6', displayName: 'Grok 4.6', defaultReasoningEffort: 'high',
         reasoningMetadataResolved: true,
+        supportsReasoning: true,
         reasoningEfforts: [
           expect.objectContaining({ value: 'xhigh', label: 'Extra High Effort' }),
           expect.objectContaining({ value: 'high', label: 'High Effort' }),

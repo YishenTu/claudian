@@ -2,49 +2,12 @@ import {
   appendEditorContext,
   buildCursorContext,
   type EditorSelectionContext,
-  findNearestNonEmptyLine,
   formatEditorContext,
 } from '@/utils/editor';
 
 function makeGetLine(lines: string[]): (line: number) => string {
   return (line: number) => lines[line] ?? '';
 }
-
-describe('findNearestNonEmptyLine', () => {
-  const lines = ['first', '', 'third', '', 'fifth'];
-  const getLine = makeGetLine(lines);
-
-  it('finds nearest non-empty line before', () => {
-    expect(findNearestNonEmptyLine(getLine, lines.length, 1, 'before')).toBe('first');
-  });
-
-  it('finds nearest non-empty line after', () => {
-    expect(findNearestNonEmptyLine(getLine, lines.length, 1, 'after')).toBe('third');
-  });
-
-  it('skips multiple empty lines before', () => {
-    expect(findNearestNonEmptyLine(getLine, lines.length, 3, 'before')).toBe('third');
-  });
-
-  it('skips multiple empty lines after', () => {
-    expect(findNearestNonEmptyLine(getLine, lines.length, 3, 'after')).toBe('fifth');
-  });
-
-  it('returns empty string when no non-empty line exists before', () => {
-    const emptyLines = ['', '', 'content'];
-    expect(findNearestNonEmptyLine(makeGetLine(emptyLines), emptyLines.length, 0, 'before')).toBe('');
-  });
-
-  it('returns empty string when no non-empty line exists after', () => {
-    const emptyLines = ['content', '', ''];
-    expect(findNearestNonEmptyLine(makeGetLine(emptyLines), emptyLines.length, 2, 'after')).toBe('');
-  });
-
-  it('skips whitespace-only lines', () => {
-    const lines = ['content', '   ', '  \t  ', 'found'];
-    expect(findNearestNonEmptyLine(makeGetLine(lines), lines.length, 0, 'after')).toBe('found');
-  });
-});
 
 describe('buildCursorContext', () => {
   it('splits line at cursor position', () => {
@@ -57,12 +20,14 @@ describe('buildCursorContext', () => {
     expect(result.column).toBe(5);
   });
 
-  it('cursor at start of line', () => {
-    const lines = ['', 'next line'];
-    const result = buildCursorContext(makeGetLine(lines), lines.length, 0, 0);
+  it.each([
+    { label: 'start', lines: ['', 'next line'], line: 0, before: '', after: 'next line' },
+    { label: 'end', lines: ['previous line', ''], line: 1, before: 'previous line', after: '' },
+  ])('cursor on an empty line at the $label of the document', ({ lines, line, before, after }) => {
+    const result = buildCursorContext(makeGetLine(lines), lines.length, line, 0);
     expect(result.isInbetween).toBe(true);
-    expect(result.beforeCursor).toBe('');
-    expect(result.afterCursor).toBe('next line');
+    expect(result.beforeCursor).toBe(before);
+    expect(result.afterCursor).toBe(after);
   });
 
   it('cursor on empty line between content', () => {
@@ -74,8 +39,8 @@ describe('buildCursorContext', () => {
   });
 
   it('cursor on whitespace-only line', () => {
-    const lines = ['above', '   ', 'below'];
-    const result = buildCursorContext(makeGetLine(lines), lines.length, 1, 1);
+    const lines = ['above', '   ', '', '  \t  ', '', ' \t ', 'below'];
+    const result = buildCursorContext(makeGetLine(lines), lines.length, 3, 1);
     expect(result.isInbetween).toBe(true);
     expect(result.beforeCursor).toBe('above');
     expect(result.afterCursor).toBe('below');

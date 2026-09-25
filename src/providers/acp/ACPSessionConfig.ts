@@ -50,7 +50,7 @@ export interface ACPResolvedSessionThoughtLevelState {
 
 type SelectItem = { description?: string; id: string; name: string };
 
-export function flattenACPSessionConfigSelectOptions(
+function flattenACPSessionConfigSelectOptions(
   options: ACPSessionConfigSelectOptions,
 ): ACPSessionConfigSelectOption[] {
   if (options.length === 0) {

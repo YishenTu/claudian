@@ -607,7 +607,6 @@ export class ClaudianView extends ItemView {
       onTabClose: (tabId) => {
         void this.handleTabClose(tabId);
       },
-      onNewTab: () => this.requestNewTab(),
       onTitleExpansionChanged: () => this.persistTabWorkspaceState(),
     });
 

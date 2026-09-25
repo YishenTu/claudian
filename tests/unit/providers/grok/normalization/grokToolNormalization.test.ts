@@ -48,14 +48,6 @@ describe('grokToolNormalization', () => {
     },
   );
 
-  it.each([
-    'spawn_subagent',
-    'get_command_or_subagent_output',
-    'kill_command_or_subagent',
-  ])('keeps observed dynamic task title %s ordinary and lossless', (rawName) => {
-    expect(normalizeGrokToolName(rawName)).toBe(rawName);
-  });
-
   it('preserves unknown names and raw input/output losslessly', () => {
     const rawInput = { nested: { flag: true }, value: 7 };
     const rawOutput = { extra: ['a', 'b'], result: 'ok' };

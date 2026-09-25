@@ -30,7 +30,6 @@ function makeCatalog(selectedIds: string[] = [], response = nativeCatalog) {
   const discovered = normalizeGrokSessionModelMetadata({ models: response.result });
   const coordinator = new GrokModelCatalogCoordinator(host, {
     discoverCatalog: async () => ({ kind: 'completed', fingerprint: 'native', defaultModelId: discovered.currentModelId, models: discovered.models }),
-    getCatalogFingerprint: async () => 'native',
   });
   return { settings, coordinator, catalog: createGrokModels(host, coordinator) };
 }

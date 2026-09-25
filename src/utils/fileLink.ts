@@ -52,7 +52,7 @@ function buildWikilinkMatch(
   };
 }
 
-export function extractLinkTarget(fullMatch: string): string {
+function extractLinkTarget(fullMatch: string): string {
   const inner = fullMatch.slice(2, -2);
   const pipeIndex = inner.indexOf('|');
   return pipeIndex >= 0 ? inner.slice(0, pipeIndex) : inner;

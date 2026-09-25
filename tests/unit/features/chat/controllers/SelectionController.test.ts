@@ -514,6 +514,8 @@ describe('SelectionController', () => {
 
     it('clears selection when deselected in reading mode', () => {
       const anchorNode = {};
+      const mockHighlights = { set: jest.fn(), delete: jest.fn() };
+      (global as any).CSS = { highlights: mockHighlights };
       (global as any).document = {
         activeElement: null,
         getSelection: jest.fn().mockReturnValue(
@@ -525,11 +527,13 @@ describe('SelectionController', () => {
       jest.advanceTimersByTime(250);
       expect(controller.hasSelection()).toBe(true);
 
+      mockHighlights.delete.mockClear();
       (global as any).document.getSelection.mockReturnValue(
         createMockDOMSelection('', null),
       );
       jest.advanceTimersByTime(250);
 
+      expect(mockHighlights.delete).toHaveBeenCalledWith('claudian-selection');
       expect(controller.hasSelection()).toBe(false);
       expect(contextTray.clearItems).toHaveBeenCalledWith('editor-selection');
     });
@@ -579,28 +583,6 @@ describe('SelectionController', () => {
       expect(contextTray.clearItems).not.toHaveBeenCalledWith('editor-selection');
     });
 
-    it('clears CSS highlight when reading mode selection is deselected', () => {
-      const anchorNode = {};
-      (global as any).document = {
-        activeElement: null,
-        getSelection: jest.fn().mockReturnValue(
-          createMockDOMSelection('reading selection', anchorNode),
-        ),
-      };
-      const mockHighlights = { set: jest.fn(), delete: jest.fn() };
-      (global as any).CSS = { highlights: mockHighlights };
-
-      controller.start();
-      jest.advanceTimersByTime(250);
-
-      (global as any).document.getSelection.mockReturnValue(
-        createMockDOMSelection('', null),
-      );
-      jest.advanceTimersByTime(250);
-
-      expect(mockHighlights.delete).toHaveBeenCalledWith('claudian-selection');
-    });
-
     it('skips CSS highlight for disconnected DOM ranges', () => {
       const anchorNode = {};
       const mockSel = createMockDOMSelection('reading selection', anchorNode);
@@ -612,10 +594,18 @@ describe('SelectionController', () => {
       controller.start();
       jest.advanceTimersByTime(250);
 
-      mockSel._range.startContainer.isConnected = false;
       const mockHighlights = { set: jest.fn(), delete: jest.fn() };
       (global as any).CSS = { highlights: mockHighlights };
 
+      (global as any).document.activeElement = inputEl;
+      controller.showHighlight();
+      expect(mockHighlights.set).toHaveBeenCalledWith(
+        'claudian-selection',
+        { ranges: [mockSel._range] },
+      );
+      mockHighlights.set.mockClear();
+
+      mockSel._range.startContainer.isConnected = false;
       controller.showHighlight();
       expect(mockHighlights.set).not.toHaveBeenCalled();
     });
@@ -721,5 +711,4 @@ describe('SelectionController', () => {
       expect(showSelectionHighlight).not.toHaveBeenCalled();
     });
   });
-
 });

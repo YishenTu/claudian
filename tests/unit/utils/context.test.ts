@@ -2,12 +2,9 @@ import {
   appendContextFiles,
   appendLinkedContent,
   appendLinkedContentBody,
-  extractContentBeforeXMLContext,
   extractUserDisplayContent,
   extractUserQuery,
   formatLinkedContent,
-  stripLinkedContentContext,
-  XML_CONTEXT_PATTERN,
 } from '../../../src/utils/context';
 
 describe('formatLinkedContent', () => {
@@ -52,197 +49,102 @@ describe('appendLinkedContent', () => {
   });
 });
 
-describe('stripLinkedContentContext', () => {
-  it('strips canonical linked_content from the end of a prompt', () => {
-    const prompt = 'User query here\n\n<linked_content path="Projects/Research" />';
-    expect(stripLinkedContentContext(prompt)).toBe('User query here');
-  });
-
-  describe('prefix format', () => {
-    it('strips linked_note from start of prompt', () => {
-      const prompt = '<linked_note>\nnotes/test.md\n</linked_note>\n\nUser query here';
-      expect(stripLinkedContentContext(prompt)).toBe('User query here');
-    });
-
-    it('handles multiline note content in prefix', () => {
-      const prompt = '<linked_note>\npath/to/note.md\nwith extra info\n</linked_note>\n\nQuery';
-      expect(stripLinkedContentContext(prompt)).toBe('Query');
-    });
-  });
-
-  describe('suffix format', () => {
-    it('strips canonical linked_note from end of prompt', () => {
-      const prompt = 'User query here\n\n<linked_note path="notes/test.md" />';
-      expect(stripLinkedContentContext(prompt)).toBe('User query here');
-    });
-
-    it('strips linked_note from end of prompt', () => {
-      const prompt = 'User query here\n\n<linked_note>\nnotes/test.md\n</linked_note>';
-      expect(stripLinkedContentContext(prompt)).toBe('User query here');
-    });
-
-    it('handles multiline note content in suffix', () => {
-      const prompt = 'Query\n\n<linked_note>\npath/to/note.md\n</linked_note>';
-      expect(stripLinkedContentContext(prompt)).toBe('Query');
-    });
-  });
-
-  describe('legacy current_note compatibility', () => {
-    it('strips current_note from start of prompt', () => {
-      const prompt = '<current_note>\nnotes/test.md\n</current_note>\n\nUser query here';
-      expect(stripLinkedContentContext(prompt)).toBe('User query here');
-    });
-
-    it('strips current_note from end of prompt', () => {
-      const prompt = 'User query here\n\n<current_note>\nnotes/test.md\n</current_note>';
-      expect(stripLinkedContentContext(prompt)).toBe('User query here');
-    });
-  });
-
-  it('returns unchanged prompt when no note context is present', () => {
-    const prompt = 'Just a regular prompt';
-    expect(stripLinkedContentContext(prompt)).toBe('Just a regular prompt');
-  });
-
-  it('prefers prefix format when both could match', () => {
-    // This tests the function order: it tries prefix first
-    const prefixPrompt = '<linked_note>\ntest.md\n</linked_note>\n\nQuery';
-    expect(stripLinkedContentContext(prefixPrompt)).toBe('Query');
-  });
-});
-
-describe('XML_CONTEXT_PATTERN', () => {
-  it('matches linked_content tag', () => {
-    const text = 'Query\n\n<linked_content path="Projects/Research" />';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
-  });
-
-  it('matches linked_note tag', () => {
-    const text = 'Query\n\n<linked_note path="test.md" />';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
-  });
-
-  it('matches legacy current_note tag', () => {
-    const text = 'Query\n\n<current_note>\ntest.md\n</current_note>';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
-  });
-
-  it('matches editor_selection tag with attributes', () => {
-    const text = 'Query\n\n<editor_selection path="test.md">\nselected text\n</editor_selection>';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
-  });
-
-  it('matches editor_cursor tag', () => {
-    const text = 'Query\n\n<editor_cursor path="test.md">\n</editor_cursor>';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
-  });
-
-  it('matches context_files tag', () => {
-    const text = 'Query\n\n<context_files>\nfile1.md, file2.md\n</context_files>';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
-  });
-
-  it('matches canvas_selection tag', () => {
-    const text = 'Query\n\n<canvas_selection path="my.canvas">\nnode1, node2\n</canvas_selection>';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
-  });
-
-  it('matches browser_selection tag', () => {
-    const text = 'Query\n\n<browser_selection source="surfing-view">\nselected web content\n</browser_selection>';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(true);
-  });
-
-  it('does not match without double newline separator', () => {
-    const text = 'Query\n<linked_note>\ntest.md\n</linked_note>';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(false);
-  });
-
-  it('does not match other XML tags', () => {
-    const text = 'Query\n\n<other_tag>\ncontent\n</other_tag>';
-    expect(XML_CONTEXT_PATTERN.test(text)).toBe(false);
-  });
-});
-
-describe('extractContentBeforeXMLContext', () => {
+describe('extractUserDisplayContent', () => {
   describe('legacy format with <query> tags', () => {
     it('extracts content from query tags', () => {
       const prompt = '<linked_note>\ntest.md\n</linked_note>\n\n<query>\nUser question\n</query>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('User question');
+      expect(extractUserDisplayContent(prompt)).toBe('User question');
     });
 
     it('trims whitespace from extracted content', () => {
       const prompt = '<query>\n  spaced content  \n</query>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('spaced content');
+      expect(extractUserDisplayContent(prompt)).toBe('spaced content');
     });
 
     it('handles multiline content in query tags', () => {
       const prompt = '<query>\nLine 1\nLine 2\nLine 3\n</query>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('Line 1\nLine 2\nLine 3');
+      expect(extractUserDisplayContent(prompt)).toBe('Line 1\nLine 2\nLine 3');
     });
   });
 
   describe('current format with user content first', () => {
-    it('extracts content before linked_note tag', () => {
-      const prompt = 'User query\n\n<linked_note>\ntest.md\n</linked_note>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('User query');
+    it.each([
+      '<linked_note>\ntest.md\n</linked_note>',
+      '<linked_note path="test.md" />',
+    ])('extracts content before linked_note context: %s', (context) => {
+      const prompt = `User query\n\n${context}`;
+      expect(extractUserDisplayContent(prompt)).toBe('User query');
     });
 
     it('extracts content before legacy current_note tag', () => {
       const prompt = 'User query\n\n<current_note>\ntest.md\n</current_note>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('User query');
+      expect(extractUserDisplayContent(prompt)).toBe('User query');
     });
 
     it('extracts content before editor_selection tag', () => {
       const prompt = 'Edit this\n\n<editor_selection path="test.md">\nselected\n</editor_selection>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('Edit this');
+      expect(extractUserDisplayContent(prompt)).toBe('Edit this');
     });
 
     it('extracts content before editor_cursor tag', () => {
       const prompt = 'Insert here\n\n<editor_cursor path="test.md">\n</editor_cursor>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('Insert here');
+      expect(extractUserDisplayContent(prompt)).toBe('Insert here');
     });
 
     it('extracts content before context_files tag', () => {
       const prompt = 'Use these files\n\n<context_files>\nfile1.md\n</context_files>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('Use these files');
+      expect(extractUserDisplayContent(prompt)).toBe('Use these files');
     });
 
     it('handles multiple context tags - extracts before first one', () => {
       const prompt = 'Query\n\n<linked_note>\ntest.md\n</linked_note>\n\n<editor_selection path="x">\ny\n</editor_selection>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('Query');
+      expect(extractUserDisplayContent(prompt)).toBe('Query');
     });
 
     it('extracts content before browser_selection tag', () => {
       const prompt = 'Summarize this\n\n<browser_selection source="surfing-view">\nselected web content\n</browser_selection>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('Summarize this');
+      expect(extractUserDisplayContent(prompt)).toBe('Summarize this');
     });
 
     it('trims whitespace from extracted content', () => {
       const prompt = '  spaced query  \n\n<linked_note>\ntest.md\n</linked_note>';
-      expect(extractContentBeforeXMLContext(prompt)).toBe('spaced query');
+      expect(extractUserDisplayContent(prompt)).toBe('spaced query');
     });
   });
 
   describe('edge cases', () => {
     it('returns undefined for empty string', () => {
-      expect(extractContentBeforeXMLContext('')).toBeUndefined();
+      expect(extractUserDisplayContent('')).toBeUndefined();
     });
 
     it('returns undefined for plain text without XML context', () => {
-      expect(extractContentBeforeXMLContext('Just a plain prompt')).toBeUndefined();
+      expect(extractUserDisplayContent('Just a plain prompt')).toBeUndefined();
     });
 
     it('returns undefined for null-ish input', () => {
-      expect(extractContentBeforeXMLContext(null as unknown as string)).toBeUndefined();
-      expect(extractContentBeforeXMLContext(undefined as unknown as string)).toBeUndefined();
+      expect(extractUserDisplayContent(null as unknown as string)).toBeUndefined();
+      expect(extractUserDisplayContent(undefined as unknown as string)).toBeUndefined();
     });
   });
-});
 
-describe('extractUserDisplayContent', () => {
-  it('extracts display content before XML context tags', () => {
-    expect(extractUserDisplayContent('Summarize this\n\n<linked_note>\nnotes/today.md\n</linked_note>'))
-      .toBe('Summarize this');
+  it('extracts content before canonical linked_content', () => {
+    const text = 'Query\n\n<linked_content path="Projects/Research" />';
+    expect(extractUserDisplayContent(text)).toBe('Query');
+  });
+
+  it('extracts content before canvas_selection', () => {
+    const text = 'Query\n\n<canvas_selection path="my.canvas">\nnode1, node2\n</canvas_selection>';
+    expect(extractUserDisplayContent(text)).toBe('Query');
+  });
+
+  it('does not extract context without a double newline separator', () => {
+    const text = 'Query\n<linked_note>\ntest.md\n</linked_note>';
+    expect(extractUserDisplayContent(text)).toBeUndefined();
+  });
+
+  it('does not extract unrelated XML tags', () => {
+    const text = 'Query\n\n<other_tag>\ncontent\n</other_tag>';
+    expect(extractUserDisplayContent(text)).toBeUndefined();
   });
 
   it('extracts display content before bracket context tags', () => {
@@ -256,7 +158,7 @@ describe('extractUserDisplayContent', () => {
 });
 
 describe('extractUserQuery', () => {
-  describe('with XML context (delegates to extractContentBeforeXMLContext)', () => {
+  describe('with structured XML context', () => {
     it('extracts content from legacy query tags', () => {
       const prompt = '<current_note>\ntest.md\n</current_note>\n\n<query>\nUser question\n</query>';
       expect(extractUserQuery(prompt)).toBe('User question');

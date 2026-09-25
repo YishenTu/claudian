@@ -140,11 +140,9 @@ describe('InlineEditSession', () => {
     const { editorView, resolve, service, session } = createSession();
     const result = createDeferred<{ success: true; editedText: string }>();
     service.editText.mockReturnValue(result.promise);
-    const showDiff = jest.fn();
     Object.assign(session as any, {
       editedText: null,
       inputEl: Object.assign(createMockEl('input'), { value: 'rewrite' }),
-      showDiffInPlace: showDiff,
       spinnerEl: createMockEl(),
     });
 
@@ -154,7 +152,6 @@ describe('InlineEditSession', () => {
     result.resolve({ success: true, editedText: 'world' });
     await generation;
 
-    expect(showDiff).not.toHaveBeenCalled();
     expect(resolve).toHaveBeenCalledWith({ decision: 'reject' });
     expect(Notice).toHaveBeenCalledWith(
       'Inline edit was not applied because the source document or selection changed.',

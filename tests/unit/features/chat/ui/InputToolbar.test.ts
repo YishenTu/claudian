@@ -36,9 +36,7 @@ function makeUsage(overrides: Partial<UsageInfo> = {}): UsageInfo {
 const DEFAULT_MODELS = [
   { value: 'haiku', label: 'Haiku', description: 'Fast and efficient' },
   { value: 'sonnet', label: 'Sonnet', description: 'Balanced performance' },
-  { value: 'sonnet[1m]', label: 'Sonnet 1M', description: 'Balanced performance (1M context window)' },
   { value: 'opus', label: 'Opus', description: 'Most capable' },
-  { value: 'opus[1m]', label: 'Opus 1M', description: 'Most capable (1M context window)' },
 ];
 
 const EFFORT_OPTIONS = [
@@ -56,66 +54,13 @@ const BUDGET_OPTIONS = [
   { value: 'xhigh', label: 'Ultra', tokens: 32000 },
 ];
 
-const DEFAULT_MODEL_VALUES = new Set(DEFAULT_MODELS.map(m => m.value));
-
-function filterVisibleModels(
-  models: typeof DEFAULT_MODELS,
-  enableOpus1M: boolean,
-  enableSonnet1M: boolean,
-) {
-  return models.filter((model) => {
-    if (model.value === 'opus' || model.value === 'opus[1m]') {
-      return enableOpus1M ? model.value === 'opus[1m]' : model.value === 'opus';
-    }
-    if (model.value === 'sonnet' || model.value === 'sonnet[1m]') {
-      return enableSonnet1M ? model.value === 'sonnet[1m]' : model.value === 'sonnet';
-    }
-    return true;
-  });
-}
-
 function createMockUIConfig() {
   return {
     getProviderIcon: jest.fn().mockReturnValue(null),
-    getModelOptions: jest.fn().mockImplementation((settings: {
-      enableOpus1M?: boolean;
-      enableSonnet1M?: boolean;
-      environmentVariables?: string;
-    }) => {
-      // Mimic real behavior: env-based custom models bypass 1M filtering
-      if (settings.environmentVariables) {
-        const match = settings.environmentVariables.match(/ANTHROPIC_MODEL=(\S+)/);
-        if (match) {
-          const value = match[1];
-          const label = value.includes('/')
-            ? value.split('/').pop() || value
-            : value.replace(/-/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
-          return [{ value, label }];
-        }
-      }
-      return filterVisibleModels(
-        DEFAULT_MODELS,
-        settings.enableOpus1M ?? false,
-        settings.enableSonnet1M ?? false,
-      );
-    }),
-    isAdaptiveReasoningModel: jest.fn().mockImplementation((model: string) => {
-      if (DEFAULT_MODEL_VALUES.has(model)) return true;
-      return /claude-(haiku|sonnet|opus)-/.test(model);
-    }),
-    getReasoningOptions: jest.fn().mockImplementation((model: string) => {
-      if (DEFAULT_MODEL_VALUES.has(model) || /claude-(haiku|sonnet|opus)-/.test(model)) {
-        return EFFORT_OPTIONS;
-      }
-      return BUDGET_OPTIONS;
-    }),
+    getModelOptions: jest.fn().mockReturnValue(DEFAULT_MODELS),
+    isAdaptiveReasoningModel: jest.fn().mockReturnValue(true),
+    getReasoningOptions: jest.fn().mockReturnValue(EFFORT_OPTIONS),
     getDefaultReasoningValue: jest.fn().mockReturnValue('high'),
-    getContextWindowSize: jest.fn().mockReturnValue(200000),
-    isDefaultModel: jest.fn().mockImplementation((model: string) =>
-      DEFAULT_MODELS.some(m => m.value === model)
-    ),
-    applyModelDefaults: jest.fn(),
-    normalizeModelVariant: jest.fn((model: string) => model),
     getPermissionModeToggle: jest.fn().mockReturnValue({
       inactiveValue: 'normal',
       inactiveLabel: 'Safe',
@@ -191,15 +136,12 @@ describe('ModelSelector', () => {
     selector = new ModelSelector(parentEl, callbacks);
   });
 
-  it('should create a container with model-selector class', () => {
-    const container = parentEl.querySelector('.claudian-model-selector');
-    expect(container).not.toBeNull();
-  });
-
   it('should display current model label', () => {
+    expect(parentEl.querySelector('.claudian-model-selector')).not.toBeNull();
     // Default model is 'sonnet' which maps to 'Sonnet'
     const btn = parentEl.querySelector('.claudian-model-btn');
     expect(btn).not.toBeNull();
+    expect(btn?.hasClass('ready')).toBe(false);
     const label = btn?.querySelector('.claudian-model-label');
     expect(label).not.toBeNull();
     expect(label?.textContent).toBe('Sonnet');
@@ -265,6 +207,7 @@ describe('ModelSelector', () => {
     // DEFAULT_CLAUDE_MODELS is [haiku, sonnet, opus] -> reversed is [opus, sonnet, haiku]
     const options = dropdown?.children || [];
     expect(options.length).toBe(3);
+    expect(options.filter((option: any) => option.hasClass('claudian-model-group'))).toHaveLength(0);
     // Text is in child span, check first child's textContent
     expect(options[0]?.children[0]?.textContent).toBe('Opus');
     expect(options[1]?.children[0]?.textContent).toBe('Sonnet');
@@ -294,30 +237,18 @@ describe('ModelSelector', () => {
     ]);
   });
 
-  it('should mark current model as selected', () => {
-    const dropdown = parentEl.querySelector('.claudian-model-dropdown');
-    const options = dropdown?.children || [];
-    // Sonnet is current (index 1 in reversed order)
-    const sonnetOption = options.find((o: any) => o.children[0]?.textContent === 'Sonnet');
-    expect(sonnetOption?.hasClass('selected')).toBe(true);
-  });
-
   it('should call onModelChange when option clicked', async () => {
     const dropdown = parentEl.querySelector('.claudian-model-dropdown');
     const options = dropdown?.children || [];
+    const sonnetOption = options.find((o: any) => o.children[0]?.textContent === 'Sonnet');
+    expect(sonnetOption?.hasClass('selected')).toBe(true);
     const opusOption = options.find((o: any) => o.children[0]?.textContent === 'Opus');
 
     await opusOption?.dispatchEvent('click', { stopPropagation: () => {} });
     expect(callbacks.onModelChange).toHaveBeenCalledWith('opus');
   });
 
-  it('should always show brand color on model button', () => {
-    const btn = parentEl.querySelector('.claudian-model-btn');
-    expect(btn).toBeTruthy();
-    expect(btn?.hasClass('ready')).toBe(false);
-  });
-
-  it('should use custom models from environment variables', () => {
+  it('should forward environment settings and render the supplied custom model', () => {
     callbacks.getEnvironmentVariables.mockReturnValue(
       'CLAUDE_CODE_USE_BEDROCK=1\nANTHROPIC_MODEL=us.anthropic.claude-sonnet-4-20250514-v1:0'
     );
@@ -328,14 +259,23 @@ describe('ModelSelector', () => {
       enableOpus1M: false,
       enableSonnet1M: false,
     });
+    const uiConfig = callbacks.getUIConfig();
+    uiConfig.getModelOptions.mockReturnValue([{
+      value: 'us.anthropic.claude-sonnet-4-20250514-v1:0', label: 'Gateway model',
+    }]);
     selector.renderOptions();
     selector.updateDisplay();
     // Custom models should be available in dropdown
     const label = parentEl.querySelector('.claudian-model-label');
-    expect(label?.textContent).toBeDefined();
+    expect(label?.textContent).toBe('Gateway model');
+    expect(uiConfig.getModelOptions).toHaveBeenLastCalledWith({
+      ...callbacks.getSettings(), environmentVariables: callbacks.getEnvironmentVariables(),
+    });
+    const options = parentEl.querySelector('.claudian-model-dropdown')?.children ?? [];
+    expect(options.map((option: any) => option.children[0]?.textContent)).toEqual(['Gateway model']);
   });
 
-  it('should not filter custom env models when 1M toggles are enabled', () => {
+  it('should render supplied env model without changing provider options', () => {
     callbacks.getEnvironmentVariables.mockReturnValue(
       'ANTHROPIC_MODEL=opus'
     );
@@ -347,11 +287,18 @@ describe('ModelSelector', () => {
       enableSonnet1M: true,
     });
 
+    const uiConfig = callbacks.getUIConfig();
+    uiConfig.getModelOptions.mockReturnValue([{ value: 'opus', label: 'Opus' }]);
     selector.renderOptions();
     selector.updateDisplay();
 
     const label = parentEl.querySelector('.claudian-model-label');
     expect(label?.textContent).toBe('Opus');
+    expect(uiConfig.getModelOptions).toHaveBeenLastCalledWith({
+      ...callbacks.getSettings(), environmentVariables: callbacks.getEnvironmentVariables(),
+    });
+    const options = parentEl.querySelector('.claudian-model-dropdown')?.children ?? [];
+    expect(options.map((option: any) => option.children[0]?.textContent)).toEqual(['Opus']);
   });
 
   it('should render group separators when models have group field', () => {
@@ -381,16 +328,7 @@ describe('ModelSelector', () => {
     expect(groups[1]?.textContent).toBe('Claude');
   });
 
-  it('should not render group separators when models have no group field', () => {
-    selector.renderOptions();
-
-    const dropdown = parentEl.querySelector('.claudian-model-dropdown');
-    const children = dropdown?.children || [];
-    const groups = children.filter((c: any) => c.hasClass('claudian-model-group'));
-    expect(groups.length).toBe(0);
-  });
-
-  it('should show 1M variants instead of standard variants when enabled', () => {
+  it('should render provider-supplied model variants', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'opus[1m]',
       reasoning: 'medium',
@@ -400,6 +338,12 @@ describe('ModelSelector', () => {
       enableSonnet1M: true,
     });
 
+    const uiConfig = callbacks.getUIConfig();
+    uiConfig.getModelOptions.mockReturnValue([
+      { value: 'haiku', label: 'Haiku' },
+      { value: 'sonnet[1m]', label: 'Sonnet 1M' },
+      { value: 'opus[1m]', label: 'Opus 1M' },
+    ]);
     selector.renderOptions();
     selector.updateDisplay();
 
@@ -410,6 +354,9 @@ describe('ModelSelector', () => {
     expect(options.find((o: any) => o.children[0]?.textContent === 'Opus')).toBeUndefined();
     expect(options.find((o: any) => o.children[0]?.textContent === 'Sonnet')).toBeUndefined();
     expect(parentEl.querySelector('.claudian-model-label')?.textContent).toBe('Opus 1M');
+    expect(uiConfig.getModelOptions).toHaveBeenLastCalledWith({
+      ...callbacks.getSettings(), environmentVariables: callbacks.getEnvironmentVariables(),
+    });
   });
 });
 
@@ -423,16 +370,6 @@ describe('ModeSelector', () => {
     parentEl = createMockEl();
     callbacks = createMockCallbacks();
     selector = new ModeSelector(parentEl, callbacks);
-  });
-
-  it('should create a container with mode-selector class', () => {
-    const container = parentEl.querySelector('.claudian-mode-selector');
-    expect(container).not.toBeNull();
-  });
-
-  it('should display the current mode label', () => {
-    const label = parentEl.querySelector('.claudian-mode-label');
-    expect(label?.textContent).toBe('Build');
   });
 
   it('should call onModeChange when the toggle is clicked', async () => {
@@ -456,6 +393,7 @@ describe('ModeSelector', () => {
     const parentEl2 = createMockEl();
     new ModeSelector(parentEl2, callbacks);
 
+    expect(parentEl2.querySelector('.claudian-mode-selector')).not.toBeNull();
     const label = parentEl2.querySelector('.claudian-mode-label');
     const toggle = parentEl2.querySelector('.claudian-toggle-switch');
     expect(label?.textContent).toBe('Build');
@@ -501,7 +439,7 @@ describe('ThinkingBudgetSelector', () => {
   let callbacks: ReturnType<typeof createMockCallbacks>;
   let selector: ThinkingBudgetSelector;
 
-  describe('adaptive mode (Claude models)', () => {
+  describe('adaptive provider configuration', () => {
     beforeEach(() => {
       jest.clearAllMocks();
       parentEl = createMockEl();
@@ -509,34 +447,20 @@ describe('ThinkingBudgetSelector', () => {
       selector = new ThinkingBudgetSelector(parentEl, callbacks);
     });
 
-    it('should create a container with thinking-selector class', () => {
-      const container = parentEl.querySelector('.claudian-thinking-selector');
-      expect(container).not.toBeNull();
-    });
-
-    it('should show effort selector for Claude models', () => {
+    it('should display current effort level for adaptive providers', () => {
+      expect(parentEl.querySelector('.claudian-thinking-selector')).not.toBeNull();
       const effort = parentEl.querySelector('.claudian-thinking-effort');
       expect(effort).not.toBeNull();
       expect(effort?.style?.display).not.toBe('none');
-    });
-
-    it('should hide budget selector for Claude models', () => {
-      const budget = parentEl.querySelector('.claudian-thinking-budget');
-      expect(budget?.style?.display).toBe('none');
-    });
-
-    it('should display current effort level for Claude models', () => {
+      expect(effort?.querySelector('.claudian-thinking-label-text')?.textContent).toBe('Effort:');
+      expect(parentEl.querySelector('.claudian-thinking-budget')?.style?.display).toBe('none');
       const current = parentEl.querySelector('.claudian-thinking-current');
       expect(current?.textContent).toBe('High');
     });
 
-    it('should render the effort label for responsive styling', () => {
-      const effort = parentEl.querySelector('.claudian-thinking-effort');
-      expect(effort?.querySelector('.claudian-thinking-label-text')?.textContent).toBe('Effort:');
-    });
   });
 
-  describe('legacy mode (custom models)', () => {
+  describe('budget provider configuration', () => {
     beforeEach(() => {
       jest.clearAllMocks();
       parentEl = createMockEl();
@@ -550,20 +474,14 @@ describe('ThinkingBudgetSelector', () => {
           enableSonnet1M: false,
         }),
       });
+      callbacks.getUIConfig().isAdaptiveReasoningModel.mockReturnValue(false);
+      callbacks.getUIConfig().getReasoningOptions.mockReturnValue(BUDGET_OPTIONS);
       selector = new ThinkingBudgetSelector(parentEl, callbacks);
     });
 
-    it('should hide effort selector for custom models', () => {
-      const effort = parentEl.querySelector('.claudian-thinking-effort');
-      expect(effort?.style?.display).toBe('none');
-    });
-
-    it('should show budget selector for custom models', () => {
-      const budget = parentEl.querySelector('.claudian-thinking-budget');
-      expect(budget?.style?.display).not.toBe('none');
-    });
-
     it('should display current budget label', () => {
+      expect(parentEl.querySelector('.claudian-thinking-effort')?.style?.display).toBe('none');
+      expect(parentEl.querySelector('.claudian-thinking-budget')?.style?.display).not.toBe('none');
       const current = parentEl.querySelector('.claudian-thinking-current');
       expect(current?.textContent).toBe('Low');
     });
@@ -590,13 +508,9 @@ describe('ThinkingBudgetSelector', () => {
       expect(gears.length).toBe(5);
       expect(gears[0]?.textContent).toBe('Ultra');
       expect(gears[4]?.textContent).toBe('Off');
-    });
-
-    it('should mark current budget as selected', () => {
-      const options = parentEl.querySelector('.claudian-thinking-options');
-      const gears = options?.children || [];
-      const lowGear = gears.find((g: any) => g.textContent === 'Low');
-      expect(lowGear?.hasClass('selected')).toBe(true);
+      expect(gears.find((gear: any) => gear.textContent === 'Low')?.hasClass('selected')).toBe(true);
+      expect(gears.find((gear: any) => gear.textContent === 'High')?.getAttribute('title')).toContain('16,000 tokens');
+      expect(gears.find((gear: any) => gear.textContent === 'Off')?.getAttribute('title')).toBe('Disabled');
     });
 
     it('should call onThinkingBudgetChange when gear clicked', async () => {
@@ -608,19 +522,6 @@ describe('ThinkingBudgetSelector', () => {
       expect(callbacks.onThinkingBudgetChange).toHaveBeenCalledWith('high');
     });
 
-    it('should set title with token count for non-off budgets', () => {
-      const options = parentEl.querySelector('.claudian-thinking-options');
-      const gears = options?.children || [];
-      const highGear = gears.find((g: any) => g.textContent === 'High');
-      expect(highGear?.getAttribute('title')).toContain('16,000 tokens');
-    });
-
-    it('should set title as Disabled for off budget', () => {
-      const options = parentEl.querySelector('.claudian-thinking-options');
-      const gears = options?.children || [];
-      const offGear = gears.find((g: any) => g.textContent === 'Off');
-      expect(offGear?.getAttribute('title')).toBe('Disabled');
-    });
   });
 });
 
@@ -635,53 +536,11 @@ describe('PermissionToggle', () => {
     new PermissionToggle(parentEl, callbacks);
   });
 
-  it('should create a container with permission-toggle class', () => {
-    const container = parentEl.querySelector('.claudian-permission-toggle');
-    expect(container).not.toBeNull();
-  });
-
-  it('should display Safe label when in normal mode', () => {
-    const label = parentEl.querySelector('.claudian-permission-label');
-    expect(label?.textContent).toBe('Safe');
-  });
-
-  it('should display YOLO label when in yolo mode', () => {
-    callbacks.getSettings.mockReturnValue({
-      model: 'sonnet',
-      reasoning: 'low',
-      serviceTier: 'default',
-      permissionMode: 'yolo',
-      enableOpus1M: false,
-      enableSonnet1M: false,
-    });
-    const parentEl2 = createMockEl();
-    new PermissionToggle(parentEl2, callbacks);
-
-    const label = parentEl2.querySelector('.claudian-permission-label');
-    expect(label?.textContent).toBe('YOLO');
-  });
-
-  it('should add active class when in yolo mode', () => {
-    callbacks.getSettings.mockReturnValue({
-      model: 'sonnet',
-      reasoning: 'low',
-      serviceTier: 'default',
-      permissionMode: 'yolo',
-    });
-    const parentEl2 = createMockEl();
-    new PermissionToggle(parentEl2, callbacks);
-
-    const toggle = parentEl2.querySelector('.claudian-toggle-switch');
-    expect(toggle?.hasClass('active')).toBe(true);
-  });
-
-  it('should not have active class in normal mode', () => {
+  it('should toggle from normal to yolo on click', async () => {
+    expect(parentEl.querySelector('.claudian-permission-toggle')).not.toBeNull();
+    expect(parentEl.querySelector('.claudian-permission-label')?.textContent).toBe('Safe');
     const toggle = parentEl.querySelector('.claudian-toggle-switch');
     expect(toggle?.hasClass('active')).toBe(false);
-  });
-
-  it('should toggle from normal to yolo on click', async () => {
-    const toggle = parentEl.querySelector('.claudian-toggle-switch');
     await toggle?.dispatchEvent('click');
     expect(callbacks.onPermissionModeChange).toHaveBeenCalledWith('yolo');
   });
@@ -696,6 +555,8 @@ describe('PermissionToggle', () => {
     new PermissionToggle(parentEl2, callbacks);
 
     const toggle = parentEl2.querySelector('.claudian-toggle-switch');
+    expect(parentEl2.querySelector('.claudian-permission-label')?.textContent).toBe('YOLO');
+    expect(toggle?.hasClass('active')).toBe(true);
     await toggle?.dispatchEvent('click');
     expect(callbacks.onPermissionModeChange).toHaveBeenCalledWith('normal');
   });
@@ -752,52 +613,19 @@ describe('ServiceTierToggle', () => {
     new ServiceTierToggle(parentEl, callbacks);
   });
 
-  it('shows the control when the provider exposes service tier options', () => {
+  it('toggles from Standard to Fast on click', async () => {
     const container = parentEl.querySelector('.claudian-service-tier-toggle');
     expect(container).not.toBeNull();
     expect(container?.hasClass('claudian-hidden')).toBe(false);
-  });
-
-  it('renders the icon button in the inactive state when fast mode is off', () => {
-    const button = parentEl.querySelector('.claudian-service-tier-button');
-    const icon = parentEl.querySelector('.claudian-service-tier-icon');
-    const container = parentEl.querySelector('.claudian-service-tier-toggle');
-    expect(button?.hasClass('active')).toBe(false);
-    expect(icon).not.toBeNull();
     expect(container?.getAttribute('title')).toBe('Fast mode: Standard');
-  });
-
-  it('renders the icon button in the active state when fast mode is on', () => {
-    uiConfig.getServiceTierToggle.mockReturnValue({
-      inactiveValue: 'default',
-      inactiveLabel: 'Standard',
-      activeValue: 'fast',
-      activeLabel: 'Fast',
-      description: '1.5x speed, 2x credits',
-      isActive: true,
-    });
-    const parentEl2 = createMockEl();
-    new ServiceTierToggle(parentEl2, callbacks);
-
-    const button = parentEl2.querySelector('.claudian-service-tier-button');
-    const container = parentEl2.querySelector('.claudian-service-tier-toggle');
-    expect(button?.hasClass('active')).toBe(true);
-    expect(container?.getAttribute('title')).toBe('Fast mode: Fast');
-  });
-
-  it('toggles from Standard to Fast on click', async () => {
+    expect(parentEl.querySelector('.claudian-service-tier-icon')).not.toBeNull();
     const button = parentEl.querySelector('.claudian-service-tier-button');
+    expect(button?.hasClass('active')).toBe(false);
     await button?.dispatchEvent('click');
     expect(callbacks.onServiceTierChange).toHaveBeenCalledWith('fast');
   });
 
   it('toggles from Fast to Standard on click', async () => {
-    callbacks.getSettings.mockReturnValue({
-      model: TEST_CODEX_MODEL,
-      reasoning: 'medium',
-      serviceTier: 'fast',
-      permissionMode: 'normal',
-    });
     uiConfig.getServiceTierToggle.mockReturnValue({
       inactiveValue: 'default',
       inactiveLabel: 'Standard',
@@ -810,20 +638,11 @@ describe('ServiceTierToggle', () => {
     new ServiceTierToggle(parentEl2, callbacks);
 
     const button = parentEl2.querySelector('.claudian-service-tier-button');
+    expect(callbacks.getSettings().serviceTier).toBe('default');
+    expect(button?.hasClass('active')).toBe(true);
+    expect(parentEl2.querySelector('.claudian-service-tier-toggle')?.getAttribute('title')).toBe('Fast mode: Fast');
     await button?.dispatchEvent('click');
     expect(callbacks.onServiceTierChange).toHaveBeenCalledWith('default');
-  });
-
-  it('hides the control when the provider exposes no service tier UI', () => {
-    callbacks.getUIConfig.mockReturnValue({
-      ...createMockUIConfig(),
-      getServiceTierToggle: jest.fn().mockReturnValue(null),
-    });
-    const parentEl2 = createMockEl();
-    new ServiceTierToggle(parentEl2, callbacks);
-
-    const container = parentEl2.querySelector('.claudian-service-tier-toggle');
-    expect(container?.style.display).toBe('none');
   });
 
   it('does not toggle when the provider exposes no fast service tier', async () => {
@@ -834,6 +653,7 @@ describe('ServiceTierToggle', () => {
     const parentEl2 = createMockEl();
     const toggle = new ServiceTierToggle(parentEl2, callbacks);
 
+    expect(parentEl2.querySelector('.claudian-service-tier-toggle')?.style.display).toBe('none');
     await expect(toggle.toggle()).resolves.toBe(false);
     expect(callbacks.onServiceTierChange).not.toHaveBeenCalled();
   });
@@ -849,19 +669,13 @@ describe('ContextUsageMeter', () => {
     meter = new ContextUsageMeter(parentEl);
   });
 
-  it('should create a container with context-meter class', () => {
-    const container = parentEl.querySelector('.claudian-context-meter');
-    expect(container).not.toBeNull();
-  });
-
-  it('should be hidden initially', () => {
-    const container = parentEl.querySelector('.claudian-context-meter');
-    expect(container?.style.display).toBe('none');
-  });
-
   it('should remain hidden when update called with null', () => {
     meter.update(null);
     const container = parentEl.querySelector('.claudian-context-meter');
+    expect(container?.style.display).toBe('none');
+    meter.update(makeUsage({ contextTokens: 50000, contextWindow: 200000, percentage: 25 }));
+    expect(container?.style.display).toBe('flex');
+    meter.update(null);
     expect(container?.style.display).toBe('none');
   });
 
@@ -869,23 +683,20 @@ describe('ContextUsageMeter', () => {
     meter.update(makeUsage({ contextTokens: 0, contextWindow: 200000, percentage: 0 }));
     const container = parentEl.querySelector('.claudian-context-meter');
     expect(container?.style.display).toBe('none');
-  });
-
-  it('should become visible when contextTokens > 0', () => {
     meter.update(makeUsage({ contextTokens: 50000, contextWindow: 200000, percentage: 25 }));
-    const container = parentEl.querySelector('.claudian-context-meter');
     expect(container?.style.display).toBe('flex');
-  });
-
-  it('should render percentage text for responsive styling', () => {
-    meter.update(makeUsage({ contextTokens: 50000, contextWindow: 200000, percentage: 25 }));
-    const percent = parentEl.querySelector('.claudian-context-meter-percent');
-    expect(percent?.textContent).toBe('25%');
+    meter.update(makeUsage({ contextTokens: 0, contextWindow: 200000, percentage: 0 }));
+    expect(container?.style.display).toBe('none');
   });
 
   it('should expose usage details to assistive technology', () => {
-    meter.update(makeUsage({ contextTokens: 50000, contextWindow: 200000, percentage: 25 }));
     const container = parentEl.querySelector('.claudian-context-meter');
+    expect(container).not.toBeNull();
+    expect(container?.style.display).toBe('none');
+    meter.update(makeUsage({ contextTokens: 50000, contextWindow: 200000, percentage: 25 }));
+    expect(container?.style.display).toBe('flex');
+    expect(parentEl.querySelector('.claudian-context-meter-percent')?.textContent).toBe('25%');
+    expect(container?.getAttribute('data-tooltip')).toBe('50k / 200k');
     expect(container?.getAttribute('role')).toBe('progressbar');
     expect(container?.getAttribute('aria-label')).toBe('Context usage');
     expect(container?.getAttribute('aria-valuemin')).toBe('0');
@@ -894,35 +705,20 @@ describe('ContextUsageMeter', () => {
     expect(container?.getAttribute('aria-valuetext')).toBe('50k / 200k');
   });
 
-  it('should add warning class when usage > 80%', () => {
-    meter.update(makeUsage({ contextTokens: 170000, contextWindow: 200000, percentage: 85 }));
-    const container = parentEl.querySelector('.claudian-context-meter');
-    expect(container?.hasClass('warning')).toBe(true);
-  });
-
   it('should remove warning class when usage drops below 80%', () => {
     meter.update(makeUsage({ contextTokens: 170000, contextWindow: 200000, percentage: 85 }));
+    const warningContainer = parentEl.querySelector('.claudian-context-meter');
+    expect(warningContainer?.hasClass('warning')).toBe(true);
+    expect(warningContainer?.getAttribute('data-tooltip')).toBe('170k / 200k (Approaching limit, run `/compact` to continue)');
     meter.update(makeUsage({ contextTokens: 50000, contextWindow: 200000, percentage: 25 }));
     const container = parentEl.querySelector('.claudian-context-meter');
     expect(container?.hasClass('warning')).toBe(false);
-  });
-
-  it('should set tooltip with formatted token counts', () => {
-    meter.update(makeUsage({ contextTokens: 50000, contextWindow: 200000, percentage: 25 }));
-    const container = parentEl.querySelector('.claudian-context-meter');
-    expect(container?.getAttribute('data-tooltip')).toBe('50k / 200k');
   });
 
   it('should format small token counts without k suffix', () => {
     meter.update(makeUsage({ contextTokens: 500, contextWindow: 200000, percentage: 0 }));
     const container = parentEl.querySelector('.claudian-context-meter');
     expect(container?.getAttribute('data-tooltip')).toBe('500 / 200k');
-  });
-
-  it('should add compact reminder to tooltip when usage > 80%', () => {
-    meter.update(makeUsage({ contextTokens: 170000, contextWindow: 200000, percentage: 85 }));
-    const container = parentEl.querySelector('.claudian-context-meter');
-    expect(container?.getAttribute('data-tooltip')).toBe('170k / 200k (Approaching limit, run `/compact` to continue)');
   });
 
   it('should not add compact reminder to tooltip when usage ≤ 80%', () => {
@@ -946,20 +742,6 @@ describe('InputToolbarLayoutController', () => {
       toJSON: jest.fn(),
     });
   }
-
-  it('should compact optional labels when toolbar items wrap', () => {
-    const toolbarEl = createMockEl();
-    const firstItem = toolbarEl.createDiv();
-    const wrappedItem = toolbarEl.createDiv();
-    setRect(firstItem, 0);
-    setRect(wrappedItem, 36);
-
-    const controller = new InputToolbarLayoutController(toolbarEl);
-    controller.refreshLayout();
-
-    expect(toolbarEl.hasClass('claudian-input-toolbar--compact')).toBe(true);
-    controller.destroy();
-  });
 
   it('should show optional labels when all toolbar items fit on one line', () => {
     const toolbarEl = createMockEl();

@@ -1,4 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
+import { setIcon } from 'obsidian';
 
 import type { ToolCallInfo, ToolDiffData } from '@/core/types';
 import {
@@ -82,18 +83,6 @@ describe('WriteEditRenderer', () => {
       expect(state.statusEl.hasClass('status-running')).toBe(true);
     });
 
-    it('should show filename only in summary', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({
-        input: { file_path: '/very/long/path/to/some/deeply/nested/file.md' },
-      });
-
-      const state = createWriteEditBlock(parentEl, toolCall);
-
-      // Summary should show just the filename
-      expect(state.summaryEl.textContent).toBe('file.md');
-    });
-
     it('should handle missing file_path gracefully', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall({ input: {} });
@@ -142,21 +131,8 @@ describe('WriteEditRenderer', () => {
 
       updateWriteEditWithDiff(state, diffData);
 
-      // Should show +1 for added line
-      expect((state.statsEl as any)._children.length).toBeGreaterThan(0);
-    });
-
-    it('should store diffLines in state', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall();
-      const state = createWriteEditBlock(parentEl, toolCall);
-
-      const diffData = createDiffData();
-
-      updateWriteEditWithDiff(state, diffData);
-
-      expect(state.diffLines).toBeDefined();
-      expect(state.diffLines!.length).toBeGreaterThan(0);
+      expect(state.statsEl.querySelector('.added')?.textContent).toBe('+1');
+      expect(state.statsEl.querySelector('.removed')).toBeNull();
     });
 
     it('should show both added and removed counts', () => {
@@ -170,8 +146,10 @@ describe('WriteEditRenderer', () => {
 
       updateWriteEditWithDiff(state, diffData);
 
-      // Should have stats children
-      expect((state.statsEl as any)._children.length).toBeGreaterThan(0);
+      expect(state.statsEl.querySelector('.added')?.textContent).toBe('+3');
+      expect(state.statsEl.querySelector('.removed')?.textContent).toBe('-2');
+      expect(state.diffLines).toBeDefined();
+      expect(state.diffLines!.length).toBeGreaterThan(0);
     });
 
     it('should handle empty diffLines with zero stats', () => {
@@ -241,33 +219,6 @@ describe('WriteEditRenderer', () => {
   });
 
   describe('renderStoredWriteEdit', () => {
-    it('should show done state for completed status', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({ status: 'completed' });
-
-      const block = renderStoredWriteEdit(parentEl, toolCall);
-
-      expect(block.hasClass('done')).toBe(true);
-    });
-
-    it('should show error state for error status', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({ status: 'error' });
-
-      const block = renderStoredWriteEdit(parentEl, toolCall);
-
-      expect(block.hasClass('error')).toBe(true);
-    });
-
-    it('should show error state for blocked status', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({ status: 'blocked' });
-
-      const block = renderStoredWriteEdit(parentEl, toolCall);
-
-      expect(block.hasClass('error')).toBe(true);
-    });
-
     it('should render diff stats from stored diffData', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall({
@@ -281,6 +232,8 @@ describe('WriteEditRenderer', () => {
 
       // Block should be created successfully with stats
       expect(block.dataset.toolId).toBe('tool-123');
+      expect(block.querySelector('.added')?.textContent).toBe('+2');
+      expect(block.querySelector('.removed')?.textContent).toBe('-1');
     });
 
     it('should handle stored block with empty diffLines', () => {
@@ -295,19 +248,10 @@ describe('WriteEditRenderer', () => {
 
       const block = renderStoredWriteEdit(parentEl, toolCall);
 
-      expect(block).toBeDefined();
-    });
-
-    it('should show error message when no diffData and error', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({
-        status: 'error',
-        result: 'File not found',
-      });
-
-      const block = renderStoredWriteEdit(parentEl, toolCall);
-
-      expect(block.hasClass('error')).toBe(true);
+      expect(block.querySelector('.claudian-write-edit-stats')?.children).toHaveLength(0);
+      (block.querySelector('.claudian-write-edit-header') as HTMLElement).click();
+      expect(block.querySelector('.claudian-write-edit-done-text')?.textContent).toBe('DONE');
+      expect(block.querySelectorAll('.claudian-diff-text')).toHaveLength(0);
     });
 
     it('should use correct icon for Edit tool', () => {
@@ -316,8 +260,7 @@ describe('WriteEditRenderer', () => {
 
       const block = renderStoredWriteEdit(parentEl, toolCall);
 
-      // Block should render for Edit tool
-      expect(block).toBeDefined();
+      expect(setIcon).toHaveBeenCalledWith(block.querySelector('.claudian-write-edit-icon'), 'file-pen');
     });
 
     it('should start collapsed by default', () => {
@@ -347,21 +290,9 @@ describe('WriteEditRenderer', () => {
       expect(headerEl?.getAttribute('aria-expanded')).toBe('true');
       expect(headerEl?.getAttribute('aria-label')).toContain('click to collapse');
     });
-
   });
 
   describe('filename extraction', () => {
-    it('should extract filename from path', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({
-        input: { file_path: 'notes/test.md' },
-      });
-
-      const state = createWriteEditBlock(parentEl, toolCall);
-
-      expect(state.summaryEl.textContent).toBe('test.md');
-    });
-
     it('should extract filename from long path', () => {
       const parentEl = createMockEl();
       const longPath = 'src/components/features/auth/modals/confirmation/ConfirmationDialog.tsx';
@@ -403,6 +334,9 @@ describe('WriteEditRenderer', () => {
 
       updateWriteEditWithDiff(state, diffData);
 
+      expect(Array.from(state.contentEl.querySelectorAll('.claudian-diff-text'), el => el.textContent))
+        .toEqual(['new content', 'line 2']);
+
       // Should show +2 for two new lines
       expect(state.diffLines).toBeDefined();
       expect(state.diffLines!.filter(l => l.type === 'insert').length).toBe(2);
@@ -422,6 +356,9 @@ describe('WriteEditRenderer', () => {
       };
 
       updateWriteEditWithDiff(state, diffData);
+
+      expect(Array.from(state.contentEl.querySelectorAll('.claudian-diff-text'), el => el.textContent))
+        .toEqual(['content']);
 
       expect(state.diffLines).toBeDefined();
       expect(state.diffLines!.filter(l => l.type === 'delete').length).toBe(1);
@@ -445,6 +382,9 @@ describe('WriteEditRenderer', () => {
       };
 
       updateWriteEditWithDiff(state, diffData);
+
+      expect(Array.from(state.contentEl.querySelectorAll('.claudian-diff-text'), el => el.textContent))
+        .toEqual(['line1', 'old', 'new1', 'new2', 'line3']);
 
       expect(state.diffLines).toBeDefined();
       const types = state.diffLines!.reduce(

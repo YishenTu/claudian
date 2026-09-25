@@ -1,5 +1,4 @@
 import { ChatState } from '@/features/chat/state/ChatState';
-import type { ChatStateCallbacks } from '@/features/chat/state/types';
 
 describe('ChatState', () => {
   const originalWindow = (globalThis as { window?: Window }).window;
@@ -48,33 +47,15 @@ describe('ChatState', () => {
       expect(chatState.messages).toHaveLength(1);
     });
 
-    it('fires onMessagesChanged when setting messages', () => {
-      const onMessagesChanged = jest.fn();
-      const chatState = new ChatState({ onMessagesChanged });
-
-      chatState.messages = [{ id: '1', role: 'user', content: 'hi', timestamp: 1 }];
-
-      expect(onMessagesChanged).toHaveBeenCalledTimes(1);
-    });
-
-    it('fires onMessagesChanged when adding a message', () => {
-      const onMessagesChanged = jest.fn();
-      const chatState = new ChatState({ onMessagesChanged });
-
-      chatState.addMessage({ id: '1', role: 'user', content: 'hi', timestamp: 1 });
-
-      expect(onMessagesChanged).toHaveBeenCalledTimes(1);
-    });
-
-    it('fires onMessagesChanged when clearing messages', () => {
-      const onMessagesChanged = jest.fn();
-      const chatState = new ChatState({ onMessagesChanged });
-      chatState.addMessage({ id: '1', role: 'user', content: 'hi', timestamp: 1 });
+    it('clears messages', () => {
+      const chatState = new ChatState();
+      const message = { id: '1', role: 'user' as const, content: 'hi', timestamp: 1 };
+      chatState.addMessage(message);
+      expect(chatState.messages).toEqual([message]);
 
       chatState.clearMessages();
 
       expect(chatState.messages).toHaveLength(0);
-      expect(onMessagesChanged).toHaveBeenCalledTimes(2); // once for add, once for clear
     });
   });
 
@@ -100,39 +81,14 @@ describe('ChatState', () => {
       expect(gen2).toBe(2);
     });
 
-    it('stores cancelRequested', () => {
-      const chatState = new ChatState();
-      chatState.cancelRequested = true;
-      expect(chatState.cancelRequested).toBe(true);
-    });
-
-    it('stores isCreatingConversation', () => {
-      const chatState = new ChatState();
-      chatState.isCreatingConversation = true;
-      expect(chatState.isCreatingConversation).toBe(true);
-    });
-
-    it('stores isSwitchingConversation', () => {
-      const chatState = new ChatState();
-      chatState.isSwitchingConversation = true;
-      expect(chatState.isSwitchingConversation).toBe(true);
-    });
   });
 
   describe('conversation', () => {
-    it('fires onConversationChanged when currentConversationId changes', () => {
+    it('fires onConversationChanged for a value and when cleared', () => {
       const onConversationChanged = jest.fn();
       const chatState = new ChatState({ onConversationChanged });
-
       chatState.currentConversationId = 'conv-1';
-
       expect(onConversationChanged).toHaveBeenCalledWith('conv-1');
-    });
-
-    it('fires onConversationChanged with null', () => {
-      const onConversationChanged = jest.fn();
-      const chatState = new ChatState({ onConversationChanged });
-      chatState.currentConversationId = 'conv-1';
 
       chatState.currentConversationId = null;
 
@@ -192,14 +148,6 @@ describe('ChatState', () => {
       chatState.queueIndicatorEl = el;
       expect(chatState.queueIndicatorEl).toBe(el);
     });
-
-    it('stores thinkingIndicatorTimeout', () => {
-      const chatState = new ChatState();
-      const timeout = window.setTimeout(() => {}, 100);
-      chatState.thinkingIndicatorTimeout = timeout;
-      expect(chatState.thinkingIndicatorTimeout).toBe(timeout);
-      window.clearTimeout(timeout);
-    });
   });
 
   describe('tool tracking maps', () => {
@@ -226,30 +174,16 @@ describe('ChatState', () => {
   });
 
   describe('usage', () => {
-    it('fires onUsageChanged when usage changes', () => {
+    it('fires onUsageChanged for a value and when cleared', () => {
       const onUsageChanged = jest.fn();
       const chatState = new ChatState({ onUsageChanged });
       const usage = { inputTokens: 100, outputTokens: 50 } as any;
-
       chatState.usage = usage;
-
       expect(onUsageChanged).toHaveBeenCalledWith(usage);
-    });
-
-    it('fires onUsageChanged with null', () => {
-      const onUsageChanged = jest.fn();
-      const chatState = new ChatState({ onUsageChanged });
-      chatState.usage = { inputTokens: 100, outputTokens: 50 } as any;
 
       chatState.usage = null;
 
       expect(onUsageChanged).toHaveBeenCalledWith(null);
-    });
-
-    it('stores ignoreUsageUpdates', () => {
-      const chatState = new ChatState();
-      chatState.ignoreUsageUpdates = true;
-      expect(chatState.ignoreUsageUpdates).toBe(true);
     });
   });
 
@@ -258,17 +192,13 @@ describe('ChatState', () => {
       jest.restoreAllMocks();
     });
 
-    it('starts without attention', () => {
-      const chatState = new ChatState();
-
-      expect(chatState.attention).toBeNull();
-      expect(chatState.requiresAction).toBe(false);
-    });
-
     it('marks and acknowledges review attention', () => {
       jest.spyOn(Date, 'now').mockReturnValue(123);
       const onAttentionChanged = jest.fn();
       const chatState = new ChatState({ onAttentionChanged });
+
+      expect(chatState.attention).toBeNull();
+      expect(chatState.requiresAction).toBe(false);
 
       chatState.markReviewRequired();
 
@@ -429,37 +359,18 @@ describe('ChatState', () => {
         since: 100,
       });
     });
-
-    it('clears visible attention and pending action tokens', () => {
-      const onAttentionChanged = jest.fn();
-      const chatState = new ChatState({ onAttentionChanged });
-
-      chatState.beginActionRequired('approval-1');
-      chatState.clearAttention();
-      chatState.endActionRequired('approval-1');
-
-      expect(chatState.attention).toBeNull();
-      expect(onAttentionChanged).toHaveBeenCalledTimes(2);
-    });
   });
 
   describe('autoScrollEnabled', () => {
-    it('fires onAutoScrollChanged when value changes', () => {
+    it('notifies only when auto-scroll changes', () => {
       const onAutoScrollChanged = jest.fn();
       const chatState = new ChatState({ onAutoScrollChanged });
-      // Default is true, so set to false to trigger change
+      chatState.autoScrollEnabled = true;
+      expect(onAutoScrollChanged).not.toHaveBeenCalled();
+
       chatState.autoScrollEnabled = false;
 
       expect(onAutoScrollChanged).toHaveBeenCalledWith(false);
-    });
-
-    it('does not fire onAutoScrollChanged when value is the same', () => {
-      const onAutoScrollChanged = jest.fn();
-      const chatState = new ChatState({ onAutoScrollChanged });
-      // Default is true, set to true again
-      chatState.autoScrollEnabled = true;
-
-      expect(onAutoScrollChanged).not.toHaveBeenCalled();
     });
   });
 
@@ -469,14 +380,6 @@ describe('ChatState', () => {
       chatState.responseStartTime = 12345;
       expect(chatState.responseStartTime).toBe(12345);
     });
-
-    it('stores flavorTimerInterval', () => {
-      const chatState = new ChatState();
-      const interval = window.setInterval(() => {}, 1000);
-      chatState.flavorTimerInterval = interval;
-      expect(chatState.flavorTimerInterval).toBe(interval);
-      window.clearInterval(interval);
-    });
   });
 
   describe('clearFlavorTimerInterval', () => {
@@ -484,7 +387,7 @@ describe('ChatState', () => {
       const chatState = new ChatState();
       const clearSpy = jest.spyOn(window, 'clearInterval');
       const interval = window.setInterval(() => {}, 1000);
-      chatState.flavorTimerInterval = interval;
+      chatState.setFlavorTimerInterval(interval, window);
 
       chatState.clearFlavorTimerInterval();
 
@@ -504,185 +407,50 @@ describe('ChatState', () => {
     });
   });
 
-  describe('resetStreamingState', () => {
-    it('resets all streaming-related state', () => {
-      const chatState = new ChatState();
-      chatState.currentContentEl = {} as HTMLElement;
-      chatState.currentTextEl = {} as HTMLElement;
-      chatState.currentTextContent = 'text';
-      chatState.currentThinkingState = {} as any;
-      chatState.isStreaming = true;
-      chatState.cancelRequested = true;
-      const timeout = window.setTimeout(() => {}, 1000);
-      chatState.thinkingIndicatorTimeout = timeout;
-      const interval = window.setInterval(() => {}, 1000);
-      chatState.flavorTimerInterval = interval;
-      chatState.responseStartTime = 12345;
-
-      chatState.resetStreamingState();
-
-      expect(chatState.currentContentEl).toBeNull();
-      expect(chatState.currentTextEl).toBeNull();
-      expect(chatState.currentTextContent).toBe('');
-      expect(chatState.currentThinkingState).toBeNull();
-      expect(chatState.isStreaming).toBe(false);
-      expect(chatState.cancelRequested).toBe(false);
-      expect(chatState.thinkingIndicatorTimeout).toBeNull();
-      expect(chatState.flavorTimerInterval).toBeNull();
-      expect(chatState.responseStartTime).toBeNull();
-    });
-  });
-
-  describe('clearMaps', () => {
-    it('clears all tracking maps', () => {
-      const chatState = new ChatState();
-      chatState.toolCallElements.set('a', {} as HTMLElement);
-      chatState.writeEditStates.set('b', {} as any);
-      chatState.pendingTools.set('c', { toolCall: {} as any, parentEl: null });
-
-      chatState.clearMaps();
-
-      expect(chatState.toolCallElements.size).toBe(0);
-      expect(chatState.writeEditStates.size).toBe(0);
-      expect(chatState.pendingTools.size).toBe(0);
-    });
-  });
-
-  describe('resetForNewConversation', () => {
-    it('resets all conversation state', () => {
-      const onMessagesChanged = jest.fn();
-      const onUsageChanged = jest.fn();
-      const onAutoScrollChanged = jest.fn();
-      const chatState = new ChatState({
-        onMessagesChanged,
-        onUsageChanged,
-        onAutoScrollChanged,
-      });
-
-      // Set up some state
-      chatState.addMessage({ id: '1', role: 'user', content: 'hi', timestamp: 1 });
-      chatState.isStreaming = true;
-      chatState.cancelRequested = true;
-      chatState.currentContentEl = {} as HTMLElement;
-      chatState.toolCallElements.set('a', {} as HTMLElement);
-      chatState.queuedMessage = { content: 'queued', editorContext: null, canvasContext: null };
-      chatState.usage = { inputTokens: 100, outputTokens: 50 } as any;
-      chatState.beginActionRequired('approval-1');
-      // autoScrollEnabled defaults to true, set to false first so reset triggers change
-      chatState.autoScrollEnabled = false;
-
-      // Reset all tracking
-      jest.clearAllMocks();
-
-      chatState.resetForNewConversation();
-
-      expect(chatState.messages).toHaveLength(0);
-      expect(chatState.isStreaming).toBe(false);
-      expect(chatState.cancelRequested).toBe(false);
-      expect(chatState.currentContentEl).toBeNull();
-      expect(chatState.toolCallElements.size).toBe(0);
-      expect(chatState.writeEditStates.size).toBe(0);
-      expect(chatState.pendingTools.size).toBe(0);
-      expect(chatState.queuedMessage).toBeNull();
-      expect(chatState.usage).toBeNull();
-      expect(chatState.attention).toBeNull();
-      expect(chatState.autoScrollEnabled).toBe(true);
-
-      // Verify callbacks were fired
-      expect(onMessagesChanged).toHaveBeenCalled();
-      expect(onUsageChanged).toHaveBeenCalledWith(null);
-      expect(onAutoScrollChanged).toHaveBeenCalledWith(true);
-    });
-  });
-
-  describe('getPersistedMessages', () => {
-    it('returns messages as-is', () => {
-      const chatState = new ChatState();
-      const msg = { id: '1', role: 'user' as const, content: 'test', timestamp: 1 };
-      chatState.addMessage(msg);
-
-      const persisted = chatState.getPersistedMessages();
-
-      expect(persisted).toHaveLength(1);
-      expect(persisted[0]).toEqual(msg);
-    });
-  });
-
-  describe('callbacks property', () => {
-    it('allows getting callbacks', () => {
-      const callbacks: ChatStateCallbacks = { onMessagesChanged: jest.fn() };
-      const chatState = new ChatState(callbacks);
-
-      expect(chatState.callbacks).toBe(callbacks);
-    });
-
-    it('allows setting callbacks', () => {
-      const chatState = new ChatState();
-      const newCallbacks: ChatStateCallbacks = { onMessagesChanged: jest.fn() };
-
-      chatState.callbacks = newCallbacks;
-      chatState.addMessage({ id: '1', role: 'user', content: 'hi', timestamp: 1 });
-
-      expect(newCallbacks.onMessagesChanged).toHaveBeenCalled();
-    });
-  });
-
   describe('truncateAt', () => {
-    it('removes target message and all after, fires callback', () => {
-      const onMessagesChanged = jest.fn();
-      const chatState = new ChatState({ onMessagesChanged });
+    it('removes target message and all after', () => {
+      const chatState = new ChatState();
       chatState.addMessage({ id: 'a', role: 'user', content: 'first', timestamp: 1 });
       chatState.addMessage({ id: 'b', role: 'assistant', content: 'reply1', timestamp: 2 });
       chatState.addMessage({ id: 'c', role: 'user', content: 'second', timestamp: 3 });
       chatState.addMessage({ id: 'd', role: 'assistant', content: 'reply2', timestamp: 4 });
-      onMessagesChanged.mockClear();
 
       const removed = chatState.truncateAt('c');
 
       expect(removed).toBe(2);
       expect(chatState.messages.map(m => m.id)).toEqual(['a', 'b']);
-      expect(onMessagesChanged).toHaveBeenCalledTimes(1);
     });
 
-    it('returns 0 and does not fire callback for unknown id', () => {
-      const onMessagesChanged = jest.fn();
-      const chatState = new ChatState({ onMessagesChanged });
+    it('returns 0 without changing messages for unknown id', () => {
+      const chatState = new ChatState();
       chatState.addMessage({ id: 'a', role: 'user', content: 'first', timestamp: 1 });
-      onMessagesChanged.mockClear();
 
       const removed = chatState.truncateAt('nonexistent');
 
       expect(removed).toBe(0);
       expect(chatState.messages.map(m => m.id)).toEqual(['a']);
-      expect(onMessagesChanged).not.toHaveBeenCalled();
     });
 
     it('clears all messages when truncating at first message', () => {
-      const onMessagesChanged = jest.fn();
-      const chatState = new ChatState({ onMessagesChanged });
+      const chatState = new ChatState();
       chatState.addMessage({ id: 'a', role: 'user', content: 'first', timestamp: 1 });
       chatState.addMessage({ id: 'b', role: 'assistant', content: 'reply', timestamp: 2 });
-      onMessagesChanged.mockClear();
 
       const removed = chatState.truncateAt('a');
 
       expect(removed).toBe(2);
       expect(chatState.messages).toEqual([]);
-      expect(onMessagesChanged).toHaveBeenCalledTimes(1);
     });
 
     it('removes only last message when truncating at last', () => {
-      const onMessagesChanged = jest.fn();
-      const chatState = new ChatState({ onMessagesChanged });
+      const chatState = new ChatState();
       chatState.addMessage({ id: 'a', role: 'user', content: 'first', timestamp: 1 });
       chatState.addMessage({ id: 'b', role: 'assistant', content: 'reply', timestamp: 2 });
-      onMessagesChanged.mockClear();
 
       const removed = chatState.truncateAt('b');
 
       expect(removed).toBe(1);
       expect(chatState.messages.map(m => m.id)).toEqual(['a']);
-      expect(onMessagesChanged).toHaveBeenCalledTimes(1);
     });
   });
 });

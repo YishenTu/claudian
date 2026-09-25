@@ -79,6 +79,15 @@ describe('AgentSkillManagementCoordinator', () => {
     coordinator.subscribe(refreshB);
 
     unsubscribeA();
+    await coordinator.create({
+      name: 'shared-skill',
+      description: 'Shared description',
+      instructions: 'Shared instructions',
+    });
+
+    expect(refreshA).not.toHaveBeenCalled();
+    expect(refreshB).toHaveBeenCalledTimes(1);
+
     coordinator.resetSubscriptions();
     await coordinator.create({
       name: 'shared-skill',
@@ -87,7 +96,7 @@ describe('AgentSkillManagementCoordinator', () => {
     });
 
     expect(refreshA).not.toHaveBeenCalled();
-    expect(refreshB).not.toHaveBeenCalled();
+    expect(refreshB).toHaveBeenCalledTimes(1);
   });
 
   it('does not publish or refresh when persistence fails', async () => {

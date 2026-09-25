@@ -80,9 +80,14 @@ describe('InlineAskUserQuestion', () => {
         { question: 'Q1', options: [] },
         { question: 'Q2', options: ['A'] },
       ]);
-      const { resolve } = renderWidget(input);
+      const { container, resolve } = renderWidget(input);
       // Should render — Q2 is valid
       expect(resolve).not.toHaveBeenCalled();
+      expect(container.querySelectorAll('claudian-ask-tab')).toHaveLength(2);
+      expect(container.querySelector('claudian-ask-question-text')?.textContent).toBe('Q2');
+      findItems(container)[0]?.click();
+      findItems(container)[0]?.click();
+      expect(resolve).toHaveBeenCalledWith({ Q2: 'A' });
     });
 
     it('resolves null when all questions have empty options', () => {
@@ -122,9 +127,14 @@ describe('InlineAskUserQuestion', () => {
           null,
         ],
       };
-      const { resolve } = renderWidget(input);
+      const { container, resolve } = renderWidget(input);
       // Only "Valid" survives — widget should render
       expect(resolve).not.toHaveBeenCalled();
+      expect(container.querySelectorAll('claudian-ask-tab')).toHaveLength(2);
+      expect(container.querySelector('claudian-ask-question-text')?.textContent).toBe('Valid');
+      findItems(container)[0]?.click();
+      findItems(container)[0]?.click();
+      expect(resolve).toHaveBeenCalledWith({ Valid: 'A' });
     });
 
     it('deduplicates options with the same label', () => {
@@ -240,11 +250,14 @@ describe('InlineAskUserQuestion', () => {
           options: [{ label: 'Approve and remember', value: 'allow_with_policy' }],
         },
       ]);
-      const { container } = renderWidget(input);
+      const { container, resolve } = renderWidget(input);
       const labels = container
         .querySelectorAll('claudian-ask-item-label')
         .map((el: any) => el.textContent);
       expect(labels).toContain('Approve and remember');
+      findItems(container)[0]?.click();
+      findItems(container)[0]?.click();
+      expect(resolve).toHaveBeenCalledWith({ Q: 'allow_with_policy' });
     });
   });
 
@@ -451,27 +464,6 @@ describe('InlineAskUserQuestion', () => {
       });
       jest.useRealTimers();
     });
-
-    it('falls back to question text when id is not provided', () => {
-      jest.useFakeTimers();
-      const input = makeInput([{ question: 'Pick one', options: ['A', 'B'] }]);
-      const { container, resolve } = renderWidget(input);
-
-      const items = findItems(container).filter(
-        (i: any) => !i.hasClass('claudian-ask-custom-item'),
-      );
-      items[0]?.click();
-      jest.advanceTimersByTime(200);
-
-      const submitItems = container.querySelectorAll('claudian-ask-item');
-      const submitRow = submitItems.find(
-        (i: any) => !i.hasClass('claudian-ask-custom-item'),
-      );
-      submitRow?.click();
-
-      expect(resolve).toHaveBeenCalledWith({ 'Pick one': 'A' });
-      jest.useRealTimers();
-    });
   });
 
   describe('abort lifecycle', () => {
@@ -487,29 +479,26 @@ describe('InlineAskUserQuestion', () => {
 
     it('does not double-resolve on abort after manual resolve', () => {
       const controller = new AbortController();
-      const input = makeInput([{ question: 'Q', options: ['A'] }]);
-      const { container, resolve } = renderWidget(input, controller.signal);
+      const addListener = jest.spyOn(controller.signal, 'addEventListener');
+      const removeListener = jest.spyOn(controller.signal, 'removeEventListener');
+      try {
+        const input = makeInput([{ question: 'Q', options: ['A'] }]);
+        const { container, resolve } = renderWidget(input, controller.signal);
+        expect(addListener).toHaveBeenCalledWith('abort', expect.any(Function), { once: true });
+        const abortHandler = addListener.mock.calls[0][1];
 
-      // Cancel via Escape
-      const root = findRoot(container);
-      fireKeyDown(root, 'Escape');
-      expect(resolve).toHaveBeenCalledTimes(1);
+        const root = findRoot(container);
+        fireKeyDown(root, 'Escape');
+        expect(resolve).toHaveBeenCalledTimes(1);
+        expect(resolve).toHaveBeenCalledWith(null);
+        expect(removeListener).toHaveBeenCalledWith('abort', abortHandler);
 
-      // Abort should not trigger a second resolve
-      controller.abort();
-      expect(resolve).toHaveBeenCalledTimes(1);
-    });
-
-    it('cleans up abort listener on resolve', () => {
-      const controller = new AbortController();
-      const input = makeInput([{ question: 'Q', options: ['A'] }]);
-      const { container, resolve } = renderWidget(input, controller.signal);
-
-      // Cancel via Escape
-      const root = findRoot(container);
-      fireKeyDown(root, 'Escape');
-      expect(resolve).toHaveBeenCalledTimes(1);
-      expect(resolve).toHaveBeenCalledWith(null);
+        controller.abort();
+        expect(resolve).toHaveBeenCalledTimes(1);
+      } finally {
+        addListener.mockRestore();
+        removeListener.mockRestore();
+      }
     });
   });
 
@@ -558,7 +547,7 @@ describe('InlineAskUserQuestion', () => {
       expect(items[1]?.hasClass('is-focused')).toBe(true);
     });
 
-    it('ArrowDown clamps at max index', () => {
+    it('ArrowDown clamps at the single option', () => {
       const input = makeInput([{ question: 'Q', options: ['A'] }]);
       const { container } = renderWidget(input);
       const root = findRoot(container);
@@ -568,9 +557,9 @@ describe('InlineAskUserQuestion', () => {
       fireKeyDown(root, 'ArrowDown');
       fireKeyDown(root, 'ArrowDown');
 
-      // Should not crash, max focus is 1 (option A + custom input)
+      // The single option stays focused after repeated navigation.
       const items = findItems(container);
-      // Last item (custom input) should be focused
+      expect(items).toHaveLength(1);
       expect(items[items.length - 1]?.hasClass('is-focused')).toBe(true);
     });
 
@@ -741,26 +730,6 @@ describe('InlineAskUserQuestion', () => {
       expect(customItem?.hasClass('is-focused')).toBe(false);
     });
 
-    it('Enter on custom item activates input without advancing tab', () => {
-      const input = makeInput([
-        { question: 'Q1', options: ['A'], isOther: true },
-        { question: 'Q2', options: ['B'] },
-      ]);
-      const { container } = renderWidget(input);
-      const root = findRoot(container);
-
-      // Arrow down to custom item
-      fireKeyDown(root, 'ArrowDown'); // Focus on option A (index 0)
-      fireKeyDown(root, 'ArrowDown'); // Focus on custom item (index 1)
-
-      // Press Enter — should activate input, NOT advance tab
-      fireKeyDown(root, 'Enter');
-
-      // Should still be on Q1 tab
-      const tabs = container.querySelectorAll('claudian-ask-tab');
-      expect(tabs[0]?.hasClass('is-active')).toBe(true);
-    });
-
     it('Enter on custom item then Enter again advances to next tab', () => {
       const input = makeInput([
         { question: 'Q1', options: ['A'], isOther: true },
@@ -775,6 +744,7 @@ describe('InlineAskUserQuestion', () => {
 
       // First Enter activates input
       fireKeyDown(root, 'Enter');
+      expect(container.querySelectorAll('claudian-ask-tab')[0]?.hasClass('is-active')).toBe(true);
       // Second Enter advances
       fireKeyDown(root, 'Enter');
 
@@ -927,7 +897,7 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
     });
 
     it('does not render custom input row', () => {
-      const input = makeInput([{ question: 'Pick', options: ['A', 'B'] }]);
+      const input = makeInput([{ question: 'Pick', options: ['A', 'B'], isOther: true }]);
       const { container } = renderImmediateWidget(input);
       const customItems = container.querySelectorAll('claudian-ask-custom-item');
       expect(customItems).toHaveLength(0);
@@ -947,6 +917,9 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
       const { container } = renderImmediateWidget(input, { headerEl: headerEl as any });
       const root = findRoot(container);
       expect(root.children.some((c: any) => c.hasClass('claudian-ask-approval-info'))).toBe(true);
+      expect(root.children[0].hasClass('claudian-ask-inline-title')).toBe(true);
+      expect(root.children[1]).toBe(headerEl);
+      expect(root.children[2].hasClass('claudian-ask-content')).toBe(true);
     });
   });
 
@@ -1033,10 +1006,15 @@ describe('InlineAskUserQuestion - immediateSelect mode', () => {
       const { container, resolve } = renderImmediateWidget(input);
       const root = findRoot(container);
 
+      fireKeyDown(root, 'ArrowDown');
+      expect(findItems(container)[1]?.hasClass('is-focused')).toBe(true);
       fireKeyDown(root, 'Tab');
       expect(resolve).not.toHaveBeenCalled();
       const items = findItems(container);
       expect(items.length).toBeGreaterThan(0);
+      expect(items[1]?.hasClass('is-focused')).toBe(true);
+      fireKeyDown(root, 'Enter');
+      expect(resolve).toHaveBeenCalledWith({ Pick: 'B' });
     });
 
     it('ArrowDown clamps at last option', () => {

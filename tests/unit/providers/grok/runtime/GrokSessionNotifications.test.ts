@@ -1,8 +1,4 @@
-import {
-  GROK_SESSION_UPDATE_NOTIFICATION_METHODS,
-  GROK_WRAPPED_SESSION_NOTIFICATION_METHOD,
-  parseGrokSessionNotification,
-} from '@/providers/grok/runtime/GrokSessionNotifications';
+import { parseGrokSessionNotification } from '@/providers/grok/runtime/GrokSessionNotifications';
 
 describe('GrokSessionNotifications', () => {
   const notification = {
@@ -13,7 +9,7 @@ describe('GrokSessionNotifications', () => {
     },
   };
 
-  it.each(GROK_SESSION_UPDATE_NOTIFICATION_METHODS)(
+  it.each(['x.ai/session/update', '_x.ai/session/update'])(
     'accepts the direct %s session update alias',
     (method) => {
       expect(parseGrokSessionNotification(method, notification)).toEqual(notification);
@@ -21,15 +17,15 @@ describe('GrokSessionNotifications', () => {
   );
 
   it('unwraps only the exact xAI session notification envelope', () => {
-    expect(parseGrokSessionNotification(GROK_WRAPPED_SESSION_NOTIFICATION_METHOD, {
+    expect(parseGrokSessionNotification('_x.ai/session_notification', {
       method: 'x.ai/session_notification',
       params: notification,
     })).toEqual(notification);
-    expect(parseGrokSessionNotification(GROK_WRAPPED_SESSION_NOTIFICATION_METHOD, {
+    expect(parseGrokSessionNotification('_x.ai/session_notification', {
       method: '_x.ai/session_notification',
       params: notification,
     })).toBeNull();
-    expect(parseGrokSessionNotification(GROK_WRAPPED_SESSION_NOTIFICATION_METHOD, notification))
+    expect(parseGrokSessionNotification('_x.ai/session_notification', notification))
       .toBeNull();
   });
 

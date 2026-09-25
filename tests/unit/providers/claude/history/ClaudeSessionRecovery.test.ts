@@ -50,14 +50,14 @@ describe('selectClaudeSessionRecoveryCandidate', () => {
     expect(selectClaudeSessionRecoveryCandidate([
       {
         sessionId: 'matching-session',
-        firstTimestamp: 1_200,
-        lastTimestamp: 2_000,
+        firstTimestamp: 10_000,
+        lastTimestamp: 11_000,
         hasAssistantMessage: false,
       },
       {
         sessionId: 'too-far',
-        firstTimestamp: 20_000,
-        lastTimestamp: 21_000,
+        firstTimestamp: 12_000,
+        lastTimestamp: 13_000,
         hasAssistantMessage: false,
       },
     ], {
@@ -65,7 +65,7 @@ describe('selectClaudeSessionRecoveryCandidate', () => {
     })).toBe('matching-session');
   });
 
-  it('rejects a transcript outside the strict creation window even when activity matches', () => {
+  it('rejects matching activity without assistant transcript evidence', () => {
     expect(selectClaudeSessionRecoveryCandidate([
       {
         sessionId: 'unrelated',

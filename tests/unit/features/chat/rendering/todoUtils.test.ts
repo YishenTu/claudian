@@ -2,11 +2,7 @@ import { createMockEl } from '@test/helpers/MockElement';
 import { setIcon } from 'obsidian';
 
 import type { TodoItem } from '@/core/tools/todo';
-import {
-  getTodoDisplayText,
-  getTodoStatusIcon,
-  renderTodoItems,
-} from '@/features/chat/rendering/todoUtils';
+import { renderTodoItems } from '@/features/chat/rendering/todoUtils';
 
 jest.mock('obsidian', () => ({
   setIcon: jest.fn(),
@@ -15,37 +11,6 @@ jest.mock('obsidian', () => ({
 describe('todoUtils', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-  });
-
-  describe('getTodoStatusIcon', () => {
-    it('should return "check" for completed', () => {
-      expect(getTodoStatusIcon('completed')).toBe('check');
-    });
-
-    it('should return "dot" for pending', () => {
-      expect(getTodoStatusIcon('pending')).toBe('dot');
-    });
-
-    it('should return "dot" for in_progress', () => {
-      expect(getTodoStatusIcon('in_progress')).toBe('dot');
-    });
-  });
-
-  describe('getTodoDisplayText', () => {
-    it('should return activeForm for in_progress', () => {
-      const todo: TodoItem = { status: 'in_progress', content: 'Fix bug', activeForm: 'Fixing bug' };
-      expect(getTodoDisplayText(todo)).toBe('Fixing bug');
-    });
-
-    it('should return content for completed', () => {
-      const todo: TodoItem = { status: 'completed', content: 'Fix bug', activeForm: 'Fixing bug' };
-      expect(getTodoDisplayText(todo)).toBe('Fix bug');
-    });
-
-    it('should return content for pending', () => {
-      const todo: TodoItem = { status: 'pending', content: 'Fix bug', activeForm: 'Fixing bug' };
-      expect(getTodoDisplayText(todo)).toBe('Fix bug');
-    });
   });
 
   describe('renderTodoItems', () => {
@@ -62,15 +27,17 @@ describe('todoUtils', () => {
       expect(container._children.length).toBe(3);
       expect(setIcon).toHaveBeenCalledTimes(3);
 
-      // First item: completed
-      expect(container._children[0].hasClass('claudian-todo-completed')).toBe(true);
-      expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'check');
-
-      // Second item: in_progress shows activeForm
-      expect(container._children[1].hasClass('claudian-todo-in_progress')).toBe(true);
-
-      // Third item: pending
-      expect(container._children[2].hasClass('claudian-todo-pending')).toBe(true);
+      const expected = [
+        { status: 'completed', icon: 'check', text: 'Task 1' },
+        { status: 'in_progress', icon: 'dot', text: 'Doing Task 2' },
+        { status: 'pending', icon: 'dot', text: 'Task 3' },
+      ];
+      expected.forEach(({ status, icon, text }, index) => {
+        const item = container._children[index];
+        expect(item.hasClass(`claudian-todo-${status}`)).toBe(true);
+        expect(setIcon).toHaveBeenNthCalledWith(index + 1, item._children[0], icon);
+        expect(item._children[1].textContent).toBe(text);
+      });
     });
 
     it('should clear container before rendering', () => {

@@ -23,38 +23,44 @@ describe('CodexCLIResolver', () => {
     mockedDeviceKey.mockReturnValue('current-host');
   });
 
-  it('uses the current host path instead of another synced host path', () => {
+  it('uses the current host path instead of another synced host path', async () => {
     mockedExists.mockImplementation((filePath: string) => filePath === '/current/codex');
     mockedStat.mockReturnValue({ isFile: () => true });
 
     const resolver = new CodexCLIResolver();
-    const resolved = resolver.resolve(
-      {
-        'other-host': '/other/codex',
-        'current-host': '/current/codex',
+    const resolved = await resolver.resolveFromSettings({
+      providerConfigs: {
+        codex: {
+          cliPathsByHost: {
+            'other-host': '/other/codex',
+            'current-host': '/current/codex',
+          },
+          cliPath: '/legacy/codex',
+        },
       },
-      '/legacy/codex',
-      '',
-    );
+    });
 
     expect(resolved).toBe('/current/codex');
   });
 
-  it('falls back to the legacy path when the current host has no custom path', () => {
+  it('falls back to the legacy path when the current host has no custom path', async () => {
     mockedExists.mockImplementation((filePath: string) => filePath === '/legacy/codex');
     mockedStat.mockReturnValue({ isFile: () => true });
 
     const resolver = new CodexCLIResolver();
-    const resolved = resolver.resolve(
-      { 'other-host': '/other/codex' },
-      '/legacy/codex',
-      '',
-    );
+    const resolved = await resolver.resolveFromSettings({
+      providerConfigs: {
+        codex: {
+          cliPathsByHost: { 'other-host': '/other/codex' },
+          cliPath: '/legacy/codex',
+        },
+      },
+    });
 
     expect(resolved).toBe('/legacy/codex');
   });
 
-  it('auto-detects from the runtime PATH when no configured path is valid', () => {
+  it('auto-detects from the runtime PATH when no configured path is valid', async () => {
     const cliPath = path.join('/custom/bin', process.platform === 'win32' ? 'codex.exe' : 'codex');
     mockedExists.mockImplementation((filePath: string) => filePath === cliPath);
     mockedStat.mockImplementation((filePath: string) => ({
@@ -62,11 +68,12 @@ describe('CodexCLIResolver', () => {
     }));
 
     const resolver = new CodexCLIResolver();
-    const resolved = resolver.resolve(
-      { 'other-host': '/other/codex' },
-      '',
-      'PATH=/custom/bin',
-    );
+    const resolved = await resolver.resolveFromSettings({
+      sharedEnvironmentVariables: 'PATH=/custom/bin',
+      providerConfigs: {
+        codex: { cliPathsByHost: { 'other-host': '/other/codex' } },
+      },
+    });
 
     expect(resolved).toBe(cliPath);
   });
@@ -75,13 +82,11 @@ describe('CodexCLIResolver', () => {
     mockedExists.mockReturnValue(false);
 
     const resolver = new CodexCLIResolver();
-    const resolved = resolver.resolve(
+    const resolved = resolver.resolveFromSettings(
       {
-        'current-host': 'codex',
+        providerConfigs: { codex: { cliPathsByHost: { 'current-host': 'codex' } } },
       },
-      '',
-      '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux' } },
     );
 
     expect(resolved).toBe('codex');
@@ -91,13 +96,17 @@ describe('CodexCLIResolver', () => {
     mockedExists.mockReturnValue(false);
 
     const resolver = new CodexCLIResolver();
-    const resolved = resolver.resolve(
+    const resolved = resolver.resolveFromSettings(
       {
-        'current-host': 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
+        providerConfigs: {
+          codex: {
+            cliPathsByHost: {
+              'current-host': 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
+            },
+          },
+        },
       },
-      '',
-      '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux' } },
     );
 
     expect(resolved).toBe('codex');

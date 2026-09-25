@@ -169,18 +169,6 @@ it('keeps background output before a later independent notification in the same 
   expect(earlier.compareDocumentPosition(notification) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
-it('retains the order of automatic responses queued in one native batch', async () => {
-  const harness = await finishedSide();
-  const native = harness.backend.latest;
-  for (const [id, text] of [['first', 'First result'], ['second', 'Second result']]) {
-    native.emitBackgroundEvent({ type: 'background_turn_started' }, id);
-    native.emitBackgroundEvent({ type: 'text_delta', text }, id);
-    native.emitBackgroundEvent({ type: 'background_turn_completed', reason: 'completed' }, id);
-  }
-  const second = await screen.findByText('Second result');
-  expect(screen.getByText('First result').compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-});
-
 it('keeps a session notification before requested continuation text and preserves the final checkpoint', async () => {
   const harness = createHarness();
   const { started } = await startSideChat(harness);

@@ -2,7 +2,6 @@ import { CODEX_SPARK_MODEL, TEST_CODEX_CATALOG } from '@test/helpers/codexModels
 
 import {
   applyCodexModelDefaults,
-  createCodexVisibleModelFilter,
   DEFAULT_CODEX_PROVIDER_SETTINGS,
   getCodexProviderSettings,
   getEffectiveCodexReasoningSummary,
@@ -128,10 +127,6 @@ describe('codex settings', () => {
       discoveredModels,
     )).toEqual(['gpt-5.4-mini', 'missing-model']);
     expect(normalizeCodexVisibleModels(undefined, discoveredModels)).toBeNull();
-    expect(createCodexVisibleModelFilter(
-      ['gpt-5.5', 'gpt-5.4-mini'],
-      discoveredModels,
-    )).toEqual(['gpt-5.5', 'gpt-5.4-mini']);
   });
 
   it('normalizes model aliases against the discovered catalog', () => {

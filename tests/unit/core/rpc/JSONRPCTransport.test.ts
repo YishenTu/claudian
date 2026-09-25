@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline';
-import { PassThrough } from 'node:stream';
+import { PassThrough, Writable } from 'node:stream';
 
 import {
   JSONRPCErrorResponse,
@@ -313,5 +313,71 @@ describe('JSONRPCTransport', () => {
 
     await expect(harness.transport.request('after-dispose'))
       .rejects.toBeInstanceOf(JSONRPCTransportClosedError);
+  });
+
+  it('rejects pending requests when disposed', async () => {
+    const requestPromise = harness.transport.request('session/prompt', {
+      prompt: [{ text: 'hi', type: 'text' }],
+      sessionId: 'session-1',
+    }, {
+      timeoutMs: 0,
+    });
+
+    await harness.nextOutbound();
+    harness.transport.dispose(new Error('transport stopped'));
+
+    await expect(requestPromise).rejects.toThrow('transport stopped');
+  });
+
+  it('flushes all preceding notification writes before resolving', async () => {
+    const input = new PassThrough();
+    const pendingWrite: { release?: () => void } = {};
+    const output = new Writable({
+      write(chunk, _encoding, callback) {
+        if (chunk.length === 0) {
+          callback();
+          return;
+        }
+        pendingWrite.release = callback;
+      },
+    });
+    const transport = new JSONRPCTransport({ input, output });
+    transport.notify('session/cancel', { sessionId: 'session-1' });
+
+    let flushed = false;
+    const flush = transport.flush().then(() => { flushed = true; });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(flushed).toBe(false);
+
+    pendingWrite.release?.();
+    await flush;
+    expect(flushed).toBe(true);
+    transport.dispose();
+    input.end();
+    output.end();
+  });
+
+  it.each([null, true, 42, 'text'])('ignores parsed JSON primitive %p', async (primitive) => {
+    harness.transport.start();
+    harness.sendInbound(primitive);
+
+    const request = harness.transport.request('session/new', {});
+    const outbound = await harness.nextOutbound();
+    harness.sendInbound({ id: outbound.id, jsonrpc: '2.0', result: 'ok' });
+
+    await expect(request).resolves.toBe('ok');
+  });
+
+  it('contains synchronous notification handler exceptions', async () => {
+    harness.transport.start();
+    const workingHandler = jest.fn();
+    harness.transport.onNotification('throwing', () => { throw new Error('handler failed'); });
+    harness.transport.onNotification('working', workingHandler);
+
+    harness.sendInbound({ jsonrpc: '2.0', method: 'throwing' });
+    harness.sendInbound({ jsonrpc: '2.0', method: 'working', params: { ok: true } });
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(workingHandler).toHaveBeenCalledWith({ ok: true });
   });
 });

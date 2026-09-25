@@ -197,18 +197,4 @@ export class NavigationController {
       messagesEl.ownerDocument.defaultView ?? null,
     );
   };
-
-  // ============================================
-  // Public API
-  // ============================================
-
-  /** Focuses the messages panel. */
-  focusMessages(): void {
-    this.deps.getMessagesEl().focus();
-  }
-
-  /** Focuses the input. */
-  focusInput(): void {
-    this.deps.getInputEl().focus();
-  }
 }

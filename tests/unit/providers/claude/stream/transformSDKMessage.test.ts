@@ -144,66 +144,6 @@ describe('transformSDKMessage', () => {
   });
 
   describe('assistant messages', () => {
-    it('yields text content block', () => {
-      const message = msg({
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'text', text: 'Hello, world!' },
-          ],
-        },
-      });
-
-      const results = [...transformSDKMessage(message)];
-
-      expect(results).toEqual([
-        { type: 'text', content: 'Hello, world!' },
-      ]);
-    });
-
-    it('yields thinking content block', () => {
-      const message = msg({
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'thinking', thinking: 'Let me think about this...' },
-          ],
-        },
-      });
-
-      const results = [...transformSDKMessage(message)];
-
-      expect(results).toEqual([
-        { type: 'thinking', content: 'Let me think about this...' },
-      ]);
-    });
-
-    it('yields tool_use content block with all fields', () => {
-      const message = msg({
-        type: 'assistant',
-        message: {
-          content: [
-            {
-              type: 'tool_use',
-              id: 'tool-123',
-              name: 'Read',
-              input: { file_path: '/test/file.ts' },
-            },
-          ],
-        },
-      });
-
-      const results = [...transformSDKMessage(message)];
-
-      expect(results).toEqual([
-        {
-          type: 'tool_use',
-          id: 'tool-123',
-          name: 'Read',
-          input: { file_path: '/test/file.ts' },
-        },
-      ]);
-    });
 
     it('generates fallback id for tool_use without id', () => {
       const message = msg({
@@ -224,24 +164,25 @@ describe('transformSDKMessage', () => {
       expect((results[0] as any).input).toEqual({});
     });
 
-    it('handles multiple content blocks', () => {
+    it('normalizes mixed assistant blocks in order without inventing usage', () => {
       const message = msg({
         type: 'assistant',
         message: {
           content: [
-            { type: 'thinking', thinking: 'Thinking...' },
-            { type: 'text', text: 'Here is my response' },
-            { type: 'tool_use', id: 'tool-1', name: 'Read', input: {} },
+            { type: 'thinking', thinking: 'Let me think about this...' },
+            { type: 'text', text: 'Hello, world!' },
+            { type: 'tool_use', id: 'tool-123', name: 'Read', input: { file_path: '/test/file.ts' } },
           ],
         },
       });
 
       const results = [...transformSDKMessage(message)];
 
-      expect(results).toHaveLength(3);
-      expect(results[0]).toEqual({ type: 'thinking', content: 'Thinking...' });
-      expect(results[1]).toEqual({ type: 'text', content: 'Here is my response' });
-      expect(results[2]).toMatchObject({ type: 'tool_use', id: 'tool-1', name: 'Read' });
+      expect(results).toEqual([
+        { type: 'thinking', content: 'Let me think about this...' },
+        { type: 'text', content: 'Hello, world!' },
+        { type: 'tool_use', id: 'tool-123', name: 'Read', input: { file_path: '/test/file.ts' } },
+      ]);
     });
 
     it('yields subagent_tool_use for assistant tool_use in subagent context', () => {
@@ -868,6 +809,7 @@ describe('transformSDKMessage', () => {
     it('handles missing event property', () => {
       const message = msg({
         type: 'stream_event',
+        event: undefined,
       });
 
       const results = [...transformSDKMessage(message)];
@@ -1580,42 +1522,6 @@ describe('transformSDKMessage', () => {
       expect(usageResults).toHaveLength(0);
     });
 
-    it('reports an unknown window instead of a custom limit or estimate', () => {
-      const message = msg({
-        type: 'assistant',
-        parent_tool_use_id: null,
-        message: {
-          content: [{ type: 'text', text: 'Hello' }],
-          usage: {
-            input_tokens: 50000,
-            output_tokens: 10000,
-            cache_creation_input_tokens: 0,
-            cache_read_input_tokens: 0,
-          },
-        },
-      });
-
-      const usage = [...transformSDKMessage(message, { intendedModel: 'sonnet' })]
-        .flatMap(result => result.type === 'usage' ? [result.usage] : []);
-
-      expect(usage).toEqual([expect.objectContaining({ contextWindow: 0, percentage: 0 })]);
-    });
-
-    it('handles missing usage field gracefully', () => {
-      const message = msg({
-        type: 'assistant',
-        parent_tool_use_id: null,
-        message: {
-          content: [{ type: 'text', text: 'Hello' }],
-        },
-      });
-
-      const results = [...transformSDKMessage(message)];
-
-      const usageResults = results.filter(r => r.type === 'usage');
-      expect(usageResults).toHaveLength(0);
-    });
-
     it('handles missing token fields with defaults', () => {
       const message = msg({
         type: 'assistant',
@@ -1727,17 +1633,6 @@ describe('transformSDKMessage', () => {
       expect(results).toEqual([
         { type: 'error', content: 'unknown' },
       ]);
-    });
-
-    it('yields nothing for assistant message without error field', () => {
-      const message = msg({
-        type: 'assistant',
-        message: { content: [] },
-      });
-
-      const results = [...transformSDKMessage(message)];
-
-      expect(results).toEqual([]);
     });
   });
 

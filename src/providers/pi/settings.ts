@@ -78,43 +78,6 @@ export function normalizePiVisibleModels(
   return normalized;
 }
 
-export function normalizePiModelAliases(
-  value: unknown,
-  discoveredModels: PiDiscoveredModel[] = [],
-): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-
-  const normalized: Record<string, string> = {};
-  for (const [encodedId, alias] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof alias !== 'string') {
-      continue;
-    }
-
-    const normalizedEncodedId = normalizePiEncodedId(encodedId, discoveredModels);
-    const normalizedAlias = alias.trim();
-    if (!normalizedEncodedId || !normalizedAlias) {
-      continue;
-    }
-
-    normalized[normalizedEncodedId] = normalizedAlias;
-  }
-
-  return normalized;
-}
-
-export function normalizePiPreferredThinkingByModel(
-  value: unknown,
-  discoveredModels: PiDiscoveredModel[] = [],
-): Record<string, PiThinkingLevel> {
-  return normalizePiPreferredThinkingEntries(
-    value,
-    discoveredModels,
-    encodedId => normalizePiEncodedId(encodedId, discoveredModels),
-  );
-}
-
 export function getPiProviderSettings(settings: Record<string, unknown>): PiProviderSettings {
   const config = getProviderConfig(settings, 'pi');
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
@@ -312,36 +275,11 @@ function normalizePiPreferredThinkingEntries(
   return normalized;
 }
 
-export function resolvePiModelAlias(
-  settings: PiProviderSettings,
-  encodedId: string,
-): string | null {
-  return settings.modelAliases[encodedId] ?? null;
-}
-
 function normalizePiToolMode(value: unknown): PiToolMode {
   if (value === undefined) {
     return 'all';
   }
   return value === 'all' || value === 'readonly' ? value : 'readonly';
-}
-
-function normalizePiEncodedId(
-  value: string,
-  discoveredModels: PiDiscoveredModel[],
-): string {
-  const trimmed = value.trim();
-  const decoded = decodePiModelId(trimmed);
-  if (!decoded) {
-    return '';
-  }
-
-  if (discoveredModels.length === 0) {
-    return trimmed;
-  }
-
-  const discoveredModel = findPiModel({ discoveredModels }, trimmed);
-  return discoveredModel ? discoveredModel.encodedId : '';
 }
 
 function normalizePiPersistableEncodedId(

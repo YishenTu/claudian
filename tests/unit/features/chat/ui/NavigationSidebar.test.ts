@@ -306,27 +306,6 @@ describe('NavigationSidebar', () => {
       expect(parentEl.querySelector('.claudian-nav-sidebar')).toBeNull();
     });
 
-    it('should create container with correct class', () => {
-      sidebar = new NavigationSidebar(
-        parentEl as unknown as HTMLElement,
-        messagesEl as unknown as HTMLElement
-      );
-
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
-      expect(container).not.toBeNull();
-    });
-
-    it('should create five navigation buttons', () => {
-      sidebar = new NavigationSidebar(
-        parentEl as unknown as HTMLElement,
-        messagesEl as unknown as HTMLElement
-      );
-
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
-      expect(container).not.toBeNull();
-      expect(container!.children.length).toBe(5);
-    });
-
     it('should set correct aria-labels on buttons', () => {
       sidebar = new NavigationSidebar(
         parentEl as unknown as HTMLElement,
@@ -334,7 +313,12 @@ describe('NavigationSidebar', () => {
       );
 
       const container = parentEl.querySelector('.claudian-nav-sidebar');
+      expect(container).not.toBeNull();
       const buttons = container!.children;
+      expect(buttons).toHaveLength(5);
+      expect(buttons.map(button => button.getAttribute('data-icon'))).toEqual([
+        'chevrons-up', 'chevron-up', 'list-tree', 'chevron-down', 'chevrons-down',
+      ]);
 
       expect(buttons[0].getAttribute('aria-label')).toBe('Scroll to top');
       expect(buttons[1].getAttribute('aria-label')).toBe('Previous message');
@@ -343,37 +327,9 @@ describe('NavigationSidebar', () => {
       expect(buttons[4].getAttribute('aria-label')).toBe('Scroll to bottom');
     });
 
-    it('should set correct icons on buttons', () => {
-      sidebar = new NavigationSidebar(
-        parentEl as unknown as HTMLElement,
-        messagesEl as unknown as HTMLElement
-      );
-
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
-      const buttons = container!.children;
-
-      expect(buttons[0].getAttribute('data-icon')).toBe('chevrons-up');
-      expect(buttons[1].getAttribute('data-icon')).toBe('chevron-up');
-      expect(buttons[2].getAttribute('data-icon')).toBe('list-tree');
-      expect(buttons[3].getAttribute('data-icon')).toBe('chevron-down');
-      expect(buttons[4].getAttribute('data-icon')).toBe('chevrons-down');
-    });
   });
 
   describe('visibility', () => {
-    it('should be hidden when content does not overflow', () => {
-      messagesEl.scrollHeight = 500;
-      messagesEl.clientHeight = 500;
-
-      sidebar = new NavigationSidebar(
-        parentEl as unknown as HTMLElement,
-        messagesEl as unknown as HTMLElement
-      );
-
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
-      expect(container!.classList.contains('visible')).toBe(false);
-    });
-
     it('should be visible when content overflows', () => {
       messagesEl.scrollHeight = 1000;
       messagesEl.clientHeight = 500;
@@ -387,45 +343,32 @@ describe('NavigationSidebar', () => {
       expect(container!.classList.contains('visible')).toBe(true);
     });
 
-    it('should update visibility when updateVisibility is called', () => {
-      messagesEl.scrollHeight = 500;
-      messagesEl.clientHeight = 500;
-
-      sidebar = new NavigationSidebar(
-        parentEl as unknown as HTMLElement,
-        messagesEl as unknown as HTMLElement
-      );
-
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
-      expect(container!.classList.contains('visible')).toBe(false);
-
-      // Simulate content growth
-      messagesEl.scrollHeight = 1000;
-      sidebar.updateVisibility();
-      jest.advanceTimersByTime(16);
-
-      expect(container!.classList.contains('visible')).toBe(true);
-    });
-
     it('should batch visibility updates until the next animation frame', () => {
-      messagesEl.scrollHeight = 500;
-      messagesEl.clientHeight = 500;
+      const requestFrame = jest.spyOn(window, 'requestAnimationFrame');
+      try {
+        messagesEl.scrollHeight = 500;
+        messagesEl.clientHeight = 500;
 
-      sidebar = new NavigationSidebar(
-        parentEl as unknown as HTMLElement,
-        messagesEl as unknown as HTMLElement
-      );
+        sidebar = new NavigationSidebar(
+          parentEl as unknown as HTMLElement,
+          messagesEl as unknown as HTMLElement
+        );
 
-      const container = parentEl.querySelector('.claudian-nav-sidebar');
-      messagesEl.scrollHeight = 1000;
-      sidebar.updateVisibility();
-      sidebar.updateVisibility();
+        const container = parentEl.querySelector('.claudian-nav-sidebar');
+        expect(container!.classList.contains('visible')).toBe(false);
+        messagesEl.scrollHeight = 1000;
+        sidebar.updateVisibility();
+        sidebar.updateVisibility();
 
-      expect(container!.classList.contains('visible')).toBe(false);
+        expect(container!.classList.contains('visible')).toBe(false);
+        expect(requestFrame).toHaveBeenCalledTimes(1);
 
-      jest.advanceTimersByTime(16);
+        jest.advanceTimersByTime(16);
 
-      expect(container!.classList.contains('visible')).toBe(true);
+        expect(container!.classList.contains('visible')).toBe(true);
+      } finally {
+        requestFrame.mockRestore();
+      }
     });
   });
 
@@ -662,28 +605,6 @@ describe('NavigationSidebar', () => {
       expect(emptyState?.textContent).toBe('No user prompts in this conversation');
     });
 
-    it('should render directory entries for user messages only', () => {
-      messagesEl.scrollHeight = 2000;
-      messagesEl.clientHeight = 500;
-      addMessage(messagesEl, 'user', 0, 'First prompt');
-      addMessage(messagesEl, 'assistant', 120, 'Assistant should not appear');
-      addMessage(messagesEl, 'user', 400, 'Second prompt');
-
-      sidebar = new NavigationSidebar(
-        parentEl as unknown as HTMLElement,
-        messagesEl as unknown as HTMLElement
-      );
-
-      getDirectoryButton(parentEl).click();
-
-      const popover = parentEl.querySelector('.claudian-nav-toc-popover');
-      const items = parentEl.querySelectorAll('.claudian-nav-toc-item');
-      expect(popover).not.toBeNull();
-      expect(items).toHaveLength(2);
-      expect(items[0].textContent).toBe('1. First prompt');
-      expect(items[1].textContent).toBe('2. Second prompt');
-    });
-
     it('should fall back to visible user message text when toc metadata is missing', () => {
       messagesEl.scrollHeight = 2000;
       messagesEl.clientHeight = 500;
@@ -737,6 +658,7 @@ describe('NavigationSidebar', () => {
       messagesEl.scrollHeight = 2000;
       messagesEl.clientHeight = 500;
       addMessage(messagesEl, 'user', 0, 'First prompt');
+      addMessage(messagesEl, 'assistant', 120, 'Assistant should not appear');
       addMessage(messagesEl, 'user', 400, 'Second prompt');
 
       sidebar = new NavigationSidebar(
@@ -746,6 +668,10 @@ describe('NavigationSidebar', () => {
 
       getDirectoryButton(parentEl).click();
       const items = parentEl.querySelectorAll('.claudian-nav-toc-item');
+      expect(parentEl.querySelector('.claudian-nav-toc-popover')).not.toBeNull();
+      expect(items).toHaveLength(2);
+      expect(items[0].textContent).toBe('1. First prompt');
+      expect(items[1].textContent).toBe('2. Second prompt');
       items[1].click();
 
       const lastCall = messagesEl.scrollToCalls[messagesEl.scrollToCalls.length - 1];
@@ -772,7 +698,7 @@ describe('NavigationSidebar', () => {
       expect(parentEl.querySelector('.claudian-nav-toc-popover')).toBeNull();
     });
 
-    it('should keep the directory button visible when message DOM changes', () => {
+    it('should refresh an open directory when a user message is added', () => {
       messagesEl.scrollHeight = 1000;
       messagesEl.clientHeight = 500;
 
@@ -784,9 +710,17 @@ describe('NavigationSidebar', () => {
       const directoryBtn = getDirectoryButton(parentEl);
       expect(directoryBtn.classList.contains('claudian-hidden')).toBe(false);
 
-      addMessage(messagesEl, 'user', 0, 'New prompt');
-      mutationCallback?.([], {} as MutationObserver);
+      directoryBtn.click();
+      expect(parentEl.querySelector('.claudian-nav-toc-empty')?.textContent).toBe('No user prompts in this conversation');
+      const newUser = addMessage(messagesEl, 'user', 0, 'New prompt');
+      mutationCallback?.([{
+        type: 'childList', target: messagesEl, addedNodes: [newUser], removedNodes: [],
+      } as unknown as MutationRecord], {} as MutationObserver);
       jest.advanceTimersByTime(16);
+      expect(parentEl.querySelector('.claudian-nav-toc-empty')).toBeNull();
+      const items = parentEl.querySelectorAll('.claudian-nav-toc-item');
+      expect(items).toHaveLength(1);
+      expect(items[0].textContent).toBe('1. New prompt');
 
       expect(directoryBtn.classList.contains('claudian-hidden')).toBe(false);
     });

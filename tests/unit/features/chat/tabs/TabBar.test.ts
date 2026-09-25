@@ -8,7 +8,6 @@ function createMockCallbacks(): TabBarCallbacks {
   return {
     onTabClick: jest.fn(),
     onTabClose: jest.fn(),
-    onNewTab: jest.fn(),
   };
 }
 
@@ -27,17 +26,6 @@ function createTabBarItem(overrides: Partial<TabBarItem> = {}): TabBarItem {
 }
 
 describe('TabBar', () => {
-  describe('constructor', () => {
-    it('should add tab badges class to container', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-
-      new TabBar(containerEl, callbacks);
-
-      expect(containerEl._classList.has('claudian-tab-badges')).toBe(true);
-    });
-  });
-
   describe('update', () => {
     it('should clear existing badges before rendering', () => {
       const containerEl = createMockEl();
@@ -49,45 +37,19 @@ describe('TabBar', () => {
       expect(containerEl._children.length).toBe(1);
 
       // Second update should clear first
-      tabBar.update([createTabBarItem(), createTabBarItem({ id: 'tab-2', index: 2 })]);
-      expect(containerEl._children.length).toBe(2);
-    });
-
-    it('should render badge for each tab item', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
       tabBar.update([
         createTabBarItem({ id: 'tab-1', index: 1 }),
         createTabBarItem({ id: 'tab-2', index: 2 }),
         createTabBarItem({ id: 'tab-3', index: 3 }),
       ]);
-
       expect(containerEl._children.length).toBe(3);
-    });
-
-    it('should render empty when no items', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
 
       tabBar.update([]);
-
       expect(containerEl._children.length).toBe(0);
     });
   });
 
   describe('badge rendering', () => {
-    it('should display index number as text', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ index: 5 })]);
-
-      expect(containerEl._children[0].textContent).toBe('5');
-    });
 
     it('should use aria-label as the single tab title tooltip source', () => {
       const containerEl = createMockEl();
@@ -112,14 +74,18 @@ describe('TabBar', () => {
 
     it('should toggle between index and title labels on double click', () => {
       const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
+      const callbacks = {
+        ...createMockCallbacks(),
+        onTitleExpansionChanged: jest.fn(),
+      };
       const tabBar = new TabBar(containerEl, callbacks);
 
-      tabBar.update([createTabBarItem({ index: 2, title: 'My Conversation' })]);
+      tabBar.update([createTabBarItem({ id: 'tab-2', index: 5, title: 'My Conversation' })]);
 
       const badge = containerEl._children[0];
       const event = { preventDefault: jest.fn(), stopPropagation: jest.fn() };
 
+      expect(badge.textContent).toBe('5');
       badge.dispatchEvent('dblclick', event);
 
       expect(badge.textContent).toBe('My Conversation');
@@ -127,29 +93,13 @@ describe('TabBar', () => {
       expect(badge.getAttribute('data-title-expanded')).toBe('true');
       expect(event.preventDefault).toHaveBeenCalled();
       expect(event.stopPropagation).toHaveBeenCalled();
+      expect(callbacks.onTitleExpansionChanged).toHaveBeenNthCalledWith(1, ['tab-2']);
 
       badge.dispatchEvent('dblclick', { preventDefault: jest.fn(), stopPropagation: jest.fn() });
 
-      expect(badge.textContent).toBe('2');
+      expect(badge.textContent).toBe('5');
       expect(badge.hasClass('claudian-tab-badge-expanded')).toBe(false);
       expect(badge.getAttribute('data-title-expanded')).toBe('false');
-    });
-
-    it('should notify when title expansion state changes', () => {
-      const containerEl = createMockEl();
-      const callbacks = {
-        ...createMockCallbacks(),
-        onTitleExpansionChanged: jest.fn(),
-      };
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ id: 'tab-2', index: 2, title: 'My Conversation' })]);
-
-      const badge = containerEl._children[0];
-      badge.dispatchEvent('dblclick', { preventDefault: jest.fn(), stopPropagation: jest.fn() });
-      badge.dispatchEvent('dblclick', { preventDefault: jest.fn(), stopPropagation: jest.fn() });
-
-      expect(callbacks.onTitleExpansionChanged).toHaveBeenNthCalledWith(1, ['tab-2']);
       expect(callbacks.onTitleExpansionChanged).toHaveBeenNthCalledWith(2, []);
     });
 
@@ -179,7 +129,6 @@ describe('TabBar', () => {
       });
 
       expect(containerEl._children[0].textContent).toBe('ABCDEFGHIJKLMNOPQRSTUVWXYZ012...');
-      expect(containerEl._children[0].textContent.endsWith('...')).toBe(true);
     });
 
     it('should keep expanded title state across tab bar updates', () => {
@@ -243,15 +192,6 @@ describe('TabBar', () => {
   });
 
   describe('badge state classes', () => {
-    it('should apply idle class for inactive tab', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ isActive: false, isWorking: false, attention: null })]);
-
-      expect(containerEl._children[0]._classList.has('claudian-tab-badge-idle')).toBe(true);
-    });
 
     it('should apply active class for active tab', () => {
       const containerEl = createMockEl();
@@ -261,55 +201,6 @@ describe('TabBar', () => {
       tabBar.update([createTabBarItem({ isActive: true })]);
 
       expect(containerEl._children[0]._classList.has('claudian-tab-badge-active')).toBe(true);
-    });
-
-    it('should apply streaming class for streaming tab', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({ isWorking: true })]);
-
-      expect(containerEl._children[0]._classList.has('claudian-tab-badge-streaming')).toBe(true);
-    });
-
-    it('should apply review class for a completed turn awaiting review', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({
-        attention: { kind: 'review', outcome: 'completed', since: 1 },
-      })]);
-
-      expect(containerEl._children[0]._classList.has('claudian-tab-badge-review')).toBe(true);
-      expect(containerEl._children[0]._classList.has('claudian-tab-badge-action-required')).toBe(false);
-    });
-
-    it('should apply error-review class for a failed turn awaiting review', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({
-        attention: { kind: 'review', outcome: 'error', since: 1 },
-      })]);
-
-      expect(containerEl._children[0]._classList.has('claudian-tab-badge-review-error')).toBe(true);
-      expect(containerEl._children[0]._classList.has('claudian-tab-badge-review')).toBe(false);
-    });
-
-    it('should apply action-required class for a pending interaction', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      tabBar.update([createTabBarItem({
-        attention: { kind: 'action-required', since: 1 },
-      })]);
-
-      expect(containerEl._children[0]._classList.has('claudian-tab-badge-action-required')).toBe(true);
-      expect(containerEl._children[0]._classList.has('claudian-tab-badge-review')).toBe(false);
     });
 
     it('should prioritize active over attention states', () => {
@@ -370,19 +261,22 @@ describe('TabBar', () => {
     });
 
     it.each([
-      [createTabBarItem(), 'idle'],
-      [createTabBarItem({ isWorking: true }), 'working'],
-      [createTabBarItem({ attention: { kind: 'review', outcome: 'completed', since: 1 } }), 'finished, ready to review'],
-      [createTabBarItem({ attention: { kind: 'review', outcome: 'error', since: 1 } }), 'stopped with an error, ready to review'],
-      [createTabBarItem({ attention: { kind: 'action-required', since: 1 } }), 'needs your input'],
-    ] as const)('should expose the color state in the accessible label', (item, status) => {
+      [createTabBarItem(), 'idle', 'claudian-tab-badge-idle', []],
+      [createTabBarItem({ isWorking: true }), 'working', 'claudian-tab-badge-streaming', []],
+      [createTabBarItem({ attention: { kind: 'review', outcome: 'completed', since: 1 } }), 'finished, ready to review', 'claudian-tab-badge-review', ['claudian-tab-badge-action-required']],
+      [createTabBarItem({ attention: { kind: 'review', outcome: 'error', since: 1 } }), 'stopped with an error, ready to review', 'claudian-tab-badge-review-error', ['claudian-tab-badge-review']],
+      [createTabBarItem({ attention: { kind: 'action-required', since: 1 } }), 'needs your input', 'claudian-tab-badge-action-required', ['claudian-tab-badge-review']],
+    ] as const)('should expose the color state in the accessible label', (item, status, expectedClass, forbiddenClasses) => {
       const containerEl = createMockEl();
       const callbacks = createMockCallbacks();
       const tabBar = new TabBar(containerEl, callbacks);
 
       tabBar.update([item]);
 
-      expect(containerEl._children[0].getAttribute('aria-label')).toBe(`Test Tab, ${status}`);
+      const badge = containerEl._children[0];
+      expect(badge.getAttribute('aria-label')).toBe(`Test Tab, ${status}`);
+      expect(badge._classList.has(expectedClass)).toBe(true);
+      expect(forbiddenClasses.filter(className => badge._classList.has(className))).toEqual([]);
     });
   });
 
@@ -433,23 +327,14 @@ describe('TabBar', () => {
       const callbacks = createMockCallbacks();
       const tabBar = new TabBar(containerEl, callbacks);
 
+      expect(containerEl._classList.has('claudian-tab-badges')).toBe(true);
+
       tabBar.update([createTabBarItem(), createTabBarItem({ id: 'tab-2', index: 2 })]);
       expect(containerEl._children.length).toBe(2);
 
       tabBar.destroy();
 
       expect(containerEl._children.length).toBe(0);
-    });
-
-    it('should remove tab badges class from container', () => {
-      const containerEl = createMockEl();
-      const callbacks = createMockCallbacks();
-      const tabBar = new TabBar(containerEl, callbacks);
-
-      expect(containerEl._classList.has('claudian-tab-badges')).toBe(true);
-
-      tabBar.destroy();
-
       expect(containerEl._classList.has('claudian-tab-badges')).toBe(false);
     });
   });

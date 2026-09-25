@@ -111,6 +111,8 @@ describe('SlashCommandSource', () => {
     }));
     const [item] = await source.load(match('$', 'rev'), new AbortController().signal);
     expect(item).toEqual(expect.objectContaining({ label: '$review', replacement: '$review ' }));
+    const action = source.select(item as Extract<typeof item, { kind: 'value' }>, match('$', 'rev'));
+    expect(action).toEqual(expect.objectContaining({ kind: 'replace', text: '$review ' }));
     source.destroy();
   });
 
@@ -171,18 +173,6 @@ describe('SlashCommandSource', () => {
     ]));
     await Promise.resolve();
     expect(providerDiscovery.load).toHaveBeenCalledTimes(1);
-    source.destroy();
-  });
-
-  it('returns the provider command as a text replacement', async () => {
-    const source = new SlashCommandSource({
-      includeBuiltIns: false,
-      providerDiscovery: discovery(),
-      providerId: 'codex',
-    });
-    const [item] = await source.load(match('$'), new AbortController().signal);
-    const action = source.select(item as Extract<typeof item, { kind: 'value' }>, match('$'));
-    expect(action).toEqual(expect.objectContaining({ kind: 'replace', text: '$review ' }));
     source.destroy();
   });
 });

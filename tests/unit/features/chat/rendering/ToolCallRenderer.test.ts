@@ -7,7 +7,6 @@ import {
   getToolName,
   getToolSummary,
   renderStoredToolCall,
-  renderTodoWriteResult,
   renderToolCall,
   setToolIcon,
   updateToolCallResult,
@@ -35,48 +34,6 @@ describe('ToolCallRenderer', () => {
   });
 
   describe('renderToolCall', () => {
-    it('should store element in toolCallElements map', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({ id: 'test-id' });
-      const toolCallElements = new Map<string, HTMLElement>();
-
-      const toolEl = renderToolCall(parentEl, toolCall, toolCallElements);
-
-      expect(toolCallElements.get('test-id')).toBe(toolEl);
-    });
-
-    it('should set data-tool-id on element', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({ id: 'my-tool-id' });
-      const toolCallElements = new Map<string, HTMLElement>();
-
-      const toolEl = renderToolCall(parentEl, toolCall, toolCallElements);
-
-      expect(toolEl.dataset.toolId).toBe('my-tool-id');
-    });
-
-    it('should set correct ARIA attributes for accessibility', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall();
-      const toolCallElements = new Map<string, HTMLElement>();
-
-      const toolEl = renderToolCall(parentEl, toolCall, toolCallElements);
-
-      const header = (toolEl as any)._children[0];
-      expect(header.getAttribute('role')).toBe('button');
-      expect(header.getAttribute('tabindex')).toBe('0');
-    });
-
-    it('should track isExpanded on toolCall object', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall();
-      const toolCallElements = new Map<string, HTMLElement>();
-
-      renderToolCall(parentEl, toolCall, toolCallElements);
-
-      expect(toolCall.isExpanded).toBe(false);
-    });
-
     it('should start expanded when requested', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall();
@@ -242,6 +199,12 @@ describe('ToolCallRenderer', () => {
       const toolCallElements = new Map<string, HTMLElement>();
 
       const toolEl = renderToolCall(parentEl, toolCall, toolCallElements);
+      expect(toolCallElements.get('tool-1')).toBe(toolEl);
+      expect(toolEl.dataset.toolId).toBe('tool-1');
+      const header = toolEl.querySelector('.claudian-tool-header');
+      expect(header?.getAttribute('role')).toBe('button');
+      expect(header?.getAttribute('tabindex')).toBe('0');
+      expect(toolCall.isExpanded).toBe(false);
 
       // Update with completed result
       toolCall.status = 'completed';
@@ -412,7 +375,6 @@ describe('ToolCallRenderer', () => {
       expect(getToolName('EnterPlanMode', {})).toBe('Entering plan mode');
       expect(getToolName('ExitPlanMode', {})).toBe('Plan complete');
     });
-
   });
 
   describe('getToolSummary', () => {
@@ -653,7 +615,13 @@ describe('ToolCallRenderer', () => {
       });
 
       const toolEl = renderStoredToolCall(parentEl, toolCall);
-      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
+      const header = toolEl.querySelector('.claudian-tool-header');
+      const content = toolEl.querySelector('.claudian-tool-content');
+      expect(toolEl.hasClass('expanded')).toBe(false);
+      expect(content?.hasClass('claudian-hidden')).toBe(true);
+      expect(header?.getAttribute('aria-expanded')).toBe('false');
+
+      (header as HTMLElement).click();
       const headers = Array.from(toolEl.querySelectorAll('.claudian-tool-patch-header')).map(el => el.textContent);
       const statusEl = toolEl.querySelector('.claudian-tool-status');
       const diffTexts = Array.from(toolEl.querySelectorAll('.claudian-diff-text')).map(el => el.textContent);
@@ -666,33 +634,6 @@ describe('ToolCallRenderer', () => {
       expect(setIcon).not.toHaveBeenCalledWith(expect.anything(), 'check');
       expect(diffTexts).toContain("import { Plugin } from 'obsidian';");
       expect(diffTexts).toContain("import { Plugin, Notice } from 'obsidian';");
-    });
-
-    it('renders stored apply_patch collapsed by default', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({
-        name: 'apply_patch',
-        status: 'completed',
-        input: {
-          patch: [
-            '*** Begin Patch',
-            '*** Update File: src/main.ts',
-            '@@',
-            '-old',
-            '+new',
-            '*** End Patch',
-          ].join('\n'),
-        },
-        result: 'Applied patch',
-      });
-
-      const toolEl = renderStoredToolCall(parentEl, toolCall);
-      const header = toolEl.querySelector('.claudian-tool-header');
-      const content = toolEl.querySelector('.claudian-tool-content');
-
-      expect(toolEl.hasClass('expanded')).toBe(false);
-      expect(content?.hasClass('claudian-hidden')).toBe(true);
-      expect(header?.getAttribute('aria-expanded')).toBe('false');
     });
 
     it('renders stored apply_patch expanded when requested', () => {
@@ -867,32 +808,6 @@ describe('ToolCallRenderer', () => {
     });
   });
 
-  describe('renderTodoWriteResult', () => {
-    it('should render todo items', () => {
-      const container = createMockEl();
-      const input = {
-        todos: [
-          { status: 'completed', content: 'Task 1', activeForm: 'Task 1' },
-          { status: 'pending', content: 'Task 2', activeForm: 'Task 2' },
-        ],
-      };
-      renderTodoWriteResult(container as unknown as HTMLElement, input);
-      expect(container.hasClass('claudian-todo-list-container')).toBe(true);
-    });
-
-    it('should show fallback text when no todos array', () => {
-      const container = createMockEl();
-      renderTodoWriteResult(container as unknown as HTMLElement, {});
-      expect(container._children[0].textContent).toBe('Tasks updated');
-    });
-
-    it('should show fallback text for non-array todos', () => {
-      const container = createMockEl();
-      renderTodoWriteResult(container as unknown as HTMLElement, { todos: 'invalid' });
-      expect(container._children[0].textContent).toBe('Tasks updated');
-    });
-  });
-
   describe('updateToolCallResult for TodoWrite', () => {
     it('should update todo status and content', () => {
       const parentEl = createMockEl();
@@ -946,20 +861,33 @@ describe('ToolCallRenderer', () => {
   });
 
   describe('renderStoredToolCall for TodoWrite', () => {
-    it('should render stored TodoWrite with status', () => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({
-        name: 'TodoWrite',
-        status: 'completed',
+    it.each([
+      {
+        label: 'todo items',
         input: {
           todos: [
-            { status: 'completed', content: 'Task 1', activeForm: 'Done' },
+            { status: 'completed', content: 'Task 1', activeForm: 'Task 1' },
+            { status: 'pending', content: 'Task 2', activeForm: 'Task 2' },
           ],
         },
-      });
+        expectedTasks: ['Task 1', 'Task 2'],
+        expectedFallback: null,
+      },
+      { label: 'missing todos', input: {}, expectedTasks: [], expectedFallback: 'Tasks updated' },
+      { label: 'invalid todos', input: { todos: 'invalid' }, expectedTasks: [], expectedFallback: 'Tasks updated' },
+    ])('renders $label through the stored tool boundary', ({ input, expectedTasks, expectedFallback }) => {
+      const toolEl = renderStoredToolCall(createMockEl(), createToolCall({
+        name: 'TodoWrite',
+        status: 'completed',
+        input,
+      }));
+      const content = toolEl.querySelector('.claudian-tool-content');
 
-      const toolEl = renderStoredToolCall(parentEl, toolCall);
       expect(toolEl).toBeDefined();
+      expect(content?.hasClass('claudian-todo-list-container')).toBe(true);
+      expect(Array.from(content!.querySelectorAll('.claudian-todo-text'), el => el.textContent))
+        .toEqual(expectedTasks);
+      expect(content?.querySelector('.claudian-tool-result-item')?.textContent ?? null).toBe(expectedFallback);
     });
   });
 });

@@ -125,7 +125,6 @@ export interface ChatStateData {
 
 /** Callbacks for ChatState changes. */
 export interface ChatStateCallbacks {
-  onMessagesChanged?: () => void;
   onStreamingStateChanged?: (isStreaming: boolean) => void;
   onRewindingStateChanged?: (isRewinding: boolean) => void;
   onConversationChanged?: (id: string | null) => void;

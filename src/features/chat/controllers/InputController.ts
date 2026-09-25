@@ -1735,10 +1735,6 @@ export class InputController {
     return this.inlinePrompts.askUserQuestion(input, signal);
   }
 
-  dismissPendingApprovalPrompt(): void {
-    this.inlinePrompts.dismissApproval();
-  }
-
   dismissProviderInteraction(kind: 'approval' | 'question'): void {
     this.inlinePrompts.dismiss(kind);
   }

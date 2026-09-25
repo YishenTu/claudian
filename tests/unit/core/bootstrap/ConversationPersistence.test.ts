@@ -215,10 +215,13 @@ describe('ConversationPersistenceStore', () => {
   it('writes device and unscoped metadata to their authoritative namespaces', async () => {
     const adapter = createAdapter();
     const store = new ConversationPersistenceStore(adapter, DEVICE_KEY);
-    const deviceMetadata = createMetadata('device-owned');
+    const deviceMetadata = {
+      ...createMetadata('device-owned'),
+      linkedContentPath: 'Notes/current.md',
+    };
     const unscopedMetadata = createMetadata('unscoped-owned');
 
-    await store.saveMetadata(deviceMetadata, 'device');
+    await store.saveMetadata(deviceMetadata);
     await store.saveMetadata(unscopedMetadata, 'unscoped');
 
     expect(adapter.write.mock.calls).toEqual([
@@ -244,25 +247,5 @@ describe('ConversationPersistenceStore', () => {
       'device metadata already exists',
     );
     expect(adapter.rename).not.toHaveBeenCalled();
-  });
-
-  it('serializes metadata only through the repository persistence boundary', async () => {
-    const adapter = createAdapter();
-    const store = new ConversationPersistenceStore(adapter, DEVICE_KEY);
-    const metadata = {
-      id: 'conversation-1',
-      providerId: 'claude' as const,
-      title: 'Persisted conversation',
-      createdAt: 1,
-      lastActivityAt: 2,
-      linkedContentPath: 'Notes/current.md',
-    };
-
-    await store.saveMetadata(metadata);
-
-    expect(adapter.write).toHaveBeenCalledWith(
-      `${DEVICE_PATH}/conversation-1.meta.json`,
-      JSON.stringify(metadata, null, 2),
-    );
   });
 });

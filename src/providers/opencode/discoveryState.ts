@@ -83,20 +83,3 @@ export function updateOpencodeDiscoveryState(
   setProviderConfig(settings, 'opencode', { ...getProviderConfig(settings, 'opencode'), ...state });
   return true;
 }
-
-export function clearOpencodeDiscoveryState(settings: Record<string, unknown>): boolean {
-  const state = ensureDiscoveryState(settings);
-  if (
-    state.availableModes.length === 0
-    && state.discoveredModels.length === 0
-    && Object.keys(state.thinkingOptionsByModel).length === 0
-  ) {
-    return false;
-  }
-
-  state.availableModes = [];
-  state.discoveredModels = [];
-  state.thinkingOptionsByModel = {};
-  setProviderConfig(settings, 'opencode', { ...getProviderConfig(settings, 'opencode'), ...state });
-  return true;
-}

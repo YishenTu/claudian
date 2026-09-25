@@ -65,14 +65,6 @@ describe('ConversationRepository hydration', () => {
     });
   });
 
-  it('preserves an unavailable Claude selection without persisting a replacement', async () => {
-    jest.restoreAllMocks();
-    const conversation = { ...createConversation(), selectedModel: 'claude-code/retired' };
-    const { repository, persistence } = createRepository(conversation);
-    await repository.reconcileSelectedModels('claude');
-    expect(conversation.selectedModel).toBe('claude-code/retired');
-    expect(persistence.saveMetadata).not.toHaveBeenCalled();
-  });
   afterEach(() => {
     jest.restoreAllMocks();
   });
@@ -97,10 +89,6 @@ describe('ConversationRepository hydration', () => {
     conversation.selectedModel = 'claude-sonnet-4-5';
     const { repository } = createRepository(conversation);
 
-    expect(repository.getMetadata(conversation.id)).toMatchObject({
-      linkedContentPath: 'Notes/Architecture.md',
-      selectedModel: 'claude-sonnet-4-5',
-    });
     expect(repository.list()[0]).toMatchObject({
       linkedContentPath: 'Notes/Architecture.md',
       selectedModel: 'claude-sonnet-4-5',
@@ -499,30 +487,6 @@ describe('ConversationRepository hydration', () => {
     }));
   });
 
-  it('preserves provider-owned state when reconciling an unhydrated model', async () => {
-    const conversation = createConversation('unhydrated-model-state');
-    conversation.selectedModel = 'claude-code/retired-native-model';
-    conversation.providerState = {
-      providerSessionId: 'provider-session-1',
-      subagentData: {
-        'agent-1': {
-          id: 'agent-1',
-          description: 'Preserved agent',
-          isExpanded: false,
-          status: 'completed',
-          toolCalls: [],
-        },
-      },
-    };
-    const { repository, persistence } = createRepository(conversation);
-
-    await repository.reconcileSelectedModels('claude');
-
-    expect(persistence.saveMetadata).not.toHaveBeenCalled();
-    expect(conversation.selectedModel).toBe('claude-code/retired-native-model');
-    expect(conversation.providerState?.providerSessionId).toBe('provider-session-1');
-  });
-
   it('preserves an unavailable stored selection while provider options are empty', async () => {
     const conversation = createConversation('temporarily-empty-catalog');
     conversation.selectedModel = 'claude-code/historical-model';
@@ -597,7 +561,6 @@ describe('ConversationRepository hydration', () => {
 
     await repository.setPinned(conversation.id, true);
 
-    expect(repository.getMetadata(conversation.id)?.isPinned).toBe(true);
     expect(repository.list()[0].isPinned).toBe(true);
     expect(conversation.lastActivityAt).toBe(42);
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
@@ -636,7 +599,7 @@ describe('ConversationRepository hydration', () => {
 
     await repository.setArchived(conversation.id, true);
 
-    expect(repository.getMetadata(conversation.id)).toMatchObject({
+    expect(repository.list().find(({ id }) => id === conversation.id)).toMatchObject({
       isArchived: true,
       isPinned: false,
       lastActivityAt: 42,
@@ -741,7 +704,7 @@ describe('ConversationRepository hydration', () => {
     );
 
     leaked.linkedContentPath = undefined;
-    expect(repository.getMetadata(conversation.id)).toMatchObject({
+    expect(repository.list().find(({ id }) => id === conversation.id)).toMatchObject({
       linkedContentPath: 'Projects/Authoritative',
     });
     expect(conversation.linkedContentPath).toBe('Projects/Authoritative');
@@ -1073,9 +1036,33 @@ describe('ConversationRepository hydration', () => {
 it('does not require a metadata write to keep an unavailable selection', async () => {
   const conversation = createConversation('unavailable');
   conversation.selectedModel = 'claude-code/retired-model';
+  conversation.providerState = {
+    providerSessionId: 'provider-session-1',
+    subagentData: {
+      'agent-1': {
+        id: 'agent-1',
+        description: 'Preserved agent',
+        isExpanded: false,
+        status: 'completed',
+        toolCalls: [],
+      },
+    },
+  };
   const { repository, persistence } = createRepository(conversation);
   persistence.saveMetadata.mockRejectedValue(new Error('disk full'));
   await expect(repository.reconcileSelectedModels('claude')).resolves.toEqual([]);
   expect(conversation.selectedModel).toBe('claude-code/retired-model');
   expect(persistence.saveMetadata).not.toHaveBeenCalled();
+  expect(conversation.providerState).toEqual({
+    providerSessionId: 'provider-session-1',
+    subagentData: {
+      'agent-1': {
+        id: 'agent-1',
+        description: 'Preserved agent',
+        isExpanded: false,
+        status: 'completed',
+        toolCalls: [],
+      },
+    },
+  });
 });

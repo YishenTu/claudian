@@ -1,6 +1,5 @@
 import '@/providers';
 
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import * as ClaudeHistoryStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { ClaudeSubagentHistoryService } from '@/providers/claude/history/ClaudeSubagentHistoryService';
 
@@ -15,7 +14,6 @@ describe('ClaudeSubagentHistoryService', () => {
     const loadFinalResult = jest.spyOn(ClaudeHistoryStore, 'loadSubagentFinalResult')
       .mockResolvedValue('Final result');
     const host = {
-      executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
       getActiveEnvironmentVariables: jest.fn()
         .mockReturnValue('CLAUDE_CONFIG_DIR=/tmp/claude-config'),
       settings: {

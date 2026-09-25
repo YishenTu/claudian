@@ -43,7 +43,6 @@ jest.mock('obsidian', () => {
     public desc = '';
     public heading = false;
     public textComponents: MockTextComponent[] = [];
-    public textAreaComponents: MockTextAreaComponent[] = [];
     public dropdownComponents: MockDropdownComponent[] = [];
     public toggleComponents: MockToggleComponent[] = [];
 
@@ -77,13 +76,6 @@ jest.mock('obsidian', () => {
       return this;
     }
 
-    addTextArea(callback: (text: MockTextAreaComponent) => void) {
-      const component = createTextAreaComponent();
-      this.textAreaComponents.push(component);
-      callback(component);
-      return this;
-    }
-
     addDropdown(callback: (dropdown: MockDropdownComponent) => void) {
       const component = createDropdownComponent();
       this.dropdownComponents.push(component);
@@ -113,7 +105,6 @@ function createSettingsRenderer() {
     cliResolver: {
       reset: mockCLIResolverReset,
     },
-    commandCatalog: {},
     vaultCommandRepository: mockVaultCommandRepository,
     modelCatalog: mockModelCatalog,
   } as unknown as Parameters<typeof createClaudeSettingsTabRenderer>[0]);
@@ -169,10 +160,6 @@ interface MockTextComponent {
   inputEl: MockInputEl;
 }
 
-interface MockTextAreaComponent extends MockTextComponent {
-  trigger: (event: string) => Promise<void>;
-}
-
 interface MockDropdownComponent {
   selectEl: HTMLSelectElement;
   value: string;
@@ -195,7 +182,6 @@ const createdSettings: Array<{
   desc: string;
   heading: boolean;
   textComponents: MockTextComponent[];
-  textAreaComponents: MockTextAreaComponent[];
   dropdownComponents: MockDropdownComponent[];
   toggleComponents: MockToggleComponent[];
 }> = [];
@@ -240,18 +226,6 @@ function createTextComponent(): MockTextComponent {
     return component;
   });
 
-  return component;
-}
-
-function createTextAreaComponent(): MockTextAreaComponent {
-  const component = createTextComponent() as MockTextAreaComponent;
-  component.trigger = async (event: string) => {
-    const handlers = (component.inputEl as ReturnType<typeof createInputEl>)._listeners.get(event) ?? [];
-    for (const handler of handlers) {
-      handler();
-    }
-    await new Promise<void>((resolve) => setImmediate(resolve));
-  };
   return component;
 }
 
@@ -372,7 +346,6 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
       ...overrides,
     },
     saveSettings: mockSaveSettings,
-    normalizeModelVariantSettings: jest.fn(() => false),
     runProviderExecutionTransition: jest.fn(async (
       _providerIds: string[],
       mutation: () => Promise<unknown>,
@@ -457,19 +430,6 @@ describe('ClaudeSettingsTab', () => {
       await waitFor(() => expect(plugin.settings.providerConfigs.claude.responseStyle).toBe(value));
     }
     expect(await axe(subtree)).toHaveNoViolations();
-  });
-
-  it('uses the current npm package wrapper path as the CLI placeholder', () => {
-    const plugin = createPlugin();
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-
-    const cliPathSetting = findSetting('settings.cliPath.name');
-    const cliPathInput = cliPathSetting.textComponents[0];
-
-    expect(cliPathInput.placeholder).toContain('cli-wrapper.cjs');
-    expect(cliPathInput.placeholder).not.toContain('cli.js');
   });
 
   it('persists Claude enablement inside its execution transition and refreshes model options', async () => {
@@ -611,22 +571,25 @@ describe('ClaudeSettingsTab', () => {
     });
   });
 
-  it('does not render obsolete Opus and Sonnet 1M toggles', () => {
+  it('renders the default Claude settings layout and model controls', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
+    const container = createContainer();
+    createSettingsRenderer().render(container, context);
 
-    createSettingsRenderer().render(createContainer(), context);
-
-    expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableOpus1M.name');
-    expect(createdSettings.map(setting => setting.name)).not.toContain('settings.enableSonnet1M.name');
-  });
-
-  it('renders Models before Safety', () => {
-    createSettingsRenderer().render(createContainer(), createContext(createPlugin()));
-
+    const cliPathInput = findSetting('settings.cliPath.name').textComponents[0];
+    expect(cliPathInput.placeholder).toContain('cli-wrapper.cjs');
+    expect(cliPathInput.placeholder).not.toContain('cli.js');
+    const names = createdSettings.map(setting => setting.name);
+    expect(names).not.toContain('settings.enableOpus1M.name');
+    expect(names).not.toContain('settings.enableSonnet1M.name');
+    expect(names).not.toContain('Default model');
+    expect(names).not.toContain('settings.customModels.name');
     const headings = createdSettings.filter(setting => setting.heading).map(setting => setting.name);
-    expect(headings.indexOf('settings.models')).toBeLessThan(
-      headings.indexOf('settings.safety'),
+    expect(headings).toEqual(expect.arrayContaining(['settings.models', 'settings.safety']));
+    expect(headings.indexOf('settings.models')).toBeLessThan(headings.indexOf('settings.safety'));
+    expect(mockRenderModelPicker).toHaveBeenCalledWith(
+      container, 'claude', 'Claude', mockModelCatalog, expect.any(Function),
     );
   });
 
@@ -663,11 +626,6 @@ describe('ClaudeSettingsTab', () => {
     const warningRegion = document.createElement('main');
     warningRegion.append(warning);
     expect(await axe(warningRegion)).toHaveNoViolations();
-  });
-
-  it('uses the model panel without a separate default-model setting', () => {
-    createSettingsRenderer().render(createContainer(), createContext(createPlugin()));
-    expect(createdSettings.map(setting => setting.name)).not.toContain('Default model');
   });
 
   it('keeps Claude CRUD on its explicit vault repository without the shared manager', () => {
@@ -719,10 +677,5 @@ describe('ClaudeSettingsTab', () => {
 
     expect(plugin.settings.providerConfigs.claude.safeMode).toBe('auto');
     expect(mockSaveSettings).toHaveBeenCalledTimes(1);
-  });
-
-  it('removes the manual custom model field', () => {
-    createSettingsRenderer().render(createContainer(), createContext(createPlugin()));
-    expect(createdSettings.some(setting => setting.name === 'settings.customModels.name')).toBe(false);
   });
 });

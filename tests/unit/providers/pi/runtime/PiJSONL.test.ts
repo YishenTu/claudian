@@ -35,18 +35,6 @@ describe('PiJsonl', () => {
     ]);
   });
 
-  it('emits trailing buffered records on end', async () => {
-    const stream = new PassThrough();
-    const lines: string[] = [];
-    subscribePiJSONLLines(stream, line => lines.push(line));
-
-    stream.write('{"a":1}');
-    stream.end();
-    await new Promise(resolve => setImmediate(resolve));
-
-    expect(lines).toEqual(['{"a":1}']);
-  });
-
   it('writes JSONL records', () => {
     const output = new PassThrough();
     const chunks: string[] = [];

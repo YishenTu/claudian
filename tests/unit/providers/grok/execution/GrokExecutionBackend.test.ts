@@ -988,6 +988,8 @@ describe('GrokExecutionBackend', () => {
     await collect(session.execute(request).events);
 
     const systemPrompt = String(native.loadRequests[0]?._meta?.systemPromptOverride);
+    expect(systemPrompt).toContain("inside **Ada**'s Obsidian Vault");
+    expect(systemPrompt).toContain('Vault absolute path: /tmp/vault');
     expect(systemPrompt).toContain('## Runtime Context');
     expect(systemPrompt).toContain('Use `bash: date`');
     expect(systemPrompt).toContain('## Vault Media');

@@ -73,12 +73,6 @@ export function resolveGrokSessionDirectory(
   return null;
 }
 
-export function getTrustedGrokSessionRoots(
-  context: ProviderHistoryPathContext,
-): string[] {
-  return getTrustedSessionRoots(context);
-}
-
 function getTrustedSessionRoots(context: ProviderHistoryPathContext): string[] {
   const configuredHome = context.environment.GROK_HOME?.trim();
   if (configuredHome) {

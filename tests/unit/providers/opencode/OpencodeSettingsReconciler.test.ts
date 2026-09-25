@@ -1,3 +1,7 @@
+import '@/providers';
+
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+
 import { isVersionedRuntimeInputFingerprint } from '../../../../src/core/providers/settings/RuntimeInputFingerprint';
 import { getOpencodeDiscoveryState, updateOpencodeDiscoveryState } from '../../../../src/providers/opencode/discoveryState';
 import { opencodeSettingsReconciler } from '../../../../src/providers/opencode/env/OpencodeSettingsReconciler';
@@ -39,7 +43,7 @@ describe('opencodeSettingsReconciler.normalizeModelVariantSettings', () => {
   });
 });
 
-describe('opencodeSettingsReconciler.handleEnvironmentChange', () => {
+describe('coordinated OpenCode environment changes', () => {
   it('retains provider-owned discovery state when environment changes', () => {
     const settings: Record<string, unknown> = {};
     updateOpencodeDiscoveryState(settings, {
@@ -47,7 +51,7 @@ describe('opencodeSettingsReconciler.handleEnvironmentChange', () => {
       discoveredModels: [{ label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' }],
     });
 
-    expect(opencodeSettingsReconciler.handleEnvironmentChange?.(settings)).toBeUndefined();
+    expect(ProviderSettingsCoordinator.handleEnvironmentChange(settings, ['opencode'])).toBe(false);
     expect(getOpencodeDiscoveryState(settings)).toEqual({
       availableModes: [{ id: 'build', name: 'Build' }],
       discoveredModels: [{ label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' }],

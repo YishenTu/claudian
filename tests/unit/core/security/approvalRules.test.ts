@@ -2,7 +2,6 @@
 import {
   getActionDescription,
   getActionPattern,
-  matchesRulePattern,
 } from '../../../../src/core/security/approvalRules';
 
 describe('getActionPattern', () => {
@@ -72,81 +71,5 @@ describe('getActionDescription', () => {
 
   it('describes unknown tools with JSON', () => {
     expect(getActionDescription('Custom', { a: 1 })).toBe('Custom: {"a":1}');
-  });
-});
-
-describe('matchesRulePattern', () => {
-  it('matches when no rule pattern is provided', () => {
-    expect(matchesRulePattern('Bash', 'git status', undefined)).toBe(true);
-  });
-
-  it('matches wildcard rule', () => {
-    expect(matchesRulePattern('Bash', 'anything', '*')).toBe(true);
-  });
-
-  it('matches exact rule', () => {
-    expect(matchesRulePattern('Bash', 'git status', 'git status')).toBe(true);
-  });
-
-  it('rejects non-matching Bash rule without wildcard', () => {
-    expect(matchesRulePattern('Bash', 'git status', 'git commit')).toBe(false);
-  });
-
-  it('matches Bash wildcard prefix', () => {
-    expect(matchesRulePattern('Bash', 'git status', 'git *')).toBe(true);
-    expect(matchesRulePattern('Bash', 'git commit', 'git *')).toBe(true);
-    expect(matchesRulePattern('Bash', 'npm install', 'git *')).toBe(false);
-  });
-
-  it('matches Bash CC-format colon wildcard', () => {
-    expect(matchesRulePattern('Bash', 'npm install', 'npm:*')).toBe(true);
-    expect(matchesRulePattern('Bash', 'npm run build', 'npm run:*')).toBe(true);
-    expect(matchesRulePattern('Bash', 'yarn install', 'npm:*')).toBe(false);
-  });
-
-  it('does not allow Bash prefix collisions without a separator', () => {
-    expect(matchesRulePattern('Bash', 'github status', 'git:*')).toBe(false);
-    expect(matchesRulePattern('Bash', 'npmish install', 'npm:*')).toBe(false);
-    expect(matchesRulePattern('Bash', 'npm runner build', 'npm run:*')).toBe(false);
-  });
-
-  it('matches file path prefix for Read tool', () => {
-    expect(matchesRulePattern('Read', '/test/vault/notes/file.md', '/test/vault/')).toBe(true);
-    expect(matchesRulePattern('Read', '/other/path/file.md', '/test/vault/')).toBe(false);
-  });
-
-  it('respects path segment boundaries', () => {
-    expect(matchesRulePattern('Read', '/test/vault/notes/file.md', '/test/vault/notes')).toBe(true);
-    expect(matchesRulePattern('Read', '/test/vault/notes2/file.md', '/test/vault/notes')).toBe(false);
-  });
-
-  it('matches exact file path (same length, no trailing slash)', () => {
-    expect(matchesRulePattern('Read', '/test/vault/file.md', '/test/vault/file.md')).toBe(true);
-  });
-
-  it('matches file path with backslash normalization for same-length paths', () => {
-    expect(matchesRulePattern('Write', '/test/vault\\file.md', '/test/vault/file.md')).toBe(true);
-  });
-
-  it('allows simple prefix matching for non-file, non-bash tools', () => {
-    expect(matchesRulePattern('Glob', '**/*.md', '**/*')).toBe(true);
-    expect(matchesRulePattern('Grep', 'TODO in file', 'TODO')).toBe(true);
-  });
-
-  it('returns false for non-file, non-bash tools when prefix does not match', () => {
-    expect(matchesRulePattern('Glob', 'src/**', 'tests/**')).toBe(false);
-  });
-
-  it('matches exact Bash prefix without trailing space/wildcard via CC format', () => {
-    expect(matchesRulePattern('Bash', 'npm', 'npm:*')).toBe(true);
-  });
-
-  it('does not match when action pattern is null', () => {
-    expect(matchesRulePattern('Read', null, '/test/vault/')).toBe(false);
-    expect(matchesRulePattern('Read', null, '*')).toBe(false);
-  });
-
-  it('still matches when no rule pattern and action is null', () => {
-    expect(matchesRulePattern('Read', null, undefined)).toBe(true);
   });
 });

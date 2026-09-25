@@ -2,12 +2,7 @@
  * @jest-environment jsdom
  */
 
-import {
-  calculateTextareaMaxHeight,
-  installTextareaSizing,
-  TEXTAREA_MAX_HEIGHT_PERCENT,
-  TEXTAREA_MIN_MAX_HEIGHT,
-} from '@/features/chat/ui/textareaSizing';
+import { installTextareaSizing } from '@/features/chat/ui/textareaSizing';
 
 describe('textareaSizing', () => {
   let resizeCallback: ResizeObserverCallback;
@@ -28,11 +23,6 @@ describe('textareaSizing', () => {
   afterEach(() => {
     globalThis.ResizeObserver = originalResizeObserver as typeof ResizeObserver;
     document.body.replaceChildren();
-  });
-
-  it('caps max height by viewport percentage with a minimum usable cap', () => {
-    expect(calculateTextareaMaxHeight(100)).toBe(TEXTAREA_MIN_MAX_HEIGHT);
-    expect(calculateTextareaMaxHeight(1000)).toBe(1000 * TEXTAREA_MAX_HEIGHT_PERCENT);
   });
 
   it('sets the initial cap from the containing view and observes later resizes', () => {

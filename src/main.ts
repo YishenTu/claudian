@@ -929,10 +929,6 @@ export default class ClaudianPlugin extends Plugin {
     return this.conversationRepository.getSync(id);
   }
 
-  findEmptyConversation(): Conversation | null {
-    return this.conversationRepository.findEmpty();
-  }
-
   getConversationList(): ConversationMeta[] {
     return this.conversationRepository.list();
   }
