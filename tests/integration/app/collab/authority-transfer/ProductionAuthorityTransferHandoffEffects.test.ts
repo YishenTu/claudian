@@ -589,7 +589,7 @@ describe('production authority-transfer hosting handoff effects', () => {
             batchRevision: staged.claimBatch.batchRevision,
             batchSha256: staged.claimBatch.batchSha256,
             checkpointSha256: staged.checkpointSha256,
-            committedAt: new Date(Date.now() + 60_000).toISOString(),
+            committedAt: new Date(target.foundation.now().getTime() + 60_000).toISOString(),
             custodyAuthority: { generation: 2, kind: 'cloud' as const },
             operationIntentId: staged.idempotencyKey,
             projectId: PROJECT_ID,

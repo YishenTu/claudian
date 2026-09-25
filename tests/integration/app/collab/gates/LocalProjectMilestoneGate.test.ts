@@ -18,7 +18,7 @@ import {
   encodeCollabTransferredMembershipClaimBatchDigestInput,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
-import { testClock, testTime } from '@test/helpers/testClock';
+import { advancingTestClock, testClock, testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -93,6 +93,8 @@ describe('G3 local Project milestone gate', () => {
       getConfiguredGitPath: () => configuredGitPath,
       installationKey: TEST_INSTALLATION_A,
       lanHost: { portCandidates: [0] },
+      // Between the expired source records (up to day 4) and the live ones (from day 31).
+      now: advancingTestClock({ days: 20 }),
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });
