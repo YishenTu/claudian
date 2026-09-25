@@ -1,12 +1,15 @@
-import type { ProviderExecutionTransitionScope } from '../../core/execution';
-import type { ProviderHost } from '../../core/providers/ProviderHost';
-import type { ProviderCliResolutionContext, ProviderId } from '../../core/providers/types';
-import type { EnvironmentScope } from '../../core/types/settings';
-import type ClaudianPlugin from '../../main';
+import type { ProviderExecutionTransitionScope } from '@/core/execution';
+import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ProviderCliResolutionContext, ProviderId } from '@/core/providers/types';
+import type { ClaudianSettings } from '@/core/types';
+import type { EnvironmentScope } from '@/core/types/settings';
 
-/** Delegates provider-facing capabilities to the application composition root. */
+/**
+ * Delegates provider-facing capabilities to the composition root, which structurally
+ * provides them. Providers see only this narrow host, never plugin lifecycle APIs.
+ */
 export class ClaudianProviderHost implements ProviderHost {
-  constructor(private readonly plugin: ClaudianPlugin) {}
+  constructor(private readonly plugin: ProviderHost) {}
 
   get app() {
     return this.plugin.app;
@@ -29,13 +32,13 @@ export class ClaudianProviderHost implements ProviderHost {
   }
 
   mutateSettings(
-    mutation: (settings: typeof this.plugin.settings) => void | Promise<void>,
+    mutation: (settings: ClaudianSettings) => void | Promise<void>,
   ): Promise<void> {
     return this.plugin.mutateSettings(mutation);
   }
 
   mutateSettingsConditionally(
-    mutation: (settings: typeof this.plugin.settings) => boolean | Promise<boolean>,
+    mutation: (settings: ClaudianSettings) => boolean | Promise<boolean>,
   ): Promise<void> {
     return this.plugin.mutateSettingsConditionally(mutation);
   }
@@ -60,7 +63,7 @@ export class ClaudianProviderHost implements ProviderHost {
 
   applyProviderRuntimeSettings(
     providerIds: ProviderId[],
-    mutation: (settings: typeof this.plugin.settings) => void | Promise<void>,
+    mutation: (settings: ClaudianSettings) => void | Promise<void>,
     onApplied?: () => void | Promise<void>,
   ): Promise<void> {
     return this.plugin.applyProviderRuntimeSettings(providerIds, mutation, onApplied);

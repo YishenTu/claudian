@@ -12,7 +12,6 @@ import { MarkdownView, Notice, Plugin, TFolder } from 'obsidian';
 
 import { ConversationRepository } from './app/conversations/ConversationRepository';
 import { SessionMetadataLoader } from './app/conversations/SessionMetadataLoader';
-import { ClaudianProviderHost } from './app/providers/ClaudianProviderHost';
 import { ChatModelSelectionCoordinator } from './app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { PinnedLinkedContentPathCoordinator } from './app/settings/PinnedLinkedContentPathCoordinator';
@@ -28,6 +27,7 @@ import {
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import { TabWorkspaceMigrationCoordinator } from './app/storage/TabWorkspaceMigrationCoordinator';
 import { ClaudianCollabComposition } from './composition/ClaudianCollabComposition';
+import { ClaudianProviderHost } from './composition/ClaudianProviderHost';
 import { isClaudianView } from './composition/claudianViews';
 import type { SharedAppStorage } from './core/bootstrap/storage';
 import {

@@ -1,8 +1,8 @@
-import { ClaudianProviderHost } from '@/app/providers/ClaudianProviderHost';
+import { ClaudianProviderHost } from '@/composition/ClaudianProviderHost';
 import type { ProviderExecutionTransitionScope } from '@/core/execution';
-import type ClaudianPlugin from '@/main';
+import type { ProviderHost } from '@/core/providers/ProviderHost';
 
-function createPlugin(overrides: Record<string, unknown> = {}): ClaudianPlugin {
+function createPlugin(overrides: Record<string, unknown> = {}): ProviderHost {
   return {
     app: {},
     executionLifecycleRegistry: {},
@@ -26,7 +26,7 @@ function createPlugin(overrides: Record<string, unknown> = {}): ClaudianPlugin {
     getAllViews: jest.fn(() => []),
     getView: jest.fn(() => null),
     ...overrides,
-  } as unknown as ClaudianPlugin;
+  } as unknown as ProviderHost;
 }
 
 describe('ClaudianProviderHost', () => {

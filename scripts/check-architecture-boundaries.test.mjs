@@ -338,6 +338,16 @@ test('only main and composition modules import composition wiring', () => {
   ), []);
 });
 
+test('no source module imports the composition root', () => {
+  const roots = fs.readdirSync(sourceRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => path.join(sourceRoot, entry.name));
+  assert.deepEqual(findResolvedImportViolations(
+    roots,
+    target => normalizeModuleTarget(target) === path.join(sourceRoot, 'main'),
+  ), []);
+});
+
 test('composition modules do not import main or concrete providers', () => {
   assert.deepEqual(findResolvedImportViolations(
     [compositionRoot],
@@ -542,7 +552,6 @@ test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
 test('persisted settings changes use the coordinator boundary', () => {
   const matches = findMatches([sourceRoot], /\.saveSettings\(\)/).filter(file => ![
     'src/main.ts',
-    'src/app/providers/ClaudianProviderHost.ts',
   ].includes(file));
   assert.deepEqual(matches, []);
 });
