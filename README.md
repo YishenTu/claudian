@@ -33,6 +33,18 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Tabs & Session Management** — Use multiple tabs in single-panel mode or a persistent session manager beside the chat in dual-pane mode.
 
+## Collaboration and migration
+
+Collab mode now lives in [Claudian Collab](https://github.com/YishenTu/claudian-collab), an independent Obsidian Desktop plugin. It retains the Collab sidebar, projects, tickets, reviews, and HTTP agent API. Claudian chat references to Collab changes and tickets are no longer available.
+
+For existing Collab users:
+
+1. Back up your vault, including hidden folders, and close other Obsidian instances using it.
+2. Update Claudian to a version with embedded Collab removed, or uninstall the embedded version, then restart Obsidian. Disabling the old plugin alone is insufficient.
+3. Follow Claudian Collab's [build and installation instructions](https://github.com/YishenTu/claudian-collab#build-and-install), then enable it in the same vault on the same device.
+4. First startup automatically moves `.claudian/collab/` to `.claudian-collab/`, imports Collab settings, and preserves this device's installation identity. Project working copies stay where they are; unrelated Claudian data is unchanged.
+
+For agents, use **Claudian Collab: Copy agent API instructions** to obtain the running endpoint. On synced devices, follow the migration steps on each device. If the plugin reports conflicting old and new storage, keep both folders and resolve the conflict before retrying; do not delete the legacy folder to force startup. See the [existing-user migration notes](https://github.com/YishenTu/claudian-collab#existing-users).
 
 ## Requirements
 
