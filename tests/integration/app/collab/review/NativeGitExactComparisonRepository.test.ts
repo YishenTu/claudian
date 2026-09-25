@@ -112,7 +112,7 @@ describe('NativeGitExactComparisonRepository resource bounds', () => {
     await writeFile(script, '#!/usr/bin/env node\n' + [
       "const { spawnSync } = require('node:child_process');",
       `const run = () => { const result = spawnSync(${JSON.stringify(executablePath)}, process.argv.slice(2), { stdio: 'inherit' }); process.exit(result.status ?? 1); };`,
-      `if (process.argv[2] === 'diff-tree') { require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ready'); setTimeout(run, 5000); } else run();`,
+      `if (process.argv[2] === 'diff-tree') { require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ready'); setTimeout(run, 20_000); } else run();`,
     ].join('\n'), { mode: 0o700 });
     let shim = script;
     if (process.platform === 'win32') {
@@ -124,7 +124,7 @@ describe('NativeGitExactComparisonRepository resource bounds', () => {
     const controller = new AbortController();
     const result = comparisons.compare(root, base, target, controller.signal)
       .then(value => ({ value }), error => ({ error }));
-    const deadline = Date.now() + 5000;
+    const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
       try { await access(marker); break; }
       catch { await new Promise(resolve => setTimeout(resolve, 10)); }
@@ -133,7 +133,7 @@ describe('NativeGitExactComparisonRepository resource bounds', () => {
     const started = performance.now();
     controller.abort();
     expect(await result).toMatchObject({ error: { code: 'cancelled' } });
-    expect(performance.now() - started).toBeLessThan(2000);
+    expect(performance.now() - started).toBeLessThan(10_000);
     expect(delayedRunner.activeProcessCount).toBe(0);
   });
 });

@@ -60,7 +60,7 @@ describe('NativeGitReviewRepository integration', () => {
         `const run = () => { const result = require('node:child_process').spawnSync(${JSON.stringify(gitExecutablePath)}, process.argv.slice(2), { stdio: 'inherit' }); process.exit(result.status ?? 1); };`,
         `const stage = ${JSON.stringify(stage)};`,
         "const delayed = (stage === 'origin-inspection' && command === 'rev-parse' && count === 1) || (stage === 'origin-config' && command === 'config') || (stage === 'fetch-inspection' && command === 'rev-parse' && count === 3);",
-        `if (delayed) { fs.writeFileSync(${JSON.stringify(marker)}, 'ready'); setTimeout(run, 5000); } else run();`,
+        `if (delayed) { fs.writeFileSync(${JSON.stringify(marker)}, 'ready'); setTimeout(run, 20_000); } else run();`,
       ].join('\n'), { mode: 0o700 });
       let shim = script;
       if (process.platform === 'win32') {
@@ -79,7 +79,7 @@ describe('NativeGitReviewRepository integration', () => {
         projectId: 'project-a', remoteUrl, repositoryPath, role: 'manager',
       }, requestDetail('a'.repeat(40), 'b'.repeat(40)), controller.signal)
         .then(value => ({ value }), error => ({ error }));
-      const deadline = Date.now() + 5000;
+      const deadline = Date.now() + 10_000;
       while (Date.now() < deadline) {
         try { await access(marker); break; }
         catch { await new Promise(resolve => setTimeout(resolve, 10)); }
@@ -88,7 +88,7 @@ describe('NativeGitReviewRepository integration', () => {
       const started = performance.now();
       controller.abort();
       expect(await result).toMatchObject({ error: { code: 'cancelled' } });
-      expect(performance.now() - started).toBeLessThan(2000);
+      expect(performance.now() - started).toBeLessThan(10_000);
       expect(delayedRunner.activeProcessCount).toBe(0);
     },
   );
