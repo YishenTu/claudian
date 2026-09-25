@@ -144,7 +144,6 @@ jobs:
       cross-platform-shards: ${{ steps.scope.outputs.cross-platform-shards }}
       pi-windows: ${{ steps.scope.outputs.pi-windows }}
       has-tests: ${{ steps.scope.outputs.has-tests }}
-      lan: ${{ steps.scope.outputs.lan }}
       cross-platform: ${{ steps.scope.outputs.cross-platform }}
     steps:
       - uses: actions/checkout@v4
@@ -167,38 +166,17 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: node scripts/ciTestSelection.mjs
 
-  lan-compatibility:
-    needs: test-scope
-    if: needs.test-scope.outputs.lan == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Verify published LAN compatibility
-        run: npm run test:lan-compatibility
-
   test:
-    needs: [test-scope, selected-tests, lan-compatibility]
+    needs: [test-scope, selected-tests]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Require selected tests and applicable LAN compatibility
+      - name: Require selected tests
         env:
           SCOPE_RESULT: ${{ needs.test-scope.result }}
           TEST_RESULT: ${{ needs.selected-tests.result }}
           HAS_TESTS: ${{ needs.test-scope.outputs.has-tests }}
-          LAN_RESULT: ${{ needs.lan-compatibility.result }}
         run: |
           test "$SCOPE_RESULT" = success
           if [ "$HAS_TESTS" = true ]; then
@@ -206,7 +184,6 @@ jobs:
           else
             test "$TEST_RESULT" = skipped
           fi
-          test "$LAN_RESULT" = success || test "$LAN_RESULT" = skipped
 
   cross-platform-smoke:
     needs: test-scope
@@ -253,7 +230,7 @@ jobs:
           TEST_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p test-results
-          npm run test:cross-platform-collab -- --selection "$TEST_SELECTION" --shard="$TEST_SHARD" --maxWorkers=3 --json --outputFile=test-results/native.json
+          npm run test:cross-platform -- --selection "$TEST_SELECTION" --shard="$TEST_SHARD" --maxWorkers=3 --json --outputFile=test-results/native.json
 
       - name: Summarize native test timings
         if: always() && steps.native-tests.outcome != 'skipped' && needs.test-scope.outputs.cross-platform-tests != '[]'

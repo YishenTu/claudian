@@ -18,8 +18,5 @@
 
 - Render and submit model/reasoning from the same destination-owned settings. Submission cannot rederive them from provider-wide defaults; side chat owns its selection in memory.
 
-- Dynamic Main Agent sections are best-effort system configuration; failures must not block Chat. Collab references insert visible text only and cannot mutate selected Project or persist hidden entity metadata.
-- Live Collab disable destroys its surface while preserving the chat tab. Plugin-lifetime composer ports reset to unavailable rather than terminal disposal; compact/dual presentation reuse one controller/tree.
+- Dynamic Main Agent sections are best-effort system configuration; failures must not block Chat.
 - One composer serves every destination, and its target is derived from presentation state rather than a separately mutable selection. User-originated sends and cancels resolve the target when they run; internally queued main work keeps the owner it was admitted with and must never read the current target at dispatch.
-- Horizontal swipes rely on native snap scrolling and scrollend. Do not cancel wheel events, classify gestures by idle/delta heuristics, or move the strip with transforms; Chromium retains the stationary pointer's wheel target through the transaction.
-- Preload may prepare a drag target without activating it. Commit semantic surface state only after snap completion; the two-surface visual replica stays inert and owns no controller/state.

@@ -1,7 +1,6 @@
-import type { App, WorkspaceLeaf } from 'obsidian';
+import type { App } from 'obsidian';
 
 import type { SharedAppStorage } from '../core/bootstrap/storage';
-import type { CollabComposerReferencePort } from '../core/collab';
 import type { ProviderHost } from '../core/providers/ProviderHost';
 import type { ProviderId } from '../core/providers/types';
 import type {
@@ -26,7 +25,6 @@ export interface FeatureViewHost {
   refreshModelSelector(providerId?: ProviderId): void;
   refreshTabControls(): void;
   refreshDualPaneLayout(): void;
-  refreshCollabAvailability(): void;
   refreshMessageTimestamps(): void;
   updateHiddenProviderCommands(): void;
   invalidateProviderResources(providerIds: ProviderId[], generation: number): void;
@@ -41,22 +39,6 @@ export interface ChatModelSelectionPort {
   ): Promise<boolean>;
 }
 
-export interface CollabSidebarSurfaceController {
-  /** Starts lazy construction and initialization without making the surface active. */
-  preload?(): void;
-  setActive(active: boolean): void;
-  destroy(): void;
-}
-
-export interface CollabSidebarSurfaceFactory {
-  create(
-    hostEl: HTMLElement,
-    leaf: WorkspaceLeaf,
-  ): CollabSidebarSurfaceController;
-}
-
-export type CollabGitInstallationStatus = 'available' | 'unavailable';
-
 /** Lets settings re-apply the warm agent process limit without owning the pool. */
 export interface WarmExecutionLimitPort {
   reconcileLimit(): Promise<boolean>;
@@ -70,18 +52,8 @@ export interface FeatureHost {
   readonly settings: ClaudianSettings;
   readonly storage: SharedAppStorage;
   readonly warmExecutionPool: WarmExecutionLimitPort;
-  readonly collabSurfaceFactory?: CollabSidebarSurfaceFactory;
-  readonly collabComposerReferences?: CollabComposerReferencePort;
 
   getMainAgentDynamicSystemPromptSections?(): Promise<readonly string[]>;
-
-  checkCollabGitInstallation(rescan?: boolean): Promise<CollabGitInstallationStatus>;
-  isCollabEnabled(): boolean;
-  setCollabEnabled(enabled: boolean): Promise<void>;
-  setCollabProjectsFolder(raw: string): Promise<
-    { readonly ok: true; readonly value: string }
-    | { readonly message: string; readonly ok: false }
-  >;
 
   mutateSettings(
     mutation: (settings: ClaudianSettings) => void | Promise<void>,

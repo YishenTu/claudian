@@ -218,7 +218,7 @@ describe('systemPrompt', () => {
 
       const defaultKey = computeSystemPromptKey(settings);
       const dynamicKey = computeSystemPromptKey(settings, {
-        dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+        dynamicSections: ['## Additional context\nRuntime guidance.'],
       });
 
       expect(dynamicKey).not.toBe(defaultKey);

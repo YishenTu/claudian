@@ -8,35 +8,21 @@ import suites from './testSuites.cjs';
 const fullSelection = {
   testFiles: null, scriptTests: null, crossPlatformTests: null,
   crossPlatformShards: ['1/2', '2/2'],
-  lanCompatibility: true, crossPlatform: true, piWindows: true,
+  crossPlatform: true, piWindows: true,
 };
-const docsTest = 'tests/unit/docs/CollabDocumentation.test.ts';
+const docsTest = 'tests/unit/docs/Documentation.test.ts';
 const piTest = 'tests/integration/providers/pi/PiSubprocess.windows.test.ts';
 const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/');
 const isJestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
 const isGraphInput = file => /^(?:src|tests)\/.*\.(?:[cm]?[jt]sx?|json)$/.test(file);
-const isCollabRuntime = file => /^(?:src|tests\/(?:unit|integration))\/(?:app|core)\/collab\//.test(file);
 
 // These consumers read files through fs rather than imports, so Jest cannot find their edges.
 const fileConsumers = [
-  [/^tests\/helpers\/collab\/CloudEntryCrashFixture\.ts$/, [
-    'tests/integration/app/collab/project/CloudProjectEntryCoordinator.recovery.test.ts',
-  ]],
-  // esbuild reads these entry points dynamically. Their owner tests also carry
-  // the transitive import edges needed when a dependency of an entry changes.
-  [/^(?:src|tests\/unit)\/(?:app\/collab\/lan\/LANTLSIdentity|features\/collab\/detail\/review\/CollabDiffRenderer|features\/collab\/shared\/markdown\/MarkdownDraftEditor)(?:\.test)?\.ts$/, [
-    'tests/integration/build/collab-dependency-envelope.test.ts',
-  ]],
-  [/^src\/i18n\/locales\/.*\.json$/, ['tests/integration/build/collab-dependency-envelope.test.ts']],
+  [/^src\/i18n\/locales\/.*\.json$/, ['tests/integration/build/dependency-envelope.test.ts']],
   [/^src\/style\//, [
     'tests/unit/style/components/code.test.ts',
     'tests/unit/style/components/messages.test.ts',
     'tests/unit/features/chat/tabs/TabAttentionStyles.test.ts',
-    'tests/unit/features/collab/modals/project/ProjectManagementModal.test.ts',
-  ]],
-  [/^tests\/fixtures\/collab\/authority-v12-inert\.sqlite\.gz$/, [
-    'tests/unit/app/collab/authority/AuthorityEventRetention.test.ts',
-    'tests/unit/app/collab/host-transfer/HostTransferAuthoritySnapshot.test.ts',
   ]],
   [/^tests\/fixtures\/providers\/grok\/history\//, [
     'tests/unit/providers/grok/history/GrokConversationHistoryService.test.ts',
@@ -48,7 +34,7 @@ const scriptConsumers = new Map(suites.scriptTests.flatMap(file => [
 ]));
 const globalInputs = new Set([
   'src/main.ts', 'tests/setupWindow.ts', 'scripts/ciTestSelection.mjs',
-  'scripts/run-tests.js', 'scripts/run-jest.js', 'scripts/run-cross-platform-collab-tests.js',
+  'scripts/run-tests.js', 'scripts/run-jest.js', 'scripts/run-cross-platform-tests.js',
   'scripts/testSuites.cjs', 'tests/tsconfig.json',
 ]);
 
@@ -84,13 +70,10 @@ export function selectCiTests({ changes, relatedTests, eventName }) {
   }
   const testFiles = [...files];
   const crossPlatformTests = suites.crossPlatformTests.filter(file => files.has(file));
-  const paths = [...changes.filter(change => change.status !== 'D').map(change => change.path), ...testFiles];
   const piWindows = files.has(piTest);
   return {
     testFiles, scriptTests: [...scripts], crossPlatformTests,
     crossPlatformShards: crossPlatformTests.length > 1 ? ['1/2', '2/2'] : ['1/1'],
-    lanCompatibility: paths.some(file => isCollabRuntime(file) && !isDocumentation(file))
-      || paths.some(file => file.startsWith('tests/compatibility/')),
     crossPlatform: crossPlatformTests.length > 0 || piWindows
       || scripts.has('scripts/ciTestSelection.test.mjs') || scripts.has('scripts/run-tests.test.mjs'),
     piWindows,
@@ -143,7 +126,6 @@ function main() {
     `script-tests=${JSON.stringify(selection.scriptTests)}`,
     `cross-platform-tests=${JSON.stringify(selection.crossPlatformTests)}`,
     `cross-platform-shards=${JSON.stringify(selection.crossPlatformShards)}`,
-    `lan=${selection.lanCompatibility}`,
     `cross-platform=${selection.crossPlatform}`,
     `pi-windows=${selection.piWindows}`,
     `has-tests=${selection.testFiles === null || selection.testFiles.length > 0

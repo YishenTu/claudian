@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 export const bundleCriticalRuntimeDependencies = Object.freeze([
   '@anthropic-ai/claude-agent-sdk',
-  '@codemirror/merge',
   'smol-toml',
 ]);
 

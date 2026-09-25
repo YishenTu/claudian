@@ -979,7 +979,7 @@ describe('GrokExecutionBackend', () => {
       configuration: {
         ...base.configuration,
         systemInstructions: {
-          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          dynamicSections: ['## Additional context\nRuntime guidance.'],
           kind: 'provider-default',
         },
       },
@@ -992,8 +992,8 @@ describe('GrokExecutionBackend', () => {
     expect(systemPrompt).toContain('Use `bash: date`');
     expect(systemPrompt).toContain('## Vault Media');
     expect(systemPrompt).toContain('Keep the shared instruction.');
-    expect(systemPrompt).toContain('## Collab Mode\nRuntime guidance.');
-    expect(systemPrompt.match(/## Collab Mode/g)).toHaveLength(1);
+    expect(systemPrompt).toContain('## Additional context\nRuntime guidance.');
+    expect(systemPrompt.match(/## Additional context/g)).toHaveLength(1);
   });
 
   it('bootstraps canonical history only when creating a new native session', async () => {
@@ -1988,7 +1988,7 @@ describe('GrokExecutionBackend', () => {
       configuration: {
         ...base.configuration,
         systemInstructions: {
-          dynamicSections: ['## Collab Mode\nFork runtime guidance.'],
+          dynamicSections: ['## Additional context\nFork runtime guidance.'],
           kind: 'provider-default',
         },
       },
@@ -2005,7 +2005,7 @@ describe('GrokExecutionBackend', () => {
       expect.objectContaining({
         _meta: expect.objectContaining({
           systemPromptOverride: expect.stringContaining(
-            '## Collab Mode\nFork runtime guidance.',
+            '## Additional context\nFork runtime guidance.',
           ),
         }),
         sessionId: 'session-forked',

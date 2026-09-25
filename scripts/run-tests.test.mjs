@@ -10,7 +10,7 @@ test('the runner executes only selected Jest and script suites, and handles empt
   const root = mkdtempSync(path.join(os.tmpdir(), 'claudian-test-runner-'));
   try {
     mkdirSync(path.join(root, 'scripts'));
-    for (const file of ['run-tests.js', 'run-cross-platform-collab-tests.js', 'testSuites.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
+    for (const file of ['run-tests.js', 'run-cross-platform-tests.js', 'testSuites.cjs']) copyFileSync(`scripts/${file}`, path.join(root, 'scripts', file));
     writeFileSync(path.join(root, 'scripts/run-jest.js'), `require('node:fs').writeFileSync('jest-args.json', JSON.stringify(process.argv.slice(2)));`);
     writeFileSync(path.join(root, 'scripts/summarize-jest-results.test.mjs'), `import { writeFileSync } from 'node:fs'; writeFileSync('script-ran', 'yes');`);
     const env = { ...process.env };
@@ -27,11 +27,11 @@ test('the runner executes only selected Jest and script suites, and handles empt
     assert.throws(() => readFileSync(path.join(root, 'jest-args.json')), { code: 'ENOENT' });
     assert.throws(() => readFileSync(path.join(root, 'script-ran')), { code: 'ENOENT' });
     const nativeTest = 'tests/unit/utils/windowsCmdShim.test.ts';
-    execFileSync(process.execPath, ['scripts/run-cross-platform-collab-tests.js', '--selection', JSON.stringify([nativeTest])], { cwd: root, env });
+    execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest])], { cwd: root, env });
     assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'jest-args.json'))), ['--runInBand', '--runTestsByPath', nativeTest]);
-    execFileSync(process.execPath, ['scripts/run-cross-platform-collab-tests.js', '--selection', JSON.stringify([nativeTest]), '--maxWorkers=2'], { cwd: root, env });
+    execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest]), '--maxWorkers=2'], { cwd: root, env });
     assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'jest-args.json'))), ['--maxWorkers=2', '--runTestsByPath', nativeTest]);
-    execFileSync(process.execPath, ['scripts/run-cross-platform-collab-tests.js', '--selection', JSON.stringify([nativeTest]), '--maxWorkers', '4'], { cwd: root, env });
+    execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest]), '--maxWorkers', '4'], { cwd: root, env });
     assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'jest-args.json'))), ['--maxWorkers', '4', '--runTestsByPath', nativeTest]);
     const invalid = spawnSync(process.execPath, ['scripts/run-tests.js', '--selection', '[]', '--script-selection', '["scripts/unknown.mjs"]'], { cwd: root });
     assert.notEqual(invalid.status, 0);

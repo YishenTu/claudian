@@ -1655,7 +1655,7 @@ describe('PiExecutionBackend', () => {
         model: 'pi:anthropic/claude-sonnet-4',
         reasoning: 'high',
         systemInstructions: {
-          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          dynamicSections: ['## Additional context\nRuntime guidance.'],
           kind: 'provider-default',
         },
       },
@@ -1671,8 +1671,8 @@ describe('PiExecutionBackend', () => {
     expect(systemPrompt).toContain('## Runtime Context');
     expect(systemPrompt).toContain('Use `bash: date`');
     expect(systemPrompt).toContain('## Vault Media');
-    expect(systemPrompt).toContain('## Collab Mode\nRuntime guidance.');
-    expect(systemPrompt.match(/## Collab Mode/g)).toHaveLength(1);
+    expect(systemPrompt).toContain('## Additional context\nRuntime guidance.');
+    expect(systemPrompt.match(/## Additional context/g)).toHaveLength(1);
   });
 
   it('maps an explicit allow-list exactly and falls back to provider model settings', async () => {

@@ -13,13 +13,11 @@ import { getHiddenProviderCommandSet } from '../../core/providers/commands/hidde
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { type AppTabManagerState, DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { type ConversationMeta, VIEW_TYPE_CLAUDIAN } from '../../core/types';
-import { t } from '../../i18n/i18n';
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
-import type { CollabSidebarSurfaceController } from '../FeatureHost';
 import type {
   ChatFeatureHost,
   ChatTabManagerHost,
@@ -40,10 +38,6 @@ import { commitProvisionalTab } from './tabs/TabLifecycle';
 import { TabManager } from './tabs/TabManager';
 import { refreshTabContextUsage } from './tabs/TabProviderState';
 import type { AssembledTabRuntime, TabId } from './tabs/types';
-import {
-  HorizontalPanelPager,
-  type HorizontalPanelPagerPanel,
-} from './ui/HorizontalPanelPager';
 
 type LoadableView = {
   containerEl?: HTMLElement;
@@ -54,8 +48,6 @@ type SessionSearchScrollState = {
   pinnedScrollTop: number;
   sessionScrollTop: number;
 };
-
-type SidebarSurface = 'sessions' | 'collab';
 
 const WIDE_SESSION_LAYOUT_MIN_WIDTH = 600;
 const MIN_CHAT_PANEL_WIDTH = 320;
@@ -93,19 +85,9 @@ export class ClaudianView extends ItemView {
   // History elements
   private historyDropdown: HTMLElement | null = null;
   private historyRenderAbortController: AbortController | null = null;
-  private compactCollabButtonEl: HTMLButtonElement | null = null;
-  private compactCollabMenuEl: HTMLElement | null = null;
   private sessionSidebarEl: HTMLElement | null = null;
   private sidebarSurfaceTrackEl: HTMLElement | null = null;
-  private sidebarSurfaceSwitcherEl: HTMLElement | null = null;
-  private sessionsSurfaceButtonEl: HTMLButtonElement | null = null;
-  private collabSurfaceButtonEl: HTMLButtonElement | null = null;
   private sessionSurfaceEl: HTMLElement | null = null;
-  private collabSurfaceEl: HTMLElement | null = null;
-  private activeSidebarSurface: SidebarSurface = 'sessions';
-  private sidebarSurfacePager: HorizontalPanelPager<SidebarSurface> | null = null;
-  private collabSurfaceController: CollabSidebarSurfaceController | null = null;
-  private collabSurfaceActive = false;
   private sessionSidebarResizerEl: HTMLElement | null = null;
   private sessionSidebarRenderAbortController: AbortController | null = null;
   private sessionSidebarResizeObserver: ResizeObserver | null = null;
@@ -490,11 +472,6 @@ export class ClaudianView extends ItemView {
     this.cancelSessionSidebarRendering();
     this.disconnectSessionSidebarLayoutObserver();
     this.stopSessionSidebarResize();
-    this.sidebarSurfacePager?.destroy();
-    this.sidebarSurfacePager = null;
-    this.setCollabSurfaceActive(false);
-    this.collabSurfaceController?.destroy();
-    this.collabSurfaceController = null;
     if (this.pendingTabBarUpdate !== null) {
       cancelScheduledAnimationFrame(this.pendingTabBarUpdate);
       this.pendingTabBarUpdate = null;
@@ -614,44 +591,7 @@ export class ClaudianView extends ItemView {
     this.sessionSurfaceEl = this.sidebarSurfaceTrackEl.createDiv({
       cls: 'claudian-session-surface',
     });
-    this.collabSurfaceEl = this.plugin?.collabSurfaceFactory
-      ? this.sidebarSurfaceTrackEl.createDiv({ cls: 'claudian-collab-surface' })
-      : null;
-    this.sidebarSurfaceSwitcherEl = this.sessionSidebarEl.createDiv({
-      cls: 'claudian-sidebar-surface-switcher',
-    });
-    this.sidebarSurfaceSwitcherEl.setAttribute('role', 'group');
-    this.sidebarSurfaceSwitcherEl.setAttribute('aria-label', t('collab.surfaceGroupLabel'));
-    this.sidebarSurfaceSwitcherEl.addEventListener('keydown', (event) => {
-      this.handleSidebarSurfaceKeydown(event);
-    });
-    this.sessionsSurfaceButtonEl = this.sidebarSurfaceSwitcherEl.createEl('button', {
-      cls: 'claudian-sidebar-surface-button claudian-sidebar-surface-button--sessions',
-      attr: { 'aria-label': t('collab.sessionsSurfaceLabel'), type: 'button' },
-    });
-    this.sessionsSurfaceButtonEl.addEventListener('click', () => {
-      this.selectSidebarSurfaceFromControl('sessions');
-    });
-    this.collabSurfaceButtonEl = this.plugin?.collabSurfaceFactory
-      ? this.sidebarSurfaceSwitcherEl.createEl('button', {
-        cls: 'claudian-sidebar-surface-button claudian-sidebar-surface-button--collab',
-        attr: { 'aria-label': t('collab.surfaceLabel'), type: 'button' },
-      })
-      : null;
-    this.collabSurfaceButtonEl?.addEventListener('click', () => {
-      this.selectSidebarSurfaceFromControl('collab');
-    });
-    this.sidebarSurfacePager?.destroy();
-    this.sidebarSurfacePager = new HorizontalPanelPager<SidebarSurface>({
-      onDragTarget: surface => this.preloadSidebarSurface(surface),
-      onIndicatorChange: surface => this.setSidebarSurfaceIndicatorVisual(surface),
-      onSettle: surface => this.settleSidebarSurface(surface),
-      trackEl: this.sidebarSurfaceTrackEl,
-    });
-    if (!this.getEnabledSidebarSurfaces().includes(this.activeSidebarSurface)) {
-      this.activeSidebarSurface = 'sessions';
-    }
-    this.updateSidebarSurfaceVisibility();
+
   }
 
   /**
@@ -709,40 +649,6 @@ export class ClaudianView extends ItemView {
       this.toggleHistoryDropdown();
     });
 
-    if (this.plugin?.collabSurfaceFactory) {
-      const compactCollabContainer = navActionsEl.createDiv({
-        cls: 'claudian-compact-collab-container claudian-nav-dropup-container',
-      });
-      this.compactCollabButtonEl = compactCollabContainer.createEl('button', {
-        cls: 'claudian-input-nav-btn claudian-compact-collab-button',
-        attr: {
-          'aria-expanded': 'false',
-          'aria-haspopup': 'true',
-          'aria-label': t('collab.surfaceLabel'),
-          type: 'button',
-        },
-      });
-      setIcon(this.compactCollabButtonEl, 'users');
-      this.compactCollabMenuEl = compactCollabContainer.createDiv({
-        cls: 'claudian-compact-collab-menu claudian-nav-dropup-menu claudian-nav-dropup-menu--surface',
-      });
-      this.compactCollabMenuEl.setAttribute('aria-label', t('collab.surfaceLabel'));
-      this.compactCollabMenuEl.setAttribute('role', 'region');
-      this.compactCollabMenuEl.addEventListener('click', event => {
-        event.stopPropagation();
-      });
-      this.compactCollabButtonEl.addEventListener('mousedown', event => {
-        event.preventDefault();
-      });
-      this.compactCollabButtonEl.addEventListener('click', event => {
-        event.stopPropagation();
-        this.toggleCompactCollabMenu();
-      });
-    } else {
-      this.compactCollabButtonEl = null;
-      this.compactCollabMenuEl = null;
-    }
-
     return wrapper;
   }
 
@@ -798,20 +704,8 @@ export class ClaudianView extends ItemView {
 
   refreshDualPaneLayout(): void {
     if (!this.viewContainerEl) return;
-    this.updateSidebarSurfaceVisibility();
+    this.updateSideChatChipLocation();
     this.updateSessionSidebarLayout(this.viewContainerEl.getBoundingClientRect().width);
-  }
-
-  refreshCollabAvailability(): void {
-    if (!this.isCollabAvailable() && this.collabSurfaceController) {
-      this.compactCollabMenuEl?.removeClass('visible');
-      this.compactCollabButtonEl?.removeClass('is-active');
-      this.compactCollabButtonEl?.setAttribute('aria-expanded', 'false');
-      this.collabSurfaceController.destroy();
-      this.collabSurfaceController = null;
-      this.collabSurfaceActive = false;
-    }
-    this.updateSidebarSurfaceVisibility();
   }
 
   private findMostRecentUnboundTab(): AssembledTabRuntime | null {
@@ -998,57 +892,9 @@ export class ClaudianView extends ItemView {
       this.historyDropdown.removeClass('visible');
       this.cancelHistoryRendering();
     } else {
-      this.closeCompactCollabMenu();
       this.historyDropdown.addClass('visible');
       this.renderHistoryDropdown();
     }
-  }
-
-  private toggleCompactCollabMenu(): void {
-    if (this.compactCollabMenuEl?.hasClass('visible')) {
-      this.closeCompactCollabMenu();
-      return;
-    }
-    this.openCompactCollabMenu();
-  }
-
-  private openCompactCollabMenu(): boolean {
-    if (
-      this.isWideSessionLayout
-      || this.requestedWideSessionLayout
-      || !this.compactCollabButtonEl
-      || !this.compactCollabMenuEl
-      || !this.collabSurfaceEl
-      || !this.isCollabAvailable()
-    ) return false;
-
-    this.compactCollabMenuEl.appendChild(this.collabSurfaceEl);
-    if (!this.ensureCollabSurfaceController()) {
-      this.attachCollabSurfaceToSidebar();
-      return false;
-    }
-
-    this.historyDropdown?.removeClass('visible');
-    this.cancelHistoryRendering();
-    this.compactCollabMenuEl.addClass('visible');
-    this.compactCollabButtonEl.addClass('is-active');
-    this.compactCollabButtonEl.setAttribute('aria-expanded', 'true');
-    this.updateSidebarSurfaceVisibility();
-    return true;
-  }
-
-  private closeCompactCollabMenu(): void {
-    if (!this.compactCollabMenuEl?.hasClass('visible')) return;
-
-    this.compactCollabMenuEl.removeClass('visible');
-    this.compactCollabButtonEl?.removeClass('is-active');
-    this.compactCollabButtonEl?.setAttribute('aria-expanded', 'false');
-    this.updateSidebarSurfaceVisibility();
-  }
-
-  private attachCollabSurfaceToSidebar(): void {
-    if (!this.sidebarSurfaceTrackEl || !this.collabSurfaceEl) return;
-    this.sidebarSurfaceTrackEl.appendChild(this.collabSurfaceEl);
   }
 
   private historyDropdownDirty = true;
@@ -1061,12 +907,7 @@ export class ClaudianView extends ItemView {
     if (this.historyDropdown?.hasClass('visible')) {
       this.renderHistoryDropdown();
     }
-    if (
-      this.isWideSessionLayout
-      && this.activeSidebarSurface !== 'collab'
-    ) {
-      this.renderSessionSidebar();
-    }
+    if (this.isWideSessionLayout) this.renderSessionSidebar();
   }
 
   private renderHistoryDropdown(): void {
@@ -1091,12 +932,7 @@ export class ClaudianView extends ItemView {
 
   private renderSessionSidebar(): void {
     const sessionSurfaceEl = this.sessionSurfaceEl ?? this.sessionSidebarEl;
-    if (
-      !sessionSurfaceEl
-      || !this.sessionSidebarDirty
-      || !this.isWideSessionLayout
-      || this.activeSidebarSurface === 'collab'
-    ) return;
+    if (!sessionSurfaceEl || !this.sessionSidebarDirty || !this.isWideSessionLayout) return;
     if (this.isSessionSearchComposing) return;
 
     const previousSearchInput = this.sessionSearchInputEl;
@@ -1398,151 +1234,8 @@ export class ClaudianView extends ItemView {
   }
 
   private showSessions(): void {
-    this.activeSidebarSurface = 'sessions';
-    this.setCollabSurfaceActive(false);
-    this.updateSidebarSurfaceVisibility();
+    this.updateSideChatChipLocation();
     this.renderSessionSidebar();
-  }
-
-  selectCollabSurface(): boolean {
-    if (
-      !this.isWideSessionLayout
-      || !this.requestedWideSessionLayout
-      || !this.collabSurfaceEl
-      || !this.plugin?.collabSurfaceFactory
-      || !this.isCollabAvailable()
-    ) return false;
-
-    if (!this.ensureCollabSurfaceController()) return false;
-
-    this.activeSidebarSurface = 'collab';
-    this.updateSidebarSurfaceVisibility();
-    return true;
-  }
-
-  private settleSidebarSurface(surface: SidebarSurface): void {
-    if (surface === this.activeSidebarSurface) return;
-    this.selectSidebarSurface(surface);
-    if (this.activeSidebarSurface !== surface) this.refreshSidebarSurfacePager();
-  }
-
-  private preloadSidebarSurface(surface: SidebarSurface): void {
-    if (surface === 'collab' && this.ensureCollabSurfaceController()) {
-      this.collabSurfaceController?.preload?.();
-    }
-  }
-
-  private ensureCollabSurfaceController(): boolean {
-    if (this.collabSurfaceController) return true;
-    if (!this.collabSurfaceEl || !this.plugin?.collabSurfaceFactory) return false;
-    try {
-      this.collabSurfaceController = this.plugin.collabSurfaceFactory.create(
-        this.collabSurfaceEl,
-        this.leaf,
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private setSidebarSurfaceIndicatorVisual(surface: SidebarSurface): void {
-    for (const candidate of ['sessions', 'collab'] as const) {
-      this.getSidebarSurfaceButton(candidate)?.toggleClass(
-        'is-active',
-        candidate === surface,
-      );
-    }
-  }
-
-  private getSidebarPagerPanels(): readonly HorizontalPanelPagerPanel<SidebarSurface>[] {
-    const panels: HorizontalPanelPagerPanel<SidebarSurface>[] = [];
-    for (const surface of this.getEnabledSidebarSurfaces()) {
-      const element = surface === 'sessions'
-        ? this.sessionSurfaceEl
-        : this.collabSurfaceEl;
-      if (element) panels.push({ element, id: surface });
-    }
-    return panels;
-  }
-
-  private refreshSidebarSurfacePager(): void {
-    const pagingEnabled = this.isWideSessionLayout && this.requestedWideSessionLayout;
-    const compactCollabVisible = Boolean(this.compactCollabMenuEl?.hasClass('visible'));
-    const panels = pagingEnabled || !compactCollabVisible
-      ? this.getSidebarPagerPanels()
-      : this.sessionSurfaceEl
-        ? [{ element: this.sessionSurfaceEl, id: 'sessions' as const }]
-        : [];
-    this.sidebarSurfacePager?.update({
-      activePanel: this.activeSidebarSurface,
-      enabled: pagingEnabled && panels.length > 1,
-      panels,
-      viewportWidth: this.sessionSidebarWidth ?? 240,
-    });
-  }
-
-  private handleSidebarSurfaceKeydown(event: KeyboardEvent): void {
-    if (!this.isWideSessionLayout || !this.requestedWideSessionLayout) return;
-    const surfaces = this.getEnabledSidebarSurfaces();
-    const current = surfaces.findIndex(surface => (
-      this.getSidebarSurfaceButton(surface) === event.target
-    ));
-    if (current < 0) return;
-    let next: number;
-    switch (event.key) {
-      case 'ArrowRight':
-      case 'ArrowDown':
-        next = (current + 1) % surfaces.length;
-        break;
-      case 'ArrowLeft':
-      case 'ArrowUp':
-        next = (current - 1 + surfaces.length) % surfaces.length;
-        break;
-      case 'Home':
-        next = 0;
-        break;
-      case 'End':
-        next = surfaces.length - 1;
-        break;
-      default:
-        return;
-    }
-    event.preventDefault();
-    const surface = surfaces[next];
-    this.selectSidebarSurfaceFromControl(surface);
-    if (this.activeSidebarSurface === surface) {
-      this.getSidebarSurfaceButton(surface)?.focus();
-    }
-  }
-
-  private selectSidebarSurface(surface: SidebarSurface): void {
-    if (surface === 'collab') {
-      this.selectCollabSurface();
-    } else {
-      this.showSessions();
-    }
-  }
-
-  private selectSidebarSurfaceFromControl(surface: SidebarSurface): void {
-    this.selectSidebarSurface(surface);
-  }
-
-  private getSidebarSurfaceButton(surface: SidebarSurface): HTMLButtonElement | null {
-    switch (surface) {
-      case 'sessions':
-        return this.sessionsSurfaceButtonEl;
-      case 'collab':
-        return this.collabSurfaceButtonEl;
-    }
-  }
-
-  private getEnabledSidebarSurfaces(): readonly SidebarSurface[] {
-    const surfaces: SidebarSurface[] = ['sessions'];
-    if (this.plugin?.collabSurfaceFactory && this.isCollabAvailable()) {
-      surfaces.push('collab');
-    }
-    return surfaces;
   }
 
   private updateSideChatChipLocation(): void {
@@ -1558,79 +1251,6 @@ export class ClaudianView extends ItemView {
     if (this.sideChatChipController !== controller) this.sideChatChipController?.setCollapsedHost(null);
     this.sideChatChipController = controller;
     controller?.setCollapsedHost(this.isWideSessionLayout ? null : this.sideChatChipHostEl);
-  }
-
-  private updateSidebarSurfaceVisibility(): void {
-    this.updateSideChatChipLocation();
-    const collabEnabled = Boolean(
-      this.plugin?.collabSurfaceFactory
-      && this.isCollabAvailable()
-      && this.collabSurfaceEl,
-    );
-    if (!collabEnabled) {
-      this.compactCollabMenuEl?.removeClass('visible');
-      this.compactCollabButtonEl?.removeClass('is-active');
-      this.compactCollabButtonEl?.setAttribute('aria-expanded', 'false');
-    }
-    if (!collabEnabled && this.activeSidebarSurface === 'collab') {
-      this.activeSidebarSurface = 'sessions';
-      this.setCollabSurfaceActive(false);
-    }
-
-    this.sidebarSurfaceSwitcherEl?.toggleClass(
-      'claudian-hidden',
-      !collabEnabled,
-    );
-    this.collabSurfaceButtonEl?.toggleClass('claudian-hidden', !collabEnabled);
-    this.collabSurfaceButtonEl?.setAttribute('aria-hidden', String(!collabEnabled));
-    this.compactCollabButtonEl?.toggleClass('claudian-hidden', !collabEnabled);
-    this.compactCollabButtonEl?.setAttribute('aria-hidden', String(!collabEnabled));
-    this.compactCollabButtonEl?.setAttribute('tabindex', collabEnabled ? '0' : '-1');
-    const showWideCollab = Boolean(collabEnabled
-      && this.isWideSessionLayout
-      && this.requestedWideSessionLayout
-      && this.activeSidebarSurface === 'collab');
-    const showCompactCollab = Boolean(collabEnabled
-      && !this.isWideSessionLayout
-      && !this.requestedWideSessionLayout
-      && this.compactCollabMenuEl?.hasClass('visible'));
-    const showCollab = showWideCollab || showCompactCollab;
-    const showSessions = !showWideCollab;
-    this.sessionSurfaceEl?.removeClass('claudian-hidden');
-    this.sessionSurfaceEl?.setAttribute('aria-hidden', String(!showSessions));
-    this.setSidebarSurfaceInert(this.sessionSurfaceEl, !showSessions);
-    this.collabSurfaceEl?.toggleClass('claudian-hidden', !collabEnabled);
-    this.collabSurfaceEl?.setAttribute('aria-hidden', String(!showCollab));
-    this.setSidebarSurfaceInert(this.collabSurfaceEl, !showCollab);
-    this.setSidebarSurfaceIndicatorVisual(this.activeSidebarSurface);
-    this.sessionsSurfaceButtonEl?.setAttribute('aria-pressed', String(showSessions));
-    this.sessionsSurfaceButtonEl?.setAttribute('tabindex', showSessions ? '0' : '-1');
-    this.collabSurfaceButtonEl?.setAttribute('aria-pressed', String(showWideCollab));
-    this.collabSurfaceButtonEl?.setAttribute('tabindex', showWideCollab ? '0' : '-1');
-    this.setCollabSurfaceActive(showCollab);
-    this.refreshSidebarSurfacePager();
-  }
-
-  private setSidebarSurfaceInert(surfaceEl: HTMLElement | null, inert: boolean): void {
-    if (!surfaceEl) return;
-    if (inert) surfaceEl.setAttribute('inert', '');
-    else surfaceEl.removeAttribute('inert');
-  }
-
-  private setCollabSurfaceActive(active: boolean): void {
-    if (
-      !this.collabSurfaceController
-      || this.collabSurfaceActive === active
-    ) return;
-    this.collabSurfaceActive = active;
-    this.collabSurfaceController.setActive(active);
-  }
-
-  private isCollabAvailable(): boolean {
-    if (typeof this.plugin?.isCollabEnabled === 'function') {
-      return this.plugin.isCollabEnabled();
-    }
-    return this.plugin?.settings?.collabEnabled ?? true;
   }
 
   private requestSessionNew(): void {
@@ -2278,7 +1898,6 @@ export class ClaudianView extends ItemView {
     this.sessionSidebarResizerEl?.setAttribute('aria-valuenow', String(width));
     this.sessionSidebarResizerEl?.setAttribute('aria-valuemin', String(MIN_SESSION_SIDEBAR_WIDTH));
     this.sessionSidebarResizerEl?.setAttribute('aria-valuemax', String(Math.round(maxWidth)));
-    this.refreshSidebarSurfacePager();
   }
 
   private updateSessionSidebarLayout(
@@ -2293,11 +1912,7 @@ export class ClaudianView extends ItemView {
 
     const isDualPaneEnabled = this.plugin?.settings?.enableDualPane ?? true;
     const shouldUseWideLayout = isDualPaneEnabled && width >= WIDE_SESSION_LAYOUT_MIN_WIDTH;
-    if (!shouldUseWideLayout) {
-      this.setCollabSurfaceActive(false);
-    }
     if (shouldUseWideLayout === this.requestedWideSessionLayout) {
-      this.refreshSidebarSurfacePager();
       if (shouldUseWideLayout && this.isWideSessionLayout) {
         if (this.sessionSidebarWidth !== null) {
           this.setSessionSidebarWidth(this.sessionSidebarWidth);
@@ -2307,12 +1922,7 @@ export class ClaudianView extends ItemView {
       return;
     }
 
-    if (shouldUseWideLayout) {
-      this.closeCompactCollabMenu();
-      this.attachCollabSurfaceToSidebar();
-    }
     this.requestedWideSessionLayout = shouldUseWideLayout;
-    this.refreshSidebarSurfacePager();
     const requestRevision = ++this.sessionLayoutRequestRevision;
 
     if (shouldUseWideLayout) {
@@ -2321,12 +1931,8 @@ export class ClaudianView extends ItemView {
         this.viewContainerEl.addClass('claudian-wide-session-layout');
         this.updateSideChatChipLocation();
       }
-      this.refreshSidebarSurfacePager();
       this.historyDropdown?.removeClass('visible');
       this.cancelHistoryRendering();
-      if (this.activeSidebarSurface === 'collab') {
-        this.setCollabSurfaceActive(true);
-      }
       if (renderSidebar) this.renderSessionSidebar();
       return;
     }
@@ -2378,7 +1984,7 @@ export class ClaudianView extends ItemView {
 
     this.isWideSessionLayout = false;
     this.viewContainerEl.removeClass('claudian-wide-session-layout');
-    this.updateSidebarSurfaceVisibility();
+    this.updateSideChatChipLocation();
   }
 
   private async openHistoryConversation(conversationId: string): Promise<void> {
@@ -2506,7 +2112,6 @@ export class ClaudianView extends ItemView {
     // Document-level click to close dropdowns
     this.registerDomEvent(activeDocument, 'click', () => {
       this.historyDropdown?.removeClass('visible');
-      this.closeCompactCollabMenu();
     });
 
     // View scopes are the Obsidian-owned boundary for main-area tab hotkeys.

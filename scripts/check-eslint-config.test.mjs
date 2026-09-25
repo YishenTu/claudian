@@ -117,9 +117,9 @@ test('file naming matches a leading camelCase acronym to its exported concept', 
   assert.equal(reports[0].data.concept, 'ACPConnection');
 });
 
-test('Collab fixtures and the shared clock reject fixed calendar anchors', async () => {
+test('the shared clock rejects fixed calendar anchors', async () => {
   const eslint = new ESLint();
-  for (const filePath of ['tests/helpers/testClock.ts', 'tests/unit/app/collab/Example.test.ts']) {
+  for (const filePath of ['tests/helpers/testClock.ts']) {
     for (const code of [
       "const anchor = '2026-08-27T00:00:00.000Z'; void anchor;",
       "const query = `SELECT '2026-08-27T00:00:00.000Z'`; void query;",

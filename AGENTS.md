@@ -7,10 +7,10 @@
 - Use the Node version in `.node-version`. For code changes, the full verification command is:
 
 ```bash
-npm run typecheck && npm run lint && npm run test && npm run test:lan-compatibility && npm run build && npm run check:performance
+npm run typecheck && npm run lint && npm run test && npm run build && npm run check:performance
 ```
 
-- For focused changes, `npm run test:affected -- --base origin/main` selects related tests and applicable LAN compatibility checks; it does not replace typecheck, lint, build, or performance checks. `test:lan-compatibility` needs public registry access; when it cannot run, say so and rely on CI. Documentation-only changes need `git diff --check` (CI enforces it on every pull request) and their affected documentation tests, not a production build.
+- For focused changes, `npm run test:affected -- --base origin/main` selects related tests; it does not replace typecheck, lint, build, or performance checks. Documentation-only changes need `git diff --check` (CI enforces it on every pull request) and their affected documentation tests, not a production build.
 - Dev and production builds load `.env.local` and may copy artifacts into the configured `OBSIDIAN_VAULT`, including removal of its old `.codex-vendor`. Check that destination before building; clearing the shell variable does not prevent reloading it from the file.
 
 ## Architectural constraints
@@ -21,7 +21,6 @@ npm run typecheck && npm run lint && npm run test && npm run test:lan-compatibil
 - Features use `FeatureHost` and core registries, never concrete app/provider implementations. `FeatureHost` stays feature-neutral; chat-only capabilities belong in chat's `ChatFeatureHost` extension. Providers use `ProviderHost`, never feature orchestration. Core imports none of these implementations.
 - `src/providers/claude/storage/ClaudianSettingsStorage.ts`, a Claude-provider re-export of app settings storage, is the only allowed provider-to-app import. It is an exception, not precedent. Do not extend it; move shared contracts to core when materially changing that seam.
 - Shared ACP code contains protocol mechanics and protocol-level normalization only; provider launch policy, extensions, provider-specific normalization, and history stay provider-owned.
-- `@claudian-collab/protocol` is an exact registry dependency owned by its standalone repository. Import only its package root; do not vendor its source, add source aliases/core re-exports, or copy package-owned registries or compatibility policy. Claudian's LAN compatibility policy remains local.
 
 ## Local conventions
 

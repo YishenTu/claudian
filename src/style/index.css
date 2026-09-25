@@ -40,19 +40,6 @@
 @import "./features/diff.css";
 @import "./features/resume-session.css";
 @import "./features/ask-user-question.css";
-@import "./features/collab-git.css";
-@import "./features/collab-project.css";
-@import "./features/collab-join.css";
-@import "./features/collab-panel.css";
-@import "./features/collab-publish.css";
-@import "./features/collab-requests.css";
-@import "./features/collab-markdown-editor.css";
-@import "./features/collab-comments.css";
-@import "./features/collab-tickets.css";
-@import "./features/collab-review.css";
-@import "./features/collab-conflicts.css";
-@import "./features/collab-access.css";
-@import "./features/collab-polish.css";
 
 /* Modals */
 @import "./modals/fork-target.css";

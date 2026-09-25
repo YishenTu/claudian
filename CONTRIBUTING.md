@@ -70,24 +70,14 @@ For a bug fix or new behavior, add or update a failing test first, then make the
 npm run typecheck
 npm run lint
 npm run test
-npm run test:lan-compatibility
 npm run build
 npm run check:performance
 ```
 
-### LAN compatibility
-
-LAN's deployed base contract is independent of the plugin version, the shared package version, and Cloud's wire and binding versions. Existing Project and Member identity, roles, Host trust, Git refs, invitations, events, Requests and Tickets remain compatible with 2.2.6. New optional operations require an advertised LAN capability; an absent or unknown capability must not disable existing collaboration. Shared payloads and their codecs remain owned by `@claudian-collab/protocol`, while LAN bindings and capability discovery remain client-owned.
-
-Do not change the base contract version for an additive feature. Keep existing fields and their semantics stable; optional metadata belongs in extensible payloads, not additional fields in the strict base envelope. Changes to authorization or authority-transfer guarantees require explicit compatibility analysis. Cloud and LAN/Cloud authority transfer support only their current contracts.
-
-Physical Host handoff also checks the receiver's authority-data format before the source quiesces. A 2.2.6 Host can hand off to a current receiver; receiving a current Host's authority requires an upgraded receiver. Other Project Members can continue using 2.2.6.
-
 For local iteration, `npm run test:affected -- --base origin/main` selects tests from
 committed, staged, unstaged and untracked changes using the CI dependency graph.
-It prints the selection, runs the selected Jest and script checks, and runs
-published LAN compatibility when affected. Use `--list` to inspect without running,
-`--full` for all tests and LAN compatibility, and `-- --runInBand` to forward Jest
+It prints the selection and runs the selected Jest and script checks.
+Use `--list` to inspect without running, `--full` for all tests, and `-- --runInBand` to forward Jest
 options. Unknown inputs or an unavailable base retain full coverage. This does not
 replace typecheck, lint, build/performance checks or native checks on other platforms.
 
@@ -100,7 +90,7 @@ JSON Jest runs also produce suite timings and execution metadata. CI uploads the
 for Linux, native smoke and scheduled suites. To compare native worker counts locally:
 
 ```bash
-npm run test:cross-platform-collab -- --maxWorkers=2 --json --outputFile=.context/native.json
+npm run test:cross-platform -- --maxWorkers=2 --json --outputFile=.context/native.json
 node scripts/summarize-jest-results.mjs .context/native.json .context/native-timings
 ```
 
@@ -110,8 +100,4 @@ commit, including fixture setup/teardown, and report elapsed time separately fro
 summed suite durations. Recheck timings on the actual CI runners before increasing
 concurrency further.
 
-`npm run test:lan-compatibility` runs real clients from this checkout and pinned 2.2.6 source against real HTTPS, WebSocket, SQL and Git implementations. It downloads the exact baseline protocol tarball and verifies it against the published lockfile's integrity hash. Other runtime dependencies use this checkout's installed versions. The command requires network access to the public registry and, in shallow checkouts, to fetch the baseline Git commit. Temporary source and packages live under `.context/` and are removed when the runner exits. CI and scheduled verification run this gate; do not replace its published side with candidate-generated fixtures or vendored protocol source.
-
 The project architecture and area-specific development rules are documented in `AGENTS.md` and the scoped `AGENTS.md` files under `src/`.
-
-For published LAN-to-Cloud migration, run the server checkout's real-dependency gate: `node --import tsx tests/helpers/AuthorityRoundtripGate.ts /absolute/path/to/claudian --published-lan`. Its PostgreSQL test configuration is described in the server's CONTRIBUTING guide. The gate supplies `CLAUDIAN_AUTHORITY_TRANSFER_SERVER_URL` and runs the complete published LAN suite, including the separate Host/Manager and lost claim response cases. Without that server variable, `test:lan-compatibility` skips the Cloud cases.

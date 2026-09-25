@@ -25,7 +25,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
 
-**`@mention`** — Type `@` to reference vault files, folders, and Collab member changes. Type `#` to reference Collab tickets.
+**`@mention`** — Type `@` to reference vault files and folders.
 
 **Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
 
@@ -33,7 +33,6 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 
 **Tabs & Session Management** — Use multiple tabs in single-panel mode or a persistent session manager beside the chat in dual-pane mode.
 
-**Collab Mode** (Experimental) — Collaborate on shared projects with other Claudian users. [Learn more](https://claudian.md/docs/collab-mode/).
 
 ## Requirements
 
@@ -46,7 +45,6 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 - A compatible subscription or API provider, such as [OpenRouter](https://openrouter.ai/docs/guides/guides/claude-code-integration), [Kimi](https://platform.kimi.ai/docs/guide/claude-code-kimi), [GLM](https://docs.z.ai/devpack/tool/claude), or [DeepSeek](https://api-docs.deepseek.com/quick_start/agent_integrations/claude_code) etc.
 - Obsidian v1.13.0+
 - Desktop only (macOS, Linux, Windows)
-- Collab Mode requires [Git](https://git-scm.com/install/). If you plan to self-host a Cloud server, see the [Claudian Cloud Server repository](https://github.com/YishenTu/claudian-cloud-server) for deployment requirements.
 
 Claudian now supports OpenCode v2, OpenCode v1 support will end on October 30, 2026. See the [OpenCode v2 migration guide](https://opencode.ai/v2/docs/migrate-v1).
 
@@ -97,9 +95,7 @@ npm run build
 ## Privacy & Data Use
 
 - **Sent to API**: Your input, attached files, images, and tool call outputs. Depending on the selected provider, data is sent to Anthropic (Claude), OpenAI (Codex), xAI (Grok), or the providers configured in OpenCode or Pi. The destination can be configured through provider settings and environment variables.
-- **Collab LAN mode**: Project Git data and coordination records are shared within your Project team and stored on your designated Host computer. LAN collaboration traffic stays between your Project team's devices and that Host on the local network.
-- **Collab Cloud mode (self-hosted)**: Project Git data and coordination records are shared within your Project team and stored on your designated [self-hosted Claudian Cloud Server](https://github.com/YishenTu/claudian-cloud-server). Cloud collaboration traffic stays between your Project team's devices and your Cloud server.
-- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, provider SDK/CLI calls needed to answer your requests, and configured Collab LAN or Cloud operations, synchronization, and recovery.
+- **No telemetry or unsolicited background activity**: Claudian does not run telemetry beacons. UI polling timers read local Obsidian/editor selection state only. Network activity is limited to explicit provider runtime work, configured MCP endpoints, provider SDK/CLI calls needed to answer your requests, and their configured services.
 
 ## Troubleshooting
 
@@ -146,7 +142,7 @@ For provider-specific installation and configuration guidance, refer to the prov
 ```
 src/
 ├── main.ts                      # Plugin entry point
-├── app/                         # Application services, storage, and lazy Collab infrastructure
+├── app/                         # Application services, and storage
 ├── core/                        # Provider-neutral execution, registry, and type contracts
 │   ├── execution/               # Provider execution, session lifecycle, and interaction contracts
 │   ├── providers/               # Provider registry and workspace services
@@ -163,7 +159,6 @@ src/
 │   └── acp/                     # Agent Client Protocol shared transport
 ├── features/
 │   ├── chat/                    # Sidebar chat: tabs, controllers, renderers
-│   ├── collab/                  # Collab sidebar, review, conflict, and access UI
 │   ├── inline-edit/             # Inline edit modal and provider-backed edit services
 │   └── settings/                # Settings shell with provider tabs
 ├── shared/                      # Reusable UI components and modals

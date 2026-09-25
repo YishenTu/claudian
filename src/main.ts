@@ -27,7 +27,6 @@ import {
 } from './app/settings/SettingsCoordinator';
 import { SharedStorageService } from './app/storage/SharedStorageService';
 import { TabWorkspaceMigrationCoordinator } from './app/storage/TabWorkspaceMigrationCoordinator';
-import { ClaudianCollabComposition } from './composition/ClaudianCollabComposition';
 import { ClaudianProviderHost } from './composition/ClaudianProviderHost';
 import { isClaudianView } from './composition/claudianViews';
 import type { SharedAppStorage } from './core/bootstrap/storage';
@@ -66,7 +65,6 @@ import {
   WarmExecutionPool,
 } from './features/chat/execution/WarmExecutionPool';
 import { registerFileMenu } from './features/chat/fileMenu';
-import type { CollabSidebarSurfaceFactory } from './features/FeatureHost';
 import { InlineEditSessionOwner } from './features/inline-edit/InlineEditSessionOwner';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
@@ -86,15 +84,6 @@ export default class ClaudianPlugin extends Plugin {
   readonly warmExecutionPool = new WarmExecutionPool(
     () => this.settings?.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES,
   );
-  private readonly collab = new ClaudianCollabComposition({
-    app: this.app,
-    getSettings: () => this.settings,
-    isUnloading: () => this.isUnloading,
-    mutateSettings: mutation => this.mutateSettings(mutation),
-    getAllViews: () => this.getAllViews(),
-  });
-  readonly collabSurfaceFactory: CollabSidebarSurfaceFactory = this.collab.surfaceFactory;
-  readonly collabComposerReferences = this.collab.composerReferences;
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private chatModelSelectionCoordinator!: ChatModelSelectionCoordinator;
   private pinnedLinkedContentPaths!: PinnedLinkedContentPathCoordinator;
@@ -133,10 +122,8 @@ export default class ClaudianPlugin extends Plugin {
         VIEW_TYPE_CLAUDIAN,
         (leaf) => new ClaudianView(leaf, this)
       );
-      this.collab.registerDetailView(this);
       registerFileMenu(this);
       this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
-        if (file instanceof TFolder) void this.collab.handleCollabFolderRename(oldPath, file.path);
         void this.handleLinkedContentRename(file, oldPath).catch(() => {
           new Notice('Failed to update linked content paths');
         });
@@ -165,7 +152,6 @@ export default class ClaudianPlugin extends Plugin {
         },
       });
 
-      this.collab.registerCommands(this);
 
       this.addCommand({
         id: 'inline-edit',
@@ -281,7 +267,6 @@ export default class ClaudianPlugin extends Plugin {
 
       this.settingsTab = new ClaudianSettingTab(this.app, this);
       this.addSettingTab(this.settingsTab);
-      this.collab.start();
       this.sessionMetadata.scheduleRemainingLoad();
       this.app.workspace.onLayoutReady(() => {
         if (this.isUnloading || this.modelMetadataMigration) return;
@@ -298,7 +283,6 @@ export default class ClaudianPlugin extends Plugin {
     this.isUnloading = true;
     this.modelMetadataMigrationAbort.abort();
     this.inlineEditSessions.dispose();
-    this.collab.beginUnload();
     this.sessionMetadata?.cancelScheduledLoad();
     StartupProfiler.freeze();
     this.applicationShutdownPromise ??= this.shutdownApplication();
@@ -306,7 +290,6 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private async shutdownApplication(): Promise<void> {
-    const finishCollabShutdown = this.collab.beginShutdown();
     await Promise.allSettled(
       this.getAllViews().map(view => view.prepareForPluginUnload()),
     );
@@ -321,7 +304,6 @@ export default class ClaudianPlugin extends Plugin {
       // Obsidian teardown has no error channel; workspace cleanup is best effort.
     }
     await this.modelMetadataMigration;
-    await finishCollabShutdown();
   }
 
   async activateView() {
@@ -353,10 +335,6 @@ export default class ClaudianPlugin extends Plugin {
     } finally {
       workspace.offref(focusIntentRef);
     }
-  }
-
-  getMainAgentDynamicSystemPromptSections(): Promise<readonly string[]> {
-    return this.collab.getMainAgentDynamicSystemPromptSections();
   }
 
   private getLeafForPlacement(placement: ChatViewPlacement): WorkspaceLeaf | null {
@@ -577,22 +555,6 @@ export default class ClaudianPlugin extends Plugin {
     onCommitted?: SettingsCommit<ClaudianSettings>,
   ): Promise<void> {
     await this.settingsCoordinator.mutate(mutation, onCommitted);
-  }
-
-  isCollabEnabled(): boolean {
-    return this.collab.isCollabEnabled();
-  }
-
-  checkCollabGitInstallation(rescan = false): Promise<'available' | 'unavailable'> {
-    return this.collab.checkCollabGitInstallation(rescan);
-  }
-
-  setCollabEnabled(enabled: boolean): Promise<void> {
-    return this.collab.setCollabEnabled(enabled);
-  }
-
-  setCollabProjectsFolder(raw: string): ReturnType<ClaudianCollabComposition['setCollabProjectsFolder']> {
-    return this.collab.setCollabProjectsFolder(raw);
   }
 
   getAgentSkillResourceGeneration(): number {

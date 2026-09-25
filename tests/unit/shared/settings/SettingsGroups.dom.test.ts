@@ -25,9 +25,9 @@ describe('settings group presentation', () => {
 
   it('leaves an unheaded page in its existing layout', () => {
     const page = document.createElement('div');
-    page.innerHTML = '<div>Enable collaboration</div><div>Projects folder</div>';
+    page.innerHTML = '<div>Enable feature</div><div>Output folder</div>';
     frameSettingsGroups(page);
-    expect(page.textContent).toBe('Enable collaborationProjects folder');
+    expect(page.textContent).toBe('Enable featureOutput folder');
     expect(within(page).queryByRole('group')).toBeNull();
   });
 });

@@ -637,7 +637,7 @@ describe('CodexExecutionBackend', () => {
     await collectEvents(session.execute(createRequest(undefined, {
       configuration: {
         systemInstructions: {
-          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          dynamicSections: ['## Additional context\nRuntime guidance.'],
           kind: 'provider-default',
         },
         model: TEST_CODEX_MODEL,
@@ -651,8 +651,8 @@ describe('CodexExecutionBackend', () => {
       ([method]) => method === 'thread/start',
     )?.[1] as { baseInstructions?: string } | undefined;
     expect(threadStart?.baseInstructions).toContain('## Runtime Context');
-    expect(threadStart?.baseInstructions).toContain('## Collab Mode\nRuntime guidance.');
-    expect(threadStart?.baseInstructions?.match(/## Collab Mode/g)).toHaveLength(1);
+    expect(threadStart?.baseInstructions).toContain('## Additional context\nRuntime guidance.');
+    expect(threadStart?.baseInstructions?.match(/## Additional context/g)).toHaveLength(1);
     await session.dispose();
   });
 

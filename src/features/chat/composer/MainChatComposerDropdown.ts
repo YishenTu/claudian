@@ -1,7 +1,3 @@
-import type {
-  CollabComposerReferencePort,
-  CollabComposerReferenceSubscription,
-} from '@/core/collab';
 import type { ProviderCommandDropdownConfig } from '@/core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
@@ -13,12 +9,9 @@ import {
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 import type { FileContextManager } from '../ui/FileContext';
-import { CollabMemberChangesFolder } from './CollabMemberChangesFolder';
-import { CollabTicketReferenceSource } from './CollabTicketReferenceSource';
 
 export interface MainChatComposerDropdownOptions {
   readonly hiddenCommands?: ReadonlySet<string>;
-  readonly collabReferences?: CollabComposerReferencePort;
   readonly providerConfig?: ProviderCommandDropdownConfig;
   readonly providerDiscovery?: ProviderCommandDiscoverySource<ProviderCommandEntry>;
   readonly providerId: ProviderId | null;
@@ -28,8 +21,6 @@ export class MainChatComposerDropdown {
   private readonly controller: ComposerDropdownController;
   private readonly slashSource: SlashCommandSource;
   private readonly mentionSource: ReturnType<FileContextManager['getMentionSource']>;
-  private readonly selectionSubscription: CollabComposerReferenceSubscription | null;
-  private readonly ticketSource: CollabTicketReferenceSource | null;
 
   constructor(
     containerEl: HTMLElement,
@@ -44,22 +35,10 @@ export class MainChatComposerDropdown {
       providerId: options.providerId,
     });
     this.mentionSource = fileContextManager.getMentionSource();
-    const memberChanges = options.collabReferences
-      ? new CollabMemberChangesFolder(options.collabReferences)
-      : null;
-    if (memberChanges) {
-      this.mentionSource.setExtensionFoldersLoader(signal => memberChanges.getRootItems(signal));
-    }
-    this.selectionSubscription = options.collabReferences?.subscribeSelection(
-      () => this.mentionSource.invalidate(),
-    ) ?? null;
-    this.ticketSource = options.collabReferences
-      ? new CollabTicketReferenceSource(options.collabReferences)
-      : null;
     this.controller = new ComposerDropdownController(
       containerEl,
       inputEl,
-      [this.slashSource, this.mentionSource, ...(this.ticketSource ? [this.ticketSource] : [])],
+      [this.slashSource, this.mentionSource],
     );
   }
 
@@ -73,9 +52,6 @@ export class MainChatComposerDropdown {
 
   destroy(): void {
     this.controller.destroy();
-    this.selectionSubscription?.dispose();
-    this.mentionSource.setExtensionFoldersLoader(undefined);
-    this.ticketSource?.destroy();
     this.slashSource.destroy();
   }
 

@@ -67,10 +67,6 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Verify published LAN compatibility
-        if: startsWith(matrix.shard, '1/')
-        run: npm run test:lan-compatibility
-
       - name: Build production plugin
         if: startsWith(matrix.shard, '1/')
         run: npm run build

@@ -49,5 +49,4 @@ if (!list) {
     '--selection', JSON.stringify(selection.testFiles),
     '--script-selection', JSON.stringify(selection.scriptTests), ...args,
   ]);
-  if (selection.lanCompatibility) run('scripts/run-lan-compatibility.mjs');
 }

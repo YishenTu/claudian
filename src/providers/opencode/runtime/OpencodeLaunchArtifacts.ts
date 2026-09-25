@@ -135,7 +135,7 @@ export async function prepareOpencodeLaunchArtifacts(
   await fs.mkdir(promptsDir, { recursive: true });
   await ensureOpencodeDatabaseDirectory(databasePath);
   // Every referenced file must exist before native config parsing, but auxiliary
-  // launches must not overwrite an existing main prompt (including Collab context).
+  // launches must not overwrite an existing main prompt (including dynamic context).
   for (const key of Object.keys(promptPaths) as OpencodeExecutionProfile[]) {
     await writeIfChanged(promptPaths[key], normalizeSystemPrompt(promptTexts[key]), params.preserveExistingPrompts || key !== profile);
   }

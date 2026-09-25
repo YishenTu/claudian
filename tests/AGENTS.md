@@ -1,6 +1,6 @@
 # Test constraints
 
-- Use package test commands: `npm run test:unit -- --runTestsByPath <path>` runs either a unit or integration Jest file with the required Node local-storage option. `npm run test` also runs script/architecture/config checks; targeted Jest does not. `tests/compatibility/` runs only through `npm run test:lan-compatibility`, which needs public registry access.
+- Use package test commands: `npm run test:unit -- --runTestsByPath <path>` runs either a unit or integration Jest file with the required Node local-storage option. `npm run test` also runs script/architecture/config checks; targeted Jest does not.
 - Integration tests keep interacting owned modules real; use narrow public ports only for environment, Obsidian, provider, or other dependencies outside the behavior under test. Do not add production facades solely for testing.
 - Express fixture timestamps with `@test/helpers/testClock`, which captures a current-time baseline for each test module environment. Derive related creation, expiry, and assertion dates from that timeline; share one injected clock across interacting services and advance it explicitly for expiry tests. Do not add fixed calendar anchors. CI also runs selected Jest tests about three years ahead under libfaketime.
 - Shared provider changes need neutral-contract coverage and distinct native adapter cases.

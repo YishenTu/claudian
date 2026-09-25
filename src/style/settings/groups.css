@@ -247,18 +247,11 @@
 }
 
 /* Pages without a heading still retain their existing visual boundaries. */
-.claudian-settings .claudian-settings-collab,
 .claudian-settings .claudian-settings-general > .setting-item {
   padding: var(--size-4-4);
   margin-bottom: var(--size-4-5);
   border: 1px solid var(--background-modifier-border);
   border-radius: var(--radius-l);
-  background: transparent;
-}
-
-.claudian-settings .claudian-settings-collab .setting-item {
-  padding: var(--size-4-3) 0;
-  border: 0;
   background: transparent;
 }
 

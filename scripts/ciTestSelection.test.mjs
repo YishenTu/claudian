@@ -6,9 +6,9 @@ import test from 'node:test';
 import { selectCiTests } from './ciTestSelection.mjs';
 
 const prompt = 'tests/unit/core/prompt/mainAgent.systemPrompt.test.ts';
-const panel = 'tests/unit/features/collab/sidebar/CollabPanel.test.ts';
-const native = 'tests/integration/app/collab/git/GitRepositoryService.test.ts';
-const docs = 'tests/unit/docs/CollabDocumentation.test.ts';
+const panel = 'tests/unit/features/chat/ClaudianView.test.ts';
+const native = 'tests/unit/core/process/ManagedStdioProcess.test.ts';
+const docs = 'tests/unit/docs/Documentation.test.ts';
 const select = (paths, relatedTests = [], eventName = 'pull_request') => selectCiTests({
   changes: paths.map(path => typeof path === 'string' ? { status: 'M', path } : path),
   relatedTests, eventName,
@@ -19,29 +19,26 @@ test('ordinary PRs and pushes select affected consumers', () => {
     const result = select(['src/core/prompt/mainAgent.ts'], [prompt], event);
     assert.deepEqual(result.testFiles, [prompt]);
     assert.deepEqual(result.crossPlatformTests, []);
-    assert.equal(result.lanCompatibility, false);
   }
 });
 
-test('presentation changes do not trigger native or published LAN checks through main composition', () => {
-  const result = select(['src/features/collab/sidebar/CollabPanel.ts'], [panel, 'tests/integration/main.test.ts']);
+test('presentation changes do not trigger native checks through main composition', () => {
+  const result = select(['src/features/chat/ClaudianView.ts'], [panel, 'tests/integration/main.test.ts']);
   assert.deepEqual(result.testFiles, [panel, 'tests/integration/main.test.ts']);
   assert.deepEqual(result.crossPlatformTests, []);
-  assert.equal(result.lanCompatibility, false);
 });
 
-test('shared dependencies retain affected native consumers and LAN checks', () => {
+test('shared dependencies retain affected native consumers', () => {
   const result = select(['src/utils/env.ts'], [prompt, native]);
   assert.deepEqual(result.testFiles, [prompt, native]);
   assert.deepEqual(result.crossPlatformTests, [native]);
-  assert.equal(result.lanCompatibility, true);
 });
 
 test('native smoke consumers run on native platforms when affected', () => {
   for (const consumer of [
     'tests/unit/utils/windowsCmdShim.test.ts',
     'tests/unit/core/process/ManagedStdioProcess.test.ts',
-    'tests/integration/app/collab/git/GitRepositoryService.test.ts',
+    'tests/unit/core/process/ManagedStdioProcess.test.ts',
   ]) {
     const result = select(['src/utils/path.ts'], [consumer]);
     assert.deepEqual(result.crossPlatformTests, [consumer]);
@@ -51,7 +48,7 @@ test('native smoke consumers run on native platforms when affected', () => {
 });
 
 test('native selection uses only nonempty shards and retains a Pi-only job', () => {
-  const paths = 'tests/unit/app/collab/local/CollabPathPolicy.test.ts';
+  const paths = 'tests/unit/utils/windowsCmdShim.test.ts';
   const sdk = 'tests/unit/core/process/ManagedStdioProcess.test.ts';
   assert.deepEqual(select([paths]).crossPlatformShards, ['1/1']);
   assert.deepEqual(select([paths, sdk]).crossPlatformShards, ['1/2', '2/2']);
@@ -66,23 +63,21 @@ test('changed tests run directly, while removed tests are omitted', () => {
 });
 
 test('shared test helpers use their graph consumers', () => {
-  assert.deepEqual(select(['tests/helpers/collab/ProjectUpdateMilestoneFixture.ts'], [native]).testFiles, [native]);
+  assert.deepEqual(select(['tests/helpers/installations.ts'], [native]).testFiles, [native]);
 });
 
 test('filesystem-read documentation, styles, and captured fixtures retain their consumers', () => {
   assert.deepEqual(select(['README.md']).testFiles, [docs]);
-  assert.deepEqual(select(['src/features/collab/AGENTS.md']).testFiles, [docs]);
+  assert.deepEqual(select(['src/features/chat/AGENTS.md']).testFiles, [docs]);
   assert.ok(select(['src/style/components/code.css']).testFiles.includes('tests/unit/style/components/code.test.ts'));
-  const fixture = select(['tests/fixtures/collab/authority-v12-inert.sqlite.gz']);
-  assert.ok(fixture.testFiles.includes('tests/unit/app/collab/authority/AuthorityEventRetention.test.ts'));
-  assert.ok(fixture.testFiles.includes('tests/unit/app/collab/host-transfer/HostTransferAuthoritySnapshot.test.ts'));
-  assert.equal(fixture.lanCompatibility, true);
+  const fixture = select(['tests/fixtures/providers/grok/history/example.json']);
+  assert.ok(fixture.testFiles.includes('tests/unit/providers/grok/history/GrokHistoryStore.test.ts'));
 });
 
 test('native Pi launch runs only when affected', () => {
   const pi = 'tests/integration/providers/pi/PiSubprocess.windows.test.ts';
   assert.equal(select(['src/providers/pi/runtime/PiSubprocess.ts'], [pi]).piWindows, true);
-  assert.equal(select(['src/features/collab/sidebar/CollabPanel.ts'], [panel]).piWindows, false);
+  assert.equal(select(['src/features/chat/ClaudianView.ts'], [panel]).piWindows, false);
 });
 
 test('script edits select their script tests without unrelated Jest work', () => {
@@ -114,7 +109,6 @@ test('unsafe deletions and global or unknown changes retain full verification', 
     assert.equal(result.testFiles, null);
     assert.equal(result.crossPlatformTests, null);
     assert.equal(result.scriptTests, null);
-    assert.equal(result.lanCompatibility, true);
     assert.equal(result.piWindows, true);
   }
 });
@@ -193,16 +187,8 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
   }
 });
 
-test('esbuild entry points and their transitive consumers retain the dependency envelope', () => {
-  const envelope = 'tests/integration/build/collab-dependency-envelope.test.ts';
-  for (const owner of [
-    'app/collab/lan/LANTLSIdentity',
-    'features/collab/detail/review/CollabDiffRenderer',
-    'features/collab/shared/markdown/MarkdownDraftEditor',
-  ]) {
-    assert.ok(select([`src/${owner}.ts`]).testFiles.includes(envelope));
-    assert.ok(select(['src/utils/path.ts'], [`tests/unit/${owner}.test.ts`]).testFiles.includes(envelope));
-  }
+test('locale changes retain the dependency envelope', () => {
+  assert.ok(select(['src/i18n/locales/en.json']).testFiles.includes('tests/integration/build/dependency-envelope.test.ts'));
 });
 
 test('local selection includes committed, staged, unstaged and untracked edits with safe fallbacks', async () => {
@@ -245,13 +231,4 @@ test('local selection includes committed, staged, unstaged and untracked edits w
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-});
-
-
-test('the dynamically bundled Cloud crash fixture selects its recovery and native checks', () => {
-  const recovery = 'tests/integration/app/collab/project/CloudProjectEntryCoordinator.recovery.test.ts';
-  const selection = select(['tests/helpers/collab/CloudEntryCrashFixture.ts']);
-  assert.ok(selection.testFiles.includes(recovery));
-  assert.ok(selection.crossPlatformTests.includes(recovery));
-  assert.equal(selection.lanCompatibility, true);
 });

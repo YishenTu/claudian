@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mainPath = path.join(root, 'main.js');
 const requiredArtifacts = ['main.js', 'manifest.json', 'styles.css'];
-export const preCollabReferenceMainBytes = 3_739_584;
+export const referenceMainBytes = 3_739_584;
 export const preStep11BundleHealthBaselineBytes = 4_896_000;
 export const mainBudgetBytes = 6_000_000;
 export const evaluationIndicatorMs = 50;
@@ -20,7 +20,7 @@ export function inspectArtifactSize(mainBytes) {
   return {
     budgetExceeded: mainBytes > mainBudgetBytes,
     healthBaselineDeltaBytes: mainBytes - preStep11BundleHealthBaselineBytes,
-    referenceDeltaBytes: mainBytes - preCollabReferenceMainBytes,
+    referenceDeltaBytes: mainBytes - referenceMainBytes,
   };
 }
 
@@ -194,7 +194,7 @@ process.stdout.write(JSON.stringify({
 
   console.log(
     `main.js ${(mainBytes / 1024 / 1024).toFixed(2)} MiB (${mainBytes} bytes); `
-    + `pre-Collab reference delta ${signed(artifact.referenceDeltaBytes)} bytes `
+    + `reference delta ${signed(artifact.referenceDeltaBytes)} bytes `
     + `(${signed(deltaMiB.toFixed(2))} MiB); `
     + `pre-Step-11 health baseline delta ${signed(artifact.healthBaselineDeltaBytes)} bytes; `
     + `median cold evaluation ${medianMs.toFixed(1)} ms`,

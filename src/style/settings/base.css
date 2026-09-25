@@ -112,52 +112,6 @@
   color: var(--text-normal);
 }
 
-.claudian-collab-git-installation-help {
-  margin: var(--size-4-1) var(--size-4-3) var(--size-4-4);
-  color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-}
-
-.claudian-collab-git-installation-help > summary {
-  cursor: pointer;
-  color: var(--text-muted);
-}
-
-.claudian-collab-git-installation-help > summary:hover {
-  color: var(--text-normal);
-}
-
-.claudian-collab-git-installation-help > p {
-  margin: var(--size-4-2) 0;
-}
-
-.claudian-collab-git-path-status {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  margin-inline-start: var(--size-4-1);
-  border-radius: 50%;
-  background: var(--text-faint);
-  vertical-align: middle;
-}
-
-.claudian-collab-git-path-status--available {
-  background: var(--color-green);
-}
-
-.claudian-collab-git-path-status--unavailable {
-  background: var(--color-red);
-}
-
-.claudian-collab-read-more-link {
-  color: var(--text-accent);
-}
-
-.claudian-collab-read-more-link:hover,
-.claudian-collab-read-more-link:focus-visible {
-  color: var(--text-accent-hover);
-}
-
 /* Custom section descriptions - align with items */
 .claudian-opencode-migration-notice {
   margin-bottom: var(--size-4-5);

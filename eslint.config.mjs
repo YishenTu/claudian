@@ -248,7 +248,7 @@ export default defineConfig([
     },
   },
   {
-    files: ['tests/**/collab/**/*.ts', 'tests/helpers/testClock.ts'],
+    files: ['tests/helpers/testClock.ts'],
     rules: {
       'no-restricted-syntax': [
         'error',

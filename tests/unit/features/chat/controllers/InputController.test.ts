@@ -433,7 +433,7 @@ describe('InputController coordinator execution', () => {
 
   it('adds app guidance to provider-default system instructions without changing input', async () => {
     const fixture = createFixture();
-    const getDynamicSections = jest.fn().mockResolvedValue(['## Collab Mode\nRuntime guidance.']);
+    const getDynamicSections = jest.fn().mockResolvedValue(['## Additional context\nRuntime guidance.']);
     Object.assign(fixture.plugin, {
       getMainAgentDynamicSystemPromptSections: getDynamicSections,
     });
@@ -446,7 +446,7 @@ describe('InputController coordinator execution', () => {
       canonicalText: 'list my projects',
       configuration: {
         systemInstructions: {
-          dynamicSections: ['## Collab Mode\nRuntime guidance.'],
+          dynamicSections: ['## Additional context\nRuntime guidance.'],
           kind: 'provider-default',
         },
       },

@@ -1,9 +1,0 @@
-# LAN transfer-binding constraints
-
-- Source routes accept Member proposals/status, never local Host acceptance/cancellation merely because a caller presents Host Member credentials.
-- Staged targets deny ordinary control, Git, Host start, and claim redemption until exact source relinquishment permits promotion. Transfer discovery and credential-free route verification grant no ordinary authority; target claims bind imported identities, never Join or membership creation.
-- Terminal sources serve only the authenticated former Member's claim/status/receipt work. They cannot reopen Host service or mint replacement claims.
-- Reuse the Host listener's registration lifecycle; no hidden listener or parallel provisional router.
-- Staged targets and retained responders may advertise the current listener location. A discovered candidate must prove the accepted CA and exact Project/generation or transfer route before receiving credentials; ambiguity fails closed. Signed historical URLs remain unchanged across listener replacement.
-- Reinstallation of the same transfer/state is idempotent; a different operation or state is not replacement permission. Preserve staging/terminal identity across shutdown and restart.
-- Bounded expiry scrubs only exact transfer-owned claims and state; it cannot delete another Member's data or infer that ordinary authority may restart.

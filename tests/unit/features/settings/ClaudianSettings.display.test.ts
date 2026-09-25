@@ -176,18 +176,6 @@ function createTab(enableDualPane: boolean): {
     }),
     getAllViews: jest.fn(() => [{ refreshDualPaneLayout: jest.fn() }]),
     notifyAgentSkillsChanged: jest.fn(),
-    checkCollabGitInstallation: jest.fn().mockResolvedValue('available'),
-    setCollabEnabled: jest.fn(async (enabled: boolean) => {
-      settings.collabEnabled = enabled;
-    }),
-    setCollabProjectsFolder: jest.fn(async (raw: string) => {
-      if (raw === '../outside') {
-        return { message: 'Projects folder must stay inside the Vault.', ok: false as const };
-      }
-      const value = raw.trim();
-      settings.collabProjectsFolder = value;
-      return { ok: true as const, value };
-    }),
     storage: {
       getAdapter: jest.fn(() => ({})),
     },
@@ -267,14 +255,6 @@ function findContainer(root: MockContainer, text: string): MockContainer | null 
   return null;
 }
 
-function findContainerByClass(root: MockContainer, className: string): MockContainer | null {
-  if (root.cls === className) return root;
-  for (const child of root.children) {
-    const match = findContainerByClass(child, className);
-    if (match) return match;
-  }
-  return null;
-}
 
 function renderSettingsTab(
   tab: ClaudianSettingTab,
@@ -431,149 +411,6 @@ describe('ClaudianSettingTab display settings', () => {
     await mockToggleChanges.get(t('settings.restoreTabsOnStartup.name'))?.(false);
 
     expect(plugin.settings.restoreTabsOnStartup).toBe(false);
-  });
-
-  it('keeps Collab controls out of General settings', () => {
-    const { tab, plugin } = createTab(true);
-    (tab as any).renderGeneralTab(createContainer());
-
-    expect(mockRenderedSettingNames).not.toContain(t('settings.collabEnabled.name'));
-    expect(mockRenderedSettingNames).not.toContain(t('settings.collabProjectsFolder.name'));
-    expect(mockRenderedSettingNames).not.toContain(t('settings.collabGitPath.name'));
-    expect(plugin.settings.collabEnabled).toBe(false);
-  });
-
-  it('delegates live enablement and Projects-folder validation from Collab settings', async () => {
-    const { tab, plugin } = createTab(true);
-    (tab as any).renderCollabTab(createContainer());
-
-    await mockToggleChanges.get(t('settings.collabEnabled.name'))?.(true);
-    await mockTextChanges.get(t('settings.collabProjectsFolder.name'))?.('  shared/projects  ');
-    await mockTextChanges.get(t('settings.collabProjectsFolder.name'))?.('../outside');
-
-    expect(plugin.setCollabEnabled).toHaveBeenCalledWith(true);
-    expect(plugin.settings.collabEnabled).toBe(true);
-    expect(plugin.setCollabProjectsFolder).toHaveBeenNthCalledWith(1, '  shared/projects  ');
-    expect(plugin.settings.collabProjectsFolder).toBe('shared/projects');
-  });
-
-  it('persists the Vault-scoped Native Git path from Collab settings', async () => {
-    const { tab, plugin } = createTab(true);
-    (tab as any).renderCollabTab(createContainer());
-
-    await mockTextChanges.get(t('settings.collabGitPath.name'))?.('  /usr/local/bin/git  ');
-
-    expect(plugin.settings.collabGitPath).toBe('/usr/local/bin/git');
-  });
-
-  it('shows Git detection status and debounces manual-path checks', async () => {
-    jest.useFakeTimers();
-    try {
-      const { tab, plugin } = createTab(true);
-      const activate = (tab as any).renderCollabTab(createContainer()) as () => void;
-
-      activate();
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(plugin.checkCollabGitInstallation).toHaveBeenCalledWith(false);
-      expect(mockGitStatusElements[0]?.parent).toBe('name');
-      expect(mockGitStatusElements[0]?.className)
-        .toContain('claudian-collab-git-path-status--available');
-
-      plugin.checkCollabGitInstallation.mockResolvedValueOnce('unavailable');
-      await mockTextChanges.get(t('settings.collabGitPath.name'))?.('/missing/git');
-      expect(mockGitStatusElements[0]?.className)
-        .toContain('claudian-collab-git-path-status--checking');
-      expect(plugin.checkCollabGitInstallation).toHaveBeenCalledTimes(1);
-
-      jest.advanceTimersByTime(300);
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(plugin.checkCollabGitInstallation).toHaveBeenLastCalledWith(true);
-      expect(mockGitStatusElements[0]?.className)
-        .toContain('claudian-collab-git-path-status--unavailable');
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it('renders compact Git setup help and copies the prompt', async () => {
-    jest.useFakeTimers();
-    const writeText = jest.fn().mockResolvedValue(undefined);
-    const originalClipboard = navigator.clipboard;
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    });
-    const { tab } = createTab(true);
-    const container = createContainer();
-    try {
-      (tab as any).renderCollabTab(container);
-
-      expect(findContainer(container, t('settings.collabGitInstallation.summary')))
-        .not.toBeNull();
-      expect(findContainer(container, [
-        t('settings.collabGitInstallation.requirement'),
-        t('settings.collabGitInstallation.verify'),
-      ].join(' ')))
-        .not.toBeNull();
-      expect(findContainer(container, t('settings.collabGitInstallation.verify')))
-        .toBeNull();
-      expect(findContainer(container, t('settings.collabGitInstallation.prompt')))
-        .not.toBeNull();
-      expect(findContainerByClass(container, 'claudian-code-wrapper')).not.toBeNull();
-      expect(findContainerByClass(container, 'copy-code-button')).not.toBeNull();
-      expect(findContainerByClass(
-        container,
-        'claudian-collab-git-verification-row',
-      )).toBeNull();
-      expect(t('settings.collabGitInstallation.prompt')).toContain(
-        'Report whether Git is installed',
-      );
-      expect(t('settings.collabGitInstallation.prompt')).toContain(
-        'advise me how to install it on this device',
-      );
-      expect(t('settings.collabGitInstallation.prompt')).toBe([
-        'Check my Git installation on this computer.',
-        '1. Report whether Git is installed, the executable path, and the version.',
-        '2. If Git is not installed, advise me how to install it on this device.',
-        '3. Do not install or change anything.',
-      ].join('\n'));
-      expect(t('settings.collabGitInstallation.prompt')).not.toContain('Collab');
-      const copyButton = findContainerByClass(container, 'copy-code-button');
-      copyButton?.click();
-      await Promise.resolve();
-      expect(writeText).toHaveBeenCalledWith(
-        t('settings.collabGitInstallation.prompt'),
-      );
-      expect(copyButton?.setText).toHaveBeenCalledWith('Copied!');
-
-      const collabEnabledDescription = mockSettingDescriptionEls.get(
-        t('settings.collabEnabled.name'),
-      )!;
-      const readMore = findContainer(
-        collabEnabledDescription,
-        t('settings.collabReadMore'),
-      );
-      expect(readMore).not.toBeNull();
-      expect(findContainer(container, t('settings.collabReadMore'))).toBeNull();
-      expect(t('settings.collabReadMore')).toBe(
-        'Read more about Claudian Collab Mode',
-      );
-      expect(readMore?.attr).toEqual(expect.objectContaining({
-        href: 'https://claudian.md/docs/collab-mode/',
-        rel: 'noopener noreferrer',
-        target: '_blank',
-      }));
-      expect(readMore?.cls).toBe('claudian-collab-read-more-link');
-    } finally {
-      jest.runOnlyPendingTimers();
-      jest.useRealTimers();
-      Object.defineProperty(navigator, 'clipboard', {
-        configurable: true,
-        value: originalClipboard,
-      });
-    }
   });
 
   it('keeps Provider initialization lazy and does not mutate chat selection on navigation', async () => {

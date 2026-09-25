@@ -76,7 +76,7 @@ describe('MentionSource', () => {
   it('keeps base mentions available when an optional extension fails', async () => {
     const { source: value } = source();
     value.setExtensionFoldersLoader(async () => {
-      throw new Error('Collab unavailable');
+      throw new Error('Reference source unavailable');
     });
 
     const items = await value.load(value.match('@alp', 4)!, new AbortController().signal);
