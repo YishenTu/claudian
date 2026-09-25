@@ -1,9 +1,9 @@
-import type { AcpContentBlock, AcpJsonRpcTransport } from '../../acp';
+import type { ACPContentBlock, ACPJSONRPCTransport } from '../../acp';
 
 const GROK_REWIND_TIMEOUT_MS = 120_000;
 
 export interface GrokInterjectRequest {
-  content?: AcpContentBlock[];
+  content?: ACPContentBlock[];
   interjectionId: string;
   sessionId: string;
   text: string;
@@ -45,7 +45,7 @@ export interface GrokRewindResponse {
 }
 
 export async function requestGrokInterjection(
-  transport: AcpJsonRpcTransport,
+  transport: ACPJSONRPCTransport,
   request: GrokInterjectRequest,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -66,7 +66,7 @@ export async function requestGrokInterjection(
 }
 
 export async function requestGrokSessionFork(
-  transport: AcpJsonRpcTransport,
+  transport: ACPJSONRPCTransport,
   request: GrokForkSessionRequest,
 ): Promise<GrokForkSessionResponse> {
   const response = await transport.request<unknown>('_x.ai/session/fork', request);
@@ -89,7 +89,7 @@ export async function requestGrokSessionFork(
 }
 
 export async function requestGrokRewind(
-  transport: AcpJsonRpcTransport,
+  transport: ACPJSONRPCTransport,
   request: GrokRewindRequest,
 ): Promise<GrokRewindResponse> {
   const response = await transport.request<unknown>(

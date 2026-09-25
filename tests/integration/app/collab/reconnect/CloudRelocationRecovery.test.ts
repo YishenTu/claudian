@@ -6,6 +6,7 @@ import {
   COLLAB_CLOUD_BINDING_VERSION,
   COLLAB_PROTOCOL_VERSION,
 } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
@@ -27,7 +28,7 @@ import {
 import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 
 const GIT_EXECUTABLE = 'git';
-const NOW = '2026-09-01T00:00:00.000Z';
+const NOW = testTime({ days: 5 });
 const PROJECT_ID = 'project-cloud-relocate';
 const MEMBER_ID = 'member-alice';
 const PERSONAL_REF = 'refs/heads/members/member-alice';

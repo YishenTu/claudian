@@ -12,11 +12,11 @@ import {
 
 import type { AuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
-  type CloudToLanManagerEntryRecord,
-  type CloudToLanTargetEntryRecord,
-  decodeCloudToLanManagerEntryRecord,
-  decodeCloudToLanTargetEntryRecord,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  type CloudToLANManagerEntryRecord,
+  type CloudToLANTargetEntryRecord,
+  decodeCloudToLANManagerEntryRecord,
+  decodeCloudToLANTargetEntryRecord,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import {
   type InstallationKey,
   parseInstallationKey,
@@ -69,19 +69,19 @@ export interface AuthorityTransferSourceEntryRecord extends AuthorityTransferEnt
 }
 
 export type AuthorityTransferEntryComponent =
-  | CloudToLanManagerEntryRecord
+  | CloudToLANManagerEntryRecord
   | AuthorityTransferRequesterEntryRecord
   | AuthorityTransferSourceEntryRecord
-  | CloudToLanTargetEntryRecord;
+  | CloudToLANTargetEntryRecord;
 
 export interface AuthorityTransferEntryRecord {
   readonly kind: 'authority-transfer-entry';
-  readonly manager: CloudToLanManagerEntryRecord | null;
+  readonly manager: CloudToLANManagerEntryRecord | null;
   readonly projectId: CollabProjectId;
   readonly requesters: Readonly<Record<string, AuthorityTransferRequesterEntryRecord>>;
   readonly schemaVersion: typeof AUTHORITY_TRANSFER_ENTRY_SCHEMA_VERSION;
   readonly source: AuthorityTransferSourceEntryRecord | null;
-  readonly target: CloudToLanTargetEntryRecord | null;
+  readonly target: CloudToLANTargetEntryRecord | null;
 }
 
 const DOCUMENT_KEYS = new Set([
@@ -244,10 +244,10 @@ export function decodeAuthorityTransferEntryComponent(
   value: unknown,
 ): AuthorityTransferEntryComponent {
   if (isRecord(value) && value.entryRole === 'cloud-to-lan-manager') {
-    return decodeCloudToLanManagerEntryRecord(value);
+    return decodeCloudToLANManagerEntryRecord(value);
   }
   if (isRecord(value) && value.entryRole === 'cloud-to-lan-target') {
-    return decodeCloudToLanTargetEntryRecord(value);
+    return decodeCloudToLANTargetEntryRecord(value);
   }
   if (
     !isRecord(value)
@@ -402,11 +402,11 @@ export function decodeAuthorityTransferEntryRecord(
 }
 
 export function createAuthorityTransferEntryDocument(input: Readonly<{
-  readonly manager?: CloudToLanManagerEntryRecord | null;
+  readonly manager?: CloudToLANManagerEntryRecord | null;
   readonly projectId: CollabProjectId;
   readonly requesters?: Readonly<Record<string, AuthorityTransferRequesterEntryRecord>>;
   readonly source?: AuthorityTransferSourceEntryRecord | null;
-  readonly target?: CloudToLanTargetEntryRecord | null;
+  readonly target?: CloudToLANTargetEntryRecord | null;
 }>): AuthorityTransferEntryRecord {
   return decodeAuthorityTransferEntryRecord({
     kind: 'authority-transfer-entry',

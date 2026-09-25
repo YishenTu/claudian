@@ -9,26 +9,27 @@ import type {
   CollabCheckpointObjectFormat,
   CollabProjectCheckpointManifest,
 } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { MemberRecoveryCredentialRepository } from '@/app/collab/authority/MemberRecoveryCredentialRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { AuthorityTransferAdmissionSettlement } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferAdmissionSettlement';
 import { AuthorityTransferCheckpointGit } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointGit';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
 import { AuthorityTransferCheckpointRepository } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointRepository';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 
-const CREATED_AT = '2026-08-26T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -1 });
 const MAIN_OID = 'a'.repeat(40);
 const MEMBER_OID = 'b'.repeat(40);
 
 describe('AuthorityTransferCheckpoint', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let source: SqlJsProjectDatabase;
-  let target: SqlJsProjectDatabase;
+  let source: SQLJSProjectDatabase;
+  let target: SQLJSProjectDatabase;
 
   beforeAll(async () => {
     SQL = await initSqlJs();
@@ -293,7 +294,7 @@ describe('AuthorityTransferCheckpoint', () => {
           invitation_id, token_hash, expires_at, revoked_at,
           created_by_member_id, created_at
         ) VALUES ('invite-one', ?, ?, NULL, 'member-host', ?)
-      `, [new Uint8Array(32).fill(4), '2026-08-27T00:00:00.000Z', CREATED_AT]);
+      `, [new Uint8Array(32).fill(4), testTime(), CREATED_AT]);
     });
 
     await expect(source.read(connection => (
@@ -528,7 +529,7 @@ describe('AuthorityTransferCheckpoint', () => {
         INSERT INTO invitations (
           invitation_id, token_hash, expires_at, revoked_at,
           created_by_member_id, created_at
-        ) VALUES ('invite-settlement', ?, '2026-08-27T00:00:00.000Z', NULL,
+        ) VALUES ('invite-settlement', ?, '${testTime()}', NULL,
           'member-host', ?)
       `, [new Uint8Array(32).fill(4), CREATED_AT]);
       for (const memberId of ['member-pending-safe', 'member-pending-diverged']) {
@@ -580,9 +581,9 @@ describe('AuthorityTransferCheckpoint', () => {
     ])).trim()).toBe('');
   });
 
-  async function createDatabase(directory: string): Promise<SqlJsProjectDatabase> {
+  async function createDatabase(directory: string): Promise<SQLJSProjectDatabase> {
     await mkdir(directory);
-    const database = new SqlJsProjectDatabase(directory, { loadSqlJs: async () => SQL });
+    const database = new SQLJSProjectDatabase(directory, { loadSqlJs: async () => SQL });
     await database.open();
     return database;
   }

@@ -15,7 +15,7 @@ function status(projectId = 'project-runtime'): CollabAuthorityTransferStatus {
     batchRevision: null,
     batchSha256: null,
     checkpointSha256: null,
-    createdAt: '2026-08-27T00:00:00.000Z',
+    createdAt: testTime(),
     direction: 'lan-to-cloud',
     expiresAt: testTime({ days: 30 }),
     phase: 'source-quiesced',
@@ -26,7 +26,7 @@ function status(projectId = 'project-runtime'): CollabAuthorityTransferStatus {
     targetAuthority: { generation: 2, kind: 'cloud' },
     targetUrl: 'https://cloud.example.test/',
     transferId: 'transfer-runtime',
-    updatedAt: '2026-08-27T00:00:01.000Z',
+    updatedAt: testTime({ seconds: 1 }),
   };
 }
 

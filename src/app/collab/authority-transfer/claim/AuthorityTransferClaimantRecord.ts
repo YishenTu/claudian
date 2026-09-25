@@ -23,7 +23,7 @@ import {
   authorityTransferChildIdempotencyKey,
 } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import { decodeProjectRecoveryClaimantRecord, type ProjectRecoveryClaimantRecord } from '@/app/collab/authority-transfer/claim/ProjectRecoveryClaimantRecord';
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import {
   type InstallationKey,
   parseInstallationKey,
@@ -57,13 +57,13 @@ export type AuthorityTransferClaimantPhase =
   | SourceIssuedAuthorityTransferClaimantPhase
   | ManagerReissuedAuthorityTransferClaimantPhase;
 
-export interface AuthorityTransferClaimantLanTarget {
+export interface AuthorityTransferClaimantLANTarget {
   readonly caCertificatePem: string;
   readonly caFingerprint: string;
   readonly endpoint: string;
 }
 
-export interface CloudToLanManagerClaimantPredecessor {
+export interface CloudToLANManagerClaimantPredecessor {
   readonly initiatingPersonalRef: string;
   readonly operationIntentId: string;
   readonly ownerInstallationKey: InstallationKey;
@@ -88,8 +88,8 @@ export interface SourceIssuedAuthorityTransferClaimantRecord
   readonly transferId: string;
   readonly claim: CollabTransferredMembershipClaim | null;
   readonly convergenceProof: 'existing-binding' | null;
-  readonly lanTarget: AuthorityTransferClaimantLanTarget | null;
-  readonly managerPredecessor: CloudToLanManagerClaimantPredecessor | null;
+  readonly lanTarget: AuthorityTransferClaimantLANTarget | null;
+  readonly managerPredecessor: CloudToLANManagerClaimantPredecessor | null;
   readonly phase: SourceIssuedAuthorityTransferClaimantPhase;
   readonly redemptionReceipt: CollabTransferredMembershipRedemptionReceipt | null;
   readonly status: CollabAuthorityTransferStatus;
@@ -103,7 +103,7 @@ export interface ManagerReissuedAuthorityTransferClaimantRecord
   readonly convergenceProof: 'receipt' | 'existing-binding' | null;
   readonly descriptor: ReissueTransferredMembershipClaimResponse;
   readonly retainedAttempts: readonly AuthorityTransferClaimantRecord[];
-  readonly lanTarget: AuthorityTransferClaimantLanTarget | null;
+  readonly lanTarget: AuthorityTransferClaimantLANTarget | null;
   readonly targetCredential: string | null;
   readonly memberPersonalRef: string;
   readonly phase: ManagerReissuedAuthorityTransferClaimantPhase;
@@ -188,10 +188,10 @@ function decodeCloudPrincipal(value: unknown): string | null {
   return value;
 }
 
-function decodeLanTarget(
+function decodeLANTarget(
   value: unknown,
   status: Pick<CollabAuthorityTransferStatus, 'targetUrl'>,
-): AuthorityTransferClaimantLanTarget | null {
+): AuthorityTransferClaimantLANTarget | null {
   if (value === null) return null;
   if (
     !value || typeof value !== 'object' || Array.isArray(value)
@@ -221,7 +221,7 @@ function decodeManagerPredecessor(
   value: unknown,
   source: Readonly<Record<string, unknown>>,
   status: CollabAuthorityTransferStatus,
-): CloudToLanManagerClaimantPredecessor | null {
+): CloudToLANManagerClaimantPredecessor | null {
   if (value === null) {
     return null;
   }
@@ -255,7 +255,7 @@ function decodeManagerPredecessor(
     ownerInstallationKey: parseInstallationKey(candidate.ownerInstallationKey),
     preparationId: candidate.preparationId,
     selectedTargetMemberId: candidate.selectedTargetMemberId,
-    sourceCloudUrl: validateCloudServerUrl(candidate.sourceCloudUrl, 'sourceCloudUrl'),
+    sourceCloudUrl: validateCloudServerURL(candidate.sourceCloudUrl, 'sourceCloudUrl'),
   });
 }
 
@@ -301,7 +301,7 @@ function decodeSourceIssuedRecord(
     || status.phase !== 'completed'
     || status.relinquishmentProof === null
   ) throw new TypeError('Invalid authority-transfer claimant status');
-  const lanTarget = decodeLanTarget(source.lanTarget, status);
+  const lanTarget = decodeLANTarget(source.lanTarget, status);
   if ((status.direction === 'cloud-to-lan') !== (lanTarget !== null)) {
     throw new TypeError('Invalid authority-transfer claimant LAN target direction');
   }
@@ -411,8 +411,8 @@ function decodeManagerReissuedRecord(
   if (typeof source.serverUrl !== 'string') {
     throw new TypeError('Invalid Manager-reissued authority-transfer claimant endpoint');
   }
-  const serverUrl = validateCloudServerUrl(source.serverUrl, 'serverUrl');
-  const lanTarget = decodeLanTarget(source.lanTarget, { targetUrl: serverUrl });
+  const serverUrl = validateCloudServerURL(source.serverUrl, 'serverUrl');
+  const lanTarget = decodeLANTarget(source.lanTarget, { targetUrl: serverUrl });
   const targetCredential = decodeCredential(source.targetCredential);
   if ((lanTarget === null) !== (cloudPrincipalId !== null)
     || (lanTarget !== null) !== (targetCredential !== null)) throw new TypeError('Invalid claimant target binding');
@@ -466,7 +466,7 @@ function decodeManagerReissuedRecord(
       || targetStatus.transferId !== descriptor.transferId
       || targetStatus.targetAuthority.kind !== 'cloud'
       || targetStatus.targetAuthority.generation !== descriptor.targetAuthorityGeneration
-      || validateCloudServerUrl(targetStatus.targetUrl, 'targetUrl') !== serverUrl
+      || validateCloudServerURL(targetStatus.targetUrl, 'targetUrl') !== serverUrl
       || (redemptionReceipt !== null
         && redemptionReceipt.checkpointSha256 !== targetStatus.checkpointSha256)
     ))
@@ -512,8 +512,8 @@ export function decodeAuthorityTransferClaimantRecord(
 export function createAuthorityTransferClaimantRecord(input: {
   readonly cloudPrincipalId: string | null;
   readonly createdAt: CollabIsoTimestamp;
-  readonly lanTarget?: AuthorityTransferClaimantLanTarget | null;
-  readonly managerPredecessor?: CloudToLanManagerClaimantPredecessor | null;
+  readonly lanTarget?: AuthorityTransferClaimantLANTarget | null;
+  readonly managerPredecessor?: CloudToLANManagerClaimantPredecessor | null;
   readonly memberId: CollabMemberId;
   readonly operationIntentId: string;
   readonly status: CollabAuthorityTransferStatus;
@@ -542,7 +542,7 @@ export function createAuthorityTransferClaimantRecord(input: {
 
 export function createManagerReissuedAuthorityTransferClaimantRecord(input: {
   readonly cloudPrincipalId: string | null;
-  readonly lanTarget?: AuthorityTransferClaimantLanTarget | null;
+  readonly lanTarget?: AuthorityTransferClaimantLANTarget | null;
   readonly targetCredential?: string | null;
   readonly descriptor: ReissueTransferredMembershipClaimResponse;
   readonly memberPersonalRef: string;

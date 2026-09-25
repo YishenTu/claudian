@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { AuthorityTransferCheckpointGit } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointGit';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
@@ -28,7 +29,7 @@ it('settles failed checkpoint commands before cleanup releases the authority res
         { byteCount: 1, name: 'coordination.ndjson', sha256: 'a'.repeat(64) },
         { byteCount: 1, name: 'repository.bundle', sha256: createHash('sha256').update('x').digest('hex') },
       ],
-      createdAt: '2026-08-26T00:00:00.000Z', expectedMainOid: 'a'.repeat(40), gitObjectFormat: 'sha1',
+      createdAt: testTime({ days: -1 }), expectedMainOid: 'a'.repeat(40), gitObjectFormat: 'sha1',
       operationId: 'transfer-git', projectId: 'project-alpha',
       refs: [{ name: 'refs/heads/main', oid: 'a'.repeat(40) }],
       sourceAuthority: { generation: 1, kind: 'cloud' }, targetAuthority: { generation: 2, kind: 'lan' },

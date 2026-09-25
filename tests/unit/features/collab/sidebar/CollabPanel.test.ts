@@ -173,13 +173,13 @@ function createPort(initialState: CollabFeatureState) {
         remoteHeadOid: 'b'.repeat(40),
         request: {
           commentCount: 0,
-          createdAt: '2026-08-08T00:00:00.000Z',
+          createdAt: testTime({ days: -19 }),
           firstBaseOid: 'a'.repeat(40),
           id: 'request-alpha',
           latestHeadOid: 'b'.repeat(40),
           memberId: 'member-host',
           status: 'open',
-          updatedAt: '2026-08-08T00:00:00.000Z',
+          updatedAt: testTime({ days: -19 }),
         },
         state: 'request-synchronized',
       },
@@ -211,13 +211,13 @@ function createPort(initialState: CollabFeatureState) {
           currentMainOid: 'a'.repeat(40),
           request: {
             commentCount: 2,
-            createdAt: '2026-08-08T00:00:00.000Z',
+            createdAt: testTime({ days: -19 }),
             firstBaseOid: 'a'.repeat(40),
             id: 'request-maya',
             latestHeadOid: 'b'.repeat(40),
             memberId: 'member-maya',
             status: 'open' as const,
-            updatedAt: '2026-08-08T00:00:00.000Z',
+            updatedAt: testTime({ days: -19 }),
           },
           reviewCondition: 'clean' as const,
           reviewedHeadOid: 'b'.repeat(40),
@@ -241,8 +241,8 @@ function createPort(initialState: CollabFeatureState) {
       value: {
         snapshot: {
           currentMember: {
-            activatedAt: '2026-08-08T00:00:00.000Z',
-            createdAt: '2026-08-08T00:00:00.000Z',
+            activatedAt: testTime({ days: -19 }),
+            createdAt: testTime({ days: -19 }),
             displayName: 'Alice',
             id: 'member-host',
             personalRef: 'refs/heads/members/member-host',
@@ -251,16 +251,16 @@ function createPort(initialState: CollabFeatureState) {
           },
           eventSequence: 1,
           members: [{
-            activatedAt: '2026-08-08T00:00:00.000Z',
-            createdAt: '2026-08-08T00:00:00.000Z',
+            activatedAt: testTime({ days: -19 }),
+            createdAt: testTime({ days: -19 }),
             displayName: 'Alice',
             id: 'member-host',
             personalRef: 'refs/heads/members/member-host',
             role: 'manager',
             status: 'active',
           }, {
-            activatedAt: '2026-08-08T00:00:00.000Z',
-            createdAt: '2026-08-08T00:00:00.000Z',
+            activatedAt: testTime({ days: -19 }),
+            createdAt: testTime({ days: -19 }),
             displayName: 'Maya',
             id: 'member-maya',
             personalRef: 'refs/heads/members/member-maya',
@@ -269,17 +269,17 @@ function createPort(initialState: CollabFeatureState) {
           }],
           openRequests: [{
             commentCount: 2,
-            createdAt: '2026-08-08T00:00:00.000Z',
+            createdAt: testTime({ days: -19 }),
             firstBaseOid: 'a'.repeat(40),
             id: 'request-maya',
             latestHeadOid: 'b'.repeat(40),
             memberId: 'member-maya',
             status: 'open',
-            updatedAt: '2026-08-08T00:00:00.000Z',
+            updatedAt: testTime({ days: -19 }),
           }],
           project: {
             authorityKind: 'lan',
-            createdAt: '2026-08-08T00:00:00.000Z',
+            createdAt: testTime({ days: -19 }),
             hostMemberId: 'member-host',
             id: 'project-alpha',
             mainOid: 'a'.repeat(40),
@@ -1155,13 +1155,13 @@ describe('CollabPanel', () => {
     if (snapshotResult.status !== 'success') throw new Error('Expected coordination snapshot');
     const ownRequest = {
       commentCount: 0,
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       firstBaseOid: 'a'.repeat(40),
       id: 'request-alpha',
       latestHeadOid: 'b'.repeat(40),
       memberId: 'member-host',
       status: 'open' as const,
-      updatedAt: '2026-08-08T00:10:00.000Z',
+      updatedAt: testTime({ days: -19, minutes: 10 }),
     };
     const coordination = {
       ...snapshotResult.value,
@@ -1271,13 +1271,13 @@ describe('CollabPanel', () => {
     if (snapshotResult.status !== 'success') throw new Error('Expected coordination snapshot');
     const ownRequest = {
       commentCount: 0,
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       firstBaseOid: 'a'.repeat(40),
       id: 'request-alpha',
       latestHeadOid: 'b'.repeat(40),
       memberId: 'member-host',
       status: 'open' as const,
-      updatedAt: '2026-08-08T00:10:00.000Z',
+      updatedAt: testTime({ days: -19, minutes: 10 }),
     };
     const coordination = {
       ...snapshotResult.value,
@@ -1414,7 +1414,7 @@ describe('CollabPanel', () => {
       projects: [project({
         cleanupStatus: 'complete',
         lifecycle: 'retired',
-        retiredAt: '2026-08-13T00:00:00.000Z',
+        retiredAt: testTime({ days: -14 }),
       })],
       selectedProjectId: 'project-alpha',
     });
@@ -1455,7 +1455,7 @@ describe('CollabPanel', () => {
       projects: [project({
         cleanupStatus: 'complete',
         lifecycle: 'retired',
-        retiredAt: '2026-08-13T00:00:00.000Z',
+        retiredAt: testTime({ days: -14 }),
       })],
       selectedProjectId: 'project-alpha',
     });
@@ -1489,7 +1489,7 @@ describe('CollabPanel', () => {
       projects: [project({
         cleanupStatus: 'failed',
         lifecycle: 'retired',
-        retiredAt: '2026-08-13T00:00:00.000Z',
+        retiredAt: testTime({ days: -14 }),
       })],
       selectedProjectId: 'project-alpha',
     });

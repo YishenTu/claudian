@@ -6,6 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
@@ -15,12 +16,12 @@ import {
 } from '@/app/collab/authority/RequestEnsureService';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketRepository } from '@/app/collab/authority/TicketRepository';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 const MAIN = '1'.repeat(40);
 const HEAD_A = '2'.repeat(40);
 const HEAD_B = '3'.repeat(40);
@@ -45,7 +46,7 @@ class FakeHeadPolicy implements RequestEnsureHeadPolicyPort {
 describe('RequestEnsureService', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let headPolicy: FakeHeadPolicy;
   let requestIds: string[];
   let service: RequestEnsureService;
@@ -58,7 +59,7 @@ describe('RequestEnsureService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-request-ensure-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -310,7 +311,7 @@ function input(idempotencyKey: string, headOid: string, expectedMainOid = MAIN) 
   };
 }
 
-async function counts(database: SqlJsProjectDatabase) {
+async function counts(database: SQLJSProjectDatabase) {
   return database.read(connection => ({
     events: connection.get('SELECT COUNT(*) AS count FROM events')?.count,
     idempotency: connection.get('SELECT COUNT(*) AS count FROM idempotency_results')?.count,

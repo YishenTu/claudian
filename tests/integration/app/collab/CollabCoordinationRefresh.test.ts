@@ -6,6 +6,7 @@ import path from 'node:path';
 import { COLLAB_CHECKPOINT_ARTIFACT_LIMITS, COLLAB_LIMITS, collabCloudCapabilityDocument, collabCloudSuccessEnvelope } from '@claudian-collab/protocol';
 import { completeCollabFeatureOptions, completeCollabPublicationOptions } from '@test/helpers/collab/CollabFeatureTestHarness';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { CollabFeatureService } from '@/app/collab/CollabFeatureService';
@@ -16,7 +17,7 @@ import { CloudAuthorityAdapter, CloudProjectEventClient, type CloudProjectEventS
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { CollabCoordinationSnapshot } from '@/core/collab/CollabFeaturePort';
-const CREATED_AT = '2026-09-07T00:00:00.000Z';
+const CREATED_AT = testTime({ days: 11 });
 const PERSONAL_REF = 'refs/heads/members/member-alice';
 class Socket implements CloudProjectEventSocket {
   listener?: (data: string) => void;

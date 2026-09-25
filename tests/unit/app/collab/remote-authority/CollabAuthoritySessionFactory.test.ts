@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
@@ -12,7 +14,7 @@ function cloudMembership(): CollabLocalCloudMembershipRecord {
       serverUrl: 'https://cloud.example.test',
       wireVersion: 15,
     },
-    createdAt: '2026-08-22T00:00:00.000Z',
+    createdAt: testTime({ days: -5 }),
     lastEventSequence: 0,
     lifecycle: 'active',
     member: {
@@ -27,7 +29,7 @@ function cloudMembership(): CollabLocalCloudMembershipRecord {
       workspacePath: 'workspace/project-cloud',
     },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: '2026-08-22T00:00:00.000Z',
+    updatedAt: testTime({ days: -5 }),
   };
 }
 

@@ -1,14 +1,16 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   ProjectEventClient,
   type ProjectEventClientSocket,
   type ProjectEventClientSocketFactory,
 } from '@/app/collab/client/ProjectEventClient';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
-import { LAN_COLLAB_EVENT_KINDS } from '@/app/collab/lan/LanCollabEvent';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
+import { LAN_COLLAB_EVENT_KINDS } from '@/app/collab/lan/LANCollabEvent';
 import { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 describe('ProjectEventClient', () => {
   it('preserves native TLS validation failure as terminal connection evidence', () => {

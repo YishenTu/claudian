@@ -1,4 +1,5 @@
 /** @jest-environment jsdom */
+import { testTime } from '@test/helpers/testClock';
 
 import type {
   CollabCoordinationSnapshot,
@@ -9,7 +10,7 @@ import type {
   CollabResult,
   CollabWorkingTreeReview,
 } from '@/core/collab';
-import { isCollabLanProjectSnapshot } from '@/core/collab';
+import { isCollabLANProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
   PersonalChangesPanel,
@@ -49,8 +50,8 @@ function inspection(options: {
     coordination: {
       snapshot: {
         currentMember: {
-          activatedAt: '2026-08-08T00:00:00.000Z',
-          createdAt: '2026-08-08T00:00:00.000Z',
+          activatedAt: testTime({ days: -19 }),
+          createdAt: testTime({ days: -19 }),
           displayName: 'Alice',
           id: 'member-a',
           personalRef: 'refs/heads/members/member-a',
@@ -62,7 +63,7 @@ function inspection(options: {
         openTicketCount: 0,
         openRequests: options.openRequest ? [{
           commentCount: options.comments ?? 0,
-          createdAt: '2026-08-08T00:00:00.000Z',
+          createdAt: testTime({ days: -19 }),
           description: 'Published change',
           firstBaseOid: MAIN,
           id: 'request-a',
@@ -71,11 +72,11 @@ function inspection(options: {
           revision: 1,
           status: 'open',
           ticketRelations: [],
-          updatedAt: '2026-08-08T00:00:00.000Z',
+          updatedAt: testTime({ days: -19 }),
         }] : [],
         project: {
           authorityKind: 'lan',
-          createdAt: '2026-08-08T00:00:00.000Z',
+          createdAt: testTime({ days: -19 }),
           hostMemberId: 'member-host',
           id: 'project-a',
           mainOid: MAIN,
@@ -478,7 +479,7 @@ describe('PersonalChangesPanel', () => {
         id: 'publish-external',
         kind: 'publish',
         phase: 'validating',
-        startedAt: '2026-08-08T00:00:00.000Z',
+        startedAt: testTime({ days: -19 }),
       },
     });
     expect(container.textContent).toContain('Publishing…');
@@ -547,7 +548,7 @@ describe('PersonalChangesPanel', () => {
       await flush();
       expect(container.querySelector('[data-path="note.md"]')).toBeNull();
       const coordination = initial.coordination!;
-      if (!isCollabLanProjectSnapshot(coordination.snapshot)) throw new Error('Expected LAN fixture');
+      if (!isCollabLANProjectSnapshot(coordination.snapshot)) throw new Error('Expected LAN fixture');
       const next = {
         ...coordination,
         syncState: {

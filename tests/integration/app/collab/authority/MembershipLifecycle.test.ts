@@ -3,24 +3,25 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
 import { MembershipAdminService } from '@/app/collab/authority/MembershipAdminService';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { HostedProjectControlService } from '@/app/collab/lan/HostedProjectControlService';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { PendingMembershipService } from '@/app/collab/lan/PendingMembershipService';
 
 const HOST_CREDENTIAL = Buffer.alloc(32, 1).toString('base64url');
 const MAIN_OID = 'a'.repeat(40);
-const NOW = new Date('2026-08-08T00:00:00.000Z');
+const NOW = new Date(testTime({ days: -19 }));
 
 describe('Membership lifecycle', () => {
   let SQL: SqlJsStatic;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let root = '';
 
   beforeAll(async () => {
@@ -31,7 +32,7 @@ describe('Membership lifecycle', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-membership-lifecycle-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();

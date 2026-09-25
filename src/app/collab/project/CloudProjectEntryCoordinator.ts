@@ -16,7 +16,7 @@ import { type CollabWorkingCopyFoundation, type CollabWorkingCopyPlacement, Coll
 import { collabWorkingCopySlugBase, isCollabWorkingCopyDirectoryName, isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
 import { type CloudAuthorityAdapter, type CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
-import { cloudProjectGitRemoteUrl, validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { cloudProjectGitRemoteURL, validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabAuthorityGitNetworkEnvironment } from '@/app/collab/remote-authority/CollabAuthorityGitNetworkEnvironment';
 import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
@@ -75,7 +75,7 @@ export class CloudProjectEntryCoordinator {
       try {
         signal.throwIfAborted();
         if (captured.authority?.kind !== 'cloud') throw new TypeError('Cloud entry requires a Cloud endpoint');
-        const serverUrl = validateCloudServerUrl(captured.authority.serverUrl, 'serverUrl');
+        const serverUrl = validateCloudServerURL(captured.authority.serverUrl, 'serverUrl');
         const parsedFolder = parseCollabProjectsFolder(projectsFolder);
         if (!parsedFolder.ok) throw new CollabError({ code: 'workspace-boundary-invalid' });
         await this.foundation.local.workspace.claimProjectsFolder(parsedFolder.value);
@@ -287,7 +287,7 @@ export class CloudProjectEntryCoordinator {
         authority: {
           authorityGeneration: admission.snapshot.project.authorityGeneration,
           bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-          gitRemoteUrl: cloudProjectGitRemoteUrl(record.serverUrl, record.projectId),
+          gitRemoteUrl: cloudProjectGitRemoteURL(record.serverUrl, record.projectId),
           kind: 'cloud', serverUrl: record.serverUrl, wireVersion: COLLAB_PROTOCOL_VERSION,
         },
         createdAt: record.createdAt, lastEventSequence: admission.snapshot.eventSequence,

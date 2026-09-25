@@ -5,20 +5,20 @@ import {
   collabControlOperationPath,
 } from '@/app/collab/lan/CollabControlOperationBindings';
 import type {
-  CollabHttpOperationOptions,
-  CollabJsonRequest,
-} from '@/app/collab/lan/CollabHttpClient';
-import { decodeLanCollabCapabilities, type LanCollabCapability } from '@/app/collab/lan/LanCollabCapabilities';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
-import { decodeLanCollabEnvelopeData } from '@/app/collab/lan/LanCollabEnvelope';
-import type { CollabLanProjectSnapshot } from '@/core/collab';
+  CollabHTTPOperationOptions,
+  CollabJSONRequest,
+} from '@/app/collab/lan/CollabHTTPClient';
+import { decodeLANCollabCapabilities, type LANCollabCapability } from '@/app/collab/lan/LANCollabCapabilities';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
+import { decodeLANCollabEnvelopeData } from '@/app/collab/lan/LANCollabEnvelope';
+import type { CollabLANProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface ProjectControlTransport {
   requestWithMember<T>(
-    request: CollabJsonRequest<T>,
+    request: CollabJSONRequest<T>,
     memberCredential: string,
-    options?: CollabHttpOperationOptions,
+    options?: CollabHTTPOperationOptions,
   ): Promise<T>;
 }
 
@@ -122,8 +122,8 @@ export class ProjectControlClient {
   readSnapshot(
     projectId: string,
     memberCredential: string,
-    options: CollabHttpOperationOptions = {},
-  ): Promise<CollabLanProjectSnapshot> {
+    options: CollabHTTPOperationOptions = {},
+  ): Promise<CollabLANProjectSnapshot> {
     return this.transport.requestWithMember({
       decode: lanCollabControlOperationCodec('getSnapshot').decodeResponse,
       method: COLLAB_CONTROL_OPERATION_BINDINGS.getSnapshot.method,
@@ -243,15 +243,15 @@ export class ProjectControlClient {
     }, input.memberCredential, input.signal ? { signal: input.signal } : {});
   }
 
-  readCapabilities(projectId: string, memberCredential: string, options: CollabHttpOperationOptions = {}): Promise<readonly string[]> {
+  readCapabilities(projectId: string, memberCredential: string, options: CollabHTTPOperationOptions = {}): Promise<readonly string[]> {
     return this.transport.requestWithMember({
       decode: input => {
         const snapshot = lanCollabControlOperationCodec('getSnapshot').decodeResponse(input);
         if (snapshot.project.id !== projectId) {
           throw new CollabError({ code: 'authority-integrity-error' });
         }
-        const data = decodeLanCollabEnvelopeData(input) as Readonly<Record<string, unknown>>;
-        return decodeLanCollabCapabilities(data.capabilities);
+        const data = decodeLANCollabEnvelopeData(input) as Readonly<Record<string, unknown>>;
+        return decodeLANCollabCapabilities(data.capabilities);
       },
       method: COLLAB_CONTROL_OPERATION_BINDINGS.getSnapshot.method,
       path: collabControlOperationPath('getSnapshot', projectId),
@@ -259,10 +259,10 @@ export class ProjectControlClient {
   }
 
   async #requireCapability(
-    capability: LanCollabCapability,
+    capability: LANCollabCapability,
     projectId: string,
     memberCredential: string,
-    options: CollabHttpOperationOptions,
+    options: CollabHTTPOperationOptions,
   ): Promise<void> {
     const capabilities = await this.readCapabilities(projectId, memberCredential, options);
     if (!capabilities.includes(capability)) {

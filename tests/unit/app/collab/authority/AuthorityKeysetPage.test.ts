@@ -1,4 +1,5 @@
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   authorityDetailPageBudgets,
@@ -7,7 +8,7 @@ import {
   trimAuthorityKeysetPage,
 } from '@/app/collab/authority/AuthorityKeysetPage';
 
-function row(id: string, createdAt = '2026-08-08T00:00:00.000Z', body = 'x') {
+function row(id: string, createdAt = testTime({ days: -19 }), body = 'x') {
   return { body, createdAt, id };
 }
 
@@ -17,7 +18,7 @@ function keyOf(value: { createdAt: string; id: string }) {
 
 describe('AuthorityKeysetPage', () => {
   it('round-trips a keyset cursor and rejects malformed input', () => {
-    const cursor = { createdAt: '2026-08-08T00:00:00.000Z', id: 'comment-1' };
+    const cursor = { createdAt: testTime({ days: -19 }), id: 'comment-1' };
     expect(decodeAuthorityKeysetCursor(
       encodeAuthorityKeysetCursor(cursor),
       'test-cursor-invalid',
@@ -29,7 +30,7 @@ describe('AuthorityKeysetPage', () => {
       'not base64 json',
       Buffer.from('"scalar"', 'utf8').toString('base64url'),
       Buffer.from('{"createdAt":"not-a-date","id":"x"}', 'utf8').toString('base64url'),
-      Buffer.from('{"createdAt":"2026-08-08T00:00:00.000Z"}', 'utf8').toString('base64url'),
+      Buffer.from(JSON.stringify({ createdAt: testTime({ days: -19 }) }), 'utf8').toString('base64url'),
       'c'.repeat(513),
     ]) {
       expect(() => decodeAuthorityKeysetCursor(value, 'test-cursor-invalid'))
@@ -49,7 +50,7 @@ describe('AuthorityKeysetPage', () => {
 
   it('trims pages to the UTF-8 byte budget with multibyte content', () => {
     // '€' is 3 UTF-8 bytes: each row serializes well beyond its UTF-16 length.
-    const rows = ['a', 'b', 'c', 'd'].map(id => row(id, '2026-08-08T00:00:00.000Z', '€'.repeat(20)));
+    const rows = ['a', 'b', 'c', 'd'].map(id => row(id, testTime({ days: -19 }), '€'.repeat(20)));
     const secondCursor = encodeAuthorityKeysetCursor(keyOf(rows[1]!));
     const exactTwoItemPageBytes = Buffer.byteLength(JSON.stringify({
       items: rows.slice(0, 2),
@@ -66,7 +67,7 @@ describe('AuthorityKeysetPage', () => {
   it('measures escaped JSON serialization, not raw content', () => {
     // Quotes and newlines inflate on the wire: a two-character body can cost
     // six serialized bytes. The budget must count the escaped form.
-    const rows = ['a', 'b', 'c'].map(id => row(id, '2026-08-08T00:00:00.000Z', '\n"'));
+    const rows = ['a', 'b', 'c'].map(id => row(id, testTime({ days: -19 }), '\n"'));
     const singleBytes = Buffer.byteLength(JSON.stringify(rows[0]), 'utf8');
     expect(singleBytes).toBeGreaterThan(Buffer.byteLength(rows[0]!.body, 'utf8'));
     const exactOneItemPageBytes = Buffer.byteLength(JSON.stringify({
@@ -81,7 +82,7 @@ describe('AuthorityKeysetPage', () => {
   it('keeps the final page wrapper and generated cursor inside the byte budget', () => {
     const rows = ['a', 'b', 'c'].map(id => row(
       id,
-      '2026-08-08T00:00:00.000Z',
+      testTime({ days: -19 }),
       '\u0001'.repeat(30),
     ));
     const itemArrayBytes = Buffer.byteLength(JSON.stringify(rows.slice(0, 2)), 'utf8');
@@ -123,7 +124,7 @@ describe('AuthorityKeysetPage', () => {
   it('keeps one maximal JSON-escaped comment inside the shared page budget', () => {
     const maximal = row(
       'maximal',
-      '2026-08-08T00:00:00.000Z',
+      testTime({ days: -19 }),
       '\u0001'.repeat(COLLAB_LIMITS.maxTicketCommentBytes),
     );
     const page = trimAuthorityKeysetPage(

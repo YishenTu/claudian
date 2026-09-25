@@ -17,7 +17,7 @@ Object.assign(globalThis, { setImmediate });
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
-const mockCodexCliResolverReset = jest.fn();
+const mockCodexCLIResolverReset = jest.fn();
 const mockRefreshCodexModelPicker = jest.fn();
 const mockRenderCodexModelPicker = jest.fn((..._args: unknown[]) => ({ refresh: mockRefreshCodexModelPicker, dispose: jest.fn() }));
 const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
@@ -112,7 +112,7 @@ function createSettingsRenderer() {
   return createCodexSettingsTabRenderer({
     commandCatalog: null,
     modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
-    cliResolver: { reset: mockCodexCliResolverReset },
+    cliResolver: { reset: mockCodexCLIResolverReset },
   } as unknown as Parameters<typeof createCodexSettingsTabRenderer>[0]);
 }
 
@@ -802,7 +802,7 @@ describe('CodexSettingsTab', () => {
       expect.any(Function),
     );
     expect(plugin.applyProviderRuntimeSettings).toHaveBeenCalledTimes(2);
-    expect(mockCodexCliResolverReset).toHaveBeenCalledTimes(2);
+    expect(mockCodexCLIResolverReset).toHaveBeenCalledTimes(2);
     expect(mockRefreshModelCatalog).not.toHaveBeenCalled();
   });
 

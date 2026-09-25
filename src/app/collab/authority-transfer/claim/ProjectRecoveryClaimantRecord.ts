@@ -6,7 +6,7 @@ import { collabControlOperationCodec, collabMemberRef, isCollabMemberId, isColla
 import { type AuthorityTransferImportedTargetIdentity, decodeAuthorityTransferImportedTargetIdentity } from '@/app/collab/authority-transfer/AuthorityTransferImportedTargetIdentity';
 import type { AuthorityTransferClaimantRecord } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import { decodeProjectRecoveryInvitation, encodeProjectRecoveryInvitation, type ProjectRecoveryInvitation, type ProjectRecoveryTarget } from '@/app/collab/project/ProjectRecoveryInvitation';
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 
 export const PROJECT_RECOVERY_CLAIMANT_PHASES = ['redemption-prepared', 'target-claimed', 'target-confirmed', 'membership-converged', 'completed'] as const;
 
@@ -94,7 +94,7 @@ export function decodeProjectRecoveryClaimantRecord(
       const binding = object(entry);
       exact(binding, ['remoteUrl', 'serverUrl']);
       if (typeof binding.remoteUrl !== 'string' || binding.serverUrl !== null && typeof binding.serverUrl !== 'string') throw new TypeError('Invalid recovery origin');
-      return { remoteUrl: validateCloudServerUrl(binding.remoteUrl, 'remoteUrl'), serverUrl: binding.serverUrl === null ? null : validateCloudServerUrl(binding.serverUrl, 'serverUrl') };
+      return { remoteUrl: validateCloudServerURL(binding.remoteUrl, 'remoteUrl'), serverUrl: binding.serverUrl === null ? null : validateCloudServerURL(binding.serverUrl, 'serverUrl') };
     });
     convergence = { target, identity, previousBindings };
   }

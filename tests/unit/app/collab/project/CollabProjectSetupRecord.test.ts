@@ -1,4 +1,5 @@
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   bindLegacyCollabProjectSetupOwner,
@@ -9,7 +10,7 @@ import {
 
 const baseRecord: CollabProjectSetupRecord = {
   cloneDirectoryName: '.claudian-clone-project-alpha',
-  createdAt: '2026-08-08T00:00:00.000Z',
+  createdAt: testTime({ days: -19 }),
   initialCommitOid: null,
   memberCredential: 'A'.repeat(43),
   memberDisplayName: 'Alice',
@@ -23,7 +24,7 @@ const baseRecord: CollabProjectSetupRecord = {
   schemaVersion: COLLAB_PROJECT_SETUP_SCHEMA_VERSION,
   seedDirectoryName: '.claudian-seed-project-alpha',
   slug: 'alpha',
-  updatedAt: '2026-08-08T00:00:00.000Z',
+  updatedAt: testTime({ days: -19 }),
 };
 
 describe('CollabProjectSetupRecord', () => {

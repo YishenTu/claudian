@@ -11,8 +11,8 @@ import type {
   CollabLocalMembershipRecord,
   CollabLocalProjectDocumentBase,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
 import type { CollabEventConnectionState } from '@/app/collab/reconnect/CollabProjectConnection';
 import { decodeCloudProjectSnapshotCache } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
 import type { CollabAuthorityControlPort } from '@/app/collab/remote-authority/CollabAuthorityControlPort';
@@ -21,7 +21,7 @@ import type { CollabAuthoritySessionFactory } from '@/app/collab/remote-authorit
 import type { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import type { CollabProjectChanges } from '@/core/collab';
 import type { CollabProjectSnapshot } from '@/core/collab';
-import { isCollabLanProjectSnapshot } from '@/core/collab';
+import { isCollabLANProjectSnapshot } from '@/core/collab';
 import { type CollabCoordinationSnapshot, type CollabListTicketsRequest, type CollabOperationOptions, type CollabTicketDetailProjection, type CollabTicketPageProjection } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -946,7 +946,7 @@ export class CollabClientProjection {
     session.assertGeneration(generation);
     const managerResponsibility = this.managerResponsibility;
     let reconcileManagerResponsibility = managerResponsibility !== undefined;
-    if (reconcileManagerResponsibility && !isCollabLanProjectSnapshot(snapshot)) {
+    if (reconcileManagerResponsibility && !isCollabLANProjectSnapshot(snapshot)) {
       const authority = await session.ensureAuthoritySession<CollabAuthoritySession>(() => (
         this.#authoritySessions.create(membership)
       ));

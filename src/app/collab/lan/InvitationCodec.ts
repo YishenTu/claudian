@@ -11,7 +11,7 @@ import {
   COLLAB_CONTROL_PROTOCOL_VERSION,
   COLLAB_INVITATION_TTL_MS,
   COLLAB_TOKEN_BYTES,
-} from '@/app/collab/lan/LanCollabConstants';
+} from '@/app/collab/lan/LANCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const INVITATION_PREFIX = 'claudian-collab';
@@ -20,7 +20,7 @@ const MAX_ENCODED_INVITATION_LENGTH = 8 * 1024;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-export interface LanCollabInvitation {
+export interface LANCollabInvitation {
   readonly caFingerprint: string;
   readonly endpoint: string;
   readonly expiresAt: string;
@@ -30,13 +30,13 @@ export interface LanCollabInvitation {
   readonly protocolVersion: typeof COLLAB_CONTROL_PROTOCOL_VERSION;
 }
 
-export type LanCollabInvitationDecodeResult =
-  | { readonly status: 'ok'; readonly value: LanCollabInvitation }
+export type LANCollabInvitationDecodeResult =
+  | { readonly status: 'ok'; readonly value: LANCollabInvitation }
   | { readonly status: 'invalid'; readonly error: CollabError };
 
-export function decodeLanCollabInvitation(
+export function decodeLANCollabInvitation(
   input: unknown,
-): LanCollabInvitationDecodeResult {
+): LANCollabInvitationDecodeResult {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     return { status: 'invalid', error: invitationError('invitation-payload-invalid') };
   }
@@ -58,7 +58,7 @@ export function decodeLanCollabInvitation(
   ) {
     return { status: 'invalid', error: invitationError('invitation-payload-invalid') };
   }
-  return { status: 'ok', value: value as unknown as LanCollabInvitation };
+  return { status: 'ok', value: value as unknown as LANCollabInvitation };
 }
 
 export interface InvitationCodecOptions {
@@ -132,8 +132,8 @@ export class InvitationCodec {
     this.randomBytes = options.randomBytes ?? secureRandomBytes;
   }
 
-  createInvitation(input: CreateCollabInvitationInput): LanCollabInvitation {
-    const invitation: LanCollabInvitation = {
+  createInvitation(input: CreateCollabInvitationInput): LANCollabInvitation {
+    const invitation: LANCollabInvitation = {
       caFingerprint: input.caFingerprint,
       endpoint: input.endpoint,
       expiresAt: input.expiresAt
@@ -147,13 +147,13 @@ export class InvitationCodec {
     return this.validateInvitation(invitation);
   }
 
-  encode(invitation: LanCollabInvitation): string {
+  encode(invitation: LANCollabInvitation): string {
     const validated = this.validateInvitation(invitation);
     const payload = Buffer.from(JSON.stringify(validated), 'utf8').toString('base64url');
     return `${INVITATION_PREFIX}:v${COLLAB_CONTROL_PROTOCOL_VERSION}:${payload}`;
   }
 
-  decode(encodedInvitation: string): LanCollabInvitation {
+  decode(encodedInvitation: string): LANCollabInvitation {
     const { payload, prefixVersion } = this.#decodeEncodedPayload(encodedInvitation);
     if (prefixVersion !== COLLAB_CONTROL_PROTOCOL_VERSION) {
       throw this.#unsupportedVersion(prefixVersion);
@@ -161,7 +161,7 @@ export class InvitationCodec {
     return this.#decodeCurrentPayload(payload);
   }
 
-  decodePendingJoinRecovery(encodedInvitation: string): LanCollabInvitation {
+  decodePendingJoinRecovery(encodedInvitation: string): LANCollabInvitation {
     const { payload, prefixVersion } = this.#decodeEncodedPayload(encodedInvitation);
     if (prefixVersion === COLLAB_CONTROL_PROTOCOL_VERSION) {
       return this.#decodeCurrentPayload(payload);
@@ -208,8 +208,8 @@ export class InvitationCodec {
     return { payload, prefixVersion };
   }
 
-  #decodeCurrentPayload(payload: unknown): LanCollabInvitation {
-    const decoded = decodeLanCollabInvitation(payload);
+  #decodeCurrentPayload(payload: unknown): LANCollabInvitation {
+    const decoded = decodeLANCollabInvitation(payload);
     if (decoded.status !== 'ok') throw decoded.error;
     return this.validateInvitation(decoded.value);
   }
@@ -225,8 +225,8 @@ export class InvitationCodec {
     });
   }
 
-  validateInvitation(invitation: LanCollabInvitation): LanCollabInvitation {
-    const decoded = decodeLanCollabInvitation(invitation);
+  validateInvitation(invitation: LANCollabInvitation): LANCollabInvitation {
+    const decoded = decodeLANCollabInvitation(invitation);
     if (decoded.status !== 'ok') throw decoded.error;
     const value = decoded.value;
     if (!isCollabOpaqueId(value.invitationId)) {

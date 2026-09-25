@@ -20,12 +20,12 @@ import {
   AuthorityTransferClaimantBindingResolver,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantBindingResolver';
 import {
-  ProductionCloudToLanTargetEffects,
-} from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
+  ProductionCloudToLANTargetEffects,
+} from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLANTargetEffects';
 import {
-  ProductionLanToCloudSourceEffects,
-} from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLanToCloudSourceEffects';
-import { LanAuthorityTransferTargetSnapshotReader } from '@/app/collab/authority-transfer/LanAuthorityTransferTargetSnapshotReader';
+  ProductionLANToCloudSourceEffects,
+} from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLANToCloudSourceEffects';
+import { LANAuthorityTransferTargetSnapshotReader } from '@/app/collab/authority-transfer/LANAuthorityTransferTargetSnapshotReader';
 import type { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import {
   CollabFeatureService,
@@ -34,7 +34,7 @@ import {
 } from '@/app/collab/CollabFeatureService';
 import {
   isCollabLocalCloudMembership,
-  isCollabLocalLanMembership,
+  isCollabLocalLANMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { FilesystemLocalRepositoryIdentity } from '@/app/collab/exit/FilesystemLocalRepositoryIdentity';
 import {
@@ -52,7 +52,7 @@ import { RetiredProjectFinalizer } from '@/app/collab/exit/RetiredProjectFinaliz
 import {
   rotateAuthorityTransferOrigin,
 } from '@/app/collab/git/CollabGitOriginPolicy';
-import { LanAuthorityTransferClient, type LanAuthorityTransferTrustedHost } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+import { LANAuthorityTransferClient, type LANAuthorityTransferTrustedHost } from '@/app/collab/lan/authority-transfer/LANAuthorityTransferClient';
 import { CollabLifecycleJournalStore } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import {
   createCollabProjectLifecycleDurableOwners,
@@ -425,7 +425,7 @@ export function createCollabFeatureSubcomposition(
       if (resource.operation?.kind !== 'authority-transfer' || !resource.operation.transferId) return;
       const record = await foundation.authorityTransfers.load(resource.projectId, resource.operation.transferId);
       if (!record || record.localRole !== 'target' || record.status.direction !== 'cloud-to-lan') return;
-      await new ProductionCloudToLanTargetEffects({
+      await new ProductionCloudToLANTargetEffects({
         cloudSession: null, convergence: authorityTransferConvergence, foundation, now,
         persistence: foundation.authorityTransfers, projectId: record.projectId,
       }).settleImportedClaims(record);
@@ -746,8 +746,8 @@ export function createCollabFeatureSubcomposition(
     settleLocalAuthorityAdvance: identity => foundation.authorityTransfers.settleLocalAuthorityAdvance(identity),
     workspace: foundation.local.workspace,
   });
-  const createLanTransferClient = (trust: LanAuthorityTransferTrustedHost) => (
-    new LanAuthorityTransferClient(trust, { discovery: foundation.discovery })
+  const createLanTransferClient = (trust: LANAuthorityTransferTrustedHost) => (
+    new LANAuthorityTransferClient(trust, { discovery: foundation.discovery })
   );
   const claimantBindingResolver = new AuthorityTransferClaimantBindingResolver({
     createLanClient: createLanTransferClient,
@@ -759,8 +759,8 @@ export function createCollabFeatureSubcomposition(
     now,
   });
   const retainCommittedTargetRedemptions: NonNullable<
-    ConstructorParameters<typeof ProductionLanToCloudSourceEffects>[0]['retainCommittedTargetRedemptions']
-  > = (target, source, members) => new ProductionCloudToLanTargetEffects({
+    ConstructorParameters<typeof ProductionLANToCloudSourceEffects>[0]['retainCommittedTargetRedemptions']
+  > = (target, source, members) => new ProductionCloudToLANTargetEffects({
     cloudSession: null, convergence: authorityTransferConvergence, foundation, now,
     persistence: foundation.authorityTransfers, projectId: target.projectId,
   }).retainCommittedRedemptions(target, source, members);
@@ -773,7 +773,7 @@ export function createCollabFeatureSubcomposition(
       return cloudAuthority.connect(input, operationOptions);
     },
 
-    createLanTargetSnapshotReader: (projectId, targetHost, authorityGeneration) => new LanAuthorityTransferTargetSnapshotReader(
+    createLanTargetSnapshotReader: (projectId, targetHost, authorityGeneration) => new LANAuthorityTransferTargetSnapshotReader(
       { ...targetHost, authorityGeneration, projectId }, { discovery: foundation.discovery },
     ),
     createCloudToLanClaimantClient: createLanTransferClient,
@@ -813,7 +813,7 @@ export function createCollabFeatureSubcomposition(
       }, operationOptions);
     },
     createCloudToLanTarget: (projectId, cloudSession) => (
-      new ProductionCloudToLanTargetEffects({
+      new ProductionCloudToLANTargetEffects({
         cloudSession,
         convergence: authorityTransferConvergence,
         foundation,
@@ -823,7 +823,7 @@ export function createCollabFeatureSubcomposition(
       })
     ),
     createLanToCloudSource: (projectId, cloudSession) => (
-      new ProductionLanToCloudSourceEffects({
+      new ProductionLANToCloudSourceEffects({
                 retainCommittedTargetRedemptions,
         cloudSession,
         convergence: authorityTransferConvergence,
@@ -844,7 +844,7 @@ export function createCollabFeatureSubcomposition(
       if (!membership) {
         throw compositionError('authority-transfer-membership-missing');
       }
-      if (record.localRole !== 'source' || !isCollabLocalLanMembership(membership)) {
+      if (record.localRole !== 'source' || !isCollabLocalLANMembership(membership)) {
         throw compositionError('authority-transfer-source-membership-invalid');
       }
       return cloudAuthority.connect({
@@ -859,9 +859,9 @@ export function createCollabFeatureSubcomposition(
         persistence: foundation.authorityTransfers, projectId: record.projectId,
       };
       if (record.localRole === 'source') {
-        await new ProductionLanToCloudSourceEffects(effectsOptions).restoreRetained(record);
+        await new ProductionLANToCloudSourceEffects(effectsOptions).restoreRetained(record);
       } else {
-        await new ProductionCloudToLanTargetEffects(effectsOptions).restoreRetained(record);
+        await new ProductionCloudToLANTargetEffects(effectsOptions).restoreRetained(record);
       }
     },
     terminalResolver: {
@@ -886,7 +886,7 @@ export function createCollabFeatureSubcomposition(
         ) {
           return {
             resume: async () => {
-              const sourceEffects = new ProductionLanToCloudSourceEffects({
+              const sourceEffects = new ProductionLANToCloudSourceEffects({
                 retainCommittedTargetRedemptions,
                 cloudSession: null,
                 convergence: authorityTransferConvergence,
@@ -929,7 +929,7 @@ export function createCollabFeatureSubcomposition(
         ) {
           return {
             resume: async () => {
-              await new ProductionCloudToLanTargetEffects({
+              await new ProductionCloudToLANTargetEffects({
                 cloudSession: null,
                 convergence: authorityTransferConvergence,
                 foundation,
@@ -954,7 +954,7 @@ export function createCollabFeatureSubcomposition(
         ) {
           return {
             resume: async () => {
-              await new ProductionCloudToLanTargetEffects({
+              await new ProductionCloudToLANTargetEffects({
                 cloudSession: null,
                 convergence: authorityTransferConvergence,
                 foundation,
@@ -980,7 +980,7 @@ export function createCollabFeatureSubcomposition(
             if (!membership) {
               throw compositionError('authority-transfer-terminal-membership-missing');
             }
-            await new ProductionLanToCloudSourceEffects({
+            await new ProductionLANToCloudSourceEffects({
               retainCommittedTargetRedemptions,
               cloudSession: null,
               convergence: authorityTransferConvergence,

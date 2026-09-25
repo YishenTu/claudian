@@ -3,18 +3,19 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
-import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type { CollabLocalLANMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
 import {
   type LocalProjectControlClientPort,
   LocalProjectControlPort,
 } from '@/app/collab/publish/LocalProjectControlPort';
 import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 const HEAD = 'a'.repeat(40);
 const MERGE = 'b'.repeat(40);
 function response(data: unknown) {
@@ -37,7 +38,7 @@ function mergedRequest() {
   };
 }
 
-function membership(): CollabLocalLanMembershipRecord {
+function membership(): CollabLocalLANMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,

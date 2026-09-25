@@ -9,6 +9,8 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
+
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import {
   COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION,
@@ -89,7 +91,7 @@ describe('ConflictScratchStore', () => {
     const projects = new CollabLocalProjectRepository(vaultRoot);
     const store = new ConflictScratchStore(vaultRoot, projects);
     const record: ConflictResolutionRecord = {
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       descriptor: {
         conflicts: [{ kind: 'text', path: 'note.md' }],
         mergeBaseOid: '1'.repeat(40),
@@ -103,7 +105,7 @@ describe('ConflictScratchStore', () => {
       projectId: 'project-a',
       resultCommitOid: null,
       schemaVersion: COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION,
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     };
     return { record, store };
   }

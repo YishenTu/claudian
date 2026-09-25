@@ -10,7 +10,7 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { EnvSnippetManager } from '@/shared/settings/EnvSnippetManager';
 
-jest.mock('obsidian', () => jest.requireActual('../../../helpers/ObsidianSettingsDom'));
+jest.mock('obsidian', () => jest.requireActual('../../../helpers/ObsidianSettingsDOM'));
 
 afterEach(() => document.body.replaceChildren());
 

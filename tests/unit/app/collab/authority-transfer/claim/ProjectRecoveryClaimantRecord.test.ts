@@ -10,7 +10,7 @@ const prepared = {
   schemaVersion: 5, kind: 'authority-transfer-claimant', variant: 'project-recovery',
   projectId: 'project-demo', memberId: 'member-one', memberPersonalRef: 'refs/heads/members/member-one',
   operationIntentId: 'redeem-one', cloudPrincipalId: `vault-${'c'.repeat(64)}`, targetCredential: null,
-  createdAt: '2026-09-14T00:00:00.000Z', updatedAt: '2026-09-14T00:00:00.000Z',
+  createdAt: testTime({ days: 18 }), updatedAt: testTime({ days: 18 }),
   phase: 'redemption-prepared', retainedAttempts: [], redemptionRequest: request, redemptionReceipt: null, convergence: null,
   invitation: { target: { kind: 'cloud', serverUrl: 'http://100.89.0.41:8787' },
     link: { projectId: 'project-demo', recoveryLinkId: 'recovery-one', authorityGeneration: 4, token: 'a'.repeat(64),
@@ -27,7 +27,7 @@ describe('ProjectRecoveryClaimantRecord', () => {
 
   it('requires the exact redemption result and confirmed identity before any local convergence', () => {
     const receipt = { projectId: 'project-demo', recoveryLinkId: 'recovery-one', authorityGeneration: 4,
-      memberId: 'member-one', personalRef: 'refs/heads/members/member-one', receiptId: 'receipt-one', recoveredAt: '2026-09-14T00:01:00.000Z' };
+      memberId: 'member-one', personalRef: 'refs/heads/members/member-one', receiptId: 'receipt-one', recoveredAt: testTime({ days: 18, minutes: 1 }) };
     const claimed = { ...prepared, phase: 'target-claimed', updatedAt: receipt.recoveredAt, redemptionReceipt: receipt };
     expect(decodeProjectRecoveryClaimantRecord(claimed, () => { throw new Error(); })).toEqual(claimed);
     expect(() => decodeProjectRecoveryClaimantRecord({ ...claimed, redemptionReceipt: { ...receipt, memberId: 'member-two' } }, () => { throw new Error(); })).toThrow();
@@ -48,7 +48,7 @@ describe('ProjectRecoveryClaimantRecord', () => {
    let online = true;
    const requests: unknown[] = [];
    const receipt = { projectId: 'project-demo', recoveryLinkId: 'recovery-one', authorityGeneration: 4,
-     memberId: 'member-one', personalRef: 'refs/heads/members/member-one', receiptId: 'receipt-one', recoveredAt: '2026-09-14T00:01:00.000Z' };
+     memberId: 'member-one', personalRef: 'refs/heads/members/member-one', receiptId: 'receipt-one', recoveredAt: testTime({ days: 18, minutes: 1 }) };
    const plan = { target: prepared.invitation.target, previousBindings: [{ remoteUrl: 'https://old.example/v7/projects/project-demo/repository.git', serverUrl: 'https://old.example' }],
      identity: { authorityGeneration: 4, project: { id: 'project-demo', name: 'Demo' }, eventSequence: 12,
        currentMember: { id: 'member-one', personalRef: 'refs/heads/members/member-one', displayName: 'One', role: 'member' as const } } };

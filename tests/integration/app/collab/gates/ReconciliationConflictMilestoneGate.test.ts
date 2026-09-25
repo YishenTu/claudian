@@ -14,7 +14,7 @@ import { CollabFixtureSnapshot } from '@test/helpers/collab/CollabFixtureSnapsho
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import type { CollabFeatureService } from '@/app/collab/CollabFeatureService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
@@ -299,7 +299,7 @@ describe('M6 publish conflict gate', () => {
       ...(ownsAuthority
         ? {
           createAuthorityDatabase: (authorityDirectory: string, resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>) => (
-            new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
+            new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
           ),
           lanHost: {
             createInvitationCodec: () => invitationCodec,

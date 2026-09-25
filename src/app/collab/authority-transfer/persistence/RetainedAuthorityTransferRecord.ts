@@ -5,9 +5,9 @@ import {
   decodeAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
-  type CloudToLanTargetEntryRecord,
-  type CloudToLanTransferHandle,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  type CloudToLANTargetEntryRecord,
+  type CloudToLANTransferHandle,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import {
   type AuthorityTransferClaimBatchCommitmentRecord,
   decodeAuthorityTransferClaimBatchCommitmentRecord,
@@ -26,7 +26,7 @@ export interface RetainedAuthorityTransferRecord {
   readonly targetHandleSha256: string | null;
 }
 
-export function completedTargetHandleDigest(handle: CloudToLanTransferHandle): string {
+export function completedTargetHandleDigest(handle: CloudToLANTransferHandle): string {
   return createHash('sha256').update(JSON.stringify([
     handle.schemaVersion, handle.projectId, handle.preparationId, handle.operationIntentId,
     handle.transferId, handle.selectedTargetMemberId, handle.sourceAuthorityGeneration,
@@ -34,7 +34,7 @@ export function completedTargetHandleDigest(handle: CloudToLanTransferHandle): s
   ])).digest('hex');
 }
 
-export function completedTargetEntryDigest(entry: CloudToLanTargetEntryRecord): string {
+export function completedTargetEntryDigest(entry: CloudToLANTargetEntryRecord): string {
   if (!entry.descriptor || !entry.successor || entry.phase !== 'handed-off') throw new TypeError();
   return completedTargetHandleDigest({
     schemaVersion: 1, projectId: entry.projectId, preparationId: entry.operationIntentId,

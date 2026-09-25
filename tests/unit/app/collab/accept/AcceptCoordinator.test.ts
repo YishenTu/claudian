@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { COLLAB_LIMITS, COLLAB_MAIN_REF } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -18,13 +19,13 @@ import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepositor
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
-const ACCEPTED_AT = '2026-08-08T00:01:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
+const ACCEPTED_AT = testTime({ days: -19, minutes: 1 });
 const MAIN = '1'.repeat(40);
 const HEAD = '2'.repeat(40);
 const RESULT = '3'.repeat(40);
@@ -34,7 +35,7 @@ const DETACHED = '6'.repeat(40);
 describe('AcceptCoordinator', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let git: FakeAcceptGit;
 
   beforeAll(async () => {
@@ -45,7 +46,7 @@ describe('AcceptCoordinator', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-accept-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();

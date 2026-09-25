@@ -8,17 +8,17 @@ import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import { WebSocketServer } from 'ws';
 
 import { ProjectEventClient } from '@/app/collab/client/ProjectEventClient';
-import { LanTlsIdentity, type LanTlsServerIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { LANTLSIdentity, type LANTLSServerIdentity } from '@/app/collab/lan/LANTLSIdentity';
 import { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
 import type { CollabError } from '@/core/collab/ClaudianCollabError';
 
 let root: string | undefined;
-let identity: LanTlsServerIdentity;
+let identity: LANTLSServerIdentity;
 
 // Native key generation is fixture setup, outside the transport behavior's timeout.
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'claudian-event-client-'));
-  identity = await new LanTlsIdentity(root, {
+  identity = await new LANTLSIdentity(root, {
     installationKey: TEST_INSTALLATION_A,
   }).issueServerIdentity('127.0.0.1');
 }, 30_000);

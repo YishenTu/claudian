@@ -4,7 +4,7 @@ import {
   type PendingTicketRelationInput,
   RequestTicketRelationRepository,
 } from '@/app/collab/authority/RequestTicketRelationRepository';
-import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface ActiveRequestMember {

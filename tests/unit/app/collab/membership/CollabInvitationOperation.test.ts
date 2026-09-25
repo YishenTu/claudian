@@ -13,8 +13,8 @@ import type { CollabAuthorityMembershipRouterPort } from '@/app/collab/remote-au
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const projectId = 'project-alpha';
-const now = testTime({ days: 6 });
-const expiresAt = testTime({ days: 6, minutes: 15 });
+const now = testTime();
+const expiresAt = testTime({ minutes: 15 });
 
 let root: string;
 let projects: CollabLocalProjectRepository;
@@ -70,15 +70,15 @@ async function setup(kind: 'lan' | 'cloud') {
       if (operation === 'createProjectRecoveryLink') {
         if (!cloudReplies.has(request.idempotencyKey)) cloudReplies.set(request.idempotencyKey, {
           projectId, authorityGeneration: 7, recoveryLinkId: `recovery-${++count}`, token: String(count).padStart(64, '0'),
-          expiresAt, secretReplayExpiresAt: testTime({ days: 6, minutes: 10 }),
+          expiresAt, secretReplayExpiresAt: testTime({ minutes: 10 }),
         });
         return cloudReplies.get(request.idempotencyKey);
       }
       if (operation !== 'createProjectInvitation') throw new Error(`Unexpected operation: ${operation}`);
       if (!cloudReplies.has(request.idempotencyKey)) cloudReplies.set(request.idempotencyKey, {
         projectId, invitationId: `invitation-${++count}`, secret: 'A'.repeat(43),
-        createdAt: now, expiresAt: testTime({ days: 7 }),
-        secretReplayExpiresAt: testTime({ days: 36 }), issuedState: 'active',
+        createdAt: now, expiresAt: testTime({ days: 1 }),
+        secretReplayExpiresAt: testTime({ days: 30 }), issuedState: 'active',
       });
       return cloudReplies.get(request.idempotencyKey);
     }),
@@ -275,7 +275,7 @@ describe('application-owned invitation operation', () => {
     const operation = service.openInvitation({ projectId, intent: 'create' });
     await operation.run();
     await operation.acknowledge();
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse(testTime({ days: 8 })));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse(testTime({ days: 2 })));
     await expect(operation.read()).resolves.toEqual({ status: 'unavailable', reason: 'expired' });
     operation.dispose();
   });

@@ -1,6 +1,6 @@
 import { Notice, TFile, TFolder } from 'obsidian';
 
-import { LocalAgentRuntimeHttpServer } from '@/app/agent-runtime/LocalAgentRuntimeHttpServer';
+import { LocalAgentRuntimeHTTPServer } from '@/app/agent-runtime/LocalAgentRuntimeHTTPServer';
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@/app/settings/defaultSettings';
 import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
@@ -21,7 +21,7 @@ import {
   updateCodexProviderSettings,
 } from '@/providers/codex/settings';
 import { computeGrokEnvironmentHash } from '@/providers/grok/env/GrokSettingsReconciler';
-import { GrokCliResolver } from '@/providers/grok/runtime/GrokCliResolver';
+import { GrokCLIResolver } from '@/providers/grok/runtime/GrokCLIResolver';
 import { GrokModelCatalogCoordinator } from '@/providers/grok/runtime/GrokModelCatalogCoordinator';
 import { GrokModelCatalogService } from '@/providers/grok/runtime/GrokModelCatalogService';
 import {
@@ -161,12 +161,12 @@ describe('ClaudianPlugin', () => {
     // Reset mocks
     jest.restoreAllMocks();
     jest.clearAllMocks();
-    jest.spyOn(LocalAgentRuntimeHttpServer.prototype, 'start').mockResolvedValue({
+    jest.spyOn(LocalAgentRuntimeHTTPServer.prototype, 'start').mockResolvedValue({
       origin: 'http://127.0.0.1:61234',
       rpcUrl: 'http://127.0.0.1:61234/v1/rpc',
     });
-    jest.spyOn(LocalAgentRuntimeHttpServer.prototype, 'close').mockResolvedValue(undefined);
-    jest.spyOn(LocalAgentRuntimeHttpServer.prototype, 'waitForWriteInvocations')
+    jest.spyOn(LocalAgentRuntimeHTTPServer.prototype, 'close').mockResolvedValue(undefined);
+    jest.spyOn(LocalAgentRuntimeHTTPServer.prototype, 'waitForWriteInvocations')
       .mockResolvedValue(undefined);
     jest.spyOn(sdkSession, 'locateSDKSession').mockImplementation(async (_vaultPath, sessionId) => ({
       availability: 'available',
@@ -264,7 +264,7 @@ describe('ClaudianPlugin', () => {
     });
 
     it('keeps Collab Runtime, Host restore, commands, and prompt dormant by default', async () => {
-      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
+      const start = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.start);
       const getCollabFeatureService = jest.spyOn(
         collabOf(plugin) as { getCollabFeatureService(): Promise<unknown> },
         'getCollabFeatureService',
@@ -284,8 +284,8 @@ describe('ClaudianPlugin', () => {
     });
 
     it('enables, drains, and re-enables Collab without restarting the Plugin', async () => {
-      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
-      const close = jest.mocked(LocalAgentRuntimeHttpServer.prototype.close);
+      const start = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.start);
+      const close = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.close);
       const restoreLifecycle = jest.fn().mockResolvedValue(undefined);
       const restoreHosts = jest.fn().mockResolvedValue(undefined);
       const getCollabFeatureService = jest.spyOn(
@@ -474,7 +474,7 @@ describe('ClaudianPlugin', () => {
       const startPending = new Promise<{ origin: string; rpcUrl: string }>(resolve => {
         resolveStart = resolve;
       });
-      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start)
+      const start = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.start)
         .mockReturnValue(startPending);
       const createCollabFeatureService = jest.spyOn(
         collabOf(plugin) as {
@@ -535,7 +535,7 @@ describe('ClaudianPlugin', () => {
 
     it('reuses one Agent Runtime start across concurrent dynamic-section requests', async () => {
       enableCollab();
-      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
+      const start = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.start);
       await plugin.onload();
 
       const dynamicSections = await Promise.all([
@@ -555,7 +555,7 @@ describe('ClaudianPlugin', () => {
         },
         'createCollabFeatureService',
       );
-      jest.mocked(LocalAgentRuntimeHttpServer.prototype.start)
+      jest.mocked(LocalAgentRuntimeHTTPServer.prototype.start)
         .mockRejectedValue(new Error('synthetic bind failure'));
 
       await plugin.onload();
@@ -566,7 +566,7 @@ describe('ClaudianPlugin', () => {
 
     it('returns the stable dynamic system section after the Agent Runtime starts', async () => {
       enableCollab();
-      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
+      const start = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.start);
       await plugin.onload();
 
       await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([
@@ -578,7 +578,7 @@ describe('ClaudianPlugin', () => {
 
     it('contains Agent Runtime start failure without failing Plugin startup', async () => {
       enableCollab();
-      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start)
+      const start = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.start)
         .mockRejectedValue(new Error('synthetic bind failure'));
 
       await expect(plugin.onload()).resolves.toBeUndefined();
@@ -597,9 +597,9 @@ describe('ClaudianPlugin', () => {
       const startPending = new Promise<{ origin: string; rpcUrl: string }>(resolve => {
         resolveStart = resolve;
       });
-      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start)
+      const start = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.start)
         .mockReturnValue(startPending);
-      const close = jest.mocked(LocalAgentRuntimeHttpServer.prototype.close);
+      const close = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.close);
 
       await plugin.onload();
       await new Promise(resolve => setImmediate(resolve));
@@ -754,7 +754,7 @@ describe('ClaudianPlugin', () => {
 
     it('keeps Agent Runtime startup independent from background Host restoration', async () => {
       enableCollab();
-      const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
+      const start = jest.mocked(LocalAgentRuntimeHTTPServer.prototype.start);
       await plugin.onload();
       await new Promise(resolve => setImmediate(resolve));
       const restoreAfterLayout = (mockApp.workspace.onLayoutReady as jest.Mock)
@@ -2481,7 +2481,7 @@ describe('ClaudianPlugin', () => {
         probe: { discover: async () => { throw new Error('Method not found'); } },
       });
       const coordinator = new GrokModelCatalogCoordinator(plugin as any, service);
-      const cliResolver = new GrokCliResolver();
+      const cliResolver = new GrokCLIResolver();
       ProviderWorkspaceRegistry.setServices('grok', {
         cliResolver,
       });

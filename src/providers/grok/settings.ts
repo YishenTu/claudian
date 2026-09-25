@@ -2,7 +2,7 @@ import { selectModelMetadata } from '../../core/providers/models/selectedModelMe
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
-import type { HostnameCliPaths } from '../../core/types/settings';
+import type { HostnameCLIPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
   decodeGrokModelId,
@@ -21,7 +21,7 @@ export interface GrokCatalogSnapshot {
 export interface PersistedGrokProviderSettings {
   enabled: boolean;
   cliPath: string;
-  cliPathsByHost: HostnameCliPaths;
+  cliPathsByHost: HostnameCLIPaths;
   catalogsByHost: Record<string, GrokCatalogSnapshot>;
   environmentVariables: string;
   environmentHash: string;

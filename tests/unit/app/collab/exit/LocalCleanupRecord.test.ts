@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   COLLAB_LOCAL_CLEANUP_SCHEMA_VERSION,
   decodeLocalCleanupRecord,
@@ -15,8 +17,8 @@ const record: LocalCleanupRecord = {
   purpose: 'leave',
   phase: 'planned',
   markerNonce: 'A'.repeat(43),
-  createdAt: '2026-08-13T00:00:00.000Z',
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
+  updatedAt: testTime({ days: -14 }),
 };
 
 describe('LocalCleanupRecord', () => {

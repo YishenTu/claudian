@@ -39,7 +39,7 @@ function snapshotError(reason: string): CollabError {
   });
 }
 
-async function loadDefaultSqlJs(): Promise<SqlJsStatic> {
+async function loadDefaultSQLJS(): Promise<SqlJsStatic> {
   const [sqlJsModule, wasmModule] = await Promise.all([
     import('sql.js'),
     import('sql.js/dist/sql-wasm.wasm'),
@@ -126,7 +126,7 @@ export class HostTransferAuthoritySnapshot {
   private readonly trust: Pick<HostTrustTransitionService, 'verifyChain'>;
 
   constructor(options: HostTransferAuthoritySnapshotOptions = {}) {
-    this.loadSqlJs = options.loadSqlJs ?? loadDefaultSqlJs;
+    this.loadSqlJs = options.loadSqlJs ?? loadDefaultSQLJS;
     this.trust = options.trust ?? new HostTrustTransitionService();
   }
 

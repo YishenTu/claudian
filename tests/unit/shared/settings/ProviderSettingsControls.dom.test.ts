@@ -88,7 +88,7 @@ jest.mock('obsidian', () => {
   return { Setting: MockSetting };
 });
 
-import { renderHostnameCliPathSetting } from '@/shared/settings/HostnameCliPathSetting';
+import { renderHostnameCLIPathSetting } from '@/shared/settings/HostnameCLIPathSetting';
 import { renderProviderEnablementSetting } from '@/shared/settings/ProviderEnablementSetting';
 
 interface TriggerableToggle {
@@ -155,7 +155,7 @@ describe('provider settings controls', () => {
   it('renders and edits the current-host CLI path, including clearing', async () => {
     const changes: string[] = [];
     let persistedPath = '/initial/provider';
-    const control = renderHostnameCliPathSetting({
+    const control = renderHostnameCLIPathSetting({
       container: document.createElement('div'),
       description: 'Provider-specific CLI description',
       getValue: () => persistedPath,
@@ -183,7 +183,7 @@ describe('provider settings controls', () => {
     const events: string[] = [];
     let persistedPath = '/initial/provider';
     const container = document.createElement('div');
-    const control = renderHostnameCliPathSetting({
+    const control = renderHostnameCLIPathSetting({
       container,
       description: 'Description',
       getValue: () => persistedPath,
@@ -215,7 +215,7 @@ describe('provider settings controls', () => {
 
   it('supports disabled CLI controls and dynamic presentation updates', async () => {
     const onChange = jest.fn();
-    const control = renderHostnameCliPathSetting({
+    const control = renderHostnameCLIPathSetting({
       container: document.createElement('div'),
       description: 'Initial description',
       disabled: true,

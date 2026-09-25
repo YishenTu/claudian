@@ -8,7 +8,7 @@ import spawn from 'cross-spawn';
 
 import { GrokExecutionBackend } from '@/providers/grok/execution/GrokExecutionBackend';
 
-import { createNativeRpcProcess } from './NativeRpcTestProcess';
+import { createNativeRPCProcess } from './NativeRPCTestProcess';
 import { createForkTestEnvironment, type ForkTestEnvironment } from './ProviderForkTestHarness';
 
 function createNativeGrok(env: ForkTestEnvironment, options: { tokenStream?: boolean } = {}) {
@@ -18,7 +18,7 @@ function createNativeGrok(env: ForkTestEnvironment, options: { tokenStream?: boo
   const directory = (id: string) => path.join(env.root, 'grok', 'sessions', encodeURIComponent(env.root), id);
   const sourceFile = path.join(directory('grok-source'), 'updates.jsonl');
   let ordinal = 0;
-  jest.mocked(spawn).mockImplementation(() => createNativeRpcProcess(async (method, params, notify) => {
+  jest.mocked(spawn).mockImplementation(() => createNativeRPCProcess(async (method, params, notify) => {
     operations.push({ method, params });
     if (method === 'initialize') return initializeFixture.initializeResult;
     if (method === 'session/new') {

@@ -72,7 +72,7 @@ export const MCP_TOOLS = [
   TOOL_READ_MCP_RESOURCE,
   TOOL_MCP,
 ] as const;
-export type McpToolName = (typeof MCP_TOOLS)[number];
+export type MCPToolName = (typeof MCP_TOOLS)[number];
 
 export const READ_ONLY_TOOLS = [
   TOOL_READ,
@@ -100,7 +100,7 @@ export function isBashTool(toolName: string): toolName is BashToolName {
   return (BASH_TOOLS as readonly string[]).includes(toolName);
 }
 
-export function isMcpTool(toolName: string): toolName is McpToolName {
+export function isMCPTool(toolName: string): toolName is MCPToolName {
   return (MCP_TOOLS as readonly string[]).includes(toolName);
 }
 

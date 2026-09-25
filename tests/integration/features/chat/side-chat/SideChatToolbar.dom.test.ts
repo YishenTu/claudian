@@ -9,7 +9,7 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 
-import { createHarness, releaseSideChatHarnesses } from './SideChatDomHarness';
+import { createHarness, releaseSideChatHarnesses } from './SideChatDOMHarness';
 
 const originalResizeObserver = globalThis.ResizeObserver;
 beforeEach(() => {

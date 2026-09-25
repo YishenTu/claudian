@@ -11,7 +11,7 @@ import {
 } from '@/app/collab/host-transfer/OutgoingHostTransferCoordinator';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 
-const NOW = '2026-08-08T00:00:00.000Z';
+const NOW = testTime({ days: -19 });
 const TARGET_CA = '-----BEGIN CERTIFICATE-----\nTARGET\n-----END CERTIFICATE-----\n';
 const TARGET_FINGERPRINT = 'b'.repeat(64);
 const MANIFEST_DIGEST = 'c'.repeat(64);

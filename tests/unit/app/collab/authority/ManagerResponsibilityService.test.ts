@@ -19,16 +19,16 @@ import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepositor
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
-const OFFERED_AT = '2026-08-08T01:00:00.000Z';
-const EXPIRED_AT = '2026-08-08T01:11:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
+const OFFERED_AT = testTime({ days: -19, hours: 1 });
+const EXPIRED_AT = testTime({ days: -19, hours: 1, minutes: 11 });
 
 describe('ManagerResponsibilityService', () => {
   let SQL: SqlJsStatic;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let root = '';
   let connected: Set<string>;
   let now: Date;
@@ -44,7 +44,7 @@ describe('ManagerResponsibilityService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-manager-responsibility-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -350,7 +350,7 @@ async function createOffer(
 }
 
 async function promoteForSetup(
-  database: SqlJsProjectDatabase,
+  database: SQLJSProjectDatabase,
   memberId: string,
 ): Promise<void> {
   await database.mutate(connection => {
@@ -364,7 +364,7 @@ async function promoteForSetup(
 }
 
 async function demoteForSetup(
-  database: SqlJsProjectDatabase,
+  database: SQLJSProjectDatabase,
   memberId: string,
 ): Promise<void> {
   await database.mutate(connection => {

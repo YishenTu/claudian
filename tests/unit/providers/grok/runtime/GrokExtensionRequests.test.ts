@@ -1,4 +1,4 @@
-import type { AcpJsonRpcTransport } from '@/providers/acp';
+import type { ACPJSONRPCTransport } from '@/providers/acp';
 import { requestGrokRewind } from '@/providers/grok/runtime/GrokExtensionRequests';
 
 describe('GrokExtensionRequests rewind', () => {
@@ -13,7 +13,7 @@ describe('GrokExtensionRequests rewind', () => {
       success: false,
       target_prompt_index: 1,
     });
-    const transport = { request } as unknown as AcpJsonRpcTransport;
+    const transport = { request } as unknown as ACPJSONRPCTransport;
 
     await expect(requestGrokRewind(transport, {
       force: false,
@@ -45,7 +45,7 @@ describe('GrokExtensionRequests rewind', () => {
   it('rejects malformed native rewind responses', async () => {
     const transport = {
       request: jest.fn().mockResolvedValue({ success: true }),
-    } as unknown as AcpJsonRpcTransport;
+    } as unknown as ACPJSONRPCTransport;
 
     await expect(requestGrokRewind(transport, {
       force: true,
@@ -66,7 +66,7 @@ describe('GrokExtensionRequests rewind', () => {
       success: true,
       target_prompt_index: 1,
     });
-    const transport = { request } as unknown as AcpJsonRpcTransport;
+    const transport = { request } as unknown as ACPJSONRPCTransport;
 
     await requestGrokRewind(transport, {
       force: true,

@@ -25,7 +25,7 @@ import type {
   PromoteManagerResponse,
   RemoveMemberRequest,
   RetireProjectRequest,
-} from '@/app/collab/lan/LanCollabControlOperations';
+} from '@/app/collab/lan/LANCollabControlOperations';
 import {
   ActiveLifecycleGateway,
   type LifecycleGatewayPort,

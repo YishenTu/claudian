@@ -1,6 +1,6 @@
 import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import type { CollabLocalCleanupStatus } from '@/core/collab';
 
 export const COLLAB_RETIREMENT_RECORD_SCHEMA_VERSION = 1 as const;
@@ -81,7 +81,7 @@ export function decodeRetirementRecord(value: unknown): RetirementRecord {
   }
   if (cloudServerUrl !== null) {
     try {
-      validateCloudServerUrl(cloudServerUrl, 'cloudServerUrl');
+      validateCloudServerURL(cloudServerUrl, 'cloudServerUrl');
     } catch { throw new TypeError('Invalid cloudServerUrl'); }
   }
   const pending = acknowledgementStatus === 'pending';

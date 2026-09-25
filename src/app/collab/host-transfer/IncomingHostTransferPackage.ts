@@ -12,7 +12,7 @@ import path from 'node:path';
 
 import { COLLAB_MAIN_REF, type CollabOperationId, type CollabProjectId, isCollabGitOid } from '@claudian-collab/protocol';
 
-import { NodeSqlJsSnapshotStore } from '@/app/collab/authority/SqlJsSnapshotStore';
+import { NodeSQLJSSnapshotStore } from '@/app/collab/authority/SQLJSSnapshotStore';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
@@ -463,7 +463,7 @@ export class IncomingHostTransferPackage implements IncomingHostTransferPackageP
     },
     owner: InstallOwner,
   ): Promise<void> {
-    const store = new NodeSqlJsSnapshotStore(authorityDirectory);
+    const store = new NodeSQLJSSnapshotStore(authorityDirectory);
     const ownerPath = path.join(authorityDirectory, INSTALL_OWNER_FILE);
     const completePath = path.join(authorityDirectory, INSTALL_COMPLETE_FILE);
     const persistedOwner = await readInstallOwner(ownerPath);

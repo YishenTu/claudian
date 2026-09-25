@@ -1,7 +1,7 @@
 import { type CollabIsoTimestamp, type CollabMemberId, type CollabOperationId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 import { collabControlOperationCodec, type CollabManagerResponsibilityOffer, type TransitionManagerResponsibilityOfferRequest } from '@claudian-collab/protocol';
 
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import type { CloudMembershipBinding } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type {
   CollabManagerResponsibilityOfferStatus,
@@ -10,7 +10,7 @@ import type {
 
 export const COLLAB_MANAGER_RESPONSIBILITY_RECEIPT_SCHEMA_VERSION = 2 as const;
 
-export interface LanManagerResponsibilityReceiptRecord {
+export interface LANManagerResponsibilityReceiptRecord {
   readonly schemaVersion: typeof COLLAB_MANAGER_RESPONSIBILITY_RECEIPT_SCHEMA_VERSION;
   readonly kind: 'manager-responsibility-receipt';
   readonly projectId: CollabProjectId;
@@ -35,8 +35,8 @@ export interface CloudManagerResponsibilityReceiptRecord extends CloudMembership
   readonly updatedAt: CollabIsoTimestamp;
 }
 
-export type ManagerResponsibilityReceiptRecord = LanManagerResponsibilityReceiptRecord | CloudManagerResponsibilityReceiptRecord;
-export type ManagerResponsibilityReceiptState = Pick<LanManagerResponsibilityReceiptRecord, 'offerId' | 'status'>;
+export type ManagerResponsibilityReceiptRecord = LANManagerResponsibilityReceiptRecord | CloudManagerResponsibilityReceiptRecord;
+export type ManagerResponsibilityReceiptState = Pick<LANManagerResponsibilityReceiptRecord, 'offerId' | 'status'>;
 
 export function managerResponsibilityReceiptState(record: ManagerResponsibilityReceiptState | CloudManagerResponsibilityReceiptRecord): ManagerResponsibilityReceiptState {
   return 'offer' in record ? { offerId: record.offer.offerId, status: record.offer.state } : record;
@@ -139,7 +139,7 @@ export function decodeCloudManagerResponsibilityReceiptRecord(value: unknown): C
   if (updatedAt < offer.offeredAt) throw new TypeError('Invalid Cloud Manager receipt time');
   return {
     schemaVersion: 3, kind: 'manager-responsibility-receipt', projectId, memberId,
-    serverUrl: validateCloudServerUrl(record.serverUrl, 'serverUrl'), authorityGeneration: record.authorityGeneration,
+    serverUrl: validateCloudServerURL(record.serverUrl, 'serverUrl'), authorityGeneration: record.authorityGeneration,
     offer, operation: record.operation, request: request?.status === 'ok' ? request.value : null, phase: record.phase, updatedAt,
   };
 }

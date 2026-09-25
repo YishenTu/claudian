@@ -16,20 +16,20 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { ProjectRetirementAuthorityService } from '@/app/collab/authority/ProjectRetirementAuthorityService';
 import {
 type AuthorityDatabaseConnection,
-SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { assertHostTransferTransition } from '@/app/collab/host-transfer/HostTransferPhaseMachine';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 import { RetirementTerminalService } from '@/app/collab/retirement/RetirementTerminalService';
 import { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
 
 describe('Project exit foundation gate', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
 
   beforeAll(async () => {
     SQL = await initSqlJs();
@@ -39,13 +39,13 @@ describe('Project exit foundation gate', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-project-exit-foundation-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
     await database.mutate(connection => {
       new ProjectAuthorityRepository().initialize(connection, {
-        createdAt: '2026-08-13T00:00:00.000Z',
+        createdAt: testTime({ days: -14 }),
         hostCredentialHash: new Uint8Array(32).fill(1),
         hostDisplayName: 'Host',
         hostMemberId: 'member-host',
@@ -72,13 +72,13 @@ describe('Project exit foundation gate', () => {
     expect(lanCollabControlOperationCodec('retireProject').decodeResponse({
       data: {
         projectId: 'project-alpha',
-        retiredAt: '2026-08-13T08:00:00.000Z',
+        retiredAt: testTime({ days: -14, hours: 8 }),
       },
       protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
       requestId: 'retire-response',
     })).toEqual({
       projectId: 'project-alpha',
-      retiredAt: '2026-08-13T08:00:00.000Z',
+      retiredAt: testTime({ days: -14, hours: 8 }),
     });
   });
 
@@ -115,9 +115,9 @@ describe('Project exit foundation gate', () => {
       },
       result: {
         projectId: 'project-alpha',
-        retiredAt: '2026-08-13T08:00:00.000Z',
+        retiredAt: testTime({ days: -14, hours: 8 }),
       },
-      retiredAt: '2026-08-13T08:00:00.000Z',
+      retiredAt: testTime({ days: -14, hours: 8 }),
       schemaVersion: 2,
     });
 
@@ -187,10 +187,10 @@ describe('Project exit foundation gate', () => {
     const sourceVault = path.join(root, 'source-vault');
     const targetVault = path.join(root, 'target-vault');
     await Promise.all([mkdir(sourceVault), mkdir(targetVault)]);
-    const sourceIdentity = new LanTlsIdentity(sourceVault, {
+    const sourceIdentity = new LANTLSIdentity(sourceVault, {
       installationKey: TEST_INSTALLATION_A,
     });
-    const targetIdentity = new LanTlsIdentity(targetVault, {
+    const targetIdentity = new LANTLSIdentity(targetVault, {
       installationKey: TEST_INSTALLATION_B,
     });
     const [sourceSigner, targetCa] = await Promise.all([
@@ -219,13 +219,13 @@ describe('Project exit foundation gate', () => {
     });
     const trust = new HostTrustTransitionService();
     const proof = await trust.signTransition(sourceSigner, {
-      issuedAt: '2026-08-13T01:02:00.000Z',
+      issuedAt: testTime({ days: -14, hours: 1, minutes: 2 }),
       nextCaCertificatePem: targetCa.caCertificatePem,
       projectId: 'project-alpha',
       transferId: 'transfer-milestone',
     });
     const activationCertificate = await trust.signActivation(sourceSigner, {
-      cutoverAt: '2026-08-13T01:02:00.000Z',
+      cutoverAt: testTime({ days: -14, hours: 1, minutes: 2 }),
       manifestDigest: 'e'.repeat(64),
       projectId: 'project-alpha',
       targetCaFingerprint: targetCa.caFingerprint,
@@ -294,8 +294,8 @@ function insertMember(connection: AuthorityDatabaseConnection, memberId: string)
     memberId,
     `refs/heads/members/${memberId}`,
     new Uint8Array(32).fill(2),
-    '2026-08-13T00:00:00.000Z',
-    '2026-08-13T00:00:00.000Z',
+    testTime({ days: -14 }),
+    testTime({ days: -14 }),
   ]);
 }
 

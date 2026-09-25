@@ -1,11 +1,11 @@
 import type { CollabAuthorityTransferStatus, CollabMemberId } from '@claudian-collab/protocol';
 
 import type {
-  CollabCloudToLanTransferView,
+  CollabCloudToLANTransferView,
   CollabFeaturePort,
   CollabFeatureState,
   CollabHostStatus,
-  CollabLanToCloudTransferView,
+  CollabLANToCloudTransferView,
   CollabLocalProjectSummary,
   CollabManagementOperationView,
   CollabManagerResponsibilityOfferSummary,
@@ -42,8 +42,8 @@ interface ManagementData {
 }
 
 interface ManagementRecovery {
-  readonly lanToCloud: CollabLanToCloudTransferView | null;
-  readonly cloudToLan: CollabCloudToLanTransferView | null;
+  readonly lanToCloud: CollabLANToCloudTransferView | null;
+  readonly cloudToLan: CollabCloudToLANTransferView | null;
   readonly operation: CollabManagementOperationView | null;
 }
 

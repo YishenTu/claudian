@@ -1,7 +1,7 @@
 import { type CollabMemberId, type CollabOperationId, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepository';
-import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SQLJSProjectDatabase';
 import type {
   CollabManagerResponsibilityOfferSummary,
   CollabManagerResponsibilityPurpose,

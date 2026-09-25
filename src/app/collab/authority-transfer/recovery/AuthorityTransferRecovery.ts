@@ -4,8 +4,8 @@ import {
   type AuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import type {
-  CloudToLanTargetEntryRecord,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  CloudToLANTargetEntryRecord,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import {
   type AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -35,7 +35,7 @@ export interface AuthorityTransferRecoveryHandler {
   resumeRetained(record: AuthorityTransferRecord, options: CollabOperationOptions): Promise<void>;
   resumeManager(projectId: CollabProjectId, options: CollabOperationOptions): Promise<void>;
   resumeTargetPreparation(
-    entry: CloudToLanTargetEntryRecord,
+    entry: CloudToLANTargetEntryRecord,
     options: CollabOperationOptions,
   ): Promise<void>;
 }

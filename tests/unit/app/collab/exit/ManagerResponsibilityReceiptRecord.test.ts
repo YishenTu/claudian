@@ -17,10 +17,10 @@ const record: ManagerResponsibilityReceiptRecord = {
   targetMemberId: 'member-bob',
   purpose: 'manager-leave',
   status: 'offered',
-  offeredAt: '2026-08-13T00:00:00.000Z',
+  offeredAt: testTime({ days: -14 }),
   expiresAt: testTime({ days: -14, minutes: 10 }),
   acknowledgedAt: null,
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  updatedAt: testTime({ days: -14 }),
 };
 
 const cloudRecord: CloudManagerResponsibilityReceiptRecord = {
@@ -31,7 +31,7 @@ const cloudRecord: CloudManagerResponsibilityReceiptRecord = {
     acknowledgedAt: null,
     expiresAt: testTime({ days: -13 }),
     managerSetGenerationAtOffer: 4,
-    offeredAt: '2026-08-13T00:00:00.000Z',
+    offeredAt: testTime({ days: -14 }),
     offerId: 'offer-cloud',
     purpose: 'manager-leave',
     revision: 2,
@@ -52,7 +52,7 @@ const cloudRecord: CloudManagerResponsibilityReceiptRecord = {
   },
   schemaVersion: 3,
   serverUrl: 'https://cloud.example',
-  updatedAt: '2026-08-13T00:01:00.000Z',
+  updatedAt: testTime({ days: -14, minutes: 1 }),
 };
 
 describe('ManagerResponsibilityReceiptRecord', () => {

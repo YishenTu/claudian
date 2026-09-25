@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { type CollabChangeRequest } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
@@ -191,7 +192,7 @@ class MemoryPublicationState {
       operation: null,
       projectId: PROJECT_ID,
       schemaVersion: COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     };
   }
 
@@ -223,7 +224,7 @@ class RecordingRequestPort {
     this.heads.push(input.headOid);
     return {
       commentCount: 0,
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       description: 'Published change',
       firstBaseOid: input.headOid,
       id: 'request-a',
@@ -232,7 +233,7 @@ class RecordingRequestPort {
       revision: 1,
       status: 'open',
       ticketRelations: [],
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     };
   }
 }

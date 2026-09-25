@@ -22,9 +22,9 @@ import {
   decodeAuthorityTransferClaimantRecord,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import type {
-  CloudToLanManagerEntryRecord,
-  CloudToLanTargetEntryRecord,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  CloudToLANManagerEntryRecord,
+  CloudToLANTargetEntryRecord,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import {
   decodeAuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
@@ -67,10 +67,10 @@ import {
 import { decodeHostTrustCheckpoint, type HostTrustCheckpoint } from '@/app/collab/host-transfer/HostTrustCheckpoint';
 import { isCollabWorkingCopyDirectoryName } from '@/app/collab/project/CollabWorkingCopySlug';
 import {
-  canonicalCloudUrl,
-  cloudProjectGitRemoteUrl,
-  validateCloudServerUrl,
-} from '@/app/collab/remote-authority/CloudAuthorityUrls';
+  canonicalCloudURL,
+  cloudProjectGitRemoteURL,
+  validateCloudServerURL,
+} from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import {
   decodeRetirementRecord,
   type RetirementRecord,
@@ -157,7 +157,7 @@ interface CollabLocalMembershipRecordBase {
   readonly updatedAt: CollabIsoTimestamp;
 }
 
-export interface CollabLocalLanMembershipRecord
+export interface CollabLocalLANMembershipRecord
   extends CollabLocalMembershipRecordBase {
   readonly authority: {
     readonly authorityGeneration: number;
@@ -194,12 +194,12 @@ export interface CollabLocalCloudMembershipRecord
 }
 
 export type CollabLocalMembershipRecord =
-  | CollabLocalLanMembershipRecord
+  | CollabLocalLANMembershipRecord
   | CollabLocalCloudMembershipRecord;
 
-export function isCollabLocalLanMembership(
+export function isCollabLocalLANMembership(
   membership: CollabLocalMembershipRecord,
-): membership is CollabLocalLanMembershipRecord {
+): membership is CollabLocalLANMembershipRecord {
   return membership.authority?.kind === 'lan';
 }
 
@@ -495,7 +495,7 @@ function requireWorkspacePath(record: UnknownRecord): string {
   return workspacePath;
 }
 
-function requireHttpsUrl(
+function requireHTTPSURL(
   record: UnknownRecord,
   key: string,
   options: { readonly endpointOnly?: boolean } = {},
@@ -520,12 +520,12 @@ function requireHttpsUrl(
   return value;
 }
 
-function requireNullableHttpsUrl(
+function requireNullableHTTPSURL(
   record: UnknownRecord,
   key: string,
   options: { readonly endpointOnly?: boolean } = {},
 ): string | null {
-  return record[key] === null ? null : requireHttpsUrl(record, key, options);
+  return record[key] === null ? null : requireHTTPSURL(record, key, options);
 }
 
 function normalizeIndexEntry(value: unknown): CollabLocalProjectIndexEntry {
@@ -729,15 +729,15 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
     ) {
       throw new TypeError('Invalid authority generation');
     }
-    const serverUrl = validateCloudServerUrl(
+    const serverUrl = validateCloudServerURL(
       requireString(value.authority, 'serverUrl', { maxLength: 2_048 }),
       'serverUrl',
     );
-    const gitRemoteUrl = canonicalCloudUrl(
+    const gitRemoteUrl = canonicalCloudURL(
       requireString(value.authority, 'gitRemoteUrl', { maxLength: 2_048 }),
       'gitRemoteUrl',
     );
-    if (gitRemoteUrl !== cloudProjectGitRemoteUrl(serverUrl, projectId)) {
+    if (gitRemoteUrl !== cloudProjectGitRemoteURL(serverUrl, projectId)) {
       throw new TypeError('Invalid Cloud Git URL');
     }
     const membership: CollabLocalCloudMembershipRecord = {
@@ -793,15 +793,15 @@ function normalizeMembership(value: unknown): CollabLocalMembershipRecord {
       maxLength: 95,
       pattern: FINGERPRINT_PATTERN,
     }).replaceAll(':', '').toLocaleLowerCase('en-US');
-  const endpoint = requireNullableHttpsUrl(value.authority, 'endpoint', {
+  const endpoint = requireNullableHTTPSURL(value.authority, 'endpoint', {
     endpointOnly: true,
   });
-  const gitRemoteUrl = requireNullableHttpsUrl(value.authority, 'gitRemoteUrl');
+  const gitRemoteUrl = requireNullableHTTPSURL(value.authority, 'gitRemoteUrl');
   const networkFields = [endpoint, gitRemoteUrl, hostCaCertificatePem, hostCaFingerprint];
   if (networkFields.some(field => field === null) && networkFields.some(field => field !== null)) {
     throw new TypeError('Incomplete LAN authority configuration');
   }
-  const membership: CollabLocalLanMembershipRecord = {
+  const membership: CollabLocalLANMembershipRecord = {
     ...common,
     authority: {
       authorityGeneration: authorityGeneration as number,
@@ -845,11 +845,11 @@ function migrateMembership(value: unknown): CollabLocalMembershipRecord {
   });
 }
 
-function serializeJson(value: unknown): string {
+function serializeJSON(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function isJsonValue(value: unknown, seen = new WeakSet<object>()): boolean {
+function isJSONValue(value: unknown, seen = new WeakSet<object>()): boolean {
   if (
     value === null
     || typeof value === 'string'
@@ -861,7 +861,7 @@ function isJsonValue(value: unknown, seen = new WeakSet<object>()): boolean {
   if (typeof value !== 'object' || seen.has(value)) return false;
   seen.add(value);
   if (Array.isArray(value)) {
-    const valid = value.every(item => isJsonValue(item, seen));
+    const valid = value.every(item => isJSONValue(item, seen));
     seen.delete(value);
     return valid;
   }
@@ -869,7 +869,7 @@ function isJsonValue(value: unknown, seen = new WeakSet<object>()): boolean {
     seen.delete(value);
     return false;
   }
-  const valid = Object.values(value).every(item => isJsonValue(item, seen));
+  const valid = Object.values(value).every(item => isJSONValue(item, seen));
   seen.delete(value);
   return valid;
 }
@@ -1019,7 +1019,7 @@ export class CollabLocalProjectRepository {
       } catch {
         throw localRecordError('local-record-corrupt', 'authority-transfer', record.projectId);
       }
-      if (serializeJson(current) !== serializeJson(record)) return false;
+      if (serializeJSON(current) !== serializeJSON(record)) return false;
       const removed = await removeCollabFileDurably(
         this.vaultRoot,
         this.#lifecycleDocumentPath(record.projectId, 'authority-transfer'),
@@ -1294,7 +1294,7 @@ export class CollabLocalProjectRepository {
         await writeCollabFileAtomically(
           this.vaultRoot,
           this.#retirementAcknowledgementPath(projectId),
-          serializeJson(record),
+          serializeJSON(record),
           { mode: 0o600, onDiagnostic: this.#onDiagnostic },
         );
       } else if (!terminal?.finalized) {
@@ -1403,7 +1403,7 @@ export class CollabLocalProjectRepository {
         await writeCollabFileAtomically(
           this.vaultRoot,
           this.#lifecycleDocumentPath(projectId, 'retirement'),
-          serializeJson(authoritative),
+          serializeJSON(authoritative),
           { mode: 0o600, onDiagnostic: this.#onDiagnostic },
         );
       }
@@ -1480,7 +1480,7 @@ export class CollabLocalProjectRepository {
       await writeCollabFileAtomically(
         this.vaultRoot,
         relativePath,
-        serializeJson(next),
+        serializeJSON(next),
         { mode: 0o600, onDiagnostic: this.#onDiagnostic },
       );
       const index = await this.#loadIndexUnlocked(false);
@@ -1642,7 +1642,7 @@ export class CollabLocalProjectRepository {
       ) {
         return membership;
       }
-      const updated: CollabLocalMembershipRecord = isCollabLocalLanMembership(membership)
+      const updated: CollabLocalMembershipRecord = isCollabLocalLANMembership(membership)
         ? {
           ...membership,
           lastEventSequence: projection.sequence,
@@ -1659,7 +1659,7 @@ export class CollabLocalProjectRepository {
       await writeCollabFileAtomically(
         this.vaultRoot,
         relativePath,
-        serializeJson(updated),
+        serializeJSON(updated),
         { mode: 0o600, onDiagnostic: this.#onDiagnostic },
       );
       return updated;
@@ -1727,7 +1727,7 @@ export class CollabLocalProjectRepository {
     ))) {
       throw localRecordError('local-record-corrupt', 'authority-transfer-entry', projectId);
     }
-    let manager: CloudToLanManagerEntryRecord | null = null;
+    let manager: CloudToLANManagerEntryRecord | null = null;
     if (entries.some(entry => entry.name === 'manager.json')) {
       const decoded = decodeLocalAuthorityTransferEntryComponent(await this.#readJson(
         `${entryDirectory}/manager.json`,
@@ -1751,7 +1751,7 @@ export class CollabLocalProjectRepository {
       }
       source = decoded;
     }
-    let target: CloudToLanTargetEntryRecord | null = null;
+    let target: CloudToLANTargetEntryRecord | null = null;
     if (entries.some(entry => entry.name === 'target.json')) {
       const decoded = decodeLocalAuthorityTransferEntryComponent(await this.#readJson(
         `${entryDirectory}/target.json`,
@@ -1801,16 +1801,16 @@ export class CollabLocalProjectRepository {
     return createAuthorityTransferEntryDocument({ manager, projectId, requesters, source, target });
   }
 
-  #saveCloudToLanManagerEntry(record: CloudToLanManagerEntryRecord): Promise<void> {
+  #saveCloudToLanManagerEntry(record: CloudToLANManagerEntryRecord): Promise<void> {
     return this.#saveAuthorityTransferSingleton(record, 'cloud-to-lan-manager', 'manager.json');
   }
 
-  #saveCloudToLanTargetEntry(record: CloudToLanTargetEntryRecord): Promise<void> {
+  #saveCloudToLanTargetEntry(record: CloudToLANTargetEntryRecord): Promise<void> {
     return this.#saveAuthorityTransferSingleton(record, 'cloud-to-lan-target', 'target.json');
   }
 
   #saveAuthorityTransferSingleton(
-    record: CloudToLanManagerEntryRecord | CloudToLanTargetEntryRecord,
+    record: CloudToLANManagerEntryRecord | CloudToLANTargetEntryRecord,
     expectedRole: 'cloud-to-lan-manager' | 'cloud-to-lan-target',
     fileName: 'manager.json' | 'target.json',
   ): Promise<void> {
@@ -1830,7 +1830,7 @@ export class CollabLocalProjectRepository {
       await writeCollabFileAtomically(
         this.vaultRoot,
         `${entryDirectory}/${fileName}`,
-        serializeJson(decoded),
+        serializeJSON(decoded),
         { mode: 0o600, onDiagnostic: this.#onDiagnostic },
       );
     });
@@ -1860,7 +1860,7 @@ export class CollabLocalProjectRepository {
     await writeCollabFileAtomically(
       this.vaultRoot,
       `${entryDirectory}/requesters/${decoded.requesterInstallationKey}.json`,
-      serializeJson(decoded),
+      serializeJSON(decoded),
       { mode: 0o600, onDiagnostic: this.#onDiagnostic },
     );
   }
@@ -1887,7 +1887,7 @@ export class CollabLocalProjectRepository {
     await writeCollabFileAtomically(
       this.vaultRoot,
       `${entryDirectory}/source.json`,
-      serializeJson(decoded),
+      serializeJSON(decoded),
       { mode: 0o600, onDiagnostic: this.#onDiagnostic },
     );
   }
@@ -1907,7 +1907,7 @@ export class CollabLocalProjectRepository {
       const decoded = decodeLocalAuthorityTransferEntryComponent(current, record.projectId);
       if (
         decoded.entryRole !== 'requester'
-        || serializeJson(decoded) !== serializeJson(record)
+        || serializeJSON(decoded) !== serializeJSON(record)
       ) return false;
       return this.#removeAuthorityTransferRequesterUnlocked(
         record.projectId,
@@ -1940,7 +1940,7 @@ export class CollabLocalProjectRepository {
       const decoded = decodeLocalAuthorityTransferEntryComponent(current, record.projectId);
       if (
         decoded.entryRole !== 'source'
-        || serializeJson(decoded) !== serializeJson(record)
+        || serializeJSON(decoded) !== serializeJSON(record)
       ) return false;
       return this.#removeAuthorityTransferSourceUnlocked(record.projectId);
     });
@@ -1954,16 +1954,16 @@ export class CollabLocalProjectRepository {
     );
   }
 
-  #removeCloudToLanManagerEntry(record: CloudToLanManagerEntryRecord): Promise<boolean> {
+  #removeCloudToLanManagerEntry(record: CloudToLANManagerEntryRecord): Promise<boolean> {
     return this.#removeAuthorityTransferSingleton(record, 'cloud-to-lan-manager', 'manager.json');
   }
 
-  #removeCloudToLanTargetEntry(record: CloudToLanTargetEntryRecord): Promise<boolean> {
+  #removeCloudToLanTargetEntry(record: CloudToLANTargetEntryRecord): Promise<boolean> {
     return this.#removeAuthorityTransferSingleton(record, 'cloud-to-lan-target', 'target.json');
   }
 
   #removeAuthorityTransferSingleton(
-    record: CloudToLanManagerEntryRecord | CloudToLanTargetEntryRecord,
+    record: CloudToLANManagerEntryRecord | CloudToLANTargetEntryRecord,
     expectedRole: 'cloud-to-lan-manager' | 'cloud-to-lan-target',
     fileName: 'manager.json' | 'target.json',
   ): Promise<boolean> {
@@ -1980,7 +1980,7 @@ export class CollabLocalProjectRepository {
       const decoded = decodeLocalAuthorityTransferEntryComponent(current, record.projectId);
       if (
         decoded.entryRole !== expectedRole
-        || serializeJson(decoded) !== serializeJson(record)
+        || serializeJSON(decoded) !== serializeJSON(record)
       ) return false;
       return removeCollabFileDurably(this.vaultRoot, entryPath, this.#onDiagnostic);
     });
@@ -2097,11 +2097,11 @@ export class CollabLocalProjectRepository {
       document.projectId !== projectId
       || !Number.isSafeInteger(document.schemaVersion)
       || document.schemaVersion < 1
-      || !isJsonValue(document)
+      || !isJSONValue(document)
     ) {
       return Promise.reject(localRecordError('local-record-corrupt', kind, projectId));
     }
-    const serialized = serializeJson(document);
+    const serialized = serializeJSON(document);
     if (kind === 'ticket-cache' && Buffer.byteLength(serialized) > CLAUDIAN_COLLAB_LIMITS.maxTicketCacheBytes) {
       return Promise.reject(localRecordError('local-record-corrupt', kind, projectId));
     }
@@ -2154,7 +2154,7 @@ export class CollabLocalProjectRepository {
       durable: true, mode: 0o700, onDiagnostic: this.#onDiagnostic,
     });
     await writeCollabFileAtomically(this.vaultRoot,
-      this.#retainedAuthorityTransferPath(projectId, retained.record.transferId), serializeJson(retained),
+      this.#retainedAuthorityTransferPath(projectId, retained.record.transferId), serializeJSON(retained),
       { mode: 0o600, onDiagnostic: this.#onDiagnostic });
   }
 
@@ -2260,7 +2260,7 @@ export class CollabLocalProjectRepository {
     let decoded: T;
     try {
       decoded = decode(document);
-      if (decoded.projectId !== projectId || !isJsonValue(decoded)) throw new TypeError();
+      if (decoded.projectId !== projectId || !isJSONValue(decoded)) throw new TypeError();
     } catch {
       return Promise.reject(localRecordError('local-record-corrupt', kind, projectId));
     }
@@ -2270,7 +2270,7 @@ export class CollabLocalProjectRepository {
       await writeCollabFileAtomically(
         this.vaultRoot,
         this.#lifecycleDocumentPath(projectId, kind),
-        serializeJson(decoded),
+        serializeJSON(decoded),
         { mode: 0o600, onDiagnostic: this.#onDiagnostic },
       );
       if (durable) {
@@ -2338,7 +2338,7 @@ export class CollabLocalProjectRepository {
       await writeCollabFileAtomically(
         this.vaultRoot,
         this.#retirementTombstonePath(decoded.projectId),
-        serializeJson(decoded),
+        serializeJSON(decoded),
         { mode: 0o600, onDiagnostic: this.#onDiagnostic },
       );
     });
@@ -3369,7 +3369,7 @@ export class CollabLocalProjectRepository {
     if (existing?.finalized || (existing && phase === 'retired')) return;
     const directory = `${RETIRED_PROJECT_DIRECTORY}/${project.id}`;
     await ensureCollabVaultDirectory(this.vaultRoot, directory, { durable: true, mode: 0o700, onDiagnostic: this.#onDiagnostic });
-    await writeCollabFileAtomically(this.vaultRoot, `${directory}/${phase}.json`, serializeJson({
+    await writeCollabFileAtomically(this.vaultRoot, `${directory}/${phase}.json`, serializeJSON({
       schemaVersion: 1, project: normalizeIndexEntry(project),
     }), { mode: 0o600, onDiagnostic: this.#onDiagnostic });
   }
@@ -3445,7 +3445,7 @@ export class CollabLocalProjectRepository {
         await writeCollabFileAtomically(
           this.vaultRoot,
           relativePath,
-          serializeJson(membership),
+          serializeJSON(membership),
           { mode: 0o600, onDiagnostic: this.#onDiagnostic },
         );
       }
@@ -3463,7 +3463,7 @@ export class CollabLocalProjectRepository {
     }
     await this.#ensurePrivateProjectDirectory(membership.project.id);
     await writeCollabFileAtomically(
-      this.vaultRoot, this.getProjectPaths(membership.project.id).membership, serializeJson(membership),
+      this.vaultRoot, this.getProjectPaths(membership.project.id).membership, serializeJSON(membership),
       { mode: 0o600, onDiagnostic: this.#onDiagnostic },
     );
   }
@@ -3479,7 +3479,7 @@ export class CollabLocalProjectRepository {
     await writeCollabFileAtomically(
       this.vaultRoot,
       `${PRIVATE_STATE_DIRECTORY}/index.json`,
-      serializeJson(await this.#projectRetirementsUnlocked(normalized)),
+      serializeJSON(await this.#projectRetirementsUnlocked(normalized)),
       { mode: 0o600, onDiagnostic: this.#onDiagnostic },
     );
   }

@@ -18,7 +18,7 @@ export function createPiEventNormalizationState(): PiEventNormalizationState {
   };
 }
 
-export function normalizePiRpcEvent(
+export function normalizePiRPCEvent(
   event: Record<string, unknown>,
   state: PiEventNormalizationState,
 ): StreamChunk[] {

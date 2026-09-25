@@ -20,7 +20,7 @@ import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transf
 import {
   AuthorityTransferModule as ProductionAuthorityTransferModule,
   type AuthorityTransferModuleOptions,
-  type CloudToLanEntryConnection,
+  type CloudToLANEntryConnection,
 } from '@/app/collab/authority-transfer/AuthorityTransferModule';
 import {
   authorityTransferChildIdempotencyKey,
@@ -47,21 +47,21 @@ import type {
   AuthorityTransferClaimantRecovery,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecovery';
 import {
-  type CloudToLanManagerEntryRecord,
-  type CloudToLanTargetEntryRecord,
-  cloudToLanTransferHandle,
-  createCloudToLanManagerEntry,
-  createCloudToLanTargetEntry,
-  handoffCloudToLanTargetEntry,
-  markCloudToLanManagerBeginPossiblySent,
-  publishCloudToLanTargetEntry,
-  recordCloudToLanManagerStatus,
-  rejectCloudToLanManagerEntry,
-  withdrawCloudToLanTargetEntry,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  type CloudToLANManagerEntryRecord,
+  type CloudToLANTargetEntryRecord,
+  cloudToLANTransferHandle,
+  createCloudToLANManagerEntry,
+  createCloudToLANTargetEntry,
+  handoffCloudToLANTargetEntry,
+  markCloudToLANManagerBeginPossiblySent,
+  publishCloudToLANTargetEntry,
+  recordCloudToLANManagerStatus,
+  rejectCloudToLANManagerEntry,
+  withdrawCloudToLANTargetEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import {
-  LanToCloudRequesterCoordinator,
-} from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudRequesterCoordinator';
+  LANToCloudRequesterCoordinator,
+} from '@/app/collab/authority-transfer/lan-to-cloud/LANToCloudRequesterCoordinator';
 import type {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -69,8 +69,8 @@ import { AuthorityTransferPersistence as ProductionAuthorityTransferPersistence 
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import type {
-  LanAuthorityTransferClient,
-} from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+  LANAuthorityTransferClient,
+} from '@/app/collab/lan/authority-transfer/LANAuthorityTransferClient';
 import {
   type CollabProjectLifecycleDurableOwner,
   CollabProjectLifecycleSubsystem,
@@ -174,7 +174,7 @@ function recoverableClaimantRecord(input: Readonly<{
     batchRevision: 1,
     batchSha256: 'b'.repeat(64),
     checkpointSha256,
-    createdAt: '2026-08-27T00:00:00.000Z',
+    createdAt: testTime(),
     direction,
     expiresAt: input.expiresAt ?? testTime({ days: 30 }),
     phase: 'completed',
@@ -185,7 +185,7 @@ function recoverableClaimantRecord(input: Readonly<{
       certificate: Buffer.alloc(64, 2).toString('base64url'),
       certificateAlgorithm: 'ed25519',
       checkpointSha256,
-      committedAt: '2026-08-27T00:00:08.000Z',
+      committedAt: testTime({ seconds: 8 }),
       operationIntentId: managerOperationIntentId,
       projectId: PROJECT_ID,
       sourceAuthority,
@@ -198,7 +198,7 @@ function recoverableClaimantRecord(input: Readonly<{
     targetAuthority,
     targetUrl,
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:00:10.000Z',
+    updatedAt: testTime({ seconds: 10 }),
   };
   return decodeAuthorityTransferClaimantRecord({
     convergenceProof: null,
@@ -252,7 +252,7 @@ function recoverableClaimantRecord(input: Readonly<{
           projectId: PROJECT_ID,
           receiptId: 'receipt-claimant-recovery',
           receiptKeyId: 'receipt-key-recovery',
-          redeemedAt: '2026-08-27T00:01:00.000Z',
+          redeemedAt: testTime({ minutes: 1 }),
           signature: Buffer.alloc(64, 3).toString('base64url'),
           signatureAlgorithm: 'ed25519',
           targetAuthorityGeneration: 2,
@@ -265,18 +265,18 @@ function recoverableClaimantRecord(input: Readonly<{
       ? Buffer.alloc(32, 5).toString('base64url')
       : null,
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:01:01.000Z',
+    updatedAt: testTime({ minutes: 1, seconds: 1 }),
     variant: 'source-issued',
   }) as SourceIssuedAuthorityTransferClaimantRecord;
 }
 
-function settledCloudToLanManagerEntry(
+function settledCloudToLANManagerEntry(
   claimant: SourceIssuedAuthorityTransferClaimantRecord,
   operationIntentId: string,
-): CloudToLanManagerEntryRecord {
+): CloudToLANManagerEntryRecord {
   const lanTarget = claimant.lanTarget!;
-  return recordCloudToLanManagerStatus(
-    markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+  return recordCloudToLANManagerStatus(
+    markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
       createdAt: claimant.status.createdAt,
       descriptor: {
         caCertificatePem: lanTarget.caCertificatePem,
@@ -307,7 +307,7 @@ function proposal(
     batchRevision: null,
     batchSha256: null,
     checkpointSha256: null,
-    createdAt: '2026-08-27T00:00:00.000Z',
+    createdAt: testTime(),
     direction: 'lan-to-cloud',
     expiresAt: testTime({ days: 30 }),
     phase: 'collecting-readiness',
@@ -318,7 +318,7 @@ function proposal(
     targetAuthority: { generation: 2, kind: 'cloud' },
     targetUrl: 'https://cloud.example.test/',
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:00:00.000Z',
+    updatedAt: testTime(),
     ...overrides,
   };
 }
@@ -327,7 +327,7 @@ function managerReissuedDescriptor() {
   return {
     claim: Buffer.alloc(32, 4).toString('base64url'),
     claimGeneration: 4,
-    createdAt: '2026-10-01T00:00:00.000Z',
+    createdAt: testTime({ days: 35 }),
     expiresAt: testTime({ days: 65 }),
     memberId: 'member-host',
     projectId: PROJECT_ID,
@@ -347,7 +347,7 @@ function managerClaimantMembership() {
       hostCaFingerprint: 'a'.repeat(64),
       kind: 'lan' as const,
     },
-    createdAt: '2026-08-27T00:00:00.000Z',
+    createdAt: testTime(),
     hostOwnership: { ownsAuthority: false },
     lastEventSequence: 1,
     member: {
@@ -359,7 +359,7 @@ function managerClaimantMembership() {
     },
     project: { id: PROJECT_ID, name: 'Recovery', workspacePath: 'workspace/recovery' },
     schemaVersion: 3 as const,
-    updatedAt: '2026-08-27T00:00:00.000Z',
+    updatedAt: testTime(),
   };
 }
 
@@ -501,7 +501,7 @@ describe('AuthorityTransferModule', () => {
     const cancelledStatus = proposal({
       phase: 'cancelled',
       state: 'cancelled',
-      updatedAt: '2026-08-27T00:01:00.000Z',
+      updatedAt: testTime({ minutes: 1 }),
     });
     const requestWithMember = jest.fn(async (operation: string, value: unknown) => {
       if (operation === 'getProjectAuthorityTransfer') return cancelledStatus;
@@ -551,7 +551,7 @@ describe('AuthorityTransferModule', () => {
     });
     const requester = module.createLanToCloudRequester({
       authorityGeneration: 1,
-      lanClient: { requestWithMember } as unknown as LanAuthorityTransferClient,
+      lanClient: { requestWithMember } as unknown as LANAuthorityTransferClient,
       memberCredential: Buffer.alloc(32, 9).toString('base64url'),
       memberId: 'member-requester',
       projectId: PROJECT_ID,
@@ -613,7 +613,7 @@ describe('AuthorityTransferModule', () => {
     };
     const requesterEntry = createAuthorityTransferRequesterEntry({
       installationKey: TEST_INSTALLATION_A,
-      proposedAt: '2026-08-27T00:00:00.000Z',
+      proposedAt: testTime(),
       proposedByMemberId: 'member-requester',
       request,
     });
@@ -638,9 +638,9 @@ describe('AuthorityTransferModule', () => {
       loadObservedSourceEntry: async () => sourceEntry,
       loadRequesterEntry: async () => requester,
     } as unknown as AuthorityTransferPersistence;
-    const coordinator = new LanToCloudRequesterCoordinator({
+    const coordinator = new LANToCloudRequesterCoordinator({
       authorityGeneration: 1,
-      client: { requestWithMember } as unknown as LanAuthorityTransferClient,
+      client: { requestWithMember } as unknown as LANAuthorityTransferClient,
       installationKey: TEST_INSTALLATION_A,
       memberCredential: Buffer.alloc(32, 9).toString('base64url'),
       memberId: 'member-requester',
@@ -662,7 +662,7 @@ describe('AuthorityTransferModule', () => {
     };
     const requester = createAuthorityTransferRequesterEntry({
       installationKey: TEST_INSTALLATION_A,
-      proposedAt: '2026-08-27T00:00:00.000Z',
+      proposedAt: testTime(),
       proposedByMemberId: 'member-requester',
       request,
     });
@@ -957,7 +957,7 @@ describe('AuthorityTransferModule', () => {
           serverUrl: 'https://cloud.example.test/',
           wireVersion: 15,
         },
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         lastEventSequence: 1,
         member: {
           displayName: 'Host',
@@ -971,7 +971,7 @@ describe('AuthorityTransferModule', () => {
           workspacePath: 'workspace/recovery',
         },
         schemaVersion: 3,
-        updatedAt: '2026-08-27T00:00:00.000Z',
+        updatedAt: testTime(),
       }),
       now: testClock({ hours: 1 }),
     });
@@ -1008,7 +1008,7 @@ describe('AuthorityTransferModule', () => {
           hostCaFingerprint: 'a'.repeat(64),
           kind: 'lan',
         },
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         hostOwnership: { ownsAuthority: false },
         lastEventSequence: 1,
         member: {
@@ -1024,7 +1024,7 @@ describe('AuthorityTransferModule', () => {
           workspacePath: 'workspace/recovery',
         },
         schemaVersion: 3,
-        updatedAt: '2026-08-27T00:00:00.000Z',
+        updatedAt: testTime(),
       }),
     });
 
@@ -1531,7 +1531,7 @@ describe('AuthorityTransferModule', () => {
         targetEntry = {
           ...(entry as object),
           phase: 'withdrawn',
-          withdrawnAt: '2026-08-27T00:05:00.000Z',
+          withdrawnAt: testTime({ minutes: 5 }),
         };
         return targetEntry;
       }),
@@ -1564,8 +1564,8 @@ describe('AuthorityTransferModule', () => {
       projectId: PROJECT_ID,
       readSnapshot: jest.fn(async () => ({
         currentMember: {
-          activatedAt: '2026-08-27T00:00:00.000Z',
-          createdAt: '2026-08-27T00:00:00.000Z',
+          activatedAt: testTime(),
+          createdAt: testTime(),
           displayName: 'Target',
           id: 'member-target',
           personalRef: 'refs/heads/members/member-target',
@@ -1578,7 +1578,7 @@ describe('AuthorityTransferModule', () => {
         openTicketCount: 0,
         project: {
           authorityGeneration: 1,
-          createdAt: '2026-08-27T00:00:00.000Z',
+          createdAt: testTime(),
           expectedMainOid: 'a'.repeat(40),
           id: PROJECT_ID,
           mainRef: 'refs/heads/main',
@@ -1607,7 +1607,7 @@ describe('AuthorityTransferModule', () => {
               ...begun,
               phase: 'cancelled',
               state: 'cancelled',
-              updatedAt: '2026-08-27T00:05:00.000Z',
+              updatedAt: testTime({ minutes: 5 }),
             };
           }
           throw new Error(`unexpected ${operation}`);
@@ -1643,8 +1643,8 @@ describe('AuthorityTransferModule', () => {
       readSnapshot: jest.fn(async () => ({
         ...(await targetCloud.readSnapshot()),
         currentMember: {
-          activatedAt: '2026-08-27T00:00:00.000Z',
-          createdAt: '2026-08-27T00:00:00.000Z',
+          activatedAt: testTime(),
+          createdAt: testTime(),
           displayName: 'Manager',
           id: 'member-manager',
           personalRef: 'refs/heads/members/member-manager',
@@ -1875,7 +1875,7 @@ describe('AuthorityTransferModule', () => {
       status: proposal({
         phase: 'cancelled',
         state: 'cancelled',
-        updatedAt: '2026-08-27T00:02:00.000Z',
+        updatedAt: testTime({ minutes: 2 }),
       }),
     });
     let current = active;
@@ -1938,7 +1938,7 @@ describe('AuthorityTransferModule', () => {
     const persistence = {
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => null),
-      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => entry),
+      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => entry),
       publishCloudToLanTargetEntry: jest.fn(async () => {
         throw new Error('simulated descriptor persistence failure');
       }),
@@ -2005,36 +2005,36 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('settles a definitive pre-ID begin rejection only after the bound recovery barrier', async () => {
-    let managerEntry: CloudToLanManagerEntryRecord | null = null;
+    let managerEntry: CloudToLANManagerEntryRecord | null = null;
     const persistence = {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = markCloudToLanManagerBeginPossiblySent(entry);
+        managerEntry = markCloudToLANManagerBeginPossiblySent(entry);
         return managerEntry;
       }),
       prepareCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
         managerEntry = entry;
         return entry;
       }),
       rejectCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = rejectCloudToLanManagerEntry(entry);
+        managerEntry = rejectCloudToLANManagerEntry(entry);
         return managerEntry;
       }),
-      settleCloudToLanManagerEntry: jest.fn(async (entry: CloudToLanManagerEntryRecord) => {
+      settleCloudToLanManagerEntry: jest.fn(async (entry: CloudToLANManagerEntryRecord) => {
         expect(entry.phase).toBe('rejected');
         managerEntry = null;
       }),
     } as unknown as AuthorityTransferPersistence;
     const snapshot = (role: 'manager' | 'member') => ({
       currentMember: {
-        activatedAt: '2026-08-27T00:00:00.000Z',
-        createdAt: '2026-08-27T00:00:00.000Z',
+        activatedAt: testTime(),
+        createdAt: testTime(),
         displayName: 'Manager',
         id: 'member-manager',
         personalRef: 'refs/heads/members/member-manager',
@@ -2047,7 +2047,7 @@ describe('AuthorityTransferModule', () => {
       openTicketCount: 0,
       project: {
         authorityGeneration: 1,
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         expectedMainOid: 'a'.repeat(40),
         id: PROJECT_ID,
         mainRef: 'refs/heads/main',
@@ -2128,7 +2128,7 @@ describe('AuthorityTransferModule', () => {
         caFingerprint: 'c'.repeat(64),
         preparationId: 'intent-target-preparation',
         projectId: PROJECT_ID,
-        publishedAt: '2026-08-27T00:00:00.000Z',
+        publishedAt: testTime(),
         schemaVersion: 1 as const,
         selectedTargetMemberId: 'member-target',
         sourceAuthorityGeneration: 1,
@@ -2155,49 +2155,49 @@ describe('AuthorityTransferModule', () => {
   it('coexists as the selected target and initiating Manager on one installation', async () => {
     const targetUrl = 'https://192.168.1.20:54545';
     const sourceUrl = 'https://cloud.example.test/';
-    let targetEntry: CloudToLanTargetEntryRecord | null = null;
-    let managerEntry: CloudToLanManagerEntryRecord | null = null;
+    let targetEntry: CloudToLANTargetEntryRecord | null = null;
+    let managerEntry: CloudToLANManagerEntryRecord | null = null;
     const persistence = {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = markCloudToLanManagerBeginPossiblySent(entry);
+        managerEntry = markCloudToLANManagerBeginPossiblySent(entry);
         return managerEntry;
       }),
       prepareCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
         managerEntry = entry;
         return entry;
       }),
       prepareCloudToLanTargetEntry: jest.fn(async (
-        entry: CloudToLanTargetEntryRecord,
+        entry: CloudToLANTargetEntryRecord,
       ) => {
         targetEntry = entry;
         return entry;
       }),
       publishCloudToLanTargetEntry: jest.fn(async (
-        entry: CloudToLanTargetEntryRecord,
-        descriptor: Parameters<typeof publishCloudToLanTargetEntry>[1],
+        entry: CloudToLANTargetEntryRecord,
+        descriptor: Parameters<typeof publishCloudToLANTargetEntry>[1],
       ) => {
-        targetEntry = publishCloudToLanTargetEntry(entry, descriptor);
+        targetEntry = publishCloudToLANTargetEntry(entry, descriptor);
         return targetEntry;
       }),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         transferStatus: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, transferStatus);
+        managerEntry = recordCloudToLANManagerStatus(entry, transferStatus);
         return managerEntry;
       }),
     } as unknown as AuthorityTransferPersistence;
     const cloudSnapshot = {
       currentMember: {
-        activatedAt: '2026-08-27T00:00:00.000Z',
-        createdAt: '2026-08-27T00:00:00.000Z',
+        activatedAt: testTime(),
+        createdAt: testTime(),
         displayName: 'Self Manager',
         id: 'member-self-manager',
         personalRef: 'refs/heads/members/member-self-manager',
@@ -2210,7 +2210,7 @@ describe('AuthorityTransferModule', () => {
       openTicketCount: 0,
       project: {
         authorityGeneration: 1,
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         expectedMainOid: 'a'.repeat(40),
         id: PROJECT_ID,
         mainRef: 'refs/heads/main',
@@ -2338,8 +2338,8 @@ describe('AuthorityTransferModule', () => {
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: completed.status.targetUrl,
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: completed.status.createdAt,
         descriptor,
         expiresAt: completed.status.expiresAt,
@@ -2366,10 +2366,10 @@ describe('AuthorityTransferModule', () => {
       load: jest.fn(async () => null),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         status: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        managerEntry = recordCloudToLANManagerStatus(entry, status);
         return managerEntry;
       }),
       settleCloudToLanManagerEntry: jest.fn(async () => { managerEntry = null; }),
@@ -2529,7 +2529,7 @@ describe('AuthorityTransferModule', () => {
         caFingerprint: 'c'.repeat(64),
         preparationId: 'intent-unrelated-target-preparation',
         projectId: PROJECT_ID,
-        publishedAt: '2026-08-27T00:00:00.000Z',
+        publishedAt: testTime(),
         schemaVersion: 1,
         selectedTargetMemberId: 'member-target',
         sourceAuthorityGeneration: 1,
@@ -2562,8 +2562,8 @@ describe('AuthorityTransferModule', () => {
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: completed.status.targetUrl,
     };
-    const managerEntry = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    const managerEntry = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: completed.status.createdAt,
         descriptor,
         expiresAt: completed.status.expiresAt,
@@ -2628,8 +2628,8 @@ describe('AuthorityTransferModule', () => {
       phase: 'source-acknowledged',
     });
     const targetHost = claimant.lanTarget!;
-    let managerEntry: CloudToLanManagerEntryRecord | null =
-      settledCloudToLanManagerEntry(claimant, managerOperationIntentId);
+    let managerEntry: CloudToLANManagerEntryRecord | null =
+      settledCloudToLANManagerEntry(claimant, managerOperationIntentId);
     const createCloudToLanConnection = jest.fn(async () => {
       throw new Error('Cloud must remain unavailable after source acknowledgement');
     });
@@ -2701,21 +2701,21 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('releases failed pre-publication target cleanup before rebuilding the preparation', async () => {
-    let targetEntry: CloudToLanTargetEntryRecord | null = null;
+    let targetEntry: CloudToLANTargetEntryRecord | null = null;
     const persistence = {
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
-      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
+      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
         targetEntry = entry;
         return entry;
       }),
       publishCloudToLanTargetEntry: jest.fn()
         .mockRejectedValueOnce(new Error('simulated descriptor persistence failure'))
         .mockImplementation(async (
-          entry: CloudToLanTargetEntryRecord,
-          descriptor: Parameters<typeof publishCloudToLanTargetEntry>[1],
+          entry: CloudToLANTargetEntryRecord,
+          descriptor: Parameters<typeof publishCloudToLANTargetEntry>[1],
         ) => {
-          targetEntry = publishCloudToLanTargetEntry(entry, descriptor);
+          targetEntry = publishCloudToLANTargetEntry(entry, descriptor);
           return targetEntry;
         }),
     } as unknown as AuthorityTransferPersistence;
@@ -2802,25 +2802,25 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('retains a withdrawn preparation until listener disposal can be retried', async () => {
-    let targetEntry: CloudToLanTargetEntryRecord | null = null;
+    let targetEntry: CloudToLANTargetEntryRecord | null = null;
     const persistence = {
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
-      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
+      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
         targetEntry = entry;
         return entry;
       }),
       publishCloudToLanTargetEntry: jest.fn(async (
-        entry: CloudToLanTargetEntryRecord,
-        descriptor: Parameters<typeof publishCloudToLanTargetEntry>[1],
+        entry: CloudToLANTargetEntryRecord,
+        descriptor: Parameters<typeof publishCloudToLANTargetEntry>[1],
       ) => {
-        targetEntry = publishCloudToLanTargetEntry(entry, descriptor);
+        targetEntry = publishCloudToLANTargetEntry(entry, descriptor);
         return targetEntry;
       }),
-      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
-        targetEntry = withdrawCloudToLanTargetEntry(
+      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
+        targetEntry = withdrawCloudToLANTargetEntry(
           entry,
-          '2026-08-27T00:01:00.000Z',
+          testTime({ minutes: 1 }),
         );
         return targetEntry;
       }),
@@ -2929,24 +2929,24 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('requires transfer recovery before withdrawing a possibly accepted target', async () => {
-    let targetEntry: CloudToLanTargetEntryRecord | null = null;
+    let targetEntry: CloudToLANTargetEntryRecord | null = null;
     const persistence = {
       load: jest.fn(async () => null),
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
-      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
+      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
         targetEntry = entry;
         return entry;
       }),
       publishCloudToLanTargetEntry: jest.fn(async (
-        entry: CloudToLanTargetEntryRecord,
-        descriptor: Parameters<typeof publishCloudToLanTargetEntry>[1],
+        entry: CloudToLANTargetEntryRecord,
+        descriptor: Parameters<typeof publishCloudToLANTargetEntry>[1],
       ) => {
-        targetEntry = publishCloudToLanTargetEntry(entry, descriptor);
+        targetEntry = publishCloudToLANTargetEntry(entry, descriptor);
         return targetEntry;
       }),
-      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
-        targetEntry = withdrawCloudToLanTargetEntry(entry, '2026-08-27T00:01:00.000Z');
+      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
+        targetEntry = withdrawCloudToLANTargetEntry(entry, testTime({ minutes: 1 }));
         return targetEntry;
       }),
     } as unknown as AuthorityTransferPersistence;
@@ -3052,9 +3052,9 @@ describe('AuthorityTransferModule', () => {
       ...collectingStatus,
       phase: 'cancelled',
       state: 'cancelled',
-      updatedAt: '2026-08-27T00:01:00.000Z',
+      updatedAt: testTime({ minutes: 1 }),
     };
-    const preparing = createCloudToLanTargetEntry({
+    const preparing = createCloudToLANTargetEntry({
       createdAt: collectingStatus.createdAt,
       expiresAt: collectingStatus.expiresAt,
       operationIntentId: 'intent-cancelled-target-preparation',
@@ -3065,7 +3065,7 @@ describe('AuthorityTransferModule', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(preparing, {
+    const published = publishCloudToLANTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: collectingStatus.createdAt,
@@ -3079,12 +3079,12 @@ describe('AuthorityTransferModule', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: cancelledStatus,
     });
-    let targetEntry: CloudToLanTargetEntryRecord | null = handoffCloudToLanTargetEntry(
+    let targetEntry: CloudToLANTargetEntryRecord | null = handoffCloudToLANTargetEntry(
       published,
       physical,
     );
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: collectingStatus.createdAt,
         descriptor: published.descriptor!,
         expiresAt: collectingStatus.expiresAt,
@@ -3156,14 +3156,14 @@ describe('AuthorityTransferModule', () => {
 
     connection.memberId = 'member-relocated';
     await expect(module.acceptCloudToLanTransfer({
-      handle: cloudToLanTransferHandle(managerEntry!),
+      handle: cloudToLANTransferHandle(managerEntry!),
     })).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-cloud-binding-mismatch' },
     });
     connection.memberId = 'member-host';
 
     await expect(module.acceptCloudToLanTransfer({
-      handle: cloudToLanTransferHandle(managerEntry!),
+      handle: cloudToLANTransferHandle(managerEntry!),
     })).rejects.toMatchObject({
       result: {
         durableProgress: true,
@@ -3182,7 +3182,7 @@ describe('AuthorityTransferModule', () => {
       },
     });
     await expect(module.acceptCloudToLanTransfer({
-      handle: cloudToLanTransferHandle(managerEntry!),
+      handle: cloudToLANTransferHandle(managerEntry!),
     })).rejects.toMatchObject({
       result: {
         durableProgress: true,
@@ -3210,32 +3210,32 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('replays one frozen Manager begin after an ambiguous result without another snapshot', async () => {
-    let managerEntry: CloudToLanManagerEntryRecord | null = null;
+    let managerEntry: CloudToLANManagerEntryRecord | null = null;
     const persistence = {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = markCloudToLanManagerBeginPossiblySent(entry);
+        managerEntry = markCloudToLANManagerBeginPossiblySent(entry);
         return managerEntry;
       }),
       prepareCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
         managerEntry = entry;
         return entry;
       }),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         transferStatus: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, transferStatus);
+        managerEntry = recordCloudToLANManagerStatus(entry, transferStatus);
         return managerEntry;
       }),
       rejectCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = rejectCloudToLanManagerEntry(entry);
+        managerEntry = rejectCloudToLANManagerEntry(entry);
         return managerEntry;
       }),
       settleCloudToLanManagerEntry: jest.fn(async () => {
@@ -3256,8 +3256,8 @@ describe('AuthorityTransferModule', () => {
       .mockResolvedValueOnce(begun);
     const readSnapshot = jest.fn(async () => ({
       currentMember: {
-        activatedAt: '2026-08-27T00:00:00.000Z',
-        createdAt: '2026-08-27T00:00:00.000Z',
+        activatedAt: testTime(),
+        createdAt: testTime(),
         displayName: 'Manager',
         id: 'member-manager',
         personalRef: 'refs/heads/members/member-manager',
@@ -3270,7 +3270,7 @@ describe('AuthorityTransferModule', () => {
       openTicketCount: 0,
       project: {
         authorityGeneration: 1,
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         expectedMainOid: 'a'.repeat(40),
         id: PROJECT_ID,
         mainRef: 'refs/heads/main',
@@ -3331,7 +3331,7 @@ describe('AuthorityTransferModule', () => {
         caFingerprint: 'c'.repeat(64),
         preparationId: 'intent-target-preparation',
         projectId: PROJECT_ID,
-        publishedAt: '2026-08-27T00:00:00.000Z',
+        publishedAt: testTime(),
         schemaVersion: 1 as const,
         selectedTargetMemberId: 'member-target',
         sourceAuthorityGeneration: 1,
@@ -3392,15 +3392,15 @@ describe('AuthorityTransferModule', () => {
       caFingerprint: 'c'.repeat(64),
       preparationId: 'intent-concurrent-target-preparation',
       projectId: PROJECT_ID,
-      publishedAt: '2026-08-27T00:00:00.000Z',
+      publishedAt: testTime(),
       schemaVersion: 1 as const,
       selectedTargetMemberId: 'member-target',
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: 'https://192.168.1.20:54545',
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null = createCloudToLanManagerEntry({
-      createdAt: '2026-08-27T00:00:00.000Z',
+    let managerEntry: CloudToLANManagerEntryRecord | null = createCloudToLANManagerEntry({
+      createdAt: testTime(),
       descriptor,
       expiresAt: testTime({ days: 30 }),
       initiatingMemberId: 'member-manager',
@@ -3412,15 +3412,15 @@ describe('AuthorityTransferModule', () => {
       inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'nonterminal' : 'absent'),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = markCloudToLanManagerBeginPossiblySent(entry);
+        managerEntry = markCloudToLANManagerBeginPossiblySent(entry);
         return managerEntry;
       }),
       rejectCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = rejectCloudToLanManagerEntry(entry);
+        managerEntry = rejectCloudToLANManagerEntry(entry);
         return managerEntry;
       }),
       settleCloudToLanManagerEntry: jest.fn(async () => {
@@ -3515,16 +3515,16 @@ describe('AuthorityTransferModule', () => {
       caFingerprint: 'c'.repeat(64),
       preparationId: 'intent-recovery-target-preparation',
       projectId: PROJECT_ID,
-      publishedAt: '2026-08-27T00:00:00.000Z',
+      publishedAt: testTime(),
       schemaVersion: 1 as const,
       selectedTargetMemberId: 'member-target',
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: 'https://192.168.1.20:54545',
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null =
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
-        createdAt: '2026-08-27T00:00:00.000Z',
+    let managerEntry: CloudToLANManagerEntryRecord | null =
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
+        createdAt: testTime(),
         descriptor,
         expiresAt: testTime({ days: 30 }),
         initiatingMemberId: 'member-host',
@@ -3550,13 +3550,13 @@ describe('AuthorityTransferModule', () => {
       loadCloudToLanTargetEntry: jest.fn(async () => null),
       loadRecoveryOwnerRecord: jest.fn(async () => physicalRecord),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => entry),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         status: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        managerEntry = recordCloudToLANManagerStatus(entry, status);
         return managerEntry;
       }),
       listRetained: jest.fn(async () => []),
@@ -3733,16 +3733,16 @@ describe('AuthorityTransferModule', () => {
       caFingerprint: 'c'.repeat(64),
       preparationId: 'intent-foreign-manager-target',
       projectId: PROJECT_ID,
-      publishedAt: '2026-08-27T00:00:00.000Z',
+      publishedAt: testTime(),
       schemaVersion: 1 as const,
       selectedTargetMemberId: 'member-target',
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: 'https://192.168.1.20:54545',
     };
-    const managerEntry = markCloudToLanManagerBeginPossiblySent(
-      createCloudToLanManagerEntry({
-        createdAt: '2026-08-27T00:00:00.000Z',
+    const managerEntry = markCloudToLANManagerBeginPossiblySent(
+      createCloudToLANManagerEntry({
+        createdAt: testTime(),
         descriptor,
         expiresAt: testTime({ days: 30 }),
         initiatingMemberId: 'member-host',
@@ -3810,8 +3810,8 @@ describe('AuthorityTransferModule', () => {
         relinquishmentProof: null,
         state: 'active' as const,
       };
-      const managerEntry = recordCloudToLanManagerStatus(
-        markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+      const managerEntry = recordCloudToLANManagerStatus(
+        markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
           createdAt: collecting.createdAt,
           descriptor: {
             caCertificatePem: completed.lanTarget!.caCertificatePem,
@@ -3856,7 +3856,7 @@ describe('AuthorityTransferModule', () => {
           loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
         } as unknown as AuthorityTransferPersistence,
       });
-      const handle = cloudToLanTransferHandle(managerEntry);
+      const handle = cloudToLANTransferHandle(managerEntry);
 
       const result = operation === 'begin'
         ? module.beginCloudToLanTransfer({
@@ -3880,8 +3880,8 @@ describe('AuthorityTransferModule', () => {
       expiresAt: testTime({ days: 1 }),
       managerOperationIntentId: 'intent-expired-manager-gap',
     });
-    let managerEntry: CloudToLanManagerEntryRecord | null =
-      settledCloudToLanManagerEntry(completed, 'intent-expired-manager-gap');
+    let managerEntry: CloudToLANManagerEntryRecord | null =
+      settledCloudToLANManagerEntry(completed, 'intent-expired-manager-gap');
     let claimant: AuthorityTransferClaimantRecord | null = null;
     const savedPhases: string[] = [];
     const createCloudToLanConnection = jest.fn(async () => {
@@ -3954,10 +3954,10 @@ describe('AuthorityTransferModule', () => {
       ...collecting,
       phase: 'cancelled',
       state: 'cancelled',
-      updatedAt: '2026-08-27T00:01:00.000Z',
+      updatedAt: testTime({ minutes: 1 }),
     };
-    let targetEntry: CloudToLanTargetEntryRecord | null = publishCloudToLanTargetEntry(
-      createCloudToLanTargetEntry({
+    let targetEntry: CloudToLANTargetEntryRecord | null = publishCloudToLANTargetEntry(
+      createCloudToLANTargetEntry({
         createdAt: collecting.createdAt,
         expiresAt: collecting.expiresAt,
         operationIntentId: 'intent-foreign-manager-target-cancel',
@@ -3975,8 +3975,8 @@ describe('AuthorityTransferModule', () => {
         targetUrl: collecting.targetUrl,
       },
     );
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: collecting.createdAt,
         descriptor: targetEntry.descriptor!,
         expiresAt: collecting.expiresAt,
@@ -3994,15 +3994,15 @@ describe('AuthorityTransferModule', () => {
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         status: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        managerEntry = recordCloudToLANManagerStatus(entry, status);
         return managerEntry;
       }),
       settleCloudToLanManagerEntry,
-      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
-        targetEntry = withdrawCloudToLanTargetEntry(entry, cancelled.updatedAt);
+      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
+        targetEntry = withdrawCloudToLANTargetEntry(entry, cancelled.updatedAt);
         return targetEntry;
       }),
     } as unknown as AuthorityTransferPersistence;
@@ -4046,7 +4046,7 @@ describe('AuthorityTransferModule', () => {
     });
 
     await expect(module.acceptCloudToLanTransfer({
-      handle: cloudToLanTransferHandle(managerEntry),
+      handle: cloudToLANTransferHandle(managerEntry),
     })).resolves.toEqual(cancelled);
 
     expect(managerEntry).toMatchObject({ phase: 'settled', status: cancelled });
@@ -4065,8 +4065,8 @@ describe('AuthorityTransferModule', () => {
       phase: 'cancelled',
       state: 'cancelled',
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: cancelled.createdAt,
         descriptor: {
           caCertificatePem: completed.lanTarget!.caCertificatePem,
@@ -4088,7 +4088,7 @@ describe('AuthorityTransferModule', () => {
       })),
       cancelled,
     );
-    const handle = cloudToLanTransferHandle(managerEntry);
+    const handle = cloudToLANTransferHandle(managerEntry);
     const createCloudToLanConnection = jest.fn();
     const settleCloudToLanManagerEntry = jest.fn(async () => { managerEntry = null; });
     const module = new AuthorityTransferModule({
@@ -4141,12 +4141,12 @@ describe('AuthorityTransferModule', () => {
       ),
       phase: 'membership-converged',
     });
-    const managerRootEntry = settledCloudToLanManagerEntry(
+    const managerRootEntry = settledCloudToLANManagerEntry(
       managerRootClaimant,
       managerOperationIntentId,
     );
     let targetRootClaimant: AuthorityTransferClaimantRecord | null = managerRootClaimant;
-    let targetRootManagerEntry: CloudToLanManagerEntryRecord | null = managerRootEntry;
+    let targetRootManagerEntry: CloudToLANManagerEntryRecord | null = managerRootEntry;
     let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
     const settleCloudToLanManagerEntry = jest.fn(async () => {
       targetRootManagerEntry = null;
@@ -4216,12 +4216,12 @@ describe('AuthorityTransferModule', () => {
       ),
       phase: 'membership-converged',
     });
-    const managerEntry = settledCloudToLanManagerEntry(
+    const managerEntry = settledCloudToLANManagerEntry(
       managerClaimant,
       managerOperationIntentId,
     );
     let storedClaimant: AuthorityTransferClaimantRecord | null = managerClaimant;
-    let storedManager: CloudToLanManagerEntryRecord | null = managerEntry;
+    let storedManager: CloudToLANManagerEntryRecord | null = managerEntry;
     let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
     const settleCloudToLanManagerEntry = jest.fn(async () => {
       storedManager = null;
@@ -4286,7 +4286,7 @@ describe('AuthorityTransferModule', () => {
       ),
       phase: 'credential-persisted',
     });
-    const managerRootEntry = settledCloudToLanManagerEntry(
+    const managerRootEntry = settledCloudToLANManagerEntry(
       managerRootClaimant,
       managerOperationIntentId,
     );
@@ -4371,8 +4371,8 @@ describe('AuthorityTransferModule', () => {
       }),
     }) as SourceIssuedAuthorityTransferClaimantRecord;
     const managerEntry = deliveryOrder === 'claimant-before-terminal-manager'
-      ? recordCloudToLanManagerStatus(
-          markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+      ? recordCloudToLANManagerStatus(
+          markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
             createdAt: claimant.status.createdAt,
             descriptor: {
               caCertificatePem: claimant.lanTarget!.caCertificatePem,
@@ -4494,8 +4494,8 @@ describe('AuthorityTransferModule', () => {
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: completedStatus.targetUrl,
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: collectingStatus.createdAt,
         descriptor,
         expiresAt: collectingStatus.expiresAt,
@@ -4522,10 +4522,10 @@ describe('AuthorityTransferModule', () => {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       loadRecoveryOwnerRecord: jest.fn(async () => physical),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         status: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        managerEntry = recordCloudToLANManagerStatus(entry, status);
         return managerEntry;
       }),
       recoverInterruptedClaimCommitment: jest.fn(async () => undefined),
@@ -4585,7 +4585,7 @@ describe('AuthorityTransferModule', () => {
     const prepareTarget = jest.fn(async (expectedEndpoint?: string) => ({
       targetUrl: expectedEndpoint ?? targetUrl,
     }));
-    const connection: CloudToLanEntryConnection = {
+    const connection: CloudToLANEntryConnection = {
       authorityGeneration: 1,
       dispose: jest.fn(),
       lifecycle: {
@@ -4659,7 +4659,7 @@ describe('AuthorityTransferModule', () => {
         targetUrl,
       },
     });
-    const prepared = createCloudToLanTargetEntry({
+    const prepared = createCloudToLANTargetEntry({
       createdAt: record.status.createdAt,
       expiresAt: record.status.expiresAt,
       operationIntentId: 'intent-target-preparation',
@@ -4670,13 +4670,13 @@ describe('AuthorityTransferModule', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: connection.serverUrl,
     });
-    const published = publishCloudToLanTargetEntry(prepared, {
+    const published = publishCloudToLANTargetEntry(prepared, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: record.status.updatedAt,
       targetUrl,
     });
-    const handedOff = handoffCloudToLanTargetEntry(published, record);
+    const handedOff = handoffCloudToLANTargetEntry(published, record);
     const operationOptions = { signal: new AbortController().signal };
 
     await module.runtimes.prepare(record, operationOptions);
@@ -4706,7 +4706,7 @@ describe('AuthorityTransferModule', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status,
     });
-    const prepared = createCloudToLanTargetEntry({
+    const prepared = createCloudToLANTargetEntry({
       createdAt: status.createdAt,
       expiresAt: status.expiresAt,
       operationIntentId: 'intent-recovered-target-preparation',
@@ -4717,8 +4717,8 @@ describe('AuthorityTransferModule', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const handedOff = handoffCloudToLanTargetEntry(
-      publishCloudToLanTargetEntry(prepared, {
+    const handedOff = handoffCloudToLANTargetEntry(
+      publishCloudToLANTargetEntry(prepared, {
         caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
         caFingerprint: 'c'.repeat(64),
         publishedAt: status.updatedAt,
@@ -4742,7 +4742,7 @@ describe('AuthorityTransferModule', () => {
       readSnapshot: jest.fn(),
       serverUrl: 'https://cloud.example.test/',
       supports: (capability: CollabCloudCapability) => capability === 'authority-transfer',
-    } satisfies CloudToLanEntryConnection));
+    } satisfies CloudToLANEntryConnection));
     const createCloudToLanConnection = jest.fn()
       .mockResolvedValueOnce(connections[0])
       .mockResolvedValueOnce(connections[1]);
@@ -4814,8 +4814,8 @@ describe('AuthorityTransferModule', () => {
 
   it('rebinds a published target entry to its exact listener endpoint during startup recovery', async () => {
     const targetUrl = 'https://192.168.1.20:54545';
-    const preparing = createCloudToLanTargetEntry({
-      createdAt: '2026-08-27T00:00:00.000Z',
+    const preparing = createCloudToLANTargetEntry({
+      createdAt: testTime(),
       expiresAt: testTime({ days: 30 }),
       operationIntentId: 'intent-recovered-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -4825,10 +4825,10 @@ describe('AuthorityTransferModule', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(preparing, {
+    const published = publishCloudToLANTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-27T00:01:00.000Z',
+      publishedAt: testTime({ minutes: 1 }),
       targetUrl,
     });
     const persistence = {
@@ -5017,7 +5017,7 @@ describe('AuthorityTransferModule', () => {
         ...proposal(),
         phase,
         state,
-        updatedAt: '2026-08-27T00:01:00.000Z',
+        updatedAt: testTime({ minutes: 1 }),
       },
     });
 
@@ -5171,7 +5171,7 @@ describe('AuthorityTransferModule', () => {
       const lanClient = {
         claimTransferredMembership: jest.fn(),
         requestWithMember: lanRequest,
-      } as unknown as LanAuthorityTransferClient;
+      } as unknown as LANAuthorityTransferClient;
       const binding = direction === 'lan-to-cloud'
         ? module.bindLanToCloudClaimant({
             cloudSession,
@@ -5208,7 +5208,7 @@ describe('AuthorityTransferModule', () => {
       projectId: PROJECT_ID,
       receiptId: 'receipt-manager-reissued',
       receiptKeyId: 'receipt-key-manager-reissued',
-      redeemedAt: '2026-10-01T00:01:00.000Z',
+      redeemedAt: testTime({ days: 35, minutes: 1 }),
       signature: Buffer.alloc(64, 3).toString('base64url'),
       signatureAlgorithm: 'ed25519' as const,
       targetAuthorityGeneration: 2,
@@ -5287,7 +5287,7 @@ describe('AuthorityTransferModule', () => {
           hostCaFingerprint: 'a'.repeat(64),
           kind: 'lan',
         },
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         hostOwnership: { ownsAuthority: false },
         lastEventSequence: 1,
         member: {
@@ -5299,7 +5299,7 @@ describe('AuthorityTransferModule', () => {
         },
         project: { id: PROJECT_ID, name: 'Recovery', workspacePath: 'workspace/recovery' },
         schemaVersion: 3,
-        updatedAt: '2026-08-27T00:00:00.000Z',
+        updatedAt: testTime(),
       }),
       now: testClock({ days: 35, seconds: 10 }),
       persistence: {
@@ -5667,7 +5667,7 @@ describe('AuthorityTransferModule', () => {
       ),
       phase: 'source-acknowledged',
     });
-    const managerEntry = settledCloudToLanManagerEntry(
+    const managerEntry = settledCloudToLANManagerEntry(
       matchingClaimant,
       managerOperationIntentId,
     );
@@ -5794,20 +5794,20 @@ describe('AuthorityTransferModule', () => {
         projectId: descriptor.projectId,
         receiptId: 'receipt-manager-local-only',
         receiptKeyId: 'receipt-key-manager-local-only',
-        redeemedAt: '2026-10-01T00:01:00.000Z',
+        redeemedAt: testTime({ days: 35, minutes: 1 }),
         signature: Buffer.alloc(64, 3).toString('base64url'),
         signatureAlgorithm: 'ed25519',
         targetAuthorityGeneration: descriptor.targetAuthorityGeneration,
         transferId: descriptor.transferId,
       },
-      updatedAt: '2026-10-01T00:01:00.000Z',
+      updatedAt: testTime({ days: 35, minutes: 1 }),
     });
     let record: AuthorityTransferClaimantRecord | null =
       advanceAuthorityTransferClaimantRecord(claimed, {
         convergenceProof: 'receipt',
         phase: 'target-confirmed',
         targetStatus: status,
-        updatedAt: '2026-10-01T00:02:00.000Z',
+        updatedAt: testTime({ days: 35, minutes: 2 }),
       });
     let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
     const recoverConvertedClaimant = jest.fn(async () => undefined);
@@ -5876,6 +5876,7 @@ describe('AuthorityTransferModule', () => {
       targetHost,
     }));
     new AuthorityTransferModule({
+      now: testClock({ hours: 2 }),
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
       installationKey: TEST_INSTALLATION_A,
@@ -5984,6 +5985,7 @@ describe('AuthorityTransferModule', () => {
       throw new Error('transport must remain unavailable');
     });
     new AuthorityTransferModule({
+      now: testClock({ hours: 2 }),
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
       installationKey: TEST_INSTALLATION_A,

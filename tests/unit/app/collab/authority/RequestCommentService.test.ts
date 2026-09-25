@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
@@ -15,21 +16,21 @@ import { RequestCommentService } from '@/app/collab/authority/RequestCommentServ
 import { type RequestEnsureDatabasePort, RequestEnsureService } from '@/app/collab/authority/RequestEnsureService';
 import {
   type AuthorityDatabaseConnection,
-  type AuthoritySqlRow,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  type AuthoritySQLRow,
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
-const COMMENTED_AT = '2026-08-08T00:01:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
+const COMMENTED_AT = testTime({ days: -19, minutes: 1 });
 const MAIN = '1'.repeat(40);
 const HEAD = '2'.repeat(40);
 
 describe('RequestCommentService', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let service: RequestCommentService;
 
   beforeAll(async () => {
@@ -40,7 +41,7 @@ describe('RequestCommentService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-request-comment-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -129,7 +130,7 @@ describe('RequestCommentService', () => {
       expectedRevision: 1, title: 'Updated title', body: 'Updated body',
     });
     await database.close();
-    database = new SqlJsProjectDatabase(path.join(root, 'authority'), {
+    database = new SQLJSProjectDatabase(path.join(root, 'authority'), {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -252,7 +253,7 @@ describe('RequestCommentService', () => {
     })).digest('hex');
     const connection: AuthorityDatabaseConnection = {
       all: () => [],
-      get: (sql): AuthoritySqlRow | null => {
+      get: (sql): AuthoritySQLRow | null => {
         if (sql.includes('FROM project p')) {
           return {
           member_id: 'member-host',

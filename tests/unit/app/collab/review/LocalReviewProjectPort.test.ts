@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import type { LocalPublishProjectPort } from '@/app/collab/publish/LocalPublishProjectPort';
 import { LocalReviewProjectPort } from '@/app/collab/review/LocalReviewProjectPort';
@@ -55,7 +57,7 @@ function membership(role: 'manager' | 'member') {
       hostCaFingerprint: 'a'.repeat(64),
       kind: 'lan' as const,
     },
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     hostOwnership: { ownsAuthority: false },
     lastEventSequence: 0,
     member: {
@@ -71,7 +73,7 @@ function membership(role: 'manager' | 'member') {
       workspacePath: 'workspace/project-a',
     },
     schemaVersion: 1 as const,
-    updatedAt: '2026-08-08T00:00:00.000Z',
+    updatedAt: testTime({ days: -19 }),
   };
 }
 

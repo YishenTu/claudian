@@ -615,7 +615,7 @@ export class ConversationRepository {
   }
 
   invalidateProviderSessions(providerIds: ProviderId[]): Conversation[] {
-    const drafts = this.conversations.map(conversation => cloneJson(conversation));
+    const drafts = this.conversations.map(conversation => cloneJSON(conversation));
     const invalidated = ProviderSettingsCoordinator.invalidateConversationSessions(drafts, providerIds);
     return invalidated.flatMap(draft => {
       const conversation = this.getSync(draft.id);
@@ -1397,7 +1397,7 @@ export class ConversationRepository {
     const generation = this.#getConversationGeneration(conversation.id);
     const fields = ['sessionId', 'providerState', 'resumeAtMessageId', 'messages'] as const;
     const before = fields.map(field => JSON.stringify(conversation[field]));
-    const draft = cloneJson(conversation);
+    const draft = cloneJSON(conversation);
     const value = await read(draft);
     const isCurrent = (): boolean => (
       this.#isConversationCurrent(conversation, generation)
@@ -1657,7 +1657,7 @@ export class ConversationRepository {
   }
 }
 
-function cloneJson<T>(value: T): T {
+function cloneJSON<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 

@@ -1,12 +1,12 @@
 /** @jest-environment jsdom */
-
 import type { CollabTicketSummary } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 import { within } from '@testing-library/dom';
 
 import type { CollabFeaturePort, CollabLocalProjectSummary } from '@/core/collab';
 import { TicketListPanel } from '@/features/collab/sidebar/tickets/TicketListPanel';
 
-const CREATED_AT = '2026-08-10T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -17 });
 
 describe('TicketListPanel', () => {
   it('keeps the sidebar list-only and opens create or detail in the main surface', async () => {

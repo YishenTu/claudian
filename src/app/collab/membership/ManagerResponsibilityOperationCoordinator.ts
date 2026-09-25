@@ -6,7 +6,7 @@ import { type CollabLocalProjectRepository, isCollabLocalCloudMembership } from 
 import { type CloudManagerResponsibilityReceiptRecord, decodeCloudManagerResponsibilityReceiptRecord, type ManagerResponsibilityReceiptState, managerResponsibilityReceiptState } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
 import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuthorityError';
 import type { CollabAuthorityMembershipRouterPort } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
-import { type CollabCloudProjectSnapshot, type CollabLanProjectSnapshot, type CollabManagerResponsibilityOfferSummary, type CollabOperationOptions, type CollabProjectSnapshot, isCollabLanProjectSnapshot } from '@/core/collab';
+import { type CollabCloudProjectSnapshot, type CollabLANProjectSnapshot, type CollabManagerResponsibilityOfferSummary, type CollabOperationOptions, type CollabProjectSnapshot, isCollabLANProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabMembershipPendingLeavePort {
@@ -110,11 +110,11 @@ implements ManagerResponsibilityOperationPort {
     context: ManagerResponsibilityContext,
     options: CollabOperationOptions,
   ): Promise<CollabManagerResponsibilityOfferSummary | null> {
-    if (!isCollabLanProjectSnapshot(snapshot)) {
+    if (!isCollabLANProjectSnapshot(snapshot)) {
       await this.#reconcileCloudSnapshot(snapshot, context, options);
       return null;
     }
-    const lanSnapshot: CollabLanProjectSnapshot = snapshot;
+    const lanSnapshot: CollabLANProjectSnapshot = snapshot;
     const offer = lanSnapshot.managerResponsibilityOffer;
     if (
       !offer

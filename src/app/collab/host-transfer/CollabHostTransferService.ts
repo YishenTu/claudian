@@ -3,10 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type {
-  CollabLocalLanMembershipRecord,
+  CollabLocalLANMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLANMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { HostTransferRecoveryStorePort } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
 import {
   hostTransferAcceptanceIdempotencyKey,
@@ -19,7 +19,7 @@ import type { HostTransferControlClient } from '@/app/collab/lan/HostTransferCon
 import type {
   CollabProjectLifecycleAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
-import { type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabHostTransferIntentRequest, type CollabLanProjectSnapshot, type CollabOperationOptions, isCollabLanProjectSnapshot } from '@/core/collab';
+import { type CollabCoordinationSnapshot, type CollabCreateHostTransferRequest, type CollabHostTransferIntentRequest, type CollabLANProjectSnapshot, type CollabOperationOptions, isCollabLANProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 type IncomingCoordinator = Pick<IncomingHostTransferCoordinator, 'accept' | 'close' | 'resume'>;
@@ -29,17 +29,17 @@ interface IncomingCoordinatorEntry {
   readonly coordinator: Promise<IncomingCoordinator>;
 }
 
-type LanCoordinationSnapshot = Omit<CollabCoordinationSnapshot, 'snapshot'> & {
-  readonly snapshot: CollabLanProjectSnapshot;
+type LANCoordinationSnapshot = Omit<CollabCoordinationSnapshot, 'snapshot'> & {
+  readonly snapshot: CollabLANProjectSnapshot;
 };
 
 export interface CollabHostTransferServiceOptions {
   readonly createControlClient: (
-    membership: CollabLocalLanMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
   ) => Pick<HostTransferControlClient, 'cancel' | 'create' | 'decline'>;
   readonly createIdempotencyKey?: (kind: string) => string;
   readonly createIncomingCoordinator: (
-    membership: CollabLocalLanMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
   ) => Promise<IncomingCoordinator> | IncomingCoordinator;
   readonly projects: Pick<
     CollabLocalProjectRepository,
@@ -229,7 +229,7 @@ export class CollabHostTransferService {
   }
 
   #incomingCoordinator(
-    membership: CollabLocalLanMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
   ): Promise<IncomingCoordinator> {
     this.#assertOpen();
     const authorityIdentity = [
@@ -264,8 +264,8 @@ export class CollabHostTransferService {
     projectId: CollabProjectId,
     options: CollabOperationOptions,
   ): Promise<{
-    readonly coordination: LanCoordinationSnapshot;
-    readonly membership: CollabLocalLanMembershipRecord;
+    readonly coordination: LANCoordinationSnapshot;
+    readonly membership: CollabLocalLANMembershipRecord;
   }> {
     const [membership, coordination] = await Promise.all([
       this.#requireMembership(projectId),
@@ -278,19 +278,19 @@ export class CollabHostTransferService {
       coordination.snapshot.project.id !== projectId
       || coordination.snapshot.currentMember.id !== membership.member.id
     ) throw serviceError('host-transfer-snapshot-mismatch');
-    if (!isCollabLanProjectSnapshot(coordination.snapshot)) {
+    if (!isCollabLANProjectSnapshot(coordination.snapshot)) {
       throw serviceError('host-transfer-lan-only', 'authorization-denied');
     }
-    return { coordination: coordination as LanCoordinationSnapshot, membership };
+    return { coordination: coordination as LANCoordinationSnapshot, membership };
   }
 
   async #requireMembership(
     projectId: CollabProjectId,
-  ): Promise<CollabLocalLanMembershipRecord> {
+  ): Promise<CollabLocalLANMembershipRecord> {
     const membership = await this.options.projects.loadMembership(projectId);
     if (
       !membership
-      || !isCollabLocalLanMembership(membership)
+      || !isCollabLocalLANMembership(membership)
       || membership.project.id !== projectId
     ) {
       throw serviceError('host-transfer-membership-missing');

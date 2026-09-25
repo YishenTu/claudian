@@ -1,8 +1,8 @@
 import { type CollabProjectId } from '@claudian-collab/protocol';
 
 import type { HostTransitionCandidateResolver } from '@/app/collab/HostTransitionCandidateResolver';
-import type { CollabTrustedHost } from '@/app/collab/lan/CollabHttpClient';
-import type { AcknowledgeRetirementResponse } from '@/app/collab/lan/LanCollabControlOperations';
+import type { CollabTrustedHost } from '@/app/collab/lan/CollabHTTPClient';
+import type { AcknowledgeRetirementResponse } from '@/app/collab/lan/LANCollabControlOperations';
 
 export interface RetirementAcknowledgementInput {
   readonly hostCaCertificatePem: string;

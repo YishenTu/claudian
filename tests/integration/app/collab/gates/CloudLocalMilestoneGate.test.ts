@@ -17,6 +17,7 @@ import {
 } from '@claudian-collab/protocol';
 import { createDevelopmentCloudAuthorityAdapter, developmentCloudGitNetwork } from '@test/helpers/collab/developmentCloudTransports';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   type CollabLocalCloudMembershipRecord,
@@ -179,12 +180,12 @@ async function createClient(
   if (memberId === HOST_MEMBER_ID) {
     await writeFile(path.join(repositoryPath, 'unpublished.md'), 'Alice local unpublished work\n');
     await new CollabRequestDraftStore(projects).save({
-      createdAt: '2026-08-23T00:00:00.000Z',
+      createdAt: testTime({ days: -4 }),
       description: 'Alice private local draft',
       projectId,
       schemaVersion: COLLAB_REQUEST_DRAFT_SCHEMA_VERSION,
       syncState: 'local',
-      updatedAt: '2026-08-23T00:00:00.000Z',
+      updatedAt: testTime({ days: -4 }),
     });
   }
   const publicationState = new CollabPublicationStateStore(projects);
@@ -193,7 +194,7 @@ async function createClient(
     operation: null,
     projectId,
     schemaVersion: COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
-    updatedAt: '2026-08-23T00:00:00.000Z',
+    updatedAt: testTime({ days: -4 }),
   });
 
   const stored = await projects.loadMembership(projectId);

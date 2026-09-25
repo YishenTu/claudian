@@ -314,14 +314,14 @@ export interface ProviderTransitionOwnerContext {
   providerTransitionOwner?: boolean;
 }
 
-export interface ProviderCliResolutionContext extends ProviderTransitionOwnerContext {
+export interface ProviderCLIResolutionContext extends ProviderTransitionOwnerContext {
   executionTarget?: unknown;
 }
 
-export interface ProviderCliResolver {
+export interface ProviderCLIResolver {
   resolveFromSettings(
     settings: Record<string, unknown>,
-    context?: ProviderCliResolutionContext,
+    context?: ProviderCLIResolutionContext,
   ): string | null | Promise<string | null>;
   reset(): void;
 }
@@ -371,7 +371,7 @@ export interface ProviderTabWarmupPolicy {
 export interface ProviderWorkspaceServices {
   commandCatalog?: ProviderCommandCatalog | null;
   vaultCommandRepository?: ProviderVaultEntryRepository | null;
-  cliResolver?: ProviderCliResolver | null;
+  cliResolver?: ProviderCLIResolver | null;
   commandLoader?: ProviderCommandLoader | null;
   tabWarmupPolicy?: ProviderTabWarmupPolicy | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;

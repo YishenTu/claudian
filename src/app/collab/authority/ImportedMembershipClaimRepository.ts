@@ -16,7 +16,7 @@ import {
 
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 interface ImportedClaimAuthority {
@@ -29,7 +29,7 @@ interface ImportedClaimAuthority {
   readonly transferId: string;
 }
 
-type LanClaimRequest = Extract<ClaimTransferredMembershipRequest, { credentialHash: string }>;
+type LANClaimRequest = Extract<ClaimTransferredMembershipRequest, { credentialHash: string }>;
 const hash = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
 const denied = () => new CollabError({ code: 'authorization-denied' });
 const invalid = () => new CollabError({ code: 'membership-claim-invalid' });
@@ -147,7 +147,7 @@ export class ImportedMembershipClaimRepository {
     if (connection.get('SELECT member_id FROM imported_member_claims WHERE member_id = ?', [memberId])) throw invalid();
   }
 
-  redeem(connection: AuthorityDatabaseConnection, input: LanClaimRequest, now: Date): CollabTransferredMembershipRedemptionReceipt {
+  redeem(connection: AuthorityDatabaseConnection, input: LANClaimRequest, now: Date): CollabTransferredMembershipRedemptionReceipt {
     const decoded = collabControlOperationCodec('claimTransferredMembership').decodeRequest(input);
     if (decoded.status !== 'ok') throw decoded.error;
     const request = decoded.value;

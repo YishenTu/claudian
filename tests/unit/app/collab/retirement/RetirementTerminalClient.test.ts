@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import { RetirementTerminalClient } from '@/app/collab/retirement/RetirementTerminalClient';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -8,7 +10,7 @@ const INPUT = {
   idempotencyKey: 'retire-local-one',
   memberCredential: 'A'.repeat(43),
   projectId: 'project-a',
-  retiredAt: '2026-08-13T00:00:00.000Z',
+  retiredAt: testTime({ days: -14 }),
 } as const;
 
 describe('RetirementTerminalClient', () => {
@@ -150,7 +152,7 @@ describe('RetirementTerminalClient', () => {
 
 function response() {
   return {
-    acknowledgedAt: '2026-08-13T00:01:00.000Z',
+    acknowledgedAt: testTime({ days: -14, minutes: 1 }),
     projectId: INPUT.projectId,
     retiredAt: INPUT.retiredAt,
   } as const;

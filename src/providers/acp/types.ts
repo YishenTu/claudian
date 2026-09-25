@@ -1,127 +1,127 @@
 export const ACP_PROTOCOL_VERSION = 1 as const;
 
-export type AcpProtocolVersion = typeof ACP_PROTOCOL_VERSION;
-export type AcpRequestId = number | string | null;
-export type AcpSessionId = string;
-export type AcpSessionModeId = string;
-export type AcpSessionConfigId = string;
-export type AcpSessionConfigValueId = string;
-export type AcpToolCallId = string;
-export type AcpPermissionOptionId = string;
-export type AcpPositionEncodingKind = 'utf-16' | 'utf-32' | 'utf-8';
-export type AcpRole = 'assistant' | 'user';
-export type AcpStopReason = string;
-export type AcpMetadata = Record<string, unknown>;
+export type ACPProtocolVersion = typeof ACP_PROTOCOL_VERSION;
+export type ACPRequestId = number | string | null;
+export type ACPSessionId = string;
+export type ACPSessionModeId = string;
+export type ACPSessionConfigId = string;
+export type ACPSessionConfigValueId = string;
+export type ACPToolCallId = string;
+export type ACPPermissionOptionId = string;
+export type ACPPositionEncodingKind = 'utf-16' | 'utf-32' | 'utf-8';
+export type ACPRole = 'assistant' | 'user';
+export type ACPStopReason = string;
+export type ACPMetadata = Record<string, unknown>;
 
-export interface AcpImplementation {
+export interface ACPImplementation {
   name: string;
   version: string;
   title?: string | null;
 }
 
-export interface AcpAuthEnvVar {
+export interface ACPAuthEnvVar {
   name: string;
   label?: string | null;
   optional?: boolean;
   secret?: boolean;
 }
 
-export type AcpAuthMethod = {
+export type ACPAuthMethod = {
   description?: string | null;
   id: string;
   name?: string | null;
 } & (
   | { type?: 'agent' }
-  | { envVars: AcpAuthEnvVar[]; type: 'env_var' }
+  | { envVars: ACPAuthEnvVar[]; type: 'env_var' }
   | { args?: string[]; command: string; type: 'terminal' }
 );
 
-export interface AcpFileSystemCapabilities {
+export interface ACPFileSystemCapabilities {
   readTextFile?: boolean;
   writeTextFile?: boolean;
 }
 
-export interface AcpClientAuthCapabilities {
+export interface ACPClientAuthCapabilities {
   terminal?: boolean;
 }
 
-export interface AcpClientCapabilities {
-  auth?: AcpClientAuthCapabilities;
-  fs?: AcpFileSystemCapabilities;
+export interface ACPClientCapabilities {
+  auth?: ACPClientAuthCapabilities;
+  fs?: ACPFileSystemCapabilities;
   terminal?: boolean;
-  positionEncodings?: AcpPositionEncodingKind[];
+  positionEncodings?: ACPPositionEncodingKind[];
 }
 
-export interface AcpPromptCapabilities {
+export interface ACPPromptCapabilities {
   audio?: boolean;
   embeddedContext?: boolean;
   image?: boolean;
 }
 
-export interface AcpMcpCapabilities {
+export interface ACPMCPCapabilities {
   http?: boolean;
   sse?: boolean;
 }
 
-export interface AcpSessionCapabilities {
+export interface ACPSessionCapabilities {
   close?: Record<string, never> | null;
   fork?: Record<string, never> | null;
   list?: Record<string, never> | null;
   resume?: Record<string, never> | null;
 }
 
-export interface AcpAgentCapabilities {
+export interface ACPAgentCapabilities {
   auth?: {
     logout?: Record<string, never> | null;
   };
   loadSession?: boolean;
-  mcpCapabilities?: AcpMcpCapabilities;
-  positionEncoding?: AcpPositionEncodingKind | null;
-  promptCapabilities?: AcpPromptCapabilities;
-  sessionCapabilities?: AcpSessionCapabilities;
+  mcpCapabilities?: ACPMCPCapabilities;
+  positionEncoding?: ACPPositionEncodingKind | null;
+  promptCapabilities?: ACPPromptCapabilities;
+  sessionCapabilities?: ACPSessionCapabilities;
 }
 
-export interface AcpInitializeRequest {
-  _meta?: AcpMetadata | null;
-  clientCapabilities?: AcpClientCapabilities;
-  clientInfo?: AcpImplementation | null;
-  protocolVersion: AcpProtocolVersion;
+export interface ACPInitializeRequest {
+  _meta?: ACPMetadata | null;
+  clientCapabilities?: ACPClientCapabilities;
+  clientInfo?: ACPImplementation | null;
+  protocolVersion: ACPProtocolVersion;
 }
 
-export interface AcpInitializeResponse {
-  _meta?: AcpMetadata | null;
-  agentCapabilities?: AcpAgentCapabilities;
-  agentInfo?: AcpImplementation | null;
-  authMethods?: AcpAuthMethod[];
-  protocolVersion: AcpProtocolVersion;
+export interface ACPInitializeResponse {
+  _meta?: ACPMetadata | null;
+  agentCapabilities?: ACPAgentCapabilities;
+  agentInfo?: ACPImplementation | null;
+  authMethods?: ACPAuthMethod[];
+  protocolVersion: ACPProtocolVersion;
 }
 
-export interface AcpAuthenticateRequest {
+export interface ACPAuthenticateRequest {
   methodId: string;
 }
 
-export type AcpAuthenticateResponse = Record<string, never>;
+export type ACPAuthenticateResponse = Record<string, never>;
 
-export interface AcpEnvVariable {
+export interface ACPEnvVariable {
   name: string;
   value: string;
 }
 
-export interface AcpHttpHeader {
+export interface ACPHTTPHeader {
   name: string;
   value: string;
 }
 
-export type AcpMcpServer =
+export type ACPMCPServer =
   | {
     type: 'http';
-    headers?: AcpHttpHeader[];
+    headers?: ACPHTTPHeader[];
     name: string;
     url: string;
   }
   | {
     type: 'sse';
-    headers?: AcpHttpHeader[];
+    headers?: ACPHTTPHeader[];
     name: string;
     url: string;
   }
@@ -129,23 +129,23 @@ export type AcpMcpServer =
     type?: 'stdio';
     args: string[];
     command: string;
-    env?: AcpEnvVariable[];
+    env?: ACPEnvVariable[];
     name: string;
   };
 
-export interface AcpSessionMode {
+export interface ACPSessionMode {
   description?: string | null;
-  id: AcpSessionModeId;
+  id: ACPSessionModeId;
   name: string;
 }
 
-export interface AcpSessionModeState {
-  availableModes: AcpSessionMode[];
-  currentModeId: AcpSessionModeId;
+export interface ACPSessionModeState {
+  availableModes: ACPSessionMode[];
+  currentModeId: ACPSessionModeId;
 }
 
-export type AcpModelInfo = {
-  _meta?: AcpMetadata | null;
+export type ACPModelInfo = {
+  _meta?: ACPMetadata | null;
   name: string;
   description?: string | null;
 } & (
@@ -153,124 +153,124 @@ export type AcpModelInfo = {
   | { id: string; modelId?: string }
 );
 
-export interface AcpSessionModelState {
-  _meta?: AcpMetadata | null;
-  availableModels: AcpModelInfo[];
+export interface ACPSessionModelState {
+  _meta?: ACPMetadata | null;
+  availableModels: ACPModelInfo[];
   currentModelId: string;
 }
 
-export interface AcpSessionConfigSelectOption {
+export interface ACPSessionConfigSelectOption {
   description?: string | null;
   name: string;
-  value: AcpSessionConfigValueId;
+  value: ACPSessionConfigValueId;
 }
 
-export interface AcpSessionConfigSelectGroup {
+export interface ACPSessionConfigSelectGroup {
   group: string;
   name: string;
-  options: AcpSessionConfigSelectOption[];
+  options: ACPSessionConfigSelectOption[];
 }
 
-export type AcpSessionConfigSelectOptions =
-  | AcpSessionConfigSelectOption[]
-  | AcpSessionConfigSelectGroup[];
+export type ACPSessionConfigSelectOptions =
+  | ACPSessionConfigSelectOption[]
+  | ACPSessionConfigSelectGroup[];
 
-export type AcpSessionConfigOption = {
+export type ACPSessionConfigOption = {
   category?: string | null;
   description?: string | null;
-  id: AcpSessionConfigId;
+  id: ACPSessionConfigId;
   name: string;
 } & (
   | { type: 'boolean'; value: boolean }
   | {
-    currentValue: AcpSessionConfigValueId;
-    options: AcpSessionConfigSelectOptions;
+    currentValue: ACPSessionConfigValueId;
+    options: ACPSessionConfigSelectOptions;
     type: 'select';
   }
 );
 
-export interface AcpNewSessionRequest {
-  _meta?: AcpMetadata | null;
+export interface ACPNewSessionRequest {
+  _meta?: ACPMetadata | null;
   additionalDirectories?: string[];
   cwd: string;
-  mcpServers: AcpMcpServer[];
+  mcpServers: ACPMCPServer[];
 }
 
-export interface AcpNewSessionResponse {
-  _meta?: AcpMetadata | null;
-  configOptions?: AcpSessionConfigOption[] | null;
-  models?: AcpSessionModelState | null;
-  modes?: AcpSessionModeState | null;
-  sessionId: AcpSessionId;
+export interface ACPNewSessionResponse {
+  _meta?: ACPMetadata | null;
+  configOptions?: ACPSessionConfigOption[] | null;
+  models?: ACPSessionModelState | null;
+  modes?: ACPSessionModeState | null;
+  sessionId: ACPSessionId;
 }
 
-export interface AcpForkSessionRequest {
-  _meta?: AcpMetadata | null;
+export interface ACPForkSessionRequest {
+  _meta?: ACPMetadata | null;
   additionalDirectories?: string[];
   cwd: string;
-  mcpServers?: AcpMcpServer[];
-  sessionId: AcpSessionId;
+  mcpServers?: ACPMCPServer[];
+  sessionId: ACPSessionId;
 }
 
-export interface AcpForkSessionResponse {
-  _meta?: AcpMetadata | null;
-  configOptions?: AcpSessionConfigOption[] | null;
-  modes?: AcpSessionModeState | null;
-  sessionId: AcpSessionId;
+export interface ACPForkSessionResponse {
+  _meta?: ACPMetadata | null;
+  configOptions?: ACPSessionConfigOption[] | null;
+  modes?: ACPSessionModeState | null;
+  sessionId: ACPSessionId;
 }
 
-export interface AcpLoadSessionRequest {
-  _meta?: AcpMetadata | null;
+export interface ACPLoadSessionRequest {
+  _meta?: ACPMetadata | null;
   additionalDirectories?: string[];
   cwd: string;
-  mcpServers: AcpMcpServer[];
-  sessionId: AcpSessionId;
+  mcpServers: ACPMCPServer[];
+  sessionId: ACPSessionId;
 }
 
-export interface AcpLoadSessionResponse {
-  _meta?: AcpMetadata | null;
-  configOptions?: AcpSessionConfigOption[] | null;
-  models?: AcpSessionModelState | null;
-  modes?: AcpSessionModeState | null;
-  sessionId?: AcpSessionId | null;
+export interface ACPLoadSessionResponse {
+  _meta?: ACPMetadata | null;
+  configOptions?: ACPSessionConfigOption[] | null;
+  models?: ACPSessionModelState | null;
+  modes?: ACPSessionModeState | null;
+  sessionId?: ACPSessionId | null;
 }
 
-export interface AcpListSessionsRequest {
+export interface ACPListSessionsRequest {
   additionalDirectories?: string[];
   cursor?: string | null;
   cwd?: string | null;
 }
 
-export interface AcpSessionInfo {
-  sessionId: AcpSessionId;
+export interface ACPSessionInfo {
+  sessionId: ACPSessionId;
   title?: string | null;
   updatedAt?: string | null;
 }
 
-export interface AcpListSessionsResponse {
+export interface ACPListSessionsResponse {
   nextCursor?: string | null;
-  sessions: AcpSessionInfo[];
+  sessions: ACPSessionInfo[];
 }
 
-export interface AcpTextContent {
+export interface ACPTextContent {
   type: 'text';
   text: string;
 }
 
-export interface AcpImageContent {
+export interface ACPImageContent {
   data: string;
   mimeType: string;
   type: 'image';
   uri?: string | null;
 }
 
-export interface AcpAudioContent {
+export interface ACPAudioContent {
   data: string;
   mimeType: string;
   type: 'audio';
 }
 
-export interface AcpResourceLink {
+export interface ACPResourceLink {
   description?: string | null;
   mimeType?: string | null;
   name: string;
@@ -280,7 +280,7 @@ export interface AcpResourceLink {
   uri: string;
 }
 
-export type AcpEmbeddedResource =
+export type ACPEmbeddedResource =
   | {
     resource: {
       mimeType?: string | null;
@@ -298,20 +298,20 @@ export type AcpEmbeddedResource =
     type: 'resource';
   };
 
-export type AcpContentBlock =
-  | AcpTextContent
-  | AcpImageContent
-  | AcpAudioContent
-  | AcpResourceLink
-  | AcpEmbeddedResource;
+export type ACPContentBlock =
+  | ACPTextContent
+  | ACPImageContent
+  | ACPAudioContent
+  | ACPResourceLink
+  | ACPEmbeddedResource;
 
-export interface AcpPromptRequest {
+export interface ACPPromptRequest {
   messageId?: string | null;
-  prompt: AcpContentBlock[];
-  sessionId: AcpSessionId;
+  prompt: ACPContentBlock[];
+  sessionId: ACPSessionId;
 }
 
-export interface AcpUsage {
+export interface ACPUsage {
   cachedReadTokens?: number | null;
   cachedWriteTokens?: number | null;
   inputTokens: number;
@@ -320,57 +320,57 @@ export interface AcpUsage {
   totalTokens: number;
 }
 
-export interface AcpPromptResponse {
-  stopReason: AcpStopReason;
-  usage?: AcpUsage | null;
+export interface ACPPromptResponse {
+  stopReason: ACPStopReason;
+  usage?: ACPUsage | null;
   userMessageId?: string | null;
 }
 
-export interface AcpCancelNotification {
-  sessionId: AcpSessionId;
+export interface ACPCancelNotification {
+  sessionId: ACPSessionId;
 }
 
-export interface AcpSetSessionModeRequest {
-  modeId: AcpSessionModeId;
-  sessionId: AcpSessionId;
+export interface ACPSetSessionModeRequest {
+  modeId: ACPSessionModeId;
+  sessionId: ACPSessionId;
 }
 
-export type AcpSetSessionModeResponse = Record<string, never>;
+export type ACPSetSessionModeResponse = Record<string, never>;
 
-export interface AcpSetSessionModelRequest {
-  _meta?: AcpMetadata | null;
+export interface ACPSetSessionModelRequest {
+  _meta?: ACPMetadata | null;
   modelId: string;
-  sessionId: AcpSessionId;
+  sessionId: ACPSessionId;
 }
 
-export interface AcpSetSessionModelResponse {
-  _meta?: AcpMetadata | null;
+export interface ACPSetSessionModelResponse {
+  _meta?: ACPMetadata | null;
 }
 
-export type AcpSetSessionConfigOptionRequest =
+export type ACPSetSessionConfigOptionRequest =
   | {
-    configId: AcpSessionConfigId;
-    sessionId: AcpSessionId;
+    configId: ACPSessionConfigId;
+    sessionId: ACPSessionId;
     type: 'boolean';
     value: boolean;
   }
   | {
-    configId: AcpSessionConfigId;
-    sessionId: AcpSessionId;
+    configId: ACPSessionConfigId;
+    sessionId: ACPSessionId;
     type: 'select';
-    value: AcpSessionConfigValueId;
+    value: ACPSessionConfigValueId;
   };
 
-export interface AcpSetSessionConfigOptionResponse {
-  configOptions: AcpSessionConfigOption[];
+export interface ACPSetSessionConfigOptionResponse {
+  configOptions: ACPSessionConfigOption[];
 }
 
-export interface AcpContentChunk {
-  content: AcpContentBlock;
+export interface ACPContentChunk {
+  content: ACPContentBlock;
   messageId?: string | null;
 }
 
-export type AcpToolKind =
+export type ACPToolKind =
   | 'read'
   | 'edit'
   | 'delete'
@@ -382,98 +382,98 @@ export type AcpToolKind =
   | 'switch_mode'
   | 'other';
 
-export type AcpToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+export type ACPToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
-export interface AcpDiffToolContent {
+export interface ACPDiffToolContent {
   newText: string;
   oldText?: string | null;
   path: string;
   type: 'diff';
 }
 
-export interface AcpTerminalToolContent {
+export interface ACPTerminalToolContent {
   terminalId: string;
   type: 'terminal';
 }
 
-export interface AcpWrappedContentToolContent {
-  content: AcpContentBlock;
+export interface ACPWrappedContentToolContent {
+  content: ACPContentBlock;
   type: 'content';
 }
 
-export type AcpToolCallContent =
-  | AcpDiffToolContent
-  | AcpTerminalToolContent
-  | AcpWrappedContentToolContent;
+export type ACPToolCallContent =
+  | ACPDiffToolContent
+  | ACPTerminalToolContent
+  | ACPWrappedContentToolContent;
 
-export interface AcpToolCallLocation {
+export interface ACPToolCallLocation {
   line?: number | null;
   path: string;
 }
 
-export interface AcpToolCall {
-  content?: AcpToolCallContent[];
-  kind?: AcpToolKind | null;
-  locations?: AcpToolCallLocation[];
+export interface ACPToolCall {
+  content?: ACPToolCallContent[];
+  kind?: ACPToolKind | null;
+  locations?: ACPToolCallLocation[];
   rawInput?: unknown;
   rawOutput?: unknown;
-  status?: AcpToolCallStatus | null;
+  status?: ACPToolCallStatus | null;
   title: string;
-  toolCallId: AcpToolCallId;
+  toolCallId: ACPToolCallId;
 }
 
-export interface AcpToolCallUpdate {
-  content?: AcpToolCallContent[] | null;
-  kind?: AcpToolKind | null;
-  locations?: AcpToolCallLocation[] | null;
+export interface ACPToolCallUpdate {
+  content?: ACPToolCallContent[] | null;
+  kind?: ACPToolKind | null;
+  locations?: ACPToolCallLocation[] | null;
   rawInput?: unknown;
   rawOutput?: unknown;
-  status?: AcpToolCallStatus | null;
+  status?: ACPToolCallStatus | null;
   title?: string | null;
-  toolCallId: AcpToolCallId;
+  toolCallId: ACPToolCallId;
 }
 
-export type AcpPlanEntryPriority = 'high' | 'medium' | 'low';
-export type AcpPlanEntryStatus = 'pending' | 'in_progress' | 'completed';
+export type ACPPlanEntryPriority = 'high' | 'medium' | 'low';
+export type ACPPlanEntryStatus = 'pending' | 'in_progress' | 'completed';
 
-export interface AcpPlanEntry {
+export interface ACPPlanEntry {
   content: string;
-  priority: AcpPlanEntryPriority;
-  status: AcpPlanEntryStatus;
+  priority: ACPPlanEntryPriority;
+  status: ACPPlanEntryStatus;
 }
 
-export interface AcpPlan {
-  entries: AcpPlanEntry[];
+export interface ACPPlan {
+  entries: ACPPlanEntry[];
 }
 
-export interface AcpAvailableCommandInput {
+export interface ACPAvailableCommandInput {
   hint: string;
 }
 
-export interface AcpAvailableCommand {
+export interface ACPAvailableCommand {
   description?: string | null;
-  input?: AcpAvailableCommandInput | null;
+  input?: ACPAvailableCommandInput | null;
   name: string;
 }
 
-export interface AcpAvailableCommandsUpdate {
-  availableCommands: AcpAvailableCommand[];
+export interface ACPAvailableCommandsUpdate {
+  availableCommands: ACPAvailableCommand[];
 }
 
-export interface AcpCurrentModeUpdate {
-  currentModeId: AcpSessionModeId;
+export interface ACPCurrentModeUpdate {
+  currentModeId: ACPSessionModeId;
 }
 
-export interface AcpConfigOptionUpdate {
-  configOptions: AcpSessionConfigOption[];
+export interface ACPConfigOptionUpdate {
+  configOptions: ACPSessionConfigOption[];
 }
 
-export interface AcpSessionInfoUpdate {
+export interface ACPSessionInfoUpdate {
   title?: string | null;
   updatedAt?: string | null;
 }
 
-export interface AcpUsageUpdate {
+export interface ACPUsageUpdate {
   cost?: {
     amount: number;
     currency: string;
@@ -482,123 +482,123 @@ export interface AcpUsageUpdate {
   used: number;
 }
 
-export type AcpSessionUpdate = { _meta?: AcpMetadata | null } & (
-  | (AcpContentChunk & { sessionUpdate: 'user_message_chunk' })
-  | (AcpContentChunk & { sessionUpdate: 'agent_message_chunk' })
-  | (AcpContentChunk & { sessionUpdate: 'agent_thought_chunk' })
-  | (AcpToolCall & { sessionUpdate: 'tool_call' })
-  | (AcpToolCallUpdate & { sessionUpdate: 'tool_call_update' })
-  | (AcpPlan & { sessionUpdate: 'plan' })
-  | (AcpAvailableCommandsUpdate & { sessionUpdate: 'available_commands_update' })
-  | (AcpCurrentModeUpdate & { sessionUpdate: 'current_mode_update' })
-  | (AcpConfigOptionUpdate & { sessionUpdate: 'config_option_update' })
-  | (AcpSessionInfoUpdate & { sessionUpdate: 'session_info_update' })
-  | (AcpUsageUpdate & { sessionUpdate: 'usage_update' })
+export type ACPSessionUpdate = { _meta?: ACPMetadata | null } & (
+  | (ACPContentChunk & { sessionUpdate: 'user_message_chunk' })
+  | (ACPContentChunk & { sessionUpdate: 'agent_message_chunk' })
+  | (ACPContentChunk & { sessionUpdate: 'agent_thought_chunk' })
+  | (ACPToolCall & { sessionUpdate: 'tool_call' })
+  | (ACPToolCallUpdate & { sessionUpdate: 'tool_call_update' })
+  | (ACPPlan & { sessionUpdate: 'plan' })
+  | (ACPAvailableCommandsUpdate & { sessionUpdate: 'available_commands_update' })
+  | (ACPCurrentModeUpdate & { sessionUpdate: 'current_mode_update' })
+  | (ACPConfigOptionUpdate & { sessionUpdate: 'config_option_update' })
+  | (ACPSessionInfoUpdate & { sessionUpdate: 'session_info_update' })
+  | (ACPUsageUpdate & { sessionUpdate: 'usage_update' })
 );
 
-export interface AcpSessionNotification {
-  _meta?: AcpMetadata | null;
-  sessionId: AcpSessionId;
-  update: AcpSessionUpdate;
+export interface ACPSessionNotification {
+  _meta?: ACPMetadata | null;
+  sessionId: ACPSessionId;
+  update: ACPSessionUpdate;
 }
 
-export type AcpPermissionOptionKind =
+export type ACPPermissionOptionKind =
   | 'allow_once'
   | 'allow_always'
   | 'reject_once'
   | 'reject_always';
 
-export interface AcpPermissionOption {
-  kind: AcpPermissionOptionKind;
+export interface ACPPermissionOption {
+  kind: ACPPermissionOptionKind;
   name: string;
-  optionId: AcpPermissionOptionId;
+  optionId: ACPPermissionOptionId;
 }
 
-export interface AcpRequestPermissionRequest {
-  options: AcpPermissionOption[];
-  sessionId: AcpSessionId;
-  toolCall: AcpToolCallUpdate;
+export interface ACPRequestPermissionRequest {
+  options: ACPPermissionOption[];
+  sessionId: ACPSessionId;
+  toolCall: ACPToolCallUpdate;
 }
 
-export type AcpRequestPermissionResponse = {
+export type ACPRequestPermissionResponse = {
   outcome:
     | {
       outcome: 'cancelled';
     }
     | {
-      optionId: AcpPermissionOptionId;
+      optionId: ACPPermissionOptionId;
       outcome: 'selected';
     };
 };
 
-export interface AcpReadTextFileRequest {
+export interface ACPReadTextFileRequest {
   limit?: number | null;
   line?: number | null;
   path: string;
-  sessionId: AcpSessionId;
+  sessionId: ACPSessionId;
 }
 
-export interface AcpReadTextFileResponse {
+export interface ACPReadTextFileResponse {
   content: string;
 }
 
-export interface AcpWriteTextFileRequest {
+export interface ACPWriteTextFileRequest {
   content: string;
   path: string;
-  sessionId: AcpSessionId;
+  sessionId: ACPSessionId;
 }
 
-export type AcpWriteTextFileResponse = Record<string, never>;
+export type ACPWriteTextFileResponse = Record<string, never>;
 
-export interface AcpCreateTerminalRequest {
+export interface ACPCreateTerminalRequest {
   args?: string[];
   command: string;
   cwd?: string | null;
-  env?: AcpEnvVariable[];
+  env?: ACPEnvVariable[];
   outputByteLimit?: number | null;
-  sessionId: AcpSessionId;
+  sessionId: ACPSessionId;
 }
 
-export interface AcpCreateTerminalResponse {
+export interface ACPCreateTerminalResponse {
   terminalId: string;
 }
 
-export interface AcpTerminalOutputRequest {
-  sessionId: AcpSessionId;
+export interface ACPTerminalOutputRequest {
+  sessionId: ACPSessionId;
   terminalId: string;
 }
 
-export interface AcpTerminalExitStatus {
+export interface ACPTerminalExitStatus {
   exitCode?: number | null;
   signal?: string | null;
 }
 
-export interface AcpTerminalOutputResponse {
-  exitStatus?: AcpTerminalExitStatus | null;
+export interface ACPTerminalOutputResponse {
+  exitStatus?: ACPTerminalExitStatus | null;
   output: string;
   truncated: boolean;
 }
 
-export interface AcpWaitForTerminalExitRequest {
-  sessionId: AcpSessionId;
+export interface ACPWaitForTerminalExitRequest {
+  sessionId: ACPSessionId;
   terminalId: string;
 }
 
-export interface AcpWaitForTerminalExitResponse {
+export interface ACPWaitForTerminalExitResponse {
   exitCode?: number | null;
   signal?: string | null;
 }
 
-export interface AcpKillTerminalRequest {
-  sessionId: AcpSessionId;
+export interface ACPKillTerminalRequest {
+  sessionId: ACPSessionId;
   terminalId: string;
 }
 
-export type AcpKillTerminalResponse = Record<string, never>;
+export type ACPKillTerminalResponse = Record<string, never>;
 
-export interface AcpReleaseTerminalRequest {
-  sessionId: AcpSessionId;
+export interface ACPReleaseTerminalRequest {
+  sessionId: ACPSessionId;
   terminalId: string;
 }
 
-export type AcpReleaseTerminalResponse = Record<string, never>;
+export type ACPReleaseTerminalResponse = Record<string, never>;

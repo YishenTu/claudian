@@ -7,7 +7,7 @@ import type {
 } from '../execution';
 import type { ClaudianSettings } from '../types';
 import type { EnvironmentScope } from '../types/settings';
-import type { ProviderCliResolutionContext, ProviderId } from './types';
+import type { ProviderCLIResolutionContext, ProviderId } from './types';
 
 /**
  * Application capabilities available to provider adapters.
@@ -47,7 +47,7 @@ export interface ProviderHost {
   ): Promise<void>;
   getResolvedProviderCliPath(
     providerId: ProviderId,
-    context?: ProviderCliResolutionContext,
+    context?: ProviderCLIResolutionContext,
   ): Promise<string | null>;
   runProviderExecutionTransition<T>(
     providerIds: ProviderId[],

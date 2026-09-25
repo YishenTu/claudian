@@ -16,7 +16,7 @@ import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
 
-import { createHarness, releaseSideChatHarnesses } from '../side-chat/SideChatDomHarness';
+import { createHarness, releaseSideChatHarnesses } from '../side-chat/SideChatDOMHarness';
 import { FakeSideSession } from '../side-chat/SideChatSessionHarness';
 
 const originalResizeObserver = globalThis.ResizeObserver;

@@ -3,10 +3,10 @@ import * as path from 'node:path';
 
 import { Setting } from 'obsidian';
 
-import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
+import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import { GROK_PROVIDER_ICON } from '@/shared/icons';
-import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
+import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
@@ -23,7 +23,7 @@ import {
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import { getHostnameKey } from '../../../utils/env';
-import { normalizeConfiguredCliPath } from '../../../utils/path';
+import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import type { GrokWorkspaceServices } from '../app/GrokWorkspaceServices';
 import {
   getGrokProviderSettings,
@@ -84,13 +84,13 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       providerName: 'Grok',
     });
 
-    renderCliInstallationSetting({
+    renderCLIInstallationSetting({
       cliName: 'Grok CLI',
       icon: GROK_PROVIDER_ICON,
       inspect: async () => {
         const settings = context.plugin.settings as unknown as Record<string, unknown>;
         const config = getGrokProviderSettings(settings);
-        return probeCliInstallation({
+        return probeCLIInstallation({
           path: await context.plugin.getResolvedProviderCliPath('grok'),
           configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
           args: ['--version'],
@@ -129,7 +129,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       placeholder: process.platform === 'win32'
         ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\grok.cmd'
         : '/usr/local/bin/grok',
-      validate: validateCliPath,
+      validate: validateCLIPath,
     });
 
     new Setting(container).setName('Models').setHeading();
@@ -159,12 +159,12 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
   },
 };
 
-function validateCliPath(value: string): string | null {
+function validateCLIPath(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) {
     return null;
   }
-  const expandedPath = normalizeConfiguredCliPath(trimmed);
+  const expandedPath = normalizeConfiguredCLIPath(trimmed);
   if (!path.posix.isAbsolute(expandedPath) && !path.win32.isAbsolute(expandedPath)) {
     return 'Path must be absolute';
   }

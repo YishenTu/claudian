@@ -25,7 +25,7 @@ import type {
 import { type CollabCloudProjectSnapshot, type CollabCoordinationSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 function lanSnapshotPort(
   readCoordinationSnapshot = jest.fn(),
@@ -579,7 +579,7 @@ describe('CollabMembershipService', () => {
           ...membership.authority,
           authorityGeneration: 8,
         },
-        updatedAt: '2026-08-08T00:01:00.000Z',
+        updatedAt: testTime({ days: -19, minutes: 1 }),
       });
       const cloudSnapshot = projection.snapshot as CollabCloudProjectSnapshot;
       snapshots.readAuthoritySnapshot.mockResolvedValue({
@@ -904,7 +904,7 @@ describe('CollabMembershipService', () => {
       decodeCloudManagementIntent({
         authorityGeneration: 7,
         completionId,
-        createdAt: '2099-09-02T00:00:00.000Z',
+        createdAt: testTime({ days: 26669 }),
         kind: 'cloud-management-intent',
         memberId: 'member-manager',
         operation: 'createProjectInvitation',
@@ -916,7 +916,7 @@ describe('CollabMembershipService', () => {
           projectId: 'project-alpha',
         },
         response: {
-          createdAt: '2099-09-02T00:00:00.000Z',
+          createdAt: testTime({ days: 26669 }),
           expiresAt: testTime({ days: 26670 }),
           invitationId,
           issuedState: 'active',
@@ -926,7 +926,7 @@ describe('CollabMembershipService', () => {
         },
         schemaVersion: 1,
         serverUrl: 'https://cloud.example',
-        updatedAt: '2099-09-02T00:00:00.000Z',
+        updatedAt: testTime({ days: 26669 }),
       })
     );
     const service = new CollabMembershipService(
@@ -943,7 +943,7 @@ describe('CollabMembershipService', () => {
     const oldView = await service.readManagementOperation('project-alpha');
     expect(oldView).toMatchObject({
       completionId: 'completion-old',
-      secretAvailableUntil: '2099-09-03T00:00:00.000Z',
+      secretAvailableUntil: testTime({ days: 26670 }),
     });
 
     await projects.saveProjectDocument(
@@ -980,7 +980,7 @@ describe('CollabMembershipService', () => {
         projectId: 'project-alpha',
       },
       response: {
-        createdAt: '2020-09-02T00:00:00.000Z',
+        createdAt: testTime({ days: -2185 }),
         expiresAt: testTime({ days: -2184 }),
         invitationId: 'invitation-expired',
         issuedState: 'active' as const,
@@ -988,7 +988,7 @@ describe('CollabMembershipService', () => {
         secret: 'A'.repeat(43),
         secretReplayExpiresAt: testTime({ days: -2155 }),
       },
-      secretAvailableUntil: '2020-09-03T00:00:00.000Z',
+      secretAvailableUntil: testTime({ days: -2184 }),
     },
     {
       completionId: 'completion-expired-claim',
@@ -1004,7 +1004,7 @@ describe('CollabMembershipService', () => {
       response: {
         claim: `${'B'.repeat(42)}A`,
         claimGeneration: 4,
-        createdAt: '2020-09-02T00:00:00.000Z',
+        createdAt: testTime({ days: -2185 }),
         expiresAt: testTime({ days: -2155 }),
         memberId: 'member-imported',
         projectId: 'project-alpha',
@@ -1012,7 +1012,7 @@ describe('CollabMembershipService', () => {
         targetAuthorityGeneration: 7,
         transferId: 'transfer-imported',
       },
-      secretAvailableUntil: '2020-10-02T00:00:00.000Z',
+      secretAvailableUntil: testTime({ days: -2155 }),
     },
   ])('retains an expired $operation result until exact completion', async fixture => {
     await projects.saveMembership({
@@ -1044,7 +1044,7 @@ describe('CollabMembershipService', () => {
     const retained = decodeCloudManagementIntent({
       authorityGeneration: 7,
       completionId: fixture.completionId,
-      createdAt: '2020-09-02T00:00:00.000Z',
+      createdAt: testTime({ days: -2185 }),
       kind: 'cloud-management-intent',
       memberId: 'member-manager',
       operation: fixture.operation,
@@ -1054,7 +1054,7 @@ describe('CollabMembershipService', () => {
       response: fixture.response,
       schemaVersion: 1,
       serverUrl: 'https://cloud.example',
-      updatedAt: '2020-09-02T00:00:00.000Z',
+      updatedAt: testTime({ days: -2185 }),
     });
     await projects.saveProjectDocument(
       'project-alpha',
@@ -1419,7 +1419,7 @@ describe('CollabMembershipService', () => {
     const control = client();
     const offered = {
       expiresAt: testTime({ days: -19, minutes: 10 }),
-      offeredAt: '2026-08-08T00:00:00.000Z',
+      offeredAt: testTime({ days: -19 }),
       offerId: 'offer-one',
       purpose: 'manager-leave' as const,
       sourceManagerMemberId: 'member-manager',
@@ -1428,7 +1428,7 @@ describe('CollabMembershipService', () => {
     };
     const acknowledged = {
       ...offered,
-      acknowledgedAt: '2026-08-08T00:01:00.000Z',
+      acknowledgedAt: testTime({ days: -19, minutes: 1 }),
       status: 'acknowledged' as const,
     };
     control.operations.getManagerResponsibilityOffer.mockResolvedValue(acknowledged);
@@ -1472,7 +1472,7 @@ describe('CollabMembershipService', () => {
     };
     const acknowledged = {
       ...offered,
-      acknowledgedAt: '2026-08-08T00:01:00.000Z',
+      acknowledgedAt: testTime({ days: -19, minutes: 1 }),
       status: 'acknowledged' as const,
     };
     control.operations.getManagerResponsibilityOffer.mockResolvedValue(offered);
@@ -1512,7 +1512,7 @@ describe('CollabMembershipService', () => {
   it('reconciles an authority-acknowledged offer after the mutation response was lost', async () => {
     const control = client();
     const acknowledged = {
-      acknowledgedAt: '2026-08-08T00:01:00.000Z',
+      acknowledgedAt: testTime({ days: -19, minutes: 1 }),
       expiresAt: testTime({ days: -19, minutes: 10 }),
       offeredAt: CREATED_AT,
       offerId: 'offer-current',

@@ -196,7 +196,7 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
 test('esbuild entry points and their transitive consumers retain the dependency envelope', () => {
   const envelope = 'tests/integration/build/collab-dependency-envelope.test.ts';
   for (const owner of [
-    'app/collab/lan/LanTlsIdentity',
+    'app/collab/lan/LANTLSIdentity',
     'features/collab/detail/review/CollabDiffRenderer',
     'features/collab/shared/markdown/MarkdownDraftEditor',
   ]) {

@@ -33,7 +33,7 @@ import {
 
 const axe = configureAxe({ rules: { region: { enabled: false } } });
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 function member(
   id: string,
@@ -90,7 +90,7 @@ function createPort(
     openInvitation: jest.fn().mockReturnValue({
       run: jest.fn().mockResolvedValue(success({
         status: 'ready', invitation: { encodedInvitation: 'claudian-collab:v2:invite-alpha', expiresAt: testTime({ days: 1442, minutes: 15 }) },
-        availableUntil: '2030-08-08T00:15:00.000Z',
+        availableUntil: testTime({ days: 1442, minutes: 15 }),
       })),
       read: jest.fn(), acknowledge: jest.fn(), dispose: jest.fn(),
     }),
@@ -795,7 +795,7 @@ it.each([false, true])('automatically restores management after Host startup wit
   it('redacts a retained member claim when its secret availability expires', async () => {
     jest.useFakeTimers();
     try {
-      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
+      jest.setSystemTime(Date.parse(testTime({ days: 6 })));
       const members = [member('member-manager', 'Alice', { role: 'manager' })];
       const port = createPort(members, {
         readManagementOperation: jest.fn().mockResolvedValue(success({
@@ -805,7 +805,7 @@ it.each([false, true])('automatically restores management after Host startup wit
             encodedInvitation: 'claudian-cloud-claim:v1:expiring-secret',
             expiresAt: testTime({ days: 14 }),
           },
-          secretAvailableUntil: '2026-09-02T00:00:01.000Z',
+          secretAvailableUntil: testTime({ days: 6, seconds: 1 }),
           status: 'result-retained',
         })),
         readProjectCapabilities: jest.fn().mockResolvedValue(success({
@@ -846,7 +846,7 @@ it.each([false, true])('automatically restores management after Host startup wit
   it.each([500, 1_000])('revalidates a retained member claim before copying at %s ms', async elapsed => {
     jest.useFakeTimers();
     try {
-      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
+      jest.setSystemTime(Date.parse(testTime({ days: 6 })));
       const members = [member('member-manager', 'Alice', { role: 'manager' })];
       const retained = {
         action: 'reissue-member-claim' as const,
@@ -855,7 +855,7 @@ it.each([false, true])('automatically restores management after Host startup wit
           encodedInvitation: 'claudian-cloud-claim:v1:stale-secret',
           expiresAt: testTime({ days: 14 }),
         },
-        secretAvailableUntil: '2026-09-02T00:00:01.000Z',
+        secretAvailableUntil: testTime({ days: 6, seconds: 1 }),
         status: 'result-retained' as const,
       };
       const port = createPort(members, {
@@ -884,7 +884,7 @@ it.each([false, true])('automatically restores management after Host startup wit
       modal.onOpen();
       await flush();
       await flush();
-      jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z') + elapsed);
+      jest.setSystemTime(Date.parse(testTime({ days: 6 })) + elapsed);
       modal.contentEl.querySelector<HTMLButtonElement>(
         '[data-action="copy-member-claim"]',
       )?.click();
@@ -1602,12 +1602,12 @@ it.each([false, true])('automatically restores management after Host startup wit
         encodedInvitation: 'claudian-cloud:v1:recovered',
         expiresAt: testTime({ days: 1467, minutes: 15 }),
       },
-      secretAvailableUntil: '2030-09-02T00:15:00.000Z', status: 'result-retained',
+      secretAvailableUntil: testTime({ days: 1467, minutes: 15 }), status: 'result-retained',
     }));
     port.openInvitation.mockReturnValue({
       run: jest.fn().mockResolvedValue(success({
         status: 'ready', invitation: { encodedInvitation: 'claudian-cloud:v1:recovered', expiresAt: testTime({ days: 1467, minutes: 15 }) },
-        availableUntil: '2030-09-02T00:15:00.000Z',
+        availableUntil: testTime({ days: 1467, minutes: 15 }),
       })),
       read: jest.fn(), acknowledge: jest.fn(), dispose: jest.fn(),
     });

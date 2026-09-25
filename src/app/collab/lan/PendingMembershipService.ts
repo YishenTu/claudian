@@ -30,24 +30,24 @@ import type { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectA
 import { ProjectRecoveryLinkRepository } from '@/app/collab/authority/ProjectRecoveryLinkRepository';
 import type {
   AuthorityDatabaseConnection,
-  SqlJsMutationResult,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSMutationResult,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketRepository } from '@/app/collab/authority/TicketRepository';
 import type {
   InvitationCodec,
-  LanCollabInvitation,
+  LANCollabInvitation,
 } from '@/app/collab/lan/InvitationCodec';
-import { COLLAB_PENDING_MEMBERSHIP_TTL_MS } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_PENDING_MEMBERSHIP_TTL_MS } from '@/app/collab/lan/LANCollabConstants';
 import type {
   ActivateJoinAttemptRequest,
   ConfirmEndpointResponse,
   CreateInvitationRequest,
   CreateJoinAttemptRequest,
-  LanCollabJoinAttempt as CollabJoinAttempt,
+  LANCollabJoinAttempt as CollabJoinAttempt,
   RefreshEndpointResponse,
   RevokeInvitationRequest,
-} from '@/app/collab/lan/LanCollabControlOperations';
-import type { CollabLanProjectSnapshot } from '@/core/collab';
+} from '@/app/collab/lan/LANCollabControlOperations';
+import type { CollabLANProjectSnapshot } from '@/core/collab';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -61,7 +61,7 @@ interface PendingMembershipDatabase {
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T>;
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
-  ): Promise<SqlJsMutationResult<T>>;
+  ): Promise<SQLJSMutationResult<T>>;
 }
 
 export interface PendingMembershipAuthority {
@@ -105,7 +105,7 @@ interface JoinFailureState {
 interface InvitationReplay {
   readonly actorMemberId: string;
   readonly fingerprint: string;
-  readonly invitation: LanCollabInvitation;
+  readonly invitation: LANCollabInvitation;
 }
 
 function serviceError(
@@ -241,7 +241,7 @@ export class PendingMembershipService {
   async createInvitation(
     memberCredential: string,
     request: CreateInvitationRequest,
-  ): Promise<LanCollabInvitation> {
+  ): Promise<LANCollabInvitation> {
     const project = await this.#requireProject(request.projectId);
     const actor = await this.authenticateMemberCredential(memberCredential, ['active']);
     if (actor.member.role !== 'manager') {
@@ -445,7 +445,7 @@ export class PendingMembershipService {
   async activateJoinAttempt(
     memberCredential: string,
     request: ActivateJoinAttemptRequest,
-  ): Promise<CollabLanProjectSnapshot> {
+  ): Promise<CollabLANProjectSnapshot> {
     const project = await this.#requireProject(request.projectId);
     assertOpaqueId(request.joinAttemptId, 'join-attempt-id');
     assertOpaqueId(request.idempotencyKey, 'idempotency-key');
@@ -497,7 +497,7 @@ export class PendingMembershipService {
     })).value;
   }
 
-  async readSnapshot(memberCredential: string): Promise<CollabLanProjectSnapshot> {
+  async readSnapshot(memberCredential: string): Promise<CollabLANProjectSnapshot> {
     await this.authenticateMemberCredential(memberCredential, ['active']);
     const mainOid = await this.#readMainOid();
     return this.authority.database.read(connection => {
@@ -508,7 +508,7 @@ export class PendingMembershipService {
 
   async refreshEndpoint(
     memberCredential: string,
-    invitation: LanCollabInvitation,
+    invitation: LANCollabInvitation,
   ): Promise<RefreshEndpointResponse> {
     const actor = await this.authenticateMemberCredential(memberCredential, ['active']);
     if (actor.member.status !== 'active') {
@@ -546,7 +546,7 @@ export class PendingMembershipService {
     return this.options.getHostEndpoint();
   }
 
-  encodeInvitation(invitation: LanCollabInvitation): string {
+  encodeInvitation(invitation: LANCollabInvitation): string {
     return this.#invitationCodec().encode(invitation);
   }
 
@@ -729,7 +729,7 @@ export class PendingMembershipService {
     connection: AuthorityDatabaseConnection,
     currentMemberId: string,
     mainOid: string,
-  ): CollabLanProjectSnapshot {
+  ): CollabLANProjectSnapshot {
     const project = this.authority.projects.get(connection);
     if (!project) throw serviceError('project-not-found', 'authority-project-missing');
     const members = this.repository.listMembers(connection);

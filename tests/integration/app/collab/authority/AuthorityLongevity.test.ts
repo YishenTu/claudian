@@ -2,12 +2,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
-import { ProjectEventHub, type ProjectEventSocket, SqlJsProjectEventSource } from '@/app/collab/lan/ProjectEventHub';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
+import { ProjectEventHub, type ProjectEventSocket, SQLJSProjectEventSource } from '@/app/collab/lan/ProjectEventHub';
 
 class Socket implements ProjectEventSocket {
   readyState = 1;
@@ -21,27 +22,27 @@ class Socket implements ProjectEventSocket {
 it('replays a durable retained tail after restart and reuses its storage across rotations', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'claudian-authority-longevity-'));
   const SQL = await initSqlJs();
-  let database = new SqlJsProjectDatabase(root, { loadSqlJs: async () => SQL });
+  let database = new SQLJSProjectDatabase(root, { loadSqlJs: async () => SQL });
   let hub: ProjectEventHub | undefined;
   const events = new AuthorityEventRepository();
   const append = (count: number) => database.mutate(connection => {
     for (let index = 0; index < count; index++) events.append(connection, {
-      actorMemberId: 'member-a', createdAt: '2026-08-13T00:00:00.000Z',
+      actorMemberId: 'member-a', createdAt: testTime({ days: -14 }),
       kind: 'request.updated', payload: { requestId: 'request-a' },
     });
   });
   try {
     await database.open();
     await database.mutate(connection => new ProjectAuthorityRepository().initialize(connection, {
-      createdAt: '2026-08-13T00:00:00.000Z', hostCredentialHash: new Uint8Array(32).fill(1),
+      createdAt: testTime({ days: -14 }), hostCredentialHash: new Uint8Array(32).fill(1),
       hostDisplayName: 'Member', hostMemberId: 'member-a', name: 'Project', projectId: 'project-a',
     }));
     await append(601);
     const initialBytes = (await database.exportSnapshot()).byteLength;
     await database.close();
-    database = new SqlJsProjectDatabase(root, { loadSqlJs: async () => SQL });
+    database = new SQLJSProjectDatabase(root, { loadSqlJs: async () => SQL });
     await database.open();
-    hub = new ProjectEventHub('project-a', new SqlJsProjectEventSource(database, 'project-a'), {
+    hub = new ProjectEventHub('project-a', new SQLJSProjectEventSource(database, 'project-a'), {
       setInterval: () => 0, clearInterval: () => undefined,
     });
     const expired = new Socket();

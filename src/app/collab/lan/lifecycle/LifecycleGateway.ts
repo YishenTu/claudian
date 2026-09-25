@@ -12,9 +12,9 @@ import type {
   HostedMembershipAdminPort,
 } from '@/app/collab/lan/HostedProjectControlService';
 import {
-  type LanCollabControlOperationMap as CollabControlOperationMap,
-  type LanCollabLifecycleControlOperation as CollabLifecycleControlOperation,
-} from '@/app/collab/lan/LanCollabControlOperations';
+  type LANCollabControlOperationMap as CollabControlOperationMap,
+  type LANCollabLifecycleControlOperation as CollabLifecycleControlOperation,
+} from '@/app/collab/lan/LANCollabControlOperations';
 import type {
   CollabControlDeferredResult,
   CollabControlRouteResult,

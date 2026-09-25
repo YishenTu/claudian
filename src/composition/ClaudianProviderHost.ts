@@ -1,6 +1,6 @@
 import type { ProviderExecutionTransitionScope } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import type { ProviderCliResolutionContext, ProviderId } from '@/core/providers/types';
+import type { ProviderCLIResolutionContext, ProviderId } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
 import type { EnvironmentScope } from '@/core/types/settings';
 
@@ -71,7 +71,7 @@ export class ClaudianProviderHost implements ProviderHost {
 
   async getResolvedProviderCliPath(
     providerId: ProviderId,
-    context?: ProviderCliResolutionContext,
+    context?: ProviderCLIResolutionContext,
   ): Promise<string | null> {
     return this.plugin.getResolvedProviderCliPath(providerId, context);
   }

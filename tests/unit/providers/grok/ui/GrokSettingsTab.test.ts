@@ -9,10 +9,10 @@ import { grokSettingsTabRenderer } from '@/providers/grok/ui/GrokSettingsTab';
 const mockGetHostnameKey = jest.fn(() => 'device:current');
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockRenderProviderModelPicker = jest.fn();
-const mockCliResolverReset = jest.fn();
+const mockCLIResolverReset = jest.fn();
 const mockRefreshModelCatalog = jest.fn().mockResolvedValue({ changed: false });
 const mockGetServices = jest.fn(() => ({
-  cliResolver: { reset: mockCliResolverReset },
+  cliResolver: { reset: mockCLIResolverReset },
   modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
 }));
 
@@ -315,7 +315,7 @@ describe('GrokSettingsTab', () => {
     notices.length = 0;
     jest.clearAllMocks();
     mockGetServices.mockReturnValue({
-      cliResolver: { reset: mockCliResolverReset },
+      cliResolver: { reset: mockCLIResolverReset },
       modelCatalog: { refresh: mockRefreshModelCatalog, markStale: jest.fn() },
     });
     mockRefreshModelCatalog.mockResolvedValue({ changed: false });
@@ -458,7 +458,7 @@ describe('GrokSettingsTab', () => {
   it('keeps a committed CLI path after recycle failure and allows reverting it', async () => {
     const plugin = createPlugin();
     const recycleError = new Error('recycle failed');
-    mockCliResolverReset.mockImplementationOnce(() => {
+    mockCLIResolverReset.mockImplementationOnce(() => {
       throw recycleError;
     });
     grokSettingsTabRenderer.render(createContainer(), createContext(plugin));
@@ -477,7 +477,7 @@ describe('GrokSettingsTab', () => {
 
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledTimes(2);
     expect(plugin.mutateSettings).toHaveBeenCalledTimes(2);
-    expect(mockCliResolverReset).toHaveBeenCalledTimes(2);
+    expect(mockCLIResolverReset).toHaveBeenCalledTimes(2);
     expect(getGrokProviderSettings(plugin.settings).cliPathsByHost).toEqual({});
   });
 
@@ -516,7 +516,7 @@ describe('GrokSettingsTab', () => {
     await applyTextInput(findSetting('CLI path').textComponents[0], '/opt/grok');
 
     expect(getGrokProviderSettings(plugin.settings).currentCatalog?.models).toHaveLength(2);
-    expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
+    expect(mockCLIResolverReset).toHaveBeenCalledTimes(1);
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
       ['grok'],
       expect.any(Function),

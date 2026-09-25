@@ -4,7 +4,7 @@
  * Note and context file formatting for prompts.
  */
 
-import { escapePromptXmlAttribute, formatPromptXmlCdata } from './promptXml';
+import { escapePromptXMLAttribute, formatPromptXMLCdata } from './promptXML';
 
 const LINKED_CONTENT_TAG = 'linked_content';
 const LINKED_CONTENT_TAG_PATTERN = '(linked_content|linked_note|current_note)';
@@ -27,7 +27,7 @@ export const XML_CONTEXT_PATTERN = /\n\n<(?:linked_content|linked_note|current_n
 const BRACKET_CONTEXT_PATTERN = /\n\[(?:Current note|Editor selection from|Browser selection from|Canvas selection from)\b/;
 
 export function formatLinkedContent(contentPath: string): string {
-  return `<${LINKED_CONTENT_TAG} path="${escapePromptXmlAttribute(contentPath)}" />`;
+  return `<${LINKED_CONTENT_TAG} path="${escapePromptXMLAttribute(contentPath)}" />`;
 }
 
 export function appendLinkedContent(prompt: string, contentPath: string): string {
@@ -35,7 +35,7 @@ export function appendLinkedContent(prompt: string, contentPath: string): string
 }
 
 export function formatLinkedContentBody(contentPath: string, content: string): string {
-  return `<${LINKED_CONTENT_TAG} path="${escapePromptXmlAttribute(contentPath)}">\n${formatPromptXmlCdata(
+  return `<${LINKED_CONTENT_TAG} path="${escapePromptXMLAttribute(contentPath)}">\n${formatPromptXMLCdata(
     content,
   )}\n</${LINKED_CONTENT_TAG}>`;
 }
@@ -66,7 +66,7 @@ export function stripLinkedContentContext(prompt: string): string {
  * 1. Legacy: content inside <query> tags
  * 2. Current: user content first, context XML appended after
  */
-export function extractContentBeforeXmlContext(text: string): string | undefined {
+export function extractContentBeforeXMLContext(text: string): string | undefined {
   if (!text) return undefined;
 
   // Legacy format: content inside <query> tags
@@ -88,7 +88,7 @@ export function extractContentBeforeXmlContext(text: string): string | undefined
 export function extractUserDisplayContent(text: string): string | undefined {
   if (!text) return undefined;
 
-  const xmlDisplayContent = extractContentBeforeXmlContext(text);
+  const xmlDisplayContent = extractContentBeforeXMLContext(text);
   if (xmlDisplayContent !== undefined) {
     return xmlDisplayContent;
   }
@@ -112,7 +112,7 @@ export function extractUserQuery(prompt: string): string {
   if (!prompt) return '';
 
   // Try to extract content before XML context
-  const extracted = extractContentBeforeXmlContext(prompt);
+  const extracted = extractContentBeforeXMLContext(prompt);
   if (extracted !== undefined) {
     return extracted;
   }
@@ -131,7 +131,7 @@ export function extractUserQuery(prompt: string): string {
 
 function formatContextFilesLine(files: string[]): string {
   const entries = files
-    .map(file => `<context_file path="${escapePromptXmlAttribute(file)}" />`)
+    .map(file => `<context_file path="${escapePromptXMLAttribute(file)}" />`)
     .join('\n');
   return `<context_files>\n${entries}\n</context_files>`;
 }

@@ -25,17 +25,17 @@ import {
   createAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
-  CloudToLanTargetCoordinator,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTargetCoordinator';
+  CloudToLANTargetCoordinator,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTargetCoordinator';
 import {
-  type CloudToLanTargetEntryRecord,
-  createCloudToLanTargetEntry,
-  publishCloudToLanTargetEntry,
-  withdrawCloudToLanTargetEntry,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  type CloudToLANTargetEntryRecord,
+  createCloudToLANTargetEntry,
+  publishCloudToLANTargetEntry,
+  withdrawCloudToLANTargetEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import {
-  LanToCloudSourceCoordinator,
-} from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudSourceCoordinator';
+  LANToCloudSourceCoordinator,
+} from '@/app/collab/authority-transfer/lan-to-cloud/LANToCloudSourceCoordinator';
 import type {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -47,8 +47,8 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 const PROJECT_ID = 'project-production-transfer';
 const TRANSFER_ID = 'transfer-production-transfer';
 const HOST_MEMBER_ID = 'member-host';
-const CREATED_AT = '2026-08-27T00:00:00.000Z';
-const EXPIRES_AT = '2026-09-26T00:00:00.000Z';
+const CREATED_AT = testTime();
+const EXPIRES_AT = testTime({ days: 30 });
 const CHECKPOINT_SHA256 = 'a'.repeat(64);
 const BATCH_SHA256 = 'b'.repeat(64);
 const SIGNATURE = Buffer.alloc(64, 7).toString('base64url');
@@ -134,7 +134,7 @@ function status(
       ? 'https://cloud.example.test'
       : 'https://192.168.1.10:43123',
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:00:10.000Z',
+    updatedAt: testTime({ seconds: 10 }),
     ...overrides,
   };
 }
@@ -153,7 +153,7 @@ function relinquishmentProof(
     certificate: SIGNATURE,
     certificateAlgorithm: 'ed25519',
     checkpointSha256: CHECKPOINT_SHA256,
-    committedAt: '2026-08-27T00:00:09.000Z',
+    committedAt: testTime({ seconds: 9 }),
     operationIntentId: direction === 'cloud-to-lan'
       ? 'intent-cloud-relinquishment'
       : 'intent-production-transfer',
@@ -198,7 +198,7 @@ function claimBatch(
 class MemoryPersistence {
   batch: CollabTransferredMembershipClaimBatch | null = null;
   entry: AuthorityTransferSourceEntryRecord | null = null;
-  targetEntry: CloudToLanTargetEntryRecord | null = null;
+  targetEntry: CloudToLANTargetEntryRecord | null = null;
   record: AuthorityTransferRecord | null = null;
   readonly phases: string[] = [];
   readonly completeTerminalCleanup = jest.fn(async () => undefined);
@@ -237,7 +237,7 @@ class MemoryPersistence {
     return record;
   };
   handoffCloudToLanTargetEntry = async (
-    entry: CloudToLanTargetEntryRecord,
+    entry: CloudToLANTargetEntryRecord,
     record: AuthorityTransferRecord,
   ): Promise<AuthorityTransferRecord> => {
     this.record = record;
@@ -253,13 +253,13 @@ class MemoryPersistence {
     this.phases.push(record.status.phase);
     return record;
   };
-  loadCloudToLanTargetEntry = async (): Promise<CloudToLanTargetEntryRecord | null> => (
+  loadCloudToLanTargetEntry = async (): Promise<CloudToLANTargetEntryRecord | null> => (
     this.targetEntry
   );
   withdrawCloudToLanTargetEntry = async (
-    entry: CloudToLanTargetEntryRecord,
-  ): Promise<CloudToLanTargetEntryRecord> => {
-    const withdrawn = withdrawCloudToLanTargetEntry(entry, '2026-08-27T00:00:11.000Z');
+    entry: CloudToLANTargetEntryRecord,
+  ): Promise<CloudToLANTargetEntryRecord> => {
+    const withdrawn = withdrawCloudToLANTargetEntry(entry, testTime({ seconds: 11 }));
     this.targetEntry = withdrawn;
     return withdrawn;
   };
@@ -295,8 +295,8 @@ class MemoryPersistence {
       throw new TypeError('Expected a Cloud-to-LAN target record');
     }
     this.record = record;
-    const published = publishCloudToLanTargetEntry(
-      createCloudToLanTargetEntry({
+    const published = publishCloudToLANTargetEntry(
+      createCloudToLANTargetEntry({
         createdAt: CREATED_AT,
         expiresAt: EXPIRES_AT,
         operationIntentId: 'intent-target-preparation',
@@ -331,7 +331,7 @@ function custodyReceipt(direction: 'cloud-to-lan' | 'lan-to-cloud', batchSha256:
     batchRevision: 1,
     batchSha256,
     checkpointSha256: CHECKPOINT_SHA256,
-    committedAt: '2026-08-27T00:00:08.000Z',
+    committedAt: testTime({ seconds: 8 }),
     custodyAuthority: {
       generation: 1,
       kind: direction === 'lan-to-cloud' ? 'lan' : 'cloud',
@@ -359,7 +359,7 @@ function targetCleanupProof(
     batchSha256: null,
     checkpointSha256: null,
     cleanupSha256: '7'.repeat(64),
-    invalidatedAt: '2026-08-27T00:00:11.000Z',
+    invalidatedAt: testTime({ seconds: 11 }),
     operationIntentId,
     projectId: PROJECT_ID,
     receiptKeyId: 'receipt-key-production-transfer',
@@ -398,8 +398,8 @@ describe('production authority-transfer direction coordinators', () => {
 
   it('builds target acceptance internally only after the exact preparation hands off', async () => {
     const persistence = new MemoryPersistence();
-    persistence.targetEntry = publishCloudToLanTargetEntry(
-      createCloudToLanTargetEntry({
+    persistence.targetEntry = publishCloudToLANTargetEntry(
+      createCloudToLANTargetEntry({
         createdAt: CREATED_AT,
         expiresAt: EXPIRES_AT,
         operationIntentId: 'intent-target-preparation',
@@ -447,7 +447,7 @@ describe('production authority-transfer direction coordinators', () => {
         throw new Error(`unexpected ${operation}`);
       }),
     } as unknown as CollabAuthorityLifecyclePort;
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       cloud,
       installationKey: TEST_INSTALLATION_A,
       persistence: persistence.asPort(),
@@ -483,8 +483,8 @@ describe('production authority-transfer direction coordinators', () => {
 
   it('withdraws an exact prepared target when Cloud already cancelled the transfer', async () => {
     const persistence = new MemoryPersistence();
-    persistence.targetEntry = publishCloudToLanTargetEntry(
-      createCloudToLanTargetEntry({
+    persistence.targetEntry = publishCloudToLANTargetEntry(
+      createCloudToLANTargetEntry({
         createdAt: CREATED_AT,
         expiresAt: EXPIRES_AT,
         operationIntentId: 'intent-target-preparation',
@@ -506,7 +506,7 @@ describe('production authority-transfer direction coordinators', () => {
     const cloud = {
       authorityTransfer: jest.fn(async () => status('cloud-to-lan', 'cancelled')),
     } as unknown as CollabAuthorityLifecyclePort;
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       cloud,
       installationKey: TEST_INSTALLATION_A,
       persistence: persistence.asPort(),
@@ -546,7 +546,7 @@ describe('production authority-transfer direction coordinators', () => {
     });
     const authorityTransfer = jest.fn();
     const acceptanceRequest = jest.fn();
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       cloud: { authorityTransfer } as unknown as CollabAuthorityLifecyclePort,
       installationKey: TEST_INSTALLATION_A,
       persistence: persistence.asPort(),
@@ -600,7 +600,7 @@ describe('production authority-transfer direction coordinators', () => {
     const authorityTransfer = jest.fn(async () => {
       throw new CollabError({ code: 'authority-transfer-not-found' });
     });
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: { authorityTransfer } as unknown as CollabAuthorityLifecyclePort,
       persistence: persistence.asPort(),
@@ -648,7 +648,7 @@ describe('production authority-transfer direction coordinators', () => {
     const reopenAfterCancellation = jest.fn()
       .mockRejectedValueOnce(new Error('simulated reopen interruption'))
       .mockResolvedValueOnce(undefined);
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: {} as CollabAuthorityLifecyclePort,
       persistence: persistence.asPort(),
@@ -714,7 +714,7 @@ describe('production authority-transfer direction coordinators', () => {
       throw new Error('Cloud must remain unopened for local cancellation recovery');
     });
     const reopenAfterCancellation = jest.fn(async () => undefined);
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: { authorityTransfer } as unknown as CollabAuthorityLifecyclePort,
       persistence: persistence.asPort(),
@@ -753,7 +753,7 @@ describe('production authority-transfer direction coordinators', () => {
       persistence.record = record;
       throw new Error('simulated post-save failure');
     };
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: {} as CollabAuthorityLifecyclePort,
       persistence: persistence.asPort(),
@@ -803,7 +803,7 @@ describe('production authority-transfer direction coordinators', () => {
       status: sourceProposalStatus(),
     });
     const sourceEndpoint = jest.fn(async () => 'https://127.0.0.1:54545');
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: {} as CollabAuthorityLifecyclePort,
       persistence: persistence.asPort(),
@@ -845,7 +845,7 @@ describe('production authority-transfer direction coordinators', () => {
       status: sourceProposalStatus(),
     });
     const canonical = status('lan-to-cloud', 'source-quiesced', {
-      createdAt: '2026-08-27T00:00:05.000Z',
+      createdAt: testTime({ seconds: 5 }),
       expiresAt: testTime({ days: 31, seconds: 5 }),
     });
     const capture = jest.fn()
@@ -866,7 +866,7 @@ describe('production authority-transfer direction coordinators', () => {
       retirement: jest.fn(),
       uploadAuthorityTransferArtifact: jest.fn(),
     } as unknown as CollabAuthorityLifecyclePort;
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
@@ -918,7 +918,7 @@ describe('production authority-transfer direction coordinators', () => {
         throw new Error('injected-upload-failure');
       }),
     } as unknown as CollabAuthorityLifecyclePort;
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
@@ -965,7 +965,7 @@ describe('production authority-transfer direction coordinators', () => {
       retirement: jest.fn(),
       uploadAuthorityTransferArtifact: jest.fn(),
     } as unknown as CollabAuthorityLifecyclePort;
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
@@ -1003,7 +1003,7 @@ describe('production authority-transfer direction coordinators', () => {
       retirement: jest.fn(),
       uploadAuthorityTransferArtifact: jest.fn(),
     } as unknown as CollabAuthorityLifecyclePort;
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
@@ -1096,7 +1096,7 @@ describe('production authority-transfer direction coordinators', () => {
       uploadAuthorityTransferArtifact: jest.fn(async () => undefined),
     } as unknown as CollabAuthorityLifecyclePort;
     const activateTerminal = jest.fn(async () => undefined);
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
@@ -1195,7 +1195,7 @@ describe('production authority-transfer direction coordinators', () => {
       uploadAuthorityTransferArtifact: jest.fn(),
     } as unknown as CollabAuthorityLifecyclePort;
     const activate = jest.fn(async () => 'target-activation-proof');
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
@@ -1244,7 +1244,7 @@ describe('production authority-transfer direction coordinators', () => {
     }));
     const authorityTransfer = jest.fn();
     const retainClaimBatch = persistence.retainClaimBatch;
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: {
         authorityTransfer,
@@ -1326,7 +1326,7 @@ describe('production authority-transfer direction coordinators', () => {
         }
         : {}),
     }));
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: {
         authorityTransfer,
@@ -1403,7 +1403,7 @@ describe('production authority-transfer direction coordinators', () => {
     const cancelStaging = jest.fn(async () => undefined);
     const invalidateStaging = jest.fn(async () => targetCleanupProof());
 
-    await expect(new LanToCloudSourceCoordinator({
+    await expect(new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: lifecycle('lan-to-cloud'),
       persistence: sourcePersistence.asPort(),
@@ -1414,7 +1414,7 @@ describe('production authority-transfer direction coordinators', () => {
         reopenAfterCancellation,
       },
     }).resume(PROJECT_ID)).resolves.toMatchObject({ state: 'cancelled' });
-    await expect(new CloudToLanTargetCoordinator({
+    await expect(new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: lifecycle('cloud-to-lan'),
       persistence: targetPersistence.asPort(),
@@ -1464,7 +1464,7 @@ describe('production authority-transfer direction coordinators', () => {
       }
       throw new Error(`unexpected ${operation}`);
     });
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: { authorityTransfer } as unknown as CollabAuthorityLifecyclePort,
       persistence: persistence.asPort(),
@@ -1539,7 +1539,7 @@ describe('production authority-transfer direction coordinators', () => {
       uploadAuthorityTransferArtifact: jest.fn(),
     } as unknown as CollabAuthorityLifecyclePort;
     const activateTerminal = jest.fn(async () => undefined);
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
@@ -1599,7 +1599,7 @@ describe('production authority-transfer direction coordinators', () => {
       retirement: jest.fn(),
       uploadAuthorityTransferArtifact: jest.fn(),
     } as unknown as CollabAuthorityLifecyclePort;
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
@@ -1640,7 +1640,7 @@ describe('production authority-transfer direction coordinators', () => {
       retirement: jest.fn(),
       uploadAuthorityTransferArtifact: jest.fn(),
     } as unknown as CollabAuthorityLifecyclePort;
-    await new LanToCloudSourceCoordinator({
+    await new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: lifecycle,
       persistence: sourcePersistence.asPort(),
@@ -1662,7 +1662,7 @@ describe('production authority-transfer direction coordinators', () => {
       status: status('cloud-to-lan', 'completed'),
     }));
     const activate = jest.fn(async () => 'target-activation-proof');
-    await new CloudToLanTargetCoordinator({
+    await new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: lifecycle,
       persistence: targetPersistence.asPort(),
@@ -1737,7 +1737,7 @@ describe('production authority-transfer direction coordinators', () => {
       reopenAfterCancellation: jest.fn(async () => undefined),
       sourceEndpoint: jest.fn(async () => 'https://127.0.0.1:54545'),
     };
-    const coordinator = new LanToCloudSourceCoordinator({
+    const coordinator = new LANToCloudSourceCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
@@ -1862,14 +1862,14 @@ describe('production authority-transfer direction coordinators', () => {
         targetProof: Buffer.alloc(64, 5).toString('base64url'),
       })),
     };
-    const coordinator = new CloudToLanTargetCoordinator({
+    const coordinator = new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud,
       persistence: persistence.asPort(),
       target,
     });
-    persistence.targetEntry = publishCloudToLanTargetEntry(
-      createCloudToLanTargetEntry({
+    persistence.targetEntry = publishCloudToLANTargetEntry(
+      createCloudToLANTargetEntry({
         createdAt: CREATED_AT,
         expiresAt: EXPIRES_AT,
         operationIntentId: 'intent-target-preparation',
@@ -1926,7 +1926,7 @@ describe('production authority-transfer direction coordinators', () => {
     const converge = jest.fn(async (record: AuthorityTransferRecord) => {
       expect(record.receiptVerifier).toEqual(RECEIPT_VERIFIER);
     });
-    const restarted = new CloudToLanTargetCoordinator({
+    const restarted = new CloudToLANTargetCoordinator({
       installationKey: TEST_INSTALLATION_A,
       cloud: offlineCloud,
       persistence: persistence.asPort(),

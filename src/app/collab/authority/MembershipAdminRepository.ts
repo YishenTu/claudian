@@ -3,13 +3,13 @@ import { type CollabMemberId, type CollabMemberStatus, type CollabOperationId, t
 import { ManagerResponsibilityRepository } from '@/app/collab/authority/ManagerResponsibilityRepository';
 import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepository';
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
-import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketMentionRepository } from '@/app/collab/authority/TicketMentionRepository';
 import type {
   DemoteManagerResponse,
   MembershipTerminationResponse,
   PromoteManagerResponse,
-} from '@/app/collab/lan/LanCollabControlOperations';
+} from '@/app/collab/lan/LANCollabControlOperations';
 import { CollabError, type CollabRecoveryAction } from '@/core/collab/ClaudianCollabError';
 
 export interface MembershipAdminContext {

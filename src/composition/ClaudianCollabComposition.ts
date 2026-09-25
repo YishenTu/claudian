@@ -3,8 +3,8 @@ import type { App, Plugin, WorkspaceLeaf } from 'obsidian';
 import { normalizePath, Notice, TFile } from 'obsidian';
 
 import type {
-  LocalAgentRuntimeHttpServer,
-  LocalAgentRuntimeHttpServerEndpoint,
+  LocalAgentRuntimeHTTPServer,
+  LocalAgentRuntimeHTTPServerEndpoint,
 } from '@/app/agent-runtime';
 import type {
   ClaudianCollabService,
@@ -87,9 +87,9 @@ export class ClaudianCollabComposition {
   private collabSettingsGitResolver: GitRuntimeResolver | null = null;
   private collabFeatureService: CollabFeatureService | null = null;
   private collabFeatureServicePromise: Promise<CollabFeatureService | null> | null = null;
-  private agentRuntime: LocalAgentRuntimeHttpServer | null = null;
+  private agentRuntime: LocalAgentRuntimeHTTPServer | null = null;
   private agentRuntimeStartPromise:
-    Promise<LocalAgentRuntimeHttpServerEndpoint | null> | null = null;
+    Promise<LocalAgentRuntimeHTTPServerEndpoint | null> | null = null;
   private collabHostRestore: Promise<void> | null = null;
   private collabHostRestoreTimer: number | null = null;
   private collabHostRestoreRetryDelayMs = 1_000;
@@ -499,10 +499,10 @@ export class ClaudianCollabComposition {
     return feature;
   }
 
-  private startAgentRuntime(): Promise<LocalAgentRuntimeHttpServerEndpoint | null> {
+  private startAgentRuntime(): Promise<LocalAgentRuntimeHTTPServerEndpoint | null> {
     if (!this.isCollabEnabled()) return Promise.resolve(null);
     if (this.agentRuntimeStartPromise) return this.agentRuntimeStartPromise;
-    const pending = (async (): Promise<LocalAgentRuntimeHttpServerEndpoint | null> => {
+    const pending = (async (): Promise<LocalAgentRuntimeHTTPServerEndpoint | null> => {
       try {
         let runtime = this.agentRuntime;
         if (!runtime) {
@@ -510,7 +510,7 @@ export class ClaudianCollabComposition {
           if (vaultRoot === null) return null;
           const agentRuntime = await import('../app/agent-runtime');
           if (!this.isCollabEnabled()) return null;
-          runtime = new agentRuntime.LocalAgentRuntimeHttpServer(
+          runtime = new agentRuntime.LocalAgentRuntimeHTTPServer(
             new agentRuntime.AgentRuntimeGateway(
               () => this.getCollabFeatureService(),
             ),

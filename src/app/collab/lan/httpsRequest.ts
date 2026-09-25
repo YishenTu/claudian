@@ -1,9 +1,9 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
 
-import { isTlsValidationError } from '@/app/collab/tlsErrors';
+import { isTLSValidationError } from '@/app/collab/tlsErrors';
 
-type HttpsRequestFailure =
+type HTTPSRequestFailure =
   | 'cancelled'
   | 'connection-failed'
   | 'response-failed'
@@ -11,20 +11,20 @@ type HttpsRequestFailure =
   | 'timeout'
   | 'tls-untrusted';
 
-export class HttpsRequestError extends Error {
-  constructor(readonly reason: HttpsRequestFailure) {
+export class HTTPSRequestError extends Error {
+  constructor(readonly reason: HTTPSRequestFailure) {
     super(reason);
   }
 }
 
-interface HttpsResponseBytes {
+interface HTTPSResponseBytes {
   readonly body: Buffer;
   readonly headers: IncomingHttpHeaders;
   readonly statusCode: number;
 }
 
 /** Owns one verified HTTPS request; callers own authentication and wire policy. */
-export async function requestHttpsBytes(
+export async function requestHTTPSBytes(
   requestOptions: Pick<RequestOptions, 'ca' | 'headers' | 'hostname' | 'method' | 'path' | 'port'>,
   options: {
     readonly body: Buffer | null;
@@ -32,8 +32,8 @@ export async function requestHttpsBytes(
     readonly signal?: AbortSignal;
     readonly timeoutMs: number;
   },
-): Promise<HttpsResponseBytes> {
-  if (options.signal?.aborted) throw new HttpsRequestError('cancelled');
+): Promise<HTTPSResponseBytes> {
+  if (options.signal?.aborted) throw new HTTPSRequestError('cancelled');
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (action: () => void) => {
@@ -43,9 +43,9 @@ export async function requestHttpsBytes(
       options.signal?.removeEventListener('abort', onAbort);
       action();
     };
-    const fail = (reason: HttpsRequestFailure) => finish(() => {
+    const fail = (reason: HTTPSRequestFailure) => finish(() => {
       outgoing.destroy();
-      reject(new HttpsRequestError(reason));
+      reject(new HTTPSRequestError(reason));
     });
     const outgoing = httpsRequest({
       ...requestOptions,
@@ -75,7 +75,7 @@ export async function requestHttpsBytes(
     const timer = window.setTimeout(() => fail('timeout'), options.timeoutMs);
     options.signal?.addEventListener('abort', onAbort, { once: true });
     outgoing.once('error', error => fail(
-      isTlsValidationError(error) ? 'tls-untrusted' : 'connection-failed',
+      isTLSValidationError(error) ? 'tls-untrusted' : 'connection-failed',
     ));
     if (options.signal?.aborted) {
       onAbort();

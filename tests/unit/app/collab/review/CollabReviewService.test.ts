@@ -1,4 +1,5 @@
 import type { CollabRequestDetail } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import type { CollabReviewControlPort } from '@/app/collab/review/CollabReviewService';
 import {
@@ -124,7 +125,7 @@ function requestDetail(): CollabRequestDetail {
     currentMainOid: MAIN,
     request: {
       commentCount: 0,
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       description: 'Published change',
       firstBaseOid: MAIN,
       id: 'request-a',
@@ -133,7 +134,7 @@ function requestDetail(): CollabRequestDetail {
       revision: 1,
       status: 'open',
       ticketRelations: [],
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     },
     reviewCondition: 'clean',
     reviewedHeadOid: HEAD,

@@ -1,20 +1,21 @@
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-jest.mock('@/app/collab/lan/CollabHttpClient', () => {
-  const actual = jest.requireActual('@/app/collab/lan/CollabHttpClient');
+jest.mock('@/app/collab/lan/CollabHTTPClient', () => {
+  const actual = jest.requireActual('@/app/collab/lan/CollabHTTPClient');
   return {
     ...actual,
-    PinnedCollabHttpClient: jest.fn().mockImplementation(() => ({
+    PinnedCollabHTTPClient: jest.fn().mockImplementation(() => ({
       requestWithMember: jest.fn(),
     })),
   };
 });
 
-const { PinnedCollabHttpClient } = jest.requireMock('@/app/collab/lan/CollabHttpClient') as {
-  PinnedCollabHttpClient: jest.Mock;
+const { PinnedCollabHTTPClient } = jest.requireMock('@/app/collab/lan/CollabHTTPClient') as {
+  PinnedCollabHTTPClient: jest.Mock;
 };
 
 async function admitProjectRecovery(
@@ -109,7 +110,7 @@ describe('ClaudianCollabService retirement recovery', () => {
       tombstones: [{
         ownerInstallationKey: TEST_INSTALLATION_B,
         projectId: 'project-a',
-        result: { projectId: 'project-a', retiredAt: '2026-08-13T00:00:00.000Z' },
+        result: { projectId: 'project-a', retiredAt: testTime({ days: -14 }) },
       }],
     });
     internal.startRetirementResponder = jest.fn();
@@ -149,16 +150,16 @@ describe('ClaudianCollabService retirement recovery', () => {
         code: 'project-retired',
         safeContext: {
           projectId: 'project-a',
-          retiredAt: '2026-08-13T00:00:00.000Z',
+          retiredAt: testTime({ days: -14 }),
         },
       }));
-    PinnedCollabHttpClient.mockImplementationOnce(() => ({ requestWithMember }));
+    PinnedCollabHTTPClient.mockImplementationOnce(() => ({ requestWithMember }));
 
     await expect(service.retireProject({
       projectId: 'project-a',
     })).resolves.toEqual({
       projectId: 'project-a',
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      retiredAt: testTime({ days: -14 }),
     });
     expect(requestWithMember).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -187,7 +188,7 @@ describe('ClaudianCollabService retirement recovery', () => {
     internal.local.projects.loadRetirementTombstone = jest.fn().mockResolvedValue({
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-a',
-      result: { projectId: 'project-a', retiredAt: '2026-08-13T00:00:00.000Z' },
+      result: { projectId: 'project-a', retiredAt: testTime({ days: -14 }) },
     });
 
     await expect(service.lanHost.startProject('project-a')).rejects.toMatchObject({
@@ -218,7 +219,7 @@ describe('ClaudianCollabService retirement recovery', () => {
     const tombstone = (projectId: string) => ({
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId,
-      result: { projectId, retiredAt: '2026-08-13T00:00:00.000Z' },
+      result: { projectId, retiredAt: testTime({ days: -14 }) },
     });
     internal.retirementTombstones.restore = jest.fn().mockResolvedValue({
       expiredProjectIds: [],

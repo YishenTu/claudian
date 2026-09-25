@@ -8,7 +8,7 @@ const summary = {
   canCancel: true,
   canDecline: false,
   expiresAt: testTime({ days: -14, minutes: 10 }),
-  offeredAt: '2026-08-13T00:00:00.000Z',
+  offeredAt: testTime({ days: -14 }),
   phase: 'accepted' as const,
   targetMemberId: 'member-target',
   transferId: 'transfer-a',

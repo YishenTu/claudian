@@ -6,6 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -18,16 +19,16 @@ import { MembershipAdminService } from '@/app/collab/authority/MembershipAdminSe
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import type { CollabManagerResponsibilityPurpose } from '@/core/collab';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
-const MUTATED_AT = '2026-08-08T01:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
+const MUTATED_AT = testTime({ days: -19, hours: 1 });
 
 describe('MembershipAdminService', () => {
   let SQL: SqlJsStatic;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let root = '';
   let connected: Set<string>;
   let managerResponsibilities: ManagerResponsibilityService;
@@ -43,7 +44,7 @@ describe('MembershipAdminService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-membership-admin-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -717,7 +718,7 @@ describe('MembershipAdminService', () => {
   }
 });
 
-async function readManagerState(database: SqlJsProjectDatabase) {
+async function readManagerState(database: SQLJSProjectDatabase) {
   return database.read(connection => ({
     generation: connection.get(
       'SELECT manager_set_generation FROM project WHERE singleton = 1',

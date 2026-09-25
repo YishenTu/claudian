@@ -7,21 +7,22 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
 
-const CREATED_AT = '2026-08-10T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -17 });
 
 describe('TicketService', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let service: TicketService;
   let nextId: number;
 
@@ -33,7 +34,7 @@ describe('TicketService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-ticket-service-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -305,7 +306,7 @@ describe('TicketService', () => {
             'b'.repeat(40),
             CREATED_AT,
             CREATED_AT,
-            `2026-08-10T00:0${index}:00.000Z`,
+            testTime({ days: -17, minutes: index }),
             'c'.repeat(40),
           ],
         );

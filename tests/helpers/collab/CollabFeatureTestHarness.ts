@@ -1,9 +1,11 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type {
   CollabAuthorityTransferEntryPort,
   CollabFeatureServiceOptions,
   CollabHostTransferPort,
   CollabJoinProjectPort,
-  CollabLanHostPort,
+  CollabLANHostPort,
   CollabLifecycleRecoveryPort,
   CollabLocalExitPort,
   CollabMembershipPort,
@@ -14,14 +16,14 @@ import type {
   CollabPublicationReconnectPort,
   CollabPublicationServiceOptions,
 } from '@/app/collab/publish/CollabPublicationService';
-import type { CollabLanProjectSnapshot } from '@/core/collab';
+import type { CollabLANProjectSnapshot } from '@/core/collab';
 import { type CollabFeaturePort, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const OID_A = 'a'.repeat(40);
 const OID_B = 'b'.repeat(40);
 const SNAPSHOT_ID = 'd'.repeat(64);
-const TEST_TIMESTAMP = '2026-08-08T00:00:00.000Z';
+const TEST_TIMESTAMP = testTime({ days: -19 });
 
 export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'initialize',
@@ -118,7 +120,7 @@ type FeatureOptionsOverrides = {
   readonly hostTransfer?: Partial<CollabHostTransferPort>;
   readonly hostInstallation?: Partial<CollabFeatureServiceOptions['hostInstallation']>;
   readonly join?: Partial<CollabJoinProjectPort>;
-  readonly lanHost?: Partial<CollabLanHostPort>;
+  readonly lanHost?: Partial<CollabLANHostPort>;
   readonly lifecycleRecovery?: Partial<CollabLifecycleRecoveryPort>;
   readonly localExit?: Partial<CollabLocalExitPort>;
   readonly membership?: Partial<CollabMembershipPort>;
@@ -169,7 +171,7 @@ function unexpected<T>(operation: string): Promise<T> {
   return Promise.reject(new Error(`Unexpected Collab test operation: ${operation}`));
 }
 
-function projectSnapshot(): CollabLanProjectSnapshot {
+function projectSnapshot(): CollabLANProjectSnapshot {
   const currentMember = {
     activatedAt: TEST_TIMESTAMP,
     createdAt: TEST_TIMESTAMP,
@@ -224,7 +226,7 @@ function defaultJoin(): CollabJoinProjectPort {
   };
 }
 
-function defaultLanHost(): CollabLanHostPort {
+function defaultLANHost(): CollabLANHostPort {
   return {
     getProjectState: projectId => ({ projectId, status: 'stopped' }),
     startProject: projectId => Promise.resolve({
@@ -422,7 +424,7 @@ export function completeCollabFeatureOptions(
       ...overrides.hostInstallation,
     },
     join: { ...defaultJoin(), ...overrides.join },
-    lanHost: { ...defaultLanHost(), ...overrides.lanHost },
+    lanHost: { ...defaultLANHost(), ...overrides.lanHost },
     lifecycleRecovery: { ...defaultLifecycleRecovery(), ...overrides.lifecycleRecovery },
     localExit: { ...defaultLocalExit(), ...overrides.localExit },
     membership: { ...defaultMembership(), ...overrides.membership },

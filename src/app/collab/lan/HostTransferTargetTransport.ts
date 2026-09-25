@@ -13,10 +13,10 @@ import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
   collabControlOperationPath,
 } from '@/app/collab/lan/CollabControlOperationBindings';
-import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
+import { PinnedCollabHTTPClient } from '@/app/collab/lan/CollabHTTPClient';
 import { hostTransferProvisionalPath } from '@/app/collab/lan/HostTransferProvisionalRouter';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
-import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
+import { fingerprintCertificatePem } from '@/app/collab/lan/LANTLSIdentity';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import { toError } from '@/utils/error';
 
@@ -37,11 +37,11 @@ function pinnedTrust(input: {
   readonly projectId: string;
   readonly targetCaCertificatePem: string;
   readonly targetCaFingerprint: string;
-}): PinnedCollabHttpClient {
+}): PinnedCollabHTTPClient {
   if (fingerprintCertificatePem(input.targetCaCertificatePem) !== input.targetCaFingerprint) {
     throw transportError('host-transfer-target-ca-mismatch', 'tls-ca-mismatch');
   }
-  return new PinnedCollabHttpClient({
+  return new PinnedCollabHTTPClient({
     caCertificatePem: input.targetCaCertificatePem,
     caFingerprint: input.targetCaFingerprint,
     endpoint: input.endpoint,

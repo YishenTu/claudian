@@ -7,7 +7,7 @@ export interface ClaudeConfigDirContext {
   vaultPath?: string | null;
 }
 
-function resolveSdkHomeDir(
+function resolveSDKHomeDir(
   environment: NodeJS.ProcessEnv,
   hostPlatform: NodeJS.Platform,
 ): string {
@@ -25,7 +25,7 @@ function resolveSdkHomeDir(
   return os.homedir();
 }
 
-function resolveFromSdkWorkingDirectory(
+function resolveFromSDKWorkingDirectory(
   value: string,
   vaultPath?: string | null,
 ): string {
@@ -40,13 +40,13 @@ export function resolveClaudeConfigDir(context?: ClaudeConfigDirContext): string
   const configuredDir = environment.CLAUDE_CONFIG_DIR;
   if (configuredDir === undefined) {
     const homeDir = context?.environment
-      ? resolveSdkHomeDir(environment, context.hostPlatform ?? process.platform)
+      ? resolveSDKHomeDir(environment, context.hostPlatform ?? process.platform)
       : os.homedir();
-    return resolveFromSdkWorkingDirectory(
+    return resolveFromSDKWorkingDirectory(
       path.join(homeDir, '.claude'),
       context?.vaultPath,
     );
   }
 
-  return resolveFromSdkWorkingDirectory(configuredDir, context?.vaultPath);
+  return resolveFromSDKWorkingDirectory(configuredDir, context?.vaultPath);
 }

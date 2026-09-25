@@ -6,26 +6,26 @@ import type {
 
 import type {
   CloudPendingLeaveRecord,
-  LanPendingLeaveRecord,
+  LANPendingLeaveRecord,
   PendingLeaveAuthorityReplay,
   PendingLeaveRecord,
 } from '@/app/collab/exit/PendingLeaveRecord';
 import {
   isCloudPendingLeaveRecord,
-  isLanPendingLeaveRecord,
+  isLANPendingLeaveRecord,
 } from '@/app/collab/exit/PendingLeaveRecord';
 import type { HostTransitionCandidateResolver } from '@/app/collab/HostTransitionCandidateResolver';
 import {
   type CollabTrustedHost,
-  PinnedCollabHttpClient,
-} from '@/app/collab/lan/CollabHttpClient';
-import type { MembershipTerminationResponse } from '@/app/collab/lan/LanCollabControlOperations';
+  PinnedCollabHTTPClient,
+} from '@/app/collab/lan/CollabHTTPClient';
+import type { MembershipTerminationResponse } from '@/app/collab/lan/LANCollabControlOperations';
 import {
   type LeaveProjectInput,
   MembershipControlClient,
 } from '@/app/collab/membership/MembershipControlClient';
 import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
-import type { CollabCloudProjectSnapshot, CollabLanProjectSnapshot } from '@/core/collab';
+import type { CollabCloudProjectSnapshot, CollabLANProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CONTROL_TIMEOUT_MS = 10_000;
@@ -40,7 +40,7 @@ export interface PendingLeaveAuthorityClientPort {
     projectId: string,
     memberCredential: string,
     options?: { readonly signal?: AbortSignal },
-  ): Promise<CollabLanProjectSnapshot>;
+  ): Promise<CollabLANProjectSnapshot>;
 }
 
 export interface CloudPendingLeaveAuthorityClientPort {
@@ -68,7 +68,7 @@ export interface CloudPendingLeaveAuthorityClientPort {
 
 export interface PendingLeaveAuthorityServiceOptions {
   readonly createClient?: (
-    record: LanPendingLeaveRecord,
+    record: LANPendingLeaveRecord,
   ) => PendingLeaveAuthorityClientPort;
   readonly createCloudClient?: (
     record: CloudPendingLeaveRecord,
@@ -107,7 +107,7 @@ export class PendingLeaveAuthorityService {
 
   constructor(private readonly options: PendingLeaveAuthorityServiceOptions = {}) {
     this.createClient = options.createClient ?? (record => {
-      const transport = new PinnedCollabHttpClient(storedTrust(record), CONTROL_TIMEOUT_MS);
+      const transport = new PinnedCollabHTTPClient(storedTrust(record), CONTROL_TIMEOUT_MS);
       const membership = new MembershipControlClient(transport);
       const project = new ProjectControlClient(transport);
       return {
@@ -233,7 +233,7 @@ export class PendingLeaveAuthorityService {
   }
 
   async resolveHost(input: ResolvePendingLeaveHostInput): Promise<CollabTrustedHost> {
-    if (!isLanPendingLeaveRecord(input.pending)) {
+    if (!isLANPendingLeaveRecord(input.pending)) {
       if (input.failure instanceof Error) throw input.failure;
       throw new CollabError({
         code: 'operation-failed',
@@ -363,7 +363,7 @@ export class PendingLeaveAuthorityService {
   }
 
   async #readCurrentLanPreparation(
-    pending: LanPendingLeaveRecord,
+    pending: LANPendingLeaveRecord,
     idempotencyManagerMemberId: string | null,
     managerResponsibilityOfferId: string | null,
     signal?: AbortSignal,
@@ -403,7 +403,7 @@ function integrityError(reason: string): CollabError {
   });
 }
 
-function storedTrust(record: LanPendingLeaveRecord): CollabTrustedHost {
+function storedTrust(record: LANPendingLeaveRecord): CollabTrustedHost {
   return {
     caCertificatePem: record.hostCaCertificatePem,
     caFingerprint: record.hostCaFingerprint,

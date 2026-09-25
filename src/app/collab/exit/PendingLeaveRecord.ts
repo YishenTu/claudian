@@ -12,7 +12,7 @@ import {
 } from '@claudian-collab/protocol';
 
 import { isCollabWorkingCopyDirectoryName } from '@/app/collab/project/CollabWorkingCopySlug';
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import type { CollabLocalCleanupChoice } from '@/core/collab';
 import { parseCollabProjectsFolder } from '@/core/collab';
 
@@ -31,7 +31,7 @@ export interface PendingLeaveAuthorityReplay {
   readonly managerResponsibilityOfferId: CollabOperationId | null;
 }
 
-export interface LanPendingLeaveRecord {
+export interface LANPendingLeaveRecord {
   readonly schemaVersion: typeof COLLAB_PENDING_LEAVE_SCHEMA_VERSION;
   readonly kind: 'pending-leave';
   readonly projectId: CollabProjectId;
@@ -94,7 +94,7 @@ export type CloudPendingLeaveRecord = CloudPendingLeaveRecordBase & (
   }
 );
 
-export type PendingLeaveRecord = LanPendingLeaveRecord | CloudPendingLeaveRecord;
+export type PendingLeaveRecord = LANPendingLeaveRecord | CloudPendingLeaveRecord;
 
 export function isCloudPendingLeaveRecord(
   record: PendingLeaveRecord,
@@ -102,9 +102,9 @@ export function isCloudPendingLeaveRecord(
   return 'authorityKind' in record && record.authorityKind === 'cloud';
 }
 
-export function isLanPendingLeaveRecord(
+export function isLANPendingLeaveRecord(
   record: PendingLeaveRecord,
-): record is LanPendingLeaveRecord {
+): record is LANPendingLeaveRecord {
   return !isCloudPendingLeaveRecord(record);
 }
 
@@ -329,14 +329,14 @@ function decodeCloudPendingLeaveRecord(value: unknown): CloudPendingLeaveRecord 
     kind: 'pending-leave',
     personalRef,
     schemaVersion: COLLAB_CLOUD_PENDING_LEAVE_SCHEMA_VERSION,
-    serverUrl: validateCloudServerUrl(text(input, 'serverUrl', 2_048), 'serverUrl'),
+    serverUrl: validateCloudServerURL(text(input, 'serverUrl', 2_048), 'serverUrl'),
   };
   if (phase === 'queued') return { ...base, phase, request: null };
   if (!decodedRequest) throw new TypeError('Invalid Cloud pending Leave request state');
   return { ...base, phase, request: decodedRequest };
 }
 
-function decodeLanPendingLeaveRecord(value: unknown): LanPendingLeaveRecord {
+function decodeLANPendingLeaveRecord(value: unknown): LANPendingLeaveRecord {
   const input = exactRecord(value, LAN_KEYS);
   const schemaVersion = input.schemaVersion;
   if (
@@ -369,5 +369,5 @@ export function decodePendingLeaveRecord(value: unknown): PendingLeaveRecord {
     && !Array.isArray(value)
     && (value as RecordValue).authorityKind === 'cloud'
   ) return decodeCloudPendingLeaveRecord(value);
-  return decodeLanPendingLeaveRecord(value);
+  return decodeLANPendingLeaveRecord(value);
 }

@@ -1,4 +1,4 @@
-import { testClock } from '@test/helpers/testClock';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import { LocalHostTransferProjection } from '@/app/collab/host-transfer/LocalHostTransferProjection';
@@ -15,7 +15,7 @@ const membership = {
     hostCaFingerprint: 'a'.repeat(64),
     kind: 'lan' as const,
   },
-  createdAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
   hostOwnership: { autoStart: false, ownsAuthority: false },
   lastEventSequence: 5,
   member: {
@@ -24,7 +24,7 @@ const membership = {
   },
   project: { id: 'project-alpha', name: 'Alpha', workspacePath: 'Projects/alpha' },
   schemaVersion: 1 as const,
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  updatedAt: testTime({ days: -14 }),
 };
 
 describe('LocalHostTransferProjection', () => {

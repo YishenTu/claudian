@@ -8,8 +8,8 @@ import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs from 'sql.js';
 
 import { AgentRuntimeGateway } from '@/app/agent-runtime/AgentRuntimeGateway';
-import { LocalAgentRuntimeHttpServer } from '@/app/agent-runtime/LocalAgentRuntimeHttpServer';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { LocalAgentRuntimeHTTPServer } from '@/app/agent-runtime/LocalAgentRuntimeHTTPServer';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
@@ -18,7 +18,7 @@ import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSet
 async function withRuntimeProject(run: (context: {
   readonly feature: ReturnType<typeof createCollabFeatureSubcomposition>['feature'];
   readonly projectId: string;
-  readonly endpoint: Awaited<ReturnType<LocalAgentRuntimeHttpServer['start']>>;
+  readonly endpoint: Awaited<ReturnType<LocalAgentRuntimeHTTPServer['start']>>;
 }) => Promise<void>): Promise<void> {
   const SQL = await initSqlJs();
   const root = await mkdtemp(path.join(tmpdir(), 'claudian-runtime-admission-'));
@@ -35,7 +35,7 @@ async function withRuntimeProject(run: (context: {
     installationKey: TEST_INSTALLATION_A,
     invitationCodec,
     obsidianConfigDirectory: '.obsidian',
-    createAuthorityDatabase: (directory, resourceAdmission) => new SqlJsProjectDatabase(
+    createAuthorityDatabase: (directory, resourceAdmission) => new SQLJSProjectDatabase(
       directory, { resourceAdmission, loadSqlJs: async () => SQL },
     ),
     lanHost: {
@@ -52,7 +52,7 @@ async function withRuntimeProject(run: (context: {
       vaultRoot: root,
     }),
   }).feature;
-  const runtime = new LocalAgentRuntimeHttpServer(
+  const runtime = new LocalAgentRuntimeHTTPServer(
     new AgentRuntimeGateway(async () => feature), { portCandidates: [0] },
   );
   try {

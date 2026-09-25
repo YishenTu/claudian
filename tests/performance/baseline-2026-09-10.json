@@ -6,7 +6,7 @@
   },
   "beforeCommit": "f0d79f53f43516f2ee9177ce63452e1de6df2422",
   "afterSourceSha256": {
-    "src/app/collab/authority/SqlJsProjectDatabase.ts": "335b486b834343cd6244768a37fb91b70a9dafe3ff5a1e23b8618cc24a8ed63d",
+    "src/app/collab/authority/SQLJSProjectDatabase.ts": "335b486b834343cd6244768a37fb91b70a9dafe3ff5a1e23b8618cc24a8ed63d",
     "src/app/collab/client/CollabClientProjection.ts": "ccf34171094c2bd20e096e5d69cd4ee5923026cdf76da958f31571ba8aa71c51"
   },
   "storageBefore": {

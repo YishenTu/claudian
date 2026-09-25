@@ -134,7 +134,7 @@ export function assertAuthorityTransferStatusObservation(
   return observed;
 }
 
-function canAdoptLanToCloudCanonicalIdentity(
+function canAdoptLANToCloudCanonicalIdentity(
   record: AuthorityTransferRecord,
   observed: CollabAuthorityTransferStatus,
 ): boolean {
@@ -170,7 +170,7 @@ export async function advanceThroughObservedAuthorityStatus(
 ): Promise<AuthorityTransferRecord> {
   const observed = decodeCollabAuthorityTransferStatus(observedValue);
   const adoptingCanonicalIdentity = !sameIdentity(initial.status, observed)
-    && canAdoptLanToCloudCanonicalIdentity(initial, observed);
+    && canAdoptLANToCloudCanonicalIdentity(initial, observed);
   if (!adoptingCanonicalIdentity) {
     assertAuthorityTransferStatusObservation(initial.status, observed);
     if (initial.status.phase === observed.phase) return initial;

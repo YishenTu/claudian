@@ -2,11 +2,11 @@ import * as fs from 'node:fs';
 
 import { Setting } from 'obsidian';
 
-import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
+import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
-import type { ProviderCliResolver } from '@/core/providers/types';
+import type { ProviderCLIResolver } from '@/core/providers/types';
 import { PI_PROVIDER_ICON } from '@/shared/icons';
-import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
+import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 
 import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -22,7 +22,7 @@ import {
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import { getHostnameKey } from '../../../utils/env';
-import { normalizeConfiguredCliPath } from '../../../utils/path';
+import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import { resolvePiProcessSpec } from '../runtime/PiSubprocess';
 import {
   getPiProviderSettings,
@@ -30,7 +30,7 @@ import {
 } from '../settings';
 
 export function createPiSettingsTabRenderer(
-  workspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; modelCatalog: ProviderModelCatalog; },
+  workspace: { cliResolver: Pick<ProviderCLIResolver, 'reset'>; modelCatalog: ProviderModelCatalog; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -79,13 +79,13 @@ export function createPiSettingsTabRenderer(
         providerName: 'Pi',
       });
 
-      renderCliInstallationSetting({
+      renderCLIInstallationSetting({
         cliName: 'Pi CLI',
         icon: PI_PROVIDER_ICON,
         inspect: async () => {
           const settings = context.plugin.settings as unknown as Record<string, unknown>;
           const config = getPiProviderSettings(settings);
-          return probeCliInstallation({
+          return probeCLIInstallation({
             path: await context.plugin.getResolvedProviderCliPath('pi'),
             configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
             args: ['--version'],
@@ -124,7 +124,7 @@ export function createPiSettingsTabRenderer(
         placeholder: process.platform === 'win32'
           ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd'
           : '/usr/local/bin/pi',
-        validate: validateCliPath,
+        validate: validateCLIPath,
       });
 
       new Setting(container).setName('Models').setHeading();
@@ -154,13 +154,13 @@ export function createPiSettingsTabRenderer(
   };
 }
 
-function validateCliPath(value: string): string | null {
+function validateCLIPath(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) {
     return null;
   }
 
-  const expandedPath = normalizeConfiguredCliPath(trimmed);
+  const expandedPath = normalizeConfiguredCLIPath(trimmed);
   if (!fs.existsSync(expandedPath)) {
     return 'Path does not exist';
   }

@@ -10,7 +10,7 @@ import type {
 } from '../../../core/providers/types';
 import { PiCommandCatalog } from '../commands/PiCommandCatalog';
 import { PiCommandMetadataProbe } from '../execution/PiCommandMetadataProbe';
-import { PiCliResolver } from '../runtime/PiCliResolver';
+import { PiCLIResolver } from '../runtime/PiCLIResolver';
 import { createPiModels } from '../runtime/PiModels';
 import { createPiSettingsTabRenderer } from '../ui/PiSettingsTab';
 import { PiCommandLoader } from './PiCommandLoader';
@@ -54,7 +54,7 @@ export async function createPiWorkspaceServices(
       },
     });
 
-  const cliResolver = new PiCliResolver();
+  const cliResolver = new PiCLIResolver();
   return {
     cliResolver,
     modelCatalog,

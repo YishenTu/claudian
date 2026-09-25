@@ -15,7 +15,7 @@ import {
   type RetirementTombstoneStore,
 } from '@/app/collab/retirement/RetirementTombstoneRepository';
 
-const NOW = new Date('2026-08-13T08:00:00.000Z');
+const NOW = new Date(testTime({ days: -14, hours: 8 }));
 
 describe('RetirementTombstoneRepository', () => {
   it('authenticates former Members and serializes idempotent acknowledgements', async () => {
@@ -43,8 +43,8 @@ describe('RetirementTombstoneRepository', () => {
   it('reports 30-day expirations without deleting cleanup authority', async () => {
     const expired = record({
       expiresAt: testTime({ days: -14, hours: 7, minutes: 59, seconds: 59, milliseconds: 999 }),
-      retiredAt: '2026-07-14T07:59:59.999Z',
-      result: { projectId: 'project-alpha', retiredAt: '2026-07-14T07:59:59.999Z' },
+      retiredAt: testTime({ days: -44, hours: 7, minutes: 59, seconds: 59, milliseconds: 999 }),
+      result: { projectId: 'project-alpha', retiredAt: testTime({ days: -44, hours: 7, minutes: 59, seconds: 59, milliseconds: 999 }) },
     });
     const store = new MemoryTombstoneStore(expired);
     const repository = new RetirementTombstoneRepository(store, { isRecoveryOwner: () => true, now: () => NOW });
@@ -123,7 +123,7 @@ describe('RetirementTombstoneRepository', () => {
     await expect(repository.acknowledge(
       'project-alpha',
       'a'.repeat(43),
-      '2026-08-13T08:00:01.000Z',
+      testTime({ days: -14, hours: 8, seconds: 1 }),
     )).rejects.toMatchObject({ code: 'stale-project-selection' });
     expect(store.records.get('project-alpha')?.formerMembers[0].acknowledgedAt).toBeNull();
   });

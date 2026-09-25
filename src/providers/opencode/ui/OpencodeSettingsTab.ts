@@ -1,11 +1,11 @@
 import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
-import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
+import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
-import type { ProviderCliResolver } from '@/core/providers/types';
+import type { ProviderCLIResolver } from '@/core/providers/types';
 import { OPENCODE_PROVIDER_ICON } from '@/shared/icons';
-import { renderCliInstallationSetting } from '@/shared/settings/CliInstallationSetting';
+import { renderCLIInstallationSetting } from '@/shared/settings/CLIInstallationSetting';
 
 import type { ProviderModelCatalog } from '../../../core/providers/models/ProviderModelCatalog';
 import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
@@ -21,7 +21,7 @@ import {
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
 import { getHostnameKey } from '../../../utils/env';
-import { normalizeConfiguredCliPath } from '../../../utils/path';
+import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import type { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import {
   getOpencodeProviderSettings,
@@ -30,7 +30,7 @@ import {
 import { renderOpencodeMigrationNotice } from './OpencodeMigrationNotice';
 
 export function createOpencodeSettingsTabRenderer(
-  opencodeWorkspace: { cliResolver: Pick<ProviderCliResolver, 'reset'>; metadataService: Pick<OpencodeMetadataService, 'loadCatalog' | 'warmModelMetadata'>; modelCatalog: ProviderModelCatalog; },
+  opencodeWorkspace: { cliResolver: Pick<ProviderCLIResolver, 'reset'>; metadataService: Pick<OpencodeMetadataService, 'loadCatalog' | 'warmModelMetadata'>; modelCatalog: ProviderModelCatalog; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -80,13 +80,13 @@ export function createOpencodeSettingsTabRenderer(
         providerName: 'OpenCode',
       });
 
-      renderCliInstallationSetting({
+      renderCLIInstallationSetting({
         cliName: 'OpenCode CLI',
         icon: OPENCODE_PROVIDER_ICON,
         inspect: async () => {
           const settings = context.plugin.settings as unknown as Record<string, unknown>;
           const config = getOpencodeProviderSettings(settings);
-          const installation = await probeCliInstallation({
+          const installation = await probeCLIInstallation({
             path: await context.plugin.getResolvedProviderCliPath('opencode'),
             configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
             args: ['--version'],
@@ -123,7 +123,7 @@ export function createOpencodeSettingsTabRenderer(
         placeholder: process.platform === 'win32'
           ? 'C:\\Users\\you\\AppData\\Roaming\\npm\\opencode.cmd'
           : '/usr/local/bin/opencode',
-        validate: validateCliPath,
+        validate: validateCLIPath,
       });
 
       new Setting(container).setName('Models').setHeading();
@@ -154,13 +154,13 @@ export function createOpencodeSettingsTabRenderer(
   };
 }
 
-function validateCliPath(value: string): string | null {
+function validateCLIPath(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) {
     return null;
   }
 
-  const expandedPath = normalizeConfiguredCliPath(trimmed);
+  const expandedPath = normalizeConfiguredCLIPath(trimmed);
   if (!fs.existsSync(expandedPath)) {
     return 'Path does not exist';
   }

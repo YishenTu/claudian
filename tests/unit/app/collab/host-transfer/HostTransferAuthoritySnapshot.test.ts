@@ -3,13 +3,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
   HostTransferAuthoritySnapshot,
@@ -21,9 +22,9 @@ import {
 } from '@/app/collab/host-transfer/HostTransferPackage';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 
-const NOW = '2026-08-13T00:00:00.000Z';
-const LATER = '2026-08-13T00:01:00.000Z';
-const EXPIRY = '2026-08-14T00:00:00.000Z';
+const NOW = testTime({ days: -14 });
+const LATER = testTime({ days: -14, minutes: 1 });
+const EXPIRY = testTime({ days: -13 });
 const proof: CollabHostTrustTransitionProof = {
   issuedAt: NOW,
   nextCaCertificatePem: '-----BEGIN CERTIFICATE-----\ntarget\n-----END CERTIFICATE-----\n',
@@ -47,7 +48,7 @@ const priorProof: CollabHostTrustTransitionProof = {
 describe('HostTransferAuthoritySnapshot', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
 
   beforeAll(async () => {
     SQL = await initSqlJs();
@@ -57,7 +58,7 @@ describe('HostTransferAuthoritySnapshot', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-host-transfer-snapshot-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    database = new SQLJSProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
     await database.open();
     await database.mutate(connection => {
       new ProjectAuthorityRepository().initialize(connection, {
@@ -294,15 +295,21 @@ describe('HostTransferAuthoritySnapshot', () => {
     });
     const inertV8 = legacyVersion === 8 ? downgradeInertToV8(new SQL.Database(inertV9))
       : Uint8Array.from(gunzipSync(await readFile('tests/fixtures/collab/authority-v12-inert.sqlite.gz')));
+    // Historical snapshot proofs retain their original signed timestamps.
+    const snapshot = new SQL.Database(inertV8);
+    const issuedAt = String(snapshot.exec('SELECT issued_at FROM host_transition_proofs')[0].values[0][0]);
+    snapshot.close();
+    const snapshotProof = { ...proof, issuedAt };
+    const cutoverAt = new Date(Date.parse(issuedAt) + 60_000).toISOString();
     const manifest = {
       ...createHostTransferPackageManifest({
         authorityMainOid: '1'.repeat(40),
         authoritySnapshot: { byteCount: inertV8.byteLength, sha256: '2'.repeat(64) },
-        createdAt: LATER,
+        createdAt: cutoverAt,
         gitBundle: { byteCount: 1, sha256: '3'.repeat(64) },
         gitObjectFormat: 'sha1',
         projectId: 'project-alpha',
-        proofChainDigest: digestHostTransitionProofChain([proof]),
+        proofChainDigest: digestHostTransitionProofChain([snapshotProof]),
         sourceAuthorityGeneration: database.generation,
         targetCaFingerprint: proof.nextCaFingerprint,
         targetHostMemberId: 'member-target',
@@ -367,7 +374,7 @@ describe('HostTransferAuthoritySnapshot', () => {
     });
 
     const activation = {
-      cutoverAt: LATER,
+      cutoverAt,
       manifestDigest: digestHostTransferPackageManifest(manifest),
       projectId: 'project-alpha',
       schemaVersion: 1 as const,

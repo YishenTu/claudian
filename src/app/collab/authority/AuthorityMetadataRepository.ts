@@ -1,4 +1,4 @@
-import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 function metadataError(reason: string): CollabError {

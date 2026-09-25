@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   RetirementResponderExpiryScheduler,
 } from '@/app/collab/retirement/RetirementResponderExpiryScheduler';
@@ -7,10 +9,10 @@ describe('RetirementResponderExpiryScheduler', () => {
   afterEach(() => jest.useRealTimers());
 
   it('keeps a 30-day responder alive through bounded timers and expires it once', async () => {
-    jest.setSystemTime(Date.parse('2026-08-13T00:00:00.000Z'));
+    jest.setSystemTime(Date.parse(testTime({ days: -14 })));
     const onExpire = jest.fn().mockResolvedValue(undefined);
     const subject = new RetirementResponderExpiryScheduler(onExpire);
-    subject.schedule('project-alpha', '2026-09-12T00:00:00.000Z');
+    subject.schedule('project-alpha', testTime({ days: 16 }));
 
     await jest.advanceTimersByTimeAsync(29 * 24 * 60 * 60 * 1_000);
     expect(onExpire).not.toHaveBeenCalled();
@@ -20,12 +22,12 @@ describe('RetirementResponderExpiryScheduler', () => {
   });
 
   it('retries a failed expiry cleanup without a zero-delay loop', async () => {
-    jest.setSystemTime(Date.parse('2026-09-12T00:00:00.000Z'));
+    jest.setSystemTime(Date.parse(testTime({ days: 16 })));
     const onExpire = jest.fn()
       .mockRejectedValueOnce(new Error('disk busy'))
       .mockResolvedValueOnce(undefined);
     const subject = new RetirementResponderExpiryScheduler(onExpire);
-    subject.schedule('project-alpha', '2026-09-12T00:00:00.000Z');
+    subject.schedule('project-alpha', testTime({ days: 16 }));
 
     await jest.advanceTimersByTimeAsync(0);
     expect(onExpire).toHaveBeenCalledTimes(1);

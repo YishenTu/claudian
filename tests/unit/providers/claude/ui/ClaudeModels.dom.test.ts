@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import '@test/helpers/ObsidianSettingsDom';
+import '@test/helpers/ObsidianSettingsDOM';
 
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';

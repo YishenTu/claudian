@@ -16,19 +16,19 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { ProjectRetirementAuthorityService } from '@/app/collab/authority/ProjectRetirementAuthorityService';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { createRetirementIntent } from '@/app/collab/retirement/RetirementIntent';
 import { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
 
-const NOW = new Date('2026-08-13T08:00:00.000Z');
+const NOW = new Date(testTime({ days: -14, hours: 8 }));
 
 describe('ProjectRetirementAuthorityService', () => {
   let SQL: SqlJsStatic;
   let authorityDirectory: string;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let localProjects: CollabLocalProjectRepository;
 
   beforeAll(async () => {
@@ -39,13 +39,13 @@ describe('ProjectRetirementAuthorityService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-retirement-authority-'));
     authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
     await database.mutate(connection => {
       new ProjectAuthorityRepository().initialize(connection, {
-        createdAt: '2026-08-13T00:00:00.000Z',
+        createdAt: testTime({ days: -14 }),
         hostCredentialHash: new Uint8Array(32).fill(1),
         hostDisplayName: 'Host',
         hostMemberId: 'member-host',
@@ -217,7 +217,7 @@ describe('ProjectRetirementAuthorityService', () => {
 
     const tombstone = await localProjects.loadRetirementTombstone('project-alpha');
     expect(tombstone?.hostTransitionProofs).toEqual([{
-      issuedAt: '2026-08-12T00:01:00.000Z',
+      issuedAt: testTime({ days: -15, minutes: 1 }),
       nextCaCertificatePem: '-----BEGIN CERTIFICATE-----\nnext\n-----END CERTIFICATE-----\n',
       nextCaFingerprint: 'b'.repeat(64),
       previousCaFingerprint: 'a'.repeat(64),
@@ -263,7 +263,7 @@ describe('ProjectRetirementAuthorityService', () => {
 
     await expect(interrupted.retire('member-host', request()))
       .rejects.toMatchObject({ code: 'durable-progress-recovery-required' });
-    current = new Date('2026-08-13T08:05:00.000Z');
+    current = new Date(testTime({ days: -14, hours: 8, minutes: 5 }));
     failAfterTombstone = false;
 
     await expect(interrupted.retire('member-host', request())).resolves.toEqual({
@@ -334,7 +334,7 @@ describe('ProjectRetirementAuthorityService', () => {
         schemaVersion: 2,
       });
     }
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     return database.open();
@@ -479,8 +479,8 @@ function insertActiveMember(
     'Second',
     `refs/heads/members/${memberId}`,
     credentialHash,
-    '2026-08-13T00:00:00.000Z',
-    '2026-08-13T00:00:00.000Z',
+    testTime({ days: -14 }),
+    testTime({ days: -14 }),
   ]);
 }
 
@@ -494,9 +494,9 @@ function insertHostTransition(connection: AuthorityDatabaseConnection): void {
     'transfer-one',
     'member-host',
     'member-second',
-    '2026-08-12T00:00:00.000Z',
-    '2026-08-12T00:10:00.000Z',
-    '2026-08-12T00:02:00.000Z',
+    testTime({ days: -15 }),
+    testTime({ days: -15, minutes: 10 }),
+    testTime({ days: -15, minutes: 2 }),
   ]);
   connection.run(`
     INSERT INTO host_transition_proofs (
@@ -511,7 +511,7 @@ function insertHostTransition(connection: AuthorityDatabaseConnection): void {
     'a'.repeat(64),
     '-----BEGIN CERTIFICATE-----\nnext\n-----END CERTIFICATE-----\n',
     'b'.repeat(64),
-    '2026-08-12T00:01:00.000Z',
+    testTime({ days: -15, minutes: 1 }),
     'c'.repeat(64),
   ]);
 }

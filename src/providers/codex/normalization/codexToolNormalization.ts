@@ -634,30 +634,30 @@ function normalizeStringArray(value: unknown): string[] {
 // MCP tool normalization
 // ---------------------------------------------------------------------------
 
-interface CodexMcpResultPart {
+interface CodexMCPResultPart {
   type?: string;
   text?: string;
 }
 
-interface CodexMcpResultPayload {
-  content?: CodexMcpResultPart[] | null;
+interface CodexMCPResultPayload {
+  content?: CodexMCPResultPart[] | null;
 }
 
-export interface NormalizedCodexMcpToolState {
+export interface NormalizedCodexMCPToolState {
   isTerminal: boolean;
   isError: boolean;
   status: 'running' | 'completed' | 'error';
   result?: string;
 }
 
-export function normalizeCodexMcpToolName(server: unknown, tool: unknown): string {
+export function normalizeCodexMCPToolName(server: unknown, tool: unknown): string {
   const serverName = typeof server === 'string' ? server : '';
   const toolName = typeof tool === 'string' ? tool : '';
   if (!serverName && !toolName) return 'tool';
   return `mcp__${serverName}__${toolName}`;
 }
 
-export function normalizeCodexMcpToolInput(rawArguments: unknown): Record<string, unknown> {
+export function normalizeCodexMCPToolInput(rawArguments: unknown): Record<string, unknown> {
   if (typeof rawArguments === 'string') {
     return parseCodexArguments(rawArguments);
   }
@@ -669,14 +669,14 @@ export function normalizeCodexMcpToolInput(rawArguments: unknown): Record<string
   return {};
 }
 
-export function normalizeCodexMcpToolState(
+export function normalizeCodexMCPToolState(
   rawStatus: unknown,
   resultPayload?: unknown,
   rawError?: unknown,
-): NormalizedCodexMcpToolState {
+): NormalizedCodexMCPToolState {
   const status = typeof rawStatus === 'string' ? rawStatus : '';
   const error = typeof rawError === 'string' ? rawError : '';
-  const resultText = extractCodexMcpResultText(resultPayload);
+  const resultText = extractCodexMCPResultText(resultPayload);
   const isTerminalStatus = status === 'completed'
     || status === 'failed'
     || status === 'error'
@@ -697,10 +697,10 @@ export function normalizeCodexMcpToolState(
   };
 }
 
-function extractCodexMcpResultText(resultPayload?: unknown): string {
+function extractCodexMCPResultText(resultPayload?: unknown): string {
   if (!resultPayload || typeof resultPayload !== 'object') return '';
 
-  const content = (resultPayload as CodexMcpResultPayload).content;
+  const content = (resultPayload as CodexMCPResultPayload).content;
   if (!Array.isArray(content)) return '';
 
   return content

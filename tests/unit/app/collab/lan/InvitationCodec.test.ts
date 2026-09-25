@@ -7,10 +7,10 @@ import {
 import {
   COLLAB_CONTROL_PROTOCOL_VERSION,
   COLLAB_INVITATION_TTL_MS,
-} from '@/app/collab/lan/LanCollabConstants';
+} from '@/app/collab/lan/LANCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const NOW = new Date('2026-08-08T00:00:00.000Z');
+const NOW = new Date(testTime({ days: -19 }));
 const FINGERPRINT = 'ab'.repeat(32);
 
 function options(): InvitationCodecOptions {

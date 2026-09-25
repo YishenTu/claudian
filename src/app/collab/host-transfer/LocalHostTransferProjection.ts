@@ -4,10 +4,10 @@ import type {
   AuthorityProjectionTransitionPort,
 } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type {
-  CollabLocalLanMembershipRecord,
+  CollabLocalLANMembershipRecord,
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLANMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { HostTransferProjectionPort } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -35,7 +35,7 @@ function projectionError(reason: string): CollabError {
   });
 }
 
-function remoteUrl(endpoint: string, projectId: CollabProjectId): string {
+function remoteURL(endpoint: string, projectId: CollabProjectId): string {
   const parsed = new URL(endpoint);
   if (
     parsed.protocol !== 'https:'
@@ -76,7 +76,7 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
         authority: {
           ...membership.authority,
           endpoint: input.endpoint,
-          gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
+          gitRemoteUrl: remoteURL(input.endpoint, input.projectId),
           hostCaCertificatePem: input.targetCaCertificatePem,
           hostCaFingerprint: input.targetCaFingerprint,
           hostTrustCheckpoint: {
@@ -101,7 +101,7 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
         authority: {
           ...membership.authority,
           endpoint: input.endpoint,
-          gitRemoteUrl: remoteUrl(input.endpoint, input.projectId),
+          gitRemoteUrl: remoteURL(input.endpoint, input.projectId),
           hostCaCertificatePem: input.targetCaCertificatePem,
           hostCaFingerprint: input.targetCaFingerprint,
           hostTrustCheckpoint: {
@@ -115,13 +115,13 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
   }
 
   async #rotate(
-    membership: CollabLocalLanMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
     endpoint: string,
   ): Promise<void> {
     const oldRemoteUrl = membership.authority.gitRemoteUrl;
     if (!oldRemoteUrl) throw projectionError('host-transfer-projection-origin-missing');
     await this.options.rotateOrigin({
-      newRemoteUrl: remoteUrl(endpoint, membership.project.id),
+      newRemoteUrl: remoteURL(endpoint, membership.project.id),
       oldRemoteUrl,
       projectId: membership.project.id,
       repositoryPath: await this.options.resolveWorkspace(membership.project.workspacePath),
@@ -130,11 +130,11 @@ export class LocalHostTransferProjection implements HostTransferProjectionPort {
 
   async #requireMembership(
     projectId: CollabProjectId,
-  ): Promise<CollabLocalLanMembershipRecord> {
+  ): Promise<CollabLocalLANMembershipRecord> {
     const membership = await this.options.loadMembership(projectId);
     if (
       !membership
-      || !isCollabLocalLanMembership(membership)
+      || !isCollabLocalLANMembership(membership)
       || membership.project.id !== projectId
     ) {
       throw projectionError('host-transfer-projection-membership-missing');

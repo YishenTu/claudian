@@ -4,7 +4,7 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { probeClaudeModels } from '@/providers/claude/runtime/probeClaudeModels';
 
 const mockQuery = jest.fn();
-jest.mock('@/providers/claude/loadClaudeAgentSdk', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
+jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
 jest.mock('@/utils/path', () => ({ getVaultPath: () => '/vault' }));
 jest.mock('@/utils/env', () => ({
   ...jest.requireActual('@/utils/env'), getEnhancedPath: () => '/bin',

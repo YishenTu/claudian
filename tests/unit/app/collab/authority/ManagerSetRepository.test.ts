@@ -6,18 +6,19 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 
-const CREATED_AT = '2026-08-17T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -10 });
 
 describe('ManagerSetRepository', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   const managers = new ManagerSetRepository();
 
   beforeAll(async () => {
@@ -28,7 +29,7 @@ describe('ManagerSetRepository', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-manager-set-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();

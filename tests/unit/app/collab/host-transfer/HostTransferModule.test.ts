@@ -6,14 +6,15 @@ import {
   TEST_INSTALLATION_A,
   TEST_INSTALLATION_B,
 } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
-import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type { CollabLocalLANMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { HostTransferModule } from '@/app/collab/host-transfer/HostTransferModule';
 import { createHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecovery';
 import { decodeHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
-import { LanHostCoordinator } from '@/app/collab/lan/LanHostCoordinator';
+import { LANHostCoordinator } from '@/app/collab/lan/LANHostCoordinator';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const membership = {
@@ -25,7 +26,7 @@ const membership = {
     hostCaFingerprint: 'a'.repeat(64),
     kind: 'lan' as const,
   },
-  createdAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
   hostOwnership: { ownsAuthority: false },
   lastEventSequence: 1,
   member: {
@@ -37,8 +38,8 @@ const membership = {
   },
   project: { id: 'project-a', name: 'Project A', workspacePath: 'workspace/a' },
   schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-  updatedAt: '2026-08-13T00:00:00.000Z',
-} satisfies CollabLocalLanMembershipRecord;
+  updatedAt: testTime({ days: -14 }),
+} satisfies CollabLocalLANMembershipRecord;
 
 const coordination = {
   snapshot: {
@@ -132,7 +133,7 @@ describe('HostTransferModule', () => {
 
   it('rejects foreign recovery before invoking coordinator effects', async () => {
     const record = createHostTransferRecoveryRecord({
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       direction: 'incoming',
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-a',
@@ -165,7 +166,7 @@ describe('HostTransferModule', () => {
 
   it('skips a foreign synchronized recovery record during client startup recovery', async () => {
     const record = createHostTransferRecoveryRecord({
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       direction: 'incoming',
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-a',
@@ -195,7 +196,7 @@ describe('HostTransferModule', () => {
 
   it('surfaces an ownerless incoming legacy recovery record during client startup recovery', async () => {
     const current = createHostTransferRecoveryRecord({
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       direction: 'incoming',
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-a',
@@ -251,7 +252,7 @@ describe('HostTransferModule', () => {
   it('cannot bypass the durable Host start guard during outgoing recovery', async () => {
     const vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-transfer-host-guard-'));
     const openProject = jest.fn();
-    const lanHost = new LanHostCoordinator({
+    const lanHost = new LANHostCoordinator({
       assertHostInstallationOwned: async () => undefined,
       commitHostedRoute: async () => undefined,
       installationKey: TEST_INSTALLATION_A,

@@ -20,15 +20,15 @@ import type {
   CollabAuthorityInstallationStatus,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLANMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import { ConflictResolutionCoordinator } from '@/app/collab/conflicts/ConflictResolutionCoordinator';
 import { ConflictScratchGitRepository } from '@/app/collab/conflicts/ConflictScratchGitRepository';
 import { ConflictScratchStore } from '@/app/collab/conflicts/ConflictScratchStore';
 import type {
-  CollabLanDiscoveryPort,
-} from '@/app/collab/discovery/CollabLanDiscoveryService';
+  CollabLANDiscoveryPort,
+} from '@/app/collab/discovery/CollabLANDiscoveryService';
 import { CollabPublicationStateStore } from '@/app/collab/publish/CollabPublicationStateStore';
 import {
   COLLAB_REQUEST_DRAFT_SCHEMA_VERSION,
@@ -73,11 +73,11 @@ import type {
   CollabAuthoritySession,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
-import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
+import { LANAuthorityAdapter } from '@/app/collab/remote-authority/LANAuthorityAdapter';
 import {
-  LanAuthorityTargetResolver,
-  type LanAuthorityTargetResolverOptions,
-} from '@/app/collab/remote-authority/LanAuthorityTargetResolver';
+  LANAuthorityTargetResolver,
+  type LANAuthorityTargetResolverOptions,
+} from '@/app/collab/remote-authority/LANAuthorityTargetResolver';
 import type { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import { CollabReviewService } from '@/app/collab/review/CollabReviewService';
 import { LocalReviewProjectPort } from '@/app/collab/review/LocalReviewProjectPort';
@@ -107,13 +107,13 @@ export interface CollabPublicationServiceOptions {
   readonly onAuthorityTransferHint?: (projectId: CollabProjectId) => void;
   readonly onAuthorityMigrationHint?: (projectId: CollabProjectId) => void;
   readonly cloudAuthority: CollabAuthorityAdapter;
-  readonly discovery: Pick<CollabLanDiscoveryPort, 'discoverProjectCandidatesForTrustTransition'>;
+  readonly discovery: Pick<CollabLANDiscoveryPort, 'discoverProjectCandidatesForTrustTransition'>;
   readonly inspectHostInstallation: (
     projectId: CollabProjectId,
   ) => Promise<CollabAuthorityInstallationStatus>;
   readonly readActiveLocalRoute: (
     projectId: CollabProjectId,
-  ) => ReturnType<LanAuthorityTargetResolverOptions['readActiveRoute']>;
+  ) => ReturnType<LANAuthorityTargetResolverOptions['readActiveRoute']>;
   readonly managerResponsibility: CollabManagerResponsibilityProjectionPort;
   readonly reconnect: CollabPublicationReconnectPort;
   readonly retirement: Pick<RetirementClientHandler, 'handle'>;
@@ -204,12 +204,12 @@ export class CollabPublicationService {
     private readonly foundation: CollabPublicationFoundationPort,
     private readonly options: CollabPublicationServiceOptions,
   ) {
-    const lanTargets = new LanAuthorityTargetResolver({
+    const lanTargets = new LANAuthorityTargetResolver({
       inspectInstallation: options.inspectHostInstallation,
       readActiveRoute: options.readActiveLocalRoute,
     });
     this.authoritySessions = new CollabAuthoritySessionFactory([
-      new LanAuthorityAdapter({
+      new LANAuthorityAdapter({
         resolveLocalTarget: membership => lanTargets.resolve(membership),
       }),
       options.cloudAuthority,
@@ -1060,7 +1060,7 @@ export class CollabPublicationService {
         || error.code === 'tls-untrusted' || error.code === 'tls-ca-mismatch') throw error;
       const membership = await this.foundation.local.projects.loadMembership(projectId);
       if (!membership) throw error;
-      if (!isCollabLocalLanMembership(membership)) {
+      if (!isCollabLocalLANMembership(membership)) {
         await this.projection.refreshObservedProject(projectId, { signal });
         return 'polling';
       }
@@ -1079,7 +1079,7 @@ export class CollabPublicationService {
     options: CollabOperationOptions,
   ): Promise<'connected' | 'retry' | 'unavailable'> {
     const membership = await this.foundation.local.projects.loadMembership(projectId);
-    if (options.signal?.aborted || !membership || !isCollabLocalLanMembership(membership)
+    if (options.signal?.aborted || !membership || !isCollabLocalLANMembership(membership)
       || !membership.authority.hostCaFingerprint) return 'unavailable';
     const candidates = await this.options.discovery.discoverProjectCandidatesForTrustTransition(
       projectId, options,

@@ -80,7 +80,7 @@ export async function loadOpencodeSessionModel(
   const rows = await loadOpencodeSessionRows(databasePath, sessionId, { environment, nativeVersion: providerState?.nativeVersion === 2 ? 2 : 'auto' }).catch(() => null);
   let rawModelId: string | null = null;
   for (const row of rows?.messageRows ?? []) {
-    const data = parseJsonObject(row.data);
+    const data = parseJSONObject(row.data);
     const model = rows?.nativeVersion === 2 ? getObject(data?.model) : null;
     const providerId = getString(model?.providerID) ?? getString(row.provider_id) ?? getString(data?.providerID);
     const modelId = getString(model?.id) ?? getString(row.model_id) ?? getString(data?.modelID);
@@ -134,7 +134,7 @@ function hydrateStoredMessages(
   for (const row of partRows) {
     const messageId = getString(row.message_id);
     const id = getString(row.id);
-    const data = parseJsonObject(row.data);
+    const data = parseJSONObject(row.data);
     if (!messageId || !id || !data) {
       continue;
     }
@@ -150,7 +150,7 @@ function hydrateStoredMessages(
       return [];
     }
 
-    const data = parseJsonObject(row.data);
+    const data = parseJSONObject(row.data);
     return [{
       info: data
         ? { ...data, id, time_created: row.time_created }
@@ -511,7 +511,7 @@ function mapToolStatus(status: string | null): ToolCallInfo['status'] | null {
   }
 }
 
-function parseJsonObject(value: unknown): StoredRow | null {
+function parseJSONObject(value: unknown): StoredRow | null {
   if (typeof value !== 'string') {
     return null;
   }
@@ -563,7 +563,7 @@ export function mapOpencodeV2Messages(
   rows: StoredRow[],
   context: OpencodeHydrationDiagnosticContext = {},
 ): ChatMessage[] {
-  return mapV2Messages(rows.map(row => ({ row, data: parseJsonObject(row.data) })), context);
+  return mapV2Messages(rows.map(row => ({ row, data: parseJSONObject(row.data) })), context);
 }
 
 export function mapOpencodeV2NativeMessages(

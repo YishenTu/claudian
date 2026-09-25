@@ -38,7 +38,7 @@ const CLOUD_TO_LAN_INTENT_ID = authorityTransferChildIdempotencyKey(
   MANAGER_INTENT_ID,
   'claims',
 );
-const CREATED_AT = '2026-08-27T00:00:00.000Z';
+const CREATED_AT = testTime();
 const CHECKPOINT_SHA256 = 'a'.repeat(64);
 const CLAIM_VALUE = Buffer.alloc(32, 4).toString('base64url');
 const TARGET_CREDENTIAL = Buffer.alloc(32, 9).toString('base64url');
@@ -74,7 +74,7 @@ function completed(direction: 'cloud-to-lan' | 'lan-to-cloud'): CollabAuthorityT
       certificate: Buffer.alloc(64, 2).toString('base64url'),
       certificateAlgorithm: 'ed25519',
       checkpointSha256: CHECKPOINT_SHA256,
-      committedAt: '2026-08-27T00:00:08.000Z',
+      committedAt: testTime({ seconds: 8 }),
       operationIntentId: 'transfer-owner-intent',
       projectId: PROJECT_ID,
       sourceAuthority: { generation: 1, kind: sourceKind },
@@ -89,7 +89,7 @@ function completed(direction: 'cloud-to-lan' | 'lan-to-cloud'): CollabAuthorityT
       ? 'https://cloud.example.test/'
       : 'https://192.168.1.20:54545/',
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:00:10.000Z',
+    updatedAt: testTime({ seconds: 10 }),
   };
 }
 
@@ -108,7 +108,7 @@ function reissuedClaim(): ReissueTransferredMembershipClaimResponse {
   return {
     ...claim(),
     claimGeneration: 4,
-    createdAt: '2026-10-01T00:00:00.000Z',
+    createdAt: testTime({ days: 35 }),
     expiresAt: testTime({ days: 65 }),
     secretReplayExpiresAt: testTime({ days: 65 }),
   };
@@ -123,7 +123,7 @@ function receipt(operationIntentId = INTENT_ID): CollabTransferredMembershipRede
     projectId: PROJECT_ID,
     receiptId: 'receipt-claimant',
     receiptKeyId: 'receipt-key-1',
-    redeemedAt: '2026-08-27T00:01:00.000Z',
+    redeemedAt: testTime({ minutes: 1 }),
     signature: Buffer.alloc(64, 3).toString('base64url'),
     signatureAlgorithm: 'ed25519',
     targetAuthorityGeneration: 2,
@@ -168,8 +168,8 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'claim-retained', claim: claim(), updatedAt: CREATED_AT });
     predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'credential-persisted', targetCredential: TARGET_CREDENTIAL, updatedAt: CREATED_AT });
     if (confirmed) {
-      predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'target-claimed', redemptionReceipt: receipt(), updatedAt: '2026-08-27T00:01:00.000Z' });
-      predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'source-acknowledged', updatedAt: '2026-08-27T00:01:00.000Z' });
+      predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'target-claimed', redemptionReceipt: receipt(), updatedAt: testTime({ minutes: 1 }) });
+      predecessor = advanceAuthorityTransferClaimantRecord(predecessor, { phase: 'source-acknowledged', updatedAt: testTime({ minutes: 1 }) });
     }
     await store.save(predecessor);
     const descriptor = { ...reissuedClaim(), targetAuthorityGeneration: 4 };
@@ -183,7 +183,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         expect(record).toMatchObject({ retainedAttempts: [predecessor] });
         if (loseResponse) { retainedRequest = request; throw new Error('response lost'); }
         expect(request).toEqual(retainedRequest);
-        return { ...receipt('replacement-intent'), targetAuthorityGeneration: 4, redeemedAt: '2026-10-01T00:01:00.000Z' };
+        return { ...receipt('replacement-intent'), targetAuthorityGeneration: 4, redeemedAt: testTime({ days: 35, minutes: 1 }) };
       }, confirmTargetBinding: async () => null },
       convergence: { converge: async record => {
         expect(record).toMatchObject({ phase: 'target-confirmed', retainedAttempts: [predecessor] });
@@ -206,7 +206,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         claimTransferredMembership: async (record, request) => {
           expect(store.record).toEqual(record);
           expect(request.credentialHash).toBe(createHash('sha256').update(TARGET_CREDENTIAL).digest('hex'));
-          return { ...receipt(), redeemedAt: '2026-10-01T00:01:00.000Z' };
+          return { ...receipt(), redeemedAt: testTime({ days: 35, minutes: 1 }) };
         },
         confirmTargetBinding: async () => null,
       },
@@ -239,7 +239,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       });
       return {
         ...receipt(),
-        redeemedAt: '2026-10-01T00:01:00.000Z',
+        redeemedAt: testTime({ days: 35, minutes: 1 }),
       };
     });
     const confirmTargetBinding = jest.fn(async (
@@ -309,7 +309,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         claimTransferredMembership: jest.fn(async () => ({
           ...receipt(),
-          redeemedAt: '2026-10-01T00:01:00.000Z',
+          redeemedAt: testTime({ days: 35, minutes: 1 }),
         })),
         confirmTargetBinding: jest.fn(async () => completed('lan-to-cloud')),
       },
@@ -387,15 +387,15 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       phase: 'target-claimed',
       redemptionReceipt: {
         ...receipt(),
-        redeemedAt: '2026-10-01T00:01:00.000Z',
+        redeemedAt: testTime({ days: 35, minutes: 1 }),
       },
-      updatedAt: '2026-10-01T00:01:00.000Z',
+      updatedAt: testTime({ days: 35, minutes: 1 }),
     });
     store.record = advanceAuthorityTransferClaimantRecord(claimed, {
       convergenceProof: 'receipt',
       phase: 'target-confirmed',
       targetStatus: completed('lan-to-cloud'),
-      updatedAt: '2026-10-01T00:02:00.000Z',
+      updatedAt: testTime({ days: 35, minutes: 2 }),
     });
     const converge = jest.fn(async () => undefined);
     const coordinator = new AuthorityTransferClaimantCoordinator({
@@ -457,7 +457,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         cloudPrincipalId: 'vault-' + 'a'.repeat(64),
         claimTransferredMembership: async () => ({
           ...receipt(),
-          redeemedAt: '2026-10-01T00:01:00.000Z',
+          redeemedAt: testTime({ days: 35, minutes: 1 }),
         }),
         confirmTargetBinding: async () => {
           throw new Error('simulated local death after receipt persistence');
@@ -507,7 +507,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         claimTransferredMembership: async (_record, request) => {
           requests.push(request);
           if (loseReply) throw new Error('simulated lost response');
-          return { ...receipt(request.idempotencyKey), redeemedAt: variant === 'source-issued' ? '2026-08-27T00:01:00.000Z' : '2026-10-01T00:01:00.000Z' };
+          return { ...receipt(request.idempotencyKey), redeemedAt: variant === 'source-issued' ? testTime({ minutes: 1 }) : testTime({ days: 35, minutes: 1 }) };
         },
         confirmTargetBinding: async () => completed('lan-to-cloud'),
       },
@@ -565,7 +565,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
           return {
             ...receipt(),
             operationIntentId: request.idempotencyKey,
-            redeemedAt: '2026-10-01T00:01:00.000Z',
+            redeemedAt: testTime({ days: 35, minutes: 1 }),
           };
         },
         confirmTargetBinding: async () => completed('lan-to-cloud'),
@@ -638,7 +638,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       status: completed('lan-to-cloud'),
       targetCredential: null,
       transferId: TRANSFER_ID,
-      updatedAt: '2026-08-27T00:02:00.000Z',
+      updatedAt: testTime({ minutes: 2 }),
       variant: 'source-issued',
     };
 
@@ -846,10 +846,10 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       memberId: MEMBER_ID, operationIntentId: INTENT_ID, status: completed(direction),
     });
     record = advanceAuthorityTransferClaimantRecord(record, {
-      phase: 'claim-retained', claim: claim(), updatedAt: '2026-08-27T00:00:01.000Z',
+      phase: 'claim-retained', claim: claim(), updatedAt: testTime({ seconds: 1 }),
     });
     record = advanceAuthorityTransferClaimantRecord(record, {
-      phase: 'credential-persisted', targetCredential: direction === 'cloud-to-lan' ? TARGET_CREDENTIAL : null, updatedAt: '2026-08-27T00:00:02.000Z',
+      phase: 'credential-persisted', targetCredential: direction === 'cloud-to-lan' ? TARGET_CREDENTIAL : null, updatedAt: testTime({ seconds: 2 }),
     });
     store.record = record;
     const converged: AuthorityTransferClaimantRecord[] = [];
@@ -890,7 +890,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         record = advanceAuthorityTransferClaimantRecord(record, {
           claim: claim(),
           phase: 'claim-retained',
-          updatedAt: '2026-08-27T00:00:01.000Z',
+          updatedAt: testTime({ seconds: 1 }),
         });
       }
       store.record = record;
@@ -928,17 +928,17 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     record = advanceAuthorityTransferClaimantRecord(record, {
       claim: claim(),
       phase: 'claim-retained',
-      updatedAt: '2026-08-27T00:00:01.000Z',
+      updatedAt: testTime({ seconds: 1 }),
     });
     record = advanceAuthorityTransferClaimantRecord(record, {
       phase: 'credential-persisted',
       targetCredential: null,
-      updatedAt: '2026-08-27T00:00:02.000Z',
+      updatedAt: testTime({ seconds: 2 }),
     });
     record = advanceAuthorityTransferClaimantRecord(record, {
       phase: 'target-claimed',
       redemptionReceipt: receipt(),
-      updatedAt: '2026-08-27T00:01:00.000Z',
+      updatedAt: testTime({ minutes: 1 }),
     });
     store.record = record;
     const acknowledge = jest.fn();

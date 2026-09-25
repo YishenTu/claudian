@@ -25,7 +25,7 @@ import {
 } from '../../../core/tools/toolNames';
 import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo } from '../../../core/types';
 import type { DiffStats } from '../../../core/types/diff';
-import { appendMcpIcon } from '../../../shared/icons';
+import { appendMCPIcon } from '../../../shared/icons';
 import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '../../../utils/diff';
 import { setupCollapsible } from './collapsible';
 import { renderDiffContent, renderDiffStats } from './DiffRenderer';
@@ -34,7 +34,7 @@ import { renderTodoItems } from './todoUtils';
 export function setToolIcon(el: HTMLElement, name: string): void {
   const icon = getToolIcon(name);
   if (icon === MCP_ICON_MARKER) {
-    appendMcpIcon(el);
+    appendMCPIcon(el);
   } else {
     setIcon(el, icon);
   }

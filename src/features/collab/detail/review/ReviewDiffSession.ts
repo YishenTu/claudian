@@ -29,7 +29,7 @@ export interface CollabDetailDiffPort {
   setLayout(layout: CollabDiffLayout): void;
 }
 
-export interface CollabDetailObjectUrlPort {
+export interface CollabDetailObjectURLPort {
   create(bytes: Uint8Array, mimeType: string): string;
   revoke(url: string): void;
 }
@@ -50,7 +50,7 @@ export interface ReviewDiffSessionPort {
 }
 
 export interface ReviewDiffSessionOptions {
-  readonly objectUrls: CollabDetailObjectUrlPort;
+  readonly objectUrls: CollabDetailObjectURLPort;
   readonly onSelectedPath?: (path: string) => void;
   readonly openProjectFile?: (projectId: string, path: string) => Promise<void>;
   readonly port: ReviewDiffSessionPort;
@@ -129,7 +129,7 @@ export class ReviewDiffSession {
   private destroyed = false;
   private layout: CollabDiffLayout = 'unified';
   private objectUrl: string | null = null;
-  private readonly objectUrls: CollabDetailObjectUrlPort;
+  private readonly objectUrls: CollabDetailObjectURLPort;
   private readonly onSelectedPath?: (path: string) => void;
   private readonly openProjectFile?: (projectId: string, path: string) => Promise<void>;
   private readonly port: ReviewDiffSessionPort;

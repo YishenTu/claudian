@@ -7,7 +7,7 @@ import {
   type RetirementTombstoneRecord,
 } from '@/app/collab/retirement/RetirementTombstoneRecord';
 
-const retiredAt = '2026-08-13T00:00:00.000Z';
+const retiredAt = testTime({ days: -14 });
 const record: RetirementTombstoneRecord = {
   schemaVersion: COLLAB_RETIREMENT_TOMBSTONE_SCHEMA_VERSION,
   kind: 'retirement-tombstone',

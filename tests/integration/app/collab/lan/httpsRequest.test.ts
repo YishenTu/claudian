@@ -6,8 +6,8 @@ import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 
-import { requestHttpsBytes } from '@/app/collab/lan/httpsRequest';
-import { LanTlsIdentity, type LanTlsServerIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { requestHTTPSBytes } from '@/app/collab/lan/httpsRequest';
+import { LANTLSIdentity, type LANTLSServerIdentity } from '@/app/collab/lan/LANTLSIdentity';
 
 function deferred() {
   let resolve!: () => void;
@@ -15,14 +15,14 @@ function deferred() {
   return { promise, resolve };
 }
 
-describe('requestHttpsBytes', () => {
+describe('requestHTTPSBytes', () => {
   let directory: string;
-  let identity: LanTlsServerIdentity;
+  let identity: LANTLSServerIdentity;
   let server: Server;
 
   beforeAll(async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'claudian-https-bytes-'));
-    identity = await new LanTlsIdentity(directory, {
+    identity = await new LANTLSIdentity(directory, {
       installationKey: TEST_INSTALLATION_A,
     }).issueServerIdentity('127.0.0.1');
   });
@@ -64,7 +64,7 @@ describe('requestHttpsBytes', () => {
       incoming.pipe(response);
     });
     const body = Buffer.from('é雪', 'utf8');
-    await expect(requestHttpsBytes(request, {
+    await expect(requestHTTPSBytes(request, {
       body, maxResponseBytes: 5, timeoutMs: 1_000,
     })).resolves.toMatchObject({
       body,
@@ -79,7 +79,7 @@ describe('requestHttpsBytes', () => {
       authorization = incoming.headers.authorization;
       response.end();
     });
-    await expect(requestHttpsBytes({
+    await expect(requestHTTPSBytes({
       ...request,
       ca: [],
       headers: { authorization: 'Bearer private-credential' },
@@ -97,7 +97,7 @@ describe('requestHttpsBytes', () => {
       response.write('雪');
       response.write('!');
     });
-    await expect(requestHttpsBytes(request, {
+    await expect(requestHTTPSBytes(request, {
       body: null, maxResponseBytes: 5, timeoutMs: 1_000,
     })).rejects.toMatchObject({ reason: 'response-too-large' });
     await closed.promise;
@@ -113,7 +113,7 @@ describe('requestHttpsBytes', () => {
         received.resolve();
       });
       const controller = new AbortController();
-      const result = requestHttpsBytes(request, {
+      const result = requestHTTPSBytes(request, {
         body: null,
         maxResponseBytes: 100,
         signal: controller.signal,
@@ -131,7 +131,7 @@ describe('requestHttpsBytes', () => {
       response.writeHead(200, { 'content-length': '100' });
       response.write('partial', () => response.destroy());
     });
-    await expect(requestHttpsBytes(request, {
+    await expect(requestHTTPSBytes(request, {
       body: null, maxResponseBytes: 100, timeoutMs: 1_000,
     })).rejects.toMatchObject({ reason: 'response-failed' });
   });

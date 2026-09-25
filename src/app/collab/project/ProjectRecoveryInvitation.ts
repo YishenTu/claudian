@@ -2,7 +2,7 @@ import { X509Certificate } from 'node:crypto';
 
 import { collabControlOperationCodec, type CreateProjectRecoveryLinkResponse } from '@claudian-collab/protocol';
 
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export type ProjectRecoveryTarget = { readonly kind: 'cloud'; readonly serverUrl: string } | {
@@ -33,12 +33,12 @@ export function decodeProjectRecoveryInvitation(encoded: string): ProjectRecover
     const link = collabControlOperationCodec('createProjectRecoveryLink').decodeResponse(value.link);
     const target = value.target as Record<string, unknown>;
     if (target.kind === 'cloud' && Object.keys(target).length === 2 && typeof target.serverUrl === 'string') {
-      return { link, target: { kind: 'cloud', serverUrl: validateCloudServerUrl(target.serverUrl, 'serverUrl') } };
+      return { link, target: { kind: 'cloud', serverUrl: validateCloudServerURL(target.serverUrl, 'serverUrl') } };
     }
     if (target.kind !== 'lan' || Object.keys(target).length !== 4 || typeof target.endpoint !== 'string'
       || typeof target.caFingerprint !== 'string' || typeof target.caCertificatePem !== 'string'
       || target.caCertificatePem.length > 16 * 1024 || target.caCertificatePem.includes('PRIVATE KEY')) throw new TypeError();
-    const endpoint = validateCloudServerUrl(target.endpoint, 'endpoint');
+    const endpoint = validateCloudServerURL(target.endpoint, 'endpoint');
     const certificate = new X509Certificate(target.caCertificatePem);
     if (!endpoint.startsWith('https://') || !certificate.ca
       || certificate.fingerprint256.replaceAll(':', '').toLowerCase() !== target.caFingerprint) throw new TypeError();

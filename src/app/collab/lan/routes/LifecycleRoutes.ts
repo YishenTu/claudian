@@ -1,8 +1,8 @@
 import { COLLAB_CONTROL_OPERATION_BINDINGS } from '@/app/collab/lan/CollabControlOperationBindings';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
 import type {
-  LanCollabLifecycleControlOperation as CollabLifecycleControlOperation,
-} from '@/app/collab/lan/LanCollabControlOperations';
+  LANCollabLifecycleControlOperation as CollabLifecycleControlOperation,
+} from '@/app/collab/lan/LANCollabControlOperations';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
 import type {
   CollabControlRouteResult,

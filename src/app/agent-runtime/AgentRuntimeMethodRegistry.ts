@@ -26,11 +26,11 @@ import {
   type AgentRuntimePublicationReview,
   type AgentRuntimeRetryPolicy,
   type AgentRuntimeReviewFileContent,
-  type AgentRuntimeRpcEnvelope,
-  type AgentRuntimeRpcError,
-  type AgentRuntimeRpcErrorResponse,
-  type AgentRuntimeRpcResponse,
-  type AgentRuntimeRpcResult,
+  type AgentRuntimeRPCEnvelope,
+  type AgentRuntimeRPCError,
+  type AgentRuntimeRPCErrorResponse,
+  type AgentRuntimeRPCResponse,
+  type AgentRuntimeRPCResult,
   type AgentRuntimeSyncState,
   type AgentRuntimeTicketAcceptedRelation,
   type AgentRuntimeTicketComment,
@@ -39,7 +39,7 @@ import {
   type AgentRuntimeTicketSummary,
   type AgentRuntimeValueSchema,
   isPlainRecord,
-} from './AgentRuntimeRpc';
+} from './AgentRuntimeRPC';
 
 export type CollabAgentPort = Pick<
   CollabFeaturePort,
@@ -73,7 +73,7 @@ export interface AgentRuntimePreparedInvocation {
   readonly access: AgentRuntimeOperationAccess;
   readonly retry: AgentRuntimeRetryPolicy;
   readonly id: string;
-  execute(signal: AbortSignal): Promise<AgentRuntimeRpcResponse>;
+  execute(signal: AbortSignal): Promise<AgentRuntimeRPCResponse>;
 }
 
 export type AgentRuntimeMethodPrepareResult =
@@ -89,8 +89,8 @@ interface AgentRuntimeMethodContext {
 }
 
 type AgentRuntimeMethodOutcome =
-  | { readonly status: 'success'; readonly result: AgentRuntimeRpcResult }
-  | { readonly status: 'error'; readonly error: AgentRuntimeRpcError };
+  | { readonly status: 'success'; readonly result: AgentRuntimeRPCResult }
+  | { readonly status: 'error'; readonly error: AgentRuntimeRPCError };
 
 interface AgentRuntimeMethodContract {
   readonly description: string;
@@ -804,10 +804,10 @@ const METHOD_DEFINITIONS = {
   },
 } as const satisfies Readonly<Record<string, AgentRuntimeMethodDefinition>>;
 
-export type AgentRuntimeRpcMethod = Extract<keyof typeof METHOD_DEFINITIONS, string>;
+export type AgentRuntimeRPCMethod = Extract<keyof typeof METHOD_DEFINITIONS, string>;
 
-export const AGENT_RUNTIME_OPERATION_NAMES: readonly AgentRuntimeRpcMethod[] = Object.freeze(
-  Object.keys(METHOD_DEFINITIONS) as AgentRuntimeRpcMethod[],
+export const AGENT_RUNTIME_OPERATION_NAMES: readonly AgentRuntimeRPCMethod[] = Object.freeze(
+  Object.keys(METHOD_DEFINITIONS) as AgentRuntimeRPCMethod[],
 );
 
 export const AGENT_RUNTIME_OPERATION_DESCRIPTORS: readonly AgentRuntimeOperationDescriptor[] =
@@ -835,8 +835,8 @@ export const AGENT_RUNTIME_MAX_REQUEST_BYTES = agentRuntimeRequestBudget(AGENT_R
 export class AgentRuntimeMethodRegistry {
   constructor(private readonly resolveCollab: ResolveCollabAgentPort) {}
 
-  prepare(envelope: AgentRuntimeRpcEnvelope): AgentRuntimeMethodPrepareResult {
-    if (!isAgentRuntimeRpcMethod(envelope.method)) return { status: 'method-not-found' };
+  prepare(envelope: AgentRuntimeRPCEnvelope): AgentRuntimeMethodPrepareResult {
+    if (!isAgentRuntimeRPCMethod(envelope.method)) return { status: 'method-not-found' };
     const definition: AgentRuntimeMethodDefinition = METHOD_DEFINITIONS[envelope.method];
     const params = decodeParams(envelope.params, methodParameters(definition));
     if (!params || definition.validate?.(params) === false) {
@@ -864,7 +864,7 @@ export class AgentRuntimeMethodRegistry {
     definition: AgentRuntimeMethodDefinition,
     params: Readonly<Record<string, unknown>>,
     signal: AbortSignal,
-  ): Promise<AgentRuntimeRpcResponse> {
+  ): Promise<AgentRuntimeRPCResponse> {
     if (signal.aborted) return errorResponse(id, cancelledError());
     try {
       const outcome = await definition.execute(
@@ -1169,7 +1169,7 @@ function toProjectDetail(inspection: CollabProjectInspection): AgentRuntimeProje
 function toPersonalChangesResult(
   projectId: string,
   inspection: CollabProjectInspection,
-): AgentRuntimeRpcResult {
+): AgentRuntimeRPCResult {
   const personal = inspection.personalChanges;
   return {
     changes: personal
@@ -1474,7 +1474,7 @@ function toConflictOpaqueVersion(
 
 function mapCollabResult<T>(
   result: CollabResult<T>,
-  mapper: (value: T) => AgentRuntimeRpcResult,
+  mapper: (value: T) => AgentRuntimeRPCResult,
 ): AgentRuntimeMethodOutcome {
   if (result.status !== 'success') return mapCollabFailure(result);
   return success(mapper(result.value));
@@ -1545,15 +1545,15 @@ function invalidPath(projectId: string, path: string): AgentRuntimeMethodOutcome
   });
 }
 
-function success(result: AgentRuntimeRpcResult): AgentRuntimeMethodOutcome {
+function success(result: AgentRuntimeRPCResult): AgentRuntimeMethodOutcome {
   return { result, status: 'success' };
 }
 
-function error(value: AgentRuntimeRpcError): AgentRuntimeMethodOutcome {
+function error(value: AgentRuntimeRPCError): AgentRuntimeMethodOutcome {
   return { error: value, status: 'error' };
 }
 
-function cancelledError(): AgentRuntimeRpcError {
+function cancelledError(): AgentRuntimeRPCError {
   return {
     code: 'cancelled',
     data: { status: 'cancelled' },
@@ -1561,14 +1561,14 @@ function cancelledError(): AgentRuntimeRpcError {
   };
 }
 
-function serviceUnavailableError(): AgentRuntimeRpcError {
+function serviceUnavailableError(): AgentRuntimeRPCError {
   return {
     code: 'service_unavailable',
     message: 'Collab service is unavailable.',
   };
 }
 
-function errorResponse(id: string, value: AgentRuntimeRpcError): AgentRuntimeRpcErrorResponse {
+function errorResponse(id: string, value: AgentRuntimeRPCError): AgentRuntimeRPCErrorResponse {
   return { error: value, id };
 }
 
@@ -1629,7 +1629,7 @@ function matchesSchema(value: unknown, schema: AgentRuntimeValueSchema): boolean
   return keys.every(key => typeof key === 'string') && new Set(keys).size === keys.length;
 }
 
-function isAgentRuntimeRpcMethod(method: string): method is AgentRuntimeRpcMethod {
+function isAgentRuntimeRPCMethod(method: string): method is AgentRuntimeRPCMethod {
   return Object.prototype.hasOwnProperty.call(METHOD_DEFINITIONS, method);
 }
 

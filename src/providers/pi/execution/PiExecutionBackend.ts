@@ -9,7 +9,7 @@ import {
   createPiForkSessionFile,
   rollbackCreatedPiForkSessionFile,
 } from '../history/PiHistoryStore';
-import type { PiExtensionUiRenderer } from '../runtime/PiExtensionUiBridge';
+import type { PiExtensionUIRenderer } from '../runtime/PiExtensionUIBridge';
 import {
   createPiExecutionKernel,
   type PiExecutionKernelFactory,
@@ -21,7 +21,7 @@ type PiExecutionServices = Pick<PiWorkspaceServices, 'commandCatalog'>;
 export interface PiExecutionBackendOptions {
   readonly createForkSessionFile?: typeof createPiForkSessionFile;
   readonly createKernel?: PiExecutionKernelFactory;
-  readonly extensionUiRenderer?: PiExtensionUiRenderer | null;
+  readonly extensionUiRenderer?: PiExtensionUIRenderer | null;
   readonly rollbackForkSessionFile?: typeof rollbackCreatedPiForkSessionFile;
 }
 

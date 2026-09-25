@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
   type CollabPublicationStateRecord,
@@ -19,7 +21,7 @@ function record(
     operation: null,
     projectId: 'project-a',
     schemaVersion: COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
-    updatedAt: '2026-08-09T00:00:00.000Z',
+    updatedAt: testTime({ days: -18 }),
     ...overrides,
   };
 }
@@ -37,13 +39,13 @@ describe('CollabPublicationStateRecord', () => {
       operation: {
         candidateOid: OID.candidate,
         contributionHeadOid: OID.contribution,
-        createdAt: '2026-08-09T00:00:00.000Z',
+        createdAt: testTime({ days: -18 }),
         currentMainOid: OID.main,
         intent: 'update',
         operationId: 'update-a',
         phase: 'applied',
         reviewBaseline,
-        updatedAt: '2026-08-09T00:01:00.000Z',
+        updatedAt: testTime({ days: -18, minutes: 1 }),
       },
     };
     expect(decodeCollabPublicationStateRecord(JSON.parse(JSON.stringify(value)))).toEqual(value);
@@ -63,11 +65,11 @@ describe('CollabPublicationStateRecord', () => {
       operation: {
         candidateOid: OID.candidate,
         contributionHeadOid: OID.contribution,
-        createdAt: '2026-08-09T00:00:00.000Z',
+        createdAt: testTime({ days: -18 }),
         currentMainOid: OID.main,
         operationId: 'publish-a',
         phase: 'review-ready',
-        updatedAt: '2026-08-09T00:01:00.000Z',
+        updatedAt: testTime({ days: -18, minutes: 1 }),
       },
     });
 
@@ -79,11 +81,11 @@ describe('CollabPublicationStateRecord', () => {
     const operation = {
       candidateOid: OID.candidate,
       contributionHeadOid: OID.contribution,
-      createdAt: '2026-08-09T00:00:00.000Z',
+      createdAt: testTime({ days: -18 }),
       currentMainOid: OID.main,
       operationId: 'publish-a',
       phase: 'confirmed' as const,
-      updatedAt: '2026-08-09T00:01:00.000Z',
+      updatedAt: testTime({ days: -18, minutes: 1 }),
     };
 
     expect(decodeCollabPublicationStateRecord(record({ operation })).operation)
@@ -98,11 +100,11 @@ describe('CollabPublicationStateRecord', () => {
       operation: {
         candidateOid: null,
         contributionHeadOid: OID.contribution,
-        createdAt: '2026-08-09T00:00:00.000Z',
+        createdAt: testTime({ days: -18 }),
         currentMainOid: null,
         operationId: 'publish-a',
         phase: 'captured',
-        updatedAt: '2026-08-09T00:00:00.000Z',
+        updatedAt: testTime({ days: -18 }),
       },
     });
 
@@ -127,11 +129,11 @@ describe('CollabPublicationStateRecord', () => {
       operation: {
         candidateOid: OID.candidate,
         contributionHeadOid: OID.contribution,
-        createdAt: '2026-08-09T00:00:00.000Z',
+        createdAt: testTime({ days: -18 }),
         currentMainOid: OID.main,
         operationId: 'publish-a',
         phase: 'unknown',
-        updatedAt: '2026-08-09T00:01:00.000Z',
+        updatedAt: testTime({ days: -18, minutes: 1 }),
       },
     })).toThrow();
     expect(() => decodeCollabPublicationStateRecord({

@@ -1,7 +1,7 @@
 import {
-  createCliPathFingerprintInputs,
-  hasCliPathFingerprintInputs,
-} from '../../../core/providers/cli/CliPathFingerprintInputs';
+  createCLIPathFingerprintInputs,
+  hasCLIPathFingerprintInputs,
+} from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import {
   createRuntimeInputFingerprint,
@@ -59,7 +59,7 @@ function getCodexRuntimeFingerprintState(settings: Record<string, unknown>): {
 } {
   const environmentText = getRuntimeEnvironmentText(settings, 'codex');
   const codexSettings = getCodexProviderSettings(settings);
-  const cliPathInputs = createCliPathFingerprintInputs(
+  const cliPathInputs = createCLIPathFingerprintInputs(
     codexSettings.cliPathsByHost[getHostnameKey()],
     codexSettings.cliPath,
   );
@@ -73,7 +73,7 @@ function getCodexRuntimeFingerprintState(settings: Record<string, unknown>): {
     currentFingerprint: computeCodexEnvHash(environmentText, additionalInputs),
     environmentText,
     hasFingerprintInputs: Boolean(
-      hasCliPathFingerprintInputs(cliPathInputs)
+      hasCLIPathFingerprintInputs(cliPathInputs)
       || codexSettings.installationMethod === 'wsl'
       || codexSettings.wslDistroOverride
       || ENV_HASH_KEYS.some(key => Object.prototype.hasOwnProperty.call(environment, key))

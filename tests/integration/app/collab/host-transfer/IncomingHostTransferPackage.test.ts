@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
@@ -13,7 +14,7 @@ import { advanceHostTransferRecoveryRecord, createHostTransferRecoveryRecord } f
 import type { IncomingHostTransferPackageOptions } from '@/app/collab/host-transfer/IncomingHostTransferPackage';
 import { IncomingHostTransferPackage } from '@/app/collab/host-transfer/IncomingHostTransferPackage';
 
-const NOW = '2026-08-13T00:00:00.000Z';
+const NOW = testTime({ days: -14 });
 const MAIN_OID = '1'.repeat(40);
 const MEMBER_OID = '2'.repeat(40);
 

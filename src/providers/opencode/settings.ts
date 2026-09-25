@@ -6,7 +6,7 @@ import {
   readStoredBoolean,
   readStoredString,
 } from '../../core/providers/settings/storedSettings';
-import type { HostnameCliPaths } from '../../core/types/settings';
+import type { HostnameCLIPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
   getOpencodeDiscoveryState,
@@ -25,7 +25,7 @@ import {
 
 export interface PersistedOpencodeProviderSettings {
   cliPath: string;
-  cliPathsByHost: HostnameCliPaths;
+  cliPathsByHost: HostnameCLIPaths;
   enabled: boolean;
   environmentHash: string;
   environmentVariables: string;

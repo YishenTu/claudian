@@ -5,22 +5,22 @@ import {
   collabControlOperationPath,
 } from '@/app/collab/lan/CollabControlOperationBindings';
 import type {
-  CollabHttpOperationOptions,
-  CollabJsonRequest,
-  PinnedCollabHttpClient,
-} from '@/app/collab/lan/CollabHttpClient';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
-import type { LanCollabJoinAttempt as CollabJoinAttempt } from '@/app/collab/lan/LanCollabControlOperations';
-import type { CollabLanProject } from '@/core/collab';
+  CollabHTTPOperationOptions,
+  CollabJSONRequest,
+  PinnedCollabHTTPClient,
+} from '@/app/collab/lan/CollabHTTPClient';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
+import type { LANCollabJoinAttempt as CollabJoinAttempt } from '@/app/collab/lan/LANCollabControlOperations';
+import type { CollabLANProject } from '@/core/collab';
 
 export interface JoinActivationSnapshot {
   readonly currentMember: CollabMember;
   readonly eventSequence: number;
-  readonly project: CollabLanProject;
+  readonly project: CollabLANProject;
 }
 
 export class JoinControlClient {
-  constructor(private readonly client: PinnedCollabHttpClient) {}
+  constructor(private readonly client: PinnedCollabHTTPClient) {}
 
   createJoinAttempt(
     input: {
@@ -29,7 +29,7 @@ export class JoinControlClient {
       readonly joinAttemptId: string;
       readonly projectId: string;
     },
-    options: CollabHttpOperationOptions = {},
+    options: CollabHTTPOperationOptions = {},
   ): Promise<CollabJoinAttempt> {
     return this.client.requestWithInvitation(this.request({
       body: {
@@ -50,7 +50,7 @@ export class JoinControlClient {
       readonly memberCredential: string;
       readonly projectId: string;
     },
-    options: CollabHttpOperationOptions = {},
+    options: CollabHTTPOperationOptions = {},
   ): Promise<JoinActivationSnapshot> {
     const idempotencyKey = `activate-${input.joinAttemptId}`;
     return this.client.requestWithMember(this.request({
@@ -76,7 +76,7 @@ export class JoinControlClient {
     }), input.memberCredential, options);
   }
 
-  private request<T>(request: CollabJsonRequest<T>): CollabJsonRequest<T> {
+  private request<T>(request: CollabJSONRequest<T>): CollabJSONRequest<T> {
     return request;
   }
 }

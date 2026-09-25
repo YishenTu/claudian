@@ -72,9 +72,9 @@ export type AgentDefinition = {
   hooks?: Record<string, unknown>;
 };
 
-export type AgentMcpServerSpec = string | Record<string, unknown>;
+export type AgentMCPServerSpec = string | Record<string, unknown>;
 
-export type McpServerConfig = Record<string, unknown>;
+export type MCPServerConfig = Record<string, unknown>;
 
 export type PermissionBehavior = 'allow' | 'deny' | 'ask';
 

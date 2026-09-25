@@ -5,7 +5,7 @@ import {
   decodeAuthorityChangeRequest,
 } from '@/app/collab/authority/RequestEnsureRepository';
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
-import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketRepository } from '@/app/collab/authority/TicketRepository';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 

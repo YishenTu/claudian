@@ -13,10 +13,10 @@ import type {
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import {
   extractAgentIdFromToolUseResult,
-  extractXmlTag,
+  extractXMLTag,
   resolveToolUseResultStatus,
 } from '../history/ClaudeHistoryStore';
-import { extractFinalResultFromSubagentJsonl } from '../history/subagentJsonl';
+import { extractFinalResultFromSubagentJSONL } from '../history/subagentJSONL';
 
 function extractAgentIdFromString(value: string): string | null {
   const regexPatterns = [
@@ -70,12 +70,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function parseJsonRecord(value: string): Record<string, unknown> | null {
-  const parsed = parseJsonValue(value);
+function parseJSONRecord(value: string): Record<string, unknown> | null {
+  const parsed = parseJSONValue(value);
   return isRecord(parsed) ? parsed : null;
 }
 
-function parseJsonValue(value: string): unknown {
+function parseJSONValue(value: string): unknown {
   try {
     const parsed: unknown = JSON.parse(value);
     return parsed;
@@ -266,7 +266,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
       return null;
     }
 
-    const parsed = parseJsonRecord(payload);
+    const parsed = parseJSONRecord(payload);
     if (parsed) {
       if (this.#hasTerminalTaskStatus(parsed)) {
         return null;
@@ -283,8 +283,8 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
       }
     }
 
-    const xmlStatus = extractXmlTag(payload, 'retrieval_status')
-      ?? extractXmlTag(payload, 'status');
+    const xmlStatus = extractXMLTag(payload, 'retrieval_status')
+      ?? extractXMLTag(payload, 'status');
     if (this.#isTerminalTaskStatusValue(xmlStatus)) {
       return null;
     }
@@ -334,7 +334,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
     if (isError) return false;
     if (!trimmed) return false;
 
-    const parsed = parseJsonRecord(payload);
+    const parsed = parseJSONRecord(payload);
     if (parsed) {
       const status = parsed.retrieval_status ?? parsed.status;
       const agents = isRecord(parsed.agents) ? parsed.agents : null;
@@ -389,7 +389,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
 
     const payload = this.#unwrapTextPayload(result);
 
-    const parsed = parseJsonRecord(payload);
+    const parsed = parseJSONRecord(payload);
     if (parsed) {
       const taskResult = this.#extractResultFromTaskObject(parsed.task);
       if (taskResult) {
@@ -483,7 +483,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
     const agentId = extractAgentIdFromString(result) ?? result.match(/\b([a-f0-9]{8})\b/)?.[1];
     if (agentId) return agentId;
 
-    const parsed = parseJsonRecord(result);
+    const parsed = parseJSONRecord(result);
     if (parsed) {
       const agentId = parsed.agent_id || parsed.agentId;
 
@@ -505,7 +505,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
   }
 
   #inferAgentIdFromResult(result: string): string | null {
-    const parsed = parseJsonRecord(result);
+    const parsed = parseJSONRecord(result);
     if (parsed) {
       const agents = isRecord(parsed.agents) ? parsed.agents : null;
       if (agents) {
@@ -516,7 +516,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
   }
 
   #unwrapTextPayload(raw: string): string {
-    const parsed = parseJsonValue(raw);
+    const parsed = parseJSONValue(raw);
     if (parsed !== null) {
       if (Array.isArray(parsed)) {
         const textBlock = (parsed as unknown[]).find((block) => isRecord(block) && typeof block.text === 'string');
@@ -529,16 +529,16 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
   }
 
   #extractResultFromTaggedPayload(payload: string): string | null {
-    const directResult = extractXmlTag(payload, 'result');
+    const directResult = extractXMLTag(payload, 'result');
     if (directResult) return directResult;
 
-    const outputContent = extractXmlTag(payload, 'output');
+    const outputContent = extractXMLTag(payload, 'output');
     if (!outputContent) return null;
 
     const extractedFromJsonl = this.#extractResultFromOutputJsonl(outputContent);
     if (extractedFromJsonl) return extractedFromJsonl;
 
-    const nestedResult = extractXmlTag(outputContent, 'result');
+    const nestedResult = extractXMLTag(outputContent, 'result');
     if (nestedResult) return nestedResult;
 
     const trimmed = outputContent.trim();
@@ -546,7 +546,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
   }
 
   #extractResultFromOutputJsonl(outputContent: string): string | null {
-    const inlineResult = extractFinalResultFromSubagentJsonl(outputContent);
+    const inlineResult = extractFinalResultFromSubagentJSONL(outputContent);
     if (inlineResult) {
       return inlineResult;
     }
@@ -561,7 +561,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
       return null;
     }
 
-    return extractFinalResultFromSubagentJsonl(fullOutput);
+    return extractFinalResultFromSubagentJSONL(fullOutput);
   }
 
   #extractFullOutputPath(content: string): string | null {

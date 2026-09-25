@@ -21,19 +21,19 @@ const mockConnectionInitialize = jest.fn();
 const mockConnectionDispose = jest.fn();
 const mockPrepareLaunchArtifacts = jest.fn();
 
-const mockAcpSubprocess = jest.fn().mockImplementation(() => ({
+const mockACPSubprocess = jest.fn().mockImplementation(() => ({
   stdin: {},
   stdout: {},
   onClose: jest.fn().mockReturnValue(jest.fn()),
   shutdown: mockProcessShutdown,
   start: mockProcessStart,
 }));
-const mockAcpJsonRpcTransport = jest.fn().mockImplementation(() => ({
+const mockACPJSONRPCTransport = jest.fn().mockImplementation(() => ({
   dispose: mockTransportDispose,
   onClose: mockTransportOnClose.mockReturnValue(jest.fn()),
   start: mockTransportStart,
 }));
-const mockAcpClientConnection = jest.fn().mockImplementation(() => ({
+const mockACPClientConnection = jest.fn().mockImplementation(() => ({
   dispose: mockConnectionDispose,
   initialize: mockConnectionInitialize,
 }));
@@ -42,9 +42,9 @@ jest.mock('@/providers/acp', () => {
   const actual = jest.requireActual('@/providers/acp');
   return {
     ...actual,
-    AcpClientConnection: mockAcpClientConnection,
-    AcpJsonRpcTransport: mockAcpJsonRpcTransport,
-    AcpSubprocess: mockAcpSubprocess,
+    ACPClientConnection: mockACPClientConnection,
+    ACPJSONRPCTransport: mockACPJSONRPCTransport,
+    ACPSubprocess: mockACPSubprocess,
   };
 });
 
@@ -60,14 +60,14 @@ jest.mock('@/providers/opencode/runtime/OpencodeLaunchArtifacts', () => {
   };
 });
 
-import type { AcpSessionUpdate } from '@/providers/acp';
+import type { ACPSessionUpdate } from '@/providers/acp';
 import type { OpencodeCommandCatalog } from '@/providers/opencode/commands/OpencodeCommandCatalog';
 import {
-  type OpencodeAcpSessionKernel,
-  type OpencodeAcpSessionKernelOptions,
+  type OpencodeACPSessionKernel,
+  type OpencodeACPSessionKernelOptions,
   type OpencodeNativeSessionInfo,
   OpencodeSessionMissingError,
-} from '@/providers/opencode/execution/OpencodeAcpSessionKernel';
+} from '@/providers/opencode/execution/OpencodeACPSessionKernel';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
@@ -84,7 +84,7 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-class FakeKernel implements OpencodeAcpSessionKernel {
+class FakeKernel implements OpencodeACPSessionKernel {
   readonly connectCalls: unknown[] = [];
   readonly openedResumeIds: Array<string | undefined> = [];
   readonly configCalls: Array<Record<string, unknown>> = [];
@@ -95,7 +95,7 @@ class FakeKernel implements OpencodeAcpSessionKernel {
   openSessionError: unknown = null;
   onOpenSession: (() => void) | null = null;
   onSetConfigOption: (() => void) | null = null;
-  promptResult: Awaited<ReturnType<OpencodeAcpSessionKernel['prompt']>> = { userMessageId: 'native-user' };
+  promptResult: Awaited<ReturnType<OpencodeACPSessionKernel['prompt']>> = { userMessageId: 'native-user' };
   private resolvePrompt: ((value: typeof this.promptResult) => void) | null = null;
   private deferredOpenSession: Deferred<OpencodeNativeSessionInfo> | null = null;
   private deferredDisposal: Deferred<void> | null = null;
@@ -136,7 +136,7 @@ class FakeKernel implements OpencodeAcpSessionKernel {
     },
   };
 
-  constructor(readonly options: OpencodeAcpSessionKernelOptions) {}
+  constructor(readonly options: OpencodeACPSessionKernelOptions) {}
 
   async connect(options: unknown): Promise<void> {
     this.connectCalls.push(options);
@@ -192,7 +192,7 @@ class FakeKernel implements OpencodeAcpSessionKernel {
     return deferred;
   }
 
-  notify(update: AcpSessionUpdate, sessionId = this.sessionInfo.sessionId): void {
+  notify(update: ACPSessionUpdate, sessionId = this.sessionInfo.sessionId): void {
     this.options.onNotification({ sessionId, update });
   }
 
@@ -378,7 +378,7 @@ describe('OpencodeExecutionBackend', () => {
     await expect(events).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'cancelled' }),
     ]));
-    expect(mockAcpSubprocess).not.toHaveBeenCalled();
+    expect(mockACPSubprocess).not.toHaveBeenCalled();
     expect(mockProcessStart).not.toHaveBeenCalled();
     await session.dispose();
   });
@@ -411,7 +411,7 @@ describe('OpencodeExecutionBackend', () => {
     await expect(events).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'cancelled' }),
     ]));
-    expect(mockAcpSubprocess).not.toHaveBeenCalled();
+    expect(mockACPSubprocess).not.toHaveBeenCalled();
     expect(mockProcessStart).not.toHaveBeenCalled();
   });
 
@@ -450,11 +450,11 @@ describe('OpencodeExecutionBackend', () => {
           throw failure;
         });
       } else if (failureBoundary === 'transport-construction') {
-        mockAcpJsonRpcTransport.mockImplementationOnce(() => {
+        mockACPJSONRPCTransport.mockImplementationOnce(() => {
           throw failure;
         });
       } else if (failureBoundary === 'connection-construction') {
-        mockAcpClientConnection.mockImplementationOnce(() => {
+        mockACPClientConnection.mockImplementationOnce(() => {
           throw failure;
         });
       } else {

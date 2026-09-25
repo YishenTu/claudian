@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
   type CollabPublicationStateRecord,
@@ -9,7 +11,7 @@ const RECORD: CollabPublicationStateRecord = {
   operation: null,
   projectId: 'project-a',
   schemaVersion: COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
-  updatedAt: '2026-08-09T00:00:00.000Z',
+  updatedAt: testTime({ days: -18 }),
 };
 
 describe('CollabPublicationStateStore', () => {

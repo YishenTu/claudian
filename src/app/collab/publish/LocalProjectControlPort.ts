@@ -3,8 +3,8 @@ import { type AcceptResponse, type CollabChangeRequest, type CollabComment, type
 import type {
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
-import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
+import { isCollabLocalLANMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { PinnedCollabHTTPClient } from '@/app/collab/lan/CollabHTTPClient';
 import {
   ProjectControlClient,
 } from '@/app/collab/publish/ProjectControlClient';
@@ -115,7 +115,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     options: LocalProjectControlPortOptions = {},
   ) {
     this.createClient = options.createClient ?? (trust => new ProjectControlClient(
-      new PinnedCollabHttpClient(trust, CONTROL_TIMEOUT_MS),
+      new PinnedCollabHTTPClient(trust, CONTROL_TIMEOUT_MS),
     ));
   }
 
@@ -510,7 +510,7 @@ export class LocalProjectControlPort implements PublishRequestEnsurePort {
     const membership = await this.projects.loadMembership(projectId);
     if (
       !membership
-      || !isCollabLocalLanMembership(membership)
+      || !isCollabLocalLANMembership(membership)
       || membership.project.id !== projectId
     ) {
       throw controlError('project-not-found', 'control-membership-missing');

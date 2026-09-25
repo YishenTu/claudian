@@ -1,6 +1,8 @@
+import { testTime } from '@test/helpers/testClock';
+
 import { decodeCloudRelocationRecord } from '@/app/collab/reconnect/CloudRelocationRecord';
 
-const CREATED_AT = '2026-09-01T00:00:00.000Z';
+const CREATED_AT = testTime({ days: 5 });
 
 function record() {
   return {
@@ -51,7 +53,7 @@ describe('CloudRelocationRecord', () => {
     { ...record(), newAuthority: { ...record().newAuthority, wireVersion: 6 } },
     { ...record(), newAuthority: { ...record().newAuthority, gitRemoteUrl: 'http://new.example.test/v1/projects/project-cloud/repository.git' } },
     { ...record(), newAuthority: record().oldAuthority },
-    { ...record(), updatedAt: '2025-01-01T00:00:00.000Z' },
+    { ...record(), updatedAt: testTime({ days: -603 }) },
   ])('rejects incompatible, identity-changing, or reconstructed state', value => {
     expect(() => decodeCloudRelocationRecord(value)).toThrow(TypeError);
   });

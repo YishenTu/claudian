@@ -2,12 +2,12 @@ import { type CollabOperationId, type CollabProjectId } from '@claudian-collab/p
 
 import type { HostTransferAuthorityService } from '@/app/collab/authority/HostTransferAuthorityService';
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
-import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import type {
   AuthorityProjectionTransitionPort,
 } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type {
-  CollabLocalLanMembershipRecord,
+  CollabLocalLANMembershipRecord,
   CollabLocalMembershipRecord,
   CollabLocalProjectRepository,
   OwnedAuthorityDirectoryCapability,
@@ -24,17 +24,17 @@ import type {
 } from '@/app/collab/host-transfer/HostTransferCoordinatorPorts';
 import { IncomingHostTransferCoordinator } from '@/app/collab/host-transfer/IncomingHostTransferCoordinator';
 import { IncomingHostTransferPackage, type IncomingHostTransferPackageOptions } from '@/app/collab/host-transfer/IncomingHostTransferPackage';
-import { LanHostTransferAdmission } from '@/app/collab/host-transfer/LanHostTransferAdmission';
-import { LanHostTransferSourceIdentity } from '@/app/collab/host-transfer/LanHostTransferSourceIdentity';
-import { LanIncomingHostTransferPreparation } from '@/app/collab/host-transfer/LanIncomingHostTransferPreparation';
+import { LANHostTransferAdmission } from '@/app/collab/host-transfer/LANHostTransferAdmission';
+import { LANHostTransferSourceIdentity } from '@/app/collab/host-transfer/LANHostTransferSourceIdentity';
+import { LANIncomingHostTransferPreparation } from '@/app/collab/host-transfer/LANIncomingHostTransferPreparation';
 import { LocalHostTransferProjection } from '@/app/collab/host-transfer/LocalHostTransferProjection';
 import { NativeHostTransferPackagePreparation } from '@/app/collab/host-transfer/NativeHostTransferPackagePreparation';
 import { OutgoingHostTransferCoordinator } from '@/app/collab/host-transfer/OutgoingHostTransferCoordinator';
 import { OutgoingHostTransferRuntime } from '@/app/collab/host-transfer/OutgoingHostTransferRuntime';
-import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
+import { PinnedCollabHTTPClient } from '@/app/collab/lan/CollabHTTPClient';
 import { HostTransferControlClient } from '@/app/collab/lan/HostTransferControlClient';
 import { HostTransferTargetTransport } from '@/app/collab/lan/HostTransferTargetTransport';
-import type { LanHostCoordinator } from '@/app/collab/lan/LanHostCoordinator';
+import type { LANHostCoordinator } from '@/app/collab/lan/LANHostCoordinator';
 import type {
   CollabProjectLifecycleAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';
@@ -57,7 +57,7 @@ export interface CreateOutgoingHostTransferRuntimeInput {
   readonly authority: {
     readonly authorityDirectory: string;
     readonly resource: OwnedAuthorityDirectoryCapability;
-    readonly database: SqlJsProjectDatabase;
+    readonly database: SQLJSProjectDatabase;
   };
   readonly git: HostTransferModuleGitFoundation;
   readonly hostTransfers: HostTransferAuthorityService;
@@ -66,6 +66,7 @@ export interface CreateOutgoingHostTransferRuntimeInput {
 }
 
 export interface HostTransferModuleOptions {
+  readonly now?: () => Date;
   readonly settleImportedClaims?: (resource: OwnedAuthorityDirectoryCapability) => Promise<void>;
   readonly activateTransferredAuthority: (input: {
     readonly projectId: CollabProjectId;
@@ -81,7 +82,7 @@ export interface HostTransferModuleOptions {
   readonly syncProjection: (projectId: CollabProjectId) => void;
   readonly authorityProjectionTransitions: AuthorityProjectionTransitionPort;
   readonly lanHost: Pick<
-    LanHostCoordinator,
+    LANHostCoordinator,
     | 'closeProjectForHostTransfer'
     | 'completeProjectHostTransfer'
     | 'hostCaSigner'
@@ -92,7 +93,7 @@ export interface HostTransferModuleOptions {
     | 'stopProvisionalTransfer'
   >;
   readonly createControlClient?: (
-    membership: CollabLocalLanMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
   ) => HostTransferControlPort;
   readonly createTargetTransport?: () => HostTransferTargetTransportPort;
   readonly installTransferTarget: IncomingHostTransferPackageOptions['installAuthority'];
@@ -213,7 +214,7 @@ export class HostTransferModule {
     return new OutgoingHostTransferRuntime(
       input.projectId,
       transferId => {
-        const admission = new LanHostTransferAdmission(
+        const admission = new LANHostTransferAdmission(
           input.projectId,
           transferId,
           this.options.lanHost,
@@ -226,6 +227,7 @@ export class HostTransferModule {
           this.createAuthority(input),
           admission,
           new NativeHostTransferPackagePreparation({
+            now: this.options.now,
             resourceAdmission: operation => this.options.projects.withAuthorityDirectory(input.authority.resource, operation),
             authorityDirectory: input.authority.authorityDirectory,
             database: input.authority.database,
@@ -234,10 +236,11 @@ export class HostTransferModule {
             runner: input.git.runner,
           }),
           this.#createTargetTransport(),
-          new LanHostTransferSourceIdentity(this.options.lanHost, this.options.projects),
+          new LANHostTransferSourceIdentity(this.options.lanHost, this.options.projects),
           this.#createProjection(input.git),
           this.recovery,
           {
+            now: this.options.now,
             installationKey: this.options.installationKey,
             sourceResourceId: input.authority.resource.resourceId,
             settleImportedClaims: () => this.options.settleImportedClaims?.(input.authority.resource) ?? Promise.resolve(),
@@ -250,11 +253,11 @@ export class HostTransferModule {
   }
 
   async #createIncomingCoordinator(
-    membership: CollabLocalLanMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
   ): Promise<IncomingHostTransferCoordinator> {
     const git = await this.options.requireGitFoundation();
     const folder = projectsFolder(membership);
-    const preparation = new LanIncomingHostTransferPreparation({
+    const preparation = new LANIncomingHostTransferPreparation({
       lanHost: this.options.lanHost,
       loadMembership: projectId => this.options.projects.loadMembership(projectId),
       projectsFolder: folder,
@@ -285,6 +288,7 @@ export class HostTransferModule {
       this.#createProjection(git),
       this.recovery,
       {
+        now: this.options.now,
         installationKey: this.options.installationKey,
         syncProjection: this.options.syncProjection,
       },
@@ -293,7 +297,7 @@ export class HostTransferModule {
     return coordinator;
   }
 
-  #createControlClient(membership: CollabLocalLanMembershipRecord): HostTransferControlPort {
+  #createControlClient(membership: CollabLocalLANMembershipRecord): HostTransferControlPort {
     if (this.options.createControlClient) return this.options.createControlClient(membership);
     const endpoint = membership.authority.endpoint;
     const caCertificatePem = membership.authority.hostCaCertificatePem;
@@ -301,7 +305,7 @@ export class HostTransferModule {
     if (!endpoint || !caCertificatePem || !caFingerprint) {
       throw compositionError('host-transfer-trust-missing');
     }
-    return new HostTransferControlClient(new PinnedCollabHttpClient({
+    return new HostTransferControlClient(new PinnedCollabHTTPClient({
       caCertificatePem,
       caFingerprint,
       endpoint,
@@ -313,6 +317,7 @@ export class HostTransferModule {
     git: HostTransferModuleGitFoundation,
   ): LocalHostTransferProjection {
     return new LocalHostTransferProjection({
+      now: this.options.now,
       authorityProjectionTransitions: this.options.authorityProjectionTransitions,
       loadMembership: projectId => this.options.projects.loadMembership(projectId),
       resolveWorkspace: workspacePath => (

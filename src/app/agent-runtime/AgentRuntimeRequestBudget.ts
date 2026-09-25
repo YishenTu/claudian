@@ -2,7 +2,7 @@ import {
   AGENT_RUNTIME_RPC_ID_MAX_LENGTH,
   type AgentRuntimeOperationDescriptor,
   type AgentRuntimeValueSchema,
-} from './AgentRuntimeRpc';
+} from './AgentRuntimeRPC';
 
 /** Covers compact JSON for every advertised operation, plus framing whitespace. */
 export function agentRuntimeRequestBudget(operations: readonly AgentRuntimeOperationDescriptor[]): number {

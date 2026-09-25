@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import { createHostTransferPackageManifest } from '@/app/collab/host-transfer/HostTransferPackage';
 import {
   createIncomingHostTransferIntentRecord,
@@ -8,7 +10,7 @@ import {
   IncomingHostTransferCoordinator,
 } from '@/app/collab/host-transfer/IncomingHostTransferCoordinator';
 
-const NOW = '2026-08-08T00:00:00.000Z';
+const NOW = testTime({ days: -19 });
 const TARGET_CA = '-----BEGIN CERTIFICATE-----\nTARGET\n-----END CERTIFICATE-----\n';
 const TARGET_FINGERPRINT = 'b'.repeat(64);
 const MANIFEST_DIGEST = 'c'.repeat(64);
@@ -397,7 +399,7 @@ describe('IncomingHostTransferCoordinator', () => {
     await completion.afterResponseFlushed();
     expect(scheduledReceiptExpiry).not.toBeNull();
 
-    currentNow = '2026-08-09T00:00:00.000Z';
+    currentNow = testTime({ days: -18 });
     await scheduledReceiptExpiry!();
 
     expect(preparation.confirmTerminalReceipt).toHaveBeenCalledWith(record);

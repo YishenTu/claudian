@@ -1,7 +1,7 @@
 import { isIP } from 'node:net';
 
 import { type GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
-import { cloudProjectGitRemoteUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { cloudProjectGitRemoteURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CollabGitOriginContext {
@@ -30,7 +30,7 @@ export interface CollabAuthorityTransferOriginTransition
   readonly retainedBindings?: readonly { readonly remoteUrl: string; readonly serverUrl: string | null }[];
 }
 
-function isGeneratedLanHostRemoteUrl(remoteUrl: string, projectId: string): boolean {
+function isGeneratedLANHostRemoteURL(remoteUrl: string, projectId: string): boolean {
   let parsed: URL;
   try {
     parsed = new URL(remoteUrl);
@@ -47,9 +47,9 @@ function isGeneratedLanHostRemoteUrl(remoteUrl: string, projectId: string): bool
     && parsed.pathname === `/v1/git/${projectId}/repository.git`;
 }
 
-function isRepairableLanHostRemoteUrl(remoteUrl: string, projectId: string): boolean {
+function isRepairableLANHostRemoteURL(remoteUrl: string, projectId: string): boolean {
   return remoteUrl === `https://127.0.0.1:1/claudian-collab/host-stopped/${projectId}`
-    || isGeneratedLanHostRemoteUrl(remoteUrl, projectId);
+    || isGeneratedLANHostRemoteURL(remoteUrl, projectId);
 }
 
 function originError(reason: string): CollabError {
@@ -77,8 +77,8 @@ export async function rotateTrustedCollabOrigin(
   transition: CollabTrustedOriginTransition,
 ): Promise<void> {
   if (
-    !isGeneratedLanHostRemoteUrl(transition.oldRemoteUrl, transition.projectId)
-    || !isGeneratedLanHostRemoteUrl(transition.newRemoteUrl, transition.projectId)
+    !isGeneratedLANHostRemoteURL(transition.oldRemoteUrl, transition.projectId)
+    || !isGeneratedLANHostRemoteURL(transition.newRemoteUrl, transition.projectId)
   ) {
     throw originError('collab-origin-transition-invalid');
   }
@@ -92,7 +92,7 @@ export async function rotateTrustedCollabOrigin(
   const currentUrl = urls[0];
   if (
     currentUrl === undefined
-    || !isRepairableLanHostRemoteUrl(currentUrl, transition.projectId)
+    || !isRepairableLANHostRemoteURL(currentUrl, transition.projectId)
   ) {
     throw originError('collab-origin-transition-mismatch');
   }
@@ -106,11 +106,11 @@ export async function rotateCloudRelocationOrigin(
   let expectedOldRemoteUrl: string;
   let expectedNewRemoteUrl: string;
   try {
-    expectedOldRemoteUrl = cloudProjectGitRemoteUrl(
+    expectedOldRemoteUrl = cloudProjectGitRemoteURL(
       transition.oldServerUrl,
       transition.projectId,
     );
-    expectedNewRemoteUrl = cloudProjectGitRemoteUrl(
+    expectedNewRemoteUrl = cloudProjectGitRemoteURL(
       transition.newServerUrl,
       transition.projectId,
     );
@@ -135,11 +135,11 @@ export async function rotateAuthorityTransferOrigin(
   git: Pick<GitRepositoryService, 'addRemote' | 'listRemoteUrls'>,
   transition: CollabAuthorityTransferOriginTransition,
 ): Promise<void> {
-  const sourceIsLan = transition.oldServerUrl === null && isGeneratedLanHostRemoteUrl(
+  const sourceIsLan = transition.oldServerUrl === null && isGeneratedLANHostRemoteURL(
     transition.oldRemoteUrl,
     transition.projectId,
   );
-  const targetIsLan = transition.newServerUrl === null && isGeneratedLanHostRemoteUrl(
+  const targetIsLan = transition.newServerUrl === null && isGeneratedLANHostRemoteURL(
     transition.newRemoteUrl,
     transition.projectId,
   );
@@ -148,12 +148,12 @@ export async function rotateAuthorityTransferOrigin(
   let targetIsCloud: boolean;
   try {
     sourceIsCloud = transition.oldServerUrl !== null
-      && transition.oldRemoteUrl === cloudProjectGitRemoteUrl(
+      && transition.oldRemoteUrl === cloudProjectGitRemoteURL(
         transition.oldServerUrl,
         transition.projectId,
       );
     targetIsCloud = transition.newServerUrl !== null
-      && transition.newRemoteUrl === cloudProjectGitRemoteUrl(
+      && transition.newRemoteUrl === cloudProjectGitRemoteURL(
         transition.newServerUrl,
         transition.projectId,
       );
@@ -177,17 +177,17 @@ export async function rotateAuthorityTransferOrigin(
     && urls[0] === `https://127.0.0.1:1/claudian-collab/host-stopped/${transition.projectId}`;
   // Git may have reached an earlier authenticated LAN locator before the
   // corresponding membership write; a listener move does not undo that cutover.
-  const targetWasAlreadyLan = !transition.exactBindings && targetIsLan && isGeneratedLanHostRemoteUrl(urls[0], transition.projectId);
+  const targetWasAlreadyLan = !transition.exactBindings && targetIsLan && isGeneratedLANHostRemoteURL(urls[0], transition.projectId);
   // LAN locators can move while installation trust stays fixed. Recovery never contacts this old origin.
   const hasRetainedLanBinding = transition.retainedBindings?.some(binding => binding.serverUrl === null
-    && isGeneratedLanHostRemoteUrl(binding.remoteUrl, transition.projectId)) ?? false;
+    && isGeneratedLANHostRemoteURL(binding.remoteUrl, transition.projectId)) ?? false;
   const recoveredLanOrigin = !transition.exactBindings && (sourceIsLan || hasRetainedLanBinding)
-    && isGeneratedLanHostRemoteUrl(urls[0], transition.projectId);
+    && isGeneratedLANHostRemoteURL(urls[0], transition.projectId);
   const retainedOrigin = transition.retainedBindings?.some(binding => {
     if (urls[0] !== binding.remoteUrl) return false;
     try {
-      return binding.serverUrl === null ? isGeneratedLanHostRemoteUrl(binding.remoteUrl, transition.projectId)
-        : binding.remoteUrl === cloudProjectGitRemoteUrl(binding.serverUrl, transition.projectId);
+      return binding.serverUrl === null ? isGeneratedLANHostRemoteURL(binding.remoteUrl, transition.projectId)
+        : binding.remoteUrl === cloudProjectGitRemoteURL(binding.serverUrl, transition.projectId);
     } catch { return false; }
   }) ?? false;
   if (urls[0] !== transition.oldRemoteUrl && !sourceWasFencedLanHost && !targetWasAlreadyLan && !retainedOrigin && !recoveredLanOrigin) {

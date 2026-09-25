@@ -1,8 +1,8 @@
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
 import { assertOpencodeSessionCompatibility, detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
-import { DefaultOpencodeAcpSessionKernel } from './OpencodeAcpSessionKernel';
-import { OpencodeHttpSessionKernel } from './OpencodeHttpSessionKernel';
+import { DefaultOpencodeACPSessionKernel } from './OpencodeACPSessionKernel';
+import { OpencodeHTTPSessionKernel } from './OpencodeHTTPSessionKernel';
 import type { OpencodeKernelConnectOptions,OpencodeSessionKernel, OpencodeSessionKernelOptions } from './OpencodeSessionContract';
 
 /** Chooses the native transport once per independent execution lease. */
@@ -24,8 +24,8 @@ export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
     if (this.disposed) throw new Error('OpenCode session is disposed');
     assertOpencodeSessionCompatibility(this.options.nativeVersion, version);
     this.kernel = version === 2
-      ? new OpencodeHttpSessionKernel(this.options, cliPath, environment, this.serverService)
-      : new DefaultOpencodeAcpSessionKernel(this.options);
+      ? new OpencodeHTTPSessionKernel(this.options, cliPath, environment, this.serverService)
+      : new DefaultOpencodeACPSessionKernel(this.options);
     await this.kernel.connect(options);
   }
 

@@ -6,7 +6,7 @@ import type {
   SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
+import { loadClaudeAgentQuery } from '../loadClaudeAgentSDK';
 import { MessageChannel } from '../runtime/ClaudeMessageChannel';
 import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
 import type { ClaudeEncodedExecutionRequest } from './ClaudeExecutionRequestEncoder';

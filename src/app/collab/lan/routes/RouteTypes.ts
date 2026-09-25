@@ -5,7 +5,7 @@ import type { CreateProjectRecoveryLinkRequest, CreateProjectRecoveryLinkRespons
 import type {
   CollabControlOperationMatch,
 } from '@/app/collab/lan/CollabControlOperationBindings';
-import type { LanCollabInvitation as CollabInvitation } from '@/app/collab/lan/InvitationCodec';
+import type { LANCollabInvitation as CollabInvitation } from '@/app/collab/lan/InvitationCodec';
 import type {
   AcknowledgeRetirementRequest,
   AcknowledgeRetirementResponse,
@@ -15,14 +15,14 @@ import type {
   CreateJoinAttemptRequest,
   GetHostTransitionsRequest,
   GetHostTransitionsResponse,
-  LanCollabJoinAttempt as CollabJoinAttempt,
+  LANCollabJoinAttempt as CollabJoinAttempt,
   MembershipTerminationResponse,
   RefreshEndpointResponse,
   RemoveMemberRequest,
   RevokeInvitationRequest,
-} from '@/app/collab/lan/LanCollabControlOperations';
+} from '@/app/collab/lan/LANCollabControlOperations';
 import type { LifecycleGatewayPort } from '@/app/collab/lan/lifecycle/LifecycleGateway';
-import type { CollabLanProjectSnapshot, CollabRetirementResult } from '@/core/collab';
+import type { CollabLANProjectSnapshot, CollabRetirementResult } from '@/core/collab';
 
 export interface CollabControlProjectService {
   createProjectRecoveryLink?(memberCredential: string, request: CreateProjectRecoveryLinkRequest): Promise<CreateProjectRecoveryLinkResponse>;
@@ -38,7 +38,7 @@ export interface CollabControlProjectService {
   activateJoinAttempt(
     memberCredential: string,
     request: ActivateJoinAttemptRequest,
-  ): Promise<CollabLanProjectSnapshot>;
+  ): Promise<CollabLANProjectSnapshot>;
   authenticateMemberCredential(
     memberCredential: string,
     statuses: readonly CollabMemberStatus[],
@@ -106,7 +106,7 @@ export interface CollabControlProjectService {
     memberCredential: string,
     request: GetRequestRequest,
   ): Promise<CollabRequestDetail>;
-  readSnapshot(memberCredential: string): Promise<CollabLanProjectSnapshot>;
+  readSnapshot(memberCredential: string): Promise<CollabLANProjectSnapshot>;
   reopenTicket(
     memberCredential: string,
     request: ChangeTicketStatusRequest,

@@ -12,7 +12,7 @@ import { AuthorityIdempotencyRepository } from '@/app/collab/authority/Authority
 import { HostTransferAuthorityService } from '@/app/collab/authority/HostTransferAuthorityService';
 import { ManagerResponsibilityService } from '@/app/collab/authority/ManagerResponsibilityService';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import {
   type HostedLifecycleControlPort,
   type HostedMembershipAdminPort,
@@ -124,7 +124,7 @@ describe('HostedProjectControlService', () => {
 
   it('returns current lifecycle data when an offer changes during a snapshot read', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'claudian-hosted-snapshot-'));
-    const database = new SqlJsProjectDatabase(root, { loadSqlJs: () => initSqlJs() });
+    const database = new SQLJSProjectDatabase(root, { loadSqlJs: () => initSqlJs() });
     try {
       await database.open();
       const credential = Buffer.alloc(32, 1).toString('base64url');

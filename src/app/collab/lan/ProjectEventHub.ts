@@ -1,12 +1,12 @@
 import { type CollabProjectId, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
 import { type AuthorityEventRecord,AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
-import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import type { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
 import {
-  type LanCollabEvent as CollabEvent,
-  type LanCollabEventKind as CollabEventKind,
-} from '@/app/collab/lan/LanCollabEvent';
+  type LANCollabEvent as CollabEvent,
+  type LANCollabEventKind as CollabEventKind,
+} from '@/app/collab/lan/LANCollabEvent';
 import type { CollabRetirementResult } from '@/core/collab';
 
 const OPEN_READY_STATE = 1;
@@ -88,11 +88,11 @@ function eventKind(kind: string): CollabEventKind | null {
   return null;
 }
 
-export class SqlJsProjectEventSource implements ProjectEventSource {
+export class SQLJSProjectEventSource implements ProjectEventSource {
   private readonly events = new AuthorityEventRepository();
 
   constructor(
-    private readonly database: SqlJsProjectDatabase,
+    private readonly database: SQLJSProjectDatabase,
     private readonly projectId: CollabProjectId,
   ) {}
 

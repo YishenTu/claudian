@@ -1,4 +1,5 @@
 import { type CollabRequestDetail } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import type { GitNetworkEnvironment } from '@/app/collab/git/GitCommandRunner';
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
@@ -234,7 +235,7 @@ function detail(reviewCondition: 'clean' | 'conflicting' | 'stale'): CollabReque
     currentMainOid: MAIN,
     request: {
       commentCount: 0,
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       description: 'Published change',
       firstBaseOid: BASE,
       id: 'request-a',
@@ -243,7 +244,7 @@ function detail(reviewCondition: 'clean' | 'conflicting' | 'stale'): CollabReque
       revision: 1,
       status: 'open',
       ticketRelations: [],
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     },
     reviewCondition,
     reviewedHeadOid: HEAD,

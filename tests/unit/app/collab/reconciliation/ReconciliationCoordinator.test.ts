@@ -1,4 +1,5 @@
 import { type CollabChangeRequest } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
@@ -49,7 +50,7 @@ function repositorySnapshot(
 function request(headOid = PERSONAL): CollabChangeRequest {
   return {
     commentCount: 0,
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     description: 'Published change',
     firstBaseOid: MAIN,
     id: 'request-a',
@@ -58,14 +59,14 @@ function request(headOid = PERSONAL): CollabChangeRequest {
     revision: 1,
     status: 'open',
     ticketRelations: [],
-    updatedAt: '2026-08-08T00:00:00.000Z',
+    updatedAt: testTime({ days: -19 }),
   };
 }
 
 function coordination(openRequest?: CollabChangeRequest): CollabProjectSnapshot {
   const member = {
-    activatedAt: '2026-08-08T00:00:00.000Z',
-    createdAt: '2026-08-08T00:00:00.000Z',
+    activatedAt: testTime({ days: -19 }),
+    createdAt: testTime({ days: -19 }),
     displayName: 'Member A',
     id: CONTEXT.memberId,
     personalRef: CONTEXT.personalRef,
@@ -80,7 +81,7 @@ function coordination(openRequest?: CollabChangeRequest): CollabProjectSnapshot 
     openRequests: openRequest ? [openRequest] : [],
     project: {
       authorityKind: 'lan',
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       hostMemberId: 'member-host',
       id: CONTEXT.projectId,
       mainOid: MAIN,
@@ -145,7 +146,7 @@ class FakePublicationState implements ReconciliationPublicationStatePort {
     operation: null,
     projectId: CONTEXT.projectId,
     schemaVersion: COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
-    updatedAt: '2026-08-08T00:00:00.000Z',
+    updatedAt: testTime({ days: -19 }),
   };
   load = jest.fn(async () => this.current);
   save = jest.fn(async (record: CollabPublicationStateRecord) => {
@@ -280,11 +281,11 @@ describe('ReconciliationCoordinator', () => {
       operation: {
         candidateOid: '5'.repeat(40),
         contributionHeadOid: PERSONAL,
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         currentMainOid: MAIN,
         operationId: 'publish-a',
         phase: 'review-ready',
-        updatedAt: '2026-08-08T00:00:00.000Z',
+        updatedAt: testTime({ days: -19 }),
       },
     };
 

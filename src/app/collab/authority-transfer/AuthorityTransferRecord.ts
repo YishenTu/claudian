@@ -76,7 +76,7 @@ function exactKeys(value: UnknownRecord, keys: ReadonlySet<string>): boolean {
   return actual.length === keys.size && actual.every(key => keys.has(key));
 }
 
-function decodeSourceLanEndpoint(value: unknown): string {
+function decodeSourceLANEndpoint(value: unknown): string {
   if (typeof value !== 'string') throw new TypeError('Invalid authority transfer source endpoint');
   let endpoint: URL;
   try {
@@ -202,7 +202,7 @@ export function decodeAuthorityTransferRecord(value: unknown): AuthorityTransfer
       );
   const sourceLanEndpoint = value.sourceLanEndpoint === null
     ? null
-    : decodeSourceLanEndpoint(value.sourceLanEndpoint);
+    : decodeSourceLANEndpoint(value.sourceLanEndpoint);
   const relinquishmentProof = status.relinquishmentProof;
   if (
     value.projectId !== status.projectId

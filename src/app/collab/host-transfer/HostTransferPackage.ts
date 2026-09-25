@@ -7,7 +7,7 @@ import { type CollabGitOid, type CollabIsoTimestamp, type CollabMemberId, type C
 
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
-import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 

@@ -66,18 +66,18 @@ import {
 import {
   createPiEventNormalizationState,
   getPiTerminalErrorMessage,
-  normalizePiRpcEvent,
+  normalizePiRPCEvent,
   type PiEventNormalizationState,
 } from '../normalizations/piEventNormalization';
 import { buildPiUsageInfo } from '../runtime/buildPiUsageInfo';
-import type { PiExtensionUiRenderer } from '../runtime/PiExtensionUiBridge';
+import type { PiExtensionUIRenderer } from '../runtime/PiExtensionUIBridge';
 import {
   buildPiLaunchSpec,
   type PiLaunchSpec,
 } from '../runtime/PiLaunchSpec';
 import { assertPiModelAvailable } from '../runtime/PiModelAvailability';
-import { buildPiSetModelPayload } from '../runtime/PiRpcPayloads';
-import type { PiRpcRecord } from '../runtime/PiRpcTransport';
+import { buildPiSetModelPayload } from '../runtime/PiRPCPayloads';
+import type { PiRPCRecord } from '../runtime/PiRPCTransport';
 import {
   getPiProviderSettings,
   type PiProviderSettings,
@@ -95,7 +95,7 @@ import {
 interface PiExecutionSessionOptions {
   readonly createForkSessionFile: typeof createPiForkSessionFile;
   readonly createKernel: PiExecutionKernelFactory;
-  readonly extensionUiRenderer: PiExtensionUiRenderer | null;
+  readonly extensionUiRenderer: PiExtensionUIRenderer | null;
   readonly rollbackForkSessionFile: typeof rollbackCreatedPiForkSessionFile;
 }
 
@@ -733,7 +733,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   #handleRpcEvent(
     kernel: PiExecutionKernel,
     generation: number,
-    event: PiRpcRecord,
+    event: PiRPCRecord,
   ): void {
     if (!this.#isCurrentKernel(kernel, generation)) return;
     const active = this.activeRun;
@@ -782,7 +782,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
 
-    const chunks = normalizePiRpcEvent(event, this.normalizationState);
+    const chunks = normalizePiRPCEvent(event, this.normalizationState);
     if (chunks.length > 0) this.#ensureAccepted(active);
     for (const chunk of chunks) {
       this.handleStreamChunk(kernel, generation, chunk);

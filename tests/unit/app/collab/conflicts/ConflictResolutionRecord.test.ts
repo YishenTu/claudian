@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION,
   type ConflictResolutionRecord,
@@ -15,7 +17,7 @@ function record(
   overrides: Partial<ConflictResolutionRecord> = {},
 ): ConflictResolutionRecord {
   return {
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     descriptor: {
       conflicts: [
         { kind: 'text', path: 'note.md' },
@@ -32,7 +34,7 @@ function record(
     projectId: 'project-a',
     resultCommitOid: null,
     schemaVersion: COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION,
-    updatedAt: '2026-08-08T00:00:01.000Z',
+    updatedAt: testTime({ days: -19, seconds: 1 }),
     ...overrides,
   };
 }

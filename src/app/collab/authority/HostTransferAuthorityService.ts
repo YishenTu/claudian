@@ -10,8 +10,8 @@ import {
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import type {
   AuthorityDatabaseConnection,
-  SqlJsMutationResult,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSMutationResult,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import type { HostTransferDurablePhase } from '@/app/collab/host-transfer/HostTransferPhaseMachine';
 import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import type { HostTransferActivationCertificate } from '@/app/collab/host-transfer/HostTrustTransitionService';
@@ -21,7 +21,7 @@ import type {
   CancelHostTransferRequest,
   CreateHostTransferRequest,
   DeclineHostTransferRequest,
-} from '@/app/collab/lan/LanCollabControlOperations';
+} from '@/app/collab/lan/LANCollabControlOperations';
 import type { CollabHostTransferSummary, CollabHostTrustTransitionProof } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -32,7 +32,7 @@ export interface HostTransferAuthorityDatabasePort {
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T>;
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
-  ): Promise<SqlJsMutationResult<T>>;
+  ): Promise<SQLJSMutationResult<T>>;
 }
 
 export interface HostTransferAuthority {

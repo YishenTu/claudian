@@ -15,9 +15,9 @@ import { AuthorityMetadataRepository } from '@/app/collab/authority/AuthorityMet
 import { MemberRecoveryCredentialRepository } from '@/app/collab/authority/MemberRecoveryCredentialRepository';
 import type {
   AuthorityDatabaseConnection,
-  AuthoritySqlRow,
-  AuthoritySqlValue,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  AuthoritySQLRow,
+  AuthoritySQLValue,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import {
   type AuthorityTransferImportedTargetIdentity,
   decodeAuthorityTransferImportedTargetIdentity,
@@ -44,7 +44,7 @@ function checkpointError(reason: string): CollabError {
   });
 }
 
-function runCheckpointSql(
+function runCheckpointSQL(
   connection: AuthorityDatabaseConnection,
   sql: string,
   params: Parameters<AuthorityDatabaseConnection['run']>[1],
@@ -57,14 +57,14 @@ function runCheckpointSql(
   }
 }
 
-function text(row: AuthoritySqlRow, field: string, nullable = false): string | null {
+function text(row: AuthoritySQLRow, field: string, nullable = false): string | null {
   const value = row[field];
   if (nullable && value === null) return null;
   if (typeof value !== 'string') throw checkpointError('checkpoint-row-invalid');
   return value;
 }
 
-function integer(row: AuthoritySqlRow, field: string, minimum = 0): number {
+function integer(row: AuthoritySQLRow, field: string, minimum = 0): number {
   const value = row[field];
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) {
     throw checkpointError('checkpoint-row-invalid');
@@ -72,27 +72,27 @@ function integer(row: AuthoritySqlRow, field: string, minimum = 0): number {
   return value;
 }
 
-function status(value: AuthoritySqlValue): 'active' | 'left' | 'revoked' {
+function status(value: AuthoritySQLValue): 'active' | 'left' | 'revoked' {
   if (value !== 'active' && value !== 'left' && value !== 'revoked') {
     throw checkpointError('checkpoint-member-status-invalid');
   }
   return value;
 }
 
-function role(value: AuthoritySqlValue): 'manager' | 'member' {
+function role(value: AuthoritySQLValue): 'manager' | 'member' {
   if (value !== 'manager' && value !== 'member') {
     throw checkpointError('checkpoint-member-role-invalid');
   }
   return value;
 }
 
-function sorted(rows: readonly AuthoritySqlRow[], field: string): readonly AuthoritySqlRow[] {
+function sorted(rows: readonly AuthoritySQLRow[], field: string): readonly AuthoritySQLRow[] {
   return [...rows].sort((left, right) => (
     String(left[field]).localeCompare(String(right[field]), 'en-US')
   ));
 }
 
-function mentionRecordId(row: AuthoritySqlRow): string {
+function mentionRecordId(row: AuthoritySQLRow): string {
   const identity = [
     text(row, 'ticket_id'),
     text(row, 'source_kind'),
@@ -516,7 +516,7 @@ export class AuthorityTransferCheckpointRepository {
     for (const record of members) {
       if (record.kind !== 'member') continue;
       const bound = record.value.memberId === input.targetHostMemberId;
-      runCheckpointSql(connection, `
+      runCheckpointSQL(connection, `
         INSERT INTO members (
           member_id, display_name, personal_ref, role, status, access_state,
           credential_hash, join_attempt_id, created_at, activated_at, revoked_at
@@ -539,7 +539,7 @@ export class AuthorityTransferCheckpointRepository {
     }
 
     new AuthorityMetadataRepository().installGeneration(connection, target.generation);
-    runCheckpointSql(connection, `
+    runCheckpointSQL(connection, `
       INSERT INTO project (
         singleton, project_id, name, state, host_member_id,
         manager_set_generation, main_ref, created_at, snapshot_generation
@@ -560,7 +560,7 @@ export class AuthorityTransferCheckpointRepository {
         case 'member':
           break;
         case 'request':
-          runCheckpointSql(connection, `
+          runCheckpointSQL(connection, `
             INSERT INTO change_requests (
               request_id, member_id, status, first_base_oid, latest_head_oid,
               merged_oid, created_at, updated_at, description, revision
@@ -579,7 +579,7 @@ export class AuthorityTransferCheckpointRepository {
           ], 'checkpoint-import-request-failed');
           break;
         case 'request-comment':
-          runCheckpointSql(connection, `
+          runCheckpointSQL(connection, `
             INSERT INTO comments (
               comment_id, request_id, author_member_id, body, created_at
             ) VALUES (?, ?, ?, ?, ?)
@@ -596,7 +596,7 @@ export class AuthorityTransferCheckpointRepository {
             candidate.kind === 'ticket-comment'
             && candidate.value.ticketId === record.value.ticketId
           )).length;
-          runCheckpointSql(connection, `
+          runCheckpointSQL(connection, `
             INSERT INTO tickets (
               ticket_number, ticket_id, title, body, status, author_member_id,
               revision, comment_count, created_at, updated_at, closed_at,
@@ -619,7 +619,7 @@ export class AuthorityTransferCheckpointRepository {
           break;
         }
         case 'ticket-comment':
-          runCheckpointSql(connection, `
+          runCheckpointSQL(connection, `
             INSERT INTO ticket_comments (
               comment_id, ticket_id, author_member_id, body, created_at
             ) VALUES (?, ?, ?, ?, ?)
@@ -632,7 +632,7 @@ export class AuthorityTransferCheckpointRepository {
           ], 'checkpoint-import-ticket-comment-failed');
           break;
         case 'ticket-relation':
-          runCheckpointSql(connection, `
+          runCheckpointSQL(connection, `
             INSERT INTO request_ticket_relations (
               relation_id, request_id, ticket_id, commit_oid, kind, state,
               created_by_member_id, created_at, updated_at, accepted_at,
@@ -653,7 +653,7 @@ export class AuthorityTransferCheckpointRepository {
           ], 'checkpoint-import-ticket-relation-failed');
           break;
         case 'ticket-mention':
-          runCheckpointSql(connection, `
+          runCheckpointSQL(connection, `
             INSERT INTO ticket_mentions (
               ticket_id, mentioned_member_id, source_kind, source_id, created_at
             ) VALUES (?, ?, ?, ?, ?)

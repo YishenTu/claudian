@@ -7,13 +7,13 @@ import {
 import { type App, Modal } from 'obsidian';
 
 import {
-  type CollabCloudToLanTargetPreparationDescriptor,
-  type CollabCloudToLanTransferHandle,
-  type CollabCloudToLanTransferView,
+  type CollabCloudToLANTargetPreparationDescriptor,
+  type CollabCloudToLANTransferHandle,
+  type CollabCloudToLANTransferView,
   type CollabFeaturePort,
   type CollabInvitationView,
-  type CollabLanProjectSnapshot,
-  type CollabLanToCloudTransferView,
+  type CollabLANProjectSnapshot,
+  type CollabLANToCloudTransferView,
   type CollabLocalCleanupChoice,
   type CollabLocalProjectSummary,
   type CollabManagementOperationView,
@@ -22,15 +22,15 @@ import {
   type CollabProjectCapabilities,
   type CollabProjectSnapshot,
   type CollabResult,
-  isCollabLanProjectSnapshot,
+  isCollabLANProjectSnapshot,
 } from '@/core/collab';
 import { HostDestinationModal } from '@/features/collab/modals/project/HostDestinationModal';
 import { HostDiagnosticsModal } from '@/features/collab/modals/project/HostDiagnosticsModal';
 import {
-  type LanHostDiagnostics,
-  LanHostSection,
-  type LanHostTransferAction,
-} from '@/features/collab/modals/project/LanHostSection';
+  type LANHostDiagnostics,
+  LANHostSection,
+  type LANHostTransferAction,
+} from '@/features/collab/modals/project/LANHostSection';
 import { ProjectInvitationModal } from '@/features/collab/modals/project/ProjectInvitationModal';
 import { ProjectManagementSession } from '@/features/collab/modals/project/ProjectManagementSession';
 import { t } from '@/i18n/i18n';
@@ -121,7 +121,7 @@ export class ProjectManagementModal extends Modal {
   #hostDestinationModal: HostDestinationModal | null = null;
   #hostDiagnosticsModal: HostDiagnosticsModal | null = null;
   #hostActionEl: HTMLDivElement | null = null;
-  #hostSection: LanHostSection | null = null;
+  #hostSection: LANHostSection | null = null;
   #membersSectionEl: HTMLDivElement | null = null;
   #invitationActionsEl: HTMLDivElement | null = null;
   #invitationModal: ProjectInvitationModal | null = null;
@@ -147,18 +147,18 @@ export class ProjectManagementModal extends Modal {
   get #managerOffers(): readonly CollabManagerResponsibilityOfferSummary[] { return this.#session.data?.managerOffers ?? []; }
   get #managementState(): 'loading' | 'ready' | 'unavailable' { return this.#session.status; }
   get #operationPending(): boolean { return this.#session.busy; }
-  get #cloudTransferView(): CollabCloudToLanTransferView | null { return this.#session.recovery.cloudToLan; }
-  get #cloudTargetDescriptor(): CollabCloudToLanTargetPreparationDescriptor | null {
+  get #cloudTransferView(): CollabCloudToLANTransferView | null { return this.#session.recovery.cloudToLan; }
+  get #cloudTargetDescriptor(): CollabCloudToLANTargetPreparationDescriptor | null {
     return this.#cloudTransferView?.target?.descriptor ?? this.#cloudTransferView?.manager?.descriptor ?? null;
   }
-  get #cloudTransferHandle(): CollabCloudToLanTransferHandle | null {
+  get #cloudTransferHandle(): CollabCloudToLANTransferHandle | null {
     return this.#cloudTransferView?.manager?.handle ?? this.#cloudTransferView?.target?.handle ?? null;
   }
   get #cloudTransferStatus(): CollabAuthorityTransferStatus | null {
     return this.#cloudTransferView?.manager?.status ?? this.#cloudTransferView?.target?.status ?? null;
   }
-  get #lanToCloudProposal(): CollabLanToCloudTransferView | null { return this.#session.recovery.lanToCloud; }
-  set #lanToCloudProposal(value: CollabLanToCloudTransferView | null) { this.#session.updateRecovery({ lanToCloud: value }); }
+  get #lanToCloudProposal(): CollabLANToCloudTransferView | null { return this.#session.recovery.lanToCloud; }
+  set #lanToCloudProposal(value: CollabLANToCloudTransferView | null) { this.#session.updateRecovery({ lanToCloud: value }); }
   get #managementOperation(): CollabManagementOperationView | null {
     const operation = this.#session.recovery.operation;
     return operation?.action === 'reissue-member-claim' && operation.status === 'result-retained'
@@ -302,7 +302,7 @@ export class ProjectManagementModal extends Modal {
         return;
       }
       this.#hostActionEl = createDiv({ cls: 'claudian-collab-project-host-action' });
-      this.#hostSection = new LanHostSection(this.#hostActionEl, {
+      this.#hostSection = new LANHostSection(this.#hostActionEl, {
         state: this.#session.host,
         transferHost: this.#hostTransferAction(),
         onAction: action => { void this.#session.runHostAction(action); },
@@ -326,7 +326,7 @@ export class ProjectManagementModal extends Modal {
     return this.#members.filter(member => member.status === 'active' && member.id !== this.#hostMemberId);
   }
 
-  #hostTransferAction(): LanHostTransferAction | undefined {
+  #hostTransferAction(): LANHostTransferAction | undefined {
     if (!this.#hostTransferMembers().length) return undefined;
     return {
       disabled: this.#managementActionBlocked(),
@@ -356,7 +356,7 @@ export class ProjectManagementModal extends Modal {
     modal.open();
   }
 
-  #openHostDiagnostics(diagnostics: LanHostDiagnostics): void {
+  #openHostDiagnostics(diagnostics: LANHostDiagnostics): void {
     if (this.#hostDiagnosticsModal) return;
     const modal = new HostDiagnosticsModal(this.#appInstance, {
       copyText: this.#options.copyText,
@@ -370,7 +370,7 @@ export class ProjectManagementModal extends Modal {
     modal.open();
   }
 
-  #applyCloudTransferView(view: CollabCloudToLanTransferView | null): void {
+  #applyCloudTransferView(view: CollabCloudToLANTransferView | null): void {
     this.#session.updateRecovery({ cloudToLan: view });
   }
 
@@ -1427,7 +1427,7 @@ export class ProjectManagementModal extends Modal {
     });
   }
 
-  #presentableLanToCloudProposal(): CollabLanToCloudTransferView | null {
+  #presentableLanToCloudProposal(): CollabLANToCloudTransferView | null {
     return this.#lanToCloudProposal?.status?.state === 'cancelled'
       ? null
       : this.#lanToCloudProposal;
@@ -1882,8 +1882,8 @@ export class ProjectManagementModal extends Modal {
     return this.#members.find(member => member.id === this.#currentMemberId);
   }
 
-  #lanSnapshot(): CollabLanProjectSnapshot | null {
-    return this.#snapshot && isCollabLanProjectSnapshot(this.#snapshot)
+  #lanSnapshot(): CollabLANProjectSnapshot | null {
+    return this.#snapshot && isCollabLANProjectSnapshot(this.#snapshot)
       ? this.#snapshot
       : null;
   }

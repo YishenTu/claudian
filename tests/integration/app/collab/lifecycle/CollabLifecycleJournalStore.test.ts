@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
+
 import type {
   CloudPendingLeaveRecord,
   PendingLeaveRecord,
@@ -16,7 +18,7 @@ const pendingLeave = (): PendingLeaveRecord => ({
   },
   cleanupChoice: 'keep-files',
   cleanupMarkerNonce: 'n'.repeat(43),
-  createdAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
   hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----',
   hostCaFingerprint: 'a'.repeat(64),
   hostEndpoint: 'https://192.168.1.10:4321/',
@@ -28,11 +30,11 @@ const pendingLeave = (): PendingLeaveRecord => ({
   memberId: 'member-alpha',
   operationId: 'leave-alpha',
   phase: 'queued',
-  projectCreatedAt: '2026-08-12T00:00:00.000Z',
+  projectCreatedAt: testTime({ days: -15 }),
   projectId: 'project-alpha',
   projectName: 'Alpha',
   schemaVersion: 2,
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  updatedAt: testTime({ days: -14 }),
   workspacePath: 'workspace/project-alpha',
 });
 
@@ -41,7 +43,7 @@ const pendingCloudLeave = (): CloudPendingLeaveRecord => ({
   authorityKind: 'cloud',
   cleanupChoice: 'delete-files',
   cleanupMarkerNonce: 'm'.repeat(43),
-  createdAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
   idempotencyKey: 'leave-cloud-request',
   kind: 'pending-leave',
   localCleanupComplete: true,
@@ -50,7 +52,7 @@ const pendingCloudLeave = (): CloudPendingLeaveRecord => ({
   operationId: 'leave-cloud-cleanup',
   personalRef: 'refs/heads/members/member-alpha',
   phase: 'submitted',
-  projectCreatedAt: '2026-08-12T00:00:00.000Z',
+  projectCreatedAt: testTime({ days: -15 }),
   projectId: 'project-alpha',
   projectName: 'Alpha',
   request: {
@@ -64,7 +66,7 @@ const pendingCloudLeave = (): CloudPendingLeaveRecord => ({
   },
   schemaVersion: 3,
   serverUrl: 'http://127.0.0.1:8787/operator-prefix',
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  updatedAt: testTime({ days: -14 }),
   workspacePath: 'workspace/project-alpha',
 });
 
@@ -133,7 +135,7 @@ describe('CollabLifecycleJournalStore', () => {
   it('discovers applied Retired cleanup journals without a Project index', async () => {
     await store.retiredCleanups.save({
       choice: 'keep-files',
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       kind: 'local-cleanup',
       markerNonce: 'A'.repeat(43),
       memberId: 'member-one',
@@ -142,7 +144,7 @@ describe('CollabLifecycleJournalStore', () => {
       projectId: 'project-one',
       purpose: 'retire',
       schemaVersion: 1,
-      updatedAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: testTime({ days: -14 }),
       workspacePath: 'workspace/project-one',
     });
 

@@ -17,7 +17,7 @@ import type {
   IncomingHostTransferCoordinator,
   IncomingHostTransferTerminalResult,
 } from '@/app/collab/host-transfer/IncomingHostTransferCoordinator';
-import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const HOST_TRANSFER_ROUTE_PREFIX = `/v${COLLAB_HOST_TRANSFER_PROTOCOL_VERSION}/host-transfers`;
@@ -137,7 +137,7 @@ async function* takeBodyBytes(
   }
 }
 
-function writeJson(response: ServerResponse, status: number, body: unknown): void {
+function writeJSON(response: ServerResponse, status: number, body: unknown): void {
   if (response.headersSent || response.writableEnded) return;
   const bytes = Buffer.from(JSON.stringify(body), 'utf8');
   response.writeHead(status, {
@@ -207,14 +207,14 @@ export class HostTransferProvisionalRouter {
     const [, transferId, action] = match;
     const receiver = this.receivers.get(transferId);
     if (!receiver) {
-      writeJson(response, 404, { error: { code: 'project-not-found' } });
+      writeJSON(response, 404, { error: { code: 'project-not-found' } });
       return true;
     }
     try {
       requireCredential(request, receiver.credentialHash);
       if (request.method !== 'POST') throw routeError('host-transfer-method-invalid');
       if (action === 'probe') {
-        writeJson(response, 200, {
+        writeJSON(response, 200, {
           authoritySchemaVersions: [12, COLLAB_AUTHORITY_SCHEMA_VERSION],
           projectId: receiver.projectId, transferId,
         });
@@ -278,7 +278,7 @@ export class HostTransferProvisionalRouter {
           throw routeError('host-transfer-activation-binding-mismatch');
         }
         await receiver.coordinator.activate(receiver.projectId, transferId, certificate);
-        writeJson(response, 200, { activated: true, transferId });
+        writeJSON(response, 200, { activated: true, transferId });
         return true;
       }
 
@@ -329,7 +329,7 @@ export class HostTransferProvisionalRouter {
         projectId: receiver.projectId,
         transferId,
       });
-      writeJson(response, 200, {
+      writeJSON(response, 200, {
         manifestDigest: staged.manifestDigest,
         transferId,
       });
@@ -338,7 +338,7 @@ export class HostTransferProvisionalRouter {
       const collabError = error instanceof CollabError
         ? error
         : routeError('host-transfer-route-failed');
-      writeJson(response, collabError.code === 'authentication-failed' ? 401 : 422, {
+      writeJSON(response, collabError.code === 'authentication-failed' ? 401 : 422, {
         error: { code: collabError.code },
       });
       return true;
@@ -367,7 +367,7 @@ export class HostTransferProvisionalRouter {
         }
       }).catch(() => undefined);
     });
-    writeJson(response, 200, body);
+    writeJSON(response, 200, body);
   }
 }
 

@@ -1,6 +1,6 @@
 import { type CollabLanHostActivationProof, type CollabMemberId, type CollabOperationId, type CollabProjectId, decodeCollabLanHostActivationProof, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
-import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SQLJSProjectDatabase';
 import {
   assertHostTransferTransition,
   type HostTransferDurablePhase,

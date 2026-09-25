@@ -1,7 +1,7 @@
 import { formatReasoningValueLabel } from '@/core/providers/reasoning';
-import { normalizeAcpAvailableCommands } from '@/providers/acp';
+import { normalizeACPAvailableCommands } from '@/providers/acp';
 
-import { pollOpencodeUntil } from '../http/OpencodeHttpClient';
+import { pollOpencodeUntil } from '../http/OpencodeHTTPClient';
 import type { OpencodeServerLease } from '../http/OpencodeServerService';
 import type {
   OpencodeMetadataCatalogResult,
@@ -25,7 +25,7 @@ export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
     const models = await this.loadModels(ownedSignal);
     const commands = await this.read('command', ownedSignal);
     return {
-      commands: normalizeAcpAvailableCommands(commands.filter(isNamedRecord).map(command => ({
+      commands: normalizeACPAvailableCommands(commands.filter(isNamedRecord).map(command => ({
         name: command.name,
         ...(typeof command.description === 'string' ? { description: command.description } : {}),
       }))),

@@ -9,7 +9,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
-import { findCliBinaryPath } from '@/utils/cliBinaryLocator';
+import { findCLIBinaryPath } from '@/utils/cliBinaryLocator';
 
 export const MINIMUM_COLLAB_GIT_VERSION = '2.38.0' as const;
 
@@ -321,7 +321,7 @@ export class GitRuntimeResolver {
     this.platform = options.platform ?? process.platform;
     this.environment = { ...(options.environment ?? process.env) };
     this.findOnPath = options.findOnPath
-      ?? (pathEnvironment => findCliBinaryPath('git', pathEnvironment, this.platform));
+      ?? (pathEnvironment => findCLIBinaryPath('git', pathEnvironment, this.platform));
     this.conventionalCandidates = options.conventionalCandidates
       ?? (() => getConventionalGitCandidates(this.platform, this.environment));
     this.probe = options.probe ?? (candidate => probeGitRuntime(candidate, this.platform));

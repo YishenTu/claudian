@@ -11,7 +11,7 @@ import {
   ManagerResponsibilityReceiptStore,
 } from '@/app/collab/exit/LocalExitStores';
 
-const NOW = '2026-08-13T00:00:00.000Z';
+const NOW = testTime({ days: -14 });
 
 function membership(): CollabLocalMembershipRecord {
   return {
@@ -140,11 +140,11 @@ describe('Local exit stores', () => {
     } as unknown as CollabLocalProjectRepository;
     const store = new ManagerResponsibilityReceiptStore(
       repository,
-      () => new Date('2026-08-13T00:02:00.000Z'),
+      () => new Date(testTime({ days: -14, minutes: 2 })),
     );
     const offered = {
       expiresAt: testTime({ days: -14, minutes: 10 }),
-      offeredAt: '2026-08-13T00:00:00.000Z',
+      offeredAt: testTime({ days: -14 }),
       offerId: 'offer-one',
       purpose: 'manager-leave' as const,
       sourceManagerMemberId: 'member-manager',
@@ -155,12 +155,12 @@ describe('Local exit stores', () => {
     await store.save('project-alpha', offered);
     await store.save('project-alpha', {
       ...offered,
-      acknowledgedAt: '2026-08-13T00:01:00.000Z',
+      acknowledgedAt: testTime({ days: -14, minutes: 1 }),
       status: 'acknowledged',
     });
 
     expect(stored).toMatchObject({
-      acknowledgedAt: '2026-08-13T00:01:00.000Z',
+      acknowledgedAt: testTime({ days: -14, minutes: 1 }),
       offerId: 'offer-one',
       status: 'acknowledged',
     });
@@ -200,7 +200,7 @@ describe('Local exit stores', () => {
     stored = legacyReceipt('manager-transfer');
     await store.save('project-alpha', {
       expiresAt: testTime({ days: -14, minutes: 20 }),
-      offeredAt: '2026-08-13T00:10:00.000Z',
+      offeredAt: testTime({ days: -14, minutes: 10 }),
       offerId: 'offer-current',
       purpose: 'manager-promotion',
       sourceManagerMemberId: 'member-manager',
@@ -229,17 +229,17 @@ describe('Local exit stores', () => {
 
 function legacyReceipt(purpose: 'manager-transfer' | 'manager-leave'): unknown {
   return {
-    acknowledgedAt: '2026-08-13T00:01:00.000Z',
+    acknowledgedAt: testTime({ days: -14, minutes: 1 }),
     expiresAt: testTime({ days: -14, minutes: 10 }),
     kind: 'manager-responsibility-receipt',
     offerId: 'offer-legacy',
-    offeredAt: '2026-08-13T00:00:00.000Z',
+    offeredAt: testTime({ days: -14 }),
     projectId: 'project-alpha',
     purpose,
     schemaVersion: 1,
     sourceManagerMemberId: 'member-manager',
     status: 'acknowledged',
     targetMemberId: 'member-alpha',
-    updatedAt: '2026-08-13T00:01:00.000Z',
+    updatedAt: testTime({ days: -14, minutes: 1 }),
   };
 }

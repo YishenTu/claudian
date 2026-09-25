@@ -13,7 +13,7 @@ import { COLLAB_MAIN_REF, isCollabOpaqueId, isCollabProjectId } from '@claudian-
 
 import { AuthorityMetadataRepository } from '@/app/collab/authority/AuthorityMetadataRepository';
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
-import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import type { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { HostTransferAuthoritySnapshot } from '@/app/collab/host-transfer/HostTransferAuthoritySnapshot';
@@ -54,7 +54,7 @@ interface PackageOwner {
 export interface NativeHostTransferPackagePreparationOptions {
   readonly resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>;
   readonly authorityDirectory: string;
-  readonly database: Pick<SqlJsProjectDatabase, 'exportSnapshot' | 'generation' | 'read'>;
+  readonly database: Pick<SQLJSProjectDatabase, 'exportSnapshot' | 'generation' | 'read'>;
   readonly now?: () => Date;
   readonly repositoryPath: string;
   readonly repositories: Pick<GitRepositoryService, 'resolveRef'>;
@@ -70,7 +70,7 @@ function preparationError(reason: string): CollabError {
   });
 }
 
-function exactJsonObject(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+function exactJSONObject(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const present = Object.keys(value);
   return present.length === keys.length && present.every(key => keys.includes(key));
@@ -364,7 +364,7 @@ export class NativeHostTransferPackagePreparation implements HostTransferPackage
       const value = JSON.parse(await readFile(path.join(directory, OWNER_FILE), 'utf8')) as unknown;
       const expected = this.owner(projectId, transferId);
       if (
-        !exactJsonObject(value, ['owner', 'projectId', 'schemaVersion', 'transferId'])
+        !exactJSONObject(value, ['owner', 'projectId', 'schemaVersion', 'transferId'])
         || value.owner !== expected.owner
         || value.projectId !== expected.projectId
         || value.schemaVersion !== expected.schemaVersion

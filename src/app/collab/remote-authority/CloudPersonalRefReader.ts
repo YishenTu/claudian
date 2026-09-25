@@ -8,7 +8,7 @@ import {
   cloudAuthorityError,
   cloudAuthorityProtocolError,
 } from '@/app/collab/remote-authority/CloudAuthorityError';
-import { resolveCloudRoute } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { resolveCloudRoute } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import { requestCloudAuthorityBytes } from '@/app/collab/remote-authority/NodeCloudAuthorityBufferedTransport';
 import type { CollabError } from '@/core/collab/ClaudianCollabError';
 

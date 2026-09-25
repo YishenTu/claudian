@@ -16,19 +16,19 @@ import { AuthorityTransferLocalFence } from '@/app/collab/authority-transfer/Aut
 import { authorityTransferChildIdempotencyKey } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import { AuthorityTransferReadModel } from '@/app/collab/authority-transfer/AuthorityTransferReadModel';
 import { createAuthorityTransferRecord, expireAuthorityTransferTerminalResponder } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
-import { cloudToLanTransferHandle, createCloudToLanManagerEntry, createCloudToLanTargetEntry, handoffCloudToLanTargetEntry, markCloudToLanManagerBeginPossiblySent, publishCloudToLanTargetEntry, recordCloudToLanManagerStatus } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
-import { ProductionCloudToLanTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
-import { LanToCloudSourceCoordinator } from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudSourceCoordinator';
-import { ProductionLanToCloudSourceEffects } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLanToCloudSourceEffects';
+import { cloudToLANTransferHandle, createCloudToLANManagerEntry, createCloudToLANTargetEntry, handoffCloudToLANTargetEntry, markCloudToLANManagerBeginPossiblySent, publishCloudToLANTargetEntry, recordCloudToLANManagerStatus } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
+import { ProductionCloudToLANTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLANTargetEffects';
+import { LANToCloudSourceCoordinator } from '@/app/collab/authority-transfer/lan-to-cloud/LANToCloudSourceCoordinator';
+import { ProductionLANToCloudSourceEffects } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLANToCloudSourceEffects';
 import { AuthorityTransferPersistence } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLANMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
-import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { LANAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LANAuthorityTransferClient';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 import { CollabProjectLifecycleSubsystem } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
 import { ProjectOperationAdmission } from '@/app/collab/ProjectOperationAdmission';
 import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
-import { cloudProjectGitRemoteUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { cloudProjectGitRemoteURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import type { CollabAuthorityLifecyclePort } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
 
 jest.setTimeout(30_000);
@@ -52,7 +52,7 @@ describe('production authority-transfer source and cancellation effects', () => 
     const dispose = jest.fn()
       .mockRejectedValueOnce(new Error('simulated target cleanup failure'))
       .mockResolvedValue(undefined);
-    const effects = new ProductionCloudToLanTargetEffects({
+    const effects = new ProductionCloudToLANTargetEffects({
       cloudSession: {} as CloudAuthorityConnection,
       convergence: {} as AuthorityTransferLocalConvergence,
       foundation: {
@@ -82,7 +82,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       .mockResolvedValue(undefined);
     const discardAuthorityTransferTarget = jest.fn(async () => undefined);
     const removeReservedProjectsFolderChild = jest.fn(async () => true);
-    const effects = new ProductionCloudToLanTargetEffects({
+    const effects = new ProductionCloudToLANTargetEffects({
       cloudSession: {} as CloudAuthorityConnection,
       convergence: {} as AuthorityTransferLocalConvergence,
       foundation: {
@@ -145,12 +145,12 @@ describe('production authority-transfer source and cancellation effects', () => 
       authority: {
         authorityGeneration: 2,
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-        gitRemoteUrl: cloudProjectGitRemoteUrl(cloudServerUrl, PROJECT_ID),
+        gitRemoteUrl: cloudProjectGitRemoteURL(cloudServerUrl, PROJECT_ID),
         kind: 'cloud',
         serverUrl: cloudServerUrl,
         wireVersion: COLLAB_PROTOCOL_VERSION,
       },
-      createdAt: '2026-08-28T00:00:00.000Z',
+      createdAt: testTime({ days: 1 }),
       lastEventSequence: 0,
       member: {
         displayName: 'Former Host',
@@ -160,12 +160,12 @@ describe('production authority-transfer source and cancellation effects', () => 
       },
       project: { id: PROJECT_ID, name: 'Portable', workspacePath: 'workspace/portable' },
       schemaVersion: 3,
-      updatedAt: '2026-08-28T00:00:00.000Z',
+      updatedAt: testTime({ days: 1 }),
     });
     const formerAuthority = await targetFoundation.createAuthority(PROJECT_ID);
     await formerAuthority.database.mutate(connection => {
       formerAuthority.projects.initialize(connection, {
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
         hostDisplayName: 'Former Host',
         hostMemberId: MEMBER_ID,
@@ -177,7 +177,7 @@ describe('production authority-transfer source and cancellation effects', () => 
     const repositoryPath = path.join(formerAuthority.authorityDirectory, 'repository.git');
     git(formerAuthority.authorityDirectory, ['init', '--bare', 'repository.git']);
     const formerRepositoryHead = await readFile(path.join(repositoryPath, 'HEAD'), 'utf8');
-    const effects = new ProductionCloudToLanTargetEffects({
+    const effects = new ProductionCloudToLANTargetEffects({
       cloudSession: { serverUrl: cloudServerUrl },
       convergence: {} as AuthorityTransferLocalConvergence,
       foundation: targetFoundation,
@@ -196,7 +196,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         status: status('cloud-to-lan', 'collecting-readiness', prepared.targetUrl),
       });
       await effects.acceptanceRequest(collecting);
-      const targetEntry = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+      const targetEntry = publishCloudToLANTargetEntry(createCloudToLANTargetEntry({
         createdAt: collecting.status.createdAt,
         expiresAt: collecting.status.expiresAt,
         operationIntentId: 'prepare-cancelled-return',
@@ -208,7 +208,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         sourceCloudUrl: cloudServerUrl,
       }), { ...prepared, publishedAt: collecting.status.createdAt });
       await targetFoundation.local.projects.authorityTransferEntries.saveTarget(
-        handoffCloudToLanTargetEntry(targetEntry, collecting),
+        handoffCloudToLANTargetEntry(targetEntry, collecting),
       );
       const cancelled = createAuthorityTransferRecord({
         ...collecting,
@@ -270,8 +270,8 @@ describe('production authority-transfer source and cancellation effects', () => 
               transferId: 'transfer-after-recovered-cancellation',
               updatedAt: descriptor.publishedAt,
             };
-            const handle = cloudToLanTransferHandle(recordCloudToLanManagerStatus(
-              markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+            const handle = cloudToLANTransferHandle(recordCloudToLANManagerStatus(
+              markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
                 createdAt: descriptor.publishedAt,
                 descriptor,
                 expiresAt: new Date(Date.parse(descriptor.publishedAt) + 60_000).toISOString(),
@@ -321,7 +321,7 @@ describe('production authority-transfer source and cancellation effects', () => 
 
   it('durably invalidates a staged Cloud-to-LAN target and replays one exact signed cleanup proof', async () => {
     const now = testDate({ days: 1, minutes: 2 });
-    const signer = await new LanTlsIdentity(targetRoot, {
+    const signer = await new LANTLSIdentity(targetRoot, {
       installationKey: TEST_INSTALLATION_A,
       now: () => now,
     }).hostCaSigner();
@@ -364,7 +364,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         },
       },
     };
-    const createEffects = () => new ProductionCloudToLanTargetEffects({
+    const createEffects = () => new ProductionCloudToLANTargetEffects({
       cloudSession: { serverUrl: 'https://cloud.example.test/' },
       convergence: {} as AuthorityTransferLocalConvergence,
       foundation: foundation as never,
@@ -488,7 +488,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       status: 'running' as const,
     }));
     const restartProjectAfterAuthorityTransferCancellation = jest.fn();
-    const effects = new ProductionLanToCloudSourceEffects({
+    const effects = new ProductionLANToCloudSourceEffects({
       cloudSession: null,
       convergence: {} as AuthorityTransferLocalConvergence,
       foundation: {
@@ -550,7 +550,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           certificate: Buffer.alloc(64, 2).toString('base64url'),
           certificateAlgorithm: 'ed25519',
           checkpointSha256: 'a'.repeat(64),
-          committedAt: '2026-08-28T00:02:00.000Z',
+          committedAt: testTime({ days: 1, minutes: 2 }),
           operationIntentId: OPERATION_ID,
           projectId: PROJECT_ID,
           sourceAuthority: { generation: 1, kind: 'lan' },
@@ -559,7 +559,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           transferId: TRANSFER_ID,
         },
         state: 'completed',
-        updatedAt: '2026-08-28T00:03:00.000Z',
+        updatedAt: testTime({ days: 1, minutes: 3 }),
       },
     });
     const events: string[] = [];
@@ -573,7 +573,8 @@ describe('production authority-transfer source and cancellation effects', () => 
       expireTerminalResponder: jest.fn(async () => { events.push('expire'); }),
       load: jest.fn(async (_id: string, transferId?: string) => settled && !transferId ? null : completedRecord),
     };
-    const effects = new ProductionLanToCloudSourceEffects({
+    const effects = new ProductionLANToCloudSourceEffects({
+      now: testClock({ days: 3 }),
       cloudSession: null,
       convergence,
       foundation: {
@@ -641,7 +642,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           certificate: Buffer.alloc(64, 2).toString('base64url'),
           certificateAlgorithm: 'ed25519',
           checkpointSha256: 'a'.repeat(64),
-          committedAt: '2026-08-28T00:02:00.000Z',
+          committedAt: testTime({ days: 1, minutes: 2 }),
           operationIntentId: OPERATION_ID,
           projectId: PROJECT_ID,
           sourceAuthority: { generation: 1, kind: 'lan' },
@@ -650,7 +651,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           transferId: TRANSFER_ID,
         },
         state: 'completed',
-        updatedAt: '2026-08-28T00:03:00.000Z',
+        updatedAt: testTime({ days: 1, minutes: 3 }),
       },
     });
     let currentRecord = completedRecord;
@@ -669,7 +670,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       .mockRejectedValueOnce(new Error('simulated cleanup failure after responder expiry'))
       .mockResolvedValue(undefined);
     const stopAuthorityTransferRoute = jest.fn(async () => undefined);
-    const effects = new ProductionLanToCloudSourceEffects({
+    const effects = new ProductionLANToCloudSourceEffects({
       cloudSession: {
         readSnapshot: jest.fn(async () => ({ project: { id: PROJECT_ID } })),
       } as never,
@@ -744,7 +745,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           ) VALUES (
             'member-production-peer', 'Bob',
             'refs/heads/members/member-production-peer', 'member', 'active', ?,
-            NULL, '2026-08-08T00:00:00.000Z', '2026-08-08T00:00:00.000Z', NULL
+            NULL, '${testTime({ days: -19 })}', '${testTime({ days: -19 })}', NULL
           )
         `, [createHash('sha256').update(peerCredential, 'utf8').digest()]);
       });
@@ -759,7 +760,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       if (!membership || membership.authority.kind !== 'lan') {
         throw new Error('Missing source LAN membership');
       }
-      const client = new LanAuthorityTransferClient({
+      const client = new LANAuthorityTransferClient({
         caCertificatePem: membership.authority.hostCaCertificatePem!,
         caFingerprint: membership.authority.hostCaFingerprint!,
         endpoint: membership.authority.endpoint!,
@@ -917,8 +918,8 @@ describe('production authority-transfer source and cancellation effects', () => 
         throw new Error(`Unexpected Cloud operation ${operation}`);
       });
       const currentMember = {
-        activatedAt: '2026-08-08T00:00:00.000Z',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        activatedAt: testTime({ days: -19 }),
+        createdAt: testTime({ days: -19 }),
         displayName: 'Alice',
         id: MEMBER_ID,
         personalRef: `refs/heads/members/${MEMBER_ID}`,
@@ -950,7 +951,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           project: {
             authorityGeneration: 2,
             authorityKind: 'cloud',
-            createdAt: '2026-08-08T00:00:00.000Z',
+            createdAt: testTime({ days: -19 }),
             id: PROJECT_ID,
             mainOid,
             mainRef: 'refs/heads/main',
@@ -999,7 +1000,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         });
       const exact = await sourceFoundation.authorityTransfers.load(PROJECT_ID, completed.transferId);
       if (!exact) throw new Error('Missing completed source transfer');
-      const nextTarget = createCloudToLanTargetEntry({
+      const nextTarget = createCloudToLANTargetEntry({
         createdAt: testTime({ days: 1, minutes: 3 }), expiresAt: testTime({ days: 30 }),
         operationIntentId: 'next-target-preparation', ownerInstallationKey: TEST_INSTALLATION_A,
         projectId: PROJECT_ID, selectedTargetMemberId: MEMBER_ID,
@@ -1013,14 +1014,15 @@ describe('production authority-transfer source and cancellation effects', () => 
         .resolves.toEqual(completed);
       await sourceFoundation.lanHost.stopAuthorityTransferRoute(PROJECT_ID, 'terminal-source', exact.transferId);
       const routeStart = jest.spyOn(sourceFoundation.lanHost, 'startAuthorityTransferRoute');
-      await new ProductionLanToCloudSourceEffects({
+      await new ProductionLANToCloudSourceEffects({
+        now: sourceFoundation.now,
         cloudSession: null, foundation: sourceFoundation, persistence: sourceFoundation.authorityTransfers,
         convergence: {} as AuthorityTransferLocalConvergence, projectId: PROJECT_ID,
       }).restoreRetained(exact);
       const restoredSession = await routeStart.mock.results[0]?.value;
       routeStart.mockRestore();
       if (!restoredSession) throw new Error('Missing restored terminal listener');
-      const restoredClient = new LanAuthorityTransferClient({
+      const restoredClient = new LANAuthorityTransferClient({
         caCertificatePem: membership.authority.hostCaCertificatePem!,
         caFingerprint: membership.authority.hostCaFingerprint!,
         endpoint: restoredSession.endpoint,
@@ -1228,7 +1230,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           authorityTransfer: (async (operation: string, request: { expectedPhase: string }) => {
             if (operation !== 'cancelProjectAuthorityTransfer') throw new Error('Unexpected Cloud operation');
             if (request.expectedPhase !== 'target-cleaned') {
-              return { ...transferStatus, phase: 'target-cleaned', updatedAt: '2026-08-28T00:01:00.000Z' };
+              return { ...transferStatus, phase: 'target-cleaned', updatedAt: testTime({ days: 1, minutes: 1 }) };
             }
             expect(reopenedFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
             const saved = await reopenedFoundation.authorityTransfers.loadSourceEntry(PROJECT_ID);
@@ -1239,14 +1241,14 @@ describe('production authority-transfer source and cancellation effects', () => 
               interrupted = true;
               throw new Error(fault);
             }
-            return { ...transferStatus, phase: 'cancelled', state: 'cancelled', updatedAt: '2026-08-28T00:02:00.000Z' };
+            return { ...transferStatus, phase: 'cancelled', state: 'cancelled', updatedAt: testTime({ days: 1, minutes: 2 }) };
           }) as CollabAuthorityLifecyclePort['authorityTransfer'],
         };
-        const createCoordinator = () => new LanToCloudSourceCoordinator({
+        const createCoordinator = () => new LANToCloudSourceCoordinator({
           cloud: cloud as CollabAuthorityLifecyclePort,
           installationKey: TEST_INSTALLATION_A,
           persistence,
-          source: new ProductionLanToCloudSourceEffects({
+          source: new ProductionLANToCloudSourceEffects({
             cloudSession: null,
             convergence: new AuthorityTransferLocalConvergence({
       settleLocalAuthorityAdvance: identity => reopenedFoundation.authorityTransfers.settleLocalAuthorityAdvance(identity),
@@ -1329,7 +1331,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       authority: {
         authorityGeneration: 2,
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-        gitRemoteUrl: cloudProjectGitRemoteUrl(cloudServerUrl, PROJECT_ID),
+        gitRemoteUrl: cloudProjectGitRemoteURL(cloudServerUrl, PROJECT_ID),
         kind: 'cloud',
         serverUrl: cloudServerUrl,
         wireVersion: COLLAB_PROTOCOL_VERSION,
@@ -1533,7 +1535,7 @@ describe('production authority-transfer source and cancellation effects', () => 
     const captured = await captureSource();
     await captured.sourceFeature.close();
     await captured.sourceFoundation.close();
-    if (!isCollabLocalLanMembership(captured.sourceMembership)) throw new Error('Expected LAN source');
+    if (!isCollabLocalLANMembership(captured.sourceMembership)) throw new Error('Expected LAN source');
     const roots = [sourceRoot, targetRoot];
     const keys = [TEST_INSTALLATION_A, TEST_INSTALLATION_B] as const;
     const members = [MEMBER_ID, 'member-production-peer'];
@@ -1601,7 +1603,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         request: { projectId: PROJECT_ID, expectedAuthorityGeneration: generation - 1, idempotencyKey: `round-${generation}`, targetUrl: 'https://cloud.example.test/' },
       }));
       const proofBase = { batchRevision: 1, batchSha256: 'b'.repeat(64), checkpointSha256: 'a'.repeat(64),
-        certificateAlgorithm: 'ed25519' as const, committedAt: '2026-08-28T00:01:00.000Z',
+        certificateAlgorithm: 'ed25519' as const, committedAt: testTime({ days: 1, minutes: 1 }),
         operationIntentId: `round-${generation}`, projectId: PROJECT_ID, transferId: TRANSFER_ID };
       const toCloud: CollabAuthorityTransferStatus = { ...status('lan-to-cloud', 'completed', 'https://cloud.example.test/'), state: 'completed',
         sourceAuthority: { kind: 'lan', generation: generation - 1 }, targetAuthority: { kind: 'cloud', generation },

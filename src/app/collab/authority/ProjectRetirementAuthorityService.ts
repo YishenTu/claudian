@@ -4,7 +4,7 @@ import {
   type PreparedProjectRetirement,
   ProjectRetirementRepository,
 } from '@/app/collab/authority/ProjectRetirementRepository';
-import type { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import type { RetirementTombstoneRecord } from '@/app/collab/retirement/RetirementTombstoneRecord';
 import type { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
 import type { CollabRetirementResult } from '@/core/collab';
@@ -46,7 +46,7 @@ export class ProjectRetirementAuthorityService {
   private readonly repository = new ProjectRetirementRepository();
 
   constructor(
-    private readonly database: SqlJsProjectDatabase,
+    private readonly database: SQLJSProjectDatabase,
     private readonly tombstones: RetirementTombstoneRepository,
     private readonly options: ProjectRetirementAuthorityServiceOptions,
   ) {

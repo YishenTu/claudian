@@ -1,8 +1,8 @@
 /**
- * Shared test timeline. Expiries and injected clocks are expressed as offsets from one epoch,
- * so no test compares a hard-coded date against the real clock.
+ * Capture one current-time baseline per test module environment so imported fixture constants
+ * and clocks agree. Each testClock owns its time; advancing one never changes other fixtures.
  */
-export const TEST_EPOCH = '2026-08-27T00:00:00.000Z';
+const EPOCH_MS = Date.now();
 
 export interface TestTimeOffset {
   readonly days?: number;
@@ -11,8 +11,6 @@ export interface TestTimeOffset {
   readonly seconds?: number;
   readonly milliseconds?: number;
 }
-
-const EPOCH_MS = Date.parse(TEST_EPOCH);
 
 function offsetMs(offset: TestTimeOffset): number {
   return (offset.days ?? 0) * 86_400_000
@@ -30,9 +28,14 @@ export function testTime(offset: TestTimeOffset = {}): string {
   return testDate(offset).toISOString();
 }
 
-/** A fixed clock for `now` options. */
-export function testClock(offset: TestTimeOffset = {}): () => Date {
-  return () => testDate(offset);
+/** An independently controlled clock for one test's `now` options. */
+export function testClock(offset: TestTimeOffset = {}): (() => Date) & {
+  advance(elapsed: TestTimeOffset): void;
+} {
+  let current = testDate(offset).getTime();
+  return Object.assign(() => new Date(current), {
+    advance: (elapsed: TestTimeOffset) => { current += offsetMs(elapsed); },
+  });
 }
 
 /**
@@ -40,7 +43,7 @@ export function testClock(offset: TestTimeOffset = {}): () => Date {
  * that wait on deadlines or order events by time.
  */
 export function advancingTestClock(offset: TestTimeOffset = {}): () => Date {
-  const startedAt = Date.now();
+  const startedAt = performance.now();
   const start = testDate(offset).getTime();
-  return () => new Date(start + Date.now() - startedAt);
+  return () => new Date(start + performance.now() - startedAt);
 }

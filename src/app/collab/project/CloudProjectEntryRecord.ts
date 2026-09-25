@@ -1,7 +1,7 @@
 import { collabControlOperationCodec, type CollabControlOperationMap, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
 import { isCollabWorkingCopyDirectoryName, isCollabWorkingCopySlug } from '@/app/collab/project/CollabWorkingCopySlug';
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import { decodeCloudProjectSnapshotCache } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
 import { type CollabCloudProjectSnapshot, parseCollabProjectsFolder } from '@/core/collab';
 
@@ -95,7 +95,7 @@ export function decodeCloudProjectEntryRecord(value: unknown): CloudProjectEntry
     createdAt: timestamp(source.createdAt), operationId: source.operationId,
     phase: source.phase, projectId: source.projectId,
     projectsFolder: source.projectsFolder, schemaVersion: 2, principalId: source.principalId,
-    serverUrl: validateCloudServerUrl(source.serverUrl, 'serverUrl'), slug: source.slug,
+    serverUrl: validateCloudServerURL(source.serverUrl, 'serverUrl'), slug: source.slug,
     stagingDirectoryName: source.stagingDirectoryName, updatedAt: timestamp(source.updatedAt),
   };
   const admitted = source.admission === null ? null : record(source.admission, ['response', 'snapshot']);

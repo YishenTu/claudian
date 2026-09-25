@@ -5,17 +5,17 @@ import {
   type ResolveCollabAgentPort,
 } from './AgentRuntimeMethodRegistry';
 import {
-  type AgentRuntimeRpcErrorResponse,
-  type AgentRuntimeRpcResponse,
-  decodeAgentRuntimeRpcEnvelope,
-} from './AgentRuntimeRpc';
+  type AgentRuntimeRPCErrorResponse,
+  type AgentRuntimeRPCResponse,
+  decodeAgentRuntimeRPCEnvelope,
+} from './AgentRuntimeRPC';
 
 export type { CollabAgentPort, ResolveCollabAgentPort };
 
 export type AgentRuntimeGatewayPrepareResult =
   | {
     readonly status: 'response';
-    readonly response: AgentRuntimeRpcResponse;
+    readonly response: AgentRuntimeRPCResponse;
   }
   | {
     readonly status: 'invocation';
@@ -30,7 +30,7 @@ export class AgentRuntimeGateway {
   }
 
   prepare(input: unknown): AgentRuntimeGatewayPrepareResult {
-    const decoded = decodeAgentRuntimeRpcEnvelope(input);
+    const decoded = decodeAgentRuntimeRPCEnvelope(input);
     if (decoded.status === 'invalid-request') {
       return {
         response: rpcError(null, 'invalid_request', 'Invalid RPC request.'),
@@ -63,7 +63,7 @@ export class AgentRuntimeGateway {
     }
   }
 
-  async handle(input: unknown, signal?: AbortSignal): Promise<AgentRuntimeRpcResponse> {
+  async handle(input: unknown, signal?: AbortSignal): Promise<AgentRuntimeRPCResponse> {
     const prepared = this.prepare(input);
     if (prepared.status === 'response') return prepared.response;
     const effectiveSignal = signal ?? new AbortController().signal;
@@ -73,8 +73,8 @@ export class AgentRuntimeGateway {
 
 function rpcError(
   id: string | null,
-  code: AgentRuntimeRpcErrorResponse['error']['code'],
+  code: AgentRuntimeRPCErrorResponse['error']['code'],
   message: string,
-): AgentRuntimeRpcErrorResponse {
+): AgentRuntimeRPCErrorResponse {
   return { error: { code, message }, id };
 }

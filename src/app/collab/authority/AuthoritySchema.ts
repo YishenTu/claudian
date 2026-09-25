@@ -735,7 +735,7 @@ const AUTHORITY_SCHEMA_V13_OBJECTS = [
 function assertAuthorityV13Schema(database: Database): void {
   repairAndAssertAuthorityV12Schema(database);
   for (const object of AUTHORITY_SCHEMA_V13_OBJECTS) {
-    if (!hasExactSchemaSql(database, object.type, object.name, object.sql)) {
+    if (!hasExactSchemaSQL(database, object.type, object.name, object.sql)) {
       throw new Error('Authority V13 transaction and replay schema is incomplete');
     }
   }
@@ -745,7 +745,7 @@ function applyAuthoritySchemaV13(database: Database): void {
   repairAndAssertAuthorityV12Schema(database);
   database.run('DROP TRIGGER IF EXISTS events_immutable_delete');
   for (const object of AUTHORITY_SCHEMA_V13_OBJECTS) {
-    if (schemaSql(database, object.type, object.name) === null) database.run(object.sql);
+    if (schemaSQL(database, object.type, object.name) === null) database.run(object.sql);
   }
   database.run(`DELETE FROM events WHERE sequence < COALESCE(
     (SELECT sequence FROM events ORDER BY sequence DESC LIMIT 1 OFFSET 499), 0
@@ -784,7 +784,7 @@ function indexExists(database: Database, index: string): boolean {
   `).length === 1;
 }
 
-function schemaSql(
+function schemaSQL(
   database: Database,
   type: 'index' | 'table' | 'trigger',
   name: string,
@@ -795,21 +795,21 @@ function schemaSql(
   return typeof value === 'string' ? value : null;
 }
 
-function normalizeSchemaSql(sql: string): string {
+function normalizeSchemaSQL(sql: string): string {
   return sql
     .toLowerCase()
     .replace(/["`[\]]/g, '')
     .replace(/[\s;]/g, '');
 }
 
-function hasExactSchemaSql(
+function hasExactSchemaSQL(
   database: Database,
   type: 'index' | 'table' | 'trigger',
   name: string,
   expected: string,
 ): boolean {
-  const actual = schemaSql(database, type, name);
-  return actual !== null && normalizeSchemaSql(actual) === normalizeSchemaSql(expected);
+  const actual = schemaSQL(database, type, name);
+  return actual !== null && normalizeSchemaSQL(actual) === normalizeSchemaSQL(expected);
 }
 
 function hasExactMemberUniqueIndexes(database: Database): boolean {
@@ -890,19 +890,19 @@ function authorityV9SchemaIsComplete(database: Database): boolean {
       'consumed_at',
       'updated_at',
     ])
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'table',
       'project',
       AUTHORITY_SCHEMA_V9_PROJECT_SQL.replace('project_v9', 'project'),
     )
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'table',
       'accept_operations',
       AUTHORITY_SCHEMA_V9_ACCEPT_SQL.replace('accept_operations_v9', 'accept_operations'),
     )
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'table',
       'manager_responsibility_offers',
@@ -911,7 +911,7 @@ function authorityV9SchemaIsComplete(database: Database): boolean {
         'manager_responsibility_offers',
       ),
     )
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'index',
       'manager_responsibility_one_nonterminal',
@@ -946,7 +946,7 @@ function authorityV10SchemaIsComplete(database: Database): boolean {
     'consumed_at',
     'updated_at',
   ])
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'table',
       'manager_responsibility_offers',
@@ -955,7 +955,7 @@ function authorityV10SchemaIsComplete(database: Database): boolean {
         'manager_responsibility_offers',
       ),
     )
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'index',
       'manager_responsibility_one_nonterminal_source',
@@ -965,7 +965,7 @@ function authorityV10SchemaIsComplete(database: Database): boolean {
         WHERE status IN ('offered', 'acknowledged')
       `,
     )
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'index',
       'manager_responsibility_one_nonterminal_target',
@@ -1005,13 +1005,13 @@ function authorityV9SchemaIsCompleteExceptManagerResponsibilities(database: Data
       'expected_resolving_tickets_json',
       'completion_actor_member_id',
     ])
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'table',
       'project',
       AUTHORITY_SCHEMA_V9_PROJECT_SQL.replace('project_v9', 'project'),
     )
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'table',
       'accept_operations',
@@ -1031,7 +1031,7 @@ function repairAndAssertAuthorityV10Schema(database: Database): boolean {
 
 function authorityV11SchemaIsComplete(database: Database): boolean {
   return authorityV10SchemaIsComplete(database)
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'trigger',
       'comments_request_capacity_insert',
@@ -1046,7 +1046,7 @@ function authorityV11SchemaIsComplete(database: Database): boolean {
         END
       `,
     )
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'trigger',
       'request_ticket_relations_accepted_capacity_insert',
@@ -1062,7 +1062,7 @@ function authorityV11SchemaIsComplete(database: Database): boolean {
         END
       `,
     )
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'trigger',
       'request_ticket_relations_accepted_capacity_update',
@@ -1107,7 +1107,7 @@ function authorityV12SchemaIsComplete(database: Database): boolean {
       'revoked_at',
       ...(hasRevision ? ['membership_revision'] : []),
     ])
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'table',
       'members',
@@ -1117,7 +1117,7 @@ function authorityV12SchemaIsComplete(database: Database): boolean {
       'singleton',
       'authority_generation',
     ])
-    && hasExactSchemaSql(
+    && hasExactSchemaSQL(
       database,
       'table',
       'authority_metadata',
@@ -1367,13 +1367,13 @@ function applyAuthoritySchemaV11(database: Database): void {
   }
   if (authorityV11SchemaIsComplete(database)) return;
   if (
-    schemaSql(database, 'trigger', 'comments_request_capacity_insert') !== null
-    || schemaSql(
+    schemaSQL(database, 'trigger', 'comments_request_capacity_insert') !== null
+    || schemaSQL(
       database,
       'trigger',
       'request_ticket_relations_accepted_capacity_insert',
     ) !== null
-    || schemaSql(
+    || schemaSQL(
       database,
       'trigger',
       'request_ticket_relations_accepted_capacity_update',
@@ -1459,7 +1459,7 @@ const AUTHORITY_SCHEMA_V14_OBJECTS = [
 
 function assertAuthorityV14Schema(database: Database): void {
   if (!tableColumns(database, 'members').has('membership_revision')
-    || AUTHORITY_SCHEMA_V14_OBJECTS.some(object => !hasExactSchemaSql(database, object.type, object.name, object.sql))) {
+    || AUTHORITY_SCHEMA_V14_OBJECTS.some(object => !hasExactSchemaSQL(database, object.type, object.name, object.sql))) {
     throw new Error('Authority V14 imported membership claim schema is incomplete');
   }
 }
@@ -1490,7 +1490,7 @@ const AUTHORITY_SCHEMA_V15_OBJECTS = [
 ] as const;
 
 function assertAuthorityV15Schema(database: Database): void {
-  if (AUTHORITY_SCHEMA_V15_OBJECTS.some(object => !hasExactSchemaSql(database, object.type, object.name, object.sql))) {
+  if (AUTHORITY_SCHEMA_V15_OBJECTS.some(object => !hasExactSchemaSQL(database, object.type, object.name, object.sql))) {
     throw new Error('Authority V15 Project recovery schema is incomplete');
   }
 }

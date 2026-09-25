@@ -1,10 +1,10 @@
-import type { CollabLanDiscoveryPort } from '@/app/collab/discovery/CollabLanDiscoveryService';
+import type { CollabLANDiscoveryPort } from '@/app/collab/discovery/CollabLANDiscoveryService';
 import type { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import type {
-  CollabHttpOperationOptions,
+  CollabHTTPOperationOptions,
   CollabTrustedEndpointCandidate,
   CollabTrustedHost,
-} from '@/app/collab/lan/CollabHttpClient';
+} from '@/app/collab/lan/CollabHTTPClient';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -22,13 +22,13 @@ const REDISCOVERY_CODES = new Set([
 export interface HostTransitionProofClientPort {
   fetchHostTransitions(
     candidate: CollabTrustedEndpointCandidate,
-    options?: CollabHttpOperationOptions,
+    options?: CollabHTTPOperationOptions,
   ): Promise<readonly CollabHostTrustTransitionProof[]>;
 }
 
 export interface HostTransitionCandidateResolverOptions {
   readonly discovery: Pick<
-    CollabLanDiscoveryPort,
+    CollabLANDiscoveryPort,
     'discoverProjectCandidatesForTrustTransition'
   >;
   readonly proofClient: HostTransitionProofClientPort;

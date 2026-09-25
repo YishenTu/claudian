@@ -15,7 +15,7 @@ Object.assign(globalThis, { setImmediate });
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
 const mockSlashCommandSettings = jest.fn();
-const mockCliResolverReset = jest.fn();
+const mockCLIResolverReset = jest.fn();
 const mockModelCatalogRefresh = jest.fn().mockResolvedValue({ changed: true });
 const mockVaultCommandRepository = {};
 const mockModelCatalog = { refresh: mockModelCatalogRefresh, markStale: jest.fn() };
@@ -111,7 +111,7 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
 function createSettingsRenderer() {
   return createClaudeSettingsTabRenderer({
     cliResolver: {
-      reset: mockCliResolverReset,
+      reset: mockCLIResolverReset,
     },
     commandCatalog: {},
     vaultCommandRepository: mockVaultCommandRepository,
@@ -562,7 +562,7 @@ describe('ClaudeSettingsTab', () => {
       await mutation(plugin.settings);
       await plugin.saveSettings();
     });
-    mockCliResolverReset.mockImplementation(() => {
+    mockCLIResolverReset.mockImplementation(() => {
       expect(transitionActive).toBe(true);
     });
 
@@ -582,7 +582,7 @@ describe('ClaudeSettingsTab', () => {
     expect(plugin.settings.providerConfigs.claude.cliPathsByHost).toEqual({
       'host-a': '/custom/claude',
     });
-    expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
+    expect(mockCLIResolverReset).toHaveBeenCalledTimes(1);
   });
 
   it('persists a CLI path pasted with surrounding quotes', async () => {
@@ -600,7 +600,7 @@ describe('ClaudeSettingsTab', () => {
       _providerIds: string[],
       mutation: () => Promise<unknown>,
     ) => mutation());
-    mockCliResolverReset.mockImplementation(() => undefined);
+    mockCLIResolverReset.mockImplementation(() => undefined);
 
     createSettingsRenderer().render(createContainer(), createContext(plugin));
     await applyTextInput(findSetting('settings.cliPath.name')

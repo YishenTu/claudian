@@ -79,6 +79,10 @@ export class CollabTicketReferenceSource implements ComposerDropdownSource {
   }
 
   match(input: string, cursor: number): ComposerTriggerMatch | null {
+    if (!this.references.isAvailable()) {
+      this.#setQuery(null);
+      return null;
+    }
     const before = input.slice(0, cursor);
     const index = before.lastIndexOf('#');
     if (index < 0 || (index > 0 && !/\s/.test(before[index - 1]))) { this.#setQuery(null); return null; }

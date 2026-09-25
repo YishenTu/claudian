@@ -29,6 +29,10 @@ export class CollabComposerReferenceService implements CollabComposerReferencePo
     private readonly isEnabled: () => boolean = () => true,
   ) {}
 
+  isAvailable(): boolean {
+    return !this.disposed && this.isEnabled();
+  }
+
   async getSelection(signal?: AbortSignal): Promise<CollabComposerSelection | null> {
     if (!this.isEnabled()) return null;
     this.#throwIfUnavailable(signal);
@@ -109,14 +113,9 @@ export class CollabComposerReferenceService implements CollabComposerReferencePo
     this.featureSelectionGeneration += 1;
     this.featureSubscription?.dispose();
     this.featureSubscription = null;
-    const shouldNotify = this.hasSelectionSnapshot
-      || this.lastSelection !== null
-      || this.isEnabled();
     this.hasSelectionSnapshot = !this.isEnabled();
     this.lastSelection = null;
-    if (shouldNotify) {
-      for (const listener of this.listeners) listener(null);
-    }
+    for (const listener of this.listeners) listener(null);
   }
 
   dispose(): void {

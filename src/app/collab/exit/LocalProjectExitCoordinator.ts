@@ -7,7 +7,7 @@ import type {
 } from '@/app/collab/activity/CollabProjectWorkSession';
 import {
   isCollabLocalCloudMembership,
-  isCollabLocalLanMembership,
+  isCollabLocalLANMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { LocalExitProjectStorePort } from '@/app/collab/exit/LocalExitStores';
 import type { LocalProjectCleanupPort } from '@/app/collab/exit/LocalProjectCleanupCoordinator';
@@ -21,7 +21,7 @@ import type {
 import type {
   CloudPendingLeavePhase,
   CloudPendingLeaveRecord,
-  LanPendingLeaveRecord,
+  LANPendingLeaveRecord,
   PendingLeavePhase,
   PendingLeaveRecord,
 } from '@/app/collab/exit/PendingLeaveRecord';
@@ -31,7 +31,7 @@ import {
   decodePendingLeaveRecord,
   isCloudPendingLeaveRecord,
 } from '@/app/collab/exit/PendingLeaveRecord';
-import type { MembershipTerminationResponse } from '@/app/collab/lan/LanCollabControlOperations';
+import type { MembershipTerminationResponse } from '@/app/collab/lan/LANCollabControlOperations';
 import type { PendingLeaveJournalPort } from '@/app/collab/lifecycle/CollabLifecycleJournalStore';
 import type {
   CollabMembershipManagerReceiptPort,
@@ -204,7 +204,7 @@ export class LocalProjectExitCoordinator {
         options,
       );
     }
-    if (!isCollabLocalLanMembership(membership)) {
+    if (!isCollabLocalLANMembership(membership)) {
       throw new CollabError({
         code: 'operation-failed',
         safeContext: { reason: 'local-exit-authority-unsupported' },
@@ -636,9 +636,9 @@ export class LocalProjectExitCoordinator {
   }
 
   private async transition(
-    record: LanPendingLeaveRecord,
+    record: LANPendingLeaveRecord,
     phase: PendingLeavePhase,
-  ): Promise<LanPendingLeaveRecord> {
+  ): Promise<LANPendingLeaveRecord> {
     const updated = decodePendingLeaveRecord({
       ...record,
       phase,
@@ -730,10 +730,10 @@ export class LocalProjectExitCoordinator {
   }
 
   async #withPersistedHostContinuity<T>(
-    pending: LanPendingLeaveRecord,
-    operation: (current: LanPendingLeaveRecord) => Promise<T>,
+    pending: LANPendingLeaveRecord,
+    operation: (current: LANPendingLeaveRecord) => Promise<T>,
     options: CollabOperationOptions,
-  ): Promise<{ readonly pending: LanPendingLeaveRecord; readonly value: T }> {
+  ): Promise<{ readonly pending: LANPendingLeaveRecord; readonly value: T }> {
     try {
       return { pending, value: await operation(pending) };
     } catch (failure) {
@@ -758,9 +758,9 @@ export class LocalProjectExitCoordinator {
   }
 
   private async update(
-    record: LanPendingLeaveRecord,
+    record: LANPendingLeaveRecord,
     patch: Partial<Pick<
-      LanPendingLeaveRecord,
+      LANPendingLeaveRecord,
       | 'authorityReplay'
       | 'hostCaCertificatePem'
       | 'hostCaFingerprint'
@@ -768,7 +768,7 @@ export class LocalProjectExitCoordinator {
       | 'localCleanupComplete'
       | 'localRole'
     >>,
-  ): Promise<LanPendingLeaveRecord> {
+  ): Promise<LANPendingLeaveRecord> {
     const updated = decodePendingLeaveRecord({
       ...record,
       ...patch,
@@ -784,7 +784,7 @@ export class LocalProjectExitCoordinator {
     return record;
   }
 
-  #requireLanPending(record: PendingLeaveRecord): LanPendingLeaveRecord {
+  #requireLanPending(record: PendingLeaveRecord): LANPendingLeaveRecord {
     if (isCloudPendingLeaveRecord(record)) throw new TypeError('Expected LAN pending Leave');
     return record;
   }
@@ -870,7 +870,7 @@ export class LocalProjectExitCoordinator {
   }
 
   #isDeterministicObsoleteOffer(
-    pending: LanPendingLeaveRecord,
+    pending: LANPendingLeaveRecord,
     error: unknown,
   ): boolean {
     const replay = pending.authorityReplay;
@@ -887,7 +887,7 @@ export class LocalProjectExitCoordinator {
     );
   }
 
-   async #clearObsoleteManagerLeave(pending: LanPendingLeaveRecord): Promise<void> {
+   async #clearObsoleteManagerLeave(pending: LANPendingLeaveRecord): Promise<void> {
     await this.projects.restoreActive(pending.projectId);
     await this.pendingLeaves.remove(pending.projectId);
   }

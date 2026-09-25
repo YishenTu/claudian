@@ -13,13 +13,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
   ClaudianCollabService,
   type CollabAuthorityFoundation,
 } from '@/app/collab';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import {
   decodeCollabProjectSetupRecord,
 } from '@/app/collab/project/CollabProjectSetupRecord';
@@ -28,7 +29,7 @@ import {
   CollabProjectSetupService,
 } from '@/app/collab/project/CollabProjectSetupService';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 const PROJECT_ID = 'project-alpha';
 const MEMBER_ID = 'member-host';
 const OPERATION_ID = 'create-project-alpha';
@@ -91,7 +92,7 @@ describe('CollabProjectSetupService', () => {
   function createFoundation(getProjectsFolder?: () => string): ClaudianCollabService {
     return new ClaudianCollabService({
       createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
-        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
+        new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
       installationKey: TEST_INSTALLATION_A,

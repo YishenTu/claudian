@@ -5,7 +5,7 @@ import type { SlashCommand } from '../../../core/types';
 import { throwIfAborted, toAbortError } from '../../../utils/abort';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
-import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
+import { loadClaudeAgentQuery } from '../loadClaudeAgentSDK';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import {
   getClaudeProviderSettings,
@@ -16,7 +16,7 @@ import {
 // one slow server cannot stall discovery.
 const PROBE_MCP_TIMEOUT_MS = '5000';
 
-function mapSdkCommands(sdkCommands: SDKSlashCommand[]): SlashCommand[] {
+function mapSDKCommands(sdkCommands: SDKSlashCommand[]): SlashCommand[] {
   return sdkCommands.map((cmd) => ({
     id: `sdk:${cmd.name}`,
     name: cmd.name,
@@ -124,7 +124,7 @@ export async function probeRuntimeCommands(
           conversation.supportedCommands(),
           signal,
         );
-        return mapSdkCommands(sdkCommands);
+        return mapSDKCommands(sdkCommands);
       }
     }
   } catch (error) {

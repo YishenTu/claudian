@@ -9,7 +9,7 @@ import {
   isCollabProjectId,
 } from '@claudian-collab/protocol';
 
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 
 export type CloudRetirementIntentPhase =
   | 'prepared'
@@ -107,7 +107,7 @@ export function decodeCloudRetirementIntent(value: unknown): CloudRetirementInte
     projectId: input.projectId,
     request,
     schemaVersion: 1,
-    serverUrl: validateCloudServerUrl(input.serverUrl, 'serverUrl'),
+    serverUrl: validateCloudServerURL(input.serverUrl, 'serverUrl'),
     updatedAt,
   };
   if (input.phase === 'terminal-retained') {

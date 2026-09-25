@@ -1,11 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { applyAuthorityMigrations, migrateLegacyAuthorityDatabaseToCurrent } from '@/app/collab/authority/AuthoritySchema';
 
-const NOW = '2026-08-13T00:00:00.000Z';
+const NOW = testTime({ days: -14 });
 
 describe('Authority event retention', () => {
   let SQL: SqlJsStatic;
@@ -50,7 +51,7 @@ describe('Authority event retention', () => {
     const database = new SQL.Database();
     try {
       applyAuthorityMigrations(database);
-      for (const where of ['', "WHERE updated_at < '2026-09-01' OR (updated_at = '2026-09-01' AND ticket_number < 42)"]) {
+      for (const where of ['', `WHERE updated_at < '${NOW}' OR (updated_at = '${NOW}' AND ticket_number < 42)`]) {
         const plan = database.exec(`EXPLAIN QUERY PLAN SELECT * FROM tickets ${where} ORDER BY updated_at DESC, ticket_number DESC LIMIT 50`)[0].values.map(row => String(row[3])).join('\n');
         expect(plan).not.toContain('TEMP B-TREE');
       }

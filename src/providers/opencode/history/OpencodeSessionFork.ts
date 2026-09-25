@@ -1,7 +1,7 @@
 import {
-  AcpClientConnection,
-  AcpJsonRpcTransport,
-  AcpSubprocess,
+  ACPClientConnection,
+  ACPJSONRPCTransport,
+  ACPSubprocess,
 } from '@/providers/acp';
 
 import { type OpencodeServerService, withOpencodeServerLease } from '../http/OpencodeServerService';
@@ -29,23 +29,23 @@ export async function forkOpencodeSession(options: OpencodeSessionForkOptions): 
       return child.data.id;
     });
   }
-  const subprocess = new AcpSubprocess({
+  const subprocess = new ACPSubprocess({
     command: options.cliPath,
     args: ['acp'],
     cwd: options.cwd,
     env: options.environment,
   });
-  let transport: AcpJsonRpcTransport | undefined;
-  let connection: AcpClientConnection | undefined;
+  let transport: ACPJSONRPCTransport | undefined;
+  let connection: ACPClientConnection | undefined;
   try {
     subprocess.start();
-    transport = new AcpJsonRpcTransport({
+    transport = new ACPJSONRPCTransport({
       input: subprocess.stdout,
       output: subprocess.stdin,
       onClose: listener => subprocess.onClose(listener),
     });
     // No live-output delegate: native fork replay belongs only to the new session.
-    connection = new AcpClientConnection({ transport });
+    connection = new ACPClientConnection({ transport });
     transport.start();
     const initialized = await connection.initialize();
     const nativeVersion = parseOpencodeNativeVersion(initialized.agentInfo?.version);

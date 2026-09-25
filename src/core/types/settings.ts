@@ -92,7 +92,7 @@ export type PermissionMode = 'yolo' | 'normal';
 export type EnvironmentScope = 'shared' | `provider:${string}`;
 
 /** Opaque device-keyed CLI paths for per-device configuration. */
-export type HostnameCliPaths = Record<string, string>;
+export type HostnameCLIPaths = Record<string, string>;
 
 /** Opaque provider-owned settings bags keyed by provider id. */
 export type ProviderConfigMap = Partial<Record<string, Record<string, unknown>>>;

@@ -13,10 +13,10 @@ import {
   collectAsyncSubagentResults,
   collectStructuredPatchResults,
   collectToolResults,
-  extractXmlTag,
+  extractXMLTag,
   hydrateFallbackAskUserAnswers,
   hydrateStructuredToolResults,
-  isCanonicalSdkUserMessage,
+  isCanonicalSDKUserMessage,
   isSystemInjectedMessage,
   mergeAssistantMessage,
   parseSDKMessageToChat,
@@ -59,7 +59,7 @@ export type {
 export {
   collectAsyncSubagentResults,
   encodeVaultPathForSDK,
-  extractXmlTag,
+  extractXMLTag,
   filterActiveBranch,
   getSDKProjectsPath,
   getSDKSessionAvailability,
@@ -234,7 +234,7 @@ export async function loadSDKSessionMessages(
       }
     } else {
       flushPendingAssistant(!chatMsg.isInterrupt);
-      if (isCanonicalSdkUserMessage(sdkMsg)) {
+      if (isCanonicalSDKUserMessage(sdkMsg)) {
         turnStartedAt = parseNativeTimestamp(sdkMsg.timestamp);
       }
       chatMessages.push(chatMsg);

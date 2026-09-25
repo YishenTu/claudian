@@ -2,15 +2,15 @@ import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { PiRpcSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
-import type { PiRpcRecord } from '@/providers/pi/runtime/PiRpcTransport';
+import { PiRPCSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
+import type { PiRPCRecord } from '@/providers/pi/runtime/PiRPCTransport';
 
 jest.setTimeout(10_000);
 
 describe('Pi execution kernel with an external protocol process', () => {
   let root: string;
-  let kernel: PiRpcSessionKernel;
-  let events: PiRpcRecord[];
+  let kernel: PiRPCSessionKernel;
+  let events: PiRPCRecord[];
   let closed: Promise<Error | undefined>;
 
   beforeEach(async () => {
@@ -19,7 +19,7 @@ describe('Pi execution kernel with an external protocol process', () => {
     events = [];
     let resolveClose!: (error?: Error) => void;
     closed = new Promise(resolve => { resolveClose = resolve; });
-    kernel = new PiRpcSessionKernel({
+    kernel = new PiRPCSessionKernel({
       command: process.execPath,
       args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs')],
       cwd: root,

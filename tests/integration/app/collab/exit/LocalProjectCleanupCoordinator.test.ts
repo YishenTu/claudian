@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { testClock } from '@test/helpers/testClock';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import { decodeLocalCleanupRecord, type LocalCleanupRecord } from '@/app/collab/exit/LocalCleanupRecord';
@@ -382,7 +382,7 @@ describe('LocalProjectCleanupCoordinator', () => {
     const copiedMarkerPath = path.join(vaultRoot, 'copied-marker.json');
     await writeFile(copiedMarkerPath, JSON.stringify({
       cleanupOperationId: 'other-operation',
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       memberId: 'member-alpha',
       nonce: 'b'.repeat(43),
       projectId: 'project-alpha',

@@ -6,11 +6,11 @@ import {
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import type { CollabAuthorityGitNetwork } from '@/app/collab/remote-authority/CollabAuthoritySession';
 import { NodeCloudAuthorityArtifactTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityArtifactTransport';
-import { NodeCloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+import { NodeCloudAuthorityHTTPTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
 
 /** Explicit test ingress assertions; never part of a persisted Cloud binding or production adapter. */
 export function createDevelopmentCloudAuthorityAdapter(vaultRoot: string, actor: string): CloudAuthorityAdapter {
-  const http = new NodeCloudAuthorityHttpTransport();
+  const http = new NodeCloudAuthorityHTTPTransport();
   const artifacts = new NodeCloudAuthorityArtifactTransport();
   const headers = (input: Readonly<Record<string, string>>) => ({
     ...input,

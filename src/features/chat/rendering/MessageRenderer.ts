@@ -24,9 +24,9 @@ import { t } from '../../../i18n/i18n';
 import { enhanceRenderedCodeFence } from '../../../shared/components/CopyableCodeFence';
 import { extractUserDisplayContent } from '../../../utils/context';
 import { processFileLinks, registerFileLinkHandler } from '../../../utils/fileLink';
-import { replaceImageEmbedsWithHtml } from '../../../utils/imageEmbed';
+import { replaceImageEmbedsWithHTML } from '../../../utils/imageEmbed';
 import { stripLegacyInterruptIndicator } from '../../../utils/interrupt';
-import { escapeRawHtmlTags } from '../../../utils/markdownHtml';
+import { escapeRawHTMLTags } from '../../../utils/markdownHTML';
 import {
   escapeMathDelimitersForStreaming,
   normalizeLatexMathDelimiters,
@@ -897,9 +897,9 @@ export class MessageRenderer {
       // Escape user-authored HTML first so placeholders like <meta-name> render
       // as plain text. Trusted plugin markup (image embeds) is injected only
       // after this step, otherwise it would be escaped too.
-      const safeMarkdown = escapeRawHtmlTags(renderMarkdown);
+      const safeMarkdown = escapeRawHTMLTags(renderMarkdown);
       const displayOnlyCodeFences = prepareDisplayOnlyCodeFences(safeMarkdown);
-      const processedMarkdown = replaceImageEmbedsWithHtml(
+      const processedMarkdown = replaceImageEmbedsWithHTML(
         displayOnlyCodeFences.markdown,
         this.app,
         { mediaFolder: this.plugin.settings.mediaFolder }

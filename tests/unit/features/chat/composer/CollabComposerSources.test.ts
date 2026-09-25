@@ -10,6 +10,7 @@ import { CollabTicketReferenceSource } from '@/features/chat/composer/CollabTick
 
 function createReferences(overrides: Partial<CollabComposerReferencePort> = {}): CollabComposerReferencePort {
   return {
+    isAvailable: () => true,
     getSelection: jest.fn(async () => ({ projectId: 'project-1', projectName: 'Project One' })),
     listMemberChanges: jest.fn(async (): Promise<CollabComposerReferenceCollection<CollabComposerMemberChange>> => ({
       items: [],

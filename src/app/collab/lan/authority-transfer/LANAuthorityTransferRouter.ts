@@ -1,0 +1,711 @@
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';
+
+import {
+  type AcceptCloudToLanTransferTargetRequest,
+  type AcceptLanToCloudTransferTargetRequest,
+  type AcknowledgeTransferredMembershipClaimRedemptionRequest,
+  type CancelProjectAuthorityTransferRequest,
+  type ClaimTransferredMembershipRequest,
+  COLLAB_LIMITS,
+  COLLAB_PROTOCOL_VERSION,
+  type CollabAuthorityRelinquishmentProof,
+  type CollabAuthorityTransferOperation,
+  type CollabAuthorityTransferOperationMap,
+  type CollabMemberId,
+  type CollabProjectId,
+  type ConfirmCloudToLanTargetActiveRequest,
+  decodeCollabAuthorityTransferOperationRequest,
+  decodeCollabAuthorityTransferOperationResponse,
+  type GetProjectAuthorityTransferRequest,
+  type GetTransferredMembershipClaimRequest,
+  isCollabMemberId,
+  type ReportCloudToLanTargetStagedRequest,
+  type RequestLanToCloudTransferRequest,
+} from '@claudian-collab/protocol';
+
+import {
+  COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION,
+  decodeLANAuthorityTransferEndpointIdentity,
+  matchCollabLANAuthorityTransferIdentityRoute,
+  matchCollabLANAuthorityTransferRoute,
+  matchesLANAuthorityTransferEndpointIdentity,
+} from '@/app/collab/lan/authority-transfer/LANAuthorityTransferBinding';
+import { CollabError } from '@/core/collab/ClaudianCollabError';
+
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const MEMBER_CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+export interface LANAuthorityTransferActor {
+  readonly memberId: CollabMemberId;
+}
+
+export interface LANAuthorityTransferMemberAuthenticator {
+  authenticateMemberCredential(
+    credential: string,
+  ): Promise<LANAuthorityTransferActor>;
+}
+
+type OperationRequest<Operation extends CollabAuthorityTransferOperation> =
+  CollabAuthorityTransferOperationMap[Operation]['request'];
+type OperationResponse<Operation extends CollabAuthorityTransferOperation> =
+  CollabAuthorityTransferOperationMap[Operation]['response'];
+type LANClaimTransferredMembershipRequest = Extract<
+  ClaimTransferredMembershipRequest,
+  { readonly credentialHash: string }
+>;
+
+export interface LANAuthorityTransferSourceActiveService
+  extends LANAuthorityTransferMemberAuthenticator {
+  requestLanToCloudTransfer(
+    actor: LANAuthorityTransferActor,
+    request: RequestLanToCloudTransferRequest,
+  ): Promise<OperationResponse<'requestLanToCloudTransfer'>>;
+  acceptLanToCloudTransferTarget(
+    actor: LANAuthorityTransferActor,
+    request: AcceptLanToCloudTransferTargetRequest,
+  ): Promise<OperationResponse<'acceptLanToCloudTransferTarget'>>;
+  getProjectAuthorityTransfer(
+    actor: LANAuthorityTransferActor,
+    request: GetProjectAuthorityTransferRequest,
+  ): Promise<OperationResponse<'getProjectAuthorityTransfer'>>;
+  cancelProjectAuthorityTransfer(
+    actor: LANAuthorityTransferActor,
+    request: CancelProjectAuthorityTransferRequest,
+  ): Promise<OperationResponse<'cancelProjectAuthorityTransfer'>>;
+}
+
+export interface LANAuthorityTransferTargetStagedService {
+  acceptCloudToLanTransferTarget(
+    request: AcceptCloudToLanTransferTargetRequest,
+  ): Promise<OperationResponse<'acceptCloudToLanTransferTarget'>>;
+  getProjectAuthorityTransfer(
+    request: GetProjectAuthorityTransferRequest,
+  ): Promise<OperationResponse<'getProjectAuthorityTransfer'>>;
+  reportCloudToLanTargetStaged(
+    request: ReportCloudToLanTargetStagedRequest,
+  ): Promise<OperationResponse<'reportCloudToLanTargetStaged'>>;
+  confirmCloudToLanTargetActive(
+    request: ConfirmCloudToLanTargetActiveRequest,
+  ): Promise<OperationResponse<'confirmCloudToLanTargetActive'>>;
+}
+
+export interface LANAuthorityTransferTargetActiveService {
+  readonly expiresAt: string;
+  claimTransferredMembership(
+    request: LANClaimTransferredMembershipRequest,
+  ): Promise<OperationResponse<'claimTransferredMembership'>>;
+  expire(): Promise<void>;
+}
+
+export interface LANAuthorityTransferTerminalSourceService
+  extends LANAuthorityTransferMemberAuthenticator {
+  readonly expiresAt: string;
+  getProjectAuthorityTransfer(
+    actor: LANAuthorityTransferActor,
+    request: GetProjectAuthorityTransferRequest,
+  ): Promise<OperationResponse<'getProjectAuthorityTransfer'>>;
+  getTransferredMembershipClaim(
+    actor: LANAuthorityTransferActor,
+    request: GetTransferredMembershipClaimRequest,
+  ): Promise<OperationResponse<'getTransferredMembershipClaim'>>;
+  acknowledgeTransferredMembershipClaimRedemption(
+    actor: LANAuthorityTransferActor,
+    request: AcknowledgeTransferredMembershipClaimRedemptionRequest,
+  ): Promise<OperationResponse<'acknowledgeTransferredMembershipClaimRedemption'>>;
+  expire(): Promise<void>;
+}
+
+interface RouteRegistrationBase {
+  readonly authorityGeneration?: number;
+  readonly projectId: CollabProjectId;
+}
+
+export interface LANAuthorityTransferSourceActiveRegistration
+  extends RouteRegistrationBase {
+  readonly hostMemberId: CollabMemberId;
+  readonly service: LANAuthorityTransferSourceActiveService;
+  readonly state: 'source-active';
+}
+
+export interface LANAuthorityTransferTargetOnlyStagedRegistration
+  extends RouteRegistrationBase {
+  readonly credentialHash: string;
+  readonly service: LANAuthorityTransferTargetStagedService;
+  readonly state: 'target-only-staged';
+  readonly transferId: string;
+}
+
+export interface LANAuthorityTransferTargetActiveRegistration
+  extends RouteRegistrationBase {
+  readonly service: LANAuthorityTransferTargetActiveService;
+  readonly state: 'target-active';
+  readonly transferId: string;
+}
+
+export interface LANAuthorityTransferTerminalSourceRegistration
+  extends RouteRegistrationBase {
+  readonly service: LANAuthorityTransferTerminalSourceService;
+  readonly state: 'terminal-source';
+  readonly transferId: string;
+}
+
+export type LANAuthorityTransferRouteRegistration =
+  | LANAuthorityTransferSourceActiveRegistration
+  | LANAuthorityTransferTargetOnlyStagedRegistration
+  | LANAuthorityTransferTargetActiveRegistration
+  | LANAuthorityTransferTerminalSourceRegistration;
+
+export interface LANAuthorityTransferRouteTransition {
+  readonly expected: LANAuthorityTransferRouteRegistration;
+  readonly next: LANAuthorityTransferRouteRegistration;
+  readonly relinquishmentProof: CollabAuthorityRelinquishmentProof;
+}
+
+export type LANAuthorityTransferRouteAdmissionResult<T> =
+  | { readonly admitted: false }
+  | { readonly admitted: true; readonly value: T };
+
+export interface LANAuthorityTransferRouteAccess {
+  resolve(
+    projectId: CollabProjectId,
+    transferId?: string,
+  ): LANAuthorityTransferRouteRegistration | null;
+
+  /**
+   * The lifecycle owner rechecks the exact registration and holds its Project
+   * replacement lane for the full callback. A state transition closes and
+   * drains this same lane before replacing the registration.
+   */
+  runIfCurrent<T>(
+    projectId: CollabProjectId,
+    expected: LANAuthorityTransferRouteRegistration,
+    operation: () => Promise<T>,
+  ): Promise<LANAuthorityTransferRouteAdmissionResult<T>>;
+}
+
+function routeError(
+  code:
+    | 'authentication-failed'
+    | 'authorization-denied'
+    | 'operation-failed'
+    | 'project-not-found'
+    | 'protocol-payload-invalid'
+    | 'protocol-version-unsupported',
+  reason: string,
+  safeContext: Readonly<Record<string, unknown>> = {},
+): CollabError {
+  return new CollabError({ code, safeContext: { reason, ...safeContext } });
+}
+
+function validateCanonicalCredential(credential: string, reason: string): Buffer {
+  if (!MEMBER_CREDENTIAL_PATTERN.test(credential)) {
+    throw routeError('authentication-failed', reason);
+  }
+  const decoded = Buffer.from(credential, 'base64url');
+  if (decoded.byteLength !== 32 || decoded.toString('base64url') !== credential) {
+    throw routeError('authentication-failed', reason);
+  }
+  return decoded;
+}
+
+function transferCredentialHash(credential: string): Buffer {
+  return createHash('sha256')
+    .update(validateCanonicalCredential(
+      credential,
+      'authority-transfer-credential-invalid',
+    ))
+    .digest();
+}
+
+function decodeCredentialHash(value: string): Buffer {
+  if (!/^[0-9a-f]{64}$/.test(value)) {
+    throw routeError('operation-failed', 'authority-transfer-credential-hash-invalid');
+  }
+  return Buffer.from(value, 'hex');
+}
+
+function singleHeader(headers: IncomingHttpHeaders, name: string): string | null {
+  const value = headers[name];
+  return typeof value === 'string' ? value : null;
+}
+
+function requestId(headers: IncomingHttpHeaders): string {
+  const supplied = singleHeader(headers, 'x-request-id');
+  return supplied && REQUEST_ID_PATTERN.test(supplied) ? supplied : randomUUID();
+}
+
+async function readRequestBody(request: IncomingMessage): Promise<Buffer> {
+  const contentType = singleHeader(request.headers, 'content-type');
+  if (
+    contentType === null
+    || !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(contentType)
+  ) {
+    request.resume();
+    throw routeError(
+      'protocol-payload-invalid',
+      'authority-transfer-request-content-type-invalid',
+    );
+  }
+  const declared = singleHeader(request.headers, 'content-length');
+  if (declared !== null && Number(declared) > COLLAB_LIMITS.maxJsonPayloadUtf8Bytes) {
+    request.resume();
+    throw routeError(
+      'protocol-payload-invalid',
+      'authority-transfer-request-too-large',
+    );
+  }
+  const chunks: Buffer[] = [];
+  let observed = 0;
+  for await (const chunk of request) {
+    const bytes = Buffer.from(chunk as Uint8Array);
+    observed += bytes.byteLength;
+    if (observed > COLLAB_LIMITS.maxJsonPayloadUtf8Bytes) {
+      throw routeError(
+        'protocol-payload-invalid',
+        'authority-transfer-request-too-large',
+      );
+    }
+    chunks.push(bytes);
+  }
+  if (chunks.length === 0) {
+    throw routeError('protocol-payload-invalid', 'authority-transfer-request-body-missing');
+  }
+  return Buffer.concat(chunks);
+}
+
+function parseJSONBody(bytes: Buffer): unknown {
+  try {
+    return JSON.parse(bytes.toString('utf8')) as unknown;
+  } catch {
+    throw routeError('protocol-payload-invalid', 'authority-transfer-request-json-invalid');
+  }
+}
+
+function statusForError(error: CollabError): number {
+  if (error.safeContext.reason === 'authority-transfer-request-too-large') return 413;
+  switch (error.code) {
+    case 'authentication-failed':
+    case 'membership-claim-invalid': return 401;
+    case 'authorization-denied': return 403;
+    case 'project-not-found':
+    case 'authority-transfer-not-found': return 404;
+    case 'protocol-version-unsupported': return 426;
+    case 'authority-transfer-stale':
+    case 'authority-transfer-cancellation-forbidden':
+    case 'idempotency-conflict':
+    case 'membership-claim-already-redeemed': return 409;
+    case 'membership-claim-expired':
+    case 'membership-claim-revoked': return 410;
+    case 'operation-timeout': return 408;
+    case 'protocol-payload-invalid': return 400;
+    default: return 500;
+  }
+}
+
+function asCollabError(error: unknown): CollabError {
+  return error instanceof CollabError
+    ? error
+    : routeError('operation-failed', 'authority-transfer-route-failed');
+}
+
+function writeJSON(
+  response: ServerResponse,
+  statusCode: number,
+  requestIdValue: string,
+  payload: Readonly<Record<string, unknown>>,
+): void {
+  if (response.headersSent || response.destroyed) return;
+  let bytes = Buffer.from(JSON.stringify({
+    bindingVersion: COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION,
+    ...payload,
+    protocolVersion: COLLAB_PROTOCOL_VERSION,
+    requestId: requestIdValue,
+  }), 'utf8');
+  if (bytes.byteLength > COLLAB_LIMITS.maxJsonPayloadUtf8Bytes) {
+    statusCode = 500;
+    bytes = Buffer.from(JSON.stringify({
+      bindingVersion: COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION,
+      error: routeError(
+        'operation-failed',
+        'authority-transfer-response-too-large',
+      ).toJSON(),
+      protocolVersion: COLLAB_PROTOCOL_VERSION,
+      requestId: requestIdValue,
+    }), 'utf8');
+  }
+  response.writeHead(statusCode, {
+    'cache-control': 'no-store',
+    'content-length': String(bytes.byteLength),
+    'content-type': 'application/json; charset=utf-8',
+    'x-content-type-options': 'nosniff',
+    'x-request-id': requestIdValue,
+  });
+  response.end(bytes);
+}
+
+function isOperationAllowed(
+  registration: LANAuthorityTransferRouteRegistration,
+  operation: CollabAuthorityTransferOperation,
+): boolean {
+  switch (registration.state) {
+    case 'source-active':
+      return operation === 'requestLanToCloudTransfer'
+        || operation === 'acceptLanToCloudTransferTarget'
+        || operation === 'getProjectAuthorityTransfer'
+        || operation === 'cancelProjectAuthorityTransfer';
+    case 'target-only-staged':
+      return operation === 'acceptCloudToLanTransferTarget'
+        || operation === 'getProjectAuthorityTransfer'
+        || operation === 'reportCloudToLanTargetStaged'
+        || operation === 'confirmCloudToLanTargetActive';
+    case 'target-active':
+      return operation === 'claimTransferredMembership';
+    case 'terminal-source':
+      return operation === 'getProjectAuthorityTransfer'
+        || operation === 'getTransferredMembershipClaim'
+        || operation === 'acknowledgeTransferredMembershipClaimRedemption';
+  }
+}
+
+function bearerCredential(request: IncomingMessage): string {
+  const authorization = singleHeader(request.headers, 'authorization');
+  const match = authorization
+    ? /^Bearer ([A-Za-z0-9_-]{43})$/.exec(authorization)
+    : null;
+  if (!match) {
+    throw routeError('authentication-failed', 'authority-transfer-authentication-failed');
+  }
+  validateCanonicalCredential(
+    match[1],
+    'authority-transfer-authentication-failed',
+  );
+  return match[1];
+}
+
+function requireTransferCredential(
+  request: IncomingMessage,
+  registration: LANAuthorityTransferTargetOnlyStagedRegistration,
+): void {
+  const authorization = singleHeader(request.headers, 'authorization');
+  const match = authorization
+    ? /^Claudian-Authority-Transfer ([A-Za-z0-9_-]{43})$/.exec(authorization)
+    : null;
+  if (!match) {
+    throw routeError('authentication-failed', 'authority-transfer-authentication-failed');
+  }
+  let actual: Buffer;
+  try {
+    actual = transferCredentialHash(match[1]);
+  } catch {
+    throw routeError('authentication-failed', 'authority-transfer-authentication-failed');
+  }
+  const expected = decodeCredentialHash(registration.credentialHash);
+  if (!timingSafeEqual(actual, expected)) {
+    throw routeError('authentication-failed', 'authority-transfer-authentication-failed');
+  }
+}
+
+function requireLANClaimRequest(
+  request: IncomingMessage,
+  operation: CollabAuthorityTransferOperation,
+  body: Buffer,
+): LANClaimTransferredMembershipRequest {
+  const authorization = singleHeader(request.headers, 'authorization');
+  const match = authorization
+    ? /^Claudian-Transfer-Claim ([A-Za-z0-9_-]+)$/.exec(authorization)
+    : null;
+  if (!match || operation !== 'claimTransferredMembership') {
+    throw routeError('authentication-failed', 'authority-transfer-authentication-failed');
+  }
+  let decoded: ClaimTransferredMembershipRequest;
+  try {
+    decoded = decodeCollabAuthorityTransferOperationRequest(
+      'claimTransferredMembership',
+      parseJSONBody(body),
+    );
+  } catch {
+    throw routeError('authentication-failed', 'authority-transfer-authentication-failed');
+  }
+  if (
+    !('credentialHash' in decoded)
+    || typeof decoded.credentialHash !== 'string'
+  ) {
+    throw routeError('authentication-failed', 'authority-transfer-authentication-failed');
+  }
+  if (
+    !BASE64URL_PATTERN.test(decoded.claim)
+    || match[1].length !== decoded.claim.length
+    || !timingSafeEqual(Buffer.from(match[1]), Buffer.from(decoded.claim))
+  ) {
+    throw routeError('authentication-failed', 'authority-transfer-authentication-failed');
+  }
+  return decoded;
+}
+
+export class LANAuthorityTransferRouter {
+  constructor(private readonly routes: LANAuthorityTransferRouteAccess) {}
+
+  private async handleIdentity(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+    const route = matchCollabLANAuthorityTransferIdentityRoute(request.method, request.url);
+    if (!route) return false;
+    const id = requestId(request.headers);
+    try {
+      if (route.version !== COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION) {
+        request.resume();
+        throw routeError('protocol-version-unsupported', 'authority-transfer-binding-version-unsupported');
+      }
+      const expected = decodeLANAuthorityTransferEndpointIdentity(
+        parseJSONBody(await readRequestBody(request)),
+      );
+      if (expected.projectId !== route.projectId) {
+        throw routeError('protocol-payload-invalid', 'authority-transfer-project-mismatch');
+      }
+      const registration = (expected.transferId === null ? null
+        : this.routes.resolve(route.projectId, expected.transferId))
+        ?? this.routes.resolve(route.projectId);
+      if (!registration) {
+        throw routeError('authorization-denied', 'authority-transfer-endpoint-identity-mismatch');
+      }
+      const admission = await this.routes.runIfCurrent(route.projectId, registration, async () => {
+        const actual = decodeLANAuthorityTransferEndpointIdentity({
+          authorityGeneration: registration.authorityGeneration ?? null,
+          projectId: registration.projectId,
+          transferId: registration.state === 'source-active' ? null : registration.transferId,
+        });
+        if (!matchesLANAuthorityTransferEndpointIdentity(expected, actual)) {
+          throw routeError('authorization-denied', 'authority-transfer-endpoint-identity-mismatch');
+        }
+        return actual;
+      });
+      if (!admission.admitted) {
+        throw routeError('authorization-denied', 'authority-transfer-endpoint-identity-mismatch');
+      }
+      writeJSON(response, 200, id, { data: admission.value });
+    } catch (error) {
+      request.resume();
+      const safeError = asCollabError(error);
+      writeJSON(response, statusForError(safeError), id, { error: safeError.toJSON() });
+    }
+    return true;
+  }
+
+  async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+    if (await this.handleIdentity(request, response)) return true;
+    const route = matchCollabLANAuthorityTransferRoute(request.method, request.url);
+    if (!route) return false;
+    const requestIdValue = requestId(request.headers);
+    try {
+      if (route.version !== COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION) {
+        request.resume();
+        throw routeError(
+          'protocol-version-unsupported',
+          'authority-transfer-binding-version-unsupported',
+          {
+            receivedVersion: route.version,
+            supportedVersion: COLLAB_LAN_AUTHORITY_TRANSFER_BINDING_VERSION,
+          },
+        );
+      }
+      const body = await readRequestBody(request);
+      const decodedRequest = route.operation === 'claimTransferredMembership'
+        ? requireLANClaimRequest(request, route.operation, body)
+        : decodeCollabAuthorityTransferOperationRequest(route.operation, parseJSONBody(body));
+      const registration = this.routes.resolve(
+        route.projectId,
+        'transferId' in decodedRequest && typeof decodedRequest.transferId === 'string' ? decodedRequest.transferId : undefined,
+      ) ?? this.routes.resolve(route.projectId);
+      if (
+        !registration
+        || registration.projectId !== route.projectId
+      ) {
+        throw routeError(
+          'authentication-failed',
+          'authority-transfer-authentication-failed',
+        );
+      }
+      const admission = await this.routes.runIfCurrent(
+        route.projectId,
+        registration,
+        async () => {
+          let actor: LANAuthorityTransferActor | null = null;
+          let lanClaimRequest: LANClaimTransferredMembershipRequest | null = null;
+          if (
+            registration.state === 'source-active'
+            || registration.state === 'terminal-source'
+          ) {
+            try {
+              actor = await registration.service.authenticateMemberCredential(
+                bearerCredential(request),
+              );
+            } catch {
+              throw routeError(
+                'authentication-failed',
+                'authority-transfer-authentication-failed',
+              );
+            }
+            if (!isCollabMemberId(actor.memberId)) {
+              throw routeError(
+                'authentication-failed',
+                'authority-transfer-authentication-failed',
+              );
+            }
+          } else if (registration.state === 'target-only-staged') {
+            requireTransferCredential(request, registration);
+          } else {
+            lanClaimRequest = requireLANClaimRequest(
+              request,
+              route.operation,
+              body,
+            );
+          }
+          if (!isOperationAllowed(registration, route.operation)) {
+            throw routeError('project-not-found', 'authority-transfer-route-not-found');
+          }
+          const decoded = lanClaimRequest
+            ?? decodedRequest;
+          if (decoded.projectId !== registration.projectId) {
+            throw routeError('project-not-found', 'authority-transfer-project-mismatch');
+          }
+          if (
+            registration.state !== 'source-active'
+            && (
+              !('transferId' in decoded)
+              || decoded.transferId !== registration.transferId
+            )
+          ) {
+            throw routeError('project-not-found', 'authority-transfer-route-not-found');
+          }
+          const result = await this.dispatch(
+            registration,
+            route.operation,
+            decoded,
+            actor,
+            lanClaimRequest,
+          );
+          const decodedResponse = decodeCollabAuthorityTransferOperationResponse(
+            route.operation,
+            result,
+          );
+          if (
+            !('projectId' in decodedResponse)
+            || decodedResponse.projectId !== decoded.projectId
+            || (
+              'transferId' in decoded
+              && (!('transferId' in decodedResponse) || decodedResponse.transferId !== decoded.transferId)
+            )
+          ) {
+            throw routeError('operation-failed', 'authority-transfer-response-mismatch');
+          }
+          return decodedResponse;
+        },
+      );
+      if (!admission.admitted) {
+        throw routeError(
+          'authentication-failed',
+          'authority-transfer-authentication-failed',
+        );
+      }
+      writeJSON(response, 200, requestIdValue, { data: admission.value });
+    } catch (error) {
+      const collabError = asCollabError(error);
+      writeJSON(response, statusForError(collabError), requestIdValue, {
+        error: collabError.toJSON(),
+      });
+    }
+    return true;
+  }
+
+  private dispatch(
+    registration: LANAuthorityTransferRouteRegistration,
+    operation: CollabAuthorityTransferOperation,
+    request: OperationRequest<CollabAuthorityTransferOperation>,
+    actor: LANAuthorityTransferActor | null,
+    lanClaimRequest: LANClaimTransferredMembershipRequest | null,
+  ): Promise<unknown> {
+    switch (registration.state) {
+      case 'source-active': {
+        const authenticated = actor!;
+        switch (operation) {
+          case 'requestLanToCloudTransfer':
+            return registration.service.requestLanToCloudTransfer(
+              authenticated,
+              request as RequestLanToCloudTransferRequest,
+            );
+          case 'acceptLanToCloudTransferTarget':
+            if (authenticated.memberId !== registration.hostMemberId) {
+              throw routeError('authorization-denied', 'authority-transfer-host-required');
+            }
+            return registration.service.acceptLanToCloudTransferTarget(
+              authenticated,
+              request as AcceptLanToCloudTransferTargetRequest,
+            );
+          case 'getProjectAuthorityTransfer':
+            return registration.service.getProjectAuthorityTransfer(
+              authenticated,
+              request as GetProjectAuthorityTransferRequest,
+            );
+          case 'cancelProjectAuthorityTransfer':
+            return registration.service.cancelProjectAuthorityTransfer(
+              authenticated,
+              request as CancelProjectAuthorityTransferRequest,
+            );
+          default: break;
+        }
+        break;
+      }
+      case 'target-only-staged':
+        switch (operation) {
+          case 'acceptCloudToLanTransferTarget':
+            return registration.service.acceptCloudToLanTransferTarget(
+              request as AcceptCloudToLanTransferTargetRequest,
+            );
+          case 'getProjectAuthorityTransfer':
+            return registration.service.getProjectAuthorityTransfer(
+              request as GetProjectAuthorityTransferRequest,
+            );
+          case 'reportCloudToLanTargetStaged':
+            return registration.service.reportCloudToLanTargetStaged(
+              request as ReportCloudToLanTargetStagedRequest,
+            );
+          case 'confirmCloudToLanTargetActive':
+            return registration.service.confirmCloudToLanTargetActive(
+              request as ConfirmCloudToLanTargetActiveRequest,
+            );
+          default: break;
+        }
+        break;
+      case 'target-active':
+        if (operation === 'claimTransferredMembership' && lanClaimRequest) {
+          return registration.service.claimTransferredMembership(
+            lanClaimRequest,
+          );
+        }
+        break;
+      case 'terminal-source': {
+        const authenticated = actor!;
+        switch (operation) {
+          case 'getProjectAuthorityTransfer':
+            return registration.service.getProjectAuthorityTransfer(
+              authenticated,
+              request as GetProjectAuthorityTransferRequest,
+            );
+          case 'getTransferredMembershipClaim':
+            return registration.service.getTransferredMembershipClaim(
+              authenticated,
+              request as GetTransferredMembershipClaimRequest,
+            );
+          case 'acknowledgeTransferredMembershipClaimRedemption':
+            return registration.service.acknowledgeTransferredMembershipClaimRedemption(
+              authenticated,
+              request as AcknowledgeTransferredMembershipClaimRedemptionRequest,
+            );
+          default: break;
+        }
+        break;
+      }
+    }
+    throw routeError('project-not-found', 'authority-transfer-route-not-found');
+  }
+}

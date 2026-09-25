@@ -15,6 +15,7 @@ import {
   writeGitFixtureTree,
 } from '@test/helpers/collabGitObjects';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 import {
@@ -25,15 +26,15 @@ import { AcceptGitRepository } from '@/app/collab/accept/AcceptGitRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
-const ACCEPTED_AT = '2026-08-08T00:01:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
+const ACCEPTED_AT = testTime({ days: -19, minutes: 1 });
 const IDENTITY = Object.freeze({ email: 'fixture@claudian.local', name: 'Fixture' });
 const MEMBER_ID = 'member-a';
 const MEMBER_REF = collabMemberRef(MEMBER_ID);
@@ -45,7 +46,7 @@ describe('AcceptCoordinator Native Git integration', () => {
   let authorityDirectory: string;
   let resources: CollabLocalProjectRepository;
   let resource: Awaited<ReturnType<CollabLocalProjectRepository['createOwnedAuthorityDirectory']>>;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let git: GitRepositoryService;
   let repository: AcceptGitRepository;
   let repositoryPath: string;
@@ -303,8 +304,8 @@ describe('AcceptCoordinator Native Git integration', () => {
     };
   }
 
-  async function openDatabase(): Promise<SqlJsProjectDatabase> {
-    const opened = new SqlJsProjectDatabase(authorityDirectory, {
+  async function openDatabase(): Promise<SQLJSProjectDatabase> {
+    const opened = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
       resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
     });
@@ -335,7 +336,7 @@ describe('AcceptCoordinator Native Git integration', () => {
     } finally {
       legacy.close();
     }
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
       resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
     });

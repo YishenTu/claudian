@@ -10,7 +10,7 @@ import { OpencodeExecutionBackend } from '@/providers/opencode/execution/Opencod
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
-import { createNativeRpcProcess, createNativeVersionProcess } from './NativeRpcTestProcess';
+import { createNativeRPCProcess, createNativeVersionProcess } from './NativeRPCTestProcess';
 import { createForkTestEnvironment, type ForkTestEnvironment } from './ProviderForkTestHarness';
 
 interface NativeMessage {
@@ -22,7 +22,7 @@ interface NativeMessage {
 async function createNativeOpencode(env: ForkTestEnvironment) {
   const sessions = new Map<string, NativeMessage[]>([['ses-source', []]]);
   const prompts: Array<{ sessionId: string; context: string[] }> = [];
-  const processes: ReturnType<typeof createNativeRpcProcess>[] = [];
+  const processes: ReturnType<typeof createNativeRPCProcess>[] = [];
   new DatabaseSync(path.join(env.root, 'opencode.db')).close();
   let ordinal = 0;
   let forkOrdinal = 0;
@@ -30,7 +30,7 @@ async function createNativeOpencode(env: ForkTestEnvironment) {
   let supportsFork = true;
   jest.mocked(spawn).mockImplementation((_command, args) => {
     if (args?.includes('--version')) return createNativeVersionProcess('1.18.31');
-    const proc = createNativeRpcProcess((method, params, notify) => {
+    const proc = createNativeRPCProcess((method, params, notify) => {
       if (method === 'initialize') return { protocolVersion: 1, agentCapabilities: { loadSession: true, sessionCapabilities: supportsFork ? { fork: {} } : {} } };
       if (method === 'session/fork') {
         if (rejectFork) throw new Error('Native fork failed');

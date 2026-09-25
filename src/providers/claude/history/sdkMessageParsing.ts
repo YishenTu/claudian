@@ -302,9 +302,9 @@ export function collectAsyncSubagentResults(
       continue;
     }
 
-    const taskId = extractXmlTag(sdkMsg.content, 'task-id');
-    const status = extractXmlTag(sdkMsg.content, 'status');
-    const result = extractXmlTag(sdkMsg.content, 'result');
+    const taskId = extractXMLTag(sdkMsg.content, 'task-id');
+    const status = extractXMLTag(sdkMsg.content, 'status');
+    const result = extractXMLTag(sdkMsg.content, 'result');
     if (!taskId || !result) {
       continue;
     }
@@ -318,7 +318,7 @@ export function collectAsyncSubagentResults(
   return results;
 }
 
-export function extractXmlTag(content: string, tagName: string): string | null {
+export function extractXMLTag(content: string, tagName: string): string | null {
   const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*</${tagName}>`, 'i');
   const match = content.match(regex);
   if (!match || !match[1]) {
@@ -329,7 +329,7 @@ export function extractXmlTag(content: string, tagName: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function isCanonicalSdkUserMessage(record: SDKNativeMessage): boolean {
+export function isCanonicalSDKUserMessage(record: SDKNativeMessage): boolean {
   const queuedPrompt = record.type === 'attachment'
     && record.attachment?.type === 'queued_command' && record.attachment.commandMode === 'prompt';
   if ((!queuedPrompt && record.type !== 'user') || isSystemInjectedMessage(record)) return false;
@@ -389,11 +389,11 @@ export function parseTaskNotification(sdkMsg: SDKNativeMessage): string | null {
       : undefined;
   const text = extractTextContent(content);
   if (!text?.trimStart().startsWith('<task-notification>')) return null;
-  if (!extractXmlTag(text, 'task-id')) return null;
-  const status = extractXmlTag(text, 'status');
+  if (!extractXMLTag(text, 'task-id')) return null;
+  const status = extractXMLTag(text, 'status');
   if (!status) return null;
-  return extractXmlTag(text, 'result')
-    ?? extractXmlTag(text, 'summary')
+  return extractXMLTag(text, 'result')
+    ?? extractXMLTag(text, 'summary')
     ?? `Background task ${status}.`;
 }
 

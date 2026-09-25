@@ -128,7 +128,7 @@ describe('ProjectInvitationModal', () => {
 
   it('updates expiry and opens a new Create operation only on an explicit click', async () => {
     jest.useFakeTimers();
-    jest.setSystemTime(Date.parse('2026-09-02T00:00:00.000Z'));
+    jest.setSystemTime(Date.parse(testTime({ days: 6 })));
     const { modal, port, current, ui } = open();
     await flush();
     jest.advanceTimersByTime(60_000);
@@ -138,7 +138,7 @@ describe('ProjectInvitationModal', () => {
     expect(port.openInvitation).toHaveBeenCalledTimes(1);
     const next = operation();
     next.run.mockResolvedValue(success({
-      status: 'ready', availableUntil: '2026-09-02T00:30:00.000Z',
+      status: 'ready', availableUntil: testTime({ days: 6, minutes: 30 }),
       invitation: { encodedInvitation: 'second-link', expiresAt: testTime({ days: 6, minutes: 30 }) },
     }));
     port.openInvitation.mockReturnValue(next);

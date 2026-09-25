@@ -1,4 +1,5 @@
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   advanceHostTransferRecoveryRecord,
@@ -30,8 +31,8 @@ const record: HostTransferRecoveryRecord = {
   manifestDigest: null,
   ownerInstallationKey: TEST_INSTALLATION_A,
   activationCertificate: null,
-  createdAt: '2026-08-13T00:00:00.000Z',
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
+  updatedAt: testTime({ days: -14 }),
 };
 
 describe('HostTransferRecoveryRecord', () => {
