@@ -177,6 +177,7 @@ describe('persistent LAN authority-transfer services', () => {
       authenticate: async () => ({ memberId: MEMBER_ID }),
       cleanupStaging: jest.fn(),
       expiresAt: status().expiresAt,
+      now: () => new Date('2026-08-27T00:02:00.000Z'),
       persistence: {
         expireTerminalResponder: jest.fn(),
         load: async () => ({

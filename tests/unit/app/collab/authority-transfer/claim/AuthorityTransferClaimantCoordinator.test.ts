@@ -781,6 +781,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const coordinator = new AuthorityTransferClaimantCoordinator({
       convergence: { converge: jest.fn() },
       lanTarget: LAN_TARGET,
+      now: () => new Date('2026-08-27T00:02:00.000Z'),
       source: {
         acknowledgeRedemption: jest.fn(),
         getClaim: jest.fn(async () => { throw new Error('simulated source outage'); }),
@@ -811,6 +812,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       convergence: { converge: async () => undefined },
       createCredential: jest.fn(() => TARGET_CREDENTIAL),
       lanTarget: LAN_TARGET,
+      now: () => new Date('2026-08-27T00:02:00.000Z'),
       source: {
         acknowledgeRedemption: async () => undefined,
         getClaim,

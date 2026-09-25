@@ -820,6 +820,7 @@ describe('AuthorityTransferModule', () => {
       const repository = new CollabLocalProjectRepository(vaultRoot);
       const persistence = new ProductionAuthorityTransferPersistence(repository, {
         isRecoveryOwner: () => true,
+        now: () => new Date('2026-08-28T00:00:00.000Z'),
       });
       const request = {
         expectedAuthorityGeneration: 1,
@@ -853,6 +854,7 @@ describe('AuthorityTransferModule', () => {
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem;
       const module = new AuthorityTransferModule({
+        now: () => new Date('2026-08-28T00:00:00.000Z'),
         createLanToCloudConnection: async () => connection as never,
         assertLanToCloudSourceOwner: () => undefined,
         assertRecoveryOwner: () => undefined,
@@ -2418,6 +2420,7 @@ describe('AuthorityTransferModule', () => {
       retirement: {} as never,
     });
     const module = new AuthorityTransferModule({
+      now: () => new Date('2026-08-28T00:00:00.000Z'),
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
       claimantStore,
@@ -3623,6 +3626,7 @@ describe('AuthorityTransferModule', () => {
       retirement: {} as never,
     });
     new AuthorityTransferModule({
+      now: () => new Date('2026-08-28T00:00:00.000Z'),
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
       claimantStore: {
@@ -5129,6 +5133,7 @@ describe('AuthorityTransferModule', () => {
         supports: () => true,
       } as unknown as CloudAuthorityConnection;
       const module = new AuthorityTransferModule({
+        now: () => new Date('2026-08-28T00:00:00.000Z'),
         assertLanToCloudSourceOwner: () => undefined,
         assertRecoveryOwner: () => undefined,
         claimantStore: {
