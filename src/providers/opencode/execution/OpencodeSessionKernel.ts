@@ -23,8 +23,11 @@ export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
     const version = await detectOpencodeNativeVersion(cliPath, environment);
     if (this.disposed) throw new Error('OpenCode session is disposed');
     assertOpencodeSessionCompatibility(this.options.nativeVersion, version);
+    // V2 keeps saved credentials in its native database; its kernel discards unpersisted sessions instead.
     this.kernel = version === 2
-      ? new OpencodeHTTPSessionKernel(this.options, cliPath, environment, this.serverService)
+      ? new OpencodeHTTPSessionKernel(this.options, cliPath, this.options.databasePath === ':memory:'
+        ? buildOpencodeRuntimeEnv(this.options.plugin.settings, cliPath)
+        : environment, this.serverService)
       : new DefaultOpencodeACPSessionKernel(this.options);
     await this.kernel.connect(options);
   }

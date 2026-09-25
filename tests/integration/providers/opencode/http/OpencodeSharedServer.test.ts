@@ -2,13 +2,14 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest } from '@/core/execution';
+import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionConfig } from '@/core/execution';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { createOpencodeWorkspaceServices } from '@/providers/opencode/app/OpencodeWorkspaceServices';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { forkOpencodeSession } from '@/providers/opencode/history/OpencodeSessionFork';
 import { opencodeProviderRegistration } from '@/providers/opencode/registration';
 import { buildOpencodeRuntimeEnv } from '@/providers/opencode/runtime/OpencodeRuntimeEnvironment';
+import { getOpencodeProviderSettings } from '@/providers/opencode/settings';
 
 const fixture = `#!/usr/bin/env node
 const fs = require('node:fs'), http = require('node:http');
@@ -16,7 +17,7 @@ if (process.argv.includes('--version')) { console.log('2.0.14'); return; }
 fs.appendFileSync(process.env.PROCESS_LOG, JSON.stringify({ pid: process.pid, db: process.env.OPENCODE_DB }) + '\\n');
 const feeds = new Set(), forms = new Map(); let sequence = 0;
 const emit = (type, data) => { if(type==='form.created') forms.set(data.form.id,data.form); if(type==='form.cancelled'||type==='form.replied') forms.delete(data.id); for (const feed of feeds) feed.write('data: ' + JSON.stringify({ type, data }) + '\\n\\n'); };
-const sessions = new Map();
+const sessions = new Map(); let held = null;
 const config = () => { const a=JSON.parse(fs.readFileSync(process.env.OPENCODE_CONFIG, 'utf8')), b=JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}'); return {...a,...b,agent:{...a.agent,...b.agent},agents:{...a.agents,...b.agents}}; };
 const agents = () => { const c = config(); return Object.entries(c.agent || {}).map(([id, a]) => ({id, system:a.prompt})).concat(Object.entries(c.agents || {}).map(([id,a]) => ({id,...a}))).filter(a => !a.disabled && !c.agents?.[a.id]?.disabled); };
 const server = http.createServer(async (req, res) => {
@@ -30,13 +31,18 @@ const server = http.createServer(async (req, res) => {
  if (route === '/fixture/event') { emit(body.type, body.data); res.writeHead(204).end(); return; }
  if (route === '/fixture/disconnect') { for(const f of feeds) f.end(); res.writeHead(204).end(); return; }
  if (route === '/api/session/global/form/form_owned' && req.method==='DELETE') { emit('form.cancelled',{sessionID:'global',id:'form_owned'}); res.writeHead(204).end(); return; }
- if (route === '/api/model') return reply([{ id:'chat', providerID:'local', name:'Chat', enabled:true, variants:[] }]);
+ // Saved provider credentials live in the native database.
+ if (route === '/api/model') return reply(process.env.OPENCODE_DB === ':memory:' ? [{ id:'free', providerID:'opencode', name:'Free', enabled:true, variants:[] }] : [{ id:'chat', providerID:'local', name:'Chat', enabled:true, variants:[] }]);
  if (route === '/api/form') return reply([...forms.values()]);
  if (route === '/api/command') return reply([]);
  if (route === '/api/agent') return reply(agents());
- if (route === '/api/session') { const id = 'ses_' + (++sequence); const session = {id, agent:body.agent}; sessions.set(id,session); return reply(session); }
+ if (route === '/fixture/sessions') return reply({ ids:[...sessions.keys()], held:held?.length ?? 0 });
+ if (route === '/fixture/hold-sessions') { held = []; res.writeHead(204).end(); return; }
+ if (route === '/fixture/release-sessions') { const pending = held ?? []; held = null; for (const send of pending) send(); res.writeHead(204).end(); return; }
+ if (route === '/api/session') { const id = 'ses_' + (++sequence); const session = {id, agent:body.agent}; sessions.set(id,session); if (held) { held.push(() => reply(session)); return; } return reply(session); }
  const session = sessions.get(id);
  if (!session) { res.writeHead(404).end(); return; }
+ if (parts.length === 4 && req.method === 'DELETE') { sessions.delete(id); res.writeHead(204).end(); return; }
  if (parts.length === 4) return reply(session);
  if (parts[4] === 'fork') { const child={...session,id:'ses_'+(++sequence)}; sessions.set(child.id,child); return reply(child); }
  if (parts[4] === 'message') { res.end(JSON.stringify({data:[],cursor:{}})); return; }
@@ -78,8 +84,8 @@ async function createFixture(disableBuild = false) {
   };
   const workspace = await createOpencodeWorkspaceServices(plugin);
   const backend = new OpencodeExecutionBackend(plugin, workspace);
-  const createSession = () => backend.createSession({
-    vaultWorkingDirectory: root, lifecycle: 'persistent', nativePersistence: 'provider-default',
+  const createSession = (config: Partial<ProviderSessionConfig> = {}) => backend.createSession({
+    vaultWorkingDirectory: root, lifecycle: 'persistent', nativePersistence: 'provider-default', ...config,
     interactionPort: { requestApproval: async r => ({ interactionId: r.interactionId, decision: 'deny' }), askUserQuestion: async r => ({ interactionId: r.interactionId, answers: null }), dismissInteraction() {} },
   });
   return { root, cli, log, plugin, workspace, createSession,
@@ -110,6 +116,47 @@ it('shares discovery and independent chat sessions, retaining the server after o
   } finally { await a.dispose(); await b.dispose(); await f.dispose(); }
 }, 20000);
 
+
+it('runs auxiliary sessions with saved credentials without persisting them or replacing the catalog', async () => {
+  const f = await createFixture();
+  const session = f.createSession({ lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported' });
+  try {
+    expect(await f.workspace.metadataService.loadCatalog()).toBe(true);
+    const request = turn('title');
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of session.execute({ ...request, toolPolicy: { kind: 'passive' } }).events) events.push(event);
+    expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+    expect(getOpencodeProviderSettings(f.plugin.settings).discoveredModels.map(model => model.rawId)).toEqual(['local/chat']);
+    expect(f.processes().map(process => process.db)).toEqual([f.environment.OPENCODE_DB]);
+    await session.dispose();
+    const lease = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+    await expect(lease.request('/api/session/ses_1')).rejects.toThrow('404');
+    await lease.dispose();
+  } finally { await session.dispose(); await f.dispose(); }
+}, 15000);
+
+it('deletes an auxiliary session whose creation was still pending during disposal', async () => {
+  const f = await createFixture();
+  const session = f.createSession({ lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported' });
+  const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+  const sessions = () => control.request<{ data: { ids: string[]; held: number } }>('/fixture/sessions').then(result => result.data);
+  try {
+    expect(await f.workspace.metadataService.loadCatalog()).toBe(true);
+    await control.request('/fixture/hold-sessions', { method: 'POST' });
+    const request = turn('title');
+    const run = session.execute({ ...request, toolPolicy: { kind: 'passive' } });
+    const consume = (async () => { const events: ProviderExecutionEvent[] = []; for await (const event of run.events) events.push(event); })();
+    const deadline = Date.now() + 5000;
+    while ((await sessions()).held === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    expect((await sessions()).held).toBe(1);
+    const disposal = session.dispose();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    await control.request('/fixture/release-sessions', { method: 'POST' });
+    await disposal;
+    await consume;
+    expect((await sessions()).ids).toEqual([]);
+  } finally { await control.dispose(); await session.dispose(); await f.dispose(); }
+}, 15000);
 
 it('shares native history and fork operations with catalog and chat transport', async () => {
   const f = await createFixture();

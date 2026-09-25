@@ -134,6 +134,17 @@ it.each(cases)('$id detects missing effort fields in an otherwise present select
   expect(ProviderRegistry.getSettingsStorageAdapter(id).needsReasoningMetadata!(host.settings)).toBe(true);
 });
 
+it.each(cases)('$id detects a selected model missing from the catalog despite resolved effort metadata', ({ id, populate }) => {
+  const { host } = makeHost();
+  populate(host.settings);
+  const config = host.settings.providerConfigs[id]!;
+  const selected = (config.visibleModels as string[])[0];
+  if (id === 'opencode') config.thinkingOptionsByModel = { [selected]: [] };
+  if (id === 'grok') updateCurrentGrokCatalog(host.settings, { defaultModelId: selected, fingerprint: 'native', refreshedAt: 1, models: [] });
+  else config.discoveredModels = [];
+  expect(ProviderRegistry.getSettingsStorageAdapter(id).needsReasoningMetadata!(host.settings)).toBe(true);
+});
+
 it.each(['claude', 'grok', 'opencode', 'pi'] as const)('%s retains confirmed non-reasoning metadata without querying on every reload', async id => {
   const { host, storage } = makeHost();
   cases.find(entry => entry.id === id)!.populate(host.settings);

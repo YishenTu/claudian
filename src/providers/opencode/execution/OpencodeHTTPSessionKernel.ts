@@ -30,6 +30,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private autoApprove = false;
   private readonly controller = new AbortController();
   private sessionId: string | null = null;
+  private createdSessionId: Promise<string | null> | null = null;
   private databasePath: string | null = null;
   private model: NativeModel | null = null;
   private models: Array<Record<string, unknown>> = [];
@@ -70,8 +71,11 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   async openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo> {
     let data: Record<string, unknown>;
     try {
-      ({ data } = await this.requireClient().request<{ data: Record<string, unknown> }>(resumeSessionId ? `/api/session/${encodeURIComponent(resumeSessionId)}` : '/api/session',
-        resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.vaultWorkingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_SAFE_MODE_ID : AUX_AGENT_IDS[this.profile]] } }));
+      const response = this.requireClient().request<{ data: Record<string, unknown> }>(resumeSessionId ? `/api/session/${encodeURIComponent(resumeSessionId)}` : '/api/session',
+        resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.vaultWorkingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_SAFE_MODE_ID : AUX_AGENT_IDS[this.profile]] } });
+      // Disposal can overtake the response; the created id is still needed to discard the session.
+      if (!resumeSessionId) this.createdSessionId = response.then(({ data }) => typeof data.id === 'string' ? data.id : null, () => null);
+      ({ data } = await response);
     } catch (error) {
       if (resumeSessionId && error instanceof OpencodeHTTPError && error.status === 404) throw new OpencodeSessionMissingError(resumeSessionId, error);
       throw error;
@@ -159,6 +163,10 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.pending?.reject(new Error('OpenCode session disposed.'));
     this.pending = null;
     await Promise.all([this.cancellation, ...interruptions]);
+    if (this.options.databasePath === ':memory:' && this.client?.isReusable()) {
+      const sessionId = await this.createdSessionId ?? this.sessionId;
+      if (sessionId) await this.client.request(`/api/session/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => undefined);
+    }
     await this.client?.dispose();
   }
 

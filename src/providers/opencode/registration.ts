@@ -10,6 +10,7 @@ import { OPENCODE_PROVIDER_CAPABILITIES } from './capabilities';
 import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
+import { buildOpencodeBaseModels } from './models';
 import { opencodeTaskResultInterpreter } from './runtime/OpencodeTaskResultInterpreter';
 import { getOpencodeProviderSettings, projectOpencodeModelSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeSubagentAdapter } from './subagentAdapter';
@@ -39,7 +40,9 @@ export const opencodeProviderRegistration: ProviderModule = {
     projectPersistedConfig: projectOpencodeModelSettings,
     needsReasoningMetadata(settings) {
       const current = getOpencodeProviderSettings(settings);
-      return current.visibleModels.some(id => !Object.hasOwn(current.thinkingOptionsByModel, id));
+      const models = buildOpencodeBaseModels(current.discoveredModels);
+      return current.visibleModels.some(id => !Object.hasOwn(current.thinkingOptionsByModel, id)
+        || !models.some(model => model.rawId === id));
     },
     hostScopedFields: ['cliPathsByHost'],
     normalizeStored(target, stored) {
