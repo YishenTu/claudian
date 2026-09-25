@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { OpencodeV2MetadataProbe } from '@/providers/opencode/metadata/OpencodeV2MetadataProbe';
+import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
 import { getOpencodeProviderSettings, projectOpencodeModelSettings } from '@/providers/opencode/settings';
 
 // External OpenCode boundary: its native catalog endpoints and stdio ownership lease.
@@ -17,14 +18,27 @@ if (process.argv.includes('--version')) {
   if (!process.argv.includes('--stdio') || process.env.OPENCODE_DB !== process.env.EXPECTED_DATABASE) process.exit(2);
   const started = Date.now();
   let reads = 0;
-  const server = http.createServer((req, res) => {
+  let activated = !process.env.ACTIVATION_DELAY_MS, activation;
+  const server = http.createServer(async (req, res) => {
     const auth = 'Basic ' + Buffer.from('opencode:' + process.env.OPENCODE_PASSWORD).toString('base64');
     const url = new URL(req.url, 'http://localhost');
     if (req.headers.authorization !== auth || url.searchParams.get('location[directory]') !== process.cwd()) {
       res.writeHead(403); res.end(); return;
     }
-    if (req.method !== 'GET' || !['/api/model', '/api/command'].includes(url.pathname)) {
+    if (req.method !== 'GET' || !['/api/model', '/api/command', '/api/integration'].includes(url.pathname)) {
       res.writeHead(405); res.end(); return;
+    }
+    activation ??= new Promise(resolve => setTimeout(() => { activated = true; resolve(); }, Number(process.env.ACTIVATION_DELAY_MS || 0)));
+    if (url.pathname === '/api/integration') {
+      fs.writeFileSync(process.env.ENDPOINT_FILE + '.integration', '');
+      if (process.env.INTEGRATION_STATUS === 'hang') {
+        res.on('close', () => fs.writeFileSync(process.env.ENDPOINT_FILE + '.integration-aborted', ''));
+        return;
+      }
+      if (process.env.INTEGRATION_STATUS) { res.writeHead(Number(process.env.INTEGRATION_STATUS)).end(); return; }
+      await activation;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ data: [] })); return;
     }
     if (fs.existsSync(process.env.CATALOG_FILE + '.invalid')) {
       res.setHeader('Content-Type', 'application/json');
@@ -32,9 +46,10 @@ if (process.argv.includes('--version')) {
     }
     if (url.pathname === '/api/model') fs.writeFileSync(process.env.ENDPOINT_FILE + '.read', '');
     const catalog = JSON.parse(fs.readFileSync(process.env.CATALOG_FILE, 'utf8'))
+      .filter(model => activated || model.providerID !== 'opencode-go')
       .filter(model => model.id !== 'slow-model' || Date.now() - started >= Number(process.env.DELAYED_CATALOG_MS || 0));
     const data = url.pathname === '/api/model'
-      ? (++reads === 1 ? [] : catalog)
+      ? (++reads === 1 && !process.env.ACTIVATION_DELAY_MS ? [] : catalog)
       : [{ name: 'review', description: 'Review changes' }];
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ location: { directory: process.cwd() }, data }));
@@ -87,7 +102,7 @@ function createPlugin(): any {
       enabled: true,
       visibleModels: [],
       environmentVariables: Object.entries(environment)
-        .filter(([key]) => ['OPENCODE_DB', 'EXPECTED_DATABASE', 'CATALOG_FILE', 'ENDPOINT_FILE', 'DELAYED_CATALOG_MS', 'READY_DELAY_MS'].includes(key))
+        .filter(([key]) => ['OPENCODE_DB', 'EXPECTED_DATABASE', 'CATALOG_FILE', 'ENDPOINT_FILE', 'DELAYED_CATALOG_MS', 'READY_DELAY_MS', 'ACTIVATION_DELAY_MS', 'INTEGRATION_STATUS'].includes(key))
         .map(([key, value]) => `${key}=${value}`).join('\n'),
     } } },
     mutateSettings: async (mutation: (settings: Record<string, unknown>) => void) => mutation(plugin.settings),
@@ -125,6 +140,67 @@ it('rejects a non-loopback readiness endpoint before sending authorization', asy
   try {
     await expect(probe.loadCatalog()).rejects.toThrow('Invalid OpenCode catalog server readiness response');
   } finally { await probe.dispose(); await servers.dispose(); }
+});
+
+it('includes account-backed models in the first discovery and keeps the saved selection available', async () => {
+  environment.ACTIVATION_DELAY_MS = '250';
+  const catalog = JSON.parse(readFileSync(environment.CATALOG_FILE!, 'utf8'));
+  catalog.push({ providerID: 'opencode-go', id: 'deepseek-v4.1-flash', name: 'DeepSeek Flash', enabled: true });
+  writeFileSync(environment.CATALOG_FILE!, JSON.stringify(catalog));
+  const plugin = createPlugin();
+  plugin.settings.providerConfigs.opencode.visibleModels = ['opencode-go/deepseek-v4.1-flash'];
+  const service = new OpencodeMetadataService(plugin);
+  try {
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toContainEqual({
+      rawId: 'opencode-go/deepseek-v4.1-flash', label: 'opencode-go/DeepSeek Flash',
+    });
+    expect(() => assertOpencodeModelAvailable(plugin.settings, 'opencode:opencode-go/deepseek-v4.1-flash')).not.toThrow();
+  } finally { await service.dispose(); }
+});
+
+it.each(['404', '500'])('loads models when the optional readiness endpoint returns %s', async status => {
+  environment.INTEGRATION_STATUS = status;
+  const service = new OpencodeMetadataService(createPlugin());
+  try {
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    await expect(service.warmModelMetadata('opencode:deepseek/chat')).resolves.toBe(true);
+  } finally { await service.dispose(); }
+});
+
+it('bounds the readiness wait and aborts its request without stopping the retained server', async () => {
+  environment.INTEGRATION_STATUS = 'hang';
+  const plugin = createPlugin();
+  const service = new OpencodeMetadataService(plugin);
+  try {
+    await expect(service.loadCatalog()).resolves.toBe(true);
+    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
+      { rawId: 'deepseek/chat', label: 'deepseek/DeepSeek Chat' },
+    ]);
+    await waitUntil(() => existsSync(environment.ENDPOINT_FILE! + '.integration-aborted'));
+    expect((await fetch(readFileSync(environment.ENDPOINT_FILE!, 'utf8'))).status).toBe(403);
+  } finally { await service.dispose(); }
+}, 12_000);
+
+it('cancels one activation wait without publishing or stopping another reader', async () => {
+  environment.ACTIVATION_DELAY_MS = '500';
+  const plugin = createPlugin();
+  const service = new OpencodeMetadataService(plugin);
+  const controller = new AbortController();
+  try {
+    const cancelled = service.loadCatalog(controller.signal);
+    const other = service.loadCatalog();
+    await waitUntil(() => existsSync(environment.ENDPOINT_FILE! + '.integration'));
+    const endpoint = readFileSync(environment.ENDPOINT_FILE!, 'utf8');
+    controller.abort();
+    await expect(cancelled).resolves.toBe(false);
+    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([]);
+    await expect(other).resolves.toBe(true);
+    expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
+      { rawId: 'deepseek/chat', label: 'deepseek/DeepSeek Chat' },
+    ]);
+    expect(readFileSync(environment.ENDPOINT_FILE!, 'utf8')).toBe(endpoint);
+  } finally { await service.dispose(); }
 });
 
 it('cancels a probe waiting for native catalog initialization and closes its server', async () => {

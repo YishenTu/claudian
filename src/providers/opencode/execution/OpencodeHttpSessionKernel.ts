@@ -58,6 +58,7 @@ export class OpencodeHttpSessionKernel implements OpencodeSessionKernel {
       this.resolveSystemPrompt(options),
     );
     const client = this.client;
+    await client.waitForActivation(this.controller.signal);
     this.models = await pollOpencodeUntil(
       async () => (await client.request<{ data: Array<Record<string, unknown>> }>('/api/model')).data.filter(model => model.enabled === true),
       models => models.length > 0, 5000, this.controller.signal,
