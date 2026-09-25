@@ -63,6 +63,41 @@ it.each([
   expect(wrapper.classList.contains('has-language')).toBe(hasLanguage);
   expect(wrapper.querySelector('.claudian-code-lang-label')?.textContent ?? null).toBe(expectedLabel);
   expect((await axe(host)).violations).toEqual([]);
+
+});
+
+it('copies code through its language label and restores the label after feedback', async () => {
+  jest.mocked(MarkdownRenderer.render).mockImplementationOnce(async (_app, _markdown, target) => {
+    const pre = (target as HTMLElement).createEl('pre');
+    pre.createEl('code', { cls: 'language-typescript', text: 'const x = 1;' });
+  });
+  await renderer.renderContent(host, '```typescript\nconst x = 1;\n```');
+
+  const label = within(host).getByText('typescript');
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  const writeText = jest.fn().mockResolvedValue(undefined);
+  jest.useFakeTimers();
+  try {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    label.click();
+    await Promise.resolve();
+    expect(writeText).toHaveBeenCalledWith('const x = 1;');
+    expect(label.textContent).toBe('Copied!');
+
+    jest.advanceTimersByTime(1_500);
+    expect(label.textContent).toBe('typescript');
+  } finally {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+    if (clipboardDescriptor) {
+      Object.defineProperty(navigator, 'clipboard', clipboardDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, 'clipboard');
+    }
+  }
 });
 
 it('preserves an existing wrapper without nesting a second wrapper', async () => {

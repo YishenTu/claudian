@@ -7,7 +7,6 @@ import { getProviderSettingsSnapshotWithModel } from '@/core/providers/conversat
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { normalizeGrokSessionModelMetadata, normalizeGrokSetModelMetadata } from '@/providers/grok/execution/GrokSessionModelMetadata';
-import { resolveGrokDefaultReasoningEffort } from '@/providers/grok/models';
 import { GrokModelCatalogCoordinator } from '@/providers/grok/runtime/GrokModelCatalogCoordinator';
 import { createGrokModels } from '@/providers/grok/runtime/GrokModels';
 import { getGrokProviderSettings, projectGrokModelSettings } from '@/providers/grok/settings';
@@ -106,10 +105,3 @@ it.each([undefined, 'low'])('projects the selected model default or preference (
   await catalog.dispose();
   await coordinator.dispose();
 });
-
- it('defaults to High even when native session metadata reports Medium', () => {
-  const model = { rawId: 'grok-4.7', displayName: 'Grok 4.7', supportsReasoning: true,
-    reasoningMetadataResolved: true, defaultReasoningEffort: 'medium',
-    reasoningEfforts: [{ value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }] };
-  expect(resolveGrokDefaultReasoningEffort(model)).toBe('high');
- });

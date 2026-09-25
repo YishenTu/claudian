@@ -64,8 +64,8 @@ describe('ThinkingBlockRenderer', () => {
 
       const duration = finalizeThinkingBlock(state);
 
-      expect(duration).toBeGreaterThanOrEqual(5);
-      expect(state.labelEl.textContent).toContain('Thought for');
+      expect(duration).toBe(5);
+      expect(state.labelEl.textContent).toBe('Thought for 5s');
       expect(state.timerInterval).toBeNull();
     });
 
@@ -102,7 +102,7 @@ describe('ThinkingBlockRenderer', () => {
 
       const wrapperEl = renderStoredThinkingBlock(parentEl, 'thinking content', 10, mockRenderContent);
 
-      expect(wrapperEl).toBeDefined();
+      expect(wrapperEl.querySelector('.claudian-thinking-label')?.textContent).toBe('Thought for 10s');
     });
   });
 });

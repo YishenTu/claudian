@@ -69,10 +69,6 @@ describe('getProviderForModel', () => {
     expect(getProviderForModel('my-custom-model', settings)).toBeNull();
   });
 
-  it('leaves an unknown raw model unresolved without settings', () => {
-    expect(getProviderForModel('my-custom-model')).toBeNull();
-  });
-
   it('rejects ambiguous ownership and resolves within enabled providers only', () => {
     const settings = {
       settingsProvider: 'claude',

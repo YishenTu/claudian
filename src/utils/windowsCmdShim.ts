@@ -13,22 +13,11 @@ interface ErrorEmitterLike {
   on(event: 'error', listener: (error: Error) => void): unknown;
 }
 
-interface CompletionEmitterLike {
-  once(event: 'close', listener: (code: number | null) => void): unknown;
-  once(event: 'error', listener: (error: Error) => void): unknown;
-}
-
 type SpawnProcess = (
   command: string,
   args: string[],
   options: { stdio: 'ignore'; windowsHide: true },
 ) => unknown;
-
-export const WINDOWS_TASKKILL_TERMINATION_TIMEOUT_MS = 10_000;
-
-export interface TerminateSpawnedProcessTreeOptions {
-  readonly taskkillTimeoutMs?: number;
-}
 
 export function resolveWindowsCmdShimSpawnSpec(
   spec: Pick<WindowsCmdShimSpawnSpec, 'args' | 'command'>
@@ -86,69 +75,8 @@ export function terminateSpawnedProcess(
   }
 }
 
-export async function terminateSpawnedProcessTree(
-  proc: KillableProcess,
-  signal: NodeJS.Signals | number | undefined,
-  spawnProcess: SpawnProcess,
-  spawnSpec?: WindowsCmdShimSpawnSpec | null,
-  options?: TerminateSpawnedProcessTreeOptions,
-): Promise<boolean> {
-  if (
-    process.platform !== 'win32'
-    || !spawnSpec?.killProcessTree
-    || typeof proc.pid !== 'number'
-  ) {
-    return proc.kill(signal);
-  }
-
-  let taskkill: unknown;
-  try {
-    taskkill = spawnProcess('taskkill.exe', ['/pid', String(proc.pid), '/t', '/f'], {
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-  } catch {
-    return proc.kill(signal);
-  }
-  if (!isCompletionEmitterLike(taskkill)) {
-    return proc.kill(signal);
-  }
-
-  return new Promise<boolean>(resolve => {
-    let settled = false;
-    const settle = (result: boolean): void => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      resolve(result);
-    };
-    const fallback = (): void => {
-      try {
-        settle(proc.kill(signal));
-      } catch {
-        settle(false);
-      }
-    };
-    const timer = window.setTimeout(
-      fallback,
-      options?.taskkillTimeoutMs ?? WINDOWS_TASKKILL_TERMINATION_TIMEOUT_MS,
-    );
-    taskkill.once('error', fallback);
-    taskkill.once('close', code => {
-      if (code === 0) settle(true);
-      else fallback();
-    });
-  });
-}
-
 function isErrorEmitterLike(value: unknown): value is ErrorEmitterLike {
   return value !== null
     && typeof value === 'object'
     && typeof (value as { on?: unknown }).on === 'function';
-}
-
-function isCompletionEmitterLike(value: unknown): value is CompletionEmitterLike {
-  return value !== null
-    && typeof value === 'object'
-    && typeof (value as { once?: unknown }).once === 'function';
 }

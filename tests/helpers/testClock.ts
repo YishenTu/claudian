@@ -37,13 +37,3 @@ export function testClock(offset: TestTimeOffset = {}): (() => Date) & {
     advance: (elapsed: TestTimeOffset) => { current += offsetMs(elapsed); },
   });
 }
-
-/**
- * A clock that starts at the given test time and advances with real elapsed time, for services
- * that wait on deadlines or order events by time.
- */
-export function advancingTestClock(offset: TestTimeOffset = {}): () => Date {
-  const startedAt = performance.now();
-  const start = testDate(offset).getTime();
-  return () => new Date(start + performance.now() - startedAt);
-}

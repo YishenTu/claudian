@@ -1,5 +1,3 @@
-import { Notice } from 'obsidian';
-
 import type {
   ProviderExecutionBackend,
   ProviderExecutionEvent,
@@ -171,17 +169,4 @@ export function rejectingInteractionPort(): ProviderInteractionPort {
     dismissInteraction: () => undefined,
     requestApproval: async () => { throw new Error('Unexpected side approval'); },
   };
-}
-
-/** Collected notices let a test assert an unavailable provider path. */
-export function collectNotices(): { messages: string[] } {
-  const collected: string[] = [];
-  const NoticeMock = Notice as unknown as jest.Mock;
-  if (typeof NoticeMock.mockImplementation === 'function') {
-    NoticeMock.mockImplementation((message: string) => {
-      collected.push(message);
-      return { hide: () => undefined, setMessage: () => undefined };
-    });
-  }
-  return { messages: collected };
 }

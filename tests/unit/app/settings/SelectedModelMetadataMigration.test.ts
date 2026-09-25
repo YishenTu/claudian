@@ -92,8 +92,16 @@ it.each(cases.flatMap(entry => [false, true].map(deselectDuringQuery => ({ ...en
   await catalog.dispose();
 });
 
-it('does not initialize providers with no selected models or disabled providers', async () => {
+it.each([
+  { label: 'enabled providers with no selected models', enabled: true, selected: false },
+  { label: 'disabled providers with incomplete selected metadata', enabled: false, selected: true },
+])('does not initialize $label', async ({ enabled, selected }) => {
   const { host } = makeHost();
+  updateClaudeProviderSettings(host.settings, {
+    enabled, visibleModels: selected ? ['sonnet'] : [], discoveredModels: [],
+  });
+  expect(ProviderRegistry.isEnabled('claude', host.settings)).toBe(enabled);
+  expect(ProviderRegistry.getSettingsStorageAdapter('claude').needsReasoningMetadata!(host.settings)).toBe(selected);
   await migrateSelectedModelMetadata(host, new AbortController().signal);
   expect(ProviderWorkspaceRegistry.ensureInitialized).not.toHaveBeenCalled();
 });

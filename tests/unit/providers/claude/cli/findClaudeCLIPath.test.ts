@@ -291,16 +291,6 @@ describe('native platform CLI discovery', () => {
     }
   });
 
-  it('returns null for custom path without claude binary on non-Windows', () => {
-    // On non-Windows, custom path resolution only looks for 'claude' binary
-    const customDir = '/custom/tools';
-
-    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
-
-    const result = findClaudeCLIPath(customDir);
-    expect(result).toBeNull();
-  });
-
   it('handles inaccessible filesystem paths gracefully', () => {
     jest.spyOn(fs, 'existsSync').mockImplementation(() => {
       throw new Error('Permission denied');

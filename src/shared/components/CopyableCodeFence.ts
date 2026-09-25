@@ -1,10 +1,3 @@
-import { setIcon } from 'obsidian';
-
-export interface CopyableCodeFenceOptions {
-  readonly copiedLabel?: string;
-  readonly copyLabel: string;
-}
-
 const COPY_FEEDBACK_DURATION_MS = 1_500;
 
 function bindCopyFeedback(
@@ -27,42 +20,6 @@ function bindCopyFeedback(
       }, COPY_FEEDBACK_DURATION_MS);
     }).catch(() => undefined);
   });
-}
-
-/** Builds the same plain code-fence surface used by rendered chat messages. */
-export function renderCopyableCodeFence(
-  container: HTMLElement,
-  text: string,
-  options: CopyableCodeFenceOptions,
-): HTMLElement {
-  const wrapper = container.createDiv({ cls: 'claudian-code-wrapper' });
-  const pre = wrapper.createEl('pre');
-  pre.createEl('code', { text });
-
-  const copyButton = wrapper.createEl('button', {
-    attr: { type: 'button' },
-    cls: 'copy-code-button',
-  });
-  copyButton.setAttribute('aria-label', options.copyLabel);
-  copyButton.title = options.copyLabel;
-
-  const renderIdle = (): void => {
-    copyButton.empty();
-    setIcon(copyButton, 'copy');
-    copyButton.classList.remove('copied');
-  };
-  renderIdle();
-  bindCopyFeedback(
-    copyButton,
-    () => text,
-    () => {
-      copyButton.empty();
-      copyButton.setText(options.copiedLabel ?? 'Copied!');
-      copyButton.classList.add('copied');
-    },
-    renderIdle,
-  );
-  return wrapper;
 }
 
 /** Adopts an Obsidian-rendered `pre` and preserves its native copy button. */

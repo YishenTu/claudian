@@ -53,18 +53,7 @@ describe('VaultFolderCache', () => {
     expect(initial).toEqual(['src']);
     expect(second).toEqual(['src']);
     expect(getAllLoadedFiles).toHaveBeenCalledTimes(1);
-  });
 
-  it('refreshes folder list after markDirty', () => {
-    let loadedFiles = [createFolder('src')];
-    const getAllLoadedFiles = jest.fn(() => loadedFiles);
-    const app = {
-      vault: { getAllLoadedFiles },
-    } as any;
-    const cache = new VaultFolderCache(app);
-
-    cache.getFolders();
-    loadedFiles = [createFolder('docs')];
     cache.markDirty();
     const refreshed = cache.getFolders().map(folder => folder.path);
 

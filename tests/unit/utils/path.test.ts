@@ -155,25 +155,25 @@ describe('parsePathEntries', () => {
   it('filters out empty segments', () => {
     const sep = isWindows ? ';' : ':';
     const result = parsePathEntries(`${sep}/a${sep}${sep}/b${sep}`);
-    expect(result.every(s => s.length > 0)).toBe(true);
+    expect(result).toEqual(isWindows ? ['A:', 'B:'] : ['/a', '/b']);
   });
 
   it('filters out $PATH placeholder', () => {
     const sep = isWindows ? ';' : ':';
     const result = parsePathEntries(`/a${sep}$PATH${sep}/b`);
-    expect(result).not.toContain('$PATH');
+    expect(result).toEqual(isWindows ? ['A:', 'B:'] : ['/a', '/b']);
   });
 
   it('filters out ${PATH} placeholder', () => {
     const sep = isWindows ? ';' : ':';
     const result = parsePathEntries(`/a${sep}\${PATH}${sep}/b`);
-    expect(result).not.toContain('${PATH}');
+    expect(result).toEqual(isWindows ? ['A:', 'B:'] : ['/a', '/b']);
   });
 
   it('filters out %PATH% placeholder', () => {
     const sep = isWindows ? ';' : ':';
     const result = parsePathEntries(`/a${sep}%PATH%${sep}/b`);
-    expect(result).not.toContain('%PATH%');
+    expect(result).toEqual(isWindows ? ['A:', 'B:'] : ['/a', '/b']);
   });
 
   it('strips surrounding double quotes', () => {
@@ -258,18 +258,18 @@ describe('normalizePathForComparison', () => {
 
   it('removes trailing slash', () => {
     const result = normalizePathForComparison('/usr/local/bin/');
-    expect(result).not.toMatch(/\/$/);
+    expect(result).toBe('/usr/local/bin');
   });
 
   it('removes multiple trailing slashes', () => {
     const result = normalizePathForComparison('/usr/local/bin///');
-    expect(result).not.toMatch(/\/$/);
+    expect(result).toBe('/usr/local/bin');
   });
 
   if (isWindows) {
     it('lowercases on Windows for case-insensitive comparison', () => {
       const result = normalizePathForComparison('C:\\Users\\Test');
-      expect(result).toBe(result.toLowerCase());
+      expect(result).toBe('c:/users/test');
     });
   }
 

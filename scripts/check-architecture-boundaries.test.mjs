@@ -113,10 +113,6 @@ function normalizeModuleTarget(target) {
   return target.replace(/\.(?:[cm]?[jt]sx?)$/, '');
 }
 
-function importsPackage(specifier, packageName) {
-  return specifier === packageName || specifier.startsWith(`${packageName}/`);
-}
-
 function resolvedImportKey(importer, target) {
   return `${path.normalize(importer)}::${normalizeModuleTarget(path.normalize(target))}`;
 }
@@ -133,22 +129,6 @@ function resolveTypeScriptImport(importer, specifier) {
   ];
   return candidates.find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile())
     ?? null;
-}
-
-function listStaticSourceGraph(entry) {
-  const pending = [entry];
-  const visited = new Set();
-  while (pending.length > 0) {
-    const file = pending.pop();
-    if (!file || visited.has(file)) continue;
-    visited.add(file);
-    for (const sourceImport of listSourceImports(file)) {
-      if (sourceImport.dynamic || sourceImport.typeOnly) continue;
-      const target = resolveTypeScriptImport(file, sourceImport.specifier);
-      if (target && isPathWithin(target, sourceRoot)) pending.push(target);
-    }
-  }
-  return [...visited].sort();
 }
 
 function findResolvedImportViolations(roots, isForbidden, allowedImports = new Set()) {

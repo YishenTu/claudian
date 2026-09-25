@@ -20,17 +20,6 @@ describe('VaultFileCache', () => {
   });
 
   describe('getFiles', () => {
-    it('should return cached files on first call', () => {
-      const cache = new VaultFileCache(mockApp);
-      const files = cache.getFiles();
-
-      expect(files).toEqual(mockFiles);
-      expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
-
-      expect(cache.getFiles()).toBe(files);
-      expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
-    });
-
     it('should return stale files if reload fails', () => {
       const getFiles = jest
         .fn()
@@ -132,7 +121,11 @@ describe('VaultFileCache', () => {
   describe('markDirty', () => {
     it('should force re-fetch on next getFiles call', () => {
       const cache = new VaultFileCache(mockApp);
-      cache.getFiles();
+      const initial = cache.getFiles();
+      expect(initial).toEqual(mockFiles);
+      expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
+
+      expect(cache.getFiles()).toBe(initial);
       expect(mockApp.vault.getFiles).toHaveBeenCalledTimes(1);
 
       const newFiles = [{ path: 'note3.md', name: 'note3.md' } as TFile];

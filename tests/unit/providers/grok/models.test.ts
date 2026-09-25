@@ -179,6 +179,10 @@ describe('Grok model metadata', () => {
     expect(resolveGrokDefaultReasoningEffort(model)).toBe('high');
     expect(resolveGrokDefaultReasoningEffort({
       ...model,
+      reasoningMetadataResolved: true,
+    })).toBe('high');
+    expect(resolveGrokDefaultReasoningEffort({
+      ...model,
       defaultReasoningEffort: undefined,
     })).toBe('high');
     expect(resolveGrokDefaultReasoningEffort({

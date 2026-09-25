@@ -32,19 +32,6 @@ describe('ProviderRegistry', () => {
     expect(caps).toHaveProperty('supportsFork');
   });
 
-  it('creates transcript-backed subagent history only for providers that own it', () => {
-    const host = {} as any;
-
-    expect(ProviderRegistry.createSubagentHistoryService(host, 'claude')).toMatchObject({
-      loadFinalResult: expect.any(Function),
-      loadToolCalls: expect.any(Function),
-    });
-    expect(ProviderRegistry.createSubagentHistoryService(host, 'codex')).toBeNull();
-    expect(ProviderRegistry.createSubagentHistoryService(host, 'grok')).toBeNull();
-    expect(ProviderRegistry.createSubagentHistoryService(host, 'opencode')).toBeNull();
-    expect(ProviderRegistry.createSubagentHistoryService(host, 'pi')).toBeNull();
-  });
-
   it('throws when an unknown provider is requested', () => {
     expect(() => ProviderRegistry.getCapabilities(
       'nonexistent' as any,

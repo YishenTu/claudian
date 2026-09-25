@@ -1236,10 +1236,16 @@ describe('CodexNotificationRouter', () => {
         },
       });
 
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
       expect(chunks.filter(chunk => (
         chunk.type === 'tool_use' || chunk.type === 'tool_result'
       )).every(chunk => chunk.id === 'exec_patch')).toBe(true);
       expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
     });
 
     it('does not recreate a claimed exec envelope from a repeated raw call', () => {
@@ -2512,11 +2518,17 @@ describe('CodexNotificationRouter', () => {
         },
       });
 
+      router.handleNotification('turn/completed', {
+        threadId: 't1',
+        turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
       expect(chunks.filter(chunk => chunk.type === 'tool_use')).toHaveLength(1);
       expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
       expect(chunks.filter(chunk => (
         chunk.type === 'tool_use' || chunk.type === 'tool_result'
       )).every(chunk => chunk.id === canonicalId)).toBe(true);
+      expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
     });
 
     it('does not correlate MCP calls when canonical arguments are a strict superset', () => {

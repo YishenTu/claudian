@@ -38,7 +38,6 @@ test('native smoke consumers run on native platforms when affected', () => {
   for (const consumer of [
     'tests/unit/utils/windowsCmdShim.test.ts',
     'tests/unit/core/process/ManagedStdioProcess.test.ts',
-    'tests/unit/core/process/ManagedStdioProcess.test.ts',
   ]) {
     const result = select(['src/utils/path.ts'], [consumer]);
     assert.deepEqual(result.crossPlatformTests, [consumer]);
@@ -63,7 +62,7 @@ test('changed tests run directly, while removed tests are omitted', () => {
 });
 
 test('shared test helpers use their graph consumers', () => {
-  assert.deepEqual(select(['tests/helpers/installations.ts'], [native]).testFiles, [native]);
+  assert.deepEqual(select(['tests/helpers/testClock.ts'], [native]).testFiles, [native]);
 });
 
 test('filesystem-read documentation, styles, and captured fixtures retain their consumers', () => {
@@ -101,7 +100,7 @@ test('native script regressions retain a Windows job without selecting unrelated
 test('unsafe deletions and global or unknown changes retain full verification', () => {
   for (const change of [
     { status: 'D', path: 'src/core/prompt/mainAgent.ts' },
-    { status: 'D', path: 'tests/helpers/installations.ts' },
+    { status: 'D', path: 'tests/helpers/testClock.ts' },
     ...['package-lock.json', 'jest.config.js', 'tests/setupWindow.ts',
       'scripts/ciTestSelection.mjs', '.github/workflows/ci.yml', 'unknown-config'].map(path => ({ status: 'M', path })),
   ]) {

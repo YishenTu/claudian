@@ -3016,7 +3016,7 @@ describe('ClaudianPlugin', () => {
       await plugin.deleteConversation(conv.id);
 
       const list = plugin.getConversationList();
-      expect(list.find(c => c.id === conv.id)).toBeUndefined();
+      expect(list).toEqual([]);
     });
 
     it('does not expose or invoke provider-native session deletion', async () => {
@@ -3191,10 +3191,13 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
 
+      await plugin.renameConversation(conv.id, 'Before whitespace rename');
       await plugin.renameConversation(conv.id, '   ');
 
       const updated = await plugin.getConversationById(conv.id);
-      expect(updated?.title).toBeTruthy();
+      expect(updated?.title.trim()).toBeTruthy();
+      expect(updated?.title).toBe(updated?.title.trim());
+      expect(updated?.title).not.toBe('Before whitespace rename');
     });
 
     it('notifies every open view after conversation list mutations', async () => {
