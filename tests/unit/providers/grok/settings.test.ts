@@ -222,6 +222,7 @@ describe('Grok settings', () => {
     expect(settings.preferredReasoningByModel).toEqual({
       'kimi-coding': 'medium',
       'legacy-model': 'low',
+      unknown: 'xhigh',
     });
   });
 
@@ -250,7 +251,7 @@ describe('Grok settings', () => {
     expect((settings.providerConfigs as Record<string, unknown>).codex).toEqual({ enabled: true });
   });
 
-  it('prunes disabled reasoning state from every host catalog', () => {
+  it('prunes disabled preferences while retaining discovered capabilities in memory', () => {
     const settings: Record<string, unknown> = {
       providerConfigs: {
         grok: {
@@ -284,9 +285,9 @@ describe('Grok settings', () => {
     expect(grok.preferredReasoningByModel).toEqual({});
     for (const catalogSnapshot of Object.values(grok.catalogsByHost)) {
       for (const model of catalogSnapshot.models) {
-        expect(model.reasoningEfforts).toEqual([]);
-        expect(model.supportsReasoning).toBe(false);
-        expect(model).not.toHaveProperty('reasoningMetadataResolved');
+        expect(model.reasoningEfforts).toEqual([{ label: 'High', value: 'high' }]);
+        expect(model.supportsReasoning).toBe(true);
+        expect(model.reasoningMetadataResolved).toBe(true);
       }
     }
   });

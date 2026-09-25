@@ -8,6 +8,7 @@ export interface ClaudeDiscoveredModel {
   resolvedModel?: string;
   /** Effort levels Claude Code reported for this model; absent when not reported. */
   supportedEffortLevels?: EffortLevel[];
+  reasoningMetadataResolved?: boolean;
 }
 
 function decodeSupportedEffortLevels(value: unknown): EffortLevel[] | undefined {
@@ -31,6 +32,7 @@ export function decodeClaudeModels(value: unknown): ClaudeDiscoveredModel[] {
       description: typeof item.description === 'string' ? item.description : '',
       ...(typeof item.resolvedModel === 'string' && item.resolvedModel.trim()
         ? { resolvedModel: item.resolvedModel } : {}),
+      ...(item.reasoningMetadataResolved === true ? { reasoningMetadataResolved: true } : {}),
       ...(supportedEffortLevels ? { supportedEffortLevels } : {}),
     });
   }

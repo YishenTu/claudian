@@ -92,13 +92,13 @@ describe('claudeChatUIConfig', () => {
       expect(claudeChatUIConfig.getReasoningOptions('sonnet[1m]', settings)).toEqual([]);
     });
 
-    it('defaults to high when reported, otherwise the first reported level', () => {
+    it('defaults to High without selecting another native effort', () => {
       expect(claudeChatUIConfig.getDefaultReasoningValue('opus', settingsWith([
         { value: 'opus', supportedEffortLevels: ['low', 'high', 'max'] },
       ]))).toBe('high');
       expect(claudeChatUIConfig.getDefaultReasoningValue('opus', settingsWith([
         { value: 'opus', supportedEffortLevels: ['medium', 'max'] },
-      ]))).toBe('medium');
+      ]))).toBe('high');
     });
 
     it('keeps a supported saved choice and normalizes an unsupported one', () => {
@@ -118,7 +118,7 @@ describe('claudeChatUIConfig', () => {
         { value: 'haiku', supportedEffortLevels: ['low', 'medium'] },
       ], { effortLevel: 'max' });
       claudeChatUIConfig.applyModelDefaults('haiku', withoutHigh);
-      expect(withoutHigh.effortLevel).toBe('low');
+      expect(withoutHigh.effortLevel).toBe('high');
     });
 
     it('preserves the saved preference while metadata is unavailable', () => {

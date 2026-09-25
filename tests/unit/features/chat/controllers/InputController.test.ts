@@ -3,7 +3,6 @@ import { Notice } from 'obsidian';
 
 import type { ProviderExecutionErrorEvent, ProviderExecutionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ImageAttachment } from '@/core/types';
 import {
   InputController,
@@ -24,17 +23,6 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
       supportsFork: true,
       supportsNativeHistory: true,
       supportsTurnSteer: true,
-    }),
-  },
-}));
-
-jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
-  ProviderSettingsCoordinator: {
-    getProviderSettingsSnapshot: jest.fn().mockReturnValue({
-      effortLevel: 'high',
-      model: 'claude-model',
-      permissionMode: 'normal',
-      serviceTier: 'standard',
     }),
   },
 }));
@@ -191,7 +179,7 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     }) as any,
     getTitleGenerationService: () => null,
     generateId: () => `id-${++id}`,
-    getAuxiliaryModel: () => 'claude-model',
+    getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'standard' }),
     getExecutionCoordinator: () => coordinator,
     getSubagentManager: () => ({
       resetSpawnedCount: jest.fn(),
@@ -309,12 +297,19 @@ describe('InputController coordinator execution', () => {
       supportsNativeHistory: true,
       supportsTurnSteer: true,
     } as any);
-    jest.mocked(ProviderSettingsCoordinator.getProviderSettingsSnapshot).mockReturnValue({
-      effortLevel: 'high',
-      model: 'claude-model',
-      permissionMode: 'normal',
-      serviceTier: 'standard',
+
+  });
+
+  it.each(['claude', 'codex', 'grok', 'opencode', 'pi'])('uses the toolbar model and reasoning snapshot as the only submission input for %s', async providerId => {
+    const toolbar = { model: 'toolbar-model', reasoning: 'low', permissionMode: 'normal', serviceTier: 'default' };
+    const fixture = createFixture({
+      getSettings: () => toolbar,
+      getTabProviderId: () => providerId,
     });
+    await fixture.controller.sendMessage({ content: 'use toolbar settings' });
+    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({
+      configuration: expect.objectContaining(toolbar),
+    }));
   });
 
   it('preserves input and blocks execution for an unresolved tab provider', async () => {

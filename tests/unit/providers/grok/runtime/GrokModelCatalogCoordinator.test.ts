@@ -403,7 +403,7 @@ describe('GrokModelCatalogCoordinator', () => {
     ]);
   });
 
-  it('persists live ACP reasoning metadata only for enabled models', async () => {
+  it('retains live ACP reasoning metadata for models available for selection', async () => {
     const host = makeHost({
       catalog: makeCatalog({
         models: [makeModel('kimi-coding', 'Kimi'), {
@@ -439,8 +439,9 @@ describe('GrokModelCatalogCoordinator', () => {
       }),
       expect.objectContaining({
         rawId: 'glm-coding',
-        reasoningEfforts: [],
-        supportsReasoning: false,
+        reasoningEfforts: [{ label: 'High', value: 'high' }],
+        reasoningMetadataResolved: true,
+        supportsReasoning: true,
       }),
     ]);
   });

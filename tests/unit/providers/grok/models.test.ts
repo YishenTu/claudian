@@ -166,7 +166,7 @@ describe('Grok model metadata', () => {
     expect(getGrokAvailableReasoningEfforts(resolvedEmpty)).toEqual([]);
   });
 
-  it('resolves preferred, declared, high, and first reasoning defaults in order', () => {
+  it('preserves explicit preferences and always defaults to High', () => {
     const model = normalizeGrokDiscoveredModels([{
       defaultReasoningEffort: 'medium',
       displayName: 'Reasoner',
@@ -176,7 +176,7 @@ describe('Grok model metadata', () => {
     }])[0];
 
     expect(resolveGrokDefaultReasoningEffort(model, 'low')).toBe('low');
-    expect(resolveGrokDefaultReasoningEffort(model)).toBe('medium');
+    expect(resolveGrokDefaultReasoningEffort(model)).toBe('high');
     expect(resolveGrokDefaultReasoningEffort({
       ...model,
       defaultReasoningEffort: undefined,
@@ -185,7 +185,7 @@ describe('Grok model metadata', () => {
       ...model,
       defaultReasoningEffort: undefined,
       reasoningEfforts: [{ label: 'Low', value: 'low' }],
-    })).toBe('low');
+    })).toBe('high');
   });
 
 });

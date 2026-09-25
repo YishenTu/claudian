@@ -8,6 +8,7 @@ import {
 import {
   type GrokDiscoveredModel,
   normalizeGrokDiscoveredModels,
+  normalizeGrokReasoningMetadata,
 } from '../models';
 
 export interface NormalizedGrokSessionModels {
@@ -41,7 +42,7 @@ export function normalizeGrokSessionModelMetadata(response: {
       description: model.description ?? rawModel?.description ?? undefined,
       displayName: model.name,
       rawId: model.id,
-      reasoningMetadataResolved: true,
+      ...(hasReasoningOptions(metadata) ? { reasoningMetadataResolved: true } : {}),
     }]);
   });
 
@@ -59,7 +60,7 @@ export function normalizeGrokSetModelMetadata(
   return normalizeGrokDiscoveredModels([{
     ...metadata.model,
     rawId: readModelId(metadata.model) ?? rawModelId,
-    reasoningMetadataResolved: true,
+    ...(hasReasoningOptions(metadata.model) ? { reasoningMetadataResolved: true } : {}),
   }])[0] ?? null;
 }
 
@@ -108,4 +109,14 @@ function readModelId(value: Record<string, unknown>): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Omitted reasoning fields are a partial update, not an empty capability list. */
+function hasReasoningOptions(metadata: Record<string, unknown>): boolean {
+  return Array.isArray(metadata.reasoningEfforts ?? metadata.reasoning_efforts)
+    || metadata.supportsReasoningEffort === false
+    || metadata.supports_reasoning_effort === false
+    || metadata.supportsReasoning === false
+    || metadata.supports_reasoning === false
+    || normalizeGrokReasoningMetadata(metadata).reasoningEfforts.length > 0;
 }

@@ -76,7 +76,11 @@ export class PiModelDiscoveryService {
         }
       });
       const response = await transport.request('get_available_models', {}, 20_000);
-      const models = normalizePiDiscoveredModels(extractModels(response));
+      const models = normalizePiDiscoveredModels(extractModels(response)).map(model => {
+        // This complete native response is authoritative, including non-reasoning models.
+        delete model.reasoningMetadataResolved;
+        return model;
+      });
       return { kind: 'completed', models };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Pi model discovery failed';

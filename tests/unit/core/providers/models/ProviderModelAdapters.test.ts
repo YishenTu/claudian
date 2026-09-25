@@ -56,7 +56,9 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
   expect(catalog.getSnapshot().selectedIds).toEqual([]);
   expect(() => assertions[id](settings, selected)).toThrow(ProviderModelUnavailableError);
   await catalog.select([selectedId]);
-  expect(warmModelMetadata.mock.calls).toEqual(id === 'opencode' ? [[selected]] : []);
+  const signal = expect.any(AbortSignal);
+  expect(warmModelMetadata.mock.calls).toEqual(id === 'opencode'
+    ? [[selected, signal], [selected, signal], [selected]] : []);
   const before = structuredClone(settings);
   persist.mockRejectedValueOnce(new Error('disk full'));
   await expect(catalog.select([])).rejects.toThrow('disk full');

@@ -37,6 +37,10 @@ export const opencodeProviderRegistration: ProviderModule = {
   settingsReconciler: opencodeSettingsReconciler,
   settingsStorage: {
     projectPersistedConfig: projectOpencodeModelSettings,
+    needsReasoningMetadata(settings) {
+      const current = getOpencodeProviderSettings(settings);
+      return current.visibleModels.some(id => !Object.hasOwn(current.thinkingOptionsByModel, id));
+    },
     hostScopedFields: ['cliPathsByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'opencode');

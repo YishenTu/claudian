@@ -29,7 +29,7 @@ describe('Claude SDK model probe', () => {
       close,
     });
     expect(await probeClaudeModels(host(enabled))).toEqual([
-      { value: 'my-model', label: 'Gateway model', description: 'Configured by SDK' },
+      { value: 'my-model', label: 'Gateway model', description: 'Configured by SDK', supportedEffortLevels: [], reasoningMetadataResolved: true },
     ]);
     const { options, prompt } = mockQuery.mock.calls[0][0] as { options: Options; prompt: AsyncGenerator };
     expect(options.model).toBeUndefined();
@@ -43,16 +43,16 @@ describe('Claude SDK model probe', () => {
   it('retains reported effort levels and drops malformed ones', async () => {
     mockQuery.mockReturnValue({
       supportedModels: async () => [
-        { value: 'opus', displayName: 'Opus', description: '', supportedEffortLevels: ['low', 'high', 'max'] },
-        { value: 'haiku', displayName: 'Haiku', description: '', supportedEffortLevels: [] },
-        { value: 'other', displayName: 'Other', description: '', supportedEffortLevels: ['low', 'turbo', 7] },
+        { value: 'opus', displayName: 'Opus', description: '', reasoningMetadataResolved: true, supportedEffortLevels: ['low', 'high', 'max'] },
+        { value: 'haiku', displayName: 'Haiku', description: '', reasoningMetadataResolved: true, supportedEffortLevels: [] },
+        { value: 'other', displayName: 'Other', description: '', reasoningMetadataResolved: true, supportedEffortLevels: ['low', 'turbo', 7] },
       ],
       close: jest.fn(),
     });
     expect(await probeClaudeModels(host())).toEqual([
-      { value: 'opus', label: 'Opus', description: '', supportedEffortLevels: ['low', 'high', 'max'] },
-      { value: 'haiku', label: 'Haiku', description: '', supportedEffortLevels: [] },
-      { value: 'other', label: 'Other', description: '', supportedEffortLevels: ['low'] },
+      { value: 'opus', label: 'Opus', description: '', reasoningMetadataResolved: true, supportedEffortLevels: ['low', 'high', 'max'] },
+      { value: 'haiku', label: 'Haiku', description: '', reasoningMetadataResolved: true, supportedEffortLevels: [] },
+      { value: 'other', label: 'Other', description: '', reasoningMetadataResolved: true, supportedEffortLevels: ['low'] },
     ]);
   });
 

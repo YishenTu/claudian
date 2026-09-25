@@ -273,7 +273,7 @@ export class SideChatRuntime {
           ...(this.#settings.permissionMode
             ? { permissionMode: this.#settings.permissionMode }
             : {}),
-          ...(this.#settings.reasoning ? { reasoning: this.#settings.reasoning } : {}),
+          ...(this.#settings.reasoning !== undefined ? { reasoning: this.#settings.reasoning } : {}),
           ...(this.#settings.serviceTier ? { serviceTier: this.#settings.serviceTier } : {}),
           systemInstructions: {
             kind: 'provider-default',

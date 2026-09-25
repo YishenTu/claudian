@@ -110,3 +110,173 @@ it.each(['codex', 'grok'] as const)('does not implicitly enable %s discovery on 
   settings.providerConfigs[id]!.visibleModels = selected;
   expect(ProviderRegistry.getChatUIConfig(id).getModelOptions(settings)).toEqual([]);
 });
+
+it.each(cases)('$id removes deselected aliases, preferences and saved effort projections from disk', async ({ id, populate, selected }) => {
+  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  populate(settings);
+  const config = settings.providerConfigs[id]!;
+  const selectedId = (config.visibleModels as string[])[0];
+  const removedId = id === 'pi' ? 'pi:anthropic/unselected-catalog-entry' : 'unselected-catalog-entry';
+  config.modelAliases = { [selectedId]: 'Keep alias', [removedId]: 'Remove alias' };
+  if (id === 'grok') config.preferredReasoningByModel = { [selectedId]: 'high', [removedId]: 'medium' };
+  if (id === 'pi' || id === 'opencode') config.preferredThinkingByModel = { [selectedId]: 'high', [removedId]: 'medium' };
+  if (id === 'opencode') config.thinkingOptionsByModel = {
+    [selectedId]: [{ label: 'High', value: 'high' }],
+    [removedId]: [{ label: 'Medium', value: 'medium' }],
+  };
+  const ui = ProviderRegistry.getChatUIConfig(id);
+  const removedSelection = ui.normalizeAvailableModelSelection?.(removedId, settings) ?? removedId;
+  settings.savedProviderModel = { [id]: removedSelection };
+  settings.savedProviderEffort = { [id]: 'medium' };
+  settings.savedProviderThinkingBudget = { [id]: 'low' };
+  settings.savedProviderServiceTier = { [id]: 'fast' };
+  settings.savedProviderPermissionMode = { [id]: 'normal' };
+  let content = '';
+  const storage = new ClaudianSettingsStorage({
+    exists: async () => false,
+    write: async (_path: string, value: string) => { content = value; },
+  } as unknown as VaultFileAdapter);
+
+  await storage.save(settings);
+
+  const saved = JSON.parse(content);
+  expect(saved.providerConfigs[id].modelAliases).toEqual({ [selectedId]: 'Keep alias' });
+  expect(content).not.toContain('unselected-catalog-entry');
+  for (const field of ['savedProviderModel', 'savedProviderEffort', 'savedProviderThinkingBudget', 'savedProviderServiceTier']) {
+    expect(saved[field]?.[id]).toBeUndefined();
+  }
+  expect(saved.savedProviderPermissionMode[id]).toBe('normal');
+  expect(settings.savedProviderModel[id]).toBe(removedSelection);
+  expect(ProviderRegistry.getChatUIConfig(id).getModelOptions(settings).some(model => ui.normalizeModelVariant(model.value, settings) === ui.normalizeModelVariant(ui.normalizeAvailableModelSelection?.(selected, settings) ?? selected, settings))).toBe(true);
+});
+
+it('cleans stale projections for every provider together when loading saved settings', async () => {
+  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  for (const { id, populate } of cases) {
+    populate(settings);
+    settings.savedProviderModel[id] = 'unselected-catalog-entry';
+    settings.savedProviderEffort[id] = 'medium';
+  }
+  let content = JSON.stringify(settings);
+  const storage = new ClaudianSettingsStorage({
+    exists: async () => true,
+    delete: async () => undefined,
+    read: async () => content,
+    write: async (_path: string, value: string) => { content = value; },
+  } as unknown as VaultFileAdapter);
+  const restored = await storage.load();
+  for (const { id, read } of cases) {
+    expect(restored.savedProviderModel[id]).toBeUndefined();
+    expect(restored.savedProviderEffort[id]).toBeUndefined();
+    expect(JSON.parse(content).savedProviderModel[id]).toBeUndefined();
+    expect(read(restored).length).toBeGreaterThan(0);
+  }
+  expect(content).not.toContain('unselected-catalog-entry');
+});
+
+it('preserves the alias of a Claude model selected through its resolved identity', async () => {
+  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  settings.providerConfigs.claude = { enabled: true, visibleModels: ['claude-sonnet-resolved'],
+    discoveredModels: [{ value: 'sonnet', resolvedModel: 'claude-sonnet-resolved', label: 'Sonnet', description: '' }],
+    modelAliases: { sonnet: 'My Sonnet', removed: 'Remove' } };
+  let content = '';
+  await new ClaudianSettingsStorage({
+    exists: async () => false,
+    write: async (_path: string, value: string) => { content = value; },
+  } as unknown as VaultFileAdapter).save(settings);
+  expect(JSON.parse(content).providerConfigs.claude.modelAliases).toEqual({ sonnet: 'My Sonnet' });
+});
+
+it.each(cases.flatMap(entry => [false, true].map(unavailable => ({ ...entry, unavailable }))))(
+  '$id retains saved projections for an explicitly selected model (unavailable: $unavailable)',
+  async ({ id, populate, unavailable }) => {
+    const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+    populate(settings);
+    const selected = ProviderRegistry.getChatUIConfig(id).getModelOptions(settings)[0].value;
+    settings.savedProviderModel = { [id]: selected };
+    settings.savedProviderEffort = { [id]: 'low' };
+    settings.customContextLimits = { [selected]: 128_000, 'deselected-model': 32_000 };
+    const originalLimits = { ...settings.customContextLimits };
+    if (unavailable) {
+      const config = settings.providerConfigs[id]!;
+      config.discoveredModels = [];
+      if (id === 'grok') {
+        for (const catalog of Object.values(config.catalogsByHost as Record<string, { models: unknown[] }>)) {
+          catalog.models = [];
+        }
+      }
+    }
+    let content = '';
+    await new ClaudianSettingsStorage({
+      exists: async () => false,
+      write: async (_path: string, value: string) => { content = value; },
+    } as unknown as VaultFileAdapter).save(settings);
+    expect(JSON.parse(content).savedProviderModel[id]).toBe(selected);
+    expect(JSON.parse(content).savedProviderEffort[id]).toBe('low');
+    expect(JSON.parse(content).customContextLimits).toEqual({ [selected]: 128_000 });
+    expect(settings.customContextLimits).toEqual(originalLimits);
+  },
+);
+
+it('keeps xHigh for an explicitly selected Grok model while its capabilities are unavailable', async () => {
+  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  settings.providerConfigs.grok = { enabled: true, visibleModels: ['temporarily-unavailable'],
+    preferredReasoningByModel: { 'temporarily-unavailable': 'xhigh', deselected: 'max' } };
+  let content = '';
+  const storage = new ClaudianSettingsStorage({
+    exists: async () => Boolean(content),
+    read: async () => content,
+    write: async (_path: string, value: string) => { content = value; },
+    delete: async () => undefined,
+  } as unknown as VaultFileAdapter);
+  await storage.save(settings);
+  expect(JSON.parse(content).providerConfigs.grok.preferredReasoningByModel)
+    .toEqual({ 'temporarily-unavailable': 'xhigh' });
+  const restored = await storage.load();
+  expect(getGrokProviderSettings(restored).preferredReasoningByModel)
+    .toEqual({ 'temporarily-unavailable': 'xhigh' });
+});
+
+
+it('cleans context overrides by provider identity while preserving resolved aliases and snippet templates', async () => {
+  const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
+  for (const { populate } of cases) populate(settings);
+  settings.providerConfigs.claude = { enabled: true, visibleModels: ['claude-sonnet-resolved'],
+    discoveredModels: [{ value: 'sonnet', resolvedModel: 'claude-sonnet-resolved', label: 'Sonnet', description: '' }] };
+  settings.customContextLimits = {
+    'claude-sonnet-resolved': 128_000,
+    'claude-code/sonnet': 128_000,
+    Sonnet: 128_000,
+    selected: 128_000,
+    'grok/selected': 128_000,
+    'openai-codex/selected': 64_000,
+    'grok/gpt-5.5': 64_000,
+    removed: 32_000,
+  };
+  settings.envSnippets = [{ id: 'template', name: 'Template', description: '', envVars: '',
+    contextLimits: { removed: 32_000 }, modelAliases: { removed: 'Template model' } }];
+  const before = structuredClone(settings);
+  let content = '';
+  const storage = new ClaudianSettingsStorage({
+    exists: async () => Boolean(content),
+    read: async () => content,
+    write: async (_path: string, value: string) => { content = value; },
+    delete: async () => undefined,
+  } as unknown as VaultFileAdapter);
+  await storage.save(settings);
+  const expected = {
+    'claude-sonnet-resolved': 128_000, 'claude-code/sonnet': 128_000,
+    Sonnet: 128_000, selected: 128_000, 'grok/selected': 128_000,
+  };
+  expect(JSON.parse(content).customContextLimits).toEqual(expected);
+  expect(JSON.parse(content).envSnippets).toEqual(settings.envSnippets);
+  expect(settings).toEqual(before);
+
+  // An otherwise normalized file still triggers cleanup when only this map is stale.
+  const saved = JSON.parse(content);
+  content = JSON.stringify({ ...saved, customContextLimits: { ...expected, removed: 32_000 } });
+  const restored = await storage.load();
+  expect(restored.customContextLimits).toEqual(expected);
+  expect(JSON.parse(content).customContextLimits).toEqual(expected);
+  expect(restored.envSnippets).toEqual(settings.envSnippets);
+});

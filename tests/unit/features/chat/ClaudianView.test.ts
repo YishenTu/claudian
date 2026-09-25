@@ -102,6 +102,8 @@ describe('ClaudianView model refresh routing', () => {
         permissionMode: 'normal',
       }));
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getReasoningOptions: () => [],
+      isAdaptiveReasoningModel: () => false,
       getPermissionModeToggle: jest.fn().mockReturnValue(null),
     } as any);
     jest.spyOn(ProviderRegistry, 'getCapabilities').mockImplementation(providerId => ({
@@ -2267,6 +2269,8 @@ describe('ClaudianView tab controls', () => {
 
   it('formats persisted model metadata for the session hover card', () => {
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
+      getReasoningOptions: () => [],
+      isAdaptiveReasoningModel: () => false,
       getModelOptions: jest.fn().mockReturnValue([
         { value: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
       ]),

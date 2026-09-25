@@ -8,12 +8,13 @@
 
 ## Provider policy
 
+- Explicit execution model/reasoning choices are authoritative: adapters may translate or validate them, but cannot silently substitute saved/default effort. Null reasoning means no explicit override; omitted reasoning permits auxiliary defaults. High is the default effort; preserve explicit supported choices and never silently choose another effort as a default.
 - Do not assume provider parity. Check the owning capabilities, registration, and UI config before sharing behavior; use `ProviderRegistry` and `ProviderWorkspaceRegistry`.
 - App/features may store opaque provider state but may not interpret native session/checkpoint fields. Providers normalize native payloads at the core boundary.
 - Live output and history replay remain separate. Application metadata changes never edit or delete native history files; explicit native session operations belong to providers.
 - Persisted provider settings require runtime decoding; invalid permission/tool/sandbox modes fail closed. Writers merge provider-owned configuration.
 - Runtime-discovered commands are read-only. Auxiliary queries own processes/sessions independently from chat.
-- The shared model catalog owns selection policy; providers retain discovery, native metadata, and persistence. Only selected models persist. Unavailable selections stay visible as unavailable rather than silently defaulting.
+- The shared model catalog owns selection policy; providers retain discovery, native metadata, and persistence. Only selected models persist. Startup fills missing selected-model reasoning metadata through provider-native discovery; no hardcoded model effort migrations. Unavailable selections stay visible as unavailable rather than silently defaulting.
 - Explicit selected-model order is durable user preference, including a full-list order; do not collapse it to legacy null/native-default ordering. Every provider's chat options reverse that order only to compensate for the upward-opening toolbar; settings and default resolution must not reverse it.
 
 ## Persistence and model resolution

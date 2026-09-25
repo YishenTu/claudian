@@ -1,6 +1,5 @@
 import {
   DEFAULT_REASONING_VALUE,
-  resolvePreferredReasoningDefault,
 } from '../../core/providers/reasoning';
 
 const PI_THINKING_LEVELS = [
@@ -25,6 +24,7 @@ export interface PiDiscoveredModel {
   maxTokens?: number;
   provider: string;
   reasoning: boolean;
+  reasoningMetadataResolved?: boolean;
   thinkingLevels: PiThinkingLevel[];
 }
 
@@ -173,6 +173,9 @@ export function normalizePiDiscoveredModels(value: unknown): PiDiscoveredModel[]
       provider,
       reasoning,
       thinkingLevels,
+      ...(entry.reasoningMetadataResolved === false
+        || (!Array.isArray(entry.thinkingLevels) || entry.thinkingLevels.length === 0)
+        ? { reasoningMetadataResolved: false } : {}),
     });
   }
 
@@ -195,27 +198,8 @@ export function clampPiThinkingLevel(
     return normalized;
   }
 
-  if (supportedLevels.length === 0) {
-    return 'off';
-  }
-
-  if (normalized) {
-    const requestedIndex = PI_THINKING_LEVELS.indexOf(normalized);
-    for (let index = requestedIndex + 1; index < PI_THINKING_LEVELS.length; index++) {
-      const candidate = PI_THINKING_LEVELS[index];
-      if (supportedLevels.includes(candidate)) {
-        return candidate;
-      }
-    }
-    for (let index = requestedIndex - 1; index >= 0; index--) {
-      const candidate = PI_THINKING_LEVELS[index];
-      if (supportedLevels.includes(candidate)) {
-        return candidate;
-      }
-    }
-  }
-
-  return resolvePreferredReasoningDefault(supportedLevels, 'medium') as PiThinkingLevel;
+  if (!supportedLevels.some(level => level !== 'off')) return 'off';
+  return DEFAULT_REASONING_VALUE;
 }
 
 function collectExplicitThinkingLevels(record: Record<string, unknown>): Array<PiThinkingLevel | null> {

@@ -65,6 +65,7 @@ export const piChatUIConfig: ProviderChatUIConfig = {
 
   getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
     const piModel = getCachedModel(model, settings);
+    if (piModel && !piModel.reasoning) return [];
     const levels = piModel?.thinkingLevels
       ?? (decodePiModelId(model) ? DEFAULT_PI_REASONING_LEVELS : ['off']);
     return levels.map((level) => ({

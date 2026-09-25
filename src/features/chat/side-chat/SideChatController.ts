@@ -7,11 +7,11 @@ import { detectSideChatCommand } from '../../../core/commands/builtInCommands';
 import type { ProviderExecutionContext } from '../../../core/execution';
 import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
-import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type { ImageAttachment } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { getVaultPath } from '../../../utils/path';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
+import { getChatSettingsSnapshot } from '../ChatSettings';
 import {
   captureLatestCompletedForkSource,
   type ForkSourceUnavailableReason,
@@ -294,9 +294,10 @@ export class SideChatController {
     panel.setCollapsedHost(this.#collapsedHost);
 
     const vaultPath = getVaultPath(this.deps.plugin.app);
-    const settingsSnapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    const settingsSnapshot = getChatSettingsSnapshot(
       this.deps.plugin.settings,
       source.providerId,
+      source.selectedModel,
     );
     const runtime = new SideChatRuntime({
       buildChildResumeState: async () => {
@@ -335,16 +336,10 @@ export class SideChatController {
         providerId,
       ),
       settings: {
-        ...(source.selectedModel ? { model: source.selectedModel } : {}),
-        ...(typeof settingsSnapshot.permissionMode === 'string'
-          ? { permissionMode: settingsSnapshot.permissionMode }
-          : {}),
-        ...(resolveReasoning(settingsSnapshot)
-          ? { reasoning: resolveReasoning(settingsSnapshot) }
-          : {}),
-        ...(typeof settingsSnapshot.serviceTier === 'string'
-          ? { serviceTier: settingsSnapshot.serviceTier }
-          : {}),
+        model: settingsSnapshot.model,
+        permissionMode: settingsSnapshot.permissionMode,
+        reasoning: settingsSnapshot.reasoning,
+        serviceTier: settingsSnapshot.serviceTier,
       },
       source,
       vaultWorkingDirectory: vaultPath ?? '.',
@@ -425,12 +420,6 @@ export class SideChatController {
     this.deps.getInputEl().value = '';
     this.deps.getImageContextManager()?.clearImages();
   }
-}
-
-function resolveReasoning(settings: Record<string, unknown>): string | undefined {
-  if (typeof settings.effortLevel === 'string') return settings.effortLevel;
-  if (typeof settings.thinkingBudget === 'string') return settings.thinkingBudget;
-  return undefined;
 }
 
 function describeUnavailable(reason: ForkSourceUnavailableReason): string {

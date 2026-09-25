@@ -1,6 +1,5 @@
 import {
   formatReasoningValueLabel,
-  resolvePreferredReasoningDefault,
 } from '@/core/providers/reasoning';
 
 describe('provider reasoning helpers', () => {
@@ -16,14 +15,4 @@ describe('provider reasoning helpers', () => {
     });
   });
 
-  describe('resolvePreferredReasoningDefault', () => {
-    it('prefers high when it is available', () => {
-      expect(resolvePreferredReasoningDefault(['low', 'high'], 'low')).toBe('high');
-    });
-
-    it('uses the fallback or first available value when high is unavailable', () => {
-      expect(resolvePreferredReasoningDefault(['low', 'medium'], 'medium')).toBe('medium');
-      expect(resolvePreferredReasoningDefault(['low', 'medium'], 'max')).toBe('low');
-    });
-  });
 });

@@ -72,8 +72,9 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
   },
 
   getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
-    return getOpencodeThinkingOptions(model, settings)
-      .map((variant) => ({
+    const options = getOpencodeThinkingOptions(model, settings);
+    if (options.every(option => option.value === OPENCODE_DEFAULT_THINKING_LEVEL)) return [];
+    return options.map((variant) => ({
         description: variant.description,
         label: formatReasoningValueLabel(variant.label),
         value: variant.value,
@@ -95,23 +96,9 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
     return isOpencodeModelSelectionId(model);
   },
 
-  applyModelDefaults(model: string, settings: unknown): void {
-    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-      return;
-    }
+  applyModelDefaults: applyOpencodeModelDefaults,
 
-    const settingsBag = settings as Record<string, unknown>;
-    const rawModelId = decodeOpencodeModelId(model);
-    if (!rawModelId) {
-      settingsBag.effortLevel = OPENCODE_DEFAULT_THINKING_LEVEL;
-      return;
-    }
-
-    const opencodeSettings = getOpencodeProviderSettings(settingsBag);
-    const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
-    settingsBag.model = encodeOpencodeModelId(baseRawId);
-    settingsBag.effortLevel = getDefaultThinkingLevelForModel(baseRawId, settingsBag);
-  },
+  applyModelProjectionDefaults: applyOpencodeModelDefaults,
 
   async prepareModelMetadata(model: string, _settings: Record<string, unknown>, context): Promise<void> {
     const rawModelId = decodeOpencodeModelId(model);
@@ -157,7 +144,7 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
       ...opencodeSettings.preferredThinkingByModel,
     };
 
-    if (!value || value === OPENCODE_DEFAULT_THINKING_LEVEL || !supportedValues.has(value)) {
+    if (!value || !supportedValues.has(value)) {
       delete nextPreferredThinkingByModel[baseRawId];
     } else {
       nextPreferredThinkingByModel[baseRawId] = value;
@@ -221,6 +208,24 @@ export const opencodeChatUIConfig: ProviderChatUIConfig = {
     return OPENCODE_PROVIDER_ICON;
   },
 };
+
+function applyOpencodeModelDefaults(model: string, settings: unknown): void {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return;
+  }
+
+  const settingsBag = settings as Record<string, unknown>;
+  const rawModelId = decodeOpencodeModelId(model);
+  if (!rawModelId) {
+    settingsBag.effortLevel = OPENCODE_DEFAULT_THINKING_LEVEL;
+    return;
+  }
+
+  const opencodeSettings = getOpencodeProviderSettings(settingsBag);
+  const baseRawId = resolveOpencodeBaseModelRawId(rawModelId, opencodeSettings.discoveredModels);
+  settingsBag.model = encodeOpencodeModelId(baseRawId);
+  settingsBag.effortLevel = getDefaultThinkingLevelForModel(baseRawId, settingsBag);
+}
 
 function getDefaultThinkingLevelForModel(
   baseRawId: string,

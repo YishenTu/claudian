@@ -36,10 +36,10 @@ describe('types.ts', () => {
       expect(resolveSupportedEffortLevel(['low', 'xhigh'], 'xhigh')).toBe('xhigh');
     });
 
-    it('prefers high, then the first reported level, for unsupported or missing choices', () => {
+    it('defaults to High for unsupported or missing choices', () => {
       expect(resolveSupportedEffortLevel(['low', 'high', 'max'], 'xhigh')).toBe('high');
-      expect(resolveSupportedEffortLevel(['medium', 'max'], undefined)).toBe('medium');
-      expect(resolveSupportedEffortLevel(['medium', 'max'], 'invalid')).toBe('medium');
+      expect(resolveSupportedEffortLevel(['medium', 'max'], undefined)).toBe('high');
+      expect(resolveSupportedEffortLevel(['medium', 'max'], 'invalid')).toBe('high');
     });
 
     it('has no explicit effort without reported levels', () => {

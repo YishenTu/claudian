@@ -145,6 +145,7 @@ export class OpencodeMetadataService {
         await projectOpencodeMetadata(this.plugin, {
           ...metadata,
           selectedRawModelId: metadata.rawModelId,
+          reasoningMetadataResolved: true,
         }, ownedSignal);
         ownedSignal.throwIfAborted();
         return true;

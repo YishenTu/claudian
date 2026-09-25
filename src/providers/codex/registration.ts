@@ -7,6 +7,7 @@ import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
 import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
 import { CodexExecutionBackend } from './execution/CodexExecutionBackend';
 import { CodexConversationHistoryService } from './history/CodexConversationHistoryService';
+import { findCodexModel } from './models';
 import { codexSubagentLifecycleAdapter } from './normalization/codexSubagentNormalization';
 import {
   getCodexProviderSettings, getVisibleCodexModelIds,
@@ -26,6 +27,11 @@ export const codexProviderRegistration: ProviderModule = {
   settingsReconciler: codexSettingsReconciler,
   settingsStorage: {
     projectPersistedConfig: projectCodexModelSettings,
+    needsReasoningMetadata(settings) {
+      const current = getCodexProviderSettings(settings);
+      return getVisibleCodexModelIds(current.visibleModels, current.discoveredModels)
+        .some(id => !findCodexModel(current.discoveredModels, id)?.supportedReasoningEfforts.length);
+    },
     hostScopedFields: ['cliPathsByHost', 'installationMethodsByHost', 'wslDistroOverridesByHost'],
     legacyTopLevelFields: [
       'codexSafeMode',

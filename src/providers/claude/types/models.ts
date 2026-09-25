@@ -4,7 +4,6 @@
 
 import {
   DEFAULT_REASONING_VALUE,
-  resolvePreferredReasoningDefault,
 } from '../../../core/providers/reasoning';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import {
@@ -46,8 +45,7 @@ export function isDefaultClaudeModel(model: string): boolean {
 
 /**
  * Resolves an effort choice within the levels Claude Code reported for the
- * model. Keeps a supported choice; otherwise prefers `high`, then the first
- * reported level. Without reported levels there is no explicit effort.
+ * model. Keeps a supported choice; otherwise defaults to `high`. Without reported levels there is no explicit effort.
  */
 export function resolveSupportedEffortLevel(
   supportedLevels: readonly EffortLevel[],
@@ -59,5 +57,5 @@ export function resolveSupportedEffortLevel(
   if (isEffortLevel(effortLevel) && supportedLevels.includes(effortLevel)) {
     return effortLevel;
   }
-  return resolvePreferredReasoningDefault(supportedLevels, DEFAULT_REASONING_VALUE) as EffortLevel;
+  return DEFAULT_REASONING_VALUE;
 }

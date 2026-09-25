@@ -1,0 +1,55 @@
+{
+  "result": {
+    "currentModelId": "grok-4.20-0309-non-reasoning",
+    "availableModels": [
+      {
+        "modelId": "grok-4.20-0309-non-reasoning",
+        "name": "grok-4.20-0309-non-reasoning",
+        "_meta": {
+          "totalContextTokens": 256000,
+          "agentType": "grok-build-plan"
+        }
+      },
+      {
+        "modelId": "grok-4.7",
+        "name": "grok-4.7",
+        "_meta": {
+          "totalContextTokens": 256000,
+          "agentType": "grok-build-plan",
+          "supportsReasoningEffort": true,
+          "reasoningEffort": "high",
+          "reasoningEfforts": [
+            {
+              "id": "low",
+              "value": "low",
+              "label": "Low",
+              "description": null,
+              "default": false
+            },
+            {
+              "id": "medium",
+              "value": "medium",
+              "label": "Medium",
+              "description": null,
+              "default": false
+            },
+            {
+              "id": "high",
+              "value": "high",
+              "label": "High",
+              "description": null,
+              "default": true
+            },
+            {
+              "id": "xhigh",
+              "value": "xhigh",
+              "label": "X-High",
+              "description": null,
+              "default": false
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

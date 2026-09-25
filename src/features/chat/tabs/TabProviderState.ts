@@ -20,6 +20,7 @@ import type { ClaudianSettings, Conversation } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { toggleServiceTier } from '../actions/toggleServiceTier';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
+import { type ChatSettings, getChatSettingsSnapshot } from '../ChatSettings';
 import { projectContextUsageDisplay } from '../utils/usageInfo';
 import { getTabProviderId, requireTabProviderId } from './providerResolution';
 import { isClosingLifecycleState } from './TabLifecycle';
@@ -75,10 +76,10 @@ export function getTabChatUIConfig(
 export function getTabSettingsSnapshot(
   tab: TabProviderContext,
   plugin: ChatFeatureHost,
-): TabProviderSettings {
+): TabProviderSettings & ChatSettings {
   const providerId = getTabProviderId(tab, plugin);
-  if (!providerId) return { ...plugin.settings, model: tab.draftModel ?? '' };
-  return getProviderSettingsSnapshotWithModel(
+  if (!providerId) return { ...plugin.settings, model: tab.draftModel ?? '', reasoning: null };
+  return getChatSettingsSnapshot(
     plugin.settings,
     providerId,
     getTabSelectedModel(tab, plugin),

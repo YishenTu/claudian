@@ -16,6 +16,8 @@
 
 ## Surface and input behavior
 
+- Render and submit model/reasoning from the same destination-owned settings. Submission cannot rederive them from provider-wide defaults; side chat owns its selection in memory.
+
 - Dynamic Main Agent sections are best-effort system configuration; failures must not block Chat. Collab references insert visible text only and cannot mutate selected Project or persist hidden entity metadata.
 - Live Collab disable destroys its surface while preserving the chat tab. Plugin-lifetime composer ports reset to unavailable rather than terminal disposal; compact/dual presentation reuse one controller/tree.
 - One composer serves every destination, and its target is derived from presentation state rather than a separately mutable selection. User-originated sends and cancels resolve the target when they run; internally queued main work keeps the owner it was admitted with and must never read the current target at dispatch.

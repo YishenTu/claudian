@@ -7,7 +7,7 @@ import { probeClaudeModels } from './probeClaudeModels';
 
 export const CLAUDE_MODEL_DISCOVERY_ERROR = 'Couldn’t load Claude models. Check your configuration and refresh the model list.';
 
-/** SDK discovery requested by the settings panel. No background refresh or retries. */
+/** SDK discovery shared by settings and startup metadata migration. */
 export class ClaudeModelCatalog {
   private controller: AbortController | null = null;
   private flight: Promise<ProviderModelCatalogRefreshResult> | null = null;

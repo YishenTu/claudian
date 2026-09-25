@@ -1466,13 +1466,19 @@ function resolveThinkingLevel(
   model: string,
   hostSettings: Record<string, unknown>,
 ): string | null {
+  if (request.configuration.reasoning === null) return null;
   const requested = request.configuration.reasoning
     ?? getString(hostSettings.effortLevel)
     ?? settings.preferredThinkingByModel[model];
   const discovered = findPiModel(settings, model);
-  return discovered
+  const resolved = discovered
     ? clampPiThinkingLevel(requested, discovered.thinkingLevels)
     : requested ?? null;
+  if (request.configuration.reasoning !== undefined && (resolved !== request.configuration.reasoning
+    || (discovered && !discovered.thinkingLevels.some(level => level === request.configuration.reasoning)))) {
+    throw new PiConfigurationError(`Pi model "${model}" does not support thinking level "${request.configuration.reasoning}".`);
+  }
+  return resolved;
 }
 
 function resolveToolProfile(

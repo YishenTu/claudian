@@ -499,6 +499,7 @@ describe('GrokExecutionBackend', () => {
 
     expect(native.loadRequests).toHaveLength(1);
     expect(native.modelRequests[0]).toEqual({
+      _meta: { reasoningEffort: 'high' },
       modelId: 'grok-4',
       sessionId: 'session-existing',
     });
@@ -568,7 +569,7 @@ describe('GrokExecutionBackend', () => {
     );
   });
 
-  it('drops an unsupported reasoning effort after cold-session model discovery', async () => {
+  it('rejects an unsupported reasoning effort after cold-session model discovery', async () => {
     const native = new FakeNativeConnection();
     native.loadResponse = {
       models: {
@@ -587,28 +588,26 @@ describe('GrokExecutionBackend', () => {
       nativeFactory: { create: () => native },
     }).createSession(sessionConfig);
 
-    await collect(session.execute(grok45Request('max')).events);
+    const events = await collect(session.execute(grok45Request('max')).events);
 
     expect(mergeLiveModels).toHaveBeenCalledTimes(1);
-    expect(native.modelRequests).toEqual([{
-      modelId: 'grok-4.5',
-      sessionId: 'session-existing',
-    }]);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(native.modelRequests).toEqual([]);
+    expect(native.promptRequests).toEqual([]);
   });
 
-  it('omits the requested reasoning effort when the selected model metadata is unknown', async () => {
+  it('rejects an unadvertised reasoning effort when model metadata is unknown', async () => {
     const native = new FakeNativeConnection();
     const session = new GrokExecutionBackend(
       createGrok45Host(),
       { nativeFactory: { create: () => native } },
     ).createSession(sessionConfig);
 
-    await collect(session.execute(grok45Request('max')).events);
+    const events = await collect(session.execute(grok45Request('max')).events);
 
-    expect(native.modelRequests).toEqual([{
-      modelId: 'grok-4.5',
-      sessionId: 'session-existing',
-    }]);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(native.modelRequests).toEqual([]);
+    expect(native.promptRequests).toEqual([]);
   });
 
   it('accepts a future effort value advertised by live session metadata', async () => {
@@ -762,7 +761,7 @@ describe('GrokExecutionBackend', () => {
       modelCatalogCoordinator: { mergeLiveModels },
       nativeFactory: { create: () => native },
     }).createSession(sessionConfig);
-    const run = session.execute(grok45Request('max'));
+    const run = session.execute(grok45Request('high'));
     while (native.promptRequests.length === 0) await Promise.resolve();
     const models: AcpSessionModelState = {
       availableModels: [{
@@ -799,7 +798,7 @@ describe('GrokExecutionBackend', () => {
     expect(mergeLiveModels).toHaveBeenCalledTimes(1);
   });
 
-  it('uses a valid per-model preference when the requested reasoning effort is unsupported', async () => {
+  it('rejects an unsupported toolbar effort without substituting a saved preference', async () => {
     const native = new FakeNativeConnection();
     const host = createGrok45Host();
     persistGrok45Catalog(host);
@@ -811,13 +810,11 @@ describe('GrokExecutionBackend', () => {
       { nativeFactory: { create: () => native } },
     ).createSession(sessionConfig);
 
-    await collect(session.execute(grok45Request('max')).events);
+    const events = await collect(session.execute(grok45Request('max')).events);
 
-    expect(native.modelRequests).toEqual([{
-      _meta: { reasoningEffort: 'low' },
-      modelId: 'grok-4.5',
-      sessionId: 'session-existing',
-    }]);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(native.modelRequests).toEqual([]);
+    expect(native.promptRequests).toEqual([]);
   });
 
   it('omits a saved per-model preference when the request has no projected effort', async () => {

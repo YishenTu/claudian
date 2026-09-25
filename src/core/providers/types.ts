@@ -74,6 +74,8 @@ export interface ProviderModule extends ProviderRegistration {
 }
 
 export interface ProviderSettingsStorageAdapter {
+  /** Whether selected models need native effort metadata discovery during startup. */
+  needsReasoningMetadata?(settings: Record<string, unknown>): boolean;
   hostScopedFields?: string[];
   legacyTopLevelFields?: string[];
   runtimeOnlyFields?: string[];

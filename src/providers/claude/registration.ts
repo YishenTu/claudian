@@ -3,12 +3,11 @@ import { hasStoredConfigNormalization } from '../../core/providers/settings/stor
 import type { ProviderModule } from '../../core/providers/types';
 import { claudeWorkspaceRegistration } from './app/ClaudeWorkspaceServices';
 import { CLAUDE_PROVIDER_CAPABILITIES } from './capabilities';
-import { migrateClaudeEffortMetadata } from './effortMetadataMigration';
 import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';
 import { ClaudeSubagentHistoryService } from './history/ClaudeSubagentHistoryService';
-import { getClaudeVisibleModelIds } from './modelOptions';
+import { findClaudeModelOption, getClaudeVisibleModelIds } from './modelOptions';
 import { projectClaudeModelSettings } from './modelPersistence';
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
@@ -29,6 +28,13 @@ export const claudeProviderRegistration: ProviderModule = {
   settingsReconciler: claudeSettingsReconciler,
   settingsStorage: {
     projectPersistedConfig: projectClaudeModelSettings,
+    needsReasoningMetadata(settings) {
+      const models = getClaudeProviderSettings(settings).discoveredModels;
+      return getClaudeVisibleModelIds(settings).some(id => {
+        const model = findClaudeModelOption(models, id);
+        return !model || (!model.supportedEffortLevels?.length && !model.reasoningMetadataResolved);
+      });
+    },
     hostScopedFields: ['cliPathsByHost'],
     legacyTopLevelFields: [
       'customModelAliases',
@@ -47,16 +53,11 @@ export const claudeProviderRegistration: ProviderModule = {
       const storedConfig = getProviderConfig(stored, 'claude');
       const removedLegacy1MSettings = LEGACY_CLAUDE_1M_SETTINGS.some(key => key in storedConfig);
       const storedSettings = getClaudeProviderSettings(stored);
-      const migrateEffortMetadata = !storedSettings.effortMetadataMigrated;
       updateClaudeProviderSettings(target, {
         ...storedSettings,
         visibleModels: getClaudeVisibleModelIds(stored),
-        ...(migrateEffortMetadata ? {
-          discoveredModels: migrateClaudeEffortMetadata(storedSettings.discoveredModels),
-          effortMetadataMigrated: true,
-        } : {}),
       });
-      return removedLegacy1MSettings || migrateEffortMetadata || hasStoredConfigNormalization(
+      return removedLegacy1MSettings || 'effortMetadataMigrated' in storedConfig || hasStoredConfigNormalization(
         storedConfig,
         getProviderConfig(target, 'claude'),
       );

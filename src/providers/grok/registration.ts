@@ -11,7 +11,7 @@ import { grokSettingsReconciler } from './env/GrokSettingsReconciler';
 import { GrokExecutionBackend } from './execution/GrokExecutionBackend';
 import { GrokConversationHistoryService } from './history/GrokConversationHistoryService';
 import { grokSubagentLifecycleAdapter } from './normalization/grokSubagentNormalization';
-import { getGrokMigratedVisibleModelIds, getGrokProviderSettings, projectGrokModelSettings, updateGrokProviderSettings } from './settings';
+import { getGrokMigratedVisibleModelIds, getGrokProviderSettings, getOrderedGrokVisibleModelIds, projectGrokModelSettings, updateGrokProviderSettings } from './settings';
 import { grokChatUIConfig } from './ui/GrokChatUIConfig';
 
 export const grokProviderRegistration: ProviderModule = {
@@ -35,6 +35,13 @@ export const grokProviderRegistration: ProviderModule = {
   settingsReconciler: grokSettingsReconciler,
   settingsStorage: {
     projectPersistedConfig: projectGrokModelSettings,
+    needsReasoningMetadata(settings) {
+      const current = getGrokProviderSettings(settings);
+      return getOrderedGrokVisibleModelIds(current).some(id => {
+        const model = current.currentCatalog?.models.find(model => model.rawId === id);
+        return !model || (!model.reasoningEfforts.length && !model.reasoningMetadataResolved);
+      });
+    },
     hostScopedFields: ['cliPathsByHost', 'catalogsByHost', 'selectedModelsByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'grok');

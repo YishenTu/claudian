@@ -10,6 +10,7 @@ import { DEFAULT_CLAUDE_MODELS, type EffortLevel } from './types/models';
 export interface ClaudeModelOption extends ProviderUIOption {
   resolvedModel?: string;
   supportedEffortLevels?: EffortLevel[];
+  reasoningMetadataResolved?: boolean;
 }
 
 export function getClaudeModelCatalog(settings: Record<string, unknown>): ClaudeModelOption[] {

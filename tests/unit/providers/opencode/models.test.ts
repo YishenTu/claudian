@@ -25,15 +25,14 @@ describe('OpenCode model identity', () => {
 });
 
 describe('OpenCode thinking defaults', () => {
-  it('falls back to the current provider level when high is unsupported', () => {
+  it('defaults to High instead of inheriting the native Medium default', () => {
     expect(resolveOpencodeDefaultThinkingLevel(
       [
         { label: 'Low', value: 'low' },
         { label: 'Medium', value: 'medium' },
       ],
       undefined,
-      'medium',
-    )).toBe('medium');
+    )).toBe('high');
   });
 });
 

@@ -82,5 +82,5 @@ it('clears explicitly empty reasoning options while retaining metadata absent fr
     discoveredModels: [{ rawId: 'provider/alpha', label: 'Alpha' }],
     thinkingOptionsByModel: { 'provider/beta': [{ label: 'low', value: 'low' }] },
   });
-  expect(getOpencodeProviderSettings(host.settings).thinkingOptionsByModel['provider/alpha']).toBeUndefined();
+  expect(getOpencodeProviderSettings(host.settings).thinkingOptionsByModel['provider/alpha']).toEqual([]);
 });

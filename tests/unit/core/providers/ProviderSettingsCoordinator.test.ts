@@ -185,7 +185,7 @@ describe('ProviderSettingsCoordinator', () => {
       ProviderSettingsCoordinator.applyModelSelection(settings, 'codex', 'gpt-5.4-mini');
 
       expect(settings.model).toBe('gpt-5.4-mini');
-      expect(settings.effortLevel).toBe('medium');
+      expect(settings.effortLevel).toBe('high');
       expect(settings.serviceTier).toBe('default');
     });
 

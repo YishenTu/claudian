@@ -30,7 +30,7 @@ export interface SideChatSource {
 export interface SideChatSettingsProjection {
   model?: string;
   permissionMode?: string;
-  reasoning?: string;
+  reasoning?: string | null;
   serviceTier?: string;
 }
 

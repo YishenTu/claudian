@@ -158,8 +158,7 @@ function createMockCallbacks(overrides: Record<string, any> = {}) {
     onPermissionModeChange: jest.fn().mockResolvedValue(undefined),
     getSettings: jest.fn().mockReturnValue({
       model: 'sonnet',
-      thinkingBudget: 'low',
-      effortLevel: 'high',
+      reasoning: 'high',
       serviceTier: 'default',
       permissionMode: 'normal',
       selectedMode: 'build',
@@ -249,7 +248,7 @@ describe('ModelSelector', () => {
   it('shows an unavailable selection instead of displaying another model', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'nonexistent',
-      thinkingBudget: 'low',
+      reasoning: 'low',
       serviceTier: 'default',
       permissionMode: 'normal',
       enableOpus1M: false,
@@ -280,8 +279,7 @@ describe('ModelSelector', () => {
     ]);
     callbacks.getSettings.mockReturnValue({
       model: 'gpt-new',
-      thinkingBudget: 'low',
-      effortLevel: 'high',
+      reasoning: 'high',
       serviceTier: 'default',
       permissionMode: 'normal',
     });
@@ -325,7 +323,7 @@ describe('ModelSelector', () => {
     );
     callbacks.getSettings.mockReturnValue({
       model: 'us.anthropic.claude-sonnet-4-20250514-v1:0',
-      thinkingBudget: 'low',
+      reasoning: 'low',
       permissionMode: 'normal',
       enableOpus1M: false,
       enableSonnet1M: false,
@@ -343,7 +341,7 @@ describe('ModelSelector', () => {
     );
     callbacks.getSettings.mockReturnValue({
       model: 'opus',
-      thinkingBudget: 'low',
+      reasoning: 'low',
       permissionMode: 'normal',
       enableOpus1M: true,
       enableSonnet1M: true,
@@ -367,8 +365,7 @@ describe('ModelSelector', () => {
     callbacks.getUIConfig.mockReturnValue(uiConfig);
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',
-      thinkingBudget: 'low',
-      effortLevel: 'high',
+      reasoning: 'high',
       serviceTier: 'default',
       permissionMode: 'normal',
     });
@@ -396,7 +393,7 @@ describe('ModelSelector', () => {
   it('should show 1M variants instead of standard variants when enabled', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'opus[1m]',
-      thinkingBudget: 'medium',
+      reasoning: 'medium',
       serviceTier: 'default',
       permissionMode: 'normal',
       enableOpus1M: true,
@@ -448,8 +445,7 @@ describe('ModeSelector', () => {
   it('should show the active style when the configured active mode is selected', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',
-      thinkingBudget: 'low',
-      effortLevel: 'high',
+      reasoning: 'high',
       serviceTier: 'default',
       permissionMode: 'normal',
       selectedMode: 'build',
@@ -470,8 +466,7 @@ describe('ModeSelector', () => {
   it('should show the inactive style when the configured inactive mode is selected', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',
-      thinkingBudget: 'low',
-      effortLevel: 'high',
+      reasoning: 'high',
       serviceTier: 'default',
       permissionMode: 'normal',
       selectedMode: 'plan',
@@ -548,8 +543,7 @@ describe('ThinkingBudgetSelector', () => {
       callbacks = createMockCallbacks({
         getSettings: jest.fn().mockReturnValue({
           model: 'custom-model',
-          thinkingBudget: 'low',
-          effortLevel: 'high',
+          reasoning: 'low',
           serviceTier: 'default',
           permissionMode: 'normal',
           enableOpus1M: false,
@@ -577,7 +571,7 @@ describe('ThinkingBudgetSelector', () => {
     it('should display Off when budget is off', () => {
       callbacks.getSettings.mockReturnValue({
         model: 'custom-model',
-        thinkingBudget: 'off',
+        reasoning: 'off',
         serviceTier: 'default',
         permissionMode: 'normal',
         enableOpus1M: false,
@@ -654,7 +648,7 @@ describe('PermissionToggle', () => {
   it('should display YOLO label when in yolo mode', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',
-      thinkingBudget: 'low',
+      reasoning: 'low',
       serviceTier: 'default',
       permissionMode: 'yolo',
       enableOpus1M: false,
@@ -670,7 +664,7 @@ describe('PermissionToggle', () => {
   it('should add active class when in yolo mode', () => {
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',
-      thinkingBudget: 'low',
+      reasoning: 'low',
       serviceTier: 'default',
       permissionMode: 'yolo',
     });
@@ -695,7 +689,7 @@ describe('PermissionToggle', () => {
   it('should toggle from yolo to normal on click', async () => {
     callbacks.getSettings.mockReturnValue({
       model: 'sonnet',
-      thinkingBudget: 'low',
+      reasoning: 'low',
       permissionMode: 'yolo',
     });
     const parentEl2 = createMockEl();
@@ -750,8 +744,7 @@ describe('ServiceTierToggle', () => {
       getUIConfig: jest.fn().mockReturnValue(uiConfig),
       getSettings: jest.fn().mockReturnValue({
         model: TEST_CODEX_MODEL,
-        thinkingBudget: 'off',
-        effortLevel: 'medium',
+        reasoning: 'medium',
         serviceTier: 'default',
         permissionMode: 'normal',
       }),
@@ -801,8 +794,7 @@ describe('ServiceTierToggle', () => {
   it('toggles from Fast to Standard on click', async () => {
     callbacks.getSettings.mockReturnValue({
       model: TEST_CODEX_MODEL,
-      thinkingBudget: 'off',
-      effortLevel: 'medium',
+      reasoning: 'medium',
       serviceTier: 'fast',
       permissionMode: 'normal',
     });

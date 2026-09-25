@@ -96,7 +96,9 @@ export const codexChatUIConfig: ProviderChatUIConfig = {
       return [...EFFORT_LEVELS];
     }
 
-    return getCodexReasoningEffortOptions(model, codexSettings.enableUltraEffort).map(option => ({
+    const options = getCodexReasoningEffortOptions(model, codexSettings.enableUltraEffort);
+    if (options.every(option => option.value === 'none')) return [];
+    return options.map(option => ({
       value: option.value,
       label: formatReasoningValueLabel(option.value),
       ...(option.description ? { description: option.description } : {}),

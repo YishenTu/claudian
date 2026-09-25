@@ -16,6 +16,7 @@ import { ChatModelSelectionCoordinator } from './app/settings/ChatModelSelection
 import { DEFAULT_CLAUDIAN_SETTINGS } from './app/settings/defaultSettings';
 import { PinnedLinkedContentPathCoordinator } from './app/settings/PinnedLinkedContentPathCoordinator';
 import { RuntimeSettingsCoordinator } from './app/settings/RuntimeSettingsCoordinator';
+import { migrateSelectedModelMetadata } from './app/settings/SelectedModelMetadataMigration';
 import type {
   ConditionalSettingsMutation,
   SettingsCommit,
@@ -115,6 +116,9 @@ export default class ClaudianPlugin extends Plugin {
   get chatModelSelection(): ChatModelSelectionCoordinator {
     return this.chatModelSelectionCoordinator;
   }
+
+  private readonly modelMetadataMigrationAbort = new AbortController();
+  private modelMetadataMigration: Promise<void> | null = null;
 
   async onload() {
     StartupProfiler.startOnload();
@@ -279,6 +283,12 @@ export default class ClaudianPlugin extends Plugin {
       this.addSettingTab(this.settingsTab);
       this.collab.start();
       this.sessionMetadata.scheduleRemainingLoad();
+      this.app.workspace.onLayoutReady(() => {
+        if (this.isUnloading || this.modelMetadataMigration) return;
+        this.modelMetadataMigration = migrateSelectedModelMetadata(
+          this.providerHost, this.modelMetadataMigrationAbort.signal,
+        );
+      });
     } finally {
       StartupProfiler.finishOnload();
     }
@@ -286,6 +296,7 @@ export default class ClaudianPlugin extends Plugin {
 
   onunload(): void {
     this.isUnloading = true;
+    this.modelMetadataMigrationAbort.abort();
     this.inlineEditSessions.dispose();
     this.collab.beginUnload();
     this.sessionMetadata?.cancelScheduledLoad();
@@ -309,6 +320,7 @@ export default class ClaudianPlugin extends Plugin {
     } catch {
       // Obsidian teardown has no error channel; workspace cleanup is best effort.
     }
+    await this.modelMetadataMigration;
     await finishCollabShutdown();
   }
 

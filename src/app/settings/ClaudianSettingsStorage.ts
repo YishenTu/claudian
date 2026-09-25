@@ -11,6 +11,7 @@ import {
   normalizeHiddenCommandList,
   normalizeHiddenProviderCommands,
 } from '../../core/providers/commands/hiddenCommands';
+import { decodeProviderModelSelectionId, toProviderRuntimeModelId } from '../../core/providers/modelSelection';
 import {
   getSharedEnvironmentVariables,
   inferEnvironmentSnippetScope,
@@ -279,6 +280,50 @@ function projectPersistableProviderConfigs(settings: Record<string, unknown>): P
     providerConfigs[providerId] = persisted;
   }
   return providerConfigs;
+}
+
+/** Drop saved model-dependent projections when their model was explicitly deselected. */
+function pruneDeselectedProviderProjections(settings: Record<string, unknown>): Record<string, unknown> {
+  const cleaned = { ...settings };
+  const configs = normalizeProviderConfigs(settings.providerConfigs);
+  const contextLimitMatchers: Array<(model: string) => boolean> = [];
+  for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
+    const selected = configs[providerId]?.visibleModels;
+    if (!Array.isArray(selected)) continue;
+    const ui = ProviderRegistry.getChatUIConfig(providerId);
+    const normalize = (id: string) => toProviderRuntimeModelId(providerId, ui.normalizeModelVariant(
+      ui.normalizeAvailableModelSelection?.(id, settings) ?? id,
+      settings,
+    ));
+    const normalizeContextModel = (id: string) => {
+      const normalized = normalize(id);
+      return (ui.normalizeCustomContextLimitModel?.(normalized) ?? normalized).toLowerCase();
+    };
+    const selectedContextModels = new Set(selected.filter((id): id is string => typeof id === 'string')
+      .map(normalizeContextModel));
+    contextLimitMatchers.push(model => {
+      const owner = decodeProviderModelSelectionId(model)?.providerId;
+      return (!owner || owner === providerId) && selectedContextModels.has(normalizeContextModel(model));
+    });
+    const savedModels = settings.savedProviderModel as Record<string, unknown> | undefined;
+    const model = savedModels?.[providerId];
+    if (typeof model !== 'string') continue;
+    if (selected.some(id => typeof id === 'string' && normalize(id) === normalize(model))) continue;
+    for (const key of ['savedProviderModel', 'savedProviderEffort', 'savedProviderThinkingBudget', 'savedProviderServiceTier']) {
+      const values = cleaned[key];
+      if (!values || typeof values !== 'object' || Array.isArray(values)) continue;
+      const remaining = { ...values } as Record<string, unknown>;
+      delete remaining[providerId];
+      cleaned[key] = remaining;
+    }
+  }
+  const limits = settings.customContextLimits;
+  if (limits && typeof limits === 'object' && !Array.isArray(limits)) {
+    const entries = Object.entries(limits);
+    const selected = entries.filter(([model]) => contextLimitMatchers.some(matches => matches(model)));
+    if (selected.length !== entries.length) cleaned.customContextLimits = Object.fromEntries(selected);
+  }
+  return cleaned;
 }
 
 function hasHostScopedProviderConfigNormalization(
@@ -558,6 +603,10 @@ export class ClaudianSettingsStorage {
         legacyProviderSettings,
       ) || didNormalizeProviderSettings;
     }
+    const pruned = pruneDeselectedProviderProjections(merged);
+    const didPruneDeselectedModels = pruned.savedProviderModel !== merged.savedProviderModel
+      || pruned.customContextLimits !== merged.customContextLimits;
+    Object.assign(merged, pruned);
     const didNormalizeHostScopedProviderConfigs = hasHostScopedProviderConfigNormalization(
       providerConfigs,
       merged.providerConfigs,
@@ -611,6 +660,7 @@ export class ClaudianSettingsStorage {
       || didMigrateCurrentDeviceProviderConfigs
       || didNormalizeHostScopedProviderConfigs
       || didNormalizeChatModelSelection
+      || didPruneDeselectedModels
       )
     ) {
       await this.save(merged);
@@ -622,7 +672,7 @@ export class ClaudianSettingsStorage {
   async save(settings: StoredClaudianSettings): Promise<void> {
     const providerConfigs = projectPersistableProviderConfigs(settings);
     const content = JSON.stringify(
-      stripLegacyFields({
+      stripLegacyFields(pruneDeselectedProviderProjections({
         ...settings,
         providerConfigs,
         sessionManagerOrganization: normalizeSessionManagerOrganization(
@@ -631,7 +681,7 @@ export class ClaudianSettingsStorage {
         pinnedLinkedContentPaths: normalizePinnedLinkedContentPaths(
           settings.pinnedLinkedContentPaths,
         ),
-      }),
+      })),
       null,
       2,
     );

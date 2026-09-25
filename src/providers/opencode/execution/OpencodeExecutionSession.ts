@@ -582,13 +582,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     }
 
     const thoughtState = extractAcpSessionThoughtLevelState({ configOptions });
-    if (
-      request.configuration.reasoning
-      && thoughtState.configId
-      && thoughtState.availableLevels.some(
-        ({ id }) => id === request.configuration.reasoning,
-      )
-    ) {
+    if (request.configuration.reasoning) {
+      if (!thoughtState.configId || !thoughtState.availableLevels.some(({ id }) => id === request.configuration.reasoning)) {
+        throw new Error(`OpenCode model "${selectedModel}" does not support thinking level "${request.configuration.reasoning}".`);
+      }
       await kernel.setConfigOption({
         configId: thoughtState.configId,
         sessionId: native.sessionId,

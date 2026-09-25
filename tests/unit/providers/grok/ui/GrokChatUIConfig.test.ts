@@ -179,7 +179,7 @@ describe('GrokChatUIConfig', () => {
     expect(settings.effortLevel).toBe('xhigh');
   });
 
-  it('uses the provider-advertised reasoning default without a saved preference', () => {
+  it('defaults to High over the provider-advertised default without a saved preference', () => {
     const catalogWithAdvertisedDefault = {
       ...catalog,
       models: catalog.models.map(model => model.rawId === 'grok-4'
@@ -202,7 +202,7 @@ describe('GrokChatUIConfig', () => {
       },
     });
 
-    expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-4', settings)).toBe('medium');
+    expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-4', settings)).toBe('high');
   });
 
   it('adopts and persists a future provider-advertised effort value', () => {
@@ -234,7 +234,7 @@ describe('GrokChatUIConfig', () => {
       .toEqual(expect.arrayContaining([
         expect.objectContaining({ label: 'Maximum', value: 'max' }),
       ]));
-    expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-future', settings)).toBe('max');
+    expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-future', settings)).toBe('high');
     grokChatUIConfig.applyReasoningSelection?.('grok/grok-future', 'max', settings);
     expect(getGrokProviderSettings(settings).preferredReasoningByModel)
       .toEqual({ 'grok-future': 'max' });

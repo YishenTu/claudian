@@ -1,6 +1,5 @@
 import {
   DEFAULT_REASONING_VALUE,
-  resolvePreferredReasoningDefault,
 } from '../../core/providers/reasoning';
 import { toCodexRuntimeModelId } from './modelSelection';
 import { formatCodexModelLabel } from './types/models';
@@ -204,13 +203,7 @@ export function getCodexDefaultReasoningEffort(
   if (supportedValues.length === 0) {
     return null;
   }
-  const fallbackValue = supportedValues.includes(model.defaultReasoningEffort)
-    ? model.defaultReasoningEffort
-    : DEFAULT_REASONING_VALUE;
-  return resolvePreferredReasoningDefault(
-    supportedValues,
-    fallbackValue,
-  );
+  return DEFAULT_REASONING_VALUE;
 }
 
 export function getCodexReasoningEffortOptions(
@@ -240,7 +233,7 @@ export function resolveCodexReasoningEffort(
     const fallbackValues: readonly string[] = CODEX_FALLBACK_REASONING_EFFORT_VALUES;
     return requestedEffort && fallbackValues.includes(requestedEffort)
       ? requestedEffort
-      : resolvePreferredReasoningDefault(fallbackValues, DEFAULT_REASONING_VALUE);
+      : DEFAULT_REASONING_VALUE;
   }
 
   const supportedValues = getCodexReasoningEffortOptions(model, enableUltraEffort)

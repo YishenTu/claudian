@@ -133,6 +133,11 @@ export class ClaudeExecutionRequestEncoder {
           ? request.configuration.reasoning
           : settings.effortLevel,
       );
+    const requestedEffort = request.configuration.reasoning;
+    if (requestedEffort != null && (!isEffortLevel(requestedEffort)
+      || !selected.supportedEffortLevels?.includes(requestedEffort))) {
+      throw new Error(`Claude model "${model}" does not support reasoning effort "${request.configuration.reasoning}".`);
+    }
     const sdkPermissionMode = settings.permissionMode === 'yolo'
       ? 'bypassPermissions'
       : claudeSettings.safeMode;

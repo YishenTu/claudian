@@ -754,15 +754,13 @@ RewindableExecutionSession {
   ): string | null {
     const settings = getGrokProviderSettings(this.plugin.settings);
     const model = findGrokModel(settings.currentCatalog?.models ?? [], rawModelId);
-    if (model?.reasoningMetadataResolved !== true) return null;
     const advertisedValues = getGrokAvailableReasoningEfforts(model)
       .map(effort => effort.value);
     const requested = requestedReasoning?.trim() ?? '';
     if (!requested) return null;
     if (advertisedValues.includes(requested)) return requested;
 
-    const preferred = settings.preferredReasoningByModel[rawModelId]?.trim() ?? '';
-    return advertisedValues.includes(preferred) ? preferred : null;
+    throw new Error(`Grok model "${rawModelId}" does not support reasoning effort "${requested}".`);
   }
 
   private handleNotification(

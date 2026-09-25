@@ -91,7 +91,7 @@ function createHost(): ProviderHost {
       },
     },
     settings: {
-      providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5', 'claude-opus-4-6', 'claude-haiku-4-5', 'custom-model', 'custom-model-a', 'custom-model-b']) },
+      providerConfigs: { claude: claudeCatalogFixture(['claude-sonnet-4-5', 'claude-opus-4-6', 'claude-haiku-4-5', 'custom-model', 'custom-model-a', 'custom-model-b'], ['low', 'medium', 'high']) },
       model: 'claude-sonnet-4-5',
       permissionMode: 'ask',
       effortLevel: 'medium',
@@ -1233,14 +1233,14 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
     const host = createHost();
-    host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5']), responseStyle: 'Concise' } };
+    host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), responseStyle: 'Concise' } };
     const session = new ClaudeExecutionBackend(host).createSession(createConfig());
 
     await collectEvents(session.execute(createRequest()).events);
     expect(sdkMock.getLastOptions()?.settings).toEqual({ outputStyle: 'Concise' });
     const query = sdkMock.getLastResponse();
     for (const responseStyle of ['Default', 'Concise']) {
-      host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5']), responseStyle } };
+      host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), responseStyle } };
       await collectEvents(session.execute(createRequest()).events);
       expect(sdkMock.getLastResponse()).toBe(query);
       expect(query?.applyFlagSettings).toHaveBeenLastCalledWith({ outputStyle: responseStyle });
@@ -1279,21 +1279,22 @@ describe('ClaudeExecutionBackend', () => {
     expect(query?.setMcpServers).not.toHaveBeenCalled();
   });
 
-  it('sends only reported effort levels, normalizing unsupported choices', async () => {
+  it.each(['xhigh', 'high'])('rejects unsupported toolbar effort %s without substituting a default', async reasoning => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
     const host = createHost();
-    host.settings.providerConfigs = { claude: claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'high']) };
+    host.settings.providerConfigs = { claude: claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium']) };
     const session = new ClaudeExecutionBackend(host).createSession(createConfig());
     const request = createRequest();
 
-    await collectEvents(session.execute({
-      ...request, configuration: { ...request.configuration, reasoning: 'xhigh' },
+    const events = await collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, reasoning },
     }).events);
 
-    expect(sdkMock.getLastOptions()?.effort).toBe('high');
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(sdkMock.getLastOptions()).toBeUndefined();
     await session.dispose();
   });
 
@@ -1302,9 +1303,12 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
-    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    const host = createHost();
+    host.settings.providerConfigs = { claude: claudeCatalogFixture(['claude-sonnet-4-5']) };
+    const session = new ClaudeExecutionBackend(host).createSession(createConfig());
 
-    await collectEvents(session.execute(createRequest()).events);
+    const request = createRequest();
+    await collectEvents(session.execute({ ...request, configuration: { ...request.configuration, reasoning: null } }).events);
 
     expect(sdkMock.getLastOptions()).not.toHaveProperty('effort');
     await session.dispose();
@@ -1331,7 +1335,7 @@ describe('ClaudeExecutionBackend', () => {
     const query = sdkMock.getLastResponse();
     const request = createRequest();
     await collectEvents(session.execute({
-      ...request, configuration: { ...request.configuration, model: 'claude-opus-4-6' },
+      ...request, configuration: { ...request.configuration, model: 'claude-opus-4-6', reasoning: null },
     }).events);
 
     expect(sdkMock.getQueryCallCount()).toBe(1);
@@ -1345,13 +1349,13 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
     const host = createHost();
-    host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5']), safeMode: 'default' } };
+    host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), safeMode: 'default' } };
     const session = new ClaudeExecutionBackend(host)
       .createSession(createConfig());
 
     await collectEvents(session.execute(createRequest()).events);
     const query = sdkMock.getLastResponse();
-    host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5']), safeMode: 'auto' } };
+    host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), safeMode: 'auto' } };
     await collectEvents(session.execute(createRequest()).events);
 
     expect(sdkMock.getQueryCallCount()).toBe(1);

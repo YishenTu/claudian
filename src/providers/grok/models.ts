@@ -1,6 +1,6 @@
 import {
+  DEFAULT_REASONING_VALUE,
   formatReasoningValueLabel,
-  resolvePreferredReasoningDefault,
   STANDARD_REASONING_VALUES,
 } from '../../core/providers/reasoning';
 
@@ -118,17 +118,6 @@ export function getGrokAvailableReasoningEfforts(
   return GROK_FALLBACK_REASONING_EFFORTS;
 }
 
-export function clearGrokReasoningMetadata(
-  model: GrokDiscoveredModel,
-): GrokDiscoveredModel {
-  const cleared = { ...model };
-  delete cleared.defaultReasoningEffort;
-  delete cleared.reasoningMetadataResolved;
-  cleared.reasoningEfforts = [];
-  cleared.supportsReasoning = false;
-  return cleared;
-}
-
 export function resolveGrokDefaultReasoningEffort(
   model: GrokDiscoveredModel | null | undefined,
   preferredEffort?: string,
@@ -139,12 +128,7 @@ export function resolveGrokDefaultReasoningEffort(
     return normalizedPreferred;
   }
 
-  const declaredDefault = model?.defaultReasoningEffort?.trim();
-  if (declaredDefault && availableValues.includes(declaredDefault)) {
-    return declaredDefault;
-  }
-
-  return resolvePreferredReasoningDefault(availableValues, 'high');
+  return DEFAULT_REASONING_VALUE;
 }
 
 export function normalizeGrokReasoningMetadata(value: unknown): Pick<

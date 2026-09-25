@@ -3114,6 +3114,41 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it('rejects explicit High when the selected model does not advertise it', async () => {
+    const plugin = createPlugin();
+    const model = (plugin.settings.providerConfigs.codex!.discoveredModels as any[])[0];
+    model.supportedReasoningEfforts = [{ value: 'medium', description: '' }];
+    const session = new CodexExecutionBackend(plugin).createSession(createSessionConfig());
+    const request = createRequest();
+    const events = await collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, reasoning: 'high' },
+    }).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(mockTransportRequest.mock.calls.some(call => call[0] === 'turn/start')).toBe(false);
+    await session.dispose();
+  });
+
+  it.each([null, 'low'])('preserves the explicit toolbar reasoning %s over saved defaults', async reasoning => {
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') return { userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos' };
+      if (method === 'thread/start') return createThreadResult('thread-toolbar');
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn('thread-toolbar', 'turn-toolbar'));
+        return createTurnResult('turn-toolbar');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const plugin = createPlugin();
+    plugin.settings.savedProviderEffort = { codex: 'high' };
+    const session = new CodexExecutionBackend(plugin).createSession(createSessionConfig());
+    const request = createRequest();
+    await collectEvents(session.execute({ ...request, configuration: { ...request.configuration, reasoning } }).events);
+    const turn = mockTransportRequest.mock.calls.find(call => call[0] === 'turn/start')?.[1];
+    expect(turn).toMatchObject({ model: TEST_CODEX_MODEL, effort: reasoning,
+      collaborationMode: { settings: { reasoning_effort: reasoning } } });
+    await session.dispose();
+  });
+
   it.each([false, true])('validates saved ultra effort against the setting and auxiliary request model (qualified: %s)', async qualified => {
     let turnIndex = 0;
     mockTransportRequest.mockImplementation(async (method: string) => {
@@ -3193,9 +3228,9 @@ describe('CodexExecutionBackend', () => {
     }));
     expect(turnParams[1]).toEqual(expect.objectContaining({
       model: 'gpt-5.6-luna',
-      effort: 'medium',
+      effort: 'high',
       collaborationMode: expect.objectContaining({
-        settings: expect.objectContaining({ reasoning_effort: 'medium' }),
+        settings: expect.objectContaining({ reasoning_effort: 'high' }),
       }),
     }));
 

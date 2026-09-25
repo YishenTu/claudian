@@ -1,3 +1,4 @@
+import { selectModelMetadata } from '../../core/providers/models/selectedModelMetadata';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
@@ -564,7 +565,12 @@ export function projectCodexModelSettings(settings: Record<string, unknown>): Re
   const current = getCodexProviderSettings(settings);
   const visibleModels = getVisibleCodexModelIds(current.visibleModels, current.discoveredModels);
   const selected = new Set(visibleModels);
-  const config = { ...getProviderConfig(settings, 'codex'), visibleModels, selectedModels: current.discoveredModels.filter(model => selected.has(model.model)) };
+  const config = {
+    ...getProviderConfig(settings, 'codex'),
+    visibleModels,
+    modelAliases: selectModelMetadata(current.modelAliases, selected),
+    selectedModels: current.discoveredModels.filter(model => selected.has(model.model)),
+  };
   for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes', 'customModels']) delete (config as Record<string, unknown>)[key];
   return config;
 }

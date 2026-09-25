@@ -1,3 +1,4 @@
+import { selectModelMetadata } from '../../core/providers/models/selectedModelMetadata';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
@@ -296,7 +297,7 @@ function pruneThinkingOptionsToPersistedSelections(
   const pruned: OpencodeThinkingOptionsByModel = {};
   for (const rawId of persistableRawIds) {
     const options = next.thinkingOptionsByModel[rawId];
-    if (options?.length) {
+    if (options) {
       pruned[rawId] = options.map((option) => ({ ...option }));
     }
   }
@@ -307,7 +308,14 @@ export function projectOpencodeModelSettings(settings: Record<string, unknown>):
   const current = getOpencodeProviderSettings(settings);
   const visibleModels = current.visibleModels;
   const selected = new Set(visibleModels);
-  const config = { ...getProviderConfig(settings, 'opencode'), visibleModels, thinkingOptionsByModel: pruneThinkingOptionsToPersistedSelections(current), selectedModels: current.discoveredModels.filter(model => selected.has(resolveOpencodeBaseModelRawId(model.rawId, current.discoveredModels))) };
+  const config = {
+    ...getProviderConfig(settings, 'opencode'),
+    visibleModels,
+    modelAliases: selectModelMetadata(current.modelAliases, selected),
+    preferredThinkingByModel: selectModelMetadata(current.preferredThinkingByModel, selected),
+    thinkingOptionsByModel: pruneThinkingOptionsToPersistedSelections(current),
+    selectedModels: current.discoveredModels.filter(model => selected.has(resolveOpencodeBaseModelRawId(model.rawId, current.discoveredModels))),
+  };
   for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes']) delete (config as Record<string, unknown>)[key];
   return config;
 }

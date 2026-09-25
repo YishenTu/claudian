@@ -93,11 +93,11 @@ describe('Pi settings normalization', () => {
       'pi:openai/gpt-5': 'xhigh',
     }, discoveredModels)).toEqual({
       'pi:anthropic/claude-sonnet-4': 'high',
-      'pi:openai/gpt-5': 'medium',
+      'pi:openai/gpt-5': 'high',
     });
   });
 
-  it('clamps max preferences to xhigh before high', () => {
+  it('defaults unsupported max preferences to High', () => {
     expect(normalizePiPreferredThinkingByModel({
       'pi:anthropic/claude-opus-4-7': 'max',
       'pi:anthropic/claude-sonnet-4': 'max',
@@ -113,7 +113,7 @@ describe('Pi settings normalization', () => {
       },
       discoveredModels[0],
     ])).toEqual({
-      'pi:anthropic/claude-opus-4-7': 'xhigh',
+      'pi:anthropic/claude-opus-4-7': 'high',
       'pi:anthropic/claude-sonnet-4': 'high',
     });
   });

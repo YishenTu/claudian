@@ -26,6 +26,7 @@ export interface OpencodeMetadataProjectionInput {
   readonly models?: AcpSessionModelState | null;
   readonly modes?: AcpSessionModeState | null;
   readonly selectedRawModelId?: string | null;
+  readonly reasoningMetadataResolved?: boolean;
 }
 
 export async function projectOpencodeMetadata(
@@ -68,7 +69,8 @@ export async function projectOpencodeMetadata(
   // ACP selectors retain currentValue (including '') even when their options are empty.
   const hasModels = input.models != null || modelState.currentModelId !== null || discoveredModels.length > 0;
   const hasModes = input.modes != null || modeState.currentModeId !== null || availableModes.length > 0;
-  const hasThinking = rawModelId !== null && thoughtState.configId !== null;
+  const hasThinking = rawModelId !== null
+    && (thoughtState.configId !== null || input.reasoningMetadataResolved === true);
   const hasUpdate = hasModels || hasModes || hasThinking;
   if (!hasUpdate) return false;
 

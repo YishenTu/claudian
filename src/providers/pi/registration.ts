@@ -33,6 +33,13 @@ export const piProviderRegistration: ProviderModule = {
   settingsReconciler: piSettingsReconciler,
   settingsStorage: {
     projectPersistedConfig: projectPiModelSettings,
+    needsReasoningMetadata(settings) {
+      const current = getPiProviderSettings(settings);
+      return current.visibleModels.some(id => {
+        const model = current.discoveredModels.find(model => model.encodedId === id);
+        return !model || model.reasoningMetadataResolved === false;
+      });
+    },
     hostScopedFields: ['cliPathsByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'pi');

@@ -347,7 +347,7 @@ describe('CodexChatUIConfig', () => {
         { value: 'low', label: 'Low', description: 'Fast responses' },
         { value: 'max', label: 'Max', description: 'Maximum reasoning' },
       ]);
-      expect(codexChatUIConfig.getDefaultReasoningValue('gpt-5.6-sol', settings)).toBe('low');
+      expect(codexChatUIConfig.getDefaultReasoningValue('gpt-5.6-sol', settings)).toBe('high');
     });
 
     it('exposes ultra only when it is enabled and advertised by the selected model', () => {
@@ -398,7 +398,7 @@ describe('CodexChatUIConfig', () => {
         .toEqual([{ value: 'max', label: 'Max', description: 'Maximum reasoning' }]);
     });
 
-    it('uses an advertised ultra default only while ultra effort is enabled', () => {
+    it('defaults to High independently of the native Ultra default', () => {
       const discoveredModels = [{
         model: 'gpt-5.6-sol',
         displayName: 'GPT-5.6-Sol',
@@ -416,10 +416,10 @@ describe('CodexChatUIConfig', () => {
 
       expect(codexChatUIConfig.getDefaultReasoningValue('gpt-5.6-sol', {
         providerConfigs: { codex: { discoveredModels } },
-      })).toBe('max');
+      })).toBe('high');
       expect(codexChatUIConfig.getDefaultReasoningValue('gpt-5.6-sol', {
         providerConfigs: { codex: { discoveredModels, enableUltraEffort: true } },
-      })).toBe('ultra');
+      })).toBe('high');
     });
 
     it('makes an ultra-only model unavailable while ultra effort is disabled', () => {

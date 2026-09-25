@@ -39,6 +39,9 @@ if (process.argv.includes('--version')) {
       respond({ result: { availableModels: 'invalid' } });
     } else if (scenario === 'extension-error') {
       respond({ ...catalog, error: 'private provider diagnostic' });
+    } else if (scenario === 'byok') {
+      // Sanitized native Grok Build 1.0.41 API-key catalog, captured 2026-09-25.
+      respond(JSON.parse(readFileSync(new URL('./models-list-byok.json', import.meta.url), 'utf8')));
     } else if (scenario === 'empty') {
       respond({ result: { currentModelId: 'grok-4.6', availableModels: [] } });
     } else {

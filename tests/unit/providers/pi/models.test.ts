@@ -66,7 +66,7 @@ describe('Pi model helpers', () => {
     })).toEqual(['low', 'high', 'max']);
   });
 
-  it('clamps supported thinking levels with Pi ladder semantics', () => {
+  it('preserves supported choices and defaults unsupported choices to High', () => {
     expect(clampPiThinkingLevel(
       'max',
       ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
@@ -74,7 +74,7 @@ describe('Pi model helpers', () => {
     expect(clampPiThinkingLevel(
       'max',
       ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
-    )).toBe('xhigh');
+    )).toBe('high');
     expect(clampPiThinkingLevel('max', ['off', 'high'])).toBe('high');
     expect(clampPiThinkingLevel('medium', ['low', 'high', 'max'])).toBe('high');
   });
@@ -119,6 +119,7 @@ describe('Pi model helpers', () => {
         label: 'GPT-5',
         provider: 'openai',
         reasoning: false,
+        reasoningMetadataResolved: false,
         thinkingLevels: ['off'],
       },
     ]);

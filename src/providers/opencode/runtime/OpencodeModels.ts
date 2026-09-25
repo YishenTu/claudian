@@ -30,6 +30,15 @@ export function createOpencodeModels(host: ProviderHost, native: Pick<OpencodeMe
     },
     discover: async signal => {
       const loaded = await native.loadCatalog(signal);
+      if (loaded) {
+        const selected = getOpencodeProviderSettings(host.settings).visibleModels;
+        for (const id of selected) {
+          if (signal.aborted) break;
+          const current = getOpencodeProviderSettings(host.settings);
+          if (!current.visibleModels.includes(id) || Object.hasOwn(current.thinkingOptionsByModel, id)) continue;
+          await native.warmModelMetadata(encodeOpencodeModelId(id), signal);
+        }
+      }
       return loaded ? { changed: true } : { changed: false, diagnostics: 'Could not load OpenCode models. Check the CLI path and login, then click Discover.' };
     },
     async afterSelect(addedIds) {

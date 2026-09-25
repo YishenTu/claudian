@@ -208,11 +208,7 @@ describe('ClaudianSettingsStorage', () => {
       const result = await storage.load();
 
       expect(result.lastSelectedChatModel).toBeNull();
-      // The only write records the one-time Claude effort metadata migration.
-      expect(mockAdapter.write).toHaveBeenCalledTimes(1);
-      const written = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-      expect(written.lastSelectedChatModel).toBeNull();
-      expect(written.providerConfigs.claude.effortMetadataMigrated).toBe(true);
+      expect(mockAdapter.write).not.toHaveBeenCalled();
     });
 
     it('normalizes a malformed stored chat model selection to null', async () => {
@@ -956,9 +952,8 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.envSnippets[0].modelAliases).toEqual({
         'custom-model': 'Snippet model',
       });
-      expect(writtenContent.providerConfigs.claude.modelAliases).toEqual({
-        'custom-model': 'Friendly model',
-      });
+      // The alias remains in runtime discovery, but this model is not selected for persistence.
+      expect(writtenContent.providerConfigs.claude.modelAliases).toEqual({});
       expect(writtenContent.envSnippets[0].modelAliases).toEqual({
         'custom-model': 'Snippet model',
       });

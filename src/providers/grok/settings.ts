@@ -1,11 +1,10 @@
+import { selectModelMetadata } from '../../core/providers/models/selectedModelMetadata';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
-import { STANDARD_REASONING_VALUES } from '../../core/providers/reasoning';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import type { HostnameCliPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
-  clearGrokReasoningMetadata,
   decodeGrokModelId,
   getGrokAvailableReasoningEfforts,
   type GrokDiscoveredModel,
@@ -221,26 +220,7 @@ export function updateGrokVisibleModels(
     new Set(current.currentCatalog?.models.map(model => model.rawId) ?? []),
     Boolean(current.currentCatalog?.models.length),
   );
-  const enabledModelIds = new Set(
-    normalizedVisibleModels
-      ?? current.currentCatalog?.models.map(model => model.rawId)
-      ?? [],
-  );
-  const catalogsByHost = Object.fromEntries(
-    Object.entries(current.catalogsByHost).map(([hostKey, catalog]) => [
-      hostKey,
-      {
-        ...catalog,
-        models: catalog.models.map(model => (
-          normalizedVisibleModels === null || enabledModelIds.has(model.rawId)
-            ? model
-            : clearGrokReasoningMetadata(model)
-        )),
-      },
-    ]),
-  );
   return updateGrokProviderSettings(settings, {
-    catalogsByHost,
     preferredReasoningByModel: current.preferredReasoningByModel,
     visibleModels: normalizedVisibleModels,
   });
@@ -360,10 +340,8 @@ export function normalizeGrokPreferredReasoningByModel(
     }
 
     const catalogModel = catalogById.get(rawModelId);
-    const supportedEfforts = new Set(catalogModel
-      ? getGrokAvailableReasoningEfforts(catalogModel).map(option => option.value)
-      : STANDARD_REASONING_VALUES);
-    if (!supportedEfforts.has(effort)) {
+    if (catalogModel?.reasoningMetadataResolved === true
+      && !getGrokAvailableReasoningEfforts(catalogModel).some(option => option.value === effort)) {
       continue;
     }
     normalized[rawModelId] = effort;
@@ -438,7 +416,13 @@ export function projectGrokModelSettings(settings: Record<string, unknown>): Rec
     models: catalog.models.filter(model => selected.has(model.rawId)),
     defaultModelId: catalog.defaultModelId && selected.has(catalog.defaultModelId) ? catalog.defaultModelId : null,
   }]));
-  const config: Record<string, unknown> = { ...getProviderConfig(settings, 'grok'), visibleModels, selectedModelsByHost };
+  const config: Record<string, unknown> = {
+    ...getProviderConfig(settings, 'grok'),
+    visibleModels,
+    selectedModelsByHost,
+    modelAliases: selectModelMetadata(current.modelAliases, selected),
+    preferredReasoningByModel: selectModelMetadata(current.preferredReasoningByModel, selected),
+  };
   delete config.catalogsByHost;
   delete config.currentCatalog;
   return config;

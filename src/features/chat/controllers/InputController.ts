@@ -12,7 +12,6 @@ import {
 } from '../../../core/commands/builtInCommands';
 import type { ProviderExecutionEvent } from '../../../core/execution';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
-import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
   type ProviderCapabilities,
@@ -34,6 +33,7 @@ import type { EditorSelectionContext } from '../../../utils/editor';
 import { toError } from '../../../utils/error';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
+import type { ChatSettings } from '../ChatSettings';
 import {
   type ChatExecutionCoordinator,
   ChatExecutionPreHandoffError,
@@ -84,7 +84,7 @@ export interface InputControllerDeps {
   getTitleGenerationService: () => TitleGenerationService | null;
   getInputContainerEl: () => HTMLElement;
   generateId: () => string;
-  getAuxiliaryModel?: () => string | null;
+  getSettings: () => Readonly<ChatSettings>;
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   getSubagentManager: () => SubagentManager;
   /** Authoritative tab/conversation provider, independent of runtime lifecycle. */
@@ -171,10 +171,6 @@ export class InputController {
 
   #getExecutionCoordinator(): ChatExecutionCoordinator | null {
     return this.deps.getExecutionCoordinator();
-  }
-
-  #getAuxiliaryModel(): string | null {
-    return this.deps.getAuxiliaryModel?.() ?? null;
   }
 
   #getActiveProviderId(): ProviderId {
@@ -1037,33 +1033,16 @@ export class InputController {
     assistant?: ChatMessage,
     dynamicSystemPromptSections: readonly string[] = [],
   ): ChatTurnSubmission {
-    const providerId = this.#getActiveProviderId();
-    const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-      this.deps.plugin.settings,
-      providerId,
-    );
-    const reasoning = typeof settings.effortLevel === 'string'
-      ? settings.effortLevel
-      : typeof settings.thinkingBudget === 'string'
-        ? settings.thinkingBudget
-        : undefined;
-    const permissionMode = typeof settings.permissionMode === 'string'
-      ? settings.permissionMode
-      : undefined;
-    const serviceTier = typeof settings.serviceTier === 'string'
-      ? settings.serviceTier
-      : undefined;
+    const settings = this.deps.getSettings();
     const images = [...(request.images ?? [])];
 
     return {
       canonicalText: request.text,
       configuration: {
-        ...(this.#getAuxiliaryModel()
-          ? { model: this.#getAuxiliaryModel() ?? undefined }
-          : {}),
-        ...(permissionMode ? { permissionMode } : {}),
-        ...(reasoning ? { reasoning } : {}),
-        ...(serviceTier ? { serviceTier } : {}),
+        model: settings.model,
+        reasoning: settings.reasoning,
+        permissionMode: settings.permissionMode,
+        serviceTier: settings.serviceTier,
         systemInstructions: dynamicSystemPromptSections.length > 0
           ? {
               dynamicSections: [...dynamicSystemPromptSections],
@@ -1668,7 +1647,7 @@ export class InputController {
       throw new Error('Missing Linked content submission for new Conversation');
     }
 
-    const selectedModel = this.#getAuxiliaryModel() ?? undefined;
+    const selectedModel = this.deps.getSettings().model || undefined;
     const conversation = await plugin.createConversation({
       providerId: this.#getActiveProviderId(),
       ...(selectedModel ? { selectedModel } : {}),

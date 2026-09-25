@@ -1,5 +1,6 @@
 import { Notice, setIcon } from 'obsidian';
 
+import { formatReasoningValueLabel } from '../../../core/providers/reasoning';
 import type {
   ProviderCapabilities,
   ProviderChatUIConfig,
@@ -17,6 +18,7 @@ import {
   type ScheduledAnimationFrame,
 } from '../../../utils/animationFrame';
 import { toggleServiceTier } from '../actions/toggleServiceTier';
+import type { ChatSettings } from '../ChatSettings';
 
 function runToolbarAction(action: () => Promise<void>, failureMessage: string): void {
   void action().catch(() => {
@@ -24,14 +26,7 @@ function runToolbarAction(action: () => Promise<void>, failureMessage: string): 
   });
 }
 
-export interface ToolbarSettings {
-  model: string;
-  thinkingBudget: string;
-  effortLevel: string;
-  serviceTier: string;
-  permissionMode: string;
-  [key: string]: unknown;
-}
+export type ToolbarSettings = ChatSettings & Record<string, unknown>;
 
 export interface ToolbarCallbacks {
   onModelChange: (model: string) => Promise<void>;
@@ -281,15 +276,15 @@ export class ThinkingBudgetSelector {
     if (!this.effortGearsEl) return;
     this.effortGearsEl.empty();
 
-    const currentEffort = this.callbacks.getSettings().effortLevel;
-    const uiConfig = this.callbacks.getUIConfig();
     const settings = this.callbacks.getSettings();
+    const currentEffort = settings.reasoning;
+    const uiConfig = this.callbacks.getUIConfig();
     const model = settings.model;
     const options = uiConfig.getReasoningOptions(model, settings);
     const currentInfo = options.find(e => e.value === currentEffort);
 
     const currentEl = this.effortGearsEl.createDiv({ cls: 'claudian-thinking-current' });
-    currentEl.setText(currentInfo?.label || options[0]?.label || 'High');
+    currentEl.setText(currentInfo?.label ?? (currentEffort ? formatReasoningValueLabel(currentEffort) : 'Default'));
 
     const optionsEl = this.effortGearsEl.createDiv({ cls: 'claudian-thinking-options' });
 
@@ -318,15 +313,15 @@ export class ThinkingBudgetSelector {
     if (!this.budgetGearsEl) return;
     this.budgetGearsEl.empty();
 
-    const currentBudget = this.callbacks.getSettings().thinkingBudget;
-    const uiConfig = this.callbacks.getUIConfig();
     const settings = this.callbacks.getSettings();
+    const currentBudget = settings.reasoning;
+    const uiConfig = this.callbacks.getUIConfig();
     const model = settings.model;
     const options: ProviderReasoningOption[] = uiConfig.getReasoningOptions(model, settings);
     const currentBudgetInfo = options.find(b => b.value === currentBudget);
 
     const currentEl = this.budgetGearsEl.createDiv({ cls: 'claudian-thinking-current' });
-    currentEl.setText(currentBudgetInfo?.label || options[0]?.label || 'Off');
+    currentEl.setText(currentBudgetInfo?.label ?? (currentBudget ? formatReasoningValueLabel(currentBudget) : 'Default'));
 
     const optionsEl = this.budgetGearsEl.createDiv({ cls: 'claudian-thinking-options' });
 

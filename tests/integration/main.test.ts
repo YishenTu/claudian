@@ -238,13 +238,20 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('onload', () => {
-    it.each([true, false])('does not discover Claude models during plugin startup (enabled: %s)', async enabled => {
+    it.each([true, false])('migrates missing selected effort metadata after layout when enabled: %s', async enabled => {
       const initialize = jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined);
+      const refresh = jest.fn().mockResolvedValue({ changed: true });
       await plugin.onload();
-      plugin.settings.providerConfigs.claude = { ...plugin.settings.providerConfigs.claude, enabled };
-      const ready = mockApp.workspace.onLayoutReady.mock.calls[0][0];
-      ready();
-      expect(initialize.mock.calls.filter(([, id, reason]) => id === 'claude' && reason === 'startup')).toHaveLength(0);
+      plugin.settings.providerConfigs.claude = {
+        ...plugin.settings.providerConfigs.claude, enabled, visibleModels: ['sonnet'], discoveredModels: [],
+      };
+      ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: { refresh } as any });
+      expect(refresh).not.toHaveBeenCalled();
+      for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) ready();
+      await (plugin as any).modelMetadataMigration;
+      expect(initialize.mock.calls.filter(([, id, reason]) => id === 'claude' && reason === 'model-metadata-migration'))
+        .toHaveLength(enabled ? 1 : 0);
+      expect(refresh).toHaveBeenCalledTimes(enabled ? 1 : 0);
     });
 
     it('should initialize settings with defaults', async () => {
@@ -971,7 +978,7 @@ describe('ClaudianPlugin', () => {
     });
 
     it('publishes the remaining conversation metadata after layout readiness', async () => {
-      let layoutReady!: () => void;
+      const layoutCallbacks: Array<() => void> = [];
       const backgroundMetadata = {
         id: 'background-conversation',
         providerId: 'claude' as const,
@@ -980,7 +987,7 @@ describe('ClaudianPlugin', () => {
         lastActivityAt: 2,
       };
       mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {
-        layoutReady = callback;
+        layoutCallbacks.push(callback);
       });
       const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({
@@ -992,7 +999,7 @@ describe('ClaudianPlugin', () => {
 
       await plugin.onload();
       const beforeLayoutReady = plugin.getCachedConversation(backgroundMetadata.id);
-      layoutReady();
+      for (const ready of layoutCallbacks) ready();
       for (let attempt = 0; attempt < 10; attempt += 1) {
         if (plugin.getCachedConversation(backgroundMetadata.id)) break;
         await new Promise(resolve => setTimeout(resolve, 1));
@@ -1008,15 +1015,15 @@ describe('ClaudianPlugin', () => {
     });
 
     it('does not start the background metadata scan when unloaded before the scheduled load runs', async () => {
-      let layoutReady!: () => void;
+      const layoutCallbacks: Array<() => void> = [];
       mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {
-        layoutReady = callback;
+        layoutCallbacks.push(callback);
       });
       const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockResolvedValue({ records: [], complete: true, invalidMetadataCount: 0 });
 
       await plugin.onload();
-      layoutReady();
+      for (const ready of layoutCallbacks) ready();
       plugin.onunload();
       await new Promise(resolve => setTimeout(resolve, 5));
       const scanCallCount = scanSpy.mock.calls.length;

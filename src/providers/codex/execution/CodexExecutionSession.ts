@@ -46,6 +46,7 @@ import {
 import { getCodexModelOptions } from '../modelOptions';
 import {
   findCodexModel,
+  getCodexReasoningEffortOptions,
   resolveCodexModelServiceTier,
   resolveCodexReasoningEffort,
 } from '../models';
@@ -1784,7 +1785,8 @@ export class CodexExecutionSession
     request: ProviderExecutionRequest,
     settings: Record<string, unknown>,
     model: string,
-  ): string {
+  ): string | null {
+    if (request.configuration.reasoning === null) return null;
     const codexSettings = getCodexProviderSettings(settings);
     const modelMetadata = findCodexModel(codexSettings.discoveredModels, model);
     const effort = resolveCodexReasoningEffort(
@@ -1793,6 +1795,11 @@ export class CodexExecutionSession
       normalizeString(request.configuration.reasoning)
         ?? normalizeString(settings.effortLevel),
     );
+    if (request.configuration.reasoning !== undefined && (effort !== request.configuration.reasoning
+      || (modelMetadata && !getCodexReasoningEffortOptions(modelMetadata, codexSettings.enableUltraEffort)
+        .some(option => option.value === request.configuration.reasoning)))) {
+      throw new Error(`Codex model "${model}" does not support reasoning effort "${request.configuration.reasoning}".`);
+    }
     if (!effort) {
       throw new Error(`Codex model "${model}" has no enabled reasoning efforts.`);
     }

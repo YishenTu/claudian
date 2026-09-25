@@ -280,6 +280,29 @@ function createHarness(
 }
 
 describe('PiExecutionBackend', () => {
+  it('rejects explicit High when the selected model does not advertise it', async () => {
+    const { host, session, kernels } = createHarness();
+    host.settings.providerConfigs.pi.discoveredModels[0].thinkingLevels = ['off', 'low'];
+    const events = await collect(session.execute(createRequest()).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(kernels.flatMap(kernel => kernel.requests).some(request => request.type === 'prompt')).toBe(false);
+    await session.dispose();
+  });
+
+  it.each([null, 'high'])('preserves the explicit toolbar reasoning %s over saved defaults', async reasoning => {
+    const { host, session, kernels } = createHarness();
+    host.settings.effortLevel = 'off';
+    const request = createRequest();
+    const result = collect(session.execute({ ...request, configuration: { ...request.configuration, reasoning } }).events);
+    await waitFor(() => kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
+    kernels[0].emit({ type: 'agent_end' });
+    await result;
+    expect(kernels[0].requests.filter(r => r.type === 'set_thinking_level')).toEqual(
+      reasoning === null ? [] : [{ type: 'set_thinking_level', payload: { level: reasoning } }],
+    );
+    await session.dispose();
+  });
+
   it('rejects an unavailable selected model before native startup with a configuration error', async () => {
     const { host, session, kernels } = createHarness();
     host.settings.providerConfigs.pi.visibleModels = [];

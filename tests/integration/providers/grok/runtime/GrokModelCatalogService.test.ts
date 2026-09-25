@@ -120,3 +120,22 @@ it.each(['hang-initialize', 'hang-list'])(
     expectProcessesClosed();
   },
 );
+
+it('distinguishes configurable Grok 4.7 reasoning from non-reasoning API-key models', async () => {
+  expect(await makeService('byok').discoverCatalog()).toMatchObject({
+    kind: 'completed',
+    models: [
+      { rawId: 'grok-4.20-0309-non-reasoning', reasoningMetadataResolved: true, reasoningEfforts: [], supportsReasoning: false },
+      {
+        rawId: 'grok-4.7', reasoningMetadataResolved: true, defaultReasoningEffort: 'high',
+        reasoningEfforts: [
+          expect.objectContaining({ value: 'low' }),
+          expect.objectContaining({ value: 'medium' }),
+          expect.objectContaining({ value: 'high' }),
+          expect.objectContaining({ value: 'xhigh' }),
+        ],
+      },
+    ],
+  });
+  expectProcessesClosed();
+});

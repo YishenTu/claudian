@@ -46,6 +46,7 @@ function createRouting(
     queueIndicatorEl: null,
   };
   const controller = new InputController({
+    getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'default' }),
     canvasSelectionController: { getContext: () => context.canvasSelection ?? null },
     browserSelectionController: { getContext: () => context.browserSelection ?? null },
     conversationController: { save: async () => undefined },

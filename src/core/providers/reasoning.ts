@@ -13,16 +13,3 @@ export function formatReasoningValueLabel(value: string): string {
 
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
-
-export function resolvePreferredReasoningDefault(
-  availableValues: readonly string[],
-  fallbackValue: string,
-): string {
-  if (availableValues.includes(DEFAULT_REASONING_VALUE)) {
-    return DEFAULT_REASONING_VALUE;
-  }
-  if (availableValues.includes(fallbackValue)) {
-    return fallbackValue;
-  }
-  return availableValues[0] ?? fallbackValue;
-}
