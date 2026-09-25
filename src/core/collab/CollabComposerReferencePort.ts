@@ -36,6 +36,7 @@ export interface CollabComposerReferenceSubscription {
 }
 
 export interface CollabComposerReferencePort {
+  isAvailable(): boolean;
   getSelection(signal?: AbortSignal): Promise<CollabComposerSelection | null>;
   listMemberChanges(
     projectId: string,
