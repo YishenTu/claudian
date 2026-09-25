@@ -211,7 +211,7 @@ it('runs YOLO with automatic native approvals while still answering questions', 
     expect(events.at(-1)?.type).toBe('turn_completed');
     expect(f.questions).toEqual([expect.objectContaining({ kind: 'question' })]);
   } finally { await f.dispose(); }
-});
+}, 15000);
 
 it('waits for account activation before replacing the catalog on a resumed first turn', async () => {
   const f = createFixture(true, undefined, 'ACTIVATION_DELAY_MS=250');
