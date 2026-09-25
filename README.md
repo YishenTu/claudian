@@ -59,12 +59,6 @@ Claudian now supports OpenCode v2, OpenCode v1 support will end on October 30, 2
 
 Or install directly from the [community plugin page](https://community.obsidian.md/plugins/realclaudian).
 
-### Plugin size and Obsidian Sync
-
-Despite considerable effort to reduce the bundle size, keeping it below 5 MB is no longer practical with the latest Claude Agent SDK. The Obsidian community plugin page may therefore display a large-plugin warning, and Obsidian's official Sync service cannot sync the main plugin file because it supports only files smaller than 5 MB.
-
-If you use Obsidian Sync across multiple desktop devices, install and update Claudian separately on each device instead of relying on Sync to copy the plugin files.
-
 ### From source (development)
 
 1. Clone this repository into your vault's plugins folder:

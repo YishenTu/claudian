@@ -458,13 +458,13 @@ test('only TabRuntimeFactory can register runtime resource ownership', () => {
 
 test('performance policy enforces the main bundle budget and reports health deltas', () => {
   assert.equal(preStep11BundleHealthBaselineBytes, 4_896_000);
-  assert.equal(mainBudgetBytes, 6_000_000);
+  assert.equal(mainBudgetBytes, 5_000_000);
   assert.deepEqual(inspectArtifactSize(mainBudgetBytes), {
     budgetExceeded: false,
     healthBaselineDeltaBytes: mainBudgetBytes - preStep11BundleHealthBaselineBytes,
     referenceDeltaBytes: mainBudgetBytes - referenceMainBytes,
   });
-  assert.equal(inspectArtifactSize(mainBudgetBytes + 1).budgetExceeded, true);
+  assert.equal(inspectArtifactSize(5_000_001).budgetExceeded, true);
   assert.equal(inspectEvaluationDuration(evaluationIndicatorMs), 'within-indicator');
   assert.equal(inspectEvaluationDuration(evaluationIndicatorMs + 1), 'warning');
   assert.equal(
