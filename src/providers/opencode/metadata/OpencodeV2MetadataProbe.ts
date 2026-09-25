@@ -51,7 +51,8 @@ export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
   async dispose(): Promise<void> { await this.client.dispose(); }
 
   private async loadModels(signal: AbortSignal, rawModelId?: string): Promise<NativeModel[]> {
-    // An initial snapshot may be partial. Later discovery re-reads the retained server.
+    await this.client.waitForActivation(signal);
+    // Older versions and background discovery can still need polling or a later refresh.
     return pollOpencodeUntil(async () => (await this.read('model', signal)).filter(isNamedRecord).flatMap(model => {
       if (model.enabled !== true || typeof model.id !== 'string' || typeof model.providerID !== 'string') return [];
       return [{

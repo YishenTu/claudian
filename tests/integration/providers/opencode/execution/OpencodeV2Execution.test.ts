@@ -16,6 +16,7 @@ const http = require('node:http');
 if (process.argv.includes('--version')) { console.log('opencode v2.0.12'); return; }
 if (!process.argv.includes('serve')) process.exit(3);
 let lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0;
+let activated = !process.env.ACTIVATION_DELAY_MS, activation;
 const emit = (type, data) => feed.write('data: ' + JSON.stringify({ type, data: { sessionID: 'ses_test', ...data } }) + '\\n\\n');
 const server = http.createServer(async (req, res) => {
   if (req.headers.authorization !== 'Basic ' + Buffer.from('opencode:' + process.env.OPENCODE_PASSWORD).toString('base64')) { res.writeHead(403).end(); return; }
@@ -29,7 +30,13 @@ const server = http.createServer(async (req, res) => {
     const inline = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT || '{}');
     res.end(JSON.stringify({ data: [...Object.entries(inline.agent || {}).map(([id, agent]) => ({ id, system: agent.prompt })), ...Object.entries(base.agents || {}).map(([id, agent]) => ({ id, ...agent }))] })); return;
   }
-  if (route === '/api/model') { res.end(JSON.stringify({ data: [{ id: 'chat', providerID: 'deepseek', name: 'Chat', enabled: true, variants: [], limit: { context: 1000 } }] })); return; }
+  if (route === '/api/integration' || route === '/api/model') {
+    activation ??= new Promise(resolve => setTimeout(() => { activated = true; resolve(); }, Number(process.env.ACTIVATION_DELAY_MS || 0)));
+    if (route === '/api/integration') { await activation; res.end(JSON.stringify({ data: [] })); return; }
+    res.end(JSON.stringify({ data: activated
+      ? [{ id: 'chat', providerID: 'deepseek', name: 'Chat', enabled: true, variants: [], limit: { context: 1000 } }]
+      : [{ id: 'builtin', providerID: 'opencode', name: 'Builtin', enabled: true, variants: [] }] })); return;
+  }
   if (route === '/api/command') { res.end(JSON.stringify({ data: [{ name: 'review', description: 'Review' }] })); return; }
   if (route === '/api/form') {
     const snapshot = [...ownedForms];
@@ -203,6 +210,16 @@ it('runs YOLO with automatic native approvals while still answering questions', 
     }).events) events.push(event);
     expect(events.at(-1)?.type).toBe('turn_completed');
     expect(f.questions).toEqual([expect.objectContaining({ kind: 'question' })]);
+  } finally { await f.dispose(); }
+});
+
+it('waits for account activation before replacing the catalog on a resumed first turn', async () => {
+  const f = createFixture(true, undefined, 'ACTIVATION_DELAY_MS=250');
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request()).events) events.push(event);
+    expect(events.at(-1)?.type).toBe('turn_completed');
+    expect(events.filter(event => event.type === 'text_delta').map(event => event.text).join('')).toBe('Finished review');
   } finally { await f.dispose(); }
 });
 

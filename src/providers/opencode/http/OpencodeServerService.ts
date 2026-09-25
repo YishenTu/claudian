@@ -136,6 +136,17 @@ export class OpencodeServerLease {
     return this.server.client.request<T>(route, { ...options, signal: this.signal(options?.signal) });
   }
 
+  /** Newer V2 integration reads wait for plugin/account activation before returning. */
+  async waitForActivation(signal?: AbortSignal): Promise<void> {
+    const ownedSignal = this.signal(signal);
+    try {
+      await this.request('/api/integration', { signal: ownedSignal, timeoutMs: 8_000 });
+    } catch {
+      // Readiness is best-effort: retain catalog polling for older versions or stalled plugins.
+      ownedSignal.throwIfAborted();
+    }
+  }
+
   async subscribe(event: Subscriber['event'], error: Subscriber['error'], interactive: Subscriber['interactive']): Promise<void> {
     this.controller.signal.throwIfAborted();
     const subscriber = { event, error, interactive };
