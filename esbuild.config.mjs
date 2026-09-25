@@ -13,7 +13,6 @@ import {
 import { assertRuntimeDependencyParity } from './scripts/runtimeDependencyParity.mjs';
 import rendererSafeUnrefHelpers from './scripts/rendererSafeUnref.js';
 import desktopRuntimeAliasHelpers from './scripts/desktopRuntimeAliases.js';
-import terserProductionBundleHelpers from './scripts/terserProductionBundle.js';
 import compressedStaticAssetsHelpers from './scripts/compressedStaticAssets.js';
 
 const {
@@ -21,7 +20,6 @@ const {
   patchRendererUnsafeUnrefSites,
 } = rendererSafeUnrefHelpers;
 const { createDesktopRuntimeAliases } = desktopRuntimeAliasHelpers;
-const { createTerserProductionBundlePlugin } = terserProductionBundleHelpers;
 const { createCompressedStaticAssetsPlugin } = compressedStaticAssetsHelpers;
 
 // Load .env.local if it exists
@@ -199,7 +197,6 @@ const mainContext = await esbuild.context({
   plugins: [
     patchSdkImportMeta,
     createCompressedStaticAssetsPlugin(),
-    ...(prod ? [createTerserProductionBundlePlugin(['main.js'])] : []),
     createPatchRendererUnsafeUnref(['main.js']),
     copyToObsidian,
   ],

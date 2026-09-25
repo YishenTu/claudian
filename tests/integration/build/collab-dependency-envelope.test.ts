@@ -4,7 +4,6 @@ mkdtempSync,
 readdirSync,
 readFileSync,
 rmSync,
-writeFileSync,
 } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -14,11 +13,9 @@ import { build,stop } from 'esbuild';
 
 import * as compressedStaticAssetsHelpers from '../../../scripts/compressedStaticAssets.js';
 import * as desktopRuntimeAliasHelpers from '../../../scripts/desktopRuntimeAliases.js';
-import * as terserProductionBundleHelpers from '../../../scripts/terserProductionBundle.js';
 
 const { createDesktopRuntimeAliases } = desktopRuntimeAliasHelpers;
 const { createCompressedStaticAssetsPlugin } = compressedStaticAssetsHelpers;
-const { minifyProductionBundle } = terserProductionBundleHelpers;
 
 
 const root = path.resolve(__dirname, '../../..');
@@ -133,8 +130,6 @@ describe('Collab dependency envelope', () => {
     bundleContributors = Object.entries(Object.values(result.metafile.outputs)[0].inputs)
       .filter(([, contribution]) => contribution.bytesInOutput > 0)
       .map(([input]) => input);
-    const productionBundle = await minifyProductionBundle(readFileSync(bundlePath, 'utf8'));
-    writeFileSync(bundlePath, `${productionBundle}\n`, 'utf8');
   }, 60_000);
 
   afterAll(() => {
@@ -308,7 +303,7 @@ describe('Collab dependency envelope', () => {
       write: false,
     });
     expect(result.outputFiles).toHaveLength(1);
-    const output = await minifyProductionBundle(result.outputFiles[0].text);
+    const output = result.outputFiles[0].text;
     const module = { exports: [] as unknown[] };
     Function('module', 'exports', 'require', output)(module, module.exports, require);
 

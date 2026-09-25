@@ -14,7 +14,7 @@ function compress(contents, mode) {
   return brotliCompressSync(contents, {
     params: {
       [zlibConstants.BROTLI_PARAM_MODE]: mode,
-      [zlibConstants.BROTLI_PARAM_QUALITY]: 11,
+      [zlibConstants.BROTLI_PARAM_QUALITY]: 9,
     },
   }).toString('base64');
 }
