@@ -63,6 +63,10 @@ describe('ClaudianPlugin', () => {
     }
   }
 
+  function collabOf(instance: ClaudianPlugin): any {
+    return (instance as any).collab;
+  }
+
   function getRegisteredCommand(commandId: string) {
     const call = (plugin.addCommand as jest.Mock).mock.calls.find(
       ([config]) => config.id === commandId,
@@ -255,7 +259,7 @@ describe('ClaudianPlugin', () => {
     it('keeps Collab Runtime, Host restore, commands, and prompt dormant by default', async () => {
       const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start);
       const getCollabFeatureService = jest.spyOn(
-        plugin as unknown as { getCollabFeatureService(): Promise<unknown> },
+        collabOf(plugin) as { getCollabFeatureService(): Promise<unknown> },
         'getCollabFeatureService',
       );
 
@@ -278,7 +282,7 @@ describe('ClaudianPlugin', () => {
       const restoreLifecycle = jest.fn().mockResolvedValue(undefined);
       const restoreHosts = jest.fn().mockResolvedValue(undefined);
       const getCollabFeatureService = jest.spyOn(
-        plugin as unknown as {
+        collabOf(plugin) as {
           getCollabFeatureService(): Promise<{
             restoreHosts(): Promise<void>;
             restoreLifecycle(): Promise<void>;
@@ -322,7 +326,7 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
       await plugin.setCollabEnabled(true);
       const trackedSurface = { close: jest.fn(), open: jest.fn() };
-      const transientSurfaces = (plugin as any).collabTransientSurfaces;
+      const transientSurfaces = collabOf(plugin).collabTransientSurfaces;
       transientSurfaces.open(() => trackedSurface);
       const openTransient = jest.spyOn(transientSurfaces, 'open');
       openTransient.mockClear();
@@ -330,8 +334,8 @@ describe('ClaudianPlugin', () => {
       const initialize = jest.fn(() => new Promise(resolve => {
         finishInitialization = () => resolve({ status: 'success', value: undefined });
       }));
-      jest.spyOn(plugin as any, 'getCollabFeatureService').mockResolvedValue({ initialize });
-      jest.spyOn(plugin as any, 'resolveCollabGit').mockResolvedValue({
+      jest.spyOn(collabOf(plugin), 'getCollabFeatureService').mockResolvedValue({ initialize });
+      jest.spyOn(collabOf(plugin), 'resolveCollabGit').mockResolvedValue({
         status: 'available',
         version: '2.42.0',
       });
@@ -362,7 +366,7 @@ describe('ClaudianPlugin', () => {
 
     it('registers the Collab detail view without initializing Collab', async () => {
       const createCollabFeatureService = jest.spyOn(
-        plugin as unknown as {
+        collabOf(plugin) as {
           createCollabFeatureService(): Promise<unknown>;
         },
         'createCollabFeatureService',
@@ -375,9 +379,9 @@ describe('ClaudianPlugin', () => {
         expect.any(Function),
       );
       expect(createCollabFeatureService).not.toHaveBeenCalled();
-      expect((plugin as unknown as { collabFoundation: unknown }).collabFoundation)
+      expect((collabOf(plugin) as { collabFoundation: unknown }).collabFoundation)
         .toBeNull();
-      expect((plugin as unknown as { collabFeatureService: unknown }).collabFeatureService)
+      expect((collabOf(plugin) as { collabFeatureService: unknown }).collabFeatureService)
         .toBeNull();
     });
 
@@ -398,7 +402,7 @@ describe('ClaudianPlugin', () => {
       mockApp.workspace.getLeavesOfType.mockReturnValue([first, second]);
       mockApp.workspace.getMostRecentLeaf.mockReturnValue(second);
 
-      expect((plugin as any).readCollabTicketFocus()).toEqual({
+      expect(collabOf(plugin).readCollabTicketFocus()).toEqual({
         projectId: 'project-a',
         ticketId: 'ticket-b',
       });
@@ -406,7 +410,7 @@ describe('ClaudianPlugin', () => {
       mockApp.workspace.getMostRecentLeaf.mockReturnValue({
         getViewState: () => ({ state: {}, type: 'markdown' }),
       });
-      expect((plugin as any).readCollabTicketFocus()).toBeNull();
+      expect(collabOf(plugin).readCollabTicketFocus()).toBeNull();
 
       for (const state of [
         { kind: 'ticket', projectId: 'bad project', ticketId: 'ticket-a' },
@@ -417,7 +421,7 @@ describe('ClaudianPlugin', () => {
         mockApp.workspace.getMostRecentLeaf.mockReturnValue({
           getViewState: () => ({ state, type: COLLAB_DETAIL_VIEW_TYPE }),
         });
-        expect((plugin as any).readCollabTicketFocus()).toBeNull();
+        expect(collabOf(plugin).readCollabTicketFocus()).toBeNull();
       }
 
       const maximumProjectId = `p${'a'.repeat(63)}`;
@@ -432,7 +436,7 @@ describe('ClaudianPlugin', () => {
           type: COLLAB_DETAIL_VIEW_TYPE,
         }),
       });
-      expect((plugin as any).readCollabTicketFocus()).toEqual({
+      expect(collabOf(plugin).readCollabTicketFocus()).toEqual({
         projectId: maximumProjectId,
         ticketId: maximumTicketId,
       });
@@ -441,11 +445,11 @@ describe('ClaudianPlugin', () => {
     it('keeps restored Collab detail subscriptions inert while Collab is disabled', async () => {
       await plugin.onload();
       const requireCollabFeatureService = jest.spyOn(
-        plugin as unknown as { requireCollabFeatureService(): Promise<unknown> },
+        collabOf(plugin) as { requireCollabFeatureService(): Promise<unknown> },
         'requireCollabFeatureService',
       );
       const port = (
-        plugin as unknown as {
+        collabOf(plugin) as {
           createCollabDetailViewPort(): { observeProject(projectId: string, listener: () => void): { dispose(): void } };
         }
       ).createCollabDetailViewPort();
@@ -466,7 +470,7 @@ describe('ClaudianPlugin', () => {
       const start = jest.mocked(LocalAgentRuntimeHttpServer.prototype.start)
         .mockReturnValue(startPending);
       const createCollabFeatureService = jest.spyOn(
-        plugin as unknown as {
+        collabOf(plugin) as {
           createCollabFeatureService(): Promise<unknown>;
         },
         'createCollabFeatureService',
@@ -483,7 +487,7 @@ describe('ClaudianPlugin', () => {
         rpcUrl: 'http://127.0.0.1:61234/v1/rpc',
       });
       await (
-        plugin as unknown as { agentRuntimeStartPromise: Promise<unknown> }
+        collabOf(plugin) as { agentRuntimeStartPromise: Promise<unknown> }
       ).agentRuntimeStartPromise;
     });
 
@@ -493,7 +497,7 @@ describe('ClaudianPlugin', () => {
         listProjects: jest.fn().mockResolvedValue({ status: 'success', value: [] }),
       };
       const getCollabFeatureService = jest.spyOn(
-        plugin as unknown as {
+        collabOf(plugin) as {
           getCollabFeatureService(): Promise<typeof collabPort>;
         },
         'getCollabFeatureService',
@@ -501,7 +505,7 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
       await new Promise(resolve => setImmediate(resolve));
       const gateway = (
-        plugin as unknown as {
+        collabOf(plugin) as {
           agentRuntime: { gateway: { handle(input: unknown): Promise<unknown> } };
         }
       ).agentRuntime.gateway;
@@ -539,7 +543,7 @@ describe('ClaudianPlugin', () => {
     it('does not initialize Collab when Agent Runtime is unavailable', async () => {
       enableCollab();
       const createCollabFeatureService = jest.spyOn(
-        plugin as unknown as {
+        collabOf(plugin) as {
           createCollabFeatureService(): Promise<unknown>;
         },
         'createCollabFeatureService',
@@ -574,7 +578,7 @@ describe('ClaudianPlugin', () => {
       await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([]);
 
       expect((
-        plugin as unknown as { agentRuntimeStartPromise: unknown }
+        collabOf(plugin) as { agentRuntimeStartPromise: unknown }
       ).agentRuntimeStartPromise).toBeNull();
       await expect(plugin.getMainAgentDynamicSystemPromptSections()).resolves.toEqual([]);
       expect(start).toHaveBeenCalledTimes(2);
@@ -602,7 +606,7 @@ describe('ClaudianPlugin', () => {
           plugin as unknown as { applicationShutdownPromise: Promise<void> }
         ).applicationShutdownPromise,
         (
-          plugin as unknown as { agentRuntimeStartPromise: Promise<unknown> }
+          collabOf(plugin) as { agentRuntimeStartPromise: Promise<unknown> }
         ).agentRuntimeStartPromise,
       ]);
 
@@ -628,7 +632,7 @@ describe('ClaudianPlugin', () => {
       enableCollab();
       await plugin.onload();
       const requireCollabFeatureService = jest.spyOn(
-        plugin as unknown as { requireCollabFeatureService(): Promise<unknown> },
+        collabOf(plugin) as { requireCollabFeatureService(): Promise<unknown> },
         'requireCollabFeatureService',
       );
       const factory = (plugin.registerView as jest.Mock).mock.calls.find(
@@ -661,7 +665,7 @@ describe('ClaudianPlugin', () => {
 
         expect(restored.getState()).toEqual(state);
         expect(requireCollabFeatureService).not.toHaveBeenCalled();
-        expect((plugin as unknown as { collabFeatureService: unknown }).collabFeatureService)
+        expect((collabOf(plugin) as { collabFeatureService: unknown }).collabFeatureService)
           .toBeNull();
       } finally {
         globals.activeDocument = previousActiveDocument;
@@ -681,7 +685,7 @@ describe('ClaudianPlugin', () => {
       const restoreLifecycle = jest.fn().mockResolvedValue(undefined);
       const restoreHosts = jest.fn().mockResolvedValue(undefined);
       const getCollabFeatureService = jest.spyOn(
-        plugin as unknown as {
+        collabOf(plugin) as {
           getCollabFeatureService(): Promise<{
             restoreHosts(): Promise<void>;
             restoreLifecycle(): Promise<void>;
@@ -713,7 +717,7 @@ describe('ClaudianPlugin', () => {
           .mockResolvedValue(undefined);
         const restoreHosts = jest.fn().mockResolvedValue(undefined);
         jest.spyOn(
-          plugin as unknown as {
+          collabOf(plugin) as {
             getCollabFeatureService(): Promise<{
               restoreHosts(): Promise<void>;
               restoreLifecycle(): Promise<void>;
@@ -791,9 +795,9 @@ describe('ClaudianPlugin', () => {
         name: 'Resume Collab project setup',
       });
       expect(plugin.collabSurfaceFactory).toBeDefined();
-      expect((plugin as unknown as { collabFoundation: unknown }).collabFoundation)
+      expect((collabOf(plugin) as { collabFoundation: unknown }).collabFoundation)
         .toBeNull();
-      expect((plugin as unknown as { collabFeatureService: unknown }).collabFeatureService)
+      expect((collabOf(plugin) as { collabFeatureService: unknown }).collabFeatureService)
         .toBeNull();
     });
 
@@ -1830,7 +1834,7 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
       const leaf = { setViewState: jest.fn().mockResolvedValue(undefined), detach: jest.fn() };
       mockApp.workspace.getLeaf.mockReturnValue(leaf);
-      const coordinator = (plugin as any).getCollabDetailViewCoordinator();
+      const coordinator = collabOf(plugin).getCollabDetailViewCoordinator();
       if (transition === 'failed-disable') mockApp.vault.adapter.write.mockRejectedValueOnce(new Error('settings write failed'));
       const outcome = await plugin.setCollabEnabled(transition === 'unchanged').then(() => 'saved', error => error.message);
       expect(outcome).toBe(transition === 'failed-disable' ? 'settings write failed' : 'saved');
@@ -1843,15 +1847,15 @@ describe('ClaudianPlugin', () => {
       await plugin.onload();
       let finishRead!: (value: unknown) => void;
       const pending = new Promise(resolve => { finishRead = resolve; });
-      Object.assign(plugin as unknown as Record<string, unknown>, {
+      Object.assign(collabOf(plugin) as Record<string, unknown>, {
         collabLayoutReady: true,
         collabFeatureService: { readConflict: () => pending, close: () => pending.then(() => undefined) },
       });
-      const opening = (plugin as any).openCollabConflict('project-alpha', 'operation-one', 'update');
+      const opening = collabOf(plugin).openCollabConflict('project-alpha', 'operation-one', 'update');
       await Promise.resolve();
       const closing = action === 'disable' ? plugin.setCollabEnabled(false) : (plugin.onunload(), (plugin as any).applicationShutdownPromise);
       await new Promise(resolve => setImmediate(resolve));
-      const admissionOpen = (plugin as any).createCollabDetailViewPort().isDetailAdmissionOpen();
+      const admissionOpen = collabOf(plugin).createCollabDetailViewPort().isDetailAdmissionOpen();
       finishRead({ status: 'success', value: { descriptor: { projectId: 'project-alpha' } } });
       await Promise.all([opening, closing]);
       expect(admissionOpen).toBe(false);
@@ -1872,7 +1876,7 @@ describe('ClaudianPlugin', () => {
       mockApp.workspace.getLeavesOfType.mockImplementation((type: string) => (
         type === COLLAB_DETAIL_VIEW_TYPE && mounted ? [leaf] : []
       ));
-      const coordinator = (plugin as any).getCollabDetailViewCoordinator();
+      const coordinator = collabOf(plugin).getCollabDetailViewCoordinator();
       const opening = coordinator.open({ kind: 'ticket', projectId: 'project-alpha' });
       await Promise.resolve();
       expect(mounted).toBe(true);
@@ -1909,7 +1913,7 @@ describe('ClaudianPlugin', () => {
       ).mockResolvedValue(undefined);
       const closeRuntime = jest.fn().mockResolvedValue(undefined);
       const retainedCollabService = { close: jest.fn().mockResolvedValue(undefined) };
-      Object.assign(plugin as unknown as Record<string, unknown>, {
+      Object.assign(collabOf(plugin) as Record<string, unknown>, {
         agentRuntime: {
           close: closeRuntime,
           waitForWriteInvocations: jest.fn().mockResolvedValue(undefined),
@@ -1925,7 +1929,7 @@ describe('ClaudianPlugin', () => {
       expect(disposeExecution).not.toHaveBeenCalled();
       expect(disposeWorkspaces).not.toHaveBeenCalled();
       await expect((
-        plugin as unknown as { getCollabFeatureService(): Promise<unknown> }
+        collabOf(plugin) as { getCollabFeatureService(): Promise<unknown> }
       ).getCollabFeatureService()).resolves.toBeNull();
       expect(retainedCollabService.close).toHaveBeenCalledTimes(1);
 
@@ -1949,7 +1953,7 @@ describe('ClaudianPlugin', () => {
       const waitForWriteInvocations = jest.fn(() => writesSettled);
       const closeFeature = jest.fn().mockResolvedValue(undefined);
       const closeFoundation = jest.fn().mockResolvedValue(undefined);
-      Object.assign(plugin as unknown as Record<string, unknown>, {
+      Object.assign(collabOf(plugin) as Record<string, unknown>, {
         agentRuntime: { close: closeRuntime, waitForWriteInvocations },
         collabFeatureService: { close: closeFeature },
         collabFoundation: { close: closeFoundation },
