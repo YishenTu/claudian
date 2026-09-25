@@ -389,19 +389,46 @@ describe('GrokExecutionBackend', () => {
     );
   });
 
-  it.each(['notification', 'update', 'standard'] as const)(
-    'preserves Grok checkpoint IDs from %s metadata across assistant messages',
+  it('preserves standard Grok message IDs across assistant messages', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = async () => {
+      for (const id of ['assistant-first', 'assistant-final']) {
+        native.emit({
+          content: { text: id, type: 'text' },
+          messageId: id,
+          sessionUpdate: 'agent_message_chunk',
+        }, 'extension');
+      }
+      return { stopReason: 'end_turn' };
+    };
+    const session = new GrokExecutionBackend(createGrokHost(), {
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    try {
+      const events = await collect(session.execute(executionRequest()).events);
+      expect(events.filter(event => event.type === 'assistant_message_started')).toEqual([
+        expect.objectContaining({ nativeAssistantId: 'assistant-first' }),
+        expect.objectContaining({ nativeAssistantId: 'assistant-final' }),
+      ]);
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  it.each(['notification', 'update'] as const)(
+    'keeps per-token Grok chunks from %s metadata in one assistant message keyed by prompt ID',
     async location => {
+      // Grok assigns a fresh eventId to every streamed token; only promptId is stable per turn.
       const native = new FakeNativeConnection();
       native.promptImplementation = async () => {
-        for (const id of ['assistant-first', 'assistant-final']) {
+        ['Hello', ',', ' world'].forEach((text, index) => {
+          const metadata = { eventId: `event-${index}`, promptId: 'prompt-1' };
           native.emit({
-            content: { text: id, type: 'text' },
+            content: { text, type: 'text' },
             sessionUpdate: 'agent_message_chunk',
-            ...(location === 'standard' ? { messageId: id } : {}),
-            ...(location === 'update' ? { _meta: { eventId: id } } : {}),
-          }, 'extension', location === 'notification' ? { eventId: id } : undefined);
-        }
+            ...(location === 'update' ? { _meta: metadata } : {}),
+          }, 'extension', location === 'notification' ? metadata : undefined);
+        });
         return { stopReason: 'end_turn' };
       };
       const session = new GrokExecutionBackend(createGrokHost(), {
@@ -410,9 +437,10 @@ describe('GrokExecutionBackend', () => {
       try {
         const events = await collect(session.execute(executionRequest()).events);
         expect(events.filter(event => event.type === 'assistant_message_started')).toEqual([
-          expect.objectContaining({ nativeAssistantId: 'assistant-first' }),
-          expect.objectContaining({ nativeAssistantId: 'assistant-final' }),
+          expect.objectContaining({ nativeAssistantId: 'prompt-1' }),
         ]);
+        expect(events.flatMap(event => (event.type === 'text_delta' ? [event.text] : [])).join(''))
+          .toBe('Hello, world');
       } finally {
         await session.dispose();
       }

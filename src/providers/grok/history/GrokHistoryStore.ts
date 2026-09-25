@@ -620,7 +620,34 @@ export function resolveGrokUpdateMessageId(
   return readString(update.messageId)
     ?? readString(updateMetadata?.eventId)
     ?? readString(outerMetadata?.eventId)
-    ?? readString(updateMetadata?.promptId)
+    ?? readTurnMessageId(role, updateMetadata, outerMetadata);
+}
+
+/**
+ * Live Grok chunks carry a fresh eventId per streamed token, so the turn's promptId
+ * must win over eventId when deciding where a live message starts.
+ */
+export function resolveGrokLiveMessageId(
+  value: unknown,
+  role: 'assistant' | 'user',
+  notificationMetadata?: unknown,
+): string | undefined {
+  const update = readRecord(value);
+  if (!update) return undefined;
+  const updateMetadata = readRecord(update._meta);
+  const outerMetadata = readRecord(notificationMetadata);
+  return readString(update.messageId)
+    ?? readTurnMessageId(role, updateMetadata, outerMetadata)
+    ?? readString(updateMetadata?.eventId)
+    ?? readString(outerMetadata?.eventId);
+}
+
+function readTurnMessageId(
+  role: 'assistant' | 'user',
+  updateMetadata: Record<string, unknown> | null,
+  outerMetadata: Record<string, unknown> | null,
+): string | undefined {
+  return readString(updateMetadata?.promptId)
     ?? readString(outerMetadata?.promptId)
     ?? (typeof updateMetadata?.promptIndex === 'number'
       ? `${role}-${updateMetadata.promptIndex}`
