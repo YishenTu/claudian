@@ -238,11 +238,11 @@ describe('GrokConversationHistoryService', () => {
     expect(missingCustomConversation.providerState).toBeUndefined();
   });
 
-  it('persists a pending fork and rehydrates only its source prefix when messages are absent', async () => {
+  it.each(['assistant-1', 'prompt-1'])('rehydrates a pending fork source prefix at checkpoint %s', async resumeAt => {
     const service = new GrokConversationHistoryService();
     const providerState = service.buildForkProviderState(
       'session-fixture',
-      'assistant-1',
+      resumeAt,
       { sessionDirectory },
     );
     const conversation: Conversation = {
@@ -259,7 +259,7 @@ describe('GrokConversationHistoryService', () => {
     expect(service.isPendingForkConversation(conversation)).toBe(true);
     expect(service.resolveSessionIdForConversation(conversation)).toBe('session-fixture');
     expect(providerState).toEqual({
-      forkSource: { resumeAt: 'assistant-1', sessionId: 'session-fixture' },
+      forkSource: { resumeAt, sessionId: 'session-fixture' },
       forkSourceSessionDirectory: sessionDirectory,
     });
 
@@ -272,6 +272,33 @@ describe('GrokConversationHistoryService', () => {
       'assistant-1',
     ]);
     expect(service.buildPersistedProviderState(conversation)).toEqual(providerState);
+  });
+
+  it.each(['missing', 'rewound'])('does not restore source history for a %s fork checkpoint', async kind => {
+    if (kind === 'rewound') {
+      await fs.appendFile(updatesPath, '\n' + JSON.stringify({
+        method: 'session/update',
+        params: {
+          sessionId: 'session-fixture',
+          update: { sessionUpdate: 'rewind_marker', target_prompt_index: 0 },
+        },
+        timestamp: 1_700_000_030,
+      }));
+    }
+    const service = new GrokConversationHistoryService();
+    const conversation = createConversation();
+    conversation.sessionId = null;
+    conversation.providerState = service.buildForkProviderState(
+      'session-fixture',
+      kind === 'missing' ? 'missing-prompt' : 'prompt-1',
+      { sessionDirectory },
+    );
+
+    await service.hydrateConversationHistory(conversation, vaultPath, {
+      environment: { HOME: tempRoot },
+    });
+
+    expect(conversation.messages).toEqual([]);
   });
 
   it('rehydrates native Grok image blocks into persisted message attachments', async () => {

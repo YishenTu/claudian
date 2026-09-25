@@ -56,15 +56,16 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
         return;
       }
       const hydrationKey = `fork::${sourceSessionDirectory}::${forkSource.resumeAt}`;
-      const parsed = await loadGrokHistory(sourceSessionDirectory, forkSource.sessionId);
-      const checkpointIndex = parsed.messages.findIndex(message => (
-        message.role === 'assistant' && message.assistantMessageId === forkSource.resumeAt
-      ));
-      if (checkpointIndex < 0) {
+      const parsed = await loadGrokHistory(
+        sourceSessionDirectory,
+        forkSource.sessionId,
+        forkSource.resumeAt,
+      );
+      if (parsed.messages.length === 0) {
         this.hydratedKeys.delete(conversation);
         return;
       }
-      conversation.messages = parsed.messages.slice(0, checkpointIndex + 1);
+      conversation.messages = parsed.messages;
       this.hydratedKeys.set(conversation, hydrationKey);
       return;
     }

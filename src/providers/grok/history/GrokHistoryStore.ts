@@ -77,6 +77,7 @@ interface PendingTurn {
 
 interface CompletedTurn {
   messages: ChatMessage[];
+  promptId?: string;
   promptIndex: number;
   usage?: GrokHistoryUsage;
 }
@@ -84,6 +85,7 @@ interface CompletedTurn {
 export function parseGrokHistoryContent(
   content: string,
   sessionId: string,
+  resumeAt?: string,
 ): ParsedGrokHistory {
   let completedTurns: CompletedTurn[] = [];
   let pending: PendingTurn | null = null;
@@ -100,6 +102,7 @@ export function parseGrokHistoryContent(
     if (messages.length === 0 || turn.timelinePromptIndex === null) return false;
     completedTurns.push({
       messages,
+      promptId,
       promptIndex: turn.timelinePromptIndex,
       ...(usage ? { usage } : {}),
     });
@@ -253,6 +256,17 @@ export function parseGrokHistoryContent(
     }
   }
 
+  if (resumeAt !== undefined) {
+    // Live checkpoints use prompt IDs, while stored messages retain their native IDs.
+    const checkpointIndex = completedTurns.findIndex(turn => (
+      turn.promptId === resumeAt
+      || turn.messages.some(message => (
+        message.role === 'assistant' && message.assistantMessageId === resumeAt
+      ))
+    ));
+    completedTurns = completedTurns.slice(0, checkpointIndex + 1);
+  }
+
   const messages = completedTurns.flatMap(turn => turn.messages);
   let lastUsage: GrokHistoryUsage | undefined;
   for (let index = completedTurns.length - 1; index >= 0; index -= 1) {
@@ -270,10 +284,11 @@ export function parseGrokHistoryContent(
 export async function loadGrokHistory(
   sessionDirectory: string,
   sessionId: string,
+  resumeAt?: string,
 ): Promise<ParsedGrokHistory> {
   try {
     const content = await fs.readFile(path.join(sessionDirectory, 'updates.jsonl'), 'utf8');
-    return parseGrokHistoryContent(content, sessionId);
+    return parseGrokHistoryContent(content, sessionId, resumeAt);
   } catch {
     return { messages: [] };
   }
