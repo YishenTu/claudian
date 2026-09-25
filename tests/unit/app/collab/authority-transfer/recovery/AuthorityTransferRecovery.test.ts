@@ -611,7 +611,10 @@ describe('AuthorityTransferRecovery', () => {
 
   it('resumes terminal cleanup when the completion marker precedes entry removal', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: () => true });
+    const persistence = new AuthorityTransferPersistence(repository, {
+      isRecoveryOwner: () => true,
+      now: () => new Date('2026-08-27T00:00:00.000Z'),
+    });
     const proposal = createAuthorityTransferEntryRecord({
       proposedByMemberId: 'member-proposer',
       request: {
