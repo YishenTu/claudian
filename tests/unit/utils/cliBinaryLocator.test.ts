@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { findCliBinaryPath, resolveConfiguredCliPath } from '@/utils/cliBinaryLocator';
+import { findCLIBinaryPath, resolveConfiguredCLIPath } from '@/utils/cliBinaryLocator';
 
 describe('cliBinaryLocator', () => {
   let tempDir: string;
@@ -19,7 +19,7 @@ describe('cliBinaryLocator', () => {
     const cliPath = path.join(tempDir, 'pi');
     fs.writeFileSync(cliPath, '');
 
-    expect(resolveConfiguredCliPath(cliPath)).toBe(cliPath);
+    expect(resolveConfiguredCLIPath(cliPath)).toBe(cliPath);
   });
 
   it('resolves a configured CLI path that was pasted with surrounding quotes', () => {
@@ -28,7 +28,7 @@ describe('cliBinaryLocator', () => {
     fs.mkdirSync(binDir, { recursive: true });
     fs.writeFileSync(cliPath, '');
 
-    expect(resolveConfiguredCliPath(`"${cliPath}"`)).toBe(cliPath);
+    expect(resolveConfiguredCLIPath(`"${cliPath}"`)).toBe(cliPath);
   });
 
   it('finds Windows npm .cmd shims on a PATH entry', () => {
@@ -37,6 +37,6 @@ describe('cliBinaryLocator', () => {
     fs.mkdirSync(binDir, { recursive: true });
     fs.writeFileSync(shimPath, '');
 
-    expect(findCliBinaryPath('pi', binDir, 'win32')).toBe(shimPath);
+    expect(findCLIBinaryPath('pi', binDir, 'win32')).toBe(shimPath);
   });
 });

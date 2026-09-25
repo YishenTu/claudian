@@ -10,12 +10,12 @@ import {
   LocalProjectExitCoordinator,
 } from '@/app/collab/exit/LocalProjectExitCoordinator';
 import {
-  isLanPendingLeaveRecord,
-  type LanPendingLeaveRecord,
+  isLANPendingLeaveRecord,
+  type LANPendingLeaveRecord,
   type PendingLeaveRecord,
 } from '@/app/collab/exit/PendingLeaveRecord';
 import { PendingLeaveWorker } from '@/app/collab/exit/PendingLeaveWorker';
-import type { MembershipTerminationResponse } from '@/app/collab/lan/LanCollabControlOperations';
+import type { MembershipTerminationResponse } from '@/app/collab/lan/LANCollabControlOperations';
 import type {
   CollabMembershipManagerReceiptPort,
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
@@ -228,7 +228,7 @@ function setup(
 
 function legacyManagerLeave(
   managerResponsibilityOfferId: string | null = 'offer-legacy',
-): LanPendingLeaveRecord {
+): LANPendingLeaveRecord {
   return {
     authorityReplay: {
       expectedHostMemberId: 'member-host',
@@ -260,7 +260,7 @@ function legacyManagerLeave(
 
 function currentManagerLeave(
   managerResponsibilityOfferId: string | null,
-): LanPendingLeaveRecord {
+): LANPendingLeaveRecord {
   return {
     ...legacyManagerLeave(managerResponsibilityOfferId),
     authorityReplay: {
@@ -469,7 +469,7 @@ describe('LocalProjectExitCoordinator', () => {
       phase: 'queued',
       request: null,
     });
-    expect(retained && isLanPendingLeaveRecord(retained)
+    expect(retained && isLANPendingLeaveRecord(retained)
       ? null
       : retained?.idempotencyKey).toBe('leave-request-2');
     expect(authority.recoverRejectedLeave).toHaveBeenCalledWith(expect.objectContaining({
@@ -962,7 +962,7 @@ describe('LocalProjectExitCoordinator', () => {
     expect(authority.settleLeave).toHaveBeenCalledTimes(2);
     expect(authority.settleLeave.mock.calls.map(call => {
       const record = call[0].pending;
-      return isLanPendingLeaveRecord(record) ? record.idempotencyKey : null;
+      return isLANPendingLeaveRecord(record) ? record.idempotencyKey : null;
     }))
       .toEqual(['leave-stable', 'leave-stable']);
     expect(authority.prepareLeave).toHaveBeenCalledTimes(1);
@@ -1023,7 +1023,7 @@ describe('LocalProjectExitCoordinator', () => {
     expect(authority.prepareLeave).toHaveBeenCalledTimes(1);
     expect(authority.settleLeave).toHaveBeenCalledTimes(2);
     const replayed = authority.settleLeave.mock.calls[1]?.[0].pending;
-    expect(replayed && isLanPendingLeaveRecord(replayed)
+    expect(replayed && isLANPendingLeaveRecord(replayed)
       ? replayed.authorityReplay
       : null).toEqual({
       expectedHostMemberId: 'member-host',

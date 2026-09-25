@@ -22,10 +22,10 @@ import {
 import { ProjectEventClient, type ProjectEventClientSocket, type ProjectEventClientSocketFactory } from '@/app/collab/client/ProjectEventClient';
 import type {
   CollabLocalCloudMembershipRecord,
-  CollabLocalLanMembershipRecord,
+  CollabLocalLANMembershipRecord,
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { CollabLocalProjectRepository, isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { CollabLocalProjectRepository, isCollabLocalLANMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
 import { CloudAuthorityAdapter, CloudProjectEventClient, type CloudProjectEventClientOptions } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -34,9 +34,9 @@ import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/Coll
 import {
   CollabAuthoritySessionFactory,
 } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
-import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
-import type { CloudAuthorityHttpRequest, CloudAuthorityHttpResponse, CloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
-import { type CollabCloudProjectSnapshot, type CollabLanProjectSnapshot, type CollabProjectSnapshot, isCollabLanProjectSnapshot } from '@/core/collab';
+import { LANAuthorityAdapter } from '@/app/collab/remote-authority/LANAuthorityAdapter';
+import type { CloudAuthorityHTTPRequest, CloudAuthorityHTTPResponse, CloudAuthorityHTTPTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
+import { type CollabCloudProjectSnapshot, type CollabLANProjectSnapshot, type CollabProjectSnapshot, isCollabLANProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREATED_AT = testTime({ days: -19 });
@@ -669,8 +669,8 @@ describe('CollabClientProjection', () => {
       expect.objectContaining({ managerResponsibilityOffer: offered }),
       expect.any(Function),
     );
-    expect(isCollabLanProjectSnapshot(result.snapshot)).toBe(true);
-    if (!isCollabLanProjectSnapshot(result.snapshot)) throw new Error('Expected LAN snapshot');
+    expect(isCollabLANProjectSnapshot(result.snapshot)).toBe(true);
+    if (!isCollabLANProjectSnapshot(result.snapshot)) throw new Error('Expected LAN snapshot');
     expect(result.snapshot.managerResponsibilityOffer).toEqual(offered);
     expect(store.documents.get('project-a')).toMatchObject({
       snapshot: { managerResponsibilityOffer: offered },
@@ -985,7 +985,7 @@ describe('CollabClientProjection', () => {
       },
     };
     let online = true;
-    const request: CloudAuthorityHttpTransport = async input => {
+    const request: CloudAuthorityHTTPTransport = async input => {
       if (!online) throw new CollabError({ code: 'endpoint-unreachable' });
       if (input.method === 'GET') return cloudCapabilities(['tickets']);
       const operation = input.url.split('/').at(-1);
@@ -1271,7 +1271,7 @@ describe('CollabClientProjection', () => {
 
     await projection.subscribe('project-a', jest.fn());
     const currentMembership = store.membership;
-    if (!isCollabLocalLanMembership(currentMembership)) throw new Error('Expected LAN membership');
+    if (!isCollabLocalLANMembership(currentMembership)) throw new Error('Expected LAN membership');
     store.membership = {
       ...currentMembership,
       authority: {
@@ -1293,7 +1293,7 @@ describe('CollabClientProjection', () => {
     const store = new MemoryProjectionStore();
     store.membership = cloudMembership();
     const requested = deferred<void>();
-    const response = deferred<CloudAuthorityHttpResponse>();
+    const response = deferred<CloudAuthorityHTTPResponse>();
     const createSocket = jest.fn(() => new FakeEventSocket());
     let requestCount = 0;
     const projection = new CollabClientProjection(store, controlPort(), {
@@ -1519,20 +1519,20 @@ function projectionOptions(): Pick<CollabClientProjectionOptions, 'authoritySess
   const sessions = new CollabProjectWorkSessionRegistry();
   registries.add(sessions);
   return {
-    authoritySessions: new CollabAuthoritySessionFactory([new LanAuthorityAdapter()]),
+    authoritySessions: new CollabAuthoritySessionFactory([new LANAuthorityAdapter()]),
     sessions,
   };
 }
 
 function lanEventSessions(createSocket: ProjectEventClientSocketFactory): CollabAuthoritySessionFactory {
-  return new CollabAuthoritySessionFactory([new LanAuthorityAdapter({
+  return new CollabAuthoritySessionFactory([new LANAuthorityAdapter({
     createEvent: (input, onInvalidation) => new ProjectEventClient(input, onInvalidation, { createSocket }),
   })]);
 }
 
 function cloudEventSessions(
   createSocket: NonNullable<CloudProjectEventClientOptions['createSocket']>,
-  request: CloudAuthorityHttpTransport = async input => (
+  request: CloudAuthorityHTTPTransport = async input => (
     input.method === 'GET' ? cloudCapabilities() : cloudSnapshotResponse(input)
   ),
 ): CollabAuthoritySessionFactory {
@@ -1542,7 +1542,7 @@ function cloudEventSessions(
   })]);
 }
 
-function cloudCapabilities(additional: readonly CollabCloudCapability[] = []): CloudAuthorityHttpResponse {
+function cloudCapabilities(additional: readonly CollabCloudCapability[] = []): CloudAuthorityHTTPResponse {
   return {
     body: collabCloudCapabilityDocument(['project-events', 'project-snapshot', ...additional], {
       maxCheckpointCoordinationBytes: COLLAB_CHECKPOINT_ARTIFACT_LIMITS.maxCoordinationBytes,
@@ -1562,7 +1562,7 @@ function cloudCapabilities(additional: readonly CollabCloudCapability[] = []): C
   };
 }
 
-function cloudSnapshotResponse(input: CloudAuthorityHttpRequest): CloudAuthorityHttpResponse {
+function cloudSnapshotResponse(input: CloudAuthorityHTTPRequest): CloudAuthorityHTTPResponse {
   const snapshot = cloudSnapshot();
   const { authorityKind: _authorityKind, mainOid, ...project } = snapshot.project;
   return {
@@ -1605,7 +1605,7 @@ class FakeEventSocket implements ProjectEventClientSocket {
   message(value: unknown): void { this.messageListener?.(JSON.stringify(value)); }
 }
 
-function membership(): CollabLocalLanMembershipRecord {
+function membership(): CollabLocalLANMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
@@ -1664,7 +1664,7 @@ function cloudMembership(): CollabLocalCloudMembershipRecord {
   };
 }
 
-function snapshot(): CollabLanProjectSnapshot {
+function snapshot(): CollabLANProjectSnapshot {
   const currentMember = {
     activatedAt: CREATED_AT,
     createdAt: CREATED_AT,
@@ -1834,7 +1834,7 @@ class MemoryProjectionStore implements CollabClientProjectionStore {
     sequence: number,
   ): Promise<CollabLocalMembershipRecord> {
     const current = this.membership;
-    if (isCollabLocalLanMembership(current)) {
+    if (isCollabLocalLANMembership(current)) {
       this.membership = {
         ...current,
         lastEventSequence: sequence,

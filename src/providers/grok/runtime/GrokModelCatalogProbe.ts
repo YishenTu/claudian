@@ -1,4 +1,4 @@
-import { AcpJsonRpcTransport, AcpSubprocess } from '../../acp';
+import { ACPJSONRPCTransport, ACPSubprocess } from '../../acp';
 import {
   type NormalizedGrokSessionModels,
   normalizeGrokSessionModelMetadata,
@@ -22,16 +22,16 @@ export interface GrokModelCatalogProbeLike {
 export class GrokModelCatalogProbe implements GrokModelCatalogProbeLike {
   async discover(request: GrokModelCatalogProbeRequest): Promise<NormalizedGrokSessionModels> {
     request.signal?.throwIfAborted();
-    const process = new AcpSubprocess({
+    const process = new ACPSubprocess({
       args: ['agent', '--no-leader', 'stdio'],
       command: request.command,
       cwd: request.cwd,
       env: request.env,
     });
-    let transport: AcpJsonRpcTransport | undefined;
+    let transport: ACPJSONRPCTransport | undefined;
     try {
       process.start();
-      transport = new AcpJsonRpcTransport({
+      transport = new ACPJSONRPCTransport({
         input: process.stdout,
         onClose: listener => process.onClose(listener),
         output: process.stdin,

@@ -4,7 +4,7 @@ isBashTool,
 // Type guards
 isEditTool,
 isFileTool,
-isMcpTool,
+isMCPTool,
 isReadOnlyTool,
 isWriteEditTool,
 TOOL_BASH,
@@ -176,38 +176,38 @@ describe('isBashTool', () => {
   });
 });
 
-describe('isMcpTool', () => {
+describe('isMCPTool', () => {
   it('should return true for ListMcpResources tool', () => {
-    expect(isMcpTool('ListMcpResources')).toBe(true);
+    expect(isMCPTool('ListMcpResources')).toBe(true);
   });
 
   it('should return true for ReadMcpResource tool', () => {
-    expect(isMcpTool('ReadMcpResource')).toBe(true);
+    expect(isMCPTool('ReadMcpResource')).toBe(true);
   });
 
   it('should return true for Mcp tool', () => {
-    expect(isMcpTool('Mcp')).toBe(true);
+    expect(isMCPTool('Mcp')).toBe(true);
   });
 
   it('should return false for Read tool', () => {
-    expect(isMcpTool('Read')).toBe(false);
+    expect(isMCPTool('Read')).toBe(false);
   });
 
   it('should return false for Bash tool', () => {
-    expect(isMcpTool('Bash')).toBe(false);
+    expect(isMCPTool('Bash')).toBe(false);
   });
 
   it('should return false for empty string', () => {
-    expect(isMcpTool('')).toBe(false);
+    expect(isMCPTool('')).toBe(false);
   });
 
   it('should return false for unknown tool', () => {
-    expect(isMcpTool('UnknownTool')).toBe(false);
+    expect(isMCPTool('UnknownTool')).toBe(false);
   });
 
   it('should return false for mcp-prefixed tool name (not in MCP_TOOLS)', () => {
     // MCP tools invoked via SDK have mcp__ prefix but are not in MCP_TOOLS
-    expect(isMcpTool('mcp__server__tool')).toBe(false);
+    expect(isMCPTool('mcp__server__tool')).toBe(false);
   });
 });
 

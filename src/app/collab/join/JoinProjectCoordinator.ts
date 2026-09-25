@@ -14,9 +14,9 @@ import {
   writeCollabFileAtomically,
 } from '@/app/collab/CollabFilesystemBoundary';
 import {
-  type CollabLocalLanMembershipRecord,
+  type CollabLocalLANMembershipRecord,
   type CollabLocalProjectRepository,
-  isCollabLocalLanMembership,
+  isCollabLocalLANMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -36,9 +36,9 @@ import {
 } from '@/app/collab/join/JoinProjectRecord';
 import {
   type CollabHostTrustStore,
-  CollabHttpClient,
+  CollabHTTPClient,
   type CollabTrustedHost,
-} from '@/app/collab/lan/CollabHttpClient';
+} from '@/app/collab/lan/CollabHTTPClient';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { decodeCollabPendingProjectOperation } from '@/app/collab/PendingProjectOperation';
 import { type CollabWorkingCopyPlacement, CollabWorkingCopySetup } from '@/app/collab/project/CollabWorkingCopySetup';
@@ -79,13 +79,13 @@ export interface JoinProjectFoundationPort {
   requireGitFoundation(): Promise<CollabGitFoundation>;
 }
 
-interface JoinHttpClientPort {
-  bootstrapInvitation: CollabHttpClient['bootstrapInvitation'];
-  fromStoredTrust: CollabHttpClient['fromStoredTrust'];
+interface JoinHTTPClientPort {
+  bootstrapInvitation: CollabHTTPClient['bootstrapInvitation'];
+  fromStoredTrust: CollabHTTPClient['fromStoredTrust'];
 }
 
 export interface JoinProjectCoordinatorOptions {
-  readonly createHttpClient?: (trustStore: CollabHostTrustStore) => JoinHttpClientPort;
+  readonly createHttpClient?: (trustStore: CollabHostTrustStore) => JoinHTTPClientPort;
   readonly createJoinAttemptId?: () => string;
   readonly getProjectsFolder?: () => string;
   readonly invitationCodec?: InvitationCodec;
@@ -151,7 +151,7 @@ function phaseRank(phase: JoinProjectPhase): number {
   ].indexOf(phase);
 }
 
-function gitRemoteUrl(record: JoinProjectRecord): string {
+function gitRemoteURL(record: JoinProjectRecord): string {
   return `${record.endpoint}/v1/git/${record.projectId}/repository.git`;
 }
 
@@ -200,7 +200,7 @@ export class JoinProjectCoordinator {
    readonly #workingCopy: CollabWorkingCopySetup;
    readonly #createHttpClient: (
     trustStore: CollabHostTrustStore,
-  ) => JoinHttpClientPort;
+  ) => JoinHTTPClientPort;
    readonly #createJoinAttemptId: () => string;
   private readonly getProjectsFolder: () => string;
    readonly #invitationCodec: InvitationCodec;
@@ -215,7 +215,7 @@ export class JoinProjectCoordinator {
     this.#workingCopy = new CollabWorkingCopySetup(foundation, options.vaultRoot);
     this.#invitationCodec = options.invitationCodec ?? new InvitationCodec({ now: options.now });
     this.#createHttpClient = options.createHttpClient
-      ?? (trustStore => new CollabHttpClient(trustStore, {
+      ?? (trustStore => new CollabHTTPClient(trustStore, {
         invitationCodec: this.#invitationCodec,
       }));
     this.#createJoinAttemptId = options.createJoinAttemptId
@@ -494,7 +494,7 @@ export class JoinProjectCoordinator {
       await this.#workingCopy.clone({
         ...this.#workingCopyInput(record),
         displayName: record.memberDisplayName,
-        remoteUrl: gitRemoteUrl(record),
+        remoteUrl: gitRemoteURL(record),
       }, this.#gitNetwork(record, caPath), signal);
     } finally {
       await this.#removeTemporaryCa(record).catch(() => undefined);
@@ -548,7 +548,7 @@ export class JoinProjectCoordinator {
     const existing = await this.foundation.local.projects.loadMembership(record.projectId);
     if (!existing) return;
     const expected = this.#membership(record, 1);
-    if (!isCollabLocalLanMembership(existing)
+    if (!isCollabLocalLANMembership(existing)
       || (existing.authority.authorityGeneration !== 1 && existing.authority.authorityGeneration !== authorityGeneration)
       || existing.createdAt !== expected.createdAt
       || existing.lifecycle === 'leaving'
@@ -568,13 +568,13 @@ export class JoinProjectCoordinator {
     });
   }
 
-  #membership(record: JoinProjectRecord, authorityGeneration: number): CollabLocalLanMembershipRecord {
+  #membership(record: JoinProjectRecord, authorityGeneration: number): CollabLocalLANMembershipRecord {
     const timestamp = this.now().toISOString();
     return {
       authority: {
         authorityGeneration,
         endpoint: record.endpoint,
-        gitRemoteUrl: gitRemoteUrl(record),
+        gitRemoteUrl: gitRemoteURL(record),
         hostCaCertificatePem: record.hostCaCertificatePem!,
         hostCaFingerprint: record.hostCaFingerprint,
         kind: 'lan',
@@ -694,7 +694,7 @@ export class JoinProjectCoordinator {
     this.#remoteMembershipMayExist.delete(record.operationId);
   }
 
-   #httpClientFor(projectId: string): JoinHttpClientPort {
+   #httpClientFor(projectId: string): JoinHTTPClientPort {
     const trustStore = new JoinTrustStore(
       projectId,
       () => this.#loadRecord(projectId),

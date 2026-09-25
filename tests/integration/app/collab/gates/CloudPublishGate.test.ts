@@ -18,7 +18,7 @@ import {
   matchCollabCloudRoute,
 } from '@claudian-collab/protocol';
 import { createDevelopmentCloudAuthorityAdapter, developmentCloudGitNetwork } from '@test/helpers/collab/developmentCloudTransports';
-import { runGitHttpBackendFixture } from '@test/helpers/collab/GitHttpBackendFixture';
+import { runGitHTTPBackendFixture } from '@test/helpers/collab/GitHTTPBackendFixture';
 import { testTime } from '@test/helpers/testClock';
 
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
@@ -100,7 +100,7 @@ function readBody(request: IncomingMessage): Promise<Buffer> {
   });
 }
 
-function writeJson(response: ServerResponse, status: number, value: unknown): void {
+function writeJSON(response: ServerResponse, status: number, value: unknown): void {
   response.writeHead(status, {
     'cache-control': 'no-store',
     'content-type': 'application/json; charset=utf-8',
@@ -172,7 +172,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
       const target = request.url.slice('/operator/cloud'.length);
       const match = matchCollabCloudRoute(request.method ?? '', target);
       if (match?.kind === 'capabilities') {
-        writeJson(response, 200, collabCloudCapabilityDocument([
+        writeJSON(response, 200, collabCloudCapabilityDocument([
           'git-receive-pack-personal-ref',
           'git-upload-pack',
           'project-snapshot',
@@ -198,7 +198,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
       ) {
         const prefix = `/v10/projects/${PROJECT_ID}/repository.git`;
         const pathname = new URL(target, 'http://127.0.0.1').pathname;
-        await runGitHttpBackendFixture(
+        await runGitHTTPBackendFixture(
           request,
           response,
           { ...repository, executablePath: GIT_EXECUTABLE, remoteUser: actor },
@@ -211,7 +211,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
           JSON.parse((await readBody(request)).toString('utf8')) as unknown,
         );
         if (envelope.status !== 'ok') throw new Error('snapshot-envelope-invalid');
-        writeJson(response, 200, collabCloudSuccessEnvelope(
+        writeJSON(response, 200, collabCloudSuccessEnvelope(
           envelope.value.requestId,
           projectSnapshot(actor as typeof ACTORS[number], repository.mainOid),
         ));
@@ -259,7 +259,7 @@ async function startGateServer(repository: RepositoryFixture): Promise<GateServe
           response.destroy();
           return;
         }
-        writeJson(response, 200, collabCloudSuccessEnvelope(envelope.value.requestId, {
+        writeJSON(response, 200, collabCloudSuccessEnvelope(envelope.value.requestId, {
           mainOid: repository.mainOid,
           request: changeRequest,
         }));

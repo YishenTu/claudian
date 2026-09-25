@@ -15,7 +15,7 @@ import {
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
@@ -68,7 +68,7 @@ describe('M4 resumable publication gate', () => {
     const hostPort = await availablePort();
     host = new ClaudianCollabService({
       installationKey: TEST_INSTALLATION_A,
-      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => new SqlJsProjectDatabase(
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => new SQLJSProjectDatabase(
         authorityDirectory,
         { resourceAdmission, loadSqlJs: async () => SQL },
       ),

@@ -38,15 +38,15 @@ import {
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferClaimantRecord } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import {
-  createCloudToLanManagerEntry,
-  createCloudToLanTargetEntry,
-  decodeCloudToLanManagerEntryRecord,
-  markCloudToLanManagerBeginPossiblySent,
-  publishCloudToLanTargetEntry,
-  recordCloudToLanManagerStatus,
-  rejectCloudToLanManagerEntry,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
-import { LanToCloudRequesterCoordinator } from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudRequesterCoordinator';
+  createCloudToLANManagerEntry,
+  createCloudToLANTargetEntry,
+  decodeCloudToLANManagerEntryRecord,
+  markCloudToLANManagerBeginPossiblySent,
+  publishCloudToLANTargetEntry,
+  recordCloudToLANManagerStatus,
+  rejectCloudToLANManagerEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
+import { LANToCloudRequesterCoordinator } from '@/app/collab/authority-transfer/lan-to-cloud/LANToCloudRequesterCoordinator';
 import {
   createAuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
@@ -57,7 +57,7 @@ import {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
-import type { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+import type { LANAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LANAuthorityTransferClient';
 import {
   CollabProjectLifecycleSubsystem,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleSubsystem';
@@ -201,7 +201,7 @@ function proposalStatus(
   };
 }
 
-function cloudToLanStatus(
+function cloudToLANStatus(
   phase: CollabCloudToLanTransferPhase,
 ): CollabAuthorityTransferStatus {
   const phaseIndex = CLOUD_TO_LAN_PHASES.indexOf(phase);
@@ -399,9 +399,9 @@ describe('AuthorityTransferPersistence', () => {
         await repository.authorityTransferClaimants.save(createAuthorityTransferClaimantRecord({
           cloudPrincipalId: null, memberId, operationIntentId: 'claim-next-generation',
           createdAt: testTime({ days: -1, minutes: 10 }),
-          status: { ...cloudToLanStatus('completed'), expiresAt: testTime({ days: -1, minutes: 11 }),
+          status: { ...cloudToLANStatus('completed'), expiresAt: testTime({ days: -1, minutes: 11 }),
             sourceAuthority: { kind: 'cloud', generation: 2 }, targetAuthority: { kind: 'lan', generation: 3 },
-            relinquishmentProof: { ...cloudToLanStatus('completed').relinquishmentProof!, sourceHostMemberId: null,
+            relinquishmentProof: { ...cloudToLANStatus('completed').relinquishmentProof!, sourceHostMemberId: null,
               sourceAuthority: { kind: 'cloud', generation: 2 }, targetAuthority: { kind: 'lan', generation: 3 } },
           },
           lanTarget: { endpoint: 'https://192.168.1.20:27001/', caFingerprint: 'a'.repeat(64),
@@ -548,7 +548,7 @@ describe('AuthorityTransferPersistence', () => {
       operationIntentId: OPERATION_INTENT_ID,
       ownerInstallationKey: TEST_INSTALLATION_A,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: cloudToLanStatus('completed'),
+      status: cloudToLANStatus('completed'),
     }));
     await expect(persistence.assertCloudImportedClaimManagementPredecessor(
       PROJECT_ID,
@@ -568,7 +568,7 @@ describe('AuthorityTransferPersistence', () => {
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
-    const target = createCloudToLanTargetEntry({
+    const target = createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-target-preparation',
@@ -579,7 +579,7 @@ describe('AuthorityTransferPersistence', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(target, {
+    const published = publishCloudToLANTargetEntry(target, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: testTime({ days: -1, seconds: 30 }),
@@ -587,7 +587,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     await persistence.prepareCloudToLanTargetEntry(target);
     await persistence.publishCloudToLanTargetEntry(target, published.descriptor!);
-    const manager = createCloudToLanManagerEntry({
+    const manager = createCloudToLANManagerEntry({
       createdAt: testTime({ days: -1, seconds: 45 }),
       descriptor: published.descriptor!,
       expiresAt: ENTRY_EXPIRES_AT,
@@ -609,7 +609,7 @@ describe('AuthorityTransferPersistence', () => {
       ownerInstallationKey: TEST_INSTALLATION_A,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: {
-        ...cloudToLanStatus('collecting-readiness'),
+        ...cloudToLANStatus('collecting-readiness'),
         targetUrl: published.descriptor!.targetUrl,
       },
     });
@@ -660,7 +660,7 @@ describe('AuthorityTransferPersistence', () => {
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
-    const target = createCloudToLanTargetEntry({
+    const target = createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-unrelated-target-preparation',
@@ -671,7 +671,7 @@ describe('AuthorityTransferPersistence', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(target, {
+    const published = publishCloudToLANTargetEntry(target, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: testTime({ days: -1, seconds: 30 }),
@@ -685,7 +685,7 @@ describe('AuthorityTransferPersistence', () => {
     };
 
     await expect(persistence.prepareCloudToLanManagerEntry(
-      createCloudToLanManagerEntry({
+      createCloudToLANManagerEntry({
         createdAt: testTime({ days: -1, seconds: 45 }),
         descriptor: unrelatedDescriptor,
         expiresAt: ENTRY_EXPIRES_AT,
@@ -710,7 +710,7 @@ describe('AuthorityTransferPersistence', () => {
       now: testClock({ days: -1, seconds: 30 }),
     });
     const preparing = await persistence.prepareCloudToLanTargetEntry(
-      createCloudToLanTargetEntry({
+      createCloudToLANTargetEntry({
         createdAt: testTime({ days: -1 }),
         expiresAt: ENTRY_EXPIRES_AT,
         operationIntentId: 'intent-unpublished-target',
@@ -736,7 +736,7 @@ describe('AuthorityTransferPersistence', () => {
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
-    const preparing = createCloudToLanTargetEntry({
+    const preparing = createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-original-target',
@@ -747,7 +747,7 @@ describe('AuthorityTransferPersistence', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(preparing, {
+    const published = publishCloudToLANTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: testTime({ days: -1, seconds: 30 }),
@@ -755,7 +755,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     await persistence.prepareCloudToLanTargetEntry(preparing);
     await persistence.publishCloudToLanTargetEntry(preparing, published.descriptor!);
-    await persistence.prepareCloudToLanManagerEntry(createCloudToLanManagerEntry({
+    await persistence.prepareCloudToLanManagerEntry(createCloudToLANManagerEntry({
       createdAt: testTime({ days: -1, seconds: 45 }),
       descriptor: published.descriptor!,
       expiresAt: ENTRY_EXPIRES_AT,
@@ -771,7 +771,7 @@ describe('AuthorityTransferPersistence', () => {
       manager: { operationIntentId: OPERATION_INTENT_ID, phase: 'prepared' },
       target: { operationIntentId: 'intent-original-target', phase: 'withdrawn' },
     });
-    const replacement = createCloudToLanTargetEntry({
+    const replacement = createCloudToLANTargetEntry({
       ...preparing,
       operationIntentId: 'intent-replacement-target',
     });
@@ -786,7 +786,7 @@ describe('AuthorityTransferPersistence', () => {
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
-    const foreignTarget = createCloudToLanTargetEntry({
+    const foreignTarget = createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-foreign-target',
@@ -797,7 +797,7 @@ describe('AuthorityTransferPersistence', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(foreignTarget, {
+    const published = publishCloudToLANTargetEntry(foreignTarget, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: testTime({ days: -1, seconds: 30 }),
@@ -805,7 +805,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     await repository.authorityTransferEntries.saveTarget(published);
 
-    await expect(persistence.prepareCloudToLanManagerEntry(createCloudToLanManagerEntry({
+    await expect(persistence.prepareCloudToLanManagerEntry(createCloudToLANManagerEntry({
       createdAt: testTime({ days: -1, seconds: 45 }),
       descriptor: published.descriptor!,
       expiresAt: ENTRY_EXPIRES_AT,
@@ -817,9 +817,9 @@ describe('AuthorityTransferPersistence', () => {
   });
 
   it('rejects a Manager phase that disagrees with its observed status state', () => {
-    const prepared = createCloudToLanManagerEntry({
+    const prepared = createCloudToLANManagerEntry({
       createdAt: testTime({ days: -1, seconds: 45 }),
-      descriptor: publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+      descriptor: publishCloudToLANTargetEntry(createCloudToLANTargetEntry({
         createdAt: testTime({ days: -1 }),
         expiresAt: ENTRY_EXPIRES_AT,
         operationIntentId: 'intent-decoder-target',
@@ -841,36 +841,36 @@ describe('AuthorityTransferPersistence', () => {
       ownerInstallationKey: TEST_INSTALLATION_A,
       operationIntentId: OPERATION_INTENT_ID,
     });
-    const observing = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(prepared),
-      { ...cloudToLanStatus('collecting-readiness'), targetUrl: prepared.descriptor.targetUrl },
+    const observing = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(prepared),
+      { ...cloudToLANStatus('collecting-readiness'), targetUrl: prepared.descriptor.targetUrl },
     );
-    const completed = recordCloudToLanManagerStatus(observing, {
-      ...cloudToLanStatus('completed'),
+    const completed = recordCloudToLANManagerStatus(observing, {
+      ...cloudToLANStatus('completed'),
       targetUrl: prepared.descriptor.targetUrl,
     });
 
-    expect(() => decodeCloudToLanManagerEntryRecord({
+    expect(() => decodeCloudToLANManagerEntryRecord({
       ...observing,
       phase: 'settled',
     })).toThrow('Invalid Cloud-to-LAN Manager entry binding');
-    expect(() => decodeCloudToLanManagerEntryRecord({
+    expect(() => decodeCloudToLANManagerEntryRecord({
       ...completed,
       phase: 'observing',
     })).toThrow('Invalid Cloud-to-LAN Manager entry binding');
-    const rejected = rejectCloudToLanManagerEntry(
-      markCloudToLanManagerBeginPossiblySent(prepared),
+    const rejected = rejectCloudToLANManagerEntry(
+      markCloudToLANManagerBeginPossiblySent(prepared),
     );
     expect(rejected).toMatchObject({ phase: 'rejected', status: null });
-    expect(() => decodeCloudToLanManagerEntryRecord({
+    expect(() => decodeCloudToLANManagerEntryRecord({
       ...rejected,
-      status: cloudToLanStatus('collecting-readiness'),
+      status: cloudToLANStatus('collecting-readiness'),
     })).toThrow('Invalid Cloud-to-LAN Manager entry binding');
     const {
       ownerInstallationKey: _legacyOwnerlessManager,
       ...ownerlessManager
     } = prepared;
-    expect(() => decodeCloudToLanManagerEntryRecord(ownerlessManager))
+    expect(() => decodeCloudToLANManagerEntryRecord(ownerlessManager))
       .toThrow('Invalid Cloud-to-LAN Manager entry');
   });
 
@@ -879,7 +879,7 @@ describe('AuthorityTransferPersistence', () => {
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
-    const target = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+    const target = publishCloudToLANTargetEntry(createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-rejected-target-preparation',
@@ -897,7 +897,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     await repository.authorityTransferEntries.saveTarget(target);
     const prepared = await persistence.prepareCloudToLanManagerEntry(
-      createCloudToLanManagerEntry({
+      createCloudToLANManagerEntry({
         createdAt: testTime({ days: -1, seconds: 45 }),
         descriptor: target.descriptor!,
         expiresAt: ENTRY_EXPIRES_AT,
@@ -930,7 +930,7 @@ describe('AuthorityTransferPersistence', () => {
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
-    const preparing = createCloudToLanTargetEntry({
+    const preparing = createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-terminal-target-preparation',
@@ -941,7 +941,7 @@ describe('AuthorityTransferPersistence', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(preparing, {
+    const published = publishCloudToLANTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: testTime({ days: -1, seconds: 30 }),
@@ -956,7 +956,7 @@ describe('AuthorityTransferPersistence', () => {
       ownerInstallationKey: TEST_INSTALLATION_A,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: {
-        ...cloudToLanStatus('completed'),
+        ...cloudToLANStatus('completed'),
         targetUrl: published.descriptor!.targetUrl,
       },
     });
@@ -1051,7 +1051,7 @@ describe('AuthorityTransferPersistence', () => {
 
   it('recovers a next-move proposal interrupted after completed target identity removal', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const preparing = createCloudToLanTargetEntry({
+    const preparing = createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-split-target-preparation',
@@ -1062,7 +1062,7 @@ describe('AuthorityTransferPersistence', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(preparing, {
+    const published = publishCloudToLANTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: testTime({ days: -1, seconds: 30 }),
@@ -1075,12 +1075,12 @@ describe('AuthorityTransferPersistence', () => {
       ownerInstallationKey: TEST_INSTALLATION_A,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: {
-        ...cloudToLanStatus('completed'),
+        ...cloudToLANStatus('completed'),
         targetUrl: published.descriptor!.targetUrl,
       },
     });
     await repository.authorityTransferEntries.saveTarget(
-      publishCloudToLanTargetEntry(preparing, published.descriptor!),
+      publishCloudToLANTargetEntry(preparing, published.descriptor!),
     );
     await repository.authorityTransferRecords.save(physical);
     const removeTarget: typeof repository.authorityTransferEntries.removeTarget = async record => {
@@ -1099,7 +1099,7 @@ describe('AuthorityTransferPersistence', () => {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
     await persistence.handoffCloudToLanTargetEntry(
-      publishCloudToLanTargetEntry(preparing, published.descriptor!),
+      publishCloudToLANTargetEntry(preparing, published.descriptor!),
       physical,
     );
     const cleanup = {
@@ -1140,7 +1140,7 @@ describe('AuthorityTransferPersistence', () => {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
       now: testClock({ days: 35 }),
     });
-    const descriptor = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+    const descriptor = publishCloudToLANTargetEntry(createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-remote-target-preparation',
@@ -1157,7 +1157,7 @@ describe('AuthorityTransferPersistence', () => {
       targetUrl: 'https://192.168.1.20:27001',
     }).descriptor!;
     let manager = await persistence.prepareCloudToLanManagerEntry(
-      createCloudToLanManagerEntry({
+      createCloudToLANManagerEntry({
         createdAt: testTime({ days: -1, seconds: 45 }),
         descriptor,
         expiresAt: ENTRY_EXPIRES_AT,
@@ -1169,7 +1169,7 @@ describe('AuthorityTransferPersistence', () => {
     );
     manager = await persistence.markCloudToLanManagerBeginPossiblySent(manager);
     manager = await persistence.recordCloudToLanManagerStatus(manager, {
-      ...cloudToLanStatus('collecting-readiness'),
+      ...cloudToLANStatus('collecting-readiness'),
       targetUrl: descriptor.targetUrl,
     });
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
@@ -1196,7 +1196,7 @@ describe('AuthorityTransferPersistence', () => {
     expect(competingOperation).not.toHaveBeenCalled();
 
     await expect(Promise.resolve().then(() => persistence.recordCloudToLanManagerStatus(manager, {
-      ...cloudToLanStatus('cloud-quiesced'),
+      ...cloudToLANStatus('cloud-quiesced'),
       targetUrl: descriptor.targetUrl,
       updatedAt: testTime({ days: -1, minutes: 3 }),
       transferId: 'transfer-other',
@@ -1204,11 +1204,11 @@ describe('AuthorityTransferPersistence', () => {
       safeContext: { reason: 'authority-transfer-observed-identity-mismatch' },
     });
     manager = await persistence.recordCloudToLanManagerStatus(manager, {
-      ...cloudToLanStatus('checkpoint-captured'),
+      ...cloudToLANStatus('checkpoint-captured'),
       targetUrl: descriptor.targetUrl,
     });
     await expect(Promise.resolve().then(() => persistence.recordCloudToLanManagerStatus(manager, {
-      ...cloudToLanStatus('cloud-quiesced'),
+      ...cloudToLANStatus('cloud-quiesced'),
       targetUrl: descriptor.targetUrl,
       updatedAt: testTime({ days: -1, minutes: 3 }),
     }))).rejects.toMatchObject({
@@ -1216,12 +1216,12 @@ describe('AuthorityTransferPersistence', () => {
     });
 
     manager = await persistence.recordCloudToLanManagerStatus(manager, {
-      ...cloudToLanStatus('completed'),
+      ...cloudToLANStatus('completed'),
       targetUrl: descriptor.targetUrl,
     });
     expect(manager.phase).toBe('settled');
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
-    await expect(persistence.prepareCloudToLanManagerEntry(createCloudToLanManagerEntry({
+    await expect(persistence.prepareCloudToLanManagerEntry(createCloudToLANManagerEntry({
       createdAt: testTime({ days: -1, minutes: 6 }),
       descriptor,
       expiresAt: ENTRY_EXPIRES_AT,
@@ -1238,7 +1238,7 @@ describe('AuthorityTransferPersistence', () => {
 
   it('admits target lifecycle work when foreign Manager deletion arrives after terminal convergence', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
-    const descriptor = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+    const descriptor = publishCloudToLANTargetEntry(createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-remote-target-preparation',
@@ -1254,7 +1254,7 @@ describe('AuthorityTransferPersistence', () => {
       publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     }).descriptor!;
-    let manager = createCloudToLanManagerEntry({
+    let manager = createCloudToLANManagerEntry({
       createdAt: testTime({ days: -1, seconds: 45 }),
       descriptor,
       expiresAt: ENTRY_EXPIRES_AT,
@@ -1263,9 +1263,9 @@ describe('AuthorityTransferPersistence', () => {
       operationIntentId: OPERATION_INTENT_ID,
       ownerInstallationKey: TEST_INSTALLATION_A,
     });
-    manager = markCloudToLanManagerBeginPossiblySent(manager);
-    manager = recordCloudToLanManagerStatus(manager, {
-      ...cloudToLanStatus('completed'),
+    manager = markCloudToLANManagerBeginPossiblySent(manager);
+    manager = recordCloudToLANManagerStatus(manager, {
+      ...cloudToLANStatus('completed'),
       targetUrl: descriptor.targetUrl,
     });
     const physical = markAuthorityTransferTerminalCleanupCompleted(createAuthorityTransferRecord({
@@ -1275,7 +1275,7 @@ describe('AuthorityTransferPersistence', () => {
       ownerInstallationKey: TEST_INSTALLATION_B,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: {
-        ...cloudToLanStatus('completed'),
+        ...cloudToLANStatus('completed'),
         targetUrl: descriptor.targetUrl,
       },
     }));
@@ -1309,7 +1309,7 @@ describe('AuthorityTransferPersistence', () => {
   });
 
   it('preserves a bounded raw HTTP Cloud endpoint in target preparation', () => {
-    expect(createCloudToLanTargetEntry({
+    expect(createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-raw-http-target',
@@ -2088,8 +2088,8 @@ describe('AuthorityTransferPersistence', () => {
       if (operation !== 'requestLanToCloudTransfer') throw new Error('Former authority credential no longer valid');
       return nextStatus;
     });
-    const requester = new LanToCloudRequesterCoordinator({
-      authorityGeneration: 3, client: { requestWithMember } as unknown as LanAuthorityTransferClient,
+    const requester = new LANToCloudRequesterCoordinator({
+      authorityGeneration: 3, client: { requestWithMember } as unknown as LANAuthorityTransferClient,
       installationKey: TEST_INSTALLATION_A, memberCredential: Buffer.alloc(32, 9).toString('base64url'),
       memberId: MEMBER_BOB, now: testClock(), persistence, projectId: PROJECT_ID,
     });
@@ -2757,7 +2757,7 @@ describe('AuthorityTransferPersistence', () => {
       localRole: 'target',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: cloudToLanStatus('cloud-quiesced'),
+      status: cloudToLANStatus('cloud-quiesced'),
     });
     const legacy: Record<string, unknown> = { ...current, schemaVersion: 1 };
     delete legacy.ownerInstallationKey;
@@ -2778,7 +2778,7 @@ describe('AuthorityTransferPersistence', () => {
       localRole: 'target',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: cloudToLanStatus('completed'),
+      status: cloudToLANStatus('completed'),
     });
     await repository.authorityTransferRecords.save(record);
     const start = jest.fn(async () => 'running');
@@ -3205,7 +3205,7 @@ describe('AuthorityTransferPersistence', () => {
       localRole: 'target',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: cloudToLanStatus('collecting-readiness'),
+      status: cloudToLANStatus('collecting-readiness'),
     });
     await persistence.create(record);
     record = createAuthorityTransferRecord({
@@ -3214,7 +3214,7 @@ describe('AuthorityTransferPersistence', () => {
       localRole: 'target',
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-      status: cloudToLanStatus('collecting-readiness'),
+      status: cloudToLANStatus('collecting-readiness'),
     });
     await persistence.advance(record, 'collecting-readiness');
 
@@ -3249,7 +3249,7 @@ describe('AuthorityTransferPersistence', () => {
         localRole: 'target',
         operationIntentId: OPERATION_INTENT_ID,
         stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
-        status: cloudToLanStatus(phase),
+        status: cloudToLANStatus(phase),
       });
       await persistence.advance(record, CLOUD_TO_LAN_PHASES[
         CLOUD_TO_LAN_PHASES.indexOf(phase) - 1
@@ -3397,7 +3397,7 @@ describe('AuthorityTransferPersistence', () => {
       operationIntentId: OPERATION_INTENT_ID,
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: {
-        ...cloudToLanStatus('cloud-quiesced'),
+        ...cloudToLANStatus('cloud-quiesced'),
         phase: 'cancelled',
         state: 'cancelled',
         updatedAt: testTime({ days: -1, minutes: 8 }),
@@ -3410,7 +3410,7 @@ describe('AuthorityTransferPersistence', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       transferId: TRANSFER_ID,
     });
-    const replacement = createCloudToLanTargetEntry({
+    const replacement = createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1, minutes: 9 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-replacement-target',
@@ -3462,7 +3462,7 @@ describe('AuthorityTransferPersistence', () => {
       targetAuthorityGeneration: 2,
       transferId: TRANSFER_ID,
     });
-    const next = createCloudToLanTargetEntry({
+    const next = createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1, minutes: 11 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-next-lan-generation',
@@ -3473,13 +3473,13 @@ describe('AuthorityTransferPersistence', () => {
       sourceAuthorityGeneration: generation,
       sourceCloudUrl: generation === 2 ? predecessor.status.targetUrl : 'https://later-cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry({ ...next,
+    const published = publishCloudToLANTargetEntry({ ...next,
       ownerInstallationKey: TEST_INSTALLATION_B, selectedTargetMemberId: MEMBER_BOB,
       selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
     }, { caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64), publishedAt: testTime({ days: -1, minutes: 11 }),
       targetUrl: 'https://192.168.1.20:27001' });
-    const manager = createCloudToLanManagerEntry({
+    const manager = createCloudToLANManagerEntry({
       createdAt: testTime({ days: -1, minutes: 11 }), expiresAt: ENTRY_EXPIRES_AT,
       descriptor: published.descriptor!, initiatingMemberId: MEMBER_ALICE,
       initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
@@ -3522,7 +3522,7 @@ describe('AuthorityTransferPersistence', () => {
         })),
       );
       await repository.authorityTransferRecords.save(predecessor);
-      const replacement = createCloudToLanTargetEntry({
+      const replacement = createCloudToLANTargetEntry({
         createdAt: testTime({ days: 34, minutes: 1 }),
         expiresAt: testTime({ days: 35 }),
         operationIntentId: 'intent-round-trip',
@@ -3604,7 +3604,7 @@ describe('AuthorityTransferPersistence', () => {
       const persistence = new AuthorityTransferPersistence(repository, {
         isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
       });
-      const replacement = createCloudToLanTargetEntry({
+      const replacement = createCloudToLANTargetEntry({
         createdAt: testTime({ days: 34, minutes: 1 }),
         expiresAt: testTime({ days: 35 }),
         operationIntentId: 'intent-round-trip',
@@ -3820,7 +3820,7 @@ describe('AuthorityTransferPersistence', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status,
     });
-    const target = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+    const target = publishCloudToLANTargetEntry(createCloudToLANTargetEntry({
       createdAt: testTime({ days: -1, minutes: 5 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-next-target',
@@ -3836,7 +3836,7 @@ describe('AuthorityTransferPersistence', () => {
       publishedAt: testTime({ days: -1, minutes: 5, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     });
-    const manager = createCloudToLanManagerEntry({
+    const manager = createCloudToLANManagerEntry({
       createdAt: testTime({ days: -1, minutes: 6 }),
       descriptor: target.descriptor!,
       expiresAt: ENTRY_EXPIRES_AT,

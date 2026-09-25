@@ -1,6 +1,6 @@
-import type { AcpUsage } from '../../acp';
+import type { ACPUsage } from '../../acp';
 
-export function parseGrokUsage(value: unknown): AcpUsage | null {
+export function parseGrokUsage(value: unknown): ACPUsage | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const inputTokens = tokenCount(record.inputTokens);
@@ -15,7 +15,7 @@ export function parseGrokUsage(value: unknown): AcpUsage | null {
   };
 }
 
-export function parseGrokPromptUsage(response: unknown): AcpUsage | null {
+export function parseGrokPromptUsage(response: unknown): ACPUsage | null {
   if (!response || typeof response !== 'object') return null;
   const record = response as Record<string, unknown>;
   const metadata = record._meta;

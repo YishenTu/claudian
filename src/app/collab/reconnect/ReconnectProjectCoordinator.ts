@@ -11,12 +11,12 @@ import type {
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type {
   CollabLocalCloudMembershipRecord,
-  CollabLocalLanMembershipRecord,
+  CollabLocalLANMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import {
   isCollabLocalCloudMembership,
-  isCollabLocalLanMembership,
+  isCollabLocalLANMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import {
@@ -30,15 +30,15 @@ import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrust
 import type { HostTransitionProofClientPort } from '@/app/collab/HostTransitionCandidateResolver';
 import {
   type CollabHostTrustStore,
-  CollabHttpClient,
-  type CollabHttpOperationOptions,
+  CollabHTTPClient,
+  type CollabHTTPOperationOptions,
   type CollabTrustedEndpointCandidate,
   type CollabTrustedHost,
-  type PinnedCollabHttpClient,
-} from '@/app/collab/lan/CollabHttpClient';
+  type PinnedCollabHTTPClient,
+} from '@/app/collab/lan/CollabHTTPClient';
 import {
   InvitationCodec,
-  type LanCollabInvitation,
+  type LANCollabInvitation,
 } from '@/app/collab/lan/InvitationCodec';
 import { decodeCloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
 import { MembershipControlClient } from '@/app/collab/membership/MembershipControlClient';
@@ -51,9 +51,9 @@ import type {
   CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import {
-  cloudProjectGitRemoteUrl,
-  validateCloudServerUrl,
-} from '@/app/collab/remote-authority/CloudAuthorityUrls';
+  cloudProjectGitRemoteURL,
+  validateCloudServerURL,
+} from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 import { type CollabLocalProjectSummary, type CollabOperationOptions, type CollabReconnectProjectRequest, type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -77,15 +77,15 @@ export interface ReconnectProjectFoundationPort {
   requireGitFoundation(): Promise<CollabGitFoundation>;
 }
 
-interface ReconnectHttpClientPort {
+interface ReconnectHTTPClientPort {
   bootstrapInvitation(
-    invitation: LanCollabInvitation,
+    invitation: LANCollabInvitation,
     options?: CollabOperationOptions,
-  ): Promise<PinnedCollabHttpClient>;
+  ): Promise<PinnedCollabHTTPClient>;
   bootstrapTrustedEndpoint(
     candidate: CollabTrustedEndpointCandidate,
-    options?: CollabHttpOperationOptions,
-  ): Promise<PinnedCollabHttpClient>;
+    options?: CollabHTTPOperationOptions,
+  ): Promise<PinnedCollabHTTPClient>;
 }
 
 export interface ReconnectDiscoveredProjectRequest {
@@ -96,8 +96,8 @@ export interface ReconnectDiscoveredProjectRequest {
 interface DiscoveredCandidateValidation {
   readonly candidate?: CollabTrustedEndpointCandidate;
   readonly error?: CollabError;
-  readonly expectedMembership?: CollabLocalLanMembershipRecord;
-  readonly membership?: CollabLocalLanMembershipRecord;
+  readonly expectedMembership?: CollabLocalLANMembershipRecord;
+  readonly membership?: CollabLocalLANMembershipRecord;
 }
 
 interface HostTrustTransitionVerifierPort {
@@ -116,7 +116,7 @@ const MAX_DISCOVERED_CANDIDATES = 8;
 export interface ReconnectProjectCoordinatorOptions {
   readonly authorityProjectionTransitions: AuthorityProjectionTransitionPort;
   readonly cloudRelocation?: CloudRelocationOptions;
-  readonly createHttpClient?: (trustStore: CollabHostTrustStore) => ReconnectHttpClientPort;
+  readonly createHttpClient?: (trustStore: CollabHostTrustStore) => ReconnectHTTPClientPort;
   readonly invitationCodec?: InvitationCodec;
   readonly hostTransitionProofClient?: HostTransitionProofClientPort;
   readonly hostTrustTransitionVerifier?: HostTrustTransitionVerifierPort;
@@ -181,12 +181,12 @@ function throwIfCancelled(signal?: AbortSignal): void {
   }
 }
 
-function remoteUrl(endpoint: string, projectId: string): string {
+function remoteURL(endpoint: string, projectId: string): string {
   return `${endpoint}/v1/git/${projectId}/repository.git`;
 }
 
 function summary(
-  record: CollabLocalLanMembershipRecord,
+  record: CollabLocalLANMembershipRecord,
   installationStatus: Awaited<ReturnType<HostInstallationBindingService['inspect']>>,
 ): CollabLocalProjectSummary {
   return {
@@ -220,7 +220,7 @@ function cloudSummary(record: CollabLocalCloudMembershipRecord): CollabLocalProj
 
 class ReconnectTrustStore implements CollabHostTrustStore {
   constructor(
-    private readonly membership: CollabLocalLanMembershipRecord,
+    private readonly membership: CollabLocalLANMembershipRecord,
     private readonly candidate: CollabTrustedEndpointCandidate,
   ) {}
 
@@ -259,7 +259,7 @@ export class ReconnectProjectCoordinator {
   private createCloudRelocationOperationId: () => string;
   private readonly createHttpClient: (
     trustStore: CollabHostTrustStore,
-  ) => ReconnectHttpClientPort;
+  ) => ReconnectHTTPClientPort;
   private readonly invitationCodec: InvitationCodec;
   private readonly hostTransitionProofClient: HostTransitionProofClientPort | null;
   private readonly hostTrustTransitionVerifier: HostTrustTransitionVerifierPort;
@@ -274,7 +274,7 @@ export class ReconnectProjectCoordinator {
     this.hostTrustTransitionVerifier = options.hostTrustTransitionVerifier
       ?? new HostTrustTransitionService();
     this.createHttpClient = options.createHttpClient
-      ?? (trustStore => new CollabHttpClient(trustStore, {
+      ?? (trustStore => new CollabHTTPClient(trustStore, {
         invitationCodec: this.invitationCodec,
       }));
     this.now = options.now ?? (() => new Date());
@@ -468,7 +468,7 @@ export class ReconnectProjectCoordinator {
       if (!membership || !isCollabLocalCloudMembership(membership)) {
         throw reconnectError('project-not-found', 'cloud-relocation-membership-missing');
       }
-      const serverUrl = validateCloudServerUrl(
+      const serverUrl = validateCloudServerURL(
         request.authority.serverUrl,
         'serverUrl',
       );
@@ -485,7 +485,7 @@ export class ReconnectProjectCoordinator {
           request.projectId,
           options.signal ? { signal: options.signal } : {},
         );
-        const expectedRemoteUrl = cloudProjectGitRemoteUrl(serverUrl, request.projectId);
+        const expectedRemoteUrl = cloudProjectGitRemoteURL(serverUrl, request.projectId);
         if (
           connection.projectId !== request.projectId
           || connection.serverUrl !== serverUrl
@@ -724,7 +724,7 @@ export class ReconnectProjectCoordinator {
   }
 
   async #validateDiscoveredCandidate(
-    membership: CollabLocalLanMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,
     options: CollabOperationOptions,
   ): Promise<DiscoveredCandidateValidation> {
@@ -739,7 +739,7 @@ export class ReconnectProjectCoordinator {
         trustedMembership,
         candidate,
       ));
-      const requestOptions: CollabHttpOperationOptions = {
+      const requestOptions: CollabHTTPOperationOptions = {
         ...(options.signal ? { signal: options.signal } : {}),
         timeoutMs: DISCOVERED_ENDPOINT_TIMEOUT_MS,
       };
@@ -769,10 +769,10 @@ export class ReconnectProjectCoordinator {
   }
 
   async #resolveCandidateTrust(
-    membership: CollabLocalLanMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,
     options: CollabOperationOptions,
-  ): Promise<CollabLocalLanMembershipRecord> {
+  ): Promise<CollabLocalLANMembershipRecord> {
     const authority = membership.authority;
     if (candidate.caFingerprint === authority.hostCaFingerprint) return membership;
     if (
@@ -811,12 +811,12 @@ export class ReconnectProjectCoordinator {
   async #loadReconnectMembership(
     projectId: string,
     candidate: CollabTrustedEndpointCandidate,
-  ): Promise<CollabLocalLanMembershipRecord> {
+  ): Promise<CollabLocalLANMembershipRecord> {
     if (candidate.projectId !== projectId) {
       throw reconnectError('project-not-found', 'reconnect-project-mismatch');
     }
     const membership = await this.foundation.local.projects.loadMembership(projectId);
-    if (!membership || !isCollabLocalLanMembership(membership)) {
+    if (!membership || !isCollabLocalLANMembership(membership)) {
       throw reconnectError('project-not-found', 'reconnect-membership-missing');
     }
     const authority = membership.authority;
@@ -832,8 +832,8 @@ export class ReconnectProjectCoordinator {
   }
 
   async #commitReconnect(
-    expectedMembership: CollabLocalLanMembershipRecord,
-    membership: CollabLocalLanMembershipRecord,
+    expectedMembership: CollabLocalLANMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
     candidate: CollabTrustedEndpointCandidate,
     options: CollabOperationOptions,
   ): Promise<CollabResult<CollabLocalProjectSummary>> {
@@ -853,14 +853,14 @@ export class ReconnectProjectCoordinator {
         projectId: membership.project.id,
       });
       const authority = membership.authority;
-      const gitRemoteUrl = remoteUrl(candidate.endpoint, candidate.projectId);
+      const gitRemoteUrl = remoteURL(candidate.endpoint, candidate.projectId);
       await rotateTrustedCollabOrigin(git.repositories, {
         newRemoteUrl: gitRemoteUrl,
         oldRemoteUrl: authority.gitRemoteUrl!,
         projectId: membership.project.id,
         repositoryPath,
       });
-      const updated: CollabLocalLanMembershipRecord = {
+      const updated: CollabLocalLANMembershipRecord = {
         ...membership,
         authority: {
           ...authority,

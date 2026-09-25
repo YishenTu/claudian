@@ -5,7 +5,7 @@ import { createTurnStats, isTokenCount, type TurnStats } from '@/core/types';
 
 import { filterActiveBranch } from './sdkBranchFilter';
 import type { SDKNativeMessage } from './sdkHistoryTypes';
-import { isCanonicalSdkUserMessage, isSystemInjectedMessage } from './sdkMessageParsing';
+import { isCanonicalSDKUserMessage, isSystemInjectedMessage } from './sdkMessageParsing';
 import { getSDKSessionPath } from './sdkSessionPaths';
 
 /** Finalized JSONL response IDs may occur in several content-block records. */
@@ -48,7 +48,7 @@ export async function loadClaudeTurnStats(
         || (record.type === 'attachment' && record.attachment?.commandMode === 'prompt');
       if (foundAssistant) records.push(record);
       if (isUser) {
-        if (!foundAssistant || !isCanonicalSdkUserMessage(record)) return undefined;
+        if (!foundAssistant || !isCanonicalSDKUserMessage(record)) return undefined;
         const branch = filterActiveBranch(records.reverse(), assistantId);
         if (!branch.includes(record)) return undefined;
         const stats = new ClaudeTurnStats();

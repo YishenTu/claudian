@@ -19,8 +19,8 @@ import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepositor
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -35,7 +35,7 @@ const DETACHED = '6'.repeat(40);
 describe('AcceptCoordinator', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let git: FakeAcceptGit;
 
   beforeAll(async () => {
@@ -46,7 +46,7 @@ describe('AcceptCoordinator', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-accept-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();

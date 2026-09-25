@@ -7,8 +7,8 @@ import initSqlJs from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
-import { ProjectEventHub, type ProjectEventSocket, SqlJsProjectEventSource } from '@/app/collab/lan/ProjectEventHub';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
+import { ProjectEventHub, type ProjectEventSocket, SQLJSProjectEventSource } from '@/app/collab/lan/ProjectEventHub';
 
 class Socket implements ProjectEventSocket {
   readyState = 1;
@@ -22,7 +22,7 @@ class Socket implements ProjectEventSocket {
 it('replays a durable retained tail after restart and reuses its storage across rotations', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'claudian-authority-longevity-'));
   const SQL = await initSqlJs();
-  let database = new SqlJsProjectDatabase(root, { loadSqlJs: async () => SQL });
+  let database = new SQLJSProjectDatabase(root, { loadSqlJs: async () => SQL });
   let hub: ProjectEventHub | undefined;
   const events = new AuthorityEventRepository();
   const append = (count: number) => database.mutate(connection => {
@@ -40,9 +40,9 @@ it('replays a durable retained tail after restart and reuses its storage across 
     await append(601);
     const initialBytes = (await database.exportSnapshot()).byteLength;
     await database.close();
-    database = new SqlJsProjectDatabase(root, { loadSqlJs: async () => SQL });
+    database = new SQLJSProjectDatabase(root, { loadSqlJs: async () => SQL });
     await database.open();
-    hub = new ProjectEventHub('project-a', new SqlJsProjectEventSource(database, 'project-a'), {
+    hub = new ProjectEventHub('project-a', new SQLJSProjectEventSource(database, 'project-a'), {
       setInterval: () => 0, clearInterval: () => undefined,
     });
     const expired = new Socket();

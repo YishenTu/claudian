@@ -5,10 +5,10 @@ import path from 'node:path';
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
 import { testTime } from '@test/helpers/testClock';
 
-import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type { CollabLocalLANMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
 import {
   type LocalProjectControlClientPort,
   LocalProjectControlPort,
@@ -38,7 +38,7 @@ function mergedRequest() {
   };
 }
 
-function membership(): CollabLocalLanMembershipRecord {
+function membership(): CollabLocalLANMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,

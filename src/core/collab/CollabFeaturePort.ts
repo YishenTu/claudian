@@ -526,7 +526,7 @@ export interface CollabFinalizeRetiredProjectRequest {
   cleanupChoice: CollabLocalCleanupChoice;
 }
 
-export interface CollabCloudToLanTargetPreparationDescriptor {
+export interface CollabCloudToLANTargetPreparationDescriptor {
   readonly caCertificatePem: string;
   readonly caFingerprint: string;
   readonly preparationId: string;
@@ -539,7 +539,7 @@ export interface CollabCloudToLanTargetPreparationDescriptor {
   readonly targetUrl: string;
 }
 
-export interface CollabCloudToLanTransferHandle {
+export interface CollabCloudToLANTransferHandle {
   readonly operationIntentId: string;
   readonly preparationId: string;
   readonly projectId: CollabProjectId;
@@ -551,46 +551,46 @@ export interface CollabCloudToLanTransferHandle {
   readonly transferId: string;
 }
 
-export interface CollabCloudToLanTransferView {
+export interface CollabCloudToLANTransferView {
   readonly preparations: readonly { readonly preparationId: string; readonly targetMemberId: CollabMemberId }[];
   readonly manager: Readonly<{
-    readonly descriptor: CollabCloudToLanTargetPreparationDescriptor;
-    readonly handle: CollabCloudToLanTransferHandle | null;
+    readonly descriptor: CollabCloudToLANTargetPreparationDescriptor;
+    readonly handle: CollabCloudToLANTransferHandle | null;
     readonly status: CollabAuthorityTransferStatus | null;
   }> | null;
   readonly target: Readonly<{
     readonly canWithdraw: boolean;
-    readonly descriptor: CollabCloudToLanTargetPreparationDescriptor | null;
-    readonly handle: CollabCloudToLanTransferHandle | null;
+    readonly descriptor: CollabCloudToLANTargetPreparationDescriptor | null;
+    readonly handle: CollabCloudToLANTransferHandle | null;
     readonly status: CollabAuthorityTransferStatus | null;
   }> | null;
 }
 
-export interface CollabPrepareCloudToLanTargetRequest {
+export interface CollabPrepareCloudToLANTargetRequest {
   readonly projectId: CollabProjectId;
 }
 
-export interface CollabBeginCloudToLanTransferRequest {
+export interface CollabBeginCloudToLANTransferRequest {
   readonly projectId: CollabProjectId;
   readonly preparationId: string;
 }
 
-export interface CollabWithdrawCloudToLanTargetRequest {
+export interface CollabWithdrawCloudToLANTargetRequest {
   readonly preparationId: string;
   readonly projectId: CollabProjectId;
 }
 
-export interface CollabLanToCloudTransferRequest {
+export interface CollabLANToCloudTransferRequest {
   readonly projectId: CollabProjectId;
   readonly serverUrl: string;
 }
 
-export interface CollabLanToCloudTransferSelectionRequest {
+export interface CollabLANToCloudTransferSelectionRequest {
   readonly projectId: CollabProjectId;
   readonly transferId: string;
 }
 
-export interface CollabLanToCloudTransferView {
+export interface CollabLANToCloudTransferView {
   readonly proposedByMemberId: CollabMemberId;
   readonly serverUrl: string;
   readonly sourceOwned: boolean;
@@ -668,19 +668,19 @@ export interface CollabFeaturePort {
   retireProject(request: CollabRetireProjectRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   finalizeRetiredProject(request: CollabFinalizeRetiredProjectRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   retryProjectCleanup(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<void>>;
-  proposeLanToCloudTransfer(request: CollabLanToCloudTransferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
-  readLanToCloudTransfer(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabLanToCloudTransferView | null>>;
-  readCloudToLanTransfer(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLanTransferView | null>>;
-  acceptLanToCloudTransfer(request: CollabLanToCloudTransferSelectionRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
-  cancelLanToCloudTransfer(request: CollabLanToCloudTransferSelectionRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  proposeLanToCloudTransfer(request: CollabLANToCloudTransferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  readLanToCloudTransfer(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabLANToCloudTransferView | null>>;
+  readCloudToLanTransfer(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLANTransferView | null>>;
+  acceptLanToCloudTransfer(request: CollabLANToCloudTransferSelectionRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  cancelLanToCloudTransfer(request: CollabLANToCloudTransferSelectionRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
   moveCloudToLan(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
-  moveLanToCloud(request: CollabLanToCloudTransferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
-  prepareCloudToLanTarget(request: CollabPrepareCloudToLanTargetRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLanTargetPreparationDescriptor>>;
-  beginCloudToLanTransfer(request: CollabBeginCloudToLanTransferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLanTransferHandle>>;
-  acceptCloudToLanTransfer(handle: CollabCloudToLanTransferHandle, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
-  withdrawCloudToLanTarget(request: CollabWithdrawCloudToLanTargetRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
+  moveLanToCloud(request: CollabLANToCloudTransferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  prepareCloudToLanTarget(request: CollabPrepareCloudToLANTargetRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLANTargetPreparationDescriptor>>;
+  beginCloudToLanTransfer(request: CollabBeginCloudToLANTransferRequest, options?: CollabOperationOptions): Promise<CollabResult<CollabCloudToLANTransferHandle>>;
+  acceptCloudToLanTransfer(handle: CollabCloudToLANTransferHandle, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  withdrawCloudToLanTarget(request: CollabWithdrawCloudToLANTargetRequest, options?: CollabOperationOptions): Promise<CollabResult<void>>;
   observeCloudToLanTransfer(projectId: CollabProjectId, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
-  cancelCloudToLanTransfer(handle: CollabCloudToLanTransferHandle, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
+  cancelCloudToLanTransfer(handle: CollabCloudToLANTransferHandle, options?: CollabOperationOptions): Promise<CollabResult<CollabAuthorityTransferStatus>>;
   observeProject(projectId: CollabProjectId, listener: CollabProjectObserver): CollabFeatureSubscription;
   subscribe(listener: CollabFeatureStateListener): CollabFeatureSubscription;
 }

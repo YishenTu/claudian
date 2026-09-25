@@ -15,8 +15,8 @@ import type {
   FileChangeApprovalDecision,
   FileChangeApprovalRequest,
   FileChangeApprovalResponse,
-  McpElicitationRequest,
-  McpElicitationResponse,
+  MCPElicitationRequest,
+  MCPElicitationResponse,
   PermissionsApprovalRequest,
   PermissionsApprovalResponse,
   RequestId,
@@ -311,8 +311,8 @@ export class CodexExecutionServerRequestRouter {
   async #handleMcpElicitation(
     requestId: RequestId,
     params: unknown,
-  ): Promise<McpElicitationResponse> {
-    if (!isMcpElicitationRequest(params) || params.turnId === null) {
+  ): Promise<MCPElicitationResponse> {
+    if (!isMCPElicitationRequest(params) || params.turnId === null) {
       return { action: 'cancel', content: null };
     }
     if (
@@ -440,7 +440,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function isMcpElicitationRequest(value: unknown): value is McpElicitationRequest {
+function isMCPElicitationRequest(value: unknown): value is MCPElicitationRequest {
   return isPlainRecord(value)
     && typeof value.threadId === 'string' && value.threadId.length > 0
     && (value.turnId === null || (typeof value.turnId === 'string' && value.turnId.length > 0))

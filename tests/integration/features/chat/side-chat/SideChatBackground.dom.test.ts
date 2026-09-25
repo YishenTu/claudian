@@ -7,7 +7,7 @@ import { MarkdownRenderer } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 
-import { createHarness, releaseSideChatHarnesses, startSideChat } from './SideChatDomHarness';
+import { createHarness, releaseSideChatHarnesses, startSideChat } from './SideChatDOMHarness';
 
 const subagentAdapter = ProviderRegistry.getSubagentAdapter('claude')!;
 const taskResultInterpreter = ProviderRegistry.getTaskResultInterpreter('claude');

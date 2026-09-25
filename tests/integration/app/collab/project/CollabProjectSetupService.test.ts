@@ -20,7 +20,7 @@ import {
   ClaudianCollabService,
   type CollabAuthorityFoundation,
 } from '@/app/collab';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import {
   decodeCollabProjectSetupRecord,
 } from '@/app/collab/project/CollabProjectSetupRecord';
@@ -92,7 +92,7 @@ describe('CollabProjectSetupService', () => {
   function createFoundation(getProjectsFolder?: () => string): ClaudianCollabService {
     return new ClaudianCollabService({
       createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
-        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
+        new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
       installationKey: TEST_INSTALLATION_A,

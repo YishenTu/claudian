@@ -2,7 +2,7 @@ import type { ProviderCommandCatalog } from '../../../core/providers/commands/Pr
 import type { ProviderVaultEntryRepository } from '../../../core/providers/commands/ProviderVaultEntryRepository';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type {
-  ProviderCliResolver,
+  ProviderCLIResolver,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
@@ -12,7 +12,7 @@ import {
   type CommandProbe,
 } from '../commands/ClaudeCommandCatalog';
 import { probeRuntimeCommands } from '../commands/probeRuntimeCommands';
-import { ClaudeCliResolver } from '../runtime/ClaudeCliResolver';
+import { ClaudeCLIResolver } from '../runtime/ClaudeCLIResolver';
 import { ClaudeModelCatalog } from '../runtime/ClaudeModelCatalog';
 import { createClaudeModels } from '../runtime/ClaudeModels';
 import { SkillStorage } from '../storage/SkillStorage';
@@ -20,7 +20,7 @@ import { SlashCommandStorage } from '../storage/SlashCommandStorage';
 import { createClaudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
 
 export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
-  cliResolver: ProviderCliResolver;
+  cliResolver: ProviderCLIResolver;
   commandCatalog: ProviderCommandCatalog;
   vaultCommandRepository: ProviderVaultEntryRepository;
   dispose(): Promise<void>;
@@ -36,7 +36,7 @@ export async function createClaudeWorkspaceServices(
   adapter: VaultFileAdapter,
   options: ClaudeWorkspaceServicesOptions = {},
 ): Promise<ClaudeWorkspaceServices> {
-  const cliResolver = new ClaudeCliResolver();
+  const cliResolver = new ClaudeCLIResolver();
   const nativeCatalog = new ClaudeModelCatalog(plugin, options.modelProbe);
   const modelCatalog = createClaudeModels(plugin, nativeCatalog);
 

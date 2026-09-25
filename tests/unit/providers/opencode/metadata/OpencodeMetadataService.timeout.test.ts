@@ -12,8 +12,8 @@ interface MockKernelOptions {
 
 const mockKernelOptions: MockKernelOptions[] = [];
 
-jest.mock('@/providers/opencode/execution/OpencodeAcpSessionKernel', () => ({
-  DefaultOpencodeAcpSessionKernel: jest.fn().mockImplementation((options) => {
+jest.mock('@/providers/opencode/execution/OpencodeACPSessionKernel', () => ({
+  DefaultOpencodeACPSessionKernel: jest.fn().mockImplementation((options) => {
     mockKernelOptions.push(options);
     return {
       connect: jest.fn(async () => undefined),

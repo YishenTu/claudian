@@ -4,7 +4,7 @@ import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { throwIfAborted, toAbortError } from '../../../utils/abort';
 import { getEnhancedPath, parseEnvironmentVariables } from '../../../utils/env';
 import { getVaultPath } from '../../../utils/path';
-import { loadClaudeAgentQuery } from '../loadClaudeAgentSdk';
+import { loadClaudeAgentQuery } from '../loadClaudeAgentSDK';
 import { type ClaudeDiscoveredModel, decodeClaudeModels } from '../modelCatalog';
 import { getClaudeProviderSettings, resolveClaudeSettingSources } from '../settings';
 import { createCustomSpawnFunction } from './customSpawn';

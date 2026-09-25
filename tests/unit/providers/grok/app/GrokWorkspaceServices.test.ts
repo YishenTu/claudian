@@ -15,7 +15,7 @@ import {
   grokWorkspaceRegistration,
 } from '@/providers/grok/app/GrokWorkspaceServices';
 import { GrokCommandCatalog } from '@/providers/grok/commands/GrokCommandCatalog';
-import { GrokCliResolver } from '@/providers/grok/runtime/GrokCliResolver';
+import { GrokCLIResolver } from '@/providers/grok/runtime/GrokCLIResolver';
 import { grokSettingsTabRenderer } from '@/providers/grok/ui/GrokSettingsTab';
 
 function createPlugin(cached = true): any {
@@ -68,7 +68,7 @@ describe('GrokWorkspaceServices', () => {
     const plugin = createPlugin();
     const services = await grokWorkspaceRegistration.initialize({ plugin } as any);
 
-    expect(services.cliResolver).toBeInstanceOf(GrokCliResolver);
+    expect(services.cliResolver).toBeInstanceOf(GrokCLIResolver);
     expect(services.commandCatalog).toBeInstanceOf(GrokCommandCatalog);
     expect(services.settingsTabRenderer).toBe(grokSettingsTabRenderer);
     expect(services.tabWarmupPolicy?.resolveMode({} as any)).toBe('commands');

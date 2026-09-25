@@ -22,7 +22,7 @@ function defaultStreamedResult() {
   };
 }
 
-export function resetCodexSdkMocks(): void {
+export function resetCodexSDKMocks(): void {
   mockCodexConstructor.mockReset();
   mockRunStreamed.mockReset();
   mockRun.mockReset();
@@ -69,7 +69,7 @@ export class Thread {
   }
 }
 
-resetCodexSdkMocks();
+resetCodexSDKMocks();
 
 // Type stubs (values don't matter for type-only imports)
 export type ThreadEvent = any;

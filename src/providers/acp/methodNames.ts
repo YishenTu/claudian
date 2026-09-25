@@ -1,4 +1,4 @@
-export type AcpLogicalMethod =
+export type ACPLogicalMethod =
   | 'initialize'
   | 'authenticate'
   | 'newSession'
@@ -11,7 +11,7 @@ export type AcpLogicalMethod =
   | 'setMode'
   | 'setConfigOption';
 
-export type AcpMethodOverrides = Partial<Record<AcpLogicalMethod, string | string[]>>;
+export type ACPMethodOverrides = Partial<Record<ACPLogicalMethod, string | string[]>>;
 
 const ACP_METHOD_CANDIDATES = {
   authenticate: ['authenticate'],
@@ -25,7 +25,7 @@ const ACP_METHOD_CANDIDATES = {
   setConfigOption: ['session/set_config_option', 'setSessionConfigOption'],
   setModel: ['session/set_model', 'setSessionModel'],
   setMode: ['session/set_mode', 'setSessionMode'],
-} as const satisfies Record<AcpLogicalMethod, readonly string[]>;
+} as const satisfies Record<ACPLogicalMethod, readonly string[]>;
 
 export const ACP_SERVER_NOTIFICATION_ALIASES = {
   sessionUpdate: ['session/update', 'sessionUpdate'],
@@ -42,9 +42,9 @@ export const ACP_SERVER_REQUEST_ALIASES = {
   writeTextFile: ['fs/write_text_file', 'fs/writeTextFile'],
 } as const;
 
-export function getAcpMethodCandidates(
-  logicalMethod: AcpLogicalMethod,
-  overrides?: AcpMethodOverrides,
+export function getACPMethodCandidates(
+  logicalMethod: ACPLogicalMethod,
+  overrides?: ACPMethodOverrides,
 ): string[] {
   const override = overrides?.[logicalMethod];
   if (override) {

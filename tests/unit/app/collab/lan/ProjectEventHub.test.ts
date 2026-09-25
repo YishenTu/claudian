@@ -1,6 +1,6 @@
 import { testTime } from '@test/helpers/testClock';
 
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
 import {
   ProjectEventHub,
   type ProjectEventReadResult,

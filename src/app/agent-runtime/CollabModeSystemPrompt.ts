@@ -1,7 +1,7 @@
-import type { LocalAgentRuntimeHttpServerEndpoint } from './LocalAgentRuntimeHttpServer';
+import type { LocalAgentRuntimeHTTPServerEndpoint } from './LocalAgentRuntimeHTTPServer';
 
 export function buildCollabModeSystemPrompt(
-  endpoint: LocalAgentRuntimeHttpServerEndpoint,
+  endpoint: LocalAgentRuntimeHTTPServerEndpoint,
 ): string {
   return [
     '## Collab Mode',

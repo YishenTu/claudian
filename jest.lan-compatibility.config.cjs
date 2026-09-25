@@ -12,7 +12,7 @@ module.exports = {
   testMatch: ['<rootDir>/tests/compatibility/**/*.test.ts'],
   moduleNameMapper: {
     ...base.moduleNameMapper,
-    '^sql.js/dist/sql-wasm.wasm$': '<rootDir>/tests/compatibility/SqlWasmAsset.ts',
+    '^sql.js/dist/sql-wasm.wasm$': '<rootDir>/tests/compatibility/SQLWasmAsset.ts',
     '^@lan226$': process.env.CLAUDIAN_LAN_BASELINE_MODULE,
   },
 };

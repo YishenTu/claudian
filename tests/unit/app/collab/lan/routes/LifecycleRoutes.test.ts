@@ -3,8 +3,8 @@ import { testTime } from '@test/helpers/testClock';
 import { matchCollabControlOperation } from '@/app/collab/lan/CollabControlOperationBindings';
 import {
   LAN_COLLAB_LIFECYCLE_CONTROL_OPERATIONS,
-  type LanCollabLifecycleControlOperation as CollabLifecycleControlOperation,
-} from '@/app/collab/lan/LanCollabControlOperations';
+  type LANCollabLifecycleControlOperation as CollabLifecycleControlOperation,
+} from '@/app/collab/lan/LANCollabControlOperations';
 import { handleLifecycleRoute } from '@/app/collab/lan/routes/LifecycleRoutes';
 import type {
   CollabControlRouteRequest,

@@ -10,7 +10,7 @@ import type {
   CollabResult,
   CollabWorkingTreeReview,
 } from '@/core/collab';
-import { isCollabLanProjectSnapshot } from '@/core/collab';
+import { isCollabLANProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
   PersonalChangesPanel,
@@ -548,7 +548,7 @@ describe('PersonalChangesPanel', () => {
       await flush();
       expect(container.querySelector('[data-path="note.md"]')).toBeNull();
       const coordination = initial.coordination!;
-      if (!isCollabLanProjectSnapshot(coordination.snapshot)) throw new Error('Expected LAN fixture');
+      if (!isCollabLANProjectSnapshot(coordination.snapshot)) throw new Error('Expected LAN fixture');
       const next = {
         ...coordination,
         syncState: {

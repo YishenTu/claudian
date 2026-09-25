@@ -33,7 +33,7 @@ import { CollabProjectLifecycleSubsystem } from '@/app/collab/lifecycle/CollabPr
 import {
 encodeCloudMembershipClaimInvitation,
 } from '@/app/collab/project/CloudProjectInvitation';
-import type { CollabLanProjectSnapshot } from '@/core/collab';
+import type { CollabLANProjectSnapshot } from '@/core/collab';
 import { type CollabPublishOutcome,type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -178,7 +178,7 @@ function pendingRelocation() {
   };
 }
 
-function authoritySnapshot(): CollabLanProjectSnapshot {
+function authoritySnapshot(): CollabLANProjectSnapshot {
   const currentMember = {
     activatedAt: CREATED_AT,
     createdAt: CREATED_AT,

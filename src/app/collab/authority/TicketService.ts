@@ -8,8 +8,8 @@ import { decodeAuthorityKeysetCursor, trimAuthorityKeysetPage } from '@/app/coll
 import { RequestEnsureRepository } from '@/app/collab/authority/RequestEnsureRepository';
 import type {
   AuthorityDatabaseConnection,
-  SqlJsMutationResult,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSMutationResult,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketMentionRepository } from '@/app/collab/authority/TicketMentionRepository';
 import {
   type TicketListCursor,
@@ -23,7 +23,7 @@ export interface TicketDatabasePort {
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T>;
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
-  ): Promise<SqlJsMutationResult<T>>;
+  ): Promise<SQLJSMutationResult<T>>;
 }
 
 export interface TicketServiceOptions {

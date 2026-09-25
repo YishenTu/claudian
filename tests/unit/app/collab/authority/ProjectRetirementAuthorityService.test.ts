@@ -16,8 +16,8 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { ProjectRetirementAuthorityService } from '@/app/collab/authority/ProjectRetirementAuthorityService';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { createRetirementIntent } from '@/app/collab/retirement/RetirementIntent';
 import { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
@@ -28,7 +28,7 @@ describe('ProjectRetirementAuthorityService', () => {
   let SQL: SqlJsStatic;
   let authorityDirectory: string;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let localProjects: CollabLocalProjectRepository;
 
   beforeAll(async () => {
@@ -39,7 +39,7 @@ describe('ProjectRetirementAuthorityService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-retirement-authority-'));
     authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -334,7 +334,7 @@ describe('ProjectRetirementAuthorityService', () => {
         schemaVersion: 2,
       });
     }
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     return database.open();

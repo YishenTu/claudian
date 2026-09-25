@@ -5,14 +5,14 @@ import { OwnedProbeRegistry } from '@/core/providers/metadata/OwnedProbeRegistry
 import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTransitionFence';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { SlashCommand } from '@/core/types';
-import { AcpSessionUpdateNormalizer } from '@/providers/acp';
+import { ACPSessionUpdateNormalizer } from '@/providers/acp';
 
 import type { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import {
-  DefaultOpencodeAcpSessionKernel,
-  type OpencodeAcpSessionKernel,
+  DefaultOpencodeACPSessionKernel,
+  type OpencodeACPSessionKernel,
   type OpencodeNativeSessionInfo,
-} from '../execution/OpencodeAcpSessionKernel';
+} from '../execution/OpencodeACPSessionKernel';
 import { OpencodeServerService } from '../http/OpencodeServerService';
 import { decodeOpencodeModelId } from '../models';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
@@ -210,9 +210,9 @@ export class OpencodeMetadataService {
 }
 
 class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
-  private readonly normalizer = new AcpSessionUpdateNormalizer();
+  private readonly normalizer = new ACPSessionUpdateNormalizer();
   private commands: SlashCommand[] | null = null;
-  private kernel: OpencodeAcpSessionKernel | null = null;
+  private kernel: OpencodeACPSessionKernel | null = null;
   private native: OpencodeNativeSessionInfo | null = null;
   private commandWaiter: (() => void) | null = null;
 
@@ -275,7 +275,7 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
   ): Promise<OpencodeNativeSessionInfo> {
     signal?.throwIfAborted();
     if (this.native) return this.native;
-    const kernel = new DefaultOpencodeAcpSessionKernel({
+    const kernel = new DefaultOpencodeACPSessionKernel({
       config: {
         interactionPort: DENY_INTERACTION_PORT,
         lifecycle: 'ephemeral',
@@ -310,7 +310,7 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
     return this.native;
   }
 
-  #requireKernel(): OpencodeAcpSessionKernel {
+  #requireKernel(): OpencodeACPSessionKernel {
     if (!this.kernel) throw new Error('OpenCode metadata probe is not connected');
     return this.kernel;
   }

@@ -26,7 +26,7 @@ import {
 } from '@/features/collab/detail/conflict/CollabConflictResolutionPanel';
 import {
   type CollabDetailDiffPort,
-  type CollabDetailObjectUrlPort,
+  type CollabDetailObjectURLPort,
   ReviewDiffSession,
 } from '@/features/collab/detail/review/ReviewDiffSession';
 import { ConflictDetailSession } from '@/features/collab/detail/sessions/ConflictDetailSession';
@@ -58,12 +58,12 @@ export type {
 } from '@/features/collab/detail/CollabDetailContracts';
 export type {
   CollabDetailDiffPort,
-  CollabDetailObjectUrlPort,
+  CollabDetailObjectURLPort,
 } from '@/features/collab/detail/review/ReviewDiffSession';
 
 export interface CollabDetailViewOptions {
   readonly conflictPanelFactory?: CollabDetailConflictPanelFactory;
-  readonly objectUrls?: CollabDetailObjectUrlPort;
+  readonly objectUrls?: CollabDetailObjectURLPort;
   readonly openProjectFile?: (projectId: string, path: string) => Promise<void>;
   readonly openTicketInNewTab?: (projectId: string, ticketId: string) => Promise<void>;
   readonly preparedReviews?: CollabPreparedReviewCache;
@@ -77,7 +77,7 @@ export interface CollabDetailWorkspacePort {
   revealLeaf(leaf: WorkspaceLeaf): Promise<void>;
 }
 
-class BrowserObjectUrlPort implements CollabDetailObjectUrlPort {
+class BrowserObjectURLPort implements CollabDetailObjectURLPort {
   create(bytes: Uint8Array, mimeType: string): string {
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
@@ -234,7 +234,7 @@ export class CollabDetailView extends ItemView {
     this.openTicketInNewTab = options.openTicketInNewTab;
     this.preparedReviews = options.preparedReviews ?? null;
     this.diffSession = new ReviewDiffSession({
-      objectUrls: options.objectUrls ?? new BrowserObjectUrlPort(),
+      objectUrls: options.objectUrls ?? new BrowserObjectURLPort(),
       ...(options.openProjectFile ? { openProjectFile: options.openProjectFile } : {}),
       onSelectedPath: path => this.reviewSession?.selectPath(path),
       port,

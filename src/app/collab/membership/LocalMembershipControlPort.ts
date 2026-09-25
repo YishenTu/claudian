@@ -1,5 +1,5 @@
-import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
-import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
+import type { CollabLocalLANMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import { PinnedCollabHTTPClient } from '@/app/collab/lan/CollabHTTPClient';
 import {
   MembershipControlClient,
 } from '@/app/collab/membership/MembershipControlClient';
@@ -40,7 +40,7 @@ export class LocalMembershipControlPort implements CollabAuthorityMembershipCont
   };
 
   constructor(
-    membership: CollabLocalLanMembershipRecord,
+    membership: CollabLocalLANMembershipRecord,
     options: LocalMembershipControlPortOptions = {},
   ) {
     const { endpoint, hostCaCertificatePem, hostCaFingerprint } = membership.authority;
@@ -48,7 +48,7 @@ export class LocalMembershipControlPort implements CollabAuthorityMembershipCont
       throw new TypeError('LAN membership control requires complete Host trust');
     }
     this.createClient = options.createClient ?? (trust => new MembershipControlClient(
-      new PinnedCollabHttpClient(trust, CONTROL_TIMEOUT_MS),
+      new PinnedCollabHTTPClient(trust, CONTROL_TIMEOUT_MS),
     ));
     this.trust = {
       caCertificatePem: hostCaCertificatePem,

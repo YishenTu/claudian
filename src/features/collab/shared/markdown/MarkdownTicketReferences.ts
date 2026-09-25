@@ -12,7 +12,7 @@ interface TicketMarker {
   readonly token: CollabTicketReferenceToken;
 }
 
-interface ObsidianDomWindow {
+interface ObsidianDOMWindow {
   createEl(tag: 'button'): HTMLButtonElement;
   createFragment(): DocumentFragment;
 }
@@ -116,6 +116,6 @@ function createTicketReference(
   return reference;
 }
 
-function domWindow(host: HTMLElement): ObsidianDomWindow {
-  return host.ownerDocument.win as unknown as ObsidianDomWindow;
+function domWindow(host: HTMLElement): ObsidianDOMWindow {
+  return host.ownerDocument.win as unknown as ObsidianDOMWindow;
 }

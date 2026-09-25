@@ -16,20 +16,20 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { ProjectRetirementAuthorityService } from '@/app/collab/authority/ProjectRetirementAuthorityService';
 import {
 type AuthorityDatabaseConnection,
-SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { assertHostTransferTransition } from '@/app/collab/host-transfer/HostTransferPhaseMachine';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 import { RetirementTerminalService } from '@/app/collab/retirement/RetirementTerminalService';
 import { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
 
 describe('Project exit foundation gate', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
 
   beforeAll(async () => {
     SQL = await initSqlJs();
@@ -39,7 +39,7 @@ describe('Project exit foundation gate', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-project-exit-foundation-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -187,10 +187,10 @@ describe('Project exit foundation gate', () => {
     const sourceVault = path.join(root, 'source-vault');
     const targetVault = path.join(root, 'target-vault');
     await Promise.all([mkdir(sourceVault), mkdir(targetVault)]);
-    const sourceIdentity = new LanTlsIdentity(sourceVault, {
+    const sourceIdentity = new LANTLSIdentity(sourceVault, {
       installationKey: TEST_INSTALLATION_A,
     });
-    const targetIdentity = new LanTlsIdentity(targetVault, {
+    const targetIdentity = new LANTLSIdentity(targetVault, {
       installationKey: TEST_INSTALLATION_B,
     });
     const [sourceSigner, targetCa] = await Promise.all([

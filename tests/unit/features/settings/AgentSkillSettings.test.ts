@@ -13,7 +13,7 @@ import { t } from '@/i18n/i18n';
 
 jest.mock('obsidian', () => ({
   ...jest.requireActual('@test/__mocks__/obsidian'),
-  ...jest.requireActual('@test/helpers/ObsidianSettingsDom'),
+  ...jest.requireActual('@test/helpers/ObsidianSettingsDOM'),
 }));
 
 function setup(notify: () => Promise<void> = async () => undefined) {

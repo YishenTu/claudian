@@ -166,7 +166,7 @@ function startsNonParagraphBlock(content: string): boolean {
     || /^ {0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/.test(content);
 }
 
-function startsInterruptingHtmlBlock(content: string): boolean {
+function startsInterruptingHTMLBlock(content: string): boolean {
   return RAW_HTML_TAG_PATTERN.test(content)
     || HTML_BLOCK_TAG_PATTERN.test(content)
     || /^ {0,3}(?:<!--|<\?|<![A-Za-z]|<!\[CDATA\[)/.test(content);
@@ -382,7 +382,7 @@ function findInlineBlockEnd(
       || /^[ \t\r]*$/.test(blockContent)
       || getFenceRun(nextLine) !== null
       || startsNonParagraphBlock(blockContent)
-      || startsInterruptingHtmlBlock(blockContent)
+      || startsInterruptingHTMLBlock(blockContent)
     ) {
       return lineEnd;
     }
@@ -447,12 +447,12 @@ function findAutolinkEnd(line: string, start: number): number | null {
   return uri || email ? end : null;
 }
 
-function isAtHtmlBlockStart(markdown: string, start: number): boolean {
+function isAtHTMLBlockStart(markdown: string, start: number): boolean {
   const lineStart = markdown.lastIndexOf('\n', start - 1) + 1;
   return /^[ \t]*$/.test(parseContainerPrefix(markdown.slice(lineStart, start)).content);
 }
 
-function findHtmlEnd(line: string, start: number): number | null {
+function findHTMLEnd(line: string, start: number): number | null {
   const specialTerminators: Array<[string, string]> = [
     ['<!--', '-->'],
     ['<![CDATA[', ']]>'],
@@ -464,7 +464,7 @@ function findHtmlEnd(line: string, start: number): number | null {
       if (end !== -1) {
         return end + closer.length - 1;
       }
-      return isAtHtmlBlockStart(line, start) ? line.length - 1 : null;
+      return isAtHTMLBlockStart(line, start) ? line.length - 1 : null;
     }
   }
 
@@ -473,7 +473,7 @@ function findHtmlEnd(line: string, start: number): number | null {
     if (end !== -1) {
       return end;
     }
-    return isAtHtmlBlockStart(line, start) ? line.length - 1 : null;
+    return isAtHTMLBlockStart(line, start) ? line.length - 1 : null;
   }
 
   let index = start + 1;
@@ -614,7 +614,7 @@ function splitInlineMarkdown(
         continue;
       }
 
-      const sourceHtmlEnd = findHtmlEnd(markdown, lineStart + index);
+      const sourceHtmlEnd = findHTMLEnd(markdown, lineStart + index);
       const htmlEnd = sourceHtmlEnd === null ? null : sourceHtmlEnd - lineStart;
       if (htmlEnd !== null) {
         appendSegment(segments, line.slice(segmentStart, index), true);
@@ -846,7 +846,7 @@ function splitMarkdown(markdown: string): MarkdownSegment[] {
     inlineHtmlEnd = continuation.htmlEnd ?? null;
     inlineMathRunLength = continuation.mathRunLength ?? null;
     paragraphContext = startsNonParagraphBlock(blockContent)
-      || startsInterruptingHtmlBlock(blockContent)
+      || startsInterruptingHTMLBlock(blockContent)
       ? null
       : currentContext;
     lineStart = lineEnd;

@@ -44,7 +44,7 @@ import { ProviderSettingsCoordinator } from './core/providers/ProviderSettingsCo
 import { ProviderWorkspaceRegistry } from './core/providers/ProviderWorkspaceRegistry';
 import type {
   AppTabManagerState,
-  ProviderCliResolutionContext,
+  ProviderCLIResolutionContext,
   ProviderId,
 } from './core/providers/types';
 import type {
@@ -71,7 +71,7 @@ import { type InlineEditContext, InlineEditModal } from './features/inline-edit/
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
 import { setLocale } from './i18n/i18n';
 import type { Locale } from './i18n/types';
-import { deleteLegacyMcpConfig } from './providers/claude/storage/LegacyMcpConfigCleanup';
+import { deleteLegacyMCPConfig } from './providers/claude/storage/LegacyMCPConfigCleanup';
 import { buildCursorContext } from './utils/editor';
 import { revealWorkspaceLeaf } from './utils/obsidianCompat';
 import { getVaultPath } from './utils/path';
@@ -412,7 +412,7 @@ export default class ClaudianPlugin extends Plugin {
       isClaudianView,
     );
     try {
-      await deleteLegacyMcpConfig(sharedStorage.getAdapter());
+      await deleteLegacyMCPConfig(sharedStorage.getAdapter());
     } catch {
       new Notice('Failed to remove obsolete Claude configuration');
     }
@@ -718,7 +718,7 @@ export default class ClaudianPlugin extends Plugin {
 
   async getResolvedProviderCliPath(
     providerId: ProviderId,
-    context?: ProviderCliResolutionContext,
+    context?: ProviderCLIResolutionContext,
   ): Promise<string | null> {
     if (context?.providerTransitionOwner !== true) {
       await ProviderWorkspaceRegistry.ensureInitialized(

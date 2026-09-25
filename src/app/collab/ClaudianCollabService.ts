@@ -20,7 +20,7 @@ import {
 import { RequestEnsureService } from '@/app/collab/authority/RequestEnsureService';
 import { RequestQueryGitPolicy } from '@/app/collab/authority/RequestQueryGitPolicy';
 import { RequestQueryService } from '@/app/collab/authority/RequestQueryService';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
 import type {
   AuthorityTransferModule,
@@ -37,17 +37,17 @@ import {
 } from '@/app/collab/CollabFilesystemBoundary';
 import {
   type AuthorityResourceOperation,
-  type CollabLocalLanMembershipRecord,
+  type CollabLocalLANMembershipRecord,
   CollabLocalProjectRepository,
-  isCollabLocalLanMembership,
+  isCollabLocalLANMembership,
   type OwnedAuthorityDirectoryCapability,
   type ProvisionalAuthorityDirectoryCapability,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabPathPolicy } from '@/app/collab/CollabPathPolicy';
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import {
-  CollabLanDiscoveryService,
-} from '@/app/collab/discovery/CollabLanDiscoveryService';
+  CollabLANDiscoveryService,
+} from '@/app/collab/discovery/CollabLANDiscoveryService';
 import { rotateTrustedCollabOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
@@ -79,23 +79,23 @@ import {
 } from '@/app/collab/lan/CollabControlOperationBindings';
 import {
   type CollabTrustedHost,
-  PinnedCollabHttpClient,
-} from '@/app/collab/lan/CollabHttpClient';
+  PinnedCollabHTTPClient,
+} from '@/app/collab/lan/CollabHTTPClient';
 import type {
   HostedLifecycleControlPort,
 } from '@/app/collab/lan/HostedProjectControlService';
 import type { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
-import type { AcknowledgeRetirementResponse } from '@/app/collab/lan/LanCollabControlOperations';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
+import type { AcknowledgeRetirementResponse } from '@/app/collab/lan/LANCollabControlOperations';
 import {
-  LanHostCoordinator,
-  type LanHostCoordinatorOptions,
-  type LanHostProjectRuntime,
-} from '@/app/collab/lan/LanHostCoordinator';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+  LANHostCoordinator,
+  type LANHostCoordinatorOptions,
+  type LANHostProjectRuntime,
+} from '@/app/collab/lan/LANHostCoordinator';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 import {
   ProjectEventHub,
-  SqlJsProjectEventSource,
+  SQLJSProjectEventSource,
 } from '@/app/collab/lan/ProjectEventHub';
 import type {
   CollabTerminalProjectService,
@@ -109,7 +109,7 @@ import {
   decodeCollabProjectSetupRecord,
 } from '@/app/collab/project/CollabProjectSetupRecord';
 import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
-import { LanHostTransitionProofClient } from '@/app/collab/reconnect/LanHostTransitionProofClient';
+import { LANHostTransitionProofClient } from '@/app/collab/reconnect/LANHostTransitionProofClient';
 import { ReconnectProjectCoordinator } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 import { ProjectRetirementCoordinator } from '@/app/collab/retirement/ProjectRetirementCoordinator';
 import { createRetirementIntent } from '@/app/collab/retirement/RetirementIntent';
@@ -146,7 +146,7 @@ export interface CollabGitFoundation {
 export interface CollabAuthorityFoundation {
   readonly resource: OwnedAuthorityDirectoryCapability | ProvisionalAuthorityDirectoryCapability;
   readonly authorityDirectory: string;
-  readonly database: SqlJsProjectDatabase;
+  readonly database: SQLJSProjectDatabase;
   readonly events: AuthorityEventRepository;
   readonly idempotency: AuthorityIdempotencyRepository;
   readonly projects: ProjectAuthorityRepository;
@@ -161,7 +161,7 @@ export interface ClaudianCollabServiceOptions {
   readonly createAuthorityDatabase?: (
     authorityDirectory: string,
     resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>,
-  ) => SqlJsProjectDatabase;
+  ) => SQLJSProjectDatabase;
   readonly getConfiguredGitPath: () => string;
   readonly getProjectsFolder?: () => string;
   readonly getEnvironment?: () => NodeJS.ProcessEnv;
@@ -169,7 +169,7 @@ export interface ClaudianCollabServiceOptions {
   readonly invitationCodec?: InvitationCodec;
   readonly installationKey: InstallationKey;
   readonly lanHost?: Pick<
-    LanHostCoordinatorOptions,
+    LANHostCoordinatorOptions,
     | 'createAddressMonitor'
     | 'createInvitationCodec'
     | 'getPrivateIpv4Addresses'
@@ -227,12 +227,12 @@ function environmentPath(environment: NodeJS.ProcessEnv): string | undefined {
 
 export class ClaudianCollabService {
   readonly authorityTransfers: AuthorityTransferPersistence;
-  readonly discovery: CollabLanDiscoveryService;
+  readonly discovery: CollabLANDiscoveryService;
   readonly hostTransitionCandidates: HostTransitionCandidateResolver;
   readonly hostInstallations: HostInstallationBindingService;
   readonly installationKey: ClaudianCollabServiceOptions['installationKey'];
   readonly join: JoinProjectCoordinator;
-  readonly lanHost: LanHostCoordinator;
+  readonly lanHost: LANHostCoordinator;
   readonly local: CollabLocalFoundation;
   /** The clock every Collab service and feature collaborator shares. */
   readonly now: () => Date;
@@ -247,7 +247,7 @@ export class ClaudianCollabService {
    readonly #createAuthorityDatabase: (
     authorityDirectory: string,
     resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>,
-  ) => SqlJsProjectDatabase;
+  ) => SQLJSProjectDatabase;
    readonly #getEnvironment: () => NodeJS.ProcessEnv;
    readonly #gitRuntimeResolver: CollabGitRuntimeResolver;
    #hostTransferModule: HostTransferModule | null = null;
@@ -296,11 +296,11 @@ export class ClaudianCollabService {
       environment: this.#getEnvironment(),
     });
     this.#createAuthorityDatabase = options.createAuthorityDatabase
-      ?? ((authorityDirectory, resourceAdmission) => new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission }));
-    this.discovery = new CollabLanDiscoveryService({
+      ?? ((authorityDirectory, resourceAdmission) => new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission }));
+    this.discovery = new CollabLANDiscoveryService({
       ...(options.invitationCodec ? { invitationCodec: options.invitationCodec } : {}),
     });
-    const tlsIdentity = options.lanHost?.tlsIdentity ?? new LanTlsIdentity(options.vaultRoot, {
+    const tlsIdentity = options.lanHost?.tlsIdentity ?? new LANTLSIdentity(options.vaultRoot, {
       installationKey: options.installationKey,
     });
     this.hostInstallations = new HostInstallationBindingService({
@@ -310,7 +310,7 @@ export class ClaudianCollabService {
       installationKey: options.installationKey,
       prepareLegacyRuntime: async projectId => {
         const membership = await projects.loadMembership(projectId);
-        const expectedFingerprint = membership && isCollabLocalLanMembership(membership)
+        const expectedFingerprint = membership && isCollabLocalLANMembership(membership)
           ? membership.authority.hostCaFingerprint
           : null;
         await tlsIdentity.adoptLegacyGlobalIdentity(expectedFingerprint);
@@ -329,7 +329,7 @@ export class ClaudianCollabService {
       ),
       now: this.now,
     });
-    const hostTransitionProofClient = new LanHostTransitionProofClient();
+    const hostTransitionProofClient = new LANHostTransitionProofClient();
     const hostTrustTransitions = new HostTrustTransitionService();
     this.hostTransitionCandidates = new HostTransitionCandidateResolver({
       discovery: this.discovery,
@@ -355,7 +355,7 @@ export class ClaudianCollabService {
       hostTransitionCandidates: this.hostTransitionCandidates,
       request: (trust, input) => this.#sendRetirementAcknowledgement(trust, input),
     });
-    this.lanHost = new LanHostCoordinator({
+    this.lanHost = new LANHostCoordinator({
       now: this.now,
       ...options.lanHost,
       assertHostInstallationOwned: async projectId => {
@@ -562,7 +562,7 @@ export class ClaudianCollabService {
   ): Promise<CollabRetirementResult> {
     this.#assertOpen();
     const membership = await this.#requireTrustedMembership(request.projectId);
-    const transport = new PinnedCollabHttpClient(membership.trust, 10_000);
+    const transport = new PinnedCollabHTTPClient(membership.trust, 10_000);
     try {
       const snapshot = await new ProjectControlClient(transport).readSnapshot(
         request.projectId,
@@ -622,7 +622,7 @@ export class ClaudianCollabService {
       retiredAt: input.retiredAt,
     };
     const operation = 'acknowledgeRetirement' as const;
-    return new PinnedCollabHttpClient(trust, 10_000).requestWithMember({
+    return new PinnedCollabHTTPClient(trust, 10_000).requestWithMember({
       body: request,
       decode: lanCollabControlOperationCodec(operation).decodeResponse,
       idempotencyKey: input.idempotencyKey,
@@ -751,8 +751,8 @@ export class ClaudianCollabService {
   }
 
   async #commitHostedRoute(
-    expected: CollabLocalLanMembershipRecord,
-    next: CollabLocalLanMembershipRecord,
+    expected: CollabLocalLANMembershipRecord,
+    next: CollabLocalLANMembershipRecord,
   ): Promise<void> {
     await this.#authorityProjectionTransitions.run(expected.project.id, async () => {
       const current = await this.local.projects.loadMembership(expected.project.id);
@@ -905,7 +905,7 @@ export class ClaudianCollabService {
 
   async openAuthorityTransferTarget(
     record: AuthorityTransferRecord,
-    validateLegacy?: (database: Pick<SqlJsProjectDatabase, 'inspectPersisted'>) => Promise<void>,
+    validateLegacy?: (database: Pick<SQLJSProjectDatabase, 'inspectPersisted'>) => Promise<void>,
   ): Promise<CollabAuthorityFoundation> {
     this.#assertOpen();
     const operation = this.#targetResourceOperation(record);
@@ -933,7 +933,7 @@ export class ClaudianCollabService {
     return this.#openOwnedAuthority(capability);
   }
 
-  discardAuthorityTransferTarget(record: AuthorityTransferRecord, validateLegacy?: (database: Pick<SqlJsProjectDatabase, 'inspectPersisted'>) => Promise<void>): Promise<void> {
+  discardAuthorityTransferTarget(record: AuthorityTransferRecord, validateLegacy?: (database: Pick<SQLJSProjectDatabase, 'inspectPersisted'>) => Promise<void>): Promise<void> {
     return this.hostInstallations.discardAuthorityTransferTarget(
       record.projectId, record.ownerInstallationKey, this.#targetResourceOperation(record),
       validateLegacy ? directory => validateLegacy(this.#createAuthorityDatabase(directory)) : undefined,
@@ -959,7 +959,7 @@ export class ClaudianCollabService {
     this.hostInstallations.assertRecoveryOwner(record.ownerInstallationKey, record.projectId, 'authority-transfer');
     const membership = await this.local.projects.loadMembership(record.projectId);
     if (!membership || membership.authority.authorityGeneration < record.status.targetAuthority.generation
-      || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) {
+      || isCollabLocalLANMembership(membership) && membership.hostOwnership.ownsAuthority) {
       throw new CollabError({ code: 'durable-progress-recovery-required', safeContext: { reason: 'authority-transfer-source-not-converged' } });
     }
     if (await this.hostInstallations.inspect(record.projectId) === 'absent') return;
@@ -995,7 +995,7 @@ export class ClaudianCollabService {
       || current.transferId !== record.transferId || current.manifestDigest !== record.manifestDigest
       || current.sourceHostMemberId !== record.sourceHostMemberId || current.targetHostMemberId !== record.targetHostMemberId
       || !['authority-relinquished', 'target-active', 'completed'].includes(current.phase)
-      || !membership || !isCollabLocalLanMembership(membership)
+      || !membership || !isCollabLocalLANMembership(membership)
       || membership.member.id !== record.targetHostMemberId
       || membership.authority.authorityGeneration !== authorityGeneration) {
       throw new CollabError({ code: 'durable-progress-recovery-required', recoveryActions: ['resume'],
@@ -1044,7 +1044,7 @@ export class ClaudianCollabService {
         const membership = await this.local.projects.loadMembership(input.projectId);
         if (
           !membership
-          || !isCollabLocalLanMembership(membership)
+          || !isCollabLocalLANMembership(membership)
           || membership.project.id !== input.projectId
           || membership.member.id !== input.targetHostMemberId
           || !membership.hostOwnership.ownsAuthority
@@ -1152,7 +1152,7 @@ export class ClaudianCollabService {
 
   async #openLanHostProject(
     projectId: CollabProjectId,
-  ): Promise<LanHostProjectRuntime> {
+  ): Promise<LANHostProjectRuntime> {
     const capability = await this.hostInstallations.assertOwnedAfterLegacyRecoveryBinding(
       projectId,
       'open',
@@ -1244,7 +1244,7 @@ export class ClaudianCollabService {
     };
     const events = new ProjectEventHub(
       projectId,
-      new SqlJsProjectEventSource(authority.database, projectId),
+      new SQLJSProjectEventSource(authority.database, projectId),
     );
     const managerResponsibilities = new ManagerResponsibilityService({
       ...authority,
@@ -1289,7 +1289,7 @@ export class ClaudianCollabService {
       tombstones,
       { installationKey: this.installationKey, now: this.now, resourceId: authority.resource.resourceId },
     );
-    const lifecycle: NonNullable<LanHostProjectRuntime['lifecycle']> = {
+    const lifecycle: NonNullable<LANHostProjectRuntime['lifecycle']> = {
       acceptHostTransfer: (actorMemberId, request) => (
         hostTransfers.accept(actorMemberId, request)
       ),
@@ -1603,7 +1603,7 @@ export class ClaudianCollabService {
     };
   }> {
     const membership = await this.local.projects.loadMembership(projectId);
-    if (!membership || !isCollabLocalLanMembership(membership)) {
+    if (!membership || !isCollabLocalLANMembership(membership)) {
       throw new CollabError({
         code: 'host-stopped',
         safeContext: { reason: 'retirement-host-trust-unavailable' },

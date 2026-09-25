@@ -60,7 +60,7 @@ describe('Collab dependency envelope', () => {
           import { scanCollabTicketReferences } from '@claudian-collab/protocol';
           import * as english from './src/i18n/locales/en.json';
           import * as german from './src/i18n/locales/de.json';
-          import { LanTlsIdentity } from './src/app/collab/lan/LanTlsIdentity';
+          import { LANTLSIdentity } from './src/app/collab/lan/LANTLSIdentity';
           import {
             CollabDiffRenderer,
             preloadCollabDiffRenderer,
@@ -104,7 +104,7 @@ describe('Collab dependency envelope', () => {
           }
 
           export function probeTlsIdentity() {
-            return typeof LanTlsIdentity;
+            return typeof LANTLSIdentity;
           }
           export async function renderCollabTextDiff(container) {
             const renderer = new CollabDiffRenderer({

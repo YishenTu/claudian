@@ -17,13 +17,13 @@ import { createAuthorityTransferEntryRecord } from '@/app/collab/authority-trans
 import type { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
 import { authorityTransferChildIdempotencyKey } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
-import { LanToCloudSourceCoordinator } from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudSourceCoordinator';
-import { ProductionLanToCloudSourceEffects } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLanToCloudSourceEffects';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { LANToCloudSourceCoordinator } from '@/app/collab/authority-transfer/lan-to-cloud/LANToCloudSourceCoordinator';
+import { ProductionLANToCloudSourceEffects } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLANToCloudSourceEffects';
+import { isCollabLocalLANMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
-import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+import { LANAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LANAuthorityTransferClient';
 import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
-import { cloudProjectGitRemoteUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { cloudProjectGitRemoteURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import type { CollabAuthorityLifecyclePort } from '@/app/collab/remote-authority/CollabAuthorityLifecyclePort';
 import type { CollabAuthorityEventConnectionInput } from '@/app/collab/remote-authority/CollabAuthoritySession';
 
@@ -75,7 +75,7 @@ describe('production authority-transfer hosting handoff effects', () => {
     if (!route) throw new Error('Missing imported claim responder');
     const targetAuthority = await host.inspectAuthority(PROJECT_ID);
     if (!targetAuthority) throw new Error('Missing imported authority');
-    const claimClient = new LanAuthorityTransferClient({
+    const claimClient = new LANAuthorityTransferClient({
       authorityGeneration: 3,
       caCertificatePem: membership.authority.hostCaCertificatePem!,
       caFingerprint: membership.authority.hostCaFingerprint!,
@@ -298,8 +298,8 @@ describe('production authority-transfer hosting handoff effects', () => {
       while (Date.now() < deadline) {
         const membership = await receiverFoundation.local.projects.loadMembership(PROJECT_ID);
         const previousHost = await target.foundation.local.projects.loadMembership(PROJECT_ID);
-        if (membership && isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority
-          && previousHost && isCollabLocalLanMembership(previousHost) && !previousHost.hostOwnership.ownsAuthority) break;
+        if (membership && isCollabLocalLANMembership(membership) && membership.hostOwnership.ownsAuthority
+          && previousHost && isCollabLocalLANMembership(previousHost) && !previousHost.hostOwnership.ownsAuthority) break;
         await new Promise(resolve => setTimeout(resolve, 25));
       }
       await expect(receiverFoundation.local.projects.loadMembership(PROJECT_ID))
@@ -357,7 +357,7 @@ describe('production authority-transfer hosting handoff effects', () => {
         const restoredSession = await restoredRouteStart.mock.results[0]?.value;
         restoredRouteStart.mockRestore();
         if (!restoredSession) throw new Error('Missing restored terminal listener');
-        const restoredClaimClient = new LanAuthorityTransferClient({
+        const restoredClaimClient = new LANAuthorityTransferClient({
           caCertificatePem: sourceMembership.authority.hostCaCertificatePem!,
           caFingerprint: sourceMembership.authority.hostCaFingerprint!,
           endpoint: restoredSession.endpoint,
@@ -383,10 +383,10 @@ describe('production authority-transfer hosting handoff effects', () => {
       });
       await receiverFoundation.authorityTransfers.proposeEntry(nextEntry);
       const submitted = jest.fn(async () => { throw new Error('Cloud request captured'); });
-      const coordinator = new LanToCloudSourceCoordinator({
+      const coordinator = new LANToCloudSourceCoordinator({
         cloud: { authorityTransfer: submitted } as unknown as CollabAuthorityLifecyclePort,
         installationKey: TEST_INSTALLATION_B, persistence: receiverFoundation.authorityTransfers,
-        source: new ProductionLanToCloudSourceEffects({
+        source: new ProductionLANToCloudSourceEffects({
           cloudSession: { principalId: 'principal:receiving-host' } as CloudAuthorityConnection,
           convergence: {} as AuthorityTransferLocalConvergence, foundation: receiverFoundation,
           persistence: receiverFoundation.authorityTransfers, projectId: PROJECT_ID,
@@ -735,13 +735,13 @@ describe('production authority-transfer hosting handoff effects', () => {
         'remote',
         'set-url',
         'origin',
-        cloudProjectGitRemoteUrl(cloudServerUrl, PROJECT_ID),
+        cloudProjectGitRemoteURL(cloudServerUrl, PROJECT_ID),
       ]);
       await seeded.local.projects.saveMembership({
         authority: {
           authorityGeneration: 2,
           bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-          gitRemoteUrl: cloudProjectGitRemoteUrl(cloudServerUrl, PROJECT_ID),
+          gitRemoteUrl: cloudProjectGitRemoteURL(cloudServerUrl, PROJECT_ID),
           kind: 'cloud',
           serverUrl: cloudServerUrl,
           wireVersion: COLLAB_PROTOCOL_VERSION,

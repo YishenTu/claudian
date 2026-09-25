@@ -10,7 +10,7 @@ import {
   createHarness,
   releaseSideChatHarnesses,
   startSideChat,
-} from './SideChatDomHarness';
+} from './SideChatDOMHarness';
 
 afterEach(releaseSideChatHarnesses);
 

@@ -3,7 +3,7 @@ import { Setting } from 'obsidian';
 import { getEnvironmentReviewKeysForScope } from '../../core/providers/providerEnvironment';
 import type { ProviderHost } from '../../core/providers/ProviderHost';
 import type { EnvironmentScope } from '../../core/types/settings';
-import { refreshCliInstallations } from './CliInstallationSetting';
+import { refreshCLIInstallations } from './CLIInstallationSetting';
 import { EnvSnippetManager } from './EnvSnippetManager';
 
 interface EnvironmentSettingsSectionOptions {
@@ -36,7 +36,7 @@ export function renderEnvironmentSettingsSection(
   }
 
   const refreshInstallations = (): void => {
-    refreshCliInstallations(container.closest('.claudian-settings') ?? container);
+    refreshCLIInstallations(container.closest('.claudian-settings') ?? container);
   };
 
   let envTextarea: HTMLTextAreaElement | null = null;

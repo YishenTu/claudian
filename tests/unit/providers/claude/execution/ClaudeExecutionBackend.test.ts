@@ -327,7 +327,7 @@ describe('ClaudeExecutionBackend', () => {
         finish.promise,
       ]]);
       query.supportedCommands.mockReturnValue(metadata.promise);
-      jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+      jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
         .mockResolvedValueOnce((() => query) as unknown as typeof sdkModule.query);
       const host = createHost();
       const session = new ClaudeExecutionBackend(host)
@@ -558,7 +558,7 @@ describe('ClaudeExecutionBackend', () => {
         : null;
       if (closedQuery) {
         jest.spyOn(
-          await import('@/providers/claude/loadClaudeAgentSdk'),
+          await import('@/providers/claude/loadClaudeAgentSDK'),
           'loadClaudeAgentQuery',
         ).mockResolvedValueOnce((() => closedQuery) as never);
       } else {
@@ -618,7 +618,7 @@ describe('ClaudeExecutionBackend', () => {
       ];
       const closedQuery = reason === 'process exit' ? createScriptedPersistentQuery([messages]) : null;
       if (closedQuery) {
-        jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+        jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
           .mockResolvedValueOnce((() => closedQuery) as never);
       }
       sdkMock.setMockMessages(messages, { appendResult: false });
@@ -953,7 +953,7 @@ describe('ClaudeExecutionBackend', () => {
       return query;
     });
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce(queryFactory as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -1039,7 +1039,7 @@ describe('ClaudeExecutionBackend', () => {
       return replacementQuery;
     });
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     )
       .mockResolvedValueOnce(staleFactory as never)
@@ -1474,7 +1474,7 @@ describe('ClaudeExecutionBackend', () => {
     ]]);
     const failedFactory = jest.fn(() => failedQuery);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     )
       .mockResolvedValueOnce(failedFactory as never)
@@ -1546,7 +1546,7 @@ describe('ClaudeExecutionBackend', () => {
       return query;
     });
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce(queryFactory as never);
     const requestAbortController = new AbortController();
@@ -1607,7 +1607,7 @@ describe('ClaudeExecutionBackend', () => {
     const firstFactory = jest.fn(() => failedQuery);
     const retryFactory = jest.fn(() => retryQuery);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     )
       .mockResolvedValueOnce(firstFactory as never)
@@ -1721,7 +1721,7 @@ describe('ClaudeExecutionBackend', () => {
       new Error('No conversation found with session ID: missing-session'),
     );
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const backend = new ClaudeExecutionBackend(createHost());
@@ -1777,7 +1777,7 @@ describe('ClaudeExecutionBackend', () => {
       new Error('No conversation found with session ID: missing-session'),
     );
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     jest.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
@@ -1841,7 +1841,7 @@ describe('ClaudeExecutionBackend', () => {
       new Promise<null>(() => undefined),
     ]]);
     const loadQuery = jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     )
       .mockResolvedValueOnce((() => failedQuery) as never)
@@ -1906,7 +1906,7 @@ describe('ClaudeExecutionBackend', () => {
   it('previews and performs checkpoint rewind only from a resumable persistent seed', async () => {
     const query = createIdlePersistentQuery();
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -1974,7 +1974,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
       keepOpen.promise,
     ]]);
-    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
       .mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
     const background: ProviderSessionEvent[] = [];
@@ -2012,7 +2012,7 @@ describe('ClaudeExecutionBackend', () => {
         pause.promise,
         { type: 'result', subtype: 'success' },
       ]]);
-      jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+      jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
         .mockResolvedValueOnce((() => query) as never);
       const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
       const events: ProviderSessionEvent[] = [];
@@ -2078,7 +2078,7 @@ describe('ClaudeExecutionBackend', () => {
         { type: 'result', subtype: 'success' },
         keepOpen.promise,
       ]]);
-      jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+      jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
         .mockResolvedValueOnce((() => query) as never);
       const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
       const background: ProviderSessionEvent[] = [];
@@ -2148,7 +2148,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
       keepOpen.promise,
     ]]);
-    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
       .mockResolvedValueOnce(((params: { options: sdkModule.Options }) => { options = params.options; return query; }) as never);
     const interactionPort = createInteractionPort();
     interactionPort.requestApproval.mockImplementation(async request => ({ interactionId: request.interactionId, decision: 'deny' }));
@@ -2211,7 +2211,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
       keepOpen.promise,
     ]]);
-    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
       .mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
     const background: ProviderSessionEvent[] = [];
@@ -2249,7 +2249,7 @@ describe('ClaudeExecutionBackend', () => {
     ];
     const query = ending === 'failure' ? createFailingPersistentQuery(messages, new Error('transport closed'))
       : createScriptedPersistentQuery([messages]);
-    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
       .mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
     const background: ProviderSessionEvent[] = [];
@@ -2285,7 +2285,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
       keepQueryOpen.promise,
     ]]);
-    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
       .mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
     const events: ProviderSessionEvent[] = [];
@@ -2330,7 +2330,7 @@ describe('ClaudeExecutionBackend', () => {
       ],
     ]);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -2372,7 +2372,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ]]);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -2398,7 +2398,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ]]);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -2423,7 +2423,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ]]);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -2456,7 +2456,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ]]);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -2503,7 +2503,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ]]);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -2553,7 +2553,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ]]);
     const loadQuery = jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     )
       .mockResolvedValueOnce((() => cancelledQuery) as never)
@@ -2635,7 +2635,7 @@ describe('ClaudeExecutionBackend', () => {
       return query;
     });
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce(queryFactory as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -2697,7 +2697,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ]]);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     )
       .mockResolvedValueOnce((() => cancelledQuery) as never)
@@ -2745,7 +2745,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ]]);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const host = createHost();
@@ -2804,7 +2804,7 @@ describe('ClaudeExecutionBackend', () => {
       { type: 'result', subtype: 'success' },
     ]]);
     const loadQuery = jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     )
       .mockResolvedValueOnce((() => staleQuery) as never)
@@ -2866,7 +2866,7 @@ describe('ClaudeExecutionBackend', () => {
     const staleFactory = jest.fn(() => staleQuery);
     const retryFactory = jest.fn(() => retryQuery);
     const loadQuery = jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     )
       .mockImplementationOnce(() => staleLoader.promise as never)
@@ -2911,7 +2911,7 @@ describe('ClaudeExecutionBackend', () => {
       nativeEndBarrier.promise,
     ]]);
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -2951,7 +2951,7 @@ describe('ClaudeExecutionBackend', () => {
       nativeFailureBarrier.promise,
     ], new Error('Claude transport closed'));
     jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSdk'),
+      await import('@/providers/claude/loadClaudeAgentSDK'),
       'loadClaudeAgentQuery',
     ).mockResolvedValueOnce((() => query) as never);
     const session = new ClaudeExecutionBackend(createHost())
@@ -3191,7 +3191,7 @@ it('preserves the main checkpoint when an async child finishes during automatic 
     { type: 'result', subtype: 'success' },
     keepOpen.promise,
   ]]);
-  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
     .mockResolvedValueOnce((() => query) as never);
   const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
   const background: ProviderSessionEvent[] = [];
@@ -3218,7 +3218,7 @@ it.each([false, true])('anchors session notifications after emitted events with 
     ...(!completed ? [{ type: 'result', subtype: 'success' }] : []),
     keepOpen.promise,
   ]]);
-  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
     .mockResolvedValueOnce((() => query) as never);
   const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
   const sessionEvents: ProviderSessionEvent[] = [];
@@ -3248,7 +3248,7 @@ it.each([false, true])('anchors notifications after automatic events with native
     ...(!completed ? [{ type: 'result', subtype: 'success' }] : []),
     keepOpen.promise,
   ]]);
-  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSdk'), 'loadClaudeAgentQuery')
+  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
     .mockResolvedValueOnce((() => query) as never);
   const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
   const events: ProviderSessionEvent[] = [];

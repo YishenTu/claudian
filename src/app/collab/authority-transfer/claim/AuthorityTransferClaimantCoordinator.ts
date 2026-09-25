@@ -13,10 +13,10 @@ import type {
 
 import {
   advanceAuthorityTransferClaimantRecord,
-  type AuthorityTransferClaimantLanTarget,
+  type AuthorityTransferClaimantLANTarget,
   type AuthorityTransferClaimantRecord,
   type AuthorityTransferClaimantStore,
-  type CloudToLanManagerClaimantPredecessor,
+  type CloudToLANManagerClaimantPredecessor,
   createAuthorityTransferClaimantRecord,
   createManagerReissuedAuthorityTransferClaimantRecord,
   decodeAuthorityTransferClaimantRecord,
@@ -73,7 +73,7 @@ export interface AuthorityTransferClaimantCoordinatorOptions {
   ) => Promise<void>;
   readonly convergence: AuthorityTransferClaimantConvergence;
   readonly createCredential?: () => string;
-  readonly lanTarget?: AuthorityTransferClaimantLanTarget | null;
+  readonly lanTarget?: AuthorityTransferClaimantLANTarget | null;
   readonly now?: () => Date;
   readonly source?: AuthorityTransferClaimantSource;
   readonly store: AuthorityTransferClaimantStore;
@@ -81,7 +81,7 @@ export interface AuthorityTransferClaimantCoordinatorOptions {
 }
 
 export interface StartAuthorityTransferClaimantInput {
-  readonly managerPredecessor?: CloudToLanManagerClaimantPredecessor | null;
+  readonly managerPredecessor?: CloudToLANManagerClaimantPredecessor | null;
   readonly memberId: CollabMemberId;
   readonly operationIntentId: string;
   readonly status: CollabAuthorityTransferStatus;
@@ -109,7 +109,7 @@ function assertNotCancelled(options: CollabOperationOptions): void {
 function sameSourceIssuedAttempt(
   record: AuthorityTransferClaimantRecord,
   input: StartAuthorityTransferClaimantInput,
-  lanTarget: AuthorityTransferClaimantLanTarget | null,
+  lanTarget: AuthorityTransferClaimantLANTarget | null,
 ): boolean {
   return record.variant === 'source-issued'
     && record.projectId === input.status.projectId

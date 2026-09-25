@@ -11,9 +11,9 @@ import {
 } from '@claudian-collab/protocol';
 
 import {
-  cloudProjectGitRemoteUrl,
-  validateCloudServerUrl,
-} from '@/app/collab/remote-authority/CloudAuthorityUrls';
+  cloudProjectGitRemoteURL,
+  validateCloudServerURL,
+} from '@/app/collab/remote-authority/CloudAuthorityURLs';
 
 export interface CloudRelocationBinding {
   readonly bindingVersion: typeof COLLAB_CLOUD_BINDING_VERSION;
@@ -90,8 +90,8 @@ function binding(value: unknown, projectId: CollabProjectId): CloudRelocationBin
     || typeof input.serverUrl !== 'string'
     || typeof input.gitRemoteUrl !== 'string'
   ) throw new TypeError('Invalid Cloud relocation binding');
-  const serverUrl = validateCloudServerUrl(input.serverUrl, 'serverUrl');
-  if (input.gitRemoteUrl !== cloudProjectGitRemoteUrl(serverUrl, projectId)) {
+  const serverUrl = validateCloudServerURL(input.serverUrl, 'serverUrl');
+  if (input.gitRemoteUrl !== cloudProjectGitRemoteURL(serverUrl, projectId)) {
     throw new TypeError('Invalid Cloud relocation Git binding');
   }
   return {

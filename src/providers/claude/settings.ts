@@ -6,7 +6,7 @@ import {
   readStoredBoolean,
   readStoredString,
 } from '../../core/providers/settings/storedSettings';
-import type { HostnameCliPaths } from '../../core/types/settings';
+import type { HostnameCLIPaths } from '../../core/types/settings';
 import { type ClaudeDiscoveredModel, decodeClaudeModels } from './modelCatalog';
 
 export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
@@ -19,7 +19,7 @@ export interface ClaudeProviderSettings {
   safeMode: ClaudeSafeMode;
   responseStyle: ClaudeResponseStyle;
   cliPath: string;
-  cliPathsByHost: HostnameCliPaths;
+  cliPathsByHost: HostnameCLIPaths;
   loadUserSettings: boolean;
   enableChrome: boolean;
   discoveredModels: ClaudeDiscoveredModel[];

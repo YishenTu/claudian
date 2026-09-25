@@ -8,8 +8,8 @@ import path from 'node:path';
 
 import { COLLAB_MAIN_REF, collabMemberRef, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
-import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
-import type { SqlJsMutationResult } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SQLJSProjectDatabase';
+import type { SQLJSMutationResult } from '@/app/collab/authority/SQLJSProjectDatabase';
 import type {
   CollabAuthorityFoundation,
   CollabGitFoundation,
@@ -44,7 +44,7 @@ interface CollabProjectAuthorityDatabase {
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T>;
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
-  ): Promise<SqlJsMutationResult<T>>;
+  ): Promise<SQLJSMutationResult<T>>;
 }
 
 export interface CollabProjectAuthorityFoundation extends Omit<

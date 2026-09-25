@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { parseOpencodeConfig, resolveOpencodeConfigPath, writeIfChanged } from '../runtime/OpencodeLaunchArtifacts';
-import { isRecord } from './OpencodeHttpClient';
+import { isRecord } from './OpencodeHTTPClient';
 
 /** Writable explicit-config layer; user files are read, never edited. */
 export class OpencodeServerConfig {

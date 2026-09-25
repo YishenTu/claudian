@@ -43,10 +43,10 @@ import {
   CloudAuthorityRejection,
 } from '@/app/collab/remote-authority/CloudAuthorityError';
 import {
-  cloudProjectGitRemoteUrl,
+  cloudProjectGitRemoteURL,
   resolveCloudRoute,
-  validateCloudServerUrl,
-} from '@/app/collab/remote-authority/CloudAuthorityUrls';
+  validateCloudServerURL,
+} from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import {
   CloudPersonalRefReader,
   type CloudPersonalRefReadInput,
@@ -71,12 +71,12 @@ import {
   NodeCloudAuthorityArtifactTransport,
 } from '@/app/collab/remote-authority/NodeCloudAuthorityArtifactTransport';
 import {
-  type CloudAuthorityHttpRequest,
-  type CloudAuthorityHttpResponse,
-  type CloudAuthorityHttpTransport,
-  NodeCloudAuthorityHttpTransport,
-} from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
-import { isTlsValidationError } from '@/app/collab/tlsErrors';
+  type CloudAuthorityHTTPRequest,
+  type CloudAuthorityHTTPResponse,
+  type CloudAuthorityHTTPTransport,
+  NodeCloudAuthorityHTTPTransport,
+} from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
+import { isTLSValidationError } from '@/app/collab/tlsErrors';
 import type { CollabCloudProjectSnapshot, CollabOperationOptions } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -139,7 +139,7 @@ export interface CloudAuthorityAdapterOptions {
     input: CloudProjectEventClientInput,
     onInvalidation: (invalidation: CollabAuthorityEventInvalidation) => Promise<number>,
   ) => { dispose(): void; start(): void };
-  readonly request?: CloudAuthorityHttpTransport;
+  readonly request?: CloudAuthorityHTTPTransport;
   readonly requestIdFactory?: () => string;
   readonly readPersonalRef?: (input: CloudPersonalRefReadInput) => Promise<string>;
 }
@@ -304,7 +304,7 @@ function assertResponseRequestId(actual: string, expected: string): void {
   }
 }
 
-function assertJsonResponse(response: CloudAuthorityHttpResponse): void {
+function assertJSONResponse(response: CloudAuthorityHTTPResponse): void {
   if (
     response.contentType === null
     || !/^application\/json(?:;\s*charset=utf-8)?$/iu.test(response.contentType)
@@ -338,7 +338,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     }> | null,
     private readonly origin: string,
     private readonly projectId: string,
-    private readonly transport: CloudAuthorityHttpTransport,
+    private readonly transport: CloudAuthorityHTTPTransport,
     private readonly requestId: () => string,
     private readonly headers: Readonly<Record<string, string>>,
   ) {}
@@ -392,7 +392,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     return caller ? AbortSignal.any([this.#lifetime.signal, caller]) : this.#lifetime.signal;
   }
 
-  private async request(input: CloudAuthorityHttpRequest): Promise<CloudAuthorityHttpResponse> {
+  private async request(input: CloudAuthorityHTTPRequest): Promise<CloudAuthorityHTTPResponse> {
     const signal = this.signal(input.signal);
     assertRequestActive(signal);
     const response = await this.transport({ ...input, signal });
@@ -512,7 +512,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       ...(options.signal ? { signal: options.signal } : {}),
       url: resolveCloudRoute(this.origin, route.target),
     });
-    assertJsonResponse(response);
+    assertJSONResponse(response);
     if (response.status < 200 || response.status >= 300) {
       const envelope = decodeCollabCloudErrorEnvelope(response.body);
       assertResponseRequestId(envelope.requestId, requestId);
@@ -782,8 +782,8 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
     }
   }
 
-   #throwArtifactResponse(response: CloudAuthorityHttpResponse): never {
-    assertJsonResponse(response);
+   #throwArtifactResponse(response: CloudAuthorityHTTPResponse): never {
+    assertJSONResponse(response);
     const envelope = decodeCollabCloudErrorEnvelope(response.body);
     throw new CollabError(envelope.error);
   }
@@ -814,7 +814,7 @@ class CloudAuthorityControl implements CollabAuthorityControlPort, CollabAuthori
       ...(options.signal ? { signal: options.signal } : {}),
       url: resolveCloudRoute(this.origin, route.target),
     });
-    assertJsonResponse(response);
+    assertJSONResponse(response);
     if (response.status < 200 || response.status >= 300) {
       const envelope = decodeCollabCloudErrorEnvelope(response.body);
       assertResponseRequestId(envelope.requestId, requestId);
@@ -905,7 +905,7 @@ export class CloudProjectEventClient {
   ) {
     this.#acknowledgedSequence = input.afterSequence;
     this.#observedSequence = input.afterSequence;
-    this.origin = validateCloudServerUrl(input.serverUrl, 'serverUrl');
+    this.origin = validateCloudServerURL(input.serverUrl, 'serverUrl');
     this.#createSocket = options.createSocket ?? createDefaultEventSocket;
   }
 
@@ -933,7 +933,7 @@ export class CloudProjectEventClient {
     socket.onError(error => {
       if (this.#socket !== socket) return;
       this.#fail(error instanceof CollabError ? error : new CollabError({
-        code: isTlsValidationError(error) ? 'tls-untrusted' : 'endpoint-unreachable',
+        code: isTLSValidationError(error) ? 'tls-untrusted' : 'endpoint-unreachable',
       }), 'Event connection failed');
     });
     socket.onClose(code => {
@@ -1093,7 +1093,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
    readonly #createEventClient: NonNullable<CloudAuthorityAdapterOptions['createEventClient']>;
   private readonly artifacts: CloudAuthorityArtifactTransport;
   private readonly readPersonalRef: NonNullable<CloudAuthorityAdapterOptions['readPersonalRef']>;
-  private readonly request: CloudAuthorityHttpTransport;
+  private readonly request: CloudAuthorityHTTPTransport;
   private readonly requestId: () => string;
 
   private readonly credentials: CloudProjectCredentialStore;
@@ -1105,7 +1105,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       ?? ((input, onInvalidation) => new CloudProjectEventClient(input, onInvalidation));
     const personalRefs = new CloudPersonalRefReader();
     this.readPersonalRef = options.readPersonalRef ?? (input => personalRefs.read(input));
-    this.request = options.request ?? new NodeCloudAuthorityHttpTransport().request;
+    this.request = options.request ?? new NodeCloudAuthorityHTTPTransport().request;
     this.requestId = options.requestIdFactory
       ?? (() => `cloud-${randomUUID().replaceAll('-', '')}`);
   }
@@ -1129,7 +1129,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       || !isCollabProjectId(projectId)
       || !isCollabMemberId(memberId)
       || personalRef !== collabMemberRef(memberId)
-      || gitRemoteUrl !== cloudProjectGitRemoteUrl(serverUrl, projectId)
+      || gitRemoteUrl !== cloudProjectGitRemoteURL(serverUrl, projectId)
     ) throw new TypeError('Invalid Cloud authority binding');
     const { document, origin } = await this.#negotiate(serverUrl, options);
     const credential = await this.credentials.require(projectId);
@@ -1412,7 +1412,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
     options: CollabOperationOptions = {},
   ): Promise<CloudAuthorityConnection> {
     const { projectId, serverUrl } = binding;
-    const remoteUrl = cloudProjectGitRemoteUrl(serverUrl, projectId);
+    const remoteUrl = cloudProjectGitRemoteURL(serverUrl, projectId);
     const { document, origin } = await this.#negotiate(serverUrl, options);
     const credential = await this.credentials.require(projectId);
     const headers = credentialHeaders(credential);
@@ -1448,7 +1448,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
     options: CollabOperationOptions,
   ): Promise<{ readonly document: CollabCloudCapabilityDocument; readonly origin: string }> {
     assertRequestActive(options.signal);
-    const origin = validateCloudServerUrl(serverUrl, 'serverUrl');
+    const origin = validateCloudServerURL(serverUrl, 'serverUrl');
     const route = collabCloudCapabilitiesRoute();
     const response = await this.request({
       headers: {},
@@ -1457,7 +1457,7 @@ export class CloudAuthorityAdapter implements CollabAuthorityAdapter {
       url: resolveCloudRoute(origin, route.target),
     });
     assertRequestActive(options.signal);
-    assertJsonResponse(response);
+    assertJSONResponse(response);
     if (response.status !== 200) {
       throw cloudAuthorityOperationError('cloud-capability-negotiation-failed');
     }

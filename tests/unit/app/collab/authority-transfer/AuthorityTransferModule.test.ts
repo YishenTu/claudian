@@ -20,7 +20,7 @@ import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transf
 import {
   AuthorityTransferModule as ProductionAuthorityTransferModule,
   type AuthorityTransferModuleOptions,
-  type CloudToLanEntryConnection,
+  type CloudToLANEntryConnection,
 } from '@/app/collab/authority-transfer/AuthorityTransferModule';
 import {
   authorityTransferChildIdempotencyKey,
@@ -47,21 +47,21 @@ import type {
   AuthorityTransferClaimantRecovery,
 } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecovery';
 import {
-  type CloudToLanManagerEntryRecord,
-  type CloudToLanTargetEntryRecord,
-  cloudToLanTransferHandle,
-  createCloudToLanManagerEntry,
-  createCloudToLanTargetEntry,
-  handoffCloudToLanTargetEntry,
-  markCloudToLanManagerBeginPossiblySent,
-  publishCloudToLanTargetEntry,
-  recordCloudToLanManagerStatus,
-  rejectCloudToLanManagerEntry,
-  withdrawCloudToLanTargetEntry,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  type CloudToLANManagerEntryRecord,
+  type CloudToLANTargetEntryRecord,
+  cloudToLANTransferHandle,
+  createCloudToLANManagerEntry,
+  createCloudToLANTargetEntry,
+  handoffCloudToLANTargetEntry,
+  markCloudToLANManagerBeginPossiblySent,
+  publishCloudToLANTargetEntry,
+  recordCloudToLANManagerStatus,
+  rejectCloudToLANManagerEntry,
+  withdrawCloudToLANTargetEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import {
-  LanToCloudRequesterCoordinator,
-} from '@/app/collab/authority-transfer/lan-to-cloud/LanToCloudRequesterCoordinator';
+  LANToCloudRequesterCoordinator,
+} from '@/app/collab/authority-transfer/lan-to-cloud/LANToCloudRequesterCoordinator';
 import type {
   AuthorityTransferPersistence,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -69,8 +69,8 @@ import { AuthorityTransferPersistence as ProductionAuthorityTransferPersistence 
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import type {
-  LanAuthorityTransferClient,
-} from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+  LANAuthorityTransferClient,
+} from '@/app/collab/lan/authority-transfer/LANAuthorityTransferClient';
 import {
   type CollabProjectLifecycleDurableOwner,
   CollabProjectLifecycleSubsystem,
@@ -270,13 +270,13 @@ function recoverableClaimantRecord(input: Readonly<{
   }) as SourceIssuedAuthorityTransferClaimantRecord;
 }
 
-function settledCloudToLanManagerEntry(
+function settledCloudToLANManagerEntry(
   claimant: SourceIssuedAuthorityTransferClaimantRecord,
   operationIntentId: string,
-): CloudToLanManagerEntryRecord {
+): CloudToLANManagerEntryRecord {
   const lanTarget = claimant.lanTarget!;
-  return recordCloudToLanManagerStatus(
-    markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+  return recordCloudToLANManagerStatus(
+    markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
       createdAt: claimant.status.createdAt,
       descriptor: {
         caCertificatePem: lanTarget.caCertificatePem,
@@ -551,7 +551,7 @@ describe('AuthorityTransferModule', () => {
     });
     const requester = module.createLanToCloudRequester({
       authorityGeneration: 1,
-      lanClient: { requestWithMember } as unknown as LanAuthorityTransferClient,
+      lanClient: { requestWithMember } as unknown as LANAuthorityTransferClient,
       memberCredential: Buffer.alloc(32, 9).toString('base64url'),
       memberId: 'member-requester',
       projectId: PROJECT_ID,
@@ -638,9 +638,9 @@ describe('AuthorityTransferModule', () => {
       loadObservedSourceEntry: async () => sourceEntry,
       loadRequesterEntry: async () => requester,
     } as unknown as AuthorityTransferPersistence;
-    const coordinator = new LanToCloudRequesterCoordinator({
+    const coordinator = new LANToCloudRequesterCoordinator({
       authorityGeneration: 1,
-      client: { requestWithMember } as unknown as LanAuthorityTransferClient,
+      client: { requestWithMember } as unknown as LANAuthorityTransferClient,
       installationKey: TEST_INSTALLATION_A,
       memberCredential: Buffer.alloc(32, 9).toString('base64url'),
       memberId: 'member-requester',
@@ -1938,7 +1938,7 @@ describe('AuthorityTransferModule', () => {
     const persistence = {
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => null),
-      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => entry),
+      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => entry),
       publishCloudToLanTargetEntry: jest.fn(async () => {
         throw new Error('simulated descriptor persistence failure');
       }),
@@ -2005,28 +2005,28 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('settles a definitive pre-ID begin rejection only after the bound recovery barrier', async () => {
-    let managerEntry: CloudToLanManagerEntryRecord | null = null;
+    let managerEntry: CloudToLANManagerEntryRecord | null = null;
     const persistence = {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = markCloudToLanManagerBeginPossiblySent(entry);
+        managerEntry = markCloudToLANManagerBeginPossiblySent(entry);
         return managerEntry;
       }),
       prepareCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
         managerEntry = entry;
         return entry;
       }),
       rejectCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = rejectCloudToLanManagerEntry(entry);
+        managerEntry = rejectCloudToLANManagerEntry(entry);
         return managerEntry;
       }),
-      settleCloudToLanManagerEntry: jest.fn(async (entry: CloudToLanManagerEntryRecord) => {
+      settleCloudToLanManagerEntry: jest.fn(async (entry: CloudToLANManagerEntryRecord) => {
         expect(entry.phase).toBe('rejected');
         managerEntry = null;
       }),
@@ -2155,42 +2155,42 @@ describe('AuthorityTransferModule', () => {
   it('coexists as the selected target and initiating Manager on one installation', async () => {
     const targetUrl = 'https://192.168.1.20:54545';
     const sourceUrl = 'https://cloud.example.test/';
-    let targetEntry: CloudToLanTargetEntryRecord | null = null;
-    let managerEntry: CloudToLanManagerEntryRecord | null = null;
+    let targetEntry: CloudToLANTargetEntryRecord | null = null;
+    let managerEntry: CloudToLANManagerEntryRecord | null = null;
     const persistence = {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = markCloudToLanManagerBeginPossiblySent(entry);
+        managerEntry = markCloudToLANManagerBeginPossiblySent(entry);
         return managerEntry;
       }),
       prepareCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
         managerEntry = entry;
         return entry;
       }),
       prepareCloudToLanTargetEntry: jest.fn(async (
-        entry: CloudToLanTargetEntryRecord,
+        entry: CloudToLANTargetEntryRecord,
       ) => {
         targetEntry = entry;
         return entry;
       }),
       publishCloudToLanTargetEntry: jest.fn(async (
-        entry: CloudToLanTargetEntryRecord,
-        descriptor: Parameters<typeof publishCloudToLanTargetEntry>[1],
+        entry: CloudToLANTargetEntryRecord,
+        descriptor: Parameters<typeof publishCloudToLANTargetEntry>[1],
       ) => {
-        targetEntry = publishCloudToLanTargetEntry(entry, descriptor);
+        targetEntry = publishCloudToLANTargetEntry(entry, descriptor);
         return targetEntry;
       }),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         transferStatus: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, transferStatus);
+        managerEntry = recordCloudToLANManagerStatus(entry, transferStatus);
         return managerEntry;
       }),
     } as unknown as AuthorityTransferPersistence;
@@ -2338,8 +2338,8 @@ describe('AuthorityTransferModule', () => {
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: completed.status.targetUrl,
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: completed.status.createdAt,
         descriptor,
         expiresAt: completed.status.expiresAt,
@@ -2366,10 +2366,10 @@ describe('AuthorityTransferModule', () => {
       load: jest.fn(async () => null),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         status: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        managerEntry = recordCloudToLANManagerStatus(entry, status);
         return managerEntry;
       }),
       settleCloudToLanManagerEntry: jest.fn(async () => { managerEntry = null; }),
@@ -2562,8 +2562,8 @@ describe('AuthorityTransferModule', () => {
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: completed.status.targetUrl,
     };
-    const managerEntry = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    const managerEntry = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: completed.status.createdAt,
         descriptor,
         expiresAt: completed.status.expiresAt,
@@ -2628,8 +2628,8 @@ describe('AuthorityTransferModule', () => {
       phase: 'source-acknowledged',
     });
     const targetHost = claimant.lanTarget!;
-    let managerEntry: CloudToLanManagerEntryRecord | null =
-      settledCloudToLanManagerEntry(claimant, managerOperationIntentId);
+    let managerEntry: CloudToLANManagerEntryRecord | null =
+      settledCloudToLANManagerEntry(claimant, managerOperationIntentId);
     const createCloudToLanConnection = jest.fn(async () => {
       throw new Error('Cloud must remain unavailable after source acknowledgement');
     });
@@ -2701,21 +2701,21 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('releases failed pre-publication target cleanup before rebuilding the preparation', async () => {
-    let targetEntry: CloudToLanTargetEntryRecord | null = null;
+    let targetEntry: CloudToLANTargetEntryRecord | null = null;
     const persistence = {
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
-      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
+      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
         targetEntry = entry;
         return entry;
       }),
       publishCloudToLanTargetEntry: jest.fn()
         .mockRejectedValueOnce(new Error('simulated descriptor persistence failure'))
         .mockImplementation(async (
-          entry: CloudToLanTargetEntryRecord,
-          descriptor: Parameters<typeof publishCloudToLanTargetEntry>[1],
+          entry: CloudToLANTargetEntryRecord,
+          descriptor: Parameters<typeof publishCloudToLANTargetEntry>[1],
         ) => {
-          targetEntry = publishCloudToLanTargetEntry(entry, descriptor);
+          targetEntry = publishCloudToLANTargetEntry(entry, descriptor);
           return targetEntry;
         }),
     } as unknown as AuthorityTransferPersistence;
@@ -2802,23 +2802,23 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('retains a withdrawn preparation until listener disposal can be retried', async () => {
-    let targetEntry: CloudToLanTargetEntryRecord | null = null;
+    let targetEntry: CloudToLANTargetEntryRecord | null = null;
     const persistence = {
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
-      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
+      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
         targetEntry = entry;
         return entry;
       }),
       publishCloudToLanTargetEntry: jest.fn(async (
-        entry: CloudToLanTargetEntryRecord,
-        descriptor: Parameters<typeof publishCloudToLanTargetEntry>[1],
+        entry: CloudToLANTargetEntryRecord,
+        descriptor: Parameters<typeof publishCloudToLANTargetEntry>[1],
       ) => {
-        targetEntry = publishCloudToLanTargetEntry(entry, descriptor);
+        targetEntry = publishCloudToLANTargetEntry(entry, descriptor);
         return targetEntry;
       }),
-      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
-        targetEntry = withdrawCloudToLanTargetEntry(
+      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
+        targetEntry = withdrawCloudToLANTargetEntry(
           entry,
           testTime({ minutes: 1 }),
         );
@@ -2929,24 +2929,24 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('requires transfer recovery before withdrawing a possibly accepted target', async () => {
-    let targetEntry: CloudToLanTargetEntryRecord | null = null;
+    let targetEntry: CloudToLANTargetEntryRecord | null = null;
     const persistence = {
       load: jest.fn(async () => null),
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
-      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
+      prepareCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
         targetEntry = entry;
         return entry;
       }),
       publishCloudToLanTargetEntry: jest.fn(async (
-        entry: CloudToLanTargetEntryRecord,
-        descriptor: Parameters<typeof publishCloudToLanTargetEntry>[1],
+        entry: CloudToLANTargetEntryRecord,
+        descriptor: Parameters<typeof publishCloudToLANTargetEntry>[1],
       ) => {
-        targetEntry = publishCloudToLanTargetEntry(entry, descriptor);
+        targetEntry = publishCloudToLANTargetEntry(entry, descriptor);
         return targetEntry;
       }),
-      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
-        targetEntry = withdrawCloudToLanTargetEntry(entry, testTime({ minutes: 1 }));
+      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
+        targetEntry = withdrawCloudToLANTargetEntry(entry, testTime({ minutes: 1 }));
         return targetEntry;
       }),
     } as unknown as AuthorityTransferPersistence;
@@ -3054,7 +3054,7 @@ describe('AuthorityTransferModule', () => {
       state: 'cancelled',
       updatedAt: testTime({ minutes: 1 }),
     };
-    const preparing = createCloudToLanTargetEntry({
+    const preparing = createCloudToLANTargetEntry({
       createdAt: collectingStatus.createdAt,
       expiresAt: collectingStatus.expiresAt,
       operationIntentId: 'intent-cancelled-target-preparation',
@@ -3065,7 +3065,7 @@ describe('AuthorityTransferModule', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(preparing, {
+    const published = publishCloudToLANTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: collectingStatus.createdAt,
@@ -3079,12 +3079,12 @@ describe('AuthorityTransferModule', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: cancelledStatus,
     });
-    let targetEntry: CloudToLanTargetEntryRecord | null = handoffCloudToLanTargetEntry(
+    let targetEntry: CloudToLANTargetEntryRecord | null = handoffCloudToLANTargetEntry(
       published,
       physical,
     );
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: collectingStatus.createdAt,
         descriptor: published.descriptor!,
         expiresAt: collectingStatus.expiresAt,
@@ -3156,14 +3156,14 @@ describe('AuthorityTransferModule', () => {
 
     connection.memberId = 'member-relocated';
     await expect(module.acceptCloudToLanTransfer({
-      handle: cloudToLanTransferHandle(managerEntry!),
+      handle: cloudToLANTransferHandle(managerEntry!),
     })).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-cloud-binding-mismatch' },
     });
     connection.memberId = 'member-host';
 
     await expect(module.acceptCloudToLanTransfer({
-      handle: cloudToLanTransferHandle(managerEntry!),
+      handle: cloudToLANTransferHandle(managerEntry!),
     })).rejects.toMatchObject({
       result: {
         durableProgress: true,
@@ -3182,7 +3182,7 @@ describe('AuthorityTransferModule', () => {
       },
     });
     await expect(module.acceptCloudToLanTransfer({
-      handle: cloudToLanTransferHandle(managerEntry!),
+      handle: cloudToLANTransferHandle(managerEntry!),
     })).rejects.toMatchObject({
       result: {
         durableProgress: true,
@@ -3210,32 +3210,32 @@ describe('AuthorityTransferModule', () => {
   });
 
   it('replays one frozen Manager begin after an ambiguous result without another snapshot', async () => {
-    let managerEntry: CloudToLanManagerEntryRecord | null = null;
+    let managerEntry: CloudToLANManagerEntryRecord | null = null;
     const persistence = {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = markCloudToLanManagerBeginPossiblySent(entry);
+        managerEntry = markCloudToLANManagerBeginPossiblySent(entry);
         return managerEntry;
       }),
       prepareCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
         managerEntry = entry;
         return entry;
       }),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         transferStatus: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, transferStatus);
+        managerEntry = recordCloudToLANManagerStatus(entry, transferStatus);
         return managerEntry;
       }),
       rejectCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = rejectCloudToLanManagerEntry(entry);
+        managerEntry = rejectCloudToLANManagerEntry(entry);
         return managerEntry;
       }),
       settleCloudToLanManagerEntry: jest.fn(async () => {
@@ -3399,7 +3399,7 @@ describe('AuthorityTransferModule', () => {
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: 'https://192.168.1.20:54545',
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null = createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = createCloudToLANManagerEntry({
       createdAt: testTime(),
       descriptor,
       expiresAt: testTime({ days: 30 }),
@@ -3412,15 +3412,15 @@ describe('AuthorityTransferModule', () => {
       inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'nonterminal' : 'absent'),
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = markCloudToLanManagerBeginPossiblySent(entry);
+        managerEntry = markCloudToLANManagerBeginPossiblySent(entry);
         return managerEntry;
       }),
       rejectCloudToLanManagerEntry: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => {
-        managerEntry = rejectCloudToLanManagerEntry(entry);
+        managerEntry = rejectCloudToLANManagerEntry(entry);
         return managerEntry;
       }),
       settleCloudToLanManagerEntry: jest.fn(async () => {
@@ -3522,8 +3522,8 @@ describe('AuthorityTransferModule', () => {
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: 'https://192.168.1.20:54545',
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null =
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null =
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: testTime(),
         descriptor,
         expiresAt: testTime({ days: 30 }),
@@ -3550,13 +3550,13 @@ describe('AuthorityTransferModule', () => {
       loadCloudToLanTargetEntry: jest.fn(async () => null),
       loadRecoveryOwnerRecord: jest.fn(async () => physicalRecord),
       markCloudToLanManagerBeginPossiblySent: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
       ) => entry),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         status: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        managerEntry = recordCloudToLANManagerStatus(entry, status);
         return managerEntry;
       }),
       listRetained: jest.fn(async () => []),
@@ -3740,8 +3740,8 @@ describe('AuthorityTransferModule', () => {
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: 'https://192.168.1.20:54545',
     };
-    const managerEntry = markCloudToLanManagerBeginPossiblySent(
-      createCloudToLanManagerEntry({
+    const managerEntry = markCloudToLANManagerBeginPossiblySent(
+      createCloudToLANManagerEntry({
         createdAt: testTime(),
         descriptor,
         expiresAt: testTime({ days: 30 }),
@@ -3810,8 +3810,8 @@ describe('AuthorityTransferModule', () => {
         relinquishmentProof: null,
         state: 'active' as const,
       };
-      const managerEntry = recordCloudToLanManagerStatus(
-        markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+      const managerEntry = recordCloudToLANManagerStatus(
+        markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
           createdAt: collecting.createdAt,
           descriptor: {
             caCertificatePem: completed.lanTarget!.caCertificatePem,
@@ -3856,7 +3856,7 @@ describe('AuthorityTransferModule', () => {
           loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
         } as unknown as AuthorityTransferPersistence,
       });
-      const handle = cloudToLanTransferHandle(managerEntry);
+      const handle = cloudToLANTransferHandle(managerEntry);
 
       const result = operation === 'begin'
         ? module.beginCloudToLanTransfer({
@@ -3880,8 +3880,8 @@ describe('AuthorityTransferModule', () => {
       expiresAt: testTime({ days: 1 }),
       managerOperationIntentId: 'intent-expired-manager-gap',
     });
-    let managerEntry: CloudToLanManagerEntryRecord | null =
-      settledCloudToLanManagerEntry(completed, 'intent-expired-manager-gap');
+    let managerEntry: CloudToLANManagerEntryRecord | null =
+      settledCloudToLANManagerEntry(completed, 'intent-expired-manager-gap');
     let claimant: AuthorityTransferClaimantRecord | null = null;
     const savedPhases: string[] = [];
     const createCloudToLanConnection = jest.fn(async () => {
@@ -3956,8 +3956,8 @@ describe('AuthorityTransferModule', () => {
       state: 'cancelled',
       updatedAt: testTime({ minutes: 1 }),
     };
-    let targetEntry: CloudToLanTargetEntryRecord | null = publishCloudToLanTargetEntry(
-      createCloudToLanTargetEntry({
+    let targetEntry: CloudToLANTargetEntryRecord | null = publishCloudToLANTargetEntry(
+      createCloudToLANTargetEntry({
         createdAt: collecting.createdAt,
         expiresAt: collecting.expiresAt,
         operationIntentId: 'intent-foreign-manager-target-cancel',
@@ -3975,8 +3975,8 @@ describe('AuthorityTransferModule', () => {
         targetUrl: collecting.targetUrl,
       },
     );
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: collecting.createdAt,
         descriptor: targetEntry.descriptor!,
         expiresAt: collecting.expiresAt,
@@ -3994,15 +3994,15 @@ describe('AuthorityTransferModule', () => {
       loadRetainedCloudToLanTarget: jest.fn(async () => null),
       loadCloudToLanTargetEntry: jest.fn(async () => targetEntry),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         status: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        managerEntry = recordCloudToLANManagerStatus(entry, status);
         return managerEntry;
       }),
       settleCloudToLanManagerEntry,
-      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
-        targetEntry = withdrawCloudToLanTargetEntry(entry, cancelled.updatedAt);
+      withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLANTargetEntryRecord) => {
+        targetEntry = withdrawCloudToLANTargetEntry(entry, cancelled.updatedAt);
         return targetEntry;
       }),
     } as unknown as AuthorityTransferPersistence;
@@ -4046,7 +4046,7 @@ describe('AuthorityTransferModule', () => {
     });
 
     await expect(module.acceptCloudToLanTransfer({
-      handle: cloudToLanTransferHandle(managerEntry),
+      handle: cloudToLANTransferHandle(managerEntry),
     })).resolves.toEqual(cancelled);
 
     expect(managerEntry).toMatchObject({ phase: 'settled', status: cancelled });
@@ -4065,8 +4065,8 @@ describe('AuthorityTransferModule', () => {
       phase: 'cancelled',
       state: 'cancelled',
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: cancelled.createdAt,
         descriptor: {
           caCertificatePem: completed.lanTarget!.caCertificatePem,
@@ -4088,7 +4088,7 @@ describe('AuthorityTransferModule', () => {
       })),
       cancelled,
     );
-    const handle = cloudToLanTransferHandle(managerEntry);
+    const handle = cloudToLANTransferHandle(managerEntry);
     const createCloudToLanConnection = jest.fn();
     const settleCloudToLanManagerEntry = jest.fn(async () => { managerEntry = null; });
     const module = new AuthorityTransferModule({
@@ -4141,12 +4141,12 @@ describe('AuthorityTransferModule', () => {
       ),
       phase: 'membership-converged',
     });
-    const managerRootEntry = settledCloudToLanManagerEntry(
+    const managerRootEntry = settledCloudToLANManagerEntry(
       managerRootClaimant,
       managerOperationIntentId,
     );
     let targetRootClaimant: AuthorityTransferClaimantRecord | null = managerRootClaimant;
-    let targetRootManagerEntry: CloudToLanManagerEntryRecord | null = managerRootEntry;
+    let targetRootManagerEntry: CloudToLANManagerEntryRecord | null = managerRootEntry;
     let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
     const settleCloudToLanManagerEntry = jest.fn(async () => {
       targetRootManagerEntry = null;
@@ -4216,12 +4216,12 @@ describe('AuthorityTransferModule', () => {
       ),
       phase: 'membership-converged',
     });
-    const managerEntry = settledCloudToLanManagerEntry(
+    const managerEntry = settledCloudToLANManagerEntry(
       managerClaimant,
       managerOperationIntentId,
     );
     let storedClaimant: AuthorityTransferClaimantRecord | null = managerClaimant;
-    let storedManager: CloudToLanManagerEntryRecord | null = managerEntry;
+    let storedManager: CloudToLANManagerEntryRecord | null = managerEntry;
     let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
     const settleCloudToLanManagerEntry = jest.fn(async () => {
       storedManager = null;
@@ -4286,7 +4286,7 @@ describe('AuthorityTransferModule', () => {
       ),
       phase: 'credential-persisted',
     });
-    const managerRootEntry = settledCloudToLanManagerEntry(
+    const managerRootEntry = settledCloudToLANManagerEntry(
       managerRootClaimant,
       managerOperationIntentId,
     );
@@ -4371,8 +4371,8 @@ describe('AuthorityTransferModule', () => {
       }),
     }) as SourceIssuedAuthorityTransferClaimantRecord;
     const managerEntry = deliveryOrder === 'claimant-before-terminal-manager'
-      ? recordCloudToLanManagerStatus(
-          markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+      ? recordCloudToLANManagerStatus(
+          markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
             createdAt: claimant.status.createdAt,
             descriptor: {
               caCertificatePem: claimant.lanTarget!.caCertificatePem,
@@ -4494,8 +4494,8 @@ describe('AuthorityTransferModule', () => {
       sourceCloudUrl: 'https://cloud.example.test/',
       targetUrl: completedStatus.targetUrl,
     };
-    let managerEntry: CloudToLanManagerEntryRecord | null = recordCloudToLanManagerStatus(
-      markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
+    let managerEntry: CloudToLANManagerEntryRecord | null = recordCloudToLANManagerStatus(
+      markCloudToLANManagerBeginPossiblySent(createCloudToLANManagerEntry({
         createdAt: collectingStatus.createdAt,
         descriptor,
         expiresAt: collectingStatus.expiresAt,
@@ -4522,10 +4522,10 @@ describe('AuthorityTransferModule', () => {
       loadCloudToLanManagerEntry: jest.fn(async () => managerEntry),
       loadRecoveryOwnerRecord: jest.fn(async () => physical),
       recordCloudToLanManagerStatus: jest.fn(async (
-        entry: CloudToLanManagerEntryRecord,
+        entry: CloudToLANManagerEntryRecord,
         status: CollabAuthorityTransferStatus,
       ) => {
-        managerEntry = recordCloudToLanManagerStatus(entry, status);
+        managerEntry = recordCloudToLANManagerStatus(entry, status);
         return managerEntry;
       }),
       recoverInterruptedClaimCommitment: jest.fn(async () => undefined),
@@ -4585,7 +4585,7 @@ describe('AuthorityTransferModule', () => {
     const prepareTarget = jest.fn(async (expectedEndpoint?: string) => ({
       targetUrl: expectedEndpoint ?? targetUrl,
     }));
-    const connection: CloudToLanEntryConnection = {
+    const connection: CloudToLANEntryConnection = {
       authorityGeneration: 1,
       dispose: jest.fn(),
       lifecycle: {
@@ -4659,7 +4659,7 @@ describe('AuthorityTransferModule', () => {
         targetUrl,
       },
     });
-    const prepared = createCloudToLanTargetEntry({
+    const prepared = createCloudToLANTargetEntry({
       createdAt: record.status.createdAt,
       expiresAt: record.status.expiresAt,
       operationIntentId: 'intent-target-preparation',
@@ -4670,13 +4670,13 @@ describe('AuthorityTransferModule', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: connection.serverUrl,
     });
-    const published = publishCloudToLanTargetEntry(prepared, {
+    const published = publishCloudToLANTargetEntry(prepared, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: record.status.updatedAt,
       targetUrl,
     });
-    const handedOff = handoffCloudToLanTargetEntry(published, record);
+    const handedOff = handoffCloudToLANTargetEntry(published, record);
     const operationOptions = { signal: new AbortController().signal };
 
     await module.runtimes.prepare(record, operationOptions);
@@ -4706,7 +4706,7 @@ describe('AuthorityTransferModule', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status,
     });
-    const prepared = createCloudToLanTargetEntry({
+    const prepared = createCloudToLANTargetEntry({
       createdAt: status.createdAt,
       expiresAt: status.expiresAt,
       operationIntentId: 'intent-recovered-target-preparation',
@@ -4717,8 +4717,8 @@ describe('AuthorityTransferModule', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const handedOff = handoffCloudToLanTargetEntry(
-      publishCloudToLanTargetEntry(prepared, {
+    const handedOff = handoffCloudToLANTargetEntry(
+      publishCloudToLANTargetEntry(prepared, {
         caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
         caFingerprint: 'c'.repeat(64),
         publishedAt: status.updatedAt,
@@ -4742,7 +4742,7 @@ describe('AuthorityTransferModule', () => {
       readSnapshot: jest.fn(),
       serverUrl: 'https://cloud.example.test/',
       supports: (capability: CollabCloudCapability) => capability === 'authority-transfer',
-    } satisfies CloudToLanEntryConnection));
+    } satisfies CloudToLANEntryConnection));
     const createCloudToLanConnection = jest.fn()
       .mockResolvedValueOnce(connections[0])
       .mockResolvedValueOnce(connections[1]);
@@ -4814,7 +4814,7 @@ describe('AuthorityTransferModule', () => {
 
   it('rebinds a published target entry to its exact listener endpoint during startup recovery', async () => {
     const targetUrl = 'https://192.168.1.20:54545';
-    const preparing = createCloudToLanTargetEntry({
+    const preparing = createCloudToLANTargetEntry({
       createdAt: testTime(),
       expiresAt: testTime({ days: 30 }),
       operationIntentId: 'intent-recovered-preparation',
@@ -4825,7 +4825,7 @@ describe('AuthorityTransferModule', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(preparing, {
+    const published = publishCloudToLANTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: testTime({ minutes: 1 }),
@@ -5171,7 +5171,7 @@ describe('AuthorityTransferModule', () => {
       const lanClient = {
         claimTransferredMembership: jest.fn(),
         requestWithMember: lanRequest,
-      } as unknown as LanAuthorityTransferClient;
+      } as unknown as LANAuthorityTransferClient;
       const binding = direction === 'lan-to-cloud'
         ? module.bindLanToCloudClaimant({
             cloudSession,
@@ -5667,7 +5667,7 @@ describe('AuthorityTransferModule', () => {
       ),
       phase: 'source-acknowledged',
     });
-    const managerEntry = settledCloudToLanManagerEntry(
+    const managerEntry = settledCloudToLANManagerEntry(
       matchingClaimant,
       managerOperationIntentId,
     );

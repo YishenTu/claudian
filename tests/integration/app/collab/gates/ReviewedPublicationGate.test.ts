@@ -7,7 +7,7 @@ import { CollabFixtureSnapshot } from '@test/helpers/collab/CollabFixtureSnapsho
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import type { CollabFeatureService } from '@/app/collab/CollabFeatureService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
@@ -156,7 +156,7 @@ describe('Reviewed publication boundary', () => {
       installationKey,
       ...(hostPort === undefined ? {} : {
         createAuthorityDatabase: (directory: string, resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>) => (
-          new SqlJsProjectDatabase(directory, { resourceAdmission, loadSqlJs: async () => SQL })
+          new SQLJSProjectDatabase(directory, { resourceAdmission, loadSqlJs: async () => SQL })
         ),
         lanHost: { createInvitationCodec: () => invitationCodec, getPrivateIpv4Addresses: () => ['127.0.0.1'], portCandidates: [hostPort] },
       }),

@@ -7,8 +7,8 @@ import { AuthorityIdempotencyRepository } from '@/app/collab/authority/Authority
 import { RequestEnsureRepository } from '@/app/collab/authority/RequestEnsureRepository';
 import type {
   AuthorityDatabaseConnection,
-  SqlJsMutationResult,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSMutationResult,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketRepository } from '@/app/collab/authority/TicketRepository';
 import { CLAUDIAN_COLLAB_LIMITS } from '@/core/collab/ClaudianCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -17,7 +17,7 @@ export interface RequestEnsureDatabasePort {
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T>;
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
-  ): Promise<SqlJsMutationResult<T>>;
+  ): Promise<SQLJSMutationResult<T>>;
 }
 
 export interface RequestEnsureHeadPolicyInput {

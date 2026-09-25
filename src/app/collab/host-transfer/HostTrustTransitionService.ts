@@ -9,8 +9,8 @@ import { type CollabIsoTimestamp, type CollabLanHostActivationProof, type Collab
 
 import { digestHostTransitionProofChain } from '@/app/collab/host-transfer/HostTransferPackage';
 import type { HostTrustCheckpoint } from '@/app/collab/host-transfer/HostTrustCheckpoint';
-import type { LanTlsHostCaSigner } from '@/app/collab/lan/LanTlsIdentity';
-import { fingerprintCertificatePem } from '@/app/collab/lan/LanTlsIdentity';
+import type { LANTLSHostCaSigner } from '@/app/collab/lan/LANTLSIdentity';
+import { fingerprintCertificatePem } from '@/app/collab/lan/LANTLSIdentity';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -170,7 +170,7 @@ export class HostTrustTransitionService {
   }
 
   async signTransition(
-    signer: LanTlsHostCaSigner,
+    signer: LANTLSHostCaSigner,
     input: SignHostTransitionInput,
   ): Promise<CollabHostTrustTransitionProof> {
     assertId(input.projectId, isCollabProjectId, 'host-proof-project-invalid');
@@ -311,7 +311,7 @@ export class HostTrustTransitionService {
   }
 
   async signActivation(
-    signer: LanTlsHostCaSigner,
+    signer: LANTLSHostCaSigner,
     input: SignHostActivationInput,
   ): Promise<HostTransferActivationCertificate> {
     assertId(input.projectId, isCollabProjectId, 'host-activation-project-invalid');

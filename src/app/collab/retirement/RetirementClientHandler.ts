@@ -6,7 +6,7 @@ import type {
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabRetiredProjectProjectionSeed } from '@/app/collab/CollabLocalProjectRepository';
-import { isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { isCollabLocalLANMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
 import {
   decodeLocalCleanupRecord,
@@ -15,7 +15,7 @@ import {
 import type { LocalProjectCleanupPort } from '@/app/collab/exit/LocalProjectCleanupCoordinator';
 import {
   isCloudPendingLeaveRecord,
-  isLanPendingLeaveRecord,
+  isLANPendingLeaveRecord,
   type PendingLeaveRecord,
 } from '@/app/collab/exit/PendingLeaveRecord';
 import type {
@@ -168,13 +168,13 @@ export class RetirementClientHandler {
           safeContext: { reason: 'cloud-retirement-acknowledgement-unavailable' },
         });
     }
-    const lanMembership = membership && isCollabLocalLanMembership(membership)
+    const lanMembership = membership && isCollabLocalLANMembership(membership)
       ? membership
       : null;
     const pendingLeave = membership
       ? null
       : await this.pendingLeaves?.load(result.projectId) ?? null;
-    const pendingLanLeave = pendingLeave && isLanPendingLeaveRecord(pendingLeave)
+    const pendingLanLeave = pendingLeave && isLANPendingLeaveRecord(pendingLeave)
       ? pendingLeave
       : null;
     const pendingCloudLeave = pendingLeave && isCloudPendingLeaveRecord(pendingLeave)

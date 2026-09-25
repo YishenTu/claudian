@@ -26,7 +26,7 @@ import {
   CollabProjectSetupService,
   createCollabFeatureSubcomposition,
 } from '@/app/collab';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import {
   authorityTransferChildIdempotencyKey,
 } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
@@ -45,7 +45,7 @@ import {
   decodeAuthorityTransferClaimCustodyRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimCustodyRecord';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
-import { listPrivateIpv4Addresses } from '@/app/collab/lan/LanHostCoordinator';
+import { listPrivateIpv4Addresses } from '@/app/collab/lan/LANHostCoordinator';
 import {
   encodeCloudMembershipClaimInvitation,
 } from '@/app/collab/project/CloudProjectInvitation';
@@ -88,7 +88,7 @@ describe('G3 local Project milestone gate', () => {
   function createFoundation(configuredGitPath = ''): ClaudianCollabService {
     return new ClaudianCollabService({
       createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
-        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
+        new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => configuredGitPath,
       installationKey: TEST_INSTALLATION_A,
@@ -262,7 +262,7 @@ describe('G3 local Project milestone gate', () => {
     const invitationCodec = new InvitationCodec({ isAddressAllowed: () => true });
     const foundation = new ClaudianCollabService({
       createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
-        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
+        new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
       installationKey: TEST_INSTALLATION_A,

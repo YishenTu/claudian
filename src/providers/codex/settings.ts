@@ -6,7 +6,7 @@ import {
   readStoredBoolean,
   readStoredString,
 } from '../../core/providers/settings/storedSettings';
-import type { HostnameCliPaths } from '../../core/types/settings';
+import type { HostnameCLIPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
   type CodexDiscoveredModel,
@@ -31,7 +31,7 @@ export interface CodexProviderConfig {
   enabled: boolean;
   safeMode: CodexSafeMode;
   cliPath: string;
-  cliPathsByHost: HostnameCliPaths;
+  cliPathsByHost: HostnameCLIPaths;
   discoveredModels: CodexDiscoveredModel[];
   modelAliases: Record<string, string>;
   visibleModels: string[] | null;
@@ -43,7 +43,7 @@ export interface CodexProviderConfig {
   catalogTimestamp: number;
   catalogFingerprint: string;
   installationMethodsByHost: HostnameInstallationMethods;
-  wslDistroOverridesByHost: HostnameCliPaths;
+  wslDistroOverridesByHost: HostnameCLIPaths;
 }
 
 export interface NormalizeCodexStoredConfigContext {

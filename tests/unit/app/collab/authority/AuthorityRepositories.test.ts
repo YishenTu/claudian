@@ -16,8 +16,8 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { RequestTicketRelationRepository } from '@/app/collab/authority/RequestTicketRelationRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketRepository } from '@/app/collab/authority/TicketRepository';
 
 const CREATED_AT = testTime({ days: -19 });
@@ -25,7 +25,7 @@ const CREATED_AT = testTime({ days: -19 });
 describe('Collab authority schema and base repositories', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   const projects = new ProjectAuthorityRepository();
 
   beforeAll(async () => {
@@ -36,7 +36,7 @@ describe('Collab authority schema and base repositories', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-authority-repositories-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();

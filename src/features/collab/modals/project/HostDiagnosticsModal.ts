@@ -1,11 +1,11 @@
 import { type App, Modal } from 'obsidian';
 
-import type { LanHostDiagnostics } from '@/features/collab/modals/project/LanHostSection';
+import type { LANHostDiagnostics } from '@/features/collab/modals/project/LANHostSection';
 import { t } from '@/i18n/i18n';
 
 export interface HostDiagnosticsModalOptions {
   readonly copyText?: (text: string) => Promise<void>;
-  readonly diagnostics: LanHostDiagnostics;
+  readonly diagnostics: LANHostDiagnostics;
   readonly onClosed?: () => void;
   readonly projectName: string;
 }

@@ -33,9 +33,9 @@ import {
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import type {
-  CloudAuthorityHttpRequest,
-  CloudAuthorityHttpResponse,
-} from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+  CloudAuthorityHTTPRequest,
+  CloudAuthorityHTTPResponse,
+} from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 jest.setTimeout(30_000);
@@ -174,7 +174,7 @@ class LostResponseCloudTransport {
 
   constructor(private readonly mainOid: string) {}
 
-  async request(input: CloudAuthorityHttpRequest): Promise<CloudAuthorityHttpResponse> {
+  async request(input: CloudAuthorityHTTPRequest): Promise<CloudAuthorityHTTPResponse> {
     if (input.method === 'GET') {
       return {
         body: collabCloudCapabilityDocument([

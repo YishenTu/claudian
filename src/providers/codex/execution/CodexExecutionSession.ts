@@ -76,9 +76,9 @@ import type { CodexLaunchSpec } from '../runtime/codexLaunchTypes';
 import { assertCodexModelAvailable } from '../runtime/CodexModelAvailability';
 import { CodexNotificationRouter } from '../runtime/CodexNotificationRouter';
 import {
-  CodexRpcResponseError,
-  CodexRpcTransport,
-} from '../runtime/CodexRpcTransport';
+  CodexRPCResponseError,
+  CodexRPCTransport,
+} from '../runtime/CodexRPCTransport';
 import {
   type CodexRuntimeContext,
   createCodexRuntimeContext,
@@ -242,7 +242,7 @@ export class CodexExecutionSession
   private readonly activeInputBundles = new Set<CodexInputBundle>();
 
   private process: CodexAppServerProcess | null = null;
-  private transport: CodexRpcTransport | null = null;
+  private transport: CodexRPCTransport | null = null;
   private launchSpec: CodexLaunchSpec | null = null;
   private runtimeContext: CodexRuntimeContext | null = null;
   private dynamicToolRegistry = new CodexDynamicToolRegistry();
@@ -377,7 +377,7 @@ export class CodexExecutionSession
       return true;
     } catch (error) {
       if (
-        error instanceof CodexRpcResponseError
+        error instanceof CodexRPCResponseError
         && JSON_RPC_PRE_HANDOFF_REJECTION_CODES.has(error.code)
       ) {
         return false;
@@ -609,7 +609,7 @@ export class CodexExecutionSession
       if (this.disposed || generation !== this.lifecycleGeneration) {
         throw new Error('Codex execution session has been disposed.');
       }
-      const transport = new CodexRpcTransport(process);
+      const transport = new CodexRPCTransport(process);
       this.transport = transport;
       transport.start();
       if (this.disposed || generation !== this.lifecycleGeneration) {
@@ -642,7 +642,7 @@ export class CodexExecutionSession
   }
 
   #wireTransportHandlers(
-    transport: CodexRpcTransport,
+    transport: CodexRPCTransport,
     generation: number,
   ): void {
     const notificationMethods = [
@@ -704,7 +704,7 @@ export class CodexExecutionSession
   }
 
   #isTransportCurrent(
-    transport: CodexRpcTransport,
+    transport: CodexRPCTransport,
     generation: number,
   ): boolean {
     return (
@@ -1210,7 +1210,7 @@ export class CodexExecutionSession
     baseInstructions: string,
     persistExtendedHistory: boolean | undefined,
     generation: number,
-    transport: CodexRpcTransport,
+    transport: CodexRPCTransport,
   ): Promise<CodexEnsuredThread> {
     const fork = this.pendingFork;
     if (!fork) throw new Error('Codex fork source is not available.');
@@ -1309,7 +1309,7 @@ export class CodexExecutionSession
   #resolveForkIdentity(
     run: CodexExecutionRun,
     fork: NonNullable<CodexProviderState['forkSource']>,
-    transport: CodexRpcTransport,
+    transport: CodexRPCTransport,
     overrides: Record<string, unknown> = {},
   ): Promise<CodexPendingForkTarget> {
     if (this.forkIdentityPromise) return this.forkIdentityPromise;

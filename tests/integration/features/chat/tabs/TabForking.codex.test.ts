@@ -6,7 +6,7 @@ import spawn from 'cross-spawn';
 
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 
-import { createNativeRpcProcess } from './NativeRpcTestProcess';
+import { createNativeRPCProcess } from './NativeRPCTestProcess';
 import { createForkTestEnvironment, type ForkTestEnvironment } from './ProviderForkTestHarness';
 
 function createNativeCodex(env: ForkTestEnvironment) {
@@ -18,7 +18,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
   const result = (id: string) => ({
     thread: { id, path: sourceFile, turns: (threads.get(id) ?? []).map(turnId => ({ id: turnId, items: [], status: 'completed' })) },
   });
-  jest.mocked(spawn).mockImplementation(() => createNativeRpcProcess(async (method, params, notify) => {
+  jest.mocked(spawn).mockImplementation(() => createNativeRPCProcess(async (method, params, notify) => {
     operations.push({ method, params });
     if (method === 'initialize') return { userAgent: 'test', codexHome: env.root, platformFamily: process.platform === 'win32' ? 'windows' : 'unix', platformOs: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux' };
     if (method === 'thread/start') return result('codex-source');

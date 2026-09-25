@@ -1,6 +1,6 @@
 import type { App, TFile } from 'obsidian';
 
-import { replaceImageEmbedsWithHtml } from '@/utils/imageEmbed';
+import { replaceImageEmbedsWithHTML } from '@/utils/imageEmbed';
 
 type LinkResolver = (
   linkPath: string,
@@ -42,11 +42,11 @@ function createMockApp(files: Map<string, string> = new Map(), resolveLink?: Lin
   } as unknown as App;
 }
 
-describe('replaceImageEmbedsWithHtml', () => {
+describe('replaceImageEmbedsWithHTML', () => {
   describe('basic image embeds', () => {
     it('replaces simple image embed with img tag', () => {
       const app = createMockApp(new Map([['image.png', 'app://local/image.png']]));
-      const result = replaceImageEmbedsWithHtml('![[image.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[image.png]]', app);
 
       expect(result).toContain('<img');
       expect(result).toContain('src="app://local/image.png"');
@@ -55,14 +55,14 @@ describe('replaceImageEmbedsWithHtml', () => {
 
     it('replaces image embed with folder path', () => {
       const app = createMockApp(new Map([['assets/photo.jpg', 'app://local/assets/photo.jpg']]));
-      const result = replaceImageEmbedsWithHtml('![[assets/photo.jpg]]', app);
+      const result = replaceImageEmbedsWithHTML('![[assets/photo.jpg]]', app);
 
       expect(result).toContain('src="app://local/assets/photo.jpg"');
     });
 
     it('handles image in surrounding text', () => {
       const app = createMockApp(new Map([['test.png', 'app://local/test.png']]));
-      const result = replaceImageEmbedsWithHtml('Check this ![[test.png]] image', app);
+      const result = replaceImageEmbedsWithHTML('Check this ![[test.png]] image', app);
 
       expect(result).toContain('Check this');
       expect(result).toContain('image');
@@ -75,7 +75,7 @@ describe('replaceImageEmbedsWithHtml', () => {
         ['literal.png', 'app://local/literal.png'],
       ]));
 
-      const result = replaceImageEmbedsWithHtml(
+      const result = replaceImageEmbedsWithHTML(
         'Visible ![[visible.png]] and `literal ![[literal.png]]`',
         app
       );
@@ -105,7 +105,7 @@ describe('replaceImageEmbedsWithHtml', () => {
         '~~~',
       ].join('\n');
 
-      const result = replaceImageEmbedsWithHtml(markdown, app);
+      const result = replaceImageEmbedsWithHTML(markdown, app);
 
       expect(result).toContain('src="app://local/visible.png"');
       expect(result).toContain('```md\n![[backtick.png]]\n```');
@@ -120,7 +120,7 @@ describe('replaceImageEmbedsWithHtml', () => {
         ['literal.png', 'app://local/literal.png'],
       ]));
 
-      const result = replaceImageEmbedsWithHtml(
+      const result = replaceImageEmbedsWithHTML(
         '![[visible.png]]\n\n    ![[literal.png]]',
         app
       );
@@ -134,28 +134,28 @@ describe('replaceImageEmbedsWithHtml', () => {
   describe('alt text and dimensions', () => {
     it('uses alt text from wikilink', () => {
       const app = createMockApp(new Map([['image.png', 'app://local/image.png']]));
-      const result = replaceImageEmbedsWithHtml('![[image.png|My Alt Text]]', app);
+      const result = replaceImageEmbedsWithHTML('![[image.png|My Alt Text]]', app);
 
       expect(result).toContain('alt="My Alt Text"');
     });
 
     it('applies width dimension from alt text', () => {
       const app = createMockApp(new Map([['image.png', 'app://local/image.png']]));
-      const result = replaceImageEmbedsWithHtml('![[image.png|300]]', app);
+      const result = replaceImageEmbedsWithHTML('![[image.png|300]]', app);
 
       expect(result).toContain('style="width: 300px;"');
     });
 
     it('applies width and height dimensions', () => {
       const app = createMockApp(new Map([['image.png', 'app://local/image.png']]));
-      const result = replaceImageEmbedsWithHtml('![[image.png|200x150]]', app);
+      const result = replaceImageEmbedsWithHTML('![[image.png|200x150]]', app);
 
       expect(result).toContain('style="width: 200px; height: 150px;"');
     });
 
     it('uses basename as alt when no alt text provided', () => {
       const app = createMockApp(new Map([['folder/my-image.png', 'app://local/folder/my-image.png']]));
-      const result = replaceImageEmbedsWithHtml('![[folder/my-image.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[folder/my-image.png]]', app);
 
       expect(result).toContain('alt="my-image"');
     });
@@ -167,7 +167,7 @@ describe('replaceImageEmbedsWithHtml', () => {
     extensions.forEach((ext) => {
       it(`replaces .${ext} image embed`, () => {
         const app = createMockApp(new Map([[`image.${ext}`, `app://local/image.${ext}`]]));
-        const result = replaceImageEmbedsWithHtml(`![[image.${ext}]]`, app);
+        const result = replaceImageEmbedsWithHTML(`![[image.${ext}]]`, app);
 
         expect(result).toContain('<img');
         expect(result).toContain(`src="app://local/image.${ext}"`);
@@ -176,14 +176,14 @@ describe('replaceImageEmbedsWithHtml', () => {
 
     it('handles uppercase extensions (case-insensitive)', () => {
       const app = createMockApp(new Map([['photo.PNG', 'app://local/photo.PNG']]));
-      const result = replaceImageEmbedsWithHtml('![[photo.PNG]]', app);
+      const result = replaceImageEmbedsWithHTML('![[photo.PNG]]', app);
 
       expect(result).toContain('<img');
     });
 
     it('handles mixed case extensions', () => {
       const app = createMockApp(new Map([['image.JpG', 'app://local/image.JpG']]));
-      const result = replaceImageEmbedsWithHtml('![[image.JpG]]', app);
+      const result = replaceImageEmbedsWithHTML('![[image.JpG]]', app);
 
       expect(result).toContain('<img');
     });
@@ -192,28 +192,28 @@ describe('replaceImageEmbedsWithHtml', () => {
   describe('non-image embeds (should pass through)', () => {
     it('leaves markdown file embed unchanged', () => {
       const app = createMockApp();
-      const result = replaceImageEmbedsWithHtml('![[note.md]]', app);
+      const result = replaceImageEmbedsWithHTML('![[note.md]]', app);
 
       expect(result).toBe('![[note.md]]');
     });
 
     it('leaves pdf embed unchanged', () => {
       const app = createMockApp();
-      const result = replaceImageEmbedsWithHtml('![[document.pdf]]', app);
+      const result = replaceImageEmbedsWithHTML('![[document.pdf]]', app);
 
       expect(result).toBe('![[document.pdf]]');
     });
 
     it('leaves audio embed unchanged', () => {
       const app = createMockApp();
-      const result = replaceImageEmbedsWithHtml('![[audio.mp3]]', app);
+      const result = replaceImageEmbedsWithHTML('![[audio.mp3]]', app);
 
       expect(result).toBe('![[audio.mp3]]');
     });
 
     it('processes only image embeds in mixed content', () => {
       const app = createMockApp(new Map([['image.png', 'app://local/image.png']]));
-      const result = replaceImageEmbedsWithHtml('![[note.md]] and ![[image.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[note.md]] and ![[image.png]]', app);
 
       expect(result).toContain('![[note.md]]');
       expect(result).toContain('<img');
@@ -223,7 +223,7 @@ describe('replaceImageEmbedsWithHtml', () => {
   describe('file not found (fallback)', () => {
     it('shows fallback when image file not found', () => {
       const app = createMockApp(); // Empty vault
-      const result = replaceImageEmbedsWithHtml('![[missing.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[missing.png]]', app);
 
       expect(result).toContain('class="claudian-embedded-image-fallback"');
       expect(result).toContain('![[missing.png]]');
@@ -231,7 +231,7 @@ describe('replaceImageEmbedsWithHtml', () => {
 
     it('escapes HTML in fallback wikilink', () => {
       const app = createMockApp();
-      const result = replaceImageEmbedsWithHtml('![[<script>alert(1)</script>.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[<script>alert(1)</script>.png]]', app);
 
       expect(result).not.toContain('<script>');
       expect(result).toContain('&lt;script&gt;');
@@ -241,7 +241,7 @@ describe('replaceImageEmbedsWithHtml', () => {
   describe('media folder resolution', () => {
     it('resolves image from media folder', () => {
       const app = createMockApp(new Map([['attachments/photo.png', 'app://local/attachments/photo.png']]));
-      const result = replaceImageEmbedsWithHtml('![[photo.png]]', app, 'attachments');
+      const result = replaceImageEmbedsWithHTML('![[photo.png]]', app, 'attachments');
 
       expect(result).toContain('src="app://local/attachments/photo.png"');
     });
@@ -253,7 +253,7 @@ describe('replaceImageEmbedsWithHtml', () => {
           ['attachments/image.png', 'app://local/attachments/image.png'],
         ])
       );
-      const result = replaceImageEmbedsWithHtml('![[image.png]]', app, 'attachments');
+      const result = replaceImageEmbedsWithHTML('![[image.png]]', app, 'attachments');
 
       expect(result).toContain('src="app://local/image.png"');
     });
@@ -274,7 +274,7 @@ describe('replaceImageEmbedsWithHtml', () => {
         }
       );
 
-      const result = replaceImageEmbedsWithHtml('![[image.png]]', app, {
+      const result = replaceImageEmbedsWithHTML('![[image.png]]', app, {
         sourcePath: 'section-b/note.md',
       });
 
@@ -291,7 +291,7 @@ describe('replaceImageEmbedsWithHtml', () => {
           ['b.png', 'app://local/b.png'],
         ])
       );
-      const result = replaceImageEmbedsWithHtml('![[a.png]] and ![[b.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[a.png]] and ![[b.png]]', app);
 
       expect(result).toContain('src="app://local/a.png"');
       expect(result).toContain('src="app://local/b.png"');
@@ -304,7 +304,7 @@ describe('replaceImageEmbedsWithHtml', () => {
           ['2.png', 'app://local/2.png'],
         ])
       );
-      const result = replaceImageEmbedsWithHtml('![[1.png]]![[2.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[1.png]]![[2.png]]', app);
 
       expect((result.match(/<img/g) || []).length).toBe(2);
     });
@@ -313,7 +313,7 @@ describe('replaceImageEmbedsWithHtml', () => {
   describe('HTML escaping (security)', () => {
     it('escapes HTML in image src', () => {
       const app = createMockApp(new Map([['test.png', 'app://local/path"><script>alert(1)</script>']]));
-      const result = replaceImageEmbedsWithHtml('![[test.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[test.png]]', app);
 
       expect(result).not.toContain('<script>');
       expect(result).toContain('&lt;script&gt;');
@@ -321,7 +321,7 @@ describe('replaceImageEmbedsWithHtml', () => {
 
     it('escapes HTML in alt text', () => {
       const app = createMockApp(new Map([['test.png', 'app://local/test.png']]));
-      const result = replaceImageEmbedsWithHtml('![[test.png|<b>bold</b>]]', app);
+      const result = replaceImageEmbedsWithHTML('![[test.png|<b>bold</b>]]', app);
 
       expect(result).not.toContain('<b>');
       expect(result).toContain('&lt;b&gt;');
@@ -331,21 +331,21 @@ describe('replaceImageEmbedsWithHtml', () => {
   describe('edge cases', () => {
     it('handles empty string', () => {
       const app = createMockApp();
-      const result = replaceImageEmbedsWithHtml('', app);
+      const result = replaceImageEmbedsWithHTML('', app);
 
       expect(result).toBe('');
     });
 
     it('handles text without embeds', () => {
       const app = createMockApp();
-      const result = replaceImageEmbedsWithHtml('Just plain text', app);
+      const result = replaceImageEmbedsWithHTML('Just plain text', app);
 
       expect(result).toBe('Just plain text');
     });
 
     it('handles incomplete embed syntax', () => {
       const app = createMockApp();
-      const result = replaceImageEmbedsWithHtml('![[incomplete', app);
+      const result = replaceImageEmbedsWithHTML('![[incomplete', app);
 
       expect(result).toBe('![[incomplete');
     });
@@ -354,9 +354,9 @@ describe('replaceImageEmbedsWithHtml', () => {
       const app = createMockApp(new Map([['a.png', 'app://local/a.png']]));
 
       // First call
-      const result1 = replaceImageEmbedsWithHtml('![[a.png]]', app);
+      const result1 = replaceImageEmbedsWithHTML('![[a.png]]', app);
       // Second call - would fail without lastIndex reset
-      const result2 = replaceImageEmbedsWithHtml('![[a.png]]', app);
+      const result2 = replaceImageEmbedsWithHTML('![[a.png]]', app);
 
       expect(result1).toContain('<img');
       expect(result2).toContain('<img');
@@ -364,7 +364,7 @@ describe('replaceImageEmbedsWithHtml', () => {
 
     it('replaces image embeds in multiline content', () => {
       const app = createMockApp(new Map([['test.png', 'app://local/test.png']]));
-      const result = replaceImageEmbedsWithHtml(
+      const result = replaceImageEmbedsWithHTML(
         'First paragraph\n\n![[test.png]]\n\nThird paragraph',
         app
       );
@@ -377,7 +377,7 @@ describe('replaceImageEmbedsWithHtml', () => {
     it('handles special characters in filename', () => {
       const filename = 'photo (2024-01-01).png';
       const app = createMockApp(new Map([[filename, `app://local/${filename}`]]));
-      const result = replaceImageEmbedsWithHtml(`![[${filename}]]`, app);
+      const result = replaceImageEmbedsWithHTML(`![[${filename}]]`, app);
 
       expect(result).toContain('<img');
     });
@@ -385,7 +385,7 @@ describe('replaceImageEmbedsWithHtml', () => {
     it('handles spaces in filename', () => {
       const filename = 'my long image name.png';
       const app = createMockApp(new Map([[filename, `app://local/${filename}`]]));
-      const result = replaceImageEmbedsWithHtml(`![[${filename}]]`, app);
+      const result = replaceImageEmbedsWithHTML(`![[${filename}]]`, app);
 
       expect(result).toContain('<img');
     });
@@ -393,14 +393,14 @@ describe('replaceImageEmbedsWithHtml', () => {
     it('handles deep folder paths', () => {
       const path = 'a/b/c/d/image.png';
       const app = createMockApp(new Map([[path, `app://local/${path}`]]));
-      const result = replaceImageEmbedsWithHtml(`![[${path}]]`, app);
+      const result = replaceImageEmbedsWithHTML(`![[${path}]]`, app);
 
       expect(result).toContain('<img');
     });
 
     it('includes lazy loading attribute', () => {
       const app = createMockApp(new Map([['test.png', 'app://local/test.png']]));
-      const result = replaceImageEmbedsWithHtml('![[test.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[test.png]]', app);
 
       expect(result).toContain('loading="lazy"');
     });
@@ -409,21 +409,21 @@ describe('replaceImageEmbedsWithHtml', () => {
   describe('error handling', () => {
     it('returns unchanged markdown when app is not initialized', () => {
       // @ts-expect-error - testing invalid input
-      const result = replaceImageEmbedsWithHtml('![[image.png]]', null);
+      const result = replaceImageEmbedsWithHTML('![[image.png]]', null);
 
       expect(result).toBe('![[image.png]]');
     });
 
     it('returns unchanged markdown when vault is missing', () => {
       const app = { metadataCache: {} } as unknown as App;
-      const result = replaceImageEmbedsWithHtml('![[image.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[image.png]]', app);
 
       expect(result).toBe('![[image.png]]');
     });
 
     it('returns unchanged markdown when metadataCache is missing', () => {
       const app = { vault: {} } as unknown as App;
-      const result = replaceImageEmbedsWithHtml('![[image.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[image.png]]', app);
 
       expect(result).toBe('![[image.png]]');
     });
@@ -442,7 +442,7 @@ describe('replaceImageEmbedsWithHtml', () => {
         },
       } as unknown as App;
 
-      const result = replaceImageEmbedsWithHtml('![[test.png]]', app);
+      const result = replaceImageEmbedsWithHTML('![[test.png]]', app);
 
       expect(result).toContain('class="claudian-embedded-image-fallback"');
     });
@@ -451,7 +451,7 @@ describe('replaceImageEmbedsWithHtml', () => {
   describe('regular wikilinks (should NOT match)', () => {
     it('does not replace regular wikilink', () => {
       const app = createMockApp();
-      const result = replaceImageEmbedsWithHtml('[[note.md]]', app);
+      const result = replaceImageEmbedsWithHTML('[[note.md]]', app);
 
       expect(result).toBe('[[note.md]]');
       expect(result).not.toContain('<img');
@@ -459,7 +459,7 @@ describe('replaceImageEmbedsWithHtml', () => {
 
     it('processes image embed but not file link', () => {
       const app = createMockApp(new Map([['image.png', 'app://local/image.png']]));
-      const result = replaceImageEmbedsWithHtml('[[note.md]] and ![[image.png]]', app);
+      const result = replaceImageEmbedsWithHTML('[[note.md]] and ![[image.png]]', app);
 
       expect(result).toContain('[[note.md]]');
       expect(result).toContain('<img');

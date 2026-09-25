@@ -16,13 +16,13 @@ import {
 } from '@test/helpers/installations';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import type { CollabFeatureService } from '@/app/collab/CollabFeatureService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
 import { InvitationCodec } from '@/app/collab/lan/InvitationCodec';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
-import { type CollabCoordinationSnapshot, type CollabResult, isCollabLanProjectSnapshot } from '@/core/collab';
+import { type CollabCoordinationSnapshot, type CollabResult, isCollabLANProjectSnapshot } from '@/core/collab';
 
 jest.setTimeout(120_000);
 
@@ -194,7 +194,7 @@ describe('M5 review and Accept gate', () => {
     }), 'Manager responsibility offer');
     unwrap(
       await readEventuallySnapshot(managerFeature, projectId, ({ snapshot }) => (
-        isCollabLanProjectSnapshot(snapshot)
+        isCollabLANProjectSnapshot(snapshot)
         && snapshot.managerResponsibilityOffer?.offerId === responsibility.offerId
         && snapshot.managerResponsibilityOffer.status === 'acknowledged'
       )),
@@ -440,7 +440,7 @@ describe('M5 review and Accept gate', () => {
       ...(ownsAuthority
         ? {
           createAuthorityDatabase: (authorityDirectory: string, resourceAdmission?: <T>(operation: () => Promise<T>) => Promise<T>) => (
-            new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
+            new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
           ),
           lanHost: {
             createInvitationCodec: () => invitationCodec,

@@ -6,27 +6,27 @@
 // JSON-RPC base
 // ---------------------------------------------------------------------------
 
-export interface JsonRpcRequest {
+export interface JSONRPCRequest {
   jsonrpc: '2.0';
   id: number;
   method: string;
   params?: unknown;
 }
 
-export interface JsonRpcNotification {
+export interface JSONRPCNotification {
   jsonrpc: '2.0';
   method: string;
   params?: unknown;
 }
 
-export interface JsonRpcResponse {
+export interface JSONRPCResponse {
   jsonrpc: '2.0';
   id: number;
   result?: unknown;
-  error?: JsonRpcError;
+  error?: JSONRPCError;
 }
 
-export interface JsonRpcError {
+export interface JSONRPCError {
   code: number;
   message: string;
   data?: unknown;
@@ -110,7 +110,7 @@ export type ThreadItem =
   | ImageViewItem
   | WebSearchItem
   | CollabAgentToolCallItem
-  | McpToolCallItem
+  | MCPToolCallItem
   | DynamicToolCallItem
   | ContextCompactionItem;
 
@@ -225,7 +225,7 @@ export interface CollabAgentToolCallItem {
   result?: unknown;
 }
 
-export interface McpToolCallItem {
+export interface MCPToolCallItem {
   type: 'mcpToolCall';
   id: string;
   server: string;
@@ -784,7 +784,7 @@ export interface PermissionsApprovalResponse {
 
 // -- MCP elicitation (mcpServer/elicitation/request) -------------------------
 
-export interface McpElicitationRequest {
+export interface MCPElicitationRequest {
   threadId: string;
   turnId: string | null;
   serverName: string;
@@ -793,7 +793,7 @@ export interface McpElicitationRequest {
   requestedSchema?: unknown;
 }
 
-export interface McpElicitationResponse {
+export interface MCPElicitationResponse {
   action: 'accept' | 'decline' | 'cancel';
   content: Record<string, unknown> | null;
 }

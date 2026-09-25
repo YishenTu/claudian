@@ -5,7 +5,7 @@ matchCollabControlOperation,
 } from '@/app/collab/lan/CollabControlOperationBindings';
 import {
 lanCollabControlOperationCodec
-} from '@/app/collab/lan/LanCollabControlOperationCodecs';
+} from '@/app/collab/lan/LANCollabControlOperationCodecs';
 
 describe('CollabControlOperationBindings', () => {
   it('rejects inherited keys when resolving an operation codec', () => {

@@ -599,7 +599,7 @@ function assertRemoteName(remote: string): void {
   }
 }
 
-function assertRemoteUrl(remoteUrl: string): void {
+function assertRemoteURL(remoteUrl: string): void {
   if (path.isAbsolute(remoteUrl)) return;
   let parsed: URL;
   try {
@@ -1449,7 +1449,7 @@ export class GitRepositoryService {
   ): Promise<void> {
     await this.#inspectRepository(repositoryPath);
     assertRemoteName(remote);
-    assertRemoteUrl(remoteUrl);
+    assertRemoteURL(remoteUrl);
     await this.runner.run({
       args: ['config', '--local', '--replace-all', `remote.${remote}.url`, remoteUrl],
       cwd: repositoryPath,
@@ -1544,7 +1544,7 @@ export class GitRepositoryService {
     signal?: AbortSignal,
   ): Promise<void> {
     await this.#inspectRepository(repositoryPath, signal);
-    assertRemoteUrl(remoteUrl);
+    assertRemoteURL(remoteUrl);
     refspecs.forEach(assertRefspec);
     await this.runner.run({
       args: ['fetch', '--quiet', '--no-tags', remoteUrl, ...refspecs],
@@ -1580,7 +1580,7 @@ export class GitRepositoryService {
     signal?: AbortSignal,
   ): Promise<void> {
     await this.#inspectRepository(repositoryPath);
-    assertRemoteUrl(remoteUrl);
+    assertRemoteURL(remoteUrl);
     assertOid(input.commitOid);
     assertRef(input.targetRef);
     await this.runner.run({
@@ -1592,7 +1592,7 @@ export class GitRepositoryService {
   }
 
   async cloneRepository(input: GitCloneInput): Promise<string> {
-    assertRemoteUrl(input.remoteUrl);
+    assertRemoteURL(input.remoteUrl);
     if (
       input.branch !== undefined
       && input.branch !== 'main'

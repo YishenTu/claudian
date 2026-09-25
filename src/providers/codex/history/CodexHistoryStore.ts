@@ -30,9 +30,9 @@ import {
   decodeCodexExecEnvelope,
   extractCodexExecCellId,
   isCodexToolOutputError,
-  normalizeCodexMcpToolInput,
-  normalizeCodexMcpToolName,
-  normalizeCodexMcpToolState,
+  normalizeCodexMCPToolInput,
+  normalizeCodexMCPToolName,
+  normalizeCodexMCPToolState,
   normalizeCodexToolCall,
   normalizeCodexToolInput,
   normalizeCodexToolName,
@@ -112,7 +112,7 @@ interface PersistedWebSearchCallPayload {
   call_id?: string;
 }
 
-interface PersistedMcpToolCallPayload {
+interface PersistedMCPToolCallPayload {
   type: 'mcp_tool_call';
   server?: string;
   tool?: string;
@@ -181,7 +181,7 @@ type PersistedPayload =
   | PersistedToolCallPayload
   | PersistedToolCallOutputPayload
   | PersistedWebSearchCallPayload
-  | PersistedMcpToolCallPayload
+  | PersistedMCPToolCallPayload
   | PersistedCompactionPayload
   | PersistedEventPayload
   | undefined;
@@ -1115,8 +1115,8 @@ function processPersistedWebSearchCall(
   });
 }
 
-function processPersistedMcpToolCall(
-  payload: PersistedMcpToolCallPayload,
+function processPersistedMCPToolCall(
+  payload: PersistedMCPToolCallPayload,
   timestamp: number,
   ctx: PersistedParseContext,
 ): void {
@@ -1128,12 +1128,12 @@ function processPersistedMcpToolCall(
 
   if (bubble.toolIndexesById.has(callId)) return;
 
-  const normalizedInput = normalizeCodexMcpToolInput(payload.arguments);
-  const normalizedState = normalizeCodexMcpToolState(payload.status, payload.result, payload.error);
+  const normalizedInput = normalizeCodexMCPToolInput(payload.arguments);
+  const normalizedState = normalizeCodexMCPToolState(payload.status, payload.result, payload.error);
 
   const toolCall: ToolCallInfo = {
     id: callId,
-    name: normalizeCodexMcpToolName(payload.server, payload.tool),
+    name: normalizeCodexMCPToolName(payload.server, payload.tool),
     input: normalizedInput,
     status: normalizedState.status,
     ...(normalizedState.result ? { result: normalizedState.result } : {}),
@@ -1220,7 +1220,7 @@ function processPersistedPayload(
       break;
 
     case 'mcp_tool_call':
-      processPersistedMcpToolCall(payload as PersistedMcpToolCallPayload, timestamp, ctx);
+      processPersistedMCPToolCall(payload as PersistedMCPToolCallPayload, timestamp, ctx);
       break;
 
     case 'compaction':

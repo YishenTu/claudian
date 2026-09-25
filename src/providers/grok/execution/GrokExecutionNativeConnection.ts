@@ -1,8 +1,8 @@
 import {
-  AcpClientConnection,
-  AcpJsonRpcTransport,
-  AcpSubprocess,
-  normalizeAcpAvailableCommands,
+  ACPClientConnection,
+  ACPJSONRPCTransport,
+  ACPSubprocess,
+  normalizeACPAvailableCommands,
 } from '../../acp';
 import {
   requestGrokInterjection,
@@ -39,31 +39,31 @@ const GROK_MODEL_UPDATE_NOTIFICATION_METHODS = [
 
 export class GrokExecutionNativeConnectionImpl
 implements GrokExecutionNativeConnection {
-  private readonly connection: AcpClientConnection;
+  private readonly connection: ACPClientConnection;
   private readonly listeners = new Set<Parameters<GrokExecutionNativeConnection['onNotification']>[0]>();
   private readonly interjectionListeners = new Set<Parameters<NonNullable<GrokExecutionNativeConnection['onInterjection']>>[0]>();
   private readonly modeListeners = new Set<(mode: 'normal' | 'yolo') => void>();
   private readonly modelListeners = new Set<
     Parameters<NonNullable<GrokExecutionNativeConnection['onModelsChanged']>>[0]
   >();
-  private readonly process: AcpSubprocess;
-  private readonly transport: AcpJsonRpcTransport;
+  private readonly process: ACPSubprocess;
+  private readonly transport: ACPJSONRPCTransport;
   private readonly unsubscribers: Array<() => void> = [];
 
   constructor(options: GrokExecutionNativeCreateOptions) {
-    this.process = new AcpSubprocess({
+    this.process = new ACPSubprocess({
       args: ['agent', '--no-leader', 'stdio'],
       command: options.command,
       cwd: options.cwd,
       env: options.env,
     });
     this.process.start();
-    this.transport = new AcpJsonRpcTransport({
+    this.transport = new ACPJSONRPCTransport({
       input: this.process.stdout,
       onClose: listener => this.process.onClose(listener),
       output: this.process.stdin,
     });
-    this.connection = new AcpClientConnection({
+    this.connection = new ACPClientConnection({
       clientInfo: { name: 'claudian', version: options.version },
       delegate: {
         onSessionNotification: notification => this.notify(notification, 'standard'),
@@ -179,7 +179,7 @@ implements GrokExecutionNativeConnection {
     if (!Array.isArray(response.commands)) {
       throw new Error('Grok returned malformed command metadata.');
     }
-    return normalizeAcpAvailableCommands(response.commands);
+    return normalizeACPAvailableCommands(response.commands);
   }
 
   newSession: GrokExecutionNativeConnection['newSession'] = request => (

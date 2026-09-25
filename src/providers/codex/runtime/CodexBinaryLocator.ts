@@ -2,13 +2,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { findCliBinaryPath, resolveConfiguredCliPath } from '../../../utils/cliBinaryLocator';
+import { findCLIBinaryPath, resolveConfiguredCLIPath } from '../../../utils/cliBinaryLocator';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import { expandHomePath, stripSurroundingQuotes } from '../../../utils/path';
 import type { CodexInstallationMethod } from '../settings';
 import type { CodexExecutionTarget } from './codexLaunchTypes';
 
-export function isWindowsStyleCliReference(value: string | null | undefined): boolean {
+export function isWindowsStyleCLIReference(value: string | null | undefined): boolean {
   const trimmed = (value ?? '').trim();
   if (!trimmed) {
     return false;
@@ -39,7 +39,7 @@ export function findCodexBinaryPath(
     return preferredBinary;
   }
 
-  return findCliBinaryPath('codex', additionalPath, platform);
+  return findCLIBinaryPath('codex', additionalPath, platform);
 }
 
 function getCodexBinaryNames(platform: NodeJS.Platform): string[] {
@@ -165,7 +165,7 @@ function parsePathEntriesForPlatform(pathValue: string | undefined, platform: No
     .map(segment => expandHomePath(segment));
 }
 
-export function resolveCodexCliPath(
+export function resolveCodexCLIPath(
   hostnamePath: string | undefined,
   legacyPath: string | undefined,
   envText: string,
@@ -183,16 +183,16 @@ export function resolveCodexCliPath(
   if (isWslTarget) {
     const configuredCommand = [hostnamePath, legacyPath]
       .map(value => stripSurroundingQuotes((value ?? '').trim()))
-      .find(value => value.length > 0 && !isWindowsStyleCliReference(value));
+      .find(value => value.length > 0 && !isWindowsStyleCLIReference(value));
     return configuredCommand || 'codex';
   }
 
-  const configuredHostnamePath = resolveConfiguredCliPath(hostnamePath);
+  const configuredHostnamePath = resolveConfiguredCLIPath(hostnamePath);
   if (configuredHostnamePath) {
     return configuredHostnamePath;
   }
 
-  const configuredLegacyPath = resolveConfiguredCliPath(legacyPath);
+  const configuredLegacyPath = resolveConfiguredCLIPath(legacyPath);
   if (configuredLegacyPath) {
     return configuredLegacyPath;
   }

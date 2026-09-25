@@ -3,7 +3,7 @@ import {
   type CollabProjectRetirementAcknowledgement,
 } from '@claudian-collab/protocol';
 
-import type { AcknowledgeRetirementResponse } from '@/app/collab/lan/LanCollabControlOperations';
+import type { AcknowledgeRetirementResponse } from '@/app/collab/lan/LANCollabControlOperations';
 import type {
   CollabProjectLifecycleAdmission,
 } from '@/app/collab/lifecycle/CollabProjectLifecycleAdmission';

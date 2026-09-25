@@ -9,7 +9,7 @@ import type {
 import { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import { OpencodeServerService } from '../http/OpencodeServerService';
 import { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
-import { OpencodeCliResolver } from '../runtime/OpencodeCliResolver';
+import { OpencodeCLIResolver } from '../runtime/OpencodeCLIResolver';
 import { createOpencodeModels } from '../runtime/OpencodeModels';
 import { createOpencodeSettingsTabRenderer } from '../ui/OpencodeSettingsTab';
 import { OpencodeCommandLoader } from './OpencodeCommandLoader';
@@ -39,7 +39,7 @@ export async function createOpencodeWorkspaceServices(
 
   const modelCatalog = createOpencodeModels(plugin, metadataService);
   const unregisterModels = plugin.executionLifecycleRegistry.registerTransitionHook('opencode', { beforeTransition: () => modelCatalog.beginTransition(), afterTransition: () => modelCatalog.endTransition() });
-  const cliResolver = new OpencodeCliResolver();
+  const cliResolver = new OpencodeCLIResolver();
   return {
     commandCatalog,
     modelCatalog,

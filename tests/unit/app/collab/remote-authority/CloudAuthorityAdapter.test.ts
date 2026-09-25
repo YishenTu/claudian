@@ -25,7 +25,7 @@ import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabPr
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 import {
   CloudAuthorityAdapter,
   CloudProjectEventClient,
@@ -37,9 +37,9 @@ import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/Coll
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import { NodeCloudAuthorityArtifactTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityArtifactTransport';
 import {
-  type CloudAuthorityHttpRequest,
-  NodeCloudAuthorityHttpTransport,
-} from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+  type CloudAuthorityHTTPRequest,
+  NodeCloudAuthorityHTTPTransport,
+} from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-cloud';
@@ -190,12 +190,12 @@ function boundCapabilityDocument(
   ], limits);
 }
 
-function envelopeRequestId(input: CloudAuthorityHttpRequest | string): string {
+function envelopeRequestId(input: CloudAuthorityHTTPRequest | string): string {
   if (typeof input === 'string') return input;
   return (input.body as { readonly requestId: string }).requestId;
 }
 
-function cloudSnapshotResponse(input: CloudAuthorityHttpRequest | string) {
+function cloudSnapshotResponse(input: CloudAuthorityHTTPRequest | string) {
   return {
     body: collabCloudSuccessEnvelope(envelopeRequestId(input), cloudSnapshot()),
     contentType: 'application/json',
@@ -218,7 +218,7 @@ describe('CloudAuthorityAdapter', () => {
     const sessions = new CollabProjectWorkSessionRegistry();
     let sequence = 7;
     const operations: string[] = [];
-    const request = async (input: CloudAuthorityHttpRequest) => {
+    const request = async (input: CloudAuthorityHTTPRequest) => {
       operations.push(input.url.split('/').at(-1)!);
       return {
         body: input.method === 'GET'
@@ -255,7 +255,7 @@ describe('CloudAuthorityAdapter', () => {
       const preflightEntered = new Promise<void>(resolve => { entered = resolve; });
       const preflightReleased = new Promise<void>(resolve => { release = resolve; });
       let sequence = 7;
-      const request = async (input: CloudAuthorityHttpRequest) => {
+      const request = async (input: CloudAuthorityHTTPRequest) => {
         if (input.method === 'GET') return {
           body: boundCapabilityDocument(['tickets']), contentType: 'application/json', status: 200,
         };
@@ -309,7 +309,7 @@ describe('CloudAuthorityAdapter', () => {
       const preflightEntered = new Promise<void>(resolve => { entered = resolve; });
       const preflightReleased = new Promise<void>(resolve => { release = resolve; });
       let sequence = 7;
-      const request = async (input: CloudAuthorityHttpRequest) => {
+      const request = async (input: CloudAuthorityHTTPRequest) => {
         if (input.method === 'GET') return {
           body: boundCapabilityDocument([]), contentType: 'application/json', status: 200,
         };
@@ -350,7 +350,7 @@ describe('CloudAuthorityAdapter', () => {
     await store.saveMembership(membership());
     const sessions = new CollabProjectWorkSessionRegistry();
     let sequence = 6;
-    const request = async (input: CloudAuthorityHttpRequest) => {
+    const request = async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') return {
         body: boundCapabilityDocument([]), contentType: 'application/json', status: 200,
       };
@@ -380,7 +380,7 @@ describe('CloudAuthorityAdapter', () => {
     await store.saveMembership(membership());
     const sessions = new CollabProjectWorkSessionRegistry();
     const lookups: unknown[] = [];
-    const request = async (input: CloudAuthorityHttpRequest) => {
+    const request = async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') return {
         body: boundCapabilityDocument(['tickets']), contentType: 'application/json', status: 200,
       };
@@ -450,7 +450,7 @@ describe('CloudAuthorityAdapter', () => {
 
   it('preserves the HTTPS prefix with native certificate verification for JSON, artifacts, and WebSockets', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'claudian-cloud-tls-'));
-    const identity = await new LanTlsIdentity(root, { installationKey: TEST_INSTALLATION_A })
+    const identity = await new LANTLSIdentity(root, { installationKey: TEST_INSTALLATION_A })
       .issueServerIdentity('127.0.0.1');
     const authenticatedHeaders: Array<Record<string, string | string[] | undefined>> = [];
     const observed: Array<{ actor: unknown; path: string }> = [];
@@ -576,7 +576,7 @@ describe('CloudAuthorityAdapter', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('Missing test listener');
     const serverUrl = `http://127.0.0.1:${address.port}`;
-    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, { request: new NodeCloudAuthorityHttpTransport(200).request });
+    const adapter = new CloudAuthorityAdapter(cloudVaultRoot, { request: new NodeCloudAuthorityHTTPTransport(200).request });
     const controller = new AbortController();
     const bound = membership();
     try {
@@ -601,8 +601,8 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it.each(['dispose', 'caller'] as const)('fences a late snapshot completion after %s cancellation', async cancellation => {
-    let release!: (response: Awaited<ReturnType<NodeCloudAuthorityHttpTransport['request']>>) => void;
-    const response = new Promise<Awaited<ReturnType<NodeCloudAuthorityHttpTransport['request']>>>(resolve => { release = resolve; });
+    let release!: (response: Awaited<ReturnType<NodeCloudAuthorityHTTPTransport['request']>>) => void;
+    const response = new Promise<Awaited<ReturnType<NodeCloudAuthorityHTTPTransport['request']>>>(resolve => { release = resolve; });
     let snapshotReads = 0;
     const session = await new CloudAuthorityAdapter(cloudVaultRoot, {
       request: async input => input.method === 'GET'
@@ -751,7 +751,7 @@ describe('CloudAuthorityAdapter', () => {
     if (!address || typeof address === 'string') throw new Error('Missing test listener');
     const serverUrl = `http://127.0.0.1:${address.port}`;
     const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
-      request: new NodeCloudAuthorityHttpTransport(200).request,
+      request: new NodeCloudAuthorityHTTPTransport(200).request,
       requestIdFactory: () => 'response-bound-snapshot',
     });
     const bound = membership();
@@ -851,7 +851,7 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('exposes only the implemented Step 13 membership-management capabilities', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => input.method === 'GET'
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => input.method === 'GET'
       ? {
         body: boundCapabilityDocument(STEP_12_CLOUD_MANAGEMENT_CAPABILITIES),
         contentType: 'application/json',
@@ -883,7 +883,7 @@ describe('CloudAuthorityAdapter', () => {
 
   it('opens one exact bound Cloud Leave recovery connection', async () => {
     const readPersonalRef = jest.fn(async () => HEAD_OID);
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') {
         return {
           body: collabCloudCapabilityDocument([
@@ -973,7 +973,7 @@ describe('CloudAuthorityAdapter', () => {
         'rejects late recovery reads after %s cancellation',
         async cancellation => {
           const response = deferred<void>();
-          const started = deferred<CloudAuthorityHttpRequest>();
+          const started = deferred<CloudAuthorityHTTPRequest>();
           const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
             request: async input => {
               if (input.method === 'GET') {
@@ -1030,7 +1030,7 @@ describe('CloudAuthorityAdapter', () => {
   );
 
   it('opens one exact bound Cloud Retirement recovery connection', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') {
         return {
           body: collabCloudCapabilityDocument([
@@ -1114,8 +1114,8 @@ describe('CloudAuthorityAdapter', () => {
       transferId: 'transfer-cloud-to-lan',
       updatedAt: CREATED_AT,
     } satisfies CollabAuthorityTransferStatus;
-    const requests: CloudAuthorityHttpRequest[] = [];
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const requests: CloudAuthorityHTTPRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       requests.push(input);
       return {
         body: input.method === 'GET'
@@ -1154,7 +1154,7 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('reads an unbound lifecycle snapshot using only the server-established Member identity', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => ({
       body: input.method === 'GET'
         ? collabCloudCapabilityDocument(['project-snapshot'], limits)
         : collabCloudSuccessEnvelope(envelopeRequestId(input), cloudSnapshot()),
@@ -1177,8 +1177,8 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('rejects a bound session before exposing mutation ports when its authenticated snapshot has another authority generation', async () => {
-    const requests: CloudAuthorityHttpRequest[] = [];
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const requests: CloudAuthorityHTTPRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       requests.push(input);
       return {
         body: input.method === 'GET'
@@ -1208,7 +1208,7 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('rejects an authenticated snapshot success envelope correlated to another request', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => ({
       body: input.method === 'GET'
         ? boundCapabilityDocument([])
         : collabCloudSuccessEnvelope('response-for-another-request', cloudSnapshot()),
@@ -1228,7 +1228,7 @@ describe('CloudAuthorityAdapter', () => {
   it.each(['success', 'rejection'] as const)(
     'rejects an operation %s envelope correlated to another request without completed-rejection provenance',
     async outcome => {
-      const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+      const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
         if (input.method === 'GET') {
           return {
             body: boundCapabilityDocument(['requests']),
@@ -1370,7 +1370,7 @@ describe('CloudAuthorityAdapter', () => {
       transferId: 'transfer-cloud-to-lan',
       updatedAt: CREATED_AT,
     } satisfies CollabAuthorityTransferStatus;
-    const jsonRequests: CloudAuthorityHttpRequest[] = [];
+    const jsonRequests: CloudAuthorityHTTPRequest[] = [];
     const uploaded: Buffer[] = [];
     const adapter = new CloudAuthorityAdapter(cloudVaultRoot, {
       artifacts: {
@@ -1477,7 +1477,7 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('keeps lifecycle calls capability-gated and rejects legacy binding documents', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => input.method === 'GET'
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => input.method === 'GET'
       ? {
         body: boundCapabilityDocument([]),
         contentType: 'application/json',
@@ -1564,8 +1564,8 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('negotiates package capabilities and maps the strict Cloud snapshot', async () => {
-    const requests: CloudAuthorityHttpRequest[] = [];
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const requests: CloudAuthorityHTTPRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       requests.push(input);
       if (input.method === 'GET') {
         return {
@@ -1615,8 +1615,8 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('ensures the current member Request through the package-owned Cloud operation', async () => {
-    const requests: CloudAuthorityHttpRequest[] = [];
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const requests: CloudAuthorityHTTPRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       requests.push(input);
       if (input.method === 'GET') {
         return {
@@ -1669,7 +1669,7 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('routes Accept through the canonical Cloud operation with its exact authority tuple', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => input.method === 'GET'
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => input.method === 'GET'
       ? {
         body: boundCapabilityDocument(['accept']),
         contentType: 'application/json',
@@ -1729,7 +1729,7 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('rejects an Accept response for a different reviewed Request tuple', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => ({
       body: input.method === 'GET'
         ? boundCapabilityDocument(['accept'])
         : input.url.endsWith('/getProjectSnapshot')
@@ -1764,7 +1764,7 @@ describe('CloudAuthorityAdapter', () => {
 
   it('routes Request reads, comments, and metadata through canonical Cloud operations', async () => {
     const operations: string[] = [];
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') {
         return {
           body: boundCapabilityDocument(['requests']),
@@ -1846,8 +1846,8 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('routes all Ticket reads and mutations through canonical Cloud operations', async () => {
-    const requests: CloudAuthorityHttpRequest[] = [];
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const requests: CloudAuthorityHTTPRequest[] = [];
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       requests.push(input);
       if (input.method === 'GET') {
         return {
@@ -1973,7 +1973,7 @@ describe('CloudAuthorityAdapter', () => {
       kind: 'resolves',
       requestId: 'request-one',
     };
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') {
         return {
           body: boundCapabilityDocument(['requests', 'tickets']),
@@ -2033,7 +2033,7 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('rejects a Ticket cursor reused across complete comment and relation collections', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') {
         return {
           body: boundCapabilityDocument(['tickets']),
@@ -2075,7 +2075,7 @@ describe('CloudAuthorityAdapter', () => {
       id,
       requestId: 'request-one',
     });
-    const request = async (input: CloudAuthorityHttpRequest) => {
+    const request = async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') {
         return {
           body: boundCapabilityDocument(['requests']),
@@ -2133,7 +2133,7 @@ describe('CloudAuthorityAdapter', () => {
         kind: 'resolves',
         requestId: `request-${id}`,
       });
-      const request = async (input: CloudAuthorityHttpRequest) => {
+      const request = async (input: CloudAuthorityHTTPRequest) => {
         if (input.method === 'GET') {
           return {
             body: boundCapabilityDocument(['tickets']),
@@ -2207,7 +2207,7 @@ describe('CloudAuthorityAdapter', () => {
         kind: 'resolves',
         requestId: 'request-one',
       };
-      const request = async (input: CloudAuthorityHttpRequest) => {
+      const request = async (input: CloudAuthorityHTTPRequest) => {
         if (input.method === 'GET') {
           return {
             body: boundCapabilityDocument(['requests', 'tickets']),
@@ -2269,7 +2269,7 @@ describe('CloudAuthorityAdapter', () => {
         id,
         ...(kind === 'Request' ? { requestId: 'request-one' } : { ticketId: 'ticket-one' }),
       });
-      const request = async (input: CloudAuthorityHttpRequest) => {
+      const request = async (input: CloudAuthorityHTTPRequest) => {
         if (input.method === 'GET') {
           return {
             body: boundCapabilityDocument(['requests', 'tickets']),
@@ -2318,7 +2318,7 @@ describe('CloudAuthorityAdapter', () => {
 
   it('rejects a continuation cursor that advances without any comments', async () => {
     let continuationReads = 0;
-    const request = async (input: CloudAuthorityHttpRequest) => {
+    const request = async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') {
         return {
           body: boundCapabilityDocument(['requests']),
@@ -2356,7 +2356,7 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('rejects continuation comments returned for a different owner', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') {
         return {
           body: boundCapabilityDocument(['requests', 'tickets']),
@@ -2405,7 +2405,7 @@ describe('CloudAuthorityAdapter', () => {
   });
 
   it('rejects a bound session whose authenticated snapshot belongs to a different Project', async () => {
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => ({
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => ({
       body: input.method === 'GET'
         ? collabCloudCapabilityDocument(['project-snapshot'], limits)
         : collabCloudSuccessEnvelope(envelopeRequestId(input), {

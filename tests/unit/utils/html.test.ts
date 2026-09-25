@@ -1,14 +1,14 @@
-import { escapeHtml } from '@/utils/html';
+import { escapeHTML } from '@/utils/html';
 
-describe('escapeHtml', () => {
+describe('escapeHTML', () => {
   it('escapes HTML special characters', () => {
-    expect(escapeHtml('<script>alert("x&y")</script>')).toBe(
+    expect(escapeHTML('<script>alert("x&y")</script>')).toBe(
       '&lt;script&gt;alert(&quot;x&amp;y&quot;)&lt;/script&gt;'
     );
   });
 
   it('returns plain and empty text unchanged', () => {
-    expect(escapeHtml('Hello World')).toBe('Hello World');
-    expect(escapeHtml('')).toBe('');
+    expect(escapeHTML('Hello World')).toBe('Hello World');
+    expect(escapeHTML('')).toBe('');
   });
 });

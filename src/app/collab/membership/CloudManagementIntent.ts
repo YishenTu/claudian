@@ -1,6 +1,6 @@
 import { collabControlOperationCodec, isCollabMemberId, isCollabProjectId } from '@claudian-collab/protocol';
 
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import type { CloudMembershipOperationMap } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 import type { CloudMembershipBinding } from '@/app/collab/remote-authority/CollabAuthorityMembershipControlPort';
 
@@ -94,7 +94,7 @@ export function decodeCloudManagementIntent(value: unknown): CloudManagementInte
   return {
     authorityGeneration: input.authorityGeneration, completionId: input.completionId, createdAt, kind: input.kind, memberId: input.memberId,
     operation: input.operation, phase: input.phase, projectId: input.projectId, request: request.value,
-    response, schemaVersion: 1, serverUrl: validateCloudServerUrl(input.serverUrl, 'serverUrl'), updatedAt,
+    response, schemaVersion: 1, serverUrl: validateCloudServerURL(input.serverUrl, 'serverUrl'), updatedAt,
   } as CloudManagementIntent;
 }
 

@@ -18,7 +18,7 @@ import {
   decodeCollabProtocolEnvelope,
   matchCollabCloudRoute,
 } from '@claudian-collab/protocol';
-import { runGitHttpBackendFixture } from '@test/helpers/collab/GitHttpBackendFixture';
+import { runGitHTTPBackendFixture } from '@test/helpers/collab/GitHTTPBackendFixture';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import { testTime } from '@test/helpers/testClock';
 import { build } from 'esbuild';
@@ -177,7 +177,7 @@ export async function createFixture(options: {
       const routeTarget = target.slice('/operator/cloud'.length);
       const route = matchCollabCloudRoute(request.method ?? '', routeTarget);
       if (route?.kind === 'git-info-refs' || route?.kind === 'git-upload-pack') {
-        return runGitHttpBackendFixture(request, response, {
+        return runGitHTTPBackendFixture(request, response, {
           barePath,
           executablePath: 'git',
           remoteUser: MEMBER_ID,

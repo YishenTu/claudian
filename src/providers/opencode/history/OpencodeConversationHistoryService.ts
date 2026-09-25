@@ -4,11 +4,11 @@ import type {
   ProviderHistoryPathContext,
 } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
-import { isRecord } from '../http/OpencodeHttpClient';
-import { readOpencodeHttpMessages } from '../http/OpencodeHttpHistory';
+import { isRecord } from '../http/OpencodeHTTPClient';
+import { readOpencodeHTTPMessages } from '../http/OpencodeHTTPHistory';
 import { type OpencodeServerLease, type OpencodeServerService, withOpencodeServerLease } from '../http/OpencodeServerService';
 import { encodeOpencodeModelId } from '../models';
-import { OpencodeCliResolver } from '../runtime/OpencodeCliResolver';
+import { OpencodeCLIResolver } from '../runtime/OpencodeCLIResolver';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
 import { getOpencodeState, type OpencodeProviderState } from '../types';
 import { resolveOpencodeDatabasePathHint } from './OpencodeHistoryPathResolver';
@@ -94,7 +94,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
 
     const messages = state.nativeVersion === 2
       ? await this.withHttp(databasePath, vaultPath, pathContext, async client => mapOpencodeV2NativeMessages(
-          await readOpencodeHttpMessages(client, sessionId), { sessionId, databasePath: databasePath ?? undefined },
+          await readOpencodeHTTPMessages(client, sessionId), { sessionId, databasePath: databasePath ?? undefined },
         )).catch(error => [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath: databasePath ?? undefined, reason: error instanceof Error ? error.message : String(error) })])
       : await loadOpencodeSessionMessages(
           sessionId,
@@ -165,7 +165,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       throw new Error('OpenCode fork requires a persistent native database.');
     }
     const settings = pathContext?.settings ?? {};
-    const cliPath = new OpencodeCliResolver().resolveFromSettings(settings) ?? 'opencode';
+    const cliPath = new OpencodeCLIResolver().resolveFromSettings(settings) ?? 'opencode';
     const environment = buildOpencodeRuntimeEnv(settings, cliPath, databasePath, pathContext?.environment);
     let nativeVersion = source.nativeVersion;
     const sessionId = await forkOpencodeSession({
@@ -207,7 +207,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const cwd = vaultPath ?? pathContext?.vaultPath;
     if (!cwd || !databasePath || databasePath === ':memory:') throw new Error('OpenCode history requires a workspace and persistent native database.');
     const settings = pathContext?.settings ?? {};
-    const cliPath = new OpencodeCliResolver().resolveFromSettings(settings) ?? 'opencode';
+    const cliPath = new OpencodeCLIResolver().resolveFromSettings(settings) ?? 'opencode';
     const environment = buildOpencodeRuntimeEnv(settings, cliPath, databasePath, pathContext?.environment);
     return withOpencodeServerLease(this.getServerService?.(), cliPath, cwd, environment, read);
   }

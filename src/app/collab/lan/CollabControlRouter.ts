@@ -14,7 +14,7 @@ import {
 import {
   COLLAB_CONTROL_MAX_BODY_BYTES,
   COLLAB_CONTROL_PROTOCOL_VERSION,
-} from '@/app/collab/lan/LanCollabConstants';
+} from '@/app/collab/lan/LANCollabConstants';
 import {
   type LifecycleGatewayPort,
   TerminalLifecycleGateway,
@@ -98,7 +98,7 @@ function normalizeRemoteAddress(address: string | undefined): string {
   return address.startsWith('::ffff:') ? address.slice('::ffff:'.length) : address;
 }
 
-function parseProjectUrl(rawUrl: string | undefined): {
+function parseProjectURL(rawUrl: string | undefined): {
   readonly projectId: string;
   readonly protocolVersion: number;
   readonly query: Readonly<Record<string, string>>;
@@ -185,7 +185,7 @@ function asCollabError(error: unknown): CollabError {
     : routerError('operation-failed', 'control-route-failed');
 }
 
-function writeJson(
+function writeJSON(
   response: ServerResponse,
   statusCode: number,
   requestIdValue: string,
@@ -259,7 +259,7 @@ interface CollabControlRequestBody {
   readonly value: unknown;
 }
 
-function readJsonBody(request: IncomingMessage): Promise<CollabControlRequestBody> {
+function readJSONBody(request: IncomingMessage): Promise<CollabControlRequestBody> {
   const contentLength = request.headers['content-length'];
   if (
     typeof contentLength === 'string'
@@ -383,7 +383,7 @@ export class CollabControlRouter {
   async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const requestIdValue = requestId(request.headers);
     try {
-      const route = parseProjectUrl(request.url);
+      const route = parseProjectURL(request.url);
       assertRouteVersion(route.protocolVersion);
       const operationMatch = matchCollabControlOperation(request.method, route.segments);
       const operationBinding = operationMatch
@@ -395,7 +395,7 @@ export class CollabControlRouter {
       ) {
         throw routerError('protocol-payload-invalid', 'control-url-query-forbidden');
       }
-      const requestBody = await readJsonBody(request);
+      const requestBody = await readJSONBody(request);
       if (
         requestBody.present
         && (
@@ -422,7 +422,7 @@ export class CollabControlRouter {
         }, terminal.service);
         invokeAfterResponseFlush(response, result.afterResponseFlushed);
         invokeAfterResponseSettles(response, result.afterResponseSettled);
-        writeJson(response, operationBinding?.successStatus ?? 200, requestIdValue, {
+        writeJSON(response, operationBinding?.successStatus ?? 200, requestIdValue, {
           data: result.data,
           protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
           requestId: requestIdValue,
@@ -450,14 +450,14 @@ export class CollabControlRouter {
       if (!result) throw routerError('project-not-found', 'control-route-not-found');
       invokeAfterResponseFlush(response, result.afterResponseFlushed);
       invokeAfterResponseSettles(response, result.afterResponseSettled);
-      writeJson(response, operationBinding?.successStatus ?? 200, requestIdValue, {
+      writeJSON(response, operationBinding?.successStatus ?? 200, requestIdValue, {
         data: result.data,
         protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
         requestId: requestIdValue,
       });
     } catch (error) {
       const collabError = asCollabError(error);
-      writeJson(response, statusForError(collabError), requestIdValue, {
+      writeJSON(response, statusForError(collabError), requestIdValue, {
         error: collabError.toJSON(),
         protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
         requestId: requestIdValue,
@@ -468,9 +468,9 @@ export class CollabControlRouter {
   async authenticateEvent(
     input: CollabEventAuthenticationInput,
   ): Promise<CollabEventAuthentication> {
-    let route: ReturnType<typeof parseProjectUrl>;
+    let route: ReturnType<typeof parseProjectURL>;
     try {
-      route = parseProjectUrl(input.url);
+      route = parseProjectURL(input.url);
     } catch {
       throw routerError('authentication-failed', 'event-route-invalid');
     }

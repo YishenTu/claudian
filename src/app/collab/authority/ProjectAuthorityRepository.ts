@@ -2,8 +2,8 @@ import { COLLAB_MAIN_REF, type CollabMemberId, collabMemberRef, type CollabProje
 
 import type {
   AuthorityDatabaseConnection,
-  AuthoritySqlRow,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  AuthoritySQLRow,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface ProjectAuthorityInitializeInput {
@@ -63,7 +63,7 @@ function assertTimestamp(value: string): void {
   }
 }
 
-function text(row: AuthoritySqlRow, field: string): string {
+function text(row: AuthoritySQLRow, field: string): string {
   const value = row[field];
   if (typeof value !== 'string') throw projectError('project-row-invalid');
   return value;

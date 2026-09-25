@@ -7,9 +7,9 @@ import type {
 } from '@/app/collab/authority-transfer/AuthorityTransferEntryRecord';
 import { type AuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import type {
-  CloudToLanManagerEntryRecord,
-  CloudToLanTargetEntryRecord,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  CloudToLANManagerEntryRecord,
+  CloudToLANTargetEntryRecord,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import type {
   AuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
@@ -32,14 +32,14 @@ export interface AuthorityTransferRecordStorePort {
 
 export interface AuthorityTransferEntryStorePort {
   load(projectId: CollabProjectId): Promise<AuthorityTransferEntryRecord | null>;
-  removeManager(record: CloudToLanManagerEntryRecord): Promise<boolean>;
+  removeManager(record: CloudToLANManagerEntryRecord): Promise<boolean>;
   removeRequester(record: AuthorityTransferRequesterEntryRecord): Promise<boolean>;
   removeSource(record: AuthorityTransferSourceEntryRecord): Promise<boolean>;
-  removeTarget(record: CloudToLanTargetEntryRecord): Promise<boolean>;
-  saveManager(record: CloudToLanManagerEntryRecord): Promise<void>;
+  removeTarget(record: CloudToLANTargetEntryRecord): Promise<boolean>;
+  saveManager(record: CloudToLANManagerEntryRecord): Promise<void>;
   saveRequester(record: AuthorityTransferRequesterEntryRecord): Promise<void>;
   saveSource(record: AuthorityTransferSourceEntryRecord): Promise<void>;
-  saveTarget(record: CloudToLanTargetEntryRecord): Promise<void>;
+  saveTarget(record: CloudToLANTargetEntryRecord): Promise<void>;
 }
 
 export interface AuthorityTransferProjectCatalog {

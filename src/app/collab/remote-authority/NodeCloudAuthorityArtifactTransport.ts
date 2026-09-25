@@ -16,7 +16,7 @@ import {
   cloudAuthorityOperationError,
   cloudAuthorityProtocolError,
 } from '@/app/collab/remote-authority/CloudAuthorityError';
-import type { CloudAuthorityHttpResponse } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+import type { CloudAuthorityHTTPResponse } from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
 import type { CollabError } from '@/core/collab/ClaudianCollabError';
 
 interface CloudAuthorityArtifactRequestBase {
@@ -40,13 +40,13 @@ export type CloudAuthorityArtifactDownloadResponse =
     readonly byteCount: number;
     readonly status: 200;
   }
-  | CloudAuthorityHttpResponse;
+  | CloudAuthorityHTTPResponse;
 
 export interface CloudAuthorityArtifactTransport {
   download(
     input: CloudAuthorityArtifactDownloadRequest,
   ): Promise<CloudAuthorityArtifactDownloadResponse>;
-  upload(input: CloudAuthorityArtifactUploadRequest): Promise<CloudAuthorityHttpResponse>;
+  upload(input: CloudAuthorityArtifactUploadRequest): Promise<CloudAuthorityHTTPResponse>;
 }
 
 function cancelled(): CollabError {
@@ -94,10 +94,10 @@ function contentType(response: IncomingMessage): string | null {
   return typeof value === 'string' ? value : null;
 }
 
-async function readJsonError(
+async function readJSONError(
   response: IncomingMessage,
   maximumBytes = COLLAB_LIMITS.maxJsonPayloadUtf8Bytes,
-): Promise<CloudAuthorityHttpResponse> {
+): Promise<CloudAuthorityHTTPResponse> {
   const length = declaredLength(response);
   if (length !== null && length > maximumBytes) {
     response.destroy();
@@ -190,7 +190,7 @@ export class NodeCloudAuthorityArtifactTransport implements CloudAuthorityArtifa
           resetIdle();
           response.on('data', resetIdle);
           if (response.statusCode !== 200) {
-            void readJsonError(response).then(result => {
+            void readJSONError(response).then(result => {
               if (complete()) resolve(result);
             }, error => fail(error instanceof Error ? error as CollabError : unreachable()));
             return;
@@ -262,7 +262,7 @@ export class NodeCloudAuthorityArtifactTransport implements CloudAuthorityArtifa
     });
   }
 
-  upload(input: CloudAuthorityArtifactUploadRequest): Promise<CloudAuthorityHttpResponse> {
+  upload(input: CloudAuthorityArtifactUploadRequest): Promise<CloudAuthorityHTTPResponse> {
     if (input.signal?.aborted) return Promise.reject(cancelled());
     if (
       !Number.isSafeInteger(input.byteCount)
@@ -283,7 +283,7 @@ export class NodeCloudAuthorityArtifactTransport implements CloudAuthorityArtifa
       let observed = 0;
       let outgoing: ClientRequest | null = null;
       let incoming: IncomingMessage | null = null;
-      let successfulResponse: CloudAuthorityHttpResponse | null = null;
+      let successfulResponse: CloudAuthorityHTTPResponse | null = null;
       let idleTimer = window.setTimeout(() => fail(timedOut()), this.idleTimeoutMs);
       const deadlineTimer = window.setTimeout(() => fail(timedOut()), this.deadlineMs);
       const resetIdle = (): void => {
@@ -356,7 +356,7 @@ export class NodeCloudAuthorityArtifactTransport implements CloudAuthorityArtifa
             });
             return;
           }
-          void readJsonError(response).then(result => {
+          void readJSONError(response).then(result => {
             if (!finish()) return;
             input.body.unpipe(outgoing ?? undefined);
             input.body.destroy();

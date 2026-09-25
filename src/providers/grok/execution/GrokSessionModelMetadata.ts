@@ -1,9 +1,9 @@
 import {
-  type AcpMetadata,
-  type AcpModelInfo,
-  type AcpSessionConfigOption,
-  type AcpSessionModelState,
-  extractAcpSessionModelState,
+  type ACPMetadata,
+  type ACPModelInfo,
+  type ACPSessionConfigOption,
+  type ACPSessionModelState,
+  extractACPSessionModelState,
 } from '../../acp';
 import {
   type GrokDiscoveredModel,
@@ -16,14 +16,14 @@ export interface NormalizedGrokSessionModels {
 }
 
 export function normalizeGrokSessionModelMetadata(response: {
-  _meta?: AcpMetadata | null;
-  configOptions?: AcpSessionConfigOption[] | null;
-  models?: AcpSessionModelState | null;
+  _meta?: ACPMetadata | null;
+  configOptions?: ACPSessionConfigOption[] | null;
+  models?: ACPSessionModelState | null;
 }): NormalizedGrokSessionModels {
-  const state = extractAcpSessionModelState(response);
+  const state = extractACPSessionModelState(response);
   const rawModelsById = new Map(
     (response.models?.availableModels ?? []).flatMap(model => {
-      const id = resolveAcpModelId(model);
+      const id = resolveACPModelId(model);
       return id ? [[id, model] as const] : [];
     }),
   );
@@ -53,7 +53,7 @@ export function normalizeGrokSessionModelMetadata(response: {
 
 export function normalizeGrokSetModelMetadata(
   rawModelId: string,
-  metadata: AcpMetadata | null | undefined,
+  metadata: ACPMetadata | null | undefined,
 ): GrokDiscoveredModel | null {
   if (!isRecord(metadata?.model)) return null;
   return normalizeGrokDiscoveredModels([{
@@ -72,28 +72,28 @@ export function normalizeGrokModelUpdateMetadata(
 
 export function parseGrokModelUpdateState(
   value: unknown,
-): AcpSessionModelState | null {
+): ACPSessionModelState | null {
   if (!isRecord(value)) return null;
   const candidate = isRecord(value.models) ? value.models : value;
   if (
     !Array.isArray(candidate.availableModels)
     || typeof candidate.currentModelId !== 'string'
     || !candidate.currentModelId.trim()
-    || !candidate.availableModels.every(isAcpModelInfo)
+    || !candidate.availableModels.every(isACPModelInfo)
   ) {
     return null;
   }
 
-  return candidate as unknown as AcpSessionModelState;
+  return candidate as unknown as ACPSessionModelState;
 }
 
-function isAcpModelInfo(value: unknown): value is AcpModelInfo {
+function isACPModelInfo(value: unknown): value is ACPModelInfo {
   return isRecord(value)
     && typeof value.name === 'string'
     && readModelId(value) !== null;
 }
 
-function resolveAcpModelId(model: AcpModelInfo): string | null {
+function resolveACPModelId(model: ACPModelInfo): string | null {
   return readModelId(model);
 }
 

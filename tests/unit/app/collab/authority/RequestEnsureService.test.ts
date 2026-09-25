@@ -16,8 +16,8 @@ import {
 } from '@/app/collab/authority/RequestEnsureService';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketRepository } from '@/app/collab/authority/TicketRepository';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -46,7 +46,7 @@ class FakeHeadPolicy implements RequestEnsureHeadPolicyPort {
 describe('RequestEnsureService', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let headPolicy: FakeHeadPolicy;
   let requestIds: string[];
   let service: RequestEnsureService;
@@ -59,7 +59,7 @@ describe('RequestEnsureService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-request-ensure-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -311,7 +311,7 @@ function input(idempotencyKey: string, headOid: string, expectedMainOid = MAIN) 
   };
 }
 
-async function counts(database: SqlJsProjectDatabase) {
+async function counts(database: SQLJSProjectDatabase) {
   return database.read(connection => ({
     events: connection.get('SELECT COUNT(*) AS count FROM events')?.count,
     idempotency: connection.get('SELECT COUNT(*) AS count FROM idempotency_results')?.count,

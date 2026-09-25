@@ -8,8 +8,8 @@ const mockProcessStart = jest.fn();
 const mockProcessShutdown = jest.fn().mockResolvedValue(undefined);
 const mockResolveLaunchSpec = jest.fn();
 
-jest.mock('@/providers/codex/runtime/CodexRpcTransport', () => ({
-  CodexRpcTransport: jest.fn().mockImplementation(() => ({
+jest.mock('@/providers/codex/runtime/CodexRPCTransport', () => ({
+  CodexRPCTransport: jest.fn().mockImplementation(() => ({
     request: mockTransportRequest,
     dispose: mockTransportDispose,
     start: mockTransportStart,

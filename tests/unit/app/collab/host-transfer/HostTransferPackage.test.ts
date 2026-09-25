@@ -14,7 +14,7 @@ import {
   parseHostTransferRecoveryPackageManifest,
   serializeHostTransferPackageManifest,
 } from '@/app/collab/host-transfer/HostTransferPackage';
-import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
 
 describe('HostTransferPackage', () => {
   let operationDirectory: string;

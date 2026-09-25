@@ -13,14 +13,14 @@ import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import {
   createHarness,
   releaseSideChatHarnesses,
-  type SideChatDomHarness,
+  type SideChatDOMHarness,
   startSideChat,
-} from './SideChatDomHarness';
+} from './SideChatDOMHarness';
 
 afterEach(releaseSideChatHarnesses);
 
 function createRouting(
-  harness: SideChatDomHarness,
+  harness: SideChatDOMHarness,
   context: ProviderExecutionContext = {},
   failAt?: 'initialization' | 'missing-coordinator' | 'handoff',
 ) {

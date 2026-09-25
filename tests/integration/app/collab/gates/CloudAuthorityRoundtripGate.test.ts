@@ -8,16 +8,16 @@ import { collabCloudProjectOperationRoute } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
 import initSqlJs from 'sql.js';
 
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { createCollabFeatureSubcomposition } from '@/app/collab/CollabFeatureSubcomposition';
 import { CollabProjectSetupService } from '@/app/collab/project/CollabProjectSetupService';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
-import { NodeCloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+import { NodeCloudAuthorityHTTPTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const serverUrl = process.env.CLAUDIAN_AUTHORITY_TRANSFER_SERVER_URL;
-const describeWithServer = serverUrl ? describe : describe.skip;
+const serverURL = process.env.CLAUDIAN_AUTHORITY_TRANSFER_SERVER_URL;
+const describeWithServer = serverURL ? describe : describe.skip;
 const MEMBER_ID = 'member-authority-roundtrip-gate';
 
 function git(cwd: string, args: readonly string[]): string {
@@ -29,17 +29,17 @@ function git(cwd: string, args: readonly string[]): string {
 describeWithServer('real Cloud authority roundtrip gate', () => {
   it.each([false, true])('preserves three roundtrips after lost begin response: %s', async loseBeginResponse => {
     const PROJECT_ID = `project-authority-roundtrip-${randomUUID()}`;
-    if (!serverUrl) throw new Error('Missing real Cloud server URL');
+    if (!serverURL) throw new Error('Missing real Cloud server URL');
     const root = await mkdtemp(path.join(tmpdir(), 'claudian-authority-roundtrip-client-'));
     const SQL = await initSqlJs();
     const foundation = new ClaudianCollabService({
-      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL }),
+      createAuthorityDatabase: (authorityDirectory, resourceAdmission) => new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL }),
       getConfiguredGitPath: () => '',
       installationKey: TEST_INSTALLATION_A,
       obsidianConfigDirectory: '.obsidian',
       vaultRoot: root,
     });
-    const transport = new NodeCloudAuthorityHttpTransport();
+    const transport = new NodeCloudAuthorityHTTPTransport();
     let beginResponseLost = false;
     const cloudAuthority = new CloudAuthorityAdapter(root, {
       request: async input => {
@@ -102,7 +102,7 @@ describeWithServer('real Cloud authority roundtrip gate', () => {
       };
 
       for (const generation of [2, 4, 6]) {
-        const cloud = await composition.feature.moveLanToCloud({ projectId: PROJECT_ID, serverUrl });
+        const cloud = await composition.feature.moveLanToCloud({ projectId: PROJECT_ID, serverUrl: serverURL });
         let cloudStatus;
         if (loseBeginResponse && generation === 2) {
           cloudStatus = await recoverLostAcceptance(cloud);

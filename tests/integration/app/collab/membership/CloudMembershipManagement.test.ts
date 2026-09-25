@@ -186,7 +186,7 @@ describe('Cloud membership management', () => {
     const client = fixture.client();
     try {
       await fixture.seed(client.foundation);
-      await seedCompletedLanToCloudClaimOwner(
+      await seedCompletedLANToCloudClaimOwner(
         client.foundation,
         fixture.serverUrl,
         fixture.createdAt,
@@ -227,7 +227,7 @@ describe('Cloud membership management', () => {
     const client = fixture.client();
     try {
       await fixture.seed(client.foundation);
-      await seedCompletedLanToCloudClaimOwner(
+      await seedCompletedLANToCloudClaimOwner(
         client.foundation,
         fixture.serverUrl,
         fixture.createdAt,
@@ -279,7 +279,7 @@ describe('Cloud membership management', () => {
     let client = fixture.client();
     try {
       await fixture.seed(client.foundation);
-      await seedCompletedLanToCloudClaimOwner(
+      await seedCompletedLANToCloudClaimOwner(
         client.foundation,
         fixture.serverUrl,
         fixture.createdAt,
@@ -304,7 +304,7 @@ describe('Cloud membership management', () => {
     let client = fixture.client();
     try {
       await fixture.seed(client.foundation);
-      await seedCompletedLanToCloudClaimOwner(
+      await seedCompletedLANToCloudClaimOwner(
         client.foundation,
         fixture.serverUrl,
         fixture.createdAt,
@@ -338,7 +338,7 @@ describe('Cloud membership management', () => {
     let client = fixture.client();
     try {
       await fixture.seed(client.foundation);
-      if (retainedSource) await seedCompletedLanToCloudClaimOwner(client.foundation, fixture.serverUrl, fixture.createdAt);
+      if (retainedSource) await seedCompletedLANToCloudClaimOwner(client.foundation, fixture.serverUrl, fixture.createdAt);
       const first = client.feature.openInvitation({ projectId: PROJECT_ID, intent: 'create', purpose: 'recovery' });
       expect((await first.run()).status).not.toBe('success');
       first.dispose();
@@ -364,7 +364,7 @@ describe('Cloud membership management', () => {
     let client = fixture.client();
     try {
       await fixture.seed(client.foundation);
-      await seedCompletedLanToCloudClaimOwner(
+      await seedCompletedLANToCloudClaimOwner(
         client.foundation,
         fixture.serverUrl,
         fixture.createdAt,
@@ -1334,7 +1334,7 @@ async function waitUntil(predicate: () => boolean): Promise<void> {
   throw new Error('Timed out waiting for fixture state');
 }
 
-async function seedCompletedLanToCloudClaimOwner(
+async function seedCompletedLANToCloudClaimOwner(
   foundation: ClaudianCollabService,
   serverUrl: string,
   createdAt: string,

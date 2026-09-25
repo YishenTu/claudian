@@ -11,14 +11,14 @@ import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepositor
 import { MembershipAdminRepository } from '@/app/collab/authority/MembershipAdminRepository';
 import type {
   AuthorityDatabaseConnection,
-  SqlJsMutationResult,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSMutationResult,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import type {
   AcknowledgeManagerResponsibilityRequest,
   CancelManagerResponsibilityOfferRequest,
   CreateManagerResponsibilityOfferRequest,
   DeclineManagerResponsibilityRequest,
-} from '@/app/collab/lan/LanCollabControlOperations';
+} from '@/app/collab/lan/LANCollabControlOperations';
 import type { CollabManagerResponsibilityOfferSummary } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -27,7 +27,7 @@ const OFFER_TTL_MS = 10 * 60 * 1_000;
 export interface ManagerResponsibilityDatabasePort {
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
-  ): Promise<SqlJsMutationResult<T>>;
+  ): Promise<SQLJSMutationResult<T>>;
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T>;
 }
 

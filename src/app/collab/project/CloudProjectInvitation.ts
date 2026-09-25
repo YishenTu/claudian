@@ -1,6 +1,6 @@
 import { collabControlOperationCodec,type CollabControlOperationMap } from '@claudian-collab/protocol';
 
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface CloudProjectInvitation {
@@ -51,7 +51,7 @@ function decodeEnvelope<T>(encoded: string, prefix: string, field: 'invitation' 
       || typeof value.serverUrl !== 'string') throw new TypeError('Invalid invitation');
     return {
       payload: decode((value as Record<string, unknown>)[field]),
-      serverUrl: validateCloudServerUrl(value.serverUrl, 'serverUrl'),
+      serverUrl: validateCloudServerURL(value.serverUrl, 'serverUrl'),
     };
   } catch {
     throw new CollabError({ code: 'invitation-invalid', recoveryActions: ['refresh-invitation'] });

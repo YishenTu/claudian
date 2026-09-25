@@ -398,7 +398,7 @@ test('Collab LAN data lanes retain one adapter and no Host-only authority bypass
   ];
 
   assert.deepEqual(findForbiddenSymbolInventoryViolations(
-    /new LanAuthorityAdapter\b/,
+    /new LANAuthorityAdapter\b/,
     new Map([['src/app/collab/publish/CollabPublicationService.ts', 1]]),
   ), []);
   assert.deepEqual(findMatches(
@@ -791,7 +791,7 @@ test('active Collab consumers use protocol-owned semantic identity predicates', 
     entries,
     /\[A-Za-z0-9\]\[A-Za-z0-9_-\]\{0,63\}/,
     new Map([
-      ['src/app/collab/lan/LanHostCoordinator.ts', 1],
+      ['src/app/collab/lan/LANHostCoordinator.ts', 1],
       ['src/app/collab/project/CollabWorkingCopySlug.ts', 1],
     ]),
   ), []);

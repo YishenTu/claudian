@@ -5,7 +5,7 @@ import {
   readStoredBoolean,
   readStoredString,
 } from '../../core/providers/settings/storedSettings';
-import type { HostnameCliPaths } from '../../core/types/settings';
+import type { HostnameCLIPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
   clampPiThinkingLevel,
@@ -21,7 +21,7 @@ export type PiToolMode = 'all' | 'readonly';
 
 export interface PersistedPiProviderSettings {
   cliPath: string;
-  cliPathsByHost: HostnameCliPaths;
+  cliPathsByHost: HostnameCLIPaths;
   discoveredModels: PiDiscoveredModel[];
   enabled: boolean;
   environmentHash: string;

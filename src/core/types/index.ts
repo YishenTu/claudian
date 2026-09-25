@@ -34,7 +34,7 @@ export {
   type ClaudianSettings,
   type EnvironmentScope,
   type EnvSnippet,
-  type HostnameCliPaths,
+  type HostnameCLIPaths,
   type KeyboardNavigationSettings,
   type LegacyLinkedContentSettingsInput,
   type PermissionMode,

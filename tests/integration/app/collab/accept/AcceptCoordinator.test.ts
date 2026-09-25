@@ -26,8 +26,8 @@ import { AcceptGitRepository } from '@/app/collab/accept/AcceptGitRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
@@ -46,7 +46,7 @@ describe('AcceptCoordinator Native Git integration', () => {
   let authorityDirectory: string;
   let resources: CollabLocalProjectRepository;
   let resource: Awaited<ReturnType<CollabLocalProjectRepository['createOwnedAuthorityDirectory']>>;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let git: GitRepositoryService;
   let repository: AcceptGitRepository;
   let repositoryPath: string;
@@ -304,8 +304,8 @@ describe('AcceptCoordinator Native Git integration', () => {
     };
   }
 
-  async function openDatabase(): Promise<SqlJsProjectDatabase> {
-    const opened = new SqlJsProjectDatabase(authorityDirectory, {
+  async function openDatabase(): Promise<SQLJSProjectDatabase> {
+    const opened = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
       resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
     });
@@ -336,7 +336,7 @@ describe('AcceptCoordinator Native Git integration', () => {
     } finally {
       legacy.close();
     }
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
       resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation),
     });

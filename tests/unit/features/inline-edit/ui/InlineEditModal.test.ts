@@ -67,7 +67,7 @@ function computeDiff(oldText: string, newText: string): DiffOp[] {
   return ops;
 }
 
-function diffToHtml(ops: DiffOp[]): string {
+function diffToHTML(ops: DiffOp[]): string {
   return ops
     .map((op) => {
       const escaped = op.text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -279,11 +279,11 @@ describe('InlineEditModal - Word-level Diff', () => {
     });
   });
 
-  describe('diffToHtml', () => {
+  describe('diffToHTML', () => {
     it('should return plain text for equal ops', () => {
       const ops: DiffOp[] = [{ type: 'equal', text: 'hello' }];
 
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toBe('hello');
       expect(html).not.toContain('span');
@@ -292,7 +292,7 @@ describe('InlineEditModal - Word-level Diff', () => {
     it('should wrap deleted text with del class', () => {
       const ops: DiffOp[] = [{ type: 'delete', text: 'removed' }];
 
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toContain('claudian-diff-del');
       expect(html).toContain('removed');
@@ -301,7 +301,7 @@ describe('InlineEditModal - Word-level Diff', () => {
     it('should wrap inserted text with ins class', () => {
       const ops: DiffOp[] = [{ type: 'insert', text: 'added' }];
 
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toContain('claudian-diff-ins');
       expect(html).toContain('added');
@@ -310,7 +310,7 @@ describe('InlineEditModal - Word-level Diff', () => {
     it('should escape HTML special characters', () => {
       const ops: DiffOp[] = [{ type: 'insert', text: '<script>alert("xss")</script>' }];
 
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toContain('&lt;script&gt;');
       expect(html).not.toContain('<script>');
@@ -323,7 +323,7 @@ describe('InlineEditModal - Word-level Diff', () => {
         { type: 'insert', text: 'universe' },
       ];
 
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toContain('Hello ');
       expect(html).toContain('claudian-diff-del');
@@ -335,7 +335,7 @@ describe('InlineEditModal - Word-level Diff', () => {
     it('should handle empty text', () => {
       const ops: DiffOp[] = [{ type: 'equal', text: '' }];
 
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toBe('');
     });
@@ -343,7 +343,7 @@ describe('InlineEditModal - Word-level Diff', () => {
     it('should preserve whitespace', () => {
       const ops: DiffOp[] = [{ type: 'equal', text: '  spaces  ' }];
 
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toBe('  spaces  ');
     });
@@ -354,7 +354,7 @@ describe('InlineEditModal - Word-level Diff', () => {
         { type: 'insert', text: 'a > b' },
       ];
 
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toContain('&lt;');
       expect(html).toContain('&gt;');
@@ -364,7 +364,7 @@ describe('InlineEditModal - Word-level Diff', () => {
   describe('integration: diff and render', () => {
     it('should produce valid HTML for simple edit', () => {
       const ops = computeDiff('old text', 'new text');
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       // Should have both del and ins spans
       expect(html).toContain('claudian-diff-del');
@@ -373,7 +373,7 @@ describe('InlineEditModal - Word-level Diff', () => {
 
     it('should produce plain text for no changes', () => {
       const ops = computeDiff('same text', 'same text');
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toBe('same text');
       expect(html).not.toContain('span');
@@ -384,7 +384,7 @@ describe('InlineEditModal - Word-level Diff', () => {
       const newCode = 'const x = 2;';
 
       const ops = computeDiff(oldCode, newCode);
-      const html = diffToHtml(ops);
+      const html = diffToHTML(ops);
 
       expect(html).toContain('1');
       expect(html).toContain('2');
@@ -395,7 +395,7 @@ describe('InlineEditModal - Word-level Diff', () => {
       const newText = '*italic* text';
 
       const ops = computeDiff(oldText, newText);
-      diffToHtml(ops); // Verify it doesn't throw
+      diffToHTML(ops); // Verify it doesn't throw
 
       expect(ops.some((op) => op.type === 'delete')).toBe(true);
       expect(ops.some((op) => op.type === 'insert')).toBe(true);

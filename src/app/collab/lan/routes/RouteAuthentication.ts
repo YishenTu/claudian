@@ -1,14 +1,14 @@
 import {
   COLLAB_CONTROL_OPERATION_BINDINGS,
 } from '@/app/collab/lan/CollabControlOperationBindings';
-import type { LanCollabControlOperation } from '@/app/collab/lan/LanCollabControlOperations';
+import type { LANCollabControlOperation } from '@/app/collab/lan/LANCollabControlOperations';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export function requireOperationCredential(
   authorization: string | null,
-  operation: LanCollabControlOperation,
+  operation: LANCollabControlOperation,
 ): string {
   const authentication = COLLAB_CONTROL_OPERATION_BINDINGS[operation].authentication;
   if (authentication === 'public') {

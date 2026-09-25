@@ -1,7 +1,7 @@
-type JsonTokenType = 'brace' | 'bracket' | 'separator' | 'delimiter' | 'string' | 'number' | 'name';
+type JSONTokenType = 'brace' | 'bracket' | 'separator' | 'delimiter' | 'string' | 'number' | 'name';
 
-type JsonToken = {
-  type: JsonTokenType;
+type JSONToken = {
+  type: JSONTokenType;
   value: string;
 };
 
@@ -44,7 +44,7 @@ function getParentPrefix(parentToolUseId: string | null): string {
   return `${parentToolUseId ?? MAIN_AGENT_STREAM}:`;
 }
 
-function findClosingTokenIndex(tokens: JsonToken[], value: string): number {
+function findClosingTokenIndex(tokens: JSONToken[], value: string): number {
   for (let index = tokens.length - 1; index >= 0; index -= 1) {
     if (tokens[index]?.value === value) {
       return index;
@@ -53,8 +53,8 @@ function findClosingTokenIndex(tokens: JsonToken[], value: string): number {
   return -1;
 }
 
-function tokenizePartialJson(input: string): JsonToken[] {
-  const tokens: JsonToken[] = [];
+function tokenizePartialJSON(input: string): JSONToken[] {
+  const tokens: JSONToken[] = [];
   let index = 0;
 
   while (index < input.length) {
@@ -172,7 +172,7 @@ function tokenizePartialJson(input: string): JsonToken[] {
   return tokens;
 }
 
-function stripIncompleteTail(tokens: JsonToken[]): JsonToken[] {
+function stripIncompleteTail(tokens: JSONToken[]): JSONToken[] {
   if (tokens.length === 0) {
     return tokens;
   }
@@ -207,9 +207,9 @@ function stripIncompleteTail(tokens: JsonToken[]): JsonToken[] {
   }
 }
 
-function closeOpenContainers(tokens: JsonToken[]): JsonToken[] {
+function closeOpenContainers(tokens: JSONToken[]): JSONToken[] {
   const completedTokens = [...tokens];
-  const closingTokens: JsonToken[] = [];
+  const closingTokens: JSONToken[] = [];
 
   for (const token of completedTokens) {
       if (token.type === 'brace') {
@@ -246,20 +246,20 @@ function closeOpenContainers(tokens: JsonToken[]): JsonToken[] {
   return completedTokens;
 }
 
-function renderJson(tokens: JsonToken[]): string {
+function renderJSON(tokens: JSONToken[]): string {
   return tokens
     .map((token) => token.type === 'string' ? `"${token.value}"` : token.value)
     .join('');
 }
 
 function parsePartialToolInput(input: string): Record<string, unknown> | null {
-  const tokens = tokenizePartialJson(input);
+  const tokens = tokenizePartialJSON(input);
   if (tokens.length === 0) {
     return {};
   }
 
   try {
-    const repairedJson = renderJson(closeOpenContainers(stripIncompleteTail(tokens)));
+    const repairedJson = renderJSON(closeOpenContainers(stripIncompleteTail(tokens)));
     return normalizeToolInput(JSON.parse(repairedJson));
   } catch {
     return null;

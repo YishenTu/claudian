@@ -2,7 +2,7 @@ import type { CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
 import { testTime } from '@test/helpers/testClock';
 
 import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
-import type { LanToCloudCancellationIntent } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
+import type { LANToCloudCancellationIntent } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-entry-service';
@@ -93,7 +93,7 @@ function createSubject(options: Readonly<{
     })),
     readLanToCloudSourceProposal: jest.fn(async () => ({
       beginSubmission: 'not-sent',
-      cancellation: null as LanToCloudCancellationIntent | null,
+      cancellation: null as LANToCloudCancellationIntent | null,
       proposedByMemberId: 'member-host',
       request: {
         expectedAuthorityGeneration: 7,

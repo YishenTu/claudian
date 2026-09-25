@@ -18,7 +18,7 @@ import { testTime } from '@test/helpers/testClock';
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import {
   type CollabLocalCloudMembershipRecord,
-  type CollabLocalLanMembershipRecord,
+  type CollabLocalLANMembershipRecord,
   CollabLocalProjectRepository,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -30,8 +30,8 @@ import {
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
-import { LanAuthorityAdapter } from '@/app/collab/remote-authority/LanAuthorityAdapter';
-import type { CloudAuthorityHttpRequest } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+import { LANAuthorityAdapter } from '@/app/collab/remote-authority/LANAuthorityAdapter';
+import type { CloudAuthorityHTTPRequest } from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-a';
@@ -51,7 +51,7 @@ describe('Local Publish adapters', () => {
     workspace = new CollabWorkspaceService(vaultRoot);
     repositories = { assertLocalRepositoryIdentity: jest.fn().mockResolvedValue(undefined) };
     sessions = new CollabProjectWorkSessionRegistry();
-    authoritySessions = new CollabAuthoritySessionFactory([new LanAuthorityAdapter()]);
+    authoritySessions = new CollabAuthoritySessionFactory([new LANAuthorityAdapter()]);
     await workspace.claimProjectsFolder('workspace');
     await mkdir(path.join(vaultRoot, 'workspace', PROJECT_ID), { recursive: true });
     await projects.upsertProject({
@@ -185,7 +185,7 @@ describe('Local Publish adapters', () => {
     const credential = await new CloudProjectCredentialStore(vaultRoot).getOrCreate(PROJECT_ID);
     const record = cloudMembership();
     await projects.saveMembership(record);
-    const request = jest.fn(async (input: CloudAuthorityHttpRequest) => {
+    const request = jest.fn(async (input: CloudAuthorityHTTPRequest) => {
       if (input.method === 'GET') {
         return {
           body: collabCloudCapabilityDocument(['project-snapshot'], cloudCapabilityLimits()),
@@ -230,7 +230,7 @@ describe('Local Publish adapters', () => {
     await projects.saveMembership(membership());
     const localEndpoint = 'https://192.168.1.44:54546';
     const localFactory = new CollabAuthoritySessionFactory([
-      new LanAuthorityAdapter({
+      new LANAuthorityAdapter({
         resolveLocalTarget: jest.fn().mockResolvedValue({ endpoint: localEndpoint }),
       }),
     ]);
@@ -264,7 +264,7 @@ describe('Local Publish adapters', () => {
       .mockResolvedValueOnce({ endpoint: firstEndpoint })
       .mockResolvedValue({ endpoint: secondEndpoint });
     const localFactory = new CollabAuthoritySessionFactory([
-      new LanAuthorityAdapter({ resolveLocalTarget }),
+      new LANAuthorityAdapter({ resolveLocalTarget }),
     ]);
     const context = await new LocalPublishProjectPort(
       projects,
@@ -302,7 +302,7 @@ describe('Local Publish adapters', () => {
       .mockResolvedValueOnce({ endpoint: firstEndpoint })
       .mockResolvedValue({ endpoint: secondEndpoint });
     const localFactory = new CollabAuthoritySessionFactory([
-      new LanAuthorityAdapter({ resolveLocalTarget }),
+      new LANAuthorityAdapter({ resolveLocalTarget }),
     ]);
     const context = await new LocalPublishProjectPort(
       projects,
@@ -423,8 +423,8 @@ describe('Local Publish adapters', () => {
 });
 
 function membership(
-  overrides: Partial<CollabLocalLanMembershipRecord> = {},
-): CollabLocalLanMembershipRecord {
+  overrides: Partial<CollabLocalLANMembershipRecord> = {},
+): CollabLocalLANMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,

@@ -7,7 +7,7 @@
 import type { EditorView } from '@codemirror/view';
 import type { Editor } from 'obsidian';
 
-import { escapePromptXmlAttribute, formatPromptXmlCdata } from './promptXml';
+import { escapePromptXMLAttribute, formatPromptXMLCdata } from './promptXML';
 
 /**
  * Gets the CodeMirror EditorView from an Obsidian Editor.
@@ -89,7 +89,7 @@ export function formatEditorContext(
     const lineAttr = context.startLine && context.lineCount
       ? ` lines="${context.startLine}-${context.startLine + context.lineCount - 1}"`
       : '';
-    return `<editor_selection path="${escapePromptXmlAttribute(context.notePath)}"${lineAttr}>\n${formatPromptXmlCdata(
+    return `<editor_selection path="${escapePromptXMLAttribute(context.notePath)}"${lineAttr}>\n${formatPromptXMLCdata(
       context.selectedText,
     )}\n</editor_selection>`;
   } else if (context.mode === 'cursor' && context.cursorContext) {
@@ -105,7 +105,7 @@ export function formatEditorContext(
       content = `${ctx.beforeCursor}|${ctx.afterCursor} #inline`;
     }
     const lineAttr = options.includeCursorLine ? ` line="${ctx.line + 1}"` : '';
-    return `<editor_cursor path="${escapePromptXmlAttribute(context.notePath)}"${lineAttr}>\n${formatPromptXmlCdata(
+    return `<editor_cursor path="${escapePromptXMLAttribute(context.notePath)}"${lineAttr}>\n${formatPromptXMLCdata(
       content,
     )}\n</editor_cursor>`;
   }

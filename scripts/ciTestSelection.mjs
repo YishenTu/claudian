@@ -24,7 +24,7 @@ const fileConsumers = [
   ]],
   // esbuild reads these entry points dynamically. Their owner tests also carry
   // the transitive import edges needed when a dependency of an entry changes.
-  [/^(?:src|tests\/unit)\/(?:app\/collab\/lan\/LanTlsIdentity|features\/collab\/detail\/review\/CollabDiffRenderer|features\/collab\/shared\/markdown\/MarkdownDraftEditor)(?:\.test)?\.ts$/, [
+  [/^(?:src|tests\/unit)\/(?:app\/collab\/lan\/LANTLSIdentity|features\/collab\/detail\/review\/CollabDiffRenderer|features\/collab\/shared\/markdown\/MarkdownDraftEditor)(?:\.test)?\.ts$/, [
     'tests/integration/build/collab-dependency-envelope.test.ts',
   ]],
   [/^src\/i18n\/locales\/.*\.json$/, ['tests/integration/build/collab-dependency-envelope.test.ts']],

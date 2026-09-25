@@ -113,7 +113,7 @@ type ProviderCommandWarmupEntry = {
   promise: Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
 };
 
-type SdkCommandDiscovery = {
+type SDKCommandDiscovery = {
   result: ProviderCommandDiscoveryResult<SlashCommand>;
   commandSnapshot?: readonly SlashCommand[];
 };
@@ -1839,7 +1839,7 @@ export class TabManager implements TabManagerInterface {
   async #getSdkCommandDiscovery(
     tabId?: TabId,
     signal?: AbortSignal,
-  ): Promise<SdkCommandDiscovery> {
+  ): Promise<SDKCommandDiscovery> {
     throwIfAborted(signal, 'Provider command discovery aborted');
     const targetTab = (tabId ? this.tabs.get(tabId) : this.getActiveTab()) ?? null;
     if (!targetTab || !this.#isTabAlive(targetTab)) {

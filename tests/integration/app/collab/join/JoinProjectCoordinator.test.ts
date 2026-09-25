@@ -27,13 +27,13 @@ import {
   type JoinProjectRecord,
 } from '@/app/collab/join/JoinProjectRecord';
 import type {
-  CollabJsonRequest,
-} from '@/app/collab/lan/CollabHttpClient';
+  CollabJSONRequest,
+} from '@/app/collab/lan/CollabHTTPClient';
 import {
   InvitationCodec,
-  type LanCollabInvitation,
+  type LANCollabInvitation,
 } from '@/app/collab/lan/InvitationCodec';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const NOW = new Date(testTime({ days: -19 }));
@@ -664,7 +664,7 @@ function fakePinnedClient(
   controlPaths: string[] = [],
   projectName?: string,
 ) {
-  const request = async <T>(definition: CollabJsonRequest<T>): Promise<T> => {
+  const request = async <T>(definition: CollabJSONRequest<T>): Promise<T> => {
     controlPaths.push(definition.path);
     const id = projectId();
     if (definition.path.endsWith('/activate') || definition.path.endsWith('/snapshot')) {
@@ -726,7 +726,7 @@ function envelope(data: unknown) {
   };
 }
 
-function createInvitation(projectId: string): LanCollabInvitation {
+function createInvitation(projectId: string): LANCollabInvitation {
   return {
     caFingerprint: CA_FINGERPRINT,
     endpoint: 'https://127.0.0.1:54545',
@@ -738,7 +738,7 @@ function createInvitation(projectId: string): LanCollabInvitation {
   };
 }
 
-function encodeInvitation(invitation: LanCollabInvitation): string {
+function encodeInvitation(invitation: LANCollabInvitation): string {
   return new InvitationCodec({
     isAddressAllowed: address => address === '127.0.0.1',
     now: () => NOW,
@@ -746,7 +746,7 @@ function encodeInvitation(invitation: LanCollabInvitation): string {
 }
 
 function encodeLegacyInvitation(
-  invitation: Omit<LanCollabInvitation, 'protocolVersion'> & { protocolVersion: 7 },
+  invitation: Omit<LANCollabInvitation, 'protocolVersion'> & { protocolVersion: 7 },
 ): string {
   const payload = Buffer.from(JSON.stringify(invitation), 'utf8').toString('base64url');
   return `claudian-collab:v7:${payload}`;

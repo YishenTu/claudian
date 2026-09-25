@@ -101,7 +101,7 @@ export function stripSurroundingQuotes(value: string): string {
  *
  * Returns an empty string when nothing is configured; callers treat that as "unset".
  */
-export function normalizeConfiguredCliPath(rawPath: string | undefined): string {
+export function normalizeConfiguredCLIPath(rawPath: string | undefined): string {
   const trimmed = (rawPath ?? '').trim();
   if (!trimmed) return '';
   return expandHomePath(stripSurroundingQuotes(trimmed));

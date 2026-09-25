@@ -8,8 +8,8 @@ import {
 
 import type {
   AuthorityDatabaseConnection,
-  SqlJsMutationResult,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSMutationResult,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import type { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -17,7 +17,7 @@ interface AdmissionSettlementDatabase {
   read<T>(reader: (connection: AuthorityDatabaseConnection) => T): Promise<T>;
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
-  ): Promise<SqlJsMutationResult<T>>;
+  ): Promise<SQLJSMutationResult<T>>;
 }
 
 interface PendingAdmissionIdentity {

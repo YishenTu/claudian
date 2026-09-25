@@ -17,7 +17,7 @@ import {
   type EditorSelectionContext,
 } from '../../../utils/editor';
 import { buildContextFromHistory, buildPromptWithHistoryContext } from '../../../utils/session';
-import type { AcpContentBlock } from '../../acp';
+import type { ACPContentBlock } from '../../acp';
 
 export interface OpencodePromptRequest {
   text: string;
@@ -72,8 +72,8 @@ export function buildOpencodePromptText(
 export function buildOpencodePromptBlocks(
   request: OpencodePromptRequest,
   conversationHistory: ChatMessage[] = [],
-): AcpContentBlock[] {
-  const blocks: AcpContentBlock[] = [
+): ACPContentBlock[] {
+  const blocks: ACPContentBlock[] = [
     { type: 'text', text: buildOpencodePromptText(request, conversationHistory) },
   ];
 

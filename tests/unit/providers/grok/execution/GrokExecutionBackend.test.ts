@@ -26,14 +26,14 @@ import {
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type {
-  AcpLoadSessionRequest,
-  AcpNewSessionRequest,
-  AcpPromptRequest,
-  AcpSessionModelState,
-  AcpSessionNotification,
-  AcpSetSessionModelRequest,
-  AcpSetSessionModelResponse,
-  AcpSetSessionModeRequest,
+  ACPLoadSessionRequest,
+  ACPNewSessionRequest,
+  ACPPromptRequest,
+  ACPSessionModelState,
+  ACPSessionNotification,
+  ACPSetSessionModelRequest,
+  ACPSetSessionModelResponse,
+  ACPSetSessionModeRequest,
 } from '@/providers/acp';
 import {
   GrokExecutionBackend,
@@ -175,11 +175,11 @@ async function drainMicrotasks(): Promise<void> {
 }
 
 class FakeNativeConnection implements GrokExecutionNativeConnection {
-  readonly loadRequests: AcpLoadSessionRequest[] = [];
-  readonly modeRequests: AcpSetSessionModeRequest[] = [];
-  readonly modelRequests: AcpSetSessionModelRequest[] = [];
-  readonly newRequests: AcpNewSessionRequest[] = [];
-  readonly promptRequests: AcpPromptRequest[] = [];
+  readonly loadRequests: ACPLoadSessionRequest[] = [];
+  readonly modeRequests: ACPSetSessionModeRequest[] = [];
+  readonly modelRequests: ACPSetSessionModelRequest[] = [];
+  readonly newRequests: ACPNewSessionRequest[] = [];
+  readonly promptRequests: ACPPromptRequest[] = [];
   cancelCalls = 0;
   forkCalls: unknown[] = [];
   initializeCalls = 0;
@@ -188,19 +188,19 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
   shutdownCalls = 0;
   loadResponse: Awaited<ReturnType<GrokExecutionNativeConnection['loadSession']>> | null = null;
   loadImplementation: (
-    request: AcpLoadSessionRequest,
+    request: ACPLoadSessionRequest,
   ) => ReturnType<GrokExecutionNativeConnection['loadSession']> = async request => (
     this.loadResponse ?? { sessionId: request.sessionId }
   );
-  private notification: ((value: AcpSessionNotification, source: 'extension' | 'standard') => void)
+  private notification: ((value: ACPSessionNotification, source: 'extension' | 'standard') => void)
     | null = null;
   private retainedNotification: ((
-    value: AcpSessionNotification,
+    value: ACPSessionNotification,
     source: 'extension' | 'standard',
   ) => void) | null = null;
   private permissionModeChanged: ((mode: 'normal' | 'yolo') => void) | null = null;
-  private modelsChanged: ((models: AcpSessionModelState) => void) | null = null;
-  private retainedModelsChanged: ((models: AcpSessionModelState) => void) | null = null;
+  private modelsChanged: ((models: ACPSessionModelState) => void) | null = null;
+  private retainedModelsChanged: ((models: ACPSessionModelState) => void) | null = null;
   initializeImplementation: () => Promise<void> = async () => {};
   forkImplementation: (request: {
     newCwd: string;
@@ -225,8 +225,8 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
   }
   interjectImplementation: () => Promise<void> = async () => {};
   modelImplementation: (
-    request: AcpSetSessionModelRequest,
-  ) => Promise<AcpSetSessionModelResponse> = async () => ({});
+    request: ACPSetSessionModelRequest,
+  ) => Promise<ACPSetSessionModelResponse> = async () => ({});
   promptImplementation: () => Promise<{ stopReason: string }> = async () => ({
     stopReason: 'end_turn',
   });
@@ -265,32 +265,32 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
   }
 
   async loadSession(
-    request: AcpLoadSessionRequest,
+    request: ACPLoadSessionRequest,
   ): ReturnType<GrokExecutionNativeConnection['loadSession']> {
     this.loadRequests.push(request);
     return this.loadImplementation(request);
   }
 
-  async newSession(request: AcpNewSessionRequest): Promise<{ sessionId: string }> {
+  async newSession(request: ACPNewSessionRequest): Promise<{ sessionId: string }> {
     this.newRequests.push(request);
     return { sessionId: 'session-new' };
   }
 
   onNotification(
-    listener: (value: AcpSessionNotification, source: 'extension' | 'standard') => void,
+    listener: (value: ACPSessionNotification, source: 'extension' | 'standard') => void,
   ): () => void {
     this.notification = listener;
     this.retainedNotification = listener;
     return () => { this.notification = null; };
   }
 
-  onModelsChanged(listener: (models: AcpSessionModelState) => void): () => void {
+  onModelsChanged(listener: (models: ACPSessionModelState) => void): () => void {
     this.modelsChanged = listener;
     this.retainedModelsChanged = listener;
     return () => { this.modelsChanged = null; };
   }
 
-  async prompt(request: AcpPromptRequest): Promise<{ stopReason: string }> {
+  async prompt(request: ACPPromptRequest): Promise<{ stopReason: string }> {
     this.promptRequests.push(request);
     return this.promptImplementation();
   }
@@ -321,11 +321,11 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
     this.permissionModeChanged?.(mode);
   }
 
-  async setMode(request: AcpSetSessionModeRequest): Promise<void> {
+  async setMode(request: ACPSetSessionModeRequest): Promise<void> {
     this.modeRequests.push(request);
   }
 
-  async setModel(request: AcpSetSessionModelRequest): Promise<AcpSetSessionModelResponse> {
+  async setModel(request: ACPSetSessionModelRequest): Promise<ACPSetSessionModelResponse> {
     this.modelRequests.push(request);
     return this.modelImplementation(request);
   }
@@ -344,7 +344,7 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
       sessionId: 'session-existing',
       update,
       ...(metadata ? { _meta: metadata } : {}),
-    } as unknown as AcpSessionNotification, source);
+    } as unknown as ACPSessionNotification, source);
   }
 
   emitRetained(
@@ -354,14 +354,14 @@ class FakeNativeConnection implements GrokExecutionNativeConnection {
     this.retainedNotification?.({
       sessionId: 'session-existing',
       update,
-    } as unknown as AcpSessionNotification, source);
+    } as unknown as ACPSessionNotification, source);
   }
 
-  emitModelsChanged(models: AcpSessionModelState): void {
+  emitModelsChanged(models: ACPSessionModelState): void {
     this.modelsChanged?.(models);
   }
 
-  emitRetainedModelsChanged(models: AcpSessionModelState): void {
+  emitRetainedModelsChanged(models: ACPSessionModelState): void {
     this.retainedModelsChanged?.(models);
   }
 }
@@ -764,7 +764,7 @@ describe('GrokExecutionBackend', () => {
     }).createSession(sessionConfig);
     const run = session.execute(grok45Request('max'));
     while (native.promptRequests.length === 0) await Promise.resolve();
-    const models: AcpSessionModelState = {
+    const models: ACPSessionModelState = {
       availableModels: [{
         _meta: {
           reasoningEffort: 'max',

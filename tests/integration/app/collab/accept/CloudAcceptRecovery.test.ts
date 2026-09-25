@@ -44,9 +44,9 @@ import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/Cloud
 import { CollabAuthorityControlRouter } from '@/app/collab/remote-authority/CollabAuthorityControlRouter';
 import { CollabAuthoritySessionFactory } from '@/app/collab/remote-authority/CollabAuthoritySessionFactory';
 import type {
-  CloudAuthorityHttpRequest,
-  CloudAuthorityHttpResponse,
-} from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+  CloudAuthorityHTTPRequest,
+  CloudAuthorityHTTPResponse,
+} from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 jest.setTimeout(30_000);
@@ -279,7 +279,7 @@ class CommitThenDisconnectTransport {
     private readonly acceptedOid: string,
   ) {}
 
-  async request(input: CloudAuthorityHttpRequest): Promise<CloudAuthorityHttpResponse> {
+  async request(input: CloudAuthorityHTTPRequest): Promise<CloudAuthorityHTTPResponse> {
     if (input.method === 'GET') {
       return {
         body: collabCloudCapabilityDocument(
@@ -325,7 +325,7 @@ class CommitThenDisconnectTransport {
     throw new Error(`Unexpected Cloud operation: ${String(operation)}`);
   }
 
-  private success(requestId: string, data: unknown): CloudAuthorityHttpResponse {
+  private success(requestId: string, data: unknown): CloudAuthorityHTTPResponse {
     return {
       body: collabCloudSuccessEnvelope(requestId, data),
       contentType: 'application/json; charset=utf-8',

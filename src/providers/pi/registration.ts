@@ -11,7 +11,7 @@ import { piSettingsReconciler } from './env/PiSettingsReconciler';
 import { PiExecutionBackend } from './execution/PiExecutionBackend';
 import { PiConversationHistoryService } from './history/PiConversationHistoryService';
 import { getPiProviderSettings, projectPiModelSettings, updatePiProviderSettings } from './settings';
-import { ObsidianPiExtensionUiRenderer } from './ui/ObsidianPiExtensionUiRenderer';
+import { ObsidianPiExtensionUIRenderer } from './ui/ObsidianPiExtensionUIRenderer';
 import { piChatUIConfig } from './ui/PiChatUIConfig';
 
 export const piProviderRegistration: ProviderModule = {
@@ -22,7 +22,7 @@ export const piProviderRegistration: ProviderModule = {
   createExecutionBackend: (plugin) => new PiExecutionBackend(
     plugin,
     getPiWorkspaceServices(),
-    { extensionUiRenderer: new ObsidianPiExtensionUiRenderer(plugin.app) },
+    { extensionUiRenderer: new ObsidianPiExtensionUIRenderer(plugin.app) },
   ),
 
   displayName: 'Pi',

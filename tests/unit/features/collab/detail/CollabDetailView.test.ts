@@ -19,7 +19,7 @@ import type {
 import {
   COLLAB_DETAIL_VIEW_TYPE,
   type CollabDetailDiffPort,
-  type CollabDetailObjectUrlPort,
+  type CollabDetailObjectURLPort,
   CollabDetailView,
   CollabDetailViewCoordinator,
 } from '@/features/collab/detail/CollabDetailView';
@@ -33,7 +33,7 @@ describe('CollabDetailView', () => {
   it('retains restored state without subscribing or loading while admission is closed', async () => {
     const port = detailPort(requestReview());
     port.isDetailAdmissionOpen.mockReturnValue(false);
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.setState(viewState(), { history: false });
     await view.onOpen();
@@ -48,7 +48,7 @@ describe('CollabDetailView', () => {
   it('retains restored Ticket state without subscribing or loading while admission is closed', async () => {
     const port = detailPort(requestReview());
     port.isDetailAdmissionOpen.mockReturnValue(false);
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     const state: CollabTicketDetailViewState = {
       kind: 'ticket',
       projectId: 'project-a',
@@ -67,7 +67,7 @@ describe('CollabDetailView', () => {
   it('validates restored detail identifiers by their semantic contracts', async () => {
     const port = detailPort(requestReview());
     port.isDetailAdmissionOpen.mockReturnValue(false);
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     const projectId = `p${'a'.repeat(63)}`;
     const ticketId = `t${'b'.repeat(127)}`;
 
@@ -90,7 +90,7 @@ describe('CollabDetailView', () => {
   it('distinguishes Git OIDs from the working-tree snapshot digest', async () => {
     const port = detailPort(requestReview());
     port.isDetailAdmissionOpen.mockReturnValue(false);
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     const state = {
       baseOid: 'a'.repeat(40),
       headOid: 'b'.repeat(64),
@@ -109,7 +109,7 @@ describe('CollabDetailView', () => {
   it('loads normally once admission is open', async () => {
     const review = requestReview();
     const port = detailPort(review);
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.onOpen();
     await view.setState(viewState(), { history: false });
@@ -148,7 +148,7 @@ describe('CollabDetailView', () => {
         state: 'request-synchronized',
       },
     });
-    const view = createView(port, renderer, objectUrlPort(), undefined, leaf);
+    const view = createView(port, renderer, objectURLPort(), undefined, leaf);
 
     await view.setState(workingTreeViewState(), { history: false });
     await nextTurn();
@@ -241,7 +241,7 @@ describe('CollabDetailView', () => {
         },
       },
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.setState(workingTreeViewState(), { history: false });
     const description = view.contentEl.querySelector<HTMLElement>(
@@ -279,7 +279,7 @@ describe('CollabDetailView', () => {
         },
       },
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.setState(workingTreeViewState(), { history: false });
 
@@ -320,7 +320,7 @@ describe('CollabDetailView', () => {
         status: 'success',
         value: { ...review.detail.request, description: 'Second description', revision: 3 },
       });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.setState(viewState(), { history: false });
     await nextTurn();
@@ -410,7 +410,7 @@ describe('CollabDetailView', () => {
         status: 'success',
         value: { ...review.detail.request, description: 'Retried draft', revision: 2 },
       });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.setState(viewState(), { history: false });
     const description = view.contentEl.querySelector<HTMLElement>(
       '[data-collab-description="true"]',
@@ -456,7 +456,7 @@ describe('CollabDetailView', () => {
     port.updateRequestMetadata.mockReturnValue(pending.promise);
     const working = workingTreeReview();
     port.prepareWorkingTreeReview.mockResolvedValue({ status: 'success', value: working });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.setState(viewState(), { history: false });
     const description = view.contentEl.querySelector<HTMLElement>(
       '[data-collab-description="true"]',
@@ -501,7 +501,7 @@ describe('CollabDetailView', () => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
     await view.setState(viewState(), { history: false });
     const description = view.contentEl.querySelector<HTMLElement>(
@@ -564,7 +564,7 @@ describe('CollabDetailView', () => {
     };
     const port = detailPort(review);
     const renderer = diffPort();
-    const view = createView(port, renderer, objectUrlPort());
+    const view = createView(port, renderer, objectURLPort());
 
     await view.setState(viewState(), { history: false });
     await nextTurn();
@@ -613,7 +613,7 @@ describe('CollabDetailView', () => {
         },
       },
     };
-    const view = createView(detailPort(review), diffPort(), objectUrlPort());
+    const view = createView(detailPort(review), diffPort(), objectURLPort());
 
     await view.setState(viewState(), { history: false });
 
@@ -636,7 +636,7 @@ describe('CollabDetailView', () => {
         requestId: 'request-a',
       },
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.setState(viewState(), { history: false });
     const commentsTitle = view.contentEl.querySelector<HTMLElement>(
@@ -701,7 +701,7 @@ describe('CollabDetailView', () => {
           requestId: 'request-a',
         },
       });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.setState(viewState(), { history: false });
     const composer = view.contentEl.querySelector<HTMLElement>(
       '[data-field="request-comment"]',
@@ -751,7 +751,7 @@ describe('CollabDetailView', () => {
           requestId: 'request-a',
         },
       });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.setState(viewState(), { history: false });
     const composer = view.contentEl.querySelector<HTMLElement>(
       '[data-field="request-comment"]',
@@ -788,7 +788,7 @@ describe('CollabDetailView', () => {
     const view = createView(
       port,
       diffPort(),
-      objectUrlPort(),
+      objectURLPort(),
       undefined,
       {} as WorkspaceLeaf,
       undefined,
@@ -851,7 +851,7 @@ describe('CollabDetailView', () => {
     const view = createView(
       port,
       diffPort(),
-      objectUrlPort(),
+      objectURLPort(),
       preparedReviews,
       leaf,
     );
@@ -885,7 +885,7 @@ describe('CollabDetailView', () => {
     port.publish.mockResolvedValue(outcome === 'stale'
       ? { status: 'stale', staleKind: 'working-copy', error: new CollabError({ code: 'working-tree-busy' }) }
       : { status: 'success', value: { state: outcome, projectId: review.projectId, localHeadOid: HEAD } });
-    const view = createView(port, diffPort(), objectUrlPort(), undefined, leaf);
+    const view = createView(port, diffPort(), objectURLPort(), undefined, leaf);
     await view.setState(workingTreeViewState(), { history: false });
     await nextTurn();
     setMarkdownValue(view.contentEl.querySelector<HTMLElement>('[data-collab-description="true"]')!, 'My description');
@@ -907,7 +907,7 @@ describe('CollabDetailView', () => {
         detach: jest.fn(),
         setViewState: jest.fn(async state => view.setState(state.state, { history: false })),
       } as unknown as WorkspaceLeaf;
-      const view = createView(port, diffPort(), objectUrlPort(), new CollabPreparedReviewCache(), leaf);
+      const view = createView(port, diffPort(), objectURLPort(), new CollabPreparedReviewCache(), leaf);
       port.prepareWorkingTreeReview.mockResolvedValue({ status: 'success', value: working });
       port.preparePublicationReview.mockResolvedValue({ status: 'success', value: publication });
       port.readWorkingTreeReviewFile.mockResolvedValue({ status: 'success', value: {
@@ -960,7 +960,7 @@ describe('CollabDetailView', () => {
       },
     });
     port.publish.mockResolvedValue({ conflict: conflictDescriptor(), status: 'conflict' });
-    const view = createView(port, diffPort(), objectUrlPort(), undefined, leaf);
+    const view = createView(port, diffPort(), objectURLPort(), undefined, leaf);
 
     await view.setState(workingTreeViewState(), { history: false });
     await nextTurn();
@@ -993,7 +993,7 @@ describe('CollabDetailView', () => {
     port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: { file: review.files[0], kind: 'text', newText: 'team update', oldText: 'personal checkpoint' } });
     port.confirmUpdate.mockResolvedValue({ status: 'success', value: { localHeadOid: review.candidateOid, projectId: review.projectId, state: 'updated' } });
     const leaf = { detach: jest.fn(), setViewState: jest.fn() } as unknown as WorkspaceLeaf;
-    const view = createView(port, diffPort(), objectUrlPort(), undefined, leaf);
+    const view = createView(port, diffPort(), objectURLPort(), undefined, leaf);
     await view.setState({ ...publicationViewState(review), intent: 'update' }, { history: false });
     await nextTurn();
     expect(view.getDisplayText()).toBe('Review project update');
@@ -1014,7 +1014,7 @@ describe('CollabDetailView', () => {
     port.preparePublicationReview.mockResolvedValue({ status: 'success', value: review });
     port.readSnapshot.mockResolvedValue({ status: 'success', value: { ...coordination(requestReview()), source: 'cache', stale: true } });
     port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: { file: review.files[0], kind: 'text', newText: 'team update', oldText: 'personal checkpoint' } });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.setState({ ...publicationViewState(review), intent: 'update' }, { history: false });
     await nextTurn();
     expect(view.getDisplayText()).toBe('Review project update');
@@ -1028,7 +1028,7 @@ describe('CollabDetailView', () => {
     const port = detailPort(requestReview());
     port.preparePublicationReview.mockResolvedValue({ status: 'success', value: review });
     port.readPublicationReviewFile.mockResolvedValue({ status: 'success', value: { file: review.files[0], kind: 'text', newText: 'team update', oldText: 'personal checkpoint' } });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.setState({ ...publicationViewState(review), intent: 'update' }, { history: false });
     await nextTurn();
     const confirm = getByRole(view.contentEl, 'button', { name: 'Update' }) as HTMLButtonElement;
@@ -1073,7 +1073,7 @@ describe('CollabDetailView', () => {
         state: 'request-synchronized',
       },
     });
-    const view = createView(port, renderer, objectUrlPort(), undefined, leaf);
+    const view = createView(port, renderer, objectURLPort(), undefined, leaf);
 
     await view.setState(publicationViewState(), { history: false });
     await nextTurn();
@@ -1153,7 +1153,7 @@ describe('CollabDetailView', () => {
       conflict: conflictDescriptor(),
       status: 'conflict',
     });
-    const view = createView(port, diffPort(), objectUrlPort(), undefined, leaf);
+    const view = createView(port, diffPort(), objectURLPort(), undefined, leaf);
 
     await view.setState(publicationViewState(), { history: false });
     await nextTurn();
@@ -1183,7 +1183,7 @@ describe('CollabDetailView', () => {
     const review = requestReview();
     const port = detailPort(review);
     const renderer = diffPort();
-    const objectUrls = objectUrlPort();
+    const objectUrls = objectURLPort();
     const view = createView(port, renderer, objectUrls);
     await view.onOpen();
 
@@ -1278,7 +1278,7 @@ describe('CollabDetailView', () => {
     const view = createView(
       port,
       renderer,
-      objectUrlPort(),
+      objectURLPort(),
       undefined,
       {} as WorkspaceLeaf,
       undefined,
@@ -1338,7 +1338,7 @@ describe('CollabDetailView', () => {
       },
     });
     const renderer = diffPort();
-    const view = createView(port, renderer, objectUrlPort());
+    const view = createView(port, renderer, objectURLPort());
 
     await view.setState(viewState(), { history: false });
     await openChanges(view);
@@ -1366,7 +1366,7 @@ describe('CollabDetailView', () => {
     const view = createView(
       port,
       renderer,
-      objectUrlPort(),
+      objectURLPort(),
       undefined,
       {} as WorkspaceLeaf,
       rendererFactory,
@@ -1432,7 +1432,7 @@ describe('CollabDetailView', () => {
       const view = createView(
         port,
         diffPort(),
-        objectUrlPort(),
+        objectURLPort(),
         undefined,
         {} as WorkspaceLeaf,
         () => diffPort(),
@@ -1490,7 +1490,7 @@ describe('CollabDetailView', () => {
         oldText: 'head\n',
       },
     }));
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     const exactState = {
       ...workingTreeViewState(),
       headOid: review.headOid,
@@ -1541,7 +1541,7 @@ describe('CollabDetailView', () => {
               },
           };
         });
-      const view = createView(port, diffPort(), objectUrlPort());
+      const view = createView(port, diffPort(), objectURLPort());
 
       await view.setState(viewState(), { history: false });
       await openChanges(view);
@@ -1580,7 +1580,7 @@ describe('CollabDetailView', () => {
     const port = detailPort(review);
     const cache = new CollabPreparedReviewCache();
     cache.store({ coordination: coordination(review), review });
-    const view = createView(port, diffPort(), objectUrlPort(), cache);
+    const view = createView(port, diffPort(), objectURLPort(), cache);
     await view.setState(viewState(), { history: false });
     const otherHead = '4'.repeat(40);
     const otherTree = '5'.repeat(40);
@@ -1631,7 +1631,7 @@ describe('CollabDetailView', () => {
     const view = createView(
       port,
       renderer,
-      objectUrlPort(),
+      objectURLPort(),
       undefined,
       { detach } as unknown as WorkspaceLeaf,
     );
@@ -1677,7 +1677,7 @@ describe('CollabDetailView', () => {
         },
       },
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.setState(viewState(), { history: false });
 
@@ -1698,7 +1698,7 @@ describe('CollabDetailView', () => {
         },
       },
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.setState(viewState(), { history: false });
 
@@ -1713,7 +1713,7 @@ describe('CollabDetailView', () => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
     await view.setState(viewState(), { history: false });
     expect(view.contentEl.querySelector('[data-collab-action="accept"]')).not.toBeNull();
@@ -1743,7 +1743,7 @@ describe('CollabDetailView', () => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
     await view.setState(viewState(), { history: false });
 
@@ -1796,7 +1796,7 @@ describe('CollabDetailView', () => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
     await view.setState(viewState(), { history: false });
     const refreshed: CollabRequestReview = {
@@ -1832,7 +1832,7 @@ describe('CollabDetailView', () => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
     await view.setState(viewState(), { history: false });
 
@@ -1899,7 +1899,7 @@ describe('CollabDetailView', () => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
     await view.setState(viewState(), { history: false });
     const prepareCallsBeforeInvalidation = port.prepareReview.mock.calls.length;
@@ -1957,7 +1957,7 @@ describe('CollabDetailView', () => {
       invalidate = listener;
       return { dispose: jest.fn() };
     });
-    const view = createView(port, renderer, objectUrlPort());
+    const view = createView(port, renderer, objectURLPort());
     await view.onOpen();
     await view.setState(viewState(), { history: false });
     await openChanges(view);
@@ -2019,7 +2019,7 @@ describe('CollabDetailView', () => {
       },
     });
     port.updateRequestMetadata.mockReturnValue(pending.promise);
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
     await view.setState(viewState(), { history: false });
     const description = view.contentEl.querySelector<HTMLElement>(
@@ -2087,7 +2087,7 @@ describe('CollabDetailView', () => {
       return { dispose: jest.fn() };
     });
     port.acceptRequest.mockReturnValue(pending.promise);
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
     await view.setState(viewState(), { history: false });
     view.contentEl.querySelector<HTMLButtonElement>(
@@ -2128,7 +2128,7 @@ describe('CollabDetailView', () => {
       order.push('review');
       return { status: 'success', value: review };
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.setState(viewState(), { history: false });
 
@@ -2146,7 +2146,7 @@ describe('CollabDetailView', () => {
       invalidate = () => listener(undefined as never);
       return { dispose: jest.fn() };
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
     await view.setState({ kind: 'ticket', projectId: 'project-a' }, { history: false });
 
@@ -2189,7 +2189,7 @@ describe('CollabDetailView', () => {
       status: 'success',
       value: { detail: ticketDetail(), source: 'online', stale: false },
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
 
     await view.setState({
       kind: 'ticket',
@@ -2242,7 +2242,7 @@ describe('CollabDetailView', () => {
     const view = createView(
       port,
       diffPort(),
-      objectUrlPort(),
+      objectURLPort(),
       undefined,
       {} as WorkspaceLeaf,
       undefined,
@@ -2306,7 +2306,7 @@ describe('CollabDetailView', () => {
     const view = createView(
       port,
       diffPort(),
-      objectUrlPort(),
+      objectURLPort(),
       undefined,
       {} as WorkspaceLeaf,
       undefined,
@@ -2354,7 +2354,7 @@ describe('CollabDetailView', () => {
           request: { ...requestReview().detail.request, status: 'merged' },
         },
       });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.setState(viewState(), { history: false });
 
     const accept = view.contentEl.querySelector<HTMLButtonElement>(
@@ -2380,7 +2380,7 @@ describe('CollabDetailView', () => {
       status: 'success',
       value: workingTreeReview(),
     });
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.setState(viewState(), { history: false });
     view.contentEl.querySelector<HTMLButtonElement>(
       '[data-collab-action="accept"]',
@@ -2444,7 +2444,7 @@ describe('CollabDetailView', () => {
     const cache = new CollabPreparedReviewCache();
     const port = detailPort(withRelations);
     port.acceptRequest.mockRejectedValue(new Error('lost response'));
-    const view = createView(port, diffPort(), objectUrlPort(), cache);
+    const view = createView(port, diffPort(), objectURLPort(), cache);
     await view.setState(viewState(), { history: false });
 
     view.contentEl.querySelector<HTMLButtonElement>(
@@ -2489,7 +2489,7 @@ describe('CollabDetailView', () => {
       error: new CollabError({ code: 'stale-request-metadata' }),
       status: 'failure',
     });
-    const view = createView(port, diffPort(), objectUrlPort(), cache);
+    const view = createView(port, diffPort(), objectURLPort(), cache);
     await view.setState(viewState(), { history: false });
     view.contentEl.querySelector<HTMLButtonElement>(
       '[data-collab-action="accept"]',
@@ -2520,7 +2520,7 @@ describe('CollabDetailView', () => {
         request: { ...open.detail.request, status: 'merged' },
       },
     };
-    const view = createView(detailPort(merged), diffPort(), objectUrlPort());
+    const view = createView(detailPort(merged), diffPort(), objectURLPort());
 
     await view.setState(viewState(), { history: false });
 
@@ -2544,7 +2544,7 @@ describe('CollabDetailView', () => {
     };
     const pendingFile = deferred<typeof fileResult>();
     port.readReviewFile.mockReturnValueOnce(pendingFile.promise);
-    const view = createView(port, renderer, objectUrlPort());
+    const view = createView(port, renderer, objectURLPort());
 
     const opening = view.setState(viewState(), { history: false });
     await nextTurn();
@@ -2566,7 +2566,7 @@ describe('CollabDetailView', () => {
     const port = detailPort(review);
     const cache = new CollabPreparedReviewCache();
     cache.store({ coordination: coordination(review), review });
-    const view = createView(port, diffPort(), objectUrlPort(), cache);
+    const view = createView(port, diffPort(), objectURLPort(), cache);
 
     await view.setState(viewState(), { history: false });
     await openChanges(view);
@@ -2583,7 +2583,7 @@ describe('CollabDetailView', () => {
     const review = markdownReview(100);
     const port = detailPort(review);
     const renderer = diffPort();
-    const objectUrls = objectUrlPort();
+    const objectUrls = objectURLPort();
     const view = createView(port, renderer, objectUrls);
     await view.onOpen();
     try {
@@ -2614,7 +2614,7 @@ describe('CollabDetailView', () => {
 
   it('rejects malformed persisted state before querying review data', async () => {
     const port = detailPort(requestReview());
-    const view = createView(port, diffPort(), objectUrlPort());
+    const view = createView(port, diffPort(), objectURLPort());
     await view.onOpen();
 
     await expect(view.setState({
@@ -2634,7 +2634,7 @@ describe('CollabDetailView', () => {
         location = options.location;
         return panel;
       },
-      objectUrls: objectUrlPort(),
+      objectUrls: objectURLPort(),
       renderer: diffPort(),
     });
     Object.defineProperty(view, 'contentEl', {
@@ -2778,7 +2778,7 @@ describe('CollabDetailViewCoordinator', () => {
 function createView(
   port: CollabDetailViewPort,
   renderer: CollabDetailDiffPort,
-  objectUrls: CollabDetailObjectUrlPort,
+  objectUrls: CollabDetailObjectURLPort,
   preparedReviews?: CollabPreparedReviewCache,
   leaf: WorkspaceLeaf = {} as WorkspaceLeaf,
   rendererFactory?: () => CollabDetailDiffPort,
@@ -3118,11 +3118,11 @@ function diffPort() {
   } satisfies CollabDetailDiffPort;
 }
 
-function objectUrlPort() {
+function objectURLPort() {
   return {
     create: jest.fn().mockReturnValue('blob:preview-1'),
     revoke: jest.fn(),
-  } satisfies CollabDetailObjectUrlPort;
+  } satisfies CollabDetailObjectURLPort;
 }
 
 function installPassiveIntersectionObserver(): () => void {
@@ -3172,7 +3172,7 @@ it('defers hidden review refresh and ignores changes to other requests', async (
   const port = detailPort(review);
   let notify: Parameters<CollabDetailViewPort['observeProject']>[1] | undefined;
   port.observeProject.mockImplementation((_id, listener) => { notify = listener; return { dispose() {} }; });
-  const view = createView(port, diffPort(), objectUrlPort());
+  const view = createView(port, diffPort(), objectURLPort());
   const visibilityListeners = new Set<() => void>();
   view.app = { workspace: {
     on: (_event: string, listener: () => void) => { visibilityListeners.add(listener); return listener; },

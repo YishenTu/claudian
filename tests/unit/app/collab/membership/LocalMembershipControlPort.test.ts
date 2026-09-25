@@ -1,6 +1,6 @@
 import { testTime } from '@test/helpers/testClock';
 
-import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type { CollabLocalLANMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { LocalMembershipControlPort } from '@/app/collab/membership/LocalMembershipControlPort';
 import { MembershipControlClient } from '@/app/collab/membership/MembershipControlClient';
@@ -9,7 +9,7 @@ const PROJECT_ID = 'project-membership-port';
 const MEMBER_ID = 'member-manager';
 const CREATED_AT = testTime({ days: 5 });
 
-function membership(): CollabLocalLanMembershipRecord {
+function membership(): CollabLocalLANMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,

@@ -55,7 +55,7 @@ function normalizeAnswersObject(value: unknown): AskUserAnswers | undefined {
   return Object.keys(answers).length > 0 ? answers : undefined;
 }
 
-function parseAnswersFromJsonObject(resultText: string): AskUserAnswers | undefined {
+function parseAnswersFromJSONObject(resultText: string): AskUserAnswers | undefined {
   const start = resultText.indexOf('{');
   const end = resultText.lastIndexOf('}');
   if (start < 0 || end <= start) return undefined;
@@ -94,7 +94,7 @@ export function extractResolvedAnswersFromResultText(result: unknown): AskUserAn
   const trimmed = result.trim();
   if (!trimmed) return undefined;
 
-  return parseAnswersFromJsonObject(trimmed) ?? parseAnswersFromQuotedPairs(trimmed);
+  return parseAnswersFromJSONObject(trimmed) ?? parseAnswersFromQuotedPairs(trimmed);
 }
 
 export function getPathFromToolInput(

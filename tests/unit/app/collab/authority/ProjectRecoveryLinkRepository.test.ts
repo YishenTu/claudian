@@ -10,7 +10,7 @@ import { MemberRecoveryCredentialRepository } from '@/app/collab/authority/Membe
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { ProjectRecoveryLinkRepository } from '@/app/collab/authority/ProjectRecoveryLinkRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 
 const NOW = testTime({ days: 18 });
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -19,7 +19,7 @@ describe('ProjectRecoveryLinkRepository', () => {
   it('recovers independent members, preserves exact receipts across restart, and accepts another link for the same binding', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'claudian-recovery-links-'));
     const sql = await initSqlJs();
-    let database = new SqlJsProjectDatabase(root, { loadSqlJs: async () => sql });
+    let database = new SQLJSProjectDatabase(root, { loadSqlJs: async () => sql });
     const links = new ProjectRecoveryLinkRepository();
     try {
       await database.open();
@@ -52,7 +52,7 @@ describe('ProjectRecoveryLinkRepository', () => {
       expect((await database.mutate(connection => links.redeem(connection, { ...request, idempotencyKey: 'redeem-three',
         recoveryLinkId: third.recoveryLinkId, token: third.token }, new Date(testTime({ days: 18, minutes: 2 }))))).value.memberId).toBe('member-one');
       await database.close();
-      database = new SqlJsProjectDatabase(root, { loadSqlJs: async () => sql });
+      database = new SQLJSProjectDatabase(root, { loadSqlJs: async () => sql });
       await database.open();
       expect((await database.mutate(connection => links.redeem(connection, request, new Date(first.expiresAt)))).value).toEqual(receipt);
       await expect(database.mutate(connection => links.redeem(connection, { ...request, idempotencyKey: 'other-intent' }, new Date(NOW)))).rejects.toBeDefined();

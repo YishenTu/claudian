@@ -3,15 +3,15 @@ import * as timers from 'node:timers';
 import { type CollabProjectId, isCollabOpaqueId } from '@claudian-collab/protocol';
 import { type RawData,WebSocket } from 'ws';
 
-import { COLLAB_CONTROL_ROUTE_PREFIX } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_CONTROL_ROUTE_PREFIX } from '@/app/collab/lan/LANCollabConstants';
 import {
-  decodeLanCollabEvent,
-  type LanCollabEvent as CollabEvent,
-} from '@/app/collab/lan/LanCollabEvent';
+  decodeLANCollabEvent,
+  type LANCollabEvent as CollabEvent,
+} from '@/app/collab/lan/LANCollabEvent';
 import type {
   CollabAuthorityEventInvalidation,
 } from '@/app/collab/remote-authority/CollabAuthoritySession';
-import { isTlsValidationError } from '@/app/collab/tlsErrors';
+import { isTLSValidationError } from '@/app/collab/tlsErrors';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export type ProjectEventInvalidation = CollabAuthorityEventInvalidation;
@@ -144,7 +144,7 @@ export class ProjectEventClient {
     socket.onError(error => {
       if (this.socket !== socket) return;
       this.#fail(error instanceof CollabError ? error : new CollabError({
-        code: isTlsValidationError(error) ? 'tls-untrusted' : 'endpoint-unreachable',
+        code: isTLSValidationError(error) ? 'tls-untrusted' : 'endpoint-unreachable',
       }), 'Event connection failed');
     });
     socket.onClose(code => {
@@ -172,7 +172,7 @@ export class ProjectEventClient {
       this.#requestSnapshot(this.observedSequence);
       return;
     }
-    const decoded = decodeLanCollabEvent(value);
+    const decoded = decodeLANCollabEvent(value);
     if (decoded.status === 'invalid') {
       this.#requestSnapshot(this.observedSequence);
       return;

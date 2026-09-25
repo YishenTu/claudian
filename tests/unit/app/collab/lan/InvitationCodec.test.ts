@@ -7,7 +7,7 @@ import {
 import {
   COLLAB_CONTROL_PROTOCOL_VERSION,
   COLLAB_INVITATION_TTL_MS,
-} from '@/app/collab/lan/LanCollabConstants';
+} from '@/app/collab/lan/LANCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const NOW = new Date(testTime({ days: -19 }));

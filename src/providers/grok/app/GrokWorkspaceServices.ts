@@ -7,7 +7,7 @@ import type {
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
-import { GrokCliResolver } from '../runtime/GrokCliResolver';
+import { GrokCLIResolver } from '../runtime/GrokCLIResolver';
 import { GrokModelCatalogCoordinator } from '../runtime/GrokModelCatalogCoordinator';
 import { GrokModelCatalogService } from '../runtime/GrokModelCatalogService';
 import { createGrokModels } from '../runtime/GrokModels';
@@ -16,7 +16,7 @@ import { GrokCommandLoader } from './GrokCommandLoader';
 import { GrokCommandMetadataProbe } from './GrokCommandMetadataProbe';
 
 export interface GrokWorkspaceServices extends ProviderWorkspaceServices {
-  cliResolver: GrokCliResolver;
+  cliResolver: GrokCLIResolver;
   commandCatalog: ProviderCommandCatalog;
   modelCatalogCoordinator: GrokModelCatalogCoordinator;
   dispose(): Promise<void>;
@@ -70,7 +70,7 @@ export async function createGrokWorkspaceServices(
     });
 
   return {
-    cliResolver: new GrokCliResolver(),
+    cliResolver: new GrokCLIResolver(),
     commandCatalog: new GrokCommandCatalog(),
     modelCatalogCoordinator,
     commandLoader: new GrokCommandLoader(commandMetadataProbe),

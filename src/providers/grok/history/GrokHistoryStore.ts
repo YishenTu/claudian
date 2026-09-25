@@ -11,7 +11,7 @@ import type {
 } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import { extractDiffData } from '../../../utils/diff';
-import { extractAcpDiffToolUseResult } from '../../acp/AcpToolResultNormalization';
+import { extractACPDiffToolUseResult } from '../../acp/ACPToolResultNormalization';
 import {
   type GrokRawToolNameResolution,
   normalizeGrokToolCall,
@@ -427,7 +427,7 @@ function reconcileToolUpdate(turn: PendingTurn, update: Record<string, unknown>)
     title: rawName,
   }, rawNameResolution);
   const status = normalizeToolStatus(readString(update.status), current?.status);
-  const nativeToolUseResult = extractAcpDiffToolUseResult(update.content)
+  const nativeToolUseResult = extractACPDiffToolUseResult(update.content)
     ?? current?.toolUseResult;
   const output = renderedContent || (update.rawOutput === undefined
     ? current?.output || normalized.output

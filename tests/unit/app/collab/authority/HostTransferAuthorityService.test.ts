@@ -12,11 +12,11 @@ import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepos
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { decodeHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 
 const CREATED_AT = testTime({ days: -19 });
 
@@ -24,10 +24,10 @@ jest.setTimeout(120_000);
 
 describe('HostTransferAuthorityService', () => {
   let SQL: SqlJsStatic;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let root: string;
-  let sourceIdentity: LanTlsIdentity;
-  let targetIdentity: LanTlsIdentity;
+  let sourceIdentity: LANTLSIdentity;
+  let targetIdentity: LANTLSIdentity;
   let service: HostTransferAuthorityService;
   let clock: Date;
 
@@ -39,7 +39,7 @@ describe('HostTransferAuthorityService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-host-authority-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -58,11 +58,11 @@ describe('HostTransferAuthorityService', () => {
     const sourceVault = path.join(root, 'source-vault');
     const targetVault = path.join(root, 'target-vault');
     await Promise.all([mkdir(sourceVault), mkdir(targetVault)]);
-    sourceIdentity = new LanTlsIdentity(sourceVault, {
+    sourceIdentity = new LANTLSIdentity(sourceVault, {
       installationKey: TEST_INSTALLATION_A,
       now: () => new Date(CREATED_AT),
     });
-    targetIdentity = new LanTlsIdentity(targetVault, {
+    targetIdentity = new LANTLSIdentity(targetVault, {
       installationKey: TEST_INSTALLATION_B,
       now: () => new Date(CREATED_AT),
     });
@@ -328,7 +328,7 @@ describe('HostTransferAuthorityService', () => {
     });
     const authorityDirectory = path.join(root, 'authority');
     await database.close();
-    database = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    database = new SQLJSProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
     await database.open();
 
     const restored = await database.read(connection => (

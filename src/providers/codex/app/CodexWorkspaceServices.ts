@@ -2,12 +2,12 @@ import type { ProviderCommandCatalog } from '../../../core/providers/commands/Pr
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
-  ProviderCliResolver,
+  ProviderCLIResolver,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
-import { CodexCliResolver } from '../runtime/CodexCliResolver';
+import { CodexCLIResolver } from '../runtime/CodexCLIResolver';
 import { CodexModelCatalogCoordinator } from '../runtime/CodexModelCatalogCoordinator';
 import { CodexModelDiscoveryService } from '../runtime/CodexModelDiscoveryService';
 import { createCodexModels } from '../runtime/CodexModels';
@@ -16,7 +16,7 @@ import { createCodexSettingsTabRenderer } from '../ui/CodexSettingsTab';
 
 export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
   commandCatalog: ProviderCommandCatalog;
-  cliResolver: ProviderCliResolver;
+  cliResolver: ProviderCLIResolver;
   modelCatalogCoordinator: CodexModelCatalogCoordinator;
   dispose(): Promise<void>;
 }
@@ -58,7 +58,7 @@ export async function createCodexWorkspaceServices(
     });
   let disposePromise: Promise<void> | null = null;
 
-  const cliResolver = new CodexCliResolver();
+  const cliResolver = new CodexCLIResolver();
   return {
     commandCatalog,
     cliResolver,

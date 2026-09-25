@@ -9,19 +9,19 @@ import { digestHostTransitionProofChain } from '@/app/collab/host-transfer/HostT
 import {
   HostTrustTransitionService,
 } from '@/app/collab/host-transfer/HostTrustTransitionService';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 
 jest.setTimeout(120_000);
 
 describe('HostTrustTransitionService', () => {
   const service = new HostTrustTransitionService();
   const roots: string[] = [];
-  let identities: LanTlsIdentity[];
+  let identities: LANTLSIdentity[];
 
-  async function identity(name: string): Promise<LanTlsIdentity> {
+  async function identity(name: string): Promise<LANTLSIdentity> {
     const root = await mkdtemp(path.join(tmpdir(), `claudian-${name}-`));
     roots.push(root);
-    return new LanTlsIdentity(root, {
+    return new LANTLSIdentity(root, {
       installationKey: TEST_INSTALLATION_A,
       now: testClock({ days: -19 }),
     });

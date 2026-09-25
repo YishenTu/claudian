@@ -9,7 +9,7 @@ import initSqlJs from 'sql.js';
 import { ImportedMembershipClaimRepository } from '@/app/collab/authority/ImportedMembershipClaimRepository';
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 
 const PROJECT_ID = 'project-recovery';
 const NOW = testTime({ days: 18 });
@@ -21,7 +21,7 @@ describe('ImportedMembershipClaimRepository', () => {
   it('issues after source expiry, rotates the old claim, and binds the same Member atomically across restart', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'claudian-imported-claims-'));
     const sql = await initSqlJs();
-    let database = new SqlJsProjectDatabase(root, { loadSqlJs: async () => sql });
+    let database = new SQLJSProjectDatabase(root, { loadSqlJs: async () => sql });
     const claims = new ImportedMembershipClaimRepository();
     try {
       await database.open();
@@ -61,7 +61,7 @@ describe('ImportedMembershipClaimRepository', () => {
         credentialHash: hash('persisted-new-credential'), idempotencyKey: 'redeem' };
       const receipt = (await database.mutate(connection => claims.redeem(connection, redeem, new Date(NOW)))).value;
       await database.close();
-      database = new SqlJsProjectDatabase(root, { loadSqlJs: async () => sql });
+      database = new SQLJSProjectDatabase(root, { loadSqlJs: async () => sql });
       await database.open();
       expect((await database.mutate(connection => claims.redeem(connection, redeem, new Date(second.expiresAt)))).value).toEqual(receipt);
       expect((await database.read(connection => claims.list(connection, MEMBER, new Date(NOW)))).members

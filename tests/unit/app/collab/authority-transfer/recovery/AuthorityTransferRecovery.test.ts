@@ -23,9 +23,9 @@ import {
   createAuthorityTransferRecord,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
-  createCloudToLanTargetEntry,
-  publishCloudToLanTargetEntry,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  createCloudToLANTargetEntry,
+  publishCloudToLANTargetEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import {
   createAuthorityTransferClaimBatchCommitmentRecord,
 } from '@/app/collab/authority-transfer/persistence/AuthorityTransferClaimBatchCommitmentRecord';
@@ -473,7 +473,7 @@ describe('AuthorityTransferRecovery', () => {
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
     });
-    const preparing = createCloudToLanTargetEntry({
+    const preparing = createCloudToLANTargetEntry({
       createdAt: testTime(),
       expiresAt: testTime({ days: 30 }),
       operationIntentId: 'intent-target-preparation',
@@ -484,7 +484,7 @@ describe('AuthorityTransferRecovery', () => {
       sourceAuthorityGeneration: 1,
       sourceCloudUrl: 'https://cloud.example.test/',
     });
-    const published = publishCloudToLanTargetEntry(preparing, {
+    const published = publishCloudToLANTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
       publishedAt: testTime({ minutes: 1 }),

@@ -1,8 +1,8 @@
 import {
-  type CliPathFingerprintInputs,
-  createCliPathFingerprintInputs,
-  hasCliPathFingerprintInputs,
-} from '../../../core/providers/cli/CliPathFingerprintInputs';
+  type CLIPathFingerprintInputs,
+  createCLIPathFingerprintInputs,
+  hasCLIPathFingerprintInputs,
+} from '../../../core/providers/cli/CLIPathFingerprintInputs';
 import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
 import {
   createRuntimeInputFingerprint,
@@ -18,11 +18,11 @@ import { CLAUDE_MODEL_ENV_KEYS } from './claudeModelEnv';
 const ENV_HASH_PROVIDER_KEYS = ['ANTHROPIC_BASE_URL', 'PATH'];
 const ALL_FINGERPRINT_ENV_KEYS = [...CLAUDE_MODEL_ENV_KEYS, ...ENV_HASH_PROVIDER_KEYS];
 
-function getConfiguredCliPathInputs(
+function getConfiguredCLIPathInputs(
   settings: Record<string, unknown>,
-): CliPathFingerprintInputs {
+): CLIPathFingerprintInputs {
   const claudeSettings = getClaudeProviderSettings(settings);
-  return createCliPathFingerprintInputs(
+  return createCLIPathFingerprintInputs(
     claudeSettings.cliPathsByHost[getHostnameKey()],
     claudeSettings.cliPath,
   );
@@ -33,14 +33,14 @@ function computeRuntimeFingerprint(
   environmentText: string = getRuntimeEnvironmentText(settings, 'claude'),
 ): string {
   return createRuntimeInputFingerprint({
-    additionalInputs: getConfiguredCliPathInputs(settings),
+    additionalInputs: getConfiguredCLIPathInputs(settings),
     environmentKeys: ALL_FINGERPRINT_ENV_KEYS,
     environmentText,
   });
 }
 
 function hasFingerprintInputs(settings: Record<string, unknown>, environmentText: string): boolean {
-  if (hasCliPathFingerprintInputs(getConfiguredCliPathInputs(settings))) {
+  if (hasCLIPathFingerprintInputs(getConfiguredCLIPathInputs(settings))) {
     return true;
   }
 
@@ -57,7 +57,7 @@ function isCurrentLegacyFingerprint(
   if (
     !savedFingerprint
     || isVersionedRuntimeInputFingerprint(savedFingerprint)
-    || hasCliPathFingerprintInputs(getConfiguredCliPathInputs(settings))
+    || hasCLIPathFingerprintInputs(getConfiguredCLIPathInputs(settings))
   ) {
     return false;
   }

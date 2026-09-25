@@ -9,8 +9,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import initSqlJs from 'sql.js';
 
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
-import { NodeSqlJsSnapshotStore } from '@/app/collab/authority/SqlJsSnapshotStore';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
+import { NodeSQLJSSnapshotStore } from '@/app/collab/authority/SQLJSSnapshotStore';
 
 const timestamp = '2026-08-08T00:00:00.000Z';
 const workloads = ['recovery', 'recovery-retention', 'serial', 'burst'] as const;
@@ -18,7 +18,7 @@ type Workload = typeof workloads[number] | 'event-loop-control';
 
 async function seed(directory: string, payloadMiB: number): Promise<void> {
   const SQL = await initSqlJs();
-  const database = new SqlJsProjectDatabase(directory, { loadSqlJs: async () => SQL });
+  const database = new SQLJSProjectDatabase(directory, { loadSqlJs: async () => SQL });
   try {
     await database.open();
     await database.mutate(connection => {
@@ -51,7 +51,7 @@ async function measure(directory: string, workload: Workload): Promise<void> {
   const sampleMemory = () => {
     sampledArrayBufferBytes = Math.max(sampledArrayBufferBytes, process.memoryUsage().arrayBuffers);
   };
-  const snapshotStore = new NodeSqlJsSnapshotStore(directory);
+  const snapshotStore = new NodeSQLJSSnapshotStore(directory);
   if (workload === 'recovery-retention') {
     assert.ok(global.gc, 'Retention diagnostics require --expose-gc');
     const readCandidate = snapshotStore.readCandidate.bind(snapshotStore);
@@ -63,7 +63,7 @@ async function measure(directory: string, workload: Workload): Promise<void> {
       return bytes;
     };
   }
-  const database = new SqlJsProjectDatabase(directory, { loadSqlJs: async () => SQL, snapshotStore });
+  const database = new SQLJSProjectDatabase(directory, { loadSqlJs: async () => SQL, snapshotStore });
   const recovering = workload === 'recovery' || workload === 'recovery-retention';
   let sampler: ReturnType<typeof setInterval> | undefined;
   try {

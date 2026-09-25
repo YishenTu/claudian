@@ -1,4 +1,4 @@
-import { probeCliInstallation } from '@/core/providers/cli/CliInstallationProbe';
+import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 
 export type OpencodeNativeVersion = 1 | 2;
 
@@ -13,7 +13,7 @@ export async function detectOpencodeNativeVersion(
   cliPath: string,
   environment: NodeJS.ProcessEnv,
 ): Promise<OpencodeNativeVersion | undefined> {
-  const installation = await probeCliInstallation({
+  const installation = await probeCLIInstallation({
     path: cliPath,
     configuredPath: cliPath,
     args: ['--version'],

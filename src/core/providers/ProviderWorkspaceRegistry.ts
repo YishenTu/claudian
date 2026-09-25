@@ -3,7 +3,7 @@ import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 import type { ProviderHost } from './ProviderHost';
 import { ProviderInitializationBoundary } from './ProviderInitializationBoundary';
 import type {
-  ProviderCliResolver,
+  ProviderCLIResolver,
   ProviderCommandLoader,
   ProviderId,
   ProviderSettingsTabRenderer,
@@ -101,7 +101,7 @@ export class ProviderWorkspaceRegistry {
     return this.getServices(providerId)?.commandCatalog ?? null;
   }
 
-  static getCliResolver(providerId: ProviderId): ProviderCliResolver | null {
+  static getCliResolver(providerId: ProviderId): ProviderCLIResolver | null {
     return this.getServices(providerId)?.cliResolver ?? null;
   }
 

@@ -20,7 +20,7 @@ function getHomeDir(): string {
 
 // Windows ships Obsidian.com beside the app. Unix uses registered CLI locations;
 // adding the macOS app directory can select the GUI executable as `obsidian`.
-function getAppProvidedCliPaths(): string[] {
+function getAppProvidedCLIPaths(): string[] {
   if (process.platform === 'win32') {
     return [path.dirname(process.execPath)];
   }
@@ -120,7 +120,7 @@ function getExtraBinaryPaths(): string[] {
       paths.push(path.join(home, '.opencode', 'bin'));
     }
 
-    paths.push(...getAppProvidedCliPaths());
+    paths.push(...getAppProvidedCLIPaths());
 
     return paths;
   } else {
@@ -176,7 +176,7 @@ function getExtraBinaryPaths(): string[] {
       }
     }
 
-    paths.push(...getAppProvidedCliPaths());
+    paths.push(...getAppProvidedCLIPaths());
 
     return paths;
   }

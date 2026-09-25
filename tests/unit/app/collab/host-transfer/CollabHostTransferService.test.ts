@@ -1,6 +1,6 @@
 import { testTime } from '@test/helpers/testClock';
 
-import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
+import type { CollabLocalLANMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CollabHostTransferService } from '@/app/collab/host-transfer/CollabHostTransferService';
 import {
@@ -30,7 +30,7 @@ const membership = {
   project: { id: 'project-a', name: 'Project A', workspacePath: 'workspace/a' },
   schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
   updatedAt: testTime({ days: -14 }),
-} satisfies CollabLocalLanMembershipRecord;
+} satisfies CollabLocalLANMembershipRecord;
 
 const snapshot = {
   snapshot: {

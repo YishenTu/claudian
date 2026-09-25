@@ -12,7 +12,7 @@ import {
   isPathSafeId,
   isValidSessionId,
 } from './sdkSessionPaths';
-import { extractFinalResultFromSubagentJsonl } from './subagentJsonl';
+import { extractFinalResultFromSubagentJSONL } from './subagentJSONL';
 
 export function isValidAgentId(agentId: string): boolean {
   return isPathSafeId(agentId);
@@ -274,7 +274,7 @@ export async function loadSubagentFinalResult(
     }
 
     const content = await fs.readFile(subagentFilePath, 'utf-8');
-    return extractFinalResultFromSubagentJsonl(content);
+    return extractFinalResultFromSubagentJSONL(content);
   } catch {
     return null;
   }

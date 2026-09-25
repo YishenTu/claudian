@@ -1,7 +1,7 @@
 import { isCollabMemberId } from '@claudian-collab/protocol';
 
 import { COLLAB_CONTROL_OPERATION_BINDINGS } from '@/app/collab/lan/CollabControlOperationBindings';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
 import { requireOperationCredential } from '@/app/collab/lan/routes/RouteAuthentication';
 import type {
   CollabControlRouteHandler,

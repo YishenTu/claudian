@@ -13,8 +13,8 @@ import type {
 import type {
   HostTransferActivationCertificate,
 } from '@/app/collab/host-transfer/HostTrustTransitionService';
-import type { AcceptHostTransferRequest } from '@/app/collab/lan/LanCollabControlOperations';
-import type { LanTlsHostCaSigner } from '@/app/collab/lan/LanTlsIdentity';
+import type { AcceptHostTransferRequest } from '@/app/collab/lan/LANCollabControlOperations';
+import type { LANTLSHostCaSigner } from '@/app/collab/lan/LANTLSIdentity';
 import type { CollabHostTransferSummary, CollabHostTrustTransitionProof } from '@/core/collab';
 
 export interface HostTransferRecoveryStorePort {
@@ -98,7 +98,7 @@ export interface HostTransferPackagePreparationPort {
 }
 
 export interface HostTransferSourceIdentityPort {
-  hostCaSigner(): Promise<LanTlsHostCaSigner>;
+  hostCaSigner(): Promise<LANTLSHostCaSigner>;
   memberCredential(projectId: CollabProjectId): Promise<string>;
 }
 

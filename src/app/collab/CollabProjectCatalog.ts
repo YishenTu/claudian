@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import type { CollabProjectId } from '@claudian-collab/protocol';
 
-import { type CollabAuthorityInstallationStatus, type CollabLocalMembershipRecord, type CollabLocalProjectIndex, type CollabLocalProjectRepository, isCollabLocalLanMembership } from '@/app/collab/CollabLocalProjectRepository';
+import { type CollabAuthorityInstallationStatus, type CollabLocalMembershipRecord, type CollabLocalProjectIndex, type CollabLocalProjectRepository, isCollabLocalLANMembership } from '@/app/collab/CollabLocalProjectRepository';
 import type { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import type { PendingLeaveRecord } from '@/app/collab/exit/PendingLeaveRecord';
 import type { HostInstallationBindingService } from '@/app/collab/host-installation/HostInstallationBindingService';
@@ -267,7 +267,7 @@ export class CollabProjectCatalog {
   ): Promise<CollabLocalProjectSummary> {
     const lifecycle = project.lifecycle ?? membership?.lifecycle;
     const effectiveLifecycle = lifecycle ?? 'active';
-    const lanMembership = membership && isCollabLocalLanMembership(membership)
+    const lanMembership = membership && isCollabLocalLANMembership(membership)
       ? membership
       : null;
     const ownsAuthority = lanMembership?.hostOwnership.ownsAuthority === true;

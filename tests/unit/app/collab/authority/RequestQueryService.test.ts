@@ -17,8 +17,8 @@ import {
 } from '@/app/collab/authority/RequestQueryService';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 
 const CREATED_AT = testTime({ days: -19 });
 const UPDATED_AT = testTime({ days: -19, minutes: 1 });
@@ -28,7 +28,7 @@ const HEAD = '2'.repeat(40);
 describe('RequestQueryService', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let git: RequestQueryGitPort;
   let service: RequestQueryService;
 
@@ -40,7 +40,7 @@ describe('RequestQueryService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-request-query-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();

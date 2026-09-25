@@ -16,15 +16,15 @@ import { MembershipAdminService } from '@/app/collab/authority/MembershipAdminSe
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import type { CollabManagerResponsibilityPurpose } from '@/core/collab';
 
 const NOW = testTime({ days: -10 });
 
 describe('multi-Manager membership lifecycle', () => {
   let SQL: SqlJsStatic;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let root = '';
 
   beforeAll(async () => {
@@ -35,7 +35,7 @@ describe('multi-Manager membership lifecycle', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-multi-manager-lifecycle-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();

@@ -1,13 +1,13 @@
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type {
-  AcpSessionConfigOption,
-  AcpSessionModelState,
-  AcpSessionModeState,
+  ACPSessionConfigOption,
+  ACPSessionModelState,
+  ACPSessionModeState,
 } from '@/providers/acp';
 import {
-  extractAcpSessionModelState,
-  extractAcpSessionModeState,
-  extractAcpSessionThoughtLevelState,
+  extractACPSessionModelState,
+  extractACPSessionModeState,
+  extractACPSessionThoughtLevelState,
 } from '@/providers/acp';
 
 import {
@@ -22,9 +22,9 @@ import {
 } from '../settings';
 
 export interface OpencodeMetadataProjectionInput {
-  readonly configOptions?: AcpSessionConfigOption[] | null;
-  readonly models?: AcpSessionModelState | null;
-  readonly modes?: AcpSessionModeState | null;
+  readonly configOptions?: ACPSessionConfigOption[] | null;
+  readonly models?: ACPSessionModelState | null;
+  readonly modes?: ACPSessionModeState | null;
   readonly selectedRawModelId?: string | null;
 }
 
@@ -33,7 +33,7 @@ export async function projectOpencodeMetadata(
   input: OpencodeMetadataProjectionInput,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  const modelState = extractAcpSessionModelState({
+  const modelState = extractACPSessionModelState({
     configOptions: input.configOptions,
     models: input.models,
   });
@@ -44,14 +44,14 @@ export async function projectOpencodeMetadata(
       rawId: model.id,
     })),
   );
-  const modeState = extractAcpSessionModeState({
+  const modeState = extractACPSessionModeState({
     configOptions: input.configOptions,
     modes: input.modes,
   });
   const availableModes = normalizeOpencodeAvailableModes(
     modeState.availableModes,
   );
-  const thoughtState = extractAcpSessionThoughtLevelState({
+  const thoughtState = extractACPSessionThoughtLevelState({
     configOptions: input.configOptions,
   });
   const thinkingOptions = normalizeOpencodeModelVariants(

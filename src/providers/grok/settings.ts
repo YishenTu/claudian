@@ -2,7 +2,7 @@ import { getProviderConfig, setProviderConfig } from '../../core/providers/provi
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { STANDARD_REASONING_VALUES } from '../../core/providers/reasoning';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
-import type { HostnameCliPaths } from '../../core/types/settings';
+import type { HostnameCLIPaths } from '../../core/types/settings';
 import { getHostnameKey } from '../../utils/env';
 import {
   clearGrokReasoningMetadata,
@@ -22,7 +22,7 @@ export interface GrokCatalogSnapshot {
 export interface PersistedGrokProviderSettings {
   enabled: boolean;
   cliPath: string;
-  cliPathsByHost: HostnameCliPaths;
+  cliPathsByHost: HostnameCLIPaths;
   catalogsByHost: Record<string, GrokCatalogSnapshot>;
   environmentVariables: string;
   environmentHash: string;

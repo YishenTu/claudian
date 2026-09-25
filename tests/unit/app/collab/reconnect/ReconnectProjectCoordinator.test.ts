@@ -13,7 +13,7 @@ import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/Authority
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import type {
   CollabLocalCloudMembershipRecord,
-  CollabLocalLanMembershipRecord,
+  CollabLocalLANMembershipRecord,
   CollabLocalMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -21,17 +21,17 @@ import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrust
 import { LocalHostTransferProjection } from '@/app/collab/host-transfer/LocalHostTransferProjection';
 import type {
   CollabHostTrustStore,
-  CollabHttpOperationOptions,
-  CollabJsonRequest,
+  CollabHTTPOperationOptions,
+  CollabJSONRequest,
   CollabTrustedHost,
-  PinnedCollabHttpClient,
-} from '@/app/collab/lan/CollabHttpClient';
+  PinnedCollabHTTPClient,
+} from '@/app/collab/lan/CollabHTTPClient';
 import {
   InvitationCodec,
-  type LanCollabInvitation,
+  type LANCollabInvitation,
 } from '@/app/collab/lan/InvitationCodec';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 import {
   decodeCloudRelocationRecord,
 } from '@/app/collab/reconnect/CloudRelocationRecord';
@@ -47,7 +47,7 @@ const fingerprint = 'ab'.repeat(32);
 const credential = Buffer.alloc(32, 9).toString('base64url');
 const certificate = '-----BEGIN CERTIFICATE-----\nCA\n-----END CERTIFICATE-----\n';
 
-function membership(): CollabLocalLanMembershipRecord {
+function membership(): CollabLocalLANMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
@@ -139,8 +139,8 @@ function cloudSnapshot(changes: {
 
 function invitation(
   codec: InvitationCodec,
-  changes: Partial<LanCollabInvitation> = {},
-): LanCollabInvitation {
+  changes: Partial<LANCollabInvitation> = {},
+): LANCollabInvitation {
   return codec.createInvitation({
     caFingerprint: changes.caFingerprint ?? fingerprint,
     endpoint: changes.endpoint ?? newEndpoint,
@@ -200,20 +200,20 @@ describe('ReconnectProjectCoordinator', () => {
     observedStoredTrust = null;
     stagedSaveResult = null;
     createHttpClient = jest.fn((store: CollabHostTrustStore) => ({
-      bootstrapInvitation: async (candidate: LanCollabInvitation) => {
+      bootstrapInvitation: async (candidate: LANCollabInvitation) => {
         const stored = await store.read(candidate.projectId);
         observedStoredTrust = stored;
         const staged: CollabTrustedHost = { ...stored!, endpoint: candidate.endpoint };
         stagedSaveResult = await store.save(staged);
         return {
           requestWithMember: <T>(
-            request: CollabJsonRequest<T>,
+            request: CollabJSONRequest<T>,
             memberCredential: string,
-            options: CollabHttpOperationOptions = {},
+            options: CollabHTTPOperationOptions = {},
           ) => (
             requestWithMember(request, memberCredential, options, candidate.endpoint)
           ),
-        } as unknown as PinnedCollabHttpClient;
+        } as unknown as PinnedCollabHTTPClient;
       },
       bootstrapTrustedEndpoint: async (candidate: {
         caFingerprint: string;
@@ -226,13 +226,13 @@ describe('ReconnectProjectCoordinator', () => {
         stagedSaveResult = await store.save(staged);
         return {
           requestWithMember: <T>(
-            request: CollabJsonRequest<T>,
+            request: CollabJSONRequest<T>,
             memberCredential: string,
-            options: CollabHttpOperationOptions = {},
+            options: CollabHTTPOperationOptions = {},
           ) => (
             requestWithMember(request, memberCredential, options, candidate.endpoint)
           ),
-        } as unknown as PinnedCollabHttpClient;
+        } as unknown as PinnedCollabHTTPClient;
       },
     }));
     foundation = {
@@ -865,18 +865,18 @@ describe('ReconnectProjectCoordinator', () => {
 
   describe('authenticated handoff history', () => {
     let identityRoot: string;
-    let source: LanTlsIdentity;
-    let target: LanTlsIdentity;
+    let source: LANTLSIdentity;
+    let target: LANTLSIdentity;
 
     // Key generation is fixture setup; each reconnect keeps its normal timeout.
     beforeAll(async () => {
       identityRoot = await mkdtemp(path.join(os.tmpdir(), 'claudian-reconnect-identities-'));
       await mkdir(path.join(identityRoot, 'source'));
       await mkdir(path.join(identityRoot, 'target'));
-      source = new LanTlsIdentity(path.join(identityRoot, 'source'), {
+      source = new LANTLSIdentity(path.join(identityRoot, 'source'), {
         installationKey: TEST_INSTALLATION_A, now: () => now,
       });
-      target = new LanTlsIdentity(path.join(identityRoot, 'target'), {
+      target = new LANTLSIdentity(path.join(identityRoot, 'target'), {
         installationKey: TEST_INSTALLATION_A, now: () => now,
       });
       await source.loadOrCreate();

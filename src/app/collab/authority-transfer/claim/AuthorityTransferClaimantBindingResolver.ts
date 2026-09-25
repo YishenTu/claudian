@@ -14,9 +14,9 @@ import type {
 } from '@/app/collab/CollabLocalProjectRepository';
 import {
   isCollabLocalCloudMembership,
-  isCollabLocalLanMembership,
+  isCollabLocalLANMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
-import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+import { LANAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LANAuthorityTransferClient';
 import type {
   CloudAuthorityConnection,
 } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
@@ -29,8 +29,8 @@ export interface AuthorityTransferClaimantBindingResolverOptions {
     readonly serverUrl: string;
   }>) => Promise<CloudAuthorityConnection>;
   readonly createLanClient?: (
-    input: ConstructorParameters<typeof LanAuthorityTransferClient>[0],
-  ) => LanAuthorityTransferClient;
+    input: ConstructorParameters<typeof LANAuthorityTransferClient>[0],
+  ) => LANAuthorityTransferClient;
   readonly loadMembership: (
     projectId: CollabProjectId,
   ) => Promise<CollabLocalMembershipRecord | null>;
@@ -54,7 +54,7 @@ export class AuthorityTransferClaimantBindingResolver {
 
   constructor(private readonly options: AuthorityTransferClaimantBindingResolverOptions) {
     this.createLanClient = options.createLanClient
-      ?? (input => new LanAuthorityTransferClient(input));
+      ?? (input => new LANAuthorityTransferClient(input));
     this.now = options.now ?? (() => new Date());
   }
 
@@ -68,7 +68,7 @@ export class AuthorityTransferClaimantBindingResolver {
     if (record.variant === 'project-recovery') {
       if (membership.member.personalRef !== record.memberPersonalRef
         || membership.authority.authorityGeneration > record.invitation.link.authorityGeneration
-        || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) throw resolutionError('project-recovery-membership-invalid');
+        || isCollabLocalLANMembership(membership) && membership.hostOwnership.ownsAuthority) throw resolutionError('project-recovery-membership-invalid');
       const target = record.invitation.target;
       return { direction: target.kind === 'cloud' ? 'lan-to-cloud' : 'cloud-to-lan', mode: 'project-recovery',
         ...(target.kind === 'cloud' && record.convergence === null ? { cloudSession: await this.options.createCloudConnection({
@@ -81,7 +81,7 @@ export class AuthorityTransferClaimantBindingResolver {
       }
       if (record.lanTarget) {
         if (membership.authority.authorityGeneration === record.descriptor.targetAuthorityGeneration) {
-          if (!isCollabLocalLanMembership(membership) || membership.hostOwnership.ownsAuthority
+          if (!isCollabLocalLANMembership(membership) || membership.hostOwnership.ownsAuthority
             || membership.member.credential !== record.targetCredential
             || membership.authority.hostCaFingerprint !== record.lanTarget.caFingerprint
             || !['target-confirmed', 'membership-converged', 'completed'].includes(record.phase)) {
@@ -90,7 +90,7 @@ export class AuthorityTransferClaimantBindingResolver {
           return { direction: 'cloud-to-lan', mode: 'local-only' };
         }
         if (membership.authority.authorityGeneration > record.descriptor.targetAuthorityGeneration
-          || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) throw resolutionError('authority-transfer-claimant-source-invalid');
+          || isCollabLocalLANMembership(membership) && membership.hostOwnership.ownsAuthority) throw resolutionError('authority-transfer-claimant-source-invalid');
         return { direction: 'cloud-to-lan', mode: 'manager-reissued', targetHost: record.lanTarget,
           authorityGeneration: record.descriptor.targetAuthorityGeneration };
       }
@@ -109,7 +109,7 @@ export class AuthorityTransferClaimantBindingResolver {
         return { direction: 'lan-to-cloud', mode: 'local-only' };
       }
       if (membership.authority.authorityGeneration >= record.descriptor.targetAuthorityGeneration
-        || isCollabLocalLanMembership(membership) && membership.hostOwnership.ownsAuthority) {
+        || isCollabLocalLANMembership(membership) && membership.hostOwnership.ownsAuthority) {
         throw resolutionError('authority-transfer-claimant-source-invalid');
       }
       return {
@@ -130,7 +130,7 @@ export class AuthorityTransferClaimantBindingResolver {
         }
         return { direction: 'lan-to-cloud', mode: 'local-only' };
       }
-      if (!isCollabLocalLanMembership(membership)) {
+      if (!isCollabLocalLANMembership(membership)) {
         throw resolutionError('authority-transfer-claimant-source-invalid');
       }
       const cloudSession = await this.options.createCloudConnection({
@@ -165,7 +165,7 @@ export class AuthorityTransferClaimantBindingResolver {
         throw error;
       }
     }
-    if (isCollabLocalLanMembership(membership)) {
+    if (isCollabLocalLANMembership(membership)) {
       if (record.phase !== 'source-acknowledged') {
         throw resolutionError('authority-transfer-claimant-phase-invalid');
       }

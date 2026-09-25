@@ -1,9 +1,9 @@
 import {
   decodeCodexExecEnvelope,
   isCodexToolOutputError,
-  normalizeCodexMcpToolInput,
-  normalizeCodexMcpToolName,
-  normalizeCodexMcpToolState,
+  normalizeCodexMCPToolInput,
+  normalizeCodexMCPToolName,
+  normalizeCodexMCPToolState,
   normalizeCodexToolCall,
   normalizeCodexToolInput,
   normalizeCodexToolName,
@@ -346,16 +346,16 @@ describe('normalizeCodexToolCall', () => {
 
 describe('Codex MCP normalization helpers', () => {
   it('normalizes MCP tool names', () => {
-    expect(normalizeCodexMcpToolName('filesystem', 'read_file')).toBe('mcp__filesystem__read_file');
+    expect(normalizeCodexMCPToolName('filesystem', 'read_file')).toBe('mcp__filesystem__read_file');
   });
 
   it('normalizes MCP arguments from string and object inputs', () => {
-    expect(normalizeCodexMcpToolInput('{"path":"README.md"}')).toEqual({ path: 'README.md' });
-    expect(normalizeCodexMcpToolInput({ path: 'README.md' })).toEqual({ path: 'README.md' });
+    expect(normalizeCodexMCPToolInput('{"path":"README.md"}')).toEqual({ path: 'README.md' });
+    expect(normalizeCodexMCPToolInput({ path: 'README.md' })).toEqual({ path: 'README.md' });
   });
 
   it('normalizes MCP completed state with structured text results', () => {
-    expect(normalizeCodexMcpToolState(
+    expect(normalizeCodexMCPToolState(
       'completed',
       { content: [{ text: 'line 1' }, { text: 'line 2' }] },
       undefined,
@@ -368,7 +368,7 @@ describe('Codex MCP normalization helpers', () => {
   });
 
   it('normalizes MCP failed state with error text', () => {
-    expect(normalizeCodexMcpToolState(
+    expect(normalizeCodexMCPToolState(
       'failed',
       undefined,
       'Permission denied',

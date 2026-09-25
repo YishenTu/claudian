@@ -8,7 +8,7 @@ import {
 } from '../models';
 import { getPiProviderSettings } from '../settings';
 import { buildPiLaunchSpec } from './PiLaunchSpec';
-import { PiRpcTransport } from './PiRpcTransport';
+import { PiRPCTransport } from './PiRPCTransport';
 import { PiSubprocess } from './PiSubprocess';
 
 export type PiModelDiscoveryResult =
@@ -47,7 +47,7 @@ export class PiModelDiscoveryService {
       settings,
     });
     const subprocess = new PiSubprocess(launchSpec);
-    let transport: PiRpcTransport | null = null;
+    let transport: PiRPCTransport | null = null;
     let removeEventListener: (() => void) | null = null;
 
     const abort = () => { transport?.dispose(); void subprocess.shutdown().catch(() => {}); };
@@ -55,7 +55,7 @@ export class PiModelDiscoveryService {
     try {
       signal?.throwIfAborted();
       subprocess.start();
-      transport = new PiRpcTransport({
+      transport = new PiRPCTransport({
         input: subprocess.stdout,
         onClose: (listener) => subprocess.onClose(listener),
         output: subprocess.stdin,

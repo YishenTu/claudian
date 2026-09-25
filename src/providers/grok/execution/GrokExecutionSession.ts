@@ -29,17 +29,17 @@ import {
   buildPromptWithHistoryContext,
 } from '../../../utils/session';
 import {
-  type AcpContentBlock,
-  AcpExecutionEventNormalizer,
-  AcpInteractionController,
-  type AcpPromptResponse,
-  type AcpSessionConfigOption,
-  type AcpSessionModelState,
-  type AcpSessionNotification,
-  AcpToolStreamAdapter,
-  type AcpUsage,
-  type AcpUsageUpdate,
-  buildAcpUsageInfo,
+  type ACPContentBlock,
+  ACPExecutionEventNormalizer,
+  ACPInteractionController,
+  type ACPPromptResponse,
+  type ACPSessionConfigOption,
+  type ACPSessionModelState,
+  type ACPSessionNotification,
+  ACPToolStreamAdapter,
+  type ACPUsage,
+  type ACPUsageUpdate,
+  buildACPUsageInfo,
 } from '../../acp';
 import type { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
 import { computeGrokEnvironmentHash } from '../env/GrokSettingsReconciler';
@@ -143,13 +143,13 @@ interface ActiveExecution {
   readonly abortController: AbortController;
   accepted: boolean;
   readonly cancellationGeneration: number;
-  readonly normalizer: AcpExecutionEventNormalizer;
+  readonly normalizer: ACPExecutionEventNormalizer;
   readonly request: ProviderExecutionRequest;
   readonly run: GrokExecutionRunState;
   sequence: number;
-  contextUsage: AcpUsageUpdate | null;
-  promptUsage: AcpUsage | null;
-  promptResponse?: AcpPromptResponse;
+  contextUsage: ACPUsageUpdate | null;
+  promptUsage: ACPUsage | null;
+  promptResponse?: ACPPromptResponse;
   readonly interjections: Map<string, PendingInterjection>;
   observedTurnCompletions: number;
   requiredTurnCompletions: number;
@@ -187,7 +187,7 @@ RewindableExecutionSession {
   private nativeOwner: GrokNativeOwner | null = null;
   private nativeStartupFlight: Promise<GrokExecutionNativeConnection> | null = null;
   private quarantineGeneration = 0;
-  private readonly interactionController: AcpInteractionController;
+  private readonly interactionController: ACPInteractionController;
   private readonly interactionRouter: GrokExecutionInteractionRouter;
   private readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
   private readonly mirrorDeduplicator = new GrokSessionNotificationMirrorDeduplicator();
@@ -213,7 +213,7 @@ RewindableExecutionSession {
         && providerState.nativeConversationContextEstablished !== false,
       );
     this.snapshot = this.#createSnapshot('idle');
-    this.interactionController = new AcpInteractionController({
+    this.interactionController = new ACPInteractionController({
       getTurnId: () => this.active?.run.turnId ?? null,
       interactionPort: config.interactionPort,
       sessionInstanceId: this.sessionInstanceId,
@@ -244,10 +244,10 @@ RewindableExecutionSession {
       interjections: new Map(),
       observedTurnCompletions: 0,
       requiredTurnCompletions: 0,
-      normalizer: new AcpExecutionEventNormalizer({
+      normalizer: new ACPExecutionEventNormalizer({
         mapUsage: usage => {
           if (active.acceptingLiveOutput) active.contextUsage = usage;
-          return buildAcpUsageInfo({ contextWindow: usage });
+          return buildACPUsageInfo({ contextWindow: usage });
         },
         scope: {
           executionId: run.executionId,
@@ -766,7 +766,7 @@ RewindableExecutionSession {
   }
 
   private handleNotification(
-    notification: AcpSessionNotification,
+    notification: ACPSessionNotification,
     source: 'extension' | 'standard',
   ): void {
     const active = this.active;
@@ -814,7 +814,7 @@ RewindableExecutionSession {
     }
   }
 
-  private accept(active: ActiveExecution, response?: AcpPromptResponse): void {
+  private accept(active: ActiveExecution, response?: ACPPromptResponse): void {
     if (active.accepted) return;
     active.accepted = true;
     if (!this.nativeConversationContextEstablished) {
@@ -857,7 +857,7 @@ RewindableExecutionSession {
         getGrokProviderSettings(this.plugin.settings).currentCatalog?.models ?? [], model,
       )?.contextWindow;
       const size = active.contextUsage?.size || advertisedWindow;
-      const usage = buildAcpUsageInfo({
+      const usage = buildACPUsageInfo({
         model: decodeGrokModelId(model) ?? undefined,
         contextWindow: size ? { size, used: active.promptUsage.totalTokens } : null,
         promptUsage: active.promptUsage,
@@ -1152,7 +1152,7 @@ RewindableExecutionSession {
 
   async #publishModelUpdate(
     owner: GrokNativeOwner,
-    state: AcpSessionModelState,
+    state: ACPSessionModelState,
   ): Promise<void> {
     if (!this.#isCurrentNativeOwner(owner)) return;
     const update = normalizeGrokModelUpdateMetadata(state);
@@ -1165,7 +1165,7 @@ RewindableExecutionSession {
   }
 
   async #publishModelsFromConfig(
-    options: readonly AcpSessionConfigOption[],
+    options: readonly ACPSessionConfigOption[],
     owner: GrokNativeOwner,
   ): Promise<void> {
     if (!this.#isCurrentNativeOwner(owner)) return;
@@ -1297,8 +1297,8 @@ class GrokExecutionCancellationError extends Error {
   }
 }
 
-function createGrokToolStreamAdapter(): AcpToolStreamAdapter {
-  return new AcpToolStreamAdapter({
+function createGrokToolStreamAdapter(): ACPToolStreamAdapter {
+  return new ACPToolStreamAdapter({
     normalizeToolInput(rawName, input) {
       return normalizeGrokToolCall({ rawInput: input, title: rawName }).input;
     },
@@ -1322,8 +1322,8 @@ function createGrokToolStreamAdapter(): AcpToolStreamAdapter {
 function buildPromptBlocks(
   request: ProviderExecutionRequest,
   replayConversationHistory = false,
-): AcpContentBlock[] {
-  const blocks: AcpContentBlock[] = [];
+): ACPContentBlock[] {
+  const blocks: ACPContentBlock[] = [];
   let text = request.input
     .filter(block => block.type === 'text')
     .map(block => block.text)

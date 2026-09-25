@@ -14,6 +14,17 @@ const jestRecommended = jestPlugin.configs['flat/recommended'];
 const tsconfigRootDir = dirname(fileURLToPath(import.meta.url));
 const obsidianRuleSeverity = 'error';
 
+// Keep acronym boundaries explicit so ordinary words such as Client stay intact.
+const filenameAcronyms = [
+  'ACP', 'API', 'CLI', 'CSS', 'DOM', 'HTML', 'HTTP', 'HTTPS', 'ID', 'JS',
+  'JSON', 'JSONL', 'LAN', 'MCP', 'RPC', 'SDK', 'SQL', 'TLS', 'UI', 'URI', 'URL', 'XML',
+];
+const acronymSpellings = new Map(filenameAcronyms.map(acronym => [
+  acronym[0] + acronym.slice(1).toLowerCase(), acronym,
+]));
+const acronymWords = new RegExp(`(${[...acronymSpellings.keys()].sort((a, b) => b.length - a.length).join('|')})(s?)(?=[A-Z0-9]|$)`, 'g');
+const preserveAcronyms = name => name.replace(acronymWords, (_, word, plural) => acronymSpellings.get(word) + plural);
+
 // Enforces the file naming conventions from AGENTS.md without extra dependencies.
 // Exported so scripts/check-eslint-config.test.mjs can exercise it directly.
 export const fileNamingRule = {
@@ -23,6 +34,8 @@ export const fileNamingRule = {
     messages: {
       invalidCase:
         "Filename '{{name}}' must use camelCase, PascalCase, or kebab-case (see AGENTS.md naming conventions).",
+      acronymCase:
+        "Filename '{{name}}' must preserve acronym capitals ('{{expected}}').",
       conceptMismatch:
         "File '{{name}}' exports '{{concept}}'; modules with a primary named concept use a PascalCase filename ('{{concept}}.ts').",
     },
@@ -42,8 +55,15 @@ export const fileNamingRule = {
           context.report({ node, messageId: 'invalidCase', data: { name: base } });
           return;
         }
+        const expected = preserveAcronyms(first);
+        if (expected !== first) {
+          context.report({ node, messageId: 'acronymCase', data: {
+            name: base, expected: expected + base.slice(first.length),
+          } });
+          return;
+        }
         if (!isCamel) return;
-        const concept = first.charAt(0).toUpperCase() + first.slice(1);
+        const concept = preserveAcronyms(first.charAt(0).toUpperCase() + first.slice(1));
         for (const statement of node.body) {
           if (statement.type !== 'ExportNamedDeclaration' || !statement.declaration) continue;
           const declaration = statement.declaration;

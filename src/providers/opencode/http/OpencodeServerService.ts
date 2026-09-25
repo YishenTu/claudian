@@ -4,12 +4,12 @@ import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTrans
 
 import { prepareOpencodeLaunchArtifacts } from '../runtime/OpencodeLaunchArtifacts';
 import { resolveOpencodeDatabasePath } from '../runtime/OpencodePaths';
-import { isRecord, OpencodeHttpClient, type OpencodeHttpEvent, pollOpencodeUntil } from './OpencodeHttpClient';
+import { isRecord, OpencodeHTTPClient, type OpencodeHTTPEvent, pollOpencodeUntil } from './OpencodeHTTPClient';
 import { createOpencodeServerConfig, type OpencodeServerConfig } from './OpencodeServerConfig';
 
-type Subscriber = { event: (event: OpencodeHttpEvent) => void; error: (error: Error) => void; interactive: () => boolean };
+type Subscriber = { event: (event: OpencodeHTTPEvent) => void; error: (error: Error) => void; interactive: () => boolean };
 interface Server {
-  client: OpencodeHttpClient;
+  client: OpencodeHTTPClient;
   config: OpencodeServerConfig;
   databasePath: string | null;
   subscribers: Set<Subscriber>;
@@ -98,7 +98,7 @@ export class OpencodeServerService {
     const artifacts = await prepareOpencodeLaunchArtifacts({ workspaceRoot: cwd, runtimeEnv: environment, nativeVersion: 2, preserveExistingPrompts: true });
     signal.throwIfAborted();
     const config = await createOpencodeServerConfig(cwd, environment);
-    const client = new OpencodeHttpClient(cliPath, cwd, { ...environment, OPENCODE_CONFIG: config.file, OPENCODE_CONFIG_CONTENT: artifacts.configContent });
+    const client = new OpencodeHTTPClient(cliPath, cwd, { ...environment, OPENCODE_CONFIG: config.file, OPENCODE_CONFIG_CONTENT: artifacts.configContent });
     const server: Server = { client, config, databasePath: artifacts.databasePath, subscribers: new Set(), forms: new Map() };
     try {
       await config.initialize(error => { void this.close(server, error); });
@@ -132,7 +132,7 @@ export class OpencodeServerLease {
   get databasePath(): string | null { return this.server.databasePath; }
   signal(signal?: AbortSignal): AbortSignal { return this.server.client.signal(AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])])); }
   isReusable(): boolean { return !this.controller.signal.aborted && this.server.client.isReusable(); }
-  request<T = unknown>(route: string, options: Parameters<OpencodeHttpClient['request']>[1] = {}): Promise<T> {
+  request<T = unknown>(route: string, options: Parameters<OpencodeHTTPClient['request']>[1] = {}): Promise<T> {
     return this.server.client.request<T>(route, { ...options, signal: this.signal(options?.signal) });
   }
 
@@ -208,7 +208,7 @@ async function subscribeToServer(server: Server, failServer: (error: Error) => P
   catch (error) { await failServer(error instanceof Error ? error : new Error(String(error))); throw error; }
 }
 
-function dispatchServerEvent(server: Server, event: OpencodeHttpEvent): void {
+function dispatchServerEvent(server: Server, event: OpencodeHTTPEvent): void {
   const form = isRecord(event.data.form) ? event.data.form : undefined;
   const sessionId = form?.sessionID ?? event.data.sessionID;
   if (sessionId === 'global') {

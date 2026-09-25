@@ -704,7 +704,7 @@ ClaudeExecutionStrategySink {
         || this.nativeQuery !== query
         || this.commandPublication !== publication
       ) return;
-      this.commandSnapshot = snapshot.map(mapSdkCommand);
+      this.commandSnapshot = snapshot.map(mapSDKCommand);
       this.#emitSession({ type: 'commands_changed' });
     };
     if (commands !== undefined) {
@@ -1356,7 +1356,7 @@ function cloneRecord(
   return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
 
-function mapSdkCommand(command: SDKSlashCommand): SlashCommand {
+function mapSDKCommand(command: SDKSlashCommand): SlashCommand {
   return {
     id: `sdk:${command.name}`,
     name: command.name,

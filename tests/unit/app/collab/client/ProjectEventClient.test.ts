@@ -5,8 +5,8 @@ import {
   type ProjectEventClientSocket,
   type ProjectEventClientSocketFactory,
 } from '@/app/collab/client/ProjectEventClient';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
-import { LAN_COLLAB_EVENT_KINDS } from '@/app/collab/lan/LanCollabEvent';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
+import { LAN_COLLAB_EVENT_KINDS } from '@/app/collab/lan/LANCollabEvent';
 import { CollabProjectConnection } from '@/app/collab/reconnect/CollabProjectConnection';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 

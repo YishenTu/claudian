@@ -1,4 +1,4 @@
-import type { AcpSessionNotification } from '../../acp';
+import type { ACPSessionNotification } from '../../acp';
 
 export const GROK_SESSION_UPDATE_NOTIFICATION_METHODS = [
   'x.ai/session/update',
@@ -12,7 +12,7 @@ const GROK_WRAPPED_SESSION_NOTIFICATION_NAME = 'x.ai/session_notification';
 export function parseGrokSessionNotification(
   method: string,
   params: unknown,
-): AcpSessionNotification | null {
+): ACPSessionNotification | null {
   if (GROK_SESSION_UPDATE_NOTIFICATION_METHODS.some(candidate => candidate === method)) {
     return parseSessionNotification(params);
   }
@@ -25,14 +25,14 @@ export function parseGrokSessionNotification(
   return parseSessionNotification(params.params);
 }
 
-function parseSessionNotification(value: unknown): AcpSessionNotification | null {
+function parseSessionNotification(value: unknown): ACPSessionNotification | null {
   if (!isRecord(value) || !isRecord(value.update)) {
     return null;
   }
   if (typeof value.sessionId !== 'string' || !value.sessionId.trim()) {
     return null;
   }
-  return value as unknown as AcpSessionNotification;
+  return value as unknown as ACPSessionNotification;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -51,21 +51,21 @@ import {
   pinAuthorityTransferReceiptVerifier,
 } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import {
-  type CloudToLanManagerEntryRecord,
-  cloudToLanManagerRequiresClaimant,
-  type CloudToLanTargetEntryRecord,
-  type CloudToLanTargetPreparationDescriptor,
-  decodeCloudToLanManagerEntryRecord,
-  decodeCloudToLanTargetEntryRecord,
-  handoffCloudToLanTargetEntry,
-  markCloudToLanManagerBeginPossiblySent,
-  markCloudToLanManagerCancellationPossiblySent,
-  prepareCloudToLanManagerCancellation,
-  publishCloudToLanTargetEntry,
-  recordCloudToLanManagerStatus,
-  rejectCloudToLanManagerEntry,
-  withdrawCloudToLanTargetEntry,
-} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+  type CloudToLANManagerEntryRecord,
+  cloudToLANManagerRequiresClaimant,
+  type CloudToLANTargetEntryRecord,
+  type CloudToLANTargetPreparationDescriptor,
+  decodeCloudToLANManagerEntryRecord,
+  decodeCloudToLANTargetEntryRecord,
+  handoffCloudToLANTargetEntry,
+  markCloudToLANManagerBeginPossiblySent,
+  markCloudToLANManagerCancellationPossiblySent,
+  prepareCloudToLANManagerCancellation,
+  publishCloudToLANTargetEntry,
+  recordCloudToLANManagerStatus,
+  rejectCloudToLANManagerEntry,
+  withdrawCloudToLANTargetEntry,
+} from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import {
   type AuthorityTransferClaimBatchCommitmentRecord,
   createAuthorityTransferClaimBatchCommitmentRecord,
@@ -85,7 +85,7 @@ import { SerialTaskQueue } from '@/app/collab/SerialTaskQueue';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { InstallationKey } from '@/core/device/InstallationKey';
 
-export type LanToCloudCancellationIntent = AuthorityTransferSourceCancellationIntent;
+export type LANToCloudCancellationIntent = AuthorityTransferSourceCancellationIntent;
 
 export interface AuthorityTransferPersistenceOptions {
   readonly isRecoveryOwner: (ownerInstallationKey: string) => boolean;
@@ -115,7 +115,7 @@ interface CompleteTerminalCleanupInput {
   readonly transferId: string;
 }
 
-interface CloudToLanCompletedTargetIdentity {
+interface CloudToLANCompletedTargetIdentity {
   readonly memberId: CollabMemberId;
   readonly operationIntentId: string;
   readonly personalRef: string;
@@ -447,7 +447,7 @@ export class AuthorityTransferPersistence {
 
   loadCloudToLanTargetEntry(
     projectId: CollabProjectId,
-  ): Promise<CloudToLanTargetEntryRecord | null> {
+  ): Promise<CloudToLANTargetEntryRecord | null> {
     return this.runProject(projectId, async () => {
       const [loadedEntry, record] = await Promise.all([
         this.stores.authorityTransferEntries.load(projectId),
@@ -463,7 +463,7 @@ export class AuthorityTransferPersistence {
   }
 
   assertCloudToLanCompletedTargetIdentity(
-    input: CloudToLanCompletedTargetIdentity,
+    input: CloudToLANCompletedTargetIdentity,
   ): Promise<void> {
     return this.runProject(input.projectId, async () => {
       const [document, record] = await Promise.all([
@@ -501,7 +501,7 @@ export class AuthorityTransferPersistence {
 
   loadCloudToLanManagerEntry(
     projectId: CollabProjectId,
-  ): Promise<CloudToLanManagerEntryRecord | null> {
+  ): Promise<CloudToLANManagerEntryRecord | null> {
     return this.runProject(projectId, async () => {
       const [loadedEntry, record] = await Promise.all([
         this.stores.authorityTransferEntries.load(projectId),
@@ -512,11 +512,11 @@ export class AuthorityTransferPersistence {
   }
 
   prepareCloudToLanTargetEntry(
-    entry: CloudToLanTargetEntryRecord,
-  ): Promise<CloudToLanTargetEntryRecord> {
-    let decoded: CloudToLanTargetEntryRecord;
+    entry: CloudToLANTargetEntryRecord,
+  ): Promise<CloudToLANTargetEntryRecord> {
+    let decoded: CloudToLANTargetEntryRecord;
     try {
-      decoded = decodeCloudToLanTargetEntryRecord(entry);
+      decoded = decodeCloudToLANTargetEntryRecord(entry);
     } catch {
       throw transferError(
         'durable-progress-recovery-required',
@@ -589,17 +589,17 @@ export class AuthorityTransferPersistence {
   }
 
   publishCloudToLanTargetEntry(
-    entry: CloudToLanTargetEntryRecord,
+    entry: CloudToLANTargetEntryRecord,
     descriptor: Pick<
-      CloudToLanTargetPreparationDescriptor,
+      CloudToLANTargetPreparationDescriptor,
       'caCertificatePem' | 'caFingerprint' | 'publishedAt' | 'targetUrl'
     >,
-  ): Promise<CloudToLanTargetEntryRecord> {
-    let decoded: CloudToLanTargetEntryRecord;
-    let published: CloudToLanTargetEntryRecord;
+  ): Promise<CloudToLANTargetEntryRecord> {
+    let decoded: CloudToLANTargetEntryRecord;
+    let published: CloudToLANTargetEntryRecord;
     try {
-      decoded = decodeCloudToLanTargetEntryRecord(entry);
-      published = publishCloudToLanTargetEntry(decoded, descriptor);
+      decoded = decodeCloudToLANTargetEntryRecord(entry);
+      published = publishCloudToLANTargetEntry(decoded, descriptor);
     } catch {
       throw transferError(
         'durable-progress-recovery-required',
@@ -621,13 +621,13 @@ export class AuthorityTransferPersistence {
   }
 
   withdrawCloudToLanTargetEntry(
-    entry: CloudToLanTargetEntryRecord,
-  ): Promise<CloudToLanTargetEntryRecord> {
-    let decoded: CloudToLanTargetEntryRecord;
-    let withdrawn: CloudToLanTargetEntryRecord;
+    entry: CloudToLANTargetEntryRecord,
+  ): Promise<CloudToLANTargetEntryRecord> {
+    let decoded: CloudToLANTargetEntryRecord;
+    let withdrawn: CloudToLANTargetEntryRecord;
     try {
-      decoded = decodeCloudToLanTargetEntryRecord(entry);
-      withdrawn = withdrawCloudToLanTargetEntry(decoded, this.now().toISOString());
+      decoded = decodeCloudToLANTargetEntryRecord(entry);
+      withdrawn = withdrawCloudToLANTargetEntry(decoded, this.now().toISOString());
     } catch {
       throw transferError(
         'authority-transfer-stale',
@@ -653,16 +653,16 @@ export class AuthorityTransferPersistence {
   }
 
   handoffCloudToLanTargetEntry(
-    entry: CloudToLanTargetEntryRecord,
+    entry: CloudToLANTargetEntryRecord,
     record: AuthorityTransferRecord,
   ): Promise<AuthorityTransferRecord> {
-    let decodedEntry: CloudToLanTargetEntryRecord;
+    let decodedEntry: CloudToLANTargetEntryRecord;
     let decodedRecord: AuthorityTransferRecord;
-    let handedOff: CloudToLanTargetEntryRecord;
+    let handedOff: CloudToLANTargetEntryRecord;
     try {
-      decodedEntry = decodeCloudToLanTargetEntryRecord(entry);
+      decodedEntry = decodeCloudToLANTargetEntryRecord(entry);
       decodedRecord = decodeAuthorityTransferRecord(record);
-      handedOff = handoffCloudToLanTargetEntry(decodedEntry, decodedRecord);
+      handedOff = handoffCloudToLANTargetEntry(decodedEntry, decodedRecord);
     } catch {
       throw transferError(
         'durable-progress-recovery-required',
@@ -701,11 +701,11 @@ export class AuthorityTransferPersistence {
   }
 
   prepareCloudToLanManagerEntry(
-    entry: CloudToLanManagerEntryRecord,
-  ): Promise<CloudToLanManagerEntryRecord> {
-    let decoded: CloudToLanManagerEntryRecord;
+    entry: CloudToLANManagerEntryRecord,
+  ): Promise<CloudToLANManagerEntryRecord> {
+    let decoded: CloudToLANManagerEntryRecord;
     try {
-      decoded = decodeCloudToLanManagerEntryRecord(entry);
+      decoded = decodeCloudToLANManagerEntryRecord(entry);
     } catch {
       throw transferError(
         'durable-progress-recovery-required',
@@ -723,7 +723,7 @@ export class AuthorityTransferPersistence {
         if (
           existing.phase === 'settled'
           && record === null
-          && !cloudToLanManagerRequiresClaimant(existing)
+          && !cloudToLANManagerRequiresClaimant(existing)
         ) {
           await this.stores.authorityTransferEntries.saveManager(decoded);
           return decoded;
@@ -754,54 +754,54 @@ export class AuthorityTransferPersistence {
   }
 
   markCloudToLanManagerBeginPossiblySent(
-    entry: CloudToLanManagerEntryRecord,
-  ): Promise<CloudToLanManagerEntryRecord> {
+    entry: CloudToLANManagerEntryRecord,
+  ): Promise<CloudToLANManagerEntryRecord> {
     return this.#updateCloudToLanManagerEntry(
       entry,
-      markCloudToLanManagerBeginPossiblySent(entry),
+      markCloudToLANManagerBeginPossiblySent(entry),
     );
   }
 
   recordCloudToLanManagerStatus(
-    entry: CloudToLanManagerEntryRecord,
+    entry: CloudToLANManagerEntryRecord,
     status: CollabAuthorityTransferStatus,
-  ): Promise<CloudToLanManagerEntryRecord> {
+  ): Promise<CloudToLANManagerEntryRecord> {
     return this.#updateCloudToLanManagerEntry(
       entry,
-      recordCloudToLanManagerStatus(entry, status),
+      recordCloudToLANManagerStatus(entry, status),
     );
   }
 
   prepareCloudToLanManagerCancellation(
-    entry: CloudToLanManagerEntryRecord,
-    request: Parameters<typeof prepareCloudToLanManagerCancellation>[1],
-  ): Promise<CloudToLanManagerEntryRecord> {
+    entry: CloudToLANManagerEntryRecord,
+    request: Parameters<typeof prepareCloudToLANManagerCancellation>[1],
+  ): Promise<CloudToLANManagerEntryRecord> {
     return this.#updateCloudToLanManagerEntry(
       entry,
-      prepareCloudToLanManagerCancellation(entry, request),
+      prepareCloudToLANManagerCancellation(entry, request),
     );
   }
 
   markCloudToLanManagerCancellationPossiblySent(
-    entry: CloudToLanManagerEntryRecord,
-  ): Promise<CloudToLanManagerEntryRecord> {
+    entry: CloudToLANManagerEntryRecord,
+  ): Promise<CloudToLANManagerEntryRecord> {
     return this.#updateCloudToLanManagerEntry(
       entry,
-      markCloudToLanManagerCancellationPossiblySent(entry),
+      markCloudToLANManagerCancellationPossiblySent(entry),
     );
   }
 
   rejectCloudToLanManagerEntry(
-    entry: CloudToLanManagerEntryRecord,
-  ): Promise<CloudToLanManagerEntryRecord> {
+    entry: CloudToLANManagerEntryRecord,
+  ): Promise<CloudToLANManagerEntryRecord> {
     return this.#updateCloudToLanManagerEntry(
       entry,
-      rejectCloudToLanManagerEntry(entry),
+      rejectCloudToLANManagerEntry(entry),
     );
   }
 
   settleCloudToLanManagerEntry(
-    entry: CloudToLanManagerEntryRecord,
+    entry: CloudToLANManagerEntryRecord,
   ): Promise<void> {
     if (entry.phase !== 'settled' && entry.phase !== 'rejected') {
       throw transferError(
@@ -823,9 +823,9 @@ export class AuthorityTransferPersistence {
   }
 
   #updateCloudToLanManagerEntry(
-    expected: CloudToLanManagerEntryRecord,
-    next: CloudToLanManagerEntryRecord,
-  ): Promise<CloudToLanManagerEntryRecord> {
+    expected: CloudToLANManagerEntryRecord,
+    next: CloudToLANManagerEntryRecord,
+  ): Promise<CloudToLANManagerEntryRecord> {
     return this.runProject(expected.projectId, async () => {
       const current = (await this.stores.authorityTransferEntries.load(expected.projectId))?.manager;
       if (!current || !sameValue(current, expected)) {
@@ -1103,7 +1103,7 @@ export class AuthorityTransferPersistence {
   }
 
   cancelSourceEntry(
-    request: LanToCloudCancellationIntent,
+    request: LANToCloudCancellationIntent,
   ): Promise<AuthorityTransferSourceEntryRecord> {
     const projectId = request.projectId;
     return this.runProject(projectId, async () => {
@@ -1151,7 +1151,7 @@ export class AuthorityTransferPersistence {
   }
 
   prepareLanToCloudCancellation(
-    request: LanToCloudCancellationIntent,
+    request: LANToCloudCancellationIntent,
   ): Promise<AuthorityTransferRecord> {
     return this.runProject(request.projectId, async () => {
       const [document, record] = await Promise.all([
@@ -1215,7 +1215,7 @@ export class AuthorityTransferPersistence {
   }
 
   markLanToCloudCancellationPossiblySent(
-    request: LanToCloudCancellationIntent,
+    request: LANToCloudCancellationIntent,
   ): Promise<void> {
     return this.runProject(request.projectId, async () => {
       const [document, record] = await Promise.all([
@@ -1240,7 +1240,7 @@ export class AuthorityTransferPersistence {
 
   prepareLanToCloudSourceReopenAcknowledgement(
     record: AuthorityTransferRecord,
-  ): Promise<LanToCloudCancellationIntent> {
+  ): Promise<LANToCloudCancellationIntent> {
     return this.runProject(record.projectId, async () => {
       const [document, current] = await Promise.all([
         this.stores.authorityTransferEntries.load(record.projectId),
@@ -1261,7 +1261,7 @@ export class AuthorityTransferPersistence {
         throw transferError('authority-transfer-stale', 'authority-transfer-source-reopen-stale');
       }
       await this.#reconcileEntrySuccessor(source, current);
-      const request: LanToCloudCancellationIntent = {
+      const request: LANToCloudCancellationIntent = {
         expectedAuthorityGeneration: current.status.sourceAuthority.generation,
         expectedPhase: 'target-cleaned',
         idempotencyKey: authorityTransferChildIdempotencyKey(
@@ -1287,7 +1287,7 @@ export class AuthorityTransferPersistence {
   }
 
   settleRejectedLanToCloudCancellation(
-    request: LanToCloudCancellationIntent,
+    request: LANToCloudCancellationIntent,
     record: AuthorityTransferRecord,
   ): Promise<void> {
     return this.runProject(request.projectId, async () => {
@@ -1329,7 +1329,7 @@ export class AuthorityTransferPersistence {
   }
 
   cancelUnbegunLanToCloudSource(
-    request: LanToCloudCancellationIntent,
+    request: LANToCloudCancellationIntent,
     cloudAbsenceProven = false,
   ): Promise<AuthorityTransferRecord> {
     return this.runProject(request.projectId, async () => {
@@ -2598,7 +2598,7 @@ export class AuthorityTransferPersistence {
     const managerIsRemovable = entry.manager !== null
       && this.#isRecoveryOwner(entry.manager.ownerInstallationKey)
       && (entry.manager.phase === 'settled' || entry.manager.phase === 'rejected')
-      && !cloudToLanManagerRequiresClaimant(entry.manager)
+      && !cloudToLANManagerRequiresClaimant(entry.manager)
       && now >= Date.parse(entry.manager.expiresAt);
     const targetIsRemovable = entry.target !== null
       && entry.target.phase === 'withdrawn'
@@ -2653,7 +2653,7 @@ export class AuthorityTransferPersistence {
     return this.#isRecoveryOwner(entry.ownerInstallationKey);
   }
 
-  #isLocalTargetEntry(entry: CloudToLanTargetEntryRecord): boolean {
+  #isLocalTargetEntry(entry: CloudToLANTargetEntryRecord): boolean {
     return this.#isRecoveryOwner(entry.ownerInstallationKey);
   }
 
@@ -2683,12 +2683,12 @@ export class AuthorityTransferPersistence {
   }
 
   async #reconcileTargetEntrySuccessor(
-    entry: CloudToLanTargetEntryRecord,
+    entry: CloudToLANTargetEntryRecord,
     record: AuthorityTransferRecord,
   ): Promise<void> {
-    let expected: CloudToLanTargetEntryRecord;
+    let expected: CloudToLANTargetEntryRecord;
     try {
-      expected = handoffCloudToLanTargetEntry(entry, record);
+      expected = handoffCloudToLANTargetEntry(entry, record);
     } catch {
       throw transferError(
         'durable-progress-recovery-required',

@@ -13,8 +13,8 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { TicketService } from '@/app/collab/authority/TicketService';
 
 const CREATED_AT = testTime({ days: -17 });
@@ -22,7 +22,7 @@ const CREATED_AT = testTime({ days: -17 });
 describe('TicketService', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let service: TicketService;
   let nextId: number;
 
@@ -34,7 +34,7 @@ describe('TicketService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-ticket-service-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();

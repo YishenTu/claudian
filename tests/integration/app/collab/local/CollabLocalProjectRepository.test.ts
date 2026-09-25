@@ -20,7 +20,7 @@ import { testClock, testTime } from '@test/helpers/testClock';
 
 import {
 type CollabLocalCloudMembershipRecord,
-type CollabLocalLanMembershipRecord,
+type CollabLocalLANMembershipRecord,
 type CollabLocalMembershipRecord,
 type CollabLocalProjectIndexEntry,
 CollabLocalProjectRepository,
@@ -73,8 +73,8 @@ function indexEntry(
 }
 
 function membershipRecord(
-  overrides: Partial<CollabLocalLanMembershipRecord> = {},
-): CollabLocalLanMembershipRecord {
+  overrides: Partial<CollabLocalLANMembershipRecord> = {},
+): CollabLocalLANMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,

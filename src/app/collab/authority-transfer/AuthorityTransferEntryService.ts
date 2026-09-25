@@ -8,7 +8,7 @@ import { COLLAB_AUTHORITY_TRANSFER_CANCELLABLE_PHASES } from '@claudian-collab/p
 
 import type {
   AuthorityTransferModule,
-  LanToCloudSourceProposalView,
+  LANToCloudSourceProposalView,
 } from '@/app/collab/authority-transfer/AuthorityTransferModule';
 import {
   authorityTransferChildIdempotencyKey,
@@ -16,31 +16,31 @@ import {
 import {
   type CollabLocalMembershipRecord,
   isCollabLocalCloudMembership,
-  isCollabLocalLanMembership,
+  isCollabLocalLANMembership,
 } from '@/app/collab/CollabLocalProjectRepository';
 import {
-  LanAuthorityTransferClient,
-  type LanAuthorityTransferTrustedHost,
-} from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
+  LANAuthorityTransferClient,
+  type LANAuthorityTransferTrustedHost,
+} from '@/app/collab/lan/authority-transfer/LANAuthorityTransferClient';
 import type { CloudMembershipClaimInvitation } from '@/app/collab/project/CloudProjectInvitation';
 import type { ProjectRecoveryInvitation } from '@/app/collab/project/ProjectRecoveryInvitation';
-import { validateCloudServerUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { validateCloudServerURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 import type {
-  CollabBeginCloudToLanTransferRequest,
-  CollabCloudToLanTargetPreparationDescriptor,
-  CollabCloudToLanTransferHandle,
-  CollabCloudToLanTransferView,
-  CollabLanToCloudTransferRequest,
-  CollabLanToCloudTransferSelectionRequest,
-  CollabLanToCloudTransferView,
+  CollabBeginCloudToLANTransferRequest,
+  CollabCloudToLANTargetPreparationDescriptor,
+  CollabCloudToLANTransferHandle,
+  CollabCloudToLANTransferView,
+  CollabLANToCloudTransferRequest,
+  CollabLANToCloudTransferSelectionRequest,
+  CollabLANToCloudTransferView,
   CollabOperationOptions,
   CollabPendingReconnectView,
-  CollabPrepareCloudToLanTargetRequest,
-  CollabWithdrawCloudToLanTargetRequest,
+  CollabPrepareCloudToLANTargetRequest,
+  CollabWithdrawCloudToLANTargetRequest,
 } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-interface PendingLanToCloudAcceptance {
+interface PendingLANToCloudAcceptance {
   readonly promise: Promise<CollabAuthorityTransferStatus>;
   readonly transferId: string;
 }
@@ -48,8 +48,8 @@ interface PendingLanToCloudAcceptance {
 export interface AuthorityTransferEntryServiceOptions {
   readonly createIdempotencyKey?: () => string;
   readonly createLanClient?: (
-    trust: LanAuthorityTransferTrustedHost,
-  ) => LanAuthorityTransferClient;
+    trust: LANAuthorityTransferTrustedHost,
+  ) => LANAuthorityTransferClient;
   readonly loadMembership: (
     projectId: CollabProjectId,
   ) => Promise<CollabLocalMembershipRecord | null>;
@@ -74,24 +74,24 @@ export class AuthorityTransferEntryService {
   readonly #loadMembership: AuthorityTransferEntryServiceOptions['loadMembership'];
   readonly #module: AuthorityTransferModule;
   readonly #sharedAcceptController = new AbortController();
-  readonly #pendingAccepts = new Map<CollabProjectId, PendingLanToCloudAcceptance>();
+  readonly #pendingAccepts = new Map<CollabProjectId, PendingLANToCloudAcceptance>();
   #closed = false;
 
   constructor(options: AuthorityTransferEntryServiceOptions) {
     this.#createIdempotencyKey = options.createIdempotencyKey
       ?? (() => `lan-to-cloud-${randomUUID().replaceAll('-', '')}`);
     this.#createLanClient = options.createLanClient
-      ?? (trust => new LanAuthorityTransferClient(trust));
+      ?? (trust => new LANAuthorityTransferClient(trust));
     this.#loadMembership = options.loadMembership;
     this.#module = options.module;
   }
 
   async proposeLanToCloudTransfer(
-    request: CollabLanToCloudTransferRequest,
+    request: CollabLANToCloudTransferRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabAuthorityTransferStatus> {
     throwIfCancelled(options.signal);
-    const serverUrl = validateCloudServerUrl(request.serverUrl, 'serverUrl');
+    const serverUrl = validateCloudServerURL(request.serverUrl, 'serverUrl');
     const membership = await this.#requireLanMembership(request.projectId, false);
     throwIfCancelled(options.signal);
     const requester = this.#module.createLanToCloudRequester({
@@ -124,11 +124,11 @@ export class AuthorityTransferEntryService {
   async readLanToCloudTransfer(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
-  ): Promise<CollabLanToCloudTransferView | null> {
+  ): Promise<CollabLANToCloudTransferView | null> {
     throwIfCancelled(options.signal);
     const membership = await this.#loadMembership(projectId);
     throwIfCancelled(options.signal);
-    if (!membership || !isCollabLocalLanMembership(membership)) return null;
+    if (!membership || !isCollabLocalLANMembership(membership)) return null;
     const proposal = await this.#module.readLanToCloudTransfer(projectId, membership.authority.authorityGeneration);
     throwIfCancelled(options.signal);
     if (!proposal) return null;
@@ -145,7 +145,7 @@ export class AuthorityTransferEntryService {
   async readCloudToLanTransfer(
     projectId: CollabProjectId,
     options: CollabOperationOptions = {},
-  ): Promise<CollabCloudToLanTransferView | null> {
+  ): Promise<CollabCloudToLANTransferView | null> {
     throwIfCancelled(options.signal);
     const local = await this.#module.readCloudToLanTransfer(projectId);
     const membership = await this.#loadMembership(projectId);
@@ -160,7 +160,7 @@ export class AuthorityTransferEntryService {
   }
 
   async acceptLanToCloudTransfer(
-    request: CollabLanToCloudTransferSelectionRequest,
+    request: CollabLANToCloudTransferSelectionRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabAuthorityTransferStatus> {
     if (this.#closed) throw entryError('authority-transfer-entry-service-closed');
@@ -187,7 +187,7 @@ export class AuthorityTransferEntryService {
   }
 
   async #acceptLanToCloudTransfer(
-    request: CollabLanToCloudTransferSelectionRequest,
+    request: CollabLANToCloudTransferSelectionRequest,
     options: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus> {
     throwIfCancelled(options.signal);
@@ -222,7 +222,7 @@ export class AuthorityTransferEntryService {
   }
 
   async cancelLanToCloudTransfer(
-    request: CollabLanToCloudTransferSelectionRequest,
+    request: CollabLANToCloudTransferSelectionRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabAuthorityTransferStatus> {
     throwIfCancelled(options.signal);
@@ -256,7 +256,7 @@ export class AuthorityTransferEntryService {
   }
 
   async moveLanToCloud(
-    request: CollabLanToCloudTransferRequest,
+    request: CollabLANToCloudTransferRequest,
     options: CollabOperationOptions = {},
   ): Promise<CollabAuthorityTransferStatus> {
     const membership = await this.#requireLanMembership(request.projectId, true);
@@ -285,9 +285,9 @@ export class AuthorityTransferEntryService {
   }
 
   async prepareCloudToLanTarget(
-    input: CollabPrepareCloudToLanTargetRequest,
+    input: CollabPrepareCloudToLANTargetRequest,
     options?: CollabOperationOptions,
-  ): Promise<CollabCloudToLanTargetPreparationDescriptor> {
+  ): Promise<CollabCloudToLANTargetPreparationDescriptor> {
     try {
       return await this.#module.prepareCloudToLanTarget({
         ...input, operationIntentId: `cloud-to-lan-target-${randomUUID().replaceAll('-', '')}`,
@@ -298,9 +298,9 @@ export class AuthorityTransferEntryService {
   }
 
   async beginCloudToLanTransfer(
-    input: CollabBeginCloudToLanTransferRequest,
+    input: CollabBeginCloudToLANTransferRequest,
     options?: CollabOperationOptions,
-  ): Promise<CollabCloudToLanTransferHandle> {
+  ): Promise<CollabCloudToLANTransferHandle> {
     const descriptor = await this.#module.resolveCloudToLanPreparation(input.projectId, input.preparationId, options);
     return this.#module.beginCloudToLanTransfer({
       descriptor, operationIntentId: descriptor.preparationId,
@@ -308,14 +308,14 @@ export class AuthorityTransferEntryService {
   }
 
   acceptCloudToLanTransfer(
-    input: Readonly<{ readonly handle: CollabCloudToLanTransferHandle }>,
+    input: Readonly<{ readonly handle: CollabCloudToLANTransferHandle }>,
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus> {
     return this.#module.acceptCloudToLanTransfer(input, options);
   }
 
   withdrawCloudToLanTarget(
-    input: CollabWithdrawCloudToLanTargetRequest,
+    input: CollabWithdrawCloudToLANTargetRequest,
     options?: CollabOperationOptions,
   ): Promise<void> {
     return this.#module.withdrawCloudToLanTarget(input, options);
@@ -329,7 +329,7 @@ export class AuthorityTransferEntryService {
   }
 
   cancelCloudToLanTransfer(
-    handle: CollabCloudToLanTransferHandle,
+    handle: CollabCloudToLANTransferHandle,
     options?: CollabOperationOptions,
   ): Promise<CollabAuthorityTransferStatus> {
     return this.#module.cancelCloudToLanTransfer(handle, options);
@@ -376,7 +376,7 @@ export class AuthorityTransferEntryService {
     const membership = await this.#loadMembership(projectId);
     if (
       !membership
-      || !isCollabLocalLanMembership(membership)
+      || !isCollabLocalLANMembership(membership)
       || membership.project.id !== projectId
       || !membership.authority.endpoint
       || !membership.authority.gitRemoteUrl
@@ -387,7 +387,7 @@ export class AuthorityTransferEntryService {
     return membership;
   }
 
-  async #requireProposal(projectId: CollabProjectId): Promise<LanToCloudSourceProposalView> {
+  async #requireProposal(projectId: CollabProjectId): Promise<LANToCloudSourceProposalView> {
     const proposal = await this.#module.readLanToCloudSourceProposal(projectId);
     if (!proposal) throw entryError('authority-transfer-source-proposal-missing');
     return proposal;

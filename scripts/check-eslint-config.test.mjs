@@ -51,13 +51,13 @@ test('source lint matches strict Obsidian and type-aware review policy', async (
 // ESLint hands the rule an absolute path using the host platform's separator, so the
 // basename has to be taken from either separator. Windows paths are used here on every
 // platform on purpose: they are what regressed, and CI only runs Linux.
-function reportsFor(physicalFilename) {
+function reportsFor(physicalFilename, body = []) {
   const reported = [];
   const visitor = fileNamingRule.create({
     physicalFilename,
     report: descriptor => reported.push(descriptor),
   });
-  visitor.Program({ body: [] });
+  visitor.Program?.({ body });
 
   return reported;
 }
@@ -73,6 +73,48 @@ test('file naming still rejects an invalid basename behind a Windows path', () =
   assert.equal(reported.length, 1);
   assert.equal(reported[0].messageId, 'invalidCase');
   assert.equal(reported[0].data.name, 'some_snake_case.ts');
+});
+
+
+test('file naming preserves acronym capitals at word boundaries', () => {
+  for (const [name, expected] of [
+    ['AcpClientConnection.ts', 'ACPClientConnection.ts'],
+    ['HttpsClient.ts', 'HTTPSClient.ts'],
+    ['SessionIds.ts', 'SessionIDs.ts'],
+    ['buildAcpUsageInfo.test.ts', 'buildACPUsageInfo.test.ts'],
+    ['AcpJsonRpcTransport.ts', 'ACPJSONRPCTransport.ts'],
+    ['CloudAuthorityUrls.ts', 'CloudAuthorityURLs.ts'],
+    ['PiExtensionUiBridge.dom.test.ts', 'PiExtensionUIBridge.dom.test.ts'],
+    ['loadClaudeAgentSdk.ts', 'loadClaudeAgentSDK.ts'],
+  ]) {
+    for (const prefix of ['/repo/src/', 'D:\\repo\\src\\']) {
+      const reports = reportsFor(prefix + name);
+      assert.equal(reports.length, 1, name);
+      assert.equal(reports[0].messageId, 'acronymCase');
+      assert.equal(reports[0].data.expected, expected);
+    }
+  }
+});
+
+test('file naming accepts acronym conventions and non-acronym words', () => {
+  for (const name of [
+    'ACPClientConnection.ts', 'ACPJSONRPCTransport.ts', 'buildACPUsageInfo.test.ts',
+    'CloudAuthorityURLs.ts', 'SQLJSSnapshotStore.ts', 'LANTLSIdentity.ts',
+    'cliBinaryLocator.ts', 'acpConnection.ts', 'sdkMessages.ts', 'urlParser.ts',
+    'PiExtensionUIBridge.dom.test.ts', 'api-client.ts', 'index.ts', 'types.ts',
+    'OpencodeSqliteReader.ts', 'ManagedStdioProcess.ts', 'windowsCmdShim.ts',
+    'NoopTaskResultInterpreter.ts', 'SQLWasmAsset.ts', 'Client.ts', 'Clipboard.ts',
+  ]) assert.deepEqual(reportsFor('/repo/src/' + name), [], name);
+});
+
+test('file naming matches a leading camelCase acronym to its exported concept', () => {
+  const reports = reportsFor('/repo/src/acpConnection.ts', [{
+    type: 'ExportNamedDeclaration',
+    declaration: { type: 'ClassDeclaration', id: { type: 'Identifier', name: 'ACPConnection' } },
+  }]);
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].messageId, 'conceptMismatch');
+  assert.equal(reports[0].data.concept, 'ACPConnection');
 });
 
 test('Collab fixtures and the shared clock reject fixed calendar anchors', async () => {

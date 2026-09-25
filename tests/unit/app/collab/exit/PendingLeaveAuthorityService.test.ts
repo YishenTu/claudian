@@ -7,10 +7,10 @@ import {
 } from '@/app/collab/exit/PendingLeaveAuthorityService';
 import type {
   CloudPendingLeaveRecord,
-  LanPendingLeaveRecord,
+  LANPendingLeaveRecord,
 } from '@/app/collab/exit/PendingLeaveRecord';
-import type { MembershipTerminationResponse } from '@/app/collab/lan/LanCollabControlOperations';
-import type { CollabCloudProjectSnapshot, CollabLanProjectSnapshot } from '@/core/collab';
+import type { MembershipTerminationResponse } from '@/app/collab/lan/LANCollabControlOperations';
+import type { CollabCloudProjectSnapshot, CollabLANProjectSnapshot } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 describe('PendingLeaveAuthorityService', () => {
@@ -348,8 +348,8 @@ function clientPort(): jest.Mocked<PendingLeaveAuthorityClientPort> {
 }
 
 function record(
-  authorityReplay: LanPendingLeaveRecord['authorityReplay'] = null,
-): LanPendingLeaveRecord {
+  authorityReplay: LANPendingLeaveRecord['authorityReplay'] = null,
+): LANPendingLeaveRecord {
   return {
     authorityReplay,
     cleanupChoice: 'keep-files',
@@ -375,7 +375,7 @@ function record(
   };
 }
 
-function snapshot(): CollabLanProjectSnapshot {
+function snapshot(): CollabLANProjectSnapshot {
   return {
     currentMember: {
       activatedAt: testTime({ days: -15 }),

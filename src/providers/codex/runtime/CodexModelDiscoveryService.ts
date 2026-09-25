@@ -11,7 +11,7 @@ import {
   resolveCodexAppServerLaunchSpec,
 } from './codexAppServerSupport';
 import type { ModelListResult } from './codexAppServerTypes';
-import { CodexRpcTransport } from './CodexRpcTransport';
+import { CodexRPCTransport } from './CodexRPCTransport';
 
 export type CodexModelDiscoveryResult =
   | {
@@ -53,7 +53,7 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
     }
 
     let process: CodexAppServerProcess | null = null;
-    let transport: CodexRpcTransport | null = null;
+    let transport: CodexRPCTransport | null = null;
     let abortListener: (() => void) | null = null;
 
     try {
@@ -71,7 +71,7 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
       }
       process = new CodexAppServerProcess(launchSpec);
       process.start();
-      transport = new CodexRpcTransport(process);
+      transport = new CodexRPCTransport(process);
       transport.start();
 
       abortListener = () => {

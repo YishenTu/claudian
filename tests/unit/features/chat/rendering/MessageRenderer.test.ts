@@ -36,7 +36,7 @@ jest.mock('@/features/chat/rendering/WriteEditRenderer', () => ({
   renderStoredWriteEdit: jest.fn(),
 }));
 jest.mock('@/utils/imageEmbed', () => ({
-  replaceImageEmbedsWithHtml: jest.fn().mockImplementation((md: string) => md),
+  replaceImageEmbedsWithHTML: jest.fn().mockImplementation((md: string) => md),
 }));
 jest.mock('@/utils/fileLink', () => ({
   processFileLinks: jest.fn(),
@@ -1408,7 +1408,7 @@ describe('MessageRenderer', () => {
 
   it('renderContent escapes placeholder-style HTML before rendering', async () => {
     const { MarkdownRenderer } = await import('obsidian');
-    const { replaceImageEmbedsWithHtml } = await import('@/utils/imageEmbed');
+    const { replaceImageEmbedsWithHTML } = await import('@/utils/imageEmbed');
     const { renderer } = createRenderer();
     const el = createMockEl();
     const markdown =
@@ -1418,7 +1418,7 @@ describe('MessageRenderer', () => {
 
     await renderer.renderContent(el, markdown);
 
-    expect(replaceImageEmbedsWithHtml).toHaveBeenCalledWith(
+    expect(replaceImageEmbedsWithHTML).toHaveBeenCalledWith(
       escapedMarkdown,
       expect.anything(),
       { mediaFolder: '' }
@@ -1971,18 +1971,18 @@ describe('MessageRenderer', () => {
   describe('renderContent - code block wrapping', () => {
     it('passes image-processed markdown directly to MarkdownRenderer', async () => {
       const { MarkdownRenderer } = await import('obsidian');
-      const { replaceImageEmbedsWithHtml } = await import('@/utils/imageEmbed');
+      const { replaceImageEmbedsWithHTML } = await import('@/utils/imageEmbed');
       const { processFileLinks } = await import('@/utils/fileLink');
       const { renderer } = createRenderer();
       const el = createMockEl();
 
-      (replaceImageEmbedsWithHtml as jest.Mock).mockReturnValueOnce(
+      (replaceImageEmbedsWithHTML as jest.Mock).mockReturnValueOnce(
         '<span title="[[note.md]]">raw html</span>\n    [[note.md]]'
       );
 
       await renderer.renderContent(el, 'before-images ![[image.png]] [[note.md]]');
 
-      expect(replaceImageEmbedsWithHtml).toHaveBeenCalledWith(
+      expect(replaceImageEmbedsWithHTML).toHaveBeenCalledWith(
         'before-images ![[image.png]] [[note.md]]',
         expect.anything(),
         { mediaFolder: '' }

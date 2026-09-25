@@ -9,7 +9,7 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js';
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
 import { AuthorityIdempotencyRepository } from '@/app/collab/authority/AuthorityIdempotencyRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import {
   AuthorityMemberCredentialAuthenticator,
 } from '@/app/collab/lan/AuthorityMemberCredentialAuthenticator';
@@ -23,7 +23,7 @@ const PROJECT_ID = 'project-alpha';
 
 describe('PendingMembershipService', () => {
   let SQL: SqlJsStatic;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let now: Date;
   let root: string;
   let credentials: Buffer[];
@@ -44,7 +44,7 @@ describe('PendingMembershipService', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-pending-membership-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -151,7 +151,7 @@ describe('PendingMembershipService', () => {
     });
     expect(service.encodeInvitation(first)).not.toBe(service.encodeInvitation(second));
     await database.close();
-    database = new SqlJsProjectDatabase(path.join(root, 'authority'), {
+    database = new SQLJSProjectDatabase(path.join(root, 'authority'), {
       loadSqlJs: async () => SQL,
     });
     await database.open();

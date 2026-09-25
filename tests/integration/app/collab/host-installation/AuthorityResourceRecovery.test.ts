@@ -8,11 +8,11 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { HostTransferAuthorityService } from '@/app/collab/authority/HostTransferAuthorityService';
 import { ProjectRetirementAuthorityService } from '@/app/collab/authority/ProjectRetirementAuthorityService';
-import { type AuthorityDatabaseConnection, SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { type AuthorityDatabaseConnection, SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { decodeHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 import { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
 
 const CREATED_AT = testTime({ days: -19 });
@@ -35,7 +35,7 @@ describe('authority resource recovery', () => {
 
   function foundation(): ClaudianCollabService {
     const service = new ClaudianCollabService({
-      createAuthorityDatabase: (directory, resourceAdmission) => new SqlJsProjectDatabase(directory, { resourceAdmission, loadSqlJs: async () => sql }),
+      createAuthorityDatabase: (directory, resourceAdmission) => new SQLJSProjectDatabase(directory, { resourceAdmission, loadSqlJs: async () => sql }),
       installationKey: TEST_INSTALLATION_A, getConfiguredGitPath: () => '',
       obsidianConfigDirectory: '.obsidian', vaultRoot: root,
       lanHost: { getPrivateIpv4Addresses: () => ['127.0.0.1'], portCandidates: [0] },
@@ -200,10 +200,10 @@ describe('authority resource recovery', () => {
     const sourceVault = path.join(root, 'source-vault');
     const targetVault = path.join(root, 'target-vault');
     await Promise.all([mkdir(sourceVault), mkdir(targetVault)]);
-    const sourceIdentity = new LanTlsIdentity(sourceVault, {
+    const sourceIdentity = new LANTLSIdentity(sourceVault, {
       installationKey: TEST_INSTALLATION_A, now: () => new Date(CREATED_AT),
     });
-    const targetIdentity = new LanTlsIdentity(targetVault, {
+    const targetIdentity = new LANTLSIdentity(targetVault, {
       installationKey: TEST_INSTALLATION_B, now: () => new Date(CREATED_AT),
     });
     const service = new HostTransferAuthorityService(authority, {

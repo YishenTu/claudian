@@ -1,6 +1,6 @@
 import { type CollabIsoTimestamp, type CollabMemberId, type CollabProjectId, isCollabMemberId, isCollabOpaqueId, isCollabProjectId } from '@claudian-collab/protocol';
 
-import { decodeLanCollabHostTrustTransitionProof } from '@/app/collab/lan/LanCollabHostTrustTransitionProof';
+import { decodeLANCollabHostTrustTransitionProof } from '@/app/collab/lan/LANCollabHostTrustTransitionProof';
 import type { CollabHostTrustTransitionProof, CollabRetirementResult } from '@/core/collab';
 import {
   type InstallationKey,
@@ -78,7 +78,7 @@ export function decodeRetirementTombstoneRecord(value: unknown): RetirementTombs
   if (result.projectId !== projectId || result.retiredAt !== retiredAt) throw new TypeError('Retirement result mismatch');
   const replay = exact(record.replay, new Set(['actorMemberId', 'idempotencyKey', 'requestFingerprint']), 'retirement replay');
   const hostTransitionProofs = record.hostTransitionProofs.map(proof => {
-    const decoded = decodeLanCollabHostTrustTransitionProof(proof);
+    const decoded = decodeLANCollabHostTrustTransitionProof(proof);
     if (decoded.status !== 'ok' || decoded.value.projectId !== projectId) throw new TypeError('Invalid Host transition proof');
     return decoded.value;
   });

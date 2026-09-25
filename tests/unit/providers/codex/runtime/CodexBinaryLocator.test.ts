@@ -4,7 +4,7 @@ import * as path from 'path';
 
 import {
   findCodexBinaryPath,
-  resolveCodexCliPath,
+  resolveCodexCLIPath,
 } from '@/providers/codex/runtime/CodexBinaryLocator';
 
 describe('CodexBinaryLocator', () => {
@@ -147,7 +147,7 @@ describe('CodexBinaryLocator', () => {
     const runtimePath = `"${path.join(tempDir, 'missing')}";"${explicitDir}"`;
 
     expect(findCodexBinaryPath(runtimePath, 'win32')).toBe(shim);
-    expect(resolveCodexCliPath(configured, '', `PATH=${runtimePath}`, {
+    expect(resolveCodexCLIPath(configured, '', `PATH=${runtimePath}`, {
       hostPlatform: 'win32',
     })).toBe(configured);
   });
@@ -236,14 +236,14 @@ describe('CodexBinaryLocator', () => {
     fs.writeFileSync(hostnamePath, '');
     fs.writeFileSync(legacyPath, '');
 
-    expect(resolveCodexCliPath(hostnamePath, legacyPath, '')).toBe(hostnamePath);
+    expect(resolveCodexCLIPath(hostnamePath, legacyPath, '')).toBe(hostnamePath);
   });
 
   it('falls back to a legacy configured path', () => {
     const legacyPath = path.join(tempDir, 'legacy-codex');
     fs.writeFileSync(legacyPath, '');
 
-    expect(resolveCodexCliPath('', legacyPath, '')).toBe(legacyPath);
+    expect(resolveCodexCLIPath('', legacyPath, '')).toBe(legacyPath);
   });
 
   it('falls back to PATH lookup when no configured file exists', () => {
@@ -252,11 +252,11 @@ describe('CodexBinaryLocator', () => {
     fs.mkdirSync(pathDir, { recursive: true });
     fs.writeFileSync(pathBinary, '');
 
-    expect(resolveCodexCliPath('', '', `PATH=${pathDir}`)).toBe(pathBinary);
+    expect(resolveCodexCLIPath('', '', `PATH=${pathDir}`)).toBe(pathBinary);
   });
 
   it('uses the configured Linux command directly in WSL mode', () => {
-    expect(resolveCodexCliPath(
+    expect(resolveCodexCLIPath(
       'codex',
       '',
       '',
@@ -265,13 +265,13 @@ describe('CodexBinaryLocator', () => {
   });
 
   it('strips matching surrounding quotes from configured Linux commands in WSL mode', () => {
-    expect(resolveCodexCliPath(
+    expect(resolveCodexCLIPath(
       '"/home/user/my tools/codex"',
       '',
       '',
       { installationMethod: 'wsl', hostPlatform: 'win32' },
     )).toBe('/home/user/my tools/codex');
-    expect(resolveCodexCliPath(
+    expect(resolveCodexCLIPath(
       "'/home/user/codex'",
       '',
       '',
@@ -283,13 +283,13 @@ describe('CodexBinaryLocator', () => {
     const originalRoot = process.env.TEST_WSL_CODEX_ROOT;
     process.env.TEST_WSL_CODEX_ROOT = 'C:\\host-tools';
     try {
-      expect(resolveCodexCliPath(
+      expect(resolveCodexCLIPath(
         '"~/tools/codex"',
         '',
         '',
         { installationMethod: 'wsl', hostPlatform: 'win32' },
       )).toBe('~/tools/codex');
-      expect(resolveCodexCliPath(
+      expect(resolveCodexCLIPath(
         '"$TEST_WSL_CODEX_ROOT/bin/codex"',
         '',
         '',
@@ -305,7 +305,7 @@ describe('CodexBinaryLocator', () => {
   });
 
   it('falls back to the default Linux command in WSL mode', () => {
-    expect(resolveCodexCliPath(
+    expect(resolveCodexCLIPath(
       '',
       '',
       '',
@@ -314,7 +314,7 @@ describe('CodexBinaryLocator', () => {
   });
 
   it('ignores a Windows-native CLI path in WSL mode and falls back to the Linux command', () => {
-    expect(resolveCodexCliPath(
+    expect(resolveCodexCLIPath(
       'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
       '',
       '',
@@ -323,7 +323,7 @@ describe('CodexBinaryLocator', () => {
   });
 
   it('ignores a quoted Windows path and selects a quoted legacy Linux command in WSL mode', () => {
-    expect(resolveCodexCliPath(
+    expect(resolveCodexCLIPath(
       '"C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe"',
       '"/home/user/legacy tools/codex"',
       '',
@@ -332,7 +332,7 @@ describe('CodexBinaryLocator', () => {
   });
 
   it('ignores a quoted Windows-native CLI path in WSL mode and uses the default command', () => {
-    expect(resolveCodexCliPath(
+    expect(resolveCodexCLIPath(
       '"C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe"',
       '',
       '',

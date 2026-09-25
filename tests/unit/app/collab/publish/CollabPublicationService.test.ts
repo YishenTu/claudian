@@ -19,13 +19,13 @@ import { WebSocketServer } from 'ws';
 
 import type {
 CollabLocalCloudMembershipRecord,
-CollabLocalLanMembershipRecord,
+CollabLocalLANMembershipRecord,
 } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
-import { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
-import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
+import { PinnedCollabHTTPClient } from '@/app/collab/lan/CollabHTTPClient';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
+import { LANTLSIdentity } from '@/app/collab/lan/LANTLSIdentity';
 import {
 type CollabPublicationFoundationPort,
 CollabPublicationService,
@@ -33,7 +33,7 @@ CollabPublicationService,
 import type { CollabRequestDraftRecord } from '@/app/collab/publish/CollabRequestDraftRecord';
 import { CloudAuthorityAdapter } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
-import { NodeCloudAuthorityHttpTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHttpTransport';
+import { NodeCloudAuthorityHTTPTransport } from '@/app/collab/remote-authority/NodeCloudAuthorityHTTPTransport';
 import { type CollabUpdateRequestMetadataRequest } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -124,7 +124,7 @@ function cloudSnapshot() {
   });
 }
 
-function lanMembership(ownsAuthority: boolean): CollabLocalLanMembershipRecord {
+function lanMembership(ownsAuthority: boolean): CollabLocalLANMembershipRecord {
   return {
     authority: {
       authorityGeneration: 1,
@@ -211,7 +211,7 @@ describe('CollabPublicationService reconnect', () => {
   });
 
   function reconnectProjects(ownsAuthority: boolean) {
-    jest.spyOn(PinnedCollabHttpClient.prototype, 'requestWithMember')
+    jest.spyOn(PinnedCollabHTTPClient.prototype, 'requestWithMember')
       .mockRejectedValueOnce(new CollabError({ code: 'endpoint-unreachable' }))
       .mockResolvedValue(lanSnapshot() as never);
     return {
@@ -225,7 +225,7 @@ describe('CollabPublicationService reconnect', () => {
 
   beforeAll(async () => {
     tlsRoot = await mkdtemp(path.join(tmpdir(), 'claudian-publication-lanes-'));
-    const identity = await new LanTlsIdentity(tlsRoot, {
+    const identity = await new LANTLSIdentity(tlsRoot, {
       installationKey: TEST_INSTALLATION_A,
     }).loadOrCreate();
     LAN_CA = identity.caCertificatePem;
@@ -245,8 +245,8 @@ describe('CollabPublicationService reconnect', () => {
     async (_lane, ownsAuthority, installationStatus, localEndpoint, expectedEndpoint) => {
       const membership = lanMembership(ownsAuthority);
       const requests: Array<{ credential: string; endpoint: string; path: string }> = [];
-      const request = jest.spyOn(PinnedCollabHttpClient.prototype, 'requestWithMember')
-        .mockImplementation(function (this: PinnedCollabHttpClient, request, credential) {
+      const request = jest.spyOn(PinnedCollabHTTPClient.prototype, 'requestWithMember')
+        .mockImplementation(function (this: PinnedCollabHTTPClient, request, credential) {
           requests.push({ credential, endpoint: this.trust.endpoint, path: request.path });
           return Promise.resolve(
             request.path.endsWith('/snapshot')
@@ -318,7 +318,7 @@ describe('CollabPublicationService reconnect', () => {
 
   it('reads an authoritative lifecycle snapshot without re-entering projection reconciliation', async () => {
     const membership = lanMembership(false);
-    const request = jest.spyOn(PinnedCollabHttpClient.prototype, 'requestWithMember')
+    const request = jest.spyOn(PinnedCollabHTTPClient.prototype, 'requestWithMember')
       .mockResolvedValue(lanSnapshot() as never);
     const projects = {
       loadMembership: jest.fn().mockResolvedValue(membership),
@@ -367,8 +367,8 @@ describe('CollabPublicationService reconnect', () => {
   it('reconnects a direct LAN mutation after stale endpoint failure without a prior snapshot', async () => {
     let currentMembership = lanMembership(false);
     const requests: string[] = [];
-    const request = jest.spyOn(PinnedCollabHttpClient.prototype, 'requestWithMember')
-      .mockImplementation(function (this: PinnedCollabHttpClient, input) {
+    const request = jest.spyOn(PinnedCollabHTTPClient.prototype, 'requestWithMember')
+      .mockImplementation(function (this: PinnedCollabHTTPClient, input) {
         requests.push(this.trust.endpoint);
         if (this.trust.endpoint === LAN_STORED_ENDPOINT) {
           return Promise.reject(new CollabError({ code: 'endpoint-unreachable' }));
@@ -459,7 +459,7 @@ describe('CollabPublicationService reconnect', () => {
       const projects = new CollabLocalProjectRepository(vaultRoot);
       await projects.saveMembership(membership);
       await new CloudProjectCredentialStore(vaultRoot).getOrCreate(CLOUD_PROJECT_ID);
-      const transport = new NodeCloudAuthorityHttpTransport();
+      const transport = new NodeCloudAuthorityHTTPTransport();
       let fault: CollabError | null = null;
       const cloudAuthority = new CloudAuthorityAdapter(vaultRoot, {
         request: input => fault ? Promise.reject(fault) : transport.request(input),
@@ -710,7 +710,7 @@ describe('CollabPublicationService reconnect', () => {
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('server address missing');
     const membership = cloudMembership(`http://127.0.0.1:${address.port}`);
-    const transport = new NodeCloudAuthorityHttpTransport();
+    const transport = new NodeCloudAuthorityHTTPTransport();
     const cloudVaultRoot = await mkdtemp(path.join(tmpdir(), 'cloud-publication-vault-'));
     await new CloudProjectCredentialStore(cloudVaultRoot).getOrCreate(membership.project.id);
     const cloudAuthority = new CloudAuthorityAdapter(cloudVaultRoot, {

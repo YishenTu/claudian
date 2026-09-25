@@ -30,7 +30,7 @@ export interface OpencodeSqliteReaderDependencies {
 }
 
 export const OPENCODE_SQLITE_QUERY_MAX_BUFFER = 100 * 1024 * 1024;
-export const OPENCODE_MESSAGE_ROW_SQL = buildOpencodeMessageRowsSql('?');
+export const OPENCODE_MESSAGE_ROW_SQL = buildOpencodeMessageRowsSQL('?');
 
 const OPENCODE_SQLITE_CHILD_SCRIPT = `
 const { DatabaseSync } = require('node:sqlite');
@@ -65,7 +65,7 @@ export async function loadOpencodeSessionRows(
       (id) => `SELECT 1 WHERE ${id} IS NULL`);
     return { ...rows, nativeVersion: 2 };
   }
-  const rows = await querySessionRows(databasePath, sessionId, dependencies, buildOpencodeMessageRowsSql, buildOpencodePartRowsSql);
+  const rows = await querySessionRows(databasePath, sessionId, dependencies, buildOpencodeMessageRowsSQL, buildOpencodePartRowsSQL);
   // Usage metadata is optional. Preserve the existing row shape where it is absent.
   for (const row of rows.messageRows) {
     for (const key of ['parent_id', 'output_tokens', 'reasoning_tokens', 'finish', 'error']) {
@@ -95,16 +95,16 @@ export async function loadOpencodeTurnRows(
     version = schema.messageRows.length > 0 ? 2 : 1;
   }
   const rows = await querySessionRows(databasePath, sessionId, dependencies,
-    id => buildTurnRowsSql(id, selector, version === 2 ? 2 : 1),
+    id => buildTurnRowsSQL(id, selector, version === 2 ? 2 : 1),
     id => `SELECT 1 WHERE ${id} IS NULL`);
   return version === 2 ? { ...rows, nativeVersion: 2 } : rows;
 }
 
-function buildTurnRowsSql(sessionId: string, selector: OpencodeTurnSelector, version: 1 | 2): string {
+function buildTurnRowsSQL(sessionId: string, selector: OpencodeTurnSelector, version: 1 | 2): string {
   const table = version === 2 ? 'session_message' : 'message';
   const userRole = version === 2 ? "type = 'user'" : "json_valid(data) AND json_extract(data, '$.role') = 'user'";
   const selectedUser = selector.userMessageId
-    ? `id = '${escapeSqlLiteral(selector.userMessageId)}'`
+    ? `id = '${escapeSQLLiteral(selector.userMessageId)}'`
     : `${userRole} AND time_created >= ${Number.isFinite(selector.startedAt) ? Math.floor(selector.startedAt) : 'NULL'}`;
   const order = version === 2 ? 'seq' : 'time_created, id';
   const columns = `id, session_id, time_created${version === 2 ? ', seq' : ''}`;
@@ -181,14 +181,14 @@ async function querySessionRows(
   }
 
   try {
-    const escapedSessionId = escapeSqlLiteral(sessionId);
-    const messageRows = await runSqlite3JsonQuery(
+    const escapedSessionId = escapeSQLLiteral(sessionId);
+    const messageRows = await runSqlite3JSONQuery(
       databasePath,
       messageSql(`'${escapedSessionId}'`),
       spawn,
       environment,
     );
-    const partRows = await runSqlite3JsonQuery(
+    const partRows = await runSqlite3JSONQuery(
       databasePath,
       partSql(`'${escapedSessionId}'`),
       spawn,
@@ -215,7 +215,7 @@ function requireSqliteModule(): SqliteModule | null {
     : null;
 }
 
-async function runSqlite3JsonQuery(
+async function runSqlite3JSONQuery(
   databasePath: string,
   sql: string,
   spawn: SpawnSqliteProcess,
@@ -314,7 +314,7 @@ function parseStoredRowsValue(value: unknown): StoredRow[] | null {
     : null;
 }
 
-function escapeSqlLiteral(value: string): string {
+function escapeSQLLiteral(value: string): string {
   return value.replaceAll('\'', '\'\'');
 }
 
@@ -322,7 +322,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function buildOpencodeMessageRowsSql(sessionIdExpression: string): string {
+function buildOpencodeMessageRowsSQL(sessionIdExpression: string): string {
   return `
 with message_json as (
   select
@@ -351,7 +351,7 @@ from message_json
 order by time_created asc, id asc;`.trim();
 }
 
-function buildOpencodePartRowsSql(sessionIdExpression: string): string {
+function buildOpencodePartRowsSQL(sessionIdExpression: string): string {
   return `
 select id, message_id, data
 from part

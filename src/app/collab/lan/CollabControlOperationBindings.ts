@@ -1,8 +1,8 @@
 import {
   COLLAB_CONTROL_PROTOCOL_VERSION,
   COLLAB_CONTROL_ROUTE_PREFIX,
-} from '@/app/collab/lan/LanCollabConstants';
-import type { LanCollabControlOperation } from '@/app/collab/lan/LanCollabControlOperations';
+} from '@/app/collab/lan/LANCollabConstants';
+import type { LANCollabControlOperation } from '@/app/collab/lan/LANCollabControlOperations';
 
 export type CollabControlAdmission = 'active' | 'bypass' | 'terminal';
 export type CollabControlAuthentication =
@@ -25,7 +25,7 @@ export interface CollabControlOperationBinding {
 }
 
 type BindingMap = {
-  readonly [Operation in LanCollabControlOperation]: CollabControlOperationBinding;
+  readonly [Operation in LANCollabControlOperation]: CollabControlOperationBinding;
 };
 
 export const COLLAB_CONTROL_OPERATION_BINDINGS = {
@@ -102,7 +102,7 @@ function binding<
 }
 
 export function collabControlOperationPath(
-  operation: LanCollabControlOperation,
+  operation: LANCollabControlOperation,
   projectId: string,
   parameters: Readonly<Record<string, string>> = {},
 ): string {
@@ -116,7 +116,7 @@ export function collabControlOperationPath(
 }
 
 export interface CollabControlOperationMatch {
-  readonly operation: LanCollabControlOperation;
+  readonly operation: LANCollabControlOperation;
   readonly parameters: Readonly<Record<string, string>>;
 }
 
@@ -126,7 +126,7 @@ export function matchCollabControlOperation(
 ): CollabControlOperationMatch | null {
   for (const operation of Object.keys(
     COLLAB_CONTROL_OPERATION_BINDINGS,
-  ) as LanCollabControlOperation[]) {
+  ) as LANCollabControlOperation[]) {
     const binding = COLLAB_CONTROL_OPERATION_BINDINGS[operation];
     if (method !== binding.method) continue;
     const expected = binding.route.split('/');

@@ -4,7 +4,7 @@ import { createMockEl } from '@test/helpers/MockElement';
 import { applyTextInput } from '@test/helpers/settingsControls';
 
 const mockRenderEnvironmentSettingsSection = jest.fn();
-const mockCliResolverReset = jest.fn();
+const mockCLIResolverReset = jest.fn();
 const mockDiscoverModels = jest.fn();
 const mockNotices: string[] = [];
 
@@ -133,7 +133,7 @@ function createSettingsRenderer() {
   return createPiSettingsTabRenderer({
     modelCatalog: { markStale: jest.fn() },
     cliResolver: {
-      reset: mockCliResolverReset,
+      reset: mockCLIResolverReset,
     },
   } as unknown as Parameters<typeof createPiSettingsTabRenderer>[0]);
 }
@@ -151,7 +151,7 @@ import { getPiProviderSettings } from '@/providers/pi/settings';
 import { createPiSettingsTabRenderer } from '@/providers/pi/ui/PiSettingsTab';
 
 const createdSettings: MockSetting[] = [];
-const createdDomElements: any[] = [];
+const createdDOMElements: any[] = [];
 const mockedExists = fs.existsSync as jest.Mock;
 const mockedStat = fs.statSync as jest.Mock;
 
@@ -301,21 +301,21 @@ function createElement(): any {
       const child = createElement();
       child.tag = tag;
       applyElementAttrs(child, attrs);
-      createdDomElements.push(child);
+      createdDOMElements.push(child);
       return child;
     }),
     createDiv: jest.fn((attrs?: Record<string, unknown>) => {
       const child = createElement();
       child.tag = 'div';
       applyElementAttrs(child, attrs);
-      createdDomElements.push(child);
+      createdDOMElements.push(child);
       return child;
     }),
     createSpan: jest.fn((attrs?: Record<string, unknown>) => {
       const child = createElement();
       child.tag = 'span';
       applyElementAttrs(child, attrs);
-      createdDomElements.push(child);
+      createdDOMElements.push(child);
       return child;
     }),
   };
@@ -394,7 +394,7 @@ describe('PiSettingsTab', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     createdSettings.length = 0;
-    createdDomElements.length = 0;
+    createdDOMElements.length = 0;
     mockNotices.length = 0;
     mockedExists.mockReturnValue(true);
     mockedStat.mockReturnValue({ isFile: () => true });
@@ -546,7 +546,7 @@ describe('PiSettingsTab', () => {
     mockedExists.mockReturnValue(false);
     await applyTextInput(cliInput, '/missing/pi');
     expect(context.plugin.saveSettings).not.toHaveBeenCalled();
-    expect(mockCliResolverReset).not.toHaveBeenCalled();
+    expect(mockCLIResolverReset).not.toHaveBeenCalled();
 
     mockedExists.mockReturnValue(true);
     mockedStat.mockReturnValue({ isFile: () => true });
@@ -554,7 +554,7 @@ describe('PiSettingsTab', () => {
     expect(getPiProviderSettings(settings).cliPathsByHost).toEqual({
       'current-host': '/valid/pi',
     });
-    expect(mockCliResolverReset).toHaveBeenCalled();
+    expect(mockCLIResolverReset).toHaveBeenCalled();
     expect(context.plugin.saveSettings).toHaveBeenCalled();
   });
 
@@ -584,7 +584,7 @@ describe('PiSettingsTab', () => {
     const context = render(settings);
     const cliInput = findSetting('CLI path').textComponents[0];
     const order: string[] = [];
-    mockCliResolverReset.mockImplementationOnce(() => {
+    mockCLIResolverReset.mockImplementationOnce(() => {
       order.push('resolver-reset');
     });
     context.plugin.runProviderExecutionTransition.mockImplementationOnce(async (
@@ -598,7 +598,7 @@ describe('PiSettingsTab', () => {
       await mutation();
       order.push('settings-committed');
       expect(getPiProviderSettings(settings).discoveredModels).toHaveLength(1);
-      expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
+      expect(mockCLIResolverReset).toHaveBeenCalledTimes(1);
       order.push('transition-end');
     });
 
@@ -639,7 +639,7 @@ describe('PiSettingsTab', () => {
       'current-host': '/old/pi',
     });
     expect(cliInput.inputEl.value).toBe('/failed/pi');
-    expect(mockCliResolverReset).not.toHaveBeenCalled();
+    expect(mockCLIResolverReset).not.toHaveBeenCalled();
     expect(context.notifyProviderModelOptionsChanged).not.toHaveBeenCalled();
   });
 
@@ -652,7 +652,7 @@ describe('PiSettingsTab', () => {
     const context = render(settings);
     const cliInput = findSetting('CLI path').textComponents[0];
     cliInput.inputEl.value = '/new/pi';
-    mockCliResolverReset.mockImplementationOnce(() => {
+    mockCLIResolverReset.mockImplementationOnce(() => {
       throw new Error('resolver reset failed');
     });
 

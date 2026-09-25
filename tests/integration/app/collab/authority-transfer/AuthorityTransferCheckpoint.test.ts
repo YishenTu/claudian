@@ -14,7 +14,7 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { MemberRecoveryCredentialRepository } from '@/app/collab/authority/MemberRecoveryCredentialRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { AuthorityTransferAdmissionSettlement } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferAdmissionSettlement';
 import { AuthorityTransferCheckpointGit } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointGit';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
@@ -28,8 +28,8 @@ const MEMBER_OID = 'b'.repeat(40);
 describe('AuthorityTransferCheckpoint', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let source: SqlJsProjectDatabase;
-  let target: SqlJsProjectDatabase;
+  let source: SQLJSProjectDatabase;
+  let target: SQLJSProjectDatabase;
 
   beforeAll(async () => {
     SQL = await initSqlJs();
@@ -581,9 +581,9 @@ describe('AuthorityTransferCheckpoint', () => {
     ])).trim()).toBe('');
   });
 
-  async function createDatabase(directory: string): Promise<SqlJsProjectDatabase> {
+  async function createDatabase(directory: string): Promise<SQLJSProjectDatabase> {
     await mkdir(directory);
-    const database = new SqlJsProjectDatabase(directory, { loadSqlJs: async () => SQL });
+    const database = new SQLJSProjectDatabase(directory, { loadSqlJs: async () => SQL });
     await database.open();
     return database;
   }

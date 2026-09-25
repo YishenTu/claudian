@@ -1,4 +1,4 @@
-export function isTlsValidationError(error: unknown): boolean {
+export function isTLSValidationError(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException)?.code ?? '';
   return code.includes('CERT')
     || code.includes('TLS')

@@ -2,11 +2,11 @@ import { collabControlOperationCodec } from '@claudian-collab/protocol';
 import { testTime } from '@test/helpers/testClock';
 
 import type {
-  CollabHttpOperationOptions,
-  CollabJsonRequest,
-} from '@/app/collab/lan/CollabHttpClient';
-import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+  CollabHTTPOperationOptions,
+  CollabJSONRequest,
+} from '@/app/collab/lan/CollabHTTPClient';
+import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
 import {
   ProjectControlClient,
   type ProjectControlTransport,
@@ -160,9 +160,9 @@ describe('ProjectControlClient', () => {
   it('reads the full Project snapshot and ensures the exact personal head', async () => {
     const transport: ProjectControlTransport = {
       requestWithMember: jest.fn(async <T>(
-        controlRequest: CollabJsonRequest<T>,
+        controlRequest: CollabJSONRequest<T>,
         _credential: string,
-        _options?: CollabHttpOperationOptions,
+        _options?: CollabHTTPOperationOptions,
       ) => controlRequest.decode(controlRequest.method === 'GET'
         ? snapshotEnvelope()
         : envelope({ mainOid: HEAD, request: request() }))),
@@ -213,7 +213,7 @@ describe('ProjectControlClient', () => {
 
   it('reads exact request detail and creates an immutable comment', async () => {
     const transport: ProjectControlTransport = {
-      requestWithMember: jest.fn(async <T>(controlRequest: CollabJsonRequest<T>) => (
+      requestWithMember: jest.fn(async <T>(controlRequest: CollabJSONRequest<T>) => (
         controlRequest.decode(controlRequest.method === 'GET'
           ? detailEnvelope()
           : envelope({
@@ -272,7 +272,7 @@ describe('ProjectControlClient', () => {
 
   it('accepts one exact reviewed head and validates the merged response', async () => {
     const transport: ProjectControlTransport = {
-      requestWithMember: jest.fn(async <T>(controlRequest: CollabJsonRequest<T>) => (
+      requestWithMember: jest.fn(async <T>(controlRequest: CollabJSONRequest<T>) => (
         controlRequest.decode(envelope({
           mainOid: MERGE,
           mergeCommitOid: MERGE,

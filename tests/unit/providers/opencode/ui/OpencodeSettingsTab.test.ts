@@ -8,7 +8,7 @@ import { createOpencodeSettingsTabRenderer } from '@/providers/opencode/ui/Openc
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
-const mockCliResolverReset = jest.fn();
+const mockCLIResolverReset = jest.fn();
 const mockMetadataLoadCatalog = jest.fn().mockResolvedValue(false);
 const mockMetadataWarmModel = jest.fn().mockResolvedValue(false);
 
@@ -78,7 +78,7 @@ jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
 function createSettingsRenderer() {
   return createOpencodeSettingsTabRenderer({
     cliResolver: {
-      reset: mockCliResolverReset,
+      reset: mockCLIResolverReset,
     },
     modelCatalog: { markStale: jest.fn() } as any,
     metadataService: {
@@ -125,7 +125,7 @@ type MockSettingRecord = {
 };
 
 const createdSettings: MockSettingRecord[] = [];
-const createdDomElements: any[] = [];
+const createdDOMElements: any[] = [];
 
 function createTextComponent(): MockTextComponent {
   const component = {} as MockTextComponent;
@@ -249,7 +249,7 @@ function createElement(): any {
       if (attrs && typeof attrs.type === 'string') {
         child.type = attrs.type;
       }
-      createdDomElements.push(child);
+      createdDOMElements.push(child);
       return child;
     }),
     createDiv: jest.fn((attrs?: Record<string, unknown>) => {
@@ -258,7 +258,7 @@ function createElement(): any {
       if (attrs && typeof attrs.cls === 'string') {
         child.cls = attrs.cls;
       }
-      createdDomElements.push(child);
+      createdDOMElements.push(child);
       return child;
     }),
     createSpan: jest.fn((_attrs?: Record<string, unknown>) => createElement()),
@@ -275,7 +275,7 @@ function createContainer(): any {
       if (attrs && typeof attrs.cls === 'string') {
         child.cls = attrs.cls;
       }
-      createdDomElements.push(child);
+      createdDOMElements.push(child);
       return child;
     }),
     createEl: jest.fn((tag?: string, attrs?: Record<string, unknown>) => {
@@ -287,7 +287,7 @@ function createContainer(): any {
       if (attrs && typeof attrs.text === 'string') {
         child.text = attrs.text;
       }
-      createdDomElements.push(child);
+      createdDOMElements.push(child);
       return child;
     }),
   };
@@ -385,7 +385,7 @@ describe('OpencodeSettingsTab', () => {
 
   beforeEach(() => {
     createdSettings.length = 0;
-    createdDomElements.length = 0;
+    createdDOMElements.length = 0;
     jest.clearAllMocks();
     mockMetadataLoadCatalog.mockResolvedValue(false);
     mockMetadataWarmModel.mockResolvedValue(false);
@@ -542,7 +542,7 @@ describe('OpencodeSettingsTab', () => {
       await mutation(plugin.settings);
       await plugin.saveSettings();
     });
-    mockCliResolverReset.mockImplementation(() => {
+    mockCLIResolverReset.mockImplementation(() => {
       expect(transitionActive).toBe(true);
     });
 
@@ -555,7 +555,7 @@ describe('OpencodeSettingsTab', () => {
       'host-a': '/custom/opencode',
     });
     expect(mockSaveSettings).toHaveBeenCalledTimes(1);
-    expect(mockCliResolverReset).toHaveBeenCalledTimes(1);
+    expect(mockCLIResolverReset).toHaveBeenCalledTimes(1);
     expect(plugin.runProviderExecutionTransition).toHaveBeenCalledWith(
       ['opencode'],
       expect.any(Function),

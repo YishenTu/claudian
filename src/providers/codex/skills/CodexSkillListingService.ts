@@ -10,7 +10,7 @@ import type {
   SkillScope,
   SkillsListResult,
 } from '../runtime/codexAppServerTypes';
-import { CodexRpcTransport } from '../runtime/CodexRpcTransport';
+import { CodexRPCTransport } from '../runtime/CodexRPCTransport';
 import { createCodexRuntimeContext } from '../runtime/CodexRuntimeContext';
 
 export interface CodexSkillListProvider {
@@ -241,7 +241,7 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     const process = new CodexAppServerProcess(launchSpec);
     process.start();
 
-    const transport = new CodexRpcTransport(process);
+    const transport = new CodexRPCTransport(process);
     transport.start();
     const onAbort = (): void => transport.dispose();
     signal?.addEventListener('abort', onAbort, { once: true });

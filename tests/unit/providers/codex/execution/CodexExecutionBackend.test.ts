@@ -19,11 +19,11 @@ const mockTransportDispose = jest.fn();
 const mockTransportStart = jest.fn();
 const mockResolveLaunchSpec = jest.fn();
 
-jest.mock('@/providers/codex/runtime/CodexRpcTransport', () => {
-  const actual = jest.requireActual('@/providers/codex/runtime/CodexRpcTransport');
+jest.mock('@/providers/codex/runtime/CodexRPCTransport', () => {
+  const actual = jest.requireActual('@/providers/codex/runtime/CodexRPCTransport');
   return {
     ...actual,
-    CodexRpcTransport: jest.fn().mockImplementation(() => ({
+    CodexRPCTransport: jest.fn().mockImplementation(() => ({
       request: mockTransportRequest,
       notify: mockTransportNotify,
       onNotification: mockTransportOnNotification,
@@ -60,7 +60,7 @@ jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => {
 
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
 import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
-import { CodexRpcResponseError } from '@/providers/codex/runtime/CodexRpcTransport';
+import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 
 type NotificationHandler = (params: unknown) => void;
@@ -3476,7 +3476,7 @@ describe('CodexExecutionBackend', () => {
 
   it('returns false for an explicit native steer rejection', async () => {
     configureSteerTransport('thread-steer-reject', 'turn-steer-reject', () => {
-      throw new CodexRpcResponseError({
+      throw new CodexRPCResponseError({
         code: -32602,
         message: 'Invalid steer parameters',
       });
@@ -3498,7 +3498,7 @@ describe('CodexExecutionBackend', () => {
       'thread-steer-internal-error',
       'turn-steer-internal-error',
       () => {
-        throw new CodexRpcResponseError({
+        throw new CodexRPCResponseError({
           code: -32603,
           message: 'Internal error after steer dispatch',
         });

@@ -32,7 +32,7 @@ interface CodexAgentSnapshot {
 const CODEX_LIST_AGENTS = 'list_agents';
 const CODEX_INTERRUPT_AGENT = 'interrupt_agent';
 
-function parseJsonObject(raw: string | undefined): Record<string, unknown> | null {
+function parseJSONObject(raw: string | undefined): Record<string, unknown> | null {
   if (!raw) return null;
 
   try {
@@ -51,7 +51,7 @@ export function extractCodexSpawnResult(
   raw: string | undefined,
   toolCall?: ToolCallInfo,
 ): CodexSpawnResult {
-  const parsed = parseJsonObject(raw);
+  const parsed = parseJSONObject(raw);
   const inputTaskName = typeof toolCall?.input.task_name === 'string'
     ? toolCall.input.task_name.trim()
     : '';
@@ -71,7 +71,7 @@ export function extractCodexSpawnResult(
 }
 
 export function extractCodexWaitResult(raw: string | undefined): CodexWaitResult {
-  const parsed = parseJsonObject(raw);
+  const parsed = parseJSONObject(raw);
   if (!parsed) {
     return { statuses: {}, timedOut: false };
   }
@@ -193,7 +193,7 @@ function resolveCodexWaitCompletion(
 
   for (const toolCall of followingToolCalls) {
     if (toolCall.name === CODEX_LIST_AGENTS && spawnResult.agentId) {
-      const parsed = parseJsonObject(toolCall.result);
+      const parsed = parseJSONObject(toolCall.result);
       const snapshot = parsed
         ? extractCodexAgentSnapshots(parsed).find(agent => agent.agentId === spawnResult.agentId)
         : undefined;
@@ -309,7 +309,7 @@ function getCodexLifecycleTargetIds(toolCall: ToolCallInfo): string[] {
   for (const target of targets) {
     if (typeof target === 'string') targetIds.add(target);
   }
-  const parsed = parseJsonObject(toolCall.result);
+  const parsed = parseJSONObject(toolCall.result);
   if (parsed) {
     for (const snapshot of extractCodexAgentSnapshots(parsed)) {
       targetIds.add(snapshot.agentId);

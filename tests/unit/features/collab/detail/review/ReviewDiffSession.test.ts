@@ -5,7 +5,7 @@ import { type CollabRequestReview, type CollabReviewFileContent } from '@/core/c
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import {
   type CollabDetailDiffPort,
-  type CollabDetailObjectUrlPort,
+  type CollabDetailObjectURLPort,
   ReviewDiffSession,
   type ReviewDiffSessionPort,
 } from '@/features/collab/detail/review/ReviewDiffSession';
@@ -23,7 +23,7 @@ describe('ReviewDiffSession', () => {
     const host = document.createElement('div');
     const review = requestReview();
     const session = new ReviewDiffSession({
-      objectUrls: objectUrlPort(),
+      objectUrls: objectURLPort(),
       port,
       renderer: primary,
       rendererFactory: () => secondary,
@@ -54,7 +54,7 @@ describe('ReviewDiffSession', () => {
     const controls = document.createElement('div');
     const host = document.createElement('div');
     const session = new ReviewDiffSession({
-      objectUrls: objectUrlPort(),
+      objectUrls: objectURLPort(),
       port,
       renderer: diffPort(),
       rendererFactory: diffPort,
@@ -79,7 +79,7 @@ describe('ReviewDiffSession', () => {
     const pending = deferred<CollabReviewFileContent>();
     const port = reviewPort(pending.promise, pending.promise);
     const renderer = diffPort();
-    const objectUrls = objectUrlPort();
+    const objectUrls = objectURLPort();
     const session = new ReviewDiffSession({
       objectUrls,
       port,
@@ -102,7 +102,7 @@ describe('ReviewDiffSession', () => {
     const renderer = diffPort();
     const controls = document.createElement('div');
     const session = new ReviewDiffSession({
-      objectUrls: objectUrlPort(),
+      objectUrls: objectURLPort(),
       port,
       renderer,
       rendererFactory: diffPort,
@@ -124,7 +124,7 @@ describe('ReviewDiffSession', () => {
     const renderer = diffPort();
     const controls = document.createElement('div');
     const session = new ReviewDiffSession({
-      objectUrls: objectUrlPort(),
+      objectUrls: objectURLPort(),
       port,
       renderer,
       rendererFactory: diffPort,
@@ -164,7 +164,7 @@ describe('ReviewDiffSession', () => {
       });
     const renderer = diffPort();
     const session = new ReviewDiffSession({
-      objectUrls: objectUrlPort(),
+      objectUrls: objectURLPort(),
       port,
       renderer,
       rendererFactory: diffPort,
@@ -199,7 +199,7 @@ describe('ReviewDiffSession', () => {
       });
     const renderer = diffPort();
     const session = new ReviewDiffSession({
-      objectUrls: objectUrlPort(),
+      objectUrls: objectURLPort(),
       port,
       renderer,
       rendererFactory: diffPort,
@@ -308,7 +308,7 @@ function diffPort(): CollabDetailDiffPort {
   };
 }
 
-function objectUrlPort(): CollabDetailObjectUrlPort {
+function objectURLPort(): CollabDetailObjectURLPort {
   return {
     create: jest.fn().mockReturnValue('blob:review'),
     revoke: jest.fn(),

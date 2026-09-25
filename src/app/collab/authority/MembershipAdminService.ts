@@ -12,8 +12,8 @@ import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepositor
 import { MembershipAdminRepository } from '@/app/collab/authority/MembershipAdminRepository';
 import type {
   AuthorityDatabaseConnection,
-  SqlJsMutationResult,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSMutationResult,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import type {
   DemoteManagerRequest,
   DemoteManagerResponse,
@@ -22,13 +22,13 @@ import type {
   PromoteManagerRequest,
   PromoteManagerResponse,
   RemoveMemberRequest,
-} from '@/app/collab/lan/LanCollabControlOperations';
+} from '@/app/collab/lan/LANCollabControlOperations';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface MembershipAdminDatabasePort {
   mutate<T>(
     mutation: (connection: AuthorityDatabaseConnection) => T,
-  ): Promise<SqlJsMutationResult<T>>;
+  ): Promise<SQLJSMutationResult<T>>;
 }
 
 export interface MembershipAdminAuthority {

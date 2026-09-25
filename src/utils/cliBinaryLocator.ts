@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 import { getEnhancedPath } from './env';
-import { expandHomePath, normalizeConfiguredCliPath, parsePathEntries, stripSurroundingQuotes } from './path';
+import { expandHomePath, normalizeConfiguredCLIPath, parsePathEntries, stripSurroundingQuotes } from './path';
 
 export function isExistingFile(filePath: string): boolean {
   try {
@@ -12,9 +12,9 @@ export function isExistingFile(filePath: string): boolean {
   }
 }
 
-export function resolveConfiguredCliPath(configuredPath: string | undefined): string | null {
+export function resolveConfiguredCLIPath(configuredPath: string | undefined): string | null {
   try {
-    const expandedPath = normalizeConfiguredCliPath(configuredPath);
+    const expandedPath = normalizeConfiguredCLIPath(configuredPath);
     if (!expandedPath) {
       return null;
     }
@@ -24,7 +24,7 @@ export function resolveConfiguredCliPath(configuredPath: string | undefined): st
   }
 }
 
-export function findCliBinaryPath(
+export function findCLIBinaryPath(
   binaryName: string,
   additionalPath?: string,
   platform: NodeJS.Platform = process.platform,

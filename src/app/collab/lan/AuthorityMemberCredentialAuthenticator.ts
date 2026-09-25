@@ -13,7 +13,7 @@ import {
 } from '@/app/collab/authority/PendingMembershipRepository';
 import type {
   AuthorityDatabaseConnection,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const CREDENTIAL_PATTERN = /^[A-Za-z0-9_-]{43}$/;

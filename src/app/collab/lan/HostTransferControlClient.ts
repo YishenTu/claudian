@@ -3,24 +3,24 @@ import {
   collabControlOperationPath,
 } from '@/app/collab/lan/CollabControlOperationBindings';
 import type {
-  CollabHttpOperationOptions,
-  CollabJsonRequest,
-} from '@/app/collab/lan/CollabHttpClient';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+  CollabHTTPOperationOptions,
+  CollabJSONRequest,
+} from '@/app/collab/lan/CollabHTTPClient';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
 import type {
   AcceptHostTransferRequest,
   CancelHostTransferRequest,
   CreateHostTransferRequest,
   DeclineHostTransferRequest,
-} from '@/app/collab/lan/LanCollabControlOperations';
-import type { LanCollabControlOperationMap } from '@/app/collab/lan/LanCollabControlOperations';
+} from '@/app/collab/lan/LANCollabControlOperations';
+import type { LANCollabControlOperationMap } from '@/app/collab/lan/LANCollabControlOperations';
 import type { CollabHostTransferSummary } from '@/core/collab';
 
 export interface HostTransferControlTransport {
   requestWithMember<T>(
-    request: CollabJsonRequest<T>,
+    request: CollabJSONRequest<T>,
     memberCredential: string,
-    options?: CollabHttpOperationOptions,
+    options?: CollabHTTPOperationOptions,
   ): Promise<T>;
 }
 
@@ -61,7 +61,7 @@ export class HostTransferControlClient {
   private mutate<Operation extends
     'acceptHostTransfer' | 'cancelHostTransfer' | 'createHostTransfer' | 'declineHostTransfer'>(
     operation: Operation,
-    input: HostTransferMutationInput<LanCollabControlOperationMap[Operation]['request']>,
+    input: HostTransferMutationInput<LANCollabControlOperationMap[Operation]['request']>,
   ): Promise<CollabHostTransferSummary> {
     return this.transport.requestWithMember({
       body: input.request,

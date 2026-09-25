@@ -9,7 +9,7 @@ import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { CollabLocalProjectRepository, type OwnedAuthorityDirectoryCapability } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
@@ -17,7 +17,7 @@ import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { HostTransferAuthoritySnapshot } from '@/app/collab/host-transfer/HostTransferAuthoritySnapshot';
 import { digestHostTransferPackageManifest } from '@/app/collab/host-transfer/HostTransferPackage';
 import { NativeHostTransferPackagePreparation } from '@/app/collab/host-transfer/NativeHostTransferPackagePreparation';
-import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
+import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LANCollabConstants';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 
 const NOW = testTime({ days: -14 });
@@ -40,7 +40,7 @@ describe('NativeHostTransferPackagePreparation', () => {
   let resource: OwnedAuthorityDirectoryCapability;
   let authorityDirectory: string;
   let repositoryPath: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let repositories: GitRepositoryService;
   let runner: GitCommandRunner;
   let SQL: SqlJsStatic;
@@ -74,7 +74,7 @@ describe('NativeHostTransferPackagePreparation', () => {
     await runner.run({ args: ['push', 'origin', 'main'], cwd: work });
 
     SQL = await initSqlJs();
-    database = new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation), loadSqlJs: async () => SQL });
+    database = new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission: operation => resources.withAuthorityDirectory(resource, operation), loadSqlJs: async () => SQL });
     await database.open();
     await database.mutate(connection => {
       new ProjectAuthorityRepository().initialize(connection, {

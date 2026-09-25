@@ -32,7 +32,7 @@ import type {
   ImageViewItem,
   ItemCompletedNotification,
   ItemStartedNotification,
-  McpToolCallItem,
+  MCPToolCallItem,
   PlanDeltaNotification,
   ReasoningSummaryTextDeltaNotification,
   ReasoningTextDeltaNotification,
@@ -1592,7 +1592,7 @@ export class CodexNotificationRouter {
 
   // -- mcpToolCall ------------------------------------------------------------
 
-  #emitToolUseFromMcp(item: McpToolCallItem): void {
+  #emitToolUseFromMcp(item: MCPToolCallItem): void {
     this.#resetAssistantSegmentText();
     this.emit({
       type: 'tool_use',
@@ -1602,7 +1602,7 @@ export class CodexNotificationRouter {
     });
   }
 
-  #emitToolResultFromMcp(item: McpToolCallItem): void {
+  #emitToolResultFromMcp(item: MCPToolCallItem): void {
     let content = '';
     if (item.error) {
       content = item.error;

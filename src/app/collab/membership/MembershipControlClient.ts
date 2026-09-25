@@ -11,11 +11,11 @@ import {
   collabControlOperationPath,
 } from '@/app/collab/lan/CollabControlOperationBindings';
 import type {
-  CollabHttpOperationOptions,
-  CollabJsonRequest,
-} from '@/app/collab/lan/CollabHttpClient';
-import type { LanCollabInvitation } from '@/app/collab/lan/InvitationCodec';
-import { lanCollabControlOperationCodec } from '@/app/collab/lan/LanCollabControlOperationCodecs';
+  CollabHTTPOperationOptions,
+  CollabJSONRequest,
+} from '@/app/collab/lan/CollabHTTPClient';
+import type { LANCollabInvitation } from '@/app/collab/lan/InvitationCodec';
+import { lanCollabControlOperationCodec } from '@/app/collab/lan/LANCollabControlOperationCodecs';
 import type {
   AcknowledgeManagerResponsibilityRequest,
   CancelManagerResponsibilityOfferRequest,
@@ -25,20 +25,20 @@ import type {
   MembershipTerminationResponse,
   PromoteManagerResponse,
   RefreshEndpointResponse,
-} from '@/app/collab/lan/LanCollabControlOperations';
+} from '@/app/collab/lan/LANCollabControlOperations';
 import type {
-  LanCollabControlOperationMap,
-  LanCollabLifecycleControlOperation,
-} from '@/app/collab/lan/LanCollabControlOperations';
+  LANCollabControlOperationMap,
+  LANCollabLifecycleControlOperation,
+} from '@/app/collab/lan/LANCollabControlOperations';
 import type { CollabManagerResponsibilityOfferSummary } from '@/core/collab';
 import { type CollabInvitationView } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 export interface MembershipControlTransport {
   requestWithMember<T>(
-    request: CollabJsonRequest<T>,
+    request: CollabJSONRequest<T>,
     memberCredential: string,
-    options?: CollabHttpOperationOptions,
+    options?: CollabHTTPOperationOptions,
   ): Promise<T>;
 }
 
@@ -121,7 +121,7 @@ interface RefreshEndpointResponseContext {
 }
 
 export interface RefreshEndpointInput {
-  readonly invitation: LanCollabInvitation;
+  readonly invitation: LANCollabInvitation;
   readonly memberCredential: string;
   readonly projectId: string;
   readonly signal?: AbortSignal;
@@ -193,10 +193,10 @@ export function decodeDemoteManagerResponse(
   return response;
 }
 
-type LifecycleResponse<Operation extends LanCollabLifecycleControlOperation> =
-  LanCollabControlOperationMap[Operation]['response'];
+type LifecycleResponse<Operation extends LANCollabLifecycleControlOperation> =
+  LANCollabControlOperationMap[Operation]['response'];
 
-function lifecycleResponse<Operation extends LanCollabLifecycleControlOperation>(
+function lifecycleResponse<Operation extends LANCollabLifecycleControlOperation>(
   operation: Operation,
   value: unknown,
 ): LifecycleResponse<Operation> {

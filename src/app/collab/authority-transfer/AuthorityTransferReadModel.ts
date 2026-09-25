@@ -1,12 +1,12 @@
 import type { CollabAuthorityTransferStatus, CollabMemberId, CollabProjectId, RequestLanToCloudTransferRequest } from '@claudian-collab/protocol';
 
-import { cloudToLanTransferHandle } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
+import { cloudToLANTransferHandle } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
 import type { AuthorityTransferPersistence } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
-import type { CollabCloudToLanTransferView } from '@/core/collab';
+import type { CollabCloudToLANTransferView } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 import type { InstallationKey } from '@/core/device/InstallationKey';
 
-export interface LanToCloudTransferView {
+export interface LANToCloudTransferView {
   readonly entryRole: 'requester' | 'source';
   readonly proposedByMemberId: CollabMemberId;
   readonly request: Readonly<RequestLanToCloudTransferRequest>;
@@ -24,7 +24,7 @@ export class AuthorityTransferReadModel {
   async readLanToCloudTransfer(
     projectId: CollabProjectId,
     sourceAuthorityGeneration: number,
-  ): Promise<LanToCloudTransferView | null> {
+  ): Promise<LANToCloudTransferView | null> {
     const [retainedSource, retainedRequester] = await Promise.all([
       this.persistence.loadSourceEntry(projectId),
       this.persistence.loadRequesterEntry(projectId, this.installationKey),
@@ -55,7 +55,7 @@ export class AuthorityTransferReadModel {
 
   async readCloudToLanTransfer(
     projectId: CollabProjectId,
-  ): Promise<CollabCloudToLanTransferView | null> {
+  ): Promise<CollabCloudToLANTransferView | null> {
     const [manager, target, physical] = await Promise.all([
       this.persistence.loadCloudToLanManagerEntry(projectId),
       this.persistence.loadCloudToLanTargetEntry(projectId),
@@ -93,7 +93,7 @@ export class AuthorityTransferReadModel {
       manager: activeManager
         ? Object.freeze({
             descriptor: activeManager.descriptor,
-            handle: activeManager.status ? cloudToLanTransferHandle(activeManager) : null,
+            handle: activeManager.status ? cloudToLANTransferHandle(activeManager) : null,
             status: activeManager.status,
           })
         : null,

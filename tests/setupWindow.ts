@@ -67,7 +67,7 @@ if (!testWindow.localStorage) {
 // Polyfill Obsidian DOM helpers for jsdom-based tests.
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-function applyDomElementInfo(el: Element, info: unknown): void {
+function applyDOMElementInfo(el: Element, info: unknown): void {
   if (!info) return;
   if (typeof info === 'string') {
     el.classList.add(...info.split(/\s+/).filter(Boolean));
@@ -97,7 +97,7 @@ function applyDomElementInfo(el: Element, info: unknown): void {
   callback?: (el: HTMLDivElement) => void,
 ): HTMLDivElement {
   const el = document.createElement('div');
-  applyDomElementInfo(el, info);
+  applyDOMElementInfo(el, info);
   if (callback) callback(el);
   return el;
 };
@@ -108,7 +108,7 @@ function applyDomElementInfo(el: Element, info: unknown): void {
   callback?: (el: HTMLElementTagNameMap[K]) => void,
 ): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
-  applyDomElementInfo(el, info);
+  applyDOMElementInfo(el, info);
   if (callback) callback(el);
   return el;
 };
@@ -118,7 +118,7 @@ function applyDomElementInfo(el: Element, info: unknown): void {
   callback?: (el: HTMLSpanElement) => void,
 ): HTMLSpanElement {
   const el = document.createElement('span');
-  applyDomElementInfo(el, info);
+  applyDOMElementInfo(el, info);
   if (callback) callback(el);
   return el;
 };
@@ -129,7 +129,7 @@ function applyDomElementInfo(el: Element, info: unknown): void {
   callback?: (el: SVGElementTagNameMap[K]) => void,
 ): SVGElementTagNameMap[K] {
   const el = document.createElementNS(SVG_NS, tag) as SVGElementTagNameMap[K];
-  applyDomElementInfo(el, info);
+  applyDOMElementInfo(el, info);
   if (callback) callback(el);
   return el;
 };

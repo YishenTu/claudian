@@ -1,20 +1,20 @@
 import type { StreamChunk } from '../../../core/types';
 import {
-  PiExtensionUiBridge,
-  type PiExtensionUiRenderer,
-} from '../runtime/PiExtensionUiBridge';
+  PiExtensionUIBridge,
+  type PiExtensionUIRenderer,
+} from '../runtime/PiExtensionUIBridge';
 import type { PiLaunchSpec } from '../runtime/PiLaunchSpec';
 import {
-  type PiRpcRecord,
-  PiRpcTransport,
-} from '../runtime/PiRpcTransport';
+  type PiRPCRecord,
+  PiRPCTransport,
+} from '../runtime/PiRPCTransport';
 import { PiSubprocess } from '../runtime/PiSubprocess';
 
 export interface PiExecutionKernelCallbacks {
   onClose(error?: Error): void;
-  onEvent(event: PiRpcRecord): void;
+  onEvent(event: PiRPCRecord): void;
   onExtensionChunk(chunk: StreamChunk): void;
-  onExtensionRequest(request: PiRpcRecord): boolean;
+  onExtensionRequest(request: PiRPCRecord): boolean;
 }
 
 export interface PiExecutionKernel {
@@ -26,7 +26,7 @@ export interface PiExecutionKernel {
     timeoutMs?: number,
     signal?: AbortSignal,
   ): Promise<T>;
-  send(record: PiRpcRecord): void;
+  send(record: PiRPCRecord): void;
   shutdown(): Promise<void>;
   start(): void;
 }
@@ -34,13 +34,13 @@ export interface PiExecutionKernel {
 export type PiExecutionKernelFactory = (
   launchSpec: PiLaunchSpec,
   callbacks: PiExecutionKernelCallbacks,
-  extensionUiRenderer: PiExtensionUiRenderer | null,
+  extensionUiRenderer: PiExtensionUIRenderer | null,
 ) => PiExecutionKernel;
 
-export class PiRpcSessionKernel implements PiExecutionKernel {
+export class PiRPCSessionKernel implements PiExecutionKernel {
   private readonly subprocess: PiSubprocess;
-  private transport: PiRpcTransport | null = null;
-  private extensionBridge: PiExtensionUiBridge | null = null;
+  private transport: PiRPCTransport | null = null;
+  private extensionBridge: PiExtensionUIBridge | null = null;
   private removeCloseListener: (() => void) | null = null;
   private removeEventListener: (() => void) | null = null;
   private started = false;
@@ -49,24 +49,24 @@ export class PiRpcSessionKernel implements PiExecutionKernel {
   constructor(
     readonly launchSpec: PiLaunchSpec,
     private readonly callbacks: PiExecutionKernelCallbacks,
-    extensionUiRenderer: PiExtensionUiRenderer | null,
+    extensionUiRenderer: PiExtensionUIRenderer | null,
   ) {
     this.subprocess = new PiSubprocess(launchSpec);
     this.extensionUiRenderer = extensionUiRenderer;
   }
 
-  private readonly extensionUiRenderer: PiExtensionUiRenderer | null;
+  private readonly extensionUiRenderer: PiExtensionUIRenderer | null;
 
   start(): void {
     if (this.started) return;
     this.started = true;
     this.subprocess.start();
-    const transport = new PiRpcTransport({
+    const transport = new PiRPCTransport({
       input: this.subprocess.stdout,
       onClose: listener => this.subprocess.onClose(listener),
       output: this.subprocess.stdin,
     });
-    const extensionBridge = new PiExtensionUiBridge(
+    const extensionBridge = new PiExtensionUIBridge(
       transport,
       this.extensionUiRenderer,
       chunk => this.callbacks.onExtensionChunk(chunk),
@@ -100,7 +100,7 @@ export class PiRpcSessionKernel implements PiExecutionKernel {
     return this.#requireTransport().request(type, payload, timeoutMs, signal);
   }
 
-  send(record: PiRpcRecord): void {
+  send(record: PiRPCRecord): void {
     this.#requireTransport().send(record);
   }
 
@@ -122,7 +122,7 @@ export class PiRpcSessionKernel implements PiExecutionKernel {
     await this.subprocess.shutdown();
   }
 
-  #requireTransport(): PiRpcTransport {
+  #requireTransport(): PiRPCTransport {
     if (!this.transport) {
       throw new Error('Pi execution kernel is not started');
     }
@@ -134,7 +134,7 @@ export const createPiExecutionKernel: PiExecutionKernelFactory = (
   launchSpec,
   callbacks,
   extensionUiRenderer,
-) => new PiRpcSessionKernel(
+) => new PiRPCSessionKernel(
   launchSpec,
   callbacks,
   extensionUiRenderer,

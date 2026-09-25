@@ -27,7 +27,7 @@ export interface CollabProjectBase {
   createdAt: CollabIsoTimestamp;
 }
 
-export interface CollabLanProject extends CollabProjectBase {
+export interface CollabLANProject extends CollabProjectBase {
   authorityGeneration: number;
   authorityKind: 'lan';
   hostMemberId: CollabMemberId;
@@ -39,7 +39,7 @@ export interface CollabCloudProject extends CollabProjectBase {
   authorityKind: 'cloud';
 }
 
-export type CollabProject = CollabLanProject | CollabCloudProject;
+export type CollabProject = CollabLANProject | CollabCloudProject;
 
 export type CollabManagerResponsibilityPurpose =
   | 'manager-promotion'
@@ -114,8 +114,8 @@ export interface CollabProjectSnapshotBase {
 }
 
 /** Client projection for the existing LAN authority. */
-export interface CollabLanProjectSnapshot extends CollabProjectSnapshotBase {
-  project: CollabLanProject;
+export interface CollabLANProjectSnapshot extends CollabProjectSnapshotBase {
+  project: CollabLANProject;
   hostTransfer?: CollabHostTransferSummary;
   managerResponsibilityOffer?: CollabManagerResponsibilityOfferSummary;
 }
@@ -126,12 +126,12 @@ export interface CollabCloudProjectSnapshot extends CollabProjectSnapshotBase {
 }
 
 export type CollabProjectSnapshot =
-  | CollabLanProjectSnapshot
+  | CollabLANProjectSnapshot
   | CollabCloudProjectSnapshot;
 
-export function isCollabLanProjectSnapshot(
+export function isCollabLANProjectSnapshot(
   snapshot: CollabProjectSnapshot,
-): snapshot is CollabLanProjectSnapshot {
+): snapshot is CollabLANProjectSnapshot {
   return snapshot.project.authorityKind === 'lan';
 }
 

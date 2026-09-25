@@ -13,20 +13,20 @@ import { advancingTestClock, testClock, testDate, testTime } from '@test/helpers
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ClaudianCollabService, CollabProjectSetupService, createCollabFeatureSubcomposition as createProductionFeatureSubcomposition } from '@/app/collab';
-import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
+import { SQLJSProjectDatabase } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
 import { authorityTransferChildIdempotencyKey } from '@/app/collab/authority-transfer/AuthorityTransferOperationIdentity';
 import { createAuthorityTransferRecord } from '@/app/collab/authority-transfer/AuthorityTransferRecord';
 import { createAuthorityTransferCheckpointManifest } from '@/app/collab/authority-transfer/checkpoint/AuthorityTransferCheckpointManifest';
-import { createCloudToLanTargetEntry, handoffCloudToLanTargetEntry, publishCloudToLanTargetEntry } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLanTransferEntryRecord';
-import { ProductionCloudToLanTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLanTargetEffects';
-import { ProductionLanToCloudSourceEffects } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLanToCloudSourceEffects';
+import { createCloudToLANTargetEntry, handoffCloudToLANTargetEntry, publishCloudToLANTargetEntry } from '@/app/collab/authority-transfer/cloud-to-lan/CloudToLANTransferEntryRecord';
+import { ProductionCloudToLANTargetEffects } from '@/app/collab/authority-transfer/cloud-to-lan/ProductionCloudToLANTargetEffects';
+import { ProductionLANToCloudSourceEffects } from '@/app/collab/authority-transfer/lan-to-cloud/ProductionLANToCloudSourceEffects';
 import { rotateAuthorityTransferOrigin } from '@/app/collab/git/CollabGitOriginPolicy';
 import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
-import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
-import { listPrivateIpv4Addresses } from '@/app/collab/lan/LanHostCoordinator';
+import { LANAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LANAuthorityTransferClient';
+import { listPrivateIpv4Addresses } from '@/app/collab/lan/LANHostCoordinator';
 import type { CloudAuthorityConnection } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
-import { cloudProjectGitRemoteUrl } from '@/app/collab/remote-authority/CloudAuthorityUrls';
+import { cloudProjectGitRemoteURL } from '@/app/collab/remote-authority/CloudAuthorityURLs';
 
 export const PROJECT_ID = 'project-production-effects';
 
@@ -255,7 +255,7 @@ export function productionAuthorityTransferFixture() {
       principalId: 'vault-source-credential',
       projectId: PROJECT_ID,
     } as unknown as CloudAuthorityConnection;
-    const sourceEffects = new ProductionLanToCloudSourceEffects({
+    const sourceEffects = new ProductionLANToCloudSourceEffects({
       cloudSession: noopSession,
       convergence: {} as AuthorityTransferLocalConvergence,
       foundation: sourceFoundation,
@@ -488,13 +488,13 @@ export function productionAuthorityTransferFixture() {
       'remote',
       'set-url',
       'origin',
-      cloudProjectGitRemoteUrl(cloudServerUrl, PROJECT_ID),
+      cloudProjectGitRemoteURL(cloudServerUrl, PROJECT_ID),
     ]);
     await targetFoundation.local.projects.saveMembership({
       authority: {
         authorityGeneration: cloudGeneration,
         bindingVersion: COLLAB_CLOUD_BINDING_VERSION,
-        gitRemoteUrl: cloudProjectGitRemoteUrl(cloudServerUrl, PROJECT_ID),
+        gitRemoteUrl: cloudProjectGitRemoteURL(cloudServerUrl, PROJECT_ID),
         kind: 'cloud',
         serverUrl: cloudServerUrl,
         wireVersion: COLLAB_PROTOCOL_VERSION,
@@ -556,7 +556,7 @@ export function productionAuthorityTransferFixture() {
       targetFoundation.lanHost,
       'transitionAuthorityTransferRoute',
     );
-    const targetEffects = new ProductionCloudToLanTargetEffects({
+    const targetEffects = new ProductionCloudToLANTargetEffects({
       cloudSession,
       convergence,
       foundation: targetFoundation,
@@ -628,7 +628,7 @@ export function productionAuthorityTransferFixture() {
       cloudSession,
       environment,
       get foundation() { return targetFoundation; },
-      recoveringEffects: () => new ProductionCloudToLanTargetEffects({
+      recoveringEffects: () => new ProductionCloudToLANTargetEffects({
         cloudSession: null,
         convergence: recoveryConvergence,
         foundation: targetFoundation,
@@ -738,7 +738,7 @@ export function productionAuthorityTransferFixture() {
       status: completedStatus,
     });
     await targetFoundation.local.projects.authorityTransferRecords.save(completedRecord);
-    const targetEntry = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
+    const targetEntry = publishCloudToLANTargetEntry(createCloudToLANTargetEntry({
       createdAt: testTime({ days: 1 }),
       expiresAt: completedStatus.expiresAt,
       operationIntentId: 'intent-production-target-preparation',
@@ -755,7 +755,7 @@ export function productionAuthorityTransferFixture() {
       targetUrl: stagedRecord.status.targetUrl,
     });
     await targetFoundation.local.projects.authorityTransferEntries.saveTarget(
-      handoffCloudToLanTargetEntry(targetEntry, completedRecord),
+      handoffCloudToLANTargetEntry(targetEntry, completedRecord),
     );
     return Object.assign(target, {
       completedRecord, relinquishmentProof, staged, targetEntry,
@@ -837,7 +837,7 @@ export function productionAuthorityTransferFixture() {
       expect(new URL(recoveredRoute.endpoint).hostname).toBe('127.0.0.1');
       expect(recoveredRoute.endpoint).not.toBe(preRecoveryMembership.authority.endpoint);
     }
-    const claimClient = new LanAuthorityTransferClient({
+    const claimClient = new LANAuthorityTransferClient({
       authorityGeneration: 3,
       caCertificatePem: preRecoveryMembership.authority.hostCaCertificatePem!,
       caFingerprint: preRecoveryMembership.authority.hostCaFingerprint!,
@@ -889,7 +889,7 @@ export function productionAuthorityTransferFixture() {
   ): ClaudianCollabService {
     const service = new ClaudianCollabService({
       createAuthorityDatabase: (authorityDirectory, resourceAdmission) => (
-        new SqlJsProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
+        new SQLJSProjectDatabase(authorityDirectory, { resourceAdmission, loadSqlJs: async () => SQL })
       ),
       getConfiguredGitPath: () => '',
       gitRuntimeResolver,

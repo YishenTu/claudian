@@ -9,8 +9,8 @@ import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
   HostTransferAuthoritySnapshot,
@@ -48,7 +48,7 @@ const priorProof: CollabHostTrustTransitionProof = {
 describe('HostTransferAuthoritySnapshot', () => {
   let SQL: SqlJsStatic;
   let root: string;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
 
   beforeAll(async () => {
     SQL = await initSqlJs();
@@ -58,7 +58,7 @@ describe('HostTransferAuthoritySnapshot', () => {
     root = await mkdtemp(path.join(tmpdir(), 'claudian-host-transfer-snapshot-'));
     const authorityDirectory = path.join(root, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
+    database = new SQLJSProjectDatabase(authorityDirectory, { loadSqlJs: async () => SQL });
     await database.open();
     await database.mutate(connection => {
       new ProjectAuthorityRepository().initialize(connection, {

@@ -17,11 +17,11 @@ import {
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ChatMessage, PermissionMode } from '@/core/types';
 import {
-  AcpExecutionEventNormalizer,
-  type AcpSessionNotification,
-  type AcpUsageUpdate,
-  buildAcpUsageInfo,
-  extractAcpSessionThoughtLevelState,
+  ACPExecutionEventNormalizer,
+  type ACPSessionNotification,
+  type ACPUsageUpdate,
+  buildACPUsageInfo,
+  extractACPSessionThoughtLevelState,
 } from '@/providers/acp';
 
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
@@ -49,14 +49,14 @@ import {
 } from './OpencodeSessionContract';
 import { DefaultOpencodeSessionKernel } from './OpencodeSessionKernel';
 
-export type OpencodeAcpSessionKernelFactory = (
+export type OpencodeACPSessionKernelFactory = (
   options: OpencodeSessionKernelOptions,
 ) => OpencodeSessionKernel;
 
 export interface OpencodeExecutionSessionOptions {
   readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setCommandSnapshot'>;
   readonly serverService: OpencodeServerService;
-  readonly createKernel?: OpencodeAcpSessionKernelFactory;
+  readonly createKernel?: OpencodeACPSessionKernelFactory;
 }
 
 class OpencodeExecutionRun implements ProviderExecutionRun {
@@ -67,7 +67,7 @@ class OpencodeExecutionRun implements ProviderExecutionRun {
   terminal = false;
   accepted = false;
   acceptingLiveOutput = false;
-  contextUsage: AcpUsageUpdate | null = null;
+  contextUsage: ACPUsageUpdate | null = null;
   cancellationRequested = false;
   lastSequence = 0;
   abortCleanup: (() => void) | null = null;
@@ -128,7 +128,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
   readonly providerId = 'opencode' as const;
   readonly sessionInstanceId = randomUUID();
 
-  private readonly createKernel: OpencodeAcpSessionKernelFactory;
+  private readonly createKernel: OpencodeACPSessionKernelFactory;
   private readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
   private activeRun: OpencodeExecutionRun | null = null;
   private kernel: OpencodeSessionKernel | null = null;
@@ -374,7 +374,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       run.nativeCompleted = response.stopReason !== 'cancelled';
       run.accept(response.userMessageId ?? undefined);
       if (response.usage) {
-        const usage = buildAcpUsageInfo({
+        const usage = buildACPUsageInfo({
           contextWindow: run.contextUsage,
           model: this.#resolveSelectedRawModelId(request.configuration.model) ?? undefined,
           promptUsage: response.usage,
@@ -458,7 +458,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
   private async handleNotification(
     generation: number,
     run: OpencodeExecutionRun,
-    notification: AcpSessionNotification,
+    notification: ACPSessionNotification,
   ): Promise<void> {
     if (
       !this.#isRunCurrent(run, generation)
@@ -523,18 +523,18 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
 
   private readonly runNormalizers = new WeakMap<
     OpencodeExecutionRun,
-    AcpExecutionEventNormalizer
+    ACPExecutionEventNormalizer
   >();
 
   #getRunNormalizer(
     run: OpencodeExecutionRun,
-  ): AcpExecutionEventNormalizer {
+  ): ACPExecutionEventNormalizer {
     let normalizer = this.runNormalizers.get(run);
     if (!normalizer) {
-      normalizer = new AcpExecutionEventNormalizer({
+      normalizer = new ACPExecutionEventNormalizer({
         mapUsage: (usage) => {
           if (run.acceptingLiveOutput) run.contextUsage = usage;
-          return buildAcpUsageInfo({
+          return buildACPUsageInfo({
             contextWindow: usage,
             model: this.#resolveSelectedRawModelId(undefined) ?? undefined,
           });
@@ -581,7 +581,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
       });
     }
 
-    const thoughtState = extractAcpSessionThoughtLevelState({ configOptions });
+    const thoughtState = extractACPSessionThoughtLevelState({ configOptions });
     if (
       request.configuration.reasoning
       && thoughtState.configId

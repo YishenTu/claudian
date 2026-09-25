@@ -1,6 +1,6 @@
 import { type CollabIdempotencyKey, type CollabMemberId, isCollabMemberId, isCollabOpaqueId } from '@claudian-collab/protocol';
 
-import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SqlJsProjectDatabase';
+import type { AuthorityDatabaseConnection } from '@/app/collab/authority/SQLJSProjectDatabase';
 import { type CollabOperationKind } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 

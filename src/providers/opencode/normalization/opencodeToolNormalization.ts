@@ -15,8 +15,8 @@ import {
 import type { AskUserAnswers, AskUserQuestionItem } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import {
-  type AcpResolvedToolRawName,
-  AcpToolStreamAdapter,
+  type ACPResolvedToolRawName,
+  ACPToolStreamAdapter,
 } from '../../acp';
 
 const TOOL_NAME_MAP: Record<string, string> = {
@@ -244,12 +244,12 @@ function extractToolMetadata(rawOutput: unknown): Record<string, unknown> | null
 }
 
 export function resolveOpencodeRawToolName(
-  currentRawName: AcpResolvedToolRawName | undefined,
+  currentRawName: ACPResolvedToolRawName | undefined,
   update: {
     kind?: string | null;
     title?: string | null;
   },
-): AcpResolvedToolRawName {
+): ACPResolvedToolRawName {
   const titleName = firstTrimmedString(update.title);
   const knownTitleName = titleName && isKnownToolName(titleName)
     ? titleName.trim().toLowerCase()
@@ -416,8 +416,8 @@ export function normalizeOpencodeToolUseResult(
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
-export function createOpencodeToolStreamAdapter(): AcpToolStreamAdapter {
-  return new AcpToolStreamAdapter({
+export function createOpencodeToolStreamAdapter(): ACPToolStreamAdapter {
+  return new ACPToolStreamAdapter({
     normalizeToolInput: normalizeOpencodeToolInput,
     normalizeToolName: normalizeOpencodeToolName,
     normalizeToolUseResult: normalizeOpencodeToolUseResult,

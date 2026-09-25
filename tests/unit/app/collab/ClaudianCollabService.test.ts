@@ -4,18 +4,18 @@ import { testTime } from '@test/helpers/testClock';
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-jest.mock('@/app/collab/lan/CollabHttpClient', () => {
-  const actual = jest.requireActual('@/app/collab/lan/CollabHttpClient');
+jest.mock('@/app/collab/lan/CollabHTTPClient', () => {
+  const actual = jest.requireActual('@/app/collab/lan/CollabHTTPClient');
   return {
     ...actual,
-    PinnedCollabHttpClient: jest.fn().mockImplementation(() => ({
+    PinnedCollabHTTPClient: jest.fn().mockImplementation(() => ({
       requestWithMember: jest.fn(),
     })),
   };
 });
 
-const { PinnedCollabHttpClient } = jest.requireMock('@/app/collab/lan/CollabHttpClient') as {
-  PinnedCollabHttpClient: jest.Mock;
+const { PinnedCollabHTTPClient } = jest.requireMock('@/app/collab/lan/CollabHTTPClient') as {
+  PinnedCollabHTTPClient: jest.Mock;
 };
 
 async function admitProjectRecovery(
@@ -153,7 +153,7 @@ describe('ClaudianCollabService retirement recovery', () => {
           retiredAt: testTime({ days: -14 }),
         },
       }));
-    PinnedCollabHttpClient.mockImplementationOnce(() => ({ requestWithMember }));
+    PinnedCollabHTTPClient.mockImplementationOnce(() => ({ requestWithMember }));
 
     await expect(service.retireProject({
       projectId: 'project-a',

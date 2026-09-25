@@ -14,8 +14,8 @@ import { MembershipAdminService } from '@/app/collab/authority/MembershipAdminSe
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import {
   type AuthorityDatabaseConnection,
-  SqlJsProjectDatabase,
-} from '@/app/collab/authority/SqlJsProjectDatabase';
+  SQLJSProjectDatabase,
+} from '@/app/collab/authority/SQLJSProjectDatabase';
 import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type { LocalExitProjectStorePort } from '@/app/collab/exit/LocalExitStores';
@@ -30,7 +30,7 @@ import {
   ManagerResponsibilityOperationCoordinator,
 } from '@/app/collab/membership/ManagerResponsibilityOperationCoordinator';
 import type { LeaveProjectInput } from '@/app/collab/membership/MembershipControlClient';
-import type { CollabLanProjectSnapshot } from '@/core/collab';
+import type { CollabLANProjectSnapshot } from '@/core/collab';
 import { type CollabLocalCleanupStatus } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
@@ -39,7 +39,7 @@ const CREDENTIAL = 'c'.repeat(43);
 
 describe('pending Leave commit-then-lost-response recovery', () => {
   let SQL: SqlJsStatic;
-  let database: SqlJsProjectDatabase;
+  let database: SQLJSProjectDatabase;
   let vaultRoot: string;
 
   beforeAll(async () => {
@@ -50,7 +50,7 @@ describe('pending Leave commit-then-lost-response recovery', () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-pending-leave-recovery-'));
     const authorityDirectory = path.join(vaultRoot, 'authority');
     await mkdir(authorityDirectory);
-    database = new SqlJsProjectDatabase(authorityDirectory, {
+    database = new SQLJSProjectDatabase(authorityDirectory, {
       loadSqlJs: async () => SQL,
     });
     await database.open();
@@ -105,7 +105,7 @@ describe('pending Leave commit-then-lost-response recovery', () => {
       phase: 'queued',
       schemaVersion: 2,
     });
-    await expect(readPendingLeaveJson(vaultRoot)).resolves.toMatchObject({
+    await expect(readPendingLeaveJSON(vaultRoot)).resolves.toMatchObject({
       authorityReplay: {
         idempotencyManagerMemberId: 'member-host',
       },
@@ -270,7 +270,7 @@ describe('pending Leave commit-then-lost-response recovery', () => {
 });
 
 function recoveryHarness(input: {
-  readonly database: SqlJsProjectDatabase;
+  readonly database: SQLJSProjectDatabase;
   readonly localMembership: CollabLocalMembershipRecord;
   readonly managerSetGeneration: number;
   readonly membership: MembershipAdminService;
@@ -426,7 +426,7 @@ function snapshot(
   memberId: string,
   role: 'manager' | 'member',
   managerSetGeneration: number,
-): CollabLanProjectSnapshot {
+): CollabLANProjectSnapshot {
   return {
     currentMember: {
       activatedAt: NOW,
@@ -476,7 +476,7 @@ function credentialHash(credential: string): Uint8Array {
 }
 
 function memberStatus(
-  database: SqlJsProjectDatabase,
+  database: SQLJSProjectDatabase,
   memberId: string,
 ): Promise<unknown> {
   return database.read(connection => connection.get(
@@ -485,7 +485,7 @@ function memberStatus(
   )?.status);
 }
 
-function activeManagers(database: SqlJsProjectDatabase): Promise<readonly string[]> {
+function activeManagers(database: SQLJSProjectDatabase): Promise<readonly string[]> {
   return database.read(connection => connection.all(`
     SELECT member_id
     FROM members
@@ -530,7 +530,7 @@ async function writeLegacyPendingLeave(
   }));
 }
 
-async function readPendingLeaveJson(
+async function readPendingLeaveJSON(
   vaultRoot: string,
 ): Promise<Readonly<Record<string, unknown>>> {
   return JSON.parse(await readFile(path.join(
