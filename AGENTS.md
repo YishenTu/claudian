@@ -2,7 +2,7 @@
 
 ## Loading and verification
 
-- Read ancestor guides and any nested guide governing the files you change. Tests also use their source owner's guides; they do not inherit `src/` instructions automatically.
+- Tests follow the guides of the source they cover; they do not inherit `src/` instructions automatically.
 - Build, dependency, lockfile, locale/static-asset import, and `esbuild.config.mjs` changes also require `scripts/AGENTS.md`. Composition changes require the guides of the services being wired.
 - Use the Node version in `.node-version`. For code changes, the full verification command is:
 
@@ -31,8 +31,6 @@ npm run typecheck && npm run lint && npm run test && npm run test:lan-compatibil
 ## Regression verification
 
 - For behavior changes, demonstrate the intended failing regression before implementation and rerun it afterward. Documentation/mechanical changes are exempt; when automation is infeasible, record a repeatable reproduction and verify the nearest stable contract.
-- Do not weaken tests to hide failures. Correct an expectation when the requested behavior or independent contract evidence justifies it; explain that evidence. Ask only when intended behavior remains ambiguous.
-- Report the checks actually run and any remaining verification gaps.
 
 ## Instruction maintenance
 
