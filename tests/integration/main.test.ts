@@ -995,6 +995,24 @@ describe('ClaudianPlugin', () => {
       expect(afterBackgroundLoad?.title).toBe(backgroundMetadata.title);
     });
 
+    it('does not start the background metadata scan when unloaded before the scheduled load runs', async () => {
+      let layoutReady!: () => void;
+      mockApp.workspace.onLayoutReady = jest.fn((callback: () => void) => {
+        layoutReady = callback;
+      });
+      const scanSpy = jest.spyOn(SessionStorage.prototype, 'scan')
+        .mockResolvedValue({ records: [], complete: true, invalidMetadataCount: 0 });
+
+      await plugin.onload();
+      layoutReady();
+      plugin.onunload();
+      await new Promise(resolve => setTimeout(resolve, 5));
+      const scanCallCount = scanSpy.mock.calls.length;
+      scanSpy.mockRestore();
+
+      expect(scanCallCount).toBe(0);
+    });
+
     it('publishes an unavailable Claude selection without silently persisting a fallback', async () => {
       const deferredMetadata = {
         id: 'deferred-retired-model',

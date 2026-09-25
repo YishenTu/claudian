@@ -25,9 +25,10 @@ export interface SessionMetadataLoaderOptions {
 }
 
 /**
- * Owns session-metadata adoption into the conversation repository: the
- * startup scan, the deferred background scan after layout, and on-demand
- * loading of individual conversations.
+ * Loads session metadata for the conversation repository. It reads the
+ * startup scan for `loadSettings`, which still adopts those records itself,
+ * and owns the deferred background scan after layout and on-demand loading
+ * of individual conversations.
  */
 export class SessionMetadataLoader {
   private pendingScan = false;
@@ -80,7 +81,7 @@ export class SessionMetadataLoader {
     }
   }
 
-  async loadRemaining(): Promise<void> {
+  private async loadRemaining(): Promise<void> {
     const { conversations, runtimeSettings } = this.options;
     const addedConversations: Conversation[] = [];
     const invalidatedConversations: Conversation[] = [];
