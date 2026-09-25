@@ -229,6 +229,7 @@ function findResolvedImportViolations(roots, isForbidden, allowedImports = new S
 
 const sourceRoot = path.join(process.cwd(), 'src');
 const appRoot = path.join(sourceRoot, 'app');
+const compositionRoot = path.join(sourceRoot, 'composition');
 const featuresRoot = path.join(sourceRoot, 'features');
 const providersRoot = path.join(sourceRoot, 'providers');
 
@@ -325,6 +326,26 @@ test('app avoids features and provider implementations outside default assembly'
 test('features are independent from the composition root and app adapters', () => {
   const pattern = /from\s+['"][^'"]*(?:main['"]|app\/)/;
   assert.deepEqual(findMatches([path.join(sourceRoot, 'features')], pattern), []);
+});
+
+test('only main and composition modules import composition wiring', () => {
+  const roots = fs.readdirSync(sourceRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && entry.name !== 'composition')
+    .map(entry => path.join(sourceRoot, entry.name));
+  assert.deepEqual(findResolvedImportViolations(
+    roots,
+    target => isPathWithin(target, compositionRoot),
+  ), []);
+});
+
+test('composition modules do not import main or concrete providers', () => {
+  assert.deepEqual(findResolvedImportViolations(
+    [compositionRoot],
+    target => (
+      normalizeModuleTarget(target) === path.join(sourceRoot, 'main')
+      || isPathWithin(target, providersRoot)
+    ),
+  ), []);
 });
 
 test('Collab Host installation authority stays outside membership and presentation', () => {
@@ -492,9 +513,13 @@ test('ordinary main evaluation cannot reach Collab runtime foundations', () => {
 
   assert.deepEqual(eagerGraph.filter(file => isPathWithin(file, collabAppRoot)), []);
   assert.deepEqual(heavyImports, []);
+  const collabCompositionFile = path.join(compositionRoot, 'ClaudianCollabComposition.ts');
+  assert.ok(eagerGraph.includes(collabCompositionFile));
   assert.ok(
-    listSourceImports(mainFile).some(sourceImport => (
-      sourceImport.dynamic && sourceImport.specifier === './app/collab'
+    listSourceImports(collabCompositionFile).some(sourceImport => (
+      sourceImport.dynamic
+      && resolveSourceImport(collabCompositionFile, sourceImport.specifier)
+        === path.join(appRoot, 'collab')
     )),
   );
   const collabReviewRoot = path.join(featuresRoot, 'collab', 'detail', 'review');

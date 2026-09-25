@@ -16,7 +16,8 @@ npm run typecheck && npm run lint && npm run test && npm run build && npm run ch
 ## Architectural constraints
 
 - `src/main.ts` is the sole concrete composition root and lifecycle publisher. App subcomposition returns complete domains, never a second root or service locator.
-- App repositories/settings/storage depend on core contracts, not feature orchestration or provider-native protocols. Concrete provider imports are confined to composition and provider-default assembly.
+- `src/composition/` holds main-owned wiring that must reach both `app/` and `features/`. Only `main.ts` and other composition modules import it; it never imports `main.ts` or concrete providers, and `main.ts` still constructs, registers, and tears it down.
+- App repositories/settings/storage depend on core contracts, not feature orchestration or provider-native protocols. Concrete provider imports are confined to `main.ts` and provider-default assembly.
 - Features use `FeatureHost` and core registries, never concrete app/provider implementations. Providers use `ProviderHost`, never feature orchestration. Core imports none of these implementations.
 - Existing Claude compatibility re-exports into app settings/storage are exceptions, not precedent. Do not extend them; move shared contracts to core when materially changing those seams.
 - Shared ACP code contains protocol mechanics and protocol-level normalization only; provider launch policy, extensions, provider-specific normalization, and history stay provider-owned.
