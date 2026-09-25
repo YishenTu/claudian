@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs from 'sql.js';
 
 import { ImportedMembershipClaimRepository } from '@/app/collab/authority/ImportedMembershipClaimRepository';
@@ -11,7 +12,7 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 
 const PROJECT_ID = 'project-recovery';
-const NOW = '2026-09-14T00:00:00.000Z';
+const NOW = testTime({ days: 18 });
 const HOST = 'member-host';
 const MEMBER = 'member-offline';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -36,7 +37,7 @@ describe('ImportedMembershipClaimRepository', () => {
           VALUES (?, 'Offline', ?, 'member', 'active', 'unbound', NULL, ?, ?)`, [MEMBER, `refs/heads/members/${MEMBER}`, NOW, NOW]);
         claims.initialize(connection, {
           projectId: PROJECT_ID, authorityGeneration: 4, transferId: 'transfer-return-to-lan',
-          checkpointSha256: 'b'.repeat(64), sourceClaimsExpireAt: '2026-09-01T00:00:00.000Z',
+          checkpointSha256: 'b'.repeat(64), sourceClaimsExpireAt: testTime({ days: 5 }),
           receiptPrivateKey: key.privateKey.export({ format: 'der', type: 'pkcs8' }).toString('base64url'),
           receiptKeyId: 'key-recovery',
         });

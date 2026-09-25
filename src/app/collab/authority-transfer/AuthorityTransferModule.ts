@@ -589,6 +589,7 @@ export class AuthorityTransferModule {
         isLocalOwner: record => this.#isAuthorityTransferClaimantLocalOwner(record),
         resume: (record, recoveryOptions) => this.claimants.resume(record, recoveryOptions),
       },
+      this.now,
     );
     this.transferRecovery.register(options.lifecycle);
     this.claimantRecovery.register(options.lifecycle);

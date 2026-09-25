@@ -6,6 +6,7 @@ import {
   TEST_INSTALLATION_A,
   TEST_INSTALLATION_B,
 } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
@@ -25,7 +26,7 @@ const membership = {
     hostCaFingerprint: 'a'.repeat(64),
     kind: 'lan' as const,
   },
-  createdAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
   hostOwnership: { ownsAuthority: false },
   lastEventSequence: 1,
   member: {
@@ -37,7 +38,7 @@ const membership = {
   },
   project: { id: 'project-a', name: 'Project A', workspacePath: 'workspace/a' },
   schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  updatedAt: testTime({ days: -14 }),
 } satisfies CollabLocalLanMembershipRecord;
 
 const coordination = {
@@ -132,7 +133,7 @@ describe('HostTransferModule', () => {
 
   it('rejects foreign recovery before invoking coordinator effects', async () => {
     const record = createHostTransferRecoveryRecord({
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       direction: 'incoming',
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-a',
@@ -165,7 +166,7 @@ describe('HostTransferModule', () => {
 
   it('skips a foreign synchronized recovery record during client startup recovery', async () => {
     const record = createHostTransferRecoveryRecord({
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       direction: 'incoming',
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-a',
@@ -195,7 +196,7 @@ describe('HostTransferModule', () => {
 
   it('surfaces an ownerless incoming legacy recovery record during client startup recovery', async () => {
     const current = createHostTransferRecoveryRecord({
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       direction: 'incoming',
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: 'project-a',

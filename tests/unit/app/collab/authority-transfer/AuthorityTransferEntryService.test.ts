@@ -15,7 +15,7 @@ function status(
     batchRevision: state === 'completed' ? 1 : null,
     batchSha256: state === 'completed' ? 'b'.repeat(64) : null,
     checkpointSha256: state === 'completed' ? 'a'.repeat(64) : null,
-    createdAt: '2026-09-02T00:00:00.000Z',
+    createdAt: testTime({ days: 6 }),
     direction: 'lan-to-cloud',
     expiresAt: testTime({ days: 36 }),
     phase: state === 'completed' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'collecting-readiness',
@@ -26,7 +26,7 @@ function status(
     targetAuthority: { generation: 8, kind: 'cloud' },
     targetUrl: SERVER_URL,
     transferId: 'transfer-entry-service',
-    updatedAt: '2026-09-02T00:00:01.000Z',
+    updatedAt: testTime({ days: 6, seconds: 1 }),
   } as CollabAuthorityTransferStatus;
 }
 
@@ -40,7 +40,7 @@ function lanMembership() {
       hostCaFingerprint: 'a'.repeat(64),
       kind: 'lan' as const,
     },
-    createdAt: '2026-09-02T00:00:00.000Z',
+    createdAt: testTime({ days: 6 }),
     hostOwnership: { ownsAuthority: true },
     lastEventSequence: 1,
     member: {
@@ -52,7 +52,7 @@ function lanMembership() {
     },
     project: { id: PROJECT_ID, name: 'Entry', workspacePath: 'workspace/entry' },
     schemaVersion: 3 as const,
-    updatedAt: '2026-09-02T00:00:00.000Z',
+    updatedAt: testTime({ days: 6 }),
   };
 }
 

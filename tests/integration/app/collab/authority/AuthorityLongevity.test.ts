@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -26,14 +27,14 @@ it('replays a durable retained tail after restart and reuses its storage across 
   const events = new AuthorityEventRepository();
   const append = (count: number) => database.mutate(connection => {
     for (let index = 0; index < count; index++) events.append(connection, {
-      actorMemberId: 'member-a', createdAt: '2026-08-13T00:00:00.000Z',
+      actorMemberId: 'member-a', createdAt: testTime({ days: -14 }),
       kind: 'request.updated', payload: { requestId: 'request-a' },
     });
   });
   try {
     await database.open();
     await database.mutate(connection => new ProjectAuthorityRepository().initialize(connection, {
-      createdAt: '2026-08-13T00:00:00.000Z', hostCredentialHash: new Uint8Array(32).fill(1),
+      createdAt: testTime({ days: -14 }), hostCredentialHash: new Uint8Array(32).fill(1),
       hostDisplayName: 'Member', hostMemberId: 'member-a', name: 'Project', projectId: 'project-a',
     }));
     await append(601);

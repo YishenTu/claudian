@@ -363,7 +363,7 @@ describe('CloudProjectEntryCoordinator', () => {
         const publication = await projects.loadProjectDocument(PROJECT_ID, 'publication-state', decodeCollabPublicationStateRecord);
         if (publication) {
           await projects.saveProjectDocument(PROJECT_ID, 'publication-state', {
-            ...publication, updatedAt: '2026-09-01T01:00:00.000Z',
+            ...publication, updatedAt: testTime({ days: 5, hours: 1 }),
           });
           await writeFile(path.join(fixture.vaultRoot, 'Shared/Projects/cloud-notes/local.md'), 'Preserved after partial finalization\n');
         }

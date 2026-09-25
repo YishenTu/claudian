@@ -150,7 +150,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         serverUrl: cloudServerUrl,
         wireVersion: COLLAB_PROTOCOL_VERSION,
       },
-      createdAt: '2026-08-28T00:00:00.000Z',
+      createdAt: testTime({ days: 1 }),
       lastEventSequence: 0,
       member: {
         displayName: 'Former Host',
@@ -160,12 +160,12 @@ describe('production authority-transfer source and cancellation effects', () => 
       },
       project: { id: PROJECT_ID, name: 'Portable', workspacePath: 'workspace/portable' },
       schemaVersion: 3,
-      updatedAt: '2026-08-28T00:00:00.000Z',
+      updatedAt: testTime({ days: 1 }),
     });
     const formerAuthority = await targetFoundation.createAuthority(PROJECT_ID);
     await formerAuthority.database.mutate(connection => {
       formerAuthority.projects.initialize(connection, {
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
         hostDisplayName: 'Former Host',
         hostMemberId: MEMBER_ID,
@@ -550,7 +550,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           certificate: Buffer.alloc(64, 2).toString('base64url'),
           certificateAlgorithm: 'ed25519',
           checkpointSha256: 'a'.repeat(64),
-          committedAt: '2026-08-28T00:02:00.000Z',
+          committedAt: testTime({ days: 1, minutes: 2 }),
           operationIntentId: OPERATION_ID,
           projectId: PROJECT_ID,
           sourceAuthority: { generation: 1, kind: 'lan' },
@@ -559,7 +559,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           transferId: TRANSFER_ID,
         },
         state: 'completed',
-        updatedAt: '2026-08-28T00:03:00.000Z',
+        updatedAt: testTime({ days: 1, minutes: 3 }),
       },
     });
     const events: string[] = [];
@@ -574,6 +574,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       load: jest.fn(async (_id: string, transferId?: string) => settled && !transferId ? null : completedRecord),
     };
     const effects = new ProductionLanToCloudSourceEffects({
+      now: testClock({ days: 3 }),
       cloudSession: null,
       convergence,
       foundation: {
@@ -641,7 +642,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           certificate: Buffer.alloc(64, 2).toString('base64url'),
           certificateAlgorithm: 'ed25519',
           checkpointSha256: 'a'.repeat(64),
-          committedAt: '2026-08-28T00:02:00.000Z',
+          committedAt: testTime({ days: 1, minutes: 2 }),
           operationIntentId: OPERATION_ID,
           projectId: PROJECT_ID,
           sourceAuthority: { generation: 1, kind: 'lan' },
@@ -650,7 +651,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           transferId: TRANSFER_ID,
         },
         state: 'completed',
-        updatedAt: '2026-08-28T00:03:00.000Z',
+        updatedAt: testTime({ days: 1, minutes: 3 }),
       },
     });
     let currentRecord = completedRecord;
@@ -744,7 +745,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           ) VALUES (
             'member-production-peer', 'Bob',
             'refs/heads/members/member-production-peer', 'member', 'active', ?,
-            NULL, '2026-08-08T00:00:00.000Z', '2026-08-08T00:00:00.000Z', NULL
+            NULL, '${testTime({ days: -19 })}', '${testTime({ days: -19 })}', NULL
           )
         `, [createHash('sha256').update(peerCredential, 'utf8').digest()]);
       });
@@ -917,8 +918,8 @@ describe('production authority-transfer source and cancellation effects', () => 
         throw new Error(`Unexpected Cloud operation ${operation}`);
       });
       const currentMember = {
-        activatedAt: '2026-08-08T00:00:00.000Z',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        activatedAt: testTime({ days: -19 }),
+        createdAt: testTime({ days: -19 }),
         displayName: 'Alice',
         id: MEMBER_ID,
         personalRef: `refs/heads/members/${MEMBER_ID}`,
@@ -950,7 +951,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           project: {
             authorityGeneration: 2,
             authorityKind: 'cloud',
-            createdAt: '2026-08-08T00:00:00.000Z',
+            createdAt: testTime({ days: -19 }),
             id: PROJECT_ID,
             mainOid,
             mainRef: 'refs/heads/main',
@@ -1014,6 +1015,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       await sourceFoundation.lanHost.stopAuthorityTransferRoute(PROJECT_ID, 'terminal-source', exact.transferId);
       const routeStart = jest.spyOn(sourceFoundation.lanHost, 'startAuthorityTransferRoute');
       await new ProductionLanToCloudSourceEffects({
+        now: sourceFoundation.now,
         cloudSession: null, foundation: sourceFoundation, persistence: sourceFoundation.authorityTransfers,
         convergence: {} as AuthorityTransferLocalConvergence, projectId: PROJECT_ID,
       }).restoreRetained(exact);
@@ -1228,7 +1230,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           authorityTransfer: (async (operation: string, request: { expectedPhase: string }) => {
             if (operation !== 'cancelProjectAuthorityTransfer') throw new Error('Unexpected Cloud operation');
             if (request.expectedPhase !== 'target-cleaned') {
-              return { ...transferStatus, phase: 'target-cleaned', updatedAt: '2026-08-28T00:01:00.000Z' };
+              return { ...transferStatus, phase: 'target-cleaned', updatedAt: testTime({ days: 1, minutes: 1 }) };
             }
             expect(reopenedFoundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(true);
             const saved = await reopenedFoundation.authorityTransfers.loadSourceEntry(PROJECT_ID);
@@ -1239,7 +1241,7 @@ describe('production authority-transfer source and cancellation effects', () => 
               interrupted = true;
               throw new Error(fault);
             }
-            return { ...transferStatus, phase: 'cancelled', state: 'cancelled', updatedAt: '2026-08-28T00:02:00.000Z' };
+            return { ...transferStatus, phase: 'cancelled', state: 'cancelled', updatedAt: testTime({ days: 1, minutes: 2 }) };
           }) as CollabAuthorityLifecyclePort['authorityTransfer'],
         };
         const createCoordinator = () => new LanToCloudSourceCoordinator({
@@ -1601,7 +1603,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         request: { projectId: PROJECT_ID, expectedAuthorityGeneration: generation - 1, idempotencyKey: `round-${generation}`, targetUrl: 'https://cloud.example.test/' },
       }));
       const proofBase = { batchRevision: 1, batchSha256: 'b'.repeat(64), checkpointSha256: 'a'.repeat(64),
-        certificateAlgorithm: 'ed25519' as const, committedAt: '2026-08-28T00:01:00.000Z',
+        certificateAlgorithm: 'ed25519' as const, committedAt: testTime({ days: 1, minutes: 1 }),
         operationIntentId: `round-${generation}`, projectId: PROJECT_ID, transferId: TRANSFER_ID };
       const toCloud: CollabAuthorityTransferStatus = { ...status('lan-to-cloud', 'completed', 'https://cloud.example.test/'), state: 'completed',
         sourceAuthority: { kind: 'lan', generation: generation - 1 }, targetAuthority: { kind: 'cloud', generation },

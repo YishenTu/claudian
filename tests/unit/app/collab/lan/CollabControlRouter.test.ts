@@ -19,7 +19,7 @@ const MEMBER_CREDENTIAL = Buffer.alloc(32, 3).toString('base64url');
 const REQUEST_ID = 'request-alpha';
 
 function snapshot(): CollabLanProjectSnapshot {
-  const createdAt = '2026-08-08T00:00:00.000Z';
+  const createdAt = testTime({ days: -19 });
   const member = {
     activatedAt: createdAt,
     createdAt,
@@ -91,7 +91,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
         expiresAt: testTime({ days: -19, minutes: 30 }),
         id: request.joinAttemptId,
         member: {
-          createdAt: '2026-08-08T00:00:00.000Z',
+          createdAt: testTime({ days: -19 }),
           displayName: request.displayName,
           id: 'member-second',
           personalRef: 'refs/heads/members/member-second',
@@ -106,13 +106,13 @@ function service(): jest.Mocked<CollabControlProjectService> {
       comment: {
         authorMemberId: 'member-host',
         body: request.body,
-        createdAt: '2026-08-08T00:01:00.000Z',
+        createdAt: testTime({ days: -19, minutes: 1 }),
         id: 'comment-alpha',
         requestId: request.requestId,
       },
       request: {
         commentCount: 1,
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         description: 'Published change',
         firstBaseOid: 'a'.repeat(40),
         id: request.requestId,
@@ -121,7 +121,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
         revision: 0,
         status: 'open' as const,
         ticketRelations: [],
-        updatedAt: '2026-08-08T00:01:00.000Z',
+        updatedAt: testTime({ days: -19, minutes: 1 }),
       },
     })),
     createTicket: jest.fn(),
@@ -137,7 +137,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
       mainOid: request.expectedMainOid,
       request: {
         commentCount: 0,
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         description: request.description,
         firstBaseOid: 'a'.repeat(40),
         id: 'request-member-host',
@@ -146,7 +146,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
         revision: 0,
         status: 'open' as const,
         ticketRelations: [],
-        updatedAt: '2026-08-08T00:00:00.000Z',
+        updatedAt: testTime({ days: -19 }),
       },
     })),
     getTicket: jest.fn(),
@@ -164,7 +164,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
       currentMainOid: 'a'.repeat(40),
       request: {
         commentCount: 0,
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         description: 'Published change',
         firstBaseOid: 'a'.repeat(40),
         id: request.requestId,
@@ -173,7 +173,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
         revision: 0,
         status: 'open' as const,
         ticketRelations: [],
-        updatedAt: '2026-08-08T00:00:00.000Z',
+        updatedAt: testTime({ days: -19 }),
       },
       reviewCondition: 'clean' as const,
       reviewedHeadOid: 'b'.repeat(40),
@@ -470,7 +470,7 @@ describe('CollabControlRouter', () => {
           canCancel: true,
           canDecline: false,
           expiresAt: testTime({ days: -14, minutes: 10 }),
-          offeredAt: '2026-08-13T00:00:00.000Z',
+          offeredAt: testTime({ days: -14 }),
           phase: 'accepted' as const,
           targetMemberId: 'member-target',
           transferId: 'transfer-a',
@@ -519,15 +519,15 @@ describe('CollabControlRouter', () => {
       acknowledgeRetirement: jest.fn(async () => ({
         afterResponseFlushed,
         response: {
-          acknowledgedAt: '2026-08-13T00:01:00.000Z',
+          acknowledgedAt: testTime({ days: -14, minutes: 1 }),
           projectId: PROJECT_ID,
-          retiredAt: '2026-08-13T00:00:00.000Z',
+          retiredAt: testTime({ days: -14 }),
         },
       })),
       getHostTransitions: jest.fn(async () => ({ projectId: PROJECT_ID, proofs: [] })),
       getRetirement: jest.fn(async () => ({
         projectId: PROJECT_ID,
-        retiredAt: '2026-08-13T00:00:00.000Z',
+        retiredAt: testTime({ days: -14 }),
       })),
     };
     router.registerTerminalProject(PROJECT_ID, terminal);
@@ -548,7 +548,7 @@ describe('CollabControlRouter', () => {
         code: 'project-retired',
         safeContext: {
           projectId: PROJECT_ID,
-          retiredAt: '2026-08-13T00:00:00.000Z',
+          retiredAt: testTime({ days: -14 }),
         },
       },
     });
@@ -565,7 +565,7 @@ describe('CollabControlRouter', () => {
         body: JSON.stringify({
           idempotencyKey: 'retirement-ack-alpha',
           projectId: PROJECT_ID,
-          retiredAt: '2026-08-13T00:00:00.000Z',
+          retiredAt: testTime({ days: -14 }),
         }),
         headers: {
           authorization: `Bearer ${MEMBER_CREDENTIAL}`,
@@ -797,7 +797,7 @@ describe('CollabControlRouter', () => {
         comments: Array.from({ length: 6 }, (_value, index) => ({
           authorMemberId: 'member-host',
           body: '\u0001'.repeat(COLLAB_LIMITS.maxCommentBytes),
-          createdAt: '2026-08-08T00:00:00.000Z',
+          createdAt: testTime({ days: -19 }),
           id: `comment-${index}`,
           requestId: 'request-alpha',
         })),
@@ -805,7 +805,7 @@ describe('CollabControlRouter', () => {
       currentMainOid: 'a'.repeat(40),
       request: {
         commentCount: 6,
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         description: 'Oversized detail',
         firstBaseOid: 'a'.repeat(40),
         id: 'request-alpha',
@@ -814,7 +814,7 @@ describe('CollabControlRouter', () => {
         revision: 0,
         status: 'open',
         ticketRelations: [],
-        updatedAt: '2026-08-08T00:00:00.000Z',
+        updatedAt: testTime({ days: -19 }),
       },
       reviewCondition: 'clean',
       reviewedHeadOid: 'b'.repeat(40),

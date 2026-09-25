@@ -14,6 +14,7 @@ import {
 completeCollabPublicationOptions,
 } from '@test/helpers/collab/CollabFeatureTestHarness';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import { WebSocketServer } from 'ws';
 
 import type {
@@ -57,7 +58,7 @@ function publicationOptions(
 
 const CLOUD_PROJECT_ID = 'project-cloud';
 const CLOUD_MEMBER_ID = 'member-cloud';
-const CLOUD_CREATED_AT = '2026-08-24T00:00:00.000Z';
+const CLOUD_CREATED_AT = testTime({ days: -3 });
 const LAN_PROJECT_ID = 'project-lan-lanes';
 const LAN_MEMBER_ID = 'member-lan-lanes';
 const LAN_CREDENTIAL = 'A'.repeat(43);
@@ -799,7 +800,7 @@ describe('CollabPublicationService reconnect', () => {
     }).projection;
     const result = {
       projectId: 'project-a',
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      retiredAt: testTime({ days: -14 }),
     };
 
     await projection.handleRetirement(result, 'terminal-fallback');
@@ -1328,7 +1329,7 @@ function metadataRequest(
 function changeRequest(description: string, revision: number) {
   return {
     commentCount: 0,
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     description,
     firstBaseOid: '1'.repeat(40),
     id: 'request-a',
@@ -1337,7 +1338,7 @@ function changeRequest(description: string, revision: number) {
     revision,
     status: 'open' as const,
     ticketRelations: [],
-    updatedAt: '2026-08-08T00:01:00.000Z',
+    updatedAt: testTime({ days: -19, minutes: 1 }),
   };
 }
 
@@ -1346,12 +1347,12 @@ function requestDraft(
   syncState: CollabRequestDraftRecord['syncState'],
 ): CollabRequestDraftRecord {
   return {
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     description,
     projectId: 'project-a',
     schemaVersion: 1,
     syncState,
-    updatedAt: '2026-08-08T00:01:00.000Z',
+    updatedAt: testTime({ days: -19, minutes: 1 }),
   };
 }
 

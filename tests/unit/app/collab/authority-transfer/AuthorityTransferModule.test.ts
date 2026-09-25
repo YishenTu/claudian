@@ -174,7 +174,7 @@ function recoverableClaimantRecord(input: Readonly<{
     batchRevision: 1,
     batchSha256: 'b'.repeat(64),
     checkpointSha256,
-    createdAt: '2026-08-27T00:00:00.000Z',
+    createdAt: testTime(),
     direction,
     expiresAt: input.expiresAt ?? testTime({ days: 30 }),
     phase: 'completed',
@@ -185,7 +185,7 @@ function recoverableClaimantRecord(input: Readonly<{
       certificate: Buffer.alloc(64, 2).toString('base64url'),
       certificateAlgorithm: 'ed25519',
       checkpointSha256,
-      committedAt: '2026-08-27T00:00:08.000Z',
+      committedAt: testTime({ seconds: 8 }),
       operationIntentId: managerOperationIntentId,
       projectId: PROJECT_ID,
       sourceAuthority,
@@ -198,7 +198,7 @@ function recoverableClaimantRecord(input: Readonly<{
     targetAuthority,
     targetUrl,
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:00:10.000Z',
+    updatedAt: testTime({ seconds: 10 }),
   };
   return decodeAuthorityTransferClaimantRecord({
     convergenceProof: null,
@@ -252,7 +252,7 @@ function recoverableClaimantRecord(input: Readonly<{
           projectId: PROJECT_ID,
           receiptId: 'receipt-claimant-recovery',
           receiptKeyId: 'receipt-key-recovery',
-          redeemedAt: '2026-08-27T00:01:00.000Z',
+          redeemedAt: testTime({ minutes: 1 }),
           signature: Buffer.alloc(64, 3).toString('base64url'),
           signatureAlgorithm: 'ed25519',
           targetAuthorityGeneration: 2,
@@ -265,7 +265,7 @@ function recoverableClaimantRecord(input: Readonly<{
       ? Buffer.alloc(32, 5).toString('base64url')
       : null,
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:01:01.000Z',
+    updatedAt: testTime({ minutes: 1, seconds: 1 }),
     variant: 'source-issued',
   }) as SourceIssuedAuthorityTransferClaimantRecord;
 }
@@ -307,7 +307,7 @@ function proposal(
     batchRevision: null,
     batchSha256: null,
     checkpointSha256: null,
-    createdAt: '2026-08-27T00:00:00.000Z',
+    createdAt: testTime(),
     direction: 'lan-to-cloud',
     expiresAt: testTime({ days: 30 }),
     phase: 'collecting-readiness',
@@ -318,7 +318,7 @@ function proposal(
     targetAuthority: { generation: 2, kind: 'cloud' },
     targetUrl: 'https://cloud.example.test/',
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:00:00.000Z',
+    updatedAt: testTime(),
     ...overrides,
   };
 }
@@ -327,7 +327,7 @@ function managerReissuedDescriptor() {
   return {
     claim: Buffer.alloc(32, 4).toString('base64url'),
     claimGeneration: 4,
-    createdAt: '2026-10-01T00:00:00.000Z',
+    createdAt: testTime({ days: 35 }),
     expiresAt: testTime({ days: 65 }),
     memberId: 'member-host',
     projectId: PROJECT_ID,
@@ -347,7 +347,7 @@ function managerClaimantMembership() {
       hostCaFingerprint: 'a'.repeat(64),
       kind: 'lan' as const,
     },
-    createdAt: '2026-08-27T00:00:00.000Z',
+    createdAt: testTime(),
     hostOwnership: { ownsAuthority: false },
     lastEventSequence: 1,
     member: {
@@ -359,7 +359,7 @@ function managerClaimantMembership() {
     },
     project: { id: PROJECT_ID, name: 'Recovery', workspacePath: 'workspace/recovery' },
     schemaVersion: 3 as const,
-    updatedAt: '2026-08-27T00:00:00.000Z',
+    updatedAt: testTime(),
   };
 }
 
@@ -501,7 +501,7 @@ describe('AuthorityTransferModule', () => {
     const cancelledStatus = proposal({
       phase: 'cancelled',
       state: 'cancelled',
-      updatedAt: '2026-08-27T00:01:00.000Z',
+      updatedAt: testTime({ minutes: 1 }),
     });
     const requestWithMember = jest.fn(async (operation: string, value: unknown) => {
       if (operation === 'getProjectAuthorityTransfer') return cancelledStatus;
@@ -613,7 +613,7 @@ describe('AuthorityTransferModule', () => {
     };
     const requesterEntry = createAuthorityTransferRequesterEntry({
       installationKey: TEST_INSTALLATION_A,
-      proposedAt: '2026-08-27T00:00:00.000Z',
+      proposedAt: testTime(),
       proposedByMemberId: 'member-requester',
       request,
     });
@@ -662,7 +662,7 @@ describe('AuthorityTransferModule', () => {
     };
     const requester = createAuthorityTransferRequesterEntry({
       installationKey: TEST_INSTALLATION_A,
-      proposedAt: '2026-08-27T00:00:00.000Z',
+      proposedAt: testTime(),
       proposedByMemberId: 'member-requester',
       request,
     });
@@ -957,7 +957,7 @@ describe('AuthorityTransferModule', () => {
           serverUrl: 'https://cloud.example.test/',
           wireVersion: 15,
         },
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         lastEventSequence: 1,
         member: {
           displayName: 'Host',
@@ -971,7 +971,7 @@ describe('AuthorityTransferModule', () => {
           workspacePath: 'workspace/recovery',
         },
         schemaVersion: 3,
-        updatedAt: '2026-08-27T00:00:00.000Z',
+        updatedAt: testTime(),
       }),
       now: testClock({ hours: 1 }),
     });
@@ -1008,7 +1008,7 @@ describe('AuthorityTransferModule', () => {
           hostCaFingerprint: 'a'.repeat(64),
           kind: 'lan',
         },
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         hostOwnership: { ownsAuthority: false },
         lastEventSequence: 1,
         member: {
@@ -1024,7 +1024,7 @@ describe('AuthorityTransferModule', () => {
           workspacePath: 'workspace/recovery',
         },
         schemaVersion: 3,
-        updatedAt: '2026-08-27T00:00:00.000Z',
+        updatedAt: testTime(),
       }),
     });
 
@@ -1531,7 +1531,7 @@ describe('AuthorityTransferModule', () => {
         targetEntry = {
           ...(entry as object),
           phase: 'withdrawn',
-          withdrawnAt: '2026-08-27T00:05:00.000Z',
+          withdrawnAt: testTime({ minutes: 5 }),
         };
         return targetEntry;
       }),
@@ -1564,8 +1564,8 @@ describe('AuthorityTransferModule', () => {
       projectId: PROJECT_ID,
       readSnapshot: jest.fn(async () => ({
         currentMember: {
-          activatedAt: '2026-08-27T00:00:00.000Z',
-          createdAt: '2026-08-27T00:00:00.000Z',
+          activatedAt: testTime(),
+          createdAt: testTime(),
           displayName: 'Target',
           id: 'member-target',
           personalRef: 'refs/heads/members/member-target',
@@ -1578,7 +1578,7 @@ describe('AuthorityTransferModule', () => {
         openTicketCount: 0,
         project: {
           authorityGeneration: 1,
-          createdAt: '2026-08-27T00:00:00.000Z',
+          createdAt: testTime(),
           expectedMainOid: 'a'.repeat(40),
           id: PROJECT_ID,
           mainRef: 'refs/heads/main',
@@ -1607,7 +1607,7 @@ describe('AuthorityTransferModule', () => {
               ...begun,
               phase: 'cancelled',
               state: 'cancelled',
-              updatedAt: '2026-08-27T00:05:00.000Z',
+              updatedAt: testTime({ minutes: 5 }),
             };
           }
           throw new Error(`unexpected ${operation}`);
@@ -1643,8 +1643,8 @@ describe('AuthorityTransferModule', () => {
       readSnapshot: jest.fn(async () => ({
         ...(await targetCloud.readSnapshot()),
         currentMember: {
-          activatedAt: '2026-08-27T00:00:00.000Z',
-          createdAt: '2026-08-27T00:00:00.000Z',
+          activatedAt: testTime(),
+          createdAt: testTime(),
           displayName: 'Manager',
           id: 'member-manager',
           personalRef: 'refs/heads/members/member-manager',
@@ -1875,7 +1875,7 @@ describe('AuthorityTransferModule', () => {
       status: proposal({
         phase: 'cancelled',
         state: 'cancelled',
-        updatedAt: '2026-08-27T00:02:00.000Z',
+        updatedAt: testTime({ minutes: 2 }),
       }),
     });
     let current = active;
@@ -2033,8 +2033,8 @@ describe('AuthorityTransferModule', () => {
     } as unknown as AuthorityTransferPersistence;
     const snapshot = (role: 'manager' | 'member') => ({
       currentMember: {
-        activatedAt: '2026-08-27T00:00:00.000Z',
-        createdAt: '2026-08-27T00:00:00.000Z',
+        activatedAt: testTime(),
+        createdAt: testTime(),
         displayName: 'Manager',
         id: 'member-manager',
         personalRef: 'refs/heads/members/member-manager',
@@ -2047,7 +2047,7 @@ describe('AuthorityTransferModule', () => {
       openTicketCount: 0,
       project: {
         authorityGeneration: 1,
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         expectedMainOid: 'a'.repeat(40),
         id: PROJECT_ID,
         mainRef: 'refs/heads/main',
@@ -2128,7 +2128,7 @@ describe('AuthorityTransferModule', () => {
         caFingerprint: 'c'.repeat(64),
         preparationId: 'intent-target-preparation',
         projectId: PROJECT_ID,
-        publishedAt: '2026-08-27T00:00:00.000Z',
+        publishedAt: testTime(),
         schemaVersion: 1 as const,
         selectedTargetMemberId: 'member-target',
         sourceAuthorityGeneration: 1,
@@ -2196,8 +2196,8 @@ describe('AuthorityTransferModule', () => {
     } as unknown as AuthorityTransferPersistence;
     const cloudSnapshot = {
       currentMember: {
-        activatedAt: '2026-08-27T00:00:00.000Z',
-        createdAt: '2026-08-27T00:00:00.000Z',
+        activatedAt: testTime(),
+        createdAt: testTime(),
         displayName: 'Self Manager',
         id: 'member-self-manager',
         personalRef: 'refs/heads/members/member-self-manager',
@@ -2210,7 +2210,7 @@ describe('AuthorityTransferModule', () => {
       openTicketCount: 0,
       project: {
         authorityGeneration: 1,
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         expectedMainOid: 'a'.repeat(40),
         id: PROJECT_ID,
         mainRef: 'refs/heads/main',
@@ -2529,7 +2529,7 @@ describe('AuthorityTransferModule', () => {
         caFingerprint: 'c'.repeat(64),
         preparationId: 'intent-unrelated-target-preparation',
         projectId: PROJECT_ID,
-        publishedAt: '2026-08-27T00:00:00.000Z',
+        publishedAt: testTime(),
         schemaVersion: 1,
         selectedTargetMemberId: 'member-target',
         sourceAuthorityGeneration: 1,
@@ -2820,7 +2820,7 @@ describe('AuthorityTransferModule', () => {
       withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
         targetEntry = withdrawCloudToLanTargetEntry(
           entry,
-          '2026-08-27T00:01:00.000Z',
+          testTime({ minutes: 1 }),
         );
         return targetEntry;
       }),
@@ -2946,7 +2946,7 @@ describe('AuthorityTransferModule', () => {
         return targetEntry;
       }),
       withdrawCloudToLanTargetEntry: jest.fn(async (entry: CloudToLanTargetEntryRecord) => {
-        targetEntry = withdrawCloudToLanTargetEntry(entry, '2026-08-27T00:01:00.000Z');
+        targetEntry = withdrawCloudToLanTargetEntry(entry, testTime({ minutes: 1 }));
         return targetEntry;
       }),
     } as unknown as AuthorityTransferPersistence;
@@ -3052,7 +3052,7 @@ describe('AuthorityTransferModule', () => {
       ...collectingStatus,
       phase: 'cancelled',
       state: 'cancelled',
-      updatedAt: '2026-08-27T00:01:00.000Z',
+      updatedAt: testTime({ minutes: 1 }),
     };
     const preparing = createCloudToLanTargetEntry({
       createdAt: collectingStatus.createdAt,
@@ -3256,8 +3256,8 @@ describe('AuthorityTransferModule', () => {
       .mockResolvedValueOnce(begun);
     const readSnapshot = jest.fn(async () => ({
       currentMember: {
-        activatedAt: '2026-08-27T00:00:00.000Z',
-        createdAt: '2026-08-27T00:00:00.000Z',
+        activatedAt: testTime(),
+        createdAt: testTime(),
         displayName: 'Manager',
         id: 'member-manager',
         personalRef: 'refs/heads/members/member-manager',
@@ -3270,7 +3270,7 @@ describe('AuthorityTransferModule', () => {
       openTicketCount: 0,
       project: {
         authorityGeneration: 1,
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         expectedMainOid: 'a'.repeat(40),
         id: PROJECT_ID,
         mainRef: 'refs/heads/main',
@@ -3331,7 +3331,7 @@ describe('AuthorityTransferModule', () => {
         caFingerprint: 'c'.repeat(64),
         preparationId: 'intent-target-preparation',
         projectId: PROJECT_ID,
-        publishedAt: '2026-08-27T00:00:00.000Z',
+        publishedAt: testTime(),
         schemaVersion: 1 as const,
         selectedTargetMemberId: 'member-target',
         sourceAuthorityGeneration: 1,
@@ -3392,7 +3392,7 @@ describe('AuthorityTransferModule', () => {
       caFingerprint: 'c'.repeat(64),
       preparationId: 'intent-concurrent-target-preparation',
       projectId: PROJECT_ID,
-      publishedAt: '2026-08-27T00:00:00.000Z',
+      publishedAt: testTime(),
       schemaVersion: 1 as const,
       selectedTargetMemberId: 'member-target',
       sourceAuthorityGeneration: 1,
@@ -3400,7 +3400,7 @@ describe('AuthorityTransferModule', () => {
       targetUrl: 'https://192.168.1.20:54545',
     };
     let managerEntry: CloudToLanManagerEntryRecord | null = createCloudToLanManagerEntry({
-      createdAt: '2026-08-27T00:00:00.000Z',
+      createdAt: testTime(),
       descriptor,
       expiresAt: testTime({ days: 30 }),
       initiatingMemberId: 'member-manager',
@@ -3515,7 +3515,7 @@ describe('AuthorityTransferModule', () => {
       caFingerprint: 'c'.repeat(64),
       preparationId: 'intent-recovery-target-preparation',
       projectId: PROJECT_ID,
-      publishedAt: '2026-08-27T00:00:00.000Z',
+      publishedAt: testTime(),
       schemaVersion: 1 as const,
       selectedTargetMemberId: 'member-target',
       sourceAuthorityGeneration: 1,
@@ -3524,7 +3524,7 @@ describe('AuthorityTransferModule', () => {
     };
     let managerEntry: CloudToLanManagerEntryRecord | null =
       markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         descriptor,
         expiresAt: testTime({ days: 30 }),
         initiatingMemberId: 'member-host',
@@ -3733,7 +3733,7 @@ describe('AuthorityTransferModule', () => {
       caFingerprint: 'c'.repeat(64),
       preparationId: 'intent-foreign-manager-target',
       projectId: PROJECT_ID,
-      publishedAt: '2026-08-27T00:00:00.000Z',
+      publishedAt: testTime(),
       schemaVersion: 1 as const,
       selectedTargetMemberId: 'member-target',
       sourceAuthorityGeneration: 1,
@@ -3742,7 +3742,7 @@ describe('AuthorityTransferModule', () => {
     };
     const managerEntry = markCloudToLanManagerBeginPossiblySent(
       createCloudToLanManagerEntry({
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         descriptor,
         expiresAt: testTime({ days: 30 }),
         initiatingMemberId: 'member-host',
@@ -3954,7 +3954,7 @@ describe('AuthorityTransferModule', () => {
       ...collecting,
       phase: 'cancelled',
       state: 'cancelled',
-      updatedAt: '2026-08-27T00:01:00.000Z',
+      updatedAt: testTime({ minutes: 1 }),
     };
     let targetEntry: CloudToLanTargetEntryRecord | null = publishCloudToLanTargetEntry(
       createCloudToLanTargetEntry({
@@ -4815,7 +4815,7 @@ describe('AuthorityTransferModule', () => {
   it('rebinds a published target entry to its exact listener endpoint during startup recovery', async () => {
     const targetUrl = 'https://192.168.1.20:54545';
     const preparing = createCloudToLanTargetEntry({
-      createdAt: '2026-08-27T00:00:00.000Z',
+      createdAt: testTime(),
       expiresAt: testTime({ days: 30 }),
       operationIntentId: 'intent-recovered-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -4828,7 +4828,7 @@ describe('AuthorityTransferModule', () => {
     const published = publishCloudToLanTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-27T00:01:00.000Z',
+      publishedAt: testTime({ minutes: 1 }),
       targetUrl,
     });
     const persistence = {
@@ -5017,7 +5017,7 @@ describe('AuthorityTransferModule', () => {
         ...proposal(),
         phase,
         state,
-        updatedAt: '2026-08-27T00:01:00.000Z',
+        updatedAt: testTime({ minutes: 1 }),
       },
     });
 
@@ -5208,7 +5208,7 @@ describe('AuthorityTransferModule', () => {
       projectId: PROJECT_ID,
       receiptId: 'receipt-manager-reissued',
       receiptKeyId: 'receipt-key-manager-reissued',
-      redeemedAt: '2026-10-01T00:01:00.000Z',
+      redeemedAt: testTime({ days: 35, minutes: 1 }),
       signature: Buffer.alloc(64, 3).toString('base64url'),
       signatureAlgorithm: 'ed25519' as const,
       targetAuthorityGeneration: 2,
@@ -5287,7 +5287,7 @@ describe('AuthorityTransferModule', () => {
           hostCaFingerprint: 'a'.repeat(64),
           kind: 'lan',
         },
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         hostOwnership: { ownsAuthority: false },
         lastEventSequence: 1,
         member: {
@@ -5299,7 +5299,7 @@ describe('AuthorityTransferModule', () => {
         },
         project: { id: PROJECT_ID, name: 'Recovery', workspacePath: 'workspace/recovery' },
         schemaVersion: 3,
-        updatedAt: '2026-08-27T00:00:00.000Z',
+        updatedAt: testTime(),
       }),
       now: testClock({ days: 35, seconds: 10 }),
       persistence: {
@@ -5794,20 +5794,20 @@ describe('AuthorityTransferModule', () => {
         projectId: descriptor.projectId,
         receiptId: 'receipt-manager-local-only',
         receiptKeyId: 'receipt-key-manager-local-only',
-        redeemedAt: '2026-10-01T00:01:00.000Z',
+        redeemedAt: testTime({ days: 35, minutes: 1 }),
         signature: Buffer.alloc(64, 3).toString('base64url'),
         signatureAlgorithm: 'ed25519',
         targetAuthorityGeneration: descriptor.targetAuthorityGeneration,
         transferId: descriptor.transferId,
       },
-      updatedAt: '2026-10-01T00:01:00.000Z',
+      updatedAt: testTime({ days: 35, minutes: 1 }),
     });
     let record: AuthorityTransferClaimantRecord | null =
       advanceAuthorityTransferClaimantRecord(claimed, {
         convergenceProof: 'receipt',
         phase: 'target-confirmed',
         targetStatus: status,
-        updatedAt: '2026-10-01T00:02:00.000Z',
+        updatedAt: testTime({ days: 35, minutes: 2 }),
       });
     let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;
     const recoverConvertedClaimant = jest.fn(async () => undefined);
@@ -5876,6 +5876,7 @@ describe('AuthorityTransferModule', () => {
       targetHost,
     }));
     new AuthorityTransferModule({
+      now: testClock({ hours: 2 }),
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
       installationKey: TEST_INSTALLATION_A,
@@ -5984,6 +5985,7 @@ describe('AuthorityTransferModule', () => {
       throw new Error('transport must remain unavailable');
     });
     new AuthorityTransferModule({
+      now: testClock({ hours: 2 }),
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
       installationKey: TEST_INSTALLATION_A,

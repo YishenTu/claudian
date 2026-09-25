@@ -41,7 +41,7 @@ function status(): CollabAuthorityTransferStatus {
     batchRevision: null,
     batchSha256: null,
     checkpointSha256: null,
-    createdAt: '2026-08-26T00:00:00.000Z',
+    createdAt: testTime({ days: -1 }),
     direction: 'lan-to-cloud',
     expiresAt: testTime({ days: 29 }),
     phase: 'collecting-readiness',
@@ -52,7 +52,7 @@ function status(): CollabAuthorityTransferStatus {
     targetAuthority: { generation: 2, kind: 'cloud' },
     targetUrl: 'https://cloud.example.test',
     transferId: 'transfer-alpha',
-    updatedAt: '2026-08-26T00:00:00.000Z',
+    updatedAt: testTime({ days: -1 }),
   };
 }
 
@@ -491,7 +491,7 @@ describe('LanAuthorityTransferRouter', () => {
         projectId: PROJECT_ID,
         receiptId: 'receipt-alpha',
         receiptKeyId: 'key-alpha',
-        redeemedAt: '2026-08-26T00:01:00.000Z',
+        redeemedAt: testTime({ days: -1, minutes: 1 }),
         signature: Buffer.alloc(64, 5).toString('base64url'),
         signatureAlgorithm: 'ed25519' as const,
         targetAuthorityGeneration: 2,
@@ -557,7 +557,7 @@ describe('LanAuthorityTransferRouter', () => {
           'acknowledgeTransferredMembershipClaimRedemption'
         ]
       >(async (_actor, request) => ({
-        acknowledgedAt: '2026-08-26T00:02:00.000Z',
+        acknowledgedAt: testTime({ days: -1, minutes: 2 }),
         memberId: OTHER_MEMBER_ID,
         projectId: PROJECT_ID,
         receiptId: request.receipt.receiptId,

@@ -2,6 +2,7 @@ import {
   TEST_INSTALLATION_A,
   TEST_INSTALLATION_B,
 } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   createCollabProjectLifecycleDurableOwners,
@@ -69,7 +70,7 @@ describe('CollabProjectLifecycleOwners', () => {
       backing.cloudManagementIntents.load.mockResolvedValue(decodeCloudManagementIntent({
         authorityGeneration: 7,
         completionId: 'completion-management',
-        createdAt: '2026-09-02T00:00:00.000Z',
+        createdAt: testTime({ days: 6 }),
         kind: 'cloud-management-intent',
         memberId: 'member-manager',
         operation: 'demoteManager',
@@ -90,7 +91,7 @@ describe('CollabProjectLifecycleOwners', () => {
         } : null,
         schemaVersion: 1,
         serverUrl: 'https://cloud.example',
-        updatedAt: '2026-09-02T00:00:00.000Z',
+        updatedAt: testTime({ days: 6 }),
       }));
       const owners = createCollabProjectLifecycleDurableOwners(backing, () => true);
       const cloudManagement = owners.find(owner => owner.name === 'cloud-management')!;

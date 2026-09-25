@@ -11,8 +11,8 @@ describe('RetirementTerminalService', () => {
   it('returns only the minimum replayable acknowledgement result', async () => {
     const repository = {
       acknowledge: jest.fn().mockResolvedValue({
-        acknowledgedAt: '2026-08-13T08:01:00.000Z',
-        result: { projectId: 'project-alpha', retiredAt: '2026-08-13T08:00:00.000Z' },
+        acknowledgedAt: testTime({ days: -14, hours: 8, minutes: 1 }),
+        result: { projectId: 'project-alpha', retiredAt: testTime({ days: -14, hours: 8 }) },
       }),
       authenticate: jest.fn().mockResolvedValue({ memberId: 'member-a', tombstone: record() }),
       load: jest.fn().mockResolvedValue(record()),
@@ -22,19 +22,19 @@ describe('RetirementTerminalService', () => {
     const response = await service.acknowledge(
       'project-alpha',
       'a'.repeat(43),
-      '2026-08-13T08:00:00.000Z',
+      testTime({ days: -14, hours: 8 }),
     );
 
     expect(response.body).toEqual({
-      acknowledgedAt: '2026-08-13T08:01:00.000Z',
+      acknowledgedAt: testTime({ days: -14, hours: 8, minutes: 1 }),
       projectId: 'project-alpha',
-      retiredAt: '2026-08-13T08:00:00.000Z',
+      retiredAt: testTime({ days: -14, hours: 8 }),
     });
 
     await expect(service.acknowledge(
       'project-alpha',
       'a'.repeat(43),
-      '2026-08-13T08:00:00.000Z',
+      testTime({ days: -14, hours: 8 }),
     )).resolves.toEqual(response);
     expect(repository.acknowledge).toHaveBeenCalledTimes(2);
   });
@@ -50,19 +50,19 @@ describe('RetirementTerminalService', () => {
     await expect(service.acknowledge(
       'project-alpha',
       'a'.repeat(43),
-      '2026-08-13T08:00:01.000Z',
+      testTime({ days: -14, hours: 8, seconds: 1 }),
     )).rejects.toMatchObject({ code: 'stale-project-selection' });
     expect(repository.acknowledge).toHaveBeenCalledWith(
       'project-alpha',
       'a'.repeat(43),
-      '2026-08-13T08:00:01.000Z',
+      testTime({ days: -14, hours: 8, seconds: 1 }),
     );
   });
 
   it('serves the copied proof chain from the tombstone', async () => {
     const tombstone = record({
       hostTransitionProofs: [{
-        issuedAt: '2026-08-12T08:00:00.000Z',
+        issuedAt: testTime({ days: -15, hours: 8 }),
         nextCaCertificatePem: 'next-ca',
         nextCaFingerprint: 'b'.repeat(64),
         previousCaFingerprint: 'a'.repeat(64),
@@ -104,9 +104,9 @@ function record(
     },
     result: {
       projectId: 'project-alpha',
-      retiredAt: '2026-08-13T08:00:00.000Z',
+      retiredAt: testTime({ days: -14, hours: 8 }),
     },
-    retiredAt: '2026-08-13T08:00:00.000Z',
+    retiredAt: testTime({ days: -14, hours: 8 }),
     schemaVersion: 1,
     ...overrides,
   };

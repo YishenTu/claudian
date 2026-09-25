@@ -1311,12 +1311,12 @@ export class LanHostCoordinator {
         throw hostError('tls-ca-mismatch', 'stored-host-ca-mismatch');
       }
       const codec = this.options.createInvitationCodec?.(listener.address)
-        ?? new InvitationCodec();
+        ?? new InvitationCodec({ now: this.now });
       const service = new PendingMembershipService(openedRuntime.authority, {
         getHostEndpoint: () => this.#currentHostEndpoint(),
         getInvitationCodec: () => {
           const address = this.listener?.address ?? listener.address;
-          return this.options.createInvitationCodec?.(address) ?? new InvitationCodec();
+          return this.options.createInvitationCodec?.(address) ?? new InvitationCodec({ now: this.now });
         },
         invitationCodec: codec,
         now: this.now,

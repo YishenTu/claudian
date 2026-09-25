@@ -13,6 +13,7 @@ import {
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
 } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import {
@@ -34,7 +35,7 @@ import type { CloudAuthorityHttpRequest } from '@/app/collab/remote-authority/No
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-a';
-const NOW = '2026-08-08T00:00:00.000Z';
+const NOW = testTime({ days: -19 });
 
 describe('Local Publish adapters', () => {
   let projects: CollabLocalProjectRepository;

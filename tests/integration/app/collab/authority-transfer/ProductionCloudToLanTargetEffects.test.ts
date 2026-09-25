@@ -7,7 +7,7 @@ import path from 'node:path';
 import { type CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
 import { git, HOST_CREDENTIAL, MEMBER_ID, OPERATION_ID, productionAuthorityTransferFixture,PROJECT_ID, status, TRANSFER_ID } from '@test/helpers/collab/ProductionAuthorityTransferFixture';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
-import { testDate } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 
 import { CollabProjectSetupService } from '@/app/collab';
 import { AuthorityMetadataRepository } from '@/app/collab/authority/AuthorityMetadataRepository';
@@ -92,7 +92,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
           relinquishmentProof: {
             batchRevision: 1, batchSha256: 'b'.repeat(64), checkpointSha256: 'a'.repeat(64),
             certificate: Buffer.alloc(64, 2).toString('base64url'), certificateAlgorithm: 'ed25519',
-            committedAt: '2026-08-28T00:02:00.000Z', operationIntentId: OPERATION_ID, projectId: PROJECT_ID,
+            committedAt: testTime({ days: 1, minutes: 2 }), operationIntentId: OPERATION_ID, projectId: PROJECT_ID,
             sourceAuthority: { generation: 1, kind: 'lan' }, sourceHostMemberId: MEMBER_ID,
             targetAuthority: { generation: 2, kind: 'cloud' }, transferId: TRANSFER_ID,
           },
@@ -103,11 +103,11 @@ describe('production Cloud-to-LAN target recovery effects', () => {
           createdAt: priorStatus.createdAt, memberId: MEMBER_ID, operationIntentId: 'old-automatic-claim', status: priorStatus });
         pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'claim-retained', claim, updatedAt: priorStatus.updatedAt });
         pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'credential-persisted', updatedAt: priorStatus.updatedAt });
-        pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'target-claimed', updatedAt: '2026-08-28T00:03:00.000Z',
+        pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'target-claimed', updatedAt: testTime({ days: 1, minutes: 3 }),
           redemptionReceipt: { checkpointSha256: 'a'.repeat(64), claimSha256: createHash('sha256').update(claim.claim).digest('hex'),
             memberId: MEMBER_ID, projectId: PROJECT_ID, transferId: TRANSFER_ID, targetAuthorityGeneration: 2,
             operationIntentId: 'old-automatic-claim', receiptId: 'old-receipt', receiptKeyId: 'old-key',
-            redeemedAt: '2026-08-28T00:03:00.000Z', signature: Buffer.alloc(64, 3).toString('base64url'), signatureAlgorithm: 'ed25519' } });
+            redeemedAt: testTime({ days: 1, minutes: 3 }), signature: Buffer.alloc(64, 3).toString('base64url'), signatureAlgorithm: 'ed25519' } });
         pending = advanceAuthorityTransferClaimantRecord(pending, { phase: 'source-acknowledged', updatedAt: pending.updatedAt });
         await clientFoundation.local.projects.authorityTransferClaimants.save(pending);
         if (previousAttempt === 'origin-written') git(worktree, ['remote', 'set-url', 'origin', `https://intermediate.example.test/v10/projects/${PROJECT_ID}/repository.git`]);
@@ -216,7 +216,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
     await target.foundation.local.projects.authorityTransferRecords.save(target.stagedRecord);
     const unrelated = await target.foundation.createAuthority(PROJECT_ID);
     await unrelated.database.mutate(connection => unrelated.projects.initialize(connection, {
-      createdAt: '2026-08-08T00:00:00.000Z', hostCredentialHash: new Uint8Array(32).fill(7),
+      createdAt: testTime({ days: -19 }), hostCredentialHash: new Uint8Array(32).fill(7),
       hostDisplayName: 'Other Host', hostMemberId: 'member-other', name: 'Other', projectId: 'project-other',
     }));
     await target.foundation.closeAuthority(PROJECT_ID);
@@ -275,7 +275,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
     const target = await prepareCloudToLanTarget(false, 4);
     const former = await target.foundation.createAuthority(PROJECT_ID);
     await former.database.mutate(connection => former.projects.initialize(connection, {
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
       hostDisplayName: 'Former Host', hostMemberId: MEMBER_ID, name: 'Portable', projectId: PROJECT_ID,
     }));
@@ -304,7 +304,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
     // Returning to the former Host must replace its retired generation-1 authority.
     const retiredSource = await target.foundation.createAuthority(PROJECT_ID);
     await retiredSource.database.mutate(connection => retiredSource.projects.initialize(connection, {
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
       hostDisplayName: 'Former Host',
       hostMemberId: MEMBER_ID,
@@ -713,7 +713,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
     await target.targetAuthority.database.mutate(connection => {
       target.targetAuthority!.events.append(connection, {
         actorMemberId: recoveredMembership.member.id,
-        createdAt: '2026-08-28T00:04:00.000Z',
+        createdAt: testTime({ days: 1, minutes: 4 }),
         kind: 'membership.updated',
         payload: { projectId: PROJECT_ID },
       });
@@ -721,7 +721,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
     await target.foundation.local.projects.saveMembership({
       ...recoveredMembership,
       lastEventSequence: recoveredMembership.lastEventSequence + 1,
-      updatedAt: '2026-08-28T00:04:00.000Z',
+      updatedAt: testTime({ days: 1, minutes: 4 }),
     });
     await target.foundation.lanHost.stopProject(PROJECT_ID);
     expect(target.foundation.lanHost.isProjectRunning(PROJECT_ID)).toBe(false);

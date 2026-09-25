@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type { LocalCleanupRecord } from '@/app/collab/exit/LocalCleanupRecord';
 import { RetirementLocalRecovery } from '@/app/collab/retirement/RetirementLocalRecovery';
@@ -10,7 +12,7 @@ const RETIREMENT = {
   cleanupStatus: 'pending',
   cloudRetirementId: null,
   cloudServerUrl: null,
-  createdAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
   hostCaCertificatePem: 'certificate',
   hostCaFingerprint: 'a'.repeat(64),
   hostEndpoint: 'https://192.168.1.10:54545',
@@ -18,9 +20,9 @@ const RETIREMENT = {
   memberCredential: 'c'.repeat(43),
   memberId: 'member-one',
   projectId: 'project-one',
-  retiredAt: '2026-08-13T00:00:00.000Z',
+  retiredAt: testTime({ days: -14 }),
   schemaVersion: 1,
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  updatedAt: testTime({ days: -14 }),
 } as const satisfies RetirementRecord;
 
 const CLEANUP = {

@@ -1,4 +1,4 @@
-import { testClock } from '@test/helpers/testClock';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import {
   type ConflictPublicationPort,
@@ -158,14 +158,14 @@ function record(
   overrides: Partial<ConflictResolutionRecord> = {},
 ): ConflictResolutionRecord {
   return {
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     descriptor: DESCRIPTOR,
     operationId: DESCRIPTOR.operationId,
     phase: 'ready',
     projectId: DESCRIPTOR.projectId,
     resultCommitOid: null,
     schemaVersion: COLLAB_CONFLICT_RESOLUTION_SCHEMA_VERSION,
-    updatedAt: '2026-08-08T00:00:00.000Z',
+    updatedAt: testTime({ days: -19 }),
     ...overrides,
   };
 }

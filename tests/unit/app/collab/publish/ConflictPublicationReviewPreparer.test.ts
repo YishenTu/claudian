@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
   type CollabPublicationStateRecord,
@@ -12,8 +14,8 @@ import type {
 const CONTRIBUTION = '1'.repeat(40);
 const MAIN = '2'.repeat(40);
 const CANDIDATE = '3'.repeat(40);
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
-const UPDATED_AT = '2026-08-08T00:01:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
+const UPDATED_AT = testTime({ days: -19, minutes: 1 });
 const CONTEXT: PublishProjectContext = {
   memberId: 'member-a',
   personalRef: 'refs/heads/members/member-a',

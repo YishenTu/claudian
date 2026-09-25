@@ -22,7 +22,7 @@ function status(): CollabAuthorityTransferStatus {
     batchRevision: 1,
     batchSha256: 'b'.repeat(64),
     checkpointSha256: CHECKPOINT_SHA256,
-    createdAt: '2026-08-27T00:00:00.000Z',
+    createdAt: testTime(),
     direction: 'lan-to-cloud',
     expiresAt: testTime({ days: 30 }),
     phase: 'completed',
@@ -33,7 +33,7 @@ function status(): CollabAuthorityTransferStatus {
       certificate: Buffer.alloc(64, 2).toString('base64url'),
       certificateAlgorithm: 'ed25519',
       checkpointSha256: CHECKPOINT_SHA256,
-      committedAt: '2026-08-27T00:00:08.000Z',
+      committedAt: testTime({ seconds: 8 }),
       operationIntentId: 'intent-owner',
       projectId: PROJECT_ID,
       sourceAuthority: { generation: 1, kind: 'lan' },
@@ -46,7 +46,7 @@ function status(): CollabAuthorityTransferStatus {
     targetAuthority: { generation: 2, kind: 'cloud' },
     targetUrl: 'https://cloud.example.test/',
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:00:10.000Z',
+    updatedAt: testTime({ seconds: 10 }),
   };
 }
 
@@ -59,7 +59,7 @@ function receipt(memberId = MEMBER_ID): CollabTransferredMembershipRedemptionRec
     projectId: PROJECT_ID,
     receiptId: 'receipt-persistent-route',
     receiptKeyId: 'cloud-receipt-key',
-    redeemedAt: '2026-08-27T00:01:00.000Z',
+    redeemedAt: testTime({ minutes: 1 }),
     signature: Buffer.alloc(64, 4).toString('base64url'),
     signatureAlgorithm: 'ed25519',
     targetAuthorityGeneration: 2,
@@ -166,7 +166,7 @@ describe('persistent LAN authority-transfer services', () => {
 
     expect(verify).toHaveBeenCalledTimes(1);
     expect(scrubClaimWithVerifiedReceipt).toHaveBeenCalledWith({
-      acknowledgedAt: '2026-08-27T00:02:00.000Z',
+      acknowledgedAt: testTime({ minutes: 2 }),
       receipt: receipt(),
     });
   });

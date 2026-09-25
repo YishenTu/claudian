@@ -227,4 +227,21 @@ export default defineConfig([
       ],
     },
   },
+  {
+    files: ['tests/**/collab/**/*.ts', 'tests/helpers/testClock.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...[
+          'Literal[value=/\\d{4}-\\d{2}-\\d{2}T/]',
+          'TemplateElement[value.raw=/\\d{4}-\\d{2}-\\d{2}T/]',
+          "NewExpression[callee.name='Date'][arguments.length>1][arguments.0.type='Literal']",
+          "CallExpression[callee.object.name='Date'][callee.property.name='UTC'][arguments.0.type='Literal']",
+        ].map(selector => ({
+          selector,
+          message: 'Derive fixture timestamps from @test/helpers/testClock instead of a fixed calendar date.',
+        })),
+      ],
+    },
+  },
 ]);

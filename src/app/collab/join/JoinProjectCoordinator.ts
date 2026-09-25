@@ -213,7 +213,7 @@ export class JoinProjectCoordinator {
     private readonly options: JoinProjectCoordinatorOptions,
   ) {
     this.#workingCopy = new CollabWorkingCopySetup(foundation, options.vaultRoot);
-    this.#invitationCodec = options.invitationCodec ?? new InvitationCodec();
+    this.#invitationCodec = options.invitationCodec ?? new InvitationCodec({ now: options.now });
     this.#createHttpClient = options.createHttpClient
       ?? (trustStore => new CollabHttpClient(trustStore, {
         invitationCodec: this.#invitationCodec,

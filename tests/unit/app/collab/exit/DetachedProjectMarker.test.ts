@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   COLLAB_DETACHED_PROJECT_MARKER_SCHEMA_VERSION,
   decodeDetachedProjectMarker,
@@ -10,7 +12,7 @@ const marker: DetachedProjectMarker = {
   memberId: 'member-alice',
   cleanupOperationId: 'cleanup-one',
   purpose: 'retire',
-  createdAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
   nonce: 'A'.repeat(43),
 };
 

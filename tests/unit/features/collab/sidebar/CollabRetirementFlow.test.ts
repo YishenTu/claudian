@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-
+import { testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
@@ -79,7 +79,7 @@ it('finishes Cloud Retire in one confirmation and presents local file choices wi
     retireProject: async () => {
       state = { ...state, projects: [{
         ...project, lifecycle: 'retired', cleanupStatus: 'complete',
-        retiredAt: '2026-09-07T00:00:00.000Z',
+        retiredAt: testTime({ days: 11 }),
       }] };
       for (const listener of listeners) listener(state);
       return { status: 'success', value: undefined };

@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-
+import { testTime } from '@test/helpers/testClock';
 import { within } from '@testing-library/dom';
 
 import type {
@@ -568,7 +568,7 @@ function snapshot(options: {
       ],
       project: {
         authorityKind: 'lan',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         hostMemberId: 'member-a',
         id: 'project-a',
         mainOid: MAIN,
@@ -599,8 +599,8 @@ function snapshot(options: {
 
 function member(id: string, displayName: string) {
   return {
-    activatedAt: '2026-08-08T00:00:00.000Z',
-    createdAt: '2026-08-08T00:00:00.000Z',
+    activatedAt: testTime({ days: -19 }),
+    createdAt: testTime({ days: -19 }),
     displayName,
     id,
     personalRef: `refs/heads/members/${id}`,
@@ -612,7 +612,7 @@ function member(id: string, displayName: string) {
 function request(id: string, memberId: string, commentCount: number) {
   return {
     commentCount,
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     description: 'Published change',
     firstBaseOid: MAIN,
     id,
@@ -621,7 +621,7 @@ function request(id: string, memberId: string, commentCount: number) {
     revision: 1,
     status: 'open' as const,
     ticketRelations: [],
-    updatedAt: '2026-08-08T00:10:00.000Z',
+    updatedAt: testTime({ days: -19, minutes: 10 }),
   };
 }
 

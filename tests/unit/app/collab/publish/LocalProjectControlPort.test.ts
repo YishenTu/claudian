@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
@@ -14,7 +15,7 @@ import {
 } from '@/app/collab/publish/LocalProjectControlPort';
 import { ProjectControlClient } from '@/app/collab/publish/ProjectControlClient';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 const HEAD = 'a'.repeat(40);
 const MERGE = 'b'.repeat(40);
 function response(data: unknown) {

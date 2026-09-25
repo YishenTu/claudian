@@ -22,9 +22,9 @@ import {
   SqlJsProjectDatabase,
 } from '@/app/collab/authority/SqlJsProjectDatabase';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
-const OFFERED_AT = '2026-08-08T01:00:00.000Z';
-const EXPIRED_AT = '2026-08-08T01:11:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
+const OFFERED_AT = testTime({ days: -19, hours: 1 });
+const EXPIRED_AT = testTime({ days: -19, hours: 1, minutes: 11 });
 
 describe('ManagerResponsibilityService', () => {
   let SQL: SqlJsStatic;

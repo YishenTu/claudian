@@ -6,6 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
@@ -20,7 +21,7 @@ import {
 import { TicketRepository } from '@/app/collab/authority/TicketRepository';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 const MAIN = '1'.repeat(40);
 const HEAD_A = '2'.repeat(40);
 const HEAD_B = '3'.repeat(40);

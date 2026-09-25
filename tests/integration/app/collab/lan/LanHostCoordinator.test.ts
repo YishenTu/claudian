@@ -133,7 +133,7 @@ function authorityTransferStatus(
     certificate: Buffer.alloc(64, 7).toString('base64url'),
     certificateAlgorithm: 'ed25519' as const,
     checkpointSha256: 'a'.repeat(64),
-    committedAt: '2026-08-08T00:00:08.000Z',
+    committedAt: testTime({ days: -19, seconds: 8 }),
     operationIntentId: 'intent-listener-transfer',
     projectId: PROJECT_ID,
     sourceAuthority: { generation: 1, kind: 'lan' as const },
@@ -145,7 +145,7 @@ function authorityTransferStatus(
     batchRevision: relinquished ? 1 : null,
     batchSha256: relinquished ? 'b'.repeat(64) : null,
     checkpointSha256: relinquished ? 'a'.repeat(64) : null,
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     direction: 'lan-to-cloud',
     expiresAt: testTime({ days: 11 }),
     phase,
@@ -157,8 +157,8 @@ function authorityTransferStatus(
     targetUrl: 'https://cloud.example.test',
     transferId: 'transfer-listener',
     updatedAt: relinquished
-      ? '2026-08-08T00:00:09.000Z'
-      : '2026-08-08T00:00:01.000Z',
+      ? testTime({ days: -19, seconds: 9 })
+      : testTime({ days: -19, seconds: 1 }),
   };
 }
 
@@ -402,7 +402,7 @@ describe('LanHostCoordinator production transport', () => {
         hostCaFingerprint: null,
         kind: 'lan',
       },
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       hostOwnership: { ownsAuthority: true },
       lastEventSequence: 0,
       member: {
@@ -418,7 +418,7 @@ describe('LanHostCoordinator production transport', () => {
         workspacePath: 'workspace/alpha',
       },
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     });
     const authorityDirectory = (
       await localProjects.createOwnedAuthorityDirectory(PROJECT_ID)
@@ -431,7 +431,7 @@ describe('LanHostCoordinator production transport', () => {
     const events = new AuthorityEventRepository();
     const idempotency = new AuthorityIdempotencyRepository();
     await authorityDatabase.mutate(connection => projects.initialize(connection, {
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
       hostDisplayName: 'Host',
       hostMemberId: 'member-host',
@@ -740,7 +740,7 @@ describe('LanHostCoordinator production transport', () => {
         hostCaFingerprint: invitation.caFingerprint,
         kind: 'lan',
       },
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       hostOwnership: { ownsAuthority: false },
       lastEventSequence: 0,
       member: {
@@ -756,7 +756,7 @@ describe('LanHostCoordinator production transport', () => {
         workspacePath: `workspace/${PROJECT_ID}`,
       },
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     });
     const hostAccess = await membershipAccess(localProjects);
     const memberAccess = await membershipAccess(memberProjects);
@@ -1088,7 +1088,7 @@ describe('LanHostCoordinator production transport', () => {
       },
       project: existing.project,
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-      updatedAt: '2026-08-22T00:00:00.000Z',
+      updatedAt: testTime({ days: -5 }),
     });
 
     await expect(coordinator.startProject(PROJECT_ID)).rejects.toMatchObject({
@@ -1563,7 +1563,7 @@ describe('LanHostCoordinator production transport', () => {
   });
 
   it('replaces ordinary authority-transfer routes with a restart-safe terminal responder', async () => {
-    authorityTransferNow = new Date('2026-08-08T00:00:10.000Z');
+    authorityTransferNow = new Date(testTime({ days: -19, seconds: 10 }));
     const running = await coordinator.startProject(PROJECT_ID);
     const membership = await localProjects.loadMembership(PROJECT_ID);
     if (!membership || !isCollabLocalLanMembership(membership)) {
@@ -1857,7 +1857,7 @@ describe('LanHostCoordinator production transport', () => {
   });
 
   it('expires an earlier transfer without cancelling the next transfer timer', async () => {
-    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const startedAt = new Date(testTime());
     const callbacks: Array<() => void> = [];
     authorityTransferNow = startedAt;
     authorityTransferTimeoutOverride = callback => {
@@ -1894,7 +1894,7 @@ describe('LanHostCoordinator production transport', () => {
 
   it('removes an expired target route before retrying terminal cleanup', async () => {
     const callbacks: Array<() => void> = [];
-    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const startedAt = new Date(testTime());
     authorityTransferNow = startedAt;
     authorityTransferTimeoutOverride = callback => {
       callbacks.push(callback);
@@ -1952,7 +1952,7 @@ describe('LanHostCoordinator production transport', () => {
 
   it('runs expired target cleanup outside the Host operation queue', async () => {
     const callbacks: Array<() => void> = [];
-    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const startedAt = new Date(testTime());
     authorityTransferNow = startedAt;
     authorityTransferTimeoutOverride = callback => {
       callbacks.push(callback);
@@ -1993,7 +1993,7 @@ describe('LanHostCoordinator production transport', () => {
 
   it('waits for an in-flight expired target cleanup before closing', async () => {
     const callbacks: Array<() => void> = [];
-    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const startedAt = new Date(testTime());
     authorityTransferNow = startedAt;
     authorityTransferTimeoutOverride = callback => {
       callbacks.push(callback);
@@ -2042,7 +2042,7 @@ describe('LanHostCoordinator production transport', () => {
     const nextAddress = listPrivateIpv4Addresses()[0];
     if (!nextAddress) throw new Error('A private address is required for listener replacement');
     const callbacks: Array<() => void> = [];
-    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const startedAt = new Date(testTime());
     authorityTransferNow = startedAt;
     authorityTransferTimeoutOverride = callback => {
       callbacks.push(callback);
@@ -2090,7 +2090,7 @@ describe('LanHostCoordinator production transport', () => {
   });
 
   it('keeps a terminal authority-transfer route through a chunked long expiry timer', async () => {
-    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const startedAt = new Date(testTime());
     const expiresAt = new Date(startedAt.getTime() + 30 * 24 * 60 * 60 * 1_000);
     const expire = jest.fn(async () => undefined);
     const callbacks: Array<() => void> = [];
@@ -2134,7 +2134,7 @@ describe('LanHostCoordinator production transport', () => {
   });
 
   it('keeps terminal expiry scheduled after a stale state-specific stop', async () => {
-    const startedAt = new Date('2026-08-27T00:00:00.000Z');
+    const startedAt = new Date(testTime());
     const expiresAt = new Date(startedAt.getTime() + 1_000);
     const callbacks: Array<() => void> = [];
     const expire = jest.fn(async () => undefined);
@@ -2476,10 +2476,10 @@ describe('LanHostCoordinator production transport', () => {
           request_id, member_id, status, first_base_oid, latest_head_oid,
           merged_oid, description, revision, created_at, updated_at
         ) VALUES (?, 'member-host', 'open', ?, ?, NULL, 'Paged request', 1, ?, ?)`,
-        [requestId, MAIN_OID, headOid, '2026-08-08T00:01:00.000Z', '2026-08-08T00:01:00.000Z'],
+        [requestId, MAIN_OID, headOid, testTime({ days: -19, minutes: 1 }), testTime({ days: -19, minutes: 1 })],
       );
       for (const [index, body] of ticketBodies.entries()) {
-        const createdAt = new Date(Date.UTC(2026, 7, 8, 0, 2, index)).toISOString();
+        const createdAt = testTime({ days: -19, minutes: 2, seconds: index });
         connection.run(
           `INSERT INTO ticket_comments (
             comment_id, ticket_id, author_member_id, body, created_at
@@ -2492,7 +2492,7 @@ describe('LanHostCoordinator production transport', () => {
         [ticketBodies.length, created.ticket.id],
       );
       for (const [index, body] of requestBodies.entries()) {
-        const createdAt = new Date(Date.UTC(2026, 7, 8, 0, 3, index)).toISOString();
+        const createdAt = testTime({ days: -19, minutes: 3, seconds: index });
         connection.run(
           `INSERT INTO comments (
             comment_id, request_id, author_member_id, body, created_at
@@ -2502,8 +2502,7 @@ describe('LanHostCoordinator production transport', () => {
       }
       for (let index = 0; index <= COLLAB_LIMITS.maxRelationsPerPage; index += 1) {
         const acceptedRequestId = `accepted-request-${index}`;
-        const acceptedAt = new Date(Date.UTC(2026, 7, 8, 0, 4) + index * 1_000)
-          .toISOString();
+        const acceptedAt = testTime({ days: -19, minutes: 4, seconds: index });
         connection.run(
           `INSERT INTO change_requests (
             request_id, member_id, status, first_base_oid, latest_head_oid,
@@ -2993,7 +2992,7 @@ describe('LanHostCoordinator production transport', () => {
         hostCaFingerprint: hostFingerprint,
         kind: 'lan',
       },
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       hostOwnership: { ownsAuthority: false },
       lastEventSequence: 0,
       member: {
@@ -3009,7 +3008,7 @@ describe('LanHostCoordinator production transport', () => {
         workspacePath: `workspace/${PROJECT_ID}`,
       },
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     });
 
     await coordinator.stopProject(PROJECT_ID);
@@ -3181,7 +3180,7 @@ describe('LanHostCoordinator production transport', () => {
             hostCaFingerprint: hostFingerprint,
             kind: 'lan',
           },
-          createdAt: '2026-08-08T00:00:00.000Z',
+          createdAt: testTime({ days: -19 }),
           hostOwnership: { ownsAuthority: false },
           lastEventSequence: 0,
           member: {
@@ -3197,7 +3196,7 @@ describe('LanHostCoordinator production transport', () => {
             workspacePath: `workspace/${PROJECT_ID}`,
           },
           schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-          updatedAt: '2026-08-08T00:00:00.000Z',
+          updatedAt: testTime({ days: -19 }),
         });
 
         const foundation = {
@@ -3347,7 +3346,7 @@ describe('LanHostCoordinator production transport', () => {
         hostCaFingerprint: null,
         kind: 'lan',
       },
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       hostOwnership: { ownsAuthority: true },
       lastEventSequence: 0,
       member: {
@@ -3363,7 +3362,7 @@ describe('LanHostCoordinator production transport', () => {
         workspacePath: 'workspace/beta',
       },
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     });
     const betaDirectory = (
       await localProjects.createOwnedAuthorityDirectory(betaId)
@@ -3376,7 +3375,7 @@ describe('LanHostCoordinator production transport', () => {
     const betaEvents = new AuthorityEventRepository();
     const betaIdempotency = new AuthorityIdempotencyRepository();
     await betaDatabase.mutate(connection => betaProjects.initialize(connection, {
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
       hostDisplayName: 'Host',
       hostMemberId: 'member-host',
@@ -3631,7 +3630,7 @@ describe('LanHostCoordinator lazy construction', () => {
     const openProject = jest.fn();
     const recovery = createHostTransferRecoveryRecord({
       ownerInstallationKey: "device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       direction: 'incoming',
       projectId: PROJECT_ID,
       receiverCredential: Buffer.alloc(32, 2).toString('base64url'),

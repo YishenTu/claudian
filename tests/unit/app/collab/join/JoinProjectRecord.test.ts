@@ -8,7 +8,7 @@ import {
 
 const baseRecord: JoinProjectRecord = {
   authorityGeneration: null,
-  createdAt: '2026-08-08T00:00:00.000Z',
+  createdAt: testTime({ days: -19 }),
   encodedInvitation: 'claudian-collab:v2:payload',
   endpoint: 'https://192.168.1.10:54545',
   hostCaCertificatePem: null,
@@ -29,7 +29,7 @@ const baseRecord: JoinProjectRecord = {
   slug: 'project-alpha',
   stagingDirectoryName: '.claudian-join-join-alpha',
   lastEventSequence: null,
-  updatedAt: '2026-08-08T00:00:00.000Z',
+  updatedAt: testTime({ days: -19 }),
 };
 
 describe('JoinProjectRecord', () => {

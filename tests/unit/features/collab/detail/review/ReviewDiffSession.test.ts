@@ -1,4 +1,5 @@
 /** @jest-environment jsdom */
+import { testTime } from '@test/helpers/testClock';
 
 import { type CollabRequestReview, type CollabReviewFileContent } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
@@ -231,7 +232,7 @@ function requestReview(): CollabRequestReview {
       currentMainOid: MAIN,
       request: {
         commentCount: 0,
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         description: '',
         firstBaseOid: MAIN,
         id: 'request-a',
@@ -240,7 +241,7 @@ function requestReview(): CollabRequestReview {
         revision: 1,
         status: 'open',
         ticketRelations: [],
-        updatedAt: '2026-08-08T00:00:00.000Z',
+        updatedAt: testTime({ days: -19 }),
       },
       reviewCondition: 'clean',
       reviewedHeadOid: TREE,

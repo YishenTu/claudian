@@ -66,6 +66,7 @@ export interface CreateOutgoingHostTransferRuntimeInput {
 }
 
 export interface HostTransferModuleOptions {
+  readonly now?: () => Date;
   readonly settleImportedClaims?: (resource: OwnedAuthorityDirectoryCapability) => Promise<void>;
   readonly activateTransferredAuthority: (input: {
     readonly projectId: CollabProjectId;
@@ -226,6 +227,7 @@ export class HostTransferModule {
           this.createAuthority(input),
           admission,
           new NativeHostTransferPackagePreparation({
+            now: this.options.now,
             resourceAdmission: operation => this.options.projects.withAuthorityDirectory(input.authority.resource, operation),
             authorityDirectory: input.authority.authorityDirectory,
             database: input.authority.database,
@@ -238,6 +240,7 @@ export class HostTransferModule {
           this.#createProjection(input.git),
           this.recovery,
           {
+            now: this.options.now,
             installationKey: this.options.installationKey,
             sourceResourceId: input.authority.resource.resourceId,
             settleImportedClaims: () => this.options.settleImportedClaims?.(input.authority.resource) ?? Promise.resolve(),
@@ -285,6 +288,7 @@ export class HostTransferModule {
       this.#createProjection(git),
       this.recovery,
       {
+        now: this.options.now,
         installationKey: this.options.installationKey,
         syncProjection: this.options.syncProjection,
       },
@@ -313,6 +317,7 @@ export class HostTransferModule {
     git: HostTransferModuleGitFoundation,
   ): LocalHostTransferProjection {
     return new LocalHostTransferProjection({
+      now: this.options.now,
       authorityProjectionTransitions: this.options.authorityProjectionTransitions,
       loadMembership: projectId => this.options.projects.loadMembership(projectId),
       resolveWorkspace: workspacePath => (

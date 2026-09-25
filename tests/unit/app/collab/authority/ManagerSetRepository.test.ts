@@ -6,13 +6,14 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepository';
 import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthorityRepository';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 
-const CREATED_AT = '2026-08-17T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -10 });
 
 describe('ManagerSetRepository', () => {
   let SQL: SqlJsStatic;

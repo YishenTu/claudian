@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -16,7 +17,7 @@ import { PendingMembershipService } from '@/app/collab/lan/PendingMembershipServ
 
 const HOST_CREDENTIAL = Buffer.alloc(32, 1).toString('base64url');
 const MAIN_OID = 'a'.repeat(40);
-const NOW = new Date('2026-08-08T00:00:00.000Z');
+const NOW = new Date(testTime({ days: -19 }));
 
 describe('Membership lifecycle', () => {
   let SQL: SqlJsStatic;

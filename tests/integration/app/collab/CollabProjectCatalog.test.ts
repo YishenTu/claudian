@@ -6,6 +6,7 @@ import path from 'node:path';
 import { COLLAB_CHECKPOINT_ARTIFACT_LIMITS, COLLAB_LIMITS, collabCloudCapabilityDocument, collabCloudSuccessEnvelope } from '@claudian-collab/protocol';
 import { completeCollabFeatureOptions, completeCollabPublicationOptions } from '@test/helpers/collab/CollabFeatureTestHarness';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { ClaudianCollabService } from '@/app/collab/ClaudianCollabService';
 import { CollabFeatureService } from '@/app/collab/CollabFeatureService';
@@ -16,7 +17,7 @@ import { CollabPublicationStateStore } from '@/app/collab/publish/CollabPublicat
 import { CloudAuthorityAdapter, CloudProjectEventClient, type CloudProjectEventSocket } from '@/app/collab/remote-authority/CloudAuthorityAdapter';
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
-const CREATED_AT = '2026-09-07T00:00:00.000Z';
+const CREATED_AT = testTime({ days: 11 });
 const PERSONAL_REF = 'refs/heads/members/member-alice';
 class Socket implements CloudProjectEventSocket {
   constructor(readonly projectId: string) {}
@@ -329,7 +330,7 @@ it('resumes live observation after a Project suspension without reopening its vi
 
 it.each([false, true])('keeps unrelated Projects available when a setup journal cannot be decoded (indexed: %s)', async indexed => {
   await withFixture(async ({ service, foundation }) => {
-    if (indexed) await foundation.local.projects.upsertProject({ id: 'project-broken', name: 'Broken', authorityKind: 'cloud', workspacePath: 'workspace/broken', createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' });
+    if (indexed) await foundation.local.projects.upsertProject({ id: 'project-broken', name: 'Broken', authorityKind: 'cloud', workspacePath: 'workspace/broken', createdAt: testTime({ days: 5 }), updatedAt: testTime({ days: 5 }) });
     await foundation.local.projects.saveProjectDocument('project-broken', 'pending-operation', { projectId: 'project-broken', schemaVersion: 999 });
     const result = await service.initialize();
     expect(result).toMatchObject({ status: 'success', value: {

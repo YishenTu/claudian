@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import { matchCollabControlOperation } from '@/app/collab/lan/CollabControlOperationBindings';
 import {
   LAN_COLLAB_LIFECYCLE_CONTROL_OPERATIONS,
@@ -147,8 +149,8 @@ const cases: readonly RouteCase[] = [
     method: 'POST', operation: 'retireProject', segments: ['retire'],
   },
   {
-    body: mutation({ retiredAt: '2026-08-13T00:00:00.000Z' }),
-    expectedRequest: mutation({ retiredAt: '2026-08-13T00:00:00.000Z' }),
+    body: mutation({ retiredAt: testTime({ days: -14 }) }),
+    expectedRequest: mutation({ retiredAt: testTime({ days: -14 }) }),
     method: 'POST', operation: 'acknowledgeRetirement',
     segments: ['retirement', 'acknowledgements', 'current'],
   },
@@ -226,9 +228,9 @@ describe('handleLifecycleRoute', () => {
   it('propagates retirement cleanup only as an app-internal post-flush callback', async () => {
     const afterResponseFlushed = jest.fn();
     const response = {
-      acknowledgedAt: '2026-08-13T00:01:00.000Z',
+      acknowledgedAt: testTime({ days: -14, minutes: 1 }),
       projectId: PROJECT_ID,
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      retiredAt: testTime({ days: -14 }),
     };
     const execute = jest.fn().mockResolvedValue({
       afterResponseFlushed,

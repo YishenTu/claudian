@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   COLLAB_RETIREMENT_RECORD_SCHEMA_VERSION,
   decodeRetirementRecord,
@@ -9,7 +11,7 @@ const record: RetirementRecord = {
   kind: 'retirement',
   projectId: 'project-alpha',
   memberId: 'member-alice',
-  retiredAt: '2026-08-13T00:00:00.000Z',
+  retiredAt: testTime({ days: -14 }),
   cleanupOperationId: 'cleanup-one',
   cleanupStatus: 'pending',
   acknowledgementStatus: 'pending',
@@ -20,8 +22,8 @@ const record: RetirementRecord = {
   hostEndpoint: 'https://192.168.1.20:54545',
   hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
   hostCaFingerprint: 'a'.repeat(64),
-  createdAt: '2026-08-13T00:00:00.000Z',
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
+  updatedAt: testTime({ days: -14 }),
 };
 
 describe('RetirementRecord', () => {

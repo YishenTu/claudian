@@ -16,7 +16,7 @@ import type { CloudRetirementIntent } from '@/app/collab/retirement/CloudRetirem
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-cloud-retire';
-const RETIRED_AT = '2026-08-27T00:00:10.000Z';
+const RETIRED_AT = testTime({ seconds: 10 });
 
 function membership(role: 'manager' | 'member' = 'manager'): CollabLocalCloudMembershipRecord {
   return {
@@ -28,7 +28,7 @@ function membership(role: 'manager' | 'member' = 'manager'): CollabLocalCloudMem
       serverUrl: 'https://cloud.example.test/operator',
       wireVersion: 15,
     },
-    createdAt: '2026-08-27T00:00:00.000Z',
+    createdAt: testTime(),
     lastEventSequence: 4,
     lifecycle: 'active',
     member: {
@@ -43,7 +43,7 @@ function membership(role: 'manager' | 'member' = 'manager'): CollabLocalCloudMem
       workspacePath: 'workspace/cloud-retire',
     },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: '2026-08-27T00:00:00.000Z',
+    updatedAt: testTime(),
   };
 }
 
@@ -113,8 +113,8 @@ function authorityClient(): jest.Mocked<CloudRetirementAuthorityClientPort> {
       ..._args: Parameters<CloudRetirementAuthorityClientPort['readSnapshot']>
     ): Promise<Awaited<ReturnType<CloudRetirementAuthorityClientPort['readSnapshot']>>> => ({
       currentMember: {
-        activatedAt: '2026-08-27T00:00:00.000Z',
-        createdAt: '2026-08-27T00:00:00.000Z',
+        activatedAt: testTime(),
+        createdAt: testTime(),
         ...membership().member,
         status: 'active',
       },
@@ -125,7 +125,7 @@ function authorityClient(): jest.Mocked<CloudRetirementAuthorityClientPort> {
       project: {
         authorityGeneration: 3,
         authorityKind: 'cloud',
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         id: PROJECT_ID,
         mainOid: 'a'.repeat(40),
         mainRef: 'refs/heads/main',

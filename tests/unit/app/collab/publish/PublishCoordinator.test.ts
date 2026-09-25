@@ -1,4 +1,5 @@
 import { type CollabChangeRequest } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   COLLAB_PUBLICATION_STATE_SCHEMA_VERSION,
@@ -31,7 +32,7 @@ const COMMITTED = '3'.repeat(40);
 const CANDIDATE = '4'.repeat(40);
 const NEXT_MAIN = '5'.repeat(40);
 const NEXT_CANDIDATE = '6'.repeat(40);
-const NOW = '2026-08-09T00:00:00.000Z';
+const NOW = testTime({ days: -18 });
 const DESCRIPTION = 'Published change';
 const PUBLISH_REQUEST = { description: DESCRIPTION, projectId: PROJECT.projectId };
 

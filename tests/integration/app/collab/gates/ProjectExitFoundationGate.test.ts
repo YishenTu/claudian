@@ -45,7 +45,7 @@ describe('Project exit foundation gate', () => {
     await database.open();
     await database.mutate(connection => {
       new ProjectAuthorityRepository().initialize(connection, {
-        createdAt: '2026-08-13T00:00:00.000Z',
+        createdAt: testTime({ days: -14 }),
         hostCredentialHash: new Uint8Array(32).fill(1),
         hostDisplayName: 'Host',
         hostMemberId: 'member-host',
@@ -72,13 +72,13 @@ describe('Project exit foundation gate', () => {
     expect(lanCollabControlOperationCodec('retireProject').decodeResponse({
       data: {
         projectId: 'project-alpha',
-        retiredAt: '2026-08-13T08:00:00.000Z',
+        retiredAt: testTime({ days: -14, hours: 8 }),
       },
       protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
       requestId: 'retire-response',
     })).toEqual({
       projectId: 'project-alpha',
-      retiredAt: '2026-08-13T08:00:00.000Z',
+      retiredAt: testTime({ days: -14, hours: 8 }),
     });
   });
 
@@ -115,9 +115,9 @@ describe('Project exit foundation gate', () => {
       },
       result: {
         projectId: 'project-alpha',
-        retiredAt: '2026-08-13T08:00:00.000Z',
+        retiredAt: testTime({ days: -14, hours: 8 }),
       },
-      retiredAt: '2026-08-13T08:00:00.000Z',
+      retiredAt: testTime({ days: -14, hours: 8 }),
       schemaVersion: 2,
     });
 
@@ -219,13 +219,13 @@ describe('Project exit foundation gate', () => {
     });
     const trust = new HostTrustTransitionService();
     const proof = await trust.signTransition(sourceSigner, {
-      issuedAt: '2026-08-13T01:02:00.000Z',
+      issuedAt: testTime({ days: -14, hours: 1, minutes: 2 }),
       nextCaCertificatePem: targetCa.caCertificatePem,
       projectId: 'project-alpha',
       transferId: 'transfer-milestone',
     });
     const activationCertificate = await trust.signActivation(sourceSigner, {
-      cutoverAt: '2026-08-13T01:02:00.000Z',
+      cutoverAt: testTime({ days: -14, hours: 1, minutes: 2 }),
       manifestDigest: 'e'.repeat(64),
       projectId: 'project-alpha',
       targetCaFingerprint: targetCa.caFingerprint,
@@ -294,8 +294,8 @@ function insertMember(connection: AuthorityDatabaseConnection, memberId: string)
     memberId,
     `refs/heads/members/${memberId}`,
     new Uint8Array(32).fill(2),
-    '2026-08-13T00:00:00.000Z',
-    '2026-08-13T00:00:00.000Z',
+    testTime({ days: -14 }),
+    testTime({ days: -14 }),
   ]);
 }
 

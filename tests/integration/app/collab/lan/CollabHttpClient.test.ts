@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   type CollabHostTrustStore,
@@ -372,7 +373,7 @@ describe('CollabHttpClient pinned transport', () => {
           code: 'project-retired',
           safeContext: {
             projectId: 'project-alpha',
-            retiredAt: '2026-08-13T08:00:00.000Z',
+            retiredAt: testTime({ days: -14, hours: 8 }),
           },
         },
         protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
@@ -392,7 +393,7 @@ describe('CollabHttpClient pinned transport', () => {
       code: 'project-retired',
       safeContext: {
         projectId: 'project-alpha',
-        retiredAt: '2026-08-13T08:00:00.000Z',
+        retiredAt: testTime({ days: -14, hours: 8 }),
       },
     });
   });

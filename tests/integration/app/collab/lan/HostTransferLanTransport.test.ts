@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { createHostTransferPackageManifest } from '@/app/collab/host-transfer/HostTransferPackage';
 import type { HostTransferActivationCertificate } from '@/app/collab/host-transfer/HostTrustTransitionService';
@@ -54,7 +55,7 @@ describe('Host transfer provisional LAN transport', () => {
         byteCount: authoritySnapshot.byteLength,
         sha256: sha256(authoritySnapshot),
       },
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       gitBundle: { byteCount: gitBundle.byteLength, sha256: sha256(gitBundle) },
       gitObjectFormat: 'sha1',
       projectId: 'project-a',
@@ -140,11 +141,11 @@ describe('Host transfer provisional LAN transport', () => {
       ...(withEvidence ? { authorityProof: {
         schemaVersion: 1 as const, authorityGeneration: 4, projectId: 'project-a', transferId: 'transfer-a',
         targetHostMemberId: 'member-target', targetCaFingerprint: identity.caFingerprint,
-        manifestSha256: manifestDigest, cutoverAt: '2026-08-13T00:01:00.000Z',
+        manifestSha256: manifestDigest, cutoverAt: testTime({ days: -14, minutes: 1 }),
         caCertificatePem: identity.caCertificatePem, signatureAlgorithm: 'rsa-pss-sha256' as const,
         signature: Buffer.alloc(256, 8).toString('base64url'),
       } } : {}),
-      cutoverAt: '2026-08-13T00:01:00.000Z',
+      cutoverAt: testTime({ days: -14, minutes: 1 }),
       manifestDigest,
       projectId: 'project-a',
       schemaVersion: 1,
@@ -253,7 +254,7 @@ describe('Host transfer provisional LAN transport', () => {
     const tls = new LanTlsIdentity(vaultRoot, { installationKey: TEST_INSTALLATION_A });
     const identity = await tls.issueServerIdentity('127.0.0.1');
     const proof = {
-      issuedAt: '2026-08-13T00:00:00.000Z',
+      issuedAt: testTime({ days: -14 }),
       nextCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
       nextCaFingerprint: 'b'.repeat(64),
       previousCaFingerprint: 'a'.repeat(64),

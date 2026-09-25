@@ -19,6 +19,7 @@ import {
 } from '@claudian-collab/protocol';
 import { createDevelopmentCloudAuthorityAdapter, developmentCloudGitNetwork } from '@test/helpers/collab/developmentCloudTransports';
 import { runGitHttpBackendFixture } from '@test/helpers/collab/GitHttpBackendFixture';
+import { testTime } from '@test/helpers/testClock';
 
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -46,7 +47,7 @@ jest.setTimeout(30_000);
 const execFileAsync = promisify(execFile);
 const GIT_EXECUTABLE = 'git';
 const PROJECT_ID = 'project-cloud-publish-gate';
-const CREATED_AT = '2026-08-23T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -4 });
 const ACTORS = ['member-alice', 'member-bob'] as const;
 
 interface RepositoryFixture {

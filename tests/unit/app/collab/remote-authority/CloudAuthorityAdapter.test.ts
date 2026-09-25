@@ -44,7 +44,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const PROJECT_ID = 'project-cloud';
 const ACTOR_ID = 'member-alice';
-const CREATED_AT = '2026-08-22T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -5 });
 const MAIN_OID = 'a'.repeat(40);
 const HEAD_OID = 'b'.repeat(40);
 const MERGED_OID = 'c'.repeat(40);
@@ -113,7 +113,7 @@ function membership(): CollabLocalCloudMembershipRecord {
       serverUrl: 'https://cloud.example.test',
       wireVersion: 15,
     },
-    createdAt: '2026-08-22T00:00:00.000Z',
+    createdAt: testTime({ days: -5 }),
     lastEventSequence: 3,
     lifecycle: 'active',
     member: {
@@ -128,7 +128,7 @@ function membership(): CollabLocalCloudMembershipRecord {
       workspacePath: `workspace/${PROJECT_ID}`,
     },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: '2026-08-22T00:00:00.000Z',
+    updatedAt: testTime({ days: -5 }),
   };
 }
 
@@ -150,8 +150,8 @@ const limits = {
 function cloudSnapshot() {
   return COLLAB_CLOUD_PROJECT_SNAPSHOT_CODEC.decodeResponse({
     currentMember: {
-      activatedAt: '2026-08-22T00:00:00.000Z',
-      createdAt: '2026-08-22T00:00:00.000Z',
+      activatedAt: testTime({ days: -5 }),
+      createdAt: testTime({ days: -5 }),
       displayName: 'Alice',
       id: ACTOR_ID,
       personalRef: 'refs/heads/members/member-alice',
@@ -160,8 +160,8 @@ function cloudSnapshot() {
     },
     eventSequence: 7,
     members: [{
-      activatedAt: '2026-08-22T00:00:00.000Z',
-      createdAt: '2026-08-22T00:00:00.000Z',
+      activatedAt: testTime({ days: -5 }),
+      createdAt: testTime({ days: -5 }),
       displayName: 'Alice',
       id: ACTOR_ID,
       personalRef: 'refs/heads/members/member-alice',
@@ -172,7 +172,7 @@ function cloudSnapshot() {
     openTicketCount: 0,
     project: {
       authorityGeneration: 1,
-      createdAt: '2026-08-22T00:00:00.000Z',
+      createdAt: testTime({ days: -5 }),
       expectedMainOid: 'a'.repeat(40),
       id: PROJECT_ID,
       mainRef: 'refs/heads/main',
@@ -2492,9 +2492,9 @@ describe('CloudProjectEventClient', () => {
     await flush();
     socket.message(JSON.stringify({
       kind: 'project.retired',
-      occurredAt: '2026-08-27T00:00:00.000Z',
+      occurredAt: testTime(),
       payload: {
-        retiredAt: '2026-08-27T00:00:00.000Z',
+        retiredAt: testTime(),
         retirementId: 'retirement-cloud-one',
       },
       projectId: PROJECT_ID,
@@ -2505,7 +2505,7 @@ describe('CloudProjectEventClient', () => {
 
     expect(onInvalidation).toHaveBeenLastCalledWith({
       kind: 'retired',
-      retiredAt: '2026-08-27T00:00:00.000Z',
+      retiredAt: testTime(),
       retirementId: 'retirement-cloud-one',
       sequence: 4,
     });
@@ -2528,7 +2528,7 @@ describe('CloudProjectEventClient', () => {
     }, onInvalidation, { createSocket: () => socket });
     client.start(); socket.open(); await flush();
     socket.message(JSON.stringify({ kind, payload, projectId: PROJECT_ID,
-      protocolVersion: 15, sequence: 4, occurredAt: '2026-08-27T00:00:00.000Z' }));
+      protocolVersion: 15, sequence: 4, occurredAt: testTime() }));
     await flush();
     expect(onInvalidation).toHaveBeenLastCalledWith({ kind: 'changes', changes, sequence: 4 });
     client.dispose();
@@ -2595,7 +2595,7 @@ describe('CloudProjectEventClient', () => {
     for (let sequence = 4; sequence <= 67; sequence += 1) {
       socket.message(JSON.stringify({
         kind: 'request.updated',
-        occurredAt: '2026-08-22T00:00:00.000Z',
+        occurredAt: testTime({ days: -5 }),
         payload: { requestId: `request-${sequence}` },
         projectId: PROJECT_ID,
         protocolVersion: 15,
@@ -2631,7 +2631,7 @@ describe('CloudProjectEventClient', () => {
     socket.open();
     socket.message(JSON.stringify({
       kind: 'request.updated',
-      occurredAt: '2026-08-22T00:00:00.000Z',
+      occurredAt: testTime({ days: -5 }),
       payload: { requestId: 'request-four' },
       projectId: PROJECT_ID,
       protocolVersion: 15,

@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
+
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import { createHostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecovery';
 import { LanIncomingHostTransferPreparation } from '@/app/collab/host-transfer/LanIncomingHostTransferPreparation';
@@ -96,7 +98,7 @@ describe('LanIncomingHostTransferPreparation', () => {
     });
     const record = createHostTransferRecoveryRecord({
       ownerInstallationKey: "device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       direction: 'incoming',
       projectId: 'project-alpha',
       receiverCredential: provisional.receiverCredential,
@@ -130,7 +132,7 @@ describe('LanIncomingHostTransferPreparation', () => {
     })).rejects.toMatchObject({ code: 'authorization-denied' });
     const validRecord = createHostTransferRecoveryRecord({
       ownerInstallationKey: "device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      createdAt: '2026-08-13T00:00:00.000Z', direction: 'incoming',
+      createdAt: testTime({ days: -14 }), direction: 'incoming',
       projectId: 'project-alpha', receiverCredential: Buffer.alloc(32, 1).toString('base64url'),
       sourceHostMemberId: 'member-source',
       stagingDirectoryName: '.claudian-host-transfer-transfer-alpha',

@@ -8,6 +8,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { applyAuthorityMigrations } from '@/app/collab/authority/AuthoritySchema';
@@ -20,7 +21,7 @@ import {
 import { TicketService } from '@/app/collab/authority/TicketService';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 describe('SqlJsProjectDatabase', () => {
   let SQL: SqlJsStatic;

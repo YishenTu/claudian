@@ -85,7 +85,7 @@ export function status(
     batchRevision: null,
     batchSha256: null,
     checkpointSha256,
-    createdAt: '2026-08-28T00:00:00.000Z',
+    createdAt: testTime({ days: 1 }),
     direction,
     expiresAt: testTime({ days: 31 }),
     phase,
@@ -101,8 +101,8 @@ export function status(
     targetUrl,
     transferId: TRANSFER_ID,
     updatedAt: phase === 'collecting-readiness'
-      ? '2026-08-28T00:00:00.000Z'
-      : '2026-08-28T00:01:00.000Z',
+      ? testTime({ days: 1 })
+      : testTime({ days: 1, minutes: 1 }),
   };
 }
 
@@ -210,7 +210,7 @@ export function productionAuthorityTransferFixture() {
           ) VALUES (
             'member-production-peer', 'Bob',
             'refs/heads/members/member-production-peer', 'member', 'active', ?,
-            NULL, '2026-08-08T00:00:00.000Z', '2026-08-08T00:00:00.000Z', NULL
+            NULL, '${testTime({ days: -19 })}', '${testTime({ days: -19 })}', NULL
           )
         `, [Buffer.alloc(32, 8)]);
       });
@@ -230,8 +230,8 @@ export function productionAuthorityTransferFixture() {
             join_attempt_id, created_at, activated_at, revoked_at
           ) VALUES (
             'member-departed', 'Departed', 'refs/heads/members/member-departed',
-            'member', ?, ?, NULL, '2026-08-08T00:00:00.000Z',
-            '2026-08-08T00:00:00.000Z', '2026-08-08T00:00:00.000Z'
+            'member', ?, ?, NULL, '${testTime({ days: -19 })}',
+            '${testTime({ days: -19 })}', '${testTime({ days: -19 })}'
           )
         `, [departedStatus, Buffer.alloc(32, 9)]);
       });
@@ -706,7 +706,7 @@ export function productionAuthorityTransferFixture() {
       batchSha256: staged.claimBatch.batchSha256,
       certificateAlgorithm: 'ed25519' as const,
       checkpointSha256: staged.checkpointSha256,
-      committedAt: '2026-08-28T00:02:00.000Z',
+      committedAt: testTime({ days: 1, minutes: 2 }),
       operationIntentId: 'intent-cloud-relinquishment',
       projectId: PROJECT_ID,
       sourceAuthority: { generation: 2, kind: 'cloud' as const },
@@ -726,7 +726,7 @@ export function productionAuthorityTransferFixture() {
       phase: 'completed',
       relinquishmentProof,
       state: 'completed',
-      updatedAt: '2026-08-28T00:03:00.000Z',
+      updatedAt: testTime({ days: 1, minutes: 3 }),
     };
     const completedRecord = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -739,7 +739,7 @@ export function productionAuthorityTransferFixture() {
     });
     await targetFoundation.local.projects.authorityTransferRecords.save(completedRecord);
     const targetEntry = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
-      createdAt: '2026-08-28T00:00:00.000Z',
+      createdAt: testTime({ days: 1 }),
       expiresAt: completedStatus.expiresAt,
       operationIntentId: 'intent-production-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -751,7 +751,7 @@ export function productionAuthorityTransferFixture() {
     }), {
       caCertificatePem: prepared.caCertificatePem,
       caFingerprint: prepared.caFingerprint,
-      publishedAt: '2026-08-28T00:00:30.000Z',
+      publishedAt: testTime({ days: 1, seconds: 30 }),
       targetUrl: stagedRecord.status.targetUrl,
     });
     await targetFoundation.local.projects.authorityTransferEntries.saveTarget(

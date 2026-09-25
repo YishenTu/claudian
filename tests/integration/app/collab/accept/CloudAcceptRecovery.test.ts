@@ -8,6 +8,7 @@ import {
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
 } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { CollabClientProjection } from '@/app/collab/client/CollabClientProjection';
@@ -55,8 +56,8 @@ const MANAGER_ID = 'member-a';
 const CONTRIBUTOR_ID = 'member-b';
 const MANAGER_REF = `refs/heads/members/${MANAGER_ID}`;
 const CONTRIBUTOR_REF = `refs/heads/members/${CONTRIBUTOR_ID}`;
-const CREATED_AT = '2026-08-23T00:00:00.000Z';
-const ACCEPTED_AT = '2026-08-23T00:01:00.000Z';
+const CREATED_AT = testTime({ days: -4 });
+const ACCEPTED_AT = testTime({ days: -4, minutes: 1 });
 
 describe('Cloud Accept recovery integration', () => {
   let root: string;

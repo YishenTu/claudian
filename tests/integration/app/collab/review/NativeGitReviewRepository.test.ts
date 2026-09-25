@@ -7,6 +7,7 @@ import {
   writeGitFixtureBlob,
   writeGitFixtureTree,
 } from '@test/helpers/collabGitObjects';
+import { testTime } from '@test/helpers/testClock';
 
 import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
@@ -189,7 +190,7 @@ function requestDetail(mainOid: string, headOid: string): CollabRequestDetail {
     currentMainOid: mainOid,
     request: {
       commentCount: 0,
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       description: 'Published change',
       firstBaseOid: mainOid,
       id: 'request-a',
@@ -198,7 +199,7 @@ function requestDetail(mainOid: string, headOid: string): CollabRequestDetail {
       revision: 1,
       status: 'open',
       ticketRelations: [],
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     },
     reviewCondition: 'clean',
     reviewedHeadOid: headOid,

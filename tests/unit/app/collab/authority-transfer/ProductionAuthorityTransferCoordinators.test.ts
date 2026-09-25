@@ -47,8 +47,8 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 const PROJECT_ID = 'project-production-transfer';
 const TRANSFER_ID = 'transfer-production-transfer';
 const HOST_MEMBER_ID = 'member-host';
-const CREATED_AT = '2026-08-27T00:00:00.000Z';
-const EXPIRES_AT = '2026-09-26T00:00:00.000Z';
+const CREATED_AT = testTime();
+const EXPIRES_AT = testTime({ days: 30 });
 const CHECKPOINT_SHA256 = 'a'.repeat(64);
 const BATCH_SHA256 = 'b'.repeat(64);
 const SIGNATURE = Buffer.alloc(64, 7).toString('base64url');
@@ -134,7 +134,7 @@ function status(
       ? 'https://cloud.example.test'
       : 'https://192.168.1.10:43123',
     transferId: TRANSFER_ID,
-    updatedAt: '2026-08-27T00:00:10.000Z',
+    updatedAt: testTime({ seconds: 10 }),
     ...overrides,
   };
 }
@@ -153,7 +153,7 @@ function relinquishmentProof(
     certificate: SIGNATURE,
     certificateAlgorithm: 'ed25519',
     checkpointSha256: CHECKPOINT_SHA256,
-    committedAt: '2026-08-27T00:00:09.000Z',
+    committedAt: testTime({ seconds: 9 }),
     operationIntentId: direction === 'cloud-to-lan'
       ? 'intent-cloud-relinquishment'
       : 'intent-production-transfer',
@@ -259,7 +259,7 @@ class MemoryPersistence {
   withdrawCloudToLanTargetEntry = async (
     entry: CloudToLanTargetEntryRecord,
   ): Promise<CloudToLanTargetEntryRecord> => {
-    const withdrawn = withdrawCloudToLanTargetEntry(entry, '2026-08-27T00:00:11.000Z');
+    const withdrawn = withdrawCloudToLanTargetEntry(entry, testTime({ seconds: 11 }));
     this.targetEntry = withdrawn;
     return withdrawn;
   };
@@ -331,7 +331,7 @@ function custodyReceipt(direction: 'cloud-to-lan' | 'lan-to-cloud', batchSha256:
     batchRevision: 1,
     batchSha256,
     checkpointSha256: CHECKPOINT_SHA256,
-    committedAt: '2026-08-27T00:00:08.000Z',
+    committedAt: testTime({ seconds: 8 }),
     custodyAuthority: {
       generation: 1,
       kind: direction === 'lan-to-cloud' ? 'lan' : 'cloud',
@@ -359,7 +359,7 @@ function targetCleanupProof(
     batchSha256: null,
     checkpointSha256: null,
     cleanupSha256: '7'.repeat(64),
-    invalidatedAt: '2026-08-27T00:00:11.000Z',
+    invalidatedAt: testTime({ seconds: 11 }),
     operationIntentId,
     projectId: PROJECT_ID,
     receiptKeyId: 'receipt-key-production-transfer',
@@ -845,7 +845,7 @@ describe('production authority-transfer direction coordinators', () => {
       status: sourceProposalStatus(),
     });
     const canonical = status('lan-to-cloud', 'source-quiesced', {
-      createdAt: '2026-08-27T00:00:05.000Z',
+      createdAt: testTime({ seconds: 5 }),
       expiresAt: testTime({ days: 31, seconds: 5 }),
     });
     const capture = jest.fn()

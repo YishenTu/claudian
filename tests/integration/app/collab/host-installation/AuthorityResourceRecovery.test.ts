@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { HostTransferAuthorityService } from '@/app/collab/authority/HostTransferAuthorityService';
@@ -14,12 +15,12 @@ import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrust
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 import { RetirementTombstoneRepository } from '@/app/collab/retirement/RetirementTombstoneRepository';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 jest.setTimeout(120_000);
 
 const PROJECT_ID = 'project-alpha';
-const RETIRED_AT = new Date('2020-01-02T00:00:00.000Z');
+const RETIRED_AT = new Date(testTime({ days: -2429 }));
 
 describe('authority resource recovery', () => {
   let root: string;
@@ -47,7 +48,7 @@ describe('authority resource recovery', () => {
     const service = foundation();
     const authority = await service.createAuthority(PROJECT_ID);
     await authority.database.mutate(connection => authority.projects.initialize(connection, {
-      projectId: PROJECT_ID, name: 'Alpha', createdAt: '2020-01-01T00:00:00.000Z',
+      projectId: PROJECT_ID, name: 'Alpha', createdAt: testTime({ days: -2430 }),
       hostCredentialHash: new Uint8Array(32).fill(1), hostDisplayName: 'Host', hostMemberId: 'member-host',
     }));
     const retirement = new ProjectRetirementAuthorityService(authority.database,
@@ -91,7 +92,7 @@ describe('authority resource recovery', () => {
     const reopened = foundation();
     const entry = {
       id: PROJECT_ID, name: 'Alpha', workspacePath: 'Projects/Alpha', authorityKind: 'lan' as const,
-      createdAt: '2020-01-01T00:00:00.000Z', updatedAt: CREATED_AT,
+      createdAt: testTime({ days: -2430 }), updatedAt: CREATED_AT,
     };
     await reopened.local.projects.upsertProject(entry);
     reopened.setRetirementHandler({ handle: async result => {

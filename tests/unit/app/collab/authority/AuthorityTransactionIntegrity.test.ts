@@ -1,10 +1,11 @@
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 import { applyAuthorityMigrations, assertAuthorityDatabaseIntegrity } from '@/app/collab/authority/AuthoritySchema';
 import { assertAuthorityTransactionIntegrity, beginAuthorityTransaction } from '@/app/collab/authority/AuthorityTransactionIntegrity';
 
-const NOW = '2026-08-13T00:00:00.000Z';
+const NOW = testTime({ days: -14 });
 const OID = 'a'.repeat(40);
 
 function transact(database: Database, change: () => void): void {
@@ -23,7 +24,7 @@ function offer(database: Database, id: string, source: string, target: string): 
   database.run(`INSERT INTO manager_responsibility_offers (
     offer_id, purpose, source_manager_member_id, target_member_id, status,
     offered_at, expires_at, updated_at
-  ) VALUES (?, 'manager-promotion', ?, ?, 'offered', ?, '2026-08-14T00:00:00.000Z', ?)`, [id, source, target, NOW, NOW]);
+  ) VALUES (?, 'manager-promotion', ?, ?, 'offered', ?, '${testTime({ days: -13 })}', ?)`, [id, source, target, NOW, NOW]);
 }
 
 describe('Authority transaction integrity', () => {

@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import {
   ProjectEventHub,
@@ -6,7 +8,7 @@ import {
   type ProjectEventSource,
 } from '@/app/collab/lan/ProjectEventHub';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 describe('ProjectEventHub', () => {
   it('replays sequential redacted invalidations and maps authority event kinds', async () => {
@@ -199,14 +201,14 @@ describe('ProjectEventHub', () => {
 
     await hub.publishRetirement({
       projectId: 'project-a',
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      retiredAt: testTime({ days: -14 }),
     });
 
     expect(socket.messages.map(parseMessage)).toEqual([
       {
         kind: 'project-retired',
-        occurredAt: '2026-08-13T00:00:00.000Z',
-        payload: { retiredAt: '2026-08-13T00:00:00.000Z' },
+        occurredAt: testTime({ days: -14 }),
+        payload: { retiredAt: testTime({ days: -14 }) },
         projectId: 'project-a',
         protocolVersion: COLLAB_CONTROL_PROTOCOL_VERSION,
         sequence: 1,

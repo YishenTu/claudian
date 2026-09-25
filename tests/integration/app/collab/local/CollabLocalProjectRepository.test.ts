@@ -62,11 +62,11 @@ function indexEntry(
 ): CollabLocalProjectIndexEntry {
   return {
     authorityKind: 'lan',
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     id: PROJECT_ID,
     name: 'Project Alpha',
     lifecycle: 'active',
-    updatedAt: '2026-08-08T00:00:00.000Z',
+    updatedAt: testTime({ days: -19 }),
     workspacePath: 'workspace/project-alpha',
     ...overrides,
   };
@@ -88,7 +88,7 @@ function membershipRecord(
       hostCaFingerprint: 'a'.repeat(64),
       kind: 'lan',
     },
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     hostOwnership: { ownsAuthority: true },
     lifecycle: 'active',
     lastEventSequence: 0,
@@ -105,7 +105,7 @@ function membershipRecord(
       workspacePath: 'workspace/project-alpha',
     },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: '2026-08-08T00:00:00.000Z',
+    updatedAt: testTime({ days: -19 }),
     ...overrides,
   };
 }
@@ -120,7 +120,7 @@ function cloudMembershipRecord(): CollabLocalCloudMembershipRecord {
       serverUrl: 'HTTP://198.51.100.20:8787/operator/cloud',
       wireVersion: 15,
     },
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     lastEventSequence: 7,
     lifecycle: 'active',
     member: {
@@ -135,7 +135,7 @@ function cloudMembershipRecord(): CollabLocalCloudMembershipRecord {
       workspacePath: 'workspace/project-alpha',
     },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: '2026-08-08T00:01:00.000Z',
+    updatedAt: testTime({ days: -19, minutes: 1 }),
   };
 }
 
@@ -145,7 +145,7 @@ function durableRetirementRecord(): RetirementRecord {
     acknowledgementStatus: 'pending',
     cleanupOperationId: 'cleanup-retired-project',
     cleanupStatus: 'failed',
-    createdAt: '2026-08-08T00:01:00.000Z',
+    createdAt: testTime({ days: -19, minutes: 1 }),
     hostCaCertificatePem: [
       '-----BEGIN CERTIFICATE-----',
       'TEST CERTIFICATE DATA',
@@ -157,9 +157,9 @@ function durableRetirementRecord(): RetirementRecord {
     memberCredential: MEMBER_CREDENTIAL,
     memberId: 'member-retired',
     projectId: 'project-retired',
-    retiredAt: '2026-08-08T00:00:00.000Z',
+    retiredAt: testTime({ days: -19 }),
     schemaVersion: 1,
-    updatedAt: '2026-08-08T00:02:00.000Z',
+    updatedAt: testTime({ days: -19, minutes: 2 }),
   });
 }
 
@@ -355,11 +355,11 @@ describe('CollabLocalProjectRepository', () => {
     expect(index).toEqual({
       projects: [{
         authorityKind: 'lan',
-        createdAt: '2026-08-08T01:00:00.000Z',
+        createdAt: testTime({ days: -19, hours: 1 }),
         id: PROJECT_ID,
         lifecycle: 'active',
         name: 'Project Alpha',
-        updatedAt: '2026-08-08T01:00:00.000Z',
+        updatedAt: testTime({ days: -19, hours: 1 }),
         workspacePath: 'workspace/project-alpha',
       }],
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
@@ -380,10 +380,10 @@ describe('CollabLocalProjectRepository', () => {
     const legacyIndex = {
       projects: [{
         authorityKind: 'lan',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         id: PROJECT_ID,
         name: 'Project Alpha',
-        updatedAt: '2026-08-08T00:00:00.000Z',
+        updatedAt: testTime({ days: -19 }),
         workspacePath: `workspace/${PROJECT_ID}`,
       }],
       schemaVersion: 1,
@@ -491,21 +491,21 @@ describe('CollabLocalProjectRepository', () => {
       projects: [{
         authorityKind: 'lan',
         cleanupStatus: 'running',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         id: PROJECT_ID,
         lifecycle: 'leaving',
         name: 'Project Alpha',
-        updatedAt: '2026-08-08T00:01:00.000Z',
+        updatedAt: testTime({ days: -19, minutes: 1 }),
         workspacePath: 'workspace/project-alpha',
       }, {
         authorityKind: 'lan',
         cleanupStatus: 'failed',
-        createdAt: '2026-08-07T00:00:00.000Z',
+        createdAt: testTime({ days: -20 }),
         id: 'project-retired',
         lifecycle: 'retired',
         name: 'Retired Project',
-        retiredAt: '2026-08-08T00:00:00.000Z',
-        updatedAt: '2026-08-08T00:02:00.000Z',
+        retiredAt: testTime({ days: -19 }),
+        updatedAt: testTime({ days: -19, minutes: 2 }),
         workspacePath: 'workspace/project-retired',
       }],
       schemaVersion: 2,
@@ -518,21 +518,21 @@ describe('CollabLocalProjectRepository', () => {
       projects: [{
         authorityKind: 'lan',
         cleanupStatus: 'running',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         id: PROJECT_ID,
         lifecycle: 'leaving',
         name: 'Project Alpha',
-        updatedAt: '2026-08-08T00:01:00.000Z',
+        updatedAt: testTime({ days: -19, minutes: 1 }),
         workspacePath: 'workspace/project-alpha',
       }, {
         authorityKind: 'lan',
         cleanupStatus: 'failed',
-        createdAt: '2026-08-07T00:00:00.000Z',
+        createdAt: testTime({ days: -20 }),
         id: 'project-retired',
         lifecycle: 'retired',
         name: 'Retired Project',
-        retiredAt: '2026-08-08T00:00:00.000Z',
-        updatedAt: '2026-08-08T00:02:00.000Z',
+        retiredAt: testTime({ days: -19 }),
+        updatedAt: testTime({ days: -19, minutes: 2 }),
         workspacePath: 'workspace/project-retired',
       }],
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
@@ -593,7 +593,7 @@ describe('CollabLocalProjectRepository', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const intent = decodeCloudRetirementIntent({
       authorityGeneration: 7,
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       kind: 'cloud-retirement-intent',
       memberId: 'member-alice',
       personalRef: 'refs/heads/members/member-alice',
@@ -608,7 +608,7 @@ describe('CollabLocalProjectRepository', () => {
       result: null,
       schemaVersion: 1,
       serverUrl: 'http://198.51.100.20:8787/operator/cloud',
-      updatedAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: testTime({ days: -14 }),
     });
 
     await repository.saveProjectDocument(
@@ -748,8 +748,8 @@ describe('CollabLocalProjectRepository', () => {
         id: retirement.projectId,
         lifecycle: 'retired',
         name: 'Retired Project',
-        retiredAt: '2026-08-08T00:00:30.000Z',
-        updatedAt: '2026-08-08T00:01:30.000Z',
+        retiredAt: testTime({ days: -19, seconds: 30 }),
+        updatedAt: testTime({ days: -19, minutes: 1, seconds: 30 }),
         workspacePath: 'workspace/project-retired',
       })],
       schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
@@ -760,7 +760,7 @@ describe('CollabLocalProjectRepository', () => {
       projects: [{
         authorityKind: 'lan',
         cleanupStatus: retirement.cleanupStatus,
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         id: retirement.projectId,
         lifecycle: 'retired',
         name: 'Retired Project',
@@ -824,9 +824,9 @@ describe('CollabLocalProjectRepository', () => {
       kind: 'retirement-tombstone',
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      retiredAt: testTime({ days: -14 }),
       expiresAt: testTime({ days: 16 }),
-      result: { projectId: PROJECT_ID, retiredAt: '2026-08-13T00:00:00.000Z' },
+      result: { projectId: PROJECT_ID, retiredAt: testTime({ days: -14 }) },
       schemaVersion: 2,
       replay: {
         actorMemberId: 'member-alice',
@@ -919,8 +919,8 @@ describe('CollabLocalProjectRepository', () => {
         idempotencyKey: 'retire-one',
         requestFingerprint: 'b'.repeat(64),
       },
-      result: { projectId: PROJECT_ID, retiredAt: '2026-08-13T00:00:00.000Z' },
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      result: { projectId: PROJECT_ID, retiredAt: testTime({ days: -14 }) },
+      retiredAt: testTime({ days: -14 }),
       schemaVersion: 2,
     };
     await repository.saveRetirementTombstone(tombstone);
@@ -957,8 +957,8 @@ describe('CollabLocalProjectRepository', () => {
         idempotencyKey: 'retire-one',
         requestFingerprint: 'b'.repeat(64),
       },
-      result: { projectId: PROJECT_ID, retiredAt: '2026-08-13T00:00:00.000Z' },
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      result: { projectId: PROJECT_ID, retiredAt: testTime({ days: -14 }) },
+      retiredAt: testTime({ days: -14 }),
       schemaVersion: 2,
     };
     await repository.saveRetirementTombstone(tombstone);
@@ -983,7 +983,7 @@ describe('CollabLocalProjectRepository', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const record = {
       choice: 'keep-files' as const,
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       kind: 'local-cleanup' as const,
       markerNonce: 'A'.repeat(43),
       memberId: 'member-alice',
@@ -992,7 +992,7 @@ describe('CollabLocalProjectRepository', () => {
       projectId: PROJECT_ID,
       purpose: 'leave' as const,
       schemaVersion: 1 as const,
-      updatedAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: testTime({ days: -14 }),
       workspacePath: 'workspace/project-alpha',
     };
 
@@ -1006,7 +1006,7 @@ describe('CollabLocalProjectRepository', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const record = createHostTransferRecoveryRecord({
       ownerInstallationKey: "device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       direction: 'incoming',
       projectId: PROJECT_ID,
       receiverCredential: Buffer.alloc(32, 1).toString('base64url'),
@@ -1053,7 +1053,7 @@ describe('CollabLocalProjectRepository', () => {
       acknowledgementStatus: 'pending',
       cleanupOperationId: 'retire-local-one',
       cleanupStatus: 'pending',
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
       hostCaFingerprint: 'a'.repeat(64),
       hostEndpoint: 'https://192.168.1.20:54545',
@@ -1061,9 +1061,9 @@ describe('CollabLocalProjectRepository', () => {
       memberCredential: MEMBER_CREDENTIAL,
       memberId: 'member-alice',
       projectId: PROJECT_ID,
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      retiredAt: testTime({ days: -14 }),
       schemaVersion: 1,
-      updatedAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: testTime({ days: -14 }),
     });
 
     await repository.transitionProjectToRetired(record);
@@ -1103,7 +1103,7 @@ describe('CollabLocalProjectRepository', () => {
       acknowledgementStatus: 'pending',
       cleanupOperationId: 'retire-local-one',
       cleanupStatus: 'pending',
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
       hostCaFingerprint: 'a'.repeat(64),
       hostEndpoint: 'https://192.168.1.20:54545',
@@ -1111,15 +1111,15 @@ describe('CollabLocalProjectRepository', () => {
       memberCredential: MEMBER_CREDENTIAL,
       memberId: 'member-alice',
       projectId: PROJECT_ID,
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      retiredAt: testTime({ days: -14 }),
       schemaVersion: 1,
-      updatedAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: testTime({ days: -14 }),
     });
     await repository.upsertProject(indexEntry({
       cleanupStatus: 'pending',
       lifecycle: 'retired',
       retiredAt: retirement.retiredAt,
-      updatedAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: testTime({ days: -15 }),
     }));
     await repository.saveMembership(membershipRecord());
     await repository.saveLifecycleProjectDocument(
@@ -1163,7 +1163,7 @@ describe('CollabLocalProjectRepository', () => {
       acknowledgementStatus: 'pending',
       cleanupOperationId: 'retire-local-one',
       cleanupStatus: 'complete',
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
       hostCaFingerprint: 'a'.repeat(64),
       hostEndpoint: 'https://192.168.1.20:54545',
@@ -1171,14 +1171,14 @@ describe('CollabLocalProjectRepository', () => {
       memberCredential: MEMBER_CREDENTIAL,
       memberId: 'member-alice',
       projectId: PROJECT_ID,
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      retiredAt: testTime({ days: -14 }),
       schemaVersion: 1,
-      updatedAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: testTime({ days: -14 }),
     });
 
     await repository.transitionProjectToRetired(retirement, {
       authorityKind: 'lan',
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       name: 'Project Alpha',
       workspacePath: 'workspace/project-alpha',
     });
@@ -1230,7 +1230,7 @@ describe('CollabLocalProjectRepository', () => {
       acknowledgementStatus: 'pending',
       cleanupOperationId: 'retire-local-one',
       cleanupStatus: 'complete',
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
       hostCaFingerprint: 'a'.repeat(64),
       hostEndpoint: 'https://192.168.1.20:54545',
@@ -1238,9 +1238,9 @@ describe('CollabLocalProjectRepository', () => {
       memberCredential: MEMBER_CREDENTIAL,
       memberId: 'member-alice',
       projectId: PROJECT_ID,
-      retiredAt: '2026-08-13T00:00:00.000Z',
+      retiredAt: testTime({ days: -14 }),
       schemaVersion: 1,
-      updatedAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: testTime({ days: -14 }),
       cloudRetirementId: authorityKind === 'cloud' ? 'retire-cloud-one' : null,
       cloudServerUrl: authorityKind === 'cloud' ? 'https://cloud.example.test' : null,
       ...(authorityKind === 'cloud' ? {
@@ -1249,7 +1249,7 @@ describe('CollabLocalProjectRepository', () => {
     });
     await repository.transitionProjectToRetired(retirement, {
       authorityKind,
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       name: 'Project Alpha',
       workspacePath: 'workspace/project-alpha',
     });
@@ -1586,7 +1586,7 @@ describe('CollabLocalProjectRepository', () => {
     )).resolves.toMatchObject({
       lastEventSequence: 4,
       member: { id: 'member-alice', role: 'member' },
-      updatedAt: '2026-08-08T01:00:00.000Z',
+      updatedAt: testTime({ days: -19, hours: 1 }),
     });
     await expect(repository.updateMembershipProjection(
       PROJECT_ID,

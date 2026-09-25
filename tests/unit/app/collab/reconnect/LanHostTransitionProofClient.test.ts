@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type { PinnedCollabHttpClient } from '@/app/collab/lan/CollabHttpClient';
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import { LanHostTransitionProofClient } from '@/app/collab/reconnect/LanHostTransitionProofClient';
@@ -11,7 +13,7 @@ describe('LanHostTransitionProofClient', () => {
       previousCaFingerprint: 'a'.repeat(64),
       nextCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
       nextCaFingerprint: 'b'.repeat(64),
-      issuedAt: '2026-08-13T00:00:00.000Z',
+      issuedAt: testTime({ days: -14 }),
       signatureAlgorithm: 'rsa-pss-sha256' as const,
       signature: Buffer.alloc(256, 1).toString('base64url'),
     };

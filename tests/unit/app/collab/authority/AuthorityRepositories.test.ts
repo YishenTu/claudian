@@ -6,6 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -19,7 +20,7 @@ import {
 } from '@/app/collab/authority/SqlJsProjectDatabase';
 import { TicketRepository } from '@/app/collab/authority/TicketRepository';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 describe('Collab authority schema and base repositories', () => {
   let SQL: SqlJsStatic;
@@ -72,7 +73,7 @@ describe('Collab authority schema and base repositories', () => {
     await database.mutate(connection => {
       connection.run(
         "UPDATE change_requests SET status = 'discarded', updated_at = ? WHERE request_id = ?",
-        ['2026-08-08T00:01:00.000Z', 'request-one'],
+        [testTime({ days: -19, minutes: 1 }), 'request-one'],
       );
     });
     await expect(database.mutate(connection => {
@@ -130,7 +131,7 @@ describe('Collab authority schema and base repositories', () => {
     }));
     const second = await database.mutate(connection => events.append(connection, {
       actorMemberId: 'member-host',
-      createdAt: '2026-08-08T00:01:00.000Z',
+      createdAt: testTime({ days: -19, minutes: 1 }),
       kind: 'project.updated',
       payload: { name: 'Alpha two' },
     }));

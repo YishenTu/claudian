@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { testDate } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 
 import {
   createPiForkSessionFile,
@@ -55,40 +55,40 @@ describe('PiHistoryStore', () => {
 
   it('restores turn duration through tool calls using the final entry timestamp', () => {
     const content = [
-      { type: 'message', id: 'u1', timestamp: '2026-09-07T10:00:00.010Z',
-        message: { role: 'user', timestamp: 1788775200000, content: 'Inspect' } },
-      { type: 'message', id: 'a1', parentId: 'u1', timestamp: '2026-09-07T10:00:04Z',
-        message: { role: 'assistant', timestamp: 1788775200010, stopReason: 'toolUse',
+      { type: 'message', id: 'u1', timestamp: testTime({ days: 11, hours: 10, milliseconds: 10 }),
+        message: { role: 'user', timestamp: testDate({ days: 11, hours: 10 }).getTime(), content: 'Inspect' } },
+      { type: 'message', id: 'a1', parentId: 'u1', timestamp: testTime({ days: 11, hours: 10, seconds: 4 }),
+        message: { role: 'assistant', timestamp: testDate({ days: 11, hours: 10, milliseconds: 10 }).getTime(), stopReason: 'toolUse',
           content: [{ type: 'toolCall', id: 'read', name: 'read', arguments: { path: 'README.md' } }] } },
-      { type: 'message', id: 'tr1', parentId: 'a1', timestamp: '2026-09-07T10:00:05Z',
+      { type: 'message', id: 'tr1', parentId: 'a1', timestamp: testTime({ days: 11, hours: 10, seconds: 5 }),
         message: { role: 'toolResult', toolCallId: 'read', content: [{ type: 'text', text: 'Details' }] } },
-      { type: 'message', id: 'a2', parentId: 'tr1', timestamp: '2026-09-07T10:01:05.900Z',
-        message: { role: 'assistant', timestamp: 1788775205000, stopReason: 'stop',
+      { type: 'message', id: 'a2', parentId: 'tr1', timestamp: testTime({ days: 11, hours: 10, minutes: 1, seconds: 5, milliseconds: 900 }),
+        message: { role: 'assistant', timestamp: testDate({ days: 11, hours: 10, seconds: 5 }).getTime(), stopReason: 'stop',
           content: [{ type: 'text', text: 'Complete.' }] } },
     ].map(entry => JSON.stringify(entry)).join('\n');
 
     expect(parsePiSessionContent(content)).toMatchObject([
       { role: 'user', content: 'Inspect' },
-      { role: 'assistant', assistantMessageId: 'a2', content: 'Complete.', durationSeconds: 65, completedAt: Date.parse('2026-09-07T10:01:05.900Z') },
+      { role: 'assistant', assistantMessageId: 'a2', content: 'Complete.', durationSeconds: 65, completedAt: Date.parse(testTime({ days: 11, hours: 10, minutes: 1, seconds: 5, milliseconds: 900 })) },
     ]);
     expect(parsePiSessionContent(content, { leafEntryId: 'a1' })[1].durationSeconds).toBeUndefined();
   });
 
   it.each([
-    ['stop', '2026-09-07T10:00:00.900Z', 0],
-    ['length', '2026-09-07T10:00:05Z', 5],
-    ['aborted', '2026-09-07T10:00:05Z', undefined],
-    ['error', '2026-09-07T10:00:05Z', undefined],
-    ['toolUse', '2026-09-07T10:00:05Z', undefined],
+    ['stop', testTime({ days: 11, hours: 10, milliseconds: 900 }), 0],
+    ['length', testTime({ days: 11, hours: 10, seconds: 5 }), 5],
+    ['aborted', testTime({ days: 11, hours: 10, seconds: 5 }), undefined],
+    ['error', testTime({ days: 11, hours: 10, seconds: 5 }), undefined],
+    ['toolUse', testTime({ days: 11, hours: 10, seconds: 5 }), undefined],
     ['stop', undefined, undefined],
     ['stop', 'invalid', undefined],
-    ['stop', '2026-09-07T09:59:59Z', undefined],
+    ['stop', testTime({ days: 11, hours: 9, minutes: 59, seconds: 59 }), undefined],
   ])('restores only completed durations with valid timing (%s, %s)', (stopReason, timestamp, expected) => {
     const content = [
-      { id: 'u1', type: 'message', timestamp: '2026-09-07T10:00:00Z',
+      { id: 'u1', type: 'message', timestamp: testTime({ days: 11, hours: 10 }),
         message: { role: 'user', content: 'Inspect' } },
       { id: 'a1', parentId: 'u1', type: 'message', timestamp,
-        message: { role: 'assistant', timestamp: 1788775200010, stopReason, content: 'Reply' } },
+        message: { role: 'assistant', timestamp: testDate({ days: 11, hours: 10, milliseconds: 10 }).getTime(), stopReason, content: 'Reply' } },
     ].map(entry => JSON.stringify(entry)).join('\n');
 
     expect(parsePiSessionContent(content)[1].durationSeconds).toBe(expected);
@@ -96,13 +96,13 @@ describe('PiHistoryStore', () => {
 
   it('starts timing again at the next user prompt', () => {
     const content = [
-      { id: 'u1', type: 'message', timestamp: '2026-09-07T10:00:00Z',
+      { id: 'u1', type: 'message', timestamp: testTime({ days: 11, hours: 10 }),
         message: { role: 'user', content: 'First' } },
-      { id: 'a1', parentId: 'u1', type: 'message', timestamp: '2026-09-07T10:00:05Z',
+      { id: 'a1', parentId: 'u1', type: 'message', timestamp: testTime({ days: 11, hours: 10, seconds: 5 }),
         message: { role: 'assistant', stopReason: 'stop', content: 'First reply' } },
-      { id: 'u2', parentId: 'a1', type: 'message', timestamp: '2026-09-07T12:00:00Z',
+      { id: 'u2', parentId: 'a1', type: 'message', timestamp: testTime({ days: 11, hours: 12 }),
         message: { role: 'user', content: 'Second' } },
-      { id: 'a2', parentId: 'u2', type: 'message', timestamp: '2026-09-07T12:00:03Z',
+      { id: 'a2', parentId: 'u2', type: 'message', timestamp: testTime({ days: 11, hours: 12, seconds: 3 }),
         message: { role: 'assistant', stopReason: 'stop', content: 'Second reply' } },
     ].map(entry => JSON.stringify(entry)).join('\n');
 
@@ -637,7 +637,7 @@ describe('PiHistoryStore', () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-fork-'));
     const sourceFile = path.join(dir, 'source.jsonl');
     await fs.writeFile(sourceFile, [
-      JSON.stringify({ type: 'session', version: 3, id: 'source-session', timestamp: '2026-01-01T00:00:00.000Z', cwd: '/source-cwd' }),
+      JSON.stringify({ type: 'session', version: 3, id: 'source-session', timestamp: testTime({ days: -238 }), cwd: '/source-cwd' }),
       JSON.stringify({ id: 'u1', parentId: null, type: 'message', message: { role: 'user', content: 'First' } }),
       JSON.stringify({ id: 'a1', parentId: 'u1', type: 'message', message: { role: 'assistant', content: 'Done' } }),
       JSON.stringify({ id: 'u2', parentId: 'a1', type: 'message', message: { role: 'user', content: 'Do not copy' } }),
@@ -654,7 +654,7 @@ describe('PiHistoryStore', () => {
     expect(forked).toEqual({
       leafEntryId: 'a1',
       parentSession: sourceFile,
-      sessionFile: path.join(dir, '2026-02-03T04-05-06-789Z_fork-session.jsonl'),
+      sessionFile: path.join(dir, `${testTime({ days: -205, hours: 4, minutes: 5, seconds: 6, milliseconds: 789 }).replace(/[:.]/g, '-')}_fork-session.jsonl`),
       sessionId: 'fork-session',
     });
     expect(forkedLines).toEqual([
@@ -662,7 +662,7 @@ describe('PiHistoryStore', () => {
         cwd: '/target-cwd',
         id: 'fork-session',
         parentSession: sourceFile,
-        timestamp: '2026-02-03T04:05:06.789Z',
+        timestamp: testTime({ days: -205, hours: 4, minutes: 5, seconds: 6, milliseconds: 789 }),
         type: 'session',
         version: 3,
       },
@@ -702,7 +702,7 @@ describe('PiHistoryStore', () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-fork-linear-'));
     const sourceFile = path.join(dir, 'source.jsonl');
     await fs.writeFile(sourceFile, [
-      JSON.stringify({ type: 'session', version: 3, id: 'source-session', timestamp: '2026-01-01T00:00:00.000Z', cwd: '/source-cwd' }),
+      JSON.stringify({ type: 'session', version: 3, id: 'source-session', timestamp: testTime({ days: -238 }), cwd: '/source-cwd' }),
       JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'Read a file' } }),
       JSON.stringify({
         id: 'a1',
@@ -756,16 +756,16 @@ describe('PiHistoryStore', () => {
 it.each([false, true])('restores Pi turn output across tool loops (missing usage: %s)', (missing) => {
   const content = [
     { type: 'session', id: 'session' },
-    { type: 'message', id: 'u', parentId: null, timestamp: '2026-09-20T11:00:00.010Z',
-      message: { role: 'user', content: 'Work', timestamp: Date.parse('2026-09-20T11:00:00Z') } },
-    { type: 'message', id: 'a', parentId: 'u', timestamp: '2026-09-20T11:00:01Z',
+    { type: 'message', id: 'u', parentId: null, timestamp: testTime({ days: 24, hours: 11, milliseconds: 10 }),
+      message: { role: 'user', content: 'Work', timestamp: Date.parse(testTime({ days: 24, hours: 11 })) } },
+    { type: 'message', id: 'a', parentId: 'u', timestamp: testTime({ days: 24, hours: 11, seconds: 1 }),
       message: { role: 'assistant', stopReason: 'toolUse', usage: missing ? undefined : { output: 100 },
         content: [{ type: 'toolCall', id: 'tool', name: 'read', arguments: {} }] } },
-    { type: 'message', id: 'r', parentId: 'a', timestamp: '2026-09-20T11:00:02Z',
+    { type: 'message', id: 'r', parentId: 'a', timestamp: testTime({ days: 24, hours: 11, seconds: 2 }),
       message: { role: 'toolResult', toolCallId: 'tool', content: [{ type: 'text', text: 'Result' }] } },
-    { type: 'message', id: 'final', parentId: 'r', timestamp: '2026-09-20T11:00:02.500Z',
+    { type: 'message', id: 'final', parentId: 'r', timestamp: testTime({ days: 24, hours: 11, seconds: 2, milliseconds: 500 }),
       message: { role: 'assistant', stopReason: 'stop', usage: { output: 25 },
-        timestamp: Date.parse('2026-09-20T11:00:02Z'), content: [{ type: 'text', text: 'Done' }] } },
+        timestamp: Date.parse(testTime({ days: 24, hours: 11, seconds: 2 })), content: [{ type: 'text', text: 'Done' }] } },
   ].map(entry => JSON.stringify(entry)).join('\n');
   expect(parsePiSessionContent(content).at(-1)?.turnStats).toEqual(missing ? undefined : { outputTokens: 125, durationMs: 2500 });
 });
@@ -773,9 +773,9 @@ it.each([false, true])('restores Pi turn output across tool loops (missing usage
 
 it('keeps live and replay stats unavailable for a hidden recovery-only input', () => {
   const content = [
-    { type: 'message', id: 'recovery', timestamp: '2026-09-20T11:00:00Z',
+    { type: 'message', id: 'recovery', timestamp: testTime({ days: 24, hours: 11 }),
       message: { role: 'user', content: encodePiRecoveryPrompt('User: Previous question', null) } },
-    { type: 'message', id: 'answer', parentId: 'recovery', timestamp: '2026-09-20T11:00:02.500Z',
+    { type: 'message', id: 'answer', parentId: 'recovery', timestamp: testTime({ days: 24, hours: 11, seconds: 2, milliseconds: 500 }),
       message: { role: 'assistant', content: 'Answer', stopReason: 'stop', usage: { output: 125 } } },
   ].map(record => JSON.stringify(record)).join('\n');
   const entries = resolvePiActivePath(parsePiSessionEntries(content).entries);

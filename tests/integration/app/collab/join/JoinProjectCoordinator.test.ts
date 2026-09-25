@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { COLLAB_MAIN_REF, collabMemberRef } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
@@ -35,7 +36,7 @@ import {
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const NOW = new Date('2026-08-08T00:00:00.000Z');
+const NOW = new Date(testTime({ days: -19 }));
 const OID = 'a'.repeat(40);
 const CA_FINGERPRINT = 'ab'.repeat(32);
 const CA_PEM = '-----BEGIN CERTIFICATE-----\nTEST CA\n-----END CERTIFICATE-----\n';

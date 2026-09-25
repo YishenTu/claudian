@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import type { LeaveProjectResponse } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -22,7 +23,7 @@ import { ManagerResponsibilityOperationCoordinator } from '@/app/collab/membersh
 import { CloudProjectCredentialStore } from '@/app/collab/remote-authority/CloudProjectCredentialStore';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const NOW = '2026-08-26T00:00:00.000Z';
+const NOW = testTime({ days: -1 });
 
 describe('Pending Cloud Leave lost-response recovery', () => {
   let vaultRoot: string;

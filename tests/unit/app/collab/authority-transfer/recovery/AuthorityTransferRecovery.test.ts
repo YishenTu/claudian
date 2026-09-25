@@ -94,7 +94,7 @@ function status(
     batchRevision: null,
     batchSha256: null,
     checkpointSha256: null,
-    createdAt: '2026-08-26T00:00:00.000Z',
+    createdAt: testTime({ days: -1 }),
     direction: 'lan-to-cloud',
     expiresAt: testTime({ days: 34 }),
     phase,
@@ -106,10 +106,10 @@ function status(
     targetUrl: 'http://127.0.0.1:8787/',
     transferId,
     updatedAt: phase === 'collecting-readiness'
-      ? '2026-08-26T00:00:00.000Z'
+      ? testTime({ days: -1 })
       : phase === 'source-quiesced'
-        ? '2026-08-26T00:01:00.000Z'
-        : '2026-08-26T00:02:00.000Z',
+        ? testTime({ days: -1, minutes: 1 })
+        : testTime({ days: -1, minutes: 2 }),
   };
 }
 
@@ -154,7 +154,7 @@ describe('AuthorityTransferRecovery', () => {
       now: testClock(),
     });
     await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
-      installationKey: TEST_INSTALLATION_A, proposedAt: '2026-08-26T00:00:00.000Z',
+      installationKey: TEST_INSTALLATION_A, proposedAt: testTime({ days: -1 }),
       proposedByMemberId: 'member-alpha', request: { projectId: PROJECT_ID, expectedAuthorityGeneration: 1,
         idempotencyKey: 'intent-before-roundtrip', targetUrl: 'http://127.0.0.1:8787/' },
     }));
@@ -194,7 +194,7 @@ describe('AuthorityTransferRecovery', () => {
       const proof = {
         batchRevision: 1, batchSha256: 'b'.repeat(64), checkpointSha256: 'a'.repeat(64),
         certificate: 'A'.repeat(86), certificateAlgorithm: 'ed25519' as const,
-        committedAt: '2026-08-26T00:03:00.000Z', operationIntentId: `retained-intent-${generation}`,
+        committedAt: testTime({ days: -1, minutes: 3 }), operationIntentId: `retained-intent-${generation}`,
         projectId: PROJECT_ID, sourceAuthority: { generation, kind: 'lan' as const },
         sourceHostMemberId: 'member-alpha', targetAuthority: { generation: generation + 1, kind: 'cloud' as const }, transferId,
       };
@@ -205,7 +205,7 @@ describe('AuthorityTransferRecovery', () => {
         status: { ...status('source-quiesced'), transferId,
           batchRevision: 1, batchSha256: proof.batchSha256, checkpointSha256: proof.checkpointSha256,
           sourceAuthority: proof.sourceAuthority, targetAuthority: proof.targetAuthority,
-          phase: 'completed', state: 'completed', relinquishmentProof: proof, updatedAt: '2026-08-26T00:04:00.000Z' },
+          phase: 'completed', state: 'completed', relinquishmentProof: proof, updatedAt: testTime({ days: -1, minutes: 4 }) },
       });
       await repository.authorityTransferRecords.saveRetained({
         schemaVersion: 2, record, custody: null, commitment: null, targetHandleSha256: null,
@@ -474,7 +474,7 @@ describe('AuthorityTransferRecovery', () => {
       isRecoveryOwner: ownerInstallationKey => ownerInstallationKey === TEST_INSTALLATION_A,
     });
     const preparing = createCloudToLanTargetEntry({
-      createdAt: '2026-08-27T00:00:00.000Z',
+      createdAt: testTime(),
       expiresAt: testTime({ days: 30 }),
       operationIntentId: 'intent-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -487,7 +487,7 @@ describe('AuthorityTransferRecovery', () => {
     const published = publishCloudToLanTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-27T00:01:00.000Z',
+      publishedAt: testTime({ minutes: 1 }),
       targetUrl: 'https://192.168.1.20:54545',
     });
     await repository.authorityTransferEntries.saveTarget(published);
@@ -556,7 +556,7 @@ describe('AuthorityTransferRecovery', () => {
     }));
     await repository.authorityTransferClaims.save(createAuthorityTransferClaimCustodyRecord({
       batch: claimBatch(),
-      createdAt: '2026-08-26T00:00:30.000Z',
+      createdAt: testTime({ days: -1, seconds: 30 }),
       operationIntentId: 'intent-one',
       purpose: 'source-terminal',
     }));
@@ -704,7 +704,7 @@ describe('AuthorityTransferRecovery', () => {
     }));
     const custody = createAuthorityTransferClaimCustodyRecord({
       batch,
-      createdAt: '2026-08-26T00:00:30.000Z',
+      createdAt: testTime({ days: -1, seconds: 30 }),
       operationIntentId: 'intent-one',
       purpose: 'source-terminal',
     });
@@ -772,7 +772,7 @@ describe('AuthorityTransferRecovery', () => {
     }));
     await repository.hostTransferRecovery.save(createHostTransferRecoveryRecord({
       ownerInstallationKey: "device-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       direction: 'incoming',
       projectId: PROJECT_ID,
       receiverCredential: 'A'.repeat(43),

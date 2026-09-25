@@ -57,7 +57,7 @@ function membership(): CollabLocalLanMembershipRecord {
       hostCaFingerprint: fingerprint,
       kind: 'lan',
     },
-    createdAt: '2026-08-07T00:00:00.000Z',
+    createdAt: testTime({ days: -20 }),
     hostOwnership: { ownsAuthority: false },
     lastEventSequence: 4,
     member: {
@@ -73,7 +73,7 @@ function membership(): CollabLocalLanMembershipRecord {
       workspacePath: 'workspace/project-a',
     },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: '2026-08-07T00:00:00.000Z',
+    updatedAt: testTime({ days: -20 }),
   };
 }
 
@@ -87,7 +87,7 @@ function cloudMembership(): CollabLocalCloudMembershipRecord {
       serverUrl: 'https://old.example.test/operator',
       wireVersion: COLLAB_PROTOCOL_VERSION,
     },
-    createdAt: '2026-08-07T00:00:00.000Z',
+    createdAt: testTime({ days: -20 }),
     lastEventSequence: 4,
     lifecycle: 'active',
     member: {
@@ -102,7 +102,7 @@ function cloudMembership(): CollabLocalCloudMembershipRecord {
       workspacePath: 'workspace/project-a',
     },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: '2026-08-07T00:00:00.000Z',
+    updatedAt: testTime({ days: -20 }),
   };
 }
 

@@ -377,7 +377,7 @@ describe('G3 local Project milestone gate', () => {
       certificate: Buffer.alloc(64, 2).toString('base64url'),
       certificateAlgorithm: 'ed25519' as const,
       checkpointSha256,
-      committedAt: '2026-08-27T00:02:00.000Z',
+      committedAt: testTime({ minutes: 2 }),
       operationIntentId,
       projectId: PROJECT_ID,
       sourceAuthority: { generation: 1, kind: 'lan' as const },
@@ -391,7 +391,7 @@ describe('G3 local Project milestone gate', () => {
       batchRevision: 1,
       batchSha256: claimBatch.batchSha256,
       checkpointSha256,
-      createdAt: '2026-08-27T00:00:00.000Z',
+      createdAt: testTime(),
       direction: 'lan-to-cloud',
       expiresAt: testTime({ days: 31 }),
       phase,
@@ -403,8 +403,8 @@ describe('G3 local Project milestone gate', () => {
       targetUrl: 'https://cloud.example.test/',
       transferId,
       updatedAt: phase === 'completed'
-        ? '2026-08-27T00:03:00.000Z'
-        : '2026-08-27T00:02:00.000Z',
+        ? testTime({ minutes: 3 })
+        : testTime({ minutes: 2 }),
     });
     const record = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -417,7 +417,7 @@ describe('G3 local Project milestone gate', () => {
     const custody = decodeAuthorityTransferClaimCustodyRecord({
       ...createAuthorityTransferClaimCustodyRecord({
         batch: claimBatch,
-        createdAt: '2026-08-27T00:01:00.000Z',
+        createdAt: testTime({ minutes: 1 }),
         operationIntentId,
         purpose: 'source-terminal',
       }),
@@ -425,7 +425,7 @@ describe('G3 local Project milestone gate', () => {
         batchRevision: 1,
         batchSha256: claimBatch.batchSha256,
         checkpointSha256,
-        committedAt: '2026-08-27T00:01:30.000Z',
+        committedAt: testTime({ minutes: 1, seconds: 30 }),
         custodyAuthority: { generation: 1, kind: 'lan' },
         operationIntentId,
         projectId: PROJECT_ID,
@@ -434,12 +434,12 @@ describe('G3 local Project milestone gate', () => {
         targetAuthorityGeneration: 2,
         transferId,
       },
-      updatedAt: '2026-08-27T00:01:30.000Z',
+      updatedAt: testTime({ minutes: 1, seconds: 30 }),
     });
     const snapshot = (): CollabCloudProjectSnapshot => ({
       currentMember: {
-        activatedAt: '2026-08-08T00:00:00.000Z',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        activatedAt: testTime({ days: -19 }),
+        createdAt: testTime({ days: -19 }),
         displayName: 'Alice',
         id: MEMBER_ID,
         personalRef: `refs/heads/members/${MEMBER_ID}`,
@@ -453,7 +453,7 @@ describe('G3 local Project milestone gate', () => {
       project: {
         authorityGeneration: 2,
         authorityKind: 'cloud',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         id: PROJECT_ID,
         mainOid: git(path.join(vaultRoot, 'workspace', 'm2-notes'), ['rev-parse', 'HEAD']),
         mainRef: 'refs/heads/main',
@@ -633,7 +633,7 @@ describe('G3 local Project milestone gate', () => {
         batchRevision: 1,
         batchSha256: 'b'.repeat(64),
         checkpointSha256,
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         direction,
         expiresAt: testTime({ days: 31 }),
         phase: 'completed',
@@ -644,7 +644,7 @@ describe('G3 local Project milestone gate', () => {
           certificate: Buffer.alloc(64, 2).toString('base64url'),
           certificateAlgorithm: 'ed25519',
           checkpointSha256,
-          committedAt: '2026-08-27T00:00:08.000Z',
+          committedAt: testTime({ seconds: 8 }),
           operationIntentId: managerOperationIntentId,
           projectId: PROJECT_ID,
           sourceAuthority,
@@ -657,11 +657,11 @@ describe('G3 local Project milestone gate', () => {
         targetAuthority,
         targetUrl,
         transferId,
-        updatedAt: '2026-08-27T00:00:10.000Z',
+        updatedAt: testTime({ seconds: 10 }),
       };
       let claimant = createAuthorityTransferClaimantRecord({
         cloudPrincipalId: direction === 'lan-to-cloud' ? 'vault-' + 'a'.repeat(64) : null,
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         lanTarget,
         managerPredecessor: direction === 'cloud-to-lan'
           ? {
@@ -690,12 +690,12 @@ describe('G3 local Project milestone gate', () => {
           transferId,
         },
         phase: 'claim-retained',
-        updatedAt: '2026-08-27T00:00:01.000Z',
+        updatedAt: testTime({ seconds: 1 }),
       });
       claimant = advanceAuthorityTransferClaimantRecord(claimant, {
         phase: 'credential-persisted',
         targetCredential: direction === 'cloud-to-lan' ? targetCredential : null,
-        updatedAt: '2026-08-27T00:00:02.000Z',
+        updatedAt: testTime({ seconds: 2 }),
       });
       claimant = advanceAuthorityTransferClaimantRecord(claimant, {
         phase: 'target-claimed',
@@ -707,17 +707,17 @@ describe('G3 local Project milestone gate', () => {
           projectId: PROJECT_ID,
           receiptId: `receipt-${direction}`,
           receiptKeyId: `receipt-key-${direction}`,
-          redeemedAt: '2026-08-27T00:01:00.000Z',
+          redeemedAt: testTime({ minutes: 1 }),
           signature: Buffer.alloc(64, 3).toString('base64url'),
           signatureAlgorithm: 'ed25519',
           targetAuthorityGeneration: 2,
           transferId,
         },
-        updatedAt: '2026-08-27T00:01:00.000Z',
+        updatedAt: testTime({ minutes: 1 }),
       });
       claimant = advanceAuthorityTransferClaimantRecord(claimant, {
         phase: 'source-acknowledged',
-        updatedAt: '2026-08-27T00:01:01.000Z',
+        updatedAt: testTime({ minutes: 1, seconds: 1 }),
       });
       if (direction === 'lan-to-cloud') {
         await foundation.local.projects.saveMembership({
@@ -739,7 +739,7 @@ describe('G3 local Project milestone gate', () => {
           },
           project: membership.project,
           schemaVersion: membership.schemaVersion,
-          updatedAt: '2026-08-27T00:01:01.000Z',
+          updatedAt: testTime({ minutes: 1, seconds: 1 }),
         });
       } else {
         await foundation.local.projects.saveMembership({
@@ -754,7 +754,7 @@ describe('G3 local Project milestone gate', () => {
           },
           hostOwnership: { autoStart: false, ownsAuthority: false },
           member: { ...membership.member, credential: targetCredential },
-          updatedAt: '2026-08-27T00:01:01.000Z',
+          updatedAt: testTime({ minutes: 1, seconds: 1 }),
         });
       }
       await foundation.local.projects.authorityTransferClaimants.save(claimant);
@@ -813,7 +813,7 @@ describe('G3 local Project milestone gate', () => {
       batchRevision: 1,
       batchSha256: 'b'.repeat(64),
       checkpointSha256,
-      createdAt: '2026-08-01T00:00:00.000Z',
+      createdAt: testTime({ days: -26 }),
       direction: 'lan-to-cloud',
       expiresAt: testTime({ days: 4 }),
       phase: 'completed',
@@ -824,7 +824,7 @@ describe('G3 local Project milestone gate', () => {
         certificate: Buffer.alloc(64, 2).toString('base64url'),
         certificateAlgorithm: 'ed25519',
         checkpointSha256,
-        committedAt: '2026-08-01T00:00:08.000Z',
+        committedAt: testTime({ days: -26, seconds: 8 }),
         operationIntentId: 'intent-manager-reissued-source',
         projectId: PROJECT_ID,
         sourceAuthority: { generation: 1, kind: 'lan' },
@@ -837,12 +837,12 @@ describe('G3 local Project milestone gate', () => {
       targetAuthority: { generation: 2, kind: 'cloud' },
       targetUrl: 'https://cloud.example.test/',
       transferId,
-      updatedAt: '2026-08-01T00:00:10.000Z',
+      updatedAt: testTime({ days: -26, seconds: 10 }),
     };
     const descriptor = {
       claim: claimValue,
       claimGeneration: 4,
-      createdAt: '2026-09-01T00:00:00.000Z',
+      createdAt: testTime({ days: 5 }),
       expiresAt: testTime({ days: 35 }),
       memberId: MEMBER_ID,
       projectId: PROJECT_ID,
@@ -853,8 +853,8 @@ describe('G3 local Project milestone gate', () => {
     let repositoryHead = '';
     const readSnapshot = jest.fn(async (): Promise<CollabCloudProjectSnapshot> => ({
       currentMember: {
-        activatedAt: '2026-08-01T00:00:00.000Z',
-        createdAt: '2026-08-01T00:00:00.000Z',
+        activatedAt: testTime({ days: -26 }),
+        createdAt: testTime({ days: -26 }),
         displayName: 'Alice',
         id: MEMBER_ID,
         personalRef: `refs/heads/members/${MEMBER_ID}`,
@@ -868,7 +868,7 @@ describe('G3 local Project milestone gate', () => {
       project: {
         authorityGeneration: 2,
         authorityKind: 'cloud',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         id: PROJECT_ID,
         mainOid: repositoryHead,
         mainRef: 'refs/heads/main',
@@ -888,7 +888,7 @@ describe('G3 local Project milestone gate', () => {
           projectId: PROJECT_ID,
           receiptId: 'receipt-manager-reissued-gate',
           receiptKeyId: 'receipt-key-manager-reissued-gate',
-          redeemedAt: '2026-09-02T00:00:00.000Z',
+          redeemedAt: testTime({ days: 6 }),
           signature: Buffer.alloc(64, 3).toString('base64url'),
           signatureAlgorithm: 'ed25519',
           targetAuthorityGeneration: 2,
@@ -1038,7 +1038,7 @@ describe('G3 local Project milestone gate', () => {
         batchRevision: 1,
         batchSha256: claimBatch.batchSha256,
         checkpointSha256,
-        createdAt: '2026-06-01T00:00:00.000Z',
+        createdAt: testTime({ days: -87 }),
         direction: 'lan-to-cloud',
         expiresAt: testTime({ days: -57 }),
         phase: 'completed',
@@ -1049,7 +1049,7 @@ describe('G3 local Project milestone gate', () => {
           certificate: Buffer.alloc(64, 7).toString('base64url'),
           certificateAlgorithm: 'ed25519',
           checkpointSha256,
-          committedAt: '2026-06-01T00:00:01.000Z',
+          committedAt: testTime({ days: -87, seconds: 1 }),
           operationIntentId,
           projectId: PROJECT_ID,
           sourceAuthority: { generation: 1, kind: 'lan' },
@@ -1062,14 +1062,14 @@ describe('G3 local Project milestone gate', () => {
         targetAuthority: { generation: 2, kind: 'cloud' },
         targetUrl: 'https://cloud.example.test/',
         transferId,
-        updatedAt: '2026-06-01T00:00:02.000Z',
+        updatedAt: testTime({ days: -87, seconds: 2 }),
       },
       }),
     );
     const retainedClaims = decodeAuthorityTransferClaimCustodyRecord({
       ...createAuthorityTransferClaimCustodyRecord({
         batch: claimBatch,
-        createdAt: '2026-06-01T00:00:00.000Z',
+        createdAt: testTime({ days: -87 }),
         operationIntentId,
         purpose: 'source-terminal',
       }),
@@ -1077,7 +1077,7 @@ describe('G3 local Project milestone gate', () => {
         batchRevision: 1,
         batchSha256: claimBatch.batchSha256,
         checkpointSha256,
-        committedAt: '2026-06-01T00:00:00.500Z',
+        committedAt: testTime({ days: -87, milliseconds: 500 }),
         custodyAuthority: { generation: 1, kind: 'lan' },
         operationIntentId,
         projectId: PROJECT_ID,
@@ -1086,7 +1086,7 @@ describe('G3 local Project milestone gate', () => {
         targetAuthorityGeneration: 2,
         transferId,
       },
-      updatedAt: '2026-06-01T00:00:00.500Z',
+      updatedAt: testTime({ days: -87, milliseconds: 500 }),
     });
     await foundation.local.projects.authorityTransferClaims.save(retainedClaims);
     await foundation.local.projects.authorityTransferClaimCommitments.save(

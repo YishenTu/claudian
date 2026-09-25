@@ -1,8 +1,8 @@
 /** @jest-environment jsdom */
-
 import { type CollabTicketDetail } from '@claudian-collab/protocol';
 import { EditorSelection } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { testTime } from '@test/helpers/testClock';
 import { getByRole } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 import { MarkdownRenderer, setIcon, type WorkspaceLeaf } from 'obsidian';
@@ -230,13 +230,13 @@ describe('CollabDetailView', () => {
           ticketHighlights: [{
             authorMemberId: 'member-a',
             commentCount: 0,
-            createdAt: '2026-08-08T00:00:00.000Z',
+            createdAt: testTime({ days: -19 }),
             id: 'ticket-a',
             number: 17,
             revision: 1,
             status: 'open',
             title: 'Preserve publish description',
-            updatedAt: '2026-08-08T00:00:00.000Z',
+            updatedAt: testTime({ days: -19 }),
           }],
         },
       },
@@ -518,7 +518,7 @@ describe('CollabDetailView', () => {
     const concurrentComment = {
       authorMemberId: 'member-b',
       body: 'Concurrent feedback',
-      createdAt: '2026-08-08T00:01:00.000Z',
+      createdAt: testTime({ days: -19, minutes: 1 }),
       id: 'comment-concurrent',
       requestId: request.detail.request.id,
     };
@@ -555,7 +555,7 @@ describe('CollabDetailView', () => {
           comments: [{
           authorMemberId: 'member-reviewer',
           body: 'Overview feedback',
-          createdAt: '2026-08-08T00:01:00.000Z',
+          createdAt: testTime({ days: -19, minutes: 1 }),
           id: 'comment-a',
           requestId: 'request-a',
         }],
@@ -606,7 +606,7 @@ describe('CollabDetailView', () => {
           comments: [{
           authorMemberId: 'member-reviewer',
           body: 'Overview feedback',
-          createdAt: '2026-08-08T00:01:00.000Z',
+          createdAt: testTime({ days: -19, minutes: 1 }),
           id: 'comment-stale',
           requestId: 'request-a',
         }],
@@ -631,7 +631,7 @@ describe('CollabDetailView', () => {
       value: {
         authorMemberId: 'member-reviewer',
         body: 'General feedback',
-        createdAt: '2026-08-08T00:01:00.000Z',
+        createdAt: testTime({ days: -19, minutes: 1 }),
         id: 'comment-general',
         requestId: 'request-a',
       },
@@ -696,7 +696,7 @@ describe('CollabDetailView', () => {
         value: {
           authorMemberId: 'member-reviewer',
           body: 'Edited feedback',
-          createdAt: '2026-08-08T00:01:00.000Z',
+          createdAt: testTime({ days: -19, minutes: 1 }),
           id: 'comment-edited',
           requestId: 'request-a',
         },
@@ -736,7 +736,7 @@ describe('CollabDetailView', () => {
         value: {
           authorMemberId: 'member-reviewer',
           body: 'Repeated feedback',
-          createdAt: '2026-08-08T00:01:00.000Z',
+          createdAt: testTime({ days: -19, minutes: 1 }),
           id: 'comment-first',
           requestId: 'request-a',
         },
@@ -746,7 +746,7 @@ describe('CollabDetailView', () => {
         value: {
           authorMemberId: 'member-reviewer',
           body: 'Repeated feedback',
-          createdAt: '2026-08-08T00:02:00.000Z',
+          createdAt: testTime({ days: -19, minutes: 2 }),
           id: 'comment-second',
           requestId: 'request-a',
         },
@@ -1750,7 +1750,7 @@ describe('CollabDetailView', () => {
     const comment = {
       authorMemberId: 'member-b',
       body: 'Remote review comment',
-      createdAt: '2026-08-08T00:01:00.000Z',
+      createdAt: testTime({ days: -19, minutes: 1 }),
       id: 'comment-remote',
       requestId: review.detail.request.id,
     };
@@ -1764,7 +1764,7 @@ describe('CollabDetailView', () => {
           commentCount: 1,
           description: 'Remote description',
           revision: 2,
-          updatedAt: '2026-08-08T00:01:00.000Z',
+          updatedAt: testTime({ days: -19, minutes: 1 }),
         },
       },
     };
@@ -1847,7 +1847,7 @@ describe('CollabDetailView', () => {
           ...review.detail.request,
           latestHeadOid: nextHead,
           revision: 2,
-          updatedAt: '2026-08-08T00:01:00.000Z',
+          updatedAt: testTime({ days: -19, minutes: 1 }),
         },
         reviewedHeadOid: nextHead,
       },
@@ -1886,7 +1886,7 @@ describe('CollabDetailView', () => {
           comments: [{
           authorMemberId: 'member-reviewer',
           body: 'Current feedback',
-          createdAt: '2026-08-08T00:01:00.000Z',
+          createdAt: testTime({ days: -19, minutes: 1 }),
           id: 'comment-current',
           requestId: base.detail.request.id,
         }],
@@ -1967,7 +1967,7 @@ describe('CollabDetailView', () => {
     const comment = {
       authorMemberId: 'member-b',
       body: 'Remote review context',
-      createdAt: '2026-08-08T00:01:00.000Z',
+      createdAt: testTime({ days: -19, minutes: 1 }),
       id: 'comment-remote',
       requestId: review.detail.request.id,
     };
@@ -2043,7 +2043,7 @@ describe('CollabDetailView', () => {
           ...review.detail.request,
           description: 'Acknowledged description',
           revision: 2,
-          updatedAt: '2026-08-08T00:01:00.000Z',
+          updatedAt: testTime({ days: -19, minutes: 1 }),
         },
       },
     };
@@ -2479,7 +2479,7 @@ describe('CollabDetailView', () => {
           ...original.detail.request,
           description: 'Updated metadata',
           revision: 2,
-          updatedAt: '2026-08-08T00:02:00.000Z',
+          updatedAt: testTime({ days: -19, minutes: 2 }),
         },
       },
     };
@@ -2887,7 +2887,7 @@ function requestReview(): CollabRequestReview {
       currentMainOid: MAIN,
       request: {
         commentCount: 0,
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         description: 'Published change',
         firstBaseOid: MAIN,
         id: 'request-a',
@@ -2896,7 +2896,7 @@ function requestReview(): CollabRequestReview {
         revision: 1,
         status: 'open',
         ticketRelations: [],
-        updatedAt: '2026-08-08T00:00:00.000Z',
+        updatedAt: testTime({ days: -19 }),
       },
       reviewCondition: 'clean',
       reviewedHeadOid: HEAD,
@@ -2931,13 +2931,13 @@ function ticketDetail(): CollabTicketDetail {
       acceptedRelationCount: 0,
       authorMemberId: 'member-a',
       commentCount: 0,
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       id: 'ticket-a',
       number: 17,
       revision: 1,
       status: 'open',
       title: 'Ticket title',
-      updatedAt: '2026-08-08T00:00:00.000Z',
+      updatedAt: testTime({ days: -19 }),
     },
   };
 }
@@ -3071,7 +3071,7 @@ function coordination(review: CollabRequestReview): CollabCoordinationSnapshot {
       openRequests: review.detail.request.status === 'open' ? [review.detail.request] : [],
       project: {
         authorityKind: 'lan',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         hostMemberId: 'member-reviewer',
         id: 'project-a',
         mainOid: MAIN,
@@ -3099,8 +3099,8 @@ function member(
   role: 'manager' | 'member' = id === 'member-reviewer' ? 'manager' : 'member',
 ) {
   return {
-    activatedAt: '2026-08-08T00:00:00.000Z',
-    createdAt: '2026-08-08T00:00:00.000Z',
+    activatedAt: testTime({ days: -19 }),
+    createdAt: testTime({ days: -19 }),
     displayName,
     id,
     personalRef: `refs/heads/members/${id}`,
@@ -3184,7 +3184,7 @@ it('defers hidden review refresh and ignores changes to other requests', async (
   const next = { ...review, detail: { ...review.detail,
     request: { ...review.detail.request, commentCount: 1 },
     comments: { comments: [{ id: 'comment-new', authorMemberId: 'member-b', requestId: 'request-a',
-      body: 'New review feedback', createdAt: '2026-08-08T00:01:00.000Z' }] },
+      body: 'New review feedback', createdAt: testTime({ days: -19, minutes: 1 }) }] },
   } };
   port.readSnapshot.mockResolvedValue({ status: 'success', value: coordination(next) });
   port.prepareReview.mockResolvedValue({ status: 'success', value: next });

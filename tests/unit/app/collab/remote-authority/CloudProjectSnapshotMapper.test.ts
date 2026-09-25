@@ -1,11 +1,13 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   decodeCloudAuthorityProjectSnapshot,
   decodeCloudProjectSnapshotCache,
 } from '@/app/collab/remote-authority/CloudProjectSnapshotMapper';
 
 const member = {
-  activatedAt: '2026-08-31T00:00:00.000Z',
-  createdAt: '2026-08-31T00:00:00.000Z',
+  activatedAt: testTime({ days: 4 }),
+  createdAt: testTime({ days: 4 }),
   displayName: 'Member',
   id: 'member-current',
   personalRef: 'refs/heads/members/member-current',
@@ -20,7 +22,7 @@ const snapshot = {
   openTicketCount: 0,
   project: {
     authorityGeneration: 7,
-    createdAt: '2026-08-31T00:00:00.000Z',
+    createdAt: testTime({ days: 4 }),
     expectedMainOid: 'a'.repeat(40),
     id: 'project-current',
     mainRef: 'refs/heads/main',
@@ -31,7 +33,7 @@ const snapshot = {
 const localProject = {
   authorityGeneration: 7,
   authorityKind: 'cloud',
-  createdAt: '2026-08-31T00:00:00.000Z',
+  createdAt: testTime({ days: 4 }),
   id: 'project-current',
   mainOid: 'a'.repeat(40),
   mainRef: 'refs/heads/main',

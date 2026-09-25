@@ -3,6 +3,8 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
+
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import {
   createHostTransferPackageManifest,
@@ -29,7 +31,7 @@ describe('HostTransferPackage', () => {
     return createHostTransferPackageManifest({
       authorityMainOid: 'a'.repeat(40),
       authoritySnapshot: { byteCount: 20, sha256: 'b'.repeat(64) },
-      createdAt: '2026-08-08T00:00:00.000Z',
+      createdAt: testTime({ days: -19 }),
       gitBundle: { byteCount: 10, sha256: 'c'.repeat(64) },
       gitObjectFormat: 'sha1',
       projectId: 'project-1',

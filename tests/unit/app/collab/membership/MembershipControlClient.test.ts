@@ -200,7 +200,7 @@ describe('MembershipControlClient', () => {
     const offer = {
       expiresAt: testTime({ days: -19, minutes: 10 }),
       offerId: 'offer-one',
-      offeredAt: '2026-08-08T00:00:00.000Z',
+      offeredAt: testTime({ days: -19 }),
       purpose: 'manager-leave',
       sourceManagerMemberId: 'member-manager',
       status: 'offered',
@@ -209,7 +209,7 @@ describe('MembershipControlClient', () => {
     const transport: MembershipControlTransport = {
       requestWithMember: jest.fn().mockImplementation(async request => request.decode(envelope(
         request.path.endsWith('/acknowledge')
-          ? { ...offer, acknowledgedAt: '2026-08-08T00:01:00.000Z', status: 'acknowledged' }
+          ? { ...offer, acknowledgedAt: testTime({ days: -19, minutes: 1 }), status: 'acknowledged' }
           : offer,
       ))),
     };
@@ -293,8 +293,8 @@ describe('MembershipControlClient', () => {
           ? { encodedInvitation, invitation }
           : {
             currentMember: {
-              activatedAt: '2026-08-08T00:00:00.000Z',
-              createdAt: '2026-08-08T00:00:00.000Z',
+              activatedAt: testTime({ days: -19 }),
+              createdAt: testTime({ days: -19 }),
               displayName: 'Manager',
               id: 'member-manager',
               personalRef: 'refs/heads/members/member-manager',
@@ -303,8 +303,8 @@ describe('MembershipControlClient', () => {
             },
             eventSequence: 1,
             members: [{
-              activatedAt: '2026-08-08T00:00:00.000Z',
-              createdAt: '2026-08-08T00:00:00.000Z',
+              activatedAt: testTime({ days: -19 }),
+              createdAt: testTime({ days: -19 }),
               displayName: 'Manager',
               id: 'member-manager',
               personalRef: 'refs/heads/members/member-manager',
@@ -315,7 +315,7 @@ describe('MembershipControlClient', () => {
             openTicketCount: 0,
             project: {
               authorityKind: 'lan',
-              createdAt: '2026-08-08T00:00:00.000Z',
+              createdAt: testTime({ days: -19 }),
               hostMemberId: 'member-manager',
               id: 'project-a',
               mainOid: 'a'.repeat(40),

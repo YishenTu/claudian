@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -17,7 +18,7 @@ import {
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type { GitRuntimeResolution } from '@/app/collab/git/GitRuntimeResolver';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 jest.setTimeout(30_000);
 

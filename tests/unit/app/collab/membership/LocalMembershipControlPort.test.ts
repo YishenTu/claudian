@@ -7,7 +7,7 @@ import { MembershipControlClient } from '@/app/collab/membership/MembershipContr
 
 const PROJECT_ID = 'project-membership-port';
 const MEMBER_ID = 'member-manager';
-const CREATED_AT = '2026-09-01T00:00:00.000Z';
+const CREATED_AT = testTime({ days: 5 });
 
 function membership(): CollabLocalLanMembershipRecord {
   return {

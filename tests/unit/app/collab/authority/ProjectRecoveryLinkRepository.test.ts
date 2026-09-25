@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs from 'sql.js';
 
 import { MemberRecoveryCredentialRepository } from '@/app/collab/authority/MemberRecoveryCredentialRepository';
@@ -11,7 +12,7 @@ import { ProjectAuthorityRepository } from '@/app/collab/authority/ProjectAuthor
 import { ProjectRecoveryLinkRepository } from '@/app/collab/authority/ProjectRecoveryLinkRepository';
 import { SqlJsProjectDatabase } from '@/app/collab/authority/SqlJsProjectDatabase';
 
-const NOW = '2026-09-14T00:00:00.000Z';
+const NOW = testTime({ days: 18 });
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 
 describe('ProjectRecoveryLinkRepository', () => {
@@ -47,9 +48,9 @@ describe('ProjectRecoveryLinkRepository', () => {
         proofCredential: 'b'.repeat(64), targetCredentialHash: hash('d'.repeat(43)) };
       await expect(database.mutate(connection => links.redeem(connection, { ...secondRequest, targetCredentialHash: request.targetCredentialHash }, new Date(NOW)))).rejects.toBeDefined();
       expect((await database.mutate(connection => links.redeem(connection, secondRequest, new Date(NOW)))).value.memberId).toBe('member-two');
-      const third = await issue('issue-three', '2026-09-14T00:01:00.000Z');
+      const third = await issue('issue-three', testTime({ days: 18, minutes: 1 }));
       expect((await database.mutate(connection => links.redeem(connection, { ...request, idempotencyKey: 'redeem-three',
-        recoveryLinkId: third.recoveryLinkId, token: third.token }, new Date('2026-09-14T00:02:00.000Z')))).value.memberId).toBe('member-one');
+        recoveryLinkId: third.recoveryLinkId, token: third.token }, new Date(testTime({ days: 18, minutes: 2 }))))).value.memberId).toBe('member-one');
       await database.close();
       database = new SqlJsProjectDatabase(root, { loadSqlJs: async () => sql });
       await database.open();

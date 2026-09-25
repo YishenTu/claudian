@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   CloudRetirementClient,
 } from '@/app/collab/retirement/CloudRetirementClient';
@@ -7,7 +9,7 @@ const PROJECT_ID = 'project-cloud-retire';
 describe('CloudRetirementClient', () => {
   it('acknowledges from the minimal durable Cloud target', async () => {
     const retirement = jest.fn().mockResolvedValue({
-      acknowledgedAt: '2026-08-27T00:00:11.000Z',
+      acknowledgedAt: testTime({ seconds: 11 }),
       idempotencyKey: 'retire-ack-cloud',
       projectId: PROJECT_ID,
       retirementId: 'retirement-cloud',

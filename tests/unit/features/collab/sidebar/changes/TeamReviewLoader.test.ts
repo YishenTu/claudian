@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type {
   CollabCoordinationSnapshot,
   CollabOperationOptions,
@@ -177,7 +179,7 @@ describe('TeamReviewLoader', () => {
 
     loader.update('project-a', coordination({
       commentCount: 1,
-      updatedAt: '2026-08-08T00:11:00.000Z',
+      updatedAt: testTime({ days: -19, minutes: 11 }),
     }));
 
     expect(loader.peek('request-a')).toBeNull();
@@ -312,13 +314,13 @@ function coordination(options: {
           ...request('request-a', 'member-a', HEAD_A, mainOid),
           commentCount: options.commentCount ?? 0,
           revision: options.revision ?? 1,
-          updatedAt: options.updatedAt ?? '2026-08-08T00:10:00.000Z',
+          updatedAt: options.updatedAt ?? testTime({ days: -19, minutes: 10 }),
         },
         request('request-b', 'member-b', HEAD_B, mainOid),
       ],
       project: {
         authorityKind: 'lan',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         hostMemberId: 'member-manager',
         id: 'project-a',
         mainOid,
@@ -342,8 +344,8 @@ function coordination(options: {
 
 function member(id: string, displayName: string) {
   return {
-    activatedAt: '2026-08-08T00:00:00.000Z',
-    createdAt: '2026-08-08T00:00:00.000Z',
+    activatedAt: testTime({ days: -19 }),
+    createdAt: testTime({ days: -19 }),
     displayName,
     id,
     personalRef: `refs/heads/members/${id}`,
@@ -355,7 +357,7 @@ function member(id: string, displayName: string) {
 function request(id: string, memberId: string, headOid: string, mainOid = MAIN) {
   return {
     commentCount: 0,
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     description: 'Published change',
     firstBaseOid: mainOid,
     id,
@@ -364,7 +366,7 @@ function request(id: string, memberId: string, headOid: string, mainOid = MAIN) 
     revision: 1,
     status: 'open' as const,
     ticketRelations: [],
-    updatedAt: '2026-08-08T00:10:00.000Z',
+    updatedAt: testTime({ days: -19, minutes: 10 }),
   };
 }
 

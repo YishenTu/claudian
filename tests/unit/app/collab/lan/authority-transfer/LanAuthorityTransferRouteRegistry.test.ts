@@ -1,6 +1,7 @@
 import type {
   CollabAuthorityRelinquishmentProof,
 } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import type {
   LanAuthorityTransferRouteRegistration,
@@ -60,7 +61,7 @@ function proof(
     certificate: Buffer.alloc(64, 2).toString('base64url'),
     certificateAlgorithm: 'ed25519' as const,
     checkpointSha256: 'c'.repeat(64),
-    committedAt: '2026-08-27T00:00:00.000Z',
+    committedAt: testTime(),
     operationIntentId: 'intent-route-transition',
     projectId: PROJECT_ID,
     transferId: TRANSFER_ID,

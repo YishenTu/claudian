@@ -22,7 +22,7 @@ import { decodeCloudRetirementIntent } from '@/app/collab/retirement/CloudRetire
 import { RetirementClientHandler } from '@/app/collab/retirement/RetirementClientHandler';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const NOW = '2026-08-27T00:00:00.000Z';
+const NOW = testTime();
 const PROJECT_ID = 'project-cloud-retire';
 
 describe('Cloud Retirement lost-response recovery', () => {

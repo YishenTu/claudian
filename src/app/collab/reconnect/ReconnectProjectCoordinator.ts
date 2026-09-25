@@ -269,7 +269,7 @@ export class ReconnectProjectCoordinator {
     private readonly foundation: ReconnectProjectFoundationPort,
     private readonly options: ReconnectProjectCoordinatorOptions,
   ) {
-    this.invitationCodec = options.invitationCodec ?? new InvitationCodec();
+    this.invitationCodec = options.invitationCodec ?? new InvitationCodec({ now: options.now });
     this.hostTransitionProofClient = options.hostTransitionProofClient ?? null;
     this.hostTrustTransitionVerifier = options.hostTrustTransitionVerifier
       ?? new HostTrustTransitionService();

@@ -37,7 +37,7 @@ import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabPublishOutcome,type CollabResult } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 function publishedRequest(): CollabChangeRequest {
   return {
@@ -1636,7 +1636,7 @@ describe('CollabFeatureService', () => {
         ...currentIndex.projects[0],
         cleanupStatus: 'complete',
         lifecycle: 'retired',
-        retiredAt: '2026-08-08T01:00:00.000Z',
+        retiredAt: testTime({ days: -19, hours: 1 }),
       }],
     };
     (foundation.requireGitFoundation as jest.Mock).mockRejectedValue(new CollabError({
@@ -1868,7 +1868,7 @@ describe('CollabFeatureService', () => {
     const claim = {
       claim: Buffer.alloc(32, 4).toString('base64url'),
       claimGeneration: 4,
-      createdAt: '2026-10-01T00:00:00.000Z',
+      createdAt: testTime({ days: 35 }),
       expiresAt: testTime({ days: 65 }),
       memberId: 'member-host',
       projectId: 'project-alpha',
@@ -2559,7 +2559,7 @@ describe('CollabFeatureService', () => {
         ...currentIndex.projects[0],
         cleanupStatus: 'complete',
         lifecycle: 'retired',
-        retiredAt: '2026-08-08T01:00:00.000Z',
+        retiredAt: testTime({ days: -19, hours: 1 }),
       }],
     };
     foundation.local.projects.loadMembership = jest.fn().mockResolvedValue({
@@ -2577,7 +2577,7 @@ describe('CollabFeatureService', () => {
           health: 'healthy',
           hostStatus: 'not-host',
           lifecycle: 'retired',
-          retiredAt: '2026-08-08T01:00:00.000Z',
+          retiredAt: testTime({ days: -19, hours: 1 }),
         }],
       },
     });
@@ -2590,7 +2590,7 @@ describe('CollabFeatureService', () => {
         ...currentIndex.projects[0],
         cleanupStatus: 'complete',
         lifecycle: 'retired',
-        retiredAt: '2026-08-08T01:00:00.000Z',
+        retiredAt: testTime({ days: -19, hours: 1 }),
       }],
     };
     const retiredPublication = publication();
@@ -2605,7 +2605,7 @@ describe('CollabFeatureService', () => {
         project: {
           cleanupStatus: 'complete',
           lifecycle: 'retired',
-          retiredAt: '2026-08-08T01:00:00.000Z',
+          retiredAt: testTime({ days: -19, hours: 1 }),
         },
       },
     });

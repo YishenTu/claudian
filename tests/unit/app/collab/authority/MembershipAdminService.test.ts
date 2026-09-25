@@ -6,6 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -22,8 +23,8 @@ import {
 } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type { CollabManagerResponsibilityPurpose } from '@/core/collab';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
-const MUTATED_AT = '2026-08-08T01:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
+const MUTATED_AT = testTime({ days: -19, hours: 1 });
 
 describe('MembershipAdminService', () => {
   let SQL: SqlJsStatic;

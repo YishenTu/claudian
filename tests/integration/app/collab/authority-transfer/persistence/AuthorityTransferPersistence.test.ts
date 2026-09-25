@@ -69,7 +69,7 @@ const CLOUD_RELINQUISHMENT_INTENT_ID = 'intent-cloud-relinquishment';
 const CHECKPOINT_SHA256 = 'a'.repeat(64);
 const MEMBER_ALICE = 'member-alice';
 const MEMBER_BOB = 'member-bob';
-const EXPIRES_AT = '2026-09-30T00:00:00.000Z';
+const EXPIRES_AT = testTime({ days: 34 });
 
 function createAuthorityTransferEntryRecord(
   input: Omit<
@@ -94,7 +94,7 @@ function createAuthorityTransferRequesterEntry(
     installationKey: TEST_INSTALLATION_A,
   });
 }
-const ENTRY_EXPIRES_AT = '2026-09-25T00:00:00.000Z';
+const ENTRY_EXPIRES_AT = testTime({ days: 29 });
 
 function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
@@ -163,7 +163,7 @@ function transferStatus(
         certificate: 'A'.repeat(86),
         certificateAlgorithm: 'ed25519' as const,
         checkpointSha256: CHECKPOINT_SHA256,
-        committedAt: '2026-08-26T00:05:00.000Z',
+        committedAt: testTime({ days: -1, minutes: 5 }),
         operationIntentId: OPERATION_INTENT_ID,
         projectId: PROJECT_ID,
         sourceAuthority: { generation: 1, kind: 'lan' as const },
@@ -176,7 +176,7 @@ function transferStatus(
     batchRevision: batchRequired ? 1 : null,
     batchSha256: batchRequired ? claimBatch().batchSha256 : null,
     checkpointSha256: checkpointRequired ? CHECKPOINT_SHA256 : null,
-    createdAt: '2026-08-26T00:00:00.000Z',
+    createdAt: testTime({ days: -1 }),
     direction: 'lan-to-cloud',
     expiresAt: EXPIRES_AT,
     phase,
@@ -187,7 +187,7 @@ function transferStatus(
     targetAuthority: { generation: 2, kind: 'cloud' },
     targetUrl: 'http://127.0.0.1:8787/',
     transferId: TRANSFER_ID,
-    updatedAt: `2026-08-26T00:${String(updatedMinute).padStart(2, '0')}:00.000Z`,
+    updatedAt: testTime({ days: -1, minutes: updatedMinute }),
   };
 }
 
@@ -212,7 +212,7 @@ function cloudToLanStatus(
     batchRevision: batchRequired ? 1 : null,
     batchSha256: batchRequired ? claimBatch().batchSha256 : null,
     checkpointSha256: checkpointRequired ? CHECKPOINT_SHA256 : null,
-    createdAt: '2026-08-26T00:00:00.000Z',
+    createdAt: testTime({ days: -1 }),
     direction: 'cloud-to-lan',
     expiresAt: EXPIRES_AT,
     phase,
@@ -224,7 +224,7 @@ function cloudToLanStatus(
           certificate: 'A'.repeat(86),
           certificateAlgorithm: 'ed25519',
           checkpointSha256: CHECKPOINT_SHA256,
-          committedAt: '2026-08-26T00:04:30.000Z',
+          committedAt: testTime({ days: -1, minutes: 4, seconds: 30 }),
           operationIntentId: CLOUD_RELINQUISHMENT_INTENT_ID,
           projectId: PROJECT_ID,
           sourceAuthority: { generation: 1, kind: 'cloud' },
@@ -238,7 +238,7 @@ function cloudToLanStatus(
     targetAuthority: { generation: 2, kind: 'lan' },
     targetUrl: 'https://192.168.1.20:27001/',
     transferId: TRANSFER_ID,
-    updatedAt: `2026-08-26T00:${String(phaseIndex).padStart(2, '0')}:00.000Z`,
+    updatedAt: testTime({ days: -1, minutes: phaseIndex }),
   };
 }
 
@@ -280,7 +280,7 @@ async function retainCompletedSource(repository: CollabLocalProjectRepository, p
       batchRevision: 1,
       batchSha256: claimBatch().batchSha256,
       checkpointSha256: CHECKPOINT_SHA256,
-      committedAt: '2026-08-26T00:03:00.000Z',
+      committedAt: testTime({ days: -1, minutes: 3 }),
       custodyAuthority: { generation: 1, kind: 'lan' },
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
@@ -298,7 +298,7 @@ describe('AuthorityTransferPersistence', () => {
   beforeEach(async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'claudian-authority-transfer-'));
     jest.useFakeTimers();
-    jest.setSystemTime(Date.parse('2026-08-26T00:01:00.000Z'));
+    jest.setSystemTime(Date.parse(testTime({ days: -1, minutes: 1 })));
   });
 
   afterEach(async () => {
@@ -371,7 +371,7 @@ describe('AuthorityTransferPersistence', () => {
 
   it.each(['discovery', 'lan-reconnect', 'pending', 'restart', 'wrong-member'] as const)(
     'admits %s only alongside a proved relinquished source', async scenario => {
-      jest.setSystemTime(Date.parse('2026-08-26T01:00:00.000Z'));
+      jest.setSystemTime(Date.parse(testTime({ days: -1, hours: 1 })));
       const repository = new CollabLocalProjectRepository(vaultRoot, { installationKey: TEST_INSTALLATION_A });
       const persistence = new AuthorityTransferPersistence(repository, { isRecoveryOwner: owner => owner === TEST_INSTALLATION_A });
       await retainCompletedSource(repository, persistence);
@@ -379,8 +379,8 @@ describe('AuthorityTransferPersistence', () => {
       const originalSource = await persistence.load(PROJECT_ID);
       const originalCustody = await repository.authorityTransferClaims.load(PROJECT_ID);
       const memberId = scenario === 'wrong-member' ? MEMBER_BOB : MEMBER_ALICE;
-      await repository.saveMembership({ schemaVersion: 3, createdAt: '2026-08-26T00:00:00.000Z',
-        updatedAt: '2026-08-26T00:00:00.000Z', lastEventSequence: 1,
+      await repository.saveMembership({ schemaVersion: 3, createdAt: testTime({ days: -1 }),
+        updatedAt: testTime({ days: -1 }), lastEventSequence: 1,
         authority: { kind: 'cloud', bindingVersion: 10, wireVersion: 15, authorityGeneration: 2, serverUrl: 'http://127.0.0.1:8787/',
           gitRemoteUrl: `http://127.0.0.1:8787/v10/projects/${PROJECT_ID}/repository.git` },
         member: { id: memberId, displayName: 'Former host', personalRef: `refs/heads/members/${memberId}`, role: 'manager' },
@@ -398,7 +398,7 @@ describe('AuthorityTransferPersistence', () => {
       if (scenario === 'pending' || scenario === 'restart') {
         await repository.authorityTransferClaimants.save(createAuthorityTransferClaimantRecord({
           cloudPrincipalId: null, memberId, operationIntentId: 'claim-next-generation',
-          createdAt: '2026-08-26T00:10:00.000Z',
+          createdAt: testTime({ days: -1, minutes: 10 }),
           status: { ...cloudToLanStatus('completed'), expiresAt: testTime({ days: -1, minutes: 11 }),
             sourceAuthority: { kind: 'cloud', generation: 2 }, targetAuthority: { kind: 'lan', generation: 3 },
             relinquishmentProof: { ...cloudToLanStatus('completed').relinquishmentProof!, sourceHostMemberId: null,
@@ -456,7 +456,7 @@ describe('AuthorityTransferPersistence', () => {
       expect(await persistence.inspectLifecycleOwner(PROJECT_ID)).toBe('nonterminal');
       const originalSource = await persistence.load(PROJECT_ID);
       const originalCustody = await repository.authorityTransferClaims.load(PROJECT_ID);
-      const base = { schemaVersion: 3 as const, createdAt: '2026-08-26T00:00:00.000Z', updatedAt: '2026-08-26T00:00:00.000Z',
+      const base = { schemaVersion: 3 as const, createdAt: testTime({ days: -1 }), updatedAt: testTime({ days: -1 }),
         lastEventSequence: 1, member: { id: MEMBER_ALICE, displayName: 'Alice', role: 'manager' as const,
           personalRef: `refs/heads/members/${MEMBER_ALICE}` },
         project: { id: PROJECT_ID, name: 'Recovery', workspacePath: 'workspace/recovery' } };
@@ -470,7 +470,7 @@ describe('AuthorityTransferPersistence', () => {
       });
       if (scenario === 'new-request') {
         await repository.authorityTransferEntries.saveRequester(completeAuthorityTransferRequesterEntry(createAuthorityTransferRequesterEntry({
-          proposedAt: '2026-08-26T00:01:00.000Z', proposedByMemberId: MEMBER_ALICE,
+          proposedAt: testTime({ days: -1, minutes: 1 }), proposedByMemberId: MEMBER_ALICE,
           request: { expectedAuthorityGeneration: 3, projectId: PROJECT_ID, idempotencyKey: 'intent-new-request', targetUrl: 'http://127.0.0.1:8787/' },
         }), proposalStatus({ sourceAuthority: { kind: 'lan', generation: 3 }, targetAuthority: { kind: 'cloud', generation: 4 }, transferId: 'transfer-new' })));
       }
@@ -569,7 +569,7 @@ describe('AuthorityTransferPersistence', () => {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
     const target = createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -582,13 +582,13 @@ describe('AuthorityTransferPersistence', () => {
     const published = publishCloudToLanTargetEntry(target, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:00:30.000Z',
+      publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     });
     await persistence.prepareCloudToLanTargetEntry(target);
     await persistence.publishCloudToLanTargetEntry(target, published.descriptor!);
     const manager = createCloudToLanManagerEntry({
-      createdAt: '2026-08-26T00:00:45.000Z',
+      createdAt: testTime({ days: -1, seconds: 45 }),
       descriptor: published.descriptor!,
       expiresAt: ENTRY_EXPIRES_AT,
       initiatingMemberId: MEMBER_ALICE,
@@ -661,7 +661,7 @@ describe('AuthorityTransferPersistence', () => {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
     const target = createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-unrelated-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -674,7 +674,7 @@ describe('AuthorityTransferPersistence', () => {
     const published = publishCloudToLanTargetEntry(target, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:00:30.000Z',
+      publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     });
     await persistence.prepareCloudToLanTargetEntry(target);
@@ -686,7 +686,7 @@ describe('AuthorityTransferPersistence', () => {
 
     await expect(persistence.prepareCloudToLanManagerEntry(
       createCloudToLanManagerEntry({
-        createdAt: '2026-08-26T00:00:45.000Z',
+        createdAt: testTime({ days: -1, seconds: 45 }),
         descriptor: unrelatedDescriptor,
         expiresAt: ENTRY_EXPIRES_AT,
         initiatingMemberId: MEMBER_ALICE,
@@ -711,7 +711,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     const preparing = await persistence.prepareCloudToLanTargetEntry(
       createCloudToLanTargetEntry({
-        createdAt: '2026-08-26T00:00:00.000Z',
+        createdAt: testTime({ days: -1 }),
         expiresAt: ENTRY_EXPIRES_AT,
         operationIntentId: 'intent-unpublished-target',
         ownerInstallationKey: TEST_INSTALLATION_A,
@@ -726,7 +726,7 @@ describe('AuthorityTransferPersistence', () => {
     await expect(persistence.withdrawCloudToLanTargetEntry(preparing)).resolves.toMatchObject({
       descriptor: null,
       phase: 'withdrawn',
-      withdrawnAt: '2026-08-26T00:00:30.000Z',
+      withdrawnAt: testTime({ days: -1, seconds: 30 }),
     });
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('absent');
   });
@@ -737,7 +737,7 @@ describe('AuthorityTransferPersistence', () => {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
     const preparing = createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-original-target',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -750,13 +750,13 @@ describe('AuthorityTransferPersistence', () => {
     const published = publishCloudToLanTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:00:30.000Z',
+      publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     });
     await persistence.prepareCloudToLanTargetEntry(preparing);
     await persistence.publishCloudToLanTargetEntry(preparing, published.descriptor!);
     await persistence.prepareCloudToLanManagerEntry(createCloudToLanManagerEntry({
-      createdAt: '2026-08-26T00:00:45.000Z',
+      createdAt: testTime({ days: -1, seconds: 45 }),
       descriptor: published.descriptor!,
       expiresAt: ENTRY_EXPIRES_AT,
       initiatingMemberId: MEMBER_ALICE,
@@ -787,7 +787,7 @@ describe('AuthorityTransferPersistence', () => {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
     const foreignTarget = createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-foreign-target',
       ownerInstallationKey: TEST_INSTALLATION_B,
@@ -800,13 +800,13 @@ describe('AuthorityTransferPersistence', () => {
     const published = publishCloudToLanTargetEntry(foreignTarget, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:00:30.000Z',
+      publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     });
     await repository.authorityTransferEntries.saveTarget(published);
 
     await expect(persistence.prepareCloudToLanManagerEntry(createCloudToLanManagerEntry({
-      createdAt: '2026-08-26T00:00:45.000Z',
+      createdAt: testTime({ days: -1, seconds: 45 }),
       descriptor: published.descriptor!,
       expiresAt: ENTRY_EXPIRES_AT,
       initiatingMemberId: MEMBER_ALICE,
@@ -818,9 +818,9 @@ describe('AuthorityTransferPersistence', () => {
 
   it('rejects a Manager phase that disagrees with its observed status state', () => {
     const prepared = createCloudToLanManagerEntry({
-      createdAt: '2026-08-26T00:00:45.000Z',
+      createdAt: testTime({ days: -1, seconds: 45 }),
       descriptor: publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
-        createdAt: '2026-08-26T00:00:00.000Z',
+        createdAt: testTime({ days: -1 }),
         expiresAt: ENTRY_EXPIRES_AT,
         operationIntentId: 'intent-decoder-target',
         ownerInstallationKey: TEST_INSTALLATION_A,
@@ -832,7 +832,7 @@ describe('AuthorityTransferPersistence', () => {
       }), {
         caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
         caFingerprint: 'c'.repeat(64),
-        publishedAt: '2026-08-26T00:00:30.000Z',
+        publishedAt: testTime({ days: -1, seconds: 30 }),
         targetUrl: 'https://192.168.1.20:27001',
       }).descriptor!,
       expiresAt: ENTRY_EXPIRES_AT,
@@ -880,7 +880,7 @@ describe('AuthorityTransferPersistence', () => {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
     const target = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-rejected-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -892,13 +892,13 @@ describe('AuthorityTransferPersistence', () => {
     }), {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:00:30.000Z',
+      publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     });
     await repository.authorityTransferEntries.saveTarget(target);
     const prepared = await persistence.prepareCloudToLanManagerEntry(
       createCloudToLanManagerEntry({
-        createdAt: '2026-08-26T00:00:45.000Z',
+        createdAt: testTime({ days: -1, seconds: 45 }),
         descriptor: target.descriptor!,
         expiresAt: ENTRY_EXPIRES_AT,
         initiatingMemberId: MEMBER_ALICE,
@@ -931,7 +931,7 @@ describe('AuthorityTransferPersistence', () => {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
     });
     const preparing = createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-terminal-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -944,7 +944,7 @@ describe('AuthorityTransferPersistence', () => {
     const published = publishCloudToLanTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:00:30.000Z',
+      publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     });
     await persistence.prepareCloudToLanTargetEntry(preparing);
@@ -995,7 +995,7 @@ describe('AuthorityTransferPersistence', () => {
       await persistence.retainClaimBatch({ batch: claimBatch(), operationIntentId: stageIntent, purpose: 'target-delivery' });
       await persistence.acknowledgeClaimBatch({
         batchRevision: 1, batchSha256: claimBatch().batchSha256, checkpointSha256: CHECKPOINT_SHA256,
-        committedAt: '2026-08-26T00:03:00.000Z', custodyAuthority: { generation: 1, kind: 'cloud' },
+        committedAt: testTime({ days: -1, minutes: 3 }), custodyAuthority: { generation: 1, kind: 'cloud' },
         operationIntentId: stageIntent, projectId: PROJECT_ID, receiptId: 'custody-target-cycle',
         submittedByMemberId: MEMBER_BOB, targetAuthorityGeneration: 2, transferId: TRANSFER_ID,
       });
@@ -1052,7 +1052,7 @@ describe('AuthorityTransferPersistence', () => {
   it('recovers a next-move proposal interrupted after completed target identity removal', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const preparing = createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-split-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -1065,7 +1065,7 @@ describe('AuthorityTransferPersistence', () => {
     const published = publishCloudToLanTargetEntry(preparing, {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:00:30.000Z',
+      publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     });
     const physical = createAuthorityTransferRecord({
@@ -1141,7 +1141,7 @@ describe('AuthorityTransferPersistence', () => {
       now: testClock({ days: 35 }),
     });
     const descriptor = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-remote-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_B,
@@ -1153,12 +1153,12 @@ describe('AuthorityTransferPersistence', () => {
     }), {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:00:30.000Z',
+      publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     }).descriptor!;
     let manager = await persistence.prepareCloudToLanManagerEntry(
       createCloudToLanManagerEntry({
-        createdAt: '2026-08-26T00:00:45.000Z',
+        createdAt: testTime({ days: -1, seconds: 45 }),
         descriptor,
         expiresAt: ENTRY_EXPIRES_AT,
         initiatingMemberId: MEMBER_ALICE,
@@ -1198,7 +1198,7 @@ describe('AuthorityTransferPersistence', () => {
     await expect(Promise.resolve().then(() => persistence.recordCloudToLanManagerStatus(manager, {
       ...cloudToLanStatus('cloud-quiesced'),
       targetUrl: descriptor.targetUrl,
-      updatedAt: '2026-08-26T00:03:00.000Z',
+      updatedAt: testTime({ days: -1, minutes: 3 }),
       transferId: 'transfer-other',
     }))).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-observed-identity-mismatch' },
@@ -1210,7 +1210,7 @@ describe('AuthorityTransferPersistence', () => {
     await expect(Promise.resolve().then(() => persistence.recordCloudToLanManagerStatus(manager, {
       ...cloudToLanStatus('cloud-quiesced'),
       targetUrl: descriptor.targetUrl,
-      updatedAt: '2026-08-26T00:03:00.000Z',
+      updatedAt: testTime({ days: -1, minutes: 3 }),
     }))).rejects.toMatchObject({
       safeContext: { reason: 'authority-transfer-observed-phase-regressed' },
     });
@@ -1222,7 +1222,7 @@ describe('AuthorityTransferPersistence', () => {
     expect(manager.phase).toBe('settled');
     await expect(persistence.inspectLifecycleOwner(PROJECT_ID)).resolves.toBe('nonterminal');
     await expect(persistence.prepareCloudToLanManagerEntry(createCloudToLanManagerEntry({
-      createdAt: '2026-08-26T00:06:00.000Z',
+      createdAt: testTime({ days: -1, minutes: 6 }),
       descriptor,
       expiresAt: ENTRY_EXPIRES_AT,
       initiatingMemberId: MEMBER_ALICE,
@@ -1239,7 +1239,7 @@ describe('AuthorityTransferPersistence', () => {
   it('admits target lifecycle work when foreign Manager deletion arrives after terminal convergence', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const descriptor = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-remote-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_B,
@@ -1251,11 +1251,11 @@ describe('AuthorityTransferPersistence', () => {
     }), {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:00:30.000Z',
+      publishedAt: testTime({ days: -1, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     }).descriptor!;
     let manager = createCloudToLanManagerEntry({
-      createdAt: '2026-08-26T00:00:45.000Z',
+      createdAt: testTime({ days: -1, seconds: 45 }),
       descriptor,
       expiresAt: ENTRY_EXPIRES_AT,
       initiatingMemberId: MEMBER_ALICE,
@@ -1310,7 +1310,7 @@ describe('AuthorityTransferPersistence', () => {
 
   it('preserves a bounded raw HTTP Cloud endpoint in target preparation', () => {
     expect(createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-raw-http-target',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -1356,10 +1356,10 @@ describe('AuthorityTransferPersistence', () => {
       stagingDirectoryName: `.claudian-authority-transfer-${TRANSFER_ID}`,
       status: {
         ...entry.status,
-        createdAt: '2026-08-26T00:00:05.000Z',
+        createdAt: testTime({ days: -1, seconds: 5 }),
         expiresAt: testTime({ days: 34, seconds: 5 }),
         phase: 'source-quiesced',
-        updatedAt: '2026-08-26T00:00:06.000Z',
+        updatedAt: testTime({ days: -1, seconds: 6 }),
       },
     });
 
@@ -1674,7 +1674,7 @@ describe('AuthorityTransferPersistence', () => {
       },
       status: proposalStatus({
         phase: 'source-quiesced',
-        updatedAt: '2026-08-26T00:01:00.000Z',
+        updatedAt: testTime({ days: -1, minutes: 1 }),
       }),
     })).toThrow('Invalid authority transfer entry proposal status');
   });
@@ -1830,13 +1830,13 @@ describe('AuthorityTransferPersistence', () => {
       targetUrl: 'http://127.0.0.1:8787/',
     };
     const requester = createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_BOB,
       request,
     });
     const otherRequester = createOwnedAuthorityTransferRequesterEntry({
       installationKey: TEST_INSTALLATION_B,
-      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_ALICE,
       request: { ...request, idempotencyKey: 'intent-other-installation' },
     });
@@ -1897,7 +1897,7 @@ describe('AuthorityTransferPersistence', () => {
       targetUrl: 'http://127.0.0.1:8787/',
     };
     const requester = createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_BOB,
       request,
     });
@@ -1931,17 +1931,17 @@ describe('AuthorityTransferPersistence', () => {
       targetUrl: 'http://127.0.0.1:8787/',
     };
     const expired = createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_BOB,
       request,
     });
     const renewed = createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-09-25T00:00:00.000Z',
+      proposedAt: testTime({ days: 29 }),
       proposedByMemberId: MEMBER_BOB,
       request: { ...request, idempotencyKey: 'intent-renewed' },
     });
     const sibling = createOwnedAuthorityTransferRequesterEntry({
-      proposedAt: '2026-09-25T00:00:00.000Z',
+      proposedAt: testTime({ days: 29 }),
       proposedByMemberId: MEMBER_BOB,
       request: { ...request, idempotencyKey: 'intent-sibling' },
       installationKey: TEST_INSTALLATION_B,
@@ -2001,7 +2001,7 @@ describe('AuthorityTransferPersistence', () => {
       targetUrl: 'http://127.0.0.1:8787/',
     };
     const requester = createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_BOB,
       request,
     });
@@ -2021,7 +2021,7 @@ describe('AuthorityTransferPersistence', () => {
       .resolves.toBeNull();
     await expect(repository.authorityTransferEntries.load(PROJECT_ID)).resolves.toBeNull();
     await expect(persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-09-25T00:00:00.000Z',
+      proposedAt: testTime({ days: 29 }),
       proposedByMemberId: MEMBER_BOB,
       request: { ...request, idempotencyKey: 'intent-replacement' },
     }))).resolves.toMatchObject({
@@ -2038,11 +2038,11 @@ describe('AuthorityTransferPersistence', () => {
     const request = { expectedAuthorityGeneration: 1, idempotencyKey: OPERATION_INTENT_ID,
       projectId: PROJECT_ID, targetUrl: 'http://127.0.0.1:8787/' };
     const entry = await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-08-26T00:00:00.000Z', proposedByMemberId: MEMBER_BOB, request,
+      proposedAt: testTime({ days: -1 }), proposedByMemberId: MEMBER_BOB, request,
     }));
     if (responseSaved) await persistence.completeRequesterEntry(entry, proposalStatus());
     const foreign = createOwnedAuthorityTransferRequesterEntry({
-      installationKey: TEST_INSTALLATION_B, proposedAt: '2026-08-26T00:00:00.000Z',
+      installationKey: TEST_INSTALLATION_B, proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_BOB, request,
     });
     const source = createAuthorityTransferEntryRecord({
@@ -2072,11 +2072,11 @@ describe('AuthorityTransferPersistence', () => {
       projectId: PROJECT_ID, targetUrl: 'http://127.0.0.1:8787/',
     };
     const oldEntry = await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-08-26T00:00:00.000Z', proposedByMemberId: MEMBER_BOB, request: oldRequest,
+      proposedAt: testTime({ days: -1 }), proposedByMemberId: MEMBER_BOB, request: oldRequest,
     }));
     if (responseSaved) await persistence.completeRequesterEntry(oldEntry, proposalStatus());
     const foreign = createOwnedAuthorityTransferRequesterEntry({
-      installationKey: TEST_INSTALLATION_B, proposedAt: '2026-08-26T00:00:00.000Z',
+      installationKey: TEST_INSTALLATION_B, proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_ALICE, request: oldRequest,
     });
     await repository.authorityTransferEntries.saveRequester(foreign);
@@ -2105,7 +2105,7 @@ describe('AuthorityTransferPersistence', () => {
   it('rejects foreign and unproved requester succession without removing its intent', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const entry = createOwnedAuthorityTransferRequesterEntry({
-      installationKey: TEST_INSTALLATION_B, proposedAt: '2026-08-26T00:00:00.000Z',
+      installationKey: TEST_INSTALLATION_B, proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_BOB, request: {
         expectedAuthorityGeneration: 1, idempotencyKey: OPERATION_INTENT_ID,
         projectId: PROJECT_ID, targetUrl: 'http://127.0.0.1:8787/',
@@ -2133,7 +2133,7 @@ describe('AuthorityTransferPersistence', () => {
       targetUrl: 'http://127.0.0.1:8787/',
     };
     const requester = createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_BOB,
       request,
     });
@@ -2145,13 +2145,13 @@ describe('AuthorityTransferPersistence', () => {
       ...proposalStatus(),
       phase: 'cancelled',
       state: 'cancelled',
-      updatedAt: '2026-08-26T00:01:00.000Z',
+      updatedAt: testTime({ days: -1, minutes: 1 }),
     });
     await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
       .resolves.toBeNull();
 
     const replacement = createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-08-26T00:01:00.000Z',
+      proposedAt: testTime({ days: -1, minutes: 1 }),
       proposedByMemberId: MEMBER_BOB,
       request: { ...request, idempotencyKey: 'intent-requester-replacement' },
     });
@@ -2167,7 +2167,7 @@ describe('AuthorityTransferPersistence', () => {
       targetUrl: 'http://127.0.0.1:8787/',
     };
     const requester = createAuthorityTransferRequesterEntry({
-      proposedAt: '2026-08-26T00:00:00.000Z',
+      proposedAt: testTime({ days: -1 }),
       proposedByMemberId: MEMBER_BOB,
       request,
     });
@@ -2363,7 +2363,7 @@ describe('AuthorityTransferPersistence', () => {
         ...entry.status,
         phase: 'cancelled',
         state: 'cancelled',
-        updatedAt: '2026-08-26T00:08:00.000Z',
+        updatedAt: testTime({ days: -1, minutes: 8 }),
       },
     }));
 
@@ -2456,7 +2456,7 @@ describe('AuthorityTransferPersistence', () => {
           ...entry.status,
           phase: 'cancelled',
           state: 'cancelled',
-          updatedAt: '2026-08-26T00:08:00.000Z',
+          updatedAt: testTime({ days: -1, minutes: 8 }),
         },
       }),
       terminalCleanupCompleted: true,
@@ -2495,7 +2495,7 @@ describe('AuthorityTransferPersistence', () => {
         ...proposalStatus(),
         phase: 'cancelled',
         state: 'cancelled',
-        updatedAt: '2026-08-26T00:08:00.000Z',
+        updatedAt: testTime({ days: -1, minutes: 8 }),
       },
     }));
     await persistence.completeTerminalCleanup({
@@ -2537,7 +2537,7 @@ describe('AuthorityTransferPersistence', () => {
           ...proposalStatus(),
           phase: 'cancelled',
           state: 'cancelled',
-          updatedAt: '2026-08-26T00:08:00.000Z',
+          updatedAt: testTime({ days: -1, minutes: 8 }),
         },
       }),
       terminalCleanupCompleted: true,
@@ -2661,7 +2661,7 @@ describe('AuthorityTransferPersistence', () => {
           batchRevision: batch.batchRevision,
           batchSha256: batch.batchSha256,
           checkpointSha256: batch.checkpointSha256,
-          committedAt: '2026-08-26T00:03:30.000Z',
+          committedAt: testTime({ days: -1, minutes: 3, seconds: 30 }),
           custodyAuthority: { generation: 1, kind: 'lan' },
           operationIntentId: OPERATION_INTENT_ID,
           projectId: PROJECT_ID,
@@ -2918,7 +2918,7 @@ describe('AuthorityTransferPersistence', () => {
       batchRevision: batch.batchRevision,
       batchSha256: batch.batchSha256,
       checkpointSha256: CHECKPOINT_SHA256,
-      committedAt: '2026-08-26T00:03:29.474Z',
+      committedAt: testTime({ days: -1, minutes: 3, seconds: 29, milliseconds: 474 }),
       custodyAuthority: { generation: 1, kind: 'lan' as const },
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
@@ -2985,7 +2985,7 @@ describe('AuthorityTransferPersistence', () => {
       batchRevision: rotated.batchRevision,
       batchSha256: rotated.batchSha256,
       checkpointSha256: CHECKPOINT_SHA256,
-      committedAt: '2026-08-26T00:03:00.000Z',
+      committedAt: testTime({ days: -1, minutes: 3 }),
       custodyAuthority: { generation: 1, kind: 'lan' as const },
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
@@ -3048,7 +3048,7 @@ describe('AuthorityTransferPersistence', () => {
       projectId: PROJECT_ID,
       receiptId: 'redemption-receipt-bob',
       receiptKeyId: 'receipt-key-one',
-      redeemedAt: '2026-08-26T00:03:59.000Z',
+      redeemedAt: testTime({ days: -1, minutes: 3, seconds: 59 }),
       signature: 'A'.repeat(86),
       signatureAlgorithm: 'ed25519' as const,
       targetAuthorityGeneration: 2,
@@ -3063,7 +3063,7 @@ describe('AuthorityTransferPersistence', () => {
       },
     })).rejects.toMatchObject({ code: 'membership-claim-invalid' });
     await persistence.scrubClaimWithVerifiedReceipt({
-      acknowledgedAt: '2026-08-26T00:04:00.000Z',
+      acknowledgedAt: testTime({ days: -1, minutes: 4 }),
       receipt: redemptionReceipt,
     });
     await expect(persistence.loadClaim(PROJECT_ID, TRANSFER_ID, MEMBER_BOB))
@@ -3164,7 +3164,7 @@ describe('AuthorityTransferPersistence', () => {
       batchRevision: batch.batchRevision,
       batchSha256: batch.batchSha256,
       checkpointSha256: batch.checkpointSha256,
-      committedAt: '2026-08-26T00:03:30.000Z',
+      committedAt: testTime({ days: -1, minutes: 3, seconds: 30 }),
       custodyAuthority: { generation: 1, kind: 'lan' },
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
@@ -3234,7 +3234,7 @@ describe('AuthorityTransferPersistence', () => {
           batchRevision: batch.batchRevision,
           batchSha256: batch.batchSha256,
           checkpointSha256: batch.checkpointSha256,
-          committedAt: '2026-08-26T00:03:30.000Z',
+          committedAt: testTime({ days: -1, minutes: 3, seconds: 30 }),
           custodyAuthority: { generation: 1, kind: 'cloud' },
           operationIntentId: stageOperationIntentId,
           projectId: PROJECT_ID,
@@ -3400,7 +3400,7 @@ describe('AuthorityTransferPersistence', () => {
         ...cloudToLanStatus('cloud-quiesced'),
         phase: 'cancelled',
         state: 'cancelled',
-        updatedAt: '2026-08-26T00:08:00.000Z',
+        updatedAt: testTime({ days: -1, minutes: 8 }),
       },
     });
     await repository.authorityTransferRecords.save(cancelled);
@@ -3411,7 +3411,7 @@ describe('AuthorityTransferPersistence', () => {
       transferId: TRANSFER_ID,
     });
     const replacement = createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:09:00.000Z',
+      createdAt: testTime({ days: -1, minutes: 9 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-replacement-target',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -3453,7 +3453,7 @@ describe('AuthorityTransferPersistence', () => {
       batchRevision: 1,
       batchSha256: claimBatch().batchSha256,
       checkpointSha256: CHECKPOINT_SHA256,
-      committedAt: '2026-08-26T00:10:00.000Z',
+      committedAt: testTime({ days: -1, minutes: 10 }),
       custodyAuthority: { generation: 1, kind: 'lan' },
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
@@ -3463,7 +3463,7 @@ describe('AuthorityTransferPersistence', () => {
       transferId: TRANSFER_ID,
     });
     const next = createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:11:00.000Z',
+      createdAt: testTime({ days: -1, minutes: 11 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-next-lan-generation',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -3477,7 +3477,7 @@ describe('AuthorityTransferPersistence', () => {
       ownerInstallationKey: TEST_INSTALLATION_B, selectedTargetMemberId: MEMBER_BOB,
       selectedTargetPersonalRef: `refs/heads/members/${MEMBER_BOB}`,
     }, { caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
-      caFingerprint: 'c'.repeat(64), publishedAt: '2026-08-26T00:11:00.000Z',
+      caFingerprint: 'c'.repeat(64), publishedAt: testTime({ days: -1, minutes: 11 }),
       targetUrl: 'https://192.168.1.20:27001' });
     const manager = createCloudToLanManagerEntry({
       createdAt: testTime({ days: -1, minutes: 11 }), expiresAt: ENTRY_EXPIRES_AT,
@@ -3523,7 +3523,7 @@ describe('AuthorityTransferPersistence', () => {
       );
       await repository.authorityTransferRecords.save(predecessor);
       const replacement = createCloudToLanTargetEntry({
-        createdAt: '2026-09-30T00:01:00.000Z',
+        createdAt: testTime({ days: 34, minutes: 1 }),
         expiresAt: testTime({ days: 35 }),
         operationIntentId: 'intent-round-trip',
         ownerInstallationKey: TEST_INSTALLATION_A,
@@ -3596,7 +3596,7 @@ describe('AuthorityTransferPersistence', () => {
       if (conflict === 'retained-custody') {
         await repository.authorityTransferClaims.save(createAuthorityTransferClaimCustodyRecord({
           batch: claimBatch(),
-          createdAt: '2026-08-26T00:01:00.000Z',
+          createdAt: testTime({ days: -1, minutes: 1 }),
           operationIntentId: OPERATION_INTENT_ID,
           purpose: 'source-terminal',
         }));
@@ -3605,7 +3605,7 @@ describe('AuthorityTransferPersistence', () => {
         isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
       });
       const replacement = createCloudToLanTargetEntry({
-        createdAt: '2026-09-30T00:01:00.000Z',
+        createdAt: testTime({ days: 34, minutes: 1 }),
         expiresAt: testTime({ days: 35 }),
         operationIntentId: 'intent-round-trip',
         ownerInstallationKey: TEST_INSTALLATION_A,
@@ -3640,7 +3640,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     const divergentCustody = createAuthorityTransferClaimCustodyRecord({
       batch: claimBatch(),
-      createdAt: '2026-08-26T00:01:00.000Z',
+      createdAt: testTime({ days: -1, minutes: 1 }),
       operationIntentId: 'different-operation-intent',
       purpose: 'source-terminal',
     });
@@ -3683,7 +3683,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     const divergentCustody = createAuthorityTransferClaimCustodyRecord({
       batch: claimBatch(),
-      createdAt: '2026-08-26T00:01:00.000Z',
+      createdAt: testTime({ days: -1, minutes: 1 }),
       operationIntentId: 'different-operation-intent',
       purpose: 'source-terminal',
     });
@@ -3732,7 +3732,7 @@ describe('AuthorityTransferPersistence', () => {
       batchRevision: 1,
       batchSha256: claimBatch().batchSha256,
       checkpointSha256: CHECKPOINT_SHA256,
-      committedAt: '2026-08-26T00:03:00.000Z',
+      committedAt: testTime({ days: -1, minutes: 3 }),
       custodyAuthority: { generation: 1, kind: 'lan' },
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
@@ -3803,17 +3803,8 @@ describe('AuthorityTransferPersistence', () => {
       isRecoveryOwner: () => true,
       now: testClock({ days: -1 }),
     });
-    const batchSha256 = '001a79c6e03aa40c576542ab21f7a692e5e8ec0d930f705101a29dd2809a66b3';
-    const batch: CollabTransferredMembershipClaimBatch = {
-      batchRevision: 1,
-      batchSha256,
-      checkpointSha256: CHECKPOINT_SHA256,
-      claims: [],
-      expiresAt: EXPIRES_AT,
-      projectId: PROJECT_ID,
-      targetAuthorityGeneration: 2,
-      transferId: TRANSFER_ID,
-    };
+    const batch = claimBatch(1, 'A', { claims: [] });
+    const { batchSha256 } = batch;
     const status: CollabAuthorityTransferStatus = {
       ...transferStatus('completed'),
       batchSha256,
@@ -3830,7 +3821,7 @@ describe('AuthorityTransferPersistence', () => {
       status,
     });
     const target = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
-      createdAt: '2026-08-26T00:05:00.000Z',
+      createdAt: testTime({ days: -1, minutes: 5 }),
       expiresAt: ENTRY_EXPIRES_AT,
       operationIntentId: 'intent-next-target',
       ownerInstallationKey: TEST_INSTALLATION_B,
@@ -3842,11 +3833,11 @@ describe('AuthorityTransferPersistence', () => {
     }), {
       caCertificatePem: '-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----',
       caFingerprint: 'c'.repeat(64),
-      publishedAt: '2026-08-26T00:05:30.000Z',
+      publishedAt: testTime({ days: -1, minutes: 5, seconds: 30 }),
       targetUrl: 'https://192.168.1.20:27001',
     });
     const manager = createCloudToLanManagerEntry({
-      createdAt: '2026-08-26T00:06:00.000Z',
+      createdAt: testTime({ days: -1, minutes: 6 }),
       descriptor: target.descriptor!,
       expiresAt: ENTRY_EXPIRES_AT,
       initiatingMemberId: MEMBER_ALICE,
@@ -3856,7 +3847,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     const requester = await persistence.completeRequesterEntry(
       await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
-        proposedAt: '2026-08-26T00:00:00.000Z',
+        proposedAt: testTime({ days: -1 }),
         proposedByMemberId: MEMBER_ALICE,
         request: {
           expectedAuthorityGeneration: 1,
@@ -3867,9 +3858,9 @@ describe('AuthorityTransferPersistence', () => {
       })),
       {
         ...transferStatus('collecting-readiness'),
-        createdAt: '2026-08-26T00:00:08.000Z',
+        createdAt: testTime({ days: -1, seconds: 8 }),
         expiresAt: testTime({ days: 34, seconds: 8 }),
-        updatedAt: '2026-08-26T00:00:08.000Z',
+        updatedAt: testTime({ days: -1, seconds: 8 }),
       },
     );
     await repository.authorityTransferRecords.save(completed);
@@ -3882,7 +3873,7 @@ describe('AuthorityTransferPersistence', () => {
       batchRevision: 1,
       batchSha256,
       checkpointSha256: CHECKPOINT_SHA256,
-      committedAt: '2026-08-26T00:03:00.000Z',
+      committedAt: testTime({ days: -1, minutes: 3 }),
       custodyAuthority: { generation: 1, kind: 'lan' },
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
@@ -4024,7 +4015,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     const divergentCustody = createAuthorityTransferClaimCustodyRecord({
       batch: claimBatch(),
-      createdAt: '2026-08-26T00:01:00.000Z',
+      createdAt: testTime({ days: -1, minutes: 1 }),
       operationIntentId: 'different-operation-intent',
       purpose: 'source-terminal',
     });
@@ -4135,7 +4126,7 @@ describe('AuthorityTransferPersistence', () => {
       batchRevision: batch.batchRevision,
       batchSha256: batch.batchSha256,
       checkpointSha256: batch.checkpointSha256,
-      committedAt: '2026-08-26T00:03:00.000Z',
+      committedAt: testTime({ days: -1, minutes: 3 }),
       custodyAuthority: { generation: 1, kind: 'lan' },
       operationIntentId: OPERATION_INTENT_ID,
       projectId: PROJECT_ID,
@@ -4234,7 +4225,7 @@ describe('AuthorityTransferPersistence', () => {
         ...status,
         relinquishmentProof: {
           ...status.relinquishmentProof!,
-          committedAt: '2026-08-25T23:59:59.000Z',
+          committedAt: testTime({ days: -2, hours: 23, minutes: 59, seconds: 59 }),
         },
       },
     })).toThrow('Invalid authority transfer relinquishment proof');
@@ -4244,7 +4235,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     await repository.authorityTransferClaims.save(createAuthorityTransferClaimCustodyRecord({
       batch: claimBatch(),
-      createdAt: '2026-08-26T00:00:00.000Z',
+      createdAt: testTime({ days: -1 }),
       operationIntentId: OPERATION_INTENT_ID,
       purpose: 'source-terminal',
     }));

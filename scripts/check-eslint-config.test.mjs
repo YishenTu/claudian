@@ -74,3 +74,19 @@ test('file naming still rejects an invalid basename behind a Windows path', () =
   assert.equal(reported[0].messageId, 'invalidCase');
   assert.equal(reported[0].data.name, 'some_snake_case.ts');
 });
+
+test('Collab fixtures and the shared clock reject fixed calendar anchors', async () => {
+  const eslint = new ESLint();
+  for (const filePath of ['tests/helpers/testClock.ts', 'tests/unit/app/collab/Example.test.ts']) {
+    for (const code of [
+      "const anchor = '2026-08-27T00:00:00.000Z'; void anchor;",
+      "const query = `SELECT '2026-08-27T00:00:00.000Z'`; void query;",
+      'const date = `2026-08-27T00:${minute}:00.000Z`; void date;',
+      'const anchor = new Date(2026, 7, 27); void anchor;',
+      'const anchor = Date.UTC(2026, 7, 27); void anchor;',
+    ]) {
+      const [result] = await eslint.lintText(code, { filePath });
+      assert.ok(result.messages.some(message => message.ruleId === 'no-restricted-syntax'), filePath);
+    }
+  }
+});

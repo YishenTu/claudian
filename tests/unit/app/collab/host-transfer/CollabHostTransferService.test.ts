@@ -17,7 +17,7 @@ const membership = {
     hostCaFingerprint: 'a'.repeat(64),
     kind: 'lan' as const,
   },
-  createdAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
   hostOwnership: { ownsAuthority: false },
   lastEventSequence: 1,
   member: {
@@ -29,7 +29,7 @@ const membership = {
   },
   project: { id: 'project-a', name: 'Project A', workspacePath: 'workspace/a' },
   schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  updatedAt: testTime({ days: -14 }),
 } satisfies CollabLocalLanMembershipRecord;
 
 const snapshot = {
@@ -41,7 +41,7 @@ const snapshot = {
       canCancel: false,
       canDecline: true,
       expiresAt: testTime({ days: -14, minutes: 10 }),
-      offeredAt: '2026-08-13T00:00:00.000Z',
+      offeredAt: testTime({ days: -14 }),
       phase: 'offered',
       targetMemberId: 'member-target',
       transferId: 'transfer-a',
@@ -51,7 +51,7 @@ const snapshot = {
     openTicketCount: 0,
     project: {
       authorityKind: 'lan',
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       hostMemberId: 'member-source',
       id: 'project-a',
       mainOid: 'a'.repeat(40),
@@ -264,7 +264,7 @@ describe('CollabHostTransferService', () => {
       direction === 'outgoing'
         ? {
           activationCertificate: JSON.stringify({}),
-          createdAt: '2026-08-13T00:00:00.000Z',
+          createdAt: testTime({ days: -14 }),
           direction: 'outgoing',
           kind: 'host-transfer-recovery',
           manifestDigest: 'c'.repeat(64),
@@ -281,7 +281,7 @@ describe('CollabHostTransferService', () => {
           targetHostMemberId: 'member-target',
           targetTerminalResponseReceived: true,
           transferId: 'transfer-a',
-          updatedAt: '2026-08-13T00:00:00.000Z',
+          updatedAt: testTime({ days: -14 }),
         }
         : null
     ));

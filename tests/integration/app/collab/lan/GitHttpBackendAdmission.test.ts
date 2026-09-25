@@ -7,6 +7,7 @@ import path from 'node:path';
 
 import { collabMemberRef } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs from 'sql.js';
 
 import { PendingMembershipRepository } from '@/app/collab/authority/PendingMembershipRepository';
@@ -20,7 +21,7 @@ import { GitHttpBackendAdmission } from '@/app/collab/lan/GitHttpBackendAdmissio
 import { GitHttpBackendProxy } from '@/app/collab/lan/GitHttpBackendProxy';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 
-const CREATED_AT = '2026-09-10T00:00:00.000Z';
+const CREATED_AT = testTime({ days: 14 });
 const members = Array.from({ length: 4 }, (_, index) => ({
   id: `member-${index}`, credential: Buffer.alloc(32, index + 1).toString('base64url'),
 }));

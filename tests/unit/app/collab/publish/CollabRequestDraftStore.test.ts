@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   COLLAB_REQUEST_DRAFT_SCHEMA_VERSION,
   type CollabRequestDraftRecord,
@@ -5,7 +7,7 @@ import {
 } from '@/app/collab/publish/CollabRequestDraftRecord';
 import { CollabRequestDraftStore } from '@/app/collab/publish/CollabRequestDraftStore';
 
-const CREATED_AT = '2026-08-10T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -17 });
 
 describe('CollabRequestDraftStore', () => {
   it('persists one private description draft without relation or secret fields', async () => {

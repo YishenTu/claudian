@@ -15,7 +15,7 @@ import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVe
 import type { CollabCloudProjectSnapshot, CollabProjectSnapshot } from '@/core/collab';
 
 const PROJECT_ID = 'project-convergence';
-const CREATED_AT = '2026-08-27T00:00:00.000Z';
+const CREATED_AT = testTime();
 
 function completed(direction: 'cloud-to-lan' | 'lan-to-cloud'): CollabAuthorityTransferStatus {
   const sourceKind = direction === 'lan-to-cloud' ? 'lan' : 'cloud';
@@ -35,7 +35,7 @@ function completed(direction: 'cloud-to-lan' | 'lan-to-cloud'): CollabAuthorityT
       certificate: Buffer.alloc(64, 2).toString('base64url'),
       certificateAlgorithm: 'ed25519',
       checkpointSha256: 'a'.repeat(64),
-      committedAt: '2026-08-27T00:00:08.000Z',
+      committedAt: testTime({ seconds: 8 }),
       operationIntentId: 'intent-convergence',
       projectId: PROJECT_ID,
       sourceAuthority: { generation: 1, kind: sourceKind },
@@ -50,7 +50,7 @@ function completed(direction: 'cloud-to-lan' | 'lan-to-cloud'): CollabAuthorityT
       ? 'https://cloud.example.test/'
       : 'https://192.168.1.20:54545/',
     transferId: 'transfer-convergence',
-    updatedAt: '2026-08-27T00:00:10.000Z',
+    updatedAt: testTime({ seconds: 10 }),
   };
 }
 

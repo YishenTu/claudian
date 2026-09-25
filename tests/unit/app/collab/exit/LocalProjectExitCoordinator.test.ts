@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type { CollabLocalMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import type { LocalExitProjectStorePort } from '@/app/collab/exit/LocalExitStores';
@@ -24,7 +26,7 @@ import { CloudAuthorityRejection } from '@/app/collab/remote-authority/CloudAuth
 import { type CollabLocalCleanupStatus } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const NOW = '2026-08-13T00:00:00.000Z';
+const NOW = testTime({ days: -14 });
 
 function membership(
   role: 'manager' | 'member' = 'member',

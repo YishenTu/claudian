@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { testClock } from '@test/helpers/testClock';
+import { testClock, testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -34,7 +34,7 @@ import type { CollabLanProjectSnapshot } from '@/core/collab';
 import { type CollabLocalCleanupStatus } from '@/core/collab';
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
-const NOW = '2026-08-13T00:00:00.000Z';
+const NOW = testTime({ days: -14 });
 const CREDENTIAL = 'c'.repeat(43);
 
 describe('pending Leave commit-then-lost-response recovery', () => {

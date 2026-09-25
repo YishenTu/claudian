@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   type CloudPendingLeaveRecord,
   COLLAB_CLOUD_PENDING_LEAVE_SCHEMA_VERSION,
@@ -23,11 +25,11 @@ const record: PendingLeaveRecord = {
   hostEndpoint: 'https://192.168.1.20:54545',
   hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
   hostCaFingerprint: 'a'.repeat(64),
-  projectCreatedAt: '2026-08-12T00:00:00.000Z',
+  projectCreatedAt: testTime({ days: -15 }),
   projectName: 'Alpha',
   workspacePath: 'workspace/project-alpha',
-  createdAt: '2026-08-13T00:00:00.000Z',
-  updatedAt: '2026-08-13T00:00:00.000Z',
+  createdAt: testTime({ days: -14 }),
+  updatedAt: testTime({ days: -14 }),
 };
 
 describe('PendingLeaveRecord', () => {
@@ -66,7 +68,7 @@ describe('PendingLeaveRecord', () => {
       authorityKind: 'cloud',
       cleanupChoice: 'delete-files',
       cleanupMarkerNonce: 'q'.repeat(43),
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       idempotencyKey: 'leave-cloud-one',
       kind: 'pending-leave',
       localCleanupComplete: true,
@@ -75,13 +77,13 @@ describe('PendingLeaveRecord', () => {
       operationId: 'leave-cloud-one',
       personalRef: 'refs/heads/members/member-alice',
       phase: 'queued',
-      projectCreatedAt: '2026-08-12T00:00:00.000Z',
+      projectCreatedAt: testTime({ days: -15 }),
       projectId: 'project-alpha',
       projectName: 'Alpha',
       request: null,
       schemaVersion: COLLAB_CLOUD_PENDING_LEAVE_SCHEMA_VERSION,
       serverUrl: 'http://127.0.0.1:8787/cloud/prefix',
-      updatedAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: testTime({ days: -14 }),
       workspacePath: 'workspace/project-alpha',
     };
 
@@ -128,7 +130,7 @@ describe('PendingLeaveRecord', () => {
       authorityKind: 'cloud',
       cleanupChoice: 'keep-files',
       cleanupMarkerNonce: 'q'.repeat(43),
-      createdAt: '2026-08-13T00:00:00.000Z',
+      createdAt: testTime({ days: -14 }),
       idempotencyKey: 'leave-cloud-one',
       kind: 'pending-leave',
       localCleanupComplete: false,
@@ -137,13 +139,13 @@ describe('PendingLeaveRecord', () => {
       operationId: 'leave-cloud-one',
       personalRef: 'refs/heads/members/member-alice',
       phase: 'queued',
-      projectCreatedAt: '2026-08-12T00:00:00.000Z',
+      projectCreatedAt: testTime({ days: -15 }),
       projectId: 'project-alpha',
       projectName: 'Alpha',
       request: null,
       schemaVersion: 3,
       serverUrl: 'https://cloud.example.test/base',
-      updatedAt: '2026-08-13T00:00:00.000Z',
+      updatedAt: testTime({ days: -14 }),
       workspacePath: 'workspace/project-alpha',
     };
     expect(() => decodePendingLeaveRecord({ ...queued, ...patch })).toThrow(TypeError);

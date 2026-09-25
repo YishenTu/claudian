@@ -169,13 +169,13 @@ describe('production authority-transfer hosting handoff effects', () => {
       const joined = await receiver.feature.joinProject({
         encodedInvitation: invitation.value.encodedInvitation, memberDisplayName: 'Next Host',
       });
-      if (joined.status !== 'success') throw new Error('Receiver join failed');
+      expect(joined).toMatchObject({ status: 'success' });
       let formerDirectory: string | undefined;
       let formerBytes: Buffer | undefined;
       if (formerState !== 'absent') {
         const former = await receiverFoundation.createAuthority(PROJECT_ID);
         await former.database.mutate(connection => former.projects.initialize(connection, {
-          createdAt: '2026-08-08T00:00:00.000Z',
+          createdAt: testTime({ days: -19 }),
           hostCredentialHash: createHash('sha256').update(HOST_CREDENTIAL).digest(),
           hostDisplayName: 'Former Host', hostMemberId: MEMBER_ID, name: 'Portable', projectId: PROJECT_ID,
         }));
@@ -521,7 +521,7 @@ describe('production authority-transfer hosting handoff effects', () => {
               ...transferStatus,
               checkpointSha256: manifest.manifestSha256,
               phase: 'checkpoint-captured',
-              updatedAt: '2026-08-28T00:02:00.000Z',
+              updatedAt: testTime({ days: 1, minutes: 2 }),
             };
           }
           return transferStatus;
@@ -541,7 +541,7 @@ describe('production authority-transfer hosting handoff effects', () => {
         if (operation === 'acknowledgeTransferredMembershipClaimRedemption') {
           const receipt = input.receipt as { readonly memberId: string; readonly receiptId: string };
           return {
-            acknowledgedAt: '2026-08-28T00:05:00.000Z',
+            acknowledgedAt: testTime({ days: 1, minutes: 5 }),
             memberId: receipt.memberId,
             projectId: PROJECT_ID,
             receiptId: receipt.receiptId,
@@ -552,7 +552,7 @@ describe('production authority-transfer hosting handoff effects', () => {
           transferStatus = {
             ...transferStatus,
             phase: 'cloud-quiesced',
-            updatedAt: '2026-08-28T00:01:00.000Z',
+            updatedAt: testTime({ days: 1, minutes: 1 }),
           };
           return transferStatus;
         }
@@ -568,7 +568,7 @@ describe('production authority-transfer hosting handoff effects', () => {
             batchSha256: staged.claimBatch.batchSha256,
             certificateAlgorithm: 'ed25519' as const,
             checkpointSha256: staged.checkpointSha256,
-            committedAt: '2026-08-28T00:03:00.000Z',
+            committedAt: testTime({ days: 1, minutes: 3 }),
             operationIntentId: 'intent-cloud-relinquishment',
             projectId: PROJECT_ID,
             sourceAuthority: { generation: 2, kind: 'cloud' as const },
@@ -583,7 +583,7 @@ describe('production authority-transfer hosting handoff effects', () => {
             checkpointSha256: staged.checkpointSha256,
             phase: 'cloud-relinquished',
             relinquishmentProof: proof,
-            updatedAt: '2026-08-28T00:03:00.000Z',
+            updatedAt: testTime({ days: 1, minutes: 3 }),
           };
           return {
             batchRevision: staged.claimBatch.batchRevision,
@@ -604,7 +604,7 @@ describe('production authority-transfer hosting handoff effects', () => {
             ...transferStatus,
             phase: 'completed',
             state: 'completed',
-            updatedAt: '2026-08-28T00:04:00.000Z',
+            updatedAt: testTime({ days: 1, minutes: 4 }),
           };
           return transferStatus;
         }

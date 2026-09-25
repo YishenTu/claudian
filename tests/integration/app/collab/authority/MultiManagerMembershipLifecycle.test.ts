@@ -6,6 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -19,7 +20,7 @@ import {
 } from '@/app/collab/authority/SqlJsProjectDatabase';
 import type { CollabManagerResponsibilityPurpose } from '@/core/collab';
 
-const NOW = '2026-08-17T00:00:00.000Z';
+const NOW = testTime({ days: -10 });
 
 describe('multi-Manager membership lifecycle', () => {
   let SQL: SqlJsStatic;

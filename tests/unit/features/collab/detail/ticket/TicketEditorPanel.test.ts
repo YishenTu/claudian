@@ -1,9 +1,9 @@
 /** @jest-environment jsdom */
-
 import 'obsidian';
 
 import { type CollabTicketDetail } from '@claudian-collab/protocol';
 import { EditorView } from '@codemirror/view';
+import { testTime } from '@test/helpers/testClock';
 import { within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
@@ -15,10 +15,10 @@ import {
 } from '@/features/collab/detail/ticket/TicketEditorPanel';
 import { TicketEditorState } from '@/features/collab/detail/ticket/TicketEditorState';
 
-const CREATED_AT = '2026-08-10T00:00:00.000Z';
-const COMMENTED_EARLY_AT = '2026-08-10T00:01:00.000Z';
-const ACCEPTED_AT = '2026-08-10T00:02:00.000Z';
-const COMMENTED_LATE_AT = '2026-08-10T00:03:00.000Z';
+const CREATED_AT = testTime({ days: -17 });
+const COMMENTED_EARLY_AT = testTime({ days: -17, minutes: 1 });
+const ACCEPTED_AT = testTime({ days: -17, minutes: 2 });
+const COMMENTED_LATE_AT = testTime({ days: -17, minutes: 3 });
 const renderMarkdown = jest.fn(async (markdown: string, host: HTMLElement) => {
   host.setText(markdown);
 });

@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { LanAuthorityTargetResolver } from '@/app/collab/remote-authority/LanAuthorityTargetResolver';
@@ -16,7 +18,7 @@ function membership(): CollabLocalLanMembershipRecord {
       hostCaFingerprint: FINGERPRINT,
       kind: 'lan',
     },
-    createdAt: '2026-08-28T00:00:00.000Z',
+    createdAt: testTime({ days: 1 }),
     hostOwnership: { ownsAuthority: true },
     lastEventSequence: 0,
     member: {
@@ -28,7 +30,7 @@ function membership(): CollabLocalLanMembershipRecord {
     },
     project: { id: PROJECT_ID, name: 'Project', workspacePath: `workspace/${PROJECT_ID}` },
     schemaVersion: COLLAB_LOCAL_PROJECT_SCHEMA_VERSION,
-    updatedAt: '2026-08-28T00:00:00.000Z',
+    updatedAt: testTime({ days: 1 }),
   };
 }
 

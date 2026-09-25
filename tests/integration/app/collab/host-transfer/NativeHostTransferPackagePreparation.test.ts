@@ -20,8 +20,8 @@ import { NativeHostTransferPackagePreparation } from '@/app/collab/host-transfer
 import { COLLAB_HOST_TRANSFER_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import type { CollabHostTrustTransitionProof } from '@/core/collab';
 
-const NOW = '2026-08-13T00:00:00.000Z';
-const LATER = '2026-08-13T00:01:00.000Z';
+const NOW = testTime({ days: -14 });
+const LATER = testTime({ days: -14, minutes: 1 });
 const proof: CollabHostTrustTransitionProof = {
   issuedAt: NOW,
   nextCaCertificatePem: '-----BEGIN CERTIFICATE-----\ntarget\n-----END CERTIFICATE-----\n',

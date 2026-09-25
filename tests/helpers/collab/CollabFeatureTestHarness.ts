@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type {
   CollabAuthorityTransferEntryPort,
   CollabFeatureServiceOptions,
@@ -21,7 +23,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 const OID_A = 'a'.repeat(40);
 const OID_B = 'b'.repeat(40);
 const SNAPSHOT_ID = 'd'.repeat(64);
-const TEST_TIMESTAMP = '2026-08-08T00:00:00.000Z';
+const TEST_TIMESTAMP = testTime({ days: -19 });
 
 export const TEST_COLLAB_FEATURE_PORT_METHODS = [
   'initialize',

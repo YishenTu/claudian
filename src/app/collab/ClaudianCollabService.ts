@@ -1039,6 +1039,7 @@ export class ClaudianCollabService {
       throw collabServiceError('not-initialized', 'host-transfer-module-already-created');
     }
     const module = new HostTransferModule({
+      now: this.now,
       activateTransferredAuthority: async input => {
         const membership = await this.local.projects.loadMembership(input.projectId);
         if (

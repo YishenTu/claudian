@@ -1,4 +1,5 @@
 import type { CollabChangeRequest } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import type { CollabCoordinationSnapshot, CollabRequestReview } from '@/core/collab';
 import { CollabPreparedReviewCache } from '@/features/collab/handoff/CollabPreparedReviewCache';
@@ -25,10 +26,10 @@ describe('CollabPreparedReviewCache', () => {
     }, coordination({ ...request, commentCount: 1 }))).toBeNull();
     expect(cache.readRequest('project-a', {
       ...request,
-      updatedAt: '2026-08-08T00:01:00.000Z',
+      updatedAt: testTime({ days: -19, minutes: 1 }),
     }, coordination({
       ...request,
-      updatedAt: '2026-08-08T00:01:00.000Z',
+      updatedAt: testTime({ days: -19, minutes: 1 }),
     }))).toBeNull();
   });
 
@@ -74,7 +75,7 @@ describe('CollabPreparedReviewCache', () => {
 function changeRequest(): CollabChangeRequest {
   return {
     commentCount: 0,
-    createdAt: '2026-08-08T00:00:00.000Z',
+    createdAt: testTime({ days: -19 }),
     description: 'Published change',
     firstBaseOid: MAIN,
     id: 'request-a',
@@ -83,7 +84,7 @@ function changeRequest(): CollabChangeRequest {
     revision: 1,
     status: 'open',
     ticketRelations: [],
-    updatedAt: '2026-08-08T00:00:00.000Z',
+    updatedAt: testTime({ days: -19 }),
   };
 }
 
@@ -110,8 +111,8 @@ function coordination(
   role: 'manager' | 'member' = 'manager',
 ): CollabCoordinationSnapshot {
   const member = {
-    activatedAt: '2026-08-08T00:00:00.000Z',
-    createdAt: '2026-08-08T00:00:00.000Z',
+    activatedAt: testTime({ days: -19 }),
+    createdAt: testTime({ days: -19 }),
     displayName: 'Member A',
     id: 'member-a',
     personalRef: 'refs/heads/members/member-a',
@@ -127,7 +128,7 @@ function coordination(
       openRequests: [request],
       project: {
         authorityKind: 'lan',
-        createdAt: '2026-08-08T00:00:00.000Z',
+        createdAt: testTime({ days: -19 }),
         hostMemberId: 'member-a',
         id: 'project-a',
         mainOid: MAIN,

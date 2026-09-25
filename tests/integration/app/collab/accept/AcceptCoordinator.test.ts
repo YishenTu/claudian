@@ -15,6 +15,7 @@ import {
   writeGitFixtureTree,
 } from '@test/helpers/collabGitObjects';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 import {
@@ -32,8 +33,8 @@ import { GitCommandRunner } from '@/app/collab/git/GitCommandRunner';
 import { GitRepositoryService } from '@/app/collab/git/GitRepositoryService';
 import { GitRuntimeResolver } from '@/app/collab/git/GitRuntimeResolver';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
-const ACCEPTED_AT = '2026-08-08T00:01:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
+const ACCEPTED_AT = testTime({ days: -19, minutes: 1 });
 const IDENTITY = Object.freeze({ email: 'fixture@claudian.local', name: 'Fixture' });
 const MEMBER_ID = 'member-a';
 const MEMBER_REF = collabMemberRef(MEMBER_ID);

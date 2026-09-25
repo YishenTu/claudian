@@ -1,4 +1,5 @@
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 import {
@@ -8,8 +9,8 @@ import {
 } from '@/app/collab/authority/AuthoritySchema';
 import { COLLAB_AUTHORITY_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 
-const CREATED_AT = '2026-08-13T00:00:00.000Z';
-const LATER = '2026-08-13T00:10:00.000Z';
+const CREATED_AT = testTime({ days: -14 });
+const LATER = testTime({ days: -14, minutes: 10 });
 
 function columns(database: Database, table: string): string[] {
   return database.exec(`PRAGMA table_info(${table})`)[0]?.values

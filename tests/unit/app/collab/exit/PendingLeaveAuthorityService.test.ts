@@ -223,7 +223,7 @@ describe('PendingLeaveAuthorityService', () => {
     const client = cloudClientPort();
     client.leaveProject.mockResolvedValueOnce({
       discardedRequestId: null,
-      leftAt: '2026-08-13T00:00:00.000Z',
+      leftAt: testTime({ days: -14 }),
       managerSetGeneration: 8,
       memberId: 'member-other',
       projectId: 'project-alpha',
@@ -272,10 +272,10 @@ describe('PendingLeaveAuthorityService', () => {
     });
     client.getManagerResponsibilityOffer.mockResolvedValueOnce({
       offer: {
-        acknowledgedAt: '2026-08-12T01:00:00.000Z',
+        acknowledgedAt: testTime({ days: -15, hours: 1 }),
         expiresAt: testTime({ days: -13 }),
         managerSetGenerationAtOffer: 7,
-        offeredAt: '2026-08-12T00:30:00.000Z',
+        offeredAt: testTime({ days: -15, minutes: 30 }),
         offerId: 'offer-successor',
         purpose: 'manager-leave',
         revision: 2,
@@ -354,7 +354,7 @@ function record(
     authorityReplay,
     cleanupChoice: 'keep-files',
     cleanupMarkerNonce: 'n'.repeat(43),
-    createdAt: '2026-08-13T00:00:00.000Z',
+    createdAt: testTime({ days: -14 }),
     hostCaCertificatePem: '-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n',
     hostCaFingerprint: 'a'.repeat(64),
     hostEndpoint: 'https://192.168.1.20:54545',
@@ -366,11 +366,11 @@ function record(
     memberId: 'member-alice',
     operationId: 'leave-one',
     phase: 'queued',
-    projectCreatedAt: '2026-08-12T00:00:00.000Z',
+    projectCreatedAt: testTime({ days: -15 }),
     projectId: 'project-alpha',
     projectName: 'Alpha',
     schemaVersion: 2,
-    updatedAt: '2026-08-13T00:00:00.000Z',
+    updatedAt: testTime({ days: -14 }),
     workspacePath: 'workspace/project-alpha',
   };
 }
@@ -378,8 +378,8 @@ function record(
 function snapshot(): CollabLanProjectSnapshot {
   return {
     currentMember: {
-      activatedAt: '2026-08-12T00:00:00.000Z',
-      createdAt: '2026-08-12T00:00:00.000Z',
+      activatedAt: testTime({ days: -15 }),
+      createdAt: testTime({ days: -15 }),
       displayName: 'Alice',
       id: 'member-alice',
       personalRef: 'refs/heads/members/member-alice',
@@ -392,7 +392,7 @@ function snapshot(): CollabLanProjectSnapshot {
     openTicketCount: 0,
     project: {
       authorityKind: 'lan',
-      createdAt: '2026-08-12T00:00:00.000Z',
+      createdAt: testTime({ days: -15 }),
       hostMemberId: 'member-host',
       id: 'project-alpha',
       authorityGeneration: 1,
@@ -413,7 +413,7 @@ function cloudRecord(
     authorityKind: 'cloud',
     cleanupChoice: 'keep-files',
     cleanupMarkerNonce: 'q'.repeat(43),
-    createdAt: '2026-08-13T00:00:00.000Z',
+    createdAt: testTime({ days: -14 }),
     idempotencyKey: 'leave-cloud-one',
     kind: 'pending-leave',
     localCleanupComplete: false,
@@ -422,13 +422,13 @@ function cloudRecord(
     operationId: 'leave-cloud-one',
     personalRef: 'refs/heads/members/member-alice',
     phase: 'queued',
-    projectCreatedAt: '2026-08-12T00:00:00.000Z',
+    projectCreatedAt: testTime({ days: -15 }),
     projectId: 'project-alpha',
     projectName: 'Alpha',
     request: null,
     schemaVersion: 3,
     serverUrl: 'https://cloud.example.test/base',
-    updatedAt: '2026-08-13T00:00:00.000Z',
+    updatedAt: testTime({ days: -14 }),
     workspacePath: 'workspace/project-alpha',
   };
 }
@@ -451,8 +451,8 @@ function submittedCloudRecord(): CloudPendingLeaveRecord {
 
 function cloudSnapshot(role: 'manager' | 'member'): CollabCloudProjectSnapshot {
   const currentMember = {
-    activatedAt: '2026-08-12T00:00:00.000Z',
-    createdAt: '2026-08-12T00:00:00.000Z',
+    activatedAt: testTime({ days: -15 }),
+    createdAt: testTime({ days: -15 }),
     displayName: 'Alice',
     id: 'member-alice' as const,
     personalRef: 'refs/heads/members/member-alice',
@@ -468,7 +468,7 @@ function cloudSnapshot(role: 'manager' | 'member'): CollabCloudProjectSnapshot {
     project: {
       authorityGeneration: 4,
       authorityKind: 'cloud',
-      createdAt: '2026-08-12T00:00:00.000Z',
+      createdAt: testTime({ days: -15 }),
       id: 'project-alpha',
       mainOid: 'a'.repeat(40),
       mainRef: 'refs/heads/main',
@@ -500,7 +500,7 @@ function cloudClientPort(
       ..._args: Parameters<CloudPendingLeaveAuthorityClientPort['leaveProject']>
     ): Promise<Awaited<ReturnType<CloudPendingLeaveAuthorityClientPort['leaveProject']>>> => ({
       discardedRequestId: null,
-      leftAt: '2026-08-13T00:00:00.000Z',
+      leftAt: testTime({ days: -14 }),
       managerSetGeneration: 8,
       memberId: 'member-alice',
       projectId: 'project-alpha',

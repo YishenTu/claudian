@@ -38,7 +38,7 @@ import type { CollabAuthoritySession } from '@/app/collab/remote-authority/Colla
 export const PROJECT_ID = 'project-cloud-entry';
 export const MEMBER_ID = 'member-server-selected';
 export const OPERATION_ID = 'entry-one';
-export const CREATED_AT = '2026-09-01T00:00:00.000Z';
+export const CREATED_AT = testTime({ days: 5 });
 const execFileAsync = promisify(execFile);
 export const gitRuntimeResolver = new GitRuntimeResolver();
 const remoteSeeds = new Map<string, { barePath: string; mainOid: string }>();

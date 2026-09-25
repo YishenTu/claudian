@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
-import { testClock } from '@test/helpers/testClock';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import { digestHostTransitionProofChain } from '@/app/collab/host-transfer/HostTransferPackage';
 import {
@@ -41,7 +41,7 @@ describe('HostTrustTransitionService', () => {
     const target = identities[1];
     const next = await target.loadOrCreate();
     const proof = await service.signTransition(await source.hostCaSigner(), {
-      issuedAt: '2026-08-08T00:00:00.000Z',
+      issuedAt: testTime({ days: -19 }),
       nextCaCertificatePem: next.caCertificatePem.replaceAll('\n', '\r\n'),
       projectId: 'project-alpha',
       transferId: 'transfer-one',
@@ -57,7 +57,7 @@ describe('HostTrustTransitionService', () => {
     const targetCa = await target.loadOrCreate();
 
     const proof = await service.signTransition(sourceSigner, {
-      issuedAt: '2026-08-08T00:00:00.000Z',
+      issuedAt: testTime({ days: -19 }),
       nextCaCertificatePem: targetCa.caCertificatePem,
       projectId: 'project-1',
       transferId: 'transfer-1',
@@ -85,13 +85,13 @@ describe('HostTrustTransitionService', () => {
     const secondCa = await second.loadOrCreate();
     const thirdCa = await third.loadOrCreate();
     const firstProof = await service.signTransition(firstSigner, {
-      issuedAt: '2026-08-08T00:00:00.000Z',
+      issuedAt: testTime({ days: -19 }),
       nextCaCertificatePem: secondCa.caCertificatePem,
       projectId: 'project-1',
       transferId: 'transfer-1',
     });
     const secondProof = await service.signTransition(secondSigner, {
-      issuedAt: '2038-08-08T00:00:00.000Z',
+      issuedAt: testTime({ days: 4364 }),
       nextCaCertificatePem: thirdCa.caCertificatePem,
       projectId: 'project-1',
       transferId: 'transfer-2',
@@ -122,7 +122,7 @@ describe('HostTrustTransitionService', () => {
     expect(() => service.verifyChain({
       pinnedCaCertificatePem: firstSigner.caCertificatePem,
       projectId: 'project-1',
-      proofs: [{ ...firstProof, issuedAt: '2026-08-08T00:00:01.000Z' }],
+      proofs: [{ ...firstProof, issuedAt: testTime({ days: -19, seconds: 1 }) }],
     })).toThrow();
   });
 
@@ -130,7 +130,7 @@ describe('HostTrustTransitionService', () => {
     const source = identities[0];
     const sourceSigner = await source.hostCaSigner();
     const input = {
-      cutoverAt: '2026-08-08T00:05:00.000Z',
+      cutoverAt: testTime({ days: -19, minutes: 5 }),
       manifestDigest: 'a'.repeat(64),
       projectId: 'project-1',
       targetCaFingerprint: 'b'.repeat(64),
@@ -156,7 +156,7 @@ describe('HostTrustTransitionService', () => {
     const signer = await source.hostCaSigner();
     const input = {
       authorityGeneration: 7,
-      cutoverAt: '2026-08-08T00:05:00.000Z', manifestDigest: 'a'.repeat(64),
+      cutoverAt: testTime({ days: -19, minutes: 5 }), manifestDigest: 'a'.repeat(64),
       projectId: 'project-1', targetCaFingerprint: 'b'.repeat(64),
       targetHostMemberId: 'member-2', transferId: 'transfer-1',
     } as const;
@@ -178,11 +178,11 @@ describe('HostTrustTransitionService', () => {
     const [first, second, third] = identities;
     const [a, b, c] = await Promise.all([first.hostCaSigner(), second.hostCaSigner(), third.hostCaSigner()]);
     const ab = await service.signTransition(a, {
-      issuedAt: '2026-08-08T00:00:00.000Z', nextCaCertificatePem: b.caCertificatePem,
+      issuedAt: testTime({ days: -19 }), nextCaCertificatePem: b.caCertificatePem,
       projectId: 'project-1', transferId: 'transfer-ab',
     });
     const bc = await service.signTransition(b, {
-      issuedAt: '2026-08-08T00:01:00.000Z', nextCaCertificatePem: c.caCertificatePem,
+      issuedAt: testTime({ days: -19, minutes: 1 }), nextCaCertificatePem: c.caCertificatePem,
       projectId: 'project-1', transferId: 'transfer-bc',
     });
     expect(service.verifyChain({
@@ -195,15 +195,15 @@ describe('HostTrustTransitionService', () => {
     const [first, second, third] = identities;
     const [a, b, c] = await Promise.all([first.hostCaSigner(), second.hostCaSigner(), third.hostCaSigner()]);
     const ab = await service.signTransition(a, {
-      issuedAt: '2026-08-08T00:00:00.000Z', nextCaCertificatePem: b.caCertificatePem,
+      issuedAt: testTime({ days: -19 }), nextCaCertificatePem: b.caCertificatePem,
       projectId: 'project-1', transferId: 'transfer-ab',
     });
     const ba = await service.signTransition(b, {
-      issuedAt: '2026-08-08T00:01:00.000Z', nextCaCertificatePem: a.caCertificatePem,
+      issuedAt: testTime({ days: -19, minutes: 1 }), nextCaCertificatePem: a.caCertificatePem,
       projectId: 'project-1', transferId: 'transfer-ba',
     });
     const ac = await service.signTransition(a, {
-      issuedAt: '2026-08-08T00:02:00.000Z', nextCaCertificatePem: c.caCertificatePem,
+      issuedAt: testTime({ days: -19, minutes: 2 }), nextCaCertificatePem: c.caCertificatePem,
       projectId: 'project-1', transferId: 'transfer-ac',
     });
     const checkpoint = {

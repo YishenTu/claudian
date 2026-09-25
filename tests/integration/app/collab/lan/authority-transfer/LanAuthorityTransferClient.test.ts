@@ -25,7 +25,7 @@ function status(): CollabAuthorityTransferStatus {
     batchRevision: null,
     batchSha256: null,
     checkpointSha256: null,
-    createdAt: '2026-08-26T00:00:00.000Z',
+    createdAt: testTime({ days: -1 }),
     direction: 'lan-to-cloud',
     expiresAt: testTime({ days: 29 }),
     phase: 'collecting-readiness',
@@ -36,7 +36,7 @@ function status(): CollabAuthorityTransferStatus {
     targetAuthority: { generation: 2, kind: 'cloud' },
     targetUrl: 'https://cloud.example.test',
     transferId: 'transfer-alpha',
-    updatedAt: '2026-08-26T00:00:00.000Z',
+    updatedAt: testTime({ days: -1 }),
   };
 }
 

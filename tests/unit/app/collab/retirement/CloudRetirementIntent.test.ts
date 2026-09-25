@@ -7,7 +7,7 @@ import {
 
 const prepared = (): CloudRetirementIntent => ({
   authorityGeneration: 3,
-  createdAt: '2026-08-27T00:00:00.000Z',
+  createdAt: testTime(),
   kind: 'cloud-retirement-intent',
   memberId: 'member-manager',
   personalRef: 'refs/heads/members/member-manager',
@@ -22,7 +22,7 @@ const prepared = (): CloudRetirementIntent => ({
   result: null,
   schemaVersion: 1,
   serverUrl: 'https://cloud.example.test/operator-prefix',
-  updatedAt: '2026-08-27T00:00:00.000Z',
+  updatedAt: testTime(),
 });
 
 describe('CloudRetirementIntent', () => {
@@ -35,11 +35,11 @@ describe('CloudRetirementIntent', () => {
         acknowledgementRequired: true,
         kind: 'project-retired' as const,
         projectId: 'project-cloud-retire' as const,
-        retiredAt: '2026-08-27T00:00:10.000Z',
+        retiredAt: testTime({ seconds: 10 }),
         retirementId: 'retirement-cloud',
         terminalExpiresAt: testTime({ days: 30, seconds: 10 }),
       },
-      updatedAt: '2026-08-27T00:00:10.000Z',
+      updatedAt: testTime({ seconds: 10 }),
     };
     expect(decodeCloudRetirementIntent(terminal)).toEqual(terminal);
   });
@@ -59,7 +59,7 @@ describe('CloudRetirementIntent', () => {
     const rejected = {
       ...prepared(),
       phase: 'rejected' as const,
-      updatedAt: '2026-08-27T00:00:01.000Z',
+      updatedAt: testTime({ seconds: 1 }),
     };
 
     expect(decodeCloudRetirementIntent(rejected)).toEqual(rejected);

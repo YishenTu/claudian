@@ -21,13 +21,13 @@ const PROJECT_ID = 'project-connection-recovery';
 const MEMBER_CREDENTIAL = Buffer.alloc(32, 8).toString('base64url');
 const STATUS: CollabAuthorityTransferStatus = {
   batchRevision: null, batchSha256: null, checkpointSha256: null,
-  createdAt: '2026-09-09T00:00:00.000Z', direction: 'lan-to-cloud',
+  createdAt: testTime({ days: 13 }), direction: 'lan-to-cloud',
   expiresAt: testTime({ days: 43 }), phase: 'collecting-readiness',
   projectId: PROJECT_ID, relinquishmentProof: null,
   sourceAuthority: { generation: 1, kind: 'lan' }, state: 'active',
   targetAuthority: { generation: 2, kind: 'cloud' },
   targetUrl: 'https://cloud.example.test', transferId: 'transfer-connection-recovery',
-  updatedAt: '2026-09-09T00:00:00.000Z',
+  updatedAt: testTime({ days: 13 }),
 };
 
 describe('LAN authority-transfer connection recovery', () => {

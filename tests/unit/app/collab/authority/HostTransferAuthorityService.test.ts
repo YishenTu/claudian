@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -17,7 +18,7 @@ import { decodeHostTransferRecoveryRecord } from '@/app/collab/host-transfer/Hos
 import { HostTrustTransitionService } from '@/app/collab/host-transfer/HostTrustTransitionService';
 import { LanTlsIdentity } from '@/app/collab/lan/LanTlsIdentity';
 
-const CREATED_AT = '2026-08-08T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -19 });
 
 jest.setTimeout(120_000);
 
@@ -298,7 +299,7 @@ describe('HostTransferAuthorityService', () => {
       projectId: 'project-alpha',
       targetMemberId: 'member-target',
     });
-    clock = new Date('2026-08-09T00:00:00.000Z');
+    clock = new Date(testTime({ days: -18 }));
     const targetCa = await targetIdentity.loadOrCreate();
 
     await expect(service.accept('member-target', {

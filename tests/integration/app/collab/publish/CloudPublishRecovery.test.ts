@@ -8,6 +8,7 @@ import {
   collabCloudCapabilityDocument,
   collabCloudSuccessEnvelope,
 } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import type { CollabLocalCloudMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -40,7 +41,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 jest.setTimeout(30_000);
 
 const ACTOR_ID = 'member-a';
-const CREATED_AT = '2026-08-23T00:00:00.000Z';
+const CREATED_AT = testTime({ days: -4 });
 const PERSONAL_REF = `refs/heads/members/${ACTOR_ID}`;
 const PROJECT_ID = 'project-a';
 

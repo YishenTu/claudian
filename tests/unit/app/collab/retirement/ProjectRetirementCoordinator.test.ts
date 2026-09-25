@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   type ProjectRetirementActiveResourcesPort,
   type ProjectRetirementAdmissionPort,
@@ -7,7 +9,7 @@ import {
   type ProjectRetirementTerminalPort,
 } from '@/app/collab/retirement/ProjectRetirementCoordinator';
 
-const RETIRED_AT = '2026-08-13T00:00:00.000Z';
+const RETIRED_AT = testTime({ days: -14 });
 const admitProjectLifecycle = <T>(
   _projectId: string,
   operation: () => Promise<T>,

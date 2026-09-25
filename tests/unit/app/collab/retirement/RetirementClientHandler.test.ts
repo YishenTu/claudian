@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type {
   CollabLocalMembershipRecord,
   CollabRetiredProjectProjectionSeed,
@@ -14,7 +16,7 @@ import {
 } from '@/app/collab/retirement/RetirementClientHandler';
 import type { RetirementRecord } from '@/app/collab/retirement/RetirementRecord';
 
-const RETIRED_AT = '2026-08-13T00:00:00.000Z';
+const RETIRED_AT = testTime({ days: -14 });
 
 describe('RetirementClientHandler', () => {
   it('drains an admitted retirement transition and rejects work after close', async () => {
@@ -287,7 +289,7 @@ describe('RetirementClientHandler', () => {
 
     await expect(handler.handle({
       projectId: 'project-a',
-      retiredAt: '2026-08-13T00:00:01.000Z',
+      retiredAt: testTime({ days: -14, seconds: 1 }),
     }, 'terminal-fallback')).rejects.toMatchObject({ code: 'authority-integrity-error' });
     expect(cleanup.cleanup).not.toHaveBeenCalled();
   });
@@ -397,7 +399,7 @@ describe('RetirementClientHandler', () => {
     expect(store.projectLifecycle).toBe('retired');
     expect(store.lastProjectionSeed).toEqual({
       authorityKind: 'lan',
-      createdAt: '2026-08-12T00:00:00.000Z',
+      createdAt: testTime({ days: -15 }),
       name: 'Alpha',
       workspacePath: 'workspace/project-a',
     });
@@ -450,7 +452,7 @@ describe('RetirementClientHandler', () => {
 
     expect(store.lastProjectionSeed).toEqual({
       authorityKind: 'cloud',
-      createdAt: '2026-08-12T00:00:00.000Z',
+      createdAt: testTime({ days: -15 }),
       name: 'Alpha',
       workspacePath: 'workspace/project-a',
     });
@@ -642,7 +644,7 @@ function pendingLeaveRecord(): PendingLeaveRecord {
     memberId: 'member-a',
     operationId: 'leave-one',
     phase: 'queued',
-    projectCreatedAt: '2026-08-12T00:00:00.000Z',
+    projectCreatedAt: testTime({ days: -15 }),
     projectId: 'project-a',
     projectName: 'Alpha',
     schemaVersion: 2,
@@ -666,7 +668,7 @@ function cloudPendingLeaveRecord(): PendingLeaveRecord {
     operationId: 'leave-cloud-cleanup',
     personalRef: 'refs/heads/members/member-a',
     phase: 'submitted',
-    projectCreatedAt: '2026-08-12T00:00:00.000Z',
+    projectCreatedAt: testTime({ days: -15 }),
     projectId: 'project-a',
     projectName: 'Alpha',
     request: {

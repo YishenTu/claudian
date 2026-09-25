@@ -22,7 +22,7 @@ describe('verifyAuthorityRelinquishmentProof', () => {
       batchSha256: 'b'.repeat(64),
       certificateAlgorithm: 'ed25519' as const,
       checkpointSha256: 'a'.repeat(64),
-      committedAt: '2026-08-27T00:00:08.000Z',
+      committedAt: testTime({ seconds: 8 }),
       operationIntentId: 'intent-relinquishment-verifier',
       projectId: PROJECT_ID,
       sourceAuthority: { generation: 1, kind: 'cloud' as const },
@@ -56,7 +56,7 @@ describe('verifyAuthorityRelinquishmentProof', () => {
         batchRevision: 1,
         batchSha256: 'b'.repeat(64),
         checkpointSha256: 'a'.repeat(64),
-        createdAt: '2026-08-27T00:00:00.000Z',
+        createdAt: testTime(),
         direction: 'cloud-to-lan',
         expiresAt: testTime({ days: 30 }),
         phase: 'completed',
@@ -67,7 +67,7 @@ describe('verifyAuthorityRelinquishmentProof', () => {
         targetAuthority: payload.targetAuthority,
         targetUrl: 'https://lan.example.test',
         transferId: TRANSFER_ID,
-        updatedAt: '2026-08-27T00:00:10.000Z',
+        updatedAt: testTime({ seconds: 10 }),
       },
     });
 
