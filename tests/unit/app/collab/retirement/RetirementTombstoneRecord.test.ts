@@ -1,4 +1,5 @@
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   COLLAB_RETIREMENT_TOMBSTONE_SCHEMA_VERSION,
@@ -14,7 +15,7 @@ const record: RetirementTombstoneRecord = {
   sourceResourceId: '12345678-1234-4234-8234-123456789abc',
   projectId: 'project-alpha',
   retiredAt,
-  expiresAt: '2026-09-12T00:00:00.000Z',
+  expiresAt: testTime({ days: 16 }),
   result: { projectId: 'project-alpha', retiredAt },
   replay: {
     actorMemberId: 'member-alice',
@@ -53,7 +54,7 @@ describe('RetirementTombstoneRecord', () => {
 
   it.each([
     { ...record, displayName: 'Alice' },
-    { ...record, expiresAt: '2026-09-11T00:00:00.000Z' },
+    { ...record, expiresAt: testTime({ days: 15 }) },
     { ...record, result: { ...record.result, projectId: 'other' } },
     { ...record, formerMembers: [...record.formerMembers, record.formerMembers[0]] },
     { ...record, formerMembers: [{ ...record.formerMembers[0], credentialHash: 'secret' }] },

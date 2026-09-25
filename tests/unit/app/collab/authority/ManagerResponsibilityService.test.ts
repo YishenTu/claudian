@@ -6,6 +6,7 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -104,7 +105,7 @@ describe('ManagerResponsibilityService', () => {
     const replay = await service.create('member-a', request);
 
     expect(created).toEqual({
-      expiresAt: '2026-08-08T01:10:00.000Z',
+      expiresAt: testTime({ days: -19, hours: 1, minutes: 10 }),
       offeredAt: OFFERED_AT,
       offerId: 'offer-1',
       purpose: 'manager-promotion',

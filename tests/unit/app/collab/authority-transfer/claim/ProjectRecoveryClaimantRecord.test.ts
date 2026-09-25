@@ -1,3 +1,5 @@
+import { testClock, testTime } from '@test/helpers/testClock';
+
 import { AuthorityTransferClaimantCoordinator } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantCoordinator';
 import { type AuthorityTransferClaimantRecord, decodeAuthorityTransferClaimantRecord } from '@/app/collab/authority-transfer/claim/AuthorityTransferClaimantRecord';
 import { decodeProjectRecoveryClaimantRecord } from '@/app/collab/authority-transfer/claim/ProjectRecoveryClaimantRecord';
@@ -12,7 +14,7 @@ const prepared = {
   phase: 'redemption-prepared', retainedAttempts: [], redemptionRequest: request, redemptionReceipt: null, convergence: null,
   invitation: { target: { kind: 'cloud', serverUrl: 'http://100.89.0.41:8787' },
     link: { projectId: 'project-demo', recoveryLinkId: 'recovery-one', authorityGeneration: 4, token: 'a'.repeat(64),
-      expiresAt: '2026-09-14T00:15:00.000Z', secretReplayExpiresAt: '2026-09-14T00:10:00.000Z' } },
+      expiresAt: testTime({ days: 18, minutes: 15 }), secretReplayExpiresAt: testTime({ days: 18, minutes: 10 }) } },
 };
 
 describe('ProjectRecoveryClaimantRecord', () => {
@@ -51,7 +53,7 @@ describe('ProjectRecoveryClaimantRecord', () => {
      identity: { authorityGeneration: 4, project: { id: 'project-demo', name: 'Demo' }, eventSequence: 12,
        currentMember: { id: 'member-one', personalRef: 'refs/heads/members/member-one', displayName: 'One', role: 'member' as const } } };
    const make = () => new AuthorityTransferClaimantCoordinator({
-     now: () => new Date('2026-09-14T01:00:00.000Z'),
+     now: testClock({ days: 18, hours: 1 }),
      store: { load: async () => record, save: async value => { record = decodeAuthorityTransferClaimantRecord(value); },
        remove: async () => { record = null; return true; }, listProjectIds: async () => ['project-demo'] },
      target: { cloudPrincipalId: prepared.cloudPrincipalId,

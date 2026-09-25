@@ -18,6 +18,7 @@ import {
   CollabError as ProtocolError,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import { WebSocketServer } from 'ws';
 
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
@@ -1064,7 +1065,7 @@ describe('CloudAuthorityAdapter', () => {
             projectId: PROJECT_ID,
             retiredAt: CREATED_AT,
             retirementId: 'retirement-cloud-one',
-            terminalExpiresAt: '2026-09-26T00:00:00.000Z',
+            terminalExpiresAt: testTime({ days: 30 }),
           };
       return {
         body: collabCloudSuccessEnvelope(envelopeRequestId(input), data),
@@ -1102,7 +1103,7 @@ describe('CloudAuthorityAdapter', () => {
       checkpointSha256: null,
       createdAt: CREATED_AT,
       direction: 'cloud-to-lan',
-      expiresAt: '2026-09-21T00:00:00.000Z',
+      expiresAt: testTime({ days: 25 }),
       phase: 'collecting-readiness',
       projectId: PROJECT_ID,
       relinquishmentProof: null,
@@ -1358,7 +1359,7 @@ describe('CloudAuthorityAdapter', () => {
       checkpointSha256: null,
       createdAt: CREATED_AT,
       direction: 'cloud-to-lan',
-      expiresAt: '2026-09-21T00:00:00.000Z',
+      expiresAt: testTime({ days: 25 }),
       phase: 'collecting-readiness',
       projectId: PROJECT_ID,
       relinquishmentProof: null,

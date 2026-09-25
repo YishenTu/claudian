@@ -20,6 +20,7 @@ import {
 } from '@claudian-collab/protocol';
 import { runGitHttpBackendFixture } from '@test/helpers/collab/GitHttpBackendFixture';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import { build } from 'esbuild';
 import { WebSocketServer } from 'ws';
 
@@ -312,8 +313,8 @@ export async function createFixture(options: {
   if (!address || typeof address === 'string') throw new Error('Fixture listener unavailable');
   const serverUrl = `http://127.0.0.1:${address.port}/operator/cloud`;
   const encodedInvitation = `claudian-cloud:v1:${Buffer.from(JSON.stringify({ serverUrl, invitation: {
-    createdAt: CREATED_AT, expiresAt: '2026-09-02T00:00:00.000Z', invitationId: 'invitation-entry',
-    issuedState: 'active', projectId, secret: 'A'.repeat(43), secretReplayExpiresAt: '2026-10-01T00:00:00.000Z',
+    createdAt: CREATED_AT, expiresAt: testTime({ days: 6 }), invitationId: 'invitation-entry',
+    issuedState: 'active', projectId, secret: 'A'.repeat(43), secretReplayExpiresAt: testTime({ days: 35 }),
   } })).toString('base64url')}`;
   const adapter = new CloudAuthorityAdapter(vaultRoot);
   const createCoordinator = () => new CloudProjectEntryCoordinator(foundation, {

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 
 import { ManagerSetRepository } from '@/app/collab/authority/ManagerSetRepository';
@@ -87,7 +88,7 @@ describe('ProjectRetirementAuthorityService', () => {
 
     const tombstone = await localProjects.loadRetirementTombstone('project-alpha');
     expect(tombstone).toEqual(expect.objectContaining({
-      expiresAt: '2026-09-12T08:00:00.000Z',
+      expiresAt: testTime({ days: 16, hours: 8 }),
       formerMembers: [
         expect.objectContaining({ credentialHash: '01'.repeat(32), memberId: 'member-host' }),
         expect.objectContaining({ credentialHash: '02'.repeat(32), memberId: 'member-second' }),
@@ -313,7 +314,7 @@ describe('ProjectRetirementAuthorityService', () => {
     }
     if (tombstoneWritten) {
       await new RetirementTombstoneRepository(localProjects, { isRecoveryOwner: () => true, now: () => NOW }).savePrepared({
-        expiresAt: '2026-09-12T08:00:00.000Z',
+        expiresAt: testTime({ days: 16, hours: 8 }),
         formerMembers: [
           { acknowledgedAt: null, credentialHash: '01'.repeat(32), memberId: 'member-host' },
           { acknowledgedAt: null, credentialHash: '02'.repeat(32), memberId: 'member-second' },

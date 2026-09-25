@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import type { CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import type { CollabDiscoveredHost } from '@/app/collab/discovery/CollabLanDiscoveryService';
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
@@ -21,7 +22,7 @@ const MEMBER_CREDENTIAL = Buffer.alloc(32, 8).toString('base64url');
 const STATUS: CollabAuthorityTransferStatus = {
   batchRevision: null, batchSha256: null, checkpointSha256: null,
   createdAt: '2026-09-09T00:00:00.000Z', direction: 'lan-to-cloud',
-  expiresAt: '2026-10-09T00:00:00.000Z', phase: 'collecting-readiness',
+  expiresAt: testTime({ days: 43 }), phase: 'collecting-readiness',
   projectId: PROJECT_ID, relinquishmentProof: null,
   sourceAuthority: { generation: 1, kind: 'lan' }, state: 'active',
   targetAuthority: { generation: 2, kind: 'cloud' },

@@ -7,6 +7,7 @@ import {
   COLLAB_PROTOCOL_VERSION,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testClock, testDate, testTime } from '@test/helpers/testClock';
 
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import type { CollabGitFoundation } from '@/app/collab/ClaudianCollabService';
@@ -39,7 +40,7 @@ import {
   type ReconnectProjectFoundationPort,
 } from '@/app/collab/reconnect/ReconnectProjectCoordinator';
 
-const now = new Date('2026-08-08T00:00:00.000Z');
+const now = testDate({ days: -19 });
 const oldEndpoint = 'https://192.168.1.10:54545';
 const newEndpoint = 'https://192.168.1.20:54545';
 const fingerprint = 'ab'.repeat(32);
@@ -143,7 +144,7 @@ function invitation(
   return codec.createInvitation({
     caFingerprint: changes.caFingerprint ?? fingerprint,
     endpoint: changes.endpoint ?? newEndpoint,
-    expiresAt: changes.expiresAt ?? '2026-08-08T00:30:00.000Z',
+    expiresAt: changes.expiresAt ?? testTime({ days: -19, minutes: 30 }),
     invitationId: changes.invitationId ?? 'invitation-a',
     invitationSecret: changes.invitationSecret ?? Buffer.alloc(32, 7).toString('base64url'),
     projectId: changes.projectId ?? 'project-a',
@@ -1126,7 +1127,7 @@ describe('ReconnectProjectCoordinator', () => {
     const projection = new LocalHostTransferProjection({
       authorityProjectionTransitions: transitions,
       loadMembership: jest.fn(async () => currentMembership),
-      now: () => new Date('2026-08-08T00:02:00.000Z'),
+      now: testClock({ days: -19, minutes: 2 }),
       resolveWorkspace: jest.fn(async () => path.join(vaultRoot, 'workspace/project-a')),
       rotateOrigin: async transition => {
         originUrls = [transition.newRemoteUrl];

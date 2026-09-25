@@ -2,6 +2,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
+
 import { CollabLocalProjectRepository, isCollabLocalCloudMembership } from '@/app/collab/CollabLocalProjectRepository';
 import { decodeCloudManagementIntent } from '@/app/collab/membership/CloudManagementIntent';
 import { CollabMembershipService } from '@/app/collab/membership/CollabMembershipService';
@@ -11,8 +13,8 @@ import type { CollabAuthorityMembershipRouterPort } from '@/app/collab/remote-au
 import { CollabError } from '@/core/collab/ClaudianCollabError';
 
 const projectId = 'project-alpha';
-const now = '2026-09-02T00:00:00.000Z';
-const expiresAt = '2026-09-02T00:15:00.000Z';
+const now = testTime({ days: 6 });
+const expiresAt = testTime({ days: 6, minutes: 15 });
 
 let root: string;
 let projects: CollabLocalProjectRepository;
@@ -68,15 +70,15 @@ async function setup(kind: 'lan' | 'cloud') {
       if (operation === 'createProjectRecoveryLink') {
         if (!cloudReplies.has(request.idempotencyKey)) cloudReplies.set(request.idempotencyKey, {
           projectId, authorityGeneration: 7, recoveryLinkId: `recovery-${++count}`, token: String(count).padStart(64, '0'),
-          expiresAt, secretReplayExpiresAt: '2026-09-02T00:10:00.000Z',
+          expiresAt, secretReplayExpiresAt: testTime({ days: 6, minutes: 10 }),
         });
         return cloudReplies.get(request.idempotencyKey);
       }
       if (operation !== 'createProjectInvitation') throw new Error(`Unexpected operation: ${operation}`);
       if (!cloudReplies.has(request.idempotencyKey)) cloudReplies.set(request.idempotencyKey, {
         projectId, invitationId: `invitation-${++count}`, secret: 'A'.repeat(43),
-        createdAt: now, expiresAt: '2026-09-03T00:00:00.000Z',
-        secretReplayExpiresAt: '2026-10-02T00:00:00.000Z', issuedState: 'active',
+        createdAt: now, expiresAt: testTime({ days: 7 }),
+        secretReplayExpiresAt: testTime({ days: 36 }), issuedState: 'active',
       });
       return cloudReplies.get(request.idempotencyKey);
     }),
@@ -273,7 +275,7 @@ describe('application-owned invitation operation', () => {
     const operation = service.openInvitation({ projectId, intent: 'create' });
     await operation.run();
     await operation.acknowledge();
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-04T00:00:00.000Z'));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse(testTime({ days: 8 })));
     await expect(operation.read()).resolves.toEqual({ status: 'unavailable', reason: 'expired' });
     operation.dispose();
   });

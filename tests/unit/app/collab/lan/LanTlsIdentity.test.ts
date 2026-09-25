@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createSecureContext } from 'node:tls';
 
+import { testClock } from '@test/helpers/testClock';
+
 import {
   fingerprintCertificatePem,
   LanTlsIdentity,
@@ -85,7 +87,7 @@ describe('LanTlsIdentity', () => {
   it('issues a short-lived server leaf with the selected IP SAN and CA chain', async () => {
     const identity = new LanTlsIdentity(vaultRoot, {
       installationKey: INSTALLATION_A,
-      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      now: testClock({ days: -19 }),
     });
 
     const issued = await identity.issueServerIdentity('192.168.1.42');

@@ -9,6 +9,7 @@ import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabAutho
 import { CollabFixtureSnapshot } from '@test/helpers/collab/CollabFixtureSnapshot';
 import { cloudReceiptVerifier, git, HOST_CREDENTIAL, MEMBER_ID, productionAuthorityTransferFixture,PROJECT_ID, signCloudRelinquishmentProof, status, TRANSFER_ID } from '@test/helpers/collab/ProductionAuthorityTransferFixture';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { CollabProjectSetupService } from '@/app/collab';
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
@@ -493,7 +494,7 @@ describe('production authority-transfer hosting handoff effects', () => {
         const input = request as Record<string, unknown>;
         if (operation === 'registerCloudToLanPreparation') {
           hostingPreparation ??= { caCertificatePem: input.caCertificatePem, caFingerprint: input.caFingerprint,
-            createdAt: '2026-08-28T00:00:00.000Z', expiresAt: input.expiresAt,
+            createdAt: testTime({ days: 1 }), expiresAt: input.expiresAt,
             preparationId: input.idempotencyKey, projectId: PROJECT_ID, sourceAuthorityGeneration: 2,
             targetHostMemberId: targetMemberId, targetUrl: input.targetUrl, withdrawnAt: null };
           return hostingPreparation;

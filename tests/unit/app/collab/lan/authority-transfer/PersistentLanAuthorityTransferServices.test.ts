@@ -4,6 +4,7 @@ import type {
   CollabAuthorityTransferStatus,
   CollabTransferredMembershipRedemptionReceipt,
 } from '@claudian-collab/protocol';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import {
   PersistentLanAuthorityTransferTargetActiveService,
@@ -23,7 +24,7 @@ function status(): CollabAuthorityTransferStatus {
     checkpointSha256: CHECKPOINT_SHA256,
     createdAt: '2026-08-27T00:00:00.000Z',
     direction: 'lan-to-cloud',
-    expiresAt: '2026-09-26T00:00:00.000Z',
+    expiresAt: testTime({ days: 30 }),
     phase: 'completed',
     projectId: PROJECT_ID,
     relinquishmentProof: {
@@ -119,7 +120,7 @@ describe('persistent LAN authority-transfer services', () => {
       authenticate: async () => ({ memberId: MEMBER_ID }),
       cleanupStaging: jest.fn(),
       expiresAt: status().expiresAt,
-      now: () => new Date('2026-08-27T00:02:00.000Z'),
+      now: testClock({ minutes: 2 }),
       persistence: {
         expireTerminalResponder: jest.fn(),
         load: async () => ({
@@ -177,7 +178,7 @@ describe('persistent LAN authority-transfer services', () => {
       authenticate: async () => ({ memberId: MEMBER_ID }),
       cleanupStaging: jest.fn(),
       expiresAt: status().expiresAt,
-      now: () => new Date('2026-08-27T00:02:00.000Z'),
+      now: testClock({ minutes: 2 }),
       persistence: {
         expireTerminalResponder: jest.fn(),
         load: async () => ({

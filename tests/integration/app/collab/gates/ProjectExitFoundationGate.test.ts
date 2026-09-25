@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A,TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testClock, testTime } from '@test/helpers/testClock';
 import initSqlJs,{ type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -94,10 +95,10 @@ describe('Project exit foundation gate', () => {
     const store = new MemoryTombstoneStore();
     const repository = new RetirementTombstoneRepository(store, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-13T08:00:00.000Z'),
+      now: testClock({ days: -14, hours: 8 }),
     });
     await repository.savePrepared({
-      expiresAt: '2026-09-12T08:00:00.000Z',
+      expiresAt: testTime({ days: 16, hours: 8 }),
       formerMembers: [{
         acknowledgedAt: null,
         credentialHash: 'a'.repeat(64),
@@ -135,10 +136,10 @@ describe('Project exit foundation gate', () => {
       presence,
     }, {
       createOfferId: () => 'offer-milestone',
-      now: () => new Date('2026-08-13T01:00:00.000Z'),
+      now: testClock({ days: -14, hours: 1 }),
     });
     const membership = new MembershipAdminService({ database, events, idempotency }, {
-      now: () => new Date('2026-08-13T01:01:00.000Z'),
+      now: testClock({ days: -14, hours: 1, minutes: 1 }),
       presence,
     });
 
@@ -175,7 +176,7 @@ describe('Project exit foundation gate', () => {
 
     const hostTransfers = new HostTransferAuthorityService({ database, events }, {
       createTransferId: () => 'transfer-milestone',
-      now: () => new Date('2026-08-13T01:02:00.000Z'),
+      now: testClock({ days: -14, hours: 1, minutes: 2 }),
     });
     await expect(hostTransfers.create('member-host', {
       expectedHostMemberId: 'member-host',
@@ -256,11 +257,11 @@ describe('Project exit foundation gate', () => {
 
     const tombstones = new RetirementTombstoneRepository(new MemoryTombstoneStore(), {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-13T01:04:00.000Z'),
+      now: testClock({ days: -14, hours: 1, minutes: 4 }),
     });
     const retirement = new ProjectRetirementAuthorityService(database, tombstones, {
       resourceId: '12345678-1234-4234-8234-123456789abc', installationKey: TEST_INSTALLATION_A,
-      now: () => new Date('2026-08-13T01:04:00.000Z'),
+      now: testClock({ days: -14, hours: 1, minutes: 4 }),
     });
     const retired = await retirement.retire('member-successor', {
       expectedHostMemberId: 'member-successor',

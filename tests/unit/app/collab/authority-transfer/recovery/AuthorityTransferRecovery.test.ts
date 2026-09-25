@@ -12,6 +12,7 @@ import {
   TEST_INSTALLATION_A,
   TEST_INSTALLATION_B,
 } from '@test/helpers/installations';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import {
   createAuthorityTransferEntryRecord as createOwnedAuthorityTransferEntryRecord,
@@ -71,7 +72,7 @@ function claimBatch(): CollabTransferredMembershipClaimBatch {
       { claim: 'A'.repeat(43), memberId: 'member-alpha' },
       { claim: 'B'.repeat(43), memberId: 'member-beta' },
     ],
-    expiresAt: '2026-09-30T00:00:00.000Z',
+    expiresAt: testTime({ days: 34 }),
     projectId: PROJECT_ID,
     targetAuthorityGeneration: 2,
     transferId: 'transfer-one',
@@ -95,7 +96,7 @@ function status(
     checkpointSha256: null,
     createdAt: '2026-08-26T00:00:00.000Z',
     direction: 'lan-to-cloud',
-    expiresAt: '2026-09-30T00:00:00.000Z',
+    expiresAt: testTime({ days: 34 }),
     phase,
     projectId,
     relinquishmentProof: null,
@@ -150,7 +151,7 @@ describe('AuthorityTransferRecovery', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
     });
     await persistence.submitRequesterEntry(createAuthorityTransferRequesterEntry({
       installationKey: TEST_INSTALLATION_A, proposedAt: '2026-08-26T00:00:00.000Z',
@@ -429,7 +430,7 @@ describe('AuthorityTransferRecovery', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
     });
     await repository.authorityTransferEntries.saveSource(
       createAuthorityTransferEntryRecord({
@@ -442,7 +443,7 @@ describe('AuthorityTransferRecovery', () => {
       },
       status: {
         ...status('collecting-readiness'),
-        expiresAt: '2026-09-25T00:00:00.000Z',
+        expiresAt: testTime({ days: 29 }),
       },
       }),
     );
@@ -474,7 +475,7 @@ describe('AuthorityTransferRecovery', () => {
     });
     const preparing = createCloudToLanTargetEntry({
       createdAt: '2026-08-27T00:00:00.000Z',
-      expiresAt: '2026-09-26T00:00:00.000Z',
+      expiresAt: testTime({ days: 30 }),
       operationIntentId: 'intent-target-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
@@ -519,13 +520,13 @@ describe('AuthorityTransferRecovery', () => {
       },
       status: {
         ...status('collecting-readiness'),
-        expiresAt: '2026-09-25T00:00:00.000Z',
+        expiresAt: testTime({ days: 29 }),
       },
       }),
     );
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-09-25T00:00:00.000Z'),
+      now: testClock({ days: 29 }),
     });
     const resume = jest.fn().mockResolvedValue(undefined);
     const recovery = new AuthorityTransferRecovery(
@@ -613,7 +614,7 @@ describe('AuthorityTransferRecovery', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
     });
     const proposal = createAuthorityTransferEntryRecord({
       proposedByMemberId: 'member-proposer',
@@ -625,7 +626,7 @@ describe('AuthorityTransferRecovery', () => {
       },
       status: {
         ...status('collecting-readiness'),
-        expiresAt: '2026-09-25T00:00:00.000Z',
+        expiresAt: testTime({ days: 29 }),
       },
     });
     await repository.authorityTransferEntries.saveSource(

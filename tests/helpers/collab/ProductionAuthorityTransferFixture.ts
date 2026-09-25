@@ -9,6 +9,7 @@ import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabAutho
 import { CollabFixtureSnapshot } from '@test/helpers/collab/CollabFixtureSnapshot';
 import type { TEST_INSTALLATION_B } from '@test/helpers/installations';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testClock, testDate, testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { ClaudianCollabService, CollabProjectSetupService, createCollabFeatureSubcomposition as createProductionFeatureSubcomposition } from '@/app/collab';
@@ -86,7 +87,7 @@ export function status(
     checkpointSha256,
     createdAt: '2026-08-28T00:00:00.000Z',
     direction,
-    expiresAt: '2026-09-27T00:00:00.000Z',
+    expiresAt: testTime({ days: 31 }),
     phase,
     projectId: PROJECT_ID,
     relinquishmentProof: null,
@@ -182,7 +183,7 @@ export function productionAuthorityTransferFixture() {
         if (kind === 'operation') return 'create-production-effects';
         return PROJECT_ID;
       },
-      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      now: testClock({ days: -19 }),
       vaultRoot: sourceRoot,
     });
     const sourceFeature = createCollabFeatureSubcomposition({
@@ -467,7 +468,7 @@ export function productionAuthorityTransferFixture() {
     const environment = {
       addresses: moveAddress ? ['127.0.0.1'] : listPrivateIpv4Addresses(),
       beforeConvergence: null as (() => Promise<void>) | null,
-      now: new Date('2026-08-28T00:03:00.000Z'),
+      now: testDate({ days: 1, minutes: 3 }),
     };
     let checkTargetAddress: () => Promise<void> = async () => undefined;
     const createTargetFoundation = () => foundation(targetRoot, TEST_INSTALLATION_A, {
@@ -894,6 +895,7 @@ export function productionAuthorityTransferFixture() {
       gitRuntimeResolver,
       installationKey,
       ...(lanHost ? { lanHost } : {}),
+      now: testClock({ days: 1, minutes: 3 }),
       obsidianConfigDirectory: '.obsidian',
       vaultRoot,
     });

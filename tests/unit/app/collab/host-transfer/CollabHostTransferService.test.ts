@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { CollabHostTransferService } from '@/app/collab/host-transfer/CollabHostTransferService';
@@ -38,7 +40,7 @@ const snapshot = {
       canAccept: true,
       canCancel: false,
       canDecline: true,
-      expiresAt: '2026-08-13T00:10:00.000Z',
+      expiresAt: testTime({ days: -14, minutes: 10 }),
       offeredAt: '2026-08-13T00:00:00.000Z',
       phase: 'offered',
       targetMemberId: 'member-target',

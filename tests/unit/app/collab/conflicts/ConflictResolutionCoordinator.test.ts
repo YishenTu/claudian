@@ -1,3 +1,5 @@
+import { testClock } from '@test/helpers/testClock';
+
 import {
   type ConflictPublicationPort,
   ConflictResolutionCoordinator,
@@ -243,7 +245,7 @@ function createSubject() {
     git,
     safety,
     publication,
-    { now: () => new Date('2026-08-08T00:00:00.000Z') },
+    { now: testClock({ days: -19 }) },
   );
   return { git, publication, safety, store, subject };
 }

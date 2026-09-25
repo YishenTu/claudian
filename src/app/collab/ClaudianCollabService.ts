@@ -176,6 +176,8 @@ export interface ClaudianCollabServiceOptions {
     | 'portCandidates'
     | 'tlsIdentity'
   >;
+  /** Clock for persisted authority-transfer and retirement expiry checks. */
+  readonly now?: () => Date;
   readonly obsidianConfigDirectory: string;
   readonly onDiagnostic?: CollabFilesystemDiagnosticSink;
   readonly vaultRoot: string;
@@ -314,11 +316,13 @@ export class ClaudianCollabService {
       isRecoveryOwner: ownerInstallationKey => (
         this.hostInstallations.isRecoveryOwner(ownerInstallationKey)
       ),
+      ...(options.now ? { now: options.now } : {}),
     });
     this.retirementTombstones = new RetirementTombstoneRepository(projects, {
       isRecoveryOwner: ownerInstallationKey => (
         this.hostInstallations.isRecoveryOwner(ownerInstallationKey)
       ),
+      ...(options.now ? { now: options.now } : {}),
     });
     const hostTransitionProofClient = new LanHostTransitionProofClient();
     const hostTrustTransitions = new HostTrustTransitionService();

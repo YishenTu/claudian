@@ -11,6 +11,8 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testClock } from '@test/helpers/testClock';
+
 import { CollabWorkspaceService } from '@/app/collab/CollabWorkspaceService';
 import { decodeLocalCleanupRecord, type LocalCleanupRecord } from '@/app/collab/exit/LocalCleanupRecord';
 import {
@@ -71,7 +73,7 @@ describe('LocalProjectCleanupCoordinator', () => {
     };
     subject = new LocalProjectCleanupCoordinator(workspace, git, records, {
       nonce: () => 'a'.repeat(43),
-      now: () => new Date('2026-08-13T00:00:00.000Z'),
+      now: testClock({ days: -14 }),
     });
   });
 

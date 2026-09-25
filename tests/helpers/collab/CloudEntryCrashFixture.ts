@@ -1,3 +1,4 @@
+import { testClock } from '@test/helpers/testClock';
 interface CrashInput {
   readonly encodedInvitation?: string;
   readonly phase: string;
@@ -58,7 +59,7 @@ async function run(input: CrashInput): Promise<void> {
     cloudAuthority: adapter,
     createId: kind => kind === 'project' ? input.projectId : input.operationId,
     getProjectsFolder: () => 'Shared/Projects',
-    now: () => new Date('2026-09-01T00:00:00.000Z'),
+    now: testClock({ days: 5 }),
     vaultRoot: input.vaultRoot,
   });
   try {

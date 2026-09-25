@@ -10,6 +10,7 @@ import {
   isCollabOpaqueId,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   type AuthorityTransferSourceEntryRecord,
@@ -845,7 +846,7 @@ describe('production authority-transfer direction coordinators', () => {
     });
     const canonical = status('lan-to-cloud', 'source-quiesced', {
       createdAt: '2026-08-27T00:00:05.000Z',
-      expiresAt: '2026-09-27T00:00:05.000Z',
+      expiresAt: testTime({ days: 31, seconds: 5 }),
     });
     const capture = jest.fn()
       .mockResolvedValueOnce({

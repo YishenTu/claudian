@@ -1,4 +1,5 @@
 import type { CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
 import type { LanToCloudCancellationIntent } from '@/app/collab/authority-transfer/persistence/AuthorityTransferPersistence';
@@ -16,7 +17,7 @@ function status(
     checkpointSha256: state === 'completed' ? 'a'.repeat(64) : null,
     createdAt: '2026-09-02T00:00:00.000Z',
     direction: 'lan-to-cloud',
-    expiresAt: '2026-10-02T00:00:00.000Z',
+    expiresAt: testTime({ days: 36 }),
     phase: state === 'completed' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'collecting-readiness',
     projectId: PROJECT_ID,
     relinquishmentProof: null,

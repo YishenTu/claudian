@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import {
 type CollabLocalCloudMembershipRecord,
@@ -346,7 +347,7 @@ describe('CollabLocalProjectRepository', () => {
       selectedProjectId: PROJECT_ID,
     }));
     const repository = new CollabLocalProjectRepository(vaultRoot, {
-      now: () => new Date('2026-08-08T01:00:00.000Z'),
+      now: testClock({ days: -19, hours: 1 }),
     });
 
     const index = await repository.loadIndex();
@@ -824,7 +825,7 @@ describe('CollabLocalProjectRepository', () => {
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
       retiredAt: '2026-08-13T00:00:00.000Z',
-      expiresAt: '2026-09-12T00:00:00.000Z',
+      expiresAt: testTime({ days: 16 }),
       result: { projectId: PROJECT_ID, retiredAt: '2026-08-13T00:00:00.000Z' },
       schemaVersion: 2,
       replay: {
@@ -903,7 +904,7 @@ describe('CollabLocalProjectRepository', () => {
   it('discovers valid tombstones when a legacy index is corrupt', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const tombstone: RetirementTombstoneRecord = {
-      expiresAt: '2026-09-12T00:00:00.000Z',
+      expiresAt: testTime({ days: 16 }),
       formerMembers: [{
         acknowledgedAt: null,
         credentialHash: 'c'.repeat(64),
@@ -941,7 +942,7 @@ describe('CollabLocalProjectRepository', () => {
   it('rediscovers a tombstone when a crash happens before its index update', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const tombstone: RetirementTombstoneRecord = {
-      expiresAt: '2026-09-12T00:00:00.000Z',
+      expiresAt: testTime({ days: 16 }),
       formerMembers: [{
         acknowledgedAt: null,
         credentialHash: 'c'.repeat(64),
@@ -1558,7 +1559,7 @@ describe('CollabLocalProjectRepository', () => {
 
   it('projects promotion and demotion monotonically with the event cursor', async () => {
     const repository = new CollabLocalProjectRepository(vaultRoot, {
-      now: () => new Date('2026-08-08T01:00:00.000Z'),
+      now: testClock({ days: -19, hours: 1 }),
     });
     await repository.saveMembership(membershipRecord({
       member: {

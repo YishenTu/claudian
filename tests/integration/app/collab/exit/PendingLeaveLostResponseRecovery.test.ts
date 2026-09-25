@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testClock } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -214,7 +215,7 @@ describe('pending Leave commit-then-lost-response recovery', () => {
       presence,
     }, {
       createOfferId: () => 'offer-accepted',
-      now: () => new Date('2026-08-13T00:01:00.000Z'),
+      now: testClock({ days: -14, minutes: 1 }),
     });
     const offer = await responsibilities.create('member-manager', {
       idempotencyKey: 'create-offer',
@@ -229,7 +230,7 @@ describe('pending Leave commit-then-lost-response recovery', () => {
       projectId: 'project-alpha',
     });
     const membership = new MembershipAdminService({ database, events, idempotency }, {
-      now: () => new Date('2026-08-13T00:02:00.000Z'),
+      now: testClock({ days: -14, minutes: 2 }),
       presence,
     });
     const harness = recoveryHarness({
@@ -366,7 +367,7 @@ function recoveryHarness(input: {
       createOperationId: () => 'leave-stable',
       managerReceipts: { load: jest.fn(async () => null) },
       managerResponsibilityOperations,
-      now: () => new Date('2026-08-13T00:03:00.000Z'),
+      now: testClock({ days: -14, minutes: 3 }),
     },
   );
   return {

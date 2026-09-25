@@ -1,4 +1,5 @@
 import { collabControlOperationCodec } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import type {
   CollabHttpOperationOptions,
@@ -60,7 +61,7 @@ function snapshotEnvelope(authorityGeneration: unknown = 1): unknown {
       canAccept: true,
       canCancel: false,
       canDecline: true,
-      expiresAt: '2026-08-08T00:15:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 15 }),
       offeredAt: CREATED_AT,
       phase: 'offered',
       targetMemberId: 'member-a',

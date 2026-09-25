@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import { COLLAB_CONTROL_PROTOCOL_VERSION } from '@/app/collab/lan/LanCollabConstants';
 import {
   decodeCreateInvitationResponse,
@@ -48,7 +50,7 @@ describe('MembershipControlClient', () => {
     const invitation = {
       caFingerprint: 'ab'.repeat(32),
       endpoint: 'https://192.168.1.20:54545',
-      expiresAt: '2026-08-08T00:15:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 15 }),
       invitationId: 'invitation-alpha',
       invitationSecret: Buffer.alloc(32, 7).toString('base64url'),
       projectId: 'project-a',
@@ -196,7 +198,7 @@ describe('MembershipControlClient', () => {
 
   it('creates and acknowledges a Manager responsibility offer through v7 routes', async () => {
     const offer = {
-      expiresAt: '2026-08-08T00:10:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 10 }),
       offerId: 'offer-one',
       offeredAt: '2026-08-08T00:00:00.000Z',
       purpose: 'manager-leave',
@@ -275,7 +277,7 @@ describe('MembershipControlClient', () => {
     const invitation = {
       caFingerprint: 'ab'.repeat(32),
       endpoint: 'https://192.168.1.10:54545',
-      expiresAt: '2026-08-08T00:15:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 15 }),
       invitationId: 'invitation-alpha',
       invitationSecret: Buffer.alloc(32, 7).toString('base64url'),
       projectId: 'project-a',
@@ -363,7 +365,7 @@ describe('MembershipControlClient', () => {
     const invitation = {
       caFingerprint: 'ab'.repeat(32),
       endpoint: 'https://192.168.1.10:54545',
-      expiresAt: '2026-08-08T00:15:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 15 }),
       invitationId: 'invitation-alpha',
       invitationSecret: Buffer.alloc(32, 7).toString('base64url'),
       projectId: 'project-a',

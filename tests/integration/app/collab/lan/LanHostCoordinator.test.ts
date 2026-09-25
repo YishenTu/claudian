@@ -18,6 +18,7 @@ import {
   type CollabAuthorityTransferStatus,
 } from '@claudian-collab/protocol';
 import { completeCollabPublicationOptions } from '@test/helpers/collab/CollabFeatureTestHarness';
+import { testClock, testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 import { WebSocket } from 'ws';
 
@@ -146,7 +147,7 @@ function authorityTransferStatus(
     checkpointSha256: relinquished ? 'a'.repeat(64) : null,
     createdAt: '2026-08-08T00:00:00.000Z',
     direction: 'lan-to-cloud',
-    expiresAt: '2026-09-07T00:00:00.000Z',
+    expiresAt: testTime({ days: 11 }),
     phase,
     projectId: PROJECT_ID,
     relinquishmentProof: proof,
@@ -2611,7 +2612,7 @@ describe('LanHostCoordinator production transport', () => {
     const control = new LocalProjectControlPort(localProjects);
     const projection = new CollabClientProjection(localProjects, control, {
       ...projectionOptions(),
-      now: () => new Date('2026-08-08T00:10:00.000Z'),
+      now: testClock({ days: -19, minutes: 10 }),
     });
     await projection.readSnapshot(PROJECT_ID);
 

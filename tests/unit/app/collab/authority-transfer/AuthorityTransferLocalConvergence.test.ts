@@ -1,6 +1,7 @@
 import type {
   CollabAuthorityTransferStatus,
 } from '@claudian-collab/protocol';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import { AuthorityTransferLocalConvergence } from '@/app/collab/authority-transfer/AuthorityTransferLocalConvergence';
 import type {
@@ -25,7 +26,7 @@ function completed(direction: 'cloud-to-lan' | 'lan-to-cloud'): CollabAuthorityT
     checkpointSha256: 'a'.repeat(64),
     createdAt: CREATED_AT,
     direction,
-    expiresAt: '2026-09-26T00:00:00.000Z',
+    expiresAt: testTime({ days: 30 }),
     phase: 'completed',
     projectId: PROJECT_ID,
     relinquishmentProof: {
@@ -278,7 +279,7 @@ describe('AuthorityTransferLocalConvergence', () => {
       activity: { transitionProject },
       authorityProjectionTransitions: new AuthorityProjectionTransitionCoordinator(),
       git: { rotate },
-      now: () => new Date('2026-08-27T00:01:00.000Z'),
+      now: testClock({ minutes: 1 }),
       projects: projects as never,
       workspace: { resolveManagedProjectPath: async () => '/vault/workspace/convergence' },
     });

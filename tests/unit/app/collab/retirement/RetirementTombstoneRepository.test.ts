@@ -4,6 +4,7 @@ import {
   TEST_INSTALLATION_A,
   TEST_INSTALLATION_B,
 } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   decodeRetirementTombstoneRecord,
@@ -41,7 +42,7 @@ describe('RetirementTombstoneRepository', () => {
 
   it('reports 30-day expirations without deleting cleanup authority', async () => {
     const expired = record({
-      expiresAt: '2026-08-13T07:59:59.999Z',
+      expiresAt: testTime({ days: -14, hours: 7, minutes: 59, seconds: 59, milliseconds: 999 }),
       retiredAt: '2026-07-14T07:59:59.999Z',
       result: { projectId: 'project-alpha', retiredAt: '2026-07-14T07:59:59.999Z' },
     });
@@ -158,7 +159,7 @@ class MemoryTombstoneStore implements RetirementTombstoneStore {
 function record(overrides: Partial<RetirementTombstoneRecord> = {}): RetirementTombstoneRecord {
   const retiredAt = overrides.retiredAt ?? NOW.toISOString();
   return {
-    expiresAt: '2026-09-12T08:00:00.000Z',
+    expiresAt: testTime({ days: 16, hours: 8 }),
     formerMembers: [
       {
         acknowledgedAt: null,

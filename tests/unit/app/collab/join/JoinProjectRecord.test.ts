@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   COLLAB_JOIN_PROJECT_SCHEMA_VERSION,
   decodeJoinProjectRecord,
@@ -43,7 +45,7 @@ describe('JoinProjectRecord', () => {
       encodedInvitation: null,
       memberCredential: Buffer.alloc(32, 4).toString('base64url'),
       memberId: 'member-alice',
-      membershipExpiresAt: '2026-08-08T00:30:00.000Z',
+      membershipExpiresAt: testTime({ days: -19, minutes: 30 }),
       phase: 'membership-created' as const,
     };
     const activated = {

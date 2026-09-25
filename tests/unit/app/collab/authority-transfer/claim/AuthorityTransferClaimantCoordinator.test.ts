@@ -8,6 +8,7 @@ import type {
   ReissueTransferredMembershipClaimResponse,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import {
   authorityTransferChildIdempotencyKey,
@@ -64,7 +65,7 @@ function completed(direction: 'cloud-to-lan' | 'lan-to-cloud'): CollabAuthorityT
     checkpointSha256: CHECKPOINT_SHA256,
     createdAt: CREATED_AT,
     direction,
-    expiresAt: '2026-09-26T00:00:00.000Z',
+    expiresAt: testTime({ days: 30 }),
     phase: 'completed',
     projectId: PROJECT_ID,
     relinquishmentProof: {
@@ -95,7 +96,7 @@ function completed(direction: 'cloud-to-lan' | 'lan-to-cloud'): CollabAuthorityT
 function claim(): CollabTransferredMembershipClaim {
   return {
     claim: CLAIM_VALUE,
-    expiresAt: '2026-09-26T00:00:00.000Z',
+    expiresAt: testTime({ days: 30 }),
     memberId: MEMBER_ID,
     projectId: PROJECT_ID,
     targetAuthorityGeneration: 2,
@@ -108,8 +109,8 @@ function reissuedClaim(): ReissueTransferredMembershipClaimResponse {
     ...claim(),
     claimGeneration: 4,
     createdAt: '2026-10-01T00:00:00.000Z',
-    expiresAt: '2026-10-31T00:00:00.000Z',
-    secretReplayExpiresAt: '2026-10-31T00:00:00.000Z',
+    expiresAt: testTime({ days: 65 }),
+    secretReplayExpiresAt: testTime({ days: 65 }),
   };
 }
 
@@ -176,7 +177,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     let loseResponse = true;
     let retainedRequest: ClaimTransferredMembershipRequest | undefined;
     const coordinator = new AuthorityTransferClaimantCoordinator({
-      store, lanTarget: LAN_TARGET, now: () => new Date('2026-10-01T00:00:10.000Z'),
+      store, lanTarget: LAN_TARGET, now: testClock({ days: 35, seconds: 10 }),
       target: { cloudPrincipalId: null, claimTransferredMembership: async (record, request) => {
         expect(store.record).toEqual(record);
         expect(record).toMatchObject({ retainedAttempts: [predecessor] });
@@ -199,7 +200,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const store = new MemoryStore();
     const coordinator = new AuthorityTransferClaimantCoordinator({
       store, lanTarget: LAN_TARGET, createCredential: () => TARGET_CREDENTIAL,
-      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      now: testClock({ days: 35, seconds: 10 }),
       target: {
         cloudPrincipalId: null,
         claimTransferredMembership: async (record, request) => {
@@ -263,7 +264,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     });
     const coordinator = new AuthorityTransferClaimantCoordinator({
       convergence: { converge },
-      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      now: testClock({ days: 35, seconds: 10 }),
       source,
       store,
       target: { cloudPrincipalId: 'vault-' + 'a'.repeat(64), claimTransferredMembership: claimTarget, confirmTargetBinding },
@@ -302,7 +303,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const store = new MemoryStore();
     const coordinator = new AuthorityTransferClaimantCoordinator({
       convergence: { converge: jest.fn(async () => undefined) },
-      now: () => new Date('2026-09-30T23:59:00.000Z'),
+      now: testClock({ days: 34, hours: 23, minutes: 59 }),
       store,
       target: {
         cloudPrincipalId: 'vault-' + 'a'.repeat(64),
@@ -399,7 +400,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const converge = jest.fn(async () => undefined);
     const coordinator = new AuthorityTransferClaimantCoordinator({
       convergence: { converge },
-      now: () => new Date('2026-10-01T00:03:00.000Z'),
+      now: testClock({ days: 35, minutes: 3 }),
       store,
       target: { cloudPrincipalId: 'vault-' + 'a'.repeat(64), claimTransferredMembership: jest.fn() },
     });
@@ -450,7 +451,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const store = new MemoryStore();
     const beforeExpiry = new AuthorityTransferClaimantCoordinator({
       convergence: { converge: jest.fn() },
-      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      now: testClock({ days: 35, seconds: 10 }),
       store,
       target: {
         cloudPrincipalId: 'vault-' + 'a'.repeat(64),
@@ -498,7 +499,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     let loseReply = true;
     const create = (cloudPrincipalId: string) => new AuthorityTransferClaimantCoordinator({
       convergence: { converge: async () => undefined },
-      now: () => new Date(variant === 'source-issued' ? '2026-08-27T00:02:00.000Z' : '2026-10-01T00:02:00.000Z'),
+      now: () => new Date(variant === 'source-issued' ? testTime({ minutes: 2 }) : testTime({ days: 35, minutes: 2 })),
       source: { getClaim: async () => claim(), acknowledgeRedemption: async () => undefined },
       store,
       target: {
@@ -538,7 +539,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     };
     const first = new AuthorityTransferClaimantCoordinator({
       convergence: { converge: jest.fn() },
-      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      now: testClock({ days: 35, seconds: 10 }),
       store,
       target: {
         cloudPrincipalId: 'vault-' + 'a'.repeat(64),
@@ -555,7 +556,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
 
     const second = new AuthorityTransferClaimantCoordinator({
       convergence: { converge: async () => undefined },
-      now: () => new Date('2026-10-01T00:00:20.000Z'),
+      now: testClock({ days: 35, seconds: 20 }),
       store,
       target: {
         cloudPrincipalId: 'vault-' + 'a'.repeat(64),
@@ -595,7 +596,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const confirmTargetBinding = jest.fn();
     const coordinator = new AuthorityTransferClaimantCoordinator({
       convergence: { converge: jest.fn() },
-      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      now: testClock({ days: 35, seconds: 10 }),
       store,
       target: {
         cloudPrincipalId: 'vault-' + 'a'.repeat(64),
@@ -643,7 +644,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
 
     expect(() => decodeAuthorityTransferClaimantRecord({
       ...value,
-      claim: { ...value.claim, expiresAt: '2026-09-25T00:00:00.000Z' },
+      claim: { ...value.claim, expiresAt: testTime({ days: 29 }) },
     })).toThrow('Invalid authority-transfer claimant progress');
     expect(() => decodeAuthorityTransferClaimantRecord({
       ...value,
@@ -687,7 +688,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         convergence: { converge },
         createCredential: () => TARGET_CREDENTIAL,
         lanTarget: expectsCredential ? LAN_TARGET : null,
-        now: () => new Date('2026-08-27T00:02:00.000Z'),
+        now: testClock({ minutes: 2 }),
         source: { acknowledgeRedemption: acknowledge, getClaim },
         store,
         target: { cloudPrincipalId: expectsCredential ? null : 'vault-' + 'a'.repeat(64), claimTransferredMembership: claimTarget },
@@ -736,7 +737,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
         },
         createCredential: () => TARGET_CREDENTIAL,
         lanTarget: direction === 'cloud-to-lan' ? LAN_TARGET : null,
-        now: () => new Date('2026-08-27T00:02:00.000Z'),
+        now: testClock({ minutes: 2 }),
         source: {
           acknowledgeRedemption: async () => undefined,
           getClaim: async () => claim(),
@@ -781,7 +782,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const coordinator = new AuthorityTransferClaimantCoordinator({
       convergence: { converge: jest.fn() },
       lanTarget: LAN_TARGET,
-      now: () => new Date('2026-08-27T00:02:00.000Z'),
+      now: testClock({ minutes: 2 }),
       source: {
         acknowledgeRedemption: jest.fn(),
         getClaim: jest.fn(async () => { throw new Error('simulated source outage'); }),
@@ -812,7 +813,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       convergence: { converge: async () => undefined },
       createCredential: jest.fn(() => TARGET_CREDENTIAL),
       lanTarget: LAN_TARGET,
-      now: () => new Date('2026-08-27T00:02:00.000Z'),
+      now: testClock({ minutes: 2 }),
       source: {
         acknowledgeRedemption: async () => undefined,
         getClaim,
@@ -861,7 +862,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     };
     const coordinator = new AuthorityTransferClaimantCoordinator({
       convergence: { converge: async value => { converged.push(value); } },
-      now: () => new Date('2026-09-26T00:00:00.000Z'), store, target,
+      now: testClock({ days: 30 }), store, target,
       source: {
         getClaim: async () => { throw new Error('Former Host is unavailable'); },
         acknowledgeRedemption: async () => { throw new Error('Former Host is unavailable'); },
@@ -899,7 +900,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
       const converge = jest.fn();
       const coordinator = new AuthorityTransferClaimantCoordinator({
         convergence: { converge },
-        now: () => new Date('2026-09-26T00:00:00.000Z'),
+        now: testClock({ days: 30 }),
         source: { acknowledgeRedemption: acknowledge, getClaim },
         store,
         target: { cloudPrincipalId: 'vault-' + 'a'.repeat(64), claimTransferredMembership: target },
@@ -944,7 +945,7 @@ describe('AuthorityTransferClaimantCoordinator', () => {
     const converge = jest.fn(async () => undefined);
     const coordinator = new AuthorityTransferClaimantCoordinator({
       convergence: { converge },
-      now: () => new Date('2026-09-26T00:00:00.000Z'),
+      now: testClock({ days: 30 }),
       source: { acknowledgeRedemption: acknowledge, getClaim: jest.fn() },
       store,
       target: { cloudPrincipalId: 'vault-' + 'a'.repeat(64), claimTransferredMembership: jest.fn() },

@@ -9,6 +9,7 @@ import type {
   CollabProjectId,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import {
   createAuthorityTransferEntryRecord,
@@ -175,7 +176,7 @@ function recoverableClaimantRecord(input: Readonly<{
     checkpointSha256,
     createdAt: '2026-08-27T00:00:00.000Z',
     direction,
-    expiresAt: input.expiresAt ?? '2026-09-26T00:00:00.000Z',
+    expiresAt: input.expiresAt ?? testTime({ days: 30 }),
     phase: 'completed',
     projectId: PROJECT_ID,
     relinquishmentProof: {
@@ -308,7 +309,7 @@ function proposal(
     checkpointSha256: null,
     createdAt: '2026-08-27T00:00:00.000Z',
     direction: 'lan-to-cloud',
-    expiresAt: '2026-09-26T00:00:00.000Z',
+    expiresAt: testTime({ days: 30 }),
     phase: 'collecting-readiness',
     projectId: PROJECT_ID,
     relinquishmentProof: null,
@@ -327,10 +328,10 @@ function managerReissuedDescriptor() {
     claim: Buffer.alloc(32, 4).toString('base64url'),
     claimGeneration: 4,
     createdAt: '2026-10-01T00:00:00.000Z',
-    expiresAt: '2026-10-31T00:00:00.000Z',
+    expiresAt: testTime({ days: 65 }),
     memberId: 'member-host',
     projectId: PROJECT_ID,
-    secretReplayExpiresAt: '2026-10-31T00:00:00.000Z',
+    secretReplayExpiresAt: testTime({ days: 65 }),
     targetAuthorityGeneration: 2,
     transferId: TRANSFER_ID,
   };
@@ -388,7 +389,7 @@ describe('AuthorityTransferModule', () => {
     const lifecycle = new CollabProjectLifecycleSubsystem({ closeRecovery: () => undefined, durableOwners: [], recoveryStages: [],
       hostTransfer: {} as never, localExit: {} as never, retirement: {} as never });
     const initial = managerClaimantMembership();
-    const now = () => new Date('2026-09-14T00:01:00.000Z');
+    const now = testClock({ days: 18, minutes: 1 });
     const receipt = { projectId: PROJECT_ID, recoveryLinkId: 'link-one', authorityGeneration: 2, memberId: initial.member.id,
       personalRef: initial.member.personalRef, receiptId: 'receipt-one', recoveredAt: now().toISOString() };
     const session = { projectId: PROJECT_ID, serverUrl: 'https://cloud.example.test/', principalId: `vault-${'a'.repeat(64)}`,
@@ -411,7 +412,7 @@ describe('AuthorityTransferModule', () => {
       await repository.saveMembership(initial);
       await module.redeemProjectRecoveryLink({ target: { kind: 'cloud', serverUrl: session.serverUrl },
         link: { projectId: PROJECT_ID, recoveryLinkId: 'link-one', authorityGeneration: 2, token: 'a'.repeat(64),
-          expiresAt: '2026-09-14T00:15:00.000Z', secretReplayExpiresAt: '2026-09-14T00:10:00.000Z' } });
+          expiresAt: testTime({ days: 18, minutes: 15 }), secretReplayExpiresAt: testTime({ days: 18, minutes: 10 }) } });
       expect(await repository.loadMembership(PROJECT_ID)).toMatchObject({ project: initial.project,
         member: { id: initial.member.id, personalRef: initial.member.personalRef }, authority: { kind: 'cloud', authorityGeneration: 2 } });
       expect(await repository.authorityTransferClaimants.load(PROJECT_ID)).toBeNull();
@@ -429,7 +430,7 @@ describe('AuthorityTransferModule', () => {
     try {
       await repository.saveMembership(managerClaimantMembership());
       await repository.authorityTransferClaimants.save(decodeAuthorityTransferClaimantRecord({
-        ...recoverableClaimantRecord({ direction: 'cloud-to-lan', phase, expiresAt: '2026-08-27T01:00:00.000Z' }),
+        ...recoverableClaimantRecord({ direction: 'cloud-to-lan', phase, expiresAt: testTime({ hours: 1 }) }),
         managerPredecessor: null,
       }));
       const module = new AuthorityTransferModule({
@@ -438,7 +439,7 @@ describe('AuthorityTransferModule', () => {
         createLanToCloudSource: () => { throw new Error('Unexpected source ownership'); },
         installationKey: TEST_INSTALLATION_A, lifecycle, persistence,
         loadClaimantMembership: id => repository.loadMembership(id),
-        now: () => new Date('2026-08-28T00:00:00.000Z'),
+        now: testClock({ days: 1 }),
       });
       await module.followAuthoritySuccessor(PROJECT_ID);
       expect(await repository.authorityTransferClaimants.load(PROJECT_ID)).toBeNull();
@@ -477,7 +478,7 @@ describe('AuthorityTransferModule', () => {
           createLanToCloudConnection: async () => { throw new Error('Unexpected target connection'); },
           installationKey: TEST_INSTALLATION_A, lifecycle, persistence,
           loadClaimantMembership: id => repository.loadMembership(id),
-          now: () => new Date('2026-08-28T00:00:00.000Z'),
+          now: testClock({ days: 1 }),
         });
         await expect(module.followAuthoritySuccessor(PROJECT_ID)).rejects.toMatchObject({
           safeContext: { reason: 'authority-transfer-claimant-source-mismatch' },
@@ -820,7 +821,7 @@ describe('AuthorityTransferModule', () => {
       const repository = new CollabLocalProjectRepository(vaultRoot);
       const persistence = new ProductionAuthorityTransferPersistence(repository, {
         isRecoveryOwner: () => true,
-        now: () => new Date('2026-08-28T00:00:00.000Z'),
+        now: testClock({ days: 1 }),
       });
       const request = {
         expectedAuthorityGeneration: 1,
@@ -854,7 +855,7 @@ describe('AuthorityTransferModule', () => {
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem;
       const module = new AuthorityTransferModule({
-        now: () => new Date('2026-08-28T00:00:00.000Z'),
+        now: testClock({ days: 1 }),
         createLanToCloudConnection: async () => connection as never,
         assertLanToCloudSourceOwner: () => undefined,
         assertRecoveryOwner: () => undefined,
@@ -941,7 +942,7 @@ describe('AuthorityTransferModule', () => {
     });
     const record = recoverableClaimantRecord({
       direction: 'cloud-to-lan',
-      expiresAt: '2026-08-27T01:00:00.000Z',
+      expiresAt: testTime({ hours: 1 }),
       phase: 'target-claimed',
     });
     const resolver = new AuthorityTransferClaimantBindingResolver({
@@ -972,7 +973,7 @@ describe('AuthorityTransferModule', () => {
         schemaVersion: 3,
         updatedAt: '2026-08-27T00:00:00.000Z',
       }),
-      now: () => new Date('2026-08-27T01:00:00.000Z'),
+      now: testClock({ hours: 1 }),
     });
 
     await expect(resolver.resolve(record)).resolves.toEqual({
@@ -1979,7 +1980,7 @@ describe('AuthorityTransferModule', () => {
         registerRecoveryStage: jest.fn(),
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
       persistence,
     });
 
@@ -2118,7 +2119,7 @@ describe('AuthorityTransferModule', () => {
         registerRecoveryStage: jest.fn(),
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
       persistence,
     };
     const input = {
@@ -2278,7 +2279,7 @@ describe('AuthorityTransferModule', () => {
         registerRecoveryStage: jest.fn(),
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
       persistence,
     });
 
@@ -2420,7 +2421,7 @@ describe('AuthorityTransferModule', () => {
       retirement: {} as never,
     });
     const module = new AuthorityTransferModule({
-      now: () => new Date('2026-08-28T00:00:00.000Z'),
+      now: testClock({ days: 1 }),
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
       claimantStore,
@@ -2774,7 +2775,7 @@ describe('AuthorityTransferModule', () => {
         registerRecoveryStage: jest.fn(),
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
       persistence,
     });
 
@@ -2883,7 +2884,7 @@ describe('AuthorityTransferModule', () => {
         registerRecoveryStage: jest.fn(),
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
       persistence,
     });
 
@@ -3010,7 +3011,7 @@ describe('AuthorityTransferModule', () => {
         registerRecoveryStage: jest.fn(),
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
       persistence,
     });
     const descriptor = await module.prepareCloudToLanTarget({
@@ -3321,7 +3322,7 @@ describe('AuthorityTransferModule', () => {
         registerRecoveryStage: jest.fn(),
         runExclusive: jest.fn(async (_projectId, _owner, _mode, operation) => operation()),
       } as unknown as CollabProjectLifecycleSubsystem,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
       persistence,
     });
     const input = {
@@ -3401,7 +3402,7 @@ describe('AuthorityTransferModule', () => {
     let managerEntry: CloudToLanManagerEntryRecord | null = createCloudToLanManagerEntry({
       createdAt: '2026-08-27T00:00:00.000Z',
       descriptor,
-      expiresAt: '2026-09-26T00:00:00.000Z',
+      expiresAt: testTime({ days: 30 }),
       initiatingMemberId: 'member-manager',
       initiatingPersonalRef: 'refs/heads/members/member-manager',
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -3525,7 +3526,7 @@ describe('AuthorityTransferModule', () => {
       markCloudToLanManagerBeginPossiblySent(createCloudToLanManagerEntry({
         createdAt: '2026-08-27T00:00:00.000Z',
         descriptor,
-        expiresAt: '2026-09-26T00:00:00.000Z',
+        expiresAt: testTime({ days: 30 }),
         initiatingMemberId: 'member-host',
         initiatingPersonalRef: 'refs/heads/members/member-host',
         ownerInstallationKey: TEST_INSTALLATION_A,
@@ -3626,7 +3627,7 @@ describe('AuthorityTransferModule', () => {
       retirement: {} as never,
     });
     new AuthorityTransferModule({
-      now: () => new Date('2026-08-28T00:00:00.000Z'),
+      now: testClock({ days: 1 }),
       assertLanToCloudSourceOwner: () => undefined,
       assertRecoveryOwner: () => undefined,
       claimantStore: {
@@ -3743,7 +3744,7 @@ describe('AuthorityTransferModule', () => {
       createCloudToLanManagerEntry({
         createdAt: '2026-08-27T00:00:00.000Z',
         descriptor,
-        expiresAt: '2026-09-26T00:00:00.000Z',
+        expiresAt: testTime({ days: 30 }),
         initiatingMemberId: 'member-host',
         initiatingPersonalRef: 'refs/heads/members/member-host',
         operationIntentId: 'intent-foreign-manager-recovery',
@@ -3876,7 +3877,7 @@ describe('AuthorityTransferModule', () => {
   it('scrubs an expired settled Manager gap locally after durably establishing its claimant', async () => {
     const completed = recoverableClaimantRecord({
       direction: 'cloud-to-lan',
-      expiresAt: '2026-08-28T00:00:00.000Z',
+      expiresAt: testTime({ days: 1 }),
       managerOperationIntentId: 'intent-expired-manager-gap',
     });
     let managerEntry: CloudToLanManagerEntryRecord | null =
@@ -3915,7 +3916,7 @@ describe('AuthorityTransferModule', () => {
       createLanToCloudSource: jest.fn() as never,
       installationKey: TEST_INSTALLATION_A,
       lifecycle,
-      now: () => new Date('2026-09-01T00:00:00.000Z'),
+      now: testClock({ days: 5 }),
       persistence: {
         settleLocalAuthorityAdvance: async () => undefined,
         inspectLifecycleOwner: jest.fn(async () => managerEntry ? 'nonterminal' : 'absent'),
@@ -4815,7 +4816,7 @@ describe('AuthorityTransferModule', () => {
     const targetUrl = 'https://192.168.1.20:54545';
     const preparing = createCloudToLanTargetEntry({
       createdAt: '2026-08-27T00:00:00.000Z',
-      expiresAt: '2026-09-26T00:00:00.000Z',
+      expiresAt: testTime({ days: 30 }),
       operationIntentId: 'intent-recovered-preparation',
       ownerInstallationKey: TEST_INSTALLATION_A,
       projectId: PROJECT_ID,
@@ -5133,7 +5134,7 @@ describe('AuthorityTransferModule', () => {
         supports: () => true,
       } as unknown as CloudAuthorityConnection;
       const module = new AuthorityTransferModule({
-        now: () => new Date('2026-08-28T00:00:00.000Z'),
+        now: testClock({ days: 1 }),
         assertLanToCloudSourceOwner: () => undefined,
         assertRecoveryOwner: () => undefined,
         claimantStore: {
@@ -5300,7 +5301,7 @@ describe('AuthorityTransferModule', () => {
         schemaVersion: 3,
         updatedAt: '2026-08-27T00:00:00.000Z',
       }),
-      now: () => new Date('2026-10-01T00:00:10.000Z'),
+      now: testClock({ days: 35, seconds: 10 }),
       persistence: {
         loadCloudToLanManagerEntry: jest.fn(async () => null),
       } as unknown as AuthorityTransferPersistence,
@@ -5842,7 +5843,7 @@ describe('AuthorityTransferModule', () => {
           operation: () => Promise<Result>,
         ) => operation(),
       } as unknown as CollabProjectLifecycleSubsystem,
-      now: () => new Date('2026-10-01T00:03:00.000Z'),
+      now: testClock({ days: 35, minutes: 3 }),
       persistence: {
         loadCloudToLanManagerEntry: jest.fn(async () => null),
       } as unknown as AuthorityTransferPersistence,
@@ -5862,7 +5863,7 @@ describe('AuthorityTransferModule', () => {
   it('recovers an expired Cloud-to-LAN redemption from the LAN target only', async () => {
     let record: AuthorityTransferClaimantRecord | null = recoverableClaimantRecord({
       direction: 'cloud-to-lan',
-      expiresAt: '2026-08-27T01:00:00.000Z',
+      expiresAt: testTime({ hours: 1 }),
       phase: 'target-claimed',
     });
     const targetHost = record.lanTarget!;
@@ -5975,7 +5976,7 @@ describe('AuthorityTransferModule', () => {
 
   it('scrubs an expired pre-redemption claimant without rebuilding transports', async () => {
     let record: AuthorityTransferClaimantRecord | null = recoverableClaimantRecord({
-      expiresAt: '2026-08-27T01:00:00.000Z',
+      expiresAt: testTime({ hours: 1 }),
       phase: 'claim-retained',
     });
     let claimantRecovery: AuthorityTransferClaimantRecovery | null = null;

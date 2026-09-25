@@ -65,6 +65,15 @@ export const fileNamingRule = {
 
 const localPlugin = { rules: { 'file-naming': fileNamingRule } };
 
+// Hard-coded ISO timestamps for expiries or injected clocks make tests depend on the date they run.
+const ISO_TIMESTAMP = "/^\\d{4}-\\d{2}-\\d{2}T/";
+const TIME_KEY = '/^now$|[eE]xpiresAt$/';
+const hardCodedTestTimeSelectors = [
+  `Property[key.name=${TIME_KEY}] > Literal[value=${ISO_TIMESTAMP}]`,
+  `Property[key.name=${TIME_KEY}] NewExpression[callee.name='Date'] > Literal[value=${ISO_TIMESTAMP}]`,
+  `AssignmentExpression[left.property.name=${TIME_KEY}] NewExpression[callee.name='Date'] > Literal[value=${ISO_TIMESTAMP}]`,
+];
+
 const stagedObsidianRules = {
   'obsidianmd/commands/no-command-in-command-id': obsidianRuleSeverity,
   'obsidianmd/commands/no-command-in-command-name': obsidianRuleSeverity,
@@ -209,6 +218,13 @@ export default defineConfig([
     rules: {
       ...jestRecommended.rules,
       '@typescript-eslint/no-explicit-any': 'off',
+      'no-restricted-syntax': [
+        'error',
+        ...hardCodedTestTimeSelectors.map(selector => ({
+          selector,
+          message: 'Express expiries and clocks with testTime/testDate/testClock from @test/helpers/testClock.',
+        })),
+      ],
     },
   },
 ]);

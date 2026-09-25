@@ -1,4 +1,5 @@
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   RetirementTerminalService,
@@ -86,7 +87,7 @@ function record(
   overrides: Partial<RetirementTombstoneRecord> = {},
 ): RetirementTombstoneRecord {
   return {
-    expiresAt: '2026-09-12T08:00:00.000Z',
+    expiresAt: testTime({ days: 16, hours: 8 }),
     formerMembers: [{
       acknowledgedAt: null,
       credentialHash: 'a'.repeat(64),

@@ -14,6 +14,7 @@ import {
   TEST_INSTALLATION_A,
   TEST_INSTALLATION_B,
 } from '@test/helpers/installations';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import {
   completeAuthorityTransferRequesterEntry,
@@ -398,7 +399,7 @@ describe('AuthorityTransferPersistence', () => {
         await repository.authorityTransferClaimants.save(createAuthorityTransferClaimantRecord({
           cloudPrincipalId: null, memberId, operationIntentId: 'claim-next-generation',
           createdAt: '2026-08-26T00:10:00.000Z',
-          status: { ...cloudToLanStatus('completed'), expiresAt: '2026-08-26T00:11:00.000Z',
+          status: { ...cloudToLanStatus('completed'), expiresAt: testTime({ days: -1, minutes: 11 }),
             sourceAuthority: { kind: 'cloud', generation: 2 }, targetAuthority: { kind: 'lan', generation: 3 },
             relinquishmentProof: { ...cloudToLanStatus('completed').relinquishmentProof!, sourceHostMemberId: null,
               sourceAuthority: { kind: 'cloud', generation: 2 }, targetAuthority: { kind: 'lan', generation: 3 } },
@@ -420,7 +421,7 @@ describe('AuthorityTransferPersistence', () => {
         createCloudToLanTarget: () => { throw new Error('Unexpected target action'); },
         loadClaimantMembership: id => repository.loadMembership(id),
         assertProjectRecoveryPredecessor: (id, identity) => persistence.assertProjectRecoveryPredecessor(id, identity),
-        now: () => new Date('2026-08-26T01:00:00.000Z'),
+        now: testClock({ days: -1, hours: 1 }),
         createCloudToLanConnection: async () => ({ dispose: () => undefined,
           lifecycle: { authorityTransfer: async () => { discoveryReached = true; return { successor: null }; } },
         }) as never,
@@ -706,7 +707,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
-      now: () => new Date('2026-08-26T00:00:30.000Z'),
+      now: testClock({ days: -1, seconds: 30 }),
     });
     const preparing = await persistence.prepareCloudToLanTargetEntry(
       createCloudToLanTargetEntry({
@@ -1137,7 +1138,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
-      now: () => new Date('2026-10-01T00:00:00.000Z'),
+      now: testClock({ days: 35 }),
     });
     const descriptor = publishCloudToLanTargetEntry(createCloudToLanTargetEntry({
       createdAt: '2026-08-26T00:00:00.000Z',
@@ -1356,7 +1357,7 @@ describe('AuthorityTransferPersistence', () => {
       status: {
         ...entry.status,
         createdAt: '2026-08-26T00:00:05.000Z',
-        expiresAt: '2026-09-30T00:00:05.000Z',
+        expiresAt: testTime({ days: 34, seconds: 5 }),
         phase: 'source-quiesced',
         updatedAt: '2026-08-26T00:00:06.000Z',
       },
@@ -1414,7 +1415,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:01:00.000Z'),
+      now: testClock({ days: -1, minutes: 1 }),
     });
     const entry = createAuthorityTransferEntryRecord({
       proposedByMemberId: MEMBER_BOB,
@@ -1548,7 +1549,7 @@ describe('AuthorityTransferPersistence', () => {
       },
     }, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:01:00.000Z'),
+      now: testClock({ days: -1, minutes: 1 }),
     });
     const entry = createAuthorityTransferEntryRecord({
       proposedByMemberId: MEMBER_BOB,
@@ -1581,7 +1582,7 @@ describe('AuthorityTransferPersistence', () => {
 
     const recovered = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:01:00.000Z'),
+      now: testClock({ days: -1, minutes: 1 }),
     });
     const interrupted = await recovered.load(PROJECT_ID);
     if (!interrupted) throw new Error('Missing interrupted cancellation');
@@ -1608,7 +1609,7 @@ describe('AuthorityTransferPersistence', () => {
       },
     }, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:01:00.000Z'),
+      now: testClock({ days: -1, minutes: 1 }),
     });
     const entry = createAuthorityTransferEntryRecord({
       proposedByMemberId: MEMBER_BOB,
@@ -1649,7 +1650,7 @@ describe('AuthorityTransferPersistence', () => {
 
     const recovered = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:01:00.000Z'),
+      now: testClock({ days: -1, minutes: 1 }),
     });
     const interrupted = await recovered.load(PROJECT_ID);
     if (!interrupted) throw new Error('Missing interrupted cancellation');
@@ -1682,7 +1683,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:01:00.000Z'),
+      now: testClock({ days: -1, minutes: 1 }),
     });
     const entry = createAuthorityTransferEntryRecord({
       proposedByMemberId: MEMBER_BOB,
@@ -1751,7 +1752,7 @@ describe('AuthorityTransferPersistence', () => {
       },
       status: {
         ...proposalStatus(),
-        expiresAt: '2027-08-26T00:00:00.000Z',
+        expiresAt: testTime({ days: 364 }),
       },
     })).toThrow('Invalid authority transfer entry expiry');
   });
@@ -1969,7 +1970,7 @@ describe('AuthorityTransferPersistence', () => {
       authorityTransferRecords: repository.authorityTransferRecords,
     }, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-09-25T00:00:00.000Z'),
+      now: testClock({ days: 29 }),
     });
 
     await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
@@ -2006,7 +2007,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     let persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-09-24T23:59:59.999Z'),
+      now: testClock({ days: 28, hours: 23, minutes: 59, seconds: 59, milliseconds: 999 }),
     });
     await persistence.submitRequesterEntry(requester);
     await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
@@ -2014,7 +2015,7 @@ describe('AuthorityTransferPersistence', () => {
 
     persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-09-25T00:00:00.000Z'),
+      now: testClock({ days: 29 }),
     });
     await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
       .resolves.toBeNull();
@@ -2032,7 +2033,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
     });
     const request = { expectedAuthorityGeneration: 1, idempotencyKey: OPERATION_INTENT_ID,
       projectId: PROJECT_ID, targetUrl: 'http://127.0.0.1:8787/' };
@@ -2064,7 +2065,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
     });
     const oldRequest = {
       expectedAuthorityGeneration: 1, idempotencyKey: OPERATION_INTENT_ID,
@@ -2090,7 +2091,7 @@ describe('AuthorityTransferPersistence', () => {
     const requester = new LanToCloudRequesterCoordinator({
       authorityGeneration: 3, client: { requestWithMember } as unknown as LanAuthorityTransferClient,
       installationKey: TEST_INSTALLATION_A, memberCredential: Buffer.alloc(32, 9).toString('base64url'),
-      memberId: MEMBER_BOB, now: () => new Date('2026-08-27T00:00:00.000Z'), persistence, projectId: PROJECT_ID,
+      memberId: MEMBER_BOB, now: testClock(), persistence, projectId: PROJECT_ID,
     });
     await expect(requester.propose({ ...oldRequest, expectedAuthorityGeneration: 3 }))
       .rejects.toMatchObject({ code: 'durable-progress-recovery-required' });
@@ -2182,7 +2183,7 @@ describe('AuthorityTransferPersistence', () => {
     }));
     let persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_B,
-      now: () => new Date('2026-09-24T23:59:59.999Z'),
+      now: testClock({ days: 28, hours: 23, minutes: 59, seconds: 59, milliseconds: 999 }),
     });
 
     await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
@@ -2192,7 +2193,7 @@ describe('AuthorityTransferPersistence', () => {
 
     persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_B,
-      now: () => new Date('2026-09-25T00:00:00.000Z'),
+      now: testClock({ days: 29 }),
     });
     await expect(persistence.loadRequesterEntry(PROJECT_ID, TEST_INSTALLATION_A))
       .resolves.toBeNull();
@@ -2898,7 +2899,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:03:29.524Z'),
+      now: testClock({ days: -1, minutes: 3, seconds: 29, milliseconds: 524 }),
     });
     await persistence.create(createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -3135,7 +3136,7 @@ describe('AuthorityTransferPersistence', () => {
       purpose: 'source-terminal',
     })).rejects.toMatchObject({ code: 'authority-transfer-stale' });
     await expect(persistence.rotateClaimBatch({
-      batch: claimBatch(2, 'C', { expiresAt: '2026-10-01T00:00:00.000Z' }),
+      batch: claimBatch(2, 'C', { expiresAt: testTime({ days: 35 }) }),
       expectedBatchRevision: first.batchRevision,
       expectedBatchSha256: first.batchSha256,
       operationIntentId: OPERATION_INTENT_ID,
@@ -3433,7 +3434,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     const persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
-      now: () => new Date('2026-08-26T00:10:00.000Z'),
+      now: testClock({ days: -1, minutes: 10 }),
     });
     const predecessor = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -3479,7 +3480,7 @@ describe('AuthorityTransferPersistence', () => {
       caFingerprint: 'c'.repeat(64), publishedAt: '2026-08-26T00:11:00.000Z',
       targetUrl: 'https://192.168.1.20:27001' });
     const manager = createCloudToLanManagerEntry({
-      createdAt: '2026-08-26T00:11:00.000Z', expiresAt: ENTRY_EXPIRES_AT,
+      createdAt: testTime({ days: -1, minutes: 11 }), expiresAt: ENTRY_EXPIRES_AT,
       descriptor: published.descriptor!, initiatingMemberId: MEMBER_ALICE,
       initiatingPersonalRef: `refs/heads/members/${MEMBER_ALICE}`,
       ownerInstallationKey: TEST_INSTALLATION_A, operationIntentId: 'intent-next-manager',
@@ -3497,7 +3498,7 @@ describe('AuthorityTransferPersistence', () => {
     await expect(prepare).resolves.toEqual(role === 'advance' ? undefined : role === 'target' ? next : manager);
     const reopened = new AuthorityTransferPersistence(new CollabLocalProjectRepository(vaultRoot), {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A,
-      now: () => new Date('2026-08-26T00:12:00.000Z'),
+      now: testClock({ days: -1, minutes: 12 }),
     });
     await expect(reopened.load(PROJECT_ID)).resolves.toBeNull();
     await expect(role === 'manager' ? reopened.prepareCloudToLanManagerEntry(manager)
@@ -3523,7 +3524,7 @@ describe('AuthorityTransferPersistence', () => {
       await repository.authorityTransferRecords.save(predecessor);
       const replacement = createCloudToLanTargetEntry({
         createdAt: '2026-09-30T00:01:00.000Z',
-        expiresAt: '2026-10-01T00:00:00.000Z',
+        expiresAt: testTime({ days: 35 }),
         operationIntentId: 'intent-round-trip',
         ownerInstallationKey: TEST_INSTALLATION_A,
         projectId: PROJECT_ID,
@@ -3605,7 +3606,7 @@ describe('AuthorityTransferPersistence', () => {
       });
       const replacement = createCloudToLanTargetEntry({
         createdAt: '2026-09-30T00:01:00.000Z',
-        expiresAt: '2026-10-01T00:00:00.000Z',
+        expiresAt: testTime({ days: 35 }),
         operationIntentId: 'intent-round-trip',
         ownerInstallationKey: TEST_INSTALLATION_A,
         projectId: PROJECT_ID,
@@ -3712,7 +3713,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:00:00.000Z'),
+      now: testClock({ days: -1 }),
     });
     const completed = createAuthorityTransferRecord({
       ownerInstallationKey: TEST_INSTALLATION_A,
@@ -3800,7 +3801,7 @@ describe('AuthorityTransferPersistence', () => {
     const repository = new CollabLocalProjectRepository(vaultRoot);
     let persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:00:00.000Z'),
+      now: testClock({ days: -1 }),
     });
     const batchSha256 = '001a79c6e03aa40c576542ab21f7a692e5e8ec0d930f705101a29dd2809a66b3';
     const batch: CollabTransferredMembershipClaimBatch = {
@@ -3867,7 +3868,7 @@ describe('AuthorityTransferPersistence', () => {
       {
         ...transferStatus('collecting-readiness'),
         createdAt: '2026-08-26T00:00:08.000Z',
-        expiresAt: '2026-09-30T00:00:08.000Z',
+        expiresAt: testTime({ days: 34, seconds: 8 }),
         updatedAt: '2026-08-26T00:00:08.000Z',
       },
     );
@@ -3892,7 +3893,7 @@ describe('AuthorityTransferPersistence', () => {
     });
     persistence = new AuthorityTransferPersistence(repository, {
       isRecoveryOwner: () => true,
-      now: () => new Date('2026-08-26T00:04:00.000Z'),
+      now: testClock({ days: -1, minutes: 4 }),
     });
     await expect(persistence.isRetainedClaimBatchEmpty(PROJECT_ID, TRANSFER_ID))
       .resolves.toBe(true);

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { HostTransferRepository } from '@/app/collab/authority/HostTransferRepository';
@@ -96,7 +97,7 @@ describe('NativeHostTransferPackagePreparation', () => {
       );
       const transfers = new HostTransferRepository();
       transfers.createOffer(connection, {
-        actorMemberId: 'member-source', expiresAt: '2026-08-14T00:00:00.000Z',
+        actorMemberId: 'member-source', expiresAt: testTime({ days: -13 }),
         offeredAt: NOW, projectId: 'project-alpha',
         targetHostMemberId: 'member-target', transferId: 'transfer-alpha',
       });

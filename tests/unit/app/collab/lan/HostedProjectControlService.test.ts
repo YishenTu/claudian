@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import type { AcceptRequest, CreateCommentRequest, EnsureMyRequestRequest } from '@claudian-collab/protocol';
+import { testClock } from '@test/helpers/testClock';
 import initSqlJs from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -134,7 +135,7 @@ describe('HostedProjectControlService', () => {
         idempotency: new AuthorityIdempotencyRepository(),
         projects,
       };
-      const now = () => new Date('2026-08-08T00:00:00.000Z');
+      const now = testClock({ days: -19 });
       await database.mutate(connection => projects.initialize(connection, {
         createdAt: now().toISOString(),
         hostCredentialHash: createHash('sha256').update(credential).digest(),

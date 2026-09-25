@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 
+import { testTime } from '@test/helpers/testClock';
 import { fireEvent, getByRole, queryByRole } from '@testing-library/dom';
 import { type App, Menu } from 'obsidian';
 
@@ -319,7 +320,7 @@ function createPort(initialState: CollabFeatureState) {
       status: 'success',
       value: {
         encodedInvitation: 'claudian-collab:v2:test',
-        expiresAt: '2026-08-08T01:00:00.000Z',
+        expiresAt: testTime({ days: -19, hours: 1 }),
       },
     }),
     startHost: jest.fn(async (projectId: string) => {

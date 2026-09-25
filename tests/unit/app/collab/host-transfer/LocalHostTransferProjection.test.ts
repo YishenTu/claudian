@@ -1,3 +1,5 @@
+import { testClock } from '@test/helpers/testClock';
+
 import { AuthorityProjectionTransitionCoordinator } from '@/app/collab/AuthorityProjectionTransitionCoordinator';
 import { LocalHostTransferProjection } from '@/app/collab/host-transfer/LocalHostTransferProjection';
 
@@ -32,7 +34,7 @@ describe('LocalHostTransferProjection', () => {
     const projection = new LocalHostTransferProjection({
       authorityProjectionTransitions: transitions(),
       loadMembership: jest.fn().mockResolvedValue(membership),
-      now: () => new Date('2026-08-13T00:01:00.000Z'),
+      now: testClock({ days: -14, minutes: 1 }),
       resolveWorkspace: jest.fn().mockResolvedValue('/vault/Projects/alpha'),
       rotateOrigin,
       saveMembership,
@@ -69,7 +71,7 @@ describe('LocalHostTransferProjection', () => {
     const projection = new LocalHostTransferProjection({
       authorityProjectionTransitions: transitions(),
       loadMembership: jest.fn().mockResolvedValue(sourceMembership),
-      now: () => new Date('2026-08-13T00:01:00.000Z'),
+      now: testClock({ days: -14, minutes: 1 }),
       resolveWorkspace: jest.fn().mockResolvedValue('/vault/Projects/alpha'),
       rotateOrigin,
       saveMembership,

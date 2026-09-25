@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type {
   CollabLocalMembershipRecord,
   CollabLocalProjectIndex,
@@ -141,7 +143,7 @@ describe('Local exit stores', () => {
       () => new Date('2026-08-13T00:02:00.000Z'),
     );
     const offered = {
-      expiresAt: '2026-08-13T00:10:00.000Z',
+      expiresAt: testTime({ days: -14, minutes: 10 }),
       offeredAt: '2026-08-13T00:00:00.000Z',
       offerId: 'offer-one',
       purpose: 'manager-leave' as const,
@@ -197,7 +199,7 @@ describe('Local exit stores', () => {
 
     stored = legacyReceipt('manager-transfer');
     await store.save('project-alpha', {
-      expiresAt: '2026-08-13T00:20:00.000Z',
+      expiresAt: testTime({ days: -14, minutes: 20 }),
       offeredAt: '2026-08-13T00:10:00.000Z',
       offerId: 'offer-current',
       purpose: 'manager-promotion',
@@ -228,7 +230,7 @@ describe('Local exit stores', () => {
 function legacyReceipt(purpose: 'manager-transfer' | 'manager-leave'): unknown {
   return {
     acknowledgedAt: '2026-08-13T00:01:00.000Z',
-    expiresAt: '2026-08-13T00:10:00.000Z',
+    expiresAt: testTime({ days: -14, minutes: 10 }),
     kind: 'manager-responsibility-receipt',
     offerId: 'offer-legacy',
     offeredAt: '2026-08-13T00:00:00.000Z',

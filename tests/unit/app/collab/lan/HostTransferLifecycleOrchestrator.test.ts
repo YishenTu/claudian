@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type { HostedLifecycleControlPort } from '@/app/collab/lan/HostedProjectControlService';
 import { HostTransferLifecycleOrchestrator } from '@/app/collab/lan/HostTransferLifecycleOrchestrator';
 
@@ -5,7 +7,7 @@ const summary = {
   canAccept: false,
   canCancel: true,
   canDecline: false,
-  expiresAt: '2026-08-13T00:10:00.000Z',
+  expiresAt: testTime({ days: -14, minutes: 10 }),
   offeredAt: '2026-08-13T00:00:00.000Z',
   phase: 'accepted' as const,
   targetMemberId: 'member-target',

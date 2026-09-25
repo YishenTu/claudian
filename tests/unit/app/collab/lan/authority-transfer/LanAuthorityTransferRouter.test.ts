@@ -9,6 +9,7 @@ import type {
   GetTransferredMembershipClaimRequest,
   RequestLanToCloudTransferRequest,
 } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import { collabLanAuthorityTransferOperationPath } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferBinding';
 import {
@@ -42,7 +43,7 @@ function status(): CollabAuthorityTransferStatus {
     checkpointSha256: null,
     createdAt: '2026-08-26T00:00:00.000Z',
     direction: 'lan-to-cloud',
-    expiresAt: '2026-09-25T00:00:00.000Z',
+    expiresAt: testTime({ days: 29 }),
     phase: 'collecting-readiness',
     projectId: PROJECT_ID,
     relinquishmentProof: null,
@@ -479,7 +480,7 @@ describe('LanAuthorityTransferRouter', () => {
     };
     const active: jest.Mocked<LanAuthorityTransferTargetActiveService> = {
       expire: jest.fn(async () => undefined),
-      expiresAt: '2026-09-26T00:00:00.000Z',
+      expiresAt: testTime({ days: 30 }),
       claimTransferredMembership: mockAsync<
         LanAuthorityTransferTargetActiveService['claimTransferredMembership']
       >(async () => ({
@@ -566,7 +567,7 @@ describe('LanAuthorityTransferRouter', () => {
         LanAuthorityTransferTerminalSourceService['authenticateMemberCredential']
       >(async () => ({ memberId: OTHER_MEMBER_ID })),
       expire: jest.fn(),
-      expiresAt: '2026-09-25T00:00:00.000Z',
+      expiresAt: testTime({ days: 29 }),
       getProjectAuthorityTransfer: mockAsync<
         LanAuthorityTransferTerminalSourceService['getProjectAuthorityTransfer']
       >(async () => transferStatus),
@@ -574,7 +575,7 @@ describe('LanAuthorityTransferRouter', () => {
         LanAuthorityTransferTerminalSourceService['getTransferredMembershipClaim']
       >(async actor => ({
         claim: CLAIM,
-        expiresAt: '2026-09-25T00:00:00.000Z',
+        expiresAt: testTime({ days: 29 }),
         memberId: actor.memberId,
         projectId: PROJECT_ID,
         targetAuthorityGeneration: 2,
@@ -637,7 +638,7 @@ describe('LanAuthorityTransferRouter', () => {
         LanAuthorityTransferTerminalSourceService['authenticateMemberCredential']
       >(async () => ({ memberId: OTHER_MEMBER_ID })),
       expire: jest.fn(),
-      expiresAt: '2026-09-25T00:00:00.000Z',
+      expiresAt: testTime({ days: 29 }),
       getProjectAuthorityTransfer: mockAsync<
         LanAuthorityTransferTerminalSourceService['getProjectAuthorityTransfer']
       >(async () => status()),

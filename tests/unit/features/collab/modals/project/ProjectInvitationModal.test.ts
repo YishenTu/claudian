@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 
+import { testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
@@ -21,7 +22,7 @@ import { CollabError } from '@/core/collab/ClaudianCollabError';
 import { ProjectInvitationModal } from '@/features/collab/modals/project/ProjectInvitationModal';
 
 const axe = configureAxe({ rules: { region: { enabled: false } } });
-const invitation = { encodedInvitation: 'invitation-string', expiresAt: '2026-09-02T00:15:00.000Z' };
+const invitation = { encodedInvitation: 'invitation-string', expiresAt: testTime({ days: 6, minutes: 15 }) };
 const ready: CollabInvitationState = { status: 'ready', invitation, availableUntil: invitation.expiresAt };
 const failure = { status: 'failure' as const, error: new CollabError({ code: 'offline' }) };
 function success<T>(value: T) { return { status: 'success' as const, value }; }
@@ -42,7 +43,7 @@ function open(intent: 'create' | 'resume' = 'create', current = operation()) {
   return { modal, port, current, copyText, ui: within(modal.contentEl) };
 }
 
-beforeEach(() => { jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-02T00:00:00.000Z')); });
+beforeEach(() => { jest.spyOn(Date, 'now').mockReturnValue(Date.parse(testTime({ days: 6 }))); });
 afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
 
 describe('ProjectInvitationModal', () => {
@@ -138,7 +139,7 @@ describe('ProjectInvitationModal', () => {
     const next = operation();
     next.run.mockResolvedValue(success({
       status: 'ready', availableUntil: '2026-09-02T00:30:00.000Z',
-      invitation: { encodedInvitation: 'second-link', expiresAt: '2026-09-02T00:30:00.000Z' },
+      invitation: { encodedInvitation: 'second-link', expiresAt: testTime({ days: 6, minutes: 30 }) },
     }));
     port.openInvitation.mockReturnValue(next);
     fireEvent.click(ui.getByRole('button', { name: 'Create new invitation' }));

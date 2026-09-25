@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   type CloudManagerResponsibilityReceiptRecord,
   COLLAB_MANAGER_RESPONSIBILITY_RECEIPT_SCHEMA_VERSION,
@@ -16,7 +18,7 @@ const record: ManagerResponsibilityReceiptRecord = {
   purpose: 'manager-leave',
   status: 'offered',
   offeredAt: '2026-08-13T00:00:00.000Z',
-  expiresAt: '2026-08-13T00:10:00.000Z',
+  expiresAt: testTime({ days: -14, minutes: 10 }),
   acknowledgedAt: null,
   updatedAt: '2026-08-13T00:00:00.000Z',
 };
@@ -27,7 +29,7 @@ const cloudRecord: CloudManagerResponsibilityReceiptRecord = {
   memberId: 'member-bob',
   offer: {
     acknowledgedAt: null,
-    expiresAt: '2026-08-14T00:00:00.000Z',
+    expiresAt: testTime({ days: -13 }),
     managerSetGenerationAtOffer: 4,
     offeredAt: '2026-08-13T00:00:00.000Z',
     offerId: 'offer-cloud',
@@ -98,7 +100,7 @@ describe('ManagerResponsibilityReceiptRecord', () => {
     { ...record, extra: true },
     { ...record, status: 'acknowledged', acknowledgedAt: null },
     { ...record, status: 'offered', acknowledgedAt: record.offeredAt },
-    { ...record, expiresAt: '2026-08-12T00:00:00.000Z' },
+    { ...record, expiresAt: testTime({ days: -15 }) },
     { ...record, purpose: 'manager-transfer' },
   ])('rejects impossible receipt state', value => {
     expect(() => decodeManagerResponsibilityReceiptRecord(value)).toThrow(TypeError);

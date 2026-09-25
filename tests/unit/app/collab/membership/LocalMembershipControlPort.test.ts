@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type { CollabLocalLanMembershipRecord } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
 import { LocalMembershipControlPort } from '@/app/collab/membership/LocalMembershipControlPort';
@@ -44,7 +46,7 @@ describe('LocalMembershipControlPort', () => {
           return request.decode({
             data: {
               acknowledgedAt: CREATED_AT,
-              expiresAt: '2026-09-01T00:15:00.000Z',
+              expiresAt: testTime({ days: 5, minutes: 15 }),
               offeredAt: CREATED_AT,
               offerId: 'offer-one',
               purpose: 'manager-promotion',

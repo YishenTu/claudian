@@ -4,6 +4,7 @@ import path from 'node:path';
 
 import { CREATED_AT, createFeatureFixture, createFixture, git, MEMBER_ID, OPERATION_ID, prepareCrashFixture, PROJECT_ID } from '@test/helpers/collab/CloudProjectEntryFixture';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { decodeManagerResponsibilityReceiptRecord } from '@/app/collab/exit/ManagerResponsibilityReceiptRecord';
 import { decodeCloudProjectEntryRecord } from '@/app/collab/project/CloudProjectEntryRecord';
@@ -189,7 +190,7 @@ describe('CloudProjectEntryCoordinator', () => {
       await projects.saveLifecycleProjectDocument(projectId, 'manager-responsibility-receipt', {
         schemaVersion: 2, kind: 'manager-responsibility-receipt', projectId, offerId: 'offer-conflicting',
         sourceManagerMemberId: 'member-other', targetMemberId: MEMBER_ID, purpose: 'manager-leave',
-        status: 'acknowledged', offeredAt: CREATED_AT, expiresAt: '2026-09-01T00:10:00.000Z',
+        status: 'acknowledged', offeredAt: CREATED_AT, expiresAt: testTime({ days: 5, minutes: 10 }),
         acknowledgedAt: CREATED_AT, updatedAt: CREATED_AT,
       }, decodeManagerResponsibilityReceiptRecord);
       await expect(feature.resumeSetup({ operationId: created.operationId })).resolves.toMatchObject({

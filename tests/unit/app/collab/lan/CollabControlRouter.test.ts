@@ -1,6 +1,7 @@
 import { createServer, request as httpRequest, type Server } from 'node:http';
 
 import { COLLAB_LIMITS } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   type CollabControlAdmissionPort,
@@ -76,7 +77,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
     >(async () => ({
         caFingerprint: 'ab'.repeat(32),
         endpoint: 'https://127.0.0.1:54545',
-        expiresAt: '2026-08-08T00:15:00.000Z',
+        expiresAt: testTime({ days: -19, minutes: 15 }),
         invitationId: 'invitation-alpha',
         invitationSecret: INVITATION_SECRET,
         projectId: PROJECT_ID,
@@ -87,7 +88,7 @@ function service(): jest.Mocked<CollabControlProjectService> {
       Parameters<CollabControlProjectService['createJoinAttempt']>
     >(
       async (_secret, request) => ({
-        expiresAt: '2026-08-08T00:30:00.000Z',
+        expiresAt: testTime({ days: -19, minutes: 30 }),
         id: request.joinAttemptId,
         member: {
           createdAt: '2026-08-08T00:00:00.000Z',
@@ -468,7 +469,7 @@ describe('CollabControlRouter', () => {
           canAccept: false,
           canCancel: true,
           canDecline: false,
-          expiresAt: '2026-08-13T00:10:00.000Z',
+          expiresAt: testTime({ days: -14, minutes: 10 }),
           offeredAt: '2026-08-13T00:00:00.000Z',
           phase: 'accepted' as const,
           targetMemberId: 'member-target',

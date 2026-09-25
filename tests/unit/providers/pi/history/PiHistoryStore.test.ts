@@ -2,6 +2,8 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { testDate } from '@test/helpers/testClock';
+
 import {
   createPiForkSessionFile,
   getPiTurnStats,
@@ -642,7 +644,7 @@ describe('PiHistoryStore', () => {
     ].join('\n'));
 
     const forked = await createPiForkSessionFile(sourceFile, 'a1', {
-      now: new Date('2026-02-03T04:05:06.789Z'),
+      now: testDate({ days: -205, hours: 4, minutes: 5, seconds: 6, milliseconds: 789 }),
       sessionId: 'fork-session',
       targetCwd: '/target-cwd',
     });
@@ -721,7 +723,7 @@ describe('PiHistoryStore', () => {
     ].join('\n'));
 
     const forked = await createPiForkSessionFile(sourceFile, 'a1', {
-      now: new Date('2026-02-03T04:05:06.789Z'),
+      now: testDate({ days: -205, hours: 4, minutes: 5, seconds: 6, milliseconds: 789 }),
       sessionId: 'fork-session',
     });
     const forkedContent = await fs.readFile(forked.sessionFile, 'utf-8');

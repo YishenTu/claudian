@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   type CloudPendingLeaveAuthorityClientPort,
   type PendingLeaveAuthorityClientPort,
@@ -271,7 +273,7 @@ describe('PendingLeaveAuthorityService', () => {
     client.getManagerResponsibilityOffer.mockResolvedValueOnce({
       offer: {
         acknowledgedAt: '2026-08-12T01:00:00.000Z',
-        expiresAt: '2026-08-14T00:00:00.000Z',
+        expiresAt: testTime({ days: -13 }),
         managerSetGenerationAtOffer: 7,
         offeredAt: '2026-08-12T00:30:00.000Z',
         offerId: 'offer-successor',

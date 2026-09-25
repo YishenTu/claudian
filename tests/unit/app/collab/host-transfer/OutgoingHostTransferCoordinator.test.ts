@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import type { HostTransferAuthorityRecord } from '@/app/collab/authority/HostTransferRepository';
 import { createHostTransferPackageManifest } from '@/app/collab/host-transfer/HostTransferPackage';
 import type { HostTransferRecoveryRecord } from '@/app/collab/host-transfer/HostTransferRecoveryRecord';
@@ -51,7 +53,7 @@ describe('OutgoingHostTransferCoordinator', () => {
   beforeEach(() => {
     authorityRecord = {
       activationCertificate: null,
-      expiresAt: '2026-08-09T00:00:00.000Z',
+      expiresAt: testTime({ days: -18 }),
       manifestDigest: null,
       offeredAt: NOW,
       phase: 'accepted',

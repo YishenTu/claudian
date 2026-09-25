@@ -10,6 +10,7 @@ import {
   collabCloudSuccessEnvelope,
   type CollabTicketDetail,
 } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import {
@@ -638,7 +639,7 @@ describe('CollabClientProjection', () => {
     const store = new MemoryProjectionStore();
     const control = controlPort();
     const offered = {
-      expiresAt: '2026-08-08T00:10:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 10 }),
       offeredAt: CREATED_AT,
       offerId: 'offer-one',
       purpose: 'manager-leave' as const,

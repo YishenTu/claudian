@@ -5,6 +5,7 @@ import {
   encodeCollabTransferredMembershipRedemptionReceiptSigningInput,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   verifyAuthorityTransferRedemptionReceipt,
@@ -36,7 +37,7 @@ function terminalRecord(receiptKeyId: string, receiptPublicKey: string) {
       checkpointSha256: CHECKPOINT_SHA256,
       createdAt: '2026-08-27T00:00:00.000Z',
       direction: 'lan-to-cloud',
-      expiresAt: '2026-09-26T00:00:00.000Z',
+      expiresAt: testTime({ days: 30 }),
       phase: 'completed',
       projectId: PROJECT_ID,
       relinquishmentProof: {

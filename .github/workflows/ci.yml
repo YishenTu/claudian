@@ -105,15 +105,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install libfaketime
+        run: sudo apt-get install -y --no-install-recommends faketime
+
+      # Run about three years ahead so a test that depends on today's date fails here, not on the day its fixture expires.
       - name: Test
         id: tests
         env:
+          FAKETIME_DONT_FAKE_MONOTONIC: '1'
           TEST_SELECTION: ${{ needs.test-scope.outputs.test-files }}
           SCRIPT_SELECTION: ${{ matrix.shard == '2/2' && '[]' || needs.test-scope.outputs.script-tests }}
           TEST_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p test-results
-          npm run test -- --selection "$TEST_SELECTION" --script-selection "$SCRIPT_SELECTION" --shard="$TEST_SHARD" --maxWorkers=3 --json --outputFile=test-results/jest.json
+          faketime -f +1100d npm run test -- --selection "$TEST_SELECTION" --script-selection "$SCRIPT_SELECTION" --shard="$TEST_SHARD" --maxWorkers=3 --json --outputFile=test-results/jest.json
 
       - name: Summarize test timings
         if: always() && steps.tests.outcome != 'skipped' && needs.test-scope.outputs.test-files != '[]'

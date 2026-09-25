@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testDate } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import { AuthorityEventRepository } from '@/app/collab/authority/AuthorityEventRepository';
@@ -36,7 +37,7 @@ describe('PendingMembershipService', () => {
   });
 
   beforeEach(async () => {
-    now = new Date('2026-08-08T00:00:00.000Z');
+    now = testDate({ days: -19 });
     credentials = [Buffer.alloc(32, 2), Buffer.alloc(32, 3), Buffer.alloc(32, 4)];
     ids = { invitation: 0, member: 0 };
     expiredMembers = [];
@@ -343,7 +344,7 @@ describe('PendingMembershipService', () => {
       joinAttemptId: 'join-alpha',
       projectId: PROJECT_ID,
     }, { remoteAddress: '127.0.0.2' });
-    now = new Date('2026-08-08T00:31:00.000Z');
+    now = testDate({ days: -19, minutes: 31 });
 
     await expect(service.garbageCollectExpiredPending()).resolves.toEqual([
       expect.objectContaining({ id: pending.member.id, status: 'pending' }),
@@ -393,7 +394,7 @@ describe('PendingMembershipService', () => {
       joinAttemptId: 'join-alpha',
       projectId: PROJECT_ID,
     }, { remoteAddress: '127.0.0.2' });
-    now = new Date('2026-08-08T00:31:00.000Z');
+    now = testDate({ days: -19, minutes: 31 });
     const freshInvitation = await service.createInvitation(HOST_CREDENTIAL, {
       idempotencyKey: 'create-invite-2',
       projectId: PROJECT_ID,

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { COLLAB_CLOUD_BINDING_VERSION, COLLAB_PROTOCOL_VERSION, type CollabAuthorityTransferStatus, type CollabCloudCapability, type CollabTransferredMembershipClaimBatch, decodeCollabProjectCheckpointCoordinationNdjson, decodeCollabProjectCheckpointManifest, encodeCollabCloudToLanTargetCleanupProofSigningInput, encodeCollabTransferredMembershipClaimBatchDigestInput, validateCollabProjectCheckpointConsistency } from '@claudian-collab/protocol';
 import { git, HOST_CREDENTIAL, MEMBER_ID, OPERATION_ID, productionAuthorityTransferFixture,PROJECT_ID, signCloudRelinquishmentProof, status, TRANSFER_ID } from '@test/helpers/collab/ProductionAuthorityTransferFixture';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testClock, testDate, testTime } from '@test/helpers/testClock';
 
 import { CollabProjectSetupService } from '@/app/collab';
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
@@ -180,7 +181,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       cloudSession: { serverUrl: cloudServerUrl },
       convergence: {} as AuthorityTransferLocalConvergence,
       foundation: targetFoundation,
-      now: () => new Date('2026-08-28T00:02:00.000Z'),
+      now: testClock({ days: 1, minutes: 2 }),
       persistence: targetFoundation.authorityTransfers,
       projectId: PROJECT_ID,
     });
@@ -319,7 +320,7 @@ describe('production authority-transfer source and cancellation effects', () => 
   });
 
   it('durably invalidates a staged Cloud-to-LAN target and replays one exact signed cleanup proof', async () => {
-    const now = new Date('2026-08-28T00:02:00.000Z');
+    const now = testDate({ days: 1, minutes: 2 });
     const signer = await new LanTlsIdentity(targetRoot, {
       installationKey: TEST_INSTALLATION_A,
       now: () => now,
@@ -408,7 +409,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       batchSha256: '0'.repeat(64),
       checkpointSha256: 'a'.repeat(64),
       claims: [],
-      expiresAt: '2026-09-27T00:00:00.000Z',
+      expiresAt: testTime({ days: 31 }),
       projectId: PROJECT_ID,
       targetAuthorityGeneration: 3,
       transferId: TRANSFER_ID,
@@ -541,7 +542,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         batchRevision: 1,
         batchSha256: 'b'.repeat(64),
         checkpointSha256: 'a'.repeat(64),
-        expiresAt: '2026-08-29T00:00:00.000Z',
+        expiresAt: testTime({ days: 2 }),
         phase: 'completed',
         relinquishmentProof: {
           batchRevision: 1,
@@ -720,7 +721,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         if (kind === 'operation') return 'create-joined-production-effects';
         return PROJECT_ID;
       },
-      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      now: testClock({ days: -19 }),
       vaultRoot: sourceRoot,
     });
     const composition = createCollabFeatureSubcomposition({
@@ -999,7 +1000,7 @@ describe('production authority-transfer source and cancellation effects', () => 
       const exact = await sourceFoundation.authorityTransfers.load(PROJECT_ID, completed.transferId);
       if (!exact) throw new Error('Missing completed source transfer');
       const nextTarget = createCloudToLanTargetEntry({
-        createdAt: new Date().toISOString(), expiresAt: '2026-09-26T00:00:00.000Z',
+        createdAt: testTime({ days: 1, minutes: 3 }), expiresAt: testTime({ days: 30 }),
         operationIntentId: 'next-target-preparation', ownerInstallationKey: TEST_INSTALLATION_A,
         projectId: PROJECT_ID, selectedTargetMemberId: MEMBER_ID,
         selectedTargetPersonalRef: `refs/heads/members/${MEMBER_ID}`,
@@ -1044,7 +1045,7 @@ describe('production authority-transfer source and cancellation effects', () => 
         if (kind === 'operation') return 'create-cancellation-restart';
         return PROJECT_ID;
       },
-      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      now: testClock({ days: -19 }),
       vaultRoot: sourceRoot,
     });
     const initialComposition = createCollabFeatureSubcomposition({
@@ -1131,7 +1132,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           if (kind === 'operation') return 'create-cancellation-restart';
           return PROJECT_ID;
         },
-        now: () => new Date('2026-08-08T00:00:00.000Z'),
+        now: testClock({ days: -19 }),
         vaultRoot: sourceRoot,
       });
       const initialComposition = createCollabFeatureSubcomposition({
@@ -1300,7 +1301,7 @@ describe('production authority-transfer source and cancellation effects', () => 
           if (kind === 'operation') return 'create-cancelled-target-effects';
           return PROJECT_ID;
         },
-        now: () => new Date('2026-08-08T00:00:00.000Z'),
+        now: testClock({ days: -19 }),
         vaultRoot: sourceRoot,
       }),
       vaultRoot: sourceRoot,

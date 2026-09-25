@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { type CollabMember } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { configureAxe } from 'jest-axe';
 
@@ -88,7 +89,7 @@ function createPort(
     acceptCloudToLanTransfer: jest.fn().mockResolvedValue(success({} as never)),
     openInvitation: jest.fn().mockReturnValue({
       run: jest.fn().mockResolvedValue(success({
-        status: 'ready', invitation: { encodedInvitation: 'claudian-collab:v2:invite-alpha', expiresAt: '2030-08-08T00:15:00.000Z' },
+        status: 'ready', invitation: { encodedInvitation: 'claudian-collab:v2:invite-alpha', expiresAt: testTime({ days: 1442, minutes: 15 }) },
         availableUntil: '2030-08-08T00:15:00.000Z',
       })),
       read: jest.fn(), acknowledge: jest.fn(), dispose: jest.fn(),
@@ -307,7 +308,7 @@ describe('ProjectManagementModal', () => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     let count = 0;
     const port = createPort(members, { openInvitation: jest.fn().mockImplementation(() => {
-      const state = success({ status: 'ready', invitation: { encodedInvitation: `recovery-${++count}`, expiresAt: '2030-08-08T00:15:00.000Z' }, availableUntil: '2030-08-08T00:15:00.000Z' });
+      const state = success({ status: 'ready', invitation: { encodedInvitation: `recovery-${++count}`, expiresAt: testTime({ days: 1442, minutes: 15 }) }, availableUntil: testTime({ days: 1442, minutes: 15 }) });
       return { run: async () => state, read: async () => state, acknowledge: async () => success(undefined), dispose: () => {} };
     }) });
     const copyText = jest.fn().mockResolvedValue(undefined);
@@ -354,7 +355,7 @@ it.each([false, true])('automatically restores management after Host startup wit
 });
 
   beforeEach(() => {
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-09-02T00:00:00.000Z'));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse(testTime({ days: 6 })));
   });
 
   afterEach(() => {
@@ -802,7 +803,7 @@ it.each([false, true])('automatically restores management after Host startup wit
           completionId: 'completion-expiring-claim',
           invitation: {
             encodedInvitation: 'claudian-cloud-claim:v1:expiring-secret',
-            expiresAt: '2026-09-10T00:00:00.000Z',
+            expiresAt: testTime({ days: 14 }),
           },
           secretAvailableUntil: '2026-09-02T00:00:01.000Z',
           status: 'result-retained',
@@ -852,7 +853,7 @@ it.each([false, true])('automatically restores management after Host startup wit
         completionId: 'completion-claim-revalidation',
         invitation: {
           encodedInvitation: 'claudian-cloud-claim:v1:stale-secret',
-          expiresAt: '2026-09-10T00:00:00.000Z',
+          expiresAt: testTime({ days: 14 }),
         },
         secretAvailableUntil: '2026-09-02T00:00:01.000Z',
         status: 'result-retained' as const,
@@ -1599,13 +1600,13 @@ it.each([false, true])('automatically restores management after Host startup wit
       action: 'create-invitation', completionId: 'completion-invitation',
       invitation: {
         encodedInvitation: 'claudian-cloud:v1:recovered',
-        expiresAt: '2030-09-02T00:15:00.000Z',
+        expiresAt: testTime({ days: 1467, minutes: 15 }),
       },
       secretAvailableUntil: '2030-09-02T00:15:00.000Z', status: 'result-retained',
     }));
     port.openInvitation.mockReturnValue({
       run: jest.fn().mockResolvedValue(success({
-        status: 'ready', invitation: { encodedInvitation: 'claudian-cloud:v1:recovered', expiresAt: '2030-09-02T00:15:00.000Z' },
+        status: 'ready', invitation: { encodedInvitation: 'claudian-cloud:v1:recovered', expiresAt: testTime({ days: 1467, minutes: 15 }) },
         availableUntil: '2030-09-02T00:15:00.000Z',
       })),
       read: jest.fn(), acknowledge: jest.fn(), dispose: jest.fn(),
@@ -1909,7 +1910,7 @@ it.each([false, true])('automatically restores management after Host startup wit
   it.each([false, true])('moves to this LAN device with one action and retains a failed move for retry (%s)', async retry => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const descriptor = {
-      expiresAt: '2026-09-10T00:00:00.000Z',
+      expiresAt: testTime({ days: 14 }),
       preparationId: 'preparation-one',
       projectId: 'project-alpha',
       schemaVersion: 1,
@@ -2008,7 +2009,7 @@ it.each([false, true])('automatically restores management after Host startup wit
   it('approves the Cloud-held receiving-device request by identity', async () => {
     const members = [member('member-manager', 'Alice', { role: 'manager' })];
     const descriptor = {
-      expiresAt: '2026-09-10T00:00:00.000Z',
+      expiresAt: testTime({ days: 14 }),
       preparationId: 'preparation-one',
       projectId: 'project-alpha',
       schemaVersion: 1,
@@ -2576,7 +2577,7 @@ it.each([false, true])('automatically restores management after Host startup wit
     ];
     const offers = [
       {
-        expiresAt: '2026-09-10T00:00:00.000Z',
+        expiresAt: testTime({ days: 14 }),
         offerId: 'offer-unrelated',
         offeredAt: CREATED_AT,
         purpose: 'manager-promotion' as const,
@@ -2585,7 +2586,7 @@ it.each([false, true])('automatically restores management after Host startup wit
         targetMemberId: 'member-noah',
       },
       {
-        expiresAt: '2026-09-10T00:00:00.000Z',
+        expiresAt: testTime({ days: 14 }),
         offerId: 'offer-current',
         offeredAt: CREATED_AT,
         purpose: 'manager-promotion' as const,
@@ -3562,7 +3563,7 @@ it.each([false, true])('automatically restores management after Host startup wit
             canAccept: true,
             canCancel: false,
             canDecline: true,
-            expiresAt: '2026-08-13T01:00:00.000Z',
+            expiresAt: testTime({ days: -14, hours: 1 }),
             offeredAt: CREATED_AT,
             phase: 'offered',
             targetMemberId: 'member-maya',
@@ -3609,7 +3610,7 @@ it.each([false, true])('automatically restores management after Host startup wit
             canAccept: true,
             canCancel: false,
             canDecline: true,
-            expiresAt: '2026-08-13T01:00:00.000Z',
+            expiresAt: testTime({ days: -14, hours: 1 }),
             offeredAt: CREATED_AT,
             phase: 'offered',
             targetMemberId: 'member-maya',

@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   CollabProjectWorkSessionRegistry,
 } from '@/app/collab/activity/CollabProjectWorkSession';
@@ -35,7 +37,7 @@ describe('CollabAuthorityControlRouter', () => {
     }));
     const second = jest.fn().mockResolvedValue({
       encodedInvitation: 'claudian-collab:v2:invite-router',
-      expiresAt: '2026-08-29T00:15:00.000Z',
+      expiresAt: testTime({ days: 2, minutes: 15 }),
     });
     const create = jest.fn()
       .mockResolvedValueOnce({
@@ -72,7 +74,7 @@ describe('CollabAuthorityControlRouter', () => {
       projectId: PROJECT_ID,
     })).resolves.toEqual({
       encodedInvitation: 'claudian-collab:v2:invite-router',
-      expiresAt: '2026-08-29T00:15:00.000Z',
+      expiresAt: testTime({ days: 2, minutes: 15 }),
     });
 
     expect(first).toHaveBeenCalledTimes(1);

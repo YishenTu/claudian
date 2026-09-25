@@ -11,6 +11,7 @@ import {
 completeCollabFeatureOptions,
 TEST_COLLAB_FEATURE_PORT_METHODS,
 } from '@test/helpers/collab/CollabFeatureTestHarness';
+import { testTime } from '@test/helpers/testClock';
 
 import { CollabProjectWorkSessionRegistry } from '@/app/collab/activity/CollabProjectWorkSession';
 import { AuthorityTransferEntryService } from '@/app/collab/authority-transfer/AuthorityTransferEntryService';
@@ -137,7 +138,7 @@ function pendingJoin() {
     memberDisplayName: 'Bob',
     memberId: 'member-bob',
     memberRole: null,
-    membershipExpiresAt: '2026-08-08T01:00:00.000Z',
+    membershipExpiresAt: testTime({ days: -19, hours: 1 }),
     operationId: 'join-alpha',
     operationKind: 'join-project',
     phase: 'membership-created',
@@ -210,7 +211,7 @@ function authoritySnapshot(): CollabLanProjectSnapshot {
 
 function membershipControl(): jest.Mocked<CollabMembershipPort> {
   const offer = {
-    expiresAt: '2026-08-08T00:10:00.000Z',
+    expiresAt: testTime({ days: -19, minutes: 10 }),
     offerId: 'offer-a',
     offeredAt: CREATED_AT,
     purpose: 'manager-promotion' as const,
@@ -226,7 +227,7 @@ function membershipControl(): jest.Mocked<CollabMembershipPort> {
     }),
     createInvitation: jest.fn().mockResolvedValue({
       encodedInvitation: 'claudian-collab:v2:test',
-      expiresAt: '2026-08-08T01:00:00.000Z',
+      expiresAt: testTime({ days: -19, hours: 1 }),
     }),
     readManagementOperation: jest.fn().mockResolvedValue(null),
     resumeManagementOperation: jest.fn().mockResolvedValue({
@@ -1868,10 +1869,10 @@ describe('CollabFeatureService', () => {
       claim: Buffer.alloc(32, 4).toString('base64url'),
       claimGeneration: 4,
       createdAt: '2026-10-01T00:00:00.000Z',
-      expiresAt: '2026-10-31T00:00:00.000Z',
+      expiresAt: testTime({ days: 65 }),
       memberId: 'member-host',
       projectId: 'project-alpha',
-      secretReplayExpiresAt: '2026-10-31T00:00:00.000Z',
+      secretReplayExpiresAt: testTime({ days: 65 }),
       targetAuthorityGeneration: 2,
       transferId: 'transfer-manager-reissued',
     };

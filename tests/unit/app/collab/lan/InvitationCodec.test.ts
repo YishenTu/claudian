@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   InvitationCodec,
   type InvitationCodecOptions,
@@ -55,7 +57,7 @@ describe('InvitationCodec', () => {
       expect(() => codec.validateInvitation({
         caFingerprint: FINGERPRINT,
         endpoint: 'https://127.0.0.1:54545',
-        expiresAt: '2026-08-08T00:15:00.000Z',
+        expiresAt: testTime({ days: -19, minutes: 15 }),
         invitationId: field.invitationId,
         invitationSecret: Buffer.alloc(32, 4).toString('base64url'),
         projectId: field.projectId,
@@ -91,7 +93,7 @@ describe('InvitationCodec', () => {
       endpoint: 'https://203.0.113.4:54545',
     }, 'invitation-invalid', { reason: 'endpoint-address-not-private' }],
     ['expired payload', {
-      expiresAt: '2026-08-07T23:59:59.999Z',
+      expiresAt: testTime({ days: -20, hours: 23, minutes: 59, seconds: 59, milliseconds: 999 }),
     }, 'invitation-expired', { reason: 'invitation-expired' }],
     ['short secret', {
       invitationSecret: Buffer.alloc(16, 1).toString('base64url'),
@@ -104,7 +106,7 @@ describe('InvitationCodec', () => {
       const invitation = {
         caFingerprint: FINGERPRINT,
         endpoint: 'https://192.168.1.10:54545',
-        expiresAt: '2026-08-08T00:15:00.000Z',
+        expiresAt: testTime({ days: -19, minutes: 15 }),
         invitationId: 'invite-alpha',
         invitationSecret: secret,
         projectId: 'project-alpha',
@@ -132,7 +134,7 @@ describe('InvitationCodec', () => {
     const payload = {
       caFingerprint: FINGERPRINT,
       endpoint: 'https://127.0.0.1:54545',
-      expiresAt: '2026-08-08T00:15:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 15 }),
       invitationId: 'invite-alpha',
       invitationSecret: Buffer.alloc(32, 4).toString('base64url'),
       projectId: 'project-alpha',
@@ -154,7 +156,7 @@ describe('InvitationCodec', () => {
     const legacyPayload = {
       caFingerprint: FINGERPRINT,
       endpoint: 'https://127.0.0.1:54545',
-      expiresAt: '2026-08-08T00:15:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 15 }),
       invitationId: 'invite-alpha',
       invitationSecret: Buffer.alloc(32, 4).toString('base64url'),
       projectId: 'project-alpha',
@@ -177,7 +179,7 @@ describe('InvitationCodec', () => {
     const payload = {
       caFingerprint: FINGERPRINT,
       endpoint: 'https://127.0.0.1:54545',
-      expiresAt: '2026-08-08T00:15:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 15 }),
       invitationId: 'invite-alpha',
       invitationSecret: Buffer.alloc(32, 4).toString('base64url'),
       projectId: 'project-alpha',

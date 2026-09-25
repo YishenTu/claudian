@@ -18,6 +18,7 @@ import {
   encodeCollabTransferredMembershipClaimBatchDigestInput,
 } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testClock, testTime } from '@test/helpers/testClock';
 import initSqlJs, { type SqlJsStatic } from 'sql.js';
 
 import {
@@ -173,7 +174,7 @@ describe('G3 local Project milestone gate', () => {
         if (kind === 'operation') return OPERATION_ID;
         return PROJECT_ID;
       },
-      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      now: testClock({ days: -19 }),
       vaultRoot,
     });
     const feature = createCollabFeatureSubcomposition({
@@ -341,7 +342,7 @@ describe('G3 local Project milestone gate', () => {
         if (kind === 'operation') return OPERATION_ID;
         return PROJECT_ID;
       },
-      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      now: testClock({ days: -19 }),
       vaultRoot,
     });
     const subcomposition = createCollabFeatureSubcomposition({
@@ -357,7 +358,7 @@ describe('G3 local Project milestone gate', () => {
       batchSha256: '0'.repeat(64),
       checkpointSha256,
       claims: [],
-      expiresAt: '2026-09-27T00:00:00.000Z',
+      expiresAt: testTime({ days: 31 }),
       projectId: PROJECT_ID,
       targetAuthorityGeneration: 2,
       transferId,
@@ -390,7 +391,7 @@ describe('G3 local Project milestone gate', () => {
       checkpointSha256,
       createdAt: '2026-08-27T00:00:00.000Z',
       direction: 'lan-to-cloud',
-      expiresAt: '2026-09-27T00:00:00.000Z',
+      expiresAt: testTime({ days: 31 }),
       phase,
       projectId: PROJECT_ID,
       relinquishmentProof: proof,
@@ -588,7 +589,7 @@ describe('G3 local Project milestone gate', () => {
           if (kind === 'operation') return OPERATION_ID;
           return PROJECT_ID;
         },
-        now: () => new Date('2026-08-08T00:00:00.000Z'),
+        now: testClock({ days: -19 }),
         vaultRoot,
       });
       const feature = createCollabFeatureSubcomposition({
@@ -632,7 +633,7 @@ describe('G3 local Project milestone gate', () => {
         checkpointSha256,
         createdAt: '2026-08-27T00:00:00.000Z',
         direction,
-        expiresAt: '2026-09-27T00:00:00.000Z',
+        expiresAt: testTime({ days: 31 }),
         phase: 'completed',
         projectId: PROJECT_ID,
         relinquishmentProof: {
@@ -800,7 +801,7 @@ describe('G3 local Project milestone gate', () => {
         if (kind === 'operation') return OPERATION_ID;
         return PROJECT_ID;
       },
-      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      now: testClock({ days: -19 }),
       vaultRoot,
     });
     const transferId = 'transfer-manager-reissued-gate';
@@ -812,7 +813,7 @@ describe('G3 local Project milestone gate', () => {
       checkpointSha256,
       createdAt: '2026-08-01T00:00:00.000Z',
       direction: 'lan-to-cloud',
-      expiresAt: '2026-08-31T00:00:00.000Z',
+      expiresAt: testTime({ days: 4 }),
       phase: 'completed',
       projectId: PROJECT_ID,
       relinquishmentProof: {
@@ -840,10 +841,10 @@ describe('G3 local Project milestone gate', () => {
       claim: claimValue,
       claimGeneration: 4,
       createdAt: '2026-09-01T00:00:00.000Z',
-      expiresAt: '2026-10-01T00:00:00.000Z',
+      expiresAt: testTime({ days: 35 }),
       memberId: MEMBER_ID,
       projectId: PROJECT_ID,
-      secretReplayExpiresAt: '2026-10-01T00:00:00.000Z',
+      secretReplayExpiresAt: testTime({ days: 35 }),
       targetAuthorityGeneration: 2,
       transferId,
     };
@@ -987,7 +988,7 @@ describe('G3 local Project milestone gate', () => {
         if (kind === 'operation') return OPERATION_ID;
         return PROJECT_ID;
       },
-      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      now: testClock({ days: -19 }),
       vaultRoot,
     });
     const feature = createCollabFeatureSubcomposition({
@@ -1005,7 +1006,7 @@ describe('G3 local Project milestone gate', () => {
       batchSha256: '0'.repeat(64),
       checkpointSha256,
       claims: [],
-      expiresAt: '2026-07-01T00:00:00.000Z',
+      expiresAt: testTime({ days: -57 }),
       projectId: PROJECT_ID,
       targetAuthorityGeneration: 2,
       transferId,
@@ -1037,7 +1038,7 @@ describe('G3 local Project milestone gate', () => {
         checkpointSha256,
         createdAt: '2026-06-01T00:00:00.000Z',
         direction: 'lan-to-cloud',
-        expiresAt: '2026-07-01T00:00:00.000Z',
+        expiresAt: testTime({ days: -57 }),
         phase: 'completed',
         projectId: PROJECT_ID,
         relinquishmentProof: {

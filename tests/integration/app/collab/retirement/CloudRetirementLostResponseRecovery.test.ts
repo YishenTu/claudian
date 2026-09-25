@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import type { CollabProjectRetirementResult } from '@claudian-collab/protocol';
+import { testTime } from '@test/helpers/testClock';
 
 import { CollabLocalProjectRepository } from '@/app/collab/CollabLocalProjectRepository';
 import { COLLAB_LOCAL_PROJECT_SCHEMA_VERSION } from '@/app/collab/CollabSchemaVersions';
@@ -256,7 +257,7 @@ function authorityClient(): jest.Mocked<CloudRetirementAuthorityClientPort> {
       projectId: PROJECT_ID,
       retiredAt: NOW,
       retirementId: 'retirement-cloud-one',
-      terminalExpiresAt: '2026-09-26T00:00:00.000Z',
+      terminalExpiresAt: testTime({ days: 30 }),
     })),
   };
 }

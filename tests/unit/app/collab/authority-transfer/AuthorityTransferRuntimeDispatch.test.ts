@@ -1,5 +1,6 @@
 import type { CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import {
   createAuthorityTransferRecord,
@@ -16,7 +17,7 @@ function status(projectId = 'project-runtime'): CollabAuthorityTransferStatus {
     checkpointSha256: null,
     createdAt: '2026-08-27T00:00:00.000Z',
     direction: 'lan-to-cloud',
-    expiresAt: '2026-09-26T00:00:00.000Z',
+    expiresAt: testTime({ days: 30 }),
     phase: 'source-quiesced',
     projectId,
     relinquishmentProof: null,

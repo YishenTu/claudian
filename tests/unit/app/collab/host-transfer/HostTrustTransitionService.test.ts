@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { TEST_INSTALLATION_A } from '@test/helpers/installations';
+import { testClock } from '@test/helpers/testClock';
 
 import { digestHostTransitionProofChain } from '@/app/collab/host-transfer/HostTransferPackage';
 import {
@@ -22,7 +23,7 @@ describe('HostTrustTransitionService', () => {
     roots.push(root);
     return new LanTlsIdentity(root, {
       installationKey: TEST_INSTALLATION_A,
-      now: () => new Date('2026-08-08T00:00:00.000Z'),
+      now: testClock({ days: -19 }),
     });
   }
 

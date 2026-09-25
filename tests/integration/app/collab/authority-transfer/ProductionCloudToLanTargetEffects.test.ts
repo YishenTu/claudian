@@ -7,6 +7,7 @@ import path from 'node:path';
 import { type CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
 import { git, HOST_CREDENTIAL, MEMBER_ID, OPERATION_ID, productionAuthorityTransferFixture,PROJECT_ID, status, TRANSFER_ID } from '@test/helpers/collab/ProductionAuthorityTransferFixture';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testDate } from '@test/helpers/testClock';
 
 import { CollabProjectSetupService } from '@/app/collab';
 import { AuthorityMetadataRepository } from '@/app/collab/authority/AuthorityMetadataRepository';
@@ -432,7 +433,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
       target.foundation.authorityTransfers,
       'expireClaims',
     ).mockResolvedValueOnce();
-    target.environment.now = new Date('2026-10-01T00:00:00.000Z');
+    target.environment.now = testDate({ days: 35 });
 
     await expect(activeRegistration.service.expire())
       .rejects.toMatchObject({
@@ -447,7 +448,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
     });
     expect(expireClaims).not.toHaveBeenCalled();
     expireClaims.mockRestore();
-    target.environment.now = new Date('2026-08-28T00:03:00.000Z');
+    target.environment.now = testDate({ days: 1, minutes: 3 });
   });
 
   it('recovers interrupted convergence without publishing an inconsistent route', async () => {
@@ -680,7 +681,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
       ...claimRequest, credentialHash: 'a'.repeat(64),
     })).rejects.toMatchObject({ code: 'authority-transfer-stale' });
     await expect(target.recoveringEffects().restoreRetained(target.completedRecord)).resolves.toBeUndefined();
-    target.environment.now = new Date('2026-10-01T00:00:00.000Z');
+    target.environment.now = testDate({ days: 35 });
     const expiredPersistence = new AuthorityTransferPersistence(target.foundation.local.projects, {
       isRecoveryOwner: owner => owner === TEST_INSTALLATION_A, now: () => target.environment.now,
     });
@@ -742,7 +743,7 @@ describe('production Cloud-to-LAN target recovery effects', () => {
       target.foundation.authorityTransfers,
       'completeTerminalCleanup',
     ).mockRejectedValueOnce(new Error('simulated crash after target-private unlink'));
-    target.environment.now = new Date('2026-10-01T00:00:00.000Z');
+    target.environment.now = testDate({ days: 35 });
 
     await expect(expiryRegistration.service.expire())
       .rejects.toThrow('simulated crash after target-private unlink');

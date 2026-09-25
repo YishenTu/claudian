@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import type { CollabAuthorityTransferStatus } from '@claudian-collab/protocol';
 import { TEST_INSTALLATION_A, TEST_INSTALLATION_B } from '@test/helpers/installations';
+import { testTime } from '@test/helpers/testClock';
 
 import { LanAuthorityTransferClient } from '@/app/collab/lan/authority-transfer/LanAuthorityTransferClient';
 import {
@@ -26,7 +27,7 @@ function status(): CollabAuthorityTransferStatus {
     checkpointSha256: null,
     createdAt: '2026-08-26T00:00:00.000Z',
     direction: 'lan-to-cloud',
-    expiresAt: '2026-09-25T00:00:00.000Z',
+    expiresAt: testTime({ days: 29 }),
     phase: 'collecting-readiness',
     projectId: PROJECT_ID,
     relinquishmentProof: null,

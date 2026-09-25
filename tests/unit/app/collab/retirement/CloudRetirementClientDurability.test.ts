@@ -1,4 +1,5 @@
 import type { CollabProjectRetirementResult } from '@claudian-collab/protocol';
+import { testClock, testTime } from '@test/helpers/testClock';
 
 import type {
   CollabLocalCloudMembershipRecord,
@@ -53,7 +54,7 @@ function result(): CollabProjectRetirementResult {
     projectId: PROJECT_ID,
     retiredAt: RETIRED_AT,
     retirementId: 'retirement-cloud',
-    terminalExpiresAt: '2026-09-26T00:00:10.000Z',
+    terminalExpiresAt: testTime({ days: 30, seconds: 10 }),
   };
 }
 
@@ -173,7 +174,7 @@ function createClient(
       connectRetirement: async () => authority,
       createIdempotencyKey,
       intents: store,
-      now: () => new Date('2026-08-27T00:00:00.000Z'),
+      now: testClock(),
       terminal: { handle: terminal, resume: terminalResume },
     }),
     terminal,

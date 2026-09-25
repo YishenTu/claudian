@@ -2,6 +2,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { testTime } from '@test/helpers/testClock';
+
 import {
   CollabLocalProjectRepository,
   isCollabLocalCloudMembership,
@@ -95,7 +97,7 @@ function client(): TestMembershipControl {
     cancelManagerResponsibilityOffer: jest.fn(),
     createInvitation: jest.fn().mockResolvedValue({
       encodedInvitation: 'claudian-collab:v2:invite-alpha',
-      expiresAt: '2026-08-08T00:15:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 15 }),
     }),
     createManagerResponsibilityOffer: jest.fn(),
     declineManagerResponsibility: jest.fn(),
@@ -342,7 +344,7 @@ describe('CollabMembershipService', () => {
     (control.cloudMembership as jest.Mock).mockResolvedValue({
       offer: {
         acknowledgedAt: null,
-        expiresAt: '2026-08-09T00:00:00.000Z',
+        expiresAt: testTime({ days: -18 }),
         managerSetGenerationAtOffer: 4,
         offeredAt: CREATED_AT,
         offerId: 'offer-manager-leave',
@@ -381,7 +383,7 @@ describe('CollabMembershipService', () => {
   });
 
   it('uses only imported-claim admission for reissue creation, recovery, and completion', async () => {
-    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-08T00:00:10.000Z'));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse(testTime({ days: -19, seconds: 10 })));
     await projects.saveMembership({
       authority: {
         authorityGeneration: 7,
@@ -474,10 +476,10 @@ describe('CollabMembershipService', () => {
           claim: `${'B'.repeat(42)}A`,
           claimGeneration: 2,
           createdAt: CREATED_AT,
-          expiresAt: '2026-09-07T00:00:00.000Z',
+          expiresAt: testTime({ days: 11 }),
           memberId: 'member-imported',
           projectId: 'project-alpha',
-          secretReplayExpiresAt: '2026-09-07T00:00:00.000Z',
+          secretReplayExpiresAt: testTime({ days: 11 }),
           targetAuthorityGeneration: binding.authorityGeneration,
           transferId: 'transfer-imported',
         };
@@ -516,7 +518,7 @@ describe('CollabMembershipService', () => {
     await expect(service.reissueMemberClaim({
       memberId: 'member-imported',
       projectId: 'project-alpha',
-    })).resolves.toMatchObject({ expiresAt: '2026-09-07T00:00:00.000Z' });
+    })).resolves.toMatchObject({ expiresAt: testTime({ days: 11 }) });
     const retained = await service.readManagementOperation('project-alpha');
     expect(retained).toMatchObject({
       action: 'reissue-member-claim',
@@ -915,12 +917,12 @@ describe('CollabMembershipService', () => {
         },
         response: {
           createdAt: '2099-09-02T00:00:00.000Z',
-          expiresAt: '2099-09-03T00:00:00.000Z',
+          expiresAt: testTime({ days: 26670 }),
           invitationId,
           issuedState: 'active',
           projectId: 'project-alpha',
           secret: 'A'.repeat(43),
-          secretReplayExpiresAt: '2099-10-02T00:00:00.000Z',
+          secretReplayExpiresAt: testTime({ days: 26699 }),
         },
         schemaVersion: 1,
         serverUrl: 'https://cloud.example',
@@ -979,12 +981,12 @@ describe('CollabMembershipService', () => {
       },
       response: {
         createdAt: '2020-09-02T00:00:00.000Z',
-        expiresAt: '2020-09-03T00:00:00.000Z',
+        expiresAt: testTime({ days: -2184 }),
         invitationId: 'invitation-expired',
         issuedState: 'active' as const,
         projectId: 'project-alpha',
         secret: 'A'.repeat(43),
-        secretReplayExpiresAt: '2020-10-02T00:00:00.000Z',
+        secretReplayExpiresAt: testTime({ days: -2155 }),
       },
       secretAvailableUntil: '2020-09-03T00:00:00.000Z',
     },
@@ -1003,10 +1005,10 @@ describe('CollabMembershipService', () => {
         claim: `${'B'.repeat(42)}A`,
         claimGeneration: 4,
         createdAt: '2020-09-02T00:00:00.000Z',
-        expiresAt: '2020-10-02T00:00:00.000Z',
+        expiresAt: testTime({ days: -2155 }),
         memberId: 'member-imported',
         projectId: 'project-alpha',
-        secretReplayExpiresAt: '2020-10-02T00:00:00.000Z',
+        secretReplayExpiresAt: testTime({ days: -2155 }),
         targetAuthorityGeneration: 7,
         transferId: 'transfer-imported',
       },
@@ -1142,7 +1144,7 @@ describe('CollabMembershipService', () => {
     };
     const offered = {
       acknowledgedAt: null,
-      expiresAt: '2026-08-09T00:00:00.000Z',
+      expiresAt: testTime({ days: -18 }),
       managerSetGenerationAtOffer: 4,
       offeredAt: CREATED_AT,
       offerId: 'offer-cloud',
@@ -1351,7 +1353,7 @@ describe('CollabMembershipService', () => {
   it('generates each completed LAN administration key inside the application owner', async () => {
     const control = client();
     control.operations.createManagerResponsibilityOffer.mockResolvedValue({
-      expiresAt: '2026-08-08T00:15:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 15 }),
       offeredAt: CREATED_AT,
       offerId: 'offer-one',
       purpose: 'manager-promotion',
@@ -1416,7 +1418,7 @@ describe('CollabMembershipService', () => {
   it('recovers a lost Manager acknowledgement response without sending another mutation', async () => {
     const control = client();
     const offered = {
-      expiresAt: '2026-08-08T00:10:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 10 }),
       offeredAt: '2026-08-08T00:00:00.000Z',
       offerId: 'offer-one',
       purpose: 'manager-leave' as const,
@@ -1460,7 +1462,7 @@ describe('CollabMembershipService', () => {
   it('automatically persists and acknowledges an offered Manager responsibility projection', async () => {
     const control = client();
     const offered = {
-      expiresAt: '2026-08-08T00:10:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 10 }),
       offeredAt: CREATED_AT,
       offerId: 'offer-one',
       purpose: 'manager-leave' as const,
@@ -1511,7 +1513,7 @@ describe('CollabMembershipService', () => {
     const control = client();
     const acknowledged = {
       acknowledgedAt: '2026-08-08T00:01:00.000Z',
-      expiresAt: '2026-08-08T00:10:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 10 }),
       offeredAt: CREATED_AT,
       offerId: 'offer-current',
       purpose: 'manager-leave' as const,
@@ -1572,7 +1574,7 @@ describe('CollabMembershipService', () => {
   it('automatically declines Manager responsibility when an offline Leave is pending', async () => {
     const control = client();
     const declined = {
-      expiresAt: '2026-08-08T00:10:00.000Z',
+      expiresAt: testTime({ days: -19, minutes: 10 }),
       offeredAt: CREATED_AT,
       offerId: 'offer-one',
       purpose: 'manager-leave' as const,

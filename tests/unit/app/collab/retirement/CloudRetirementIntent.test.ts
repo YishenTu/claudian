@@ -1,3 +1,5 @@
+import { testTime } from '@test/helpers/testClock';
+
 import {
   type CloudRetirementIntent,
   decodeCloudRetirementIntent,
@@ -35,7 +37,7 @@ describe('CloudRetirementIntent', () => {
         projectId: 'project-cloud-retire' as const,
         retiredAt: '2026-08-27T00:00:10.000Z',
         retirementId: 'retirement-cloud',
-        terminalExpiresAt: '2026-09-26T00:00:10.000Z',
+        terminalExpiresAt: testTime({ days: 30, seconds: 10 }),
       },
       updatedAt: '2026-08-27T00:00:10.000Z',
     };
