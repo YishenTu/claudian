@@ -8,7 +8,7 @@ import {
   isCanonicalUserMessage,
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
-import type { FeatureHost } from '../../FeatureHost';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import { getTabProviderId } from './providerResolution';
 import {
   getTabCapabilities,
@@ -60,7 +60,7 @@ export type ForkSourceCapture =
 
 async function resolveForkSource(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   assistantCheckpointId: string,
 ): Promise<ForkSource | null> {
   const conversation = tab.conversationId
@@ -103,7 +103,7 @@ async function resolveForkSource(
  */
 export async function captureLatestCompletedForkSource(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   isRuntimeLive: (tab: AssembledTabRuntime) => boolean,
 ): Promise<ForkSourceCapture> {
   const { state } = tab;
@@ -160,7 +160,7 @@ export async function captureLatestCompletedForkSource(
 
 export async function handleForkRequest(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   assistantMessageId: string,
   forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
   isRuntimeLive: (tab: AssembledTabRuntime) => boolean,
@@ -229,7 +229,7 @@ export async function handleForkRequest(
 
 export async function handleForkAll(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   forkRequestCallback: (forkContext: ForkContext) => Promise<void>,
   isRuntimeLive: (tab: AssembledTabRuntime) => boolean,
 ): Promise<void> {

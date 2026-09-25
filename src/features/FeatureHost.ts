@@ -3,7 +3,7 @@ import type { App, WorkspaceLeaf } from 'obsidian';
 import type { SharedAppStorage } from '../core/bootstrap/storage';
 import type { CollabComposerReferencePort } from '../core/collab';
 import type { ProviderHost } from '../core/providers/ProviderHost';
-import type { AppTabManagerState, ProviderId } from '../core/providers/types';
+import type { ProviderId } from '../core/providers/types';
 import type {
   ClaudianSettings,
   Conversation,
@@ -11,29 +11,17 @@ import type {
   ConversationMutablePatch,
   StoredChatModelSelection,
 } from '../core/types';
-import type { ChatExecutionPersistence } from './chat/execution/ChatExecutionCoordinator';
-import type { WarmExecutionPool } from './chat/execution/WarmExecutionPool';
-import type { AssembledTabRuntime, TabId, TabManagerViewHost } from './chat/tabs/types';
 
-export interface TabWorkspaceStateDeliveryRegistration {
-  readonly declarationsReady: boolean;
-  readonly waitUntilDeclarationsReady: Promise<void>;
+/** What features outside chat may read about the active chat tab. */
+export interface FeatureActiveTab {
+  readonly conversationId: string | null;
+  readonly draftModel: string | null;
+  readonly providerId: ProviderId | null;
 }
 
-export interface FeatureTabManagerHost {
-  canCreateTab(): boolean;
-  getAllTabs(): AssembledTabRuntime[];
-  getTab(tabId: TabId): AssembledTabRuntime | null;
-  isTabWorking(tabId: TabId): boolean;
-  switchToTab(tabId: TabId): Promise<void>;
-  closeTab(tabId: TabId, force?: boolean): Promise<boolean>;
-  primeProviderExecution(providerIds?: ProviderId | ProviderId[]): void;
-  invalidateProviderResources(providerIds: ProviderId | ProviderId[], generation: number): void;
-}
-
-export interface FeatureViewHost extends TabManagerViewHost {
-  getActiveTab(): AssembledTabRuntime | null;
-  getTabManager(): FeatureTabManagerHost | null;
+/** Chat view capabilities available to every feature. Chat narrows this in `ChatFeatureHost`. */
+export interface FeatureViewHost {
+  getActiveTab(): FeatureActiveTab | null;
   notifyConversationListChanged(): void;
   refreshModelSelector(providerId?: ProviderId): void;
   refreshTabControls(): void;
@@ -69,15 +57,19 @@ export interface CollabSidebarSurfaceFactory {
 
 export type CollabGitInstallationStatus = 'available' | 'unavailable';
 
+/** Lets settings re-apply the warm agent process limit without owning the pool. */
+export interface WarmExecutionLimitPort {
+  reconcileLimit(): Promise<boolean>;
+}
+
 /** Application capabilities consumed by user-facing features. */
 export interface FeatureHost {
   readonly app: App;
   readonly chatModelSelection: ChatModelSelectionPort;
-  readonly executionPersistence: ChatExecutionPersistence;
   readonly providerHost: ProviderHost;
   readonly settings: ClaudianSettings;
   readonly storage: SharedAppStorage;
-  readonly warmExecutionPool: WarmExecutionPool;
+  readonly warmExecutionPool: WarmExecutionLimitPort;
   readonly collabSurfaceFactory?: CollabSidebarSurfaceFactory;
   readonly collabComposerReferences?: CollabComposerReferencePort;
 
@@ -127,16 +119,7 @@ export interface FeatureHost {
   getConversationSync(id: string): Conversation | null;
   getConversationList(): ConversationMeta[];
   ensureConversationMetadataLoaded(conversationIds: readonly string[]): Promise<void>;
-  registerTabWorkspaceStateDelivery(
-    view: FeatureViewHost,
-    hasViewScopedState: boolean,
-  ): TabWorkspaceStateDeliveryRegistration;
-  claimLegacyTabManagerState(): Promise<AppTabManagerState | null>;
-  completeLegacyTabManagerStateMigration(): Promise<void>;
 
   getView(): FeatureViewHost | null;
   getAllViews(): FeatureViewHost[];
-  findConversationAcrossViews(
-    conversationId: string,
-  ): { view: FeatureViewHost; tabId: TabId } | null;
 }

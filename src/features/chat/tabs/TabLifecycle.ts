@@ -1,6 +1,6 @@
 import { Notice } from 'obsidian';
 
-import type { FeatureHost } from '../../FeatureHost';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import type {
   AssembledTabRuntime,
   TabRuntimeCleanupFailure,
@@ -181,7 +181,7 @@ async function destroyTabOnce(tab: AssembledTabRuntime): Promise<void> {
   }
 }
 
-export function getTabTitle(tab: AssembledTabRuntime, plugin: FeatureHost): string {
+export function getTabTitle(tab: AssembledTabRuntime, plugin: ChatFeatureHost): string {
   if (tab.conversationId) {
     const conversation = plugin.getConversationSync(tab.conversationId);
     if (conversation?.title) {

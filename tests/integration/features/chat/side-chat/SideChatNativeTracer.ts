@@ -9,10 +9,10 @@ import type {
 import type { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, ImageAttachment, ProviderId } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
 import { handleForkRequest } from '@/features/chat/tabs/TabForking';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-import type { FeatureHost } from '@/features/FeatureHost';
 
 import type { ForkTestEnvironment } from '../tabs/ProviderForkTestHarness';
 
@@ -139,7 +139,7 @@ export async function captureSideSource(
     app: env.app,
     settings: (env.host as unknown as { settings: unknown }).settings,
     getConversationSync: (id: string) => env.repository.getSync(id),
-  } as unknown as FeatureHost;
+  } as unknown as ChatFeatureHost;
   const tab = {
     conversationId: chat.conversation.id,
     executionCoordinator: chat.coordinator,

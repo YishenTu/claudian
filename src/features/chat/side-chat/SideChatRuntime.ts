@@ -11,7 +11,7 @@ import type {
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '../../../core/providers/types';
 import type { ChatMessage, ImageAttachment } from '../../../core/types';
-import type { FeatureHost } from '../../FeatureHost';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import {
   providerOutputEventToStreamChunk,
   StreamController,
@@ -31,7 +31,7 @@ import type {
 } from './SideChatTypes';
 
 export interface SideChatRuntimeDeps {
-  readonly plugin: FeatureHost;
+  readonly plugin: ChatFeatureHost;
   readonly component: Component;
   readonly source: SideChatSource;
   readonly settings: SideChatSettingsProjection;

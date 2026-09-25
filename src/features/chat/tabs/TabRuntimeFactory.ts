@@ -3,8 +3,8 @@ import type { Component } from 'obsidian';
 import type { ProviderId } from '@/core/providers/types';
 import type { Conversation } from '@/core/types';
 import type { TabAttention, TabReviewOutcome } from '@/features/chat/state/types';
-import type { FeatureHost } from '@/features/FeatureHost';
 
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import type {
   PublishedTabRuntimeRef,
   TabRuntimeCleanup,
@@ -36,7 +36,7 @@ import type {
 } from './types';
 
 export interface TabRuntimeFactoryOptions {
-  plugin: FeatureHost;
+  plugin: ChatFeatureHost;
   containerEl: HTMLElement;
   component: Component;
   conversation?: Conversation;

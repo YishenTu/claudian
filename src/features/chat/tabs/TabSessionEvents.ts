@@ -4,7 +4,7 @@ import type {
   ProviderBackgroundOutputEvent,
   ProviderSessionEvent,
 } from '../../../core/execution';
-import type { FeatureHost } from '../../FeatureHost';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import type { ChatExecutionEventContext } from '../execution/ChatExecutionCoordinator';
 import { type BackgroundTurnRenderTarget, discardBackgroundTurn, renderAutoTriggeredTurn, renderSessionTaskNotification, reserveBackgroundTurn } from '../rendering/BackgroundTurnRenderer';
 import { updateTabPermissionMode } from './TabProviderState';
@@ -22,7 +22,7 @@ const backgroundTurnBuffers = new WeakMap<
 
 async function handleTabSessionEvent(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   event: ProviderSessionEvent,
   context: ChatExecutionEventContext,
   isCurrent: () => boolean,
@@ -110,7 +110,7 @@ async function handleTabSessionEvent(
 
 export function enqueueTabSessionEvent(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   event: ProviderSessionEvent,
   context: ChatExecutionEventContext,
 ): Promise<void> | undefined {

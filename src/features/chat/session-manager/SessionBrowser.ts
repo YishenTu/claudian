@@ -10,7 +10,7 @@ import type {
 import { t } from '../../../i18n/i18n';
 import { createProviderIconSvg } from '../../../shared/icons';
 import { extractUserDisplayContent } from '../../../utils/context';
-import type { FeatureHost } from '../../FeatureHost';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import type { TabAttention } from '../state/types';
 import {
   getLinkedContentTitle,
@@ -94,7 +94,7 @@ type HistoryScrollAnchor = {
 };
 
 export interface SessionBrowserDeps {
-  plugin: FeatureHost;
+  plugin: ChatFeatureHost;
   getCurrentConversationId: () => string | null;
   isStreaming: () => boolean;
   reloadActiveConversation: () => Promise<void>;

@@ -11,7 +11,7 @@ import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSet
 import type { ImageAttachment } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { getVaultPath } from '../../../utils/path';
-import type { FeatureHost } from '../../FeatureHost';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import {
   captureLatestCompletedForkSource,
   type ForkSourceUnavailableReason,
@@ -29,7 +29,7 @@ import {
 } from './SideChatTypes';
 
 export interface SideChatControllerDeps {
-  readonly plugin: FeatureHost;
+  readonly plugin: ChatFeatureHost;
   readonly component: Component;
   /** Composer root that carries the joined side border while expanded. */
   readonly composerEl: HTMLElement;

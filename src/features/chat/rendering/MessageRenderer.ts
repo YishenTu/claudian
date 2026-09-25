@@ -31,7 +31,7 @@ import {
   escapeMathDelimitersForStreaming,
   normalizeLatexMathDelimiters,
 } from '../../../utils/markdownMath';
-import type { FeatureHost } from '../../FeatureHost';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import { findRewindContext } from '../rewind';
 import { ImagePreviewModal } from '../ui/ImagePreviewModal';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
@@ -71,7 +71,7 @@ function runRendererAction(action: () => Promise<void>): void {
 export class MessageRenderer {
   private static nextHistoryId = 0;
   private app: App;
-  private plugin: FeatureHost;
+  private plugin: ChatFeatureHost;
   private component: Component;
   private messagesEl: HTMLElement;
   private rewindCallback?: (messageId: string, mode?: ChatRewindMode) => Promise<void>;
@@ -84,7 +84,7 @@ export class MessageRenderer {
   private readonly contentRenders = new WeakMap<HTMLElement, object>();
 
   constructor(
-    plugin: FeatureHost,
+    plugin: ChatFeatureHost,
     component: Component,
     messagesEl: HTMLElement,
     rewindCallback?: (messageId: string, mode?: ChatRewindMode) => Promise<void>,

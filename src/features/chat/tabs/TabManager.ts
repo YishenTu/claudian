@@ -20,7 +20,7 @@ import { throwIfAborted, toAbortError } from '../../../utils/abort';
 import { scheduleAnimationFrame } from '../../../utils/animationFrame';
 import { revealWorkspaceLeaf } from '../../../utils/obsidianCompat';
 import { getVaultPath } from '../../../utils/path';
-import type { FeatureHost } from '../../FeatureHost';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import { getTabProviderId } from './providerResolution';
 import type { ForkContext } from './TabForking';
 import {
@@ -91,7 +91,7 @@ type ProviderWarmupContext = {
   coordinatorState: 'absent' | 'idle' | 'active' | 'stale';
   conversation: Conversation | null;
   hasResumableNativeSeed: boolean;
-  plugin: FeatureHost['providerHost'];
+  plugin: ChatFeatureHost['providerHost'];
   tab: {
     conversationId: string | null;
     draftModel: string | null;
@@ -134,7 +134,7 @@ function throwCollectedErrors(errors: readonly unknown[], message: string): void
  * TabManager coordinates multiple chat tabs.
  */
 export class TabManager implements TabManagerInterface {
-  private plugin: FeatureHost;
+  private plugin: ChatFeatureHost;
   private containerEl: HTMLElement;
   private view: TabManagerViewHost;
 
@@ -173,20 +173,20 @@ export class TabManager implements TabManagerInterface {
   private shutdownSnapshotOpen = false;
 
   constructor(
-    plugin: FeatureHost,
+    plugin: ChatFeatureHost,
     containerEl: HTMLElement,
     view: TabManagerViewHost,
     callbacks?: TabManagerCallbacks,
   );
   constructor(
-    plugin: FeatureHost,
+    plugin: ChatFeatureHost,
     legacyArg: unknown,
     containerEl: HTMLElement,
     view: TabManagerViewHost,
     callbacks?: TabManagerCallbacks,
   );
   constructor(
-    plugin: FeatureHost,
+    plugin: ChatFeatureHost,
     arg2: unknown,
     arg3: HTMLElement | TabManagerViewHost,
     arg4?: TabManagerViewHost | TabManagerCallbacks,

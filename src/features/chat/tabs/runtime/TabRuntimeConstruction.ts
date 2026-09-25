@@ -2,7 +2,7 @@ import type { Component } from 'obsidian';
 
 import type { ProviderId } from '../../../../core/providers/types';
 import type { Conversation } from '../../../../core/types';
-import type { FeatureHost } from '../../../FeatureHost';
+import type { ChatFeatureHost } from '../../ChatFeatureHost';
 import type { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinator';
 import type { MessageRenderer } from '../../rendering/MessageRenderer';
 import type { ChatState } from '../../state/ChatState';
@@ -24,7 +24,7 @@ import type {
 export type TabRuntimeCleanup = () => void | Promise<void>;
 
 export interface TabRuntimeConstructionContext {
-  plugin: FeatureHost;
+  plugin: ChatFeatureHost;
   containerEl: HTMLElement;
   component: Component;
   conversation?: Conversation;

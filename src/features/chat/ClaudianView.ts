@@ -19,12 +19,12 @@ import {
   scheduleAnimationFrame,
   type ScheduledAnimationFrame,
 } from '../../utils/animationFrame';
+import type { CollabSidebarSurfaceController } from '../FeatureHost';
 import type {
-  CollabSidebarSurfaceController,
-  FeatureHost,
-  FeatureTabManagerHost,
+  ChatFeatureHost,
+  ChatTabManagerHost,
   TabWorkspaceStateDeliveryRegistration,
-} from '../FeatureHost';
+} from './ChatFeatureHost';
 import { MentionCacheCoordinator } from './services/MentionCacheCoordinator';
 import { TabStatePersistenceCoordinator } from './services/TabStatePersistenceCoordinator';
 import { getObsidianLanguage } from './session-manager/ProvisionalNoteNames';
@@ -64,7 +64,7 @@ const SESSION_RESIZER_WIDTH = 5;
 const SESSION_RESIZE_KEYBOARD_STEP = 16;
 
 export class ClaudianView extends ItemView {
-  private plugin: FeatureHost;
+  private plugin: ChatFeatureHost;
 
   // Tab management
   private tabManager: TabManager | null = null;
@@ -145,7 +145,7 @@ export class ClaudianView extends ItemView {
   private viewShutdownStarted = false;
   private sessionBrowser: SessionBrowser;
 
-  constructor(leaf: WorkspaceLeaf, plugin: FeatureHost) {
+  constructor(leaf: WorkspaceLeaf, plugin: ChatFeatureHost) {
     super(leaf);
     this.plugin = plugin;
     this.sessionBrowser = new SessionBrowser({
@@ -1973,7 +1973,7 @@ export class ClaudianView extends ItemView {
   }
 
   private getOpenConversationTabs(conversationId: string): Array<{
-    manager: FeatureTabManagerHost;
+    manager: ChatTabManagerHost;
     tab: AssembledTabRuntime;
   }> {
     const managers = new Set(
@@ -1985,7 +1985,7 @@ export class ClaudianView extends ItemView {
       managers.add(this.tabManager);
     }
 
-    const openTabs: Array<{ manager: FeatureTabManagerHost; tab: AssembledTabRuntime }> = [];
+    const openTabs: Array<{ manager: ChatTabManagerHost; tab: AssembledTabRuntime }> = [];
     for (const manager of managers) {
       for (const tab of manager.getAllTabs()) {
         if (tab.conversationId === conversationId) {

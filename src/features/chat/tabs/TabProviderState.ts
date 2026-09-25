@@ -18,8 +18,8 @@ import type {
 } from '../../../core/providers/types';
 import type { ClaudianSettings, Conversation } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
-import type { FeatureHost } from '../../FeatureHost';
 import { toggleServiceTier } from '../actions/toggleServiceTier';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import { projectContextUsageDisplay } from '../utils/usageInfo';
 import { getTabProviderId, requireTabProviderId } from './providerResolution';
 import { isClosingLifecycleState } from './TabLifecycle';
@@ -56,7 +56,7 @@ export function getBlankTabModelOptions(
 
 export function getTabCapabilities(
   tab: TabProviderContext,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   conversation?: Conversation | null,
 ): ProviderCapabilities {
   const providerId = getTabProviderId(tab, plugin, conversation);
@@ -65,7 +65,7 @@ export function getTabCapabilities(
 
 export function getTabChatUIConfig(
   tab: TabProviderContext,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   conversation?: Conversation | null,
 ): ProviderChatUIConfig {
   const providerId = getTabProviderId(tab, plugin, conversation);
@@ -74,7 +74,7 @@ export function getTabChatUIConfig(
 
 export function getTabSettingsSnapshot(
   tab: TabProviderContext,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
 ): TabProviderSettings {
   const providerId = getTabProviderId(tab, plugin);
   if (!providerId) return { ...plugin.settings, model: tab.draftModel ?? '' };
@@ -87,7 +87,7 @@ export function getTabSettingsSnapshot(
 
 export function getWritableTabSettingsSnapshot(
   tab: TabProviderContext,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   settings: ClaudianSettings = plugin.settings,
 ): TabProviderSettings {
   return getProviderSettingsSnapshotWithModel(
@@ -99,14 +99,14 @@ export function getWritableTabSettingsSnapshot(
 
 export function getTabConversation(
   tab: TabProviderContext,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
 ): Conversation | null {
   return tab.conversationId ? plugin.getConversationSync(tab.conversationId) : null;
 }
 
 export function getTabSelectedModel(
   tab: TabProviderContext,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
 ): string | null {
   const providerId = getTabProviderId(tab, plugin);
   if (!providerId) return tab.draftModel;
@@ -126,7 +126,7 @@ export function getTabSelectedModel(
 
 export function getTabHiddenCommands(
   tab: TabProviderContext,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   conversation?: Conversation | null,
 ): Set<string> {
   const providerId = getTabProviderId(tab, plugin, conversation);
@@ -147,7 +147,7 @@ function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalog
 
 export function syncComposerDropdownForProvider(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   getProviderCatalogConfig?: ProviderCatalogResolver,
   conversation?: Conversation | null,
 ): void {
@@ -181,7 +181,7 @@ export function invalidateTabProviderCommands(
 
 export async function updateTabProviderSettings(
   tab: TabProviderContext,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   update: (settings: TabProviderSettings) => void,
 ): Promise<TabProviderSettings> {
   const providerId = requireTabProviderId(tab, plugin);
@@ -200,7 +200,7 @@ export async function updateTabProviderSettings(
 
 export async function updateTabServiceTier(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   serviceTier: string,
 ): Promise<void> {
   await updateTabProviderSettings(tab, plugin, (settings) => {
@@ -211,7 +211,7 @@ export async function updateTabServiceTier(
 
 export async function toggleTabServiceTier(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
 ): Promise<boolean> {
   return await toggleServiceTier({
     getUIConfig: () => getTabChatUIConfig(tab, plugin),
@@ -232,7 +232,7 @@ export function refreshTabProviderUI(tab: AssembledTabRuntime): void {
 
 export function applyProviderUIGating(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
 ): void {
   const capabilities = getTabCapabilities(tab, plugin);
   const uiConfig = getTabChatUIConfig(tab, plugin);
@@ -247,7 +247,7 @@ export function applyProviderUIGating(
 /** Renders the tab's raw usage through the shared reported-window/custom-limit projection. */
 export function refreshTabContextUsage(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
 ): void {
   const settings = getTabSettingsSnapshot(tab, plugin);
   tab.ui.contextUsageMeter.update(projectContextUsageDisplay(tab.state.usage, {
@@ -260,7 +260,7 @@ export function refreshTabContextUsage(
 
 export function refreshTabWorkspaceServices(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
 ): void {
   syncComposerDropdownForProvider(tab, plugin);
   applyProviderUIGating(tab, plugin);
@@ -297,7 +297,7 @@ function resolveBlankTabFallback(
 
 export function onProviderAvailabilityChanged(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
 ): boolean {
   if (tab.conversationId !== null) return false;
 
@@ -350,18 +350,18 @@ export function createConversationExecutionBinding(conversation: Conversation) {
 
 export async function initializeTabExecution(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   conversationOverride?: Conversation | null,
 ): Promise<void>;
 export async function initializeTabExecution(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   _legacyArg: unknown,
   conversationOverride?: Conversation | null,
 ): Promise<void>;
 export async function initializeTabExecution(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   argOrOverride?: unknown,
   maybeOverride?: Conversation | null,
 ): Promise<void> {
@@ -413,7 +413,7 @@ function isConversationLike(value: unknown): value is Conversation {
 
 export async function updateTabPermissionMode(
   tab: AssembledTabRuntime,
-  plugin: FeatureHost,
+  plugin: ChatFeatureHost,
   mode: string,
 ): Promise<void> {
   const uiConfig = getTabChatUIConfig(tab, plugin);

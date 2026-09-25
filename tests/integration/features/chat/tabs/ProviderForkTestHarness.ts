@@ -14,10 +14,10 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { ChatMessage, Conversation, ProviderId } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { handleForkRequest } from '@/features/chat/tabs/TabForking';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-import type { FeatureHost } from '@/features/FeatureHost';
 import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
 
 /** Real persistence/orchestration with only the Obsidian filesystem boundary supplied by the test. */
@@ -61,7 +61,7 @@ export async function createForkTestEnvironment() {
   const plugin = {
     app, settings,
     getConversationSync: (id: string) => repository.getSync(id),
-  } as unknown as FeatureHost;
+  } as unknown as ChatFeatureHost;
   const coordinators: ChatExecutionCoordinator[] = [];
   let sequence = 0;
 

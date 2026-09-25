@@ -33,7 +33,7 @@ import { extractUserDisplayContent } from '../../../utils/context';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import { toError } from '../../../utils/error';
 import { appendMarkdownSnippet } from '../../../utils/markdown';
-import type { FeatureHost } from '../../FeatureHost';
+import type { ChatFeatureHost } from '../ChatFeatureHost';
 import {
   type ChatExecutionCoordinator,
   ChatExecutionPreHandoffError,
@@ -68,7 +68,7 @@ import { TurnCoordinator } from './TurnCoordinator';
 type ApprovalCallbackOptions = InlineApprovalOptions;
 
 export interface InputControllerDeps {
-  plugin: FeatureHost;
+  plugin: ChatFeatureHost;
   state: ChatState;
   renderer: MessageRenderer;
   streamController: StreamController;

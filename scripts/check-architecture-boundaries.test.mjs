@@ -473,6 +473,17 @@ test('features and shared UI are independent from concrete providers', () => {
   ], pattern), []);
 });
 
+test('the shared FeatureHost contract does not depend on chat', () => {
+  const featureHostFile = path.join(featuresRoot, 'FeatureHost.ts');
+  const violations = listSourceImports(featureHostFile)
+    .filter(sourceImport => {
+      const target = resolveSourceImport(featureHostFile, sourceImport.specifier);
+      return target !== null && isPathWithin(target, path.join(featuresRoot, 'chat'));
+    })
+    .map(sourceImport => `${sourceImport.line}: ${sourceImport.specifier}`);
+  assert.deepEqual(violations, []);
+});
+
 test('chat consumes Collab only through the FeatureHost surface seam', () => {
   const chatRoot = path.join(featuresRoot, 'chat');
   const collabRoot = path.join(featuresRoot, 'collab');

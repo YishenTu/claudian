@@ -5,9 +5,9 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App } from 'obsidian';
 
 import type { Conversation } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
-import type { FeatureHost } from '@/features/FeatureHost';
 
 import { createHarness, releaseSideChatHarnesses } from './SideChatDomHarness';
 
@@ -34,13 +34,13 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     sessionId: 'main-session', messages: harness.tab.state.messages,
   } as Conversation;
   const plugin = {
-    ...(harness.plugin as FeatureHost),
+    ...(harness.plugin as ChatFeatureHost),
     app,
     settings: { model: 'claude-sonnet-4-5', permissionMode: 'normal' },
     getActiveEnvironmentVariables: () => '',
     getConversationSync: () => conversation,
     getConversationList: () => [conversation],
-  } as unknown as FeatureHost;
+  } as unknown as ChatFeatureHost;
   const tab = await createTabRuntime({
     plugin,
     component: { addChild: () => undefined, register: () => undefined, registerDomEvent: () => undefined, registerEvent: () => undefined } as never,

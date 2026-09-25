@@ -1,9 +1,9 @@
 import '@/providers';
 
 import type { ClaudianSettings, UsageInfo } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { refreshTabContextUsage } from '@/features/chat/tabs/TabProviderState';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-import type { FeatureHost } from '@/features/FeatureHost';
 
 function createTab(model: string, customContextLimits: Record<string, number>, usageOverrides: Partial<UsageInfo> = {}) {
   const usage: UsageInfo = {
@@ -30,7 +30,7 @@ function createTab(model: string, customContextLimits: Record<string, number>, u
       customContextLimits,
       providerConfigs: { claude: { enabled: true, discoveredModels: [], visibleModels: [] } },
     } as unknown as ClaudianSettings,
-  } as FeatureHost;
+  } as ChatFeatureHost;
   return { tab, plugin, update };
 }
 
