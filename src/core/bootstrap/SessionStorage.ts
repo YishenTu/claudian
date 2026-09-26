@@ -47,6 +47,7 @@ export interface SessionMetadataReadOptions {
 
 export interface SessionMetadataReader {
   load(id: string): Promise<SessionMetadataReadResult | null>;
+  revalidate(records: readonly SessionMetadataReadResult[]): Promise<SessionMetadataReadResult[]>;
   scan(options?: SessionMetadataReadOptions): Promise<SessionMetadataReadScanResult>;
   loadMetadata(id: string): Promise<SessionMetadata | null>;
   scanMetadata(options?: SessionMetadataListOptions): Promise<SessionMetadataScanResult>;
@@ -68,6 +69,7 @@ export function assertValidSessionMetadataId(id: string): void {
 
 export class SessionStorage implements SessionMetadataReader {
   private readonly deviceSessionsPath: string;
+  private readonly readVersions = new WeakMap<SessionMetadataReadResult, { mtime: number; size: number }>();
 
   constructor(
     private readonly adapter: VaultFileAdapter,
@@ -121,6 +123,36 @@ export class SessionStorage implements SessionMetadataReader {
       if (await this.adapter.exists(path)) return this.readMetadata(path, id, source);
     }
     return null;
+  }
+
+  /** Recheck authority and file versions without parsing unchanged scan records twice. */
+  async revalidate(records: readonly SessionMetadataReadResult[]): Promise<SessionMetadataReadResult[]> {
+    const checked = await mapWithConcurrency([...records], async record => {
+      const version = this.readVersions.get(record);
+      if (version) {
+        try {
+          const id = record.metadata.id;
+          const candidates = [
+            { path: this.getMetadataPath(id), source: 'device' },
+            { path: this.getUnscopedMetadataPath(id), source: 'unscoped' },
+            { path: this.getLegacyMetadataPath(id), source: 'legacy' },
+          ];
+          for (const { path, source } of candidates) {
+            if (!await this.adapter.exists(path)) continue;
+            if (source !== record.source) break;
+            const current = await this.adapter.stat(path);
+            if (current && current.mtime === version.mtime && current.size === version.size) {
+              return record;
+            }
+            break;
+          }
+        } catch {
+          // Fall back to the normal read/retry path if version checks are unavailable.
+        }
+      }
+      return this.load(record.metadata.id);
+    }, SESSION_METADATA_READ_CONCURRENCY);
+    return checked.filter((record): record is SessionMetadataReadResult => record !== null);
   }
 
   async loadMetadata(id: string): Promise<SessionMetadata | null> {
@@ -234,6 +266,9 @@ export class SessionStorage implements SessionMetadataReader {
     expectedId: string,
     source: SessionMetadataSource,
   ): Promise<SessionMetadataReadResult | null> {
+    // Capture before reading so a concurrent write invalidates reuse on the next check.
+    let version: { mtime: number; size: number } | null = null;
+    try { version = await this.adapter.stat(path); } catch { /* Read normally when stat is unavailable. */ }
     const content = await this.adapter.read(path);
     let parsed: unknown;
     try {
@@ -287,7 +322,9 @@ export class SessionStorage implements SessionMetadataReader {
       || linkedContent.needsMigration
       || (rawSelectedModel !== undefined && selectedModel === undefined)
       || (rawModelRecoverySource !== undefined && modelRecoverySource === undefined);
-    return { metadata, needsMigration, source };
+    const record = { metadata, needsMigration, source };
+    if (version) this.readVersions.set(record, version);
+    return record;
   }
 
   private parseModelRecoverySource(value: unknown): ConversationModelRecoverySource | undefined {

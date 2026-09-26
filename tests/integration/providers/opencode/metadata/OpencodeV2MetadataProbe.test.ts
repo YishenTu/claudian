@@ -6,6 +6,7 @@ import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerS
 import { OpencodeMetadataService } from '@/providers/opencode/metadata/OpencodeMetadataService';
 import { OpencodeV2MetadataProbe } from '@/providers/opencode/metadata/OpencodeV2MetadataProbe';
 import { assertOpencodeModelAvailable } from '@/providers/opencode/runtime/OpencodeModelAvailability';
+import { createOpencodeModels } from '@/providers/opencode/runtime/OpencodeModels';
 import { getOpencodeProviderSettings, projectOpencodeModelSettings } from '@/providers/opencode/settings';
 
 // External OpenCode boundary: its native catalog endpoints and stdio ownership lease.
@@ -44,7 +45,7 @@ if (process.argv.includes('--version')) {
       res.setHeader('Content-Type', 'application/json');
       res.end('{}'); return;
     }
-    if (url.pathname === '/api/model') fs.writeFileSync(process.env.ENDPOINT_FILE + '.read', '');
+    if (url.pathname === '/api/model') fs.writeFileSync(process.env.ENDPOINT_FILE + '.read', String(reads + 1));
     const catalog = JSON.parse(fs.readFileSync(process.env.CATALOG_FILE, 'utf8'))
       .filter(model => activated || model.providerID !== 'opencode-go')
       .filter(model => model.id !== 'slow-model' || Date.now() - started >= Number(process.env.DELAYED_CATALOG_MS || 0));
@@ -110,6 +111,28 @@ function createPlugin(): any {
   };
   return plugin;
 }
+
+it('discovers several selected models from one native catalog response', async () => {
+  environment.ACTIVATION_DELAY_MS = '1';
+  writeFileSync(environment.CATALOG_FILE!, JSON.stringify([
+    { providerID: 'test', id: 'one', name: 'One', enabled: true, variants: [{ id: 'high' }] },
+    { providerID: 'test', id: 'two', name: 'Two', enabled: true, variants: [{ id: 'low' }] },
+  ]));
+  const plugin = createPlugin();
+  plugin.settings.providerConfigs.opencode.visibleModels = ['test/one', 'test/two'];
+  const service = new OpencodeMetadataService(plugin);
+  const models = createOpencodeModels(plugin, service);
+  try {
+    await models.refresh();
+    const thinking = getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel;
+    expect(thinking['test/one'].map(option => option.value)).toEqual(['high', 'default']);
+    expect(thinking['test/two'].map(option => option.value)).toEqual(['low', 'default']);
+    expect(readFileSync(environment.ENDPOINT_FILE + '.read', 'utf8')).toBe('1');
+  } finally {
+    await models.dispose();
+    await service.dispose();
+  }
+});
 
 it('refreshes the native catalog and commands without persisting the catalog or enabling models', async () => {
   const plugin = createPlugin();

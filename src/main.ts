@@ -29,7 +29,6 @@ import { SharedStorageService } from './app/storage/SharedStorageService';
 import { TabWorkspaceMigrationCoordinator } from './app/storage/TabWorkspaceMigrationCoordinator';
 import { ClaudianProviderHost } from './composition/ClaudianProviderHost';
 import { isClaudianView } from './composition/claudianViews';
-import type { SharedAppStorage } from './core/bootstrap/storage';
 import {
   ProviderExecutionLifecycleRegistry,
   type ProviderExecutionTransitionScope,
@@ -77,7 +76,7 @@ import { getVaultPath } from './utils/path';
 
 export default class ClaudianPlugin extends Plugin {
   settings!: ClaudianSettings;
-  storage!: SharedAppStorage;
+  storage!: SharedStorageService;
   readonly executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   private settingsTab: ClaudianSettingTab | null = null;
   readonly providerHost = new ClaudianProviderHost(this);
@@ -106,8 +105,10 @@ export default class ClaudianPlugin extends Plugin {
     return this.chatModelSelectionCoordinator;
   }
 
-  private readonly modelMetadataMigrationAbort = new AbortController();
+  private readonly startupMaintenanceAbort = new AbortController();
   private modelMetadataMigration: Promise<void> | null = null;
+  private sessionInputCleanup: Promise<void> | null = null;
+  private sessionInputCleanupTimer: number | null = null;
 
   async onload() {
     StartupProfiler.startOnload();
@@ -269,9 +270,17 @@ export default class ClaudianPlugin extends Plugin {
       this.addSettingTab(this.settingsTab);
       this.sessionMetadata.scheduleRemainingLoad();
       this.app.workspace.onLayoutReady(() => {
+        if (this.isUnloading || this.sessionInputCleanup || this.sessionInputCleanupTimer !== null) return;
+        this.sessionInputCleanupTimer = window.setTimeout(() => {
+          this.sessionInputCleanupTimer = null;
+          if (this.isUnloading) return;
+          this.sessionInputCleanup = this.storage.cleanupObsoleteSessionInputs(this.startupMaintenanceAbort.signal);
+        }, 0);
+      });
+      this.app.workspace.onLayoutReady(() => {
         if (this.isUnloading || this.modelMetadataMigration) return;
         this.modelMetadataMigration = migrateSelectedModelMetadata(
-          this.providerHost, this.modelMetadataMigrationAbort.signal,
+          this.providerHost, this.startupMaintenanceAbort.signal,
         );
       });
     } finally {
@@ -281,7 +290,11 @@ export default class ClaudianPlugin extends Plugin {
 
   onunload(): void {
     this.isUnloading = true;
-    this.modelMetadataMigrationAbort.abort();
+    this.startupMaintenanceAbort.abort();
+    if (this.sessionInputCleanupTimer !== null) {
+      window.clearTimeout(this.sessionInputCleanupTimer);
+      this.sessionInputCleanupTimer = null;
+    }
     this.inlineEditSessions.dispose();
     StartupProfiler.freeze();
     this.applicationShutdownPromise ??= this.shutdownApplication();
@@ -291,6 +304,7 @@ export default class ClaudianPlugin extends Plugin {
   private async shutdownApplication(): Promise<void> {
     await Promise.allSettled([
       this.sessionMetadata?.dispose(),
+      this.sessionInputCleanup,
       ...this.getAllViews().map(view => view.prepareForPluginUnload()),
     ]);
     try {
@@ -783,15 +797,10 @@ export default class ClaudianPlugin extends Plugin {
       const tabManager = view.getTabManager();
       if (!tabManager) continue;
 
-      for (const tab of tabManager.getAllTabs()) {
-        if (tab.conversationId === id) {
-          try {
-            tab.controllers.inputController?.cancelStreaming();
-            await tab.controllers.conversationController?.createNew({ force: true });
-          } catch (error) {
-            errors.push(error);
-          }
-        }
+      try {
+        await tabManager.resetConversationTabs(id);
+      } catch (error) {
+        errors.push(error);
       }
     }
     if (errors.length > 0) {
@@ -978,7 +987,7 @@ export default class ClaudianPlugin extends Plugin {
       const tabManager = view.getTabManager();
       if (!tabManager) continue;
 
-      const tabs = tabManager.getAllTabs();
+      const tabs = tabManager.getTabIdentities();
       for (const tab of tabs) {
         if (tab.conversationId === conversationId) {
           return { view, tabId: tab.id };

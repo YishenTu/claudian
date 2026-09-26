@@ -7,6 +7,7 @@ import * as path from 'node:path';
 import { App, Notice, type Plugin } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
+import { SessionMetadataLoader } from '@/app/conversations/SessionMetadataLoader';
 import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
 import { migrateSessionSidecars } from '@/core/bootstrap/migrateSessionSidecars';
@@ -31,6 +32,10 @@ beforeEach(async () => {
   app = new App();
   app.vault.adapter = {
     exists: async (file: string) => fs.access(path.join(root, file)).then(() => true, () => false),
+    stat: async (file: string) => {
+      const stat = await fs.stat(path.join(root, file));
+      return { type: stat.isDirectory() ? 'folder' : 'file', mtime: stat.mtimeMs, ctime: stat.ctimeMs, size: stat.size };
+    },
     read: (file: string) => fs.readFile(path.join(root, file), 'utf8'),
     write: (file: string, data: string) => fs.writeFile(path.join(root, file), data),
     mkdir: (file: string) => fs.mkdir(path.join(root, file), { recursive: true }),
@@ -51,6 +56,35 @@ beforeEach(async () => {
 afterEach(async () => {
   jest.restoreAllMocks();
   await fs.rm(root, { recursive: true, force: true });
+});
+
+test('initial metadata loading reads unchanged payloads once through the storage adapter', async () => {
+  for (let index = 0; index < 25; index++) {
+    await store.saveMetadata({ ...metadata, id: `saved-${index}` });
+  }
+  const read = jest.spyOn(adapter, 'read');
+  const loader = new SessionMetadataLoader({
+    sessions: store.metadataReader, conversations: createRepository(), runtimeSettings: {} as never,
+    isUnloading: () => false, whenLayoutReady: callback => callback(), onConversationListChanged: () => undefined,
+  });
+  const result = await loader.readInitialMetadata();
+  expect(result.records).toHaveLength(25);
+  expect(result.complete).toBe(true);
+  expect(result.records.every(record => record.source === 'device')).toBe(true);
+  expect(read).toHaveBeenCalledTimes(25);
+});
+
+test('preserves higher-priority metadata authority when its stat is unavailable', async () => {
+  await store.saveMetadata(metadata, 'unscoped');
+  const scanned = await store.metadataReader.scan();
+  await store.saveMetadata({ ...metadata, title: 'Device owner' });
+  const stat = app.vault.adapter.stat.bind(app.vault.adapter);
+  jest.spyOn(app.vault.adapter, 'stat').mockImplementation(async file => {
+    if (file === `${DEVICE_PATH}/${metadata.id}.meta.json`) throw new Error('Stat temporarily unavailable');
+    return stat(file);
+  });
+  const resolved = await store.metadataReader.revalidate(scanned.records);
+  expect(resolved).toEqual([expect.objectContaining({ source: 'device', metadata: expect.objectContaining({ title: 'Device owner' }) })]);
 });
 
 test('assignment moves the metadata to its device and the shared folder contains only the device directory', async () => {
@@ -118,8 +152,11 @@ test('migration completes old assignments and deletions before removing their si
   }));
   await adapter.write(`${SESSIONS_PATH}/${metadata.id}.inputs.json`, '{}');
 
-  await migrateSessionSidecars(adapter);
-  await migrateSessionSidecars(adapter);
+  const obsoleteInputs = await migrateSessionSidecars(adapter);
+  expect(obsoleteInputs).toEqual([`${SESSIONS_PATH}/${metadata.id}.inputs.json`]);
+  expect(await adapter.exists(obsoleteInputs[0])).toBe(true);
+  for (const file of obsoleteInputs) await adapter.delete(file);
+  expect(await migrateSessionSidecars(adapter)).toEqual([]);
 
   expect(await adapter.listFilesRecursive(SESSIONS_PATH)).toEqual([`${DEVICE_PATH}/${metadata.id}.meta.json`]);
   expect(await store.metadataReader.loadMetadata(metadata.id)).toEqual(metadata);
@@ -204,10 +241,60 @@ test('migration continues when a listed assignment disappears before it is read'
     return read(file);
   });
 
-  await expect(migrateSessionSidecars(adapter)).resolves.toBeUndefined();
+  await expect(migrateSessionSidecars(adapter)).resolves.toEqual([`${SESSIONS_PATH}/${metadata.id}.inputs.json`]);
 
-  expect(await fs.readdir(path.join(root, SESSIONS_PATH))).toEqual([`${metadata.id}.meta.json`]);
+  expect(await fs.readdir(path.join(root, SESSIONS_PATH))).toEqual([`${metadata.id}.inputs.json`, `${metadata.id}.meta.json`]);
   expect(await store.metadataReader.loadMetadata(metadata.id)).toEqual(metadata);
+});
+
+test('initialization loads settings while sidecar discovery is pending and waits for assignment recovery', async () => {
+  await store.saveMetadata(metadata, 'unscoped');
+  await adapter.write(`${SESSIONS_PATH}/${metadata.id}.assigned.json`, JSON.stringify({
+    schemaVersion: 1, conversationId: metadata.id, deviceKey: DEVICE_KEY,
+  }));
+  await adapter.write(CLAUDIAN_SETTINGS_PATH, JSON.stringify({ userName: 'Example' }));
+  const list = app.vault.adapter.list.bind(app.vault.adapter);
+  let entered!: () => void;
+  const listingStarted = new Promise<void>(resolve => { entered = resolve; });
+  let release!: () => void;
+  const listingGate = new Promise<void>(resolve => { release = resolve; });
+  jest.spyOn(app.vault.adapter, 'list').mockImplementation(async folder => {
+    entered();
+    await listingGate;
+    return list(folder);
+  });
+  const exists = jest.spyOn(app.vault.adapter, 'exists');
+  const storage = new SharedStorageService({ app } as Plugin);
+  let finished = false;
+  const initializing = storage.initialize().then(result => { finished = true; return result; });
+  try {
+    await listingStarted;
+    expect(exists).toHaveBeenCalledWith(CLAUDIAN_SETTINGS_PATH);
+    expect(finished).toBe(false);
+  } finally {
+    release();
+    await initializing;
+  }
+  expect(JSON.parse(await adapter.read(`${DEVICE_PATH}/${metadata.id}.meta.json`))).toEqual(metadata);
+  expect(await adapter.exists(`${SESSIONS_PATH}/${metadata.id}.meta.json`)).toBe(false);
+});
+
+test('initialization joins recovery before reporting a settings failure', async () => {
+  await store.saveMetadata(metadata, 'unscoped');
+  await adapter.write(`${SESSIONS_PATH}/${metadata.id}.assigned.json`, JSON.stringify({
+    schemaVersion: 1, conversationId: metadata.id, deviceKey: DEVICE_KEY,
+  }));
+  await adapter.write(CLAUDIAN_SETTINGS_PATH, '{}');
+  const failure = new Error('Settings unavailable');
+  const read = app.vault.adapter.read.bind(app.vault.adapter);
+  jest.spyOn(app.vault.adapter, 'read').mockImplementation(file => {
+    if (file === CLAUDIAN_SETTINGS_PATH) return Promise.reject(failure);
+    return read(file);
+  });
+  const storage = new SharedStorageService({ app } as Plugin);
+  await expect(storage.initialize()).rejects.toBe(failure);
+  expect(JSON.parse(await adapter.read(`${DEVICE_PATH}/${metadata.id}.meta.json`))).toEqual(metadata);
+  expect(await adapter.exists(`${SESSIONS_PATH}/${metadata.id}.assigned.json`)).toBe(false);
 });
 
 test.each(['list', 'read', 'rename'] as const)(
@@ -219,7 +306,15 @@ test.each(['list', 'read', 'rename'] as const)(
     }));
     await adapter.write(CLAUDIAN_SETTINGS_PATH, JSON.stringify({ userName: 'Example' }));
     const storage = new SharedStorageService({ app } as Plugin);
-    jest.spyOn(app.vault.adapter, operation).mockRejectedValueOnce(new Error('Storage unavailable'));
+    const original = app.vault.adapter[operation].bind(app.vault.adapter) as (...args: string[]) => ReturnType<App['vault']['adapter'][typeof operation]>;
+    let failed = false;
+    jest.spyOn(app.vault.adapter, operation).mockImplementation((...args: string[]): ReturnType<App['vault']['adapter'][typeof operation]> => {
+      if (!failed && args[0].startsWith(SESSIONS_PATH)) {
+        failed = true;
+        throw new Error('Storage unavailable');
+      }
+      return original(...args);
+    });
     jest.mocked(Notice).mockClear();
 
     await expect(storage.initialize()).resolves.toMatchObject({ claudian: { userName: 'Example' } });

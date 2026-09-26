@@ -426,6 +426,31 @@ describe('sdkSession', () => {
       expect(result.skippedLines).toBe(0);
     });
 
+    it('yields during large transcript parsing and retains both sides of compaction', async () => {
+      mockExistsSync.mockReturnValue(true);
+      const entries = Array.from({ length: 300 }, (_, index) => ({
+        type: 'user', uuid: `u${index}`, message: { content: '汉字🙂'.repeat(4096) },
+      }));
+      const boundary = { type: 'system', subtype: 'compact_boundary', uuid: 'compact', parentUuid: null };
+      const records = [...entries.slice(0, 150), boundary, ...entries.slice(150)];
+      mockFsPromises.readFile.mockResolvedValue(records.map(record => JSON.stringify(record)).join('\r\n'));
+      const parse = jest.spyOn(JSON, 'parse');
+      let parsedAtHeartbeat = 0;
+      const heartbeat = new Promise<void>(resolve => setTimeout(() => {
+        parsedAtHeartbeat = parse.mock.calls.length;
+        resolve();
+      }, 0));
+      try {
+        const result = await readSDKSession(vaultPath, 'long-session');
+        await heartbeat;
+        expect(result).toEqual({ messages: records, skippedLines: 0 });
+        expect(parsedAtHeartbeat).toBeGreaterThan(0);
+        expect(parsedAtHeartbeat).toBeLessThan(records.length);
+      } finally {
+        parse.mockRestore();
+      }
+    });
+
     it('reads from the effective Claude config directory', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockResolvedValue(

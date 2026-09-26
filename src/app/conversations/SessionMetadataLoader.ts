@@ -46,9 +46,9 @@ export class SessionMetadataLoader {
   }
 
   async readInitialMetadata(): Promise<InitialSessionMetadataScan> {
-    const scan = await this.options.sessions.scanMetadata();
+    const scan = await this.options.sessions.scan();
     return {
-      records: await this.resolveMetadataSources(scan.metadata),
+      records: await this.options.sessions.revalidate(scan.records),
       complete: scan.complete,
       invalidMetadataCount: scan.invalidMetadataCount,
     };
@@ -127,12 +127,13 @@ export class SessionMetadataLoader {
       const invalidatedIds = new Set(
         invalidatedShells.map(({ id }) => id),
       );
-      const added = publishable.flatMap(({ conversation, source }) => (
-        conversations.mergeMetadataConversations(
-          [conversation],
+      const added = conversations.mergeMetadataConversations(
+        shells,
+        new Map(publishable.map(({ conversation, source }) => [
+          conversation.id,
           source === 'legacy' ? 'unscoped' : source,
-        )
-      ));
+        ])),
+      );
       conversations.registerHistoricalModelRecoverySources(
         recoverySources.filter(({ id }) => publishedIds.has(id)),
       );
@@ -159,9 +160,7 @@ export class SessionMetadataLoader {
     const scannedShells = scan.records
       .map(({ metadata }) => conversations.getCachedConversation(metadata.id))
       .filter((shell): shell is Conversation => shell !== null);
-    const records = await this.resolveMetadataSources(
-      scan.records.map(({ metadata }) => metadata),
-    );
+    const records = await this.options.sessions.revalidate(scan.records);
     if (this.isStopped()) return;
     const resolvedIds = new Set(records.map(({ metadata }) => metadata.id));
     const unresolvedShells = scannedShells.filter(
@@ -342,14 +341,4 @@ export class SessionMetadataLoader {
     this.remainingLoad = load;
   }
 
-  private async resolveMetadataSources(
-    metadata: SessionMetadata[],
-  ): Promise<SessionMetadataReadResult[]> {
-    const records = await Promise.all(
-      metadata.map(({ id }) => this.options.sessions.load(id)),
-    );
-    return records.filter(
-      (record): record is SessionMetadataReadResult => record !== null,
-    );
-  }
 }

@@ -334,10 +334,7 @@ function resolveBlankTabFallback(
   return null;
 }
 
-export function onProviderAvailabilityChanged(
-  tab: AssembledTabRuntime,
-  plugin: ChatFeatureHost,
-): boolean {
+export function reconcileBlankTabIdentity(tab: TabProviderContext, plugin: ChatFeatureHost): boolean {
   if (tab.conversationId !== null) return false;
 
   const settingsSnapshot = plugin.settings as unknown as Record<string, unknown>;
@@ -365,12 +362,18 @@ export function onProviderAvailabilityChanged(
 
   tab.providerId = nextProviderId;
 
+  return tab.draftModel !== previousDraftModel || tab.providerId !== previousProviderId;
+}
+
+export function onProviderAvailabilityChanged(tab: AssembledTabRuntime, plugin: ChatFeatureHost): boolean {
+  if (tab.conversationId !== null) return false;
+  const changed = reconcileBlankTabIdentity(tab, plugin);
   syncTabProviderServices(tab, tab.services);
   syncComposerDropdownForProvider(tab, plugin);
   invalidateTabProviderCommands(tab);
   refreshTabProviderUI(tab);
   applyProviderUIGating(tab, plugin);
-  return tab.draftModel !== previousDraftModel || tab.providerId !== previousProviderId;
+  return changed;
 }
 
 export function createConversationExecutionBinding(conversation: Conversation) {

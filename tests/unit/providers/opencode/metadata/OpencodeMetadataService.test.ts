@@ -58,6 +58,30 @@ function createProbe(overrides: Partial<OpencodeMetadataProbe> = {}): OpencodeMe
 }
 
 describe('OpencodeMetadataService', () => {
+  it('discovers selected model metadata with one probe and skips models deselected during the batch', async () => {
+    const plugin = createPlugin();
+    plugin.settings.providerConfigs.opencode.visibleModels = ['a/one', 'b/two', 'c/three'];
+    const probe = createProbe({
+      loadCatalog: jest.fn(async () => ({ commands: [], models: { currentModelId: '', availableModels: ['a/one', 'b/two', 'c/three'].map(modelId => ({ modelId, name: modelId })) } })),
+      warmModel: jest.fn(async rawModelId => {
+        if (rawModelId === 'a/one') {
+          plugin.settings.providerConfigs.opencode.visibleModels = ['a/one', 'b/two'];
+          throw new Error('First model unavailable');
+        }
+        return { rawModelId, configOptions: [] };
+      }),
+    });
+    const create = jest.fn(() => probe);
+    const service = new OpencodeMetadataService(plugin, { createProbe: create });
+    try {
+      await expect(service.discoverModels()).resolves.toBe(true);
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(jest.mocked(probe.warmModel).mock.calls.map(([id]) => id)).toEqual(['a/one', 'b/two']);
+      expect(getOpencodeProviderSettings(plugin.settings).thinkingOptionsByModel['b/two']).toEqual([]);
+      expect(probe.dispose).toHaveBeenCalledTimes(1);
+    } finally { await service.dispose(); }
+  });
+
   it('uses an isolated probe, publishes commands, and persists discovered models', async () => {
     const plugin = createPlugin();
     const probe = createProbe();
@@ -175,6 +199,8 @@ describe('OpencodeMetadataService', () => {
     const catalog = service.loadCatalog();
     const commands = service.discoverCommands();
     const warm = service.warmModelMetadata('opencode:anthropic/claude');
+    const discovery = service.discoverModels();
+    const batch = service.warmModelsMetadata(['opencode:anthropic/claude']);
     await Promise.resolve();
 
     expect(createProbeFactory).not.toHaveBeenCalled();
@@ -183,13 +209,13 @@ describe('OpencodeMetadataService', () => {
 
     environment = 'environment-b';
     await afterTransition();
-    await expect(Promise.all([catalog, commands, warm])).resolves.toEqual([
+    await expect(Promise.all([catalog, commands, warm, discovery, batch])).resolves.toEqual([
       true,
       expect.objectContaining({ loaded: true }),
-      true,
+      true, true, true,
     ]);
     expect(probeEnvironments).toEqual([
-      'environment-b',
+      'environment-b', 'environment-b', 'environment-b',
       'environment-b',
       'environment-b',
     ]);
@@ -239,7 +265,7 @@ it('does not replace catalog rows during command warmup', async () => {
   await service.dispose();
 });
 
-it.each(['catalog', 'warm'] as const)('does not publish canceled %s metadata queued behind a settings write', async kind => {
+it.each(['catalog', 'warm', 'discovery', 'batch'] as const)('does not publish canceled %s metadata queued behind a settings write', async kind => {
   const host = createPlugin();
   let release!: () => void;
   let queued!: () => void;
@@ -256,7 +282,9 @@ it.each(['catalog', 'warm'] as const)('does not publish canceled %s metadata que
   const controller = new AbortController();
   const pending = kind === 'catalog'
     ? service.loadCatalog(controller.signal)
-    : service.warmModelMetadata('opencode:anthropic/claude', controller.signal);
+    : kind === 'discovery' ? service.discoverModels(controller.signal)
+      : kind === 'batch' ? service.warmModelsMetadata(['opencode:anthropic/claude'], controller.signal)
+        : service.warmModelMetadata('opencode:anthropic/claude', controller.signal);
   await waiting;
   controller.abort();
   release();

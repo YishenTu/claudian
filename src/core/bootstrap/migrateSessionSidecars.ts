@@ -2,8 +2,8 @@ import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import { isValidSessionMetadataId } from './SessionStorage';
 import { getDeviceSessionsPath, isDeviceSettingsKey, LEGACY_SESSIONS_PATH, SESSIONS_PATH } from './storagePaths';
 
-/** Finish the old sidecars' transitions before retiring them. Safe to retry after partial cleanup. */
-export async function migrateSessionSidecars(adapter: VaultFileAdapter): Promise<void> {
+/** Finish assignment/deletion recovery and return obsolete inputs for deferred cleanup. Safe to retry. */
+export async function migrateSessionSidecars(adapter: VaultFileAdapter): Promise<string[]> {
   const files = await adapter.listFilesRecursive(SESSIONS_PATH);
   for (const file of files) {
     if (!file.endsWith('.assigned.json')) continue;
@@ -53,8 +53,7 @@ export async function migrateSessionSidecars(adapter: VaultFileAdapter): Promise
         await adapter.delete(`${LEGACY_SESSIONS_PATH}/${id}.meta.json`);
       }
       await adapter.delete(file);
-    } else if (file.endsWith('.inputs.json')) {
-      await adapter.delete(file);
     }
   }
+  return files.filter(file => file.endsWith('.inputs.json'));
 }

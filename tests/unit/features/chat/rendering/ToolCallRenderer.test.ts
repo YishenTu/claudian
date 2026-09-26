@@ -60,11 +60,11 @@ describe('ToolCallRenderer', () => {
       const content = toolEl.querySelector('.claudian-tool-content');
 
       expect(toolEl.hasClass('claudian-tool-call-bash')).toBe(true);
-      expect(toolEl.querySelector('.claudian-tool-bash-command')?.textContent).toBe('$ npm test');
       expect(setIcon).toHaveBeenCalledWith(expect.anything(), 'terminal');
 
       (header as HTMLElement | null)?.click();
       expect(toolCall.isExpanded).toBe(true);
+      expect(toolEl.querySelector('.claudian-tool-bash-command')?.textContent).toBe('$ npm test');
       expect(content?.hasClass('claudian-hidden')).toBe(false);
     });
 
@@ -776,6 +776,7 @@ describe('ToolCallRenderer', () => {
       };
 
       updateToolCallResult('patch-1', toolCall, toolCallElements);
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
 
       const statusEl = toolEl.querySelector('.claudian-tool-status');
       const diffTexts = Array.from(toolEl.querySelectorAll('.claudian-diff-text')).map(el => el.textContent);

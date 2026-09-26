@@ -279,7 +279,7 @@ export class ConversationRepository {
 
   mergeMetadataConversations(
     conversations: Conversation[],
-    metadataTarget: SessionMetadataAuthority | null = 'device',
+    metadataTarget: SessionMetadataAuthority | ReadonlyMap<string, SessionMetadataAuthority> | null = 'device',
   ): Conversation[] {
     const existingIds = new Set(this.conversations.map(({ id }) => id));
     for (const conversation of conversations) {
@@ -291,20 +291,20 @@ export class ConversationRepository {
         this.pendingLinkedContentPathCorrectionIds.add(conversation.id);
       }
     }
-    const added = conversations.filter(
-      ({ id }) =>
-        !existingIds.has(id)
-        && !this.deletedConversationIds.has(id)
-        && !this.deletingConversationIds.has(id),
-    );
-    if (added.length === 0) {
-      return [];
-    }
-
-    if (metadataTarget) {
-      for (const conversation of added) {
-        this.metadataTargets.set(conversation.id, metadataTarget);
+    const added = conversations.filter(({ id }) => {
+      if (existingIds.has(id) || this.deletedConversationIds.has(id) || this.deletingConversationIds.has(id)) {
+        return false;
       }
+      existingIds.add(id);
+      return true;
+    });
+    if (added.length === 0) return [];
+
+    for (const conversation of added) {
+      const target = typeof metadataTarget === 'string'
+        ? metadataTarget
+        : metadataTarget?.get(conversation.id);
+      if (target) this.metadataTargets.set(conversation.id, target);
     }
 
     this.conversations.push(...added);
@@ -635,7 +635,11 @@ export class ConversationRepository {
   }
 
   invalidateProviderSessions(providerIds: ProviderId[]): Conversation[] {
-    const drafts = this.conversations.map(conversation => cloneJSON(conversation));
+    if (providerIds.length === 0) return [];
+    const providers = new Set(providerIds);
+    const drafts = this.conversations
+      .filter(conversation => providers.has(conversation.providerId))
+      .map(conversation => cloneJSON(conversation));
     const invalidated = ProviderSettingsCoordinator.invalidateConversationSessions(drafts, providerIds);
     return invalidated.flatMap(draft => {
       const conversation = this.getSync(draft.id);

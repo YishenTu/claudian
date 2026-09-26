@@ -1,5 +1,7 @@
 import '@/providers';
 
+import { testDate } from '@test/helpers/testClock';
+
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import {
 LEGACY_SESSIONS_PATH,
@@ -35,6 +37,7 @@ describe('SessionStorage', () => {
   beforeEach(() => {
     mockAdapter = {
       exists: jest.fn(),
+      stat: jest.fn().mockResolvedValue(null),
       read: jest.fn(),
       write: jest.fn(),
       delete: jest.fn(),
@@ -42,6 +45,31 @@ describe('SessionStorage', () => {
     } as unknown as jest.Mocked<VaultFileAdapter>;
 
     storage = new SessionStorage(mockAdapter, DEVICE_KEY);
+  });
+
+  it('reuses unchanged scan content and reloads only changed authority or file versions', async () => {
+    const now = testDate().getTime();
+    const paths = ['same', 'edited', 'moved', 'gone'].map(id => storage.getUnscopedMetadataPath(id));
+    const contents = new Map(paths.map((path, index) => [path, JSON.stringify({
+      id: ['same', 'edited', 'moved', 'gone'][index], title: 'Original', lastActivityAt: now,
+    })]));
+    const versions = new Map(paths.map(path => [path, now]));
+    mockAdapter.listFiles.mockImplementation(async folder => paths.filter(path => path.slice(0, path.lastIndexOf('/')) === folder));
+    mockAdapter.exists.mockImplementation(async path => contents.has(path));
+    mockAdapter.read.mockImplementation(async path => contents.get(path)!);
+    mockAdapter.stat = jest.fn(async path => contents.has(path) ? { mtime: versions.get(path) ?? now, size: contents.get(path)!.length } : null);
+    const scan = await storage.scan();
+    contents.set(paths[1], JSON.stringify({ id: 'edited', title: 'Changed', lastActivityAt: now }));
+    versions.set(paths[1], now + 1);
+    contents.set(storage.getMetadataPath('moved'), JSON.stringify({ id: 'moved', title: 'Device', lastActivityAt: now }));
+    contents.delete(paths[3]);
+
+    const records = await storage.revalidate(scan.records);
+
+    expect(records.map(({ metadata, source }) => [metadata.id, metadata.title, source])).toEqual([
+      ['same', 'Original', 'unscoped'], ['edited', 'Changed', 'unscoped'], ['moved', 'Device', 'device'],
+    ]);
+    expect(mockAdapter.read).toHaveBeenCalledTimes(6);
   });
 
   describe('getMetadataPath', () => {

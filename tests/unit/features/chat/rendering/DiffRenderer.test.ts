@@ -21,6 +21,26 @@ function makeInsertLines(n: number): DiffLine[] {
 
 describe('DiffRenderer', () => {
   describe('splitIntoHunks', () => {
+    it('numbers separated insert/delete hunks with linear line visits', () => {
+      let visits = 0;
+      const lines: DiffLine[] = Array.from({ length: 1000 }, (_, index) => ({
+        text: `${index}`,
+        get type() {
+          visits++;
+          return index % 40 === 10 ? 'insert' : index % 40 === 30 ? 'delete' : 'equal';
+        },
+      }));
+      const hunks = splitIntoHunks(lines);
+      expect(hunks).toHaveLength(50);
+      expect(hunks.map(hunk => [hunk.oldStart, hunk.newStart, hunk.lines.map(line => line.text)]))
+        .toEqual(Array.from({ length: 50 }, (_, index) => [
+          8 + 20 * index - Math.ceil(index / 2),
+          8 + 20 * index - Math.floor(index / 2),
+          Array.from({ length: 7 }, (_, offset) => `${7 + 20 * index + offset}`),
+        ]));
+      expect(visits).toBeLessThanOrEqual(5 * lines.length);
+    });
+
     it('should return empty array for no changes', () => {
       const diffLines: DiffLine[] = [
         { type: 'equal', text: 'line1', oldLineNum: 1, newLineNum: 1 },

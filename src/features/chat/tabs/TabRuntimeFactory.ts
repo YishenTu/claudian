@@ -23,6 +23,7 @@ import {
   applyProviderUIGating,
   refreshTabProviderUI,
 } from './TabProviderState';
+import type { TabSessionState } from './TabSession';
 import type {
   AssembledTabRuntime,
   ProviderCatalogInfo,
@@ -41,6 +42,7 @@ export interface TabRuntimeFactoryOptions {
   component: Component;
   conversation?: Conversation;
   tabId?: TabId;
+  initialState?: Readonly<TabSessionState>;
   draftModel?: string | null;
   providerId?: ProviderId | null;
   lifecycleState?: Extract<

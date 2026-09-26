@@ -231,6 +231,76 @@ describe('ClaudianPlugin', () => {
       expect(refresh).toHaveBeenCalledTimes(enabled ? 1 : 0);
     });
 
+    it.each(['run', 'before-layout', 'before-timer'])('defers obsolete input cleanup until after layout and respects unload: %s', async mode => {
+      const inputPath = '.claudian/sessions/old.inputs.json';
+      const files = installVaultFiles({ [inputPath]: '{}' });
+      await mockApp.vault.adapter.mkdir('.claudian/sessions');
+      mockApp.vault.adapter.list.mockResolvedValue({ files: [inputPath], folders: [] });
+      await plugin.onload();
+      expect(files.has(inputPath)).toBe(true);
+      if (mode === 'before-layout') plugin.onunload();
+      for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) { ready(); ready(); }
+      if (mode === 'before-timer') plugin.onunload();
+      await new Promise(resolve => setTimeout(resolve, 5));
+      await (plugin as any).sessionInputCleanup;
+      expect(files.has(inputPath)).toBe(mode !== 'run');
+    });
+
+    it('joins an admitted input deletion on unload and leaves remaining inputs for the next launch', async () => {
+      const inputs = ['.claudian/sessions/first.inputs.json', '.claudian/sessions/second.inputs.json'];
+      const files = installVaultFiles(Object.fromEntries(inputs.map(file => [file, '{}'])));
+      await mockApp.vault.adapter.mkdir('.claudian/sessions');
+      mockApp.vault.adapter.list.mockResolvedValue({ files: inputs, folders: [] });
+      let entered!: () => void;
+      const deleting = new Promise<void>(resolve => { entered = resolve; });
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      mockApp.vault.adapter.remove.mockImplementation(async (file: string) => {
+        entered();
+        await gate;
+        files.delete(file);
+      });
+      await plugin.onload();
+      for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) ready();
+      await deleting;
+      plugin.onunload();
+      let stopped = false;
+      const shutdown = (plugin as any).applicationShutdownPromise.then(() => { stopped = true; });
+      try {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(stopped).toBe(false);
+      } finally {
+        release();
+        await shutdown;
+      }
+      expect(files.has(inputs[0])).toBe(false);
+      expect(files.has(inputs[1])).toBe(true);
+      expect(mockApp.vault.adapter.remove).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries a failed deferred input cleanup on the next launch', async () => {
+      const inputPath = '.claudian/sessions/old.inputs.json';
+      const files = installVaultFiles({ [inputPath]: '{}' });
+      await mockApp.vault.adapter.mkdir('.claudian/sessions');
+      mockApp.vault.adapter.list.mockResolvedValue({ files: [inputPath], folders: [] });
+      mockApp.vault.adapter.remove.mockRejectedValueOnce(new Error('Storage unavailable'));
+      await plugin.onload();
+      for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) ready();
+      await new Promise(resolve => setTimeout(resolve, 5));
+      await (plugin as any).sessionInputCleanup;
+      expect(files.has(inputPath)).toBe(true);
+      expect(Notice).toHaveBeenCalledWith('Failed to clean up obsolete session files; will retry next launch');
+      plugin.onunload();
+      await (plugin as any).applicationShutdownPromise;
+      mockApp.workspace.onLayoutReady.mockClear();
+      const nextPlugin = createPlugin();
+      await nextPlugin.onload();
+      for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) ready();
+      await new Promise(resolve => setTimeout(resolve, 5));
+      await (nextPlugin as any).sessionInputCleanup;
+      expect(files.has(inputPath)).toBe(false);
+    });
+
     it('should initialize settings with defaults', async () => {
       await plugin.onload();
 
@@ -262,7 +332,7 @@ describe('ClaudianPlugin', () => {
 
     it('does not preload legacy tab metadata before a view claims migration', async () => {
       type EmptyMetadataScan = {
-        metadata: [];
+        records: [];
         complete: true;
         invalidMetadataCount: 0;
       };
@@ -277,7 +347,7 @@ describe('ClaudianPlugin', () => {
         createdAt: 1,
         lastActivityAt: 2,
       };
-      const listSpy = jest.spyOn(SessionStorage.prototype, 'scanMetadata')
+      const listSpy = jest.spyOn(SessionStorage.prototype, 'scan')
         .mockReturnValue(historyScan);
       const loadSourceSpy = jest.spyOn(SessionStorage.prototype, 'load')
         .mockResolvedValue({
@@ -294,7 +364,7 @@ describe('ClaudianPlugin', () => {
 
       const onloadPromise = plugin.onload();
       const completedBeforeHistoryScan = await completesWhilePending(onloadPromise);
-      finishHistoryScan({ metadata: [], complete: true, invalidMetadataCount: 0 });
+      finishHistoryScan({ records: [], complete: true, invalidMetadataCount: 0 });
       await onloadPromise;
       const cachedConversation = plugin.getCachedConversation(restoredMetadata.id);
       const didLoadRestoredMetadata = loadSourceSpy.mock.calls.some(
@@ -1800,8 +1870,8 @@ describe('ClaudianPlugin', () => {
       });
       const publicationError = new Error('post-commit publication failed');
       const invalidateSpy = jest.spyOn(
-        ProviderSettingsCoordinator,
-        'invalidateConversationSessions',
+        (plugin as any).conversationRepository,
+        'invalidateProviderSessions',
       ).mockImplementationOnce(() => {
         throw publicationError;
       });
@@ -3060,80 +3130,32 @@ describe('ClaudianPlugin', () => {
       expect(plugin.getConversationList().find(item => item.id === conv.id)).toBeUndefined();
     });
 
-    it('should reset every open tab that references the deleted conversation', async () => {
+    it('resets each view through its tab owner when deleting a conversation', async () => {
       await plugin.onload();
       const conv = await plugin.createConversation();
-      const cancelStreaming = jest.fn();
-      const createNew = jest.fn().mockResolvedValue(undefined);
+      const resetConversationTabs = jest.fn().mockResolvedValue(undefined);
       mockApp.workspace.getLeavesOfType.mockReturnValue([{
-        view: {
-          notifyConversationListChanged: jest.fn(),
-          getTabManager: () => ({
-            getAllTabs: () => [{
-              conversationId: conv.id,
-              controllers: {
-                inputController: { cancelStreaming },
-                conversationController: { createNew },
-              },
-            }],
-          }),
-        },
+        view: { notifyConversationListChanged: jest.fn(), getTabManager: () => ({ resetConversationTabs }) },
       }]);
-
       await plugin.deleteConversation(conv.id);
-
-      expect(cancelStreaming).toHaveBeenCalledTimes(1);
-      expect(createNew).toHaveBeenCalledWith({ force: true });
+      expect(resetConversationTabs).toHaveBeenCalledWith(conv.id);
     });
 
-    it('attempts every matching tab and retries only failed deletion associations', async () => {
+    it('attempts every view and retries failed deletion associations', async () => {
       await plugin.onload();
       const conv = await plugin.createConversation();
-      const firstTab = {
-        conversationId: conv.id as string | null,
-        controllers: {
-          inputController: { cancelStreaming: jest.fn() },
-          conversationController: {
-            createNew: jest.fn()
-              .mockRejectedValueOnce(new Error('first tab failed'))
-              .mockImplementation(async () => {
-                firstTab.conversationId = null;
-              }),
-          },
-        },
-      };
-      const secondTab = {
-        conversationId: conv.id as string | null,
-        controllers: {
-          inputController: { cancelStreaming: jest.fn() },
-          conversationController: {
-            createNew: jest.fn().mockImplementation(async () => {
-              secondTab.conversationId = null;
-            }),
-          },
-        },
-      };
-      mockApp.workspace.getLeavesOfType.mockReturnValue([{
-        view: {
-          notifyConversationListChanged: jest.fn(),
-          getTabManager: () => ({
-            getAllTabs: () => [firstTab, secondTab],
-          }),
-        },
-      }]);
-
+      const first = jest.fn().mockRejectedValueOnce(new Error('first tab failed')).mockResolvedValue(undefined);
+      const second = jest.fn().mockResolvedValue(undefined);
+      mockApp.workspace.getLeavesOfType.mockReturnValue([first, second].map(resetConversationTabs => ({
+        view: { notifyConversationListChanged: jest.fn(), getTabManager: () => ({ resetConversationTabs }) },
+      })));
       await expect(plugin.deleteConversation(conv.id)).rejects.toThrow('first tab failed');
-
-      expect(firstTab.controllers.conversationController.createNew).toHaveBeenCalledTimes(1);
-      expect(secondTab.controllers.conversationController.createNew).toHaveBeenCalledTimes(1);
+      expect(first).toHaveBeenCalledTimes(1);
+      expect(second).toHaveBeenCalledTimes(1);
       expect(plugin.getConversationList().find(item => item.id === conv.id)).toBeUndefined();
-
       await expect(plugin.deleteConversation(conv.id)).resolves.toBeUndefined();
-
-      expect(firstTab.controllers.conversationController.createNew).toHaveBeenCalledTimes(2);
-      expect(secondTab.controllers.conversationController.createNew).toHaveBeenCalledTimes(1);
-      expect(firstTab.conversationId).toBeNull();
-      expect(secondTab.conversationId).toBeNull();
+      expect(first).toHaveBeenCalledTimes(2);
+      expect(second).toHaveBeenCalledTimes(2);
     });
   });
 
