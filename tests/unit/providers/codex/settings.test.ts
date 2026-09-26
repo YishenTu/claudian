@@ -484,8 +484,8 @@ describe('codex settings', () => {
         'host-b': 'Debian',
       },
     });
-    expect(result.config).not.toHaveProperty('installationMethod');
-    expect(result.config).not.toHaveProperty('wslDistroOverride');
+    expect(result.config).toHaveProperty('installationMethod');
+    expect(result.config).toHaveProperty('wslDistroOverride');
   });
 
   it('does not import retired Windows installation scalars', () => {
@@ -504,11 +504,11 @@ describe('codex settings', () => {
       },
     );
 
-    expect(result.changed).toBe(true);
+    expect(result.changed).toBe(false);
     expect(result.config.installationMethodsByHost).toEqual({});
     expect(result.config.wslDistroOverridesByHost).toEqual({});
-    expect(result.config).not.toHaveProperty('installationMethod');
-    expect(result.config).not.toHaveProperty('wslDistroOverride');
+    expect(result.config).toHaveProperty('installationMethod');
+    expect(result.config).toHaveProperty('wslDistroOverride');
   });
 
   it('forces reasoning summary off for GPT-5.3 Codex Spark', () => {

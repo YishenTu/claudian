@@ -860,3 +860,14 @@ describe('GrokHistoryStore', () => {
     ]);
   });
 });
+
+it('does not infer a fork checkpoint from synthetic legacy message ids', () => {
+  const content = [
+    { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: 'Question' } },
+    { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Answer' } },
+    { sessionUpdate: 'turn_completed', stop_reason: 'end_turn' },
+  ].map(update => JSON.stringify({ method: 'session/update', params: { sessionId: 'old', update } })).join('\n');
+  const assistant = parseGrokHistoryContent(content, 'old').messages.find(message => message.role === 'assistant');
+  expect(assistant?.assistantMessageId).toBeDefined();
+  expect(resolveGrokPromptIndexAfterAssistant(content, 'old', assistant!.assistantMessageId!)).toBeNull();
+});

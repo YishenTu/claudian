@@ -10,7 +10,6 @@ import {
 import { isBlockedMessage } from '../sdk/messages';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type { ClaudeAsyncSubagentCompletionEvent, TransformEvent } from '../sdk/types';
-import { isDefaultClaudeModel } from '../types/models';
 import { createTransformStreamState, type TransformStreamState } from './toolInputStreamState';
 
 type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
@@ -186,12 +185,11 @@ function findUniqueEntry(
 function matchClaudeModelSignature(
   entrySignature: ClaudeModelSignature | null,
   intendedSignature: ClaudeModelSignature,
-  options?: { ignoreIs1M?: boolean },
 ): boolean {
   if (!entrySignature || entrySignature.family !== intendedSignature.family) {
     return false;
   }
-  if (!options?.ignoreIs1M && entrySignature.is1M !== intendedSignature.is1M) {
+  if (entrySignature.is1M !== intendedSignature.is1M) {
     return false;
   }
   if (intendedSignature.major && entrySignature.major !== intendedSignature.major) {
@@ -240,29 +238,14 @@ function selectContextWindowEntry(
     return exactMatch;
   }
 
-  if (!isDefaultClaudeModel(intendedModel)) {
-    return null;
-  }
-
   const intendedSignature = parseClaudeModelSignature(intendedModel);
-  if (!intendedSignature) {
-    return null;
-  }
-
-  const strictSignatureMatch = findUniqueEntry(entries, (entry) =>
-    matchClaudeModelSignature(parseClaudeModelSignature(entry.model), intendedSignature),
-  );
-  if (strictSignatureMatch) {
-    return strictSignatureMatch;
-  }
-
-  const hasVersionedTarget = Boolean(intendedSignature.major || intendedSignature.date);
-  if (!hasVersionedTarget) {
+  // Native tier IDs can include [1m]; explicit model IDs must match the report above.
+  if (!intendedSignature || intendedSignature.major) {
     return null;
   }
 
   return findUniqueEntry(entries, (entry) =>
-    matchClaudeModelSignature(parseClaudeModelSignature(entry.model), intendedSignature, { ignoreIs1M: true }),
+    matchClaudeModelSignature(parseClaudeModelSignature(entry.model), intendedSignature),
   );
 }
 

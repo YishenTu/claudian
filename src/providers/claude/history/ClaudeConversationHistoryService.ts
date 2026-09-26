@@ -28,7 +28,6 @@ import {
   loadSubagentToolCalls,
   locateSDKSession,
   locateSDKSessions,
-  readLegacyConversationSessionId,
   recoverSDKSessionIdByTime,
 } from './ClaudeHistoryStore';
 import type { SDKSessionLocation } from './sdkSessionPaths';
@@ -601,18 +600,6 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   ): Promise<boolean> {
     if (!vaultPath || this.resolveSessionIdForConversation(conversation)) {
       return false;
-    }
-
-    const legacySessionId = await readLegacyConversationSessionId(
-      vaultPath,
-      conversation.id,
-    );
-    if (legacySessionId) {
-      conversation.providerState = sanitizeProviderState({
-        ...getClaudeState(conversation.providerState),
-        previousProviderSessionIds: [legacySessionId],
-      });
-      return true;
     }
 
     const fingerprint = {

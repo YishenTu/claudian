@@ -18,9 +18,8 @@ import { isClaudeModelSelectionId, toClaudeRuntimeModelId } from '../modelSelect
 import { isClaudeModelTier } from '../modelTiers';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import {
-  DEFAULT_CLAUDE_MODELS,
-  normalizeLegacyClaudeModelAlias,
-  resolveSupportedEffortLevel,
+  isDefaultClaudeModel,
+  resolveSupportedEffortLevel
 } from '../types/models';
 
 const CLAUDE_PERMISSION_MODE_TOGGLE: ProviderPermissionModeToggleConfig = {
@@ -46,7 +45,7 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
     const runtimeModel = toClaudeRuntimeModelId(model);
-    return /^claude-(?:haiku|sonnet|opus)-/.test(model) || isClaudeModelSelectionId(model) || isClaudeModelTier(normalizeLegacyClaudeModelAlias(model))
+    return /^claude-(?:haiku|sonnet|opus)-/.test(model) || isClaudeModelSelectionId(model) || isClaudeModelTier(runtimeModel)
       || getClaudeVisibleModelIds(settings).some(id => toClaudeRuntimeModelId(id) === runtimeModel)
       || Boolean(findClaudeModelOption(getClaudeModelCatalog(settings), model));
   },
@@ -64,11 +63,8 @@ export const claudeChatUIConfig: ProviderChatUIConfig = {
     return resolveClaudeEffortSetting(model, settings);
   },
 
-  normalizeCustomContextLimitModel: normalizeLegacyClaudeModelAlias,
-
   isDefaultModel(model: string): boolean {
-    const runtimeModel = normalizeLegacyClaudeModelAlias(toClaudeRuntimeModelId(model));
-    return DEFAULT_CLAUDE_MODELS.some(m => m.value === runtimeModel);
+    return isDefaultClaudeModel(model);
   },
 
   applyModelDefaults: applyClaudeEffortSetting,

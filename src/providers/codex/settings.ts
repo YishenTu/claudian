@@ -371,8 +371,6 @@ function projectStoredCodexConfigNormalization(
     }
   }
   delete projected.customModels;
-  delete projected.installationMethod;
-  delete projected.wslDistroOverride;
   return projected;
 }
 
@@ -401,8 +399,6 @@ export function normalizeCodexStoredConfig(
     wslDistroOverridesByHost,
   };
   delete normalizedConfig.customModels;
-  delete normalizedConfig.installationMethod;
-  delete normalizedConfig.wslDistroOverride;
 
   const projectedConfig = projectStoredCodexConfigNormalization(originalConfig, normalizedConfig);
   return {

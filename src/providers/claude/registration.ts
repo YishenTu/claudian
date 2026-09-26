@@ -14,8 +14,6 @@ import { getClaudeProviderSettings, updateClaudeProviderSettings } from './setti
 import { claudeSubagentAdapter } from './subagentAdapter';
 import { claudeChatUIConfig } from './ui/ClaudeChatUIConfig';
 
-const LEGACY_CLAUDE_1M_SETTINGS = ['enableOpus1M', 'enableSonnet1M'] as const;
-
 export const claudeProviderRegistration: ProviderModule = {
   id: 'claude',
   displayName: 'Claude',
@@ -38,13 +36,12 @@ export const claudeProviderRegistration: ProviderModule = {
     hostScopedFields: ['cliPathsByHost'],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'claude');
-      const removedLegacy1MSettings = LEGACY_CLAUDE_1M_SETTINGS.some(key => key in storedConfig);
       const storedSettings = getClaudeProviderSettings(stored);
       updateClaudeProviderSettings(target, {
         ...storedSettings,
         visibleModels: getClaudeVisibleModelIds(stored),
       });
-      return removedLegacy1MSettings || 'effortMetadataMigrated' in storedConfig || hasStoredConfigNormalization(
+      return 'effortMetadataMigrated' in storedConfig || hasStoredConfigNormalization(
         storedConfig,
         getProviderConfig(target, 'claude'),
       );

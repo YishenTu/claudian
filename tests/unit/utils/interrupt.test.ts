@@ -1,7 +1,6 @@
 import {
   isCompactionCanceledStderr,
   isInterruptSignalText,
-  stripLegacyInterruptIndicator,
 } from '@/utils/interrupt';
 
 describe('interrupt utils', () => {
@@ -58,19 +57,4 @@ describe('interrupt utils', () => {
     });
   });
 
-  describe('stripLegacyInterruptIndicator', () => {
-    it('removes only the trailing Claudian-owned interruption marker', () => {
-      const marker =
-        '<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>';
-
-      expect(stripLegacyInterruptIndicator(`Partial response\n\n${marker}`)).toEqual({
-        content: 'Partial response',
-        interrupted: true,
-      });
-      expect(stripLegacyInterruptIndicator(`${marker}\n\nMore text`)).toEqual({
-        content: `${marker}\n\nMore text`,
-        interrupted: false,
-      });
-    });
-  });
 });

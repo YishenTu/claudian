@@ -1,3 +1,7 @@
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import type { Conversation } from '@/core/types';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
@@ -17,34 +21,6 @@ function createConversation(overrides: Partial<Conversation> = {}): Conversation
 }
 
 describe('ClaudeConversationHistoryService', () => {
-  describe('legacy conversation backup recovery', () => {
-    it('reads a matching safe session id from the metadata header', () => {
-      const content = [
-        JSON.stringify({
-          type: 'meta',
-          id: 'conversation-1',
-          sessionId: 'recovered-session',
-        }),
-        JSON.stringify({ type: 'message', message: { content: 'History' } }),
-      ].join('\r\n');
-
-      expect(historyStore.parseLegacyConversationSessionId(
-        content,
-        'conversation-1',
-      )).toBe('recovered-session');
-    });
-
-    it.each([
-      ['mismatched conversation', { type: 'meta', id: 'other', sessionId: 'session-1' }],
-      ['cleared session', { type: 'meta', id: 'conversation-1', sessionId: null }],
-      ['unsafe session', { type: 'meta', id: 'conversation-1', sessionId: '../session' }],
-    ])('rejects a %s header', (_label, header) => {
-      expect(historyStore.parseLegacyConversationSessionId(
-        JSON.stringify(header),
-        'conversation-1',
-      )).toBeNull();
-    });
-  });
 
   describe('getConversationSessionAvailability', () => {
     it('reports a missing native session', async () => {
@@ -353,8 +329,6 @@ describe('ClaudeConversationHistoryService', () => {
         createdAt: 1_000,
         lastActivityAt: 2_000,
       });
-      const legacySpy = jest.spyOn(historyStore, 'readLegacyConversationSessionId')
-        .mockResolvedValue(null);
       const recoverySpy = jest.spyOn(historyStore, 'recoverSDKSessionIdByTime')
         .mockResolvedValue('recovered-session');
 
@@ -372,45 +346,28 @@ describe('ClaudeConversationHistoryService', () => {
         providerState: { providerSessionId: 'recovered-session' },
       });
 
-      legacySpy.mockRestore();
       recoverySpy.mockRestore();
     });
 
-    it('recovers a cleared session pointer from the legacy conversation backup', async () => {
+    it('uses native recovery instead of old conversation backup headers', async () => {
+      const vaultPath = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-retired-backup-'));
       const service = new ClaudeConversationHistoryService();
-      const conversation = createConversation({
-        sessionId: null,
-        providerState: undefined,
-      });
-      const legacySpy = jest.spyOn(historyStore, 'readLegacyConversationSessionId')
-        .mockResolvedValue('recovered-session');
-      const locationSpy = jest.spyOn(historyStore, 'locateSDKSessions')
-        .mockResolvedValue(new Map([['recovered-session', {
-          availability: 'available',
-          sessionPath: '/vault/recovered-session.jsonl',
-        }]]));
-      const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
-        .mockResolvedValue({
-          messages: [{
-            id: 'recovered-message',
-            role: 'user',
-            content: 'Recovered',
-            timestamp: 1,
-          }],
-          skippedLines: 0,
-        });
-
-      await service.hydrateConversationHistory(conversation, '/vault');
-
-      expect(legacySpy).toHaveBeenCalledWith('/vault', conversation.id);
-      expect(conversation.providerState).toEqual({
-        previousProviderSessionIds: ['recovered-session'],
-      });
-      expect(conversation.messages.map(message => message.content)).toEqual(['Recovered']);
-
-      legacySpy.mockRestore();
-      locationSpy.mockRestore();
-      loadSpy.mockRestore();
+      const conversation = createConversation({ sessionId: null, providerState: undefined });
+      const recoverySpy = jest.spyOn(historyStore, 'recoverSDKSessionIdByTime').mockResolvedValue(null);
+      try {
+        const folder = path.join(vaultPath, '.claude', 'sessions');
+        await fs.mkdir(folder, { recursive: true });
+        await fs.writeFile(path.join(folder, conversation.id + '.jsonl'), JSON.stringify({
+          type: 'meta', id: conversation.id, sessionId: 'retired-session',
+        }));
+        await expect(service.recoverConversationSessionReference(conversation, vaultPath)).resolves.toBe(false);
+        expect(recoverySpy).toHaveBeenCalled();
+        expect(conversation.sessionId).toBeNull();
+        expect(conversation.providerState).toBeUndefined();
+      } finally {
+        recoverySpy.mockRestore();
+        await fs.rm(vaultPath, { recursive: true, force: true });
+      }
     });
 
     it('re-resolves history when the effective Claude config directory changes', async () => {

@@ -5,7 +5,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
     agentLabel: 'Haiku',
     description: 'Fast and efficient',
     environmentKey: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-    legacyAliases: [],
     supportsOneMillionSuffix: false,
   },
   {
@@ -14,7 +13,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
     agentLabel: 'Sonnet',
     description: 'Balanced performance',
     environmentKey: 'ANTHROPIC_DEFAULT_SONNET_MODEL',
-    legacyAliases: ['sonnet[1m]'],
     supportsOneMillionSuffix: true,
   },
   {
@@ -23,7 +21,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
     agentLabel: 'Opus',
     description: 'Most capable',
     environmentKey: 'ANTHROPIC_DEFAULT_OPUS_MODEL',
-    legacyAliases: ['opus[1m]'],
     supportsOneMillionSuffix: true,
   },
   {
@@ -32,7 +29,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
     agentLabel: 'Fable',
     description: "Anthropic's most capable model — premium pricing above Opus",
     environmentKey: 'ANTHROPIC_DEFAULT_FABLE_MODEL',
-    legacyAliases: ['claude-fable-5'],
     supportsOneMillionSuffix: false,
   },
 ] as const;
@@ -51,13 +47,4 @@ export function isClaudeModelTier(value: string): value is ClaudeModelTier {
 
 export function getClaudeModelTierDefinition(tier: ClaudeModelTier): ClaudeModelTierDefinition {
   return CLAUDE_MODEL_TIER_DEFINITIONS.find(definition => definition.id === tier)!;
-}
-
-export function resolveClaudeModelTierAlias(value: string): ClaudeModelTier | null {
-  const normalized = value.trim().toLowerCase();
-  const definition = CLAUDE_MODEL_TIER_DEFINITIONS.find(candidate =>
-    candidate.id === normalized
-    || (candidate.legacyAliases as readonly string[]).includes(normalized)
-  );
-  return definition?.id ?? null;
 }

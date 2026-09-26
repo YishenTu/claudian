@@ -8,7 +8,7 @@ import {
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import {
   CLAUDE_MODEL_TIER_DEFINITIONS,
-  resolveClaudeModelTierAlias,
+  isClaudeModelTier,
 } from '../modelTiers';
 
 /** Model identifier (string to support custom models via environment variables). */
@@ -35,12 +35,8 @@ function normalizeModelId(model: string): string {
   return toClaudeRuntimeModelId(model).trim().toLowerCase();
 }
 
-export function normalizeLegacyClaudeModelAlias(model: string): string {
-  return resolveClaudeModelTierAlias(normalizeModelId(model)) ?? model;
-}
-
 export function isDefaultClaudeModel(model: string): boolean {
-  return resolveClaudeModelTierAlias(normalizeModelId(model)) !== null;
+  return isClaudeModelTier(normalizeModelId(model));
 }
 
 /**

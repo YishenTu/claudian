@@ -243,9 +243,6 @@ export interface ProviderChatUIConfig {
   /** Default reasoning value for the model. */
   getDefaultReasoningValue(model: string, settings: Record<string, unknown>): string;
 
-  /** Normalize runtime model aliases only for legacy custom-context-limit matching. */
-  normalizeCustomContextLimitModel?(this: void, model: string): string;
-
   /** Whether this is a built-in (default) model vs custom/env model. */
   isDefaultModel(model: string): boolean;
 

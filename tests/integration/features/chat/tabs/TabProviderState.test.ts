@@ -40,16 +40,16 @@ describe('tab context usage projection', () => {
     { model: 'claude-fable-5', limits: { fable: 500_000 } },
     { model: 'claude-code/claude-fable-5', limits: { fable: 500_000 } },
     { model: 'fable', limits: { 'claude-code/claude-fable-5': 500_000 } },
-  ])('uses the legacy Claude custom limit for $model', ({ model, limits }) => {
+  ])('does not borrow custom limits through retired Claude aliases for $model', ({ model, limits }) => {
     const { tab, plugin, update } = createTab(model, limits);
 
     refreshTabContextUsage(tab, plugin);
 
-    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ contextWindow: 500_000, percentage: 10 }));
+    expect(update).toHaveBeenLastCalledWith(null);
     expect(tab.state.usage).toMatchObject({ contextWindow: 0, percentage: 0 });
   });
 
-  it('prefers an exact custom-limit key over its legacy alias', () => {
+  it('uses an exact custom-limit key without interpreting retired aliases', () => {
     const { tab, plugin, update } = createTab('claude-fable-5', {
       'claude-fable-5': 100_000,
       fable: 500_000,
@@ -62,8 +62,8 @@ describe('tab context usage projection', () => {
 
   it('rejects ambiguous equivalent custom-limit keys', () => {
     const { tab, plugin, update } = createTab('claude-fable-5', {
-      fable: 500_000,
-      FABLE: 100_000,
+      'CLAUDE-FABLE-5': 500_000,
+      'claude-code/CLAUDE-FABLE-5': 100_000,
     });
 
     refreshTabContextUsage(tab, plugin);
@@ -71,7 +71,7 @@ describe('tab context usage projection', () => {
     expect(update).toHaveBeenLastCalledWith(null);
   });
 
-  it('prefers a reported window over an alias-matched custom limit', () => {
+  it('uses a reported window even when custom limits belong to another model', () => {
     const { tab, plugin, update } = createTab('claude-fable-5', { fable: 500_000 }, {
       contextWindow: 200_000,
     });
@@ -84,7 +84,7 @@ describe('tab context usage projection', () => {
   it.each([
     { model: 'claude-fable-5', reportedModel: 'fable' },
     { model: 'sonnet[1m]', reportedModel: 'sonnet' },
-  ])('does not use custom-limit aliases to transfer a report from $reportedModel to $model', ({ model, reportedModel }) => {
+  ])('does not transfer a report from $reportedModel to $model', ({ model, reportedModel }) => {
     const { tab, plugin, update } = createTab(model, {}, {
       model: reportedModel,
       contextWindow: 200_000,

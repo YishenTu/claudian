@@ -125,8 +125,6 @@ export function updateClaudeProviderSettings(
 ): ClaudeProviderSettings {
   const current = getClaudeProviderSettings(settings);
   const stored = getProviderConfig(settings, 'claude');
-  delete stored.enableOpus1M;
-  delete stored.enableSonnet1M;
   delete stored.defaultModel;
   delete stored.effortMetadataMigrated;
   const next = {

@@ -119,14 +119,16 @@ it('leaves interrupted and unsuccessful output expanded', () => {
   }
 });
 
-it('copies interrupted replay text without legacy marker markup', async () => {
+it('copies retired interruption markup as ordinary message text', async () => {
   const { renderer, messagesEl } = setup();
   const marker = '<span class="claudian-interrupted">Interrupted</span> <span class="claudian-interrupted-hint">· What should Claudian do instead?</span>';
   renderer.renderStoredMessage({ id: 'legacy', role: 'assistant', timestamp: 5,
     content: `Partial answer\n\n${marker}` });
   fireEvent.click(within(messagesEl).getByRole('button', { name: 'Copy message' }));
   await Promise.resolve();
-  expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Partial answer');
+  expect(navigator.clipboard.writeText).toHaveBeenCalledWith(`Partial answer\n\n${marker}`);
+  expect(messagesEl.querySelectorAll('.claudian-interrupted')).toHaveLength(0);
+  expect(await axe(messagesEl)).toHaveNoViolations();
   renderer.dispose();
 });
 
@@ -199,7 +201,6 @@ it('offers fork on the final live response of a multi-message turn', async () =>
   expect(fork).toHaveBeenCalledWith('a2');
   renderer.dispose();
 });
-
 
 it('offers full-session fork only on the latest reply and removes it when another turn starts', async () => {
   const { renderer, messagesEl, fork } = setup('opencode');
@@ -341,7 +342,6 @@ it('keeps requested work on both sides of a mid-response notification in its own
   expect(within(messagesEl).getByText('Work after notification.').closest('[hidden]')).toBeNull();
   renderer.dispose();
 });
-
 
 it.each(['claude', 'pi', 'opencode', 'codex'])('shows native throughput for %s on replay', async (provider) => {
   const { renderer, messagesEl } = setup(provider);

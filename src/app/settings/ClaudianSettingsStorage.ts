@@ -222,7 +222,7 @@ function pruneDeselectedProviderProjections(settings: Record<string, unknown>): 
     ));
     const normalizeContextModel = (id: string) => {
       const normalized = normalize(id);
-      return (ui.normalizeCustomContextLimitModel?.(normalized) ?? normalized).toLowerCase();
+      return normalized.toLowerCase();
     };
     const selectedContextModels = new Set(selected.filter((id): id is string => typeof id === 'string')
       .map(normalizeContextModel));

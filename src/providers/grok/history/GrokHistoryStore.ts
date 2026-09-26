@@ -347,24 +347,6 @@ export function resolveGrokPromptIndexAfterAssistant(
     }
   }
 
-  return resolveLegacyForkTargetPromptIndex(content, sessionId, resumeAt);
-}
-
-function resolveLegacyForkTargetPromptIndex(
-  content: string,
-  sessionId: string,
-  resumeAt: string,
-): number | null {
-  let completedPrompts = 0;
-  for (const message of parseGrokHistoryContent(content, sessionId).messages) {
-    if (message.role === 'user' && message.userMessageId) {
-      completedPrompts += 1;
-      continue;
-    }
-    if (message.assistantMessageId === resumeAt) {
-      return completedPrompts;
-    }
-  }
   return null;
 }
 

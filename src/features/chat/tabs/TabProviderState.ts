@@ -293,7 +293,6 @@ export function refreshTabContextUsage(
     providerId: getTabProviderId(tab, plugin),
     model: settings.model,
     customContextLimits: settings.customContextLimits,
-    normalizeCustomContextLimitModel: getTabChatUIConfig(tab, plugin).normalizeCustomContextLimitModel,
   }));
 }
 

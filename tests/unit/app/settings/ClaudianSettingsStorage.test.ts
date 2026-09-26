@@ -583,7 +583,7 @@ describe('ClaudianSettingsStorage', () => {
       }));
     });
 
-    it('strips legacy Codex installation scalar fields from non-Windows provider config', async () => {
+    it('ignores retired Codex installation scalars without rewriting them', async () => {
       Object.defineProperty(process, 'platform', { value: 'darwin' });
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
@@ -605,10 +605,10 @@ describe('ClaudianSettingsStorage', () => {
 
       expect(getCodexProviderSettings(result).installationMethod).toBe('native-windows');
       expect(getCodexProviderSettings(result).wslDistroOverride).toBe('');
-      expect(codexConfig).not.toHaveProperty('installationMethod');
-      expect(codexConfig).not.toHaveProperty('wslDistroOverride');
-      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('installationMethod');
-      expect(writtenContent.providerConfigs.codex).not.toHaveProperty('wslDistroOverride');
+      expect(codexConfig).toHaveProperty('installationMethod');
+      expect(codexConfig).toHaveProperty('wslDistroOverride');
+      expect(writtenContent.providerConfigs.codex).toHaveProperty('installationMethod');
+      expect(writtenContent.providerConfigs.codex).toHaveProperty('wslDistroOverride');
     });
 
     it('defaults Codex installation method and WSL distro override when missing', async () => {
@@ -678,22 +678,13 @@ describe('ClaudianSettingsStorage', () => {
       expect(getCodexProviderSettings(result).wslDistroOverride).toBe('');
     });
 
-    it('should remove legacy Claude 1M toggles from provider settings', async () => {
+    it('leaves retired Claude 1M toggles uninterpreted', async () => {
       mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        providerConfigs: {
-          claude: {
-            enableOpus1M: true,
-            enableSonnet1M: true,
-          },
-        },
-      }));
-
-      await storage.load();
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-
-      expect(writtenContent.providerConfigs.claude).not.toHaveProperty('enableOpus1M');
-      expect(writtenContent.providerConfigs.claude).not.toHaveProperty('enableSonnet1M');
+      mockAdapter.read.mockResolvedValue(JSON.stringify({ providerConfigs: { claude: {
+        enableOpus1M: true, enableSonnet1M: true,
+      } } }));
+      const result = await storage.load();
+      expect(result.providerConfigs.claude).toMatchObject({ enableOpus1M: true, enableSonnet1M: true });
     });
 
     it('should not override explicit provider hidden commands with legacy hiddenSlashCommands', async () => {

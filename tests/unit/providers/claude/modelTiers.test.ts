@@ -2,8 +2,8 @@ import {
   CLAUDE_MODEL_TIER_DEFINITIONS,
   getClaudeModelTierDefinition,
   isClaudeModelTier,
-  resolveClaudeModelTierAlias,
 } from '@/providers/claude/modelTiers';
+import { isDefaultClaudeModel } from '@/providers/claude/types/models';
 
 describe('Claude model tiers', () => {
   it('defines every SDK model tier once', () => {
@@ -22,11 +22,11 @@ describe('Claude model tiers', () => {
     expect(isClaudeModelTier('model')).toBe(false);
   });
 
-  it('resolves legacy aliases through the owning tier definition', () => {
-    expect(resolveClaudeModelTierAlias('sonnet[1M]')).toBe('sonnet');
-    expect(resolveClaudeModelTierAlias('opus[1m]')).toBe('opus');
-    expect(resolveClaudeModelTierAlias('claude-fable-5')).toBe('fable');
-    expect(resolveClaudeModelTierAlias('claude-fable-6')).toBeNull();
+  it('does not classify retired aliases as built-in tiers', () => {
+    expect(isDefaultClaudeModel('sonnet[1M]')).toBe(false);
+    expect(isDefaultClaudeModel('opus[1m]')).toBe(false);
+    expect(isDefaultClaudeModel('claude-fable-5')).toBe(false);
+    expect(isDefaultClaudeModel('claude-fable-6')).toBe(false);
   });
 
   it('keeps [1m] suffix compatibility explicit in the descriptor', () => {
