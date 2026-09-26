@@ -921,7 +921,7 @@ describe('ProviderSettingsCoordinator', () => {
         providerConfigs: {
           opencode: {
             enabled: true,
-            selectedMode: 'build',
+            selectedMode: 'claudian-yolo',
           },
         },
         model: 'haiku',

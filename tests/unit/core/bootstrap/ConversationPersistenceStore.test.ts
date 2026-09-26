@@ -7,7 +7,6 @@ import {
 import {
   DEVICE_SESSIONS_PATH,
   getDeviceSessionsPath,
-  LEGACY_SESSIONS_PATH,
   SESSIONS_PATH,
 } from '@/core/bootstrap/storagePaths';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
@@ -84,14 +83,14 @@ describe('SessionStorage read boundary', () => {
     expect(adapter.rename).not.toHaveBeenCalled();
   });
 
-  it('loads current and legacy records with source information and performs no migration writes', async () => {
+  it('loads device and unscoped records with source information and performs no migration writes', async () => {
     const adapter = createAdapter();
     const storage = new SessionStorage(adapter, DEVICE_KEY);
     const current = createMetadata('current');
     const legacy = createMetadata('legacy');
     adapter.exists.mockImplementation(async (path) => (
       path === `${DEVICE_PATH}/current.meta.json`
-      || path === `${LEGACY_SESSIONS_PATH}/legacy.meta.json`
+      || path === `${SESSIONS_PATH}/legacy.meta.json`
     ));
     adapter.read.mockImplementation(async (path) => (
       path.includes('current') ? JSON.stringify(current) : JSON.stringify(legacy)
@@ -105,7 +104,7 @@ describe('SessionStorage read boundary', () => {
     await expect(storage.load('legacy')).resolves.toEqual({
       metadata: legacy,
       needsMigration: false,
-      source: 'legacy',
+      source: 'unscoped',
     } satisfies SessionMetadataReadResult);
     await expect(storage.loadMetadata('legacy')).resolves.toEqual(legacy);
 
@@ -113,7 +112,7 @@ describe('SessionStorage read boundary', () => {
     expect(adapter.delete).not.toHaveBeenCalled();
   });
 
-  it('scans current and legacy metadata read-only while preferring current duplicates', async () => {
+  it('scans device and unscoped metadata read-only while preferring device duplicates', async () => {
     const adapter = createAdapter();
     const storage = new SessionStorage(adapter, DEVICE_KEY);
     const current = createMetadata('duplicate');
@@ -122,10 +121,10 @@ describe('SessionStorage read boundary', () => {
       if (path === DEVICE_PATH) {
         return [`${DEVICE_PATH}/duplicate.meta.json`];
       }
-      if (path === LEGACY_SESSIONS_PATH) {
+      if (path === SESSIONS_PATH) {
         return [
-          `${LEGACY_SESSIONS_PATH}/duplicate.meta.json`,
-          `${LEGACY_SESSIONS_PATH}/legacy-only.meta.json`,
+          `${SESSIONS_PATH}/duplicate.meta.json`,
+          `${SESSIONS_PATH}/legacy-only.meta.json`,
         ];
       }
       return [];
@@ -140,7 +139,7 @@ describe('SessionStorage read boundary', () => {
 
     expect(result.records).toEqual([
       { metadata: current, needsMigration: false, source: 'device' },
-      { metadata: legacyOnly, needsMigration: false, source: 'legacy' },
+      { metadata: legacyOnly, needsMigration: false, source: 'unscoped' },
     ]);
     expect(result.complete).toBe(true);
     expect(adapter.write).not.toHaveBeenCalled();

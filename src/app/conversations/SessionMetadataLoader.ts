@@ -130,7 +130,7 @@ export class SessionMetadataLoader {
       const added = publishable.flatMap(({ conversation, source }) => (
         conversations.mergeMetadataConversations(
           [conversation],
-          source === 'legacy' ? 'unscoped' : source,
+          source,
         )
       ));
       conversations.registerHistoricalModelRecoverySources(

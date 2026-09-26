@@ -66,17 +66,15 @@ export function parseSlashCommandContent(content: string): ParsedSlashCommandCon
   const fm = parsed.frontmatter;
 
   return {
-    // Existing fields — support both kebab-case (file format) and camelCase
     description: extractString(fm, 'description'),
-    argumentHint: extractString(fm, 'argument-hint') ?? extractString(fm, 'argumentHint'),
-    allowedTools: extractStringArray(fm, 'allowed-tools') ?? extractStringArray(fm, 'allowedTools'),
+    argumentHint: extractString(fm, 'argument-hint'),
+    allowedTools: extractStringArray(fm, 'allowed-tools'),
     model: extractString(fm, 'model'),
     promptContent: parsed.body,
-    // Skill fields — kebab-case preferred (CC file format), camelCase for backwards compat
     disableModelInvocation:
-      extractBoolean(fm, 'disable-model-invocation') ?? extractBoolean(fm, 'disableModelInvocation'),
+      extractBoolean(fm, 'disable-model-invocation'),
     userInvocable:
-      extractBoolean(fm, 'user-invocable') ?? extractBoolean(fm, 'userInvocable'),
+      extractBoolean(fm, 'user-invocable'),
     context: extractString(fm, 'context') === 'fork' ? 'fork' : undefined,
     agent: extractString(fm, 'agent'),
     hooks: isRecord(fm.hooks) ? fm.hooks : undefined,

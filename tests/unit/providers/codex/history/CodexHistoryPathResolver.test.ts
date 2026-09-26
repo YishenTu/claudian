@@ -2,6 +2,7 @@ import {
   resolveCodexSessionFileHint,
   resolveCodexTranscriptRootHint,
 } from '@/providers/codex/history/CodexHistoryPathResolver';
+import { getHostnameKey } from '@/utils/env';
 
 function createWslContext(distroOverride = '') {
   return {
@@ -10,8 +11,8 @@ function createWslContext(distroOverride = '') {
     settings: {
       providerConfigs: {
         codex: {
-          installationMethod: 'wsl',
-          wslDistroOverride: distroOverride,
+          installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
+          wslDistroOverridesByHost: { [getHostnameKey()]: distroOverride },
         },
       },
     },

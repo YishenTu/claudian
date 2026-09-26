@@ -1,8 +1,9 @@
 import { claudeSubagentAdapter } from '@/providers/claude/subagentAdapter';
 
 describe('claudeSubagentAdapter', () => {
-  it.each(['Agent', 'Task'])('recognizes %s as a managed subagent spawn tool', (name) => {
-    expect(claudeSubagentAdapter.isSpawnTool(name)).toBe(true);
+  it('recognizes Agent without accepting the retired Task alias', () => {
+    expect(claudeSubagentAdapter.isSpawnTool('Agent')).toBe(true);
+    expect(claudeSubagentAdapter.isSpawnTool('Task')).toBe(false);
   });
 
   it('continues to recognize TaskOutput as the managed subagent output tool', () => {

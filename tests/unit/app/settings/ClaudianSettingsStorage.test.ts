@@ -4,8 +4,7 @@ import { TEST_CODEX_CATALOG } from '@test/helpers/codexModels';
 
 import {
   CLAUDIAN_SETTINGS_PATH,
-  ClaudianSettingsStorage,
-  LEGACY_CLAUDIAN_SETTINGS_PATH,
+  ClaudianSettingsStorage
 } from '@/app/settings/ClaudianSettingsStorage';
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@/app/settings/defaultSettings';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
@@ -92,29 +91,13 @@ describe('ClaudianSettingsStorage', () => {
       expect(mockAdapter.read).not.toHaveBeenCalled();
     });
 
-    it('loads legacy .claude settings and migrates them to .claudian', async () => {
-      mockAdapter.exists.mockImplementation(async (path: string) => (
-        path === LEGACY_CLAUDIAN_SETTINGS_PATH
-      ));
-      mockAdapter.read.mockImplementation(async (path: string) => {
-        if (path === LEGACY_CLAUDIAN_SETTINGS_PATH) {
-          return JSON.stringify({
-            model: 'claude-opus-4-5',
-            userName: 'MigratedUser',
-          });
-        }
-        return '{}';
-      });
-
-      const result = await storage.load();
-
-      expect(result.model).toBe('claude-opus-4-5');
-      expect(result.userName).toBe('MigratedUser');
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        CLAUDIAN_SETTINGS_PATH,
-        expect.any(String),
-      );
-      expect(mockAdapter.delete).toHaveBeenCalledWith(LEGACY_CLAUDIAN_SETTINGS_PATH);
+    it('ignores retired .claude settings without modifying them', async () => {
+      mockAdapter.exists.mockImplementation(async path => path === '.claude/claudian-settings.json');
+      mockAdapter.read.mockResolvedValue(JSON.stringify({ userName: 'Retired' }));
+      expect((await storage.load()).userName).toBe(DEFAULT_SETTINGS.userName);
+      expect(mockAdapter.read).not.toHaveBeenCalled();
+      expect(mockAdapter.write).not.toHaveBeenCalled();
+      expect(mockAdapter.delete).not.toHaveBeenCalled();
     });
 
     it('should parse valid JSON and merge with defaults', async () => {
@@ -265,32 +248,16 @@ describe('ClaudianSettingsStorage', () => {
       });
     });
 
-    it('migrates legacy openInMainTab true to main-tab placement', async () => {
+    it('ignores retired placement and flat provider settings', async () => {
       mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        openInMainTab: true,
-      }));
-
+      mockAdapter.read.mockResolvedValue(JSON.stringify({ openInMainTab: true, claudeCliPath: '/retired', codexCliPath: '/retired', environmentVariables: 'ANTHROPIC_API_KEY=retired\nHTTP_PROXY=retired', hiddenSlashCommands: ['retired'] }));
       const result = await storage.load();
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-
-      expect(result.chatViewPlacement).toBe('main-tab');
-      expect(writtenContent.chatViewPlacement).toBe('main-tab');
-      expect(writtenContent).not.toHaveProperty('openInMainTab');
-    });
-
-    it('migrates legacy openInMainTab false to right-sidebar placement', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        openInMainTab: false,
-      }));
-
-      const result = await storage.load();
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-
-      expect(result.chatViewPlacement).toBe('right-sidebar');
-      expect(writtenContent.chatViewPlacement).toBe('right-sidebar');
-      expect(writtenContent).not.toHaveProperty('openInMainTab');
+      expect(result.chatViewPlacement).toBe(DEFAULT_SETTINGS.chatViewPlacement);
+      expect(getClaudeProviderSettings(result).cliPath).toBe('');
+      expect(getCodexProviderSettings(result).cliPath).toBe('');
+      expect(getClaudeProviderSettings(result).environmentVariables).toBe('');
+      expect(result.sharedEnvironmentVariables).toBe('');
+      expect(result.hiddenProviderCommands).toEqual({});
     });
 
     it('normalizes invalid chatViewPlacement values', async () => {
@@ -351,31 +318,16 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.restoreTabsOnStartup).toBe(false);
     });
 
-    it('should strip legacy blocklist fields from loaded data', async () => {
+    it('normalizes claude provider CLI paths from loaded data', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
-        enableBlocklist: false,
-        blockedCommands: {
-          unix: ['custom-unix-cmd'],
-          windows: ['custom-win-cmd'],
-        },
-      }));
-
-      const result = await storage.load();
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-
-      expect('enableBlocklist' in result).toBe(false);
-      expect('blockedCommands' in result).toBe(false);
-      expect(writtenContent).not.toHaveProperty('enableBlocklist');
-      expect(writtenContent).not.toHaveProperty('blockedCommands');
-    });
-
-    it('should normalize claudeCliPathsByHost from loaded data', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        claudeCliPathsByHost: {
+        providerConfigs: {
+          claude: {
+            cliPathsByHost: {
           'host-a': '/custom/path-a',
           'host-b': '/custom/path-b',
+        }
+        }
         },
       }));
 
@@ -385,23 +337,16 @@ describe('ClaudianSettingsStorage', () => {
       expect(getClaudeProviderSettings(result).cliPathsByHost['host-b']).toBe('/custom/path-b');
     });
 
-    it('should preserve legacy claudeCliPath field', async () => {
+    it('normalizes codex provider CLI paths from loaded data', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
-        claudeCliPath: '/legacy/path',
-      }));
-
-      const result = await storage.load();
-
-      expect(getClaudeProviderSettings(result).cliPath).toBe('/legacy/path');
-    });
-
-    it('should normalize codexCliPathsByHost from loaded data', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        codexCliPathsByHost: {
+        providerConfigs: {
+          codex: {
+            cliPathsByHost: {
           'host-a': '/custom/codex-a',
           'host-b': '/custom/codex-b',
+        }
+        }
         },
       }));
 
@@ -666,17 +611,6 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.providerConfigs.codex).not.toHaveProperty('wslDistroOverride');
     });
 
-    it('should preserve legacy codexCliPath field', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        codexCliPath: '/legacy/codex',
-      }));
-
-      const result = await storage.load();
-
-      expect(getCodexProviderSettings(result).cliPath).toBe('/legacy/codex');
-    });
-
     it('defaults Codex installation method and WSL distro override when missing', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({}));
@@ -744,36 +678,6 @@ describe('ClaudianSettingsStorage', () => {
       expect(getCodexProviderSettings(result).wslDistroOverride).toBe('');
     });
 
-    it('should remove legacy show1MModel from the stored file', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        model: 'sonnet',
-        show1MModel: true,
-      }));
-
-      await storage.load();
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-
-      expect(writtenContent.model).toBe('sonnet');
-      expect(writtenContent.hiddenProviderCommands).toEqual({});
-      expect(writtenContent).not.toHaveProperty('show1MModel');
-    });
-
-    it('should remove legacy Claude 1M toggles from top-level settings', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        model: 'sonnet',
-        enableOpus1M: true,
-        enableSonnet1M: true,
-      }));
-
-      await storage.load();
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-
-      expect(writtenContent).not.toHaveProperty('enableOpus1M');
-      expect(writtenContent).not.toHaveProperty('enableSonnet1M');
-    });
-
     it('should remove legacy Claude 1M toggles from provider settings', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
@@ -790,39 +694,6 @@ describe('ClaudianSettingsStorage', () => {
 
       expect(writtenContent.providerConfigs.claude).not.toHaveProperty('enableOpus1M');
       expect(writtenContent.providerConfigs.claude).not.toHaveProperty('enableSonnet1M');
-    });
-
-    it('should remove legacy slashCommands from the stored file', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        model: 'sonnet',
-        slashCommands: [{ id: 'cmd-review', name: 'review', content: 'Review' }],
-      }));
-
-      const result = await storage.load();
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-
-      expect('slashCommands' in result).toBe(false);
-      expect(writtenContent.model).toBe('sonnet');
-      expect(writtenContent.hiddenProviderCommands).toEqual({});
-      expect(writtenContent).not.toHaveProperty('slashCommands');
-    });
-
-    it('should migrate legacy hiddenSlashCommands into Claude hiddenProviderCommands', async () => {
-      mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.read.mockResolvedValue(JSON.stringify({
-        hiddenSlashCommands: ['commit', '/review'],
-      }));
-
-      const result = await storage.load();
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-
-      expect(result.hiddenProviderCommands).toEqual({
-        claude: ['commit', 'review'],
-      });
-      expect(writtenContent.hiddenProviderCommands).toEqual({
-        claude: ['commit', 'review'],
-      });
     });
 
     it('should not override explicit provider hidden commands with legacy hiddenSlashCommands', async () => {
@@ -845,7 +716,7 @@ describe('ClaudianSettingsStorage', () => {
       });
     });
 
-    it('normalizes stale scoped mixed env snippets back to unscoped on load', async () => {
+    it('preserves explicit scope on stored mixed environment snippets', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
         envSnippets: [{
@@ -865,20 +736,24 @@ describe('ClaudianSettingsStorage', () => {
         name: 'Mixed snippet',
         description: '',
         envVars: 'PATH=/usr/local/bin\nANTHROPIC_MODEL=claude-custom',
-        scope: undefined,
+        scope: 'shared',
         contextLimits: undefined,
         modelAliases: undefined,
       }]);
-      expect(writtenContent.envSnippets[0].scope).toBeUndefined();
+      expect(writtenContent.envSnippets[0].scope).toBe('shared');
     });
 
     it('normalizes custom model aliases on load', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
-        customModelAliases: {
+        providerConfigs: {
+          claude: {
+            modelAliases: {
           ' custom-model ': '  Friendly model  ',
           empty: '   ',
           ignored: 123,
+        }
+        }
         },
         envSnippets: [{
           id: 'snippet-1',
@@ -945,20 +820,6 @@ describe('ClaudianSettingsStorage', () => {
       expect(writtenContent.providerConfigs.codex.wslDistroOverridesByHost).toEqual({});
     });
 
-    it('should strip legacy slashCommands before writing', async () => {
-      const settings = {
-        ...DEFAULT_SETTINGS,
-        model: 'claude-opus-4-5' as const,
-        slashCommands: [{ id: 'cmd-review', name: 'review', content: 'Review' }],
-      } as typeof DEFAULT_SETTINGS & { slashCommands: unknown[] };
-
-      await storage.save(settings as any);
-
-      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
-      expect(writtenContent.model).toBe('claude-opus-4-5');
-      expect(writtenContent).not.toHaveProperty('slashCommands');
-    });
-
     it('persists only selected Codex metadata with hand-picked model IDs', async () => {
       const settings = {
         ...DEFAULT_SETTINGS,
@@ -1016,20 +877,6 @@ describe('ClaudianSettingsStorage', () => {
       expect(getCodexProviderSettings(reloaded).modelAliases).toEqual({
         'gpt-5.5': 'Primary',
       });
-    });
-
-    it('deletes the legacy settings file after writing the new path', async () => {
-      mockAdapter.exists.mockImplementation(async (path: string) => (
-        path === LEGACY_CLAUDIAN_SETTINGS_PATH
-      ));
-
-      await storage.save(DEFAULT_SETTINGS);
-
-      expect(mockAdapter.write).toHaveBeenCalledWith(
-        CLAUDIAN_SETTINGS_PATH,
-        expect.any(String),
-      );
-      expect(mockAdapter.delete).toHaveBeenCalledWith(LEGACY_CLAUDIAN_SETTINGS_PATH);
     });
 
     it('should throw on write error', async () => {

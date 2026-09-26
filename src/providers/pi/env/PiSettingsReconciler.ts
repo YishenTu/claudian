@@ -11,19 +11,9 @@ import {
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
-import { sameStringList } from '../internal/compareCollections';
-import {
-  clampPiThinkingLevel,
-  decodePiModelId,
-  encodePiModelId,
-  findPiModel,
-  isPiModelSelectionId,
-  PI_DEFAULT_THINKING_LEVEL,
-} from '../models';
 import {
   getPiProviderSettings,
-  normalizePiVisibleModels,
-  updatePiProviderSettings,
+  updatePiProviderSettings
 } from '../settings';
 import { clearPiResumeState } from '../types';
 
@@ -81,7 +71,7 @@ function isCurrentLegacyPiFingerprint(
   return savedFingerprint === legacyFingerprint;
 }
 
-export const piSettingsReconciler: ProviderSettingsReconciler = {
+export const piSettingsReconciler = {
 
   invalidateConversationSessions: invalidatePiConversationSessions,
 
@@ -136,96 +126,6 @@ export const piSettingsReconciler: ProviderSettingsReconciler = {
       changed = true;
     }
 
-    const normalizeSelection = (value: unknown): string | null => {
-      if (typeof value !== 'string') {
-        return null;
-      }
-
-      if (!isPiModelSelectionId(value)) {
-        return value === 'pi' || value.startsWith('pi:') ? '' : null;
-      }
-
-      const decoded = decodePiModelId(value);
-      if (decoded) {
-        return encodePiModelId(decoded.provider, decoded.modelId);
-      }
-      return null;
-    };
-
-    const modelSelection = normalizeSelection(settings.model);
-    if (
-      typeof settings.model === 'string'
-      && modelSelection !== null
-      && settings.model !== modelSelection
-    ) {
-      settings.model = modelSelection;
-      changed = true;
-    }
-
-    const titleModelSelection = normalizeSelection(settings.titleGenerationModel);
-    if (
-      typeof settings.titleGenerationModel === 'string'
-      && titleModelSelection !== null
-      && settings.titleGenerationModel !== titleModelSelection
-    ) {
-      settings.titleGenerationModel = titleModelSelection;
-      changed = true;
-    }
-
-    const savedProviderModelRaw = settings.savedProviderModel;
-    if (savedProviderModelRaw && typeof savedProviderModelRaw === 'object' && !Array.isArray(savedProviderModelRaw)) {
-      const savedProviderModel = savedProviderModelRaw as Record<string, unknown>;
-      const savedSelection = normalizeSelection(savedProviderModel.pi);
-      if (
-        typeof savedProviderModel.pi === 'string'
-        && savedSelection !== null
-        && savedProviderModel.pi !== savedSelection
-      ) {
-        if (savedSelection) {
-          savedProviderModel.pi = savedSelection;
-        } else {
-          delete savedProviderModel.pi;
-        }
-        changed = true;
-      }
-    }
-
-    const normalizedVisibleModels = normalizePiVisibleModels(
-      piSettings.visibleModels,
-      piSettings.discoveredModels,
-    );
-    const shouldUpdateProviderSettings = !sameStringList(normalizedVisibleModels, piSettings.visibleModels);
-    if (shouldUpdateProviderSettings) {
-      updatePiProviderSettings(settings, {
-        visibleModels: normalizedVisibleModels,
-      });
-      changed = true;
-    }
-
-    if (typeof settings.effortLevel === 'string' && !settings.effortLevel.trim()) {
-      settings.effortLevel = getDefaultPiEffortForSelection(settings.model, piSettings);
-      changed = true;
-    }
-
     return changed;
   },
-};
-
-function getDefaultPiEffortForSelection(
-  selection: unknown,
-  piSettings: ReturnType<typeof getPiProviderSettings>,
-): string {
-  if (typeof selection !== 'string') {
-    return 'off';
-  }
-
-  const decoded = decodePiModelId(selection);
-  if (!decoded) {
-    return 'off';
-  }
-
-  const model = findPiModel(piSettings, encodePiModelId(decoded.provider, decoded.modelId));
-  return model
-    ? clampPiThinkingLevel(PI_DEFAULT_THINKING_LEVEL, model.thinkingLevels)
-    : PI_DEFAULT_THINKING_LEVEL;
-}
+} satisfies ProviderSettingsReconciler;

@@ -502,7 +502,7 @@ export class ProviderSettingsCoordinator {
         this.projectProviderState(targetSettings, providerId);
       }
 
-      const changed = reconciler.normalizeModelVariantSettings(targetSettings);
+      const changed = reconciler.normalizeModelVariantSettings?.(targetSettings);
       if (changed) {
         anyChanged = true;
         this.persistProjectedProviderState(targetSettings, providerId);

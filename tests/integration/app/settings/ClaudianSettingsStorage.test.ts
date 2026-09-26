@@ -1,16 +1,13 @@
 import '@/providers';
 
-import {
-  CLAUDIAN_SETTINGS_PATH,
-  ClaudianSettingsStorage,
-  LEGACY_CLAUDIAN_SETTINGS_PATH,
-} from '@/app/settings/ClaudianSettingsStorage';
+import { CLAUDIAN_SETTINGS_PATH, ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 
 function fixture() {
-  const files = new Map([[LEGACY_CLAUDIAN_SETTINGS_PATH, JSON.stringify({ userName: 'Legacy' })]]);
+  const retiredPath = '.claude/claudian-settings.json';
+  const files = new Map([[retiredPath, JSON.stringify({ userName: 'Retired' })]]);
   const adapter = {
     exists: jest.fn(async (path: string) => files.has(path)),
     read: jest.fn(async (path: string) => files.get(path)!),
@@ -20,48 +17,29 @@ function fixture() {
   const storage = new ClaudianSettingsStorage(adapter as unknown as VaultFileAdapter);
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
   const coordinator = new SettingsCoordinator(settings, value => storage.save(value));
-  return { files, adapter, storage, settings, coordinator };
+  return { files, adapter, storage, settings, coordinator, retiredPath };
 }
 
-test.each(['exists', 'delete'] as const)(
-  'legacy cleanup %s failure preserves the committed settings and retries on the next save',
-  async operation => {
-    const { files, adapter, settings, coordinator } = fixture();
-    adapter[operation].mockRejectedValueOnce(new Error('Legacy file unavailable'));
-    const publish = jest.fn();
-
-    await expect(coordinator.mutate(value => { value.userName = 'Updated'; }, publish))
-      .resolves.toBeUndefined();
-
-    expect(settings.userName).toBe('Updated');
-    expect(JSON.parse(files.get(CLAUDIAN_SETTINGS_PATH)!).userName).toBe('Updated');
-    expect(publish).toHaveBeenCalledTimes(1);
-    expect(files.has(LEGACY_CLAUDIAN_SETTINGS_PATH)).toBe(true);
-
-    await coordinator.persistCurrent();
-    expect(files.has(LEGACY_CLAUDIAN_SETTINGS_PATH)).toBe(false);
-  },
-);
-
-test('legacy migration remains usable when obsolete settings cannot be deleted', async () => {
-  const { files, adapter, storage } = fixture();
-  adapter.delete.mockRejectedValueOnce(new Error('Legacy file is locked'));
-
-  await expect(storage.load()).resolves.toMatchObject({ userName: 'Legacy' });
-  expect(JSON.parse(files.get(CLAUDIAN_SETTINGS_PATH)!).userName).toBe('Legacy');
-  expect(files.has(LEGACY_CLAUDIAN_SETTINGS_PATH)).toBe(true);
-  await expect(storage.load()).resolves.toMatchObject({ userName: 'Legacy' });
+test('loads and saves canonical settings without reading or deleting retired storage', async () => {
+  const { files, adapter, settings, coordinator, storage, retiredPath } = fixture();
+  expect((await storage.load()).userName).toBe(DEFAULT_CLAUDIAN_SETTINGS.userName);
+  expect(adapter.read).not.toHaveBeenCalled();
+  const publish = jest.fn();
+  await coordinator.mutate(value => { value.userName = 'Updated'; }, publish);
+  expect(settings.userName).toBe('Updated');
+  expect((await storage.load()).userName).toBe('Updated');
+  expect(publish).toHaveBeenCalledTimes(1);
+  expect(files.get(retiredPath)).toBe(JSON.stringify({ userName: 'Retired' }));
+  expect(adapter.delete).not.toHaveBeenCalled();
 });
 
-test('a canonical write failure still rolls back memory and preserves the legacy file', async () => {
-  const { files, adapter, settings, coordinator } = fixture();
+test('a canonical write failure rolls back memory without touching retired storage', async () => {
+  const { files, adapter, settings, coordinator, retiredPath } = fixture();
   const previousName = settings.userName;
   adapter.write.mockRejectedValueOnce(new Error('Write failed'));
-
-  await expect(coordinator.mutate(value => { value.userName = 'Unsaved'; }))
-    .rejects.toThrow('Write failed');
+  await expect(coordinator.mutate(value => { value.userName = 'Unsaved'; })).rejects.toThrow('Write failed');
   expect(settings.userName).toBe(previousName);
   expect(files.has(CLAUDIAN_SETTINGS_PATH)).toBe(false);
-  expect(files.has(LEGACY_CLAUDIAN_SETTINGS_PATH)).toBe(true);
+  expect(files.has(retiredPath)).toBe(true);
   expect(adapter.delete).not.toHaveBeenCalled();
 });

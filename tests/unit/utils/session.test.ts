@@ -434,48 +434,6 @@ describe('session utilities', () => {
       expect(result).toBe(historyContext);
     });
 
-    it('avoids duplication when legacy XML-wrapped content matches display content', () => {
-      const prompt = [
-        '<current_note>',
-        'notes/file.md',
-        '</current_note>',
-        '',
-        '<editor_selection path="notes/file.md">',
-        'selected text',
-        '</editor_selection>',
-        '',
-        '<query>',
-        'Follow up',
-        '</query>',
-      ].join('\n');
-
-      const actualPrompt = [
-        '<editor_selection path="notes/file.md">',
-        'selected text',
-        '</editor_selection>',
-        '',
-        '<query>',
-        'Follow up',
-        '</query>',
-      ].join('\n');
-
-      const messages: ChatMessage[] = [
-        {
-          id: 'msg-1',
-          role: 'user',
-          content: prompt,
-          displayContent: 'Follow up',
-          timestamp: 1000,
-        },
-      ];
-
-      const historyContext = 'User: Follow up';
-
-      const result = buildPromptWithHistoryContext(historyContext, prompt, actualPrompt, messages);
-
-      expect(result).toBe(historyContext);
-    });
-
     describe('new format (user content before XML context)', () => {
       it('avoids duplication when actualPrompt matches last user message', () => {
         const prompt = 'Explain this\n\n<linked_note>\ntest.md\n</linked_note>';

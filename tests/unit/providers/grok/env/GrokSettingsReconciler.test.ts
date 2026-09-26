@@ -176,7 +176,7 @@ describe('GrokSettingsReconciler', () => {
       },
     };
 
-    expect(grokSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
+    expect(grokSettingsReconciler.normalizeModelVariantSettings!(settings)).toBe(true);
     expect(settings).toEqual({
       model: 'grok/grok-4.5',
       titleGenerationModel: 'grok/grok-3',
@@ -197,7 +197,7 @@ describe('GrokSettingsReconciler', () => {
       },
     };
 
-    expect(grokSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(false);
+    expect(grokSettingsReconciler.normalizeModelVariantSettings!(settings)).toBe(false);
     expect(settings).toEqual({
       model: 'grok/grok-4.5',
       titleGenerationModel: 'claude-sonnet-4-5',

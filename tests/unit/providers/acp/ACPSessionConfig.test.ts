@@ -56,25 +56,8 @@ describe('AcpSessionConfig', () => {
     });
   });
 
-  it('falls back to the legacy model id when category is unavailable', () => {
-    expect(extractACPSessionModelState({
-      configOptions: [
-        {
-          currentValue: 'openai/gpt-5',
-          id: 'model',
-          name: 'Model',
-          options: [
-            { name: 'OpenAI/GPT-5', value: 'openai/gpt-5' },
-          ],
-          type: 'select',
-        },
-      ],
-    })).toEqual({
-      availableModels: [
-        { id: 'openai/gpt-5', name: 'OpenAI/GPT-5' },
-      ],
-      currentModelId: 'openai/gpt-5',
-    });
+  it('ignores uncategorized model selectors', () => {
+    expect(extractACPSessionModelState({ configOptions: [{ currentValue: 'model-1', id: 'model', name: 'Model', options: [{ name: 'Model', value: 'model-1' }], type: 'select' }] })).toEqual({ availableModels: [], currentModelId: null });
   });
 
   it('falls back to ACP session model metadata when config options are unavailable', () => {
@@ -231,25 +214,8 @@ describe('AcpSessionConfig', () => {
     });
   });
 
-  it('falls back to the legacy mode id when category is unavailable', () => {
-    expect(extractACPSessionModeState({
-      configOptions: [
-        {
-          currentValue: 'build',
-          id: 'mode',
-          name: 'Mode',
-          options: [
-            { description: 'Default editing agent', name: 'Build', value: 'build' },
-          ],
-          type: 'select',
-        },
-      ],
-    })).toEqual({
-      availableModes: [
-        { description: 'Default editing agent', id: 'build', name: 'Build' },
-      ],
-      currentModeId: 'build',
-    });
+  it('ignores uncategorized mode selectors', () => {
+    expect(extractACPSessionModeState({ configOptions: [{ currentValue: 'plan', id: 'mode', name: 'Mode', options: [{ name: 'Plan', value: 'plan' }], type: 'select' }] })).toEqual({ availableModes: [], currentModeId: null });
   });
 
   it('falls back to ACP session mode metadata when config options are unavailable', () => {

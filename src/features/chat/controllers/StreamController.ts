@@ -1859,7 +1859,7 @@ export class StreamController {
   #notifyApplyPatchFileChanges(input: Record<string, unknown>): void {
     const notified = new Set<string>();
 
-    // Legacy changes array
+    // Codex fileChange events supply structured changes.
     const changes = input.changes;
     if (Array.isArray(changes)) {
       for (const change of changes) {

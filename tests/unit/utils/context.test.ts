@@ -50,21 +50,8 @@ describe('appendLinkedContent', () => {
 });
 
 describe('extractUserDisplayContent', () => {
-  describe('legacy format with <query> tags', () => {
-    it('extracts content from query tags', () => {
-      const prompt = '<linked_note>\ntest.md\n</linked_note>\n\n<query>\nUser question\n</query>';
-      expect(extractUserDisplayContent(prompt)).toBe('User question');
-    });
-
-    it('trims whitespace from extracted content', () => {
-      const prompt = '<query>\n  spaced content  \n</query>';
-      expect(extractUserDisplayContent(prompt)).toBe('spaced content');
-    });
-
-    it('handles multiline content in query tags', () => {
-      const prompt = '<query>\nLine 1\nLine 2\nLine 3\n</query>';
-      expect(extractUserDisplayContent(prompt)).toBe('Line 1\nLine 2\nLine 3');
-    });
+  it('does not interpret query wrappers as structured context', () => {
+    expect(extractUserDisplayContent('<query>Question</query>')).toBeUndefined();
   });
 
   describe('current format with user content first', () => {
@@ -159,9 +146,8 @@ describe('extractUserDisplayContent', () => {
 
 describe('extractUserQuery', () => {
   describe('with structured XML context', () => {
-    it('extracts content from legacy query tags', () => {
-      const prompt = '<current_note>\ntest.md\n</current_note>\n\n<query>\nUser question\n</query>';
-      expect(extractUserQuery(prompt)).toBe('User question');
+    it('preserves query tags as ordinary user text', () => {
+      expect(extractUserQuery('<query>Question</query>')).toBe('<query>Question</query>');
     });
 
     it('extracts content before XML context tags', () => {

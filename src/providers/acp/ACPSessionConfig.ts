@@ -137,22 +137,10 @@ function findSessionConfigSelectOption(
   if (!configOptions) {
     return null;
   }
-  // Prefer explicit `category` metadata; fall back to id-based matching for older agents
-  // that have not yet migrated their config options to tag a category.
   const byCategory = configOptions.find((option) => (
     option.type === 'select' && normalizeComparableKey(option.category) === category
   ));
-  if (byCategory?.type === 'select') {
-    return byCategory;
-  }
-  const byLegacyId = configOptions.find((option) => (
-    option.type === 'select' && normalizeComparableKey(option.id) === legacyConfigIdForCategory(category)
-  ));
-  return byLegacyId?.type === 'select' ? byLegacyId : null;
-}
-
-function legacyConfigIdForCategory(category: 'model' | 'mode' | 'thought_level'): string {
-  return category === 'thought_level' ? 'effort' : category;
+  return byCategory?.type === 'select' ? byCategory : null;
 }
 
 function isSelectGroup(

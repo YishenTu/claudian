@@ -109,8 +109,8 @@ Prompt`,
       const adapter = createMockAdapter({
         '.claude/skills/my-skill/SKILL.md': `---
 description: Full skill
-disableModelInvocation: true
-userInvocable: true
+disable-model-invocation: true
+user-invocable: true
 context: fork
 agent: code-reviewer
 model: sonnet

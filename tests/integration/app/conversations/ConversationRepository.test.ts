@@ -29,7 +29,6 @@ function fixture() {
     },
     saveMetadata: jest.fn().mockResolvedValue(undefined),
     deleteCurrentMetadata: jest.fn().mockResolvedValue(undefined),
-    deleteLegacyMetadata: jest.fn().mockResolvedValue(undefined),
     assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
   };
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
@@ -96,7 +95,7 @@ test('a metadata scan paused during source resolution cannot publish writes afte
   const { repository, persistence, conversation, runtimeSettings } = fixture();
   repository.replaceAll([]);
   const metadata: SessionMetadata = { ...conversation, providerState: undefined };
-  const record = { metadata, source: 'legacy' as const, needsMigration: true };
+  const record = { metadata, source: 'unscoped' as const, needsMigration: true };
   let resolveSource!: (value: typeof record) => void;
   let sourceStarted!: () => void;
   const readingSource = new Promise<void>(resolve => { sourceStarted = resolve; });
@@ -121,7 +120,6 @@ test('a metadata scan paused during source resolution cannot publish writes afte
   await disposal;
   expect(persistence.saveMetadata).not.toHaveBeenCalled();
 });
-
 
 test.each(['rename', 'archive', 'model'] as const)('failed %s writes leave the committed projection intact', async operation => {
   const { repository, persistence, conversation } = fixture();
@@ -169,7 +167,7 @@ test('execution claims reject competitors and stale handoffs until explicitly re
 test('loader disposal drains an admitted migration and rejects further on-demand reads', async () => {
   const { repository, persistence, conversation, runtimeSettings } = fixture();
   repository.replaceAll([]);
-  persistence.metadataReader.load.mockResolvedValue({ metadata: conversation, source: 'legacy', needsMigration: true });
+  persistence.metadataReader.load.mockResolvedValue({ metadata: conversation, source: 'unscoped', needsMigration: true });
   let finishWrite!: () => void;
   persistence.saveMetadata.mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
   const loader = new SessionMetadataLoader({
@@ -185,10 +183,9 @@ test('loader disposal drains an admitted migration and rejects further on-demand
   expect(persistence.metadataReader.load).toHaveBeenCalledTimes(1);
   finishWrite();
   await Promise.all([load, disposal]);
-  expect(persistence.deleteLegacyMetadata).toHaveBeenCalledWith(conversation.id);
+  expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({ id: conversation.id }), 'unscoped');
   expect(disposed).toBe(true);
 });
-
 
 test('historical recovery cannot overwrite a model selection whose write is pending', async () => {
   const { repository, persistence, conversation } = fixture();
@@ -228,7 +225,6 @@ test('provider invalidation preserves an ordinary metadata commit already in fli
   expect(conversation).toMatchObject({ title: 'Renamed', sessionId: null });
 });
 
-
 test('failed deletion restores an ordinary metadata commit that finished during deletion', async () => {
   const { repository, persistence, conversation } = fixture();
   let finishWrite!: () => void;
@@ -255,7 +251,6 @@ test('provider invalidation fences session fields while preserving the rest of a
   expect(conversation).toMatchObject({ title: 'Renamed', sessionId: null });
   expect(persistence.saveMetadata.mock.calls.at(-1)?.[0]).toMatchObject({ title: 'Renamed', sessionId: null });
 });
-
 
 test('a missing-session check waits for an already-admitted binding write', async () => {
   const { repository, persistence, conversation } = fixture();
@@ -332,7 +327,6 @@ test('activity accepted during a session write reaches disk', async () => {
   await Promise.all([update, activity]);
   expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].lastActivityAt).toBe(timestamp);
 });
-
 
 test('linked-content rename during a session write reaches disk', async () => {
   const { repository, persistence, conversation } = fixture();

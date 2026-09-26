@@ -82,7 +82,7 @@ function invalidateClaudeConversationSessions(conversations: Conversation[]): Co
   ));
 }
 
-export const claudeSettingsReconciler: ProviderSettingsReconciler = {
+export const claudeSettingsReconciler = {
   invalidateConversationSessions: invalidateClaudeConversationSessions,
 
   reconcileModelWithEnvironment(
@@ -116,4 +116,4 @@ export const claudeSettingsReconciler: ProviderSettingsReconciler = {
     updateClaudeProviderSettings(settings, { environmentHash: computeRuntimeFingerprint(settings, environmentText) });
     return true;
   },
-};
+} satisfies ProviderSettingsReconciler;

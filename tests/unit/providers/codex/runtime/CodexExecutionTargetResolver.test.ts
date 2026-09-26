@@ -2,6 +2,7 @@ import {
   parseDefaultWslDistroListOutput,
   resolveCodexExecutionTarget,
 } from '@/providers/codex/runtime/CodexExecutionTargetResolver';
+import { getHostnameKey } from '@/utils/env';
 
 describe('resolveCodexExecutionTarget', () => {
   it('infers the WSL distro from a \\\\wsl$ workspace path', () => {
@@ -9,7 +10,7 @@ describe('resolveCodexExecutionTarget', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
       },
@@ -30,8 +31,8 @@ describe('resolveCodexExecutionTarget', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
-            wslDistroOverride: 'Debian',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
+            wslDistroOverridesByHost: { [getHostnameKey()]: 'Debian' },
           },
         },
       },
@@ -50,7 +51,7 @@ describe('resolveCodexExecutionTarget', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
       },
@@ -70,7 +71,7 @@ describe('resolveCodexExecutionTarget', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
       },

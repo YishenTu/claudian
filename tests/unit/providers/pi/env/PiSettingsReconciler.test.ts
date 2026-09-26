@@ -133,21 +133,4 @@ describe('piSettingsReconciler', () => {
     expect(piSettingsReconciler.invalidateConversationSessions([conversation])).toEqual([]);
   });
 
-  it('normalizes malformed Pi model selections instead of preserving invalid ids', () => {
-    const settings: Record<string, unknown> = {
-      model: 'pi:missing-slash',
-      providerConfigs: {
-        pi: {},
-      },
-      savedProviderModel: {
-        pi: 'pi:also-invalid',
-      },
-      titleGenerationModel: 'pi:invalid-title',
-    };
-
-    expect(piSettingsReconciler.normalizeModelVariantSettings(settings)).toBe(true);
-    expect(settings.model).toBe('');
-    expect(settings.titleGenerationModel).toBe('');
-    expect(settings.savedProviderModel).toEqual({});
-  });
 });

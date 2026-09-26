@@ -101,7 +101,7 @@ function invalidateCodexConversationSessions(conversations: Conversation[]): Con
   return invalidatedConversations;
 }
 
-export const codexSettingsReconciler: ProviderSettingsReconciler = {
+export const codexSettingsReconciler = {
   invalidateConversationSessions: invalidateCodexConversationSessions,
 
   reconcileModelWithEnvironment(
@@ -162,4 +162,4 @@ export const codexSettingsReconciler: ProviderSettingsReconciler = {
     settings.model = normalizedModel;
     return true;
   },
-};
+} satisfies ProviderSettingsReconciler;

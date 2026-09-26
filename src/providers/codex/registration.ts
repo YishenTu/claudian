@@ -33,14 +33,6 @@ export const codexProviderRegistration: ProviderModule = {
         .some(id => !findCodexModel(current.discoveredModels, id)?.supportedReasoningEfforts.length);
     },
     hostScopedFields: ['cliPathsByHost', 'installationMethodsByHost', 'wslDistroOverridesByHost'],
-    legacyTopLevelFields: [
-      'codexSafeMode',
-      'codexCliPath',
-      'codexCliPathsByHost',
-      'codexReasoningSummary',
-      'codexEnabled',
-      'lastCodexEnvHash',
-    ],
     normalizeStored(target, stored) {
       const normalization = normalizeCodexStoredConfig(stored);
       normalization.config.visibleModels = getVisibleCodexModelIds(normalization.config.visibleModels, normalization.config.discoveredModels);

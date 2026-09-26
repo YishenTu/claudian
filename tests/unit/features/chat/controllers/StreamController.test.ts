@@ -842,6 +842,28 @@ describe('StreamController - Text Content', () => {
       );
     });
 
+    it.each([
+      { changes: [{ path: 'notes/new.md', kind: 'add' }] },
+      { patch: '*** Begin Patch\n*** Add File: notes/new.md\n+hello\n*** End Patch' },
+    ])('refreshes the vault after successful current apply_patch input: %j', async (input) => {
+      const vault = deps.plugin.app.vault;
+      vault.getAbstractFileByPath = jest.fn().mockReturnValue(null);
+      vault.adapter.list = jest.fn().mockResolvedValue({ files: [], folders: [] });
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+
+      await controller.handleStreamChunk(
+        { type: 'tool_use', id: 'patch-refresh', name: TOOL_APPLY_PATCH, input }, msg,
+      );
+      await controller.handleStreamChunk(
+        { type: 'tool_result', id: 'patch-refresh', content: 'Success' }, msg,
+      );
+      await jest.advanceTimersByTimeAsync(200);
+
+      expect(vault.getAbstractFileByPath).toHaveBeenCalledWith('notes/new.md');
+      expect(vault.adapter.list).toHaveBeenCalledWith('notes');
+    });
+
     it('should pass expanded default to apply_patch tool blocks when enabled', async () => {
       const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       (deps.plugin.settings as any).expandFileEditsByDefault = true;

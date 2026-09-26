@@ -215,8 +215,7 @@ export class ConversationRepository {
   ): Promise<void> {
     for (const { conversation, source } of entries) {
       if (!this.metadataTargets.has(conversation.id)) {
-        const target = source === 'legacy' ? 'unscoped' : source;
-        this.metadataTargets.set(conversation.id, target);
+        this.metadataTargets.set(conversation.id, source);
       }
     }
     const linkedContentPathCorrectedIds = new Set<string>();
@@ -253,14 +252,14 @@ export class ConversationRepository {
     }
     const migrations = entries
       .filter(
-        ({ conversation, needsMigration, source }) =>
+        ({ conversation, needsMigration }) =>
           (
-            (source === 'legacy' || needsMigration)
+            needsMigration
             && (addedIds.has(conversation.id) || !!this.getSync(conversation.id))
           )
           || linkedContentPathCorrectedIds.has(conversation.id),
       )
-      .map(({ conversation, source }) => this.#enqueuePersistence(
+      .map(({ conversation }) => this.#enqueuePersistence(
         conversation.id,
         async () => {
           const current = this.getSync(conversation.id);
@@ -269,9 +268,6 @@ export class ConversationRepository {
             preserveProviderState: !this.hydratedConversationIds.has(current.id),
           });
           this.pendingLinkedContentPathCorrectionIds.delete(current.id);
-          if (source === 'legacy') {
-            await this.persistence.deleteLegacyMetadata(current.id);
-          }
         },
       ));
     await Promise.all(migrations);
@@ -451,7 +447,6 @@ export class ConversationRepository {
     let metadataRemoved = false;
     try {
       await this.#enqueuePersistence(id, async () => {
-        await this.persistence.deleteLegacyMetadata(id);
         const target = this.#requireMetadataTarget(id);
         await (target === 'device'
           ? this.persistence.deleteCurrentMetadata(id)

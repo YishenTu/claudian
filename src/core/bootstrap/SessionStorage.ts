@@ -11,13 +11,11 @@ import type {
 } from '../types';
 import {
   getDeviceSessionsPath,
-  LEGACY_SESSIONS_PATH,
   SESSIONS_PATH,
 } from './storagePaths';
 
 export {
-  LEGACY_SESSIONS_PATH,
-  SESSIONS_PATH,
+  SESSIONS_PATH
 };
 
 const SAFE_METADATA_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -26,7 +24,7 @@ const SESSION_METADATA_PUBLISH_BATCH_SIZE = 16;
 const METADATA_SUFFIX = '.meta.json';
 
 export type SessionMetadataAuthority = 'device' | 'unscoped';
-export type SessionMetadataSource = SessionMetadataAuthority | 'legacy';
+export type SessionMetadataSource = SessionMetadataAuthority;
 
 export interface SessionMetadataReadResult {
   metadata: SessionMetadata;
@@ -86,11 +84,6 @@ export class SessionStorage implements SessionMetadataReader {
     return `${SESSIONS_PATH}/${id}${METADATA_SUFFIX}`;
   }
 
-  getLegacyMetadataPath(id: string): string {
-    assertValidSessionMetadataId(id);
-    return `${LEGACY_SESSIONS_PATH}/${id}${METADATA_SUFFIX}`;
-  }
-
   async load(id: string): Promise<SessionMetadataReadResult | null> {
     if (!isValidSessionMetadataId(id)) {
       return null;
@@ -115,7 +108,6 @@ export class SessionStorage implements SessionMetadataReader {
     const candidates = [
       { path: this.getMetadataPath(id), source: 'device' },
       { path: this.getUnscopedMetadataPath(id), source: 'unscoped' },
-      { path: this.getLegacyMetadataPath(id), source: 'legacy' },
     ] as const;
     for (const { path, source } of candidates) {
       if (await this.adapter.exists(path)) return this.readMetadata(path, id, source);
@@ -147,14 +139,12 @@ export class SessionStorage implements SessionMetadataReader {
         invalidMetadataCount: 0,
       };
     }
-    const legacyListing = await this.listFiles(LEGACY_SESSIONS_PATH);
-    let complete = legacyListing.complete;
+    let complete = true;
     let invalidMetadataCount = 0;
     const filesById = new Map<string, { path: string; source: SessionMetadataSource }>();
     for (const [listing, source] of [
       [deviceListing, 'device'],
       [unscopedListing, 'unscoped'],
-      [legacyListing, 'legacy'],
     ] as const) {
       for (const [id, path] of this.indexPathsById(listing.files, METADATA_SUFFIX)) {
         if (!filesById.has(id)) filesById.set(id, { path, source });

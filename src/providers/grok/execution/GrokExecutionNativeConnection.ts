@@ -69,7 +69,6 @@ implements GrokExecutionNativeConnection {
         onSessionNotification: notification => this.notify(notification, 'standard'),
         requestPermission: request => options.requestPermission(request),
       },
-      methodOverrides: { cancel: 'session/cancel' },
       transport: this.transport,
     });
     for (const method of [

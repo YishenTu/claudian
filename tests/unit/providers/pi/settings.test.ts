@@ -243,28 +243,4 @@ describe('Pi settings normalization', () => {
     expect(getPiProviderSettings(settings).visibleModels).toEqual(['pi:anthropic/claude-sonnet-4']);
   });
 
-  it('normalizes blank Pi effort to a value supported by the selected model', () => {
-    const nonReasoningSettings: Record<string, unknown> = {
-      effortLevel: '',
-      model: 'pi:openai/gpt-5',
-      providerConfigs: {
-        pi: {
-          discoveredModels: [{
-            encodedId: 'pi:openai/gpt-5',
-            id: 'gpt-5',
-            input: ['text'],
-            label: 'GPT-5',
-            provider: 'openai',
-            reasoning: false,
-            thinkingLevels: ['off'],
-          }],
-          visibleModels: ['pi:openai/gpt-5'],
-        },
-      },
-    };
-
-    expect(piSettingsReconciler.normalizeModelVariantSettings(nonReasoningSettings)).toBe(true);
-    expect(nonReasoningSettings.effortLevel).toBe('off');
-
-  });
 });

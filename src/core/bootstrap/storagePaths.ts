@@ -2,7 +2,6 @@ import { type InstallationKey, isInstallationKey } from '@/core/device/Installat
 
 export const CLAUDIAN_STORAGE_PATH = '.claudian';
 
-export const LEGACY_CLAUDIAN_SETTINGS_PATH = '.claude/claudian-settings.json';
 export const CLAUDIAN_SETTINGS_PATH = `${CLAUDIAN_STORAGE_PATH}/claudian-settings.json`;
 
 export const LEGACY_SESSIONS_PATH = '.claude/sessions';

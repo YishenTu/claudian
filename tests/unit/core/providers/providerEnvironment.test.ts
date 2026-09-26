@@ -64,18 +64,11 @@ describe('providerEnvironment', () => {
       ].join('\n'));
     });
 
-    it('falls back to classifying legacy single-bag env settings', () => {
-      const settings: Record<string, unknown> = {
-        environmentVariables: [
-          'PATH=/usr/local/bin',
-          'ANTHROPIC_MODEL=claude-custom',
-          'OPENAI_MODEL=gpt-custom',
-        ].join('\n'),
-      };
-
-      expect(getSharedEnvironmentVariables(settings)).toBe('PATH=/usr/local/bin');
-      expect(getProviderEnvironmentVariables(settings, 'claude')).toBe('ANTHROPIC_MODEL=claude-custom');
-      expect(getProviderEnvironmentVariables(settings, 'codex')).toBe('OPENAI_MODEL=gpt-custom');
+    it('ignores retired single-bag environment settings', () => {
+      const settings = { environmentVariables: 'PATH=/retired\nANTHROPIC_MODEL=retired\nOPENAI_MODEL=retired' };
+      expect(getSharedEnvironmentVariables(settings)).toBe('');
+      expect(getProviderEnvironmentVariables(settings, 'claude')).toBe('');
+      expect(getProviderEnvironmentVariables(settings, 'codex')).toBe('');
     });
 
     it('updates split env settings through scoped setters', () => {

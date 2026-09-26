@@ -7,8 +7,7 @@ import type {
 } from '../../../../src/providers/acp';
 import {
   ACPClientConnection,
-  ACPJSONRPCTransport,
-  JSONRPCErrorResponse,
+  ACPJSONRPCTransport
 } from '../../../../src/providers/acp';
 
 interface ConnectionHarness {
@@ -267,120 +266,32 @@ describe('ACPClientConnection', () => {
     }
   });
 
-  it('falls back to legacy method names and caches the resolved method', async () => {
-    const harness = createConnectionHarness((transport) => new ACPClientConnection({ transport }));
-
+  it('propagates unsupported methods without retrying a retired alias', async () => {
+    const harness = createConnectionHarness(transport => new ACPClientConnection({ transport }));
+    const requestSpy = jest.spyOn(harness.transport, 'request');
     try {
-      const firstPromise = harness.connection.setMode({
-        modeId: 'plan',
-        sessionId: 'session-1',
-      });
-
-      const firstAttempt = await harness.nextOutbound();
-      expect(firstAttempt.method).toBe('session/set_mode');
-      harness.sendInbound({
-        error: {
-          code: -32601,
-          message: 'Method not found',
-        },
-        id: firstAttempt.id,
-        jsonrpc: '2.0',
-      });
-
-      const secondAttempt = await harness.nextOutbound();
-      expect(secondAttempt.method).toBe('setSessionMode');
-      harness.sendInbound({
-        id: secondAttempt.id,
-        jsonrpc: '2.0',
-        result: {},
-      });
-
-      await expect(firstPromise).resolves.toEqual({});
-
-      const cachedPromise = harness.connection.setMode({
-        modeId: 'plan',
-        sessionId: 'session-1',
-      });
-
-      const cachedAttempt = await harness.nextOutbound();
-      expect(cachedAttempt.method).toBe('setSessionMode');
-      harness.sendInbound({
-        id: cachedAttempt.id,
-        jsonrpc: '2.0',
-        result: {},
-      });
-
-      await expect(cachedPromise).resolves.toEqual({});
-    } finally {
-      harness.connection.dispose();
-      harness.transport.dispose();
-      harness.close();
-    }
+      const pending = harness.connection.setMode({ modeId: 'plan', sessionId: 'session-1' });
+      const outcome = pending.catch(error => error);
+      const outbound = await harness.nextOutbound();
+      expect(outbound.method).toBe('session/set_mode');
+      harness.sendInbound({ jsonrpc: '2.0', id: outbound.id, error: { code: -32601, message: 'Method not found' } });
+      expect(await outcome).toMatchObject({ code: -32601 });
+      expect(requestSpy).toHaveBeenCalledTimes(1);
+    } finally { harness.connection.dispose(); harness.transport.dispose(); harness.close(); }
   });
 
-  it('negotiates the standard set-model method and caches the legacy fallback', async () => {
-    const harness = createConnectionHarness((transport) => new ACPClientConnection({ transport }));
-
+  it('sets the model through the standard method with opaque metadata', async () => {
+    const harness = createConnectionHarness(transport => new ACPClientConnection({ transport }));
     try {
-      const firstPromise = harness.connection.setModel({
-        _meta: { reasoningEffort: 'high' },
-        modelId: 'model-1',
-        sessionId: 'session-1',
-      });
-
-      const firstAttempt = await harness.nextOutbound();
-      expect(firstAttempt).toMatchObject({
-        method: 'session/set_model',
-        params: {
-          _meta: { reasoningEffort: 'high' },
-          modelId: 'model-1',
-          sessionId: 'session-1',
-        },
-      });
-      harness.sendInbound({
-        error: {
-          code: -32601,
-          message: 'Method not found',
-        },
-        id: firstAttempt.id,
-        jsonrpc: '2.0',
-      });
-
-      const secondAttempt = await harness.nextOutbound();
-      expect(secondAttempt.method).toBe('setSessionModel');
-      harness.sendInbound({
-        id: secondAttempt.id,
-        jsonrpc: '2.0',
-        result: { _meta: { accepted: true } },
-      });
-      await expect(firstPromise).resolves.toEqual({ _meta: { accepted: true } });
-
-      const cachedPromise = harness.connection.setModel({
-        modelId: 'model-2',
-        sessionId: 'session-1',
-      });
-      const cachedAttempt = await harness.nextOutbound();
-      expect(cachedAttempt).toMatchObject({
-        method: 'setSessionModel',
-        params: {
-          modelId: 'model-2',
-          sessionId: 'session-1',
-        },
-      });
-      harness.sendInbound({
-        id: cachedAttempt.id,
-        jsonrpc: '2.0',
-        result: {},
-      });
-      await expect(cachedPromise).resolves.toEqual({});
-    } finally {
-      harness.connection.dispose();
-      harness.transport.dispose();
-      harness.close();
-    }
+      const pending = harness.connection.setModel({ _meta: { reasoningEffort: 'high' }, modelId: 'model-1', sessionId: 'session-1' });
+      const outbound = await harness.nextOutbound();
+      expect(outbound).toMatchObject({ method: 'session/set_model', params: { _meta: { reasoningEffort: 'high' }, modelId: 'model-1', sessionId: 'session-1' } });
+      harness.sendInbound({ jsonrpc: '2.0', id: outbound.id, result: { _meta: { accepted: true } } });
+      await expect(pending).resolves.toEqual({ _meta: { accepted: true } });
+    } finally { harness.connection.dispose(); harness.transport.dispose(); harness.close(); }
   });
 
-  it('disables request timeout for prompt turns across method fallback', async () => {
+  it('disables request timeout for prompt turns', async () => {
     const promptRequest = {
       prompt: [{ text: 'hi', type: 'text' as const }],
       sessionId: 'session-1',
@@ -396,9 +307,6 @@ describe('ACPClientConnection', () => {
       onRequest: () => () => undefined,
       request: async (method: string, params?: unknown, options?: JSONRPCRequestOptions) => {
         requests.push({ method, options, params });
-        if (method === 'session/prompt') {
-          throw new JSONRPCErrorResponse(method, -32601, 'Method not found');
-        }
         return { stopReason: 'end_turn' };
       },
       signal: new AbortController().signal,
@@ -415,34 +323,16 @@ describe('ACPClientConnection', () => {
         options: { timeoutMs: 0 },
         params: promptRequest,
       },
-      {
-        method: 'prompt',
-        options: { timeoutMs: 0 },
-        params: promptRequest,
-      },
     ]);
   });
 
-  it('sends cancel notifications to all known aliases when no working method is cached', async () => {
-    const harness = createConnectionHarness((transport) => new ACPClientConnection({ transport }));
-
+  it('sends one cancel notification using the standard method', async () => {
+    const harness = createConnectionHarness(transport => new ACPClientConnection({ transport }));
+    const notifySpy = jest.spyOn(harness.transport, 'notify');
     try {
       harness.connection.cancel({ sessionId: 'session-1' });
-
-      await expect(harness.nextOutbound()).resolves.toMatchObject({
-        jsonrpc: '2.0',
-        method: 'session/cancel',
-        params: { sessionId: 'session-1' },
-      });
-      await expect(harness.nextOutbound()).resolves.toMatchObject({
-        jsonrpc: '2.0',
-        method: 'cancel',
-        params: { sessionId: 'session-1' },
-      });
-    } finally {
-      harness.connection.dispose();
-      harness.transport.dispose();
-      harness.close();
-    }
+      await expect(harness.nextOutbound()).resolves.toMatchObject({ method: 'session/cancel', params: { sessionId: 'session-1' } });
+      expect(notifySpy).toHaveBeenCalledTimes(1);
+    } finally { harness.connection.dispose(); harness.transport.dispose(); harness.close(); }
   });
 });

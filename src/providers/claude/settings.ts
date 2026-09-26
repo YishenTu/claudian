@@ -68,7 +68,7 @@ export function getClaudeProviderSettings(
 ): ClaudeProviderSettings {
   const config = getProviderConfig(settings, 'claude');
   const cliPathsByHost = normalizeHostnameStringMap(
-    config.cliPathsByHost ?? settings.claudeCliPathsByHost,
+    config.cliPathsByHost,
   );
 
   return {
@@ -79,28 +79,22 @@ export function getClaudeProviderSettings(
     responseStyle: config.responseStyle === 'Concise' ? 'Concise' : 'Default',
     safeMode: readStoredClaudeSafeMode(
       config.safeMode,
-      readStoredClaudeSafeMode(
-        settings.claudeSafeMode,
-        DEFAULT_CLAUDE_PROVIDER_SETTINGS.safeMode,
-      ),
+      DEFAULT_CLAUDE_PROVIDER_SETTINGS.safeMode,
     ),
     cliPath: readStoredString(
       config.cliPath,
-      readStoredString(settings.claudeCliPath, DEFAULT_CLAUDE_PROVIDER_SETTINGS.cliPath),
+      DEFAULT_CLAUDE_PROVIDER_SETTINGS.cliPath,
     ),
     cliPathsByHost,
     loadUserSettings: readStoredBoolean(
       config.loadUserSettings,
-      readStoredBoolean(
-        settings.loadUserClaudeSettings,
-        DEFAULT_CLAUDE_PROVIDER_SETTINGS.loadUserSettings,
-      ),
+      DEFAULT_CLAUDE_PROVIDER_SETTINGS.loadUserSettings,
     ),
     enableChrome: readStoredBoolean(
       config.enableChrome,
-      readStoredBoolean(settings.enableChrome, DEFAULT_CLAUDE_PROVIDER_SETTINGS.enableChrome),
+      DEFAULT_CLAUDE_PROVIDER_SETTINGS.enableChrome,
     ),
-    modelAliases: decodeModelAliases(config.modelAliases ?? settings.customModelAliases),
+    modelAliases: decodeModelAliases(config.modelAliases),
     discoveredModels: decodeClaudeModels(config.discoveredModels ?? config.selectedModels),
     visibleModels: config.visibleModels == null ? null : Array.isArray(config.visibleModels)
       ? [...new Set(config.visibleModels.filter((id): id is string => typeof id === 'string' && Boolean(id.trim())))]
@@ -112,7 +106,7 @@ export function getClaudeProviderSettings(
     ),
     environmentHash: readStoredString(
       config.environmentHash,
-      readStoredString(settings.lastEnvHash, DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentHash),
+      DEFAULT_CLAUDE_PROVIDER_SETTINGS.environmentHash,
     ),
   };
 }

@@ -141,15 +141,12 @@ Prompt`;
       expect(parsed.userInvocable).toBe(false);
     });
 
-    it('should parse camelCase userInvocable (backwards compat)', () => {
-      const content = `---
-description: A skill
-userInvocable: false
----
-Prompt`;
-
-      const parsed = parseSlashCommandContent(content);
-      expect(parsed.userInvocable).toBe(false);
+    it('ignores retired camelCase command fields', () => {
+      const parsed = parseSlashCommandContent('---\nargumentHint: old\nallowedTools: [Read]\ndisableModelInvocation: true\nuserInvocable: false\n---\nPrompt');
+      expect(parsed.argumentHint).toBeUndefined();
+      expect(parsed.allowedTools).toBeUndefined();
+      expect(parsed.disableModelInvocation).toBeUndefined();
+      expect(parsed.userInvocable).toBeUndefined();
     });
 
     it('should prefer kebab-case over camelCase when both present', () => {
@@ -169,8 +166,8 @@ Prompt`;
     it('should parse all skill fields together', () => {
       const content = `---
 description: Full skill
-disableModelInvocation: true
-userInvocable: true
+disable-model-invocation: true
+user-invocable: true
 context: fork
 agent: code-reviewer
 model: sonnet

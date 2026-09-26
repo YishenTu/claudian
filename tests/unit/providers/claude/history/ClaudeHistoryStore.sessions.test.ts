@@ -2492,16 +2492,16 @@ describe('sdkSession', () => {
   });
 
   describe('loadSDKSessionMessages - async subagent hydration', () => {
-    it('populates toolCall.subagent for async Task tools from queue-operation results', async () => {
+    it('populates toolCall.subagent for async Agent tools from queue-operation results', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockImplementation(async (filePath: any) => {
         const p = String(filePath);
         if (p.endsWith('.jsonl') && !p.includes('subagents')) {
           return [
             '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Run background task"}}',
-            // Assistant spawns async Task
-            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Review code","prompt":"Check for bugs","run_in_background":true}}]}}',
-            // Task tool_result with agentId (SDK launch shape)
+            // Assistant spawns async Agent
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Agent","input":{"description":"Review code","prompt":"Check for bugs","run_in_background":true}}]}}',
+            // Agent tool_result with agentId (SDK launch shape)
             `{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"ae5eb9a","status":"async_launched","description":"Review code","prompt":"Check for bugs","outputFile":"/tmp/agent.output"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Task launched in background."}]}}`,
             // Queue-operation with full result
             `{"type":"queue-operation","operation":"enqueue","content":"<task-notification><task-id>ae5eb9a</task-id><status>completed</status><summary>Agent completed</summary><result>Found 3 issues:\\n1. Missing error handling\\n2. Unused import\\n3. Race condition</result></task-notification>"}`,
@@ -2515,13 +2515,13 @@ describe('sdkSession', () => {
 
       const result = await loadSDKSessionMessages(vaultPath, 'session-async-hydrate');
 
-      // Should have: user message, merged assistant with Task tool, assistant follow-up
+      // Should have: user message, merged assistant with Agent tool, assistant follow-up
       expect(result.messages.length).toBeGreaterThanOrEqual(2);
 
-      const assistantMsg = result.messages.find(m => m.role === 'assistant' && m.toolCalls?.some(tc => tc.name === 'Task'));
+      const assistantMsg = result.messages.find(m => m.role === 'assistant' && m.toolCalls?.some(tc => tc.name === 'Agent'));
       expect(assistantMsg).toBeDefined();
 
-      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Agent')!;
       expect(taskToolCall.subagent).toBeDefined();
       expect(taskToolCall.subagent!.mode).toBe('async');
       expect(taskToolCall.subagent!.agentId).toBe('ae5eb9a');
@@ -2541,7 +2541,7 @@ describe('sdkSession', () => {
         if (p.endsWith('.jsonl') && !p.includes('subagents')) {
           return [
             '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Run background task"}}',
-            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Review code","prompt":"Check for bugs","run_in_background":true}}]}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Agent","input":{"description":"Review code","prompt":"Check for bugs","run_in_background":true}}]}}',
             `{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"ae5eb9a","status":"async_launched"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Task launched in background.","is_error":true}]}}`,
             `{"type":"queue-operation","operation":"enqueue","content":"<task-notification><task-id>ae5eb9a</task-id><status>completed</status><summary>Agent completed</summary><result>Background work finished cleanly</result></task-notification>"}`,
           ].join('\n');
@@ -2551,8 +2551,8 @@ describe('sdkSession', () => {
 
       const result = await loadSDKSessionMessages(vaultPath, 'session-async-error-flag');
 
-      const assistantMsg = result.messages.find(m => m.role === 'assistant' && m.toolCalls?.some(tc => tc.name === 'Task'));
-      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+      const assistantMsg = result.messages.find(m => m.role === 'assistant' && m.toolCalls?.some(tc => tc.name === 'Agent'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Agent')!;
 
       expect(taskToolCall.subagent).toBeDefined();
       expect(taskToolCall.subagent!.status).toBe('completed');
@@ -2569,7 +2569,7 @@ describe('sdkSession', () => {
         if (p.endsWith('.jsonl') && !p.includes('subagents')) {
           return [
             '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Run task"}}',
-            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Test task","prompt":"test","run_in_background":true}}]}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Agent","input":{"description":"Test task","prompt":"test","run_in_background":true}}]}}',
             `{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"abc123"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Task launched."}]}}`,
             // No queue-operation entry
           ].join('\n');
@@ -2579,8 +2579,8 @@ describe('sdkSession', () => {
 
       const result = await loadSDKSessionMessages(vaultPath, 'session-no-queue-op');
 
-      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Task'));
-      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Agent'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Agent')!;
 
       expect(taskToolCall.subagent).toBeDefined();
       expect(taskToolCall.subagent!.agentId).toBe('abc123');
@@ -2598,7 +2598,7 @@ describe('sdkSession', () => {
         if (p.endsWith('.jsonl') && !p.includes('subagents')) {
           return [
             '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Run task"}}',
-            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Test task","prompt":"test","run_in_background":true}}]}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Agent","input":{"description":"Test task","prompt":"test","run_in_background":true}}]}}',
             '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"abc123","status":"async_launched"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Task launched in background.","is_error":true}]}}',
           ].join('\n');
         }
@@ -2607,8 +2607,8 @@ describe('sdkSession', () => {
 
       const result = await loadSDKSessionMessages(vaultPath, 'session-async-launch-error-flag');
 
-      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Task'));
-      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Agent'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Agent')!;
 
       expect(taskToolCall.subagent).toBeDefined();
       expect(taskToolCall.subagent!.status).toBe('running');
@@ -2624,7 +2624,7 @@ describe('sdkSession', () => {
         if (p.endsWith('.jsonl') && !p.includes('subagents')) {
           return [
             '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Run task"}}',
-            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Test task","prompt":"test","run_in_background":true}}]}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Agent","input":{"description":"Test task","prompt":"test","run_in_background":true}}]}}',
             '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"abc123","status":"async_launched"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Task launched in background."}]}}',
             '{"type":"queue-operation","operation":"enqueue","content":"<task-notification><task-id>abc123</task-id><status>success</status><result>Background task succeeded</result></task-notification>"}',
           ].join('\n');
@@ -2634,8 +2634,8 @@ describe('sdkSession', () => {
 
       const result = await loadSDKSessionMessages(vaultPath, 'session-queue-success');
 
-      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Task'));
-      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Agent'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Agent')!;
 
       expect(taskToolCall.subagent).toBeDefined();
       expect(taskToolCall.subagent!.status).toBe('completed');
@@ -2644,14 +2644,14 @@ describe('sdkSession', () => {
       expect(taskToolCall.result).toBe('Background task succeeded');
     });
 
-    it('does not build SubagentInfo for sync Task tools', async () => {
+    it('does not build SubagentInfo for sync Agent tools', async () => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockImplementation(async (filePath: any) => {
         const p = String(filePath);
         if (p.endsWith('.jsonl') && !p.includes('subagents')) {
           return [
             '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Run sync task"}}',
-            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Sync task","prompt":"test","run_in_background":false}}]}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Agent","input":{"description":"Sync task","prompt":"test","run_in_background":false}}]}}',
             '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Sync result"}]}}',
           ].join('\n');
         }
@@ -2660,8 +2660,8 @@ describe('sdkSession', () => {
 
       const result = await loadSDKSessionMessages(vaultPath, 'session-sync-task');
 
-      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Task'));
-      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Agent'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Agent')!;
 
       // Sync tasks should NOT get SubagentInfo from this pass
       expect(taskToolCall.subagent).toBeUndefined();
@@ -2680,7 +2680,7 @@ describe('sdkSession', () => {
         if (p.endsWith('.jsonl')) {
           return [
             '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Review"}}',
-            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Review","prompt":"check","run_in_background":true}}]}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Agent","input":{"description":"Review","prompt":"check","run_in_background":true}}]}}',
             `{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"ae5eb9a"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Launched"}]}}`,
             `{"type":"queue-operation","operation":"enqueue","content":"<task-notification><task-id>ae5eb9a</task-id><status>completed</status><result>Done reviewing</result></task-notification>"}`,
           ].join('\n');
@@ -2690,8 +2690,8 @@ describe('sdkSession', () => {
 
       const result = await loadSDKSessionMessages(vaultPath, 'session-sidecar');
 
-      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Task'));
-      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Agent'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Agent')!;
 
       expect(taskToolCall.subagent).toBeDefined();
       expect(taskToolCall.subagent!.toolCalls).toHaveLength(1);
@@ -2706,7 +2706,7 @@ describe('sdkSession', () => {
         if (p === fixturePath('/old-project/session-sidecar.jsonl')) {
           return [
             '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:00:00Z","message":{"content":"Review"}}',
-            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Task","input":{"description":"Review","prompt":"check","run_in_background":true}}]}}',
+            '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"task-1","name":"Agent","input":{"description":"Review","prompt":"check","run_in_background":true}}]}}',
             '{"type":"user","uuid":"u2","timestamp":"2024-01-15T10:01:01Z","toolUseResult":{"isAsync":true,"agentId":"ae5eb9a"},"message":{"content":[{"type":"tool_result","tool_use_id":"task-1","content":"Launched"}]}}',
           ].join('\n');
         }
@@ -2726,8 +2726,8 @@ describe('sdkSession', () => {
         fixturePath('/old-project/session-sidecar.jsonl'),
       );
 
-      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Task'));
-      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Task')!;
+      const assistantMsg = result.messages.find(m => m.toolCalls?.some(tc => tc.name === 'Agent'));
+      const taskToolCall = assistantMsg!.toolCalls!.find(tc => tc.name === 'Agent')!;
       expect(mockFsPromises.readFile).toHaveBeenCalledWith(
         fixturePath('/old-project/session-sidecar/subagents/agent-ae5eb9a.jsonl'),
         'utf-8',

@@ -56,7 +56,6 @@ export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<PersistedOpencodeProvi
 
 export function normalizeOpencodeVisibleModels(
   value: unknown,
-  discoveredModels: OpencodeDiscoveredModel[] = [],
 ): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -69,7 +68,7 @@ export function normalizeOpencodeVisibleModels(
       continue;
     }
 
-    const trimmed = resolveOpencodeBaseModelRawId(entry.trim(), discoveredModels);
+    const trimmed = entry.trim();
     if (!trimmed || seen.has(trimmed)) {
       continue;
     }
@@ -83,7 +82,6 @@ export function normalizeOpencodeVisibleModels(
 
 export function normalizeOpencodeModelAliases(
   value: unknown,
-  discoveredModels: OpencodeDiscoveredModel[] = [],
 ): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -95,7 +93,7 @@ export function normalizeOpencodeModelAliases(
       continue;
     }
 
-    const normalizedRawId = resolveOpencodeBaseModelRawId(rawId.trim(), discoveredModels);
+    const normalizedRawId = rawId.trim();
     const normalizedAlias = alias.trim();
     if (!normalizedRawId || !normalizedAlias) {
       continue;
@@ -109,7 +107,6 @@ export function normalizeOpencodeModelAliases(
 
 export function normalizeOpencodePreferredThinkingByModel(
   value: unknown,
-  discoveredModels: OpencodeDiscoveredModel[] = [],
 ): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -121,7 +118,7 @@ export function normalizeOpencodePreferredThinkingByModel(
       continue;
     }
 
-    const normalizedRawId = resolveOpencodeBaseModelRawId(rawId.trim(), discoveredModels);
+    const normalizedRawId = rawId.trim();
     const normalizedThinkingLevel = thinkingLevel.trim();
     if (!normalizedRawId || !normalizedThinkingLevel) {
       continue;
@@ -165,14 +162,13 @@ export function getOpencodeProviderSettings(
       getProviderEnvironmentVariables(settings, 'opencode')
         ?? DEFAULT_OPENCODE_PROVIDER_SETTINGS.environmentVariables,
     ),
-    modelAliases: normalizeOpencodeModelAliases(config.modelAliases, discoveredModels),
+    modelAliases: normalizeOpencodeModelAliases(config.modelAliases),
     preferredThinkingByModel: normalizeOpencodePreferredThinkingByModel(
-      config.preferredThinkingByModel,
-      discoveredModels,
+      config.preferredThinkingByModel
     ),
     selectedMode: normalizeManagedOpencodeSelectedMode(config.selectedMode, availableModes),
     thinkingOptionsByModel,
-    visibleModels: normalizeOpencodeVisibleModels(config.visibleModels, discoveredModels),
+    visibleModels: normalizeOpencodeVisibleModels(config.visibleModels),
   };
 }
 
@@ -205,13 +201,11 @@ export function updateOpencodeProviderSettings(
     nextAvailableModes,
   );
   const nextVisibleModels = normalizeOpencodeVisibleModels(
-    updates.visibleModels ?? current.visibleModels,
-    nextDiscoveredModels,
+    updates.visibleModels ?? current.visibleModels
   );
   const nextModelAliases = pruneModelAliasesToVisible(
     normalizeOpencodeModelAliases(
-      updates.modelAliases ?? current.modelAliases,
-      nextDiscoveredModels,
+      updates.modelAliases ?? current.modelAliases
     ),
     nextVisibleModels,
   );
@@ -245,8 +239,7 @@ export function updateOpencodeProviderSettings(
     discoveredModels: nextDiscoveredModels,
     modelAliases: nextModelAliases,
     preferredThinkingByModel: normalizeOpencodePreferredThinkingByModel(
-      updates.preferredThinkingByModel ?? current.preferredThinkingByModel,
-      nextDiscoveredModels,
+      updates.preferredThinkingByModel ?? current.preferredThinkingByModel
     ),
     selectedMode: nextSelectedMode,
     thinkingOptionsByModel: nextThinkingOptionsByModel,

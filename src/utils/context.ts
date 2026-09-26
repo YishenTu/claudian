@@ -41,18 +41,10 @@ export function appendLinkedContentBody(
 
 /**
  * Extracts user content that appears before XML context tags.
- * Handles two formats:
- * 1. Legacy: content inside <query> tags
- * 2. Current: user content first, context XML appended after
+ * User content comes first, with context XML appended after.
  */
 function extractContentBeforeXMLContext(text: string): string | undefined {
   if (!text) return undefined;
-
-  // Legacy format: content inside <query> tags
-  const queryMatch = text.match(/<query>\n?([\s\S]*?)\n?<\/query>/);
-  if (queryMatch) {
-    return queryMatch[1].trim();
-  }
 
   // Current format: user content before any XML context tags
   // Context tags are always appended with \n\n separator

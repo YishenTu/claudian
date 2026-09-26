@@ -1,6 +1,7 @@
 import type * as ChildProcess from 'child_process';
 
 import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
+import { getHostnameKey } from '@/utils/env';
 
 const childProcess = jest.requireActual<typeof ChildProcess>('child_process');
 
@@ -22,7 +23,7 @@ describe('buildCodexLaunchSpec', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'native-windows',
+            installationMethodsByHost: { [getHostnameKey()]: 'native-windows' },
           },
         },
       },
@@ -61,8 +62,8 @@ describe('buildCodexLaunchSpec', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
-            wslDistroOverride: 'Ubuntu',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
+            wslDistroOverridesByHost: { [getHostnameKey()]: 'Ubuntu' },
           },
         },
       },
@@ -97,7 +98,7 @@ describe('buildCodexLaunchSpec', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
       },
@@ -136,7 +137,7 @@ describe('buildCodexLaunchSpec', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
       },
@@ -176,7 +177,7 @@ describe('buildCodexLaunchSpec', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
       },
@@ -194,8 +195,8 @@ describe('buildCodexLaunchSpec', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
-            wslDistroOverride: 'Ubuntu',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
+            wslDistroOverridesByHost: { [getHostnameKey()]: 'Ubuntu' },
           },
         },
       },
@@ -211,8 +212,8 @@ describe('buildCodexLaunchSpec', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
-            wslDistroOverride: 'Debian',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
+            wslDistroOverridesByHost: { [getHostnameKey()]: 'Debian' },
           },
         },
       },
@@ -228,7 +229,7 @@ describe('buildCodexLaunchSpec', () => {
       settings: {
         providerConfigs: {
           codex: {
-            installationMethod: 'wsl',
+            installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
           },
         },
       },

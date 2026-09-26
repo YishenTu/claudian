@@ -59,7 +59,7 @@ it('clears catalogs supplied as empty ACP selectors while preserving omitted cat
     visibleModels: ['provider/alpha', 'provider/beta'],
   });
   await projectOpencodeMetadata(host, {
-    configOptions: [{ id: 'mode', name: 'Mode', type: 'select', currentValue: '', options: [] }],
+    configOptions: [{ id: 'mode', category: 'mode', name: 'Mode', type: 'select', currentValue: '', options: [] }],
   });
   expect(getOpencodeProviderSettings(host.settings).availableModes).toEqual([]);
 });

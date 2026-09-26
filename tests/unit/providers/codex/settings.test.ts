@@ -488,7 +488,7 @@ describe('codex settings', () => {
     expect(result.config).not.toHaveProperty('wslDistroOverride');
   });
 
-  it('migrates legacy Windows Codex installation scalars into current host maps', () => {
+  it('does not import retired Windows installation scalars', () => {
     const result = normalizeCodexStoredConfig(
       {
         providerConfigs: {
@@ -505,12 +505,8 @@ describe('codex settings', () => {
     );
 
     expect(result.changed).toBe(true);
-    expect(result.config.installationMethodsByHost).toEqual({
-      'host-a': 'wsl',
-    });
-    expect(result.config.wslDistroOverridesByHost).toEqual({
-      'host-a': 'Ubuntu',
-    });
+    expect(result.config.installationMethodsByHost).toEqual({});
+    expect(result.config.wslDistroOverridesByHost).toEqual({});
     expect(result.config).not.toHaveProperty('installationMethod');
     expect(result.config).not.toHaveProperty('wslDistroOverride');
   });

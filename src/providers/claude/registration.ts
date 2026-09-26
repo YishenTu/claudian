@@ -36,19 +36,6 @@ export const claudeProviderRegistration: ProviderModule = {
       });
     },
     hostScopedFields: ['cliPathsByHost'],
-    legacyTopLevelFields: [
-      'customModelAliases',
-      'claudeSafeMode',
-      'claudeCliPath',
-      'claudeCliPathsByHost',
-      'loadUserClaudeSettings',
-      'lastClaudeModel',
-      'enableChrome',
-      'enableBangBash',
-      ...LEGACY_CLAUDE_1M_SETTINGS,
-      'environmentVariables',
-      'lastEnvHash',
-    ],
     normalizeStored(target, stored) {
       const storedConfig = getProviderConfig(stored, 'claude');
       const removedLegacy1MSettings = LEGACY_CLAUDE_1M_SETTINGS.some(key => key in storedConfig);

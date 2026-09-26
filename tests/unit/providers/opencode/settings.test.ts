@@ -10,7 +10,6 @@ import {
   getOpencodeProviderSettings,
   normalizeOpencodeModelAliases,
   normalizeOpencodePreferredThinkingByModel,
-  normalizeOpencodeVisibleModels,
   updateOpencodeProviderSettings
 } from '../../../../src/providers/opencode/settings';
 
@@ -26,28 +25,29 @@ describe('OpenCode settings normalization', () => {
     mockGetHostnameKey.mockReturnValue('host-a');
   });
 
-  it('normalizes visible models to base model ids', () => {
-    expect(normalizeOpencodeVisibleModels([
-      'anthropic/claude-sonnet-4/high',
-      'anthropic/claude-sonnet-4',
-      'google/gemini-2.5-pro',
-    ], discoveredModels)).toEqual([
-      'anthropic/claude-sonnet-4',
-      'google/gemini-2.5-pro',
-    ]);
+  it('does not migrate saved variant model IDs into another selection', () => {
+    const settings = getOpencodeProviderSettings({      providerConfigs: {        opencode: {
+          discoveredModels,
+          visibleModels: ['anthropic/claude-sonnet-4/high', 'anthropic/claude-sonnet-4'],
+          preferredThinkingByModel: { 'anthropic/claude-sonnet-4/high': 'high' },
+          modelAliases: { 'anthropic/claude-sonnet-4/high': 'Saved alias' },
+        }      }    });
+    expect(settings.visibleModels).toEqual(['anthropic/claude-sonnet-4/high', 'anthropic/claude-sonnet-4']);
+    expect(settings.preferredThinkingByModel).toEqual({ 'anthropic/claude-sonnet-4/high': 'high' });
+    expect(settings.modelAliases).toEqual({ 'anthropic/claude-sonnet-4/high': 'Saved alias' });
   });
 
-  it('normalizes preferred thinking keys to base model ids', () => {
+  it('preserves preferred thinking keys', () => {
     expect(normalizeOpencodePreferredThinkingByModel({
       'anthropic/claude-sonnet-4/high': 'high',
       'google/gemini-2.5-pro': 'max',
-    }, discoveredModels)).toEqual({
-      'anthropic/claude-sonnet-4': 'high',
+    })).toEqual({
+      'anthropic/claude-sonnet-4/high': 'high',
       'google/gemini-2.5-pro': 'max',
     });
   });
 
-  it('hydrates provider settings with normalized base models and preferred thinking', () => {
+  it('hydrates provider settings without rewriting model identities', () => {
     expect(getOpencodeProviderSettings({
       providerConfigs: {
         opencode: {
@@ -68,7 +68,7 @@ describe('OpenCode settings normalization', () => {
       },
     })).toMatchObject({
       preferredThinkingByModel: {
-        'anthropic/claude-sonnet-4': 'high',
+        'anthropic/claude-sonnet-4/high': 'high',
       },
       cliPath: '/legacy/opencode',
       cliPathsByHost: {
@@ -76,7 +76,7 @@ describe('OpenCode settings normalization', () => {
         'host-b': '/host-b/opencode',
       },
       visibleModels: [
-        'anthropic/claude-sonnet-4',
+        'anthropic/claude-sonnet-4/high',
         'google/gemini-2.5-pro',
       ],
     });
@@ -115,23 +115,23 @@ describe('OpenCode settings normalization', () => {
     }).cliPathsByHost).toEqual({ 'host-a': '/host-a/opencode' });
   });
 
-  it('normalizes model aliases to base model ids and trims values', () => {
+  it('preserves model alias keys and trims values', () => {
     expect(normalizeOpencodeModelAliases({
       'anthropic/claude-sonnet-4/high': '  Sonnet  ',
       'google/gemini-2.5-pro': 'Gemini Pro',
       'unknown/model': 'ignored',
       'anthropic/claude-sonnet-4': '',
-    }, discoveredModels)).toEqual({
-      'anthropic/claude-sonnet-4': 'Sonnet',
+    })).toEqual({
+      'anthropic/claude-sonnet-4/high': 'Sonnet',
       'google/gemini-2.5-pro': 'Gemini Pro',
       'unknown/model': 'ignored',
     });
   });
 
   it('ignores non-string and non-object alias payloads', () => {
-    expect(normalizeOpencodeModelAliases(null, discoveredModels)).toEqual({});
-    expect(normalizeOpencodeModelAliases(['alias'], discoveredModels)).toEqual({});
-    expect(normalizeOpencodeModelAliases({ 'anthropic/claude-sonnet-4': 123 }, discoveredModels)).toEqual({});
+    expect(normalizeOpencodeModelAliases(null)).toEqual({});
+    expect(normalizeOpencodeModelAliases(['alias'])).toEqual({});
+    expect(normalizeOpencodeModelAliases({ 'anthropic/claude-sonnet-4': 123 })).toEqual({});
   });
 
   it('prunes aliases whose rawId is no longer visible when updating settings', () => {
@@ -363,15 +363,8 @@ describe('OpenCode settings normalization', () => {
     }).selectedMode).toBe('claudian-safe');
   });
 
-  it('normalizes the legacy build alias back to the managed YOLO mode', () => {
-    expect(getOpencodeProviderSettings({
-      providerConfigs: {
-        opencode: {
-          availableModes: [],
-          selectedMode: 'build',
-        },
-      },
-    }).selectedMode).toBe('claudian-yolo');
+  it('does not grant YOLO permissions to the retired build alias', () => {
+    expect(getOpencodeProviderSettings({ providerConfigs: { opencode: { availableModes: [], selectedMode: 'build' } } }).selectedMode).toBe('claudian-safe');
   });
 
   it('preserves legacy cliPath when no host-scoped path exists', () => {
