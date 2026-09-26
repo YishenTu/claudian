@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { testDate } from '@test/helpers/testClock';
 import { App, Notice, type Plugin } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
@@ -12,9 +13,11 @@ import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
 import { migrateSessionSidecars } from '@/core/bootstrap/migrateSessionSidecars';
 import { CLAUDIAN_SETTINGS_PATH, getDeviceSessionsPath, SESSIONS_PATH } from '@/core/bootstrap/storagePaths';
+import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation, SessionMetadata } from '@/core/types';
+import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 
 const DEVICE_KEY = `device-${'a'.repeat(64)}`;
 const DEVICE_PATH = getDeviceSessionsPath(DEVICE_KEY);
@@ -56,6 +59,52 @@ beforeEach(async () => {
 afterEach(async () => {
   jest.restoreAllMocks();
   await fs.rm(root, { recursive: true, force: true });
+});
+
+test('writes compact metadata without changing its contents', async () => {
+  const data = { ...metadata, providerState: { futureField: { values: ['one', 'two'], multiline: 'line one\nline two' } } };
+  await store.saveMetadata(data);
+  const content = await adapter.read(`${DEVICE_PATH}/${metadata.id}.meta.json`);
+  expect(content).toBe(JSON.stringify(data));
+  expect(await store.metadataReader.loadMetadata(metadata.id)).toEqual(data);
+});
+
+test('execution snapshots avoid history payload serialization while persistence retains subagent history', async () => {
+  const subagent = {
+    id: 'task-1', description: 'Research', isExpanded: false, status: 'completed' as const,
+    result: 'Complete result', toolCalls: [{ id: 'read-1', name: 'Read', input: { file_path: 'note.md' },
+      status: 'completed' as const, isExpanded: false, result: 'Full tool output' }],
+  };
+  const subagentData = { [subagent.id]: subagent };
+  const serializeHistory = jest.fn(() => ({ [subagent.id]: subagent }));
+  Object.defineProperty(subagentData, 'toJSON', { value: serializeHistory });
+  const providerState = { providerSessionId: 'native-1', subagentData, futureField: { cursor: 'keep' } };
+  const conversation: Conversation = {
+    ...metadata, providerId: 'claude', sessionId: 'native-1', providerState,
+    messages: [{ id: 'message-1', role: 'assistant', content: '', timestamp: testDate().getTime(),
+      toolCalls: [{ id: subagent.id, name: 'Task', input: {}, status: 'completed', isExpanded: false, subagent }] }],
+  };
+  const session = new ClaudeExecutionBackend({ settings: {} } as ProviderHost).createSession({
+    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: root,
+    resumeSeed: { providerSessionId: 'native-1', providerState },
+    interactionPort: { dismissInteraction() {}, requestApproval: async ({ interactionId }) => ({ interactionId, decision: 'deny' }),
+      askUserQuestion: async ({ interactionId }) => ({ interactionId, answers: null }) },
+  });
+  const repository = createRepository();
+  repository.replaceAll([conversation]);
+  repository.registerExecutionBinding(conversation.id, 'binding', 0);
+  try {
+    for (let index = 0; index < 20; index++) session.getSnapshot();
+    expect(serializeHistory).not.toHaveBeenCalled();
+    const snapshot = session.getSnapshot();
+    expect(snapshot.providerState).toEqual({ providerSessionId: 'native-1', futureField: { cursor: 'keep' } });
+    expect(snapshot.providerStateDeletes ?? []).not.toContain('subagentData');
+    await repository.persistExecutionSnapshot(conversation.id, 'binding', 0, snapshot);
+    expect((await store.metadataReader.loadMetadata(conversation.id))?.providerState).toEqual(providerState);
+    expect(conversation.messages[0].toolCalls?.[0].subagent).toBe(subagent);
+  } finally {
+    await session.dispose();
+  }
 });
 
 test('initial metadata loading reads unchanged payloads once through the storage adapter', async () => {

@@ -227,11 +227,11 @@ describe('ConversationPersistenceStore', () => {
     expect(adapter.write.mock.calls).toEqual([
       [
         `${DEVICE_PATH}/device-owned.meta.json`,
-        JSON.stringify(deviceMetadata, null, 2),
+        JSON.stringify(deviceMetadata),
       ],
       [
         `${SESSIONS_PATH}/unscoped-owned.meta.json`,
-        JSON.stringify(unscopedMetadata, null, 2),
+        JSON.stringify(unscopedMetadata),
       ],
     ]);
   });

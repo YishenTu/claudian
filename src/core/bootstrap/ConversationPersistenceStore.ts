@@ -38,7 +38,7 @@ export class ConversationPersistenceStore implements ConversationPersistence {
   ): Promise<void> {
     await this.adapter.write(
       this.getMetadataPath(metadata.id, target),
-      JSON.stringify(metadata, null, 2),
+      JSON.stringify(metadata),
     );
   }
 

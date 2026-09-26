@@ -112,12 +112,22 @@ export class SessionBrowser {
   private metadataPopoverEl: HTMLElement | null = null;
   private metadataPopoverTarget: HTMLElement | null = null;
   private metadataPopoverSequence = 0;
+  private metadataPopoverView: {
+    el: HTMLElement;
+    linkedContent: HTMLElement;
+    provider: HTMLElement;
+    created: HTMLElement;
+    lastActive: HTMLElement;
+    providerIcon: SVGElement | null;
+    providerIconKey: string;
+  } | null = null;
 
   constructor(private readonly deps: SessionBrowserDeps) {}
 
   dispose(): void {
     this.cancelInlineRename();
     this.#closeSessionMetadataPopover();
+    this.metadataPopoverView = null;
   }
 
   cancelInlineRename(): boolean {
@@ -1113,19 +1123,19 @@ export class SessionBrowser {
       this.#cancelSessionMetadataPopoverClose();
       return;
     }
+    // Measure the anchor before removing/inserting popover DOM.
+    const targetRect = item.getBoundingClientRect();
     this.#closeSessionMetadataPopover();
 
     const document = item.ownerDocument;
-    const body = document.body;
-    if (!body) return;
-
-    const hoverEl = body.createDiv({ cls: 'claudian-session-metadata-popover' });
+    if (!document.body) return;
+    const view = this.#getSessionMetadataPopoverView(document);
+    const hoverEl = view.el;
     this.metadataPopoverEl = hoverEl;
     this.metadataPopoverTarget = item;
 
     const popoverId = `claudian-session-metadata-${++this.metadataPopoverSequence}`;
     hoverEl.setAttribute('id', popoverId);
-    hoverEl.setAttribute('role', 'tooltip');
     descriptionTarget.setAttribute('aria-describedby', popoverId);
 
     const language = options.language ?? 'en';
@@ -1136,38 +1146,29 @@ export class SessionBrowser {
         contentIsNote: options.contentIsNote,
         language,
       });
-    if (hasLinkedContent) {
-      this.#renderSessionMetadataRow(
-        hoverEl,
-        'file-text',
-        null,
-        getLinkedContentTitle(linkedContentPath),
-        {
-          className: 'claudian-session-metadata-value--content',
-          title: linkedContentPath,
-        },
-      );
-    }
-    this.#renderSessionMetadataProviderRow(
-      hoverEl,
-      conversation,
-      options.getProviderIcon?.(conversation),
-      options.getModelLabel?.(conversation) ?? conversation.selectedModel ?? '',
-    );
-    this.#renderSessionMetadataRow(
-      hoverEl,
-      'calendar-days',
-      'Created',
-      this.formatMetadataDate(conversation.createdAt),
-    );
-    this.#renderSessionMetadataRow(
-      hoverEl,
-      'clock-3',
-      'Last active',
-      this.formatMetadataDateTime(conversation.lastActivityAt),
-    );
+    view.linkedContent.parentElement!.classList.toggle('claudian-hidden', !hasLinkedContent);
+    view.linkedContent.textContent = hasLinkedContent ? getLinkedContentTitle(linkedContentPath) : '';
+    view.linkedContent.title = hasLinkedContent ? linkedContentPath : '';
+    view.provider.textContent = options.getModelLabel?.(conversation) ?? conversation.selectedModel ?? '';
+    view.created.textContent = this.formatMetadataDate(conversation.createdAt);
+    view.lastActive.textContent = this.formatMetadataDateTime(conversation.lastActivityAt);
 
-    this.#positionSessionMetadataPopover(item, hoverEl);
+    const icon = options.getProviderIcon?.(conversation);
+    const iconKey = JSON.stringify([conversation.providerId, icon ?? null]);
+    if (view.providerIconKey !== iconKey) {
+      view.providerIcon?.remove();
+      const row = view.provider.parentElement!;
+      row.classList.toggle('claudian-session-metadata-row--provider-no-icon', !icon);
+      view.providerIcon = icon ? createProviderIconSvg(icon, {
+        className: 'claudian-session-metadata-provider-icon', dataProvider: conversation.providerId,
+        height: 14, width: 14, parent: row,
+      }) : null;
+      if (view.providerIcon) row.prepend(view.providerIcon);
+      view.providerIconKey = iconKey;
+    }
+    hoverEl.removeClass('claudian-hidden');
+    document.body.appendChild(hoverEl);
+    this.#positionSessionMetadataPopover(targetRect, hoverEl);
     const cancelClose = (): void => this.#cancelSessionMetadataPopoverClose();
     const scheduleClose = (): void => this.#scheduleSessionMetadataPopoverClose(item);
     const closeForViewportChange = (): void => {
@@ -1201,9 +1202,8 @@ export class SessionBrowser {
     };
   }
 
-  #positionSessionMetadataPopover(target: HTMLElement, popover: HTMLElement): void {
-    const document = target.ownerDocument;
-    const targetRect = target.getBoundingClientRect();
+  #positionSessionMetadataPopover(targetRect: DOMRect, popover: HTMLElement): void {
+    const document = popover.ownerDocument;
     const popoverRect = popover.getBoundingClientRect();
     const viewportWidth = document.defaultView?.innerWidth
       ?? document.documentElement?.clientWidth
@@ -1260,7 +1260,7 @@ export class SessionBrowser {
     label: string | null,
     value: string,
     options: { className?: string; title?: string } = {},
-  ): void {
+  ): HTMLElement {
     const row = parent.createDiv({
       cls: [
         'claudian-session-metadata-row',
@@ -1280,34 +1280,25 @@ export class SessionBrowser {
       text: value,
     });
     if (options.title) valueEl.setAttribute('title', options.title);
+    return valueEl;
   }
 
-  #renderSessionMetadataProviderRow(
-    parent: HTMLElement,
-    conversation: ConversationMeta,
-    icon: ProviderIconSvg | null | undefined,
-    value: string,
-  ): void {
-    const row = parent.createDiv({
-      cls: [
-        'claudian-session-metadata-row',
-        'claudian-session-metadata-row--provider',
-        icon ? '' : 'claudian-session-metadata-row--provider-no-icon',
-      ].filter(Boolean).join(' '),
+  #getSessionMetadataPopoverView(document: Document) {
+    if (this.metadataPopoverView?.el.ownerDocument === document) return this.metadataPopoverView;
+    const el = document.body.createDiv({ cls: 'claudian-session-metadata-popover' });
+    el.setAttribute('role', 'tooltip');
+    const linkedContent = this.#renderSessionMetadataRow(el, 'file-text', null, '', {
+      className: 'claudian-session-metadata-value--content',
     });
-    if (icon) {
-      createProviderIconSvg(icon, {
-        className: 'claudian-session-metadata-provider-icon',
-        dataProvider: conversation.providerId,
-        height: 14,
-        parent: row,
-        width: 14,
-      });
-    }
-    row.createSpan({
-      cls: 'claudian-session-metadata-value claudian-session-metadata-value--provider',
-      text: value,
-    });
+    const providerRow = el.createDiv({ cls: 'claudian-session-metadata-row claudian-session-metadata-row--provider' });
+    const provider = providerRow.createSpan({ cls: 'claudian-session-metadata-value claudian-session-metadata-value--provider' });
+    this.metadataPopoverView = {
+      el, linkedContent, provider,
+      created: this.#renderSessionMetadataRow(el, 'calendar-days', 'Created', ''),
+      lastActive: this.#renderSessionMetadataRow(el, 'clock-3', 'Last active', ''),
+      providerIcon: null, providerIconKey: '',
+    };
+    return this.metadataPopoverView;
   }
 
   #closeSessionMetadataPopover(): void {
