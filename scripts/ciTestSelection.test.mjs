@@ -38,6 +38,7 @@ test('real subprocess consumers run on native platforms when affected', () => {
   for (const consumer of [
     'tests/integration/core/process/ProcessProbe.test.ts',
     'tests/integration/core/process/ManagedStdioProcess.test.ts',
+    'tests/integration/utils/cliBinaryLocator.test.ts',
   ]) {
     const result = select(['src/utils/path.ts'], [consumer]);
     assert.deepEqual(result.crossPlatformTests, [consumer]);
