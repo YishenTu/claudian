@@ -1621,7 +1621,7 @@ export class ClaudianView extends ItemView {
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
       if (
         tab.conversationId
-        && this.plugin.getConversationSync(tab.conversationId)?.isPinned
+        && this.plugin.getConversationSummary(tab.conversationId)?.isPinned
       ) {
         commitProvisionalTab(tab);
       }
@@ -2031,7 +2031,7 @@ export class ClaudianView extends ItemView {
   }
 
   private retainPinnedConversationTab(conversationId: string): void {
-    if (!this.plugin.getConversationSync(conversationId)?.isPinned) return;
+    if (!this.plugin.getConversationSummary(conversationId)?.isPinned) return;
 
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
       if (tab.conversationId === conversationId) {

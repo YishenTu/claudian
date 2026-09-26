@@ -1866,14 +1866,12 @@ export class TabManager implements TabManagerInterface {
 
     const providerId = getTabProviderId(targetTab, this.plugin);
     if (!providerId) return { result: { status: 'empty' } };
-    if (!ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
-      await ProviderWorkspaceRegistry.ensureInitialized(this.plugin.providerHost, providerId, 'command-picker');
-      throwIfAborted(signal, 'Provider command discovery aborted');
-      if (
-        !this.#isTabAlive(targetTab)
-        || getTabProviderId(targetTab, this.plugin) !== providerId
-      ) return { result: { status: 'empty' } };
-    }
+    await ProviderWorkspaceRegistry.ensureInitialized(this.plugin.providerHost, providerId, 'command-picker');
+    throwIfAborted(signal, 'Provider command discovery aborted');
+    if (
+      !this.#isTabAlive(targetTab)
+      || getTabProviderId(targetTab, this.plugin) !== providerId
+    ) return { result: { status: 'empty' } };
 
     const staticCapabilities = ProviderRegistry.getCapabilities(providerId);
     if (!staticCapabilities.supportsProviderCommands) {
@@ -2013,7 +2011,7 @@ export class TabManager implements TabManagerInterface {
     providerId: ProviderId | null,
     reason: string,
   ): Promise<boolean> {
-    if (providerId && !ProviderWorkspaceRegistry.getIfInitialized(providerId)) {
+    if (providerId) {
       await ProviderWorkspaceRegistry.ensureInitialized(
         this.plugin.providerHost,
         providerId,

@@ -174,6 +174,11 @@ export interface Conversation {
   resumeAtMessageId?: string;
 }
 
+/** Detached metadata for controls that do not need transcript or native session state. */
+export type ConversationSummary = Readonly<Pick<Conversation, 'id' | 'providerId' | 'title' | 'selectedModel' | 'isPinned'> & {
+  usage?: Readonly<Pick<UsageInfo, 'model'>>;
+}>;
+
 export type ConversationMutablePatch = Partial<Omit<
   Conversation,
   'id' | 'providerId' | 'createdAt' | 'linkedContentPath'

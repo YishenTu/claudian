@@ -101,6 +101,7 @@ function createFixture(overrides: Record<string, unknown> = {}) {
     createConversation: jest.fn(),
     getConversationById: jest.fn().mockResolvedValue(null),
     getConversationList: jest.fn().mockReturnValue([]),
+    getConversationSummary(id: string) { return this.getConversationSync(id); },
     getConversationSync: jest.fn().mockReturnValue({
       id: 'conversation-1',
       providerId: 'claude',
@@ -455,6 +456,23 @@ describe('InputController coordinator execution', () => {
     expect(fixture.state.messages[0]?.content).toBe('list my projects');
   });
 
+  it('does not launch execution when close overlaps dynamic configuration', async () => {
+    let closing = false;
+    const fixture = createFixture({ isClosing: () => closing });
+    Object.assign(fixture.plugin, {
+      getMainAgentDynamicSystemPromptSections: async () => {
+        closing = true;
+        fixture.state.bumpStreamGeneration();
+        return [];
+      },
+    });
+    await fixture.controller.sendMessage({ content: 'Keep the admitted input' });
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.state.messages).toEqual([
+      expect.objectContaining({ role: 'user', content: 'Keep the admitted input' }),
+    ]);
+  });
+
   it('continues without dynamic sections when app guidance is unavailable', async () => {
     const fixture = createFixture();
     Object.assign(fixture.plugin, {
@@ -623,6 +641,21 @@ describe('InputController coordinator execution', () => {
     expect(fixture.deps.renderer.removeMessage).toHaveBeenCalledTimes(2);
     expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
     expect(fixture.deps.streamController.appendText).not.toHaveBeenCalled();
+  });
+
+  it('keeps unsent input in the closing transcript when preparation fails before handoff', async () => {
+    let closing = false;
+    const fixture = createFixture({ isClosing: () => closing });
+    fixture.coordinator.execute.mockImplementation(async () => {
+      closing = true;
+      fixture.state.bumpStreamGeneration();
+      throw new ChatExecutionPreHandoffError('closed during preparation');
+    });
+    await fixture.controller.sendMessage({ content: 'Keep the admitted input' });
+    expect(fixture.state.messages).toEqual([
+      expect.objectContaining({ role: 'user', content: 'Keep the admitted input' }),
+    ]);
+    expect(fixture.input.value).toBe('');
   });
 
   it('restores the unsent turn after an asynchronous unaccepted configuration rejection', async () => {

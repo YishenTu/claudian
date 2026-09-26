@@ -500,7 +500,7 @@ export class StreamController {
 
   #getActiveProviderModel(): string | undefined {
     const conversation = this.deps.state.currentConversationId
-      ? this.deps.plugin.getConversationSync(this.deps.state.currentConversationId)
+      ? this.deps.plugin.getConversationSummary(this.deps.state.currentConversationId)
       : null;
     if (conversation) {
       return resolveConversationModel(

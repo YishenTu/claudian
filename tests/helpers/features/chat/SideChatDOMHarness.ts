@@ -113,6 +113,7 @@ export function createHarness(options: {
   const settings = options.settings ?? {};
   const plugin = {
     app,
+    getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
     getConversationSync: () => null,
     getMainAgentDynamicSystemPromptSections: options.getMainAgentDynamicSystemPromptSections,
     providerHost: { app, settings, executionLifecycleRegistry: lifecycleRegistry },

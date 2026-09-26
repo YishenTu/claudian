@@ -46,6 +46,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
         ] } },
     },
     getActiveEnvironmentVariables: () => '',
+    getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
     getConversationSync: () => conversation,
     getConversationList: () => [conversation],
   } as unknown as ChatFeatureHost;

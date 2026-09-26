@@ -16,7 +16,7 @@ import type {
   ProviderId,
   ProviderUIOption,
 } from '../../../core/providers/types';
-import type { ClaudianSettings, Conversation } from '../../../core/types';
+import type { ClaudianSettings, Conversation, ConversationSummary } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { toggleServiceTier } from '../actions/toggleServiceTier';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
@@ -76,12 +76,13 @@ export function getTabChatUIConfig(
 export function getTabSettingsSnapshot(
   tab: TabProviderContext & Pick<AssembledTabRuntime, 'session'>,
   plugin: ChatFeatureHost,
+  conversation: ConversationSummary | null = tab.conversationId ? plugin.getConversationSummary(tab.conversationId) : null,
 ): TabProviderSettings & ChatSettings {
   const settings = plugin.getCommittedSettings();
-  const providerId = getTabProviderId(tab, plugin);
+  const providerId = conversation?.providerId ?? tab.providerId;
   if (!providerId) return { ...settings, model: tab.draftModel ?? '', reasoning: null };
   const snapshot = {
-    ...getChatSettingsSnapshot(settings, providerId, getTabSelectedModel(tab, plugin, settings)),
+    ...getChatSettingsSnapshot(settings, providerId, getTabSelectedModel(tab, plugin, settings, conversation)),
   };
   if (snapshot.reasoning !== null) {
     const key = `${providerId}:${snapshot.model}`;
@@ -132,8 +133,9 @@ export function getTabSelectedModel(
   tab: TabProviderContext,
   plugin: ChatFeatureHost,
   settings: Readonly<ClaudianSettings> = plugin.settings,
+  conversation: ConversationSummary | null = tab.conversationId ? plugin.getConversationSummary(tab.conversationId) : null,
 ): string | null {
-  const providerId = getTabProviderId(tab, plugin);
+  const providerId = conversation?.providerId ?? tab.providerId;
   if (!providerId) return tab.draftModel;
   if (tab.conversationId === null) {
     return normalizeProviderModelSelection(providerId, settings, tab.draftModel)
@@ -141,7 +143,6 @@ export function getTabSelectedModel(
       ?? null;
   }
 
-  const conversation = getTabConversation(tab, plugin);
   if (conversation) {
     return resolveConversationModel(settings, providerId, conversation).model;
   }
@@ -278,9 +279,10 @@ export function refreshTabContextUsage(
   tab: AssembledTabRuntime,
   plugin: ChatFeatureHost,
 ): void {
-  const settings = getTabSettingsSnapshot(tab, plugin);
+  const conversation = tab.conversationId ? plugin.getConversationSummary(tab.conversationId) : null;
+  const settings = getTabSettingsSnapshot(tab, plugin, conversation);
   tab.ui.contextUsageMeter.update(projectContextUsageDisplay(tab.state.usage, {
-    providerId: getTabProviderId(tab, plugin),
+    providerId: getTabProviderId(tab, plugin, conversation),
     model: settings.model,
     customContextLimits: settings.customContextLimits,
   }));

@@ -201,6 +201,7 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
     getCachedConversation: jest.fn().mockReturnValue(null),
     getConversationById: jest.fn().mockResolvedValue(null),
     getConversationList: jest.fn().mockReturnValue([]),
+    getConversationSummary(id: string) { return this.getConversationSync(id); },
     getConversationSync: jest.fn().mockReturnValue(null),
     updateConversation: jest.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -245,6 +246,8 @@ describe('TabManager provider execution orchestration', () => {
   beforeEach(() => {
     jest.mocked(ProviderWorkspaceRegistry.getCommandCatalog).mockReturnValue(commandCatalog as never);
     jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockReturnValue(commandLoader);
+    jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockResolvedValue(undefined);
+    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockReturnValue({});
     mockTabs.length = 0;
     jest.clearAllMocks();
     (ProviderRegistry.getCapabilities as jest.Mock).mockReturnValue({
@@ -256,6 +259,37 @@ describe('TabManager provider execution orchestration', () => {
       status: 'ready',
       items: [{ description: 'Review changes', name: 'review' }],
     });
+  });
+
+  it.each(['admission', 'command lookup'] as const)('validates cached workspace ownership during %s', async phase => {
+    const { ProviderInitializationBoundary } = jest.requireActual('@/core/providers/ProviderInitializationBoundary');
+    const boundary = new ProviderInitializationBoundary();
+    const hostA = {
+      storage: { getAdapter: () => ({}) },
+      runProviderExecutionTransition: async (_ids: unknown, run: any) => run({}),
+    };
+    const commandsA = {
+      ...commandLoader,
+      loadCommands: jest.fn().mockResolvedValue({
+        status: 'ready', items: [{ name: 'from-vault-a', description: 'Vault A only' }],
+      }),
+    };
+    const { manager } = createManager(createPlugin());
+    if (phase === 'command lookup') await manager.createTab();
+    boundary.register('claude', {
+      initialize: async () => ({ commandCatalog, commandLoader: commandsA, tabWarmupPolicy: warmupPolicy }),
+    });
+    await boundary.ensureInitialized(hostA, 'claude', 'host-a');
+    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(id => boundary.getIfInitialized(id));
+    jest.mocked(ProviderWorkspaceRegistry.ensureInitialized).mockImplementation((host, id, reason) => boundary.ensureInitialized(host, id, reason));
+    jest.mocked(ProviderWorkspaceRegistry.getCommandLoader).mockImplementation(id => boundary.getIfInitialized(id)?.commandLoader ?? null);
+
+    const outcome = phase === 'admission'
+      ? await manager.createTab().then(tab => tab?.hydrationState)
+      : await manager.getSdkCommands().then(() => 'loaded', error => error.message);
+    expect(outcome).toMatch(phase === 'admission' ? /^failed$/ : /host differs/);
+    expect(commandsA.loadCommands).not.toHaveBeenCalled();
+    await manager.destroy();
   });
 
   it('creates tabs without installing runtime callbacks', async () => {
@@ -2062,7 +2096,7 @@ describe('TabManager provider execution orchestration', () => {
     };
     const { manager, plugin } = createManager(createPlugin({
       getCachedConversation: jest.fn().mockReturnValue(sourceConversation),
-      getConversationSync: jest.fn().mockReturnValue(sourceConversation),
+    getConversationSync: jest.fn().mockReturnValue(sourceConversation),
     }));
     const source = await manager.createTab('source-conversation');
 

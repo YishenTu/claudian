@@ -11,7 +11,10 @@ import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { Conversation, SessionMetadata } from '@/core/types';
+import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
+import { refreshTabContextUsage } from '@/features/chat/tabs/TabProviderState';
+import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 function fixture() {
   const conversation: Conversation = {
@@ -354,4 +357,40 @@ test('conversation reads and update inputs are detached from repository records'
   snapshot.messages[0].content = 'reader edit';
   repository.getAll().splice(0);
   expect(repository.getSync(conversation.id)?.messages[0].content).toBe('original');
+});
+
+test('context controls read detached metadata without copying the transcript', async () => {
+  const { repository, conversation } = fixture();
+  conversation.selectedModel = 'sonnet';
+  conversation.messages = [{
+    id: 'large-message', role: 'user', content: 'transcript'.repeat(100_000), timestamp: testDate().getTime(),
+  }];
+  repository.replaceAll([conversation]);
+  const settings = { ...DEFAULT_CLAUDIAN_SETTINGS, customContextLimits: { sonnet: 100_000, opus: 200_000 } };
+  const fullRead = jest.spyOn(repository, 'getSync');
+  const summaryRead = jest.spyOn(repository, 'getSummary');
+  const update = jest.fn();
+  const tab = {
+    conversationId: conversation.id, providerId: 'claude', draftModel: null,
+    session: { reasoningSelections: new Map() },
+    state: { usage: { model: 'sonnet', contextTokens: 50_000, inputTokens: 50_000 } },
+    ui: { contextUsageMeter: { update } },
+  } as unknown as AssembledTabRuntime;
+  const host = {
+    getCommittedSettings: () => settings,
+    getConversationSummary: (id: string) => repository.getSummary(id),
+    getConversationSync: (id: string) => repository.getSync(id),
+  } as unknown as ChatFeatureHost;
+
+  refreshTabContextUsage(tab, host);
+  expect(summaryRead).toHaveBeenCalledTimes(1);
+  expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ contextWindow: 100_000, percentage: 50 }));
+  const previous = repository.getSummary(conversation.id)!;
+  expect(previous).not.toHaveProperty('messages');
+  expect(previous).not.toHaveProperty('providerState');
+  await repository.update(conversation.id, { selectedModel: 'opus' });
+  refreshTabContextUsage(tab, host);
+  expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ contextWindow: 200_000, percentage: 25 }));
+  expect(previous.selectedModel).toBe('sonnet');
+  expect(fullRead).not.toHaveBeenCalled();
 });

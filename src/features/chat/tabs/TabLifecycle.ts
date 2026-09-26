@@ -184,7 +184,7 @@ async function destroyTabOnce(tab: AssembledTabRuntime): Promise<void> {
 
 export function getTabTitle(tab: Pick<AssembledTabRuntime, 'conversationId'>, plugin: ChatFeatureHost): string {
   if (tab.conversationId) {
-    const conversation = plugin.getConversationSync(tab.conversationId);
+    const conversation = plugin.getConversationSummary(tab.conversationId);
     if (conversation?.title) {
       return conversation.title;
     }

@@ -569,7 +569,7 @@ export default class ClaudianPlugin extends Plugin {
   getActiveModelSelection(): { providerId: ProviderId; model: string } | null {
     const tab = this.getView()?.getActiveTab();
     if (!tab) return null;
-    const conversation = tab.conversationId ? this.getConversationSync(tab.conversationId) : null;
+    const conversation = tab.conversationId ? this.getConversationSummary(tab.conversationId) : null;
     const providerId = conversation?.providerId ?? tab.providerId;
     if (!providerId) return null;
     const model = conversation
@@ -979,6 +979,10 @@ export default class ClaudianPlugin extends Plugin {
 
   getCachedConversation(id: string): Conversation | null {
     return this.conversationRepository.getCachedConversation(id);
+  }
+
+  getConversationSummary(id: string) {
+    return this.conversationRepository.getSummary(id);
   }
 
   getConversationSync(id: string): Conversation | null {

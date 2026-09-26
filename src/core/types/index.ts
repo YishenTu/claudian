@@ -8,6 +8,7 @@ export {
   type ConversationMeta,
   type ConversationModelRecoverySource,
   type ConversationMutablePatch,
+  type ConversationSummary,
   type ExecutionInputBrowserSnapshot,
   type ExecutionInputCanvasSnapshot,
   type ExecutionInputContextSnapshot,

@@ -188,7 +188,7 @@ export class SessionMetadataLoader {
       invalidatedEntries.map(({ id }) => id),
     );
     const existingIds = new Set(
-      conversations.getAll().map(({ id }) => id),
+      conversations.list().map(({ id }) => id),
     );
     await conversations.adoptMetadataConversations(entries);
     if (this.isStopped()) return;

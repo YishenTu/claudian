@@ -136,6 +136,7 @@ export async function captureSideSource(
   const plugin = {
     app: env.app,
     settings: (env.host as unknown as { settings: unknown }).settings,
+    getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
     getConversationSync: (id: string) => env.repository.getSync(id),
   } as unknown as ChatFeatureHost;
   const tab = {

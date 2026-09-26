@@ -44,6 +44,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
         lastActivityAt: Date.now(),
       }),
       getConversationById: jest.fn().mockResolvedValue(null),
+      getConversationSummary(id: string) { return this.getConversationSync(id); },
       getConversationSync: jest.fn().mockReturnValue(null),
       getConversationList: jest.fn().mockReturnValue([]),
       updateConversation: jest.fn().mockResolvedValue(undefined),

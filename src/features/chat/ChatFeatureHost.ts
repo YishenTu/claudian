@@ -1,5 +1,5 @@
 import type { AppTabManagerState, ProviderId } from '../../core/providers/types';
-import type { Conversation, ConversationMeta, ConversationMutablePatch, StoredChatModelSelection } from '../../core/types';
+import type { Conversation, ConversationMeta, ConversationMutablePatch, ConversationSummary, StoredChatModelSelection } from '../../core/types';
 import type { FeatureHost } from '../FeatureHost';
 import type { ChatExecutionPersistence } from './execution/ChatExecutionCoordinator';
 import type { WarmExecutionPool } from './execution/WarmExecutionPool';
@@ -75,6 +75,7 @@ export interface ChatFeatureHost extends FeatureHost {
   updateConversation(id: string, updates: ConversationMutablePatch): Promise<void>;
   getConversationById(id: string): Promise<Conversation | null>;
   getCachedConversation(id: string): Conversation | null;
+  getConversationSummary(id: string): ConversationSummary | null;
   getConversationSync(id: string): Conversation | null;
   getConversationList(): ConversationMeta[];
   ensureConversationMetadataLoaded(conversationIds: readonly string[]): Promise<void>;

@@ -60,6 +60,7 @@ export async function createForkTestEnvironment() {
   });
   const plugin = {
     app, settings,
+    getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
     getConversationSync: (id: string) => repository.getSync(id),
   } as unknown as ChatFeatureHost;
   const coordinators: ChatExecutionCoordinator[] = [];

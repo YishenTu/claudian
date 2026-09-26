@@ -365,6 +365,7 @@ export function buildTabRuntimeControllers(
     getSubagentManager: () => services.subagentManager,
     getTabProviderId: () => getTabProviderId(runtimeRef.requirePublished(), plugin),
     canStartTurn: () => shell.session.acceptsIntents,
+    isClosing: () => shell.lifecycleState === 'closing',
     getSideChatController: () => sideChatController,
     turnOwner: shell.session,
     ensureExecutionInitialized,

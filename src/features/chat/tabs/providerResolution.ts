@@ -9,7 +9,7 @@ function getStoredConversationProviderId(
   plugin: ChatFeatureHost,
 ): ProviderId | null {
   if (tab.conversationId) {
-    const conversation = plugin.getConversationSync(tab.conversationId);
+    const conversation = plugin.getConversationSummary(tab.conversationId);
     if (conversation?.providerId) {
       return conversation.providerId;
     }
@@ -21,7 +21,7 @@ function getStoredConversationProviderId(
 export function getTabProviderId(
   tab: TabProviderContext,
   plugin: ChatFeatureHost,
-  conversation?: Conversation | null,
+  conversation?: Pick<Conversation, 'providerId'> | null,
 ): ProviderId | null {
   return conversation?.providerId ?? getStoredConversationProviderId(tab, plugin);
 }

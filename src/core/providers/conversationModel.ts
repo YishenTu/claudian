@@ -1,4 +1,4 @@
-import type { Conversation } from '../types';
+import type { ConversationSummary } from '../types';
 import type { StoredChatModelSelection } from '../types/settings';
 import { findAvailableModelOption } from './models/modelOptions';
 import { toProviderRuntimeModelId } from './modelSelection';
@@ -169,7 +169,7 @@ export function normalizeProviderModelSelection(
 export function resolveConversationModel(
   settings: Record<string, unknown>,
   providerId: ProviderId,
-  conversation?: Conversation | null,
+  conversation?: Pick<ConversationSummary, 'selectedModel' | 'usage'> | null,
 ): ConversationModelResolution {
   const rawSelectedModel = trimModel(conversation?.selectedModel);
   const modelOptions = ProviderRegistry.getModelPolicy(providerId).getModelOptions(settings);

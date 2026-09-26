@@ -122,6 +122,7 @@ describe('ClaudianView model refresh routing', () => {
     attachSessionBrowser(view);
     view.plugin = {
       getCommittedSettings: jest.fn().mockReturnValue({}),
+      getConversationSummary(id: string) { return this.getConversationSync(id); },
       getConversationSync: jest.fn().mockReturnValue(null),
       providerHost: {},
       settings: {},
@@ -1291,6 +1292,7 @@ describe('ClaudianView tab controls', () => {
       requestedWideSessionLayout: true,
       sessionLayoutRequestRevision: 0,
       plugin: {
+        getConversationSummary(id: string) { return this.getConversationSync(id); },
         getConversationSync: jest.fn(),
       },
       tabManager: {
@@ -1331,7 +1333,10 @@ describe('ClaudianView tab controls', () => {
       cancelHistoryRendering: jest.fn(),
       cancelSessionSidebarRendering: jest.fn(),
       isWideSessionLayout: true,
-      plugin: { getConversationSync: jest.fn() },
+      plugin: {
+        getConversationSummary(id: string) { return this.getConversationSync(id); },
+        getConversationSync: jest.fn(),
+      },
       renderSessionSidebar: jest.fn(),
       requestedWideSessionLayout: true,
       sessionLayoutRequestRevision: 0,
@@ -1382,6 +1387,7 @@ describe('ClaudianView tab controls', () => {
       cancelSessionSidebarRendering: jest.fn(),
       isWideSessionLayout: true,
       plugin: {
+        getConversationSummary(id: string) { return this.getConversationSync(id); },
         getConversationSync: jest.fn((id: string) => (
           id === 'pinned-conversation' ? { isPinned: true } : { isPinned: false }
         )),
@@ -2027,6 +2033,7 @@ describe('ClaudianView tab controls', () => {
 
     view.plugin = {
       findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      getConversationSummary(id: string) { return this.getConversationSync(id); },
       getConversationSync: jest.fn().mockReturnValue(null),
     };
     view.tabManager = {
@@ -2066,6 +2073,7 @@ describe('ClaudianView tab controls', () => {
 
     view.plugin = {
       findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      getConversationSummary(id: string) { return this.getConversationSync(id); },
       getConversationSync: jest.fn().mockReturnValue({ isPinned: true }),
     };
     view.tabManager = {
@@ -2087,6 +2095,7 @@ describe('ClaudianView tab controls', () => {
 
     view.plugin = {
       findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      getConversationSummary(id: string) { return this.getConversationSync(id); },
       getConversationSync: jest.fn().mockReturnValue(null),
     };
     view.tabManager = {
@@ -2116,6 +2125,7 @@ describe('ClaudianView tab controls', () => {
 
     view.plugin = {
       findConversationAcrossViews: jest.fn().mockReturnValue(null),
+      getConversationSummary(id: string) { return this.getConversationSync(id); },
       getConversationSync: jest.fn().mockReturnValue(null),
     };
     view.tabManager = {

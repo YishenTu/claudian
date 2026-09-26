@@ -29,6 +29,7 @@ import {
   type ConversationMeta,
   type ConversationModelRecoverySource,
   type ConversationMutablePatch,
+  type ConversationSummary,
   type SessionMetadata,
 } from '../../core/types';
 import { mapWithConcurrency } from '../../utils/concurrency';
@@ -1062,6 +1063,15 @@ export class ConversationRepository {
     if (!this.#isConversationCurrent(conversation, generation)) return null;
     this.hydratedConversationIds.add(id);
     return conversation;
+  }
+
+  getSummary(id: string): ConversationSummary | null {
+    const record = this.#getRecord(id);
+    return record ? {
+      id: record.id, providerId: record.providerId, title: record.title,
+      selectedModel: record.selectedModel, isPinned: record.isPinned,
+      ...(record.usage ? { usage: { model: record.usage.model } } : {}),
+    } : null;
   }
 
   /** Detached projections; mutation authority stays inside the repository. */

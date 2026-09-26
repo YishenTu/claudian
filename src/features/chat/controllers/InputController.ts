@@ -100,6 +100,7 @@ export interface InputControllerDeps {
   /** Captures a review reporter when a terminal provider turn becomes visible. */
   captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
   canStartTurn?: () => boolean;
+  isClosing?: () => boolean;
   turnOwner?: ActiveTurnOwner;
   /** Destination seam for the shared composer; absent means main-only. */
   getSideChatController?: () => SideChatController | null;
@@ -185,7 +186,7 @@ export class InputController {
       return DEFAULT_CHAT_PROVIDER_ID;
     }
 
-    return this.deps.plugin.getConversationSync(conversationId)?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
+    return this.deps.plugin.getConversationSummary(conversationId)?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
   }
 
   #getActiveCapabilities(): ProviderCapabilities {
@@ -455,6 +456,7 @@ export class InputController {
 
     try {
       await this.#ensureConversationShell(linkedContentSubmission);
+      if (this.#retainUnsentTurnOnClose()) return;
       await this.#triggerTitleGeneration();
     } catch (error) {
       if (linkedContentSubmission && !state.currentConversationId) {
@@ -509,6 +511,7 @@ export class InputController {
     if (this.deps.ensureExecutionInitialized) {
       const ready = await this.deps.ensureExecutionInitialized();
       if (!ready) {
+        if (this.#retainUnsentTurnOnClose(assistantMsg.id)) return;
         new Notice('Failed to initialize agent execution. Please try again.');
         this.#restoreMessageToInput(
           this.#createQueuedMessage(displayContent, admittedTurnRequest),
@@ -537,6 +540,7 @@ export class InputController {
     }
 
     const dynamicSystemPromptSections = await this.#resolveMainAgentDynamicSystemPromptSections();
+    if (this.#retainUnsentTurnOnClose(assistantMsg.id)) return;
 
     try {
       userMsg.content = admittedTurnRequest.text;
@@ -610,6 +614,7 @@ export class InputController {
       }
     } catch (error) {
       if (error instanceof ChatExecutionPreHandoffError) {
+        if (this.#retainUnsentTurnOnClose(assistantMsg.id)) return;
         this.#restoreMessageToInput(
           this.#createQueuedMessage(displayContent, admittedTurnRequest),
           { mergeWithComposer: true },
@@ -1510,6 +1515,17 @@ export class InputController {
       && !message.content.trim()
       && (message.toolCalls?.length ?? 0) === 0
       && (message.contentBlocks?.length ?? 0) === 0;
+  }
+
+  #retainUnsentTurnOnClose(assistantMessageId?: string): boolean {
+    if (!this.deps.isClosing?.()) return false;
+    // Teardown retains submitted input in the in-memory conversation projection.
+    // The closing composer cannot receive a retry; native history remains provider-owned.
+    if (assistantMessageId) this.#discardStreamingAssistantMessage(assistantMessageId);
+    this.activeStreamingAssistantMessage = null;
+    this.#resetProviderMessageBoundaryState();
+    this.#resetTurnStreamingState();
+    return true;
   }
 
   #discardStreamingAssistantMessage(messageId: string): void {
