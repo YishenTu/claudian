@@ -120,6 +120,7 @@ describe('ClaudianView model refresh routing', () => {
     const view = Object.create(ClaudianView.prototype) as any;
     attachSessionBrowser(view);
     view.plugin = {
+      getCommittedSettings: jest.fn().mockReturnValue({}),
       getConversationSync: jest.fn().mockReturnValue(null),
       providerHost: {},
       settings: {},

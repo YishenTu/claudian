@@ -33,11 +33,17 @@ function restoreSettings<T extends object>(settings: T, snapshot: T): void {
 
 export class SettingsCoordinator<T extends object> {
   private tail: Promise<void> = Promise.resolve();
+  private pendingSnapshot: T | null = null;
 
   constructor(
     private readonly settings: T,
     private readonly persist: (settings: T) => Promise<void>,
   ) {}
+
+  /** Excludes mutations whose persistence is still pending. Callers must not mutate this view. */
+  getCommittedSettings(): Readonly<T> {
+    return this.pendingSnapshot ?? this.settings;
+  }
 
   mutate(
     mutation: SettingsMutation<T>,
@@ -73,11 +79,14 @@ export class SettingsCoordinator<T extends object> {
   ): Promise<void> {
     return this.enqueue(async () => {
       const snapshot = structuredClone(this.settings);
+      this.pendingSnapshot = snapshot;
       try {
         await operation();
       } catch (error) {
         restoreSettings(this.settings, snapshot);
         throw error;
+      } finally {
+        this.pendingSnapshot = null;
       }
       try {
         await onCommitted?.(this.settings);

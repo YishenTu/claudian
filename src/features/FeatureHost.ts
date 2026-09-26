@@ -55,6 +55,8 @@ export interface FeatureHost {
 
   getMainAgentDynamicSystemPromptSections?(): Promise<readonly string[]>;
 
+  getCommittedSettings(): Readonly<ClaudianSettings>;
+
   mutateSettings(
     mutation: (settings: ClaudianSettings) => void | Promise<void>,
   ): Promise<void>;

@@ -77,13 +77,12 @@ export function getTabSettingsSnapshot(
   tab: TabProviderContext & Pick<AssembledTabRuntime, 'session'>,
   plugin: ChatFeatureHost,
 ): TabProviderSettings & ChatSettings {
+  const settings = plugin.getCommittedSettings();
   const providerId = getTabProviderId(tab, plugin);
-  if (!providerId) return { ...plugin.settings, model: tab.draftModel ?? '', reasoning: null };
-  const snapshot = getChatSettingsSnapshot(
-    plugin.settings,
-    providerId,
-    getTabSelectedModel(tab, plugin),
-  );
+  if (!providerId) return { ...settings, model: tab.draftModel ?? '', reasoning: null };
+  const snapshot = {
+    ...getChatSettingsSnapshot(settings, providerId, getTabSelectedModel(tab, plugin, settings)),
+  };
   if (snapshot.reasoning !== null) {
     const key = `${providerId}:${snapshot.model}`;
     const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
@@ -146,18 +145,19 @@ export function getTabConversation(
 export function getTabSelectedModel(
   tab: TabProviderContext,
   plugin: ChatFeatureHost,
+  settings: Readonly<ClaudianSettings> = plugin.settings,
 ): string | null {
   const providerId = getTabProviderId(tab, plugin);
   if (!providerId) return tab.draftModel;
   if (tab.conversationId === null) {
-    return normalizeProviderModelSelection(providerId, plugin.settings, tab.draftModel)
+    return normalizeProviderModelSelection(providerId, settings, tab.draftModel)
       ?? tab.draftModel
       ?? null;
   }
 
   const conversation = getTabConversation(tab, plugin);
   if (conversation) {
-    return resolveConversationModel(plugin.settings, providerId, conversation).model;
+    return resolveConversationModel(settings, providerId, conversation).model;
   }
 
   return null;

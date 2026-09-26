@@ -550,6 +550,10 @@ export default class ClaudianPlugin extends Plugin {
     await this.settingsCoordinator.persistCurrent();
   }
 
+  getCommittedSettings(): Readonly<ClaudianSettings> {
+    return this.settingsCoordinator.getCommittedSettings();
+  }
+
   async mutateSettings(
     mutation: SettingsMutation<ClaudianSettings>,
     onCommitted?: SettingsCommit<ClaudianSettings>,

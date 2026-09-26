@@ -7,7 +7,9 @@ describe('SettingsCoordinator', () => {
   it('serializes mutation closures over the latest in-memory settings', async () => {
     const settings: Record<string, unknown> = { alpha: 0, beta: 0 };
     const persisted: Array<Record<string, unknown>> = [];
+    const visibleDuringWrites: Array<Record<string, unknown>> = [];
     const coordinator = new SettingsCoordinator(settings, async (current) => {
+      visibleDuringWrites.push({ ...coordinator.getCommittedSettings() });
       persisted.push({ ...current });
     });
 
@@ -21,6 +23,11 @@ describe('SettingsCoordinator', () => {
     await Promise.all([first, second]);
 
     expect(settings).toEqual({ alpha: 1, beta: 2 });
+    expect(coordinator.getCommittedSettings()).toEqual(settings);
+    expect(visibleDuringWrites).toEqual([
+      { alpha: 0, beta: 0 },
+      { alpha: 1, beta: 0 },
+    ]);
     expect(persisted).toEqual([
       { alpha: 1, beta: 0 },
       { alpha: 1, beta: 2 },
@@ -36,14 +43,14 @@ describe('SettingsCoordinator', () => {
 
     const first = coordinator.mutate(
       current => { current.value = 1; },
-      () => { events.push('commit'); },
+      () => { events.push(`commit:${coordinator.getCommittedSettings().value}`); },
     );
     const second = coordinator.mutate(current => {
       events.push(`next:${current.value}`);
     });
     await Promise.all([first, second]);
 
-    expect(events).toEqual(['persist', 'commit', 'next:1', 'persist']);
+    expect(events).toEqual(['persist', 'commit:1', 'next:1', 'persist']);
   });
 
   it('rolls back a failed save before running later queued mutations', async () => {
@@ -63,6 +70,7 @@ describe('SettingsCoordinator', () => {
     }, commit);
     const second = coordinator.mutate(current => {
       expect(current).toEqual({ nested: { committed: true } });
+      expect(coordinator.getCommittedSettings()).toEqual({ nested: { committed: true } });
       current.second = true;
     });
 
@@ -82,10 +90,12 @@ describe('SettingsCoordinator', () => {
 
     await expect(coordinator.mutate(async current => {
       current.value = 'partial';
+      expect(coordinator.getCommittedSettings()).toEqual({ value: 'committed' });
       throw originalError;
     })).rejects.toBe(originalError);
 
     expect(settings).toEqual({ value: 'committed' });
+    expect(coordinator.getCommittedSettings()).toEqual(settings);
     expect(persist).not.toHaveBeenCalled();
   });
 
@@ -99,7 +109,10 @@ describe('SettingsCoordinator', () => {
 
     const first = coordinator.mutate(
       current => { current.value = 'durable'; },
-      () => { throw publicationError; },
+      () => {
+        expect(coordinator.getCommittedSettings()).toEqual({ value: 'durable' });
+        throw publicationError;
+      },
     );
     const second = coordinator.mutate(current => {
       expect(current.value).toBe('durable');
@@ -142,8 +155,10 @@ describe('SettingsCoordinator', () => {
 
     await coordinator.mutateConditionally(current => {
       current.transient = 1;
+      expect(coordinator.getCommittedSettings()).toEqual({ transient: 0, persisted: 0 });
       return false;
     });
+    expect(coordinator.getCommittedSettings()).toEqual({ transient: 1, persisted: 0 });
     await coordinator.mutateConditionally(current => {
       current.persisted = 2;
       return true;

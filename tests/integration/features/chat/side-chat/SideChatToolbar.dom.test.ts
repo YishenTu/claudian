@@ -35,6 +35,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
   const plugin = {
     ...(harness.plugin as ChatFeatureHost),
     app,
+    getCommittedSettings: () => plugin.settings,
     settings: {
       model: 'claude-opus-4-6', effortLevel: 'medium', permissionMode: 'normal',
       savedProviderModel: { claude: 'claude-opus-4-6' }, savedProviderEffort: { claude: 'medium' },

@@ -102,6 +102,7 @@ function createChatHarness(settings: ClaudianSettings, id: ProviderId, selected:
     updateConversation: async (conversationId: string, patch: Partial<Conversation>) =>
       Object.assign(conversations.find(entry => entry.id === conversationId)!, patch),
     mutateSettings: settingsCoordinator.mutate.bind(settingsCoordinator),
+    getCommittedSettings: settingsCoordinator.getCommittedSettings.bind(settingsCoordinator),
   } as unknown as ChatFeatureHost;
   const createTab = async () => {
     const conversation = {
@@ -278,6 +279,45 @@ it('refreshes a cached effort when provider settings remove it from the availabl
     await expectSubmission(tab, sessions, 'openai-codex/gpt-5.5', 'high');
     await expectSubmission(peer, sessions, 'openai-codex/gpt-5.5', 'medium');
   } finally {
+    for (const tab of tabs) await destroyTab(tab);
+  }
+});
+
+it.each([true, false])('seeds tabs from committed reasoning while a save is pending (succeeds: %s)', async (succeeds) => {
+  const entry = modelCatalogCases.find(candidate => candidate.id === 'codex')!;
+  const settings = createSettings(entry);
+  const { createTab, sessions, tabs, persist, plugin } = createChatHarness(settings, entry.id, entry.selected);
+  let resolveSave!: (value: undefined) => void;
+  let rejectSave!: (error: Error) => void;
+  const save = new Promise<undefined>((resolve, reject) => {
+    resolveSave = resolve;
+    rejectSave = reject;
+  });
+  const mutate = jest.spyOn(plugin, 'mutateSettings');
+  const saveError = new Error('disk full');
+  try {
+    const source = await createTab();
+    persist.mockImplementationOnce(() => save);
+    fireEvent.click(within(source.dom.inputComposerEl).getByText('Medium', { selector: '.claudian-thinking-gear' }));
+    await waitFor(() => expect(persist).toHaveBeenCalled());
+
+    const duringSave = await createTab();
+    await expectSubmission(duringSave, sessions, 'openai-codex/gpt-5.5', 'high');
+    if (succeeds) {
+      resolveSave(undefined);
+    } else {
+      rejectSave(saveError);
+    }
+    const result = await Promise.allSettled([mutate.mock.results[0].value]);
+    expect(result).toEqual([succeeds
+      ? { status: 'fulfilled', value: undefined }
+      : { status: 'rejected', reason: saveError }]);
+    refreshTabProviderUI(duringSave);
+    await expectSubmission(duringSave, sessions, 'openai-codex/gpt-5.5', 'high');
+    await expectSubmission(await createTab(), sessions, 'openai-codex/gpt-5.5', succeeds ? 'medium' : 'high');
+  } finally {
+    resolveSave(undefined);
+    await mutate.mock.results[0]?.value.catch(() => undefined);
     for (const tab of tabs) await destroyTab(tab);
   }
 });

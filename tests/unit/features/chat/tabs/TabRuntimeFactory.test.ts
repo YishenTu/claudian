@@ -190,6 +190,7 @@ function createPlugin(overrides: Record<string, unknown> = {}) {
       }),
     },
     settings,
+    getCommittedSettings: () => settings,
     getActiveEnvironmentVariables: jest.fn().mockReturnValue({}),
     mutateSettings: jest.fn(async (mutation) => {
       await mutation(settings);

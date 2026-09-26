@@ -25,6 +25,7 @@ function createTab(model: string, customContextLimits: Record<string, number>, u
     ui: { contextUsageMeter: { update } },
   } as unknown as AssembledTabRuntime;
   const plugin = {
+    getCommittedSettings: () => plugin.settings,
     settings: {
       model,
       customContextLimits,
