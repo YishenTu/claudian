@@ -10,7 +10,7 @@ import {
   loadOpencodeSessionRows,
   OPENCODE_MESSAGE_ROW_SQL,
   type OpencodeSqliteReaderDependencies,
-} from '../../../../src/providers/opencode/history/OpencodeSqliteReader';
+} from '@/providers/opencode/history/OpencodeSqliteReader';
 
 type Spawn = NonNullable<OpencodeSqliteReaderDependencies['spawn']>;
 

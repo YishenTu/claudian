@@ -3,15 +3,14 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import type * as environmentModule from '@/utils/env';
-
 import {
   loadOpencodeSessionMessages,
   loadOpencodeSessionModel,
   mapOpencodeMessages,
   mapOpencodeV2NativeMessages,
   OPENCODE_MESSAGE_ROW_SQL,
-} from '../../../../src/providers/opencode/history/OpencodeHistoryStore';
+} from '@/providers/opencode/history/OpencodeHistoryStore';
+import type * as environmentModule from '@/utils/env';
 
 // Exercise real SQLite subprocesses without discovering the runner's other Node installations.
 jest.mock('@/utils/env', () => ({

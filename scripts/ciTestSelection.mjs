@@ -11,7 +11,7 @@ const fullSelection = {
   crossPlatform: true, piWindows: true,
 };
 const docsTest = 'tests/unit/docs/Documentation.test.ts';
-const piTest = 'tests/integration/providers/pi/PiSubprocess.windows.test.ts';
+const piTest = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
 const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/');
 const isJestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
 const isGraphInput = file => /^(?:src|tests)\/.*\.(?:[cm]?[jt]sx?|json)$/.test(file);

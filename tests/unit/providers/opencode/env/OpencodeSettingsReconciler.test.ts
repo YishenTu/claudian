@@ -1,10 +1,9 @@
 import '@/providers';
 
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
-
-import { isVersionedRuntimeInputFingerprint } from '../../../../src/core/providers/settings/RuntimeInputFingerprint';
-import { getOpencodeDiscoveryState, updateOpencodeDiscoveryState } from '../../../../src/providers/opencode/discoveryState';
-import { opencodeSettingsReconciler } from '../../../../src/providers/opencode/env/OpencodeSettingsReconciler';
+import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
+import { getOpencodeDiscoveryState, updateOpencodeDiscoveryState } from '@/providers/opencode/discoveryState';
+import { opencodeSettingsReconciler } from '@/providers/opencode/env/OpencodeSettingsReconciler';
 
 describe('opencodeSettingsReconciler.normalizeModelVariantSettings', () => {
   it('migrates saved variant model ids into base model ids plus effort', () => {

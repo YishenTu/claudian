@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
-import { FakeAuxiliaryBackend } from '@test/unit/core/auxiliary/AuxiliaryExecutionTestHarness';
+import { FakeAuxiliaryBackend } from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { MarkdownRenderer, Notice } from 'obsidian';

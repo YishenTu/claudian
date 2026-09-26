@@ -2,12 +2,11 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 jest.mock('cross-spawn', () => jest.fn());
+import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestProcess';
 import spawn from 'cross-spawn';
 
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
-
-import { createNativeRPCProcess } from './NativeRPCTestProcess';
-import { createForkTestEnvironment, type ForkTestEnvironment } from './ProviderForkTestHarness';
 
 function createNativeCodex(env: ForkTestEnvironment) {
   const threads = new Map<string, string[]>([['codex-source', []]]);

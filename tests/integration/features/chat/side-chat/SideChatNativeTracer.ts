@@ -1,3 +1,5 @@
+import type { ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+
 import type {
   ProviderExecutionBackend,
   ProviderExecutionEvent,
@@ -11,8 +13,6 @@ import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
 import { handleForkRequest } from '@/features/chat/tabs/TabForking';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-
-import type { ForkTestEnvironment } from '../tabs/ProviderForkTestHarness';
 
 export const capturedImage: ImageAttachment = {
   id: 'captured-image', name: 'captured.png', mediaType: 'image/png', source: 'paste', size: 68,

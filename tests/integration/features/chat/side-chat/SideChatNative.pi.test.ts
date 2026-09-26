@@ -2,12 +2,12 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 jest.mock('cross-spawn', () => jest.fn());
+import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 import spawn from 'cross-spawn';
 
 import { PiCommandCatalog } from '@/providers/pi/commands/PiCommandCatalog';
 import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
 
-import { createForkTestEnvironment, type ForkTestEnvironment } from '../tabs/ProviderForkTestHarness';
 import { capturedImage, traceSideChild } from './SideChatNativeTracer';
 
 async function readRecords(file: string) {

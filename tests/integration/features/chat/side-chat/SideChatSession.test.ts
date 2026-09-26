@@ -1,8 +1,8 @@
+import { FakeSideBackend, waitFor } from '@test/helpers/features/chat/SideChatSessionHarness';
+
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { WarmExecutionCapacityError, WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
 import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
-
-import { FakeSideBackend, waitFor } from './SideChatSessionHarness';
 
 function createSession(overrides: Partial<ConstructorParameters<typeof SideChatSession>[0]> = {}) {
   const backend = new FakeSideBackend();

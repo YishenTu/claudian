@@ -1,7 +1,8 @@
 import * as path from 'path';
 
+import { extractCodexUserVisibleText, joinCodexUserTextParts } from '@/providers/codex/normalization/codexUserText';
+
 import type { CitationGroup, StreamChunk, UsageInfo } from '../../../core/types';
-import { extractCodexUserVisibleText, joinCodexUserTextParts } from '../codexUserText';
 import {
   normalizeCodexMemoryCitation,
   stripCodexMemoryCitationMarkup,

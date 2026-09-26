@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { build } from 'esbuild';
 
-import type * as reader from '../../../../src/providers/opencode/history/OpencodeSqliteReader';
+import type * as reader from '@/providers/opencode/history/OpencodeSqliteReader';
 
 it('reads history with the require function supplied by the Obsidian plugin loader', async () => {
   const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'claudian-opencode-loader-'));
@@ -25,7 +25,7 @@ it('reads history with the require function supplied by the Obsidian plugin load
     }
 
     const bundle = await build({
-      entryPoints: [path.resolve(__dirname, '../../../../src/providers/opencode/history/OpencodeSqliteReader.ts')],
+      entryPoints: [path.resolve(__dirname, '../../../../../src/providers/opencode/history/OpencodeSqliteReader.ts')],
       bundle: true,
       platform: 'node',
       format: 'cjs',

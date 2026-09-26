@@ -4,10 +4,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import type { Conversation } from '@/core/types';
+import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import type * as environmentModule from '@/utils/env';
-
-import type { Conversation } from '../../../../src/core/types';
-import { OpencodeConversationHistoryService } from '../../../../src/providers/opencode/history/OpencodeConversationHistoryService';
 
 // Exercise real SQLite subprocesses without discovering the runner's other Node installations.
 jest.mock('@/utils/env', () => ({
@@ -44,7 +43,7 @@ describe('OpencodeConversationHistoryService', () => {
     try {
       await jest.isolateModulesAsync(async () => {
         const { OpencodeConversationHistoryService: HistoryService } = await import(
-          '../../../../src/providers/opencode/history/OpencodeConversationHistoryService'
+          '@/providers/opencode/history/OpencodeConversationHistoryService'
         );
         await new HistoryService().hydrateConversationHistory(conversation, null, {
           environment: {

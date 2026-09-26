@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App } from 'obsidian';
 
@@ -8,8 +9,6 @@ import type { Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
-
-import { createHarness, releaseSideChatHarnesses } from './SideChatDOMHarness';
 
 const originalResizeObserver = globalThis.ResizeObserver;
 beforeEach(() => {

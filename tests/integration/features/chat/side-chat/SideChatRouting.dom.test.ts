@@ -1,6 +1,12 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import {
+  createHarness,
+  releaseSideChatHarnesses,
+  type SideChatDOMHarness,
+  startSideChat,
+} from '@test/helpers/features/chat/SideChatDOMHarness';
 import { waitFor } from '@testing-library/dom';
 
 import type { ProviderExecutionContext } from '@/core/execution';
@@ -9,13 +15,6 @@ import { InputController, type InputControllerDeps } from '@/features/chat/contr
 import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-
-import {
-  createHarness,
-  releaseSideChatHarnesses,
-  type SideChatDOMHarness,
-  startSideChat,
-} from './SideChatDOMHarness';
 
 afterEach(releaseSideChatHarnesses);
 

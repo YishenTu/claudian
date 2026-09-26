@@ -1,7 +1,7 @@
 import '@/providers';
 
+import { FakeSideBackend, waitFor } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
-import { FakeSideBackend, waitFor } from '@test/integration/features/chat/side-chat/SideChatSessionHarness';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { SessionMetadataLoader } from '@/app/conversations/SessionMetadataLoader';

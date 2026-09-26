@@ -6,7 +6,7 @@ import {
   resolveExistingOpencodeDatabasePath,
   resolveOpencodeDatabasePath,
   resolveOpencodeDataDir,
-} from '../../../../src/providers/opencode/runtime/OpencodePaths';
+} from '@/providers/opencode/runtime/OpencodePaths';
 
 describe('OpencodePaths', () => {
   const originalPlatform = process.platform;

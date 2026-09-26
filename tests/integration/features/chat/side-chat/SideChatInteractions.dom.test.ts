@@ -1,10 +1,9 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-
-import { createHarness, releaseSideChatHarnesses, startSideChat } from './SideChatDOMHarness';
 
 afterEach(releaseSideChatHarnesses);
 

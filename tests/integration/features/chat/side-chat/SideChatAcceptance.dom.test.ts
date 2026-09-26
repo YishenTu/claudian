@@ -1,16 +1,15 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
-import { fireEvent, screen, waitFor } from '@testing-library/dom';
-
-import { ClaudianView } from '@/features/chat/ClaudianView';
-import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
-
 import {
   createHarness,
   releaseSideChatHarnesses,
   startSideChat,
-} from './SideChatDOMHarness';
+} from '@test/helpers/features/chat/SideChatDOMHarness';
+import { fireEvent, screen, waitFor } from '@testing-library/dom';
+
+import { ClaudianView } from '@/features/chat/ClaudianView';
+import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 
 afterEach(releaseSideChatHarnesses);
 

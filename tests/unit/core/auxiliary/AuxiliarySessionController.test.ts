@@ -1,11 +1,11 @@
+import { FakeAuxiliarySession } from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
+
 import { AuxiliarySessionController } from '@/core/auxiliary/AuxiliarySessionController';
 import type {
   ProviderExecutionBackend,
   ProviderSessionConfig,
 } from '@/core/execution';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
-
-import { FakeAuxiliarySession } from './AuxiliaryExecutionTestHarness';
 
 class RejectingCleanupSession extends FakeAuxiliarySession {
   private rejectCleanup!: (reason: unknown) => void;

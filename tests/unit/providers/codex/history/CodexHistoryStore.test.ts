@@ -9,7 +9,7 @@ import {
   parseCodexSessionTurns,
 } from '@/providers/codex/history/CodexHistoryStore';
 
-const FIXTURES_DIR = path.join(__dirname, '..', 'fixtures');
+const FIXTURES_DIR = path.join(__dirname, '../../../../fixtures/providers/codex/history');
 
 describe('CodexHistoryStore', () => {
   it('settles lookup at the deadline when a directory read never resolves', async () => {

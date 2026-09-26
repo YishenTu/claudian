@@ -2,13 +2,13 @@ import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
 jest.mock('cross-spawn', () => jest.fn());
+import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { createNativeRPCProcess, createNativeVersionProcess } from '@test/helpers/providers/NativeRPCTestProcess';
 import spawn from 'cross-spawn';
 
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
-import { createNativeRPCProcess, createNativeVersionProcess } from '../tabs/NativeRPCTestProcess';
-import { createForkTestEnvironment } from '../tabs/ProviderForkTestHarness';
 import { traceSideChild } from './SideChatNativeTracer';
 
 it('forks native disk history and resumes the side child independently after cooling', async () => {

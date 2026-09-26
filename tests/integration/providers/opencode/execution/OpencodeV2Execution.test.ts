@@ -2,13 +2,13 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+
 import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
-
-import { createForkTestEnvironment } from '../../../features/chat/tabs/ProviderForkTestHarness';
 
 // Native HTTP boundary, based on v2.0.12 event and route contracts.
 const fixture = `#!/usr/bin/env node

@@ -1,7 +1,7 @@
 import {
   joinCodexUserTextParts,
   stripCodexImagePlaceholderText,
-} from '@/providers/codex/codexUserText';
+} from '@/providers/codex/normalization/codexUserText';
 
 describe('codexUserText', () => {
   it('strips inline generated image placeholder tags', () => {
