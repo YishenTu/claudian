@@ -1,6 +1,8 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
+import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App } from 'obsidian';
@@ -15,9 +17,6 @@ import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import { updateCurrentGrokCatalog } from '@/providers/grok/settings';
-
-import { createHarness, releaseSideChatHarnesses } from '../side-chat/SideChatDOMHarness';
-import { FakeSideSession } from '../side-chat/SideChatSessionHarness';
 
 const originalResizeObserver = globalThis.ResizeObserver;
 beforeEach(() => {

@@ -3,7 +3,7 @@ import {
   normalizeOpencodeToolInput,
   normalizeOpencodeToolName,
   resolveOpencodeRawToolName,
-} from '../../../../src/providers/opencode/normalization/opencodeToolNormalization';
+} from '@/providers/opencode/normalization/opencodeToolNormalization';
 
 describe('normalizeOpencodeToolInput', () => {
   it.each([{ name: 'probe-skill' }, { id: 'probe-skill' }])(

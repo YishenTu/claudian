@@ -1,4 +1,4 @@
-import { normalizeInsertionText } from '@/utils/inlineEdit';
+import { normalizeInsertionText } from '@/features/inline-edit/ui/normalizeInsertionText';
 
 describe('normalizeInsertionText', () => {
   it.each([

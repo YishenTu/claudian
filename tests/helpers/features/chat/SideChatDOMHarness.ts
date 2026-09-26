@@ -1,3 +1,4 @@
+import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { waitFor } from '@testing-library/dom';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
@@ -6,8 +7,6 @@ import type { ProviderCapabilities, ProviderConversationHistoryService, Provider
 import { WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
-
-import { FakeSideBackend } from './SideChatSessionHarness';
 
 Object.assign(HTMLElement.prototype, {
   appendText(this: HTMLElement, text: string) { this.appendChild(this.ownerDocument.createTextNode(text)); },

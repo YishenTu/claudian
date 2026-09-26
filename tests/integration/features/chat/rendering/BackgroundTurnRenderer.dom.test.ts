@@ -3,6 +3,7 @@ import '@/providers';
 
 import * as fs from 'node:fs/promises';
 
+import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { MarkdownRenderer } from 'obsidian';
@@ -17,8 +18,6 @@ import { ChatState } from '@/features/chat/state/ChatState';
 import { TabSession } from '@/features/chat/tabs/TabSession';
 import { enqueueTabSessionEvent } from '@/features/chat/tabs/TabSessionEvents';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
-
-import { FakeSideBackend } from '../side-chat/SideChatSessionHarness';
 
 jest.mock('node:fs/promises');
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };

@@ -1,6 +1,6 @@
-import { TextResponseCollector } from '@/core/auxiliary/TextResponseCollector';
+import { FakeAuxiliarySession } from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
 
-import { FakeAuxiliarySession } from './AuxiliaryExecutionTestHarness';
+import { TextResponseCollector } from '@/core/auxiliary/TextResponseCollector';
 
 describe('TextResponseCollector', () => {
   it('collects deltas and requires completion', async () => {

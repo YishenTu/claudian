@@ -4,12 +4,11 @@ import * as path from 'node:path';
 import initializeFixture from '@test/fixtures/providers/grok/extensions/plan-mode-hook.json';
 
 jest.mock('cross-spawn', () => jest.fn());
+import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestProcess';
 import spawn from 'cross-spawn';
 
 import { GrokExecutionBackend } from '@/providers/grok/execution/GrokExecutionBackend';
-
-import { createNativeRPCProcess } from './NativeRPCTestProcess';
-import { createForkTestEnvironment, type ForkTestEnvironment } from './ProviderForkTestHarness';
 
 function createNativeGrok(env: ForkTestEnvironment, options: { tokenStream?: boolean } = {}) {
   const sessions = new Map<string, string[]>([['grok-source', []]]);

@@ -2,11 +2,10 @@
 import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { screen, waitFor } from '@testing-library/dom';
 
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-
-import { createHarness, releaseSideChatHarnesses, startSideChat } from './SideChatDOMHarness';
 
 beforeEach(() => ProviderWorkspaceRegistry.setServices('claude', {}));
 afterEach(async () => {

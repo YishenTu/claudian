@@ -1,10 +1,10 @@
-import { InlineEditService } from '@/core/auxiliary/InlineEditService';
-import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
-
 import {
   FakeAuxiliaryBackend,
   waitFor,
-} from './AuxiliaryExecutionTestHarness';
+} from '@test/helpers/core/auxiliary/AuxiliaryExecutionTestHarness';
+
+import { InlineEditService } from '@/core/auxiliary/InlineEditService';
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 
 function createService() {
   const backend = new FakeAuxiliaryBackend();

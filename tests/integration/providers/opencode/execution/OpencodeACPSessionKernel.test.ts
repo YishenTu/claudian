@@ -7,12 +7,12 @@ import spawn from 'cross-spawn';
 
 jest.mock('cross-spawn', () => jest.fn());
 
+import { createNativeRPCProcess, createNativeVersionProcess } from '@test/helpers/providers/NativeRPCTestProcess';
+
 import type { ProviderExecutionEvent } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
-
-import { createNativeRPCProcess, createNativeVersionProcess } from '../../../features/chat/tabs/NativeRPCTestProcess';
 
 it.each([
   ['yolo', 'allow'],

@@ -6,12 +6,12 @@ import spawn from 'cross-spawn';
 
 jest.mock('cross-spawn', () => jest.fn());
 
+import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
+import { createNativeRPCProcess, createNativeVersionProcess } from '@test/helpers/providers/NativeRPCTestProcess';
+
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
-
-import { createNativeRPCProcess, createNativeVersionProcess } from './NativeRPCTestProcess';
-import { createForkTestEnvironment, type ForkTestEnvironment } from './ProviderForkTestHarness';
 
 interface NativeMessage {
   info: { id: string; role: string };

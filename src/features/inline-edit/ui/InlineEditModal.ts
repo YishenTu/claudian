@@ -4,6 +4,8 @@ import { Decoration, EditorView, WidgetType } from '@codemirror/view';
 import type { App, Component, Editor, MarkdownView } from 'obsidian';
 import { Notice } from 'obsidian';
 
+import { normalizeInsertionText } from '@/features/inline-edit/ui/normalizeInsertionText';
+
 import { createCatalogCommandDiscoveryStore } from '../../../core/providers/commands/catalogCommandDiscovery';
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import { resolveConversationModel } from '../../../core/providers/conversationModel';
@@ -24,7 +26,6 @@ import {
   normalizeMentionPath,
 } from '../../../utils/contextMentionResolver';
 import { type CursorContext, getEditorView } from '../../../utils/editor';
-import { normalizeInsertionText } from '../../../utils/inlineEdit';
 import { getVaultPath, normalizePathForVault as normalizePathForVaultUtil } from '../../../utils/path';
 import type { FeatureHost } from '../../FeatureHost';
 import type { InlineEditSessionOwner } from '../InlineEditSessionOwner';

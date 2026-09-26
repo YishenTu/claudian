@@ -4,6 +4,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import {
+  extractCodexUserVisibleText,
+  joinCodexUserTextParts,
+} from '@/providers/codex/normalization/codexUserText';
+
 import type {
   ChatMessage,
   CitationGroup,
@@ -17,10 +22,6 @@ import {
   buildImageAttachmentFromBase64,
   parseImageDataUri,
 } from '../../../utils/imageAttachment';
-import {
-  extractCodexUserVisibleText,
-  joinCodexUserTextParts,
-} from '../codexUserText';
 import {
   normalizeCodexMemoryCitation,
   stripCodexMemoryCitationMarkup,

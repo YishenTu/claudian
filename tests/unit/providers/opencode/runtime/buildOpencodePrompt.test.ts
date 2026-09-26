@@ -1,4 +1,4 @@
-import { buildOpencodePromptBlocks, buildOpencodePromptText } from '../../../../src/providers/opencode/runtime/buildOpencodePrompt';
+import { buildOpencodePromptBlocks, buildOpencodePromptText } from '@/providers/opencode/runtime/buildOpencodePrompt';
 
 describe('buildOpencodePromptText', () => {
   it('appends Claudian XML context to the user query', () => {

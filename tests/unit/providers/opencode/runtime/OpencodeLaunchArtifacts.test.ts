@@ -5,11 +5,11 @@ import * as path from 'node:path';
 import {
   OPENCODE_SAFE_MODE_ID,
   OPENCODE_YOLO_MODE_ID,
-} from '../../../../src/providers/opencode/modes';
+} from '@/providers/opencode/modes';
 import {
   buildOpencodeManagedConfig,
   prepareOpencodeLaunchArtifacts,
-} from '../../../../src/providers/opencode/runtime/OpencodeLaunchArtifacts';
+} from '@/providers/opencode/runtime/OpencodeLaunchArtifacts';
 
 describe('buildOpencodeManagedConfig', () => {
   it.each([1, 2] as const)('overrides user approval rules for YOLO under native v%s configuration', (nativeVersion) => {

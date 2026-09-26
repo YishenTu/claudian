@@ -51,7 +51,7 @@ test('native selection uses only nonempty shards and retains a Pi-only job', () 
   const sdk = 'tests/unit/core/process/ManagedStdioProcess.test.ts';
   assert.deepEqual(select([paths]).crossPlatformShards, ['1/1']);
   assert.deepEqual(select([paths, sdk]).crossPlatformShards, ['1/2', '2/2']);
-  assert.deepEqual(select(['tests/integration/providers/pi/PiSubprocess.windows.test.ts']).crossPlatformShards, ['1/1']);
+  assert.deepEqual(select(['tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts']).crossPlatformShards, ['1/1']);
   assert.deepEqual(select(['package-lock.json']).crossPlatformShards, ['1/2', '2/2']);
 });
 
@@ -74,7 +74,7 @@ test('filesystem-read documentation, styles, and captured fixtures retain their 
 });
 
 test('native Pi launch runs only when affected', () => {
-  const pi = 'tests/integration/providers/pi/PiSubprocess.windows.test.ts';
+  const pi = 'tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts';
   assert.equal(select(['src/providers/pi/runtime/PiSubprocess.ts'], [pi]).piWindows, true);
   assert.equal(select(['src/features/chat/ClaudianView.ts'], [panel]).piWindows, false);
 });

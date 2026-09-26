@@ -247,7 +247,7 @@ jobs:
 
       - name: Run Windows Pi launch integration
         if: runner.os == 'Windows' && matrix.shard != '2/2' && needs.test-scope.outputs.pi-windows == 'true'
-        run: npm run test:unit -- --runInBand tests/integration/providers/pi/PiSubprocess.windows.test.ts
+        run: npm run test:unit -- --runInBand tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts
 
   build-artifacts:
     runs-on: ubuntu-latest

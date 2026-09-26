@@ -1,8 +1,7 @@
 import * as sdk from '@anthropic-ai/claude-agent-sdk';
+import { createForkTestEnvironment, type ForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
-
-import { createForkTestEnvironment, type ForkTestEnvironment } from './ProviderForkTestHarness';
 
 function createNativeClaude() {
   const sessions = new Map<string, string[]>([['claude-source', []]]);

@@ -2,6 +2,7 @@
 
 import '@/providers';
 
+import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { MarkdownRenderer } from 'obsidian';
@@ -16,8 +17,6 @@ import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { ClaudeExecutionEventNormalizer } from '@/providers/claude/execution/ClaudeExecutionEventNormalizer';
-
-import { FakeSideBackend } from '../side-chat/SideChatSessionHarness';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
