@@ -45,10 +45,9 @@ function getAppProvidedCLIPaths(): string[] {
 /** GUI apps like Obsidian have minimal PATH, so we add common binary locations. */
 function getExtraBinaryPaths(): string[] {
   const home = getHomeDir();
-  const miseShims = getMiseShimsDir(home);
+  const paths: string[] = [];
 
   if (isWindows) {
-    const paths: string[] = [];
     const localAppData = process.env.LOCALAPPDATA;
     const appData = process.env.APPDATA;
     const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
@@ -134,19 +133,14 @@ function getExtraBinaryPaths(): string[] {
       paths.push(path.join(home, '.bun', 'bin'));
       paths.push(path.join(home, '.opencode', 'bin'));
     }
-
-    if (miseShims) paths.push(miseShims);
-    paths.push(...getAppProvidedCLIPaths());
-
-    return paths;
   } else {
     // Unix paths
-    const paths = [
+    paths.push(
       '/usr/local/bin',
       '/opt/homebrew/bin',  // macOS ARM Homebrew
       '/usr/bin',
       '/bin',
-    ];
+    );
 
     const voltaHome = process.env.VOLTA_HOME;
     if (voltaHome) {
@@ -191,12 +185,13 @@ function getExtraBinaryPaths(): string[] {
         }
       }
     }
-
-    if (miseShims) paths.push(miseShims);
-    paths.push(...getAppProvidedCLIPaths());
-
-    return paths;
   }
+
+  const miseShims = getMiseShimsDir(home);
+  if (miseShims) paths.push(miseShims);
+  paths.push(...getAppProvidedCLIPaths());
+
+  return paths;
 }
 
 function* findNodeDirectories(additionalPaths?: string): Generator<string, undefined> {
