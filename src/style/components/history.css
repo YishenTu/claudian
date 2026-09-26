@@ -10,7 +10,6 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--background-primary);
 }
 
 .claudian-session-resizer {
@@ -170,7 +169,6 @@
 .claudian-session-sidebar .claudian-session-section-header {
   flex-shrink: 0;
   min-height: 40px;
-  background: var(--background-primary);
 }
 
 .claudian-session-header-actions {
