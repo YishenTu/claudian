@@ -188,12 +188,6 @@ export function getDefaultCodexModel(
   return models.find(model => model.isDefault) ?? models[0] ?? null;
 }
 
-export function getCodexModelsInPickerOrder(
-  models: CodexDiscoveredModel[],
-): CodexDiscoveredModel[] {
-  return [...models].reverse();
-}
-
 export function getCodexDefaultReasoningEffort(
   model: CodexDiscoveredModel,
   enableUltraEffort: boolean,

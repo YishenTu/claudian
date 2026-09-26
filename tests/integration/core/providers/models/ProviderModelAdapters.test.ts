@@ -22,6 +22,14 @@ jest.mock('@/providers/pi/runtime/PiModelDiscoveryService', () => ({
 
 const assertions = { claude: assertClaudeModelAvailable, codex: assertCodexModelAvailable, grok: assertGrokModelAvailable, opencode: assertOpencodeModelAvailable, pi: assertPiModelAvailable };
 
+const browseOrders = {
+  claude: ['sonnet', 'unselected-catalog-entry'],
+  codex: ['gpt-5.5', 'unselected-catalog-entry'],
+  grok: ['selected', 'unselected-catalog-entry'],
+  opencode: ['unselected-catalog-entry', 'anthropic/selected'],
+  pi: ['pi:anthropic/unselected-catalog-entry', 'pi:anthropic/selected'],
+};
+
 it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata behind the common catalog', async ({id, selected, populate, read}) => {
   const settings: Record<string, unknown> = {};
   populate(settings);
@@ -39,7 +47,11 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
     pi: () => createPiModels(host),
   };
   const catalog = factories[id]();
+  const discoveredModels = structuredClone(read(settings));
+  expect(catalog.getSnapshot().models.map(model => model.id)).toEqual(browseOrders[id]);
+  expect(read(settings)).toEqual(discoveredModels);
   const selectedId = catalog.getSnapshot().selectedIds[0];
+  expect(catalog.getSnapshot().defaultModelId).toBe(selectedId);
   expect(() => assertions[id](settings, selected)).not.toThrow();
   await catalog.refresh();
   const discover = id === 'pi' ? mockPiDiscover : discovery;
@@ -75,7 +87,7 @@ it('preserves OpenCode provider labels for catalog filtering', () => {
   } } } } as unknown as ProviderHost;
   const catalog = createOpencodeModels(host, { discoverModels: jest.fn(), warmModelsMetadata: jest.fn() });
   expect(catalog.getSnapshot().models).toEqual([
-    expect.objectContaining({ id: 'anthropic/sonnet', name: 'Sonnet', providerKey: 'anthropic', providerLabel: 'Anthropic' }),
     expect.objectContaining({ id: 'openai/gpt', name: 'GPT', providerKey: 'openai', providerLabel: 'OpenAI' }),
+    expect.objectContaining({ id: 'anthropic/sonnet', name: 'Sonnet', providerKey: 'anthropic', providerLabel: 'Anthropic' }),
   ]);
 });

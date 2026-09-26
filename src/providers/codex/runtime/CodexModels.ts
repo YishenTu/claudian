@@ -1,6 +1,6 @@
 import { ProviderModelCatalogController } from '../../../core/providers/models/ProviderModelCatalog';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import { getCodexModelsInPickerOrder, isCodexModelAvailable } from '../models';
+import { isCodexModelAvailable } from '../models';
 import { getCodexProviderSettings, getVisibleCodexModelIds, updateCodexProviderSettings } from '../settings';
 import type { CodexModelCatalogCoordinator } from './CodexModelCatalogCoordinator';
 
@@ -14,7 +14,7 @@ export function createCodexModels(host: ProviderHost, native: Pick<CodexModelCat
       const current = getCodexProviderSettings(host.settings);
       return {
         enabled: current.enabled,
-        models: getCodexModelsInPickerOrder(current.discoveredModels).map(model => ({
+        models: current.discoveredModels.map(model => ({
           id: model.model, name: model.displayName, description: model.description,
           isAvailable: isCodexModelAvailable(model, current.enableUltraEffort),
           unavailableMessage: 'Requires Ultra effort to be enabled',

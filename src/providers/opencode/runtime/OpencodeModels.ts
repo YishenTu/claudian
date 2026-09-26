@@ -23,7 +23,7 @@ export function createOpencodeModels(host: ProviderHost, native: Pick<OpencodeMe
             providerKey: model.rawId.split('/')[0],
             providerLabel,
           };
-        }),
+        }).reverse(),
         selectedIds: current.visibleModels,
         aliases: current.modelAliases,
       };

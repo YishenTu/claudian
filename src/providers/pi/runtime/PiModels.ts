@@ -21,7 +21,7 @@ export function createPiModels(host: ProviderHost): ProviderModelCatalogControll
             model.contextWindow ? `${model.contextWindow.toLocaleString()} context` : '',
             model.reasoning ? `thinking: ${model.thinkingLevels.join(', ')}` : 'thinking: off',
           ].filter(Boolean).join(' | '),
-        })),
+        })).reverse(),
         selectedIds: current.visibleModels,
         aliases: current.modelAliases,
       };
