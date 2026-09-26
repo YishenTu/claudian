@@ -20,15 +20,20 @@ const LEGACY_CODEX_ENV_HASH_KEYS = [
   'OPENAI_BASE_URL',
   'OPENAI_API_KEY',
 ] as const;
-const ENV_HASH_KEYS = [...LEGACY_CODEX_ENV_HASH_KEYS, 'PATH'] as const;
+const NATIVE_HOME_ENV_KEYS = ['CODEX_HOME', 'HOME', 'USERPROFILE'];
+const ENV_HASH_KEYS = [...LEGACY_CODEX_ENV_HASH_KEYS, 'PATH', ...NATIVE_HOME_ENV_KEYS];
 
 export function computeCodexEnvHash(
   environmentText: string,
   additionalInputs: Readonly<Record<string, string | undefined>> = {},
 ): string {
+  const environment = parseEnvironmentVariables(environmentText);
   return createRuntimeInputFingerprint({
     additionalInputs,
-    environmentKeys: ENV_HASH_KEYS,
+    // Keep existing default-home fingerprints stable when no override is configured.
+    environmentKeys: ENV_HASH_KEYS.filter(key => (
+      !NATIVE_HOME_ENV_KEYS.includes(key) || Object.prototype.hasOwnProperty.call(environment, key)
+    )),
     environmentText,
   });
 }

@@ -31,6 +31,9 @@ export interface SessionMetadataLoaderOptions {
  * of individual conversations.
  */
 export class SessionMetadataLoader {
+  private stopped = false;
+  private disposal: Promise<void> | null = null;
+  private readonly requestedLoads = new Set<Promise<void>>();
   private pendingScan = false;
   private loadedAll = false;
   private scheduledLoadTimer: number | null = null;
@@ -57,12 +60,12 @@ export class SessionMetadataLoader {
   }
 
   scheduleRemainingLoad(): void {
-    if (!this.pendingScan || this.options.isUnloading()) {
+    if (!this.pendingScan || this.isStopped()) {
       return;
     }
 
     const schedule = (): void => {
-      if (!this.pendingScan || this.options.isUnloading()) {
+      if (!this.pendingScan || this.isStopped()) {
         return;
       }
       this.scheduledLoadTimer = window.setTimeout(() => {
@@ -74,20 +77,34 @@ export class SessionMetadataLoader {
     this.options.whenLayoutReady(schedule);
   }
 
-  cancelScheduledLoad(): void {
+  /** Stop admission synchronously and join already-admitted repository operations. */
+  dispose(): Promise<void> {
+    if (this.disposal) return this.disposal;
+    this.stopped = true;
+    this.pendingScan = false;
     if (this.scheduledLoadTimer !== null) {
       window.clearTimeout(this.scheduledLoadTimer);
       this.scheduledLoadTimer = null;
     }
+    this.disposal = Promise.allSettled([
+      this.remainingLoad,
+      ...this.requestedLoads,
+    ]).then(() => undefined);
+    return this.disposal;
+  }
+
+  private isStopped(): boolean {
+    return this.stopped || this.options.isUnloading();
   }
 
   private async loadRemaining(): Promise<void> {
+    if (this.isStopped()) return;
     const { conversations, runtimeSettings } = this.options;
     const addedConversations: Conversation[] = [];
     const invalidatedConversations: Conversation[] = [];
     let didChangeConversationList = false;
     const publishBatch = (records: SessionMetadataReadResult[]): void => {
-      if (this.options.isUnloading() || records.length === 0) return;
+      if (this.isStopped() || records.length === 0) return;
 
       const recoverySources = records.map(({ metadata }) => (
         this.createShell(metadata)
@@ -130,7 +147,7 @@ export class SessionMetadataLoader {
     const scan = await this.options.sessions.scan({
       onBatch: publishBatch,
     });
-    if (this.options.isUnloading()) {
+    if (this.isStopped()) {
       return;
     }
 
@@ -145,6 +162,7 @@ export class SessionMetadataLoader {
     const records = await this.resolveMetadataSources(
       scan.records.map(({ metadata }) => metadata),
     );
+    if (this.isStopped()) return;
     const resolvedIds = new Set(records.map(({ metadata }) => metadata.id));
     const unresolvedShells = scannedShells.filter(
       ({ id }) => !resolvedIds.has(id),
@@ -174,6 +192,7 @@ export class SessionMetadataLoader {
       conversations.getAll().map(({ id }) => id),
     );
     await conversations.adoptMetadataConversations(entries);
+    if (this.isStopped()) return;
     conversations.registerHistoricalModelRecoverySources(
       shells,
     );
@@ -206,7 +225,7 @@ export class SessionMetadataLoader {
     );
     StartupProfiler.recordCount('background-session-metadata-count', currentAddedConversations.length);
     let recoveredModels: Conversation[] = [];
-    if (!this.options.isUnloading()) {
+    if (!this.isStopped()) {
       recoveredModels = await conversations
         .recoverMissingSelectedModels();
       StartupProfiler.recordCount(
@@ -214,18 +233,19 @@ export class SessionMetadataLoader {
         recoveredModels.length,
       );
     }
+    if (this.isStopped()) return;
     await conversations.persistConversations(
       uniqueCurrentInvalidatedConversations,
     );
     if (
-      !this.options.isUnloading()
+      !this.isStopped()
       && (didChangeConversationList || recoveredModels.length > 0)
     ) {
       this.options.onConversationListChanged();
     }
     if (scan.complete) {
       this.loadedAll = true;
-      if (!this.options.isUnloading()) {
+      if (!this.isStopped()) {
         await runtimeSettings.completePendingSessionInvalidations(
           runtimeSettings.getCompletablePendingSessionInvalidations(),
         );
@@ -234,6 +254,17 @@ export class SessionMetadataLoader {
   }
 
   async ensureLoaded(conversationIds: readonly string[]): Promise<void> {
+    if (this.isStopped()) return;
+    const load = this.loadConversations(conversationIds);
+    this.requestedLoads.add(load);
+    try {
+      await load;
+    } finally {
+      this.requestedLoads.delete(load);
+    }
+  }
+
+  private async loadConversations(conversationIds: readonly string[]): Promise<void> {
     const { conversations, runtimeSettings } = this.options;
     const missingIds = Array.from(new Set(conversationIds)).filter(
       id => !conversations.getCachedConversation(id),
@@ -243,7 +274,7 @@ export class SessionMetadataLoader {
     const records = (await Promise.all(
       missingIds.map(id => this.options.sessions.load(id)),
     )).filter((record): record is SessionMetadataReadResult => record !== null);
-    if (records.length === 0) return;
+    if (this.isStopped() || records.length === 0) return;
 
     const entries = records.map(({ metadata, needsMigration, source }) => ({
       conversation: this.createShell(metadata),
@@ -258,6 +289,7 @@ export class SessionMetadataLoader {
       ).map(({ id }) => id),
     );
     await conversations.adoptMetadataConversations(entries);
+    if (this.isStopped()) return;
     conversations.registerHistoricalModelRecoverySources(shells);
     await conversations.persistConversations(
       Array.from(invalidatedIds)
@@ -290,7 +322,7 @@ export class SessionMetadataLoader {
   private startRemainingLoad(): void {
     if (
       !this.pendingScan
-      || this.options.isUnloading()
+      || this.isStopped()
       || this.remainingLoad
     ) {
       return;

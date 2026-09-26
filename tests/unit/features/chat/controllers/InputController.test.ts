@@ -254,6 +254,7 @@ describe('InputController approval details', () => {
     });
 
     const pending = fixture.controller.handleApprovalRequest(
+      'approval-id',
       'Bash',
       {},
       'A long command description',
@@ -282,7 +283,7 @@ describe('InputController approval details', () => {
     expect(stopPropagation).toHaveBeenCalledTimes(2);
     expect(preventDefault).not.toHaveBeenCalled();
 
-    fixture.controller.dismissProviderInteraction('approval');
+    fixture.controller.dismissProviderInteraction('approval-id');
     return pending;
   });
 });

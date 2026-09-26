@@ -2524,6 +2524,25 @@ describe('ClaudianView tab workspace persistence', () => {
     });
   });
 
+  it('keeps live persistence authoritative after another state delivery to an initialized view', async () => {
+    const view = Object.create(ClaudianView.prototype) as any;
+    attachSessionBrowser(view);
+    view.viewLifecycleRevision = 1;
+    view.initializedTabWorkspaceLifecycleRevision = 1;
+    view.plugin = {
+      registerTabWorkspaceStateDelivery: jest.fn().mockReturnValue(readyTabWorkspaceStateDelivery()),
+    };
+    const live = { activeTabId: 'live-tab', openTabs: [{ conversationId: null, tabId: 'live-tab' }] };
+    view.tabManager = { getPersistedState: () => live };
+    view.tabStatePersistence = { update: jest.fn() };
+    await view.setState({ tabWorkspace: {
+      version: 1, activeTabId: 'old-tab', openTabs: [{ conversationId: 'old-conversation', tabId: 'old-tab' }],
+    } }, { history: false });
+    expect(view.getState()).toEqual({ tabWorkspace: { version: 1, ...live } });
+    view.persistTabWorkspaceState();
+    expect(view.tabStatePersistence.update).toHaveBeenCalledWith(live);
+  });
+
   it('accepts a valid persisted view workspace', async () => {
     const view = Object.create(ClaudianView.prototype) as any;
     attachSessionBrowser(view);

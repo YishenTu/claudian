@@ -191,9 +191,10 @@ it('isolates different databases and gives each in-memory execution its own proc
     expect(f.processes().filter(process => process.db === ':memory:')).toHaveLength(2);
     await Promise.all(leases.map(lease => lease.dispose()));
     for (const native of f.processes().filter(process => process.db === ':memory:')) expect(() => process.kill(native.pid, 0)).toThrow();
+    for (const native of f.processes()) expect(() => process.kill(native.pid, 0)).toThrow();
     const persistent = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
     await persistent.request('/api/model');
-    expect(f.processes()).toHaveLength(4);
+    expect(f.processes()).toHaveLength(5);
     await persistent.dispose();
   } finally { await f.dispose(); }
 });

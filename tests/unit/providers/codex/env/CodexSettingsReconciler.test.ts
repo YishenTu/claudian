@@ -8,6 +8,21 @@ import {
 } from '@/providers/codex/env/CodexSettingsReconciler';
 
 describe('codexSettingsReconciler', () => {
+  it.each(['CODEX_HOME', 'HOME', 'USERPROFILE'])('invalidates native bindings when configured %s changes or is removed', key => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: { codex: { enabled: true, environmentVariables: `${key}=/old-home` } },
+    };
+    codexSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+    const conversation = { providerId: 'codex', sessionId: 'native-session', messages: [] } as unknown as Conversation;
+    for (const nextEnvironment of [`${key}=/new-home`, '']) {
+      (settings.providerConfigs as any).codex.environmentVariables = nextEnvironment;
+      conversation.sessionId = 'native-session';
+      const result = codexSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
+      expect(result).toMatchObject({ changed: true, invalidatedConversations: [conversation] });
+      expect(conversation.sessionId).toBeNull();
+    }
+  });
+
   it('finalizes an empty legacy fingerprint before later runtime inputs change', () => {
     const conversation = {
       providerId: 'codex',

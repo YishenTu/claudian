@@ -2228,6 +2228,31 @@ describe('GrokExecutionBackend', () => {
     ]);
   });
 
+  it('cancels an approval already resolved by the UI when the native turn is cancelled', async () => {
+    const native = new FakeNativeConnection();
+    native.promptImplementation = () => new Promise(() => {});
+    let nativeOptions!: GrokExecutionNativeCreateOptions;
+    const session = new GrokExecutionBackend(createGrokHost(), {
+      nativeFactory: { create: options => { nativeOptions = options; return native; } },
+    }).createSession({
+      ...sessionConfig,
+      interactionPort: {
+        ...interactionPort,
+        requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }),
+      },
+    });
+    const run = session.execute(executionRequest());
+    while (native.promptRequests.length === 0) await Promise.resolve();
+    const permission = nativeOptions.requestPermission({
+      options: [{ kind: 'allow_once', name: 'Allow', optionId: 'allow' }],
+      sessionId: 'session-existing', toolCall: { title: 'write', toolCallId: 'tool-1' },
+    });
+    run.cancel();
+    await expect(permission).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+    await collect(run.events);
+    await session.dispose();
+  });
+
   it('publishes live model metadata and rejects passive auxiliary permissions', async () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});

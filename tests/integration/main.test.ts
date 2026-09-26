@@ -178,6 +178,7 @@ describe('ClaudianPlugin', () => {
         onLayoutReady: jest.fn(),
         getLeavesOfType: jest.fn().mockReturnValue([]),
         getMostRecentLeaf: jest.fn().mockReturnValue(null),
+        getActiveViewOfType: jest.fn().mockReturnValue(null),
         getRightLeaf: jest.fn().mockReturnValue({
           setViewState: jest.fn().mockResolvedValue(undefined),
         }),
@@ -1205,7 +1206,7 @@ describe('ClaudianPlugin', () => {
       );
 
       plugin.onunload();
-      await Promise.resolve();
+      await (plugin as any).applicationShutdownPromise;
 
       expect(disposeSpy).toHaveBeenCalledTimes(1);
     });
@@ -2664,6 +2665,36 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('new-tab command', () => {
+    it('routes current-tab commands to the focused view when several leaves exist', async () => {
+      await plugin.onload();
+      const makeView = (id: string) => {
+        const manager = {
+          getActiveTab: () => ({ state: { isStreaming: false } }),
+          getActiveTabId: () => id,
+          closeTab: jest.fn().mockResolvedValue(undefined),
+          createNewConversation: jest.fn().mockResolvedValue(undefined),
+        };
+        return {
+          getTabManager: () => manager,
+          isDualPaneMode: () => false,
+          prepareForPluginUnload: async () => undefined,
+          manager,
+        };
+      };
+      const first = { view: makeView('first-tab') };
+      const focused = { view: makeView('focused-tab') };
+      mockApp.workspace.getLeavesOfType.mockReturnValue([first, focused]);
+      mockApp.workspace.getActiveViewOfType.mockReturnValue(focused.view);
+      expect(getRegisteredCommand('close-current-tab').checkCallback(false)).toBe(true);
+      expect(getRegisteredCommand('new-session').checkCallback(false)).toBe(true);
+      expect(focused.view.manager.closeTab).toHaveBeenCalledWith('focused-tab');
+      expect(focused.view.manager.createNewConversation).toHaveBeenCalledTimes(1);
+      expect(first.view.manager.closeTab).not.toHaveBeenCalled();
+      expect(first.view.manager.createNewConversation).not.toHaveBeenCalled();
+      mockApp.workspace.getActiveViewOfType.mockReturnValue(null);
+      expect(plugin.getView()).toBe(first.view);
+    });
+
     it('delegates New to the active dual-pane navigation policy', async () => {
       await plugin.onload();
 

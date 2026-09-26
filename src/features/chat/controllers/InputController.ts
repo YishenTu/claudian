@@ -1715,28 +1715,33 @@ export class InputController {
   // ============================================
 
   handleApprovalRequest(
+    interactionId: string,
     toolName: string,
     input: Record<string, unknown>,
     description: string,
     approvalOptions?: ApprovalCallbackOptions,
+    signal?: AbortSignal,
   ): Promise<ApprovalDecision> {
     return this.inlinePrompts.requestApproval(
+      interactionId,
       toolName,
       input,
       description,
       approvalOptions,
+      signal,
     );
   }
 
   handleAskUserQuestion(
+    interactionId: string,
     input: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<Record<string, string | string[]> | null> {
-    return this.inlinePrompts.askUserQuestion(input, signal);
+    return this.inlinePrompts.askUserQuestion(interactionId, input, signal);
   }
 
-  dismissProviderInteraction(kind: 'approval' | 'question'): void {
-    this.inlinePrompts.dismiss(kind);
+  dismissProviderInteraction(interactionId: string): void {
+    this.inlinePrompts.dismiss(interactionId);
   }
 
   dismissPendingApproval(): void {

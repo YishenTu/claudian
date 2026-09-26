@@ -26,6 +26,20 @@ function createPort(): jest.Mocked<ProviderInteractionPort> {
 }
 
 describe('ACPInteractionController', () => {
+  it.each(['caller-abort', 'cancel', 'dispose'] as const)('rejects an already-fulfilled approval after %s', reason => {
+    const port = createPort();
+    port.requestApproval.mockImplementation(async request => ({ decision: 'allow', interactionId: request.interactionId }));
+    const controller = new ACPInteractionController({
+      getTurnId: () => 'turn-1', interactionPort: port, sessionInstanceId: 'session-1',
+    });
+    const caller = new AbortController();
+    const pending = controller.requestPermission(PERMISSION_REQUEST, caller.signal);
+    if (reason === 'caller-abort') caller.abort();
+    else if (reason === 'cancel') controller.dismissAll('cancelled');
+    else controller.dispose();
+    return expect(pending).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+  });
+
   it('routes ACP permissions with stable local identity and validates the echoed response', async () => {
     const port = createPort();
     port.requestApproval.mockImplementation(async (request) => ({

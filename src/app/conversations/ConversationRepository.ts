@@ -56,6 +56,7 @@ interface ExecutionBindingState {
 
 interface ConversationDeletionState {
   readonly conversation: Conversation;
+  readonly generation: number;
   readonly executionBinding: ExecutionBindingState | null;
 }
 
@@ -432,6 +433,7 @@ export class ConversationRepository {
     const pendingHydration = this.hydrationPromises.get(id) ?? null;
     const deletionState: ConversationDeletionState = {
       conversation,
+      generation: this.#getConversationGeneration(id),
       executionBinding: this.executionBindings.get(id) ?? null,
     };
     this.deletionStates.set(id, deletionState);
@@ -541,11 +543,9 @@ export class ConversationRepository {
   }
 
   async rename(id: string, title: string): Promise<void> {
-    const conversation = this.getSync(id);
-    if (!conversation) return;
-
-    conversation.title = title.trim() || this.#generateDefaultTitle();
-    await this.save(conversation);
+    await this.#mutateMetadata(id, () => ({
+      title: title.trim() || this.#generateDefaultTitle(),
+    }));
   }
 
   async update(id: string, updates: ConversationMutablePatch): Promise<void> {
@@ -557,10 +557,8 @@ export class ConversationRepository {
         `Conversation update cannot change immutable fields: ${attemptedImmutableFields.join(', ')}`,
       );
     }
-
     const conversation = this.getSync(id);
     if (!conversation) return;
-
     const safeUpdates = { ...updates };
     if ('selectedModel' in safeUpdates) {
       const selectedModel = normalizeProviderModelSelection(
@@ -570,48 +568,70 @@ export class ConversationRepository {
       );
       if (selectedModel) {
         safeUpdates.selectedModel = selectedModel;
+        // Explicit intent supersedes pending automatic model recovery immediately.
         this.#markSelectedModelMutation(conversation);
       } else {
         delete safeUpdates.selectedModel;
       }
     }
-    Object.assign(conversation, safeUpdates);
-    if (
-      'sessionId' in safeUpdates
-      || 'providerState' in safeUpdates
-      || 'resumeAtMessageId' in safeUpdates
-    ) {
+    if ('sessionId' in safeUpdates || 'providerState' in safeUpdates || 'resumeAtMessageId' in safeUpdates) {
+      // Fence native reads as soon as a replacement binding is accepted.
       this.hydratedConversationIds.delete(id);
       this.#invalidateConversation(id);
     }
-    await this.save(conversation);
+    await this.#mutateMetadata(id, () => safeUpdates);
   }
 
   async setPinned(id: string, isPinned: boolean): Promise<void> {
-    const conversation = this.getSync(id);
-    if (
-      !conversation
-      || (isPinned && conversation.isArchived)
-      || conversation.isPinned === isPinned
-    ) return;
-
-    conversation.isPinned = isPinned;
-    await this.save(conversation);
+    await this.#mutateMetadata(id, conversation => (
+      (isPinned && conversation.isArchived) || conversation.isPinned === isPinned
+        ? null
+        : { isPinned }
+    ));
   }
 
   async setArchived(id: string, isArchived: boolean): Promise<void> {
-    const conversation = this.getSync(id);
-    if (!conversation) return;
-    if (
-      conversation.isArchived === isArchived
-      && (!isArchived || conversation.isPinned === false)
-    ) return;
+    await this.#mutateMetadata(id, conversation => (
+      conversation.isArchived === isArchived && (!isArchived || conversation.isPinned === false)
+        ? null
+        : { isArchived, ...(isArchived ? { isPinned: false } : {}) }
+    ));
+  }
 
-    conversation.isArchived = isArchived;
-    if (isArchived) {
-      conversation.isPinned = false;
-    }
-    await this.save(conversation);
+  /** Serializes a metadata decision through persistence and committed publication. */
+  #mutateMetadata(
+    id: string,
+    createPatch: (conversation: Conversation) => ConversationMutablePatch | null,
+  ): Promise<void> {
+    const conversation = this.getSync(id);
+    if (!conversation) return Promise.resolve();
+    const generation = this.#getConversationGeneration(id);
+    return this.#enqueuePersistence(id, async () => {
+      if (!await this.#canWriteConversation(conversation)) return;
+      const patch = createPatch(conversation);
+      if (!patch) return;
+      const discardSupersededSessionFields = (): void => {
+        const deletion = this.deletionStates.get(id);
+        if (
+          this.#getConversationGeneration(id) === generation
+          || (deletion?.conversation === conversation && deletion.generation === generation)
+        ) return;
+        delete patch.sessionId;
+        delete patch.providerState;
+        delete patch.resumeAtMessageId;
+        delete patch.messages;
+      };
+      discardSupersededSessionFields();
+      await this.#writeMetadata({ ...conversation, ...patch });
+      if (!this.#isConversationRetained(conversation)) return;
+      // Session invalidation cannot cancel an unrelated committed title or pin edit.
+      discardSupersededSessionFields();
+      Object.assign(conversation, patch);
+      if ('sessionId' in patch || 'providerState' in patch || 'resumeAtMessageId' in patch) {
+        this.hydratedConversationIds.delete(id);
+        this.#invalidateConversation(id);
+      }
+    });
   }
 
   invalidateProviderSessions(providerIds: ProviderId[]): Conversation[] {
@@ -737,6 +757,7 @@ export class ConversationRepository {
     recoverModelSelection: HistoricalModelRecovery,
     recoverySource: Conversation,
   ): Promise<HistoricalModelRecoveryResult> {
+    const mutationVersion = this.#getSelectedModelMutationVersion(conversation);
     let selectedModel: string | null;
     try {
       const vaultPath = this.deps.getVaultPath();
@@ -751,6 +772,7 @@ export class ConversationRepository {
     if (!selectedModel) return 'unresolved';
     if (
       !this.#isConversationCurrent(conversation, generation)
+      || this.#getSelectedModelMutationVersion(conversation) !== mutationVersion
       || getStoredModelSelection(conversation.selectedModel)
     ) {
       return 'superseded';
@@ -821,7 +843,12 @@ export class ConversationRepository {
     providerGeneration: number,
   ): void {
     const conversation = this.getSync(conversationId);
-    if (!conversation) return;
+    if (!conversation) throw new Error(`Conversation is no longer available: ${conversationId}`);
+    const existing = this.executionBindings.get(conversationId);
+    if (existing && !existing.closed) {
+      if (existing.bindingId === bindingId && existing.providerGeneration === providerGeneration) return;
+      throw new Error('This conversation already has an active execution owner in another tab.');
+    }
     this.executionBindings.set(conversationId, {
       bindingId,
       providerId: conversation.providerId,
@@ -937,10 +964,18 @@ export class ConversationRepository {
     }
   }
 
-  async assertConversationExecutionAuthority(conversationId: string): Promise<void> {
+  async assertConversationExecutionAuthority(
+    conversationId: string,
+    bindingId: string,
+    providerGeneration: number,
+  ): Promise<void> {
     const conversation = this.getSync(conversationId);
+    const binding = this.executionBindings.get(conversationId);
     if (!conversation || !await this.#canWriteConversation(conversation)
-      || this.getSync(conversationId) !== conversation) {
+      || this.getSync(conversationId) !== conversation
+      || !binding || binding.closed
+      || binding.bindingId !== bindingId || binding.providerGeneration !== providerGeneration
+      || this.executionBindings.get(conversationId) !== binding) {
       throw new Error(`Conversation is no longer available: ${conversationId}`);
     }
   }
@@ -1223,6 +1258,7 @@ export class ConversationRepository {
   private async ensureSelectedModel(
     conversation: Conversation,
   ): Promise<void> {
+    const mutationVersion = this.#getSelectedModelMutationVersion(conversation);
     let recoveryResult: HistoricalModelRecoveryResult | 'unsupported' = 'unsupported';
     if (!getStoredModelSelection(conversation.selectedModel)) {
       const recovery = this.#recoverHistoricalModelSelection(conversation);
@@ -1247,6 +1283,7 @@ export class ConversationRepository {
       return;
     }
 
+    if (this.#getSelectedModelMutationVersion(conversation) !== mutationVersion) return;
     await this.#persistSelectedModelBeforePublish(conversation, modelToPersist);
   }
 
@@ -1297,11 +1334,12 @@ export class ConversationRepository {
   ): Promise<boolean> {
     const previousSelectedModel = conversation.selectedModel;
     const selectedModelMutationVersion = this.#markSelectedModelMutation(conversation);
-    const didPersist = await this.#enqueuePersistence(conversation.id, async () => {
+    return this.#enqueuePersistence(conversation.id, async () => {
       if (
         this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
         || !await this.#canWriteConversation(conversation)
         || this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
+        || conversation.selectedModel !== previousSelectedModel
       ) {
         return false;
       }
@@ -1313,21 +1351,14 @@ export class ConversationRepository {
       await this.#writeMetadata(snapshot, {
         preserveProviderState: !this.hydratedConversationIds.has(conversation.id),
       });
+      if (!this.#isConversationRetained(conversation)) return false;
+      // Publish inside the same queue slot; a later explicit intent commits next.
+      conversation.selectedModel = selectedModel;
+      if (clearRecoverySource) {
+        conversation.modelRecoverySource = undefined;
+      }
       return true;
     });
-    if (
-      !didPersist
-      || this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
-      || conversation.selectedModel !== previousSelectedModel
-    ) {
-      return false;
-    }
-
-    conversation.selectedModel = selectedModel;
-    if (clearRecoverySource) {
-      conversation.modelRecoverySource = undefined;
-    }
-    return true;
   }
 
   #markSelectedModelMutation(conversation: Conversation): number {
@@ -1362,6 +1393,10 @@ export class ConversationRepository {
     shouldPersist: (value: T) => boolean = () => false,
   ): Promise<{ current: false } | { current: true; value: T }> {
     const generation = this.#getConversationGeneration(conversation.id);
+    // Reads must not decide against a binding whose replacement is still committing.
+    const pendingWrite = this.persistenceQueues.get(conversation.id);
+    if (pendingWrite) await pendingWrite;
+    if (!this.#isConversationCurrent(conversation, generation)) return { current: false };
     const fields = ['sessionId', 'providerState', 'resumeAtMessageId', 'messages'] as const;
     const before = fields.map(field => JSON.stringify(conversation[field]));
     const draft = cloneJSON(conversation);
@@ -1431,17 +1466,18 @@ export class ConversationRepository {
 
   private save(conversation: Conversation): Promise<void> {
     this.#restoreLinkedContentIdentity(conversation);
-    const generation = this.#getConversationGeneration(conversation.id);
     return this.#enqueuePersistence(conversation.id, async () => {
-      if (
-        !this.#isConversationCurrent(conversation, generation)
-        || !await this.#canWriteConversation(conversation)
-      ) {
-        return;
-      }
+      // Flush the current projection; a binding change does not cancel its metadata.
+      if (!await this.#canWriteConversation(conversation)) return;
       this.#restoreLinkedContentIdentity(conversation);
       await this.#writeMetadata(conversation);
     });
+  }
+
+  /** A committed write also belongs in the projection retained for deletion rollback. */
+  #isConversationRetained(conversation: Conversation): boolean {
+    return this.getSync(conversation.id) === conversation
+      || this.deletionStates.get(conversation.id)?.conversation === conversation;
   }
 
   async #canWriteConversation(

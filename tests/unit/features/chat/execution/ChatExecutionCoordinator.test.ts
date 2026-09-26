@@ -846,7 +846,7 @@ describe('ChatExecutionCoordinator', () => {
       name: 'ChatExecutionPreHandoffError',
       cause,
     });
-    expect(authorityCheck).toHaveBeenCalledWith('conversation-1');
+    expect(authorityCheck).toHaveBeenCalledWith('conversation-1', 'local-1', 0);
     expect(execute).not.toHaveBeenCalled();
   });
 

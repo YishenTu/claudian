@@ -98,6 +98,7 @@ export class ACPInteractionController {
         turnId,
       }, abortController.signal);
 
+      if (this.disposed || abortController.signal.aborted) return CANCELLED_RESPONSE;
       if (response.interactionId !== interactionId) {
         this.#dismiss(interactionId, 'native-rejected');
         return CANCELLED_RESPONSE;

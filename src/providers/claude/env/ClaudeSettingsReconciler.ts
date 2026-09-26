@@ -16,7 +16,8 @@ import { clearClaudeResumeState } from '../types/providerState';
 import { CLAUDE_MODEL_ENV_KEYS } from './claudeModelEnv';
 
 const ENV_HASH_PROVIDER_KEYS = ['ANTHROPIC_BASE_URL', 'PATH'];
-const ALL_FINGERPRINT_ENV_KEYS = [...CLAUDE_MODEL_ENV_KEYS, ...ENV_HASH_PROVIDER_KEYS];
+const NATIVE_HOME_ENV_KEYS = ['CLAUDE_CONFIG_DIR', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH'];
+const ALL_FINGERPRINT_ENV_KEYS = [...CLAUDE_MODEL_ENV_KEYS, ...ENV_HASH_PROVIDER_KEYS, ...NATIVE_HOME_ENV_KEYS];
 
 function getConfiguredCLIPathInputs(
   settings: Record<string, unknown>,
@@ -32,9 +33,13 @@ function computeRuntimeFingerprint(
   settings: Record<string, unknown>,
   environmentText: string = getRuntimeEnvironmentText(settings, 'claude'),
 ): string {
+  const environment = parseEnvironmentVariables(environmentText);
   return createRuntimeInputFingerprint({
     additionalInputs: getConfiguredCLIPathInputs(settings),
-    environmentKeys: ALL_FINGERPRINT_ENV_KEYS,
+    // Keep existing default-home fingerprints stable when no override is configured.
+    environmentKeys: ALL_FINGERPRINT_ENV_KEYS.filter(key => (
+      !NATIVE_HOME_ENV_KEYS.includes(key) || Object.prototype.hasOwnProperty.call(environment, key)
+    )),
     environmentText,
   });
 }

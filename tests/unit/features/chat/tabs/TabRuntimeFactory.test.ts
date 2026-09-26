@@ -1778,10 +1778,12 @@ describe('Tab provider execution ownership', () => {
 
     await Promise.resolve();
     expect(handleApprovalRequest).toHaveBeenCalledWith(
+      'interaction-1',
       'Read',
       { path: 'note.md' },
       'Read note',
       {},
+      expect.any(AbortSignal),
     );
     expect(tab.state.requiresAction).toBe(true);
     expect(coordinatorDeps[0].warmExecution?.canCool()).toBe(false);

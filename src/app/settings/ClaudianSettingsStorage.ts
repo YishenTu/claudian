@@ -642,7 +642,12 @@ export class ClaudianSettingsStorage {
       2,
     );
     await this.adapter.write(CLAUDIAN_SETTINGS_PATH, content);
-    await this.#deleteLegacyFileIfPresent();
+    try {
+      await this.#deleteLegacyFileIfPresent();
+    } catch {
+      // The canonical settings are committed. Cleanup retries on the next save
+      // and must not cause callers to restore stale in-memory settings.
+    }
   }
 
   #getDefaults(): StoredClaudianSettings {

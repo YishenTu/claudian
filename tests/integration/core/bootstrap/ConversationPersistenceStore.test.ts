@@ -165,7 +165,8 @@ test.each(['{', JSON.stringify({ schemaVersion: 1, conversationId: metadata.id, 
 test('a deletion started during an execution authority check rejects the handoff', async () => {
   const repository = createRepository();
   const conversation = await repository.create();
-  const authority = repository.assertConversationExecutionAuthority(conversation.id);
+  repository.registerExecutionBinding(conversation.id, 'binding', 0);
+  const authority = repository.assertConversationExecutionAuthority(conversation.id, 'binding', 0);
   const deletion = repository.delete(conversation.id);
 
   await expect(authority).rejects.toThrow('no longer available');

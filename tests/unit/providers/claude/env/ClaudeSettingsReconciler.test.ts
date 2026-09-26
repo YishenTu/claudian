@@ -4,6 +4,21 @@ import { claudeSettingsReconciler } from '@/providers/claude/env/ClaudeSettingsR
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 
 describe('claudeSettingsReconciler', () => {
+  it.each(['CLAUDE_CONFIG_DIR', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH'])('invalidates native bindings when configured %s changes or is removed', key => {
+    const settings: Record<string, unknown> = {
+      providerConfigs: { claude: { enabled: true, environmentVariables: `${key}=/old-home` } },
+    };
+    claudeSettingsReconciler.reconcileModelWithEnvironment(settings, []);
+    const conversation = { providerId: 'claude', sessionId: 'native-session', messages: [] } as unknown as Conversation;
+    for (const nextEnvironment of [`${key}=/new-home`, '']) {
+      (settings.providerConfigs as any).claude.environmentVariables = nextEnvironment;
+      conversation.sessionId = 'native-session';
+      const result = claudeSettingsReconciler.reconcileModelWithEnvironment(settings, [conversation]);
+      expect(result).toMatchObject({ changed: true, invalidatedConversations: [conversation] });
+      expect(conversation.sessionId).toBeNull();
+    }
+  });
+
   describe('reconcileModelWithEnvironment', () => {
     it('preserves an active settings-defined custom model across non-model env changes', () => {
       const conversation = {

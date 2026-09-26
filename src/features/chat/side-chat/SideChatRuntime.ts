@@ -495,31 +495,25 @@ export class SideChatRuntime {
   }
 
   #createInteractionPort(): ProviderInteractionPort {
-    const kinds = new Map<string, 'approval' | 'question'>();
     return {
       askUserQuestion: async (request, signal) => {
-        kinds.set(request.interactionId, request.kind);
         this.state.beginActionRequired(request.interactionId);
         try {
-          const answers = await this.#prompts.askUserQuestion({ ...request.input }, signal);
+          const answers = await this.#prompts.askUserQuestion(request.interactionId, { ...request.input }, signal);
           return { answers, interactionId: request.interactionId };
         } finally {
-          kinds.delete(request.interactionId);
           this.state.endActionRequired(request.interactionId);
         }
       },
       dismissInteraction: (interactionId) => {
-        const kind = kinds.get(interactionId);
-        if (!kind) return;
-        this.#prompts.dismiss(kind);
-        kinds.delete(interactionId);
+        this.#prompts.dismiss(interactionId);
         this.state.endActionRequired(interactionId);
       },
-      requestApproval: async (request) => {
-        kinds.set(request.interactionId, request.kind);
+      requestApproval: async (request, signal) => {
         this.state.beginActionRequired(request.interactionId);
         try {
           const decision = await this.#prompts.requestApproval(
+            request.interactionId,
             request.toolName,
             { ...request.input },
             request.description,
@@ -533,10 +527,10 @@ export class SideChatRuntime {
                 ? { additionalPermissions: request.additionalPermissions }
                 : {}),
             },
+            signal,
           );
           return { decision, interactionId: request.interactionId };
         } finally {
-          kinds.delete(request.interactionId);
           this.state.endActionRequired(request.interactionId);
         }
       },

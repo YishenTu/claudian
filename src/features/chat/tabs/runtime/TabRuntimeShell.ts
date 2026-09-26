@@ -205,17 +205,13 @@ function createTabExecutionCoordinator(
   runtimeRef: PublishedTabRuntimeRef,
 ): ChatExecutionCoordinator {
   const { plugin } = options;
-  const interactionKinds = new Map<
-    string,
-    'approval' | 'question'
-  >();
   const interactionPort: ProviderInteractionPort = {
-    requestApproval: async (request) => {
+    requestApproval: async (request, signal) => {
       const tab = runtimeRef.requirePublished();
-      interactionKinds.set(request.interactionId, request.kind);
       state.beginActionRequired(request.interactionId);
       try {
         const decision = await tab.controllers.inputController.handleApprovalRequest(
+          request.interactionId,
           request.toolName,
           { ...request.input },
           request.description,
@@ -229,36 +225,31 @@ function createTabExecutionCoordinator(
               ? { additionalPermissions: request.additionalPermissions }
               : {}),
           },
+          signal,
         );
         return { interactionId: request.interactionId, decision };
       } finally {
-        interactionKinds.delete(request.interactionId);
         state.endActionRequired(request.interactionId);
       }
     },
     askUserQuestion: async (request, signal) => {
       const tab = runtimeRef.requirePublished();
-      interactionKinds.set(request.interactionId, request.kind);
       state.beginActionRequired(request.interactionId);
       try {
         const answers = await tab.controllers.inputController.handleAskUserQuestion(
+          request.interactionId,
           { ...request.input },
           signal,
         );
         return { interactionId: request.interactionId, answers };
       } finally {
-        interactionKinds.delete(request.interactionId);
         state.endActionRequired(request.interactionId);
       }
     },
     dismissInteraction: (interactionId) => {
       const tab = runtimeRef.requirePublished();
-      const kind = interactionKinds.get(interactionId);
-      if (kind) {
-        tab.controllers.inputController.dismissProviderInteraction(kind);
-        interactionKinds.delete(interactionId);
-        state.endActionRequired(interactionId);
-      }
+      tab.controllers.inputController.dismissProviderInteraction(interactionId);
+      state.endActionRequired(interactionId);
     },
   };
   return new ChatExecutionCoordinator({

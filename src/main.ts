@@ -8,7 +8,7 @@ import './providers';
 StartupProfiler.finishModuleEvaluation();
 
 import type { Editor, TAbstractFile, WorkspaceLeaf } from 'obsidian';
-import { MarkdownView, Notice, Plugin, TFolder } from 'obsidian';
+import { ItemView, MarkdownView, Notice, Plugin, TFolder } from 'obsidian';
 
 import { ConversationRepository } from './app/conversations/ConversationRepository';
 import { SessionMetadataLoader } from './app/conversations/SessionMetadataLoader';
@@ -283,16 +283,16 @@ export default class ClaudianPlugin extends Plugin {
     this.isUnloading = true;
     this.modelMetadataMigrationAbort.abort();
     this.inlineEditSessions.dispose();
-    this.sessionMetadata?.cancelScheduledLoad();
     StartupProfiler.freeze();
     this.applicationShutdownPromise ??= this.shutdownApplication();
     void this.applicationShutdownPromise.catch(() => undefined);
   }
 
   private async shutdownApplication(): Promise<void> {
-    await Promise.allSettled(
-      this.getAllViews().map(view => view.prepareForPluginUnload()),
-    );
+    await Promise.allSettled([
+      this.sessionMetadata?.dispose(),
+      ...this.getAllViews().map(view => view.prepareForPluginUnload()),
+    ]);
     try {
       await this.executionLifecycleRegistry.dispose();
     } catch {
@@ -957,6 +957,10 @@ export default class ClaudianPlugin extends Plugin {
 
   getView(): ClaudianView | null {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN);
+    const activeView = this.app.workspace.getActiveViewOfType(ItemView);
+    if (isClaudianView(activeView) && leaves.some(leaf => leaf.view === activeView)) {
+      return activeView;
+    }
     return leaves.map(leaf => leaf.view).find(isClaudianView) ?? null;
   }
 

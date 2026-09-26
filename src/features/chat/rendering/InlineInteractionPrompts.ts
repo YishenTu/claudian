@@ -45,17 +45,18 @@ export interface InlineInteractionPromptsDeps {
  * provider interaction port. It holds no execution or persistence authority.
  */
 export class InlineInteractionPrompts {
-  private approvalInline: InlineAskUserQuestion | null = null;
-  private questionInline: InlineAskUserQuestion | null = null;
+  private readonly pending = new Map<string, InlineAskUserQuestion>();
   private suppressDepth = 0;
 
   constructor(private readonly deps: InlineInteractionPromptsDeps) {}
 
   async requestApproval(
+    interactionId: string,
     toolName: string,
     _input: Record<string, unknown>,
     description: string,
     approvalOptions?: InlineApprovalOptions,
+    signal?: AbortSignal,
   ): Promise<ApprovalDecision> {
     const parentEl = this.#requireParentEl();
     const headerEl = parentEl.createDiv({ cls: 'claudian-ask-approval-info' });
@@ -109,10 +110,10 @@ export class InlineInteractionPrompts {
     });
 
     const result = await this.#showInline(
+      interactionId,
       parentEl,
       { questions: [{ isOther: false, isSecret: false, options: questionOptions, question: 'Allow this action?' }] },
-      (inline) => { this.approvalInline = inline; },
-      undefined,
+      signal,
       { headerEl, immediateSelect: true, showCustomInput: false, title: 'Permission required' },
     );
 
@@ -129,37 +130,24 @@ export class InlineInteractionPrompts {
   }
 
   askUserQuestion(
+    interactionId: string,
     input: Record<string, unknown>,
     signal?: AbortSignal,
   ): Promise<Record<string, string | string[]> | null> {
     return this.#showInline(
+      interactionId,
       this.#requireParentEl(),
       input,
-      (inline) => { this.questionInline = inline; },
       signal,
     );
   }
 
-  dismissApproval(): void {
-    if (this.approvalInline) {
-      this.approvalInline.destroy();
-      this.approvalInline = null;
-    }
-  }
-
-  dismiss(kind: 'approval' | 'question'): void {
-    if (kind === 'approval') {
-      this.dismissApproval();
-      return;
-    }
-    this.questionInline?.destroy();
-    this.questionInline = null;
+  dismiss(interactionId: string): void {
+    this.pending.get(interactionId)?.destroy();
   }
 
   dismissAll(): void {
-    this.dismissApproval();
-    this.questionInline?.destroy();
-    this.questionInline = null;
+    for (const inline of [...this.pending.values()]) inline.destroy();
     this.resetSuppression();
   }
 
@@ -170,12 +158,16 @@ export class InlineInteractionPrompts {
   }
 
   #showInline(
+    interactionId: string,
     parentEl: HTMLElement,
     input: Record<string, unknown>,
-    setPending: (inline: InlineAskUserQuestion | null) => void,
     signal?: AbortSignal,
     config?: InlineAskQuestionConfig,
   ): Promise<Record<string, string | string[]> | null> {
+    if (signal?.aborted) return Promise.resolve(null);
+    if (this.pending.has(interactionId)) {
+      return Promise.reject(new Error(`Duplicate inline interaction: ${interactionId}`));
+    }
     this.deps.onBeforeShow?.();
     this.#suppress();
 
@@ -184,20 +176,22 @@ export class InlineInteractionPrompts {
         parentEl,
         input,
         (result) => {
-          setPending(null);
+          if (this.pending.get(interactionId) !== inline) return;
+          this.pending.delete(interactionId);
           this.#restore();
           resolve(result);
         },
         signal,
         config,
       );
-      setPending(inline);
+      this.pending.set(interactionId, inline);
       try {
         inline.render();
       } catch (error) {
-        setPending(null);
+        this.pending.delete(interactionId);
         this.#restore();
         reject(error instanceof Error ? error : new Error(String(error)));
+        inline.destroy();
       }
     });
   }

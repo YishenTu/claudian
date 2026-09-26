@@ -78,7 +78,11 @@ export interface ChatExecutionPersistence {
     snapshot: ProviderSessionSnapshot,
   ): Promise<boolean>;
   releaseExecutionBinding(conversationId: string, bindingId: string): void;
-  assertConversationExecutionAuthority(conversationId: string): Promise<void>;
+  assertConversationExecutionAuthority(
+    conversationId: string,
+    bindingId: string,
+    providerGeneration: number,
+  ): Promise<void>;
   recordConversationActivity(conversationId: string, timestamp: number): Promise<void>;
 }
 
@@ -327,12 +331,12 @@ export class ChatExecutionCoordinator {
       };
       this.#sessionBinding = binding;
       this.#stale = false;
-      this.deps.persistence.registerExecutionBinding(
-        conversation.conversationId,
-        binding.bindingId,
-        binding.generation,
-      );
       try {
+        this.deps.persistence.registerExecutionBinding(
+          conversation.conversationId,
+          binding.bindingId,
+          binding.generation,
+        );
         await this.#persistSnapshot(binding, binding.session.getSnapshot());
         if (
           this.#isBindingCurrent(binding)
@@ -372,8 +376,11 @@ export class ChatExecutionCoordinator {
       if (!sameConversationBinding(conversation, this.#conversation)) {
         throw new Error('Chat execution binding changed before provider handoff');
       }
+      binding = this.#requireCurrentSessionBinding();
       await this.deps.persistence.assertConversationExecutionAuthority(
         conversation.conversationId,
+        binding.bindingId,
+        binding.generation,
       );
       if (!sameConversationBinding(conversation, this.#conversation)) {
         throw new Error('Chat execution binding changed before provider handoff');
@@ -424,7 +431,9 @@ export class ChatExecutionCoordinator {
     const binding = this.#requireCurrentSessionBinding();
     if (!isSteerableExecutionSession(binding.session)) return false;
     try {
-      await this.deps.persistence.assertConversationExecutionAuthority(binding.conversation.conversationId);
+      await this.deps.persistence.assertConversationExecutionAuthority(
+        binding.conversation.conversationId, binding.bindingId, binding.generation,
+      );
       if (!this.#isBindingCurrent(binding)) throw new Error('Conversation binding changed before steering');
     } catch (error) {
       throw new ChatExecutionPreHandoffError(error);
@@ -858,16 +867,15 @@ export class ChatExecutionCoordinator {
     ) {
       return;
     }
-    await this.deps.persistence.persistExecutionSnapshot(
+    const persisted = await this.deps.persistence.persistExecutionSnapshot(
       binding.conversation.conversationId,
       binding.bindingId,
       binding.generation,
       snapshot,
     );
-    binding.lastSnapshotRevision = Math.max(
-      binding.lastSnapshotRevision,
-      snapshot.revision,
-    );
+    if (persisted) {
+      binding.lastSnapshotRevision = Math.max(binding.lastSnapshotRevision, snapshot.revision);
+    }
   }
 
   #trackBindingWork(
@@ -910,15 +918,16 @@ export class ChatExecutionCoordinator {
     if (binding && binding.backgroundSequences.size > 0) {
       this.deps.onBackgroundWorkChanged?.(false);
     }
-    if (binding) {
-      this.deps.persistence.releaseExecutionBinding(
-        binding.conversation.conversationId,
-        binding.bindingId,
-      );
-    }
     try {
       await this.#supervisor.release();
     } finally {
+      // Keep the claim until the previous native session has finished disposal.
+      if (binding) {
+        this.deps.persistence.releaseExecutionBinding(
+          binding.conversation.conversationId,
+          binding.bindingId,
+        );
+      }
       this.#releaseWarmSlot();
     }
   }

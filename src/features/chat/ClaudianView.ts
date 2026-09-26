@@ -196,14 +196,6 @@ export class ClaudianView extends ItemView {
     const hasTabWorkspaceViewState = record !== null
       && TAB_WORKSPACE_VIEW_STATE_KEY in record;
     this.hasTabWorkspaceViewState = hasTabWorkspaceViewState;
-    this.pendingTabWorkspaceState = null;
-
-    if (hasTabWorkspaceViewState && record) {
-      this.pendingTabWorkspaceState = decodeTabWorkspaceViewState(
-        record[TAB_WORKSPACE_VIEW_STATE_KEY],
-      );
-    }
-
     const registration = this.plugin.registerTabWorkspaceStateDelivery(
       this,
       this.hasTabWorkspaceViewState,
@@ -211,7 +203,16 @@ export class ClaudianView extends ItemView {
     this.tabWorkspaceStateDelivery = registration;
     const lifecycleRevision = this.viewLifecycleRevision ?? 0;
 
+    // Once initialized, live membership owns persistence for this view lifecycle.
     if (this.initializedTabWorkspaceLifecycleRevision === lifecycleRevision) return;
+
+    this.pendingTabWorkspaceState = null;
+
+    if (hasTabWorkspaceViewState && record) {
+      this.pendingTabWorkspaceState = decodeTabWorkspaceViewState(
+        record[TAB_WORKSPACE_VIEW_STATE_KEY],
+      );
+    }
 
     if (registration.declarationsReady) {
       await this.initializeTabWorkspace(lifecycleRevision);

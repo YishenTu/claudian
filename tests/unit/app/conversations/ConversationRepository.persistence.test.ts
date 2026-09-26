@@ -402,6 +402,7 @@ describe('ConversationRepository persistence queue and binding fences', () => {
         status: 'idle',
       },
     );
+    repository.releaseExecutionBinding(conversation.id, 'old-binding');
     repository.registerExecutionBinding(conversation.id, 'new-binding', 2);
     barrier.resolve();
 
@@ -697,6 +698,7 @@ describe('ConversationRepository deletion persistence', () => {
     for (let attempt = 0; attempt < 20 && !repository.getCachedConversation(conversation.id); attempt++) {
       await Promise.resolve();
     }
+    repository.releaseExecutionBinding(conversation.id, 'old-binding');
     repository.registerExecutionBinding(conversation.id, 'new-binding', 5);
 
     expect(await failedDeletion).toEqual(new Error('removal failed'));
