@@ -74,16 +74,54 @@ export function getTabChatUIConfig(
 }
 
 export function getTabSettingsSnapshot(
-  tab: TabProviderContext,
+  tab: TabProviderContext & Pick<AssembledTabRuntime, 'session'>,
   plugin: ChatFeatureHost,
 ): TabProviderSettings & ChatSettings {
   const providerId = getTabProviderId(tab, plugin);
   if (!providerId) return { ...plugin.settings, model: tab.draftModel ?? '', reasoning: null };
-  return getChatSettingsSnapshot(
+  const snapshot = getChatSettingsSnapshot(
     plugin.settings,
     providerId,
     getTabSelectedModel(tab, plugin),
   );
+  if (snapshot.reasoning !== null) {
+    const key = `${providerId}:${snapshot.model}`;
+    const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+    const selected = tab.session.reasoningSelections.get(key) ?? snapshot.reasoning;
+    const reasoning = uiConfig.getReasoningOptions(snapshot.model, snapshot)
+      .some(option => option.value === selected)
+      ? selected
+      : uiConfig.getDefaultReasoningValue(snapshot.model, snapshot);
+    tab.session.reasoningSelections.set(key, reasoning);
+    snapshot.reasoning = reasoning;
+    if (uiConfig.isAdaptiveReasoningModel(snapshot.model, snapshot)) {
+      snapshot.effortLevel = reasoning;
+    } else {
+      snapshot.thinkingBudget = reasoning;
+    }
+  }
+  return snapshot;
+}
+
+export async function updateTabReasoning(
+  tab: AssembledTabRuntime,
+  plugin: ChatFeatureHost,
+  reasoning: string,
+): Promise<void> {
+  const providerId = requireTabProviderId(tab, plugin);
+  const model = getTabSettingsSnapshot(tab, plugin).model;
+  const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+  await plugin.mutateSettings((settings) => {
+    const snapshot = getProviderSettingsSnapshotWithModel(settings, providerId, model);
+    if (uiConfig.isAdaptiveReasoningModel(model, snapshot)) {
+      snapshot.effortLevel = reasoning;
+    } else {
+      snapshot.thinkingBudget = reasoning;
+    }
+    uiConfig.applyReasoningSelection?.(model, reasoning, snapshot);
+    ProviderSettingsCoordinator.commitProviderSettingsSnapshot(settings, providerId, snapshot);
+  });
+  tab.session.reasoningSelections.set(`${providerId}:${model}`, reasoning);
 }
 
 export function getWritableTabSettingsSnapshot(

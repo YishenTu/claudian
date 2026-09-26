@@ -11,6 +11,8 @@ export interface TabSessionState {
 }
 
 export class TabSession {
+  /** Runtime selections survive tab activation and execution cooling, but not tab disposal. */
+  readonly reasoningSelections = new Map<string, string>();
   private activeTurnValue: Promise<void> | null = null;
   private backgroundWork: Promise<void> = Promise.resolve();
   private backgroundWorkPauseDepth = 0;

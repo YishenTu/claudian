@@ -33,7 +33,6 @@ import {
   getTabCapabilities,
   getTabChatUIConfig,
   getTabHiddenCommands,
-  getTabSelectedModel,
   getTabSettingsSnapshot,
   refreshTabProviderUI,
   syncComposerDropdownForProvider,
@@ -41,6 +40,7 @@ import {
   type TabProviderSettings,
   updateTabPermissionMode,
   updateTabProviderSettings,
+  updateTabReasoning,
   updateTabServiceTier,
 } from '../TabProviderState';
 import type {
@@ -361,21 +361,13 @@ function buildInputToolbar(
     onThinkingBudgetChange: async (budget: string) => {
       if (applySideSetting({ reasoning: budget })) return;
       const tab = runtimeRef.requirePublished();
-      await updateTabProviderSettings(tab, plugin, (settings) => {
-        const model = getTabSelectedModel(tab, plugin) ?? settings.model;
-        settings.thinkingBudget = budget;
-        getTabChatUIConfig(tab, plugin).applyReasoningSelection?.(model, budget, settings);
-      });
+      await updateTabReasoning(tab, plugin, budget);
       onUserModified();
     },
     onEffortLevelChange: async (effort: string) => {
       if (applySideSetting({ reasoning: effort })) return;
       const tab = runtimeRef.requirePublished();
-      await updateTabProviderSettings(tab, plugin, (settings) => {
-        const model = getTabSelectedModel(tab, plugin) ?? settings.model;
-        settings.effortLevel = effort;
-        getTabChatUIConfig(tab, plugin).applyReasoningSelection?.(model, effort, settings);
-      });
+      await updateTabReasoning(tab, plugin, effort);
       onUserModified();
     },
     onServiceTierChange: async (serviceTier: string) => {
