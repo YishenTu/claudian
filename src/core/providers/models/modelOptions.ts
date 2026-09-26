@@ -1,10 +1,10 @@
 import { decodeProviderModelSelectionId, toProviderRuntimeModelId } from '../modelSelection';
-import type { ProviderChatUIConfig, ProviderId } from '../types';
+import type { ProviderId,ProviderModelPolicy } from '../types';
 
 /** Match an available identity without applying semantic defaults or dropping a variant. */
 export function findAvailableModelOption(
   providerId: ProviderId,
-  uiConfig: ProviderChatUIConfig,
+  uiConfig: ProviderModelPolicy,
   model: string,
   settings: Record<string, unknown>,
 ): string | null {

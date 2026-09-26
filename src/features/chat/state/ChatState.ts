@@ -53,7 +53,7 @@ export class ChatState {
   private thinkingIndicatorTimeoutWindow: Window | null = null;
   private flavorTimerIntervalWindow: Window | null = null;
 
-  constructor(callbacks: ChatStateCallbacks = {}) {
+  constructor(callbacks: ChatStateCallbacks = {}, private readonly conversationIdentity?: { get(): string | null; set(id: string | null): void }) {
     this.state = createInitialState();
     this._callbacks = callbacks;
   }
@@ -154,11 +154,12 @@ export class ChatState {
   // ============================================
 
   get currentConversationId(): string | null {
-    return this.state.currentConversationId;
+    return this.conversationIdentity ? this.conversationIdentity.get() : this.state.currentConversationId;
   }
 
   set currentConversationId(value: string | null) {
-    this.state.currentConversationId = value;
+    if (this.conversationIdentity) this.conversationIdentity.set(value);
+    else this.state.currentConversationId = value;
     this._callbacks.onConversationChanged?.(value);
   }
 

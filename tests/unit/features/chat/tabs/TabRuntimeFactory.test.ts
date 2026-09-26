@@ -1,4 +1,5 @@
 import { createMockEl } from '@test/helpers/MockElement';
+import { testDate } from '@test/helpers/testClock';
 import { within } from '@testing-library/dom';
 import { JSDOM } from 'jsdom';
 
@@ -99,6 +100,7 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
       supportsFork: true,
       supportsImageAttachments: true,
     }),
+    getModelPolicy: (providerId: string) => ProviderRegistry.getChatUIConfig(providerId),
     getChatUIConfig: jest.fn().mockReturnValue({
       applyPermissionMode: (_mode: string, settings: Record<string, unknown>) => {
         settings.permissionMode = _mode;
@@ -132,9 +134,10 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
 
 jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   ProviderSettingsCoordinator: {
-    commitProviderSettingsSnapshot: (
+    commitProviderSettingsChange: (
       settings: Record<string, unknown>,
       _providerId: string,
+      _before: Record<string, unknown>,
       snapshot: Record<string, unknown>,
     ) => Object.assign(settings, snapshot),
     getProviderSettingsSnapshot: (settings: Record<string, unknown>) => ({
@@ -342,7 +345,7 @@ function installTransitionController(
     getExecutionCoordinator: () => tab.executionCoordinator,
     awaitBackgroundWork: () => tab.session.awaitBackgroundWork(),
     ensureExecutionForConversation: async (conversation) => {
-      tab.conversationId = conversation?.id ?? null;
+      tab.session.setConversationId(conversation?.id ?? null);
       await tab.executionCoordinator?.bindConversation(conversation
         ? {
           conversationId: conversation.id,
@@ -796,8 +799,8 @@ describe('Tab provider execution ownership', () => {
     expect(constructionContext).not.toHaveProperty('session');
     expect(constructionContext).not.toHaveProperty('state');
 
-    tab.draftModel = 'claude-alternate';
-    tab.lifecycleState = 'warm';
+    tab.session.selectDraft(tab.providerId, 'claude-alternate');
+    tab.session.setExecutionWarm(true);
     tab.providerCatalogResolver();
 
     const currentContext = getProviderCatalogConfig.mock.lastCall?.[0] as Record<
@@ -1151,8 +1154,8 @@ describe('Tab provider execution ownership', () => {
   it('keeps a legacy Codex draft on its recorded provider when that provider is disabled', async () => {
     const plugin = createPlugin();
     const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
-    tab.providerId = 'codex';
-    tab.draftModel = 'gpt-5.4';
+    tab.session.selectDraft('codex', tab.draftModel);
+    tab.session.selectDraft(tab.providerId, 'gpt-5.4');
     (ProviderRegistry.getEnabledProviderIds as jest.Mock).mockReturnValue(['claude']);
     (ProviderRegistry.resolveProviderForModel as jest.Mock).mockReturnValue('claude');
     onProviderAvailabilityChanged(tab, plugin);
@@ -1249,7 +1252,7 @@ describe('Tab provider execution ownership', () => {
         attempt += 1) {
         await Promise.resolve();
       }
-      tab.lifecycleState = 'closing';
+      tab.session.beginClose();
       initialization.resolve(undefined);
       await new Promise<void>(resolve => setImmediate(resolve));
 
@@ -1348,7 +1351,7 @@ describe('Tab provider execution ownership', () => {
       attempt += 1) {
       await Promise.resolve();
     }
-    tab.lifecycleState = 'closing';
+    tab.session.beginClose();
     commitGate.resolve(undefined);
     await new Promise<void>(resolve => setImmediate(resolve));
 
@@ -1484,7 +1487,7 @@ describe('Tab provider execution ownership', () => {
       attempt += 1) {
       await Promise.resolve();
     }
-    tab.lifecycleState = 'closing';
+    tab.session.beginClose();
     commitGate.resolve(undefined);
     await new Promise<void>(resolve => setImmediate(resolve));
 
@@ -1517,7 +1520,7 @@ describe('Tab provider execution ownership', () => {
       attempt += 1) {
       await Promise.resolve();
     }
-    tab.conversationId = 'conversation-2';
+    tab.session.setConversationId('conversation-2');
     persistence.resolve(undefined);
     await new Promise<void>(resolve => setImmediate(resolve));
 
@@ -1598,7 +1601,7 @@ describe('Tab provider execution ownership', () => {
       containerEl: createMockEl() as any,
       conversation: createConversation(),
     }, { component: { handleNewConversationCommand } });
-    tab.lifecycleState = 'closing';
+    tab.session.beginClose();
     tab.dom.inputEl.value = '/clear';
 
     await tab.controllers.inputController.sendMessage();
@@ -2367,6 +2370,40 @@ describe('Tab provider execution ownership', () => {
     expect(coordinator.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it('persists an admitted conversation binding delivered while close drains the turn', async () => {
+    const creation = deferred<string>();
+    const updateConversation = jest.fn().mockResolvedValue(undefined);
+    const tab = await createTestTab({
+      plugin: createPlugin({ updateConversation }),
+      containerEl: createMockEl() as any,
+    });
+    const message = {
+      id: 'first-prompt', role: 'user', content: 'Keep this first prompt',
+      timestamp: testDate().getTime(),
+    };
+    tab.state.messages = [message];
+    tab.session.activeTurn = creation.promise.then(conversationId => {
+      tab.state.currentConversationId = conversationId;
+    });
+    const cancellation = deferred<void>();
+    coordinatorInstances[0].cancel.mockImplementation(() => cancellation.resolve(undefined));
+
+    const closing = destroyTab(tab);
+    await cancellation.promise;
+    expect(tab.lifecycleState).toBe('closing');
+    expect(tab.session.acceptsIntents).toBe(false);
+    expect(updateConversation).not.toHaveBeenCalled();
+    creation.resolve('created-during-close');
+    await closing;
+
+    expect(tab.conversationId).toBe('created-during-close');
+    expect(updateConversation).toHaveBeenCalledWith('created-during-close', expect.objectContaining({
+      messages: [message], lastActivityAt: expect.any(Number),
+    }));
+    tab.state.currentConversationId = 'late-identity';
+    expect(tab.conversationId).toBe('created-during-close');
+  });
+
   it('drains an active turn without closing the runtime before its final snapshot', async () => {
     const tab = await createTestTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
     const coordinator = coordinatorInstances[0];
@@ -2525,7 +2562,7 @@ describe('Tab provider execution ownership', () => {
       await Promise.resolve();
     }
     expect(coordinatorInstances[0].resolveForkSource).toHaveBeenCalled();
-    tab.lifecycleState = 'closing';
+    tab.session.beginClose();
     forkSource.resolve({
       sessionId: 'native-session',
     });
@@ -2574,7 +2611,7 @@ describe('Tab provider execution ownership', () => {
       attempt += 1) {
       await Promise.resolve();
     }
-    tab.conversationId = 'conversation-b';
+    tab.session.setConversationId('conversation-b');
     forkSource.resolve({ sessionId: 'native-session' });
     await fork;
 

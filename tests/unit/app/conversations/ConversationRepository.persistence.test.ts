@@ -167,7 +167,7 @@ describe('ConversationRepository persistence queue and binding fences', () => {
         providerStateDeletes: ['retainedFutureField'],
       },
     )).resolves.toBe(false);
-    expect(conversation.providerState).toEqual({
+    expect(repository.getSync(conversation.id)!.providerState).toEqual({
       retainedFutureField: 'preserve-me',
       cursor: 2,
     });
@@ -274,7 +274,7 @@ describe('ConversationRepository persistence queue and binding fences', () => {
         },
       }),
     );
-    expect(conversation.providerState).toEqual({
+    expect(repository.getSync(conversation.id)!.providerState).toEqual({
       retainedFutureField: { nested: true },
       cursor: 2,
       replaced: 'new-value',
@@ -343,7 +343,7 @@ describe('ConversationRepository persistence queue and binding fences', () => {
         },
       }),
     );
-    expect(conversation).toMatchObject({
+    expect(repository.getSync(conversation.id)).toMatchObject({
       sessionId: null,
       providerState: {
         retainedFutureField: 'preserve-me',
@@ -372,7 +372,7 @@ describe('ConversationRepository persistence queue and binding fences', () => {
       },
     )).resolves.toBe(true);
 
-    expect(conversation.providerState).toBeUndefined();
+    expect(repository.getSync(conversation.id)!.providerState).toBeUndefined();
     expect(persistence.saveMetadata).toHaveBeenCalledWith(
       expect.not.objectContaining({ providerState: expect.anything() }),
     );
@@ -553,7 +553,7 @@ describe('ConversationRepository persistence queue and binding fences', () => {
       { conversation: deferredConversation, needsMigration: false, source: 'device' },
     ]);
 
-    expect(deferredConversation.linkedContentPath).toBe('Notes/New.md');
+    expect(repository.getSync(deferredConversation.id)!.linkedContentPath).toBe('Notes/New.md');
     expect(persistence.saveMetadata).toHaveBeenCalledWith(expect.objectContaining({
       id: 'deferred',
       linkedContentPath: 'Notes/New.md',
@@ -617,7 +617,7 @@ describe('ConversationRepository deletion persistence', () => {
     removal.reject(new Error('removal failed'));
 
     await expect(deletion).rejects.toThrow('removal failed');
-    expect(repository.getCachedConversation(conversation.id)).toBe(conversation);
+    expect(repository.getCachedConversation(conversation.id)).toMatchObject({ id: conversation.id });
     expect(persistence.saveMetadata).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'native-during-delete',
@@ -892,7 +892,7 @@ describe('ConversationRepository deletion persistence', () => {
     await expect(repository.delete(conversation.id)).rejects.toThrow(
       'deleteCurrentMetadata failed',
     );
-    expect(repository.getCachedConversation(conversation.id)).toBe(conversation);
+    expect(repository.getCachedConversation(conversation.id)).toMatchObject({ id: conversation.id });
     expect(onConversationDeleted).not.toHaveBeenCalled();
 
     await repository.delete(conversation.id);

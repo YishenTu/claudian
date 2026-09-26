@@ -332,6 +332,7 @@ describe('InlineEditModal - openAndWait', () => {
             },
           },
         },
+        getActiveModelSelection: () => ({ providerId: 'opencode', model: 'opencode:openai/gpt-5.4' }),
         getConversationSync: jest.fn().mockReturnValue(null),
         getView: jest.fn().mockReturnValue({
           getActiveTab: jest.fn().mockReturnValue({
@@ -451,6 +452,7 @@ describe('InlineEditModal - openAndWait', () => {
             opencode: { enabled: true },
           },
         },
+        getActiveModelSelection: () => ({ providerId: 'opencode', model: conversation.selectedModel }),
         getConversationSync: jest.fn().mockReturnValue(conversation),
         getView: jest.fn().mockReturnValue({
           getActiveTab: jest.fn().mockReturnValue({

@@ -11,6 +11,7 @@ import { opencodeSettingsReconciler } from './env/OpencodeSettingsReconciler';
 import { OpencodeExecutionBackend } from './execution/OpencodeExecutionBackend';
 import { OpencodeConversationHistoryService } from './history/OpencodeConversationHistoryService';
 import { buildOpencodeBaseModels } from './models';
+import { opencodeModelPolicy } from './OpencodeModelPolicy';
 import { opencodeTaskResultInterpreter } from './runtime/OpencodeTaskResultInterpreter';
 import { getOpencodeProviderSettings, projectOpencodeModelSettings, updateOpencodeProviderSettings } from './settings';
 import { opencodeSubagentAdapter } from './subagentAdapter';
@@ -20,6 +21,7 @@ export const opencodeProviderRegistration: ProviderModule = {
   id: 'opencode',
   blankTabOrder: 10,
   capabilities: OPENCODE_PROVIDER_CAPABILITIES,
+  modelPolicy: opencodeModelPolicy,
   chatUIConfig: opencodeChatUIConfig,
   createExecutionBackend: (plugin) => {
     const workspace = getOpencodeWorkspaceServices();

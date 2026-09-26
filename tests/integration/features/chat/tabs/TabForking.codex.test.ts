@@ -81,7 +81,7 @@ describe('Codex fork integration', () => {
     expect(native.operations).toContainEqual({ method: 'thread/rollback', params: { threadId: 'codex-child', numTurns: 1 } });
     expect(native.threads.get('codex-source')).toEqual(['codex-turn-1', 'codex-turn-2']);
     expect(await fs.readFile(native.sourceFile, 'utf8')).toBe(original);
-    expect(child!.sessionId).toBe('codex-child');
+    expect(env.repository.getSync(child!.id)!.sessionId).toBe('codex-child');
     await env.send(source, 'Keep original going');
     expect(native.prompts.at(-1)).toEqual({ threadId: 'codex-source', context: ['codex-turn-1', 'codex-turn-2'] });
   });

@@ -20,7 +20,7 @@ import type { ClaudianSettings, Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { getChatSettingsSnapshot } from '@/features/chat/ChatSettings';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
-import { refreshTabProviderUI } from '@/features/chat/tabs/TabProviderState';
+import { refreshTabProviderUI, updateTabProviderSettings } from '@/features/chat/tabs/TabProviderState';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '@/providers/codex/settings';
@@ -320,4 +320,27 @@ it.each([true, false])('seeds tabs from committed reasoning while a save is pend
     await mutate.mock.results[0]?.value.catch(() => undefined);
     for (const tab of tabs) await destroyTab(tab);
   }
+});
+
+test.each(['provider switch', 'switch back', 'closing'] as const)('queued toolbar changes cannot survive %s', async transition => {
+  const entry = modelCatalogCases.find(entry => entry.id === 'claude')!;
+  const settings = createSettings(entry);
+  const { plugin, createTab } = createChatHarness(settings, entry.id, entry.selected);
+  const tab = await createTab();
+  tab.session.startDraft(entry.id, entry.selected);
+  try {
+    let release!: () => void;
+    const blocker = plugin.mutateSettings(() => new Promise<void>(resolve => { release = resolve; }));
+    await Promise.resolve();
+    const before = structuredClone(settings);
+    const pending = updateTabProviderSettings(tab, plugin, snapshot => { snapshot.permissionMode = 'normal'; });
+    if (transition === 'closing') tab.session.beginClose();
+    else {
+      tab.session.selectDraft('codex', 'openai-codex/gpt-5.5');
+      if (transition === 'switch back') tab.session.selectDraft(entry.id, entry.selected);
+    }
+    release();
+    await Promise.all([blocker, pending]);
+    expect(settings).toEqual(before);
+  } finally { await destroyTab(tab); }
 });

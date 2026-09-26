@@ -6,6 +6,7 @@ import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderF
 
 import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { providerOutputEventToStreamChunk } from '@/features/chat/controllers/StreamController';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
@@ -250,6 +251,11 @@ it('delivers child completion and automatic parent replies after the requested t
     for await (const event of f.session.execute(request('background')).events) requested.push(event);
     expect(requested.at(-1)?.type).toBe('turn_completed');
     expect(requested).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'tool_completed', content: 'Child read result', toolScope: { kind: 'subagent', subagentId: 'tool_child' } })]));
+    const childCompletion = requested.find(event => event.type === 'tool_completed' && event.content === 'Child read result')!;
+    expect(providerOutputEventToStreamChunk(childCompletion)).toMatchObject({
+      type: 'subagent_tool_result', subagentId: 'tool_child',
+      providerPayload: { rawOutput: { content: [{ type: 'text', text: 'Child read result' }] } },
+    });
     await background;
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'async_subagent_completed', subagentId: 'ses_child', result: 'Child result', status: 'completed' }),

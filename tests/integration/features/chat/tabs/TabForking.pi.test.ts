@@ -52,7 +52,7 @@ describe('Pi fork integration', () => {
       ['pi-user-1', 'pi-assistant-1', 'pi-user-2', 'pi-assistant-2'].slice(0, checkpoint * 2),
     );
     expect((await native.contexts()).at(-1)?.file).not.toBe(native.sourceFile);
-    expect(child!.sessionId).not.toBe(source.conversation.sessionId);
+    expect(env.repository.getSync(child!.id)!.sessionId).not.toBe(source.conversation.sessionId);
     expect(await fs.readFile(native.sourceFile, 'utf8')).toBe(sourceBefore);
     await env.send(source, 'Keep original going');
     expect((await native.contexts()).at(-1)).toEqual({ file: native.sourceFile, ids: ['pi-user-1', 'pi-assistant-1', 'pi-user-2', 'pi-assistant-2'] });

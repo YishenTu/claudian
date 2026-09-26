@@ -361,7 +361,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.mutateSettings((settings) => {
               settings.enableDualPane = value;
             });
-            this.refreshDualPaneLayouts();
             this.update();
           })
       );
@@ -379,8 +378,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
               await this.plugin.mutateSettings((settings) => {
                 settings.dualPaneSide = value as DualPaneSide;
               });
-              this.refreshDualPaneLayouts();
-            });
+              });
         });
 
     }
@@ -421,9 +419,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.mutateSettings((settings) => {
               settings.showMessageTimestamps = value;
             });
-            for (const view of this.plugin.getAllViews()) {
-              view.refreshMessageTimestamps();
-            }
           })
       );
 
@@ -720,20 +715,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
             await this.plugin.mutateSettings((settings) => {
               settings.maxWarmAgentProcesses = value;
             });
-            try {
-              const reconciled = await this.plugin.warmExecutionPool.reconcileLimit();
-              if (!reconciled) {
-                new Notice(
-                  'The new concurrent running session limit will apply as busy sessions become idle.',
-                );
-              }
-            } catch (error) {
-              new Notice(
-                error instanceof Error
-                  ? error.message
-                  : 'Failed to release excess warm agent processes.',
-              );
-            }
+
           });
       });
 
@@ -752,12 +734,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private notifyProviderModelOptionsChanged(providerId: ProviderId): void {
     this.plugin.notifyProviderChatOptionsChanged(providerId);
     this.refreshTitleModelOptions?.();
-  }
-
-  private refreshDualPaneLayouts(): void {
-    for (const view of this.plugin.getAllViews()) {
-      view.refreshDualPaneLayout();
-    }
   }
 
   private renderHiddenProviderCommandSetting(
@@ -780,7 +756,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
                 [providerId]: normalizeHiddenCommandList(value.split(/\r?\n/)),
               };
             });
-            this.plugin.getView()?.updateHiddenProviderCommands();
           });
         text.inputEl.rows = 4;
         text.inputEl.cols = 30;
@@ -888,9 +863,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
             settings.customContextLimits[modelId] = parseContextLimit(trimmed)!;
           }
         });
-        for (const view of this.plugin.getAllViews()) {
-          view.refreshModelSelector(providerId);
-        }
       };
 
       inputEl.addEventListener('input', () => {

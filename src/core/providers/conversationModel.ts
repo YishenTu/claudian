@@ -40,14 +40,14 @@ export function findProviderModelOption(
   model: string,
   settings: Record<string, unknown>,
 ): string | null {
-  return findAvailableModelOption(providerId, ProviderRegistry.getChatUIConfig(providerId), model, settings);
+  return findAvailableModelOption(providerId, ProviderRegistry.getModelPolicy(providerId), model, settings);
 }
 
 export function resolveProviderDefaultModel(
   providerId: ProviderId,
   settings: Record<string, unknown>,
 ): string | null {
-  const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+  const uiConfig = ProviderRegistry.getModelPolicy(providerId);
   const options = uiConfig.getModelOptions(settings);
   if (options.length === 0) {
     return null;
@@ -129,7 +129,7 @@ export function normalizeProviderModelSelection(
     return null;
   }
 
-  const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
+  const uiConfig = ProviderRegistry.getModelPolicy(providerId);
   const baseSettings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
     settings,
     providerId,
@@ -172,7 +172,7 @@ export function resolveConversationModel(
   conversation?: Conversation | null,
 ): ConversationModelResolution {
   const rawSelectedModel = trimModel(conversation?.selectedModel);
-  const modelOptions = ProviderRegistry.getChatUIConfig(providerId).getModelOptions(settings);
+  const modelOptions = ProviderRegistry.getModelPolicy(providerId).getModelOptions(settings);
   const selectedModel = rawSelectedModel
     ? findProviderModelOption(providerId, rawSelectedModel, settings)
     : null;

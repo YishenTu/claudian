@@ -261,6 +261,7 @@ export function buildTabRuntimeControllers(
       ),
       awaitBackgroundWork: () => shell.session.awaitBackgroundWork(),
       isDisposed: () => shell.lifecycleState === 'closing',
+      isConversationHydrated: () => shell.hydrationState === 'ready',
       ensureExecutionForConversation: async (conversation) => {
         const tab = runtimeRef.requirePublished();
         const nextProviderId = getTabProviderId(tab, plugin, conversation);
@@ -269,18 +270,13 @@ export function buildTabRuntimeControllers(
         if (providerChanged || tab.conversationId !== nextConversationId) {
           options.onCommandContextChanged?.(tab);
         }
-        tab.providerId = nextProviderId;
+        tab.session.bindConversation(nextConversationId, nextProviderId);
 
         if (providerChanged) {
           syncTabProviderServices(tab, services);
         }
 
-        tab.conversationId = nextConversationId;
         tab.controllers.sideChatController.handleConversationChanged(nextConversationId);
-        tab.draftModel = null;
-        if (tab.lifecycleState !== 'provisional') {
-          tab.lifecycleState = 'cold';
-        }
         syncComposerDropdownForProvider(
           tab,
           plugin,
@@ -304,9 +300,7 @@ export function buildTabRuntimeControllers(
         void shell.executionCoordinator.bindConversation(null);
         tab.controllers.sideChatController.handleConversationChanged(null);
         commitProvisionalTab(tab);
-        tab.draftModel = nextModel?.model ?? null;
-        tab.conversationId = null;
-        tab.providerId = nextModel?.providerId ?? DEFAULT_CHAT_PROVIDER_ID;
+        tab.session.startDraft(nextModel?.providerId ?? DEFAULT_CHAT_PROVIDER_ID, nextModel?.model ?? null);
         options.onDraftModelChanged?.(tab, tab.draftModel);
         if (tab.providerId !== previousProviderId) {
           syncTabProviderServices(tab, services);

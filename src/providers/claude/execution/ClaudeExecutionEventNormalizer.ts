@@ -393,6 +393,8 @@ function toOutputEvent(
     case 'tool_result':
     case 'subagent_tool_result':
       return normalizeToolCompleted(chunk, state);
+    case 'subagent_tool_output':
+      return { type: 'tool_output', toolCallId: chunk.id, toolScope: { kind: 'subagent', subagentId: chunk.subagentId }, content: chunk.content };
     case 'tool_output': {
       const identity = state.toolScopes.get(chunk.id)
         ?? { toolScope: { kind: 'main' as const } };
@@ -491,6 +493,7 @@ function normalizeToolCompleted(
     isError: chunk.isError,
     isBlocked: state.blockedToolIds.has(chunk.id),
     toolUseResult: chunk.toolUseResult,
+    ...(chunk.providerPayload ? { providerPayload: chunk.providerPayload } : {}),
   };
 }
 

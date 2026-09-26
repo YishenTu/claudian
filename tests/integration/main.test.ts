@@ -203,6 +203,55 @@ describe('ClaudianPlugin', () => {
     (plugin.loadData as jest.Mock).mockResolvedValue({});
   });
 
+  it('publishes committed presentation settings to every view after persistence', async () => {
+    await plugin.onload();
+    const views = [0, 1].map(() => ({
+      refreshMessageTimestamps: jest.fn(), refreshDualPaneLayout: jest.fn(),
+      updateHiddenProviderCommands: jest.fn(), refreshModelSelector: jest.fn(),
+    }));
+    const viewsSpy = jest.spyOn(plugin, 'getAllViews').mockReturnValue(views as never);
+    let finish!: () => void;
+    let started!: () => void;
+    const writing = new Promise<void>(resolve => { started = resolve; });
+    const persist = jest.spyOn(plugin.storage, 'saveClaudianSettings').mockImplementationOnce(async () => {
+      started();
+      await new Promise<void>(resolve => { finish = resolve; });
+    });
+    try {
+      const change = plugin.mutateSettings(settings => {
+        settings.showMessageTimestamps = !settings.showMessageTimestamps;
+        settings.enableDualPane = !settings.enableDualPane;
+        settings.hiddenProviderCommands = { claude: ['test-command'] };
+        settings.customContextLimits = { test: 1000 };
+      });
+      await writing;
+      for (const view of views) {
+        for (const refresh of Object.values(view)) expect(refresh).not.toHaveBeenCalled();
+      }
+      finish();
+      await change;
+      for (const view of views) {
+        for (const refresh of Object.values(view)) expect(refresh).toHaveBeenCalledTimes(1);
+      }
+      persist.mockRejectedValueOnce(new Error('disk unavailable'));
+      await expect(plugin.mutateSettings(settings => {
+        settings.showMessageTimestamps = !settings.showMessageTimestamps;
+      })).rejects.toThrow('disk unavailable');
+      for (const view of views) expect(view.refreshMessageTimestamps).toHaveBeenCalledTimes(1);
+      persist.mockResolvedValueOnce(undefined);
+      views[0].refreshModelSelector.mockImplementationOnce(() => { throw new Error('view detached'); });
+      const committed = jest.fn();
+      await expect(plugin.mutateSettings(settings => { settings.customContextLimits = { test: 2000 }; }, committed))
+        .rejects.toThrow('post-commit');
+      expect(committed).toHaveBeenCalledTimes(1);
+      expect(views[1].refreshModelSelector).toHaveBeenCalledTimes(2);
+      expect(plugin.getCommittedSettings().customContextLimits).toEqual({ test: 2000 });
+    } finally {
+      viewsSpy.mockRestore();
+      persist.mockRestore();
+    }
+  });
+
   afterEach(async () => {
     for (const instance of pluginInstances) {
       instance.onunload();
@@ -581,7 +630,7 @@ describe('ClaudianPlugin', () => {
         .mockImplementation(async (...args: unknown[]) => {
           const conversations = args[0] as readonly Conversation[];
           events.push(`persist:${String(conversations[0]?.sessionId)}`);
-          persistedRecoverySources.push(conversations[0]?.modelRecoverySource);
+          persistedRecoverySources.push(conversations[0] ? repository.getSync(conversations[0].id)?.modelRecoverySource : undefined);
         });
 
       await (plugin as any).sessionMetadata.loadRemaining();
@@ -1846,7 +1895,7 @@ describe('ClaudianPlugin', () => {
           .toBe(generation);
         expect((plugin as any).runtimeSettings.blockedEnvironmentInvalidationGenerations.get('claude'))
           .toBe(generation);
-        expect(conversation.sessionId).toBe('pre-invalidation-session');
+        expect(plugin.getConversationSync(conversation.id)!.sessionId).toBe('pre-invalidation-session');
         const persistedFailureSettings = JSON.parse(
           [...mockApp.vault.adapter.write.mock.calls]
             .reverse()
@@ -1863,7 +1912,7 @@ describe('ClaudianPlugin', () => {
           'ANTHROPIC_BASE_URL=https://publication-retry.example.com',
         );
 
-        expect(conversation.sessionId).toBeNull();
+        expect(plugin.getConversationSync(conversation.id)!.sessionId).toBeNull();
         expect(plugin.settings.pendingProviderSessionInvalidations.claude).toBeUndefined();
         expect((plugin as any).runtimeSettings.pendingEnvironmentInvalidationGenerations.has('claude')).toBe(false);
         expect((plugin as any).runtimeSettings.blockedEnvironmentInvalidationGenerations.has('claude')).toBe(false);
@@ -1898,8 +1947,8 @@ describe('ClaudianPlugin', () => {
         )).rejects.toBe(metadataError);
 
         const generation = plugin.settings.pendingProviderSessionInvalidations.claude;
-        expect(first.sessionId).toBeNull();
-        expect(second.sessionId).toBeNull();
+        expect(plugin.getConversationSync(first.id)!.sessionId).toBeNull();
+        expect(plugin.getConversationSync(second.id)!.sessionId).toBeNull();
         expect(generation).toEqual(expect.any(Number));
         expect((plugin as any).runtimeSettings.pendingEnvironmentInvalidationGenerations.get('claude'))
           .toBe(generation);
@@ -1998,6 +2047,7 @@ describe('ClaudianPlugin', () => {
         previousProviderSessionIds: ['live-previous-session'],
       };
       live.resumeAtMessageId = 'live-resume-message';
+      await plugin.updateConversation(live.id, { providerState: live.providerState, resumeAtMessageId: live.resumeAtMessageId });
       const deferredMetadata = {
         id: 'deferred-failed-environment',
         providerId: 'claude' as const,
@@ -2050,7 +2100,7 @@ describe('ClaudianPlugin', () => {
         stateAtRelease = {
           blocked: (plugin as any).runtimeSettings.blockedEnvironmentInvalidationGenerations.has('claude'),
           deferredSessionId: plugin.getCachedConversation(deferredMetadata.id)?.sessionId,
-          liveSessionId: live.sessionId,
+          liveSessionId: plugin.getConversationSync(live.id)!.sessionId,
           pending: plugin.settings.pendingProviderSessionInvalidations.claude,
         };
       });
@@ -2079,7 +2129,7 @@ describe('ClaudianPlugin', () => {
         liveSessionId: 'live-session',
         pending: undefined,
       });
-      expect(live).toEqual(expect.objectContaining({
+      expect(plugin.getConversationSync(live.id)).toEqual(expect.objectContaining({
         sessionId: 'live-session',
         providerState: {
           providerSessionId: 'live-provider-session',
@@ -2114,16 +2164,16 @@ describe('ClaudianPlugin', () => {
       );
 
       expect(invalidateSpy).toHaveBeenCalledTimes(1);
-      expect(live.sessionId).toBeNull();
-      expect(live.providerState).toEqual({
+      expect(plugin.getConversationSync(live.id)?.sessionId).toBeNull();
+      expect(plugin.getConversationSync(live.id)?.providerState).toEqual({
         previousProviderSessionIds: [
           'live-previous-session',
           'live-provider-session',
         ],
       });
       expect(live.resumeAtMessageId).toBe('live-resume-message');
-      expect(deferred?.sessionId).toBeNull();
-      expect(deferred?.providerState).toEqual({
+      expect(plugin.getConversationSync(deferredMetadata.id)?.sessionId).toBeNull();
+      expect(plugin.getConversationSync(deferredMetadata.id)?.providerState).toEqual({
         previousProviderSessionIds: [
           'deferred-previous-session',
           'deferred-provider-session',
@@ -2868,6 +2918,7 @@ describe('ClaudianPlugin', () => {
         contextWindow: 200000,
         percentage: 1,
       };
+      (plugin as any).conversationRepository.replaceAll([conv]);
       const saveMetadataSpy = jest.spyOn(getConversationPersistence(plugin), 'saveMetadata');
       saveMetadataSpy.mockClear();
 
@@ -2884,6 +2935,7 @@ describe('ClaudianPlugin', () => {
 
       const conv = await plugin.createConversation();
       delete (conv as { selectedModel?: string }).selectedModel;
+      (plugin as any).conversationRepository.replaceAll([conv]);
       const saveMetadataSpy = jest.spyOn(getConversationPersistence(plugin), 'saveMetadata');
       saveMetadataSpy.mockClear();
 
@@ -3067,7 +3119,7 @@ describe('ClaudianPlugin', () => {
         conv.id,
         'different-reported-session',
       )).resolves.toBe('preserved');
-      expect(plugin.getConversationSync(conv.id)).toBe(conv);
+      expect(plugin.getConversationSync(conv.id)).toEqual(conv);
     });
 
     it('removes the record when every provider transcript segment is missing', async () => {
@@ -3193,7 +3245,7 @@ describe('ClaudianPlugin', () => {
         linkedContentPath: 'Projects/Plan.md',
       });
 
-      expect(plugin.getConversationSync(conversation.id)).toBe(conversation);
+      expect(plugin.getConversationSync(conversation.id)).toEqual(conversation);
       expect(healthyView.notifyConversationListChanged).toHaveBeenCalledTimes(1);
     });
   });
@@ -3229,11 +3281,11 @@ describe('ClaudianPlugin', () => {
         'Projects/Old',
       );
 
-      expect(fileConversation).toMatchObject({
+      expect(plugin.getConversationSync(fileConversation.id)).toMatchObject({
         linkedContentPath: 'Notes/New.md',
         lastActivityAt: fileUpdatedAt,
       });
-      expect(folderConversation).toMatchObject({
+      expect(plugin.getConversationSync(folderConversation.id)).toMatchObject({
         linkedContentPath: 'Projects/New/Plan.md',
         lastActivityAt: folderUpdatedAt,
       });

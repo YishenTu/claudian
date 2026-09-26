@@ -8,7 +8,6 @@ import { normalizeInsertionText } from '@/features/inline-edit/ui/normalizeInser
 
 import { createCatalogCommandDiscoveryStore } from '../../../core/providers/commands/catalogCommandDiscovery';
 import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
-import { resolveConversationModel } from '../../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import { type InlineEditMode, type InlineEditService, type ProviderId } from '../../../core/providers/types';
@@ -270,21 +269,10 @@ interface InlineEditProviderContext {
 }
 
 function resolveInlineEditProviderContext(plugin: InlineEditHost): InlineEditProviderContext {
-  const activeView = typeof plugin.getView === 'function' ? plugin.getView() : null;
-  const activeTab = activeView?.getActiveTab();
-  const conversation = activeTab?.conversationId
-    ? plugin.getConversationSync(activeTab.conversationId)
-    : null;
-  const activeProviderId = conversation?.providerId ?? activeTab?.providerId;
-  const providerId = activeProviderId
-    && ProviderRegistry.isEnabled(activeProviderId, plugin.settings)
-    ? activeProviderId
-    : ProviderRegistry.resolveSettingsProviderId(plugin.settings);
-  const modelOverride = conversation?.providerId === providerId
-    ? resolveConversationModel(plugin.settings, providerId, conversation).model
-    : activeTab?.providerId === providerId
-    ? activeTab.draftModel
-    : null;
+  const selection = plugin.getActiveModelSelection?.();
+  const providerId = selection && ProviderRegistry.isEnabled(selection.providerId, plugin.settings)
+    ? selection.providerId : ProviderRegistry.resolveSettingsProviderId(plugin.settings);
+  const modelOverride = selection?.providerId === providerId ? selection.model : null;
 
   return {
     modelOverride: modelOverride ?? undefined,

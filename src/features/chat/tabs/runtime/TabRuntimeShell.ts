@@ -50,7 +50,7 @@ export function buildTabRuntimeShell(
     },
     onUsageChanged: () => refreshTabContextUsage(runtimeRef.requirePublished(), plugin),
     onAutoScrollChanged: () => runtimeRef.requirePublished().ui.navigationSidebar.updateVisibility(),
-  });
+  }, { get: () => session.conversationId, set: id => session.setConversationId(id) });
   state.queueIndicatorEl = dom.queueIndicatorEl;
 
   options.registerCleanup('tab thinking state', () => {
@@ -102,27 +102,15 @@ export function buildTabRuntimeShell(
     get lifecycleState() {
       return session.lifecycleState;
     },
-    set lifecycleState(value) {
-      session.lifecycleState = value;
-    },
     hydrationState: sessionState.conversationId ? 'idle' : 'ready',
     get draftModel() {
       return session.draftModel;
     },
-    set draftModel(value) {
-      session.draftModel = value;
-    },
     get providerId() {
       return session.providerId;
     },
-    set providerId(value) {
-      session.providerId = value;
-    },
     get conversationId() {
       return session.conversationId;
-    },
-    set conversationId(value) {
-      session.conversationId = value;
     },
     executionCoordinator,
     providerCatalogResolver: () => options.getProviderCatalogConfig(providerCatalogContext),
@@ -270,7 +258,7 @@ function createTabExecutionCoordinator(
       onWarmStateChanged: (isWarm) => {
         const tab = runtimeRef.requirePublished();
         if (tab.lifecycleState === 'closing') return;
-        tab.lifecycleState = isWarm ? 'warm' : 'cold';
+        tab.session.setExecutionWarm(isWarm);
         if (!isWarm) options.onCommandContextChanged?.(tab);
       },
     },

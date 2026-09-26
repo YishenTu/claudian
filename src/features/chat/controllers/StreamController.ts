@@ -31,7 +31,6 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
-import type { SDKToolUseResult } from '../../../core/types/diff';
 import {
   cancelScheduledAnimationFrame,
   scheduleAnimationFrame,
@@ -193,7 +192,7 @@ export class StreamController {
     const { state } = this.deps;
     const responseMessage = msg;
     // A notification may split display messages while tools from the earlier segment still run.
-    const ownerToolId = chunk.type === 'subagent_tool_use' || chunk.type === 'subagent_tool_result'
+    const ownerToolId = chunk.type === 'subagent_tool_use' || chunk.type === 'subagent_tool_result' || chunk.type === 'subagent_tool_output'
       ? chunk.subagentId
       : chunk.type === 'tool_use' || chunk.type === 'tool_result' || chunk.type === 'tool_output' ? chunk.id : undefined;
     if (ownerToolId && !msg.toolCalls?.some(tool => tool.id === ownerToolId)) {
@@ -274,6 +273,7 @@ export class StreamController {
       }
 
       case 'subagent_tool_use':
+      case 'subagent_tool_output':
       case 'subagent_tool_result':
         await this.#handleSubagentChunk(chunk, msg);
         break;
@@ -934,20 +934,14 @@ export class StreamController {
   }
 
   async #handleToolResult(
-    chunk: {
-      type: 'tool_result';
-      id: string;
-      content: string;
-      isError?: boolean;
-      isBlocked?: boolean;
-      toolUseResult?: SDKToolUseResult;
-    },
+    chunk: Extract<StreamChunk, { type: 'tool_result' }>,
     msg: ChatMessage
   ): Promise<void> {
     const { state, subagentManager } = this.deps;
     const normalizedContent = this.#normalizeToolResultContent(chunk.content);
 
     const lifecycleToolCall = msg.toolCalls?.find(toolCall => toolCall.id === chunk.id);
+    if (lifecycleToolCall) mergeToolProviderPayload(lifecycleToolCall, chunk.providerPayload);
     const lifecycleAdapter = lifecycleToolCall
       ? this.getSubagentAdapter(lifecycleToolCall.name)
       : null;
@@ -996,6 +990,7 @@ export class StreamController {
     const isBlocked = chunk.isBlocked === true;
 
     if (existingToolCall) {
+      mergeToolProviderPayload(existingToolCall, chunk.providerPayload);
       const providerPayload = extractToolProviderPayload(chunk.toolUseResult);
       if (providerPayload) {
         existingToolCall.providerPayload = {
@@ -1294,7 +1289,7 @@ export class StreamController {
   }
 
   async #handleSubagentChunk(
-    chunk: Extract<StreamChunk, { type: 'subagent_tool_use' | 'subagent_tool_result' }>,
+    chunk: Extract<StreamChunk, { type: 'subagent_tool_use' | 'subagent_tool_result' | 'subagent_tool_output' }>,
     msg: ChatMessage,
   ): Promise<void> {
     const parentToolUseId = chunk.subagentId;
@@ -1320,8 +1315,18 @@ export class StreamController {
           status: 'running',
           isExpanded: false,
         };
+        mergeToolProviderPayload(toolCall, chunk.providerPayload);
         subagentManager.addSyncToolCall(parentToolUseId, toolCall);
         this.showThinkingIndicator();
+        break;
+      }
+
+      case 'subagent_tool_output': {
+        const toolCall = subagentState.info.toolCalls.find(tc => tc.id === chunk.id);
+        if (toolCall) {
+          toolCall.result = (toolCall.result ?? '') + chunk.content;
+          subagentManager.updateSyncToolResult(parentToolUseId, chunk.id, toolCall);
+        }
         break;
       }
 
@@ -1333,6 +1338,9 @@ export class StreamController {
             ? 'blocked'
             : (chunk.isError ? 'error' : 'completed');
           toolCall.result = normalizedContent;
+          mergeToolProviderPayload(toolCall, chunk.toolUseResult?.providerPayload);
+          mergeToolProviderPayload(toolCall, chunk.providerPayload);
+          toolCall.diffData = extractDiffData(chunk.toolUseResult, toolCall) ?? toolCall.diffData;
           subagentManager.updateSyncToolResult(parentToolUseId, chunk.id, toolCall);
         }
         break;
@@ -2002,6 +2010,7 @@ export function providerOutputEventToStreamChunk(
           input: { ...event.input },
           name: event.name,
           subagentId: event.toolScope.subagentId,
+          ...(event.providerPayload ? { providerPayload: event.providerPayload } : {}),
           type: 'subagent_tool_use',
         }
         : {
@@ -2012,7 +2021,9 @@ export function providerOutputEventToStreamChunk(
           type: 'tool_use',
         };
     case 'tool_output':
-      return { content: event.content, id: event.toolCallId, type: 'tool_output' };
+      return event.toolScope.kind === 'subagent'
+        ? { content: event.content, id: event.toolCallId, type: 'subagent_tool_output', subagentId: event.toolScope.subagentId }
+        : { content: event.content, id: event.toolCallId, type: 'tool_output' };
     case 'tool_completed':
       return event.toolScope.kind === 'subagent'
         ? {
@@ -2021,6 +2032,7 @@ export function providerOutputEventToStreamChunk(
           ...(event.isError !== undefined ? { isError: event.isError } : {}),
           ...(event.isBlocked !== undefined ? { isBlocked: event.isBlocked } : {}),
           subagentId: event.toolScope.subagentId,
+          ...(event.providerPayload ? { providerPayload: event.providerPayload } : {}),
           ...(event.toolUseResult ? { toolUseResult: event.toolUseResult } : {}),
           type: 'subagent_tool_result',
         }
@@ -2029,6 +2041,7 @@ export function providerOutputEventToStreamChunk(
           id: event.toolCallId,
           ...(event.isError !== undefined ? { isError: event.isError } : {}),
           ...(event.isBlocked !== undefined ? { isBlocked: event.isBlocked } : {}),
+          ...(event.providerPayload ? { providerPayload: event.providerPayload } : {}),
           ...(event.toolUseResult ? { toolUseResult: event.toolUseResult } : {}),
           type: 'tool_result',
         };

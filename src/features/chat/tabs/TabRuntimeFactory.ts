@@ -171,9 +171,6 @@ function composeTabRuntime(
     get lifecycleState() {
       return shell.lifecycleState;
     },
-    set lifecycleState(value) {
-      shell.lifecycleState = value;
-    },
     get hydrationState() {
       return shell.hydrationState;
     },
@@ -183,20 +180,11 @@ function composeTabRuntime(
     get draftModel() {
       return shell.draftModel;
     },
-    set draftModel(value) {
-      shell.draftModel = value;
-    },
     get providerId() {
       return shell.providerId;
     },
-    set providerId(value) {
-      shell.providerId = value;
-    },
     get conversationId() {
       return shell.conversationId;
-    },
-    set conversationId(value) {
-      shell.conversationId = value;
     },
     executionCoordinator: shell.executionCoordinator,
     providerCatalogResolver: shell.providerCatalogResolver,

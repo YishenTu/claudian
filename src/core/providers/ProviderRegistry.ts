@@ -20,6 +20,7 @@ import {
   type ProviderChatUIConfig,
   type ProviderConversationHistoryService,
   type ProviderId,
+  type ProviderModelPolicy,
   type ProviderRegistration,
   type ProviderSettingsReconciler,
   type ProviderSettingsStorageAdapter,
@@ -102,7 +103,7 @@ export class ProviderRegistry {
 
     const candidates = this.getRegisteredProviderIds().flatMap(providerId => {
       if (!this.isEnabled(providerId, settings)) return [];
-      const model = findAvailableModelOption(providerId, this.getChatUIConfig(providerId), titleModel, settings);
+      const model = findAvailableModelOption(providerId, this.getModelPolicy(providerId), titleModel, settings);
       return model ? [{ providerId, model }] : [];
     });
     return candidates.length === 1 ? candidates[0] : null;
@@ -155,6 +156,10 @@ export class ProviderRegistry {
     return this.getProviderRegistration(providerId).environmentKeyPatterns ?? [];
   }
 
+  static getModelPolicy(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderModelPolicy {
+    return this.getProviderRegistration(providerId).modelPolicy;
+  }
+
   static getChatUIConfig(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderChatUIConfig {
     return this.getProviderRegistration(providerId).chatUIConfig;
   }
@@ -170,7 +175,7 @@ export class ProviderRegistry {
         continue;
       }
 
-      for (const option of this.getChatUIConfig(providerId).getModelOptions(settings)) {
+      for (const option of this.getModelPolicy(providerId).getModelOptions(settings)) {
         if (seenValues.has(option.value)) {
           continue;
         }
@@ -278,14 +283,14 @@ export class ProviderRegistry {
     }
 
     if (decodedSelection) return null;
-    const owners = providerIds.filter(providerId => this.getChatUIConfig(providerId).ownsModel(model, settings));
+    const owners = providerIds.filter(providerId => this.getModelPolicy(providerId).ownsModel(model, settings));
     return owners.length === 1 ? owners[0] : null;
   }
 
   static getCustomModelIds(envVars: Record<string, string>): Set<string> {
     const ids = new Set<string>();
     for (const providerId of this.getRegisteredProviderIds()) {
-      for (const modelId of this.getChatUIConfig(providerId).getCustomModelIds(envVars)) {
+      for (const modelId of this.getModelPolicy(providerId).getCustomModelIds(envVars)) {
         ids.add(modelId);
       }
     }

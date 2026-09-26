@@ -3,6 +3,7 @@ import { hasStoredConfigNormalization } from '../../core/providers/settings/stor
 import type { ProviderModule } from '../../core/providers/types';
 import { claudeWorkspaceRegistration } from './app/ClaudeWorkspaceServices';
 import { CLAUDE_PROVIDER_CAPABILITIES } from './capabilities';
+import { claudeModelPolicy } from './ClaudeModelPolicy';
 import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';
@@ -22,6 +23,7 @@ export const claudeProviderRegistration: ProviderModule = {
   setEnabled: (settings, enabled) => updateClaudeProviderSettings(settings, { enabled }),
   capabilities: CLAUDE_PROVIDER_CAPABILITIES,
   environmentKeyPatterns: [/^ANTHROPIC_/i, /^CLAUDE_/i],
+  modelPolicy: claudeModelPolicy,
   chatUIConfig: claudeChatUIConfig,
   settingsReconciler: claudeSettingsReconciler,
   settingsStorage: {

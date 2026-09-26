@@ -265,6 +265,7 @@ export type StreamChunk =
       isError?: boolean;
       isBlocked?: boolean;
       toolUseResult?: SDKToolUseResult;
+      providerPayload?: ToolProviderPayload;
     }
   | { type: 'tool_output'; id: string; content: string }
   | {
@@ -278,7 +279,8 @@ export type StreamChunk =
   | { type: 'usage'; usage: UsageInfo; sessionId?: string | null }
   | { type: 'context_compacted' }
   | { type: 'task_notification'; content: string }
-  | { type: 'subagent_tool_use'; subagentId: string; id: string; name: string; input: Record<string, unknown> }
+  | { type: 'subagent_tool_use'; subagentId: string; id: string; name: string; input: Record<string, unknown>; providerPayload?: ToolProviderPayload }
+  | { type: 'subagent_tool_output'; subagentId: string; id: string; content: string }
   | {
       type: 'subagent_tool_result';
       subagentId: string;
@@ -287,6 +289,7 @@ export type StreamChunk =
       isError?: boolean;
       isBlocked?: boolean;
       toolUseResult?: SDKToolUseResult;
+      providerPayload?: ToolProviderPayload;
     };
 
 /**

@@ -171,12 +171,14 @@ export class ConversationRepository {
   private readonly pendingLinkedContentPathCorrectionIds = new Set<string>();
   private readonly metadataTargets = new Map<string, SessionMetadataAuthority>();
   private readonly persistence: ConversationPersistence;
+  private readonly snapshots = new WeakMap<Conversation, { record: Conversation; generation: number }>();
 
   constructor(private readonly deps: ConversationRepositoryDeps) {
     this.persistence = deps.persistence;
   }
 
   replaceAll(conversations: Conversation[]): void {
+    conversations = structuredClone(conversations);
     for (const conversation of this.conversations) {
       this.#invalidateConversation(conversation.id);
     }
@@ -213,6 +215,7 @@ export class ConversationRepository {
       source: SessionMetadataReadResult['source'];
     }>,
   ): Promise<void> {
+    entries = structuredClone(entries);
     for (const { conversation, source } of entries) {
       if (!this.metadataTargets.has(conversation.id)) {
         this.metadataTargets.set(conversation.id, source);
@@ -220,7 +223,7 @@ export class ConversationRepository {
     }
     const linkedContentPathCorrectedIds = new Set<string>();
     for (const { conversation } of entries) {
-      const current = this.getSync(conversation.id);
+      const current = this.#getRecord(conversation.id);
       if (this.pendingLinkedContentPathCorrectionIds.has(conversation.id)) {
         linkedContentPathCorrectedIds.add(conversation.id);
       } else if (
@@ -233,7 +236,7 @@ export class ConversationRepository {
     const registeredProviderIds = new Set(ProviderRegistry.getRegisteredProviderIds());
     for (const { conversation } of entries) {
       if (
-        !this.getSync(conversation.id)
+        !this.#getRecord(conversation.id)
         && registeredProviderIds.has(conversation.providerId)
       ) {
         await this.#reconcileIncomingSelectedModel(conversation);
@@ -255,14 +258,14 @@ export class ConversationRepository {
         ({ conversation, needsMigration }) =>
           (
             needsMigration
-            && (addedIds.has(conversation.id) || !!this.getSync(conversation.id))
+            && (addedIds.has(conversation.id) || !!this.#getRecord(conversation.id))
           )
           || linkedContentPathCorrectedIds.has(conversation.id),
       )
       .map(({ conversation }) => this.#enqueuePersistence(
         conversation.id,
         async () => {
-          const current = this.getSync(conversation.id);
+          const current = this.#getRecord(conversation.id);
           if (!current || !await this.#canWriteConversation(current)) return;
           await this.#writeMetadata(current, {
             preserveProviderState: !this.hydratedConversationIds.has(current.id),
@@ -277,10 +280,11 @@ export class ConversationRepository {
     conversations: Conversation[],
     metadataTarget: SessionMetadataAuthority | ReadonlyMap<string, SessionMetadataAuthority> | null = 'device',
   ): Conversation[] {
+    conversations = structuredClone(conversations);
     const existingIds = new Set(this.conversations.map(({ id }) => id));
     for (const conversation of conversations) {
       if (existingIds.has(conversation.id)) {
-        this.getSync(conversation.id);
+        this.#getRecord(conversation.id);
         continue;
       }
       if (this.#applyLinkedContentPathRenamesToHydratedConversation(conversation)) {
@@ -314,14 +318,16 @@ export class ConversationRepository {
         this.hydratedConversationIds.add(conversation.id);
       }
     }
-    return added;
+    return added.map(record => this.#snapshot(record));
   }
 
   discardUnresolvedMetadataShells(
     shells: readonly Conversation[],
   ): void {
-    for (const shell of shells) {
-      if (this.getSync(shell.id) !== shell) continue;
+    for (const snapshot of shells) {
+      const shell = this.#resolveSnapshot(snapshot);
+      const ownership = this.snapshots.get(snapshot);
+      if (!shell || (ownership && ownership.generation !== this.#getConversationGeneration(shell.id))) continue;
 
       const index = this.conversations.indexOf(shell);
       if (index === -1) continue;
@@ -337,7 +343,7 @@ export class ConversationRepository {
 
   getAll(): Conversation[] {
     this.#restoreAllLinkedContentIdentities();
-    return this.conversations;
+    return this.conversations.map(record => this.#snapshot(record));
   }
 
   async create(options?: {
@@ -389,7 +395,7 @@ export class ConversationRepository {
       this.discardUnresolvedMetadataShells([conversation]);
       throw error;
     }
-    return conversation;
+    return this.#snapshot(conversation);
   }
 
   async switchTo(id: string): Promise<Conversation | null> {
@@ -397,7 +403,7 @@ export class ConversationRepository {
   }
 
   async assignToCurrentDevice(id: string): Promise<boolean> {
-    const conversation = this.getSync(id);
+    const conversation = this.#getRecord(id);
     if (!conversation) return false;
 
     return this.#enqueuePersistence(id, async () => {
@@ -493,7 +499,7 @@ export class ConversationRepository {
     id: string,
     missingProviderSessionId?: string,
   ): Promise<'deleted' | 'reset' | 'preserved' | 'not_found'> {
-    const conversation = this.getSync(id);
+    const conversation = this.#getRecord(id);
     if (!conversation) return 'not_found';
     const generation = this.#getConversationGeneration(id);
 
@@ -552,9 +558,9 @@ export class ConversationRepository {
         `Conversation update cannot change immutable fields: ${attemptedImmutableFields.join(', ')}`,
       );
     }
-    const conversation = this.getSync(id);
+    const conversation = this.#getRecord(id);
     if (!conversation) return;
-    const safeUpdates = { ...updates };
+    const safeUpdates = structuredClone(updates);
     if ('selectedModel' in safeUpdates) {
       const selectedModel = normalizeProviderModelSelection(
         conversation.providerId,
@@ -598,7 +604,7 @@ export class ConversationRepository {
     id: string,
     createPatch: (conversation: Conversation) => ConversationMutablePatch | null,
   ): Promise<void> {
-    const conversation = this.getSync(id);
+    const conversation = this.#getRecord(id);
     if (!conversation) return Promise.resolve();
     const generation = this.#getConversationGeneration(id);
     return this.#enqueuePersistence(id, async () => {
@@ -621,7 +627,7 @@ export class ConversationRepository {
       if (!this.#isConversationRetained(conversation)) return;
       // Session invalidation cannot cancel an unrelated committed title or pin edit.
       discardSupersededSessionFields();
-      Object.assign(conversation, patch);
+      Object.assign(conversation, structuredClone(patch));
       if ('sessionId' in patch || 'providerState' in patch || 'resumeAtMessageId' in patch) {
         this.hydratedConversationIds.delete(id);
         this.#invalidateConversation(id);
@@ -637,14 +643,14 @@ export class ConversationRepository {
       .map(conversation => cloneJSON(conversation));
     const invalidated = ProviderSettingsCoordinator.invalidateConversationSessions(drafts, providerIds);
     return invalidated.flatMap(draft => {
-      const conversation = this.getSync(draft.id);
+      const conversation = this.#getRecord(draft.id);
       if (!conversation) return [];
       conversation.sessionId = draft.sessionId;
       conversation.providerState = draft.providerState;
       conversation.resumeAtMessageId = draft.resumeAtMessageId;
       this.hydratedConversationIds.delete(conversation.id);
       this.#invalidateConversation(conversation.id);
-      return [conversation];
+      return [this.#snapshot(conversation)];
     });
   }
 
@@ -657,7 +663,10 @@ export class ConversationRepository {
     conversations: readonly Conversation[],
   ): Promise<void> {
     await Promise.all(
-      conversations.map((conversation) => this.save(conversation)),
+      conversations.map((snapshot) => {
+        const record = this.#resolveSnapshot(snapshot);
+        return record ? this.save(record) : Promise.resolve();
+      }),
     );
   }
 
@@ -665,7 +674,7 @@ export class ConversationRepository {
     conversations: readonly Conversation[],
   ): void {
     for (const source of conversations) {
-      const target = this.getSync(source.id);
+      const target = this.#getRecord(source.id);
       if (
         !target
         || getStoredModelSelection(target.selectedModel)
@@ -696,7 +705,7 @@ export class ConversationRepository {
         const recovery = this.#recoverHistoricalModelSelection(conversation);
         if (!recovery) return null;
         const result = await recovery;
-        return result === 'recovered' && this.getSync(conversation.id) === conversation
+        return result === 'recovered' && this.#getRecord(conversation.id) === conversation
           ? conversation
           : null;
       },
@@ -704,7 +713,7 @@ export class ConversationRepository {
     );
     return recovered.filter(
       (conversation): conversation is Conversation => conversation !== null,
-    );
+    ).map(record => this.#snapshot(record));
   }
 
   #recoverHistoricalModelSelection(
@@ -761,7 +770,7 @@ export class ConversationRepository {
     try {
       const vaultPath = this.deps.getVaultPath();
       selectedModel = (await recoverModelSelection(
-        recoverySource,
+        structuredClone(recoverySource),
         vaultPath,
         this.#getHistoryPathContext(recoverySource.providerId, vaultPath),
       ))?.trim() || null;
@@ -841,7 +850,7 @@ export class ConversationRepository {
     bindingId: string,
     providerGeneration: number,
   ): void {
-    const conversation = this.getSync(conversationId);
+    const conversation = this.#getRecord(conversationId);
     if (!conversation) throw new Error(`Conversation is no longer available: ${conversationId}`);
     const existing = this.executionBindings.get(conversationId);
     if (existing && !existing.closed) {
@@ -865,7 +874,7 @@ export class ConversationRepository {
     snapshot: ProviderSessionSnapshot,
   ): Promise<boolean> {
     const binding = this.executionBindings.get(conversationId);
-    const conversation = this.getSync(conversationId);
+    const conversation = this.#getRecord(conversationId);
     const deletionState = this.deletionStates.get(conversationId);
     const isTransientDeletionBinding = (
       !conversation
@@ -888,7 +897,7 @@ export class ConversationRepository {
       !binding.latestSnapshot
       || snapshot.revision > binding.latestSnapshot.revision
     ) {
-      binding.latestSnapshot = snapshot;
+      binding.latestSnapshot = structuredClone(snapshot);
     }
 
     if (!conversation) {
@@ -910,7 +919,7 @@ export class ConversationRepository {
       ) {
         return false;
       }
-      const current = this.getSync(conversationId);
+      const current = this.#getRecord(conversationId);
       if (!current || !await this.#canWriteConversation(current)) {
         return false;
       }
@@ -939,7 +948,7 @@ export class ConversationRepository {
       !binding
       || binding.closed
       || this.executionBindings.get(conversationId) !== binding
-      || this.getSync(conversationId) !== deletionState.conversation
+      || this.#getRecord(conversationId) !== deletionState.conversation
       || !binding.latestSnapshot
       || binding.latestSnapshot.revision <= binding.lastPersistedRevision
     ) {
@@ -968,10 +977,10 @@ export class ConversationRepository {
     bindingId: string,
     providerGeneration: number,
   ): Promise<void> {
-    const conversation = this.getSync(conversationId);
+    const conversation = this.#getRecord(conversationId);
     const binding = this.executionBindings.get(conversationId);
     if (!conversation || !await this.#canWriteConversation(conversation)
-      || this.getSync(conversationId) !== conversation
+      || this.#getRecord(conversationId) !== conversation
       || !binding || binding.closed
       || binding.bindingId !== bindingId || binding.providerGeneration !== providerGeneration
       || this.executionBindings.get(conversationId) !== binding) {
@@ -980,7 +989,7 @@ export class ConversationRepository {
   }
 
   async recordConversationActivity(conversationId: string, timestamp: number): Promise<void> {
-    const conversation = this.getSync(conversationId);
+    const conversation = this.#getRecord(conversationId);
     if (!conversation) return;
     conversation.lastActivityAt = Math.max(conversation.lastActivityAt, timestamp);
     await this.save(conversation);
@@ -995,7 +1004,12 @@ export class ConversationRepository {
   }
 
   async ensureHydrated(id: string): Promise<Conversation | null> {
-    const conversation = this.getSync(id);
+    const record = await this.#ensureHydratedRecord(id);
+    return record ? this.#snapshot(record) : null;
+  }
+
+  async #ensureHydratedRecord(id: string): Promise<Conversation | null> {
+    const conversation = this.#getRecord(id);
     if (!conversation) {
       return null;
     }
@@ -1034,7 +1048,7 @@ export class ConversationRepository {
     id: string,
     generation: number,
   ): Promise<Conversation | null> {
-    const conversation = this.getSync(id);
+    const conversation = this.#getRecord(id);
     if (!conversation) {
       return null;
     }
@@ -1050,7 +1064,28 @@ export class ConversationRepository {
     return conversation;
   }
 
+  /** Detached projections; mutation authority stays inside the repository. */
   getSync(id: string): Conversation | null {
+    const record = this.#getRecord(id);
+    return record ? this.#snapshot(record) : null;
+  }
+
+  #snapshot(record: Conversation): Conversation {
+    const snapshot = structuredClone(record);
+    this.snapshots.set(snapshot, { record, generation: this.#getConversationGeneration(record.id) });
+    return snapshot;
+  }
+
+  isCurrentSnapshot(snapshot: Conversation): boolean {
+    return this.#resolveSnapshot(snapshot) !== null;
+  }
+
+  #resolveSnapshot(snapshot: Conversation): Conversation | null {
+    const record = this.snapshots.get(snapshot)?.record ?? snapshot;
+    return this.#getRecord(record.id) === record ? record : null;
+  }
+
+  #getRecord(id: string): Conversation | null {
     const conversation = this.conversations.find(
       (conversation) => conversation.id === id,
     ) ?? null;
@@ -1117,7 +1152,7 @@ export class ConversationRepository {
         changed.push(conversation);
       }
     }
-    return changed;
+    return changed.map(record => this.#snapshot(record));
   }
 
   #applyLinkedContentPathRenamesToHydratedConversation(
@@ -1310,7 +1345,7 @@ export class ConversationRepository {
     const snapshot = { ...conversation, selectedModel: modelToPersist };
     const didPersist = await this.#enqueuePersistence(conversation.id, async () => {
       if (
-        this.getSync(conversation.id)
+        this.#getRecord(conversation.id)
         || this.deletedConversationIds.has(conversation.id)
         || this.deletingConversationIds.has(conversation.id)
       ) {
@@ -1321,7 +1356,7 @@ export class ConversationRepository {
       });
       return true;
     });
-    if (didPersist && !this.getSync(conversation.id)) {
+    if (didPersist && !this.#getRecord(conversation.id)) {
       conversation.selectedModel = modelToPersist;
     }
   }
@@ -1418,7 +1453,7 @@ export class ConversationRepository {
       });
       if (!persisted || !isCurrent()) return { current: false };
     }
-    Object.assign(conversation, patch);
+    Object.assign(conversation, structuredClone(patch));
     return { current: true, value };
   }
 
@@ -1475,7 +1510,7 @@ export class ConversationRepository {
 
   /** A committed write also belongs in the projection retained for deletion rollback. */
   #isConversationRetained(conversation: Conversation): boolean {
-    return this.getSync(conversation.id) === conversation
+    return this.#getRecord(conversation.id) === conversation
       || this.deletionStates.get(conversation.id)?.conversation === conversation;
   }
 
@@ -1483,7 +1518,7 @@ export class ConversationRepository {
     conversation: Conversation,
   ): Promise<boolean> {
     return (
-      this.getSync(conversation.id) === conversation
+      this.#getRecord(conversation.id) === conversation
       && !this.deletedConversationIds.has(conversation.id)
       && !this.deletingConversationIds.has(conversation.id)
     );
@@ -1493,7 +1528,7 @@ export class ConversationRepository {
     conversation: Conversation,
     options: { preserveProviderState?: boolean } = {},
   ): Promise<void> {
-    const metadata = this.toSessionMetadata(conversation, options);
+    const metadata = this.toSessionMetadata(structuredClone(conversation), options);
     const target = this.#requireMetadataTarget(conversation.id);
     return target === 'device'
       ? this.persistence.saveMetadata(metadata)
@@ -1624,7 +1659,7 @@ export class ConversationRepository {
     generation: number,
   ): boolean {
     return (
-      this.getSync(conversation.id) === conversation
+      this.#getRecord(conversation.id) === conversation
       && this.#getConversationGeneration(conversation.id) === generation
     );
   }

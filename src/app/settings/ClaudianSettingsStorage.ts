@@ -215,7 +215,7 @@ function pruneDeselectedProviderProjections(settings: Record<string, unknown>): 
   for (const providerId of ProviderRegistry.getRegisteredProviderIds()) {
     const selected = configs[providerId]?.visibleModels;
     if (!Array.isArray(selected)) continue;
-    const ui = ProviderRegistry.getChatUIConfig(providerId);
+    const ui = ProviderRegistry.getModelPolicy(providerId);
     const normalize = (id: string) => toProviderRuntimeModelId(providerId, ui.normalizeModelVariant(
       ui.normalizeAvailableModelSelection?.(id, settings) ?? id,
       settings,

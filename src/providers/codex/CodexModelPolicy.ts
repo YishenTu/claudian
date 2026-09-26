@@ -1,0 +1,165 @@
+import {
+  DEFAULT_REASONING_VALUE,
+  formatReasoningValueLabel,
+} from '../../core/providers/reasoning';
+import type {
+  ProviderModelPolicy,
+  ProviderReasoningOption,
+  ProviderServiceTierPolicy,
+  ProviderUIOption,
+} from '../../core/providers/types';
+import { getCodexModelOptions } from './modelOptions';
+import {
+  CODEX_DEFAULT_SERVICE_TIER,
+  CODEX_FALLBACK_REASONING_EFFORT_VALUES,
+  findCodexModel,
+  getCodexDefaultReasoningEffort,
+  getCodexFastServiceTier,
+  getCodexReasoningEffortOptions,
+  isCodexModelAvailable,
+  resolveCodexModelServiceTier
+} from './models';
+import {
+  encodeCodexModelSelectionId, isCodexModelSelectionId,
+  looksLikeCodexModel,
+  toCodexRuntimeModelId
+} from './modelSelection';
+import {
+  applyCodexModelDefaults,
+  getCodexProviderSettings,
+  getVisibleCodexModelIds,
+} from './settings';
+
+const EFFORT_LEVELS: ProviderReasoningOption[] = [
+  ...CODEX_FALLBACK_REASONING_EFFORT_VALUES,
+].map(value => ({ value, label: formatReasoningValueLabel(value) }));
+
+
+const DEFAULT_SERVICE_TIER_LABEL = 'Standard';
+
+
+function getVisibleDiscoveredModels(settings: Record<string, unknown>) {
+  const codexSettings = getCodexProviderSettings(settings);
+  const visibleModelIds = new Set(getVisibleCodexModelIds(
+    codexSettings.visibleModels,
+    codexSettings.discoveredModels,
+  ));
+  return codexSettings.discoveredModels.filter(model =>
+    visibleModelIds.has(model.model)
+    && isCodexModelAvailable(model, codexSettings.enableUltraEffort)
+  );
+}
+
+export const codexModelPolicy: ProviderModelPolicy = {
+  permissionModes: { inactiveValue: 'normal', activeValue: 'yolo' },
+  getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
+    return getCodexModelOptions(settings).reverse();
+  },
+
+  getDefaultModel(settings: Record<string, unknown>): string | null {
+    const codexSettings = getCodexProviderSettings(settings);
+    const firstVisibleModel = getVisibleCodexModelIds(
+      codexSettings.visibleModels,
+      codexSettings.discoveredModels,
+    ).find(modelId => getVisibleDiscoveredModels(settings).some(model => model.model === modelId));
+    return firstVisibleModel ? encodeCodexModelSelectionId(firstVisibleModel) : getCodexModelOptions(settings)[0]?.value ?? null;
+  },
+
+  ownsModel(model: string, settings: Record<string, unknown>): boolean {
+    if (isCodexModelSelectionId(model)) {
+      return true;
+    }
+
+    const runtimeModel = toCodexRuntimeModelId(model);
+    return getCodexProviderSettings(settings).discoveredModels.some(candidate => candidate.model === runtimeModel)
+      || looksLikeCodexModel(runtimeModel);
+  },
+
+  isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
+    return true;
+  },
+
+  getReasoningOptions(modelId: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
+    const codexSettings = getCodexProviderSettings(settings);
+    const model = findCodexModel(
+      codexSettings.discoveredModels,
+      modelId,
+    );
+    if (!model) {
+      return [...EFFORT_LEVELS];
+    }
+
+    const options = getCodexReasoningEffortOptions(model, codexSettings.enableUltraEffort);
+    if (options.every(option => option.value === 'none')) return [];
+    return options.map(option => ({
+      value: option.value,
+      label: formatReasoningValueLabel(option.value),
+      ...(option.description ? { description: option.description } : {}),
+    }));
+  },
+
+  getDefaultReasoningValue(modelId: string, settings: Record<string, unknown>): string {
+    const codexSettings = getCodexProviderSettings(settings);
+    const model = findCodexModel(
+      codexSettings.discoveredModels,
+      modelId,
+    );
+    return model
+      ? getCodexDefaultReasoningEffort(model, codexSettings.enableUltraEffort)
+        ?? DEFAULT_REASONING_VALUE
+      : DEFAULT_REASONING_VALUE;
+  },
+
+  isDefaultModel(model: string): boolean {
+    return looksLikeCodexModel(toCodexRuntimeModelId(model)) && !isCodexModelSelectionId(model);
+  },
+
+  applyModelDefaults(model: string, settings: unknown): void {
+    if (!settings || typeof settings !== 'object') {
+      return;
+    }
+
+    applyCodexModelDefaults(toCodexRuntimeModelId(model), settings as Record<string, unknown>);
+  },
+
+  normalizeModelVariant(model: string, settings: Record<string, unknown>): string {
+    const runtimeModel = toCodexRuntimeModelId(model);
+    const option = getCodexModelOptions(settings).find((candidate) =>
+      candidate.value === model || toCodexRuntimeModelId(candidate.value) === runtimeModel
+    );
+    if (option) {
+      return option.value;
+    }
+
+    return this.ownsModel(model, settings) && !looksLikeCodexModel(runtimeModel)
+      ? encodeCodexModelSelectionId(runtimeModel) : model;
+  },
+
+  getCustomModelIds(): Set<string> {
+    return new Set();
+  },
+
+  getServiceTierPolicy(settings): ProviderServiceTierPolicy | null {
+    const model = findCodexModel(
+      getCodexProviderSettings(settings).discoveredModels,
+      typeof settings.model === 'string' ? settings.model : undefined,
+    );
+    if (!model) {
+      return null;
+    }
+
+    const tier = getCodexFastServiceTier(model);
+    if (!tier) {
+      return null;
+    }
+
+    return {
+      inactiveValue: CODEX_DEFAULT_SERVICE_TIER,
+      inactiveLabel: DEFAULT_SERVICE_TIER_LABEL,
+      activeValue: tier.id,
+      activeLabel: tier.name,
+      isActive: resolveCodexModelServiceTier(model, settings.serviceTier) === tier.id,
+      description: tier.description || undefined,
+    };
+  }
+};

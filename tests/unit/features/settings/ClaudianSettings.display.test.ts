@@ -341,7 +341,7 @@ describe('ClaudianSettingTab display settings', () => {
     expect(findContainer(container, t('settings.tabs.general'))).not.toBeNull();
   });
 
-  it('refreshes timestamps in every open view after the setting is saved', async () => {
+  it('saves timestamp preferences through the application settings owner', async () => {
     const { tab, plugin } = createTab(true);
     const firstView = { refreshMessageTimestamps: jest.fn() };
     const secondView = { refreshMessageTimestamps: jest.fn() };
@@ -360,8 +360,7 @@ describe('ClaudianSettingTab display settings', () => {
     await change;
 
     expect(plugin.settings.showMessageTimestamps).toBe(true);
-    expect(firstView.refreshMessageTimestamps).toHaveBeenCalledWith();
-    expect(secondView.refreshMessageTimestamps).toHaveBeenCalledWith();
+    expect(plugin.mutateSettings).toHaveBeenCalledTimes(1);
   });
 
   it('renders the dual-pane position only while dual-pane mode is enabled', () => {

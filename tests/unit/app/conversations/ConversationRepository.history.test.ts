@@ -151,7 +151,7 @@ test('restores the conversation when missing-session metadata removal fails', as
 
   await expect(repository.handleMissingProviderSession(conversation.id, 'session-1'))
     .rejects.toThrow('Metadata cleanup failed');
-  expect(repository.getCachedConversation(conversation.id)).toBe(conversation);
+  expect(repository.getCachedConversation(conversation.id)).toMatchObject({ id: conversation.id });
 });
 
 test('surfaces a failed missing-session reset save while preserving live identity', async () => {

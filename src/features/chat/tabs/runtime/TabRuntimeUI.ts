@@ -150,18 +150,16 @@ function buildInputToolbar(
       model: shell.draftModel,
     }),
     applyModel: (model) => {
-      shell.draftModel = model;
+      shell.session.selectDraft(shell.providerId, model);
     },
     applyProviderTarget: ({ providerId, model }) => {
-      shell.draftModel = model;
-      shell.providerId = providerId;
+      shell.session.selectDraft(providerId, model);
       syncTabProviderServices(shell, services);
       runtimeRef.requirePublished().ui.composerDropdown.clearProviderCatalog();
     },
     restoreDraft: ({ providerId, model }) => {
       const tab = runtimeRef.requirePublished();
-      shell.draftModel = model;
-      shell.providerId = providerId;
+      shell.session.selectDraft(providerId, model);
       syncTabProviderServices(shell, services);
       syncComposerDropdownForProvider(tab, plugin, shell.providerCatalogResolver);
       refreshTabProviderUI(tab);

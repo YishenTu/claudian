@@ -298,6 +298,9 @@ test('the shared FeatureHost contract does not depend on chat', () => {
     })
     .map(sourceImport => `${sourceImport.line}: ${sourceImport.specifier}`);
   assert.deepEqual(violations, []);
+  const contract = fs.readFileSync(featureHostFile, 'utf8');
+  assert.doesNotMatch(contract, /\b(?:getView|getAllViews|warmExecutionPool|chatModelSelection)\b/);
+
 });
 
 
@@ -662,4 +665,8 @@ test('documented and scheduled npm commands exist in the package manifest', () =
       assert.ok(Object.hasOwn(scripts, command), `${file} invokes missing npm script: ${command}`);
     }
   }
+});
+
+test('application and core selection consume provider policy rather than chat UI', () => {
+  assert.deepEqual(findMatches([appRoot, path.join(sourceRoot, 'core')], /\.getChatUIConfig\s*\(/), []);
 });

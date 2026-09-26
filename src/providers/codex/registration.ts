@@ -4,6 +4,7 @@ import {
   codexWorkspaceRegistration,
 } from './app/CodexWorkspaceServices';
 import { CODEX_PROVIDER_CAPABILITIES } from './capabilities';
+import { codexModelPolicy } from './CodexModelPolicy';
 import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
 import { CodexExecutionBackend } from './execution/CodexExecutionBackend';
 import { CodexConversationHistoryService } from './history/CodexConversationHistoryService';
@@ -23,6 +24,7 @@ export const codexProviderRegistration: ProviderModule = {
   setEnabled: (settings, enabled) => updateCodexProviderSettings(settings, { enabled }),
   capabilities: CODEX_PROVIDER_CAPABILITIES,
   environmentKeyPatterns: [/^OPENAI_/i, /^CODEX_/i],
+  modelPolicy: codexModelPolicy,
   chatUIConfig: codexChatUIConfig,
   settingsReconciler: codexSettingsReconciler,
   settingsStorage: {

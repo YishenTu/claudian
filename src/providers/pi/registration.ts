@@ -10,6 +10,7 @@ import { PI_PROVIDER_CAPABILITIES } from './capabilities';
 import { piSettingsReconciler } from './env/PiSettingsReconciler';
 import { PiExecutionBackend } from './execution/PiExecutionBackend';
 import { PiConversationHistoryService } from './history/PiConversationHistoryService';
+import { piModelPolicy } from './PiModelPolicy';
 import { getPiProviderSettings, projectPiModelSettings, updatePiProviderSettings } from './settings';
 import { ObsidianPiExtensionUIRenderer } from './ui/ObsidianPiExtensionUIRenderer';
 import { piChatUIConfig } from './ui/PiChatUIConfig';
@@ -18,6 +19,7 @@ export const piProviderRegistration: ProviderModule = {
   id: 'pi',
   blankTabOrder: 11,
   capabilities: PI_PROVIDER_CAPABILITIES,
+  modelPolicy: piModelPolicy,
   chatUIConfig: piChatUIConfig,
   createExecutionBackend: (plugin) => new PiExecutionBackend(
     plugin,

@@ -33,6 +33,7 @@ import {
   ProviderExecutionLifecycleRegistry,
   type ProviderExecutionTransitionScope,
 } from './core/execution';
+import { resolveConversationModel } from './core/providers/conversationModel';
 import {
   getEnvironmentVariablesForScope as getScopedEnvironmentVariables,
   getRuntimeEnvironmentText,
@@ -438,6 +439,7 @@ export default class ClaudianPlugin extends Plugin {
         ProviderSettingsCoordinator.persistProjectedProviderState(settings);
         await this.storage.saveClaudianSettings(settings);
       },
+      (settings, previous) => this.publishCommittedSettings(settings, previous),
     );
     this.chatModelSelectionCoordinator = new ChatModelSelectionCoordinator(
       this.settingsCoordinator,
@@ -562,6 +564,47 @@ export default class ClaudianPlugin extends Plugin {
 
   async saveSettings() {
     await this.settingsCoordinator.persistCurrent();
+  }
+
+  getActiveModelSelection(): { providerId: ProviderId; model: string } | null {
+    const tab = this.getView()?.getActiveTab();
+    if (!tab) return null;
+    const conversation = tab.conversationId ? this.getConversationSync(tab.conversationId) : null;
+    const providerId = conversation?.providerId ?? tab.providerId;
+    if (!providerId) return null;
+    const model = conversation
+      ? resolveConversationModel(this.getCommittedSettings(), providerId, conversation).model
+      : tab.draftModel;
+    return model ? { providerId, model } : null;
+  }
+
+  private async publishCommittedSettings(settings: Readonly<ClaudianSettings>, previous: Readonly<ClaudianSettings>): Promise<void> {
+    const errors: unknown[] = [];
+    const publish = (refresh: () => void): void => {
+      try { refresh(); } catch (error) { errors.push(error); }
+    };
+    const timestampsChanged = settings.showMessageTimestamps !== previous.showMessageTimestamps;
+    const layoutChanged = settings.enableDualPane !== previous.enableDualPane || settings.dualPaneSide !== previous.dualPaneSide;
+    const commandsChanged = JSON.stringify(settings.hiddenProviderCommands) !== JSON.stringify(previous.hiddenProviderCommands);
+    const contextChanged = JSON.stringify(settings.customContextLimits) !== JSON.stringify(previous.customContextLimits);
+    if (timestampsChanged || layoutChanged || commandsChanged || contextChanged) {
+      for (const view of this.getAllViews()) {
+        if (timestampsChanged) publish(() => view.refreshMessageTimestamps());
+        if (layoutChanged) publish(() => view.refreshDualPaneLayout());
+        if (commandsChanged) publish(() => view.updateHiddenProviderCommands());
+        if (contextChanged) publish(() => view.refreshModelSelector());
+      }
+    }
+    if (settings.maxWarmAgentProcesses !== previous.maxWarmAgentProcesses) {
+      try {
+        if (!await this.warmExecutionPool.reconcileLimit()) {
+          new Notice('The new concurrent running session limit will apply as busy sessions become idle.');
+        }
+      } catch (error) {
+        new Notice(error instanceof Error ? error.message : 'Failed to release excess warm agent processes.');
+      }
+    }
+    if (errors.length > 0) throw new AggregateError(errors, 'Settings view publication failed.');
   }
 
   getCommittedSettings(): Readonly<ClaudianSettings> {

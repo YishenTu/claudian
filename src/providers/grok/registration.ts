@@ -9,6 +9,7 @@ import {
 import { GROK_PROVIDER_CAPABILITIES } from './capabilities';
 import { grokSettingsReconciler } from './env/GrokSettingsReconciler';
 import { GrokExecutionBackend } from './execution/GrokExecutionBackend';
+import { grokModelPolicy } from './GrokModelPolicy';
 import { GrokConversationHistoryService } from './history/GrokConversationHistoryService';
 import { grokSubagentLifecycleAdapter } from './normalization/grokSubagentNormalization';
 import { getGrokMigratedVisibleModelIds, getGrokProviderSettings, getOrderedGrokVisibleModelIds, projectGrokModelSettings, updateGrokProviderSettings } from './settings';
@@ -18,6 +19,7 @@ export const grokProviderRegistration: ProviderModule = {
   id: 'grok',
   blankTabOrder: 12,
   capabilities: GROK_PROVIDER_CAPABILITIES,
+  modelPolicy: grokModelPolicy,
   chatUIConfig: grokChatUIConfig,
   createExecutionBackend: (plugin) => {
     const workspace = getGrokWorkspaceServices();

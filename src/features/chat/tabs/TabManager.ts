@@ -301,7 +301,6 @@ export class TabManager implements TabManagerInterface {
         onConversationIdChanged: (runtime, nextConversationId) => {
           if (!this.#isTabOwned(runtime)) return;
           if (this.destroyed && !this.shutdownSnapshotOpen) return;
-          runtime.conversationId = nextConversationId;
           if (!this.destroyed) {
             this.#bumpTabCommandContextRevision(runtime.id);
           }
@@ -425,7 +424,7 @@ export class TabManager implements TabManagerInterface {
       return rollbackErrors;
     }
 
-    tab.lifecycleState = 'closing';
+    tab.session.beginClose();
     rollbackErrors.push(...this.#releaseTabRuntimeMetadata(tab.id));
 
     if (this.activeTabId === tab.id) {
@@ -908,7 +907,8 @@ export class TabManager implements TabManagerInterface {
       }
 
       // Replacement admission is complete; teardown is now irreversible.
-      tab.lifecycleState = 'closing';
+      if ('session' in tab) tab.session.beginClose();
+      else tab.lifecycleState = 'closing';
       this.committedTabIds.delete(tabId);
       if (this.committedActiveTabId === tabId) {
         this.committedActiveTabId = null;
@@ -1531,8 +1531,6 @@ export class TabManager implements TabManagerInterface {
     const activeTab = this.getActiveTab();
     if (activeTab) {
       await activeTab.controllers.conversationController.createNew();
-      // Sync tab.conversationId with the newly created conversation
-      activeTab.conversationId = activeTab.state.currentConversationId;
     }
   }
 
@@ -2334,6 +2332,7 @@ export class TabManager implements TabManagerInterface {
   /** Seals the final identity snapshot so late runtime callbacks cannot mutate tab state. */
   sealShutdownSnapshot(): void {
     this.shutdownSnapshotOpen = false;
+    for (const tab of this.getAllTabs()) tab.session.sealIdentity();
   }
 
   /** Cancels and drains active tab work while terminal binding callbacks remain accepted. */

@@ -102,6 +102,7 @@ export async function createForkTestEnvironment() {
     }).catch(error => { throw new Error(JSON.stringify(error.cause ?? error), { cause: error }); });
     if (result.status !== expectedStatus) throw new Error(JSON.stringify(result));
     await repository.update(chat.conversation.id, { messages: chat.conversation.messages });
+    Object.assign(chat.conversation, repository.getSync(chat.conversation.id)!, { messages: chat.conversation.messages });
     return assistant;
   }
 
@@ -119,6 +120,7 @@ export async function createForkTestEnvironment() {
         .buildForkProviderState(context.sourceSessionId, context.resumeAt, context.sourceProviderState, root);
       child = await repository.create({ providerId });
       await repository.update(child.id, { messages: context.messages, providerState });
+      child = repository.getSync(child.id)!;
     }, () => true);
     return child;
   }

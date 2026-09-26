@@ -40,6 +40,20 @@ describe('ProviderWorkspaceRegistry', () => {
     ProviderWorkspaceRegistry.clear();
   });
 
+  it('rejects a different workspace host until disposal', async () => {
+    const initialize = jest.fn(async () => ({}));
+    ProviderWorkspaceRegistry.register('claude', { initialize });
+    const owner = createProviderHost();
+    const other = createProviderHost();
+    await ProviderWorkspaceRegistry.ensureInitialized(owner, 'claude', 'test');
+    await expect(ProviderWorkspaceRegistry.ensureInitialized(other, 'claude', 'test'))
+      .rejects.toThrow('workspace host');
+    expect(initialize).toHaveBeenCalledTimes(1);
+    await ProviderWorkspaceRegistry.disposeInitialized();
+    await ProviderWorkspaceRegistry.ensureInitialized(other, 'claude', 'test');
+    expect(initialize).toHaveBeenCalledTimes(2);
+  });
+
   it('returns the assigned catalog for a provider', () => {
     const mockCatalog = {
       listDropdownEntries: jest.fn(),

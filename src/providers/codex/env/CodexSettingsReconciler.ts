@@ -10,10 +10,10 @@ import {
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
 import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
+import { codexModelPolicy } from '../CodexModelPolicy';
 import { resolveCodexModelSelection } from '../modelOptions';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
 import { getCodexState } from '../types';
-import { codexChatUIConfig } from '../ui/CodexChatUIConfig';
 
 const LEGACY_CODEX_ENV_HASH_KEYS = [
   'OPENAI_MODEL',
@@ -154,7 +154,7 @@ export const codexSettingsReconciler = {
       return changed;
     }
 
-    const normalizedModel = codexChatUIConfig.normalizeModelVariant(model, settings);
+    const normalizedModel = codexModelPolicy.normalizeModelVariant(model, settings);
     if (normalizedModel === model) {
       return changed;
     }

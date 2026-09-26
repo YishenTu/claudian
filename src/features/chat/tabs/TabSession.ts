@@ -19,6 +19,8 @@ export class TabSession {
   private coordinatorDisposal: Promise<void> | null = null;
   private intentAdmissionPauseDepth = 0;
   private userOwnershipRevisionValue = 0;
+  private identityRevisionValue = 0;
+  private identitySealed = false;
 
   constructor(
     private readonly state: TabSessionState,
@@ -28,13 +30,9 @@ export class TabSession {
 
   get id(): string { return this.state.id; }
   get lifecycleState(): TabLifecycleState { return this.state.lifecycleState; }
-  set lifecycleState(value: TabLifecycleState) { this.state.lifecycleState = value; }
   get providerId(): ProviderId | null { return this.state.providerId; }
-  set providerId(value: ProviderId | null) { this.state.providerId = value; }
   get conversationId(): string | null { return this.state.conversationId; }
-  set conversationId(value: string | null) { this.state.conversationId = value; }
   get draftModel(): string | null { return this.state.draftModel; }
-  set draftModel(value: string | null) { this.state.draftModel = value; }
   get executionCoordinator(): ChatExecutionCoordinator { return this.coordinator; }
   get acceptsIntents(): boolean { return this.intentAdmissionPauseDepth === 0; }
   get userOwnershipRevision(): number { return this.userOwnershipRevisionValue; }
@@ -44,6 +42,52 @@ export class TabSession {
     this.activeTurnValue = value;
     if (wasActive !== (value !== null)) this.onWorkChanged?.();
     if (value === null) this.coordinator.notifyMayCool();
+  }
+
+  get identityRevision(): number { return this.identityRevisionValue; }
+
+  bindConversation(conversationId: string | null, providerId: ProviderId | null): void {
+    this.replaceIdentity(conversationId, providerId, null);
+    this.setExecutionWarm(false);
+  }
+
+  selectDraft(providerId: ProviderId | null, model: string | null): void {
+    if (this.conversationId !== null) throw new Error('Cannot select a draft on a bound tab');
+    this.replaceIdentity(null, providerId, model);
+  }
+
+  startDraft(providerId: ProviderId | null, model: string | null): void {
+    this.replaceIdentity(null, providerId, model);
+  }
+
+  setConversationId(conversationId: string | null): void {
+    this.replaceIdentity(conversationId, this.providerId, conversationId ? null : this.draftModel);
+  }
+
+  private replaceIdentity(conversationId: string | null, providerId: ProviderId | null, draftModel: string | null): void {
+    if (this.identitySealed) return;
+    if (this.conversationId !== conversationId || this.providerId !== providerId || this.draftModel !== draftModel) {
+      this.identityRevisionValue++;
+      Object.assign(this.state, { conversationId, providerId, draftModel });
+    }
+  }
+
+  commitAdmission(): void {
+    if (this.lifecycleState === 'provisional') this.state.lifecycleState = 'cold';
+  }
+
+  sealIdentity(): void {
+    this.identitySealed = true;
+    this.identityRevisionValue++;
+  }
+
+  beginClose(): void {
+    this.state.lifecycleState = 'closing';
+  }
+
+  setExecutionWarm(warm: boolean): void {
+    if (this.lifecycleState === 'closing' || this.lifecycleState === 'provisional') return;
+    this.state.lifecycleState = warm ? 'warm' : 'cold';
   }
 
   claimUserOwnership(): void {

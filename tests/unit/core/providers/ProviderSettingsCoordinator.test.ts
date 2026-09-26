@@ -11,6 +11,24 @@ import type { Conversation } from '@/core/types';
 import { DEFAULT_CLAUDE_PROVIDER_SETTINGS } from '@/providers/claude/settings';
 
 describe('ProviderSettingsCoordinator', () => {
+  it('commits only the target provider preferences without changing its selected model', () => {
+    const settings: Record<string, unknown> = {
+      settingsProvider: 'claude', model: 'opus', effortLevel: 'high', permissionMode: 'normal',
+      savedProviderModel: { claude: 'opus', codex: TEST_CODEX_MODEL },
+      savedProviderEffort: { claude: 'high', codex: 'low' },
+      providerConfigs: { claude: claudeCatalogFixture(), codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } },
+      locale: 'en',
+    };
+    const before = getProviderSettingsSnapshotWithModel(settings, 'codex', TEST_CODEX_MODEL);
+    const after = structuredClone(before);
+    after.effortLevel = 'high';
+    after.locale = 'fr';
+    (after.savedProviderModel as Record<string, string>).claude = 'wrong';
+    const original = structuredClone(settings);
+    ProviderSettingsCoordinator.commitProviderSettingsChange(settings, 'codex', before, after);
+    expect(settings).toEqual({ ...original, savedProviderEffort: { claude: 'high', codex: 'high' } });
+  });
+
   describe('conversation model projection', () => {
     it('preserves a valid explicit reasoning choice when reading an existing conversation', () => {
       const settings: Record<string, unknown> = {
@@ -377,7 +395,7 @@ describe('ProviderSettingsCoordinator', () => {
       const originalGetSettingsReconciler = ProviderRegistry.getSettingsReconciler.bind(
         ProviderRegistry,
       );
-      const originalGetChatUIConfig = ProviderRegistry.getChatUIConfig.bind(ProviderRegistry);
+      const originalGetChatUIConfig = ProviderRegistry.getModelPolicy.bind(ProviderRegistry);
       const reconcilerSpy = jest.spyOn(ProviderRegistry, 'getSettingsReconciler')
         .mockImplementation((providerId) => {
           if (providerId === 'fake-invalidate') return defaultReconciler;
@@ -386,7 +404,7 @@ describe('ProviderSettingsCoordinator', () => {
         });
       const settingsProviderSpy = jest.spyOn(ProviderRegistry, 'resolveSettingsProviderId')
         .mockReturnValue('fake-invalidate');
-      const uiConfigSpy = jest.spyOn(ProviderRegistry, 'getChatUIConfig')
+      const uiConfigSpy = jest.spyOn(ProviderRegistry, 'getModelPolicy')
         .mockImplementation((providerId) => (
           providerId === 'fake-invalidate' || providerId === 'fake-reload'
             ? originalGetChatUIConfig('claude')

@@ -38,6 +38,7 @@ export class SettingsCoordinator<T extends object> {
   constructor(
     private readonly settings: T,
     private readonly persist: (settings: T) => Promise<void>,
+    private readonly publish?: (settings: Readonly<T>, previous: Readonly<T>) => void | Promise<void>,
   ) {}
 
   /** Excludes mutations whose persistence is still pending. Callers must not mutate this view. */
@@ -88,10 +89,11 @@ export class SettingsCoordinator<T extends object> {
       } finally {
         this.pendingSnapshot = null;
       }
-      try {
-        await onCommitted?.(this.settings);
-      } catch (error) {
-        throw new SettingsPostCommitError(error);
+      const errors: unknown[] = [];
+      try { await onCommitted?.(this.settings); } catch (error) { errors.push(error); }
+      try { await this.publish?.(this.settings, snapshot); } catch (error) { errors.push(error); }
+      if (errors.length > 0) {
+        throw new SettingsPostCommitError(errors.length === 1 ? errors[0] : new AggregateError(errors));
       }
     });
   }

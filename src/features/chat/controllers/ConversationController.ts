@@ -68,6 +68,7 @@ export interface ConversationControllerDeps {
   awaitBackgroundWork?: () => Promise<void>;
   /** True once the owning tab has begun teardown. */
   isDisposed?: () => boolean;
+  isConversationHydrated?: () => boolean;
 }
 
 type SaveOptions = {
@@ -234,7 +235,7 @@ export class ConversationController {
     const { plugin, state, subagentManager } = this.deps;
 
     if (this.deps.isDisposed?.()) return;
-    if (id === state.currentConversationId) return;
+    if (id === state.currentConversationId && this.deps.isConversationHydrated?.() !== false) return;
     if (state.isStreaming) return;
     if (state.isRewinding) return;
     if (state.isSwitchingConversation) return;
@@ -486,6 +487,7 @@ export class ConversationController {
    * only metadata is saved - the SDK handles message persistence.
    */
   async save(updateLastActivity = false, options?: SaveOptions): Promise<void> {
+    if (this.deps.isConversationHydrated?.() === false) return;
     const { plugin, state } = this.deps;
 
     // Entry point with no messages - nothing to save

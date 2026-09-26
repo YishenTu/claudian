@@ -83,7 +83,7 @@ describe('Grok fork integration', () => {
     const load = native.operations.find(operation => operation.method === 'session/load');
     expect(load?.params).toMatchObject({ sessionId: 'grok-child', _meta: expect.any(Object) });
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'grok-child', context: ['grok-assistant-1'] });
-    expect(child!.sessionId).toBe('grok-child');
+    expect(env.repository.getSync(child!.id)!.sessionId).toBe('grok-child');
     expect(await fs.readFile(native.sourceFile, 'utf8')).toBe(original);
     await env.send(source, 'Keep original going');
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'grok-source', context: ['grok-assistant-1', 'grok-assistant-2'] });

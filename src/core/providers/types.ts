@@ -58,6 +58,7 @@ export interface ProviderRegistration {
   setEnabled?: (settings: Record<string, unknown>, enabled: boolean) => void;
   capabilities: ProviderCapabilities;
   environmentKeyPatterns?: RegExp[];
+  modelPolicy: ProviderModelPolicy;
   chatUIConfig: ProviderChatUIConfig;
   settingsReconciler: ProviderSettingsReconciler;
   createExecutionBackend: (plugin: ProviderHost) => ProviderExecutionBackend;
@@ -205,8 +206,8 @@ export interface ProviderPermissionModeToggleConfig {
   activeLabel: string;
 }
 
-/** Compact service-tier toggle descriptor for providers that expose a fast/standard toolbar control. */
-export interface ProviderServiceTierToggleConfig {
+/** Provider-reported service-tier choices, labels and resolved selection. */
+export interface ProviderServiceTierPolicy {
   inactiveValue: string;
   inactiveLabel: string;
   activeValue: string;
@@ -216,6 +217,8 @@ export interface ProviderServiceTierToggleConfig {
   description?: string;
 }
 
+export type ProviderServiceTierToggleConfig = ProviderServiceTierPolicy;
+
 export interface ProviderModeSelectorConfig {
   activeValue?: string;
   label: string;
@@ -223,9 +226,10 @@ export interface ProviderModeSelectorConfig {
   value: string;
 }
 
-/** Synchronous UI projection owned by the provider and backed by provider-owned metadata. */
-export interface ProviderChatUIConfig {
-  /** Model options for the selector dropdown. Provider extracts what it needs from the settings bag. */
+/** Provider model and execution preferences, independent of chat rendering. */
+export interface ProviderModelPolicy {
+  readonly permissionModes?: { inactiveValue: string; activeValue: string };
+  /** Available models in durable selection order, independent of dropdown layout. */
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[];
 
   /** Semantic default model, independent from selector display order. */
@@ -280,25 +284,25 @@ export interface ProviderChatUIConfig {
     update(settings: Record<string, unknown>, aliases: Record<string, string>): void;
   };
 
-  /** Optional permission-mode toggle descriptor. Return null when the provider exposes no permission toggle UI. */
-  getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;
-
   /** Optional provider-owned mapping back into the shared permission-mode contract. */
   resolvePermissionMode?(settings: Record<string, unknown>): string | null;
 
   /** Optional hook when the toolbar changes permission mode. */
   applyPermissionMode?(value: string, settings: unknown): void;
 
-  /** Optional service-tier toggle descriptor. Return null when the provider exposes no fast/standard UI. */
-  getServiceTierToggle?(settings: Record<string, unknown>): ProviderServiceTierToggleConfig | null;
-
-  /** Optional provider-owned mode selector descriptor. */
-  getModeSelector?(settings: Record<string, unknown>): ProviderModeSelectorConfig | null;
+  /** Available service-tier choices and the currently resolved tier. */
+  getServiceTierPolicy?(settings: Record<string, unknown>): ProviderServiceTierPolicy | null;
 
   /** Optional hook when the toolbar changes a provider-owned mode selection. */
   applyModeSelection?(value: string, settings: unknown): void;
 
-  /** SVG icon for the provider (shown next to model names in selectors). */
+}
+
+/** UI composition may reuse policy, but application code consumes ProviderModelPolicy. */
+export interface ProviderChatUIConfig extends Omit<ProviderModelPolicy, 'permissionModes' | 'getServiceTierPolicy'> {
+  getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;
+  getServiceTierToggle?(settings: Record<string, unknown>): ProviderServiceTierToggleConfig | null;
+  getModeSelector?(settings: Record<string, unknown>): ProviderModeSelectorConfig | null;
   getProviderIcon?(): ProviderIconSvg | null;
 }
 

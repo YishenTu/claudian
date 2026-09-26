@@ -70,7 +70,7 @@ describe('Claude fork integration', () => {
     await env.send(fork, 'Continue here');
     expect(native.launches.at(-1)).toMatchObject({ resume: 'claude-source', resumeSessionAt: 'claude-assistant-1', forkSession: true });
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'claude-child', context: ['claude-assistant-1'] });
-    expect(child!.sessionId).toBe('claude-child');
+    expect(env.repository.getSync(child!.id)!.sessionId).toBe('claude-child');
     expect(native.sessions.get('claude-source')).toEqual(['claude-assistant-1', 'claude-assistant-2']);
     await env.send(source, 'Keep original going');
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'claude-source', context: ['claude-assistant-1', 'claude-assistant-2'] });

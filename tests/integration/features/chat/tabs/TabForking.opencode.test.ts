@@ -106,7 +106,7 @@ describe('OpenCode fork integration', () => {
     const fork = await env.open(native.backend, child!);
     await env.send(fork, 'Continue here');
     expect(native.prompts.at(-1)).toEqual({ sessionId: 'ses-child-1', context: ['Remember apples', 'Reply 1', 'Remember pears', 'Reply 2'] });
-    expect(child!.sessionId).toBe('ses-child-1');
+    expect(env.repository.getSync(child!.id)!.sessionId).toBe('ses-child-1');
     expect(native.sessions.get('ses-source')).toEqual(sourceHistory);
     await env.send(source, 'Keep original going');
     expect(native.prompts.at(-1)?.context).toEqual(['Remember apples', 'Reply 1', 'Remember pears', 'Reply 2']);

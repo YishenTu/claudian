@@ -32,9 +32,10 @@ function readyTabWorkspaceStateDelivery() {
   };
 }
 
-function createOwnershipSession() {
+function createOwnershipSession(onCommit = () => {}) {
   return {
     claimUserOwnership: jest.fn(),
+    commitAdmission: jest.fn(onCommit),
     userOwnershipRevision: 0,
   };
 }
@@ -1364,13 +1365,13 @@ describe('ClaudianView tab controls', () => {
       id: 'pinned-tab',
       conversationId: 'pinned-conversation',
       lifecycleState: 'provisional',
-      session: createOwnershipSession(),
+      session: createOwnershipSession(() => { pinnedTab.lifecycleState = 'cold'; }),
     };
     const previewTab = {
       id: 'preview-tab',
       conversationId: 'preview-conversation',
       lifecycleState: 'provisional',
-      session: createOwnershipSession(),
+      session: createOwnershipSession(() => { previewTab.lifecycleState = 'cold'; }),
     };
     const discardProvisionalTabs = jest.fn().mockImplementation(async () => {
       expect(pinnedTab.lifecycleState).toBe('cold');
@@ -1403,7 +1404,7 @@ describe('ClaudianView tab controls', () => {
     const openTab = {
       conversationId: 'open-conversation',
       lifecycleState: 'provisional',
-      session: createOwnershipSession(),
+      session: createOwnershipSession(() => { openTab.lifecycleState = 'cold'; }),
     };
     const setConversationPinned = jest.fn().mockResolvedValue(undefined);
     const view = Object.create(ClaudianView.prototype) as any;
@@ -2057,7 +2058,7 @@ describe('ClaudianView tab controls', () => {
       tabs.push({
         conversationId,
         lifecycleState: 'provisional',
-        session: createOwnershipSession(),
+        session: createOwnershipSession(() => { tabs[tabs.length - 1].lifecycleState = 'cold'; }),
       });
     });
     const view = Object.create(ClaudianView.prototype) as any;

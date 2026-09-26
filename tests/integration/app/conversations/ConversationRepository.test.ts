@@ -125,6 +125,7 @@ test('a metadata scan paused during source resolution cannot publish writes afte
 test.each(['rename', 'archive', 'model'] as const)('failed %s writes leave the committed projection intact', async operation => {
   const { repository, persistence, conversation } = fixture();
   conversation.selectedModel = 'opus';
+  repository.replaceAll([conversation]);
   const before = { ...conversation };
   const mutate = () => operation === 'rename'
     ? repository.rename(conversation.id, 'New title')
@@ -149,7 +150,7 @@ test('queued archive and pin decisions use the committed result of the preceding
   expect(conversation.isArchived).toBeUndefined();
   finishWrite();
   await Promise.all([archive, pin]);
-  expect(conversation).toMatchObject({ isArchived: true, isPinned: false });
+  expect(repository.getSync(conversation.id)).toMatchObject({ isArchived: true, isPinned: false });
   expect(persistence.saveMetadata).toHaveBeenCalledTimes(1);
 });
 
@@ -207,7 +208,7 @@ test('historical recovery cannot overwrite a model selection whose write is pend
     finishWrite();
     await Promise.all([recovery, update]);
     expect(persistence.saveMetadata.mock.calls.map(([metadata]) => metadata.selectedModel)).toEqual(['sonnet']);
-    expect(conversation.selectedModel).toBe('sonnet');
+    expect(repository.getSync(conversation.id)?.selectedModel).toBe('sonnet');
   } finally {
     recoverySpy.mockRestore();
   }
@@ -223,7 +224,7 @@ test('provider invalidation preserves an ordinary metadata commit already in fli
   finishWrite();
   await Promise.all([rename, invalidation]);
   expect(persistence.saveMetadata.mock.calls.map(([metadata]) => metadata.title)).toEqual(['Renamed', 'Renamed']);
-  expect(conversation).toMatchObject({ title: 'Renamed', sessionId: null });
+  expect(repository.getSync(conversation.id)).toMatchObject({ title: 'Renamed', sessionId: null });
 });
 
 test('failed deletion restores an ordinary metadata commit that finished during deletion', async () => {
@@ -249,7 +250,7 @@ test('provider invalidation fences session fields while preserving the rest of a
   const invalidation = repository.persistConversations(repository.invalidateProviderSessions(['claude']));
   finishWrite();
   await Promise.all([update, invalidation]);
-  expect(conversation).toMatchObject({ title: 'Renamed', sessionId: null });
+  expect(repository.getSync(conversation.id)).toMatchObject({ title: 'Renamed', sessionId: null });
   expect(persistence.saveMetadata.mock.calls.at(-1)?.[0]).toMatchObject({ title: 'Renamed', sessionId: null });
 });
 
@@ -341,4 +342,16 @@ test('linked-content rename during a session write reaches disk', async () => {
   finishWrite();
   await Promise.all([update, rename]);
   expect(persistence.saveMetadata.mock.calls.at(-1)?.[0].linkedContentPath).toBe('new.md');
+});
+
+test('conversation reads and update inputs are detached from repository records', async () => {
+  const { repository, conversation } = fixture();
+  const messages = [{ id: 'message', role: 'assistant', content: 'original', timestamp: testDate().getTime() }] as Conversation['messages'];
+  await repository.update(conversation.id, { messages });
+  messages[0].content = 'caller edit';
+  const snapshot = repository.getCachedConversation(conversation.id)!;
+  expect(snapshot.messages[0].content).toBe('original');
+  snapshot.messages[0].content = 'reader edit';
+  repository.getAll().splice(0);
+  expect(repository.getSync(conversation.id)?.messages[0].content).toBe('original');
 });

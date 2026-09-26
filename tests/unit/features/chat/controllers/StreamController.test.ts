@@ -532,6 +532,18 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('tool completion outcome mapping', () => {
+    it.each(['main', 'subagent'] as const)('preserves %s tool payloads and output ownership', kind => {
+      const scope = { kind: 'requested' as const, sessionInstanceId: 's', executionId: 'e', turnId: 't', sequence: 1 };
+      const toolScope = kind === 'main' ? { kind } : { kind, subagentId: 'parent' };
+      const providerPayload = { rawInput: { native: true }, rawOutput: { native: 'output' } };
+      expect(providerOutputEventToStreamChunk({ type: 'tool_started', scope, toolScope, toolCallId: 'child', name: 'Read', input: {}, providerPayload }))
+        .toMatchObject({ providerPayload });
+      expect(providerOutputEventToStreamChunk({ type: 'tool_completed', scope, toolScope, toolCallId: 'child', content: 'done', providerPayload }))
+        .toMatchObject({ providerPayload });
+      expect(providerOutputEventToStreamChunk({ type: 'tool_output', scope, toolScope, toolCallId: 'child', content: 'partial' }))
+        .toMatchObject(kind === 'main' ? { type: 'tool_output' } : { type: 'subagent_tool_output', subagentId: 'parent' });
+    });
+
     it('preserves an authoritative blocked outcome from provider events', () => {
       expect(providerOutputEventToStreamChunk({
         type: 'tool_completed',
@@ -1485,6 +1497,22 @@ describe('StreamController - Text Content', () => {
   });
 
   describe('Subagent chunk handling', () => {
+    it('routes provider child output and native completion payloads to the child tool', async () => {
+      const msg = createTestMessage();
+      const toolCall = { id: 'read', name: 'Read', input: {}, status: 'running', result: '' };
+      const child = { info: { id: 'parent', description: 'test', status: 'running', toolCalls: [toolCall] } };
+      (deps.subagentManager.getSyncSubagent as jest.Mock).mockReturnValue(child);
+      const scope = { kind: 'requested' as const, sessionInstanceId: 's', executionId: 'e', turnId: 't', sequence: 1 };
+      const toolScope = { kind: 'subagent' as const, subagentId: 'parent' };
+      const output = providerOutputEventToStreamChunk({ type: 'tool_output', toolCallId: 'read', toolScope, scope, content: 'partial' })!;
+      await controller.handleStreamChunk(output, msg);
+      expect(toolCall).toMatchObject({ status: 'running', result: 'partial' });
+      const completion = providerOutputEventToStreamChunk({ type: 'tool_completed', toolCallId: 'read', toolScope, scope, content: 'complete', providerPayload: { rawOutput: { native: true } } })!;
+      await controller.handleStreamChunk(completion, msg);
+      expect(toolCall).toMatchObject({ status: 'completed', result: 'complete', providerPayload: { rawOutput: { native: true } } });
+      expect(msg.toolCalls ?? []).toEqual([]);
+    });
+
     it('should handle subagent tool_result chunk', async () => {
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
