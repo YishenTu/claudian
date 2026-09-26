@@ -70,13 +70,11 @@ test('real dependency discovery retains native launch checks for shared process 
   assert.ok(result.testFiles.includes('tests/unit/core/process/ManagedStdioProcess.test.ts'));
 });
 
-test('native selection uses only nonempty shards and retains a Pi-only job', () => {
-  const probe = 'tests/integration/core/process/ProcessProbe.test.ts';
-  const managed = 'tests/integration/core/process/ManagedStdioProcess.test.ts';
-  assert.deepEqual(select([probe]).crossPlatformShards, ['1/1']);
-  assert.deepEqual(select([probe, managed]).crossPlatformShards, ['1/2', '2/2']);
-  assert.deepEqual(select(['tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts']).crossPlatformShards, ['1/1']);
-  assert.deepEqual(select(['package-lock.json']).crossPlatformShards, ['1/2', '2/2']);
+test('Pi-only changes retain native verification without unrelated process suites', () => {
+  const result = select(['tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts']);
+  assert.equal(result.crossPlatform, true);
+  assert.equal(result.piWindows, true);
+  assert.deepEqual(result.crossPlatformTests, []);
 });
 
 test('changed tests run directly, while removed tests are omitted', () => {
@@ -116,7 +114,6 @@ test('native script regressions retain a Windows job without selecting unrelated
     assert.deepEqual(result.scriptTests, [script]);
     assert.deepEqual(result.testFiles, []);
     assert.deepEqual(result.crossPlatformTests, []);
-    assert.deepEqual(result.crossPlatformShards, ['1/1']);
     assert.equal(result.crossPlatform, true);
   }
 });
@@ -205,6 +202,13 @@ test('the CI entry point handles real Git ranges, renames, missing bases and rel
       assert.equal(full['test-files'], null);
       assert.deepEqual(full['test-shards'], ['1/2', '2/2']);
     }
+    // Release scope must work before dependency installation, without invoking Jest.
+    writeFileSync(path.join(root, 'scripts/run-jest.js'), "throw new Error('Jest is unavailable');");
+    const tag = scope(deleted, { GITHUB_REF: 'refs/tags/2.3.0' });
+    assert.equal(tag['test-files'], null);
+    assert.equal(tag['script-tests'], null);
+    assert.equal(tag['cross-platform-tests'], null);
+    assert.equal(tag['pi-windows'], true);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -49,10 +49,11 @@ jobs:
         shell: bash
         env:
           TEST_SHARD: ${{ matrix.shard }}
+          SCRIPT_SELECTION: ${{ startsWith(matrix.shard, '1/') && 'null' || '[]' }}
         run: |
           worker_args=()
           if [[ "$RUNNER_OS" == "Windows" ]]; then worker_args=(--maxWorkers=1); fi
-          npm run test -- "${worker_args[@]}" --shard="$TEST_SHARD" --json --outputFile=test-results/jest.json
+          npm run test -- --script-selection "$SCRIPT_SELECTION" "${worker_args[@]}" --shard="$TEST_SHARD" --json --outputFile=test-results/jest.json
 
       - name: Summarize test timings
         if: always() && steps.tests.outcome != 'skipped'

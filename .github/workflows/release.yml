@@ -26,28 +26,19 @@ jobs:
         with:
           fetch-depth: 0  # Full history for changelog generation
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Download verified release artifacts
+        uses: actions/download-artifact@v8
         with:
-          node-version-file: .node-version
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate release version
-        run: node scripts/check-release-version.mjs "${{ github.ref_name }}"
-
-      - name: Build
-        run: npm run build && npm run check:performance
+          name: release-artifacts
+          path: release-artifacts
 
       - name: Generate artifact attestations
         uses: actions/attest@v4
         with:
           subject-path: |
-            main.js
-            manifest.json
-            styles.css
+            release-artifacts/main.js
+            release-artifacts/manifest.json
+            release-artifacts/styles.css
 
       - name: Get previous tag
         id: prev_tag
@@ -80,7 +71,8 @@ jobs:
             ${{ steps.changelog.outputs.notes }}
 
             **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.prev_tag.outputs.tag }}...${{ github.ref_name }}
+          fail_on_unmatched_files: true
           files: |
-            main.js
-            manifest.json
-            styles.css
+            release-artifacts/main.js
+            release-artifacts/manifest.json
+            release-artifacts/styles.css
