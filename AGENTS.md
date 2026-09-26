@@ -2,7 +2,7 @@
 
 ## Loading and verification
 
-- For changes to tests or tested behavior, follow `tests/AGENTS.md` and review affected coverage, including when no new test is needed.
+- For test changes or changes to the code they cover, follow `tests/AGENTS.md`, even when no test edit is planned.
 - Tests follow the guides of the source they cover; they do not inherit `src/` instructions automatically.
 - Build, dependency, lockfile, locale/static-asset import, and `esbuild.config.mjs` changes also require `scripts/AGENTS.md`. Composition changes require the guides of the services being wired.
 - Use the Node version in `.node-version`. For code changes, the full verification command is:
