@@ -21,6 +21,7 @@ function fixture() {
   };
   const persistence = {
     metadataReader: {
+      revalidate: jest.fn().mockResolvedValue([]),
       load: jest.fn().mockResolvedValue(null),
       scan: jest.fn().mockResolvedValue({ records: [], complete: true, invalidMetadataCount: 0 }),
       loadMetadata: jest.fn().mockResolvedValue(null),
@@ -96,10 +97,10 @@ test('a metadata scan paused during source resolution cannot publish writes afte
   repository.replaceAll([]);
   const metadata: SessionMetadata = { ...conversation, providerState: undefined };
   const record = { metadata, source: 'unscoped' as const, needsMigration: true };
-  let resolveSource!: (value: typeof record) => void;
+  let resolveSource!: (value: (typeof record)[]) => void;
   let sourceStarted!: () => void;
   const readingSource = new Promise<void>(resolve => { sourceStarted = resolve; });
-  persistence.metadataReader.load.mockImplementation(() => new Promise(resolve => {
+  persistence.metadataReader.revalidate.mockImplementation(() => new Promise(resolve => {
     resolveSource = resolve;
     sourceStarted();
   }));
@@ -116,7 +117,7 @@ test('a metadata scan paused during source resolution cannot publish writes afte
   await readingSource;
   unloading = true;
   const disposal = loader.dispose();
-  resolveSource(record);
+  resolveSource([record]);
   await disposal;
   expect(persistence.saveMetadata).not.toHaveBeenCalled();
 });

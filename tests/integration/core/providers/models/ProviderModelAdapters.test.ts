@@ -29,13 +29,13 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
   const coordinator = new SettingsCoordinator(settings, persist);
   const host = { settings, mutateSettings: coordinator.mutate.bind(coordinator), mutateSettingsConditionally: coordinator.mutateConditionally.bind(coordinator), notifyProviderChatOptionsChanged: jest.fn() } as unknown as ProviderHost;
   const discovery = jest.fn(async () => ({ changed: true, refreshed: true, kind: 'completed' as const, catalog: null, models: [], persistedSettingsChanged: false }));
-  const warmModelMetadata = jest.fn(async () => true);
+  const warmModelsMetadata = jest.fn(async () => true);
   mockPiDiscover.mockResolvedValue({ kind: 'completed', models: read(settings) });
   const factories: Record<string, () => ProviderModelCatalog> = {
     claude: () => createClaudeModels(host, { refresh: discovery }),
     codex: () => createCodexModels(host, { refresh: discovery }),
     grok: () => createGrokModels(host, { refresh: discovery }),
-    opencode: () => createOpencodeModels(host, { loadCatalog: async () => { await discovery(); return true; }, warmModelMetadata }),
+    opencode: () => createOpencodeModels(host, { discoverModels: async () => { await discovery(); return true; }, warmModelsMetadata }),
     pi: () => createPiModels(host),
   };
   const catalog = factories[id]();
@@ -56,9 +56,8 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
   expect(catalog.getSnapshot().selectedIds).toEqual([]);
   expect(() => assertions[id](settings, selected)).toThrow(ProviderModelUnavailableError);
   await catalog.select([selectedId]);
-  const signal = expect.any(AbortSignal);
-  expect(warmModelMetadata.mock.calls).toEqual(id === 'opencode'
-    ? [[selected, signal], [selected, signal], [selected]] : []);
+  expect(warmModelsMetadata.mock.calls).toEqual(id === 'opencode'
+    ? [[[]], [[selected]]] : []);
   const before = structuredClone(settings);
   persist.mockRejectedValueOnce(new Error('disk full'));
   await expect(catalog.select([])).rejects.toThrow('disk full');
@@ -74,7 +73,7 @@ it('preserves OpenCode provider labels for catalog filtering', () => {
       { rawId: 'openai/gpt', label: 'OpenAI/GPT' },
     ],
   } } } } as unknown as ProviderHost;
-  const catalog = createOpencodeModels(host, { loadCatalog: jest.fn(), warmModelMetadata: jest.fn() });
+  const catalog = createOpencodeModels(host, { discoverModels: jest.fn(), warmModelsMetadata: jest.fn() });
   expect(catalog.getSnapshot().models).toEqual([
     expect.objectContaining({ id: 'anthropic/sonnet', name: 'Sonnet', providerKey: 'anthropic', providerLabel: 'Anthropic' }),
     expect.objectContaining({ id: 'openai/gpt', name: 'GPT', providerKey: 'openai', providerLabel: 'OpenAI' }),

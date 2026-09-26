@@ -1,16 +1,14 @@
 import { Notice } from 'obsidian';
 
 import type { ProviderInteractionPort } from '../../../../core/execution';
-import { resolveNewConversationModel } from '../../../../core/providers/conversationModel';
-import { getProviderForModel } from '../../../../core/providers/modelRouting';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
-import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
 import { getVaultPath } from '../../../../utils/path';
 import { ComposerEditor } from '../../composer/ComposerEditor';
 import { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinator';
 import { cleanupThinkingBlock } from '../../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement } from '../../rendering/WelcomeRenderer';
 import { ChatState } from '../../state/ChatState';
+import { createTabSessionState } from '../TabIdentity';
 import { refreshTabContextUsage } from '../TabProviderState';
 import { TabSession } from '../TabSession';
 import {
@@ -60,32 +58,9 @@ export function buildTabRuntimeShell(
     state.currentThinkingState = null;
   });
 
-  const isBound = !!conversation?.id;
-  const restoredDraftModel = typeof options.draftModel === 'string'
-    ? options.draftModel.trim()
-    : '';
-  const newConversationModel = !isBound && !restoredDraftModel
-    ? resolveNewConversationModel(plugin.settings)
-    : null;
-  const draftModel = isBound
-    ? null
-    : (restoredDraftModel || newConversationModel?.model || null);
-  const restoredProviderId = options.providerId === undefined
-    ? (restoredDraftModel ? getProviderForModel(restoredDraftModel, plugin.settings) : null)
-    : options.providerId;
-  const initialProviderId = conversation?.providerId
-    ?? newConversationModel?.providerId
-    ?? (draftModel
-      ? restoredProviderId && ProviderRegistry.getRegisteredProviderIds().includes(restoredProviderId)
-        ? restoredProviderId : null
-      : DEFAULT_CHAT_PROVIDER_ID);
-  const sessionState = {
-    id,
-    lifecycleState: options.lifecycleState ?? 'cold',
-    draftModel,
-    providerId: initialProviderId,
-    conversationId: conversation?.id ?? null,
-  };
+  const sessionState = options.initialState
+    ? { ...options.initialState }
+    : createTabSessionState(plugin.settings, conversation, { ...options, tabId: id });
   const executionCoordinator = createTabExecutionCoordinator(
     id,
     state,
@@ -130,7 +105,7 @@ export function buildTabRuntimeShell(
     set lifecycleState(value) {
       session.lifecycleState = value;
     },
-    hydrationState: isBound ? 'idle' : 'ready',
+    hydrationState: sessionState.conversationId ? 'idle' : 'ready',
     get draftModel() {
       return session.draftModel;
     },

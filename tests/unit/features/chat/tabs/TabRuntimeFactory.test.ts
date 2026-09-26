@@ -1067,6 +1067,33 @@ describe('Tab provider execution ownership', () => {
     expect(tab.draftModel).toBe('retired');
   });
 
+  it('assembles only the active restored tab and preserves inactive identities without resources', async () => {
+    const plugin = createPlugin();
+    const root = createMockEl();
+    const manager = createTabManager(plugin, root);
+    const saved = {
+      openTabs: Array.from({ length: 20 }, (_, index) => ({ tabId: `saved-${index}`, conversationId: null, draftModel: 'claude-default' })),
+      activeTabId: 'saved-0',
+    };
+    try {
+      await manager.restoreState(saved);
+      expect(manager.getTabCount()).toBe(20);
+      expect(manager.getAllTabs()).toHaveLength(1);
+      expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(1);
+      expect(coordinatorInstances).toHaveLength(1);
+      expect(titleServiceInstances).toHaveLength(1);
+      expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(saved.openTabs.map(tab => tab.tabId));
+      await manager.closeTab('saved-19');
+      expect(coordinatorInstances).toHaveLength(1);
+      plugin.settings.lastSelectedChatModel = { model: 'changed-model', providerId: 'codex' };
+      await manager.switchToTab('saved-1');
+      expect(manager.getActiveTab()?.draftModel).toBe('claude-default');
+      expect(coordinatorInstances).toHaveLength(2);
+      expect(root.querySelectorAll('.claudian-tab-content')).toHaveLength(2);
+    } finally { await manager.destroy(); }
+    expect(coordinatorInstances.every(coordinator => coordinator.dispose.mock.calls.length === 1)).toBe(true);
+  });
+
   it('restores a draft on its recorded provider even when model ownership is unresolved', async () => {
     const plugin = createPlugin();
     (ProviderRegistry.resolveProviderForModel as jest.Mock).mockReturnValue(null);

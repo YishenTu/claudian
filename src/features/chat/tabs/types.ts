@@ -64,6 +64,7 @@ export interface TabManagerInterface {
 
   /** Gets all tabs. */
   getAllTabs(): AssembledTabRuntime[];
+  getTabIdentities(): readonly TabProviderCatalogContext[];
 
   /** Reports aggregate user-visible work for a runtime tab. */
   isTabWorking(tabId: TabId): boolean;

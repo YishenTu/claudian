@@ -24,7 +24,6 @@
   min-height: 140px;
   border: 1px solid var(--claudian-input-wrapper-border-color);
   border-radius: 6px;
-  background: var(--background-primary);
   box-shadow: var(--claudian-input-wrapper-box-shadow);
 }
 

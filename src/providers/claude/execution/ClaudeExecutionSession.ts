@@ -148,6 +148,9 @@ ClaudeExecutionStrategySink {
     this.providerSessionId = this.pendingFork
       ? null
       : this.initialProviderSessionId;
+    // Subagent history belongs to the conversation projection, not native resume state.
+    // Snapshots merge their keys into that projection without deleting omitted history.
+    delete state.subagentData;
     this.providerState = state;
     this.replayHistoryOnNextTurn = state.historyReplayPending === true;
     this.replayHistoryGeneration = this.replayHistoryOnNextTurn ? 1 : 0;

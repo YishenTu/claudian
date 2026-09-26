@@ -11,12 +11,14 @@ import type { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog'
 import {
   DefaultOpencodeACPSessionKernel,
   type OpencodeACPSessionKernel,
+  type OpencodeLaunchContext,
   type OpencodeNativeSessionInfo,
 } from '../execution/OpencodeACPSessionKernel';
 import { OpencodeServerService } from '../http/OpencodeServerService';
 import { decodeOpencodeModelId } from '../models';
 import { buildOpencodeRuntimeEnv } from '../runtime/OpencodeRuntimeEnvironment';
 import { detectOpencodeNativeVersion } from '../runtime/OpencodeVersion';
+import { getOpencodeProviderSettings } from '../settings';
 import {
   type OpencodeMetadataProjectionInput,
   projectOpencodeMetadata,
@@ -70,7 +72,9 @@ export class OpencodeMetadataService {
         const environment = buildOpencodeRuntimeEnv(plugin.settings, cliPath);
         const version = await detectOpencodeNativeVersion(cliPath, environment);
         signal.throwIfAborted();
-        if (version !== 2) return new DefaultOpencodeMetadataProbe(plugin);
+        if (version !== 2) return new DefaultOpencodeMetadataProbe(plugin, {
+          cliPath, version, environment: buildOpencodeRuntimeEnv(plugin.settings, cliPath, ':memory:'),
+        });
         return new OpencodeV2MetadataProbe(await this.serverService.acquire(cliPath, resolveVaultPath(plugin), environment, signal));
       });
     this.probes = new OwnedProbeRegistry({
@@ -89,22 +93,32 @@ export class OpencodeMetadataService {
   }
 
   async loadCatalog(signal?: AbortSignal): Promise<boolean> {
-    const result = await this.#runProbe(
-      async (probe, ownedSignal) => {
-        const catalog = await probe.loadCatalog(ownedSignal);
+    return await this.#runProbe((probe, ownedSignal) => this.#publishCatalog(probe, ownedSignal), signal) ?? false;
+  }
+
+  async discoverModels(signal?: AbortSignal): Promise<boolean> {
+    return await this.#runProbe(async (probe, ownedSignal) => {
+      await this.#publishCatalog(probe, ownedSignal);
+      const selected = getOpencodeProviderSettings(this.plugin.settings).visibleModels;
+      for (const id of selected) {
         ownedSignal.throwIfAborted();
-        await projectOpencodeMetadata(this.plugin, catalog, ownedSignal);
-        ownedSignal.throwIfAborted();
-        if (catalog.commands !== null) {
-          this.options.commandCatalog?.setCommandSnapshot(
-            catalog.commands.map((command) => ({ ...command })),
-          );
-        }
-        return true;
-      },
-      signal,
-    );
-    return result ?? false;
+        const current = getOpencodeProviderSettings(this.plugin.settings);
+        if (!current.visibleModels.includes(id) || Object.hasOwn(current.thinkingOptionsByModel, id)) continue;
+        await this.#warmModel(probe, id, ownedSignal);
+      }
+      return true;
+    }, signal) ?? false;
+  }
+
+  async #publishCatalog(probe: OpencodeMetadataProbe, signal: AbortSignal): Promise<boolean> {
+    const catalog = await probe.loadCatalog(signal);
+    signal.throwIfAborted();
+    await projectOpencodeMetadata(this.plugin, catalog, signal);
+    signal.throwIfAborted();
+    if (catalog.commands !== null) {
+      this.options.commandCatalog?.setCommandSnapshot(catalog.commands.map(command => ({ ...command })));
+    }
+    return true;
   }
 
   async loadCommands(signal?: AbortSignal): Promise<SlashCommand[]> {
@@ -132,27 +146,38 @@ export class OpencodeMetadataService {
     return result;
   }
 
-  async warmModelMetadata(
-    model: string,
-    signal?: AbortSignal,
-  ): Promise<boolean> {
-    const rawModelId = decodeOpencodeModelId(model);
-    if (!rawModelId) return false;
-    const result = await this.#runProbe(
-      async (probe, ownedSignal) => {
-        const metadata = await probe.warmModel(rawModelId, ownedSignal);
+  async warmModelMetadata(model: string, signal?: AbortSignal): Promise<boolean> {
+    return this.warmModelsMetadata([model], signal);
+  }
+
+  async warmModelsMetadata(models: readonly string[], signal?: AbortSignal): Promise<boolean> {
+    const ids = models.map(decodeOpencodeModelId).filter((id): id is string => !!id);
+    if (ids.length === 0) return false;
+    return await this.#runProbe(async (probe, ownedSignal) => {
+      let warmed = false;
+      for (const id of ids) {
         ownedSignal.throwIfAborted();
-        await projectOpencodeMetadata(this.plugin, {
-          ...metadata,
-          selectedRawModelId: metadata.rawModelId,
-          reasoningMetadataResolved: true,
-        }, ownedSignal);
-        ownedSignal.throwIfAborted();
-        return true;
-      },
-      signal,
-    );
-    return result ?? false;
+        warmed = await this.#warmModel(probe, id, ownedSignal) || warmed;
+      }
+      return warmed;
+    }, signal) ?? false;
+  }
+
+  async #warmModel(probe: OpencodeMetadataProbe, rawModelId: string, signal: AbortSignal): Promise<boolean> {
+    try {
+      const metadata = await probe.warmModel(rawModelId, signal);
+      signal.throwIfAborted();
+      await projectOpencodeMetadata(this.plugin, {
+        ...metadata,
+        selectedRawModelId: metadata.rawModelId,
+        reasoningMetadataResolved: true,
+      }, signal);
+      signal.throwIfAborted();
+      return true;
+    } catch {
+      signal.throwIfAborted();
+      return false;
+    }
   }
 
   async invalidate(): Promise<void> {
@@ -217,7 +242,7 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
   private native: OpencodeNativeSessionInfo | null = null;
   private commandWaiter: (() => void) | null = null;
 
-  constructor(private readonly plugin: ProviderHost) {}
+  constructor(private readonly plugin: ProviderHost, private readonly launchContext: OpencodeLaunchContext) {}
 
   async loadCatalog(signal?: AbortSignal): Promise<OpencodeMetadataCatalogResult> {
     const native = await this.#ensureOpen(signal);
@@ -245,27 +270,33 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
     rawModelId: string,
     signal?: AbortSignal,
   ): Promise<OpencodeMetadataWarmResult> {
-    const native = await this.#ensureOpen(signal);
-    signal?.throwIfAborted();
-    const response = await this.#requireKernel().setConfigOption({
-      configId: 'model',
-      sessionId: native.sessionId,
-      type: 'select',
-      value: rawModelId,
-    });
-    signal?.throwIfAborted();
-    return {
-      configOptions: response.configOptions,
-      models: native.models,
-      modes: native.modes,
-      rawModelId,
-    };
+    try {
+      const native = await this.#ensureOpen(signal);
+      signal?.throwIfAborted();
+      const response = await this.#requireKernel().setConfigOption({
+        configId: 'model',
+        sessionId: native.sessionId,
+        type: 'select',
+        value: rawModelId,
+      });
+      signal?.throwIfAborted();
+      return {
+        configOptions: response.configOptions,
+        models: native.models,
+        modes: native.modes,
+        rawModelId,
+      };
+    } catch (error) {
+      await this.dispose();
+      throw error;
+    }
   }
 
   async dispose(): Promise<void> {
     const kernel = this.kernel;
     this.kernel = null;
     this.native = null;
+    this.commands = null;
     this.commandWaiter?.();
     this.commandWaiter = null;
     await kernel?.dispose();
@@ -299,7 +330,7 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
       },
       plugin: this.plugin,
       sessionInstanceId: `metadata-${randomUUID()}`,
-    });
+    }, this.launchContext);
     this.kernel = kernel;
     await kernel.connect({
       profile: 'passive',

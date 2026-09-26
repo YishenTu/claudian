@@ -61,6 +61,7 @@ function createMockTab(options: Record<string, any>): any {
     lifecycleState: options.lifecycleState ?? 'cold',
     providerId: options.conversation?.providerId ?? 'claude',
     session,
+    ...options.initialState,
     captureReviewableSettlement: options.captureReviewableSettlement ?? null,
     state: {
       acknowledgeReview: jest.fn(),
@@ -162,6 +163,11 @@ jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
 
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
+    getRegisteredProviderIds: jest.fn().mockReturnValue(['claude', 'codex']),
+    getEnabledProviderIds: jest.fn().mockReturnValue(['claude']),
+    getBlankTabProviderIds: jest.fn().mockReturnValue(['claude']),
+    isEnabled: jest.fn().mockReturnValue(true),
+    getChatUIConfig: jest.fn().mockReturnValue({ getModelOptions: () => [{ value: 'claude-default' }], getDefaultModel: () => 'claude-default' }),
     getCapabilities: jest.fn().mockReturnValue({
       providerId: 'claude',
       supportsProviderCommands: true,
@@ -1700,20 +1706,159 @@ describe('TabManager provider execution orchestration', () => {
       activeTabId: 'restored-2',
     });
 
-    expect(manager.getAllTabs().map(tab => ({
+    expect(manager.getTabIdentities().map(tab => ({
       id: tab.id,
       lifecycleState: tab.lifecycleState,
     }))).toEqual([
       { id: 'restored-1', lifecycleState: 'cold' },
       { id: 'restored-2', lifecycleState: 'cold' },
     ]);
+    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(1);
+    expect(manager.getTab('restored-1')).toBeNull();
+    expect(manager.getTabCount()).toBe(2);
     expect(manager.getActiveTabId()).toBe('restored-2');
     expect(onActiveTabChanged).toHaveBeenCalledTimes(1);
-    expect(mockCreateTabRuntime.mock.calls[1]?.[0]).toEqual(expect.objectContaining({
+    expect(mockCreateTabRuntime.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
       draftModel: 'codex:gpt-5',
       lifecycleState: 'cold',
       tabId: 'restored-2',
     }));
+    await Promise.all([manager.switchToTab('restored-1'), manager.switchToTab('restored-1')]);
+    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(2);
+    expect(manager.getActiveTabId()).toBe('restored-1');
+    expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['restored-1', 'restored-2']);
+  });
+
+  it('restores a usable tab when the selected saved runtime cannot be assembled', async () => {
+    const { manager } = createManager(createPlugin({ getCachedConversation: (id: string) => ({ id, providerId: 'claude' }) }));
+    mockCreateTabRuntime.mockRejectedValueOnce(new Error('Unavailable selected tab'));
+    await expect(manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' })).resolves.toBeUndefined();
+    expect(manager.getActiveTabId()).toBe('two');
+    expect(manager.getTab('one')).toBeNull();
+    expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['one', 'two']);
+    await manager.switchToTab('one');
+    expect(manager.getActiveTabId()).toBe('one');
+  });
+
+  it('keeps the active source reversible when an inactive successor fails assembly', async () => {
+    const { manager } = createManager(createPlugin({ getCachedConversation: (id: string) => ({ id, providerId: 'claude' }) }));
+    await manager.restoreState({ openTabs: [
+      { tabId: 'active', conversationId: 'one' }, { tabId: 'cold', conversationId: 'two' },
+    ], activeTabId: 'active' });
+    const source = manager.getActiveTab()!;
+    const before = manager.getPersistedState();
+    mockCreateTabRuntime.mockRejectedValueOnce(new Error('Assembly failed'));
+    await expect(manager.closeTab('active')).rejects.toThrow('Assembly failed');
+    expect(manager.getActiveTab()).toBe(source);
+    expect(source.session.acceptsIntents).toBe(true);
+    expect(source.controllers.conversationController.save).not.toHaveBeenCalled();
+    expect(manager.getPersistedState()).toEqual(before);
+    await expect(manager.closeTab('active')).resolves.toBe(true);
+    expect(manager.getActiveTabId()).toBe('cold');
+  });
+
+  it('resets a deleted conversation during reversible close preflight even if successor assembly fails', async () => {
+    const { manager } = createManager(createPlugin({ getCachedConversation: (id: string) => ({ id, providerId: 'claude' }) }));
+    await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+    const source = manager.getActiveTab()!;
+    source.controllers.inputController.cancelStreaming = jest.fn();
+    source.controllers.conversationController.createNew = jest.fn(async () => { source.conversationId = null; });
+    const pending = deferred<any>();
+    mockCreateTabRuntime.mockImplementationOnce(() => pending.promise);
+    const closing = manager.closeTab('one');
+    await manager.resetConversationTabs('one');
+    pending.reject(new Error('Successor unavailable'));
+    await expect(closing).rejects.toThrow('Successor unavailable');
+    expect(manager.getActiveTab()).toBe(source);
+    expect(source.conversationId).toBeNull();
+    expect(source.session.acceptsIntents).toBe(true);
+    expect(source.controllers.inputController.cancelStreaming).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses an inactive conversation locally and closes another shell without assembling it', async () => {
+    const { manager } = createManager(createPlugin({ getCachedConversation: (id: string) => ({ id, providerId: 'claude' }) }));
+    await manager.restoreState({ openTabs: ['one', 'two', 'three'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+    await manager.closeTab('three');
+    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(1);
+    expect(mockDestroyTab).not.toHaveBeenCalled();
+    await manager.openConversation('two');
+    expect(manager.getTabCount()).toBe(2);
+    expect(manager.getActiveTabId()).toBe('two');
+    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(2);
+  });
+
+  it('joins a late restored assembly during shutdown without losing its shell snapshot', async () => {
+    const { manager } = createManager(createPlugin({ getCachedConversation: (id: string) => ({ id, providerId: 'claude' }) }));
+    await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+    const pending = deferred<any>();
+    let options: any;
+    mockCreateTabRuntime.mockImplementationOnce(input => { options = input; return pending.promise; });
+    const switching = manager.switchToTab('two');
+    const shutdown = manager.drainForShutdownSnapshot();
+    const late = createMockTab(options);
+    pending.resolve(late);
+    await Promise.all([switching, shutdown]);
+    expect(mockDestroyTab).toHaveBeenCalledWith(late);
+    expect(manager.getTab('two')).toBeNull();
+    expect(manager.getPersistedState().openTabs.map(tab => tab.tabId)).toEqual(['one', 'two']);
+    expect(manager.getPersistedState().activeTabId).toBe('one');
+  });
+
+  it.each([false, true])('resets deleted shells and retries failed runtime resets (multiple failures: %s)', async multipleFailures => {
+    const { manager, plugin } = createManager(createPlugin({ getCachedConversation: (id: string) => ({ id, providerId: 'claude' }) }));
+    await manager.restoreState({ openTabs: ['one', 'two', 'three'].map(tabId => ({ tabId, conversationId: 'deleted' })), activeTabId: 'one' });
+    await manager.switchToTab('three');
+    const other = manager.getTab('three')!;
+    other.controllers.inputController.cancelStreaming = jest.fn();
+    other.controllers.conversationController.createNew = jest.fn(async () => { other.conversationId = null; });
+    if (multipleFailures) jest.mocked(other.controllers.conversationController.createNew).mockRejectedValueOnce(new Error('Other reset failed'));
+    plugin.settings.lastSelectedChatModel = { providerId: 'claude', model: 'claude-default' };
+    const active = manager.getTab('one')!;
+    active.controllers.inputController.cancelStreaming = jest.fn();
+    active.controllers.conversationController.createNew = jest.fn().mockRejectedValueOnce(new Error('Reset failed'))
+      .mockImplementation(async () => { active.conversationId = null; });
+    await expect(manager.resetConversationTabs('deleted')).rejects.toThrow('Reset failed');
+    expect(manager.getTabIdentities().find(tab => tab.id === 'two')?.conversationId).toBeNull();
+    expect(mockCreateTabRuntime).toHaveBeenCalledTimes(2);
+    await manager.resetConversationTabs('deleted');
+    expect(active.controllers.conversationController.createNew).toHaveBeenCalledTimes(2);
+    expect(other.controllers.conversationController.createNew).toHaveBeenCalledTimes(multipleFailures ? 2 : 1);
+    expect(manager.getTabIdentities().every(tab => tab.conversationId === null)).toBe(true);
+  });
+
+  it('reuses an unassembled conversation in another view without creating a local duplicate', async () => {
+    const lookup = (id: string) => ({ id, providerId: 'claude' });
+    const other = createManager(createPlugin({ getCachedConversation: lookup }));
+    await other.manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+    const otherView = { leaf: {}, getTabManager: () => other.manager };
+    const { manager } = createManager(createPlugin({
+      getCachedConversation: lookup,
+      findConversationAcrossViews: (id: string) => id === 'two' ? { tabId: 'two', view: otherView } : null,
+    }));
+    await manager.createTab(null, 'local');
+    await manager.openConversation('two');
+    expect(other.manager.getActiveTabId()).toBe('two');
+    expect(other.manager.getTabCount()).toBe(2);
+    expect(manager.getTabCount()).toBe(1);
+    expect(manager.getTab('local')?.conversationId).toBeNull();
+  });
+
+  it.each(['close', 'delete'] as const)('discards late assembly when %s invalidates its restored shell', async operation => {
+    const { manager } = createManager(createPlugin({ getCachedConversation: (id: string) => ({ id, providerId: 'claude' }) }));
+    await manager.restoreState({ openTabs: ['one', 'two'].map(id => ({ tabId: id, conversationId: id })), activeTabId: 'one' });
+    const pending = deferred<any>();
+    let options: any;
+    mockCreateTabRuntime.mockImplementationOnce(input => { options = input; return pending.promise; });
+    const switching = manager.switchToTab('two');
+    if (operation === 'close') await manager.closeTab('two');
+    else await manager.resetConversationTabs('two');
+    const late = createMockTab(options);
+    pending.resolve(late);
+    await switching;
+    expect(mockDestroyTab).toHaveBeenCalledWith(late);
+    expect(manager.getTab('two')).toBeNull();
+    expect(manager.getActiveTabId()).toBe('one');
+    expect(manager.getTabIdentities().find(tab => tab.id === 'two')?.conversationId).toBe(operation === 'close' ? undefined : null);
   });
 
   it('uses each tab live command snapshot instead of unrelated discovery state', async () => {
@@ -2247,12 +2392,14 @@ describe('TabManager provider execution orchestration', () => {
     const revealLeaf = jest.fn(() => reveal.promise);
     const switchToTab = jest.fn().mockResolvedValue(undefined);
     const targetTab = {
+      id: 'other-tab',
       conversationId: 'cross-view-conversation',
       lifecycleState: 'cold',
     };
     const otherManager = {
       canCreateTab: jest.fn().mockReturnValue(true),
       getTab: jest.fn().mockReturnValue(targetTab),
+      getTabIdentities: () => [targetTab],
       switchToTab,
     };
     const otherView = {
@@ -2292,12 +2439,14 @@ describe('TabManager provider execution orchestration', () => {
     const targetSwitch = deferred<void>();
     const switchToTab = jest.fn(() => targetSwitch.promise);
     const targetTab = {
+      id: 'other-tab',
       conversationId: 'cross-view-conversation',
       lifecycleState: 'cold',
     };
     const otherManager = {
       canCreateTab: jest.fn().mockReturnValue(true),
       getTab: jest.fn().mockReturnValue(targetTab),
+      getTabIdentities: () => [targetTab],
       switchToTab,
     };
     const otherView = {

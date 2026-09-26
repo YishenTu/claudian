@@ -24,6 +24,7 @@ function createConversation(id = 'conversation-1'): Conversation {
 function createRepository(conversation = createConversation()) {
   const persistence: jest.Mocked<ConversationPersistence> = {
     metadataReader: {
+      revalidate: jest.fn().mockResolvedValue([]),
       load: jest.fn().mockResolvedValue(null),
       scan: jest.fn().mockResolvedValue({
         records: [],

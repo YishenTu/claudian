@@ -4,7 +4,7 @@ import type { OpencodeMetadataService } from '../metadata/OpencodeMetadataServic
 import { buildOpencodeBaseModels, encodeOpencodeModelId, splitOpencodeModelLabel } from '../models';
 import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from '../settings';
 
-export function createOpencodeModels(host: ProviderHost, native: Pick<OpencodeMetadataService, 'loadCatalog' | 'warmModelMetadata'>): ProviderModelCatalogController {
+export function createOpencodeModels(host: ProviderHost, native: Pick<OpencodeMetadataService, 'discoverModels' | 'warmModelsMetadata'>): ProviderModelCatalogController {
   return new ProviderModelCatalogController({
     providerId: 'opencode',
     host,
@@ -29,20 +29,11 @@ export function createOpencodeModels(host: ProviderHost, native: Pick<OpencodeMe
       };
     },
     discover: async signal => {
-      const loaded = await native.loadCatalog(signal);
-      if (loaded) {
-        const selected = getOpencodeProviderSettings(host.settings).visibleModels;
-        for (const id of selected) {
-          if (signal.aborted) break;
-          const current = getOpencodeProviderSettings(host.settings);
-          if (!current.visibleModels.includes(id) || Object.hasOwn(current.thinkingOptionsByModel, id)) continue;
-          await native.warmModelMetadata(encodeOpencodeModelId(id), signal);
-        }
-      }
+      const loaded = await native.discoverModels(signal);
       return loaded ? { changed: true } : { changed: false, diagnostics: 'Could not load OpenCode models. Check the CLI path and login, then click Discover.' };
     },
     async afterSelect(addedIds) {
-      for (const id of addedIds) await native.warmModelMetadata(encodeOpencodeModelId(id));
+      await native.warmModelsMetadata(addedIds.map(encodeOpencodeModelId));
     },
   });
 }

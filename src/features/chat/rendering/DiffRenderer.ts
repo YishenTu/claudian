@@ -52,18 +52,15 @@ export function splitIntoHunks(diffLines: DiffLine[], contextLines = 3): DiffHun
   // Convert ranges to hunks
   const hunks: DiffHunk[] = [];
 
+  let oldStart = 1;
+  let newStart = 1;
+  let cursor = 0;
   for (const range of ranges) {
     const lines = diffLines.slice(range.start, range.end + 1);
-
-    // Find the starting line numbers for this hunk
-    let oldStart = 1;
-    let newStart = 1;
-
-    // Count lines before this range
-    for (let i = 0; i < range.start; i++) {
-      const line = diffLines[i];
-      if (line.type === 'equal' || line.type === 'delete') oldStart++;
-      if (line.type === 'equal' || line.type === 'insert') newStart++;
+    while (cursor < range.start) {
+      const type = diffLines[cursor++].type;
+      if (type === 'equal' || type === 'delete') oldStart++;
+      if (type === 'equal' || type === 'insert') newStart++;
     }
 
     hunks.push({ lines, oldStart, newStart });

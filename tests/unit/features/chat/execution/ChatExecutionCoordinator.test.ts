@@ -350,6 +350,82 @@ async function reserveProtectedWarmSlots(
 }
 
 describe('ChatExecutionCoordinator', () => {
+  it.each(['claude', 'codex'] as const)(
+    'validates %s events without serializing resume history after an equivalent rebind',
+    async (providerId) => {
+      const harness = createHarness();
+      const serializeHistory = jest.fn(() => ({ result: 'x'.repeat(1024 * 1024) }));
+      const makeBinding = () => ({
+        conversationId: 'conversation-1',
+        providerId,
+        resumeSeed: {
+          providerSessionId: 'native-session',
+          providerState: { history: { toJSON: serializeHistory } },
+        },
+      });
+      await harness.coordinator.bindConversation(makeBinding());
+      await harness.coordinator.prepare();
+      await harness.coordinator.bindConversation(makeBinding());
+      serializeHistory.mockClear();
+
+      const backend = harness.backends.get(providerId)!;
+      const session = backend.sessions[0];
+      const execute = session.execute.bind(session);
+      jest.spyOn(session, 'execute').mockImplementationOnce((request) => {
+        const run = execute(request) as FakeRun;
+        for (let sequence = 1; sequence <= 20; sequence++) {
+          run.events.push({
+            type: 'text_delta', scope: requestedScope(session, run, sequence), text: `${sequence}`,
+          });
+        }
+        run.events.push({
+          type: 'turn_completed', scope: requestedScope(session, run, 21), reason: 'completed',
+        });
+        run.events.end();
+        return run;
+      });
+      session.emit({
+        type: 'session_error', category: 'provider', message: 'background failure', recoverable: true,
+        scope: { kind: 'session', sessionInstanceId: session.sessionInstanceId, sequence: 1 },
+      });
+      expect(harness.sessionEvents).toHaveLength(1);
+      expect(harness.coordinator.isEventContextCurrent(harness.sessionEventContexts[0])).toBe(true);
+
+      await expect(harness.coordinator.execute(createSubmission())).resolves.toMatchObject({
+        status: 'completed',
+      });
+      expect(harness.requestedEvents.filter(event => event.type === 'text_delta').map(event => event.text))
+        .toEqual(Array.from({ length: 20 }, (_, index) => `${index + 1}`));
+      expect(backend.sessions).toHaveLength(1);
+      expect(serializeHistory).not.toHaveBeenCalled();
+      await harness.coordinator.dispose();
+    },
+  );
+
+  it.each([
+    { providerSessionId: 'replacement-session' },
+    { resumeCheckpoint: 'earlier-message' },
+    { providerState: { leafId: 'replacement-leaf' } },
+  ])('replaces the session when resume configuration changes to %j', async (changedSeed) => {
+    const harness = createHarness();
+    const { session, run, resultPromise } = await beginExecution(harness);
+    const resumeSeed = {
+      providerSessionId: 'native-session',
+      providerState: { leafId: 'leaf-1' },
+      ...changedSeed,
+    };
+    await harness.coordinator.bindConversation({
+      conversationId: 'conversation-1', providerId: 'claude', resumeSeed,
+    });
+    run.events.push({ type: 'text_delta', scope: requestedScope(session, run, 1), text: 'late' });
+    await expect(resultPromise).resolves.toMatchObject({ status: 'invalidated' });
+    expect(harness.requestedEvents).toHaveLength(0);
+    expect(session.disposeCalls).toBe(1);
+    await harness.coordinator.prepare();
+    expect(harness.backends.get('claude')!.configs[1].resumeSeed).toEqual(resumeSeed);
+    await harness.coordinator.dispose();
+  });
+
   it('exposes commands only for the current conversation and provider binding', async () => {
     const harness = createHarness();
     await harness.coordinator.bindConversation({ conversationId: 'one', providerId: 'claude' });

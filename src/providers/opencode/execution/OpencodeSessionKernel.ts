@@ -28,7 +28,7 @@ export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
       ? new OpencodeHTTPSessionKernel(this.options, cliPath, this.options.databasePath === ':memory:'
         ? buildOpencodeRuntimeEnv(this.options.plugin.settings, cliPath)
         : environment, this.serverService)
-      : new DefaultOpencodeACPSessionKernel(this.options);
+      : new DefaultOpencodeACPSessionKernel(this.options, { cliPath, environment, version });
     await this.kernel.connect(options);
   }
 

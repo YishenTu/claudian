@@ -321,7 +321,7 @@ describe('WriteEditRenderer', () => {
     it('should render new file correctly (all inserts)', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall();
-      const state = createWriteEditBlock(parentEl, toolCall);
+      const state = createWriteEditBlock(parentEl, toolCall, { initiallyExpanded: true });
 
       const diffData: ToolDiffData = {
         filePath: 'test.md',
@@ -345,7 +345,7 @@ describe('WriteEditRenderer', () => {
     it('should handle file deletion (all deletes)', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall();
-      const state = createWriteEditBlock(parentEl, toolCall);
+      const state = createWriteEditBlock(parentEl, toolCall, { initiallyExpanded: true });
 
       const diffData: ToolDiffData = {
         filePath: 'test.md',
@@ -367,7 +367,7 @@ describe('WriteEditRenderer', () => {
     it('should handle mixed changes', () => {
       const parentEl = createMockEl();
       const toolCall = createToolCall();
-      const state = createWriteEditBlock(parentEl, toolCall);
+      const state = createWriteEditBlock(parentEl, toolCall, { initiallyExpanded: true });
 
       const diffData: ToolDiffData = {
         filePath: 'test.md',

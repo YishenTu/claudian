@@ -75,6 +75,12 @@ export function classifyOpencodeSessionLoadError(
     : error;
 }
 
+export interface OpencodeLaunchContext {
+  cliPath: string;
+  environment: NodeJS.ProcessEnv;
+  version: 1 | 2 | undefined;
+}
+
 export class DefaultOpencodeACPSessionKernel
   implements OpencodeACPSessionKernel {
   private connection: ACPClientConnection | null = null;
@@ -89,7 +95,10 @@ export class DefaultOpencodeACPSessionKernel
   private connectPromise: Promise<void> | null = null;
   private disposePromise: Promise<void> | null = null;
 
-  constructor(private readonly options: OpencodeACPSessionKernelOptions) {}
+  constructor(
+    private readonly options: OpencodeACPSessionKernelOptions,
+    private readonly launchContext?: OpencodeLaunchContext,
+  ) {}
 
   connect(options: OpencodeKernelConnectOptions): Promise<void> {
     if (this.disposed) {
@@ -118,15 +127,17 @@ export class DefaultOpencodeACPSessionKernel
   ): Promise<void> {
     this.profile = options.profile;
     try {
-      const cliPath = await this.options.plugin
-        .getResolvedProviderCliPath('opencode') ?? 'opencode';
+      const cliPath = this.launchContext?.cliPath
+        ?? await this.options.plugin.getResolvedProviderCliPath('opencode') ?? 'opencode';
       this.#assertNotDisposed();
-      const runtimeEnv = buildOpencodeRuntimeEnv(
+      const runtimeEnv = this.launchContext?.environment ?? buildOpencodeRuntimeEnv(
         this.options.plugin.settings,
         cliPath,
         this.options.databasePath,
       );
-      this.nativeVersion = await detectOpencodeNativeVersion(cliPath, runtimeEnv);
+      this.nativeVersion = this.launchContext
+        ? this.launchContext.version
+        : await detectOpencodeNativeVersion(cliPath, runtimeEnv);
       this.#assertNotDisposed();
       assertOpencodeSessionCompatibility(this.options.nativeVersion, this.nativeVersion);
       const artifacts = await prepareOpencodeLaunchArtifacts({

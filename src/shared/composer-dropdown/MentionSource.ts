@@ -116,7 +116,7 @@ export class MentionSource implements ComposerDropdownSource {
 
   #vaultItems(query: string): readonly ComposerDropdownValueItem[] {
     type Scored = {
-      readonly item: ComposerDropdownValueItem;
+      readonly path: string;
       readonly mtime: number;
       readonly name: string;
       readonly starts: boolean;
@@ -148,16 +148,8 @@ export class MentionSource implements ComposerDropdownSource {
         || folder.name.toLocaleLowerCase().includes(query)
       ))
       .map((folder): Scored => {
-        const normalized = this.callbacks.normalizePathForVault(folder.path) ?? folder.path;
         return {
-          item: {
-            className: 'is-vault-folder',
-            icon: 'folder',
-            id: `vault-folder:${folder.path}`,
-            kind: 'value',
-            label: `@${folder.path}/`,
-            replacement: `@${normalized}/ `,
-          },
+          path: folder.path,
           mtime: folderMtimes.get(folder.path) ?? 0,
           name: folder.name,
           starts: folder.name.toLocaleLowerCase().startsWith(query),
@@ -171,15 +163,8 @@ export class MentionSource implements ComposerDropdownSource {
       .filter(file => file.path.toLocaleLowerCase().includes(query)
         || file.name.toLocaleLowerCase().includes(query))
       .map((file): Scored => {
-        const normalized = this.callbacks.normalizePathForVault(file.path) ?? file.path;
         return {
-          item: {
-            icon: 'file-text',
-            id: `vault-file:${file.path}`,
-            kind: 'value',
-            label: file.path,
-            replacement: (this.options.formatVaultFileMention ?? formatVaultFileMention)(normalized),
-          },
+          path: file.path,
           mtime: file.stat.mtime,
           name: file.name,
           starts: file.name.toLocaleLowerCase().startsWith(query),
@@ -191,7 +176,26 @@ export class MentionSource implements ComposerDropdownSource {
 
     return [...folders, ...fileItems]
       .sort(compare)
-      .map(scored => scored.item);
+      .map((scored): ComposerDropdownValueItem => {
+        const normalized = this.callbacks.normalizePathForVault(scored.path) ?? scored.path;
+        if (scored.type === 'folder') {
+          return {
+            className: 'is-vault-folder',
+            icon: 'folder',
+            id: `vault-folder:${scored.path}`,
+            kind: 'value',
+            label: `@${scored.path}/`,
+            replacement: `@${normalized}/ `,
+          };
+        }
+        return {
+          icon: 'file-text',
+          id: `vault-file:${scored.path}`,
+          kind: 'value',
+          label: scored.path,
+          replacement: (this.options.formatVaultFileMention ?? formatVaultFileMention)(normalized),
+        };
+      });
   }
 
   private notify(): void {

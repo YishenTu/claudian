@@ -18,11 +18,13 @@ interface NativeModel {
 
 /** V2 catalog reads share native credentials without creating a native session. */
 export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
+  private models: NativeModel[] | null = null;
+
   constructor(private readonly client: OpencodeServerLease) {}
 
   async loadCatalog(signal?: AbortSignal): Promise<OpencodeMetadataCatalogResult> {
     const ownedSignal = this.client.signal(signal);
-    const models = await this.loadModels(ownedSignal);
+    const models = this.models = await this.loadModels(ownedSignal);
     const commands = await this.read('command', ownedSignal);
     return {
       commands: normalizeACPAvailableCommands(commands.filter(isNamedRecord).map(command => ({
@@ -34,7 +36,11 @@ export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
   }
 
   async warmModel(rawModelId: string, signal?: AbortSignal): Promise<OpencodeMetadataWarmResult> {
-    const models = await this.loadModels(this.client.signal(signal), rawModelId);
+    const ownedSignal = this.client.signal(signal);
+    ownedSignal.throwIfAborted();
+    const models = this.models?.some(model => `${model.providerID}/${model.id}` === rawModelId)
+      ? this.models
+      : this.models = await this.loadModels(ownedSignal, rawModelId);
     const model = models.find(model => `${model.providerID}/${model.id}` === rawModelId);
     if (!model) throw new Error('OpenCode model is no longer available. Refresh the model catalog.');
     const variants = model.variants.length > 0 ? [...new Set([...model.variants, 'default'])] : [];

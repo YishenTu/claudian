@@ -2,7 +2,7 @@ import type { AppTabManagerState, ProviderId } from '../../core/providers/types'
 import type { FeatureHost, FeatureViewHost } from '../FeatureHost';
 import type { ChatExecutionPersistence } from './execution/ChatExecutionCoordinator';
 import type { WarmExecutionPool } from './execution/WarmExecutionPool';
-import type { AssembledTabRuntime, TabId, TabManagerViewHost } from './tabs/types';
+import type { AssembledTabRuntime, TabId, TabManagerViewHost,TabProviderCatalogContext } from './tabs/types';
 
 export interface TabWorkspaceStateDeliveryRegistration {
   readonly declarationsReady: boolean;
@@ -11,7 +11,9 @@ export interface TabWorkspaceStateDeliveryRegistration {
 
 export interface ChatTabManagerHost {
   canCreateTab(): boolean;
+  resetConversationTabs(conversationId: string): Promise<void>;
   getAllTabs(): AssembledTabRuntime[];
+  getTabIdentities(): readonly TabProviderCatalogContext[];
   getTab(tabId: TabId): AssembledTabRuntime | null;
   isTabWorking(tabId: TabId): boolean;
   switchToTab(tabId: TabId): Promise<void>;

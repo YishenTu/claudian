@@ -20,6 +20,7 @@ function createConversation(id = 'conversation-1'): Conversation {
 function createRepository(conversation = createConversation()) {
   const persistence: jest.Mocked<ConversationPersistence> = {
     metadataReader: {
+      revalidate: jest.fn().mockResolvedValue([]),
       load: jest.fn().mockResolvedValue(null),
       scan: jest.fn().mockResolvedValue({
         records: [],
@@ -49,6 +50,22 @@ function createRepository(conversation = createConversation()) {
 }
 
 describe('ConversationRepository hydration', () => {
+  it.each([false, true])('does not copy unrelated history when invalidating providers (Claude: %s)', (invalidateClaude) => {
+    const affected = createConversation();
+    const unrelated = { ...createConversation('other'), providerId: 'codex' as const };
+    const serializeUnrelated = jest.fn(() => []);
+    Object.defineProperty(unrelated.messages, 'toJSON', { value: serializeUnrelated });
+    const { repository } = createRepository(affected);
+    repository.replaceAll([affected, unrelated]);
+
+    const result = repository.invalidateProviderSessions(invalidateClaude ? ['claude'] : []);
+
+    expect(result).toEqual(invalidateClaude ? [affected] : []);
+    expect(affected.sessionId).toBe(invalidateClaude ? null : 'session-1');
+    expect(unrelated.sessionId).toBe('session-1');
+    expect(serializeUnrelated).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     // Exercise repository fallback persistence against a provider that opts into fallback.
     // Claude's preservation policy has a separate regression below.
@@ -919,6 +936,22 @@ describe('ConversationRepository hydration', () => {
     expect(repository.getCachedConversation(conversation.id)?.messages).toEqual([]);
     await expect(repository.ensureHydrated(conversation.id)).resolves.toBe(conversation);
     expect(hydrateConversationHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('merges mixed metadata authority once in stable order and admits duplicate IDs once', async () => {
+    const { repository, persistence } = createRepository();
+    repository.replaceAll([]);
+    const first = createConversation('first');
+    const second = createConversation('second');
+    const third = createConversation('third');
+    const targets = new Map<string, 'device' | 'unscoped'>([
+      ['first', 'unscoped'], ['second', 'device'], ['third', 'unscoped'],
+    ]);
+    const added = repository.mergeMetadataConversations([first, second, third, { ...first }], targets);
+    expect(added).toEqual([first, second, third]);
+    expect(repository.getAll().map(({ id }) => id)).toEqual(['first', 'second', 'third']);
+    await repository.persistConversations(added);
+    expect(persistence.saveMetadata.mock.calls.map(([, target]) => target)).toEqual(['unscoped', undefined, 'unscoped']);
   });
 
   it('merges background metadata without replacing an already hydrated conversation', () => {

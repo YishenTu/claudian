@@ -126,6 +126,8 @@ describe('ClaudianView model refresh routing', () => {
       settings: {},
     };
     view.tabManager = {
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([codexTab, grokTab, blankGrokTab]),
       primeProviderExecution,
       reconcileProviderAvailability: jest.fn(),
@@ -163,6 +165,8 @@ function createViewHarness(options: {
   };
   view.tabManager = {
     canCreateTab: jest.fn().mockReturnValue(options.canCreateTab),
+    getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
     getAllTabs: jest.fn().mockReturnValue(options.tabs ?? []),
     getTabCount: jest.fn().mockReturnValue(options.tabCount ?? 1),
   };
@@ -415,6 +419,8 @@ describe('ClaudianView tab controls', () => {
     const view = Object.create(ClaudianView.prototype) as any;
     attachSessionBrowser(view);
     view.tabManager = {
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([
         { ui: { linkedContentController: first } },
         { ui: { linkedContentController: second } },
@@ -496,6 +502,8 @@ describe('ClaudianView tab controls', () => {
       requestDualNew: jest.fn(),
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([]),
       },
     });
@@ -550,6 +558,8 @@ describe('ClaudianView tab controls', () => {
       requestDualNew: jest.fn(),
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([]),
       },
     });
@@ -593,6 +603,8 @@ describe('ClaudianView tab controls', () => {
       sessionSearchQuery: 'roadmap',
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([]),
       },
       updateSessionSearchQuery: jest.fn(),
@@ -676,6 +688,8 @@ describe('ClaudianView tab controls', () => {
       sessionSearchQuery: '',
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([]),
       },
     });
@@ -810,6 +824,8 @@ describe('ClaudianView tab controls', () => {
       sessionSidebarDirty: false,
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([]),
       },
     });
@@ -869,6 +885,8 @@ describe('ClaudianView tab controls', () => {
     view.createNewTab = jest.fn();
     view.tabManager = {
       getActiveTab: jest.fn().mockReturnValue(draftTab),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([draftTab]),
       switchToTab: jest.fn(),
     };
@@ -894,6 +912,8 @@ describe('ClaudianView tab controls', () => {
     view.createNewTab = jest.fn();
     view.tabManager = {
       getActiveTab: jest.fn().mockReturnValue(activeTab),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([activeTab, firstDraft, latestDraft]),
       switchToTab: jest.fn().mockResolvedValue(undefined),
     };
@@ -914,6 +934,8 @@ describe('ClaudianView tab controls', () => {
     view.createNewTab = jest.fn().mockResolvedValue(undefined);
     view.tabManager = {
       getActiveTab: jest.fn().mockReturnValue(activeTab),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([activeTab]),
     };
 
@@ -1272,6 +1294,8 @@ describe('ClaudianView tab controls', () => {
       },
       tabManager: {
         discardProvisionalTabs,
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([]),
       },
       viewContainerEl,
@@ -1313,6 +1337,8 @@ describe('ClaudianView tab controls', () => {
       sessionSidebarWidth: null,
       tabManager: {
         discardProvisionalTabs,
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([]),
       },
       viewContainerEl,
@@ -1361,6 +1387,8 @@ describe('ClaudianView tab controls', () => {
       },
       tabManager: {
         discardProvisionalTabs,
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([pinnedTab, previewTab]),
       },
       viewContainerEl,
@@ -1383,6 +1411,8 @@ describe('ClaudianView tab controls', () => {
     Object.assign(view, {
       plugin: { setConversationPinned },
       tabManager: {
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([openTab]),
       },
     });
@@ -1411,10 +1441,14 @@ describe('ClaudianView tab controls', () => {
     };
     const localManager = {
       closeTab: jest.fn().mockResolvedValue(true),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([localTab]),
     };
     const otherManager = {
       closeTab: jest.fn().mockResolvedValue(true),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([otherTab]),
     };
     const otherView = { getTabManager: jest.fn().mockReturnValue(otherManager) };
@@ -1447,6 +1481,8 @@ describe('ClaudianView tab controls', () => {
     };
     const manager = {
       closeTab: jest.fn().mockResolvedValue(true),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([runningTab]),
     };
     const setConversationArchived = jest.fn().mockResolvedValue(undefined);
@@ -1472,6 +1508,8 @@ describe('ClaudianView tab controls', () => {
     const setConversationArchived = jest.fn().mockResolvedValue(undefined);
     const manager = {
       closeTab: jest.fn(),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([]),
       openConversation: jest.fn(),
     };
@@ -1800,6 +1838,8 @@ describe('ClaudianView tab controls', () => {
     attachSessionBrowser(view);
     view.tabManager = {
       getActiveTab: () => activeTab,
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: () => [activeTab, localTab],
       isTabWorking: (tabId: string) => tabId === 'tab-active',
     };
@@ -1920,6 +1960,8 @@ describe('ClaudianView tab controls', () => {
       sessionSidebarDirty: false,
       tabManager: {
         canCreateTab: jest.fn().mockReturnValue(true),
+        getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
         getAllTabs: jest.fn().mockReturnValue([]),
       },
     });
@@ -1988,6 +2030,8 @@ describe('ClaudianView tab controls', () => {
     };
     view.tabManager = {
       canCreateTab: jest.fn().mockReturnValue(true),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([
         { id: 'draft-1', conversationId: null },
       ]),
@@ -2024,6 +2068,8 @@ describe('ClaudianView tab controls', () => {
       getConversationSync: jest.fn().mockReturnValue({ isPinned: true }),
     };
     view.tabManager = {
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn(() => tabs),
       openConversation,
     };
@@ -2044,6 +2090,8 @@ describe('ClaudianView tab controls', () => {
     };
     view.tabManager = {
       canCreateTab: jest.fn().mockReturnValue(false),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([
         { id: 'tab-1', conversationId: 'conversation-1' },
         { id: 'draft-1', conversationId: null },
@@ -2071,6 +2119,8 @@ describe('ClaudianView tab controls', () => {
     };
     view.tabManager = {
       canCreateTab: jest.fn().mockReturnValue(false),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([
         { id: 'tab-1', conversationId: 'conversation-1' },
         { id: 'tab-2', conversationId: 'conversation-2' },
@@ -2132,6 +2182,8 @@ describe('ClaudianView runtime tab initialization', () => {
         return {
           createTab,
           discardProvisionalTabs: jest.fn().mockResolvedValue(undefined),
+          getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
           getAllTabs: jest.fn().mockReturnValue([]),
           getPersistedState: jest.fn().mockReturnValue({
             activeTabId: 'restored-2',
@@ -2242,6 +2294,8 @@ describe('ClaudianView runtime tab initialization', () => {
       destroy,
       discardProvisionalTabs: jest.fn().mockResolvedValue(undefined),
       getActiveTab: jest.fn().mockReturnValue(null),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([]),
       getPersistedState: jest.fn().mockReturnValue({
         activeTabId: null,
@@ -2325,6 +2379,8 @@ describe('ClaudianView runtime tab initialization', () => {
     mockTabManagerConstructor.mockImplementation(() => ({
       createTab,
       discardProvisionalTabs: jest.fn().mockResolvedValue(undefined),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([]),
       getPersistedState: jest.fn().mockReturnValue({
         activeTabId: 'closing-tab-2',
@@ -2405,6 +2461,8 @@ describe('ClaudianView runtime tab initialization', () => {
     mockTabManagerConstructor.mockImplementation(() => ({
       createTab,
       discardProvisionalTabs: jest.fn().mockResolvedValue(undefined),
+      getTabIdentities() { return this.getAllTabs(); },
+      getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([]),
       getPersistedState: jest.fn().mockReturnValue({
         activeTabId: 'finalized-tab-2',

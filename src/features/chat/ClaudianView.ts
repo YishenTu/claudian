@@ -37,6 +37,7 @@ import {
 import { commitProvisionalTab } from './tabs/TabLifecycle';
 import { TabManager } from './tabs/TabManager';
 import { refreshTabContextUsage } from './tabs/TabProviderState';
+import type { TabProviderCatalogContext } from './tabs/types';
 import type { AssembledTabRuntime, TabId } from './tabs/types';
 
 type LoadableView = {
@@ -678,7 +679,7 @@ export class ClaudianView extends ItemView {
     const draftTab = this.findMostRecentUnboundTab();
     if (draftTab) {
       await this.tabManager?.switchToTab(draftTab.id);
-      draftTab.dom.inputEl.focus();
+      this.tabManager?.getTab(draftTab.id)?.dom.inputEl.focus();
       return;
     }
 
@@ -708,8 +709,8 @@ export class ClaudianView extends ItemView {
     this.updateSessionSidebarLayout(this.viewContainerEl.getBoundingClientRect().width);
   }
 
-  private findMostRecentUnboundTab(): AssembledTabRuntime | null {
-    const tabs = this.tabManager?.getAllTabs() ?? [];
+  private findMostRecentUnboundTab(): TabProviderCatalogContext | null {
+    const tabs = this.tabManager?.getTabIdentities() ?? [];
     for (let index = tabs.length - 1; index >= 0; index -= 1) {
       if (tabs[index].conversationId === null) {
         return tabs[index];
@@ -1572,7 +1573,7 @@ export class ClaudianView extends ItemView {
     }
 
     const openTabs = this.getOpenConversationTabs(conversationId);
-    if (openTabs.some(({ tab }) => tab.state.isStreaming)) {
+    if (openTabs.some(({ manager, tab }) => manager.getTab(tab.id)?.state.isStreaming)) {
       new Notice('Running sessions cannot be archived');
       return;
     }
@@ -1594,7 +1595,7 @@ export class ClaudianView extends ItemView {
 
   private getOpenConversationTabs(conversationId: string): Array<{
     manager: ChatTabManagerHost;
-    tab: AssembledTabRuntime;
+    tab: TabProviderCatalogContext;
   }> {
     const managers = new Set(
       this.plugin.getAllViews()
@@ -1605,9 +1606,9 @@ export class ClaudianView extends ItemView {
       managers.add(this.tabManager);
     }
 
-    const openTabs: Array<{ manager: ChatTabManagerHost; tab: AssembledTabRuntime }> = [];
+    const openTabs: Array<{ manager: ChatTabManagerHost; tab: TabProviderCatalogContext }> = [];
     for (const manager of managers) {
-      for (const tab of manager.getAllTabs()) {
+      for (const tab of manager.getTabIdentities()) {
         if (tab.conversationId === conversationId) {
           openTabs.push({ manager, tab });
         }
@@ -2065,7 +2066,7 @@ export class ClaudianView extends ItemView {
     const localTab = this.findTabWithConversation(conversationId);
     if (localTab) {
       return {
-        attention: localTab.state.attention,
+        attention: this.tabManager?.getTab(localTab.id)?.state.attention,
         openState: 'open',
         isRunning: this.tabManager?.isTabWorking(localTab.id) ?? false,
         location: 'current-view',
@@ -2092,13 +2093,13 @@ export class ClaudianView extends ItemView {
     };
   }
 
-  private findTabWithConversation(conversationId: string): AssembledTabRuntime | null {
-    const tabs = this.tabManager?.getAllTabs() ?? [];
+  private findTabWithConversation(conversationId: string): TabProviderCatalogContext | null {
+    const tabs = this.tabManager?.getTabIdentities() ?? [];
     return tabs.find(tab => tab.conversationId === conversationId) ?? null;
   }
 
-  private getHistoryTabIndex(tab: AssembledTabRuntime): number | undefined {
-    const index = this.tabManager?.getAllTabs().findIndex(candidate => candidate.id === tab.id) ?? -1;
+  private getHistoryTabIndex(tab: TabProviderCatalogContext): number | undefined {
+    const index = this.tabManager?.getTabIdentities().findIndex(candidate => candidate.id === tab.id) ?? -1;
     return index >= 0 ? index + 1 : undefined;
   }
 

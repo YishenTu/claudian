@@ -1,3 +1,4 @@
+import { testDate } from '@test/helpers/testClock';
 import type { TFile } from 'obsidian';
 
 import { MentionSource } from '@/shared/composer-dropdown/MentionSource';
@@ -24,6 +25,27 @@ function source(overrides: Record<string, unknown> = {}) {
 }
 
 describe('MentionSource', () => {
+  it('formats only retained suggestions while preserving file and folder ranking', async () => {
+    const now = testDate().getTime();
+    const files = Array.from({ length: 250 }, (_, index) => file(`folder${index % 60}/Note ${index}.md`, now + index + 1));
+    const normalizePathForVault = jest.fn((path: string) => path);
+    const { source: value } = source({
+      getCachedVaultFiles: () => files,
+      getCachedVaultFolders: () => Array.from({ length: 60 }, (_, index) => ({ name: `folder${index}`, path: `folder${index}` })),
+      normalizePathForVault,
+    });
+    const items = await value.load(value.match('@', 1)!, new AbortController().signal);
+    expect(items).toHaveLength(150);
+    expect(items.slice(0, 2)).toEqual([
+      expect.objectContaining({ id: 'vault-file:folder9/Note 249.md', replacement: '@folder9/Note 249.md ' }),
+      expect.objectContaining({ id: 'vault-folder:folder9', replacement: '@folder9/ ' }),
+    ]);
+    expect(normalizePathForVault).toHaveBeenCalledTimes(150);
+    files[0].stat.mtime = now + 1000;
+    const updated = await value.load(value.match('@', 1)!, new AbortController().signal);
+    expect(updated.slice(0, 2).map(item => item.id)).toEqual(['vault-file:folder0/Note 0.md', 'vault-folder:folder0']);
+  });
+
   it('matches @ at a token boundary and preserves file names containing spaces', () => {
     const { source: value } = source();
     expect(value.match('Ask @Al', 7)).toEqual(expect.objectContaining({ query: 'Al' }));

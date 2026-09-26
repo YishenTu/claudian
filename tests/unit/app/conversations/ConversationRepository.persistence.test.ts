@@ -30,6 +30,7 @@ interface MockPersistence extends ConversationPersistence {
 
 function createPersistence(): MockPersistence {
   const metadataReader: SessionMetadataReader = {
+    revalidate: jest.fn().mockResolvedValue([]),
     load: jest.fn(),
     scan: jest.fn(),
     loadMetadata: jest.fn(),

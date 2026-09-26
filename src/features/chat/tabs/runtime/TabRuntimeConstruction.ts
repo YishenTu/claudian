@@ -8,6 +8,7 @@ import type { MessageRenderer } from '../../rendering/MessageRenderer';
 import type { ChatState } from '../../state/ChatState';
 import type { TabAttention, TabReviewOutcome } from '../../state/types';
 import type { ForkContext } from '../TabForking';
+import type { TabSessionState } from '../TabSession';
 import type { TabSession } from '../TabSession';
 import type {
   AssembledTabRuntime,
@@ -29,6 +30,7 @@ export interface TabRuntimeConstructionContext {
   component: Component;
   conversation?: Conversation;
   tabId?: TabId;
+  initialState?: Readonly<TabSessionState>;
   draftModel?: string | null;
   providerId?: ProviderId | null;
   lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'cold'>;

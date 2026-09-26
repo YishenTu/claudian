@@ -261,7 +261,7 @@ export class ChatExecutionCoordinator {
   ): Promise<void> {
     this.#assertAvailable();
     if (sameConversationBinding(this.#conversation, conversation)) {
-      this.#conversation = conversation;
+      // Keep the canonical binding so event guards can compare it by identity.
       return;
     }
 
@@ -1203,7 +1203,8 @@ function sameConversationBinding(
   left: ChatExecutionConversationBinding | null,
   right: ChatExecutionConversationBinding | null,
 ): boolean {
-  if (!left || !right) return left === right;
+  if (left === right) return true;
+  if (!left || !right) return false;
   return (
     left.conversationId === right.conversationId
     && left.providerId === right.providerId

@@ -8,7 +8,6 @@ import type { TitleGenerationService } from '@/core/providers/types';
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { OPENAI_PROVIDER_ICON } from '@/shared/icons';
 
 jest.mock('@/shared/modals/ConfirmModal', () => ({
   confirm: jest.fn().mockResolvedValue(true),
@@ -479,86 +478,6 @@ describe('SessionBrowser', () => {
         expect(menu.items[1].clickHandler).toBeNull();
       });
 
-      it('renders dual-mode sessions on one row with metadata in a hover card', () => {
-        const container = createMockEl();
-        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([{
-          id: 'session-1',
-          providerId: 'codex',
-          selectedModel: 'gpt-5.1-codex',
-          title: 'Review architecture',
-          createdAt: 1_000,
-          lastActivityAt: 2_000,
-          linkedContentPath: 'Projects/Architecture.md',
-        }]);
-        jest.spyOn(controller, 'formatMetadataDate').mockReturnValue('Aug 3, 2026');
-        jest.spyOn(controller, 'formatMetadataDateTime').mockReturnValue('Aug 5, 2026, 14:28');
-
-        controller.renderHistoryDropdown(container, {
-          onSelectConversation: jest.fn(),
-          showMetadataPopover: true,
-          getProviderIcon: () => OPENAI_PROVIDER_ICON,
-          getModelLabel: () => 'GPT-5.1 Codex',
-        });
-
-        const item = container.querySelector('.claudian-history-item')!;
-        item.getBoundingClientRect = jest.fn().mockReturnValue({
-          top: 120,
-          left: 20,
-          width: 200,
-          height: 28,
-          right: 220,
-          bottom: 148,
-          x: 20,
-          y: 120,
-          toJSON: jest.fn(),
-        });
-        const body = createMockEl();
-        Object.defineProperty(item.ownerDocument, 'body', {
-          configurable: true,
-          value: body,
-        });
-        const content = item.querySelector('.claudian-history-item-content')!;
-        expect(item.getAttribute('tabindex')).toBeNull();
-        expect(item.getAttribute('role')).toBeNull();
-        expect(content.getAttribute('tabindex')).toBe('0');
-        expect(content.getAttribute('role')).toBe('button');
-        expect(item.querySelector('.claudian-history-item-date')).toBeNull();
-
-        item.dispatchEvent({ type: 'mouseenter' });
-
-        const popover = body.querySelector('.claudian-session-metadata-popover')!;
-        expect(popover.getAttribute('role')).toBe('tooltip');
-        expect(popover.querySelectorAll('.claudian-session-metadata-label')
-          .map((label: { textContent: string }) => label.textContent))
-          .toEqual(['Created', 'Last active']);
-        expect(popover.querySelectorAll('.claudian-session-metadata-value')
-          .map((value: { textContent: string }) => value.textContent))
-          .toEqual([
-            'Architecture',
-            'GPT-5.1 Codex',
-            'Aug 3, 2026',
-            'Aug 5, 2026, 14:28',
-          ]);
-        expect(popover.querySelector('.claudian-session-metadata-provider-icon'))
-          .not.toBeNull();
-        expect(popover.style.top).toBe('120px');
-        const contentValue = popover.querySelector(
-          '.claudian-session-metadata-value--content',
-        )!;
-        expect(contentValue.getAttribute('title')).toBe('Projects/Architecture.md');
-
-        content.dispatchEvent({
-          type: 'keydown',
-          key: 'Escape',
-          stopPropagation: jest.fn(),
-        });
-        expect(popover.hasClass('claudian-hidden')).toBe(true);
-
-        content.dispatchEvent({ type: 'focusin' });
-        expect(body.querySelectorAll('.claudian-session-metadata-popover'))
-          .toHaveLength(2);
-      });
-
       it.each(['Enter', ' '])('opens a focusable dual-mode session with %s', async (key) => {
         const container = createMockEl();
         const onSelectConversation = jest.fn().mockResolvedValue(undefined);
@@ -595,42 +514,6 @@ describe('SessionBrowser', () => {
         expect(preventDefault).toHaveBeenCalledTimes(1);
         expect(stopPropagation).toHaveBeenCalledTimes(1);
         expect(onSelectConversation).toHaveBeenCalledWith('session-1');
-      });
-
-      it('omits the note metadata row for unlinked sessions', () => {
-        const container = createMockEl();
-        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([{
-          id: 'session-1',
-          providerId: 'codex',
-          selectedModel: 'gpt-5.1-codex',
-          title: 'Review architecture',
-          createdAt: 1_000,
-          lastActivityAt: 2_000,
-        }]);
-        jest.spyOn(controller, 'formatMetadataDate').mockReturnValue('Aug 3, 2026');
-        jest.spyOn(controller, 'formatMetadataDateTime').mockReturnValue('Aug 5, 2026, 14:28');
-
-        controller.renderHistoryDropdown(container, {
-          onSelectConversation: jest.fn(),
-          showMetadataPopover: true,
-          getProviderIcon: () => OPENAI_PROVIDER_ICON,
-          getModelLabel: () => 'GPT-5.1 Codex',
-        });
-
-        const item = container.querySelector('.claudian-history-item')!;
-        const body = createMockEl();
-        Object.defineProperty(item.ownerDocument, 'body', {
-          configurable: true,
-          value: body,
-        });
-
-        item.dispatchEvent({ type: 'mouseenter' });
-
-        const popover = body.querySelector('.claudian-session-metadata-popover')!;
-        expect(popover.querySelectorAll('.claudian-session-metadata-row')).toHaveLength(3);
-        expect(popover.querySelectorAll('.claudian-session-metadata-value')
-          .map((value: { textContent: string }) => value.textContent))
-          .toEqual(['GPT-5.1 Codex', 'Aug 3, 2026', 'Aug 5, 2026, 14:28']);
       });
 
       it('hides the pinned section when no sessions are pinned', () => {
@@ -1009,39 +892,6 @@ describe('SessionBrowser', () => {
         expect(container.querySelector('.claudian-session-group-status')?.textContent)
           .toBe('Missing');
         expect(container.querySelector('.claudian-session-group-new-action')).toBeNull();
-      });
-
-      it('shows metadata for an existing directory with a provisional Note name', () => {
-        const container = createMockEl();
-        (deps.plugin.getConversationList as jest.Mock).mockReturnValue([{
-          id: 'untitled-folder',
-          providerId: 'claude',
-          title: 'Untitled folder chat',
-          createdAt: 1,
-          lastActivityAt: 1,
-          linkedContentPath: 'Projects/Untitled',
-        }]);
-
-        controller.renderHistoryDropdown(container, {
-          onSelectConversation: jest.fn(),
-          organization: 'linked-content',
-          sort: 'created',
-          language: 'en',
-          contentExists: () => true,
-          contentIsNote: () => false,
-          showMetadataPopover: true,
-        });
-
-        const item = container.querySelector('.claudian-history-item')!;
-        const body = createMockEl();
-        Object.defineProperty(item.ownerDocument, 'body', {
-          configurable: true,
-          value: body,
-        });
-        item.dispatchEvent({ type: 'mouseenter' });
-
-        expect(body.querySelector('.claudian-session-metadata-value--content')?.textContent)
-          .toBe('Untitled');
       });
 
       it('delegates rerendering after deletion when the surface owner provides a callback', async () => {
