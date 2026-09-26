@@ -3,11 +3,11 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import test from 'node:test';
 
-import { selectCiTests } from './ciTestSelection.mjs';
+import { selectCiTests, selectRelatedCiTests } from './ciTestSelection.mjs';
 
 const prompt = 'tests/unit/core/prompt/mainAgent.systemPrompt.test.ts';
 const panel = 'tests/unit/features/chat/ClaudianView.test.ts';
-const native = 'tests/unit/core/process/ManagedStdioProcess.test.ts';
+const native = 'tests/integration/core/process/ManagedStdioProcess.test.ts';
 const docs = 'tests/unit/docs/Documentation.test.ts';
 const select = (paths, relatedTests = [], eventName = 'pull_request') => selectCiTests({
   changes: paths.map(path => typeof path === 'string' ? { status: 'M', path } : path),
@@ -34,10 +34,10 @@ test('shared dependencies retain affected native consumers', () => {
   assert.deepEqual(result.crossPlatformTests, [native]);
 });
 
-test('native smoke consumers run on native platforms when affected', () => {
+test('real subprocess consumers run on native platforms when affected', () => {
   for (const consumer of [
-    'tests/unit/utils/windowsCmdShim.test.ts',
-    'tests/unit/core/process/ManagedStdioProcess.test.ts',
+    'tests/integration/core/process/ProcessProbe.test.ts',
+    'tests/integration/core/process/ManagedStdioProcess.test.ts',
   ]) {
     const result = select(['src/utils/path.ts'], [consumer]);
     assert.deepEqual(result.crossPlatformTests, [consumer]);
@@ -46,11 +46,35 @@ test('native smoke consumers run on native platforms when affected', () => {
   }
 });
 
+test('mocked process policies remain in the ordinary suite without native jobs', () => {
+  const unitTests = [
+    'tests/unit/utils/windowsCmdShim.test.ts',
+    'tests/unit/core/process/ManagedStdioProcess.test.ts',
+  ];
+  const result = select(unitTests);
+  assert.deepEqual(result.testFiles, unitTests);
+  assert.deepEqual(result.crossPlatformTests, []);
+  assert.equal(result.crossPlatform, false);
+});
+
+test('real dependency discovery retains native launch checks for shared process changes', () => {
+  const result = selectRelatedCiTests({
+    changes: [{ status: 'M', path: 'src/utils/windowsCmdShim.ts' }],
+  });
+  assert.deepEqual(result.crossPlatformTests.sort(), [
+    'tests/integration/core/process/ManagedStdioProcess.test.ts',
+    'tests/integration/core/process/ProcessProbe.test.ts',
+  ]);
+  assert.equal(result.piWindows, true);
+  assert.ok(result.testFiles.includes('tests/unit/utils/windowsCmdShim.test.ts'));
+  assert.ok(result.testFiles.includes('tests/unit/core/process/ManagedStdioProcess.test.ts'));
+});
+
 test('native selection uses only nonempty shards and retains a Pi-only job', () => {
-  const paths = 'tests/unit/utils/windowsCmdShim.test.ts';
-  const sdk = 'tests/unit/core/process/ManagedStdioProcess.test.ts';
-  assert.deepEqual(select([paths]).crossPlatformShards, ['1/1']);
-  assert.deepEqual(select([paths, sdk]).crossPlatformShards, ['1/2', '2/2']);
+  const probe = 'tests/integration/core/process/ProcessProbe.test.ts';
+  const managed = 'tests/integration/core/process/ManagedStdioProcess.test.ts';
+  assert.deepEqual(select([probe]).crossPlatformShards, ['1/1']);
+  assert.deepEqual(select([probe, managed]).crossPlatformShards, ['1/2', '2/2']);
   assert.deepEqual(select(['tests/integration/providers/pi/runtime/PiSubprocess.windows.test.ts']).crossPlatformShards, ['1/1']);
   assert.deepEqual(select(['package-lock.json']).crossPlatformShards, ['1/2', '2/2']);
 });

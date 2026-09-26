@@ -1,6 +1,6 @@
 const crossPlatformTests = [
-  'tests/unit/utils/windowsCmdShim.test.ts',
-  'tests/unit/core/process/ManagedStdioProcess.test.ts',
+  'tests/integration/core/process/ProcessProbe.test.ts',
+  'tests/integration/core/process/ManagedStdioProcess.test.ts',
 ];
 
 const scriptTests = [

@@ -26,7 +26,7 @@ test('the runner executes only selected Jest and script suites, and handles empt
     run('--selection', '[]', '--script-selection', '[]');
     assert.throws(() => readFileSync(path.join(root, 'jest-args.json')), { code: 'ENOENT' });
     assert.throws(() => readFileSync(path.join(root, 'script-ran')), { code: 'ENOENT' });
-    const nativeTest = 'tests/unit/utils/windowsCmdShim.test.ts';
+    const nativeTest = 'tests/integration/core/process/ManagedStdioProcess.test.ts';
     execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest])], { cwd: root, env });
     assert.deepEqual(JSON.parse(readFileSync(path.join(root, 'jest-args.json'))), ['--runInBand', '--runTestsByPath', nativeTest]);
     execFileSync(process.execPath, ['scripts/run-cross-platform-tests.js', '--selection', JSON.stringify([nativeTest]), '--maxWorkers=2'], { cwd: root, env });

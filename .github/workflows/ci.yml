@@ -222,7 +222,7 @@ jobs:
       - name: Build production plugin
         run: npm run build
 
-      - name: Run affected OS-sensitive tests
+      - name: Run affected real-process integration tests
         id: native-tests
         shell: bash
         env:
