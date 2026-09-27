@@ -79,6 +79,32 @@ describe('User message list containment', () => {
   });
 });
 
+describe('Message table overflow', () => {
+  it('allows long table cells to wrap and keeps wider content scrollable', () => {
+    const style = document.createElement('style');
+    // A host theme may disable wrapping in table cells.
+    style.textContent = 'th, td { white-space: nowrap; }'
+      + readFileSync(path.resolve('src/style/components/messages.css'), 'utf8');
+    document.head.appendChild(style);
+    const message = document.createElement('div');
+    message.className = 'claudian-message-content';
+    message.innerHTML = '<table><tr><th>Long header</th><td>Long value</td></tr></table>';
+    document.body.appendChild(message);
+
+    try {
+      for (const cell of message.querySelectorAll('th, td')) {
+        const computed = window.getComputedStyle(cell);
+        expect(computed.overflowWrap).toBe('anywhere');
+        expect(computed.whiteSpace).toBe('normal');
+      }
+      expect(window.getComputedStyle(message).overflowX).toBe('auto');
+    } finally {
+      message.remove();
+      style.remove();
+    }
+  });
+});
+
 describe('Message action row visibility', () => {
   function revealSelectors(): string[] {
     const style = document.createElement('style');

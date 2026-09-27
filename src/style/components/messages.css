@@ -341,6 +341,7 @@ body.mod-windows .claudian-message-assistant {
 
 .claudian-message-content {
   line-height: 1.5;
+  overflow-x: auto;
   user-select: text;
   -webkit-user-select: text;
   unicode-bidi: plaintext; /* Proper BiDi text handling for mixed RTL/LTR */
@@ -457,6 +458,8 @@ button.claudian-text-copy-btn.copied {
   border: 1px solid var(--background-modifier-border);
   padding: 6px 10px;
   text-align: start;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .claudian-message-content th {
