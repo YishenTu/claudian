@@ -74,7 +74,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  column-gap: 8px;
+  gap: 0 8px;
   padding: 0 0 4px;
   padding-inline-start: 24px;
   font-family: var(--font-monospace);
