@@ -34,7 +34,7 @@ beforeEach(() => {
   });
 });
 
-it('renders a consumed native notification and its follow-up through the real session and chat pipeline', async () => {
+it.each([false, true])('renders a native notification and its follow-up through session and chat (consumption echo: %s)', async echoed => {
   const { renderSessionTaskNotification, renderAutoTriggeredTurn } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
@@ -61,9 +61,13 @@ it('renders a consumed native notification and its follow-up through the real se
     await session.handleNativeMessage({ type: 'system', subtype: 'task_notification', session_id: 'session', task_id: 'task',
       status: 'completed', summary: 'There are 22 Markdown files.', uuid: 'completion' } as any, 1);
     expect(within(messagesEl).queryByRole('button', { name: 'Task notification' })).toBeNull();
-    await session.handleNativeMessage({ type: 'user', session_id: 'session', uuid: '00000000-0000-4000-8000-000000000001', parent_tool_use_id: null,
+    await session.handleNativeMessage({ type: 'user', parent_tool_use_id: 'agent', message: { content: [{ type: 'tool_result', tool_use_id: 'child-bash', content: '(Bash completed with no output)' }] } } as any, 1);
+    await session.handleNativeMessage({ type: 'system', subtype: 'init', session_id: 'session' } as any, 1);
+    if (echoed) await session.handleNativeMessage({ type: 'user', session_id: 'session', uuid: '00000000-0000-4000-8000-000000000001', parent_tool_use_id: null,
       isReplay: true, isSynthetic: true, timestamp: testTime(), message: { role: 'user', content:
         '<task-notification><task-id>task</task-id><status>completed</status><summary>There are 22 Markdown files.</summary></task-notification>' } }, 1);
+    await session.handleNativeMessage({ type: 'assistant', parent_tool_use_id: 'agent', message: { id: 'child', content: [{ type: 'text', text: 'Child output' }] } } as any, 1);
+    expect(within(messagesEl).queryByRole('button', { name: 'Task notification' }) !== null).toBe(echoed);
     await session.handleNativeMessage({ type: 'assistant', message: { id: 'followup', content: [{ type: 'text', text: 'Agent complete: 22 files.' }] } } as any, 1);
     await session.handleNativeMessage({ type: 'result', subtype: 'success' } as any, 1);
     await renderAutoTriggeredTurn(host, { events: output, metadata: {} }, () => true);

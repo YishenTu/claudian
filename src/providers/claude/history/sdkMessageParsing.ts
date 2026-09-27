@@ -379,7 +379,7 @@ export function parseTaskNotification(sdkMsg: SDKNativeMessage): string | null {
       && attachment.commandMode === 'task-notification'
       ? attachment.prompt
       : undefined;
-  return parseClaudeTaskNotification(content);
+  return parseClaudeTaskNotification(content)?.content ?? null;
 }
 
 export function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {
