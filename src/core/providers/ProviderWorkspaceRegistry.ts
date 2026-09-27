@@ -7,7 +7,6 @@ import type {
   ProviderCommandLoader,
   ProviderId,
   ProviderSettingsTabRenderer,
-  ProviderTabWarmupPolicy,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from './types';
@@ -97,10 +96,6 @@ export class ProviderWorkspaceRegistry {
 
   static getCommandLoader(providerId: ProviderId): ProviderCommandLoader | null {
     return this.getServices(providerId)?.commandLoader ?? null;
-  }
-
-  static getTabWarmupPolicy(providerId: ProviderId): ProviderTabWarmupPolicy | null {
-    return this.getServices(providerId)?.tabWarmupPolicy ?? null;
   }
 
   static getSettingsTabRenderer(providerId: ProviderId): ProviderSettingsTabRenderer | null {

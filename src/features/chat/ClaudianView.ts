@@ -253,10 +253,6 @@ export class ClaudianView extends ItemView {
       tab.ui.permissionToggle.updateDisplay();
       tab.ui.serviceTierToggle.updateDisplay();
     }
-
-    if (!changedProviderId) {
-      this.tabManager?.primeProviderExecution();
-    }
   }
 
   invalidateProviderCommandCaches(providerIds?: ProviderId[]): void {

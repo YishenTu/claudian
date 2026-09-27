@@ -78,7 +78,6 @@ jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
     getCommandCatalog: jest.fn().mockReturnValue(null),
     getIfInitialized: jest.fn().mockReturnValue(null),
     getCommandLoader: jest.fn().mockReturnValue(null),
-    getTabWarmupPolicy: jest.fn().mockReturnValue(null),
   },
 }));
 
@@ -227,7 +226,7 @@ function createTabManager(
 
 function expectTabManagerMetadataReleased(manager: TabManager, tabId: string): void {
   const internals = manager as any;
-  expect(internals.providerRuntimeCommandWarmups.has(tabId)).toBe(false);
+  expect(internals.providerRuntimeCommandLoads.has(tabId)).toBe(false);
   expect(internals.providerRuntimeCommandCache.has(tabId)).toBe(false);
   expect(internals.providerCommandDiscoveryStores.has(tabId)).toBe(false);
   expect(internals.tabCommandContextRevisions.has(tabId)).toBe(false);

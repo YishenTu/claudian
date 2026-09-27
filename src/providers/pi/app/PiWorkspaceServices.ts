@@ -4,7 +4,6 @@ import type {
 } from '../../../core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
-  ProviderTabWarmupPolicy,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
@@ -23,12 +22,6 @@ export interface PiWorkspaceServices extends ProviderWorkspaceServices {
 export interface PiWorkspaceServicesOptions {
   readonly commandMetadataProbe?: PiCommandMetadataProbe;
 }
-
-const piTabWarmupPolicy: ProviderTabWarmupPolicy = {
-  resolveMode() {
-    return 'commands';
-  },
-};
 
 export async function createPiWorkspaceServices(
   plugin: ProviderHost,
@@ -61,7 +54,6 @@ export async function createPiWorkspaceServices(
     commandCatalog: new PiCommandCatalog(),
     commandLoader: new PiCommandLoader(commandMetadataProbe),
     settingsTabRenderer: createPiSettingsTabRenderer({ cliResolver, modelCatalog }),
-    tabWarmupPolicy: piTabWarmupPolicy,
     async dispose() {
       unregisterTransitionHook();
       await Promise.all([commandMetadataProbe.dispose(), modelCatalog.dispose()]);

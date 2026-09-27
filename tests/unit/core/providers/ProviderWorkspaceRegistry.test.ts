@@ -110,18 +110,6 @@ describe('ProviderWorkspaceRegistry', () => {
     expect(commandCatalog).not.toHaveProperty('saveVaultEntry');
   });
 
-  it('returns the tab warmup policy for a provider', () => {
-    const tabWarmupPolicy = {
-      resolveMode: jest.fn().mockReturnValue('commands'),
-    };
-
-    ProviderWorkspaceRegistry.setServices('opencode', {
-      tabWarmupPolicy: tabWarmupPolicy as any,
-    });
-
-    expect(ProviderWorkspaceRegistry.getTabWarmupPolicy('opencode')).toBe(tabWarmupPolicy);
-  });
-
   it('deduplicates concurrent provider initialization', async () => {
     const initialize = jest.fn(async () => ({ commandCatalog: {} as any }));
     ProviderWorkspaceRegistry.register('codex', { initialize });

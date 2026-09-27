@@ -68,7 +68,6 @@ describe('GrokWorkspaceServices', () => {
     expect(services.cliResolver).toBeInstanceOf(GrokCLIResolver);
     expect(services.commandCatalog).toBeInstanceOf(GrokCommandCatalog);
     expect(services.settingsTabRenderer).toBe(grokSettingsTabRenderer);
-    expect(services.tabWarmupPolicy?.resolveMode({} as any)).toBe('commands');
     expect(services.commandLoader).toBeInstanceOf(GrokCommandLoader);
     expect(services).not.toHaveProperty('beginAuxiliaryServicesEnvironmentChange');
     expect(mockDiscoverCatalog).not.toHaveBeenCalled();

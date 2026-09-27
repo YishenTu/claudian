@@ -347,33 +347,11 @@ export interface ProviderCommandLoader {
   ): Promise<ProviderCommandDiscoveryResult<SlashCommand>>;
 }
 
-export type ProviderTabWarmupMode = 'none' | 'commands' | 'execution';
-
-export type ProviderTabWarmupLifecycleState = 'provisional' | 'cold' | 'warm' | 'closing';
-
-export interface ProviderTabWarmupContext {
-  coordinatorState: 'absent' | 'idle' | 'active' | 'stale';
-  conversation: Conversation | null;
-  hasResumableNativeSeed: boolean;
-  plugin: ProviderHost;
-  tab: {
-    conversationId: string | null;
-    draftModel: string | null;
-    lifecycleState: ProviderTabWarmupLifecycleState;
-    providerId: ProviderId;
-  };
-}
-
-export interface ProviderTabWarmupPolicy {
-  resolveMode(context: ProviderTabWarmupContext): ProviderTabWarmupMode;
-}
-
 export interface ProviderWorkspaceServices {
   commandCatalog?: ProviderCommandCatalog | null;
   vaultCommandRepository?: ProviderVaultEntryRepository | null;
   cliResolver?: ProviderCLIResolver | null;
   commandLoader?: ProviderCommandLoader | null;
-  tabWarmupPolicy?: ProviderTabWarmupPolicy | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
   modelCatalog?: ProviderModelCatalog;
   dispose?(): Promise<void> | void;
