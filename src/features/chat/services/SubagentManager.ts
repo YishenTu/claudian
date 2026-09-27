@@ -750,27 +750,19 @@ export class SubagentManager {
     previousEl?: HTMLElement,
   ): string[] {
     const update = this.sessionSubagentUpdates.get(toolCall.id);
-    if (update) toolCall.subagent = { ...adapter.buildSubagentInfo(toolCall, toolCalls), ...update };
-    const info = adapter.buildSubagentInfo(toolCall, toolCalls);
+    const info = { ...adapter.buildSubagentInfo(toolCall, toolCalls), ...update };
     toolCall.subagent = info;
     this.#renderLifecycleState(info, parentEl, previousEl);
     this.#applyLifecycleProgress(toolCall, toolCalls, adapter);
     return this.#bindLifecycleAgent(toolCall.id, info.agentId, toolCalls, adapter);
   }
 
-  public applySessionUpdate(
-    info: SubagentInfo, tools: ToolCallInfo[], parentEl?: HTMLElement | null, previousEl?: HTMLElement,
-  ): boolean {
-    const tool = tools.find(candidate => candidate.id === info.id
-      || (info.agentId && candidate.subagent?.agentId === info.agentId));
-    const id = tool?.id ?? info.id;
-    const updated = { ...tool?.subagent, ...info, id };
-    this.sessionSubagentUpdates.set(id, updated);
-    if (!tool) return false;
-    tool.subagent = updated;
-    if (info.agentId) this.lifecycleAgentIds.set(info.agentId, id);
-    this.#renderLifecycleState(updated, parentEl, previousEl);
-    return true;
+  public applySessionUpdate(info: SubagentInfo): void {
+    this.sessionSubagentUpdates.set(info.id, info);
+  }
+
+  public hasSessionSubagent(id: string): boolean {
+    return this.sessionSubagentUpdates.has(id);
   }
 
   public getLifecycleElement(id: string): HTMLElement | undefined {
@@ -795,7 +787,7 @@ export class SubagentManager {
     if (adapter.isHiddenTool(toolCall.name) && linkedIds.length === 0) {
       return { consumed: false, hiddenToolIds };
     }
-    if (adapter.isSpawnTool(toolCall.name)) {
+    if (adapter.isSpawnTool(toolCall.name) || toolCall.subagent?.lifecycleSource === 'session') {
       Object.assign(toolCall, resolved);
       const info = adapter.buildSubagentInfo(toolCall, toolCalls);
       const agentId = adapter.extractSpawnResult(content, toolCall).agentId ?? info.agentId;

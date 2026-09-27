@@ -239,7 +239,7 @@ export class StreamController {
           break;
         }
         if (subagentAdapter?.protocol === 'lifecycle') {
-          if (subagentAdapter.isSpawnTool(chunk.name)) {
+          if (subagentAdapter.isSpawnTool(chunk.name) || this.deps.subagentManager.hasSessionSubagent(chunk.id)) {
             this.#handleProviderSubagentSpawn(chunk, msg, subagentAdapter);
             break;
           }
@@ -608,9 +608,12 @@ export class StreamController {
   #placeProviderSubagent(toolCall: ToolCallInfo, msg: ChatMessage, adapter: ProviderSubagentLifecycleAdapter): void {
     const { state, subagentManager } = this.deps;
     const id = toolCall.id;
-    const previous = subagentManager.getLifecycleElement(id) ?? state.toolCallElements.get(id);
+    const content = this.#getMessageContentEl(msg);
+    const restored = content ? [...content.querySelectorAll<HTMLElement>('[data-subagent-id]')]
+      .find(element => element.dataset.subagentId === id) : undefined;
+    const previous = restored ?? subagentManager.getLifecycleElement(id) ?? state.toolCallElements.get(id);
     const pending = state.pendingTools.get(id);
-    const parent = previous?.parentElement ?? pending?.parentEl ?? state.currentContentEl;
+    const parent = previous?.parentElement ?? pending?.parentEl ?? content;
     this.#cancelPendingToolOutputRender(id);
     if (pending) {
       this.#flushPendingToolsBefore(id);
@@ -1210,17 +1213,16 @@ export class StreamController {
   }
 
   public handleSubagentUpdate(info: SubagentInfo): boolean {
-    const messages = this.deps.state.messages;
-    const owner = messages.find(message => message.toolCalls?.some(tool => tool.id === info.id
-      || (info.agentId && tool.subagent?.agentId === info.agentId)));
-    const tool = owner?.toolCalls?.find(tool => tool.id === info.id || tool.subagent?.agentId === info.agentId);
-    const parent = owner ? this.deps.getMessagesEl().querySelector<HTMLElement>(
-      `[data-message-id="${owner.id}"] .claudian-message-content`,
-    ) : null;
-    const previous = parent && tool ? [...parent.querySelectorAll<HTMLElement>('[data-subagent-id]')]
-      .find(element => element.dataset.subagentId === tool.id) : undefined;
-    return this.deps.subagentManager.applySessionUpdate(info,
-      messages.flatMap(message => message.toolCalls ?? []), parent, previous);
+    this.deps.subagentManager.applySessionUpdate(info);
+    for (const message of this.deps.state.messages) {
+      const tool = message.toolCalls?.find(candidate => candidate.id === info.id);
+      if (!tool) continue;
+      const adapter = this.getSubagentAdapter(tool.name);
+      if (adapter?.protocol !== 'lifecycle') return false;
+      this.#placeProviderSubagent(tool, message, adapter);
+      return true;
+    }
+    return false;
   }
 
   public handleSubagentProgress(progress: SubagentProgress): void {

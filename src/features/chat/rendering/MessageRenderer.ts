@@ -599,7 +599,7 @@ export class MessageRenderer {
       this.#renderTaskSubagent(contentEl, toolCall);
     } else if (
       subagentAdapter?.protocol === 'lifecycle'
-      && subagentAdapter.isSpawnTool(toolCall.name)
+      && (subagentAdapter.isSpawnTool(toolCall.name) || toolCall.subagent?.lifecycleSource === 'session')
       && msg
     ) {
       this.#renderProviderLifecycleSubagent(contentEl, toolCall, msg);
@@ -636,7 +636,7 @@ export class MessageRenderer {
   ): boolean {
     const agentIdToSpawnId = new Map<string, string>();
     for (const sibling of msg.toolCalls ?? []) {
-      if (!adapter.isSpawnTool(sibling.name)) continue;
+      if (!adapter.isSpawnTool(sibling.name) && sibling.subagent?.lifecycleSource !== 'session') continue;
       const spawnResult = adapter.extractSpawnResult(sibling.result, sibling);
       const agentId = spawnResult.agentId
         ?? adapter.buildSubagentInfo(sibling, msg.toolCalls ?? []).agentId;

@@ -419,19 +419,20 @@ it('preserves async prompt expansion and focus on repeated tool snapshots', () =
 });
 
 
-it('keeps the native Codex card updated after parent settlement and a later follow-up', async () => {
+it.each(['before spawn', 'after spawn'])('keeps the native Codex card updated with session events %s, parent settlement, and a follow-up', async timing => {
   const view = createCodexLifecycleView();
   let tracker = new CodexSubagentTracker(info => view.stream.handleSubagentUpdate(info), async () => {
     throw new Error('Child read unavailable');
   });
   const started = { type: 'subAgentActivity' as const, id: 'spawn', kind: 'started' as const,
     agentThreadId: 'child', agentPath: '/root/helper' };
+  if (timing === 'before spawn') tracker.activity(started, 'parent-turn');
   view.router.handleNotification('rawResponseItem/completed', { threadId: 'parent', turnId: 'parent-turn', item: {
     type: 'function_call', call_id: 'spawn', name: 'spawn_agent',
     arguments: JSON.stringify({ task_name: 'helper', message: 'gAAAAAEncryptedPrompt==' }),
   } });
   await view.flush();
-  tracker.activity(started, 'parent-turn');
+  if (timing === 'after spawn') tracker.activity(started, 'parent-turn');
   view.router.handleNotification('item/completed', { threadId: 'parent', turnId: 'parent-turn', item: started });
   await view.flush();
   expect(view.parent.querySelectorAll('.claudian-subagent-list')).toHaveLength(1);
@@ -467,24 +468,40 @@ it('keeps the native Codex card updated after parent settlement and a later foll
   await Promise.resolve();
   expect(view.parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(1);
   expect(view.parent.textContent).toContain('Ready.');
-  tracker.activity({ ...started, id: 'followup', kind: 'interacted' }, 'later-parent-turn');
-  tracker.turnStarted('child', 'child-turn-2');
-  expect(view.tools[0].subagent).toMatchObject({ status: 'running' });
-  expect(view.parent.textContent).not.toContain('Ready.');
-  expect(view.parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(0);
-  tracker.turnCompleted('child', { id: 'child-turn-2', status: 'completed', error: null, items: [
-    { type: 'agentMessage', id: 'answer-2', text: 'Two.', phase: 'final_answer', memoryCitation: null },
-  ] });
-  expect(view.tools[0].subagent).toMatchObject({ status: 'completed', result: 'Two.' });
-  expect(view.parent.textContent).toContain('Two.');
   const laterMessage: ChatMessage = { id: 'later', role: 'assistant', content: '', timestamp: testDate().getTime(), toolCalls: [] };
   view.state.addMessage(laterMessage);
   view.state.currentContentEl = view.renderer.addMessage(laterMessage).querySelector('.claudian-message-content');
+  const followup = { type: 'tool_use' as const, id: 'followup', name: 'followup_task', input: { target: 'helper', message: 'Run bash date' } };
+  if (timing === 'after spawn') await view.stream.handleStreamChunk(followup, laterMessage);
+  tracker.activity({ ...started, id: 'followup', kind: 'interacted' }, 'later-parent-turn');
+  tracker.turnStarted('child', 'child-turn-2');
+  if (timing === 'before spawn') await view.stream.handleStreamChunk(followup, laterMessage);
+  expect(view.tools[0].subagent).toMatchObject({ status: 'completed', result: 'Ready.' });
+  expect(laterMessage.toolCalls![0].subagent).toMatchObject({ id: 'followup', status: 'running', toolCalls: [] });
+  for (const item of [
+    { type: 'custom_tool_call', call_id: 'date-call', name: 'exec', input: "text(await tools.exec_command({cmd: \"bash -lc 'date'\"}));" },
+    { type: 'custom_tool_call_output', call_id: 'date-call', output: [{ type: 'input_text', text: 'Date result' }] },
+  ]) tracker.handleNotification('child', 'child-turn-2', 'rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn-2', item });
+  tracker.turnCompleted('child', { id: 'child-turn-2', status: 'completed', error: null, items: [
+    { type: 'agentMessage', id: 'answer-2', text: 'Two.', phase: 'final_answer', memoryCitation: null },
+  ] });
+  await view.stream.handleStreamChunk({ type: 'tool_result', id: 'followup', content: '' }, laterMessage);
   await view.stream.handleStreamChunk({ type: 'tool_use', id: 'wait', name: 'wait_agent', input: { targets: ['helper'] } }, laterMessage);
   await view.stream.handleStreamChunk({ type: 'tool_result', id: 'wait', content: 'aborted by user', isError: true }, laterMessage);
-  expect(view.tools[0].subagent).toMatchObject({ status: 'completed', result: 'Two.' });
-  expect(view.parent.textContent).not.toContain('aborted by user');
-  expect(view.parent.querySelectorAll('.claudian-subagent-list')).toHaveLength(1);
+  for (const reload of [false, true]) {
+    if (reload) view.renderer.renderMessages(view.state.messages, () => 'Hello');
+    const original = view.parent.querySelector('[data-message-id="response"]')! as HTMLElement;
+    const later = view.parent.querySelector('[data-message-id="later"]')! as HTMLElement;
+    expect(original.querySelectorAll('.claudian-subagent-list')).toHaveLength(1);
+    expect(original.textContent).toContain('Ready.');
+    expect(original.textContent).toContain('Clock result');
+    expect(original.textContent).not.toContain('Date result');
+    expect(later.querySelectorAll('.claudian-subagent-list')).toHaveLength(1);
+    expect(later.textContent).toContain('Two.');
+    expect(later.textContent).toContain('Date result');
+    expect(later.textContent).not.toContain('Clock result');
+    expect(view.parent.textContent).not.toContain('aborted by user');
+  }
   expect(await axe(view.parent)).toHaveNoViolations();
 });
 

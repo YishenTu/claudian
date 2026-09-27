@@ -1584,12 +1584,15 @@ function parseModernSessionTurns(records: ParsedSessionRecord[]): CodexParsedTur
     if (payload.type !== 'item_completed') continue;
     const activity = normalizeCodexSubagentActivity(payload.item);
     if (!activity) continue;
-    const tool = activity.kind === 'started' ? tools.find(tool => tool.id === activity.id) : agents.get(activity.agentThreadId);
-    if (!tool) continue;
     const interaction = tools.find(candidate => candidate.id === activity.id);
     const startsWork = activity.kind === 'started' || (activity.kind === 'interacted'
       && ['followup_task', 'resume_agent', 'send_input'].includes(interaction?.name ?? ''));
-    tool.subagent = applyCodexSubagentActivity(activity, tool.subagent ?? buildCodexSubagentInfo(tool), record.timestamp, startsWork);
+    const previous = agents.get(activity.agentThreadId);
+    const tool = startsWork ? interaction : previous;
+    if (!tool) continue;
+    const initial = tool.subagent ?? buildCodexSubagentInfo(tool);
+    if (startsWork && previous?.subagent) initial.description = previous.subagent.description;
+    tool.subagent = applyCodexSubagentActivity(activity, initial, record.timestamp, startsWork);
     agents.set(activity.agentThreadId, tool);
   }
   return turns;

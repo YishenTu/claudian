@@ -30,17 +30,16 @@ import {
 } from './CodexHistoryStore';
 import { hydrateCodexSubagentHistory } from './CodexSubagentHistory';
 
-async function readSessionTurns(sessionFilePath: string, throughTurnId?: string): Promise<CodexParsedTurn[]> {
+async function readSessionContent(sessionFilePath: string): Promise<string> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 10_000);
   try {
-    const content = await fs.readFile(sessionFilePath, {
+    return await fs.readFile(sessionFilePath, {
       encoding: 'utf-8',
       signal: controller.signal,
     });
-    return parseCodexSessionTurns(content, throughTurnId);
   } catch {
-    return [];
+    return '';
   } finally {
     window.clearTimeout(timer);
   }
@@ -170,7 +169,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
       );
       if (!sourceSessionFile) return conversation;
 
-      const turns = await readSessionTurns(sourceSessionFile, state.forkSource!.resumeAt);
+      const turns = parseCodexSessionTurns(await readSessionContent(sourceSessionFile), state.forkSource!.resumeAt);
       const resumeAt = state.forkSource!.resumeAt;
       const truncated = this.#truncateTurnsAtCheckpoint(turns, resumeAt);
       if (!truncated) {
@@ -202,11 +201,12 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         : null);
 
       if (sourceSessionFile && forkSessionFile) {
-        const sourceTurns = await readSessionTurns(sourceSessionFile);
-        const forkTurns = await readSessionTurns(forkSessionFile);
+        const sourceContent = await readSessionContent(sourceSessionFile);
+        const sourceTurns = parseCodexSessionTurns(sourceContent);
+        const forkTurns = parseCodexSessionTurns(await readSessionContent(forkSessionFile));
 
         const resumeAt = state.forkSource.resumeAt;
-        const sourcePrefix = this.#truncateTurnsAtCheckpoint(await readSessionTurns(sourceSessionFile, resumeAt), resumeAt);
+        const sourcePrefix = this.#truncateTurnsAtCheckpoint(parseCodexSessionTurns(sourceContent, resumeAt), resumeAt);
         if (!sourcePrefix) {
           return conversation;
         }
@@ -373,7 +373,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     };
     const deadline = Date.now() + CODEX_HISTORY_LOOKUP_TIMEOUT_MS;
     let sourcePath = await this.#resolveSourceSessionFile(providerState, pathContext, deadline);
-    let turns = sourcePath ? await readSessionTurns(sourcePath) : [];
+    let turns = sourcePath ? parseCodexSessionTurns(await readSessionContent(sourcePath)) : [];
     if (turns.length === 0) {
       const trustedRoot = resolveCodexTranscriptRootHint(sourceTranscriptRootPath, pathContext);
       const roots = [
@@ -386,7 +386,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         );
         if (!candidate || candidate === sourcePath) continue;
         sourcePath = candidate;
-        turns = await readSessionTurns(candidate);
+        turns = parseCodexSessionTurns(await readSessionContent(candidate));
         if (turns.length > 0) break;
       }
     }

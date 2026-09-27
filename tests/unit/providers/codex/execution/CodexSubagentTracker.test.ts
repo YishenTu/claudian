@@ -22,7 +22,7 @@ it('fences completion reads across a follow-up and deduplicates native completio
   tracker.turnStarted('child', 'child-turn-2');
   oldRead(child('Old answer.'));
   await Promise.resolve();
-  expect(updates.at(-1)).toMatchObject({ id: 'spawn', status: 'running', result: undefined });
+  expect(updates.at(-1)).toMatchObject({ id: 'followup', status: 'running', result: undefined });
   const count = updates.length;
   tracker.activity({ ...started, id: 'complete', kind: 'completed' }, 'parent-1');
   tracker.turnCompleted('child', child('Old answer.').turns[0]);
@@ -45,7 +45,7 @@ it('fences a pending child read after the native process is released', async () 
   expect(tracker.hasBackgroundWork()).toBe(false);
 });
 
-it('restores the original spawn identity on resume and accepts new child turns', async () => {
+it('restores agent identity on resume and assigns a separate card to new child turns', async () => {
   const publish = jest.fn();
   const tracker = new CodexSubagentTracker(publish, async () => child('Ready.'));
   tracker.seed({ ...child(''), id: 'parent', turns: [{ id: 'parent-turn', status: 'completed', error: null,
@@ -55,7 +55,7 @@ it('restores the original spawn identity on resume and accepts new child turns',
   await Promise.resolve();
   tracker.turnStarted('child', 'new-turn');
   await Promise.resolve();
-  expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'spawn', agentId: 'child', status: 'running', description: 'Bohr (model, high)' }));
+  expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'followup', agentId: 'child', status: 'running', description: 'Bohr (model, high)' }));
 });
 
 it('does not restart an idle child when native send_message reports interacted', async () => {

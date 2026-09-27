@@ -8,7 +8,7 @@ interface TrackedAgent {
   parentTurnId: string;
   agentPath: string;
   nativeTurnId?: string;
-  pendingParentTurnId?: string;
+  pendingInteraction?: { id: string; parentTurnId: string };
   revision: number;
   readGeneration: number;
   seen: Set<string>;
@@ -43,7 +43,7 @@ export class CodexSubagentTracker {
     let agent = this.agents.get(item.agentThreadId);
     if (agent?.seen.has(item.id)) return;
     if (hydrate && agent && item.kind === 'completed' && agent.parentTurnId !== parentTurnId
-      && agent.pendingParentTurnId !== parentTurnId) return;
+      && agent.pendingInteraction?.parentTurnId !== parentTurnId) return;
     if (!agent) {
       agent = {
         info: {
@@ -57,11 +57,14 @@ export class CodexSubagentTracker {
     }
     agent.seen.add(item.id);
     if (item.kind === 'interacted') {
-      agent.pendingParentTurnId = parentTurnId;
+      agent.pendingInteraction = { id: item.id, parentTurnId };
       // An idle message starts no work. Seeded state cannot replace hydrated raw-only tools.
       if (agent.info.status !== 'running') return;
     }
     else if (item.kind === 'started') agent.parentTurnId = parentTurnId;
+    else if (agent.pendingInteraction?.parentTurnId === parentTurnId && agent.parentTurnId !== parentTurnId) {
+      this.beginInvocation(agent);
+    }
     agent.revision += 1;
     agent.info = applyCodexSubagentActivity(item, agent.info, Date.now());
     if (hydrate) {
@@ -75,15 +78,28 @@ export class CodexSubagentTracker {
     if (!agent) return false;
     if (agent.seen.has(`turn:${turnId}`)) return true;
     agent.seen.add(`turn:${turnId}`);
+    this.beginInvocation(agent);
     agent.nativeTurnId = turnId;
-    agent.parentTurnId = agent.pendingParentTurnId ?? agent.parentTurnId;
-    agent.pendingParentTurnId = undefined;
     agent.revision += 1;
     agent.router = undefined;
     agent.info = { ...agent.info, status: 'running', toolCalls: [], result: undefined, startedAt: Date.now(), completedAt: undefined };
     this.publish({ ...agent.info });
     void this.hydrate(threadId, agent);
     return true;
+  }
+
+  private beginInvocation(agent: TrackedAgent): void {
+    const pending = agent.pendingInteraction;
+    if (!pending) return;
+    agent.parentTurnId = pending.parentTurnId;
+    agent.pendingInteraction = undefined;
+    agent.nativeTurnId = undefined;
+    agent.router = undefined;
+    agent.info = {
+      id: pending.id, agentId: agent.info.agentId, lifecycleSource: 'session',
+      description: agent.info.description, mode: 'sync', isExpanded: false,
+      status: 'running', toolCalls: [], startedAt: Date.now(),
+    };
   }
 
   turnCompleted(threadId: string, turn: Turn): boolean {
@@ -154,8 +170,6 @@ export class CodexSubagentTracker {
       const currentLifecycle = agent.revision === revision;
       if (currentLifecycle && turn?.status === 'inProgress') {
         agent.nativeTurnId = turn.id;
-        agent.parentTurnId = agent.pendingParentTurnId ?? agent.parentTurnId;
-        agent.pendingParentTurnId = undefined;
       }
       const canHydrateTurn = currentLifecycle && turn && (!agent.nativeTurnId || agent.nativeTurnId === turn.id)
         && (agent.info.status !== 'running' || turn.status === 'inProgress');
