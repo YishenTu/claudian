@@ -341,7 +341,7 @@ export class MessageRenderer {
       this.#renderAssistantContent(msg, contentEl);
       for (const card of contentEl.querySelectorAll<HTMLElement>('[data-subagent-id]')) {
         const info = msg.toolCalls?.find(tool => tool.id === card.dataset.subagentId)?.subagent;
-        if (info) renderSubagentHistory(card, info, allMessages ?? [msg], this.messagesEl);
+        if (info) renderSubagentHistory(card, info, allMessages ?? [msg]);
       }
       if (msg.isInterrupt) {
         this.appendInterruptIndicator(contentEl);

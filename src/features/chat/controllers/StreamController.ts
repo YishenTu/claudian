@@ -629,7 +629,7 @@ export class StreamController {
     }
     const card = subagentManager.getLifecycleElement(id);
     if (card && toolCall.subagent) {
-      renderSubagentHistory(card, toolCall.subagent, state.messages, this.deps.getMessagesEl());
+      renderSubagentHistory(card, toolCall.subagent, state.messages);
     }
   }
 

@@ -38,26 +38,9 @@ function createDisclosure(parent: HTMLElement, label: string, render: (body: HTM
   });
 }
 
-function navigateToRun(messagesEl: HTMLElement, run: ToolCallInfo): void {
-  const card = [...messagesEl.querySelectorAll<HTMLElement>('[data-subagent-id]')]
-    .find(element => element.dataset.subagentId === run.id);
-  const header = card?.querySelector<HTMLElement>('.claudian-subagent-header');
-  if (!header) return;
-  // Completed turns may have moved the original card into a closed work disclosure.
-  for (let ancestor = header.parentElement; ancestor && ancestor !== messagesEl; ancestor = ancestor.parentElement) {
-    if (!ancestor.hidden || !ancestor.id) continue;
-    const toggle = [...messagesEl.querySelectorAll<HTMLButtonElement>('button[aria-controls]')]
-      .find(button => button.getAttribute('aria-controls') === ancestor.id);
-    toggle?.click();
-  }
-  if (header.getAttribute('aria-expanded') !== 'true') header.click();
-  header.focus({ preventScroll: true });
-  header.scrollIntoView({ block: 'center' });
-}
-
 /** View-only history: earlier cards stay authoritative, and copies are rendered only on demand. */
 export function renderSubagentHistory(
-  card: HTMLElement, info: SubagentInfo, messages: ChatMessage[], messagesEl: HTMLElement,
+  card: HTMLElement, info: SubagentInfo, messages: ChatMessage[],
 ): void {
   const content = card.querySelector<HTMLElement>('.claudian-subagent-content');
   if (!content) return;
@@ -75,12 +58,8 @@ export function renderSubagentHistory(
       const status = run.subagent!.status;
       const label = status === 'completed' ? 'Completed' : status === 'error' ? 'Error' : 'Running';
       createDisclosure(body, `Run ${index + 1} · ${label}`, runBody => {
-        const navigate = runBody.createEl('button', {
-          cls: 'claudian-subagent-history-link', text: 'Go to original turn', attr: { type: 'button' },
-        });
-        navigate.addEventListener('click', () => navigateToRun(messagesEl, run));
         const view = createSubagentBlock(runBody, run.subagent!);
-        // These are passive details, not another live card or another navigation target.
+        // These are passive details, not another live card.
         delete view.wrapperEl.dataset.subagentId;
         view.headerEl.remove();
         view.contentEl.removeClass('claudian-hidden');

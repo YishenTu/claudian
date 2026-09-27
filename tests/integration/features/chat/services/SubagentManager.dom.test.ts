@@ -419,7 +419,7 @@ it('preserves async prompt expansion and focus on repeated tool snapshots', () =
 });
 
 
-it.each(['before spawn', 'after spawn'])('keeps the native Codex card updated with session events %s, parent settlement, and a follow-up', async timing => {
+it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex card updated with session events %s, parent settlement, and a follow-up', async timing => {
   const view = createCodexLifecycleView();
   let tracker = new CodexSubagentTracker(info => view.stream.handleSubagentUpdate(info), async () => {
     throw new Error('Child read unavailable');
@@ -432,7 +432,7 @@ it.each(['before spawn', 'after spawn'])('keeps the native Codex card updated wi
     arguments: JSON.stringify({ task_name: 'helper', message: 'gAAAAAEncryptedPrompt==' }),
   } });
   await view.flush();
-  if (timing === 'after spawn') tracker.activity(started, 'parent-turn');
+  if (timing !== 'before spawn') tracker.activity(started, 'parent-turn');
   view.router.handleNotification('item/completed', { threadId: 'parent', turnId: 'parent-turn', item: started });
   await view.flush();
   expect(view.parent.querySelectorAll('.claudian-subagent-list')).toHaveLength(1);
@@ -472,18 +472,46 @@ it.each(['before spawn', 'after spawn'])('keeps the native Codex card updated wi
   view.state.addMessage(laterMessage);
   view.state.currentContentEl = view.renderer.addMessage(laterMessage).querySelector('.claudian-message-content');
   const followup = { type: 'tool_use' as const, id: 'followup', name: 'followup_task', input: { target: 'helper', message: 'Run bash date' } };
-  if (timing === 'after spawn') await view.stream.handleStreamChunk(followup, laterMessage);
-  tracker.activity({ ...started, id: 'followup', kind: 'interacted' }, 'later-parent-turn');
+  let followupWork = Promise.resolve();
+  const followupRouter = new CodexNotificationRouter(chunk => {
+    followupWork = followupWork.then(() => view.stream.handleStreamChunk(chunk, laterMessage));
+  }, '/workspace');
+  const emitFollowupRaw = () => {
+    followupRouter.handleNotification('rawResponseItem/completed', { threadId: 'parent', turnId: 'later-parent-turn', item: {
+      type: 'function_call', call_id: followup.id, name: followup.name, arguments: JSON.stringify(followup.input),
+    } });
+    return followupWork;
+  };
+  if (timing === 'after spawn') await emitFollowupRaw();
+  const interaction = { ...started, id: 'followup', kind: 'interacted' as const };
+  tracker.activity(interaction, 'later-parent-turn');
+  followupRouter.handleNotification('item/completed', { threadId: 'parent', turnId: 'later-parent-turn', item: interaction });
+  await followupWork;
   tracker.turnStarted('child', 'child-turn-2');
-  if (timing === 'before spawn') await view.stream.handleStreamChunk(followup, laterMessage);
+  if (timing === 'before spawn') await emitFollowupRaw();
   expect(view.tools[0].subagent).toMatchObject({ status: 'completed', result: 'Ready.' });
   expect(laterMessage.toolCalls![0].subagent).toMatchObject({ id: 'followup', status: 'running', toolCalls: [] });
+  followupRouter.handleNotification('item/started', { threadId: 'parent', turnId: 'later-parent-turn', item: {
+    type: 'collabAgentToolCall', id: 'native-wait', tool: 'wait', status: 'inProgress', senderThreadId: 'parent',
+    receiverThreadIds: [], agentsStates: {},
+  } });
+  await followupWork;
+  await view.stream.handleStreamChunk({ type: 'done' }, laterMessage);
+  expect(view.state.currentContentEl!.querySelector('[data-tool-id="native-wait"]')).toBeNull();
   const liveHistory = within(view.state.currentContentEl!).getByRole('button', { name: 'Previous runs (1)' });
   liveHistory.focus();
-  for (const item of [
+  const dateItems = timing === 'native only' ? [
+    { type: 'commandExecution', id: 'date-call', command: "bash -lc 'date'", cwd: '/workspace',
+      commandActions: [{ type: 'unknown', command: "bash -lc 'date'" }], status: 'completed',
+      aggregatedOutput: 'Date result', exitCode: 0, durationMs: 1 },
+  ] : [
     { type: 'custom_tool_call', call_id: 'date-call', name: 'exec', input: "text(await tools.exec_command({cmd: \"bash -lc 'date'\"}));" },
     { type: 'custom_tool_call_output', call_id: 'date-call', output: [{ type: 'input_text', text: 'Date result' }] },
-  ]) tracker.handleNotification('child', 'child-turn-2', 'rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn-2', item });
+  ];
+  for (const item of dateItems) tracker.handleNotification('child', 'child-turn-2',
+    item.type === 'commandExecution' ? 'item/completed' : 'rawResponseItem/completed',
+    { threadId: 'child', turnId: 'child-turn-2', item });
+  expect(view.state.currentContentEl!.textContent).toContain('Date result');
   tracker.turnCompleted('child', { id: 'child-turn-2', status: 'completed', error: null, items: [
     { type: 'agentMessage', id: 'answer-2', text: 'Two.', phase: 'final_answer', memoryCitation: null },
   ] });
@@ -527,19 +555,13 @@ it.each(['before spawn', 'after spawn'])('keeps the native Codex card updated wi
     expect(later.textContent).toContain('Ready.');
     expect(later.textContent).not.toContain('Three.');
     expect(later.querySelectorAll('[data-subagent-id="spawn"]')).toHaveLength(0);
-    const originalHeader = within(original).getByRole('button', { name: /Subagent task:/ });
-    const scroll = jest.fn();
-    originalHeader.scrollIntoView = scroll;
-    fireEvent.click(within(later).getByRole('button', { name: 'Go to original turn' }));
-    expect(document.activeElement).toBe(originalHeader);
-    expect(originalHeader.getAttribute('aria-expanded')).toBe('true');
-    expect(scroll).toHaveBeenCalled();
+    expect(within(later).queryByRole('button', { name: 'Go to original turn' })).toBeNull();
     const final = view.parent.querySelector('[data-message-id="final-run"]')! as HTMLElement;
     fireEvent.click(within(final).getByRole('button', { name: 'Previous runs (2)' }));
     expect(within(final).getAllByRole('button', { name: /^Run \d/ }).map(button => button.textContent))
       .toEqual(['Run 1 · Completed', 'Run 2 · Completed']);
     fireEvent.click(within(final).getByRole('button', { name: 'Run 2 · Completed' }));
-    expect(final.textContent).toContain('Run bash date');
+    expect(final.textContent!.includes('Run bash date')).toBe(timing !== 'native only');
     expect(final.textContent).toContain('Date result');
     expect(final.textContent).toContain('Two.');
     expect(final.textContent).not.toContain('Clock result');
@@ -549,7 +571,7 @@ it.each(['before spawn', 'after spawn'])('keeps the native Codex card updated wi
 });
 
 
-it('links previous runs to the original card after completed-turn regrouping and excludes other agents', async () => {
+it('shows previous runs after completed-turn regrouping without navigation or other agents', async () => {
   const view = createCodexLifecycleView();
   const tool = (id: string, agentId: string): ToolCallInfo => ({
     id, name: 'spawn_agent', input: {}, status: 'completed',
@@ -575,12 +597,8 @@ it('links previous runs to the original card after completed-turn regrouping and
   expect(history.textContent).toContain('first prompt');
   expect(history.textContent).toContain('first result');
   expect(history.textContent).not.toContain('other result');
-  const original = view.parent.querySelector<HTMLElement>('[data-subagent-id="first"] .claudian-subagent-header')!;
-  original.scrollIntoView = jest.fn();
-  fireEvent.click(within(history).getByRole('button', { name: 'Go to original turn' }));
-  expect(previousWork.getAttribute('aria-expanded')).toBe('true');
-  expect(document.activeElement).toBe(original);
-  expect(original.scrollIntoView).toHaveBeenCalled();
+  expect(within(history).queryByRole('button', { name: 'Go to original turn' })).toBeNull();
+  expect(previousWork.getAttribute('aria-expanded')).toBe('false');
   expect(await axe(view.parent)).toHaveNoViolations();
 });
 

@@ -444,6 +444,12 @@ export class CodexNotificationRouter {
   #onItemCompleted(params: ItemCompletedNotification): void {
     const item = params.item;
     if (item.type === 'subAgentActivity') {
+      // Resumed threads can omit raw function calls. Keep an interaction anchor so
+      // session-owned child updates have a tool to attach to when work starts.
+      if (item.kind === 'interacted' && !this.#rawStartedCallIds.has(item.id)) {
+        this.emit({ type: 'tool_use', id: item.id, name: 'send_input', input: { id: item.agentThreadId } });
+        this.emit({ type: 'tool_result', id: item.id, content: '', isError: false });
+      }
       if (item.kind === 'started' && !this.#completedCanonicalToolItemIds.has(item.id)) {
         this.#completedCanonicalToolItemIds.add(item.id);
         this.emit({ type: 'tool_use', id: item.id, name: 'spawn_agent', input: normalizeCodexToolInput('spawn_agent', {

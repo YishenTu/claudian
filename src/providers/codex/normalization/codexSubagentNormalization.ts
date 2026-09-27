@@ -257,8 +257,10 @@ export function buildCodexSubagentInfo(
   spawnToolCall: ToolCallInfo,
   siblingToolCalls: ToolCallInfo[] = [],
 ): SubagentInfo {
-  if (spawnToolCall.subagent?.lifecycleSource === 'session') return spawnToolCall.subagent;
   const prompt = getCodexSubagentPrompt(spawnToolCall.input);
+  if (spawnToolCall.subagent?.lifecycleSource === 'session') {
+    return prompt ? { ...spawnToolCall.subagent, prompt } : spawnToolCall.subagent;
+  }
   const model = getCodexSubagentModel(spawnToolCall.input);
   const spawnResult = extractCodexSpawnResult(spawnToolCall.result, spawnToolCall);
   const taskName = typeof spawnToolCall.input.task_name === 'string'
@@ -322,7 +324,8 @@ function getCodexLifecycleTargetIds(toolCall: ToolCallInfo): string[] {
 }
 
 function isCodexGlobalWaitToolCall(toolCall: ToolCallInfo): boolean {
-  return toolCall.name === TOOL_WAIT_AGENT
+  return (toolCall.name === TOOL_WAIT_AGENT || toolCall.name === TOOL_WAIT)
+    && !('cell_id' in toolCall.input)
     && getCodexLifecycleTargetIds(toolCall).length === 0;
 }
 

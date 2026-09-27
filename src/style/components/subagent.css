@@ -136,8 +136,8 @@
   margin-top: 8px;
 }
 
-.claudian-subagent-history button:is(.claudian-subagent-history-toggle, .claudian-subagent-history-link),
-.claudian-subagent-history button:is(.claudian-subagent-history-toggle, .claudian-subagent-history-link):is(:hover, :focus, :active, :disabled) {
+.claudian-subagent-history button.claudian-subagent-history-toggle,
+.claudian-subagent-history button.claudian-subagent-history-toggle:is(:hover, :focus, :active, :disabled) {
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -149,17 +149,13 @@
   cursor: pointer;
 }
 
-.claudian-subagent-history button:is(.claudian-subagent-history-toggle, .claudian-subagent-history-link):hover {
+.claudian-subagent-history button.claudian-subagent-history-toggle:hover {
   color: var(--text-normal);
 }
 
-.claudian-subagent-history button:is(.claudian-subagent-history-toggle, .claudian-subagent-history-link):focus-visible {
+.claudian-subagent-history button.claudian-subagent-history-toggle:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 2px;
-}
-
-.claudian-subagent-history button.claudian-subagent-history-link {
-  text-decoration: underline;
 }
 
 .claudian-subagent-prompt-text,
