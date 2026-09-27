@@ -277,8 +277,12 @@ it('preserves all requested text positions across two notifications in one batch
   native.emitText('Last segment.');
   native.complete('last-checkpoint');
   await started;
-  const notifications = screen.getAllByRole('button', { name: 'Task notification' });
+  const notifications = screen.getAllByRole('button', { name: 'Task notification', hidden: true });
   const elements = [screen.getByText(/First segment\./), notifications[0], screen.getByText(/Middle segment\./), notifications[1], screen.getByText(/Last segment\./)];
+  const worked = screen.getByRole('button', { name: /^Worked/ });
+  const history = document.getElementById(worked.getAttribute('aria-controls')!)!;
+  for (const element of elements.slice(0, -1)) expect(history.contains(element)).toBe(true);
+  expect(elements.at(-1)!.closest('[hidden]')).toBeNull();
   for (let index = 1; index < elements.length; index++) {
     expect(elements[index - 1].compareDocumentPosition(elements[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }

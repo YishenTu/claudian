@@ -61,7 +61,7 @@ export async function continueResponseAfterNotification(
     toolCalls: [], contentBlocks: [],
     ...(message.isAutomaticResponse ? { isAutomaticResponse: true } : {}),
   };
-  recordResponseContinuation(continuation, message);
+  recordResponseContinuation(continuation, message.isAutomaticResponse ? preceding : message);
   const insertionIndex = host.state.messages.indexOf(preceding) + 1;
   const messages = host.state.messages;
   messages.splice(insertionIndex, 0, continuation);

@@ -25,6 +25,15 @@ export function isStandaloneTaskNotification(message: ChatMessage | undefined): 
     && message.contentBlocks?.every(block => block.type === 'task_notification') === true;
 }
 
+/** Keep an automatic response's notification binding across requested DOM splits. */
+export function getAutomaticNotificationPredecessor(message: ChatMessage, messages: ChatMessage[]): ChatMessage | undefined {
+  if (!message.isAutomaticResponse || message.contentBlocks?.some(block => block.type === 'task_notification')) return undefined;
+  const first = getResponseSegments(message, messages)[0];
+  if (isStandaloneTaskNotification(first)) return first;
+  const previous = messages[messages.indexOf(message) - 1];
+  return isStandaloneTaskNotification(previous) ? previous : undefined;
+}
+
 /** Shared live/replay policy. Renderers only map these decisions to existing elements. */
 export function getResponseLayout(message: ChatMessage, messages: ChatMessage[], collapse: boolean) {
   const blocks = message.contentBlocks?.length
@@ -37,9 +46,7 @@ export function getResponseLayout(message: ChatMessage, messages: ChatMessage[],
     && !blocks.some(block => block.type === 'context_compacted');
   const hasNotification = blocks.some(block => block.type === 'task_notification');
   const end = messages.indexOf(message);
-  const previous = messages[end - 1];
-  const notificationPredecessor = !hasNotification && message.isAutomaticResponse === true
-    && isStandaloneTaskNotification(previous) ? previous : undefined;
+  const notificationPredecessor = getAutomaticNotificationPredecessor(message, messages);
   const automaticNotification = message.isAutomaticResponse === true
     && (hasNotification || notificationPredecessor !== undefined);
   const segments = getResponseSegments(message, messages);
@@ -49,10 +56,17 @@ export function getResponseLayout(message: ChatMessage, messages: ChatMessage[],
     && !messages[start - 1].isInterrupt
     && !messages[start - 1].contentBlocks?.some(block =>
       block.type === 'task_notification' || block.type === 'context_compacted')) start--;
+  const hasContinuation = segments.length > 1;
+  let earlierMessages = messages.slice(start, end);
+  if (hasContinuation) {
+    const backgroundNotifications = new Set(messages.map(item => getAutomaticNotificationPredecessor(item, messages)));
+    earlierMessages = messages.slice(messages.indexOf(segments[0]), end)
+      .filter(item => segments.includes(item)
+        || (isStandaloneTaskNotification(item) && !backgroundNotifications.has(item)));
+  }
   return {
-    blocks, finalText, canCollapse, hasNotification, notificationPredecessor, automaticNotification,
-    earlierMessages: segments.length > 1 ? segments.slice(0, -1) : messages.slice(start, end),
-    keepEarlierCommentary: segments.length > 1,
+    blocks, finalText, canCollapse, notificationPredecessor, automaticNotification,
+    earlierMessages, hasContinuation,
     finalBlockCount: finalBlocks.filter(block => block.type === 'citations'
       || (block.type === 'text' && block.content.trim())).length,
   };

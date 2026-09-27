@@ -259,7 +259,17 @@ export async function loadSDKSessionMessages(
     }
   }
 
-  chatMessages.sort((a, b) => a.timestamp - b.timestamp);
+  // Notification timestamps record enqueue time, not consumption. Pin their
+  // transcript boundaries while retaining timestamp ordering (e.g. /compact)
+  // within each intervening section.
+  let sectionStart = 0;
+  for (let index = 0; index <= chatMessages.length; index++) {
+    if (index < chatMessages.length
+      && !chatMessages[index].contentBlocks?.some(block => block.type === 'task_notification')) continue;
+    const section = chatMessages.slice(sectionStart, index).sort((a, b) => a.timestamp - b.timestamp);
+    for (let offset = 0; offset < section.length; offset++) chatMessages[sectionStart + offset] = section[offset];
+    sectionStart = index + 1;
+  }
 
   return { messages: chatMessages, skippedLines: result.skippedLines };
 }

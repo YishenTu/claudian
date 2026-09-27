@@ -352,8 +352,8 @@ export class MessageRenderer {
     if (!msgEl || !contentEl
       || this.messagesEl.querySelector(`.claudian-work[data-work-message-id="${msg.id}"]`)) return;
 
-    const { blocks, finalText, canCollapse, hasNotification, notificationPredecessor,
-      automaticNotification, earlierMessages, keepEarlierCommentary, finalBlockCount } = getResponseLayout(msg, messages, collapse);
+    const { blocks, finalText, canCollapse, notificationPredecessor,
+      automaticNotification, earlierMessages, hasContinuation, finalBlockCount } = getResponseLayout(msg, messages, collapse);
     const precedingNotificationHistory = notificationPredecessor
       ? this.messagesEl.querySelector<HTMLElement>(
         `[data-message-id="${notificationPredecessor.id}"] .claudian-task-notification .claudian-work-history`,
@@ -370,29 +370,22 @@ export class MessageRenderer {
       }
     }
     if (canCollapse && !automaticNotification) {
-      // Continuations can follow standalone notifications. Keep the disclosure at
-      // the start of its response while leaving commentary and notifications in place.
-      const workContentEl = keepEarlierCommentary && earlierMessages.length
+      // Keep the disclosure at the start of its response and fold consumed
+      // notifications with the work around them, preserving transcript order.
+      const workContentEl = hasContinuation && earlierMessages.length
         ? this.messagesEl.querySelector<HTMLElement>(
           `[data-message-id="${earlierMessages[0].id}"] .claudian-message-content`,
         ) ?? contentEl : contentEl;
       const earlierEls = earlierMessages.flatMap(message => {
         const el = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`);
         if (!el) return [];
-        if (!keepEarlierCommentary) return [el];
         const previousContent = el.querySelector<HTMLElement>('.claudian-message-content');
-        const children = Array.from(previousContent?.children ?? []) as HTMLElement[];
-        // As on replay, commentary stays on its side of a notification boundary.
-        const work = children.filter(child => getResponseElementKind(child) !== 'text'
-          && getResponseElementKind(child) !== 'citations'
-          && getResponseElementKind(child) !== 'notification');
-        return previousContent !== workContentEl && work.length > 0 && work.length === children.length ? [el] : work;
+        return previousContent === workContentEl ? Array.from(previousContent.children) as HTMLElement[] : [el];
       });
-      const children = (Array.from(contentEl.children) as HTMLElement[])
-        .filter(child => getResponseElementKind(child) !== 'notification');
+      const children = Array.from(contentEl.children) as HTMLElement[];
       const textEls = children.filter(child => getResponseElementKind(child) === 'text'
         || getResponseElementKind(child) === 'citations');
-      const answerEls = new Set(!hasNotification ? textEls.slice(-finalBlockCount) : textEls);
+      const answerEls = new Set(textEls.slice(-finalBlockCount));
       // Fallback tool calls can follow the answer in the DOM without belonging to the answer.
       const workEls = children.filter(child => !answerEls.has(child));
       if (earlierEls.length || workEls.length || msg.durationSeconds !== undefined) {

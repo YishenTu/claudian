@@ -43,8 +43,10 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
   let response: ChatMessage = { id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
   const order = () => {
     const worked = within(messagesEl).getByRole('button', { name: /^Worked(?: for \d+:\d+)?$/ });
-    const notification = within(messagesEl).getByRole('button', { name: 'Task notification' });
+    const notification = within(messagesEl).getByRole('button', { name: 'Task notification', hidden: true });
     const answer = within(messagesEl).getByText('Requested answer.');
+    const history = document.getElementById(worked.getAttribute('aria-controls')!);
+    expect(history!.contains(notification)).toBe(true);
     expect(worked.compareDocumentPosition(notification) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     return (notification.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
   };
@@ -53,6 +55,7 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
     state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
     if (hasTool) await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, response);
     renderSessionTaskNotification({ state, renderer, isConnected: () => true, createMessageId: () => 'notification' }, 'Task finished.');
+    const notificationElement = within(messagesEl).getByRole('button', { name: 'Task notification' });
     const toolMessage = response;
     if (hasTool && !lateResult) await stream.handleStreamChunk({ type: 'tool_result', id: 'read', content: 'The note.' }, response);
     response = await continueResponseAfterNotification({ state, renderer, stream, createMessageId: () => 'continuation' }, response, { type: 'text', content: 'Requested answer.' });
@@ -71,6 +74,8 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
     const worked = within(messagesEl).getByRole('button', { name: 'Worked for 00:18' });
     const history = document.getElementById(worked.getAttribute('aria-controls')!);
     expect(history!.contains(toolElement)).toBe(hasTool);
+    expect(history!.contains(notificationElement)).toBe(true);
+    expect(notificationElement.closest('[hidden]')).not.toBeNull();
     expect(Boolean(toolElement?.closest('[hidden]'))).toBe(hasTool);
     fireEvent.click(worked);
     expect(toolElement?.closest('[hidden]') ?? null).toBeNull();
@@ -99,6 +104,95 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
     const replayNotificationBeforeAnswer = order();
     expect(replayNotificationBeforeAnswer).toBe(true);
     expect({ liveNotificationBeforeAnswer }).toEqual({ liveNotificationBeforeAnswer: replayNotificationBeforeAnswer });
+  } finally {
+    stream.dispose(); subagents.clear(); renderer.dispose();
+  }
+});
+
+it.each(['between', 'during-second', 'after-second'])('groups an older task notification by consumption position: %s', async position => {
+  const { renderSessionTaskNotification } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
+  const messagesEl = document.body.createDiv();
+  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const renderer = new MessageRenderer(plugin,
+    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+  const state = new ChatState();
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
+    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
+  const prefix = [
+    { type: 'user', uuid: 'first-user', timestamp: testTime({ seconds: 0 }), message: { content: 'Start background research.' } },
+    { type: 'assistant', uuid: 'launch', timestamp: testTime({ seconds: 1 }), message: { stop_reason: 'tool_use', content: [
+      { type: 'tool_use', id: 'old-task', name: 'Agent', input: { description: 'First turn research', run_in_background: true } },
+    ] } },
+    { type: 'user', uuid: 'launched', timestamp: testTime({ seconds: 2 }), toolUseResult: { agentId: 'old-agent', isAsync: true }, message: { content: [
+      { type: 'tool_result', tool_use_id: 'old-task', content: '{"agent_id":"old-agent"}' },
+    ] } },
+    { type: 'assistant', uuid: 'first-final', timestamp: testTime({ seconds: 3 }), message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'First answer.' }] } },
+  ];
+  const notification = { type: 'attachment', uuid: 'notification', timestamp: testTime({ seconds: 2 }), attachment: {
+    type: 'queued_command', commandMode: 'task-notification',
+    prompt: '<task-notification><task-id>old-agent</task-id><tool-use-id>old-task</tool-use-id><status>completed</status><summary>Old research finished.</summary></task-notification>',
+  } };
+  const secondUser = { type: 'user', uuid: 'second-user', timestamp: testTime({ seconds: 10 }), message: { content: 'Next request.' } };
+  const secondFinal = { type: 'assistant', uuid: 'second-final', timestamp: testTime({ seconds: 13 }), message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Second answer.' }] } };
+  const nativeRows = [...prefix, ...(position === 'between' ? [notification] : []), secondUser,
+    ...(position === 'during-second' ? [notification] : []), secondFinal,
+    ...(position === 'after-second' ? [notification] : [])];
+  const loadNative = async (rows: typeof nativeRows) => {
+    jest.mocked(reviewFs.readFile).mockResolvedValue(rows.map((row, index) => JSON.stringify({
+      ...row, parentUuid: rows[index - 1]?.uuid,
+    })).join('\n'));
+    return loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
+  };
+  const notify = () => renderSessionTaskNotification({ state, renderer, isConnected: () => true,
+    createMessageId: () => 'notification' }, 'Old research finished.');
+  const assertPlacement = () => {
+    const headers = within(messagesEl).getAllByRole('button', { name: /^Worked for/ });
+    expect(headers).toHaveLength(2);
+    const histories = headers.map(header => document.getElementById(header.getAttribute('aria-controls')!)!);
+    const notice = within(messagesEl).getByRole('button', { name: 'Task notification', hidden: true });
+    expect(histories[0].contains(notice)).toBe(false);
+    expect(histories[1].contains(notice)).toBe(position === 'during-second');
+    const originalTask = within(messagesEl).getByRole('button', { name: /Background task: First turn research/, hidden: true });
+    expect(histories[0].contains(originalTask)).toBe(true);
+    expect(histories[1].contains(originalTask)).toBe(false);
+    const firstAnswer = within(messagesEl).getByText('First answer.');
+    const secondAnswer = within(messagesEl).getByText('Second answer.');
+    expect(firstAnswer.closest('[hidden]')).toBeNull();
+    expect(secondAnswer.closest('[hidden]')).toBeNull();
+    expect(firstAnswer.compareDocumentPosition(notice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(Boolean(notice.compareDocumentPosition(secondAnswer) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(position !== 'after-second');
+  };
+  try {
+    const firstTurn = await loadNative(prefix);
+    expect(firstTurn.error).toBeUndefined();
+    state.messages = firstTurn.messages;
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    if (position === 'between') notify();
+    const user: ChatMessage = { id: 'second-user', role: 'user', timestamp: testDate().getTime(), content: 'Next request.' };
+    state.addMessage(user);
+    renderer.addMessage(user);
+    let response: ChatMessage = { id: 'second-response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
+    state.addMessage(response);
+    state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
+    if (position === 'during-second') notify();
+    const text = { type: 'text' as const, content: 'Second answer.' };
+    response = await continueResponseAfterNotification({ state, renderer, stream, createMessageId: () => 'second-continuation' }, response, text);
+    await stream.handleStreamChunk(text, response);
+    await stream.finalizeCurrentTextBlock(response);
+    response.durationSeconds = 3;
+    renderer.finalizeResponse(response, state.messages);
+    if (position === 'after-second') notify();
+    assertPlacement();
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    assertPlacement();
+    const replay = await loadNative(nativeRows);
+    expect(replay.error).toBeUndefined();
+    renderer.renderMessages(replay.messages, () => 'Welcome');
+    await Promise.resolve();
+    assertPlacement();
+    expect((await axe(messagesEl)).violations).toEqual([]);
   } finally {
     stream.dispose(); subagents.clear(); renderer.dispose();
   }
@@ -206,13 +300,67 @@ it.each(['background', 'user'] as const)('groups only the requested response acr
     expect(cards).toHaveLength(2);
     for (const card of cards) expect(history.contains(card)).toBe(intervening === 'background');
     const commentary = within(messagesEl).getByText('Still working.');
-    const notifications = within(messagesEl).getAllByRole('button', { name: 'Task notification' });
-    expect(commentary.closest('[hidden]')).toBeNull();
+    const notifications = within(messagesEl).getAllByRole('button', { name: 'Task notification', hidden: true });
+    expect(history.contains(commentary)).toBe(intervening === 'background');
+    for (const notification of notifications) expect(history.contains(notification)).toBe(intervening === 'background');
     expect(notifications[0].compareDocumentPosition(commentary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(commentary.compareDocumentPosition(notifications[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(history.contains(messagesEl.querySelector('[data-message-id="other"]'))).toBe(false);
-    expect(within(messagesEl).getAllByRole('button', { name: 'Task notification' })).toHaveLength(2);
+    expect(notifications).toHaveLength(2);
     expect(within(messagesEl).getByText('Final answer.').closest('[hidden]')).toBeNull();
+    expect((await axe(messagesEl)).violations).toEqual([]);
+  } finally {
+    stream.dispose(); subagents.clear(); renderer.dispose();
+  }
+});
+
+it('keeps a notification consumed by an automatic response outside an admitted requested turn', async () => {
+  const { renderAutoTriggeredTurn, renderSessionTaskNotification } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
+  const messagesEl = document.body.createDiv();
+  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const renderer = new MessageRenderer(plugin,
+    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+  const state = new ChatState();
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
+    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
+  let nextId = 0;
+  const host = { state, renderer, stream, isConnected: () => true, createMessageId: () => `part-${++nextId}` };
+  let response: ChatMessage = { id: 'requested', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
+  const scope = { kind: 'background' as const, sessionInstanceId: 'session', turnId: 'automatic', sequence: 1 };
+  const assertOwnership = () => {
+    const worked = within(messagesEl).getByRole('button', { name: 'Worked for 00:18' });
+    const history = document.getElementById(worked.getAttribute('aria-controls')!)!;
+    const notification = within(messagesEl).getByRole('button', { name: 'Task notification' });
+    const notificationHistory = document.getElementById(notification.getAttribute('aria-controls')!)!;
+    const tool = within(messagesEl).getByRole('button', { name: /Read.*background\.md/, hidden: true });
+    expect(history.contains(notification)).toBe(false);
+    expect(history.contains(tool)).toBe(false);
+    expect(notificationHistory.contains(tool)).toBe(true);
+    expect(within(messagesEl).getByText('Automatic answer.').closest('[hidden]')).toBeNull();
+    expect(within(messagesEl).getByText('Requested answer.').closest('[hidden]')).toBeNull();
+  };
+  try {
+    state.addMessage(response);
+    state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
+    renderSessionTaskNotification(host, 'Background task finished.');
+    await renderAutoTriggeredTurn(host, {
+      metadata: {}, events: [
+        { type: 'tool_started', scope, toolCallId: 'background-read', toolScope: { kind: 'main' }, name: 'Read', input: { file_path: 'background.md' } },
+        { type: 'tool_completed', scope: { ...scope, sequence: 2 }, toolCallId: 'background-read', toolScope: { kind: 'main' }, content: 'Background content.' },
+        { type: 'text_delta', scope: { ...scope, sequence: 3 }, text: 'Automatic answer.' },
+      ],
+    }, () => true);
+    const text = { type: 'text' as const, content: 'Requested answer.' };
+    response = await continueResponseAfterNotification(host, response, text);
+    await stream.handleStreamChunk(text, response);
+    await stream.finalizeCurrentTextBlock(response);
+    response.durationSeconds = 18;
+    renderer.finalizeResponse(response, state.messages);
+    assertOwnership();
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    assertOwnership();
     expect((await axe(messagesEl)).violations).toEqual([]);
   } finally {
     stream.dispose(); subagents.clear(); renderer.dispose();

@@ -256,7 +256,7 @@ it('shows one task notification disclosure between the initial and automatic rep
   renderer.dispose();
 });
 
-it('preserves requested work before a notification arriving in the same response', async () => {
+it('folds requested commentary and its notification together before the final answer', async () => {
   const { renderer, messagesEl } = setup();
   renderer.renderStoredMessage({
     id: 'requested-with-notification', role: 'assistant', timestamp: 1,
@@ -270,15 +270,19 @@ it('preserves requested work before a notification arriving in the same response
   });
   await Promise.resolve();
   const work = within(messagesEl).getByRole('button', { name: 'Worked for 00:05' });
-  expect(within(messagesEl).getByRole('button', { name: 'Task notification' }).closest('[hidden]')).toBeNull();
-  expect(within(messagesEl).getByText('Initial reply.').closest('[hidden]')).toBeNull();
+  const notification = within(messagesEl).getByRole('button', { name: 'Task notification', hidden: true });
+  expect(notification.closest('[hidden]')).not.toBeNull();
+  expect(within(messagesEl).getByText('Initial reply.').closest('[hidden]')).not.toBeNull();
   expect(within(messagesEl).getByText('Follow-up reply.').closest('[hidden]')).toBeNull();
   fireEvent.click(work);
   expect(within(messagesEl).getByText('Initial reasoning.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Initial reply.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Initial reply.').compareDocumentPosition(notification) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(notification.closest('[hidden]')).toBeNull();
   renderer.dispose();
 });
 
-it('keeps a requested response disclosure separate when a notification precedes its first output', async () => {
+it('nests a notification before the first output inside the requested work disclosure', async () => {
   const { renderer, messagesEl } = setup();
   renderer.renderStoredMessage({
     id: 'requested-after-notification', role: 'assistant', timestamp: 1,
@@ -290,13 +294,15 @@ it('keeps a requested response disclosure separate when a notification precedes 
     ],
   });
   await Promise.resolve();
-  const notification = within(messagesEl).getByRole('button', { name: 'Task notification' });
+  const notification = within(messagesEl).getByRole('button', { name: 'Task notification', hidden: true });
   const work = within(messagesEl).getByRole('button', { name: 'Worked for 00:05' });
-  fireEvent.click(notification);
-  expect(within(messagesEl).getByText('Old task result.').closest('[hidden]')).toBeNull();
+  expect(notification.closest('[hidden]')).not.toBeNull();
   expect(within(messagesEl).getByText('Reasoning about the new request.').closest('[hidden]')).not.toBeNull();
   fireEvent.click(work);
   expect(within(messagesEl).getByText('Reasoning about the new request.').closest('[hidden]')).toBeNull();
+  expect(within(messagesEl).getByText('Old task result.').closest('[hidden]')).not.toBeNull();
+  fireEvent.click(notification);
+  expect(within(messagesEl).getByText('Old task result.').closest('[hidden]')).toBeNull();
   expect(within(messagesEl).getByText('The requested answer.').closest('[hidden]')).toBeNull();
   renderer.dispose();
 });
@@ -337,9 +343,10 @@ it('keeps requested work on both sides of a mid-response notification in its own
     ],
   });
   await Promise.resolve();
-  fireEvent.click(within(messagesEl).getByRole('button', { name: 'Task notification' }));
   expect(within(messagesEl).getByText('Work after notification.').closest('[hidden]')).not.toBeNull();
   fireEvent.click(within(messagesEl).getByRole('button', { name: 'Worked for 00:05' }));
+  fireEvent.click(within(messagesEl).getByRole('button', { name: 'Task notification' }));
+  expect(within(messagesEl).getByText('Old task result.').closest('[hidden]')).toBeNull();
   expect(within(messagesEl).getByText('Work before notification.').closest('[hidden]')).toBeNull();
   expect(within(messagesEl).getByText('Work after notification.').closest('[hidden]')).toBeNull();
   renderer.dispose();
