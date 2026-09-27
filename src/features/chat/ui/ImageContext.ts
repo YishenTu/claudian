@@ -306,8 +306,7 @@ export class ImageContextManager {
       id,
       kind: 'image' as const,
       label: images.length === 1 ? 'Image' : `Image ${index + 1}`,
-      title: `${image.name} · ${this.formatSize(image.size)}`,
-      ariaLabel: `Image attachment: ${image.name}`,
+      ariaLabel: `Image attachment: ${image.name} · ${this.formatSize(image.size)}`,
       onActivate: () => this.showFullImage(image),
       onRemove: () => {
         this.attachedImages.delete(id);

@@ -605,24 +605,17 @@ export class ContextUsageMeter {
       this.percentEl.setText(`${usage.percentage}%`);
     }
 
-    // Toggle warning class for > 80%
-    if (usage.percentage > 80) {
-      this.container.addClass('warning');
-    } else {
-      this.container.removeClass('warning');
-    }
+    this.container.toggleClass('warning', usage.percentage > 80);
 
     // Set tooltip with detailed usage
-    let tooltip = `${this.#formatTokens(usage.contextTokens)} / ${this.#formatTokens(usage.contextWindow)}`;
+    const usageText = `${this.#formatTokens(usage.contextTokens)} / ${this.#formatTokens(usage.contextWindow)}`;
+    let tooltip = usageText;
     if (usage.percentage > 80) {
       tooltip += ' (Approaching limit, run `/compact` to continue)';
     }
-    this.container.setAttribute('data-tooltip', tooltip);
+    this.container.setAttribute('aria-label', `Context usage: ${tooltip}`);
     this.container.setAttribute('aria-valuenow', String(usage.percentage));
-    this.container.setAttribute(
-      'aria-valuetext',
-      `${this.#formatTokens(usage.contextTokens)} / ${this.#formatTokens(usage.contextWindow)}`,
-    );
+    this.container.setAttribute('aria-valuetext', usageText);
   }
 
   #formatTokens(tokens: number): string {

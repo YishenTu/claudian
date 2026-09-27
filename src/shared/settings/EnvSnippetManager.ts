@@ -139,7 +139,7 @@ export class EnvSnippetModal extends Modal {
         });
         aliasInput.value = existingAliases[modelId] ?? '';
         aliasInput.setAttribute('aria-label', `Alias for ${modelId}`);
-        aliasInput.title = 'Custom label shown in the model selector. Leave empty to use the default.';
+        aliasInput.setAttribute('aria-description', 'Custom label shown in the model selector. Leave empty to use the default.');
         modelAliasInputs.set(modelId, aliasInput);
 
         const input = row.createEl('input', {

@@ -41,7 +41,6 @@ export async function renderMermaidDiagrams(
         attr: { type: 'button' },
       });
       toggle.setAttribute('aria-label', 'Show diagram source');
-      toggle.title = 'Show diagram source';
       setIcon(toggle, 'code-2');
       source.tabIndex = -1;
       const showSource = (visible: boolean) => {

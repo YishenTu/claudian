@@ -525,17 +525,17 @@ describe('ClaudianView tab controls', () => {
     expect(newButton?.tagName).toBe('DIV');
     expect(newButton?.getAttribute('role')).toBe('button');
     expect(newButton?.getAttribute('tabindex')).toBe('0');
-    expect(newButton?.getAttribute('aria-label')).toBe('New');
+    expect(newButton?.getAttribute('aria-label')).toBeNull();
     expect(newButton?.querySelector('.claudian-session-new-label')?.textContent).toBe('New');
     expect(setIcon).toHaveBeenCalledWith(
       newButton?.querySelector('.claudian-session-new-icon'),
       'square-pen',
     );
-    expect(searchButton?.getAttribute('aria-label')).toBe('Search');
+    expect(searchButton?.getAttribute('aria-label')).toBeNull();
     expect(searchButton?.querySelector('.claudian-session-nav-label')?.textContent)
       .toBe('Search');
     expect(container.querySelector('.claudian-session-files-control')).toBeNull();
-    expect(archiveButton?.getAttribute('aria-label')).toBe('Archive');
+    expect(archiveButton?.getAttribute('aria-label')).toBeNull();
     expect(container.querySelector('.claudian-history-list')).toBe(list);
 
     newButton?.click();

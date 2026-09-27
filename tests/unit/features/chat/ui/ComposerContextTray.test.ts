@@ -87,7 +87,7 @@ describe('ComposerContextTray', () => {
       kind: 'selection',
       label: 'Architecture.md',
       icon: 'file-text',
-      title: 'notes/Architecture.md',
+      ariaLabel: 'notes/Architecture.md',
       onActivate,
       onRemove,
     }]);
@@ -97,7 +97,7 @@ describe('ComposerContextTray', () => {
 
     expect(mainButton?.tagName).toBe('BUTTON');
     expect(removeButton?.tagName).toBe('BUTTON');
-    expect(mainButton?.getAttribute('title')).toBe('notes/Architecture.md');
+    expect(mainButton?.getAttribute('aria-label')).toBe('notes/Architecture.md');
 
     mainButton?.click();
     removeButton?.click();

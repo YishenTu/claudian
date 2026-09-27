@@ -670,8 +670,8 @@ describe('ImageContextManager - Private Helpers', () => {
       expect(trayEl.hasClass('has-content')).toBe(true);
       const chipEl = trayEl.querySelector('.claudian-context-chip--image');
       expect(chipEl).not.toBeNull();
-      expect(chipEl.querySelector('.claudian-context-chip-main').getAttribute('title'))
-        .toBe(`photo.png · ${expectedSize}`);
+      expect(chipEl.querySelector('.claudian-context-chip-main').getAttribute('aria-label'))
+        .toBe(`Image attachment: photo.png · ${expectedSize}`);
 
       const thumbEl = chipEl.querySelector('.claudian-context-chip-thumbnail');
       expect(thumbEl).toBeNull();
