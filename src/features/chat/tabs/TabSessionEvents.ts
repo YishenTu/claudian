@@ -40,6 +40,11 @@ async function handleTabSessionEvent(
     if (!isCurrent()) return;
     return;
   }
+  if (event.type === 'subagent_updated') {
+    await tab.controllers.conversationController.save(true);
+    tab.executionCoordinator.notifyMayCool();
+    return;
+  }
   if (event.type === 'async_subagent_completed') {
     const providerSessionId = event.providerSessionId
       ?? tab.executionCoordinator.snapshot?.providerSessionId;
@@ -129,6 +134,9 @@ export function enqueueTabSessionEvent(
     return undefined;
   }
   // Display-only progress must not wait behind queued background rendering.
+  if (event.type === 'subagent_updated' && !tab.controllers.streamController.handleSubagentUpdate(event.subagent)) {
+    return undefined;
+  }
   if (event.type === 'subagent_progress') {
     tab.controllers.streamController.handleSubagentProgress(event.progress);
     return undefined;

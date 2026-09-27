@@ -693,7 +693,9 @@ export class StreamController {
     const adapter = this.getSubagentAdapter(existingToolCall.name);
     if (!adapter || adapter.protocol !== 'lifecycle') return false;
     const result = this.deps.subagentManager.handleLifecycleResult(
-      existingToolCall, normalizedContent, chunk.isError === true, msg.toolCalls ?? [], adapter,
+      existingToolCall, normalizedContent, chunk.isError === true,
+      (this.deps.state.messages.includes(msg) ? this.deps.state.messages : [...this.deps.state.messages, msg])
+        .flatMap(message => message.toolCalls ?? []), adapter,
     );
     for (const id of result.hiddenToolIds) this.#removeProviderSubagentToolCard(id);
     return result.consumed;
@@ -1205,6 +1207,20 @@ export class StreamController {
     await this.#hydrateAsyncSubagentHistory(handled);
 
     return isLinked || handled !== undefined;
+  }
+
+  public handleSubagentUpdate(info: SubagentInfo): boolean {
+    const messages = this.deps.state.messages;
+    const owner = messages.find(message => message.toolCalls?.some(tool => tool.id === info.id
+      || (info.agentId && tool.subagent?.agentId === info.agentId)));
+    const tool = owner?.toolCalls?.find(tool => tool.id === info.id || tool.subagent?.agentId === info.agentId);
+    const parent = owner ? this.deps.getMessagesEl().querySelector<HTMLElement>(
+      `[data-message-id="${owner.id}"] .claudian-message-content`,
+    ) : null;
+    const previous = parent && tool ? [...parent.querySelectorAll<HTMLElement>('[data-subagent-id]')]
+      .find(element => element.dataset.subagentId === tool.id) : undefined;
+    return this.deps.subagentManager.applySessionUpdate(info,
+      messages.flatMap(message => message.toolCalls ?? []), parent, previous);
   }
 
   public handleSubagentProgress(progress: SubagentProgress): void {
@@ -1741,7 +1757,7 @@ export class StreamController {
     state.currentTextContent = '';
     state.currentThinkingState = null;
     this.resetSubagentStreamingState();
-    this.deps.subagentManager.resetLifecycleState();
+    this.deps.subagentManager.resetLifecycleState(true);
     state.pendingTools.clear();
     // Reset response timer (duration already captured at this point)
     state.responseStartTime = null;

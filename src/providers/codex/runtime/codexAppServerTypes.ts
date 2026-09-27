@@ -65,6 +65,8 @@ export interface Thread {
   updatedAt: number;
   name: string | null;
   modelProvider: string;
+  model?: string | null;
+  reasoningEffort?: string | null;
   source: string;
   agentNickname: string | null;
   agentRole: string | null;
@@ -109,6 +111,7 @@ export type ThreadItem =
   | FileChangeItem
   | ImageViewItem
   | WebSearchItem
+  | SubAgentActivityItem
   | CollabAgentToolCallItem
   | MCPToolCallItem
   | DynamicToolCallItem
@@ -216,6 +219,14 @@ export interface WebSearchItem {
   status?: string;
 }
 
+export interface SubAgentActivityItem {
+  type: 'subAgentActivity';
+  id: string;
+  kind: 'started' | 'interacted' | 'interrupted' | 'completed';
+  agentThreadId: string;
+  agentPath: string;
+}
+
 export interface CollabAgentToolCallItem {
   type: 'collabAgentToolCall';
   id: string;
@@ -223,6 +234,12 @@ export interface CollabAgentToolCallItem {
   status?: string;
   arguments?: Record<string, unknown>;
   result?: unknown;
+  senderThreadId?: string;
+  receiverThreadIds?: string[];
+  prompt?: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  agentsStates?: Record<string, { status: string; message: string | null }>;
 }
 
 export interface MCPToolCallItem {

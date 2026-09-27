@@ -11,6 +11,7 @@ import type {
   SessionMetadata,
   SlashCommand,
   SubagentInfo,
+  SubagentProgress,
   ToolCallInfo,
 } from '../types';
 import type { ProviderId } from '../types/provider';
@@ -544,6 +545,8 @@ export interface ProviderTaskResultInterpreter {
 export interface ProviderSubagentLaunchResult {
   agentId?: string;
   nickname?: string;
+  /** Other native identifiers that refer to this same agent. */
+  aliases?: string[];
 }
 
 export interface ProviderSubagentWaitStatus {
@@ -581,6 +584,11 @@ export interface ProviderSubagentLifecycleAdapter {
     spawnToolCall: ToolCallInfo,
     siblingToolCalls?: ToolCallInfo[],
   ): SubagentInfo;
+  /** Display-only activity from provider lifecycle snapshots; never stored on the task. */
+  getProgress?(
+    spawnToolCall: ToolCallInfo,
+    siblingToolCalls: ToolCallInfo[],
+  ): SubagentProgress | undefined;
   extractSpawnResult(
     raw: string | undefined,
     toolCall?: ToolCallInfo,

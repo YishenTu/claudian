@@ -463,3 +463,9 @@ describe('parseCodexArguments', () => {
     expect(parseCodexArguments(undefined)).toEqual({});
   });
 });
+
+it.each(['spawn_agent', 'followup_task', 'send_message', 'send_input'])('omits encrypted %s task messages from display inputs', name => {
+  expect(normalizeCodexToolInput(name, { target: 'helper', message: 'gAAAAAEncryptedPrompt==' }))
+    .toEqual({ target: 'helper' });
+  expect(normalizeCodexToolInput(name, { message: 'Readable task.' })).toEqual({ message: 'Readable task.' });
+});

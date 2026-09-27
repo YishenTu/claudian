@@ -38,6 +38,7 @@ export {
   type ProviderSessionEventScope,
   type ProviderSessionStateChangedEvent,
   type ProviderSubagentProgressEvent,
+  type ProviderSubagentUpdatedEvent,
   type ProviderTaskNotificationEvent,
   type ProviderTextDeltaEvent,
   type ProviderThinkingDeltaEvent,

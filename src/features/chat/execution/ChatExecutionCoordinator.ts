@@ -245,7 +245,8 @@ export class ChatExecutionCoordinator {
   }
 
   get hasBackgroundWork(): boolean {
-    return (this.#sessionBinding?.backgroundTurns.size ?? 0) > 0;
+    return (this.#sessionBinding?.backgroundTurns.size ?? 0) > 0
+      || (this.#sessionBinding?.session.hasBackgroundWork?.() ?? false);
   }
 
   isEventContextCurrent(context: ChatExecutionEventContext): boolean {
@@ -695,6 +696,7 @@ export class ChatExecutionCoordinator {
       && this.#activeExecution === null
       && this.#pendingInteractions.size === 0
       && this.#pendingSteerAttempts.size === 0
+      && !binding.session.hasBackgroundWork?.()
       && binding.backgroundTurns.size === 0
       && binding.pendingWorkCount === 0
       && (this.deps.warmExecution?.canCool() ?? true),
@@ -940,6 +942,7 @@ export class ChatExecutionCoordinator {
       binding.sessionSequence = event.scope.sequence;
     }
 
+    if (event.type === 'subagent_updated') this.deps.onBackgroundWorkChanged?.(this.hasBackgroundWork);
     const eventWork: Promise<unknown>[] = [];
     if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
       eventWork.push(this.#persistSnapshot(binding, event.snapshot));

@@ -79,13 +79,13 @@ function createSection(parentEl: HTMLElement, title: string, bodyClass?: string)
 function setPromptText(promptBodyEl: HTMLElement, prompt: string): void {
   promptBodyEl.empty();
   const textEl = promptBodyEl.createDiv({ cls: 'claudian-subagent-prompt-text' });
-  textEl.setText(prompt || 'No prompt provided');
+  textEl.setText(prompt);
 }
 
 function updateSyncHeaderAria(state: SubagentState): void {
   state.headerEl.setAttribute(
     'aria-label',
-    `Subagent task: ${truncateDescription(state.info.description)} - Status: ${state.info.status} - click to expand`
+    `Subagent task: ${state.info.description} - Status: ${state.info.status} - click to expand`
   );
   state.statusEl.setAttribute('aria-label', `Status: ${state.info.status}`);
 }
@@ -294,7 +294,8 @@ export function createSubagentBlock(parentEl: HTMLElement, info: Readonly<Subage
 }
 
 function updateSubagentContent(state: SubagentState, info: Readonly<SubagentInfo>, result?: string): void {
-  if (state.promptBodyEl.textContent !== (info.prompt || 'No prompt provided')) {
+  state.promptSectionEl.hidden = !info.prompt?.trim();
+  if (state.promptBodyEl.textContent !== (info.prompt || '')) {
     setPromptText(state.promptBodyEl, info.prompt || '');
   }
   for (const toolCall of info.toolCalls) {
@@ -321,6 +322,7 @@ function updateSubagentContent(state: SubagentState, info: Readonly<SubagentInfo
 export function updateSubagentBlock(state: SubagentState, info: Readonly<SubagentInfo>): void {
   state.info = info;
   state.labelEl.setText(truncateDescription(info.description));
+  state.headerEl.title = info.description;
   updateSubagentContent(state, info, info.status === 'running' ? undefined
     : info.result?.trim() ? info.result : (info.status === 'error' ? 'ERROR' : 'DONE'));
   state.statusEl.className = `claudian-subagent-status status-${info.status}`;
@@ -383,11 +385,12 @@ function getAsyncStatusAriaLabel(asyncStatus: string | undefined): string {
 
 function updateAsyncLabel(state: AsyncSubagentState): void {
   state.labelEl.setText(truncateDescription(state.info.description));
+  state.headerEl.title = state.info.description;
 
   const statusLabel = getAsyncStatusAriaLabel(state.info.asyncStatus);
   state.headerEl.setAttribute(
     'aria-label',
-    `Background task: ${truncateDescription(state.info.description)} - ${statusLabel} - click to expand`
+    `Background task: ${state.info.description} - ${statusLabel} - click to expand`
   );
 }
 

@@ -1,3 +1,5 @@
+import { isCodexEncryptedMessage } from './codexSubagentNormalization';
+
 /**
  * Shared Codex tool normalization layer.
  *
@@ -458,6 +460,12 @@ export function normalizeCodexToolInput(
   rawName: string | undefined,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
+  if (rawName && ['spawn_agent', 'followup_task', 'send_message', 'send_input'].includes(rawName)
+    && isCodexEncryptedMessage(input.message)) {
+    const displayInput = { ...input };
+    delete displayInput.message;
+    return displayInput;
+  }
   switch (rawName) {
     case 'command_execution':
     case 'shell_command':

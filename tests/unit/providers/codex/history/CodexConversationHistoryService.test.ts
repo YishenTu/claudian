@@ -25,6 +25,44 @@ describe('CodexConversationHistoryService', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
+  it.each(['normal', 'pending fork', 'established fork'])('hydrates the completed child answer and identity from %s history', async mode => {
+    const root = path.join(tempHome, '.codex', 'sessions');
+    fs.mkdirSync(root, { recursive: true });
+    const record = (type: string, payload: Record<string, unknown>, seconds: number) => JSON.stringify({ type, payload, timestamp: testDate({ seconds }).toISOString() });
+    const parentPath = path.join(root, 'rollout-parent.jsonl');
+    fs.writeFileSync(parentPath, [
+      record('event_msg', { type: 'task_started', turn_id: 'parent-turn' }, 0),
+      record('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'spawn', kind: 'started', agent_thread_id: 'child', agent_path: '/root/helper' } }, 1),
+      record('event_msg', { type: 'task_complete', turn_id: 'parent-turn' }, 2),
+      record('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'done', kind: 'completed', agent_thread_id: 'child', agent_path: '/root/helper' } }, 5),
+    ].join('\n'));
+    fs.writeFileSync(path.join(root, 'rollout-child.jsonl'), [
+      record('session_meta', { id: 'child', source: { subagent: { thread_spawn: { agent_nickname: 'Bohr', parent_thread_id: 'parent' } } } }, 1),
+      record('session_meta', { id: 'parent', source: 'vscode' }, 0),
+      record('response_item', { type: 'function_call', call_id: 'inherited-tool', name: 'parent_only', arguments: '{}' }, 0),
+      record('turn_context', { model: 'child-model', effort: 'high' }, 2),
+      record('event_msg', { type: 'task_started', turn_id: 'child-turn' }, 2),
+      record('response_item', { type: 'custom_tool_call', call_id: 'clock-call', name: 'exec', input: 'const t = await tools.clock__curr_time({}); text(t.current_time);' }, 3),
+      record('response_item', { type: 'custom_tool_call_output', call_id: 'clock-call', output: [{ type: 'input_text', text: 'Clock result' }] }, 3),
+      record('response_item', { type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: 'Ready.' }] }, 3),
+      record('event_msg', { type: 'task_complete', turn_id: 'child-turn' }, 4),
+      record('event_msg', { type: 'task_started', turn_id: 'later-child-turn' }, 7),
+      record('response_item', { type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: 'Future answer.' }] }, 8),
+    ].join('\n'));
+    const forkPath = path.join(root, 'rollout-fork.jsonl');
+    fs.writeFileSync(forkPath, '');
+    const source = { forkSource: { sessionId: 'parent', resumeAt: 'parent-turn' }, forkSourceSessionFilePath: parentPath, forkSourceTranscriptRootPath: root };
+    const providerState = mode === 'normal' ? { threadId: 'parent', sessionFilePath: parentPath, transcriptRootPath: root }
+      : mode === 'pending fork' ? source : { ...source, threadId: 'fork', sessionFilePath: forkPath, transcriptRootPath: root };
+    const result = await new CodexConversationHistoryService().hydrateConversationHistory({
+      id: 'conversation', sessionId: mode === 'pending fork' ? null : mode === 'normal' ? 'parent' : 'fork', providerState, messages: [],
+    } as any, null);
+    expect(result.messages!.flatMap(message => message.toolCalls ?? [])[0].subagent).toMatchObject({
+      status: 'completed', result: 'Ready.', description: 'Bohr (child-model, high)',
+      toolCalls: [expect.objectContaining({ id: 'clock-call', status: 'completed', result: expect.stringContaining('Clock result') })],
+    });
+  });
+
   it('hydrates history by resolving the transcript path from thread id', async () => {
     const threadId = 'thread-123';
     const sessionsDir = path.join(tempHome, '.codex', 'sessions', '2026', '03', '27');

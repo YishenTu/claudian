@@ -434,6 +434,80 @@ describe('CodexExecutionBackend', () => {
     });
   });
 
+  it('publishes native subagent completion after the parent settles and through later follow-ups', async () => {
+    configureSteerTransport('parent', 'parent-turn', () => ({}));
+    const baseRequest = mockTransportRequest.getMockImplementation()!;
+    let answer = 'Ready.';
+    mockTransportRequest.mockImplementation((method: string, ...args: unknown[]) => {
+      if (method === 'thread/read') return Promise.resolve({ thread: {
+        ...createThreadResult('child', [{ id: 'child-turn', items: [
+          { type: 'agentMessage', id: 'answer', phase: 'final_answer', text: answer },
+        ] }]).thread,
+        agentNickname: 'Bohr', model: TEST_CODEX_MODEL, reasoningEffort: 'high',
+      } });
+      return baseRequest(method, ...args);
+    });
+    const session = new CodexExecutionBackend(createPlugin()).createSession(createSessionConfig());
+    const updates: ProviderSessionEvent[] = [];
+    session.onEvent(event => updates.push(event));
+    try {
+      const run = session.execute(createRequest());
+      const output = collectEvents(run.events);
+      await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start'));
+      const activity = (id: string, kind: string) => emitNotification('item/completed', {
+        threadId: 'parent', turnId: 'parent-turn',
+        item: { type: 'subAgentActivity', id, kind, agentThreadId: 'child', agentPath: '/root/ui_test_helper' },
+      });
+      activity('spawn', 'started');
+      completeTurn('parent', 'parent-turn');
+      await output;
+      emitNotification('turn/started', { threadId: 'child', turn: { id: 'child-turn', status: 'inProgress', items: [], error: null } });
+      emitNotification('rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item: {
+        type: 'custom_tool_call', call_id: 'clock-call', name: 'exec', input: 'const t = await tools.clock__curr_time({}); text(t.current_time);',
+      } });
+      expect((updates.at(-1) as any).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'running' })]);
+      emitNotification('rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item: {
+        type: 'custom_tool_call_output', call_id: 'clock-call', output: [{ type: 'input_text', text: 'Clock result' }],
+      } });
+      expect((updates.at(-1) as any).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'completed', result: 'Clock result' })]);
+      // A later canonical projection must update the already visible raw row.
+      emitNotification('item/completed', { threadId: 'child', turnId: 'child-turn', item: {
+        type: 'dynamicToolCall', id: 'canonical-clock', tool: 'clock__curr_time', arguments: {},
+        status: 'completed', success: true, contentItems: [{ type: 'inputText', text: 'Clock result' }],
+      } });
+      expect((updates.at(-1) as any).subagent.toolCalls).toEqual([expect.objectContaining({ id: 'clock-call', status: 'completed', result: 'Clock result' })]);
+      emitNotification('rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item: {
+        type: 'function_call', call_id: 'command-call', name: 'exec_command', arguments: JSON.stringify({ cmd: 'echo child' }),
+      } });
+      emitNotification('item/completed', { threadId: 'child', turnId: 'child-turn', item: {
+        type: 'commandExecution', id: 'canonical-command', command: 'echo child', cwd: '/vault',
+        status: 'completed', commandActions: [{ type: 'unknown', command: 'echo child' }], aggregatedOutput: 'child', exitCode: 0, durationMs: 10,
+      } });
+      emitNotification('rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item: {
+        type: 'function_call_output', call_id: 'command-call', output: 'child',
+      } });
+      emitNotification('turn/completed', { threadId: 'child', turn: { id: 'child-turn', status: 'completed', items: [], error: null } });
+      expect(updates.at(-1)).toEqual(expect.objectContaining({ subagent: expect.objectContaining({
+        toolCalls: expect.arrayContaining([
+          expect.objectContaining({ id: 'clock-call', status: 'completed', result: expect.stringContaining('Clock result') }),
+          expect.objectContaining({ id: 'command-call', status: 'completed', result: 'child' }),
+        ]),
+      }) }));
+      expect((updates.at(-1) as any).subagent.toolCalls).toHaveLength(2);
+      activity('child-completed-1', 'completed');
+      await waitForCondition(() => updates.some(event => (event as any).subagent?.result === 'Ready.'));
+      expect(updates).toContainEqual(expect.objectContaining({
+        type: 'subagent_updated', scope: expect.objectContaining({ kind: 'session' }),
+        subagent: expect.objectContaining({ id: 'spawn', agentId: 'child', status: 'completed', result: 'Ready.' }),
+      }));
+      answer = 'Two.';
+      activity('followup', 'interacted');
+      activity('child-completed-2', 'completed');
+      await waitForCondition(() => updates.some(event => (event as any).subagent?.result === 'Two.'));
+      expect(updates.at(-1)).toEqual(expect.objectContaining({ subagent: expect.objectContaining({ id: 'spawn', status: 'completed', result: 'Two.' }) }));
+    } finally { await session.dispose(); }
+  });
+
   it.each(['completion', 'failure', 'cancellation', 'disposal'] as const)(
     'sends image bytes through a temporary file and removes it on %s',
     async outcome => {

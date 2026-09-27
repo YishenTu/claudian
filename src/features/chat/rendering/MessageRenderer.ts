@@ -641,6 +641,7 @@ export class MessageRenderer {
       const agentId = spawnResult.agentId
         ?? adapter.buildSubagentInfo(sibling, msg.toolCalls ?? []).agentId;
       if (agentId) agentIdToSpawnId.set(agentId, sibling.id);
+      for (const alias of spawnResult.aliases ?? []) agentIdToSpawnId.set(alias, sibling.id);
     }
     return adapter.isToolCallFullyOwned(toolCall, agentIdToSpawnId);
   }

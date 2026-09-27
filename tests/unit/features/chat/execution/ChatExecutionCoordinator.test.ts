@@ -84,6 +84,22 @@ describe('ChatExecutionCoordinator', () => {
     await harness.coordinator.dispose();
   });
 
+  it('protects a native session with running children from cooling after its parent settles', async () => {
+    const harness = createHarness();
+    await harness.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
+    await harness.coordinator.prepare();
+    const session = harness.backends.get('codex')!.sessions[0];
+    const hasBackgroundWork = jest.fn(() => true);
+    Object.assign(session, { hasBackgroundWork });
+    expect(harness.coordinator.hasBackgroundWork).toBe(true);
+    expect(harness.coordinator.canCool()).toBe(false);
+    hasBackgroundWork.mockReturnValue(false);
+    expect(harness.coordinator.hasBackgroundWork).toBe(false);
+    expect(harness.coordinator.canCool()).toBe(true);
+    await harness.coordinator.dispose();
+    await harness.registry.dispose();
+  });
+
   it('exposes commands only for the current conversation and provider binding', async () => {
     const harness = createHarness();
     await harness.coordinator.bindConversation({ conversationId: 'one', providerId: 'claude' });

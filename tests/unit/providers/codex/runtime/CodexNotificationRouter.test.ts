@@ -3858,6 +3858,39 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('collabAgentToolCall', () => {
+    it('keeps structured raw output when the native item also has a plain acknowledgement', () => {
+      for (const item of [
+        { type: 'function_call', call_id: 'send', name: 'send_input', arguments: '{"id":"child"}' },
+        { type: 'function_call_output', call_id: 'send', output: '{"output":"Detailed raw output"}' },
+      ]) router.handleNotification('rawResponseItem/completed', { threadId: 't1', turnId: 'turn1', item });
+      router.handleNotification('item/completed', {
+        threadId: 't1', turnId: 'turn1', item: {
+          type: 'collabAgentToolCall', id: 'send', tool: 'sendInput', status: 'completed', result: 'Acknowledged',
+          receiverThreadIds: ['child'], agentsStates: { child: { status: 'running', message: 'Working' } },
+        },
+      });
+      const result = chunks.find(chunk => chunk.type === 'tool_result');
+      expect(result?.type === 'tool_result' && JSON.parse(result.content)).toEqual({
+        output: 'Detailed raw output', status: { child: { status: 'running', message: 'Working' } },
+      });
+    });
+
+    it('preserves a raw request error instead of merging an accompanying native agent state', () => {
+      for (const item of [
+        { type: 'function_call', call_id: 'send', name: 'send_input', arguments: '{"id":"child","message":"Follow up"}' },
+        { type: 'function_call_output', call_id: 'send', output: '{"error":"permission denied"}' },
+      ]) router.handleNotification('rawResponseItem/completed', { threadId: 't1', turnId: 'turn1', item });
+      router.handleNotification('item/completed', {
+        threadId: 't1', turnId: 'turn1', item: {
+          type: 'collabAgentToolCall', id: 'send', tool: 'sendInput', status: 'completed',
+          receiverThreadIds: ['child'], agentsStates: { child: { status: 'running', message: 'Prior activity' } },
+        },
+      });
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([
+        { type: 'tool_result', id: 'send', content: '{"error":"permission denied"}', isError: true },
+      ]);
+    });
+
     it('maps collabAgentToolCall item/started to tool_use chunk', () => {
       router.handleNotification('item/started', {
         item: {

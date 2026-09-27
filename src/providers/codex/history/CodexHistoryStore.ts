@@ -26,6 +26,8 @@ import {
   normalizeCodexMemoryCitation,
   stripCodexMemoryCitationMarkup,
 } from '../normalization/CodexMemoryCitation';
+import { applyCodexSubagentActivity, normalizeCodexSubagentActivity } from '../normalization/codexSubagentActivity';
+import { buildCodexSubagentInfo } from '../normalization/codexSubagentNormalization';
 import {
   appendCodexCommandOutput,
   decodeCodexExecEnvelope,
@@ -1037,6 +1039,13 @@ function processEventMsg(
   if (!payload?.type) return;
 
   switch (payload.type) {
+    case 'item_completed': {
+      const activity = normalizeCodexSubagentActivity((payload as Record<string, unknown>).item);
+      if (activity?.kind === 'started' && !ctx.toolCallToTurn.has(activity.id)) {
+        pushPersistedNormalizedToolCall(activity.id, { name: 'spawn_agent', input: { task_name: activity.agentPath } }, timestamp, ctx);
+      }
+      break;
+    }
     case 'task_started': {
       const serverTurnId = extractServerTurnId(payload);
       const id = nextTurnId(ctx);
@@ -1474,13 +1483,24 @@ export function parseCodexSessionModel(
   return resumeAtTurnId ? null : model;
 }
 
-export function parseCodexSessionTurns(content: string): CodexParsedTurn[] {
+export function parseCodexSessionTurns(content: string, throughTurnId?: string): CodexParsedTurn[] {
   const records = content
     .split('\n')
     .filter(line => line.trim())
     .map(parseSessionRecord)
     .filter((record): record is ParsedSessionRecord => record !== null);
 
+  if (throughTurnId) {
+    let reached = false;
+    const nextTurn = records.findIndex(record => {
+      const payload = record.payload as Record<string, unknown> | undefined;
+      if (record.type !== 'event_msg' || payload?.type !== 'task_started') return false;
+      if (reached && payload.turn_id !== throughTurnId) return true;
+      if (payload.turn_id === throughTurnId) reached = true;
+      return false;
+    });
+    if (nextTurn >= 0) return parseModernSessionTurns(records.slice(0, nextTurn));
+  }
   return parseModernSessionTurns(records);
 }
 
@@ -1555,7 +1575,24 @@ function parseModernSessionTurns(records: ParsedSessionRecord[]): CodexParsedTur
   for (const turn of ctx.turns.values()) {
     if (turn.serverTurnId) turn.outputTokens = turnOutputTokens.get(turn.serverTurnId);
   }
-  return flushBubbleTurnsGrouped(ctx.turns, ctx.turnOrder);
+  const turns = flushBubbleTurnsGrouped(ctx.turns, ctx.turnOrder);
+  const tools = turns.flatMap(turn => turn.messages.flatMap(message => message.toolCalls ?? []));
+  const agents = new Map<string, ToolCallInfo>();
+  for (const record of records) {
+    if (record.type !== 'event_msg') continue;
+    const payload = record.payload as Record<string, unknown>;
+    if (payload.type !== 'item_completed') continue;
+    const activity = normalizeCodexSubagentActivity(payload.item);
+    if (!activity) continue;
+    const tool = activity.kind === 'started' ? tools.find(tool => tool.id === activity.id) : agents.get(activity.agentThreadId);
+    if (!tool) continue;
+    const interaction = tools.find(candidate => candidate.id === activity.id);
+    const startsWork = activity.kind === 'started' || (activity.kind === 'interacted'
+      && ['followup_task', 'resume_agent', 'send_input'].includes(interaction?.name ?? ''));
+    tool.subagent = applyCodexSubagentActivity(activity, tool.subagent ?? buildCodexSubagentInfo(tool), record.timestamp, startsWork);
+    agents.set(activity.agentThreadId, tool);
+  }
+  return turns;
 }
 
 function flushBubbleTurnsGrouped(
