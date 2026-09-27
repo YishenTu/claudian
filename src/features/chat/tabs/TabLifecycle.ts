@@ -106,16 +106,19 @@ async function drainTabForShutdownSnapshotOnce(
   tab.session.pauseIntentAdmission();
   tab.session.pauseBackgroundWork();
   const cleanupFailures: TabRuntimeCleanupFailure[] = [];
+  const cancelledActiveTurn = tab.session.turns.isActive;
+  if (cancelledActiveTurn) {
+    tab.state.cancelRequested = true;
+    tab.state.bumpStreamGeneration();
+    tab.session.turns.cancel('shutdown');
+  }
 
   await captureTeardownFailure(
     cleanupFailures,
     'tab pending provider interaction',
     () => tab.controllers.inputController.dismissPendingApproval(),
   );
-  const cancelledActiveTurn = tab.session.turns.isActive;
   if (cancelledActiveTurn) {
-    tab.state.cancelRequested = true;
-    tab.state.bumpStreamGeneration();
     await captureTeardownFailure(
       cleanupFailures,
       'tab active execution cancellation',

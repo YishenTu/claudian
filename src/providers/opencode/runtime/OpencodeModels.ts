@@ -10,8 +10,8 @@ export function createOpencodeModels(host: ProviderHost, native: Pick<OpencodeMe
     host,
     update: updateOpencodeProviderSettings,
     providerName: 'OpenCode',
-    read: () => {
-      const current = getOpencodeProviderSettings(host.settings);
+    read: (settings = host.settings) => {
+      const current = getOpencodeProviderSettings(settings);
       return {
         enabled: current.enabled,
         models: buildOpencodeBaseModels(current.discoveredModels).map(model => {

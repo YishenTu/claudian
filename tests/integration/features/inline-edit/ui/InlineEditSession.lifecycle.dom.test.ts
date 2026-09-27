@@ -253,3 +253,31 @@ it('uses provider-scoped hidden commands and cancels widget-owned discovery on r
   expect(signals[1].aborted).toBe(true);
   expect(screen.queryByRole('listbox')).toBeNull();
 });
+
+
+async function rejectAfterSourceChange(h: ReturnType<typeof createHarness>, expectedRequests: number): Promise<void> {
+  h.editorView.dispatch({ changes: { from: 0, insert: 'XXXXX' } });
+  submitInstruction('Use uppercase');
+  await waitFor(() => expect(h.settled).toHaveBeenCalledWith({ decision: 'reject' }));
+  expect(h.backend.sessions.flatMap(session => session.requests)).toHaveLength(expectedRequests);
+  expect(screen.queryByRole('button', { name: 'Accept inline edit' })).toBeNull();
+}
+
+it('rejects changed source before first submission without sending stale edit context', async () => {
+  const h = createHarness();
+  h.createSession().show();
+  await rejectAfterSourceChange(h, 0);
+  expect(h.editorView.state.doc.toString()).toBe('XXXXXhello world');
+});
+
+it('rejects changed source before clarification reply without continuing stale edit context', async () => {
+  const h = createHarness();
+  h.createSession().show();
+  submitInstruction();
+  await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+  h.backend.sessions[0].emitText('Which tone?');
+  h.backend.sessions[0].complete();
+  await waitFor(() => expect(input().placeholder).toBe('Reply to continue...'));
+  await rejectAfterSourceChange(h, 1);
+  expect(h.editorView.state.doc.toString()).toBe('XXXXXhello world');
+});

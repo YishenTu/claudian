@@ -77,7 +77,8 @@ export class TabWorkspaceMigrationCoordinator {
     if (this.legacyStateClaimed) return null;
 
     this.legacyStateClaimed = true;
-    return this.storage.getTabManagerState();
+    const state = await this.storage.getTabManagerState();
+    return this.hasViewScopedState ? null : state;
   }
 
   async completeMigration(): Promise<void> {

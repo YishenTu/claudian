@@ -23,8 +23,8 @@ export function renderProviderModelsSection(
     emptyCatalogText: `No ${providerName} models reported. Check your configuration and click Discover.`,
     loadingCatalogText: `Loading ${providerName} models…`,
     async loadCatalog(force) { await catalog.refresh({ force }); },
-    onSelectedIdsChange: ids => catalog.select(ids),
-    onAliasesChange: aliases => catalog.setAliases(aliases),
+    onSelectionChange: change => catalog.changeSelection(change),
+    onAliasChange: (modelId, alias) => catalog.setAlias(modelId, alias),
   });
   const refresh = () => {
     updateStatus();

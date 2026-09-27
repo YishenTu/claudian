@@ -64,6 +64,30 @@ describe('BrowserSelectionController', () => {
     jest.useRealTimers();
   });
 
+  it.each(['stop', 'clear', 'restart'] as const)('discards pending webview selection across %s', async action => {
+    selectionText = '';
+    const webview = document.createElement('webview') as HTMLElement & { executeJavaScript: jest.Mock };
+    let finishRead!: (value: string) => void;
+    webview.executeJavaScript = jest.fn()
+      .mockImplementationOnce(() => new Promise<string>(resolve => { finishRead = resolve; }))
+      .mockResolvedValue('current selection');
+    containerEl.appendChild(webview);
+    controller.start();
+    jest.advanceTimersByTime(250);
+    if (action === 'clear') controller.clear();
+    else controller.stop();
+    if (action === 'restart') {
+      controller.start();
+      await jest.advanceTimersByTimeAsync(250);
+    }
+    expect(controller.getContext()?.selectedText ?? null).toBe(action === 'restart' ? 'current selection' : null);
+    const publications = contextTray.setItems.mock.calls.length;
+    finishRead('stale selection');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(controller.getContext()?.selectedText ?? null).toBe(action === 'restart' ? 'current selection' : null);
+    expect(contextTray.setItems).toHaveBeenCalledTimes(publications);
+  });
+
   it('captures browser selection and updates indicator', async () => {
     controller.start();
     jest.advanceTimersByTime(250);

@@ -17,7 +17,8 @@ export class BrowserSelectionController {
   private onUserSelectionChanged: (() => void) | null;
   private storedSelection: BrowserSelectionContext | null = null;
   private pollInterval: number | null = null;
-  private pollInFlight = false;
+  private pollGeneration = 0;
+  private pollInFlight: number | null = null;
 
   constructor(
     app: App,
@@ -34,14 +35,14 @@ export class BrowserSelectionController {
   }
 
   start(): void {
-    if (this.pollInterval) return;
+    if (this.pollInterval !== null) return;
     this.pollInterval = window.setInterval(() => {
       void this.#poll();
     }, BROWSER_SELECTION_POLL_INTERVAL);
   }
 
   stop(): void {
-    if (this.pollInterval) {
+    if (this.pollInterval !== null) {
       window.clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
@@ -49,8 +50,9 @@ export class BrowserSelectionController {
   }
 
   async #poll(): Promise<void> {
-    if (this.pollInFlight) return;
-    this.pollInFlight = true;
+    const generation = this.pollGeneration;
+    if (this.pollInFlight === generation) return;
+    this.pollInFlight = generation;
     try {
       const browserView = this.#getActiveBrowserView();
       if (!browserView) {
@@ -59,6 +61,7 @@ export class BrowserSelectionController {
       }
 
       const selectedText = await this.extractSelectedText(browserView.containerEl);
+      if (generation !== this.pollGeneration) return;
       if (selectedText) {
         const nextContext = this.#buildContext(browserView.view, browserView.viewType, browserView.containerEl, selectedText);
         if (!this.#isSameSelection(nextContext, this.storedSelection)) {
@@ -72,14 +75,14 @@ export class BrowserSelectionController {
     } catch {
       // Ignore transient polling errors to keep selection tracking resilient.
     } finally {
-      this.pollInFlight = false;
+      if (this.pollInFlight === generation) this.pollInFlight = null;
     }
   }
 
   #getActiveBrowserView(): { view: ItemView; viewType: string; containerEl: HTMLElement } | null {
     const activeLeaf = this.app.workspace.getMostRecentLeaf?.();
     const activeView = activeLeaf?.view as ItemView | undefined;
-    const containerEl = (activeView as unknown as { containerEl?: HTMLElement }).containerEl;
+    const containerEl = (activeView as unknown as { containerEl?: HTMLElement } | undefined)?.containerEl;
     if (!activeView || !containerEl) return null;
 
     const viewType = activeView.getViewType?.() ?? '';
@@ -279,6 +282,7 @@ export class BrowserSelectionController {
   }
 
   clear(): void {
+    this.pollGeneration += 1;
     this.storedSelection = null;
     this.updateIndicator();
   }

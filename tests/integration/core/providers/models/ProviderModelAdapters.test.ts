@@ -62,17 +62,17 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
   expect(catalog.getSnapshot()).toMatchObject({ stale: true, discoveredCount: 2, selectedIds: [selectedId] });
   await catalog.refresh({ force: true });
   expect(discover).toHaveBeenCalledTimes(calls + 1);
-  await catalog.setAliases({ [selectedId]: 'My selected model' });
+  await catalog.setAlias(selectedId, 'My selected model');
   expect(catalog.getSnapshot().aliases[selectedId]).toBe('My selected model');
-  await catalog.select([]);
+  await catalog.changeSelection({ type: 'clear' });
   expect(catalog.getSnapshot().selectedIds).toEqual([]);
   expect(() => assertions[id](settings, selected)).toThrow(ProviderModelUnavailableError);
-  await catalog.select([selectedId]);
+  await catalog.changeSelection({ type: 'set', modelId: selectedId, selected: true });
   expect(warmModelsMetadata.mock.calls).toEqual(id === 'opencode'
     ? [[[]], [[selected]]] : []);
   const before = structuredClone(settings);
   persist.mockRejectedValueOnce(new Error('disk full'));
-  await expect(catalog.select([])).rejects.toThrow('disk full');
+  await expect(catalog.changeSelection({ type: 'clear' })).rejects.toThrow('disk full');
   expect(settings).toEqual(before);
   expect(catalog.getSnapshot().selectedIds).toEqual([selectedId]);
   await catalog.dispose();

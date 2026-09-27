@@ -33,6 +33,7 @@ export class ImageContextManager {
   private readonly imagePreviewModal = new ImagePreviewModal();
   private destroyed = false;
   private enabled = true;
+  private attachmentGeneration = 0;
   private readonly dragEnterHandler = (event: DragEvent): void => this.handleDragEnter(event);
   private readonly dragOverHandler = (event: DragEvent): void => this.handleDragOver(event);
   private readonly dragLeaveHandler = (event: DragEvent): void => this.handleDragLeave(event);
@@ -72,7 +73,7 @@ export class ImageContextManager {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    if (!enabled && this.attachedImages.size > 0) {
+    if (!enabled) {
       this.clearImages();
     }
   }
@@ -86,12 +87,14 @@ export class ImageContextManager {
   }
 
   clearImages() {
+    this.attachmentGeneration += 1;
     this.attachedImages.clear();
     this.updateImagePreview();
   }
 
   /** Sets images directly (used for queued messages). */
   setImages(images: ImageAttachment[]) {
+    this.attachmentGeneration += 1;
     this.attachedImages.clear();
     for (const image of images) {
       this.attachedImages.set(image.id, image);
@@ -197,7 +200,9 @@ export class ImageContextManager {
     const files = e.dataTransfer?.files;
     if (!files) return;
 
+    const generation = this.attachmentGeneration;
     for (let i = 0; i < files.length; i++) {
+      if (this.destroyed || generation !== this.attachmentGeneration) return;
       const file = files[i];
       if (this.isImageFile(file)) {
         await this.addImageFromFile(file, 'drop');
@@ -254,9 +259,10 @@ export class ImageContextManager {
       return false;
     }
 
+    const generation = this.attachmentGeneration;
     try {
       const base64 = await this.fileToBase64(file);
-      if (this.destroyed) return false;
+      if (this.destroyed || !this.enabled || generation !== this.attachmentGeneration) return false;
 
       const attachment: ImageAttachment = {
         id: this.generateId(),
@@ -272,7 +278,7 @@ export class ImageContextManager {
       this.callbacks.onUserImagesChanged?.();
       return true;
     } catch (error) {
-      if (this.destroyed) return false;
+      if (this.destroyed || !this.enabled || generation !== this.attachmentGeneration) return false;
       this.notifyImageError('Failed to attach image.', error);
       return false;
     }

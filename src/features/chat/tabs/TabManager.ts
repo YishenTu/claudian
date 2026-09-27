@@ -2324,6 +2324,7 @@ export class TabManager implements TabManagerInterface {
     this.shutdownSnapshotOpen = true;
     for (const tab of this.getAllTabs()) {
       tab.session.pauseIntentAdmission();
+      tab.session.turns.cancel('shutdown');
     }
   }
 

@@ -1,26 +1,9 @@
 import { Setting } from 'obsidian';
 
-import type { ProviderCatalogModel, ProviderModelCatalogSnapshot } from '../../core/providers/models/ProviderModelCatalog';
+import type { ProviderCatalogModel, ProviderModelCatalogSnapshot, ProviderModelSelectionChange } from '../../core/providers/models/ProviderModelCatalog';
 
 const ALL_PROVIDERS_KEY = 'all';
 const VISIBLE_MODELS_DESCRIPTION = 'Choose which models are available in the chat selector. Drag to reorder them; the provider uses the first currently usable model as its default. Select at least one model to use this provider.';
-
-export function reorderProviderModelIds(
-  selectedIds: readonly string[],
-  modelId: string,
-  targetIndex: number,
-): string[] {
-  const currentIndex = selectedIds.indexOf(modelId);
-  if (currentIndex < 0) {
-    return [...selectedIds];
-  }
-
-  const next = [...selectedIds];
-  next.splice(currentIndex, 1);
-  const boundedIndex = Math.max(0, Math.min(targetIndex, next.length));
-  next.splice(boundedIndex, 0, modelId);
-  return next;
-}
 
 export interface ProviderModelPickerController {
   refresh(): void;
@@ -35,8 +18,8 @@ export interface ProviderModelPickerOptions {
   loadCatalog(force: boolean): Promise<void>;
   loadingCatalogText: string;
   modifier: string;
-  onAliasesChange(aliases: Record<string, string>): Promise<void>;
-  onSelectedIdsChange(selectedIds: string[]): Promise<void>;
+  onAliasChange(modelId: string, alias: string): Promise<void>;
+  onSelectionChange(change: ProviderModelSelectionChange): Promise<void>;
   providerName: string;
   searchPlaceholder?: string;
 }
@@ -142,20 +125,7 @@ export function renderProviderModelPicker(
   };
 
   const persistAlias = async (modelId: string, value: string): Promise<void> => {
-    const state = options.getState();
-    const existing = state.aliases[modelId] ?? '';
-    const next = value.trim();
-    if (next === existing) {
-      return;
-    }
-
-    const aliases = { ...state.aliases };
-    if (next) {
-      aliases[modelId] = next;
-    } else {
-      delete aliases[modelId];
-    }
-    await options.onAliasesChange(aliases);
+    await options.onAliasChange(modelId, value);
     renderSelected();
   };
 
@@ -182,7 +152,7 @@ export function renderProviderModelPicker(
     clearAllButton.setAttribute('type', 'button');
     clearAllButton.setAttribute('aria-label', `Clear all selected ${options.providerName} models`);
     clearAllButton.addEventListener('click', () => {
-      void persistSelectedIds([]);
+      void persistSelection({ type: 'clear' });
     });
 
     const rowsEl = selectedEl.createDiv({ cls: 'claudian-provider-model-picker-selected-rows' });
@@ -217,12 +187,7 @@ export function renderProviderModelPicker(
         if (!sourceModelId || sourceModelId === modelId) {
           return;
         }
-        const targetIndex = options.getState().selectedIds.indexOf(modelId);
-        void persistSelectedIds(reorderProviderModelIds(
-          options.getState().selectedIds,
-          sourceModelId,
-          targetIndex,
-        ));
+        void persistSelection({ type: 'move', modelId: sourceModelId, target: modelId });
       });
 
       const dragHandle = rowEl.createEl('button', {
@@ -259,17 +224,7 @@ export function renderProviderModelPicker(
         }
 
         event.preventDefault();
-        const selectedIds = options.getState().selectedIds;
-        const currentIndex = selectedIds.indexOf(modelId);
-        const targetIndex = currentIndex + offset;
-        if (currentIndex < 0 || targetIndex < 0 || targetIndex >= selectedIds.length) {
-          return;
-        }
-        void persistSelectedIds(reorderProviderModelIds(
-          selectedIds,
-          modelId,
-          targetIndex,
-        ));
+        void persistSelection({ type: 'move', modelId, target: offset });
       });
 
       const infoEl = rowEl.createDiv({ cls: 'claudian-provider-model-picker-selected-info' });
@@ -338,7 +293,7 @@ export function renderProviderModelPicker(
       removeButton.setAttribute('type', 'button');
       removeButton.setAttribute('aria-label', `Remove ${defaultLabel}`);
       removeButton.addEventListener('click', () => {
-        void persistSelectedIds(options.getState().selectedIds.filter(id => id !== model.id));
+        void persistSelection({ type: 'set', modelId: model.id, selected: false });
       });
     }
   };
@@ -390,8 +345,8 @@ export function renderProviderModelPicker(
       .some(value => value.toLowerCase().includes(searchQuery));
   };
 
-  const persistSelectedIds = async (selectedIds: string[]): Promise<void> => {
-    await options.onSelectedIdsChange(selectedIds);
+  const persistSelection = async (change: ProviderModelSelectionChange): Promise<void> => {
+    await options.onSelectionChange(change);
     renderAll();
   };
 
@@ -423,16 +378,8 @@ export function renderProviderModelPicker(
 
       const checkboxEl = rowEl.createEl('input', { type: 'checkbox' });
       checkboxEl.checked = isSelected;
-      const persistSelection = async (): Promise<void> => {
-        const selecting = checkboxEl.checked;
-        const currentIds = options.getState().selectedIds;
-        const nextIds = selecting
-          ? [...currentIds, model.id]
-          : currentIds.filter(id => id !== model.id);
-        await persistSelectedIds(nextIds);
-      };
       checkboxEl.addEventListener('change', () => {
-        void persistSelection();
+        void persistSelection({ type: 'set', modelId: model.id, selected: checkboxEl.checked });
       });
 
       const textEl = rowEl.createDiv({ cls: 'claudian-provider-model-picker-row-text' });

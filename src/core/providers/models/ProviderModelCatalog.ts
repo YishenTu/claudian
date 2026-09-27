@@ -26,12 +26,17 @@ export interface ProviderModelCatalogSnapshot extends ProviderModelSelection {
   error?: string;
 }
 
+export type ProviderModelSelectionChange =
+  | { type: 'set'; modelId: string; selected: boolean }
+  | { type: 'move'; modelId: string; target: string | -1 | 1 }
+  | { type: 'clear' };
+
 export interface ProviderModelCatalog {
   getSnapshot(): ProviderModelCatalogSnapshot;
   refresh(options?: { force?: boolean }): Promise<ProviderModelCatalogRefreshResult>;
   markStale(): void;
-  select(ids: string[]): Promise<void>;
-  setAliases(aliases: Record<string, string>): Promise<void>;
+  changeSelection(change: ProviderModelSelectionChange): Promise<void>;
+  setAlias(modelId: string, alias: string): Promise<void>;
   observe(observer: () => void): () => void;
   dispose(): Promise<void>;
 }
@@ -40,7 +45,7 @@ export interface ProviderModelCatalogOptions {
   providerId: ProviderId;
   providerName: string;
   host: Pick<ProviderHost, 'mutateSettings' | 'notifyProviderChatOptionsChanged'>;
-  read(): ProviderModelSelection & { enabled: boolean };
+  read(settings?: Readonly<Record<string, unknown>>): ProviderModelSelection & { enabled: boolean };
   discover(signal: AbortSignal): Promise<ProviderModelCatalogRefreshResult>;
   update(settings: Record<string, unknown>, patch: {
     visibleModels?: string[];
@@ -164,19 +169,47 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
     this.publish();
   }
 
-  async select(ids: string[]): Promise<void> {
-    const selectedIds = normalizeSelectedModelIds(ids);
-    const previousIds = this.options.read().selectedIds;
+  async changeSelection(change: ProviderModelSelectionChange): Promise<void> {
+    let addedIds: string[] = [];
     await this.options.host.mutateSettings(settings => {
+      const previousIds = normalizeSelectedModelIds(this.options.read(settings).selectedIds);
+      let selectedIds = [...previousIds];
+      switch (change.type) {
+        case 'clear':
+          selectedIds = [];
+          break;
+        case 'set': {
+          const modelId = change.modelId.trim();
+          selectedIds = change.selected
+            ? normalizeSelectedModelIds([...selectedIds, modelId])
+            : selectedIds.filter(id => id !== modelId);
+          break;
+        }
+        case 'move': {
+          const index = selectedIds.indexOf(change.modelId);
+          const target = typeof change.target === 'string'
+            ? selectedIds.indexOf(change.target)
+            : index + change.target;
+          if (index >= 0 && target >= 0 && target < selectedIds.length) {
+            selectedIds.splice(index, 1);
+            selectedIds.splice(target, 0, change.modelId);
+          }
+          break;
+        }
+      }
+      addedIds = selectedIds.filter(id => !previousIds.includes(id));
       this.options.update(settings, { visibleModels: selectedIds });
     });
-    await this.options.afterSelect?.(selectedIds.filter(id => !previousIds.includes(id)));
+    await this.options.afterSelect?.(addedIds);
     this.options.host.notifyProviderChatOptionsChanged(this.options.providerId);
     this.publish();
   }
 
-  async setAliases(aliases: Record<string, string>): Promise<void> {
+  async setAlias(modelId: string, alias: string): Promise<void> {
     await this.options.host.mutateSettings(settings => {
+      const aliases = { ...this.options.read(settings).aliases };
+      if (alias.trim()) aliases[modelId] = alias.trim();
+      else delete aliases[modelId];
       this.options.update(settings, { modelAliases: aliases });
     });
     this.options.host.notifyProviderChatOptionsChanged(this.options.providerId);

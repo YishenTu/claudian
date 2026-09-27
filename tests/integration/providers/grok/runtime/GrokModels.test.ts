@@ -39,7 +39,7 @@ it('retains discovered effort choices through selection, persistence, and reload
   // Discovery must remain available in memory, but only selected models go to disk.
   expect(Object.values(projectGrokModelSettings(settings).selectedModelsByHost as Record<string, { models: unknown[] }>)
     .every(snapshot => snapshot.models.length === 0)).toBe(true);
-  await catalog.select(['grok-4.6']);
+  await catalog.changeSelection({ type: 'set', modelId: 'grok-4.6', selected: true });
   const reloaded = { providerConfigs: { grok: JSON.parse(JSON.stringify(projectGrokModelSettings(settings))) } };
   expect(grokChatUIConfig.getReasoningOptions('grok/grok-4.6', reloaded).map(option => option.value))
     .toEqual(['xhigh', 'high', 'medium', 'low']);

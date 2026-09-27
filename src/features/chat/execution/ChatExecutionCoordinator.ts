@@ -27,6 +27,7 @@ import type {
   ImageAttachment,
   ProviderId,
 } from '@/core/types';
+import { throwIfAborted } from '@/utils/abort';
 import { toError } from '@/utils/error';
 
 import {
@@ -201,6 +202,7 @@ export class ChatExecutionCoordinator {
   #conversation: ChatExecutionConversationBinding | null = null;
   #sessionBinding: SessionBinding | null = null;
   #activeExecution: ActiveExecution | null = null;
+  #requestController: AbortController | null = null;
   readonly #pendingInteractions = new Map<string, PendingInteraction>();
   readonly #pendingSteerAttempts = new Map<string, PendingSteerAttempt>();
   #disposed = false;
@@ -358,23 +360,33 @@ export class ChatExecutionCoordinator {
     }
   }
 
-  async execute(submission: ChatTurnSubmission): Promise<ChatExecutionResult> {
-    return this.#runProtectedOperation(() => this.#executeProtected(submission));
+  async execute(submission: ChatTurnSubmission, signal?: AbortSignal): Promise<ChatExecutionResult> {
+    this.#assertAvailable();
+    if (this.#requestController) throw new Error('A chat execution is already active');
+    const controller = new AbortController();
+    this.#requestController = controller;
+    const cancel = () => this.cancel();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) controller.abort();
+    try {
+      return await this.#runProtectedOperation(() => this.#executeProtected(submission, controller));
+    } finally {
+      signal?.removeEventListener('abort', cancel);
+      this.#requestController = null;
+    }
   }
 
   async #executeProtected(
     submission: ChatTurnSubmission,
+    requestController: AbortController,
   ): Promise<ChatExecutionResult> {
-    this.#assertAvailable();
-    if (this.#activeExecution) {
-      throw new Error('A chat execution is already active');
-    }
     const conversation = this.#requireConversation();
-    const requestController = new AbortController();
     let binding: SessionBinding;
     let run: ProviderExecutionRun;
     try {
+      throwIfAborted(requestController.signal, 'Turn cancelled before provider handoff');
       await this.prepare();
+      throwIfAborted(requestController.signal, 'Turn cancelled before provider handoff');
       if (!sameConversationBinding(conversation, this.#conversation)) {
         throw new Error('Chat execution binding changed before provider handoff');
       }
@@ -387,6 +399,7 @@ export class ChatExecutionCoordinator {
       if (!sameConversationBinding(conversation, this.#conversation)) {
         throw new Error('Chat execution binding changed before provider handoff');
       }
+      throwIfAborted(requestController.signal, 'Turn cancelled before provider handoff');
       binding = this.#requireCurrentSessionBinding();
       binding.model = submission.configuration.model;
       run = binding.session.execute(
@@ -416,6 +429,8 @@ export class ChatExecutionCoordinator {
   }
 
   cancel(): void {
+    if (this.#requestController?.signal.aborted) return;
+    this.#requestController?.abort();
     const active = this.#activeExecution;
     if (!active) return;
     active.terminationOverride = 'cancelled';

@@ -10,8 +10,8 @@ export function createCodexModels(host: ProviderHost, native: Pick<CodexModelCat
     host,
     update: updateCodexProviderSettings,
     providerName: 'Codex',
-    read: () => {
-      const current = getCodexProviderSettings(host.settings);
+    read: (settings = host.settings) => {
+      const current = getCodexProviderSettings(settings);
       return {
         enabled: current.enabled,
         models: current.discoveredModels.map(model => ({

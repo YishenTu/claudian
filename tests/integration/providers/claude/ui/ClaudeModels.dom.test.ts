@@ -2,14 +2,20 @@
 
 import '@test/helpers/ObsidianSettingsDOM';
 
+import { deserialize, serialize } from 'node:v8';
+
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
+import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
+import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderSettingsTabRendererContext } from '@/core/providers/types';
+import type { ClaudianSettings } from '@/core/types';
 import { ModelSelector, type ToolbarCallbacks } from '@/features/chat/ui/InputToolbar';
 import type { ClaudeModelCatalog } from '@/providers/claude/runtime/ClaudeModelCatalog';
 import { createClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
+import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
 import { renderProviderModelsSection } from '@/shared/settings/ProviderModelsSection';
 
@@ -216,3 +222,55 @@ it('allows Discover after abort and detaches the closed settings observer', asyn
   await catalog.dispose();
   expect(container.innerHTML).toBe(rendered);
 });
+
+// Settings persistence uses structuredClone, which is not provided by jsdom.
+globalThis.structuredClone ??= value => deserialize(serialize(value));
+
+it.each(['selections', 'aliases'] as const)(
+  'preserves overlapping model %s while the first settings save is pending', async kind => {
+    const settings = { providerConfigs: { claude: {
+      visibleModels: kind === 'aliases' ? ['sonnet', 'opus'] : [],
+      modelAliases: {},
+      discoveredModels: [{ value: 'sonnet', label: 'Sonnet' }, { value: 'opus', label: 'Opus' }],
+    } } };
+    let finish!: () => void;
+    let started!: () => void;
+    const saving = new Promise<void>(resolve => { started = resolve; });
+    const gate = new Promise<void>(resolve => { finish = resolve; });
+    let writes = 0;
+    const coordinator = new SettingsCoordinator(settings, async () => {
+      if (++writes === 1) { started(); await gate; }
+    });
+    const notify = jest.fn();
+    const host = {
+      settings,
+      mutateSettings: (mutation: (draft: ClaudianSettings) => void | Promise<void>) =>
+        coordinator.mutate(draft => mutation(draft as unknown as ClaudianSettings)),
+      notifyProviderChatOptionsChanged: notify,
+    } as unknown as ProviderHost;
+    const catalog = createClaudeModels(host, { refresh: async () => ({ changed: false }) });
+    await catalog.refresh();
+    const container = document.body.createDiv();
+    const picker = renderProviderModelsSection(container, 'claude', 'Claude', catalog);
+    expect((await axe(container)).violations).toEqual([]);
+    const edit = (name: string, value: string) => {
+      if (kind === 'selections') fireEvent.click(within(container).getByRole('checkbox', { name: new RegExp(name) }));
+      else {
+        const field = within(container).getByRole('textbox', { name: `Alias for ${name}` }) as HTMLInputElement;
+        field.value = value;
+        fireEvent.blur(field);
+      }
+    };
+    edit('Sonnet', 'First');
+    await saving;
+    edit('Opus', 'Second');
+    finish();
+    await waitFor(() => expect(notify).toHaveBeenCalledTimes(2));
+    picker.dispose();
+    await catalog.dispose();
+    const saved = getClaudeProviderSettings(settings);
+    expect(saved.visibleModels).toEqual(['sonnet', 'opus']);
+    expect(saved.modelAliases).toEqual(kind === 'aliases' ? { sonnet: 'First', opus: 'Second' } : {});
+    container.remove();
+  },
+);

@@ -454,6 +454,12 @@ export class InlineEditSession {
       this.selectedText = this.editor.getSelection() || this.selectedText;
       this.startLine = from.line + 1; // 1-indexed
     }
+    this.sourceSnapshot = {
+      doc,
+      from: this.selFrom,
+      text: this.#getDocumentSlice(doc, this.selFrom, this.selTo),
+      to: this.selTo,
+    };
   }
 
   show() {
@@ -694,16 +700,12 @@ export class InlineEditSession {
     if (this.settled || this.generating || !this.inputEl || !this.spinnerEl) return;
     const userMessage = this.inputEl.value.trim();
     if (!userMessage) return;
+    if (!this.#isSourceUnchanged()) {
+      this.#rejectStaleSource();
+      return;
+    }
     const generation = ++this.generation;
     this.generating = true;
-
-    const sourceDoc = this.editorView.state.doc;
-    this.sourceSnapshot = {
-      doc: sourceDoc,
-      from: this.selFrom,
-      text: this.#getDocumentSlice(sourceDoc, this.selFrom, this.selTo),
-      to: this.selTo,
-    };
 
     // Slash commands are passed directly to SDK for handling
 
@@ -742,7 +744,8 @@ export class InlineEditSession {
       }
     } catch (error) {
       if (this.#isGenerationActive(generation)) {
-        this.#handleError(error instanceof Error ? error.message : 'Error - try again');
+        if (!this.#isSourceUnchanged()) this.#rejectStaleSource();
+        else this.#handleError(error instanceof Error ? error.message : 'Error - try again');
       }
       return;
     } finally {
@@ -814,9 +817,11 @@ export class InlineEditSession {
     if (!this.inputEl) return;
     this.inputEl.disabled = false;
     this.inputEl.placeholder = errorMessage;
-    this.#updatePositionsFromEditor();
-    this.#updateHighlight();
-    this.#attachSelectionListeners();
+    if (!this.isConversing) {
+      this.#updatePositionsFromEditor();
+      this.#updateHighlight();
+      this.#attachSelectionListeners();
+    }
     this.inputEl.focus();
   }
 

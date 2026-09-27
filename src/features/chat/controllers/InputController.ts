@@ -381,10 +381,10 @@ export class InputController {
       return;
     }
 
-    await this.turnCoordinator.run(() => this.#executeMainTurn(content, options));
+    await this.turnCoordinator.run(signal => this.#executeMainTurn(content, signal, options));
   }
 
-  async #executeMainTurn(content: string, options?: SendMessageOptions): Promise<void> {
+  async #executeMainTurn(content: string, signal: AbortSignal, options?: SendMessageOptions): Promise<void> {
     const { plugin, state, renderer, streamController, conversationController } = this.deps;
     const inputEl = this.deps.getInputEl();
     const imageContextManager = this.deps.getImageContextManager();
@@ -455,10 +455,21 @@ export class InputController {
     state.hasPendingConversationSave = true;
     renderer.addMessage(userMsg);
 
+    const restoreCancelledInput = (): boolean => {
+      if (!signal.aborted) return false;
+      this.#restoreMessageToInput(this.#createQueuedMessage(displayContent, turnRequest), { mergeWithComposer: true });
+      this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
+      this.activeStreamingAssistantMessage = null;
+      this.#resetProviderMessageBoundaryState();
+      this.#reportDeferredReviewableSettlement();
+      return true;
+    };
+
     try {
       await this.#ensureConversationShell(linkedContentSubmission);
-      if (this.#retainUnsentTurnOnClose()) return;
+      if (this.#retainUnsentTurnOnClose(signal) || restoreCancelledInput()) return;
       await this.#triggerTitleGeneration();
+      if (this.#retainUnsentTurnOnClose(signal) || restoreCancelledInput()) return;
     } catch (error) {
       if (linkedContentSubmission && !state.currentConversationId) {
         linkedContentController.rollbackSubmission(linkedContentSubmission);
@@ -511,8 +522,9 @@ export class InputController {
     // Lazy initialization: bind and prepare execution on the first provider action.
     if (this.deps.ensureExecutionInitialized) {
       const ready = await this.deps.ensureExecutionInitialized();
+      if (this.#retainUnsentTurnOnClose(signal, assistantMsg.id) || restoreCancelledInput()) return;
       if (!ready) {
-        if (this.#retainUnsentTurnOnClose(assistantMsg.id)) return;
+        if (this.#retainUnsentTurnOnClose(signal, assistantMsg.id)) return;
         new Notice('Failed to initialize agent execution. Please try again.');
         this.#restoreMessageToInput(
           this.#createQueuedMessage(displayContent, admittedTurnRequest),
@@ -541,7 +553,7 @@ export class InputController {
     }
 
     const dynamicSystemPromptSections = await this.#resolveMainAgentDynamicSystemPromptSections();
-    if (this.#retainUnsentTurnOnClose(assistantMsg.id)) return;
+    if (this.#retainUnsentTurnOnClose(signal, assistantMsg.id) || restoreCancelledInput()) return;
 
     try {
       userMsg.content = admittedTurnRequest.text;
@@ -552,7 +564,7 @@ export class InputController {
         userMsg,
         assistantMsg,
         dynamicSystemPromptSections,
-      ));
+      ), signal);
       if (result.status === 'completed') {
         const checkpoint = result.nativeAssistantMessageId ?? result.nativeCheckpointId;
         const finalAssistant = this.activeStreamingAssistantMessage ?? assistantMsg;
@@ -615,14 +627,14 @@ export class InputController {
       }
     } catch (error) {
       if (error instanceof ChatExecutionPreHandoffError) {
-        if (this.#retainUnsentTurnOnClose(assistantMsg.id)) return;
+        if (this.#retainUnsentTurnOnClose(signal, assistantMsg.id)) return;
         this.#restoreMessageToInput(
           this.#createQueuedMessage(displayContent, admittedTurnRequest),
           { mergeWithComposer: true },
         );
         this.#rollbackFailedTurn(messagesBeforeTurn, hadPendingConversationSave);
         didRollbackUnsentTurn = true;
-        new Notice('Message was not sent. Please try again.');
+        if (!signal.aborted) new Notice('Message was not sent. Please try again.');
         this.#reportDeferredReviewableSettlement();
       } else {
         hadExecutionError = true;
@@ -1518,8 +1530,8 @@ export class InputController {
       && (message.contentBlocks?.length ?? 0) === 0;
   }
 
-  #retainUnsentTurnOnClose(assistantMessageId?: string): boolean {
-    if (!this.deps.isClosing?.()) return false;
+  #retainUnsentTurnOnClose(signal: AbortSignal, assistantMessageId?: string): boolean {
+    if (!this.deps.isClosing?.() && signal.reason !== 'shutdown') return false;
     // Teardown retains submitted input in the in-memory conversation projection.
     // The closing composer cannot receive a retry; native history remains provider-owned.
     if (assistantMessageId) this.#discardStreamingAssistantMessage(assistantMessageId);
@@ -1700,6 +1712,7 @@ export class InputController {
     const { state, streamController } = this.deps;
     if (!state.isStreaming) return;
     state.cancelRequested = true;
+    this.turnCoordinator.cancel();
     this.#restoreQueuedMessageToInput();
     this.#clearCurrentPendingSteerUi();
     this.#getExecutionCoordinator()?.cancel();

@@ -818,12 +818,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       const validationEl = inputWrapper.createDiv({ cls: 'claudian-context-limit-validation claudian-hidden' });
 
       const saveAlias = async (): Promise<void> => {
-        const existing = (modelAliases?.get(this.plugin.settings) ?? {})[modelId] ?? '';
         const trimmed = aliasInputEl.value.trim();
-        if (trimmed === existing) {
-          aliasInputEl.value = existing;
-          return;
-        }
 
         await this.plugin.mutateSettings((settings) => {
           const aliases = (modelAliases?.get(settings) ?? {});

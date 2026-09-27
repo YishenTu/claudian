@@ -1,4 +1,4 @@
-import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
+import { ProviderModelCatalogController, type ProviderModelSelectionChange } from '@/core/providers/models/ProviderModelCatalog';
 
 function fixture() {
   let models = [{ id: 'selected', name: 'Selected' }];
@@ -109,9 +109,9 @@ it('notifies only for committed selection and alias writes, not discovery or sta
   await catalog.refresh();
   catalog.markStale();
   expect(notify).not.toHaveBeenCalled();
-  await catalog.select(['selected']);
+  await catalog.changeSelection({ type: 'set', modelId: 'selected', selected: true });
   expect(notify).toHaveBeenCalledTimes(1);
-  await catalog.setAliases({ selected: 'Alias' });
+  await catalog.setAlias('selected', 'Alias');
   expect(notify).toHaveBeenCalledTimes(2);
 });
 
@@ -139,4 +139,31 @@ it('does not retry a failed initial discovery when settings reopen', async () =>
   await catalog.refresh({ force: true });
   expect(discover).toHaveBeenCalledTimes(2);
   expect(catalog.getSnapshot()).toMatchObject({ status: 'ready', error: undefined });
+});
+
+
+it.each<{ change: ProviderModelSelectionChange; expected: string[] }>([
+  { change: { type: 'move', modelId: 'c', target: 'a' }, expected: ['c', 'a', 'b'] },
+  { change: { type: 'move', modelId: 'a', target: 'c' }, expected: ['b', 'c', 'a'] },
+  { change: { type: 'move', modelId: 'a', target: -1 }, expected: ['a', 'b', 'c'] },
+  { change: { type: 'move', modelId: 'c', target: 1 }, expected: ['a', 'b', 'c'] },
+  { change: { type: 'move', modelId: 'missing', target: 'a' }, expected: ['a', 'b', 'c'] },
+  { change: { type: 'move', modelId: 'a', target: 'missing' }, expected: ['a', 'b', 'c'] },
+  { change: { type: 'set', modelId: ' b ', selected: true }, expected: ['a', 'b', 'c'] },
+  { change: { type: 'set', modelId: ' b ', selected: false }, expected: ['a', 'c'] },
+])('applies selection intent $change without changing other identities', async ({ change, expected }) => {
+  const settings = { visibleModels: ['a', 'b', 'c'] };
+  const catalog = new ProviderModelCatalogController({
+    providerId: 'example', providerName: 'Example',
+    read: (draft = settings) => ({ enabled: true, models: [], selectedIds: draft.visibleModels as string[], aliases: {} }),
+    discover: async () => ({ changed: false }),
+    update: (draft, patch) => { Object.assign(draft, patch); },
+    host: {
+      mutateSettings: async mutate => { await mutate(settings as any); },
+      notifyProviderChatOptionsChanged: jest.fn(),
+    },
+  });
+  await catalog.changeSelection(change);
+  expect(settings.visibleModels).toEqual(expected);
+  await catalog.dispose();
 });

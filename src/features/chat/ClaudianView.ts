@@ -115,10 +115,12 @@ export class ClaudianView extends ItemView {
   private pendingTabBarUpdate: ScheduledAnimationFrame | null = null;
   private tabStatePersistence: TabStatePersistenceCoordinator | null = null;
   private hasTabWorkspaceViewState = false;
+  private tabWorkspaceDeliveryRevision = 0;
   private pendingTabWorkspaceState: AppTabManagerState | null = null;
   private finalizedTabWorkspaceState: AppTabManagerState | null = null;
   private tabWorkspaceStateDelivery: TabWorkspaceStateDeliveryRegistration | null = null;
   private initializedTabWorkspaceLifecycleRevision = -1;
+  private admittedTabWorkspaceLifecycleRevision = -1;
   private tabWorkspaceInitialization: {
     lifecycleRevision: number;
     promise: Promise<void>;
@@ -204,9 +206,13 @@ export class ClaudianView extends ItemView {
     this.tabWorkspaceStateDelivery = registration;
     const lifecycleRevision = this.viewLifecycleRevision ?? 0;
 
-    // Once initialized, live membership owns persistence for this view lifecycle.
-    if (this.initializedTabWorkspaceLifecycleRevision === lifecycleRevision) return;
+    // Once shells are admitted, live membership owns this view lifecycle.
+    if (
+      this.initializedTabWorkspaceLifecycleRevision === lifecycleRevision
+      || this.admittedTabWorkspaceLifecycleRevision === lifecycleRevision
+    ) return;
 
+    this.tabWorkspaceDeliveryRevision = (this.tabWorkspaceDeliveryRevision ?? 0) + 1;
     this.pendingTabWorkspaceState = null;
 
     if (hasTabWorkspaceViewState && record) {
@@ -2210,8 +2216,12 @@ export class ClaudianView extends ItemView {
     }
 
     const promise = (async () => {
-      await this.restoreTabWorkspace(lifecycleRevision, reopeningState);
-      if (!this.isViewLifecycleCurrent(lifecycleRevision)) return;
+      let deliveryRevision: number;
+      do {
+        deliveryRevision = this.tabWorkspaceDeliveryRevision ?? 0;
+        await this.restoreTabWorkspace(lifecycleRevision, reopeningState);
+        if (!this.isViewLifecycleCurrent(lifecycleRevision)) return;
+      } while (deliveryRevision !== (this.tabWorkspaceDeliveryRevision ?? 0));
 
       this.initializedTabWorkspaceLifecycleRevision = lifecycleRevision;
       this.syncProviderBrandColor();
@@ -2238,6 +2248,7 @@ export class ClaudianView extends ItemView {
     const tabManager = this.tabManager;
     if (!tabManager) return;
 
+    const deliveryRevision = this.tabWorkspaceDeliveryRevision ?? 0;
     let usedLegacyState = false;
     let persistedState = reopeningState
       ?? (this.hasTabWorkspaceViewState ? this.pendingTabWorkspaceState : null);
@@ -2248,6 +2259,7 @@ export class ClaudianView extends ItemView {
     if (
       !this.isViewLifecycleCurrent(lifecycleRevision)
       || this.tabManager !== tabManager
+      || deliveryRevision !== (this.tabWorkspaceDeliveryRevision ?? 0)
     ) return;
 
     const restorePlan = resolveTabRestorePlan(persistedState, {
@@ -2268,12 +2280,24 @@ export class ClaudianView extends ItemView {
     if (
       !this.isViewLifecycleCurrent(lifecycleRevision)
       || this.tabManager !== tabManager
+      || deliveryRevision !== (this.tabWorkspaceDeliveryRevision ?? 0)
     ) return;
 
-    await tabManager.restoreState(restorePlan);
+    // restoreState admits the complete shell set synchronously before activation awaits.
+    // From this handoff onward live membership, not later Obsidian deliveries, owns it.
+    this.admittedTabWorkspaceLifecycleRevision = lifecycleRevision;
+    try {
+      await tabManager.restoreState(restorePlan);
+    } catch (error) {
+      if (this.isViewLifecycleCurrent(lifecycleRevision)) {
+        this.admittedTabWorkspaceLifecycleRevision = -1;
+      }
+      throw error;
+    }
     if (
       !this.isViewLifecycleCurrent(lifecycleRevision)
       || this.tabManager !== tabManager
+      || deliveryRevision !== (this.tabWorkspaceDeliveryRevision ?? 0)
     ) return;
 
     this.tabBar?.setExpandedTitleTabIds(restorePlan.expandedTitleTabIds ?? []);

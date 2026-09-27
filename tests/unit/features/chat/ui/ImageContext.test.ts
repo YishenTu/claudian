@@ -68,6 +68,33 @@ describe('ImageContextManager', () => {
     manager = new ImageContextManager(container, inputEl, callbacks);
   });
 
+  it.each(['replace-draft', 'disable-images', 'clear-draft'] as const)(
+    'discards a pending file read and the rest of its drop batch after %s', async action => {
+      let finishRead!: (value: ArrayBuffer) => void;
+      const first = {
+        name: 'old-draft.png', type: 'image/png', size: 3,
+        arrayBuffer: () => new Promise<ArrayBuffer>(resolve => { finishRead = resolve; }),
+      } as File;
+      const second = {
+        name: 'second.png', type: 'image/png', size: 3,
+        arrayBuffer: jest.fn(async () => new Uint8Array([4, 5, 6]).buffer),
+      } as unknown as File;
+      const pending = manager['handleDrop']({
+        dataTransfer: { files: [first, second] }, preventDefault: jest.fn(), stopPropagation: jest.fn(),
+      } as unknown as DragEvent);
+      const replacement = createImageAttachment({ id: 'replacement' });
+      if (action === 'replace-draft') manager.setImages([replacement]);
+      else if (action === 'disable-images') { manager.setEnabled(false); manager.setEnabled(true); }
+      else manager.clearImages();
+      finishRead(new Uint8Array([1, 2, 3]).buffer);
+      await pending;
+      expect(manager.getAttachedImages()).toEqual(action === 'replace-draft' ? [replacement] : []);
+      expect(second.arrayBuffer).not.toHaveBeenCalled();
+      expect(callbacks.onUserImagesChanged).not.toHaveBeenCalled();
+      manager.destroy();
+    },
+  );
+
   describe('initial state', () => {
     it('should start with no images', () => {
       expect(manager.hasImages()).toBe(false);

@@ -9,8 +9,8 @@ export function createGrokModels(host: ProviderHost, native: Pick<GrokModelCatal
     host,
     update: updateGrokProviderSettings,
     providerName: 'Grok',
-    read: () => {
-      const current = getGrokProviderSettings(host.settings);
+    read: (settings = host.settings) => {
+      const current = getGrokProviderSettings(settings);
       return {
         enabled: current.enabled,
         models: (current.currentCatalog?.models ?? []).map(model => ({
