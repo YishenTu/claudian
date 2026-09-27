@@ -1,30 +1,33 @@
-export interface ActiveTurnOwner {
-  activeTurn: Promise<void> | null;
-}
-
-/** Owns the lifetime of the existing turn orchestration without changing its phases. */
-export class TurnCoordinator<TRequest> {
+/** Owns one admitted main turn through its final rendering and persistence. */
+export class TurnCoordinator {
   private activeTurn: Promise<void> | null = null;
 
-  constructor(
-    private readonly executeTurn: (request?: TRequest) => Promise<void>,
-    private readonly owner?: ActiveTurnOwner,
-  ) {}
+  constructor(private readonly onWorkChanged?: () => void) {}
 
-  get current(): Promise<void> | null {
-    return this.activeTurn;
+  get isActive(): boolean {
+    return this.activeTurn !== null;
   }
 
-  async run(request?: TRequest): Promise<void> {
-    const execution = this.executeTurn(request);
-    this.activeTurn = execution;
-    if (this.owner) this.owner.activeTurn = execution;
+  drain(): Promise<void> {
+    return this.activeTurn ?? Promise.resolve();
+  }
 
+  async run(execute: () => Promise<void>): Promise<void> {
+    if (this.activeTurn) throw new Error('A main turn is already active');
+    let settle!: () => void;
+    this.activeTurn = new Promise<void>(resolve => { settle = resolve; });
     try {
-      await execution;
+      const execution = execute();
+      try {
+        this.onWorkChanged?.();
+      } finally {
+        // An observer failure must not release ownership of running work.
+        await execution;
+      }
     } finally {
-      if (this.activeTurn === execution) this.activeTurn = null;
-      if (this.owner?.activeTurn === execution) this.owner.activeTurn = null;
+      this.activeTurn = null;
+      settle();
+      this.onWorkChanged?.();
     }
   }
 }

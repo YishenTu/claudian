@@ -18,7 +18,9 @@ import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderConversationHistoryService,
+  ProviderHistoryInput,
   ProviderHistoryPathContext,
+  ProviderHistoryResult,
 } from '../../core/providers/types';
 import {
   DEFAULT_CHAT_PROVIDER_ID,
@@ -518,7 +520,7 @@ export class ConversationRepository {
           draft,
           vaultPath,
           missingProviderSessionId,
-          this.#getHistoryPathContext(draft.providerId, vaultPath),
+          this.#getHistoryPathContext(conversation.providerId, vaultPath),
         );
         nativeReadCompleted = true;
         return result;
@@ -1270,9 +1272,10 @@ export class ConversationRepository {
     );
     if (historyService.recoverConversationSessionReference) {
       try {
-        const outcome = await this.#readProviderHistory(conversation, draft => (
-          historyService.recoverConversationSessionReference!(draft, vaultPath, pathContext)
-        ), changed => changed);
+        const outcome = await this.#readProviderHistory(conversation, async input => {
+          const changes = await historyService.recoverConversationSessionReference!(input, vaultPath, pathContext);
+          return { outcome: changes !== null, changes: changes ?? undefined };
+        }, changed => changed);
         if (!outcome.current) return false;
       } catch {
         return true;
@@ -1281,17 +1284,18 @@ export class ConversationRepository {
 
     if (!historyService.getConversationSessionAvailability) return true;
     try {
-      const availability = await this.#readProviderHistory(conversation, draft => (
-        historyService.getConversationSessionAvailability!(draft, vaultPath, pathContext)
-      ));
+      const availability = await this.#readProviderHistory(conversation, async input => ({
+        outcome: await historyService.getConversationSessionAvailability!(input, vaultPath, pathContext),
+      }));
       if (!availability.current) return false;
       if (
         availability.value !== 'relocated'
         || !historyService.prepareRelocatedConversationSession
       ) return true;
-      const outcome = await this.#readProviderHistory(conversation, draft => (
-        historyService.prepareRelocatedConversationSession!(draft, vaultPath, pathContext)
-      ), changed => changed);
+      const outcome = await this.#readProviderHistory(conversation, async input => {
+        const changes = await historyService.prepareRelocatedConversationSession!(input, vaultPath, pathContext);
+        return { outcome: changes !== null, changes: changes ?? undefined };
+      }, changed => changed);
       return outcome.current;
     } catch {
       // Failed reads only discard their isolated draft.
@@ -1419,21 +1423,22 @@ export class ConversationRepository {
     conversation: Conversation,
   ): Promise<boolean> {
     const vaultPath = this.deps.getVaultPath();
-    const outcome = await this.#readProviderHistory(conversation, draft => (
-      ProviderRegistry.getConversationHistoryService(draft.providerId)
+    const outcome = await this.#readProviderHistory(conversation, async input => ({
+      outcome: undefined,
+      changes: await ProviderRegistry.getConversationHistoryService(conversation.providerId)
         .hydrateConversationHistory(
-          draft,
+          input,
           vaultPath,
-          this.#getHistoryPathContext(draft.providerId, vaultPath),
-        )
-    ));
+          this.#getHistoryPathContext(conversation.providerId, vaultPath),
+        ),
+    }));
     return outcome.current;
   }
 
-  /** Native readers may mutate only this detached draft; the repository publishes it. */
+  /** Publish explicit native-history updates only while their captured binding remains current. */
   async #readProviderHistory<T>(
     conversation: Conversation,
-    read: (draft: Conversation) => Promise<T>,
+    read: (input: ProviderHistoryInput) => Promise<ProviderHistoryResult<T>>,
     shouldPersist: (value: T) => boolean = () => false,
   ): Promise<{ current: false } | { current: true; value: T }> {
     const generation = this.#getConversationGeneration(conversation.id);
@@ -1442,19 +1447,21 @@ export class ConversationRepository {
     if (pendingWrite) await pendingWrite;
     if (!this.#isConversationCurrent(conversation, generation)) return { current: false };
     const fields = ['sessionId', 'providerState', 'resumeAtMessageId', 'messages'] as const;
-    const before = fields.map(field => JSON.stringify(conversation[field]));
-    const draft = cloneJSON(conversation);
-    const value = await read(draft);
+    const before = fields.map(field => conversation[field]);
+    const input: ProviderHistoryInput = structuredClone({
+      sessionId: conversation.sessionId,
+      providerState: conversation.providerState,
+      resumeAtMessageId: conversation.resumeAtMessageId,
+      messages: conversation.messages,
+      createdAt: conversation.createdAt,
+      lastActivityAt: conversation.lastActivityAt,
+    });
+    const { outcome: value, changes: patch = {} } = await read(input);
     const isCurrent = (): boolean => (
       this.#isConversationCurrent(conversation, generation)
-      && fields.every((field, index) => JSON.stringify(conversation[field]) === before[index])
+      && fields.every((field, index) => conversation[field] === before[index])
     );
     if (!isCurrent()) return { current: false };
-    const patch: ConversationMutablePatch = {};
-    if (JSON.stringify(draft.messages) !== before[3]) patch.messages = draft.messages;
-    if (JSON.stringify(draft.sessionId) !== before[0]) patch.sessionId = draft.sessionId;
-    if (JSON.stringify(draft.providerState) !== before[1]) patch.providerState = draft.providerState;
-    if (JSON.stringify(draft.resumeAtMessageId) !== before[2]) patch.resumeAtMessageId = draft.resumeAtMessageId;
     if (shouldPersist(value)) {
       const persisted = await this.#enqueuePersistence(conversation.id, async () => {
         if (!await this.#canWriteConversation(conversation) || !isCurrent()) return false;

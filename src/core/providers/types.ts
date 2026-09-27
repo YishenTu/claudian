@@ -425,58 +425,73 @@ export interface ProviderWorkspaceRegistration<
   initialize(context: ProviderWorkspaceInitContext): Promise<TServices>;
 }
 
-/**
- * Mutation callbacks receive a detached repository-owned draft. Only the repository
- * may publish its history/session fields after validating the captured binding.
- */
+/** Only repository-owned history fields may be proposed by native readers. */
+export type ProviderHistoryState = Pick<
+  Conversation, 'sessionId' | 'providerState' | 'resumeAtMessageId' | 'messages'
+>;
+
+/** Native history inspection never receives application identity or mutable repository state. */
+export type ProviderHistoryInput = Readonly<ProviderHistoryState> & {
+  readonly createdAt?: number;
+  readonly lastActivityAt?: number;
+};
+
+export type ProviderHistoryUpdate = Partial<ProviderHistoryState>;
+
+export interface ProviderHistoryResult<T> {
+  readonly outcome: T;
+  readonly changes?: ProviderHistoryUpdate;
+}
+
+/** Readers return explicit proposals; only the repository validates and publishes them. */
 export interface ProviderConversationHistoryService {
   /** Whether this conversation still references native history worth model recovery. */
-  hasConversationModelRecoverySource?(conversation: Conversation): boolean;
+  hasConversationModelRecoverySource?(conversation: ProviderHistoryInput): boolean;
   /**
    * Recovers a stable provider-owned model selection from native history.
    * Implementations must not require the model to remain in the current catalog.
    */
   recoverConversationModelSelection?(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<string | null>;
   /** Recovers a missing provider-native session reference before history hydration. */
   recoverConversationSessionReference?(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<boolean>;
+  ): Promise<ProviderHistoryUpdate | null>;
   /**
    * Reports whether the provider-native session needed to resume a persisted
    * conversation is still available. Providers that cannot distinguish a
    * missing session from an inaccessible history store should return unknown.
    */
   getConversationSessionAvailability?(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<ProviderConversationSessionAvailability>;
   /** Clears stale resume state so relocated provider history can rebuild natively. */
   prepareRelocatedConversationSession?(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<boolean>;
+  ): Promise<ProviderHistoryUpdate | null>;
   /** Decides whether a confirmed missing resume session makes the whole record disposable. */
   resolveMissingConversationSession?(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string | null,
     missingProviderSessionId?: string,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<'delete' | 'reset' | 'preserve'>;
+  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>>;
   hydrateConversationHistory(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<void>;
-  resolveSessionIdForConversation(conversation: Conversation | null): string | null;
-  isPendingForkConversation(conversation: Conversation): boolean;
+  ): Promise<ProviderHistoryUpdate>;
+  resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null;
+  isPendingForkConversation(conversation: ProviderHistoryInput): boolean;
   /** Builds opaque provider state for a forked conversation. */
   buildForkProviderState(
     sourceSessionId: string,
@@ -485,8 +500,8 @@ export interface ProviderConversationHistoryService {
     vaultPath?: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Record<string, unknown> | Promise<Record<string, unknown>>;
-  /** Adds provider-owned persisted metadata to Conversation.providerState before session save. */
-  buildPersistedProviderState?(conversation: Conversation): Record<string, unknown> | undefined;
+  /** Adds provider-owned persisted metadata to ProviderHistoryInput.providerState before session save. */
+  buildPersistedProviderState?(conversation: ProviderHistoryInput): Record<string, unknown> | undefined;
 }
 
 export interface ProviderSubagentHistoryRequest {

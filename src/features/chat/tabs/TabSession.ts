@@ -1,4 +1,5 @@
 import type { ProviderId } from '../../../core/providers/types';
+import { TurnCoordinator } from '../controllers/TurnCoordinator';
 import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
 import type { TabLifecycleState } from './types';
 
@@ -13,7 +14,7 @@ export interface TabSessionState {
 export class TabSession {
   /** Runtime selections survive tab activation and execution cooling, but not tab disposal. */
   readonly reasoningSelections = new Map<string, string>();
-  private activeTurnValue: Promise<void> | null = null;
+  readonly turns: TurnCoordinator;
   private backgroundWork: Promise<void> = Promise.resolve();
   private backgroundWorkPauseDepth = 0;
   private coordinatorDisposal: Promise<void> | null = null;
@@ -26,7 +27,12 @@ export class TabSession {
     private readonly state: TabSessionState,
     private readonly coordinator: ChatExecutionCoordinator,
     private readonly onWorkChanged?: () => void,
-  ) {}
+  ) {
+    this.turns = new TurnCoordinator(() => {
+      this.onWorkChanged?.();
+      if (!this.turns.isActive) this.coordinator.notifyMayCool();
+    });
+  }
 
   get id(): string { return this.state.id; }
   get lifecycleState(): TabLifecycleState { return this.state.lifecycleState; }
@@ -36,14 +42,6 @@ export class TabSession {
   get executionCoordinator(): ChatExecutionCoordinator { return this.coordinator; }
   get acceptsIntents(): boolean { return this.intentAdmissionPauseDepth === 0; }
   get userOwnershipRevision(): number { return this.userOwnershipRevisionValue; }
-  get activeTurn(): Promise<void> | null { return this.activeTurnValue; }
-  set activeTurn(value: Promise<void> | null) {
-    const wasActive = this.activeTurnValue !== null;
-    this.activeTurnValue = value;
-    if (wasActive !== (value !== null)) this.onWorkChanged?.();
-    if (value === null) this.coordinator.notifyMayCool();
-  }
-
   get identityRevision(): number { return this.identityRevisionValue; }
 
   bindConversation(conversationId: string | null, providerId: ProviderId | null): void {

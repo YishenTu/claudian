@@ -17,7 +17,7 @@ export function getClaudeState(
   return (providerState ?? {});
 }
 
-export function getClaudeConversationSessionIds(conversation: Conversation): string[] {
+export function getClaudeConversationSessionIds(conversation: Pick<Conversation, 'sessionId' | 'providerState'>): string[] {
   const state = getClaudeState(conversation.providerState);
   const isPendingFork = !!state.forkSource
     && !state.providerSessionId

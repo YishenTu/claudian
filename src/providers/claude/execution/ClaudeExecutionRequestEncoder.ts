@@ -230,10 +230,10 @@ export class ClaudeExecutionRequestEncoder {
   }
 
   #resolveSettings(request: ProviderExecutionRequest): ClaudianSettings {
-    const settings = ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+    const settings = { ...ProviderSettingsCoordinator.getProviderSettingsSnapshot(
       this.deps.host.settings,
       'claude',
-    );
+    ) };
     if (request.configuration.model?.trim()) {
       settings.model = request.configuration.model;
     }

@@ -66,7 +66,7 @@ export function buildPersistedPiState(state: PiProviderState): PiProviderState |
   return Object.keys(persisted).length > 0 ? persisted : undefined;
 }
 
-export function clearPiResumeState(conversation: Conversation): boolean {
+export function clearPiResumeState(conversation: Pick<Conversation, 'sessionId' | 'providerState'>): boolean {
   const state = getPiState(conversation.providerState);
   const hasResumeState = conversation.sessionId != null
     || !!state.sessionId

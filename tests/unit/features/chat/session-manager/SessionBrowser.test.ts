@@ -5,6 +5,7 @@ import { createMockEl } from '@test/helpers/MockElement';
 import { Menu, Notice, setIcon } from 'obsidian';
 
 import type { TitleGenerationService } from '@/core/providers/types';
+import type { ClaudianSettings } from '@/core/types';
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { ChatState } from '@/features/chat/state/ChatState';
@@ -13,7 +14,7 @@ jest.mock('@/shared/modals/ConfirmModal', () => ({
   confirm: jest.fn().mockResolvedValue(true),
 }));
 
-function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps & { getHistoryDropdown: () => HTMLElement; getTitleGenerationService: () => TitleGenerationService | null } {
+function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps & { plugin: ConversationControllerDeps['plugin'] & { settings: ClaudianSettings }; getHistoryDropdown: () => HTMLElement; getTitleGenerationService: () => TitleGenerationService | null } {
   const state = new ChatState();
   const inputEl = { value: '', focus: jest.fn() } as unknown as HTMLTextAreaElement;
   const historyDropdown = createMockEl();

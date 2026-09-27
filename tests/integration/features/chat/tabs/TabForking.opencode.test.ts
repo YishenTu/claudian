@@ -119,7 +119,7 @@ describe('OpenCode fork integration', () => {
     expect(child).toBeDefined();
     const service = new OpencodeConversationHistoryService();
     const restored = { ...child!, providerState: JSON.parse(JSON.stringify(service.buildPersistedProviderState(child!))) };
-    await service.hydrateConversationHistory(restored, env.root);
+    Object.assign(restored, await service.hydrateConversationHistory(restored, env.root));
     expect(restored.messages[1].assistantMessageId).toBe('msg-child-1-1');
     const fork = await env.open(native.backend, restored);
     const nested = await env.fork(fork, restored.messages[1]);

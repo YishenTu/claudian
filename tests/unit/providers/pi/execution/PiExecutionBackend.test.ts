@@ -1143,7 +1143,8 @@ describe('PiExecutionBackend', () => {
           sessionDir,
           missingSessionId,
         );
-        return resolution === 'delete' ? 'deleted' : resolution === 'preserve'
+        Object.assign(current, resolution.changes);
+        return resolution.outcome === 'delete' ? 'deleted' : resolution.outcome === 'preserve'
           ? 'preserved'
           : 'reset';
       },
@@ -1269,7 +1270,7 @@ describe('PiExecutionBackend', () => {
       },
     } as Conversation;
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       sessionDir,
       {
@@ -1278,7 +1279,7 @@ describe('PiExecutionBackend', () => {
           PI_CODING_AGENT_SESSION_DIR: sessionDir,
         },
       },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual([
       'recovered question',

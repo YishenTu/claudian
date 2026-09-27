@@ -226,10 +226,12 @@ describe('ClaudeConversationHistoryService', () => {
       const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
         .mockResolvedValue({ messages: [], skippedLines: 0 });
 
-      await expect(service.prepareRelocatedConversationSession(
+      const update1 = await service.prepareRelocatedConversationSession(
         conversation,
         '/vault',
-      )).resolves.toBe(true);
+      );
+      expect(update1).not.toBeNull();
+      Object.assign(conversation, update1);
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
         previousProviderSessionIds: ['session-previous', 'session-1'],
@@ -258,10 +260,12 @@ describe('ClaudeConversationHistoryService', () => {
         .mockResolvedValue({ messages: [], skippedLines: 0 });
 
       await service.getConversationSessionAvailability(conversation, '/vault');
-      await expect(service.prepareRelocatedConversationSession(
+      const update2 = await service.prepareRelocatedConversationSession(
         conversation,
         '/vault',
-      )).resolves.toBe(false);
+      );
+      expect(update2).toBeNull();
+      Object.assign(conversation, update2);
 
       expect(conversation.sessionId).toBe('session-1');
       expect(conversation.providerState).toEqual({
@@ -282,11 +286,13 @@ describe('ClaudeConversationHistoryService', () => {
       const locationSpy = jest.spyOn(historyStore, 'locateSDKSessions')
         .mockResolvedValue(new Map([['session-1', { availability: 'missing' }]]));
 
-      await expect(service.resolveMissingConversationSession(
+      const update3 = await service.resolveMissingConversationSession(
         conversation,
         '/vault',
         'session-1',
-      )).resolves.toBe('delete');
+      );
+      expect(update3.outcome).toBe('delete');
+      Object.assign(conversation, update3.changes);
       expect(conversation.sessionId).toBe('session-1');
 
       locationSpy.mockRestore();
@@ -306,11 +312,13 @@ describe('ClaudeConversationHistoryService', () => {
           ['session-1', { availability: 'missing' }],
         ]));
 
-      await expect(service.resolveMissingConversationSession(
+      const update4 = await service.resolveMissingConversationSession(
         conversation,
         '/vault',
         'session-1',
-      )).resolves.toBe('reset');
+      );
+      expect(update4.outcome).toBe('reset');
+      Object.assign(conversation, update4.changes);
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
         previousProviderSessionIds: ['session-previous'],
@@ -332,10 +340,12 @@ describe('ClaudeConversationHistoryService', () => {
       const recoverySpy = jest.spyOn(historyStore, 'recoverSDKSessionIdByTime')
         .mockResolvedValue('recovered-session');
 
-      await expect(service.recoverConversationSessionReference(
+      const update5 = await service.recoverConversationSessionReference(
         conversation,
         '/vault',
-      )).resolves.toBe(true);
+      );
+      expect(update5).not.toBeNull();
+      Object.assign(conversation, update5);
 
       expect(recoverySpy).toHaveBeenCalledWith('/vault', {
         createdAt: 1_000,
@@ -360,7 +370,9 @@ describe('ClaudeConversationHistoryService', () => {
         await fs.writeFile(path.join(folder, conversation.id + '.jsonl'), JSON.stringify({
           type: 'meta', id: conversation.id, sessionId: 'retired-session',
         }));
-        await expect(service.recoverConversationSessionReference(conversation, vaultPath)).resolves.toBe(false);
+        const update6 = await service.recoverConversationSessionReference(conversation, vaultPath);
+      expect(update6).toBeNull();
+      Object.assign(conversation, update6);
         expect(recoverySpy).toHaveBeenCalled();
         expect(conversation.sessionId).toBeNull();
         expect(conversation.providerState).toBeUndefined();
@@ -402,15 +414,17 @@ describe('ClaudeConversationHistoryService', () => {
           };
         });
 
-      await service.hydrateConversationHistory(conversation, '/vault', contextA);
-      await service.hydrateConversationHistory(conversation, '/vault', contextB);
+      const first = await service.hydrateConversationHistory(conversation, '/vault', contextA);
+      expect(conversation.messages).toEqual([]);
+      expect(await service.hydrateConversationHistory(conversation, '/vault', contextA)).toEqual(first);
+      Object.assign(conversation, first);
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault', contextB));
 
       expect(conversation.messages.map(message => message.content)).toEqual([
         '/config-a',
         '/config-b',
       ]);
-      expect(locationSpy).toHaveBeenCalledTimes(2);
-      expect(loadSpy).toHaveBeenCalledTimes(2);
+      expect(loadSpy).toHaveBeenCalledTimes(3);
 
       locationSpy.mockRestore();
       loadSpy.mockRestore();
@@ -435,7 +449,7 @@ describe('ClaudeConversationHistoryService', () => {
 
       await service.getConversationSessionAvailability(conversation, '/vault');
       await service.getConversationSessionAvailability(conversation, '/vault');
-      await service.hydrateConversationHistory(conversation, '/vault');
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
 
       expect(loadSpy).toHaveBeenCalledWith('/vault', 'session-1', undefined);
 
@@ -461,7 +475,7 @@ describe('ClaudeConversationHistoryService', () => {
       await expect(service.getConversationSessionAvailability(conversation, '/vault'))
         .resolves.toBe('relocated');
       await service.getConversationSessionAvailability(conversation, '/vault');
-      await service.hydrateConversationHistory(conversation, '/vault');
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
 
       expect(loadSpy).toHaveBeenCalledWith(
         '/vault',
@@ -501,7 +515,7 @@ describe('ClaudeConversationHistoryService', () => {
           skippedLines: 0,
         }));
 
-      await service.hydrateConversationHistory(conversation, '/vault');
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
 
       expect(conversation.messages.map(message => message.content)).toEqual([
         'session-previous',
@@ -544,8 +558,8 @@ describe('ClaudeConversationHistoryService', () => {
           skippedLines: 0,
         });
 
-      await service.hydrateConversationHistory(conversation, '/vault');
-      await service.hydrateConversationHistory(conversation, '/vault');
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
 
       expect(conversation.messages).toHaveLength(1);
       expect(locationSpy).toHaveBeenCalledTimes(2);
@@ -586,8 +600,8 @@ describe('ClaudeConversationHistoryService', () => {
           };
         });
 
-      await service.hydrateConversationHistory(conversation, '/vault');
-      await service.hydrateConversationHistory(conversation, '/vault');
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
 
       expect(conversation.messages.map(message => message.content)).toEqual([
         'session-previous',
@@ -632,8 +646,8 @@ describe('ClaudeConversationHistoryService', () => {
           skippedLines: 0,
         }));
 
-      await service.hydrateConversationHistory(conversation, '/vault');
-      await service.hydrateConversationHistory(conversation, '/vault');
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
 
       expect(conversation.messages.map(message => message.content)).toEqual([
         'session-previous',

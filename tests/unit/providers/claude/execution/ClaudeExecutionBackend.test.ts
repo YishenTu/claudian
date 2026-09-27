@@ -18,6 +18,8 @@ import type {
   ProviderSessionSnapshot,
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ClaudianSettings } from '@/core/types';
+type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 import type { Conversation } from '@/core/types';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
@@ -83,7 +85,7 @@ function createInteractionPort(): jest.Mocked<ProviderInteractionPort> {
   };
 }
 
-function createHost(): ProviderHost {
+function createHost(): MutableTestHost {
   return {
     app: {
       vault: {
@@ -105,7 +107,7 @@ function createHost(): ProviderHost {
     storage: {} as ProviderHost['storage'],
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
     getActiveEnvironmentVariables: jest.fn().mockReturnValue(''),
-  } as unknown as ProviderHost;
+  } as unknown as MutableTestHost;
 }
 
 function createConfig(
@@ -1811,7 +1813,8 @@ describe('ClaudeExecutionBackend', () => {
           '/vault',
           missingSessionId,
         );
-        return resolution === 'delete' ? 'deleted' : resolution === 'preserve'
+        Object.assign(current, resolution.changes);
+        return resolution.outcome === 'delete' ? 'deleted' : resolution.outcome === 'preserve'
           ? 'preserved'
           : 'reset';
       },

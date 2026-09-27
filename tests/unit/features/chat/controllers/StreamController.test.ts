@@ -3,7 +3,6 @@ import '@/providers';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 import { createMockEl } from '@test/helpers/MockElement';
 
-import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import {
   TOOL_AGENT_OUTPUT,
   TOOL_APPLY_PATCH,
@@ -579,18 +578,11 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.usage).toEqual(usage);
     });
 
-    it('stamps the active provider model onto usage when the provider omits it', async () => {
+    it('preserves unknown usage identity instead of deriving it from global settings', async () => {
       const msg = createTestMessage();
       const usage = createMockUsage({ model: undefined });
-      const providerSettingsSpy = jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot');
-      providerSettingsSpy.mockReturnValue({ model: TEST_CODEX_MODEL } as any);
-      deps.getProviderId = () => 'codex';
-
       await controller.handleStreamChunk({ type: 'usage', usage, sessionId: 'session-1' }, msg);
-
-      expect(deps.state.usage).toEqual({ ...usage, model: TEST_CODEX_MODEL });
-
-      providerSettingsSpy.mockRestore();
+      expect(deps.state.usage).toEqual(usage);
     });
 
     it('should ignore usage from other sessions', async () => {

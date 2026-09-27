@@ -262,9 +262,9 @@ test('a missing-session check waits for an already-admitted binding write', asyn
   let finishWrite!: () => void;
   persistence.saveMetadata.mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
   const history = ProviderRegistry.getConversationHistoryService('claude');
-  const missingSpy = jest.spyOn(history, 'resolveMissingConversationSession').mockImplementation(async draft => (
-    draft.sessionId === 'native-shared' ? 'delete' : 'preserve'
-  ));
+  const missingSpy = jest.spyOn(history, 'resolveMissingConversationSession').mockImplementation(async draft => ({
+    outcome: draft.sessionId === 'native-shared' ? 'delete' : 'preserve',
+  }));
   try {
     const update = repository.update(conversation.id, { sessionId: 'replacement' });
     await waitFor(() => Boolean(finishWrite));

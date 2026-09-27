@@ -168,3 +168,25 @@ describe('SettingsCoordinator', () => {
     expect(persisted).toEqual([{ transient: 1, persisted: 2 }]);
   });
 });
+
+
+it('keeps shared settings readers on committed values throughout a failed write', async () => {
+  const settings = { nested: { prompt: 'committed' } };
+  const retained = settings.nested;
+  let rejectWrite!: (error: Error) => void;
+  let markStarted!: () => void;
+  const started = new Promise<void>(resolve => { markStarted = resolve; });
+  const gate = new Promise<void>((_, reject) => { rejectWrite = reject; });
+  const coordinator = new SettingsCoordinator(settings, () => { markStarted(); return gate; });
+  const mutation = coordinator.mutate(draft => { draft.nested.prompt = 'uncommitted'; });
+  const settled = mutation.catch(() => undefined);
+  await started;
+  try {
+    expect(settings.nested.prompt).toBe('committed');
+    expect(retained.prompt).toBe('committed');
+  } finally {
+    rejectWrite(new Error('simulated storage failure'));
+    await settled;
+    expect(settings.nested.prompt).toBe('committed');
+  }
+});

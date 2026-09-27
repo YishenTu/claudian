@@ -12,7 +12,7 @@ import type {
 export interface FeatureHost {
   readonly app: App;
   readonly providerHost: ProviderHost;
-  readonly settings: ClaudianSettings;
+  readonly settings: Readonly<ClaudianSettings>;
   readonly storage: SharedAppStorage;
 
   getMainAgentDynamicSystemPromptSections?(): Promise<readonly string[]>;

@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
-import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
+import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { App } from 'obsidian';
 
@@ -106,4 +106,25 @@ it('refreshes destination settings when the side panel collapses, expands, and i
   } finally {
     await destroyTab(tab);
   }
+});
+
+it('side usage must carry the side model when native usage omits model', async () => {
+  const harness = createHarness({ settings: {
+    model: 'claude-opus-4-6', settingsProvider: 'claude',
+    savedProviderModel: { claude: 'claude-opus-4-6' },
+    providerConfigs: { claude: { enabled: true, visibleModels: ['claude-sonnet-4-5', 'claude-opus-4-6'] } },
+  } });
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.complete();
+  await started;
+  harness.controller.updateSideSettings({ model: 'claude-code/claude-sonnet-4-5', reasoning: 'high', permissionMode: 'normal', serviceTier: 'default' });
+  const pending = harness.controller.submitToSide('second turn', []);
+  await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(2));
+  expect(harness.backend.latest.requests[1].configuration.model).toBe('claude-code/claude-sonnet-4-5');
+  harness.backend.latest.emitOutput({ type: 'usage_updated', usage: {
+    inputTokens: 100, contextTokens: 100, contextWindow: 200000, percentage: 0,
+  } });
+  harness.backend.latest.complete();
+  await pending;
+  expect(harness.controller.runtime?.state.usage?.model).toBe('claude-code/claude-sonnet-4-5');
 });

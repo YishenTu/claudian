@@ -1,14 +1,19 @@
+import { copyProviderHistoryState } from '@/core/providers/providerHistory';
+
 import { encodeProviderModelSelectionId } from '../../../core/providers/modelSelection';
 import type {
   ProviderConversationHistoryService,
   ProviderConversationSessionAvailability,
+  ProviderHistoryInput,
   ProviderHistoryPathContext,
+  ProviderHistoryResult,
+  ProviderHistoryState,
+  ProviderHistoryUpdate,
 } from '../../../core/providers/types';
 import { TOOL_SUBAGENT } from '../../../core/tools/toolNames';
 import type {
   AsyncSubagentStatus,
   ChatMessage,
-  Conversation,
   ForkSource,
   ImageAttachment,
   SubagentInfo,
@@ -394,21 +399,19 @@ function sanitizeProviderState(
 }
 
 export class ClaudeConversationHistoryService implements ProviderConversationHistoryService {
-  // A discarded repository draft must not mark another projection hydrated.
-  private hydratedConversations = new WeakSet<Conversation>();
-  private historyCacheKeysByConversation = new WeakMap<Conversation, string>();
+  private historyCacheKeysByConversation = new WeakMap<ProviderHistoryInput, string>();
   private pendingSessionLocationsByConversation = new WeakMap<
-    Conversation,
+    ProviderHistoryInput,
     Map<string, SDKSessionLocation>
   >();
-  private relocatedSessionPathsByConversation = new WeakMap<Conversation, Map<string, string>>();
+  private relocatedSessionPathsByConversation = new WeakMap<ProviderHistoryInput, Map<string, string>>();
 
-  #getConversationSessionIds(conversation: Conversation): string[] {
+  #getConversationSessionIds(conversation: ProviderHistoryInput): string[] {
     return getClaudeConversationSessionIds(conversation);
   }
 
   #synchronizeHistoryCache(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string,
     pathContext?: ProviderHistoryPathContext,
   ): void {
@@ -422,7 +425,6 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     ]);
     const previousKey = this.historyCacheKeysByConversation.get(conversation);
     if (previousKey !== undefined && previousKey !== cacheKey) {
-      this.hydratedConversations.delete(conversation);
       this.pendingSessionLocationsByConversation.delete(conversation);
       this.relocatedSessionPathsByConversation.delete(conversation);
     }
@@ -430,7 +432,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   }
 
   async getConversationSessionAvailability(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<ProviderConversationSessionAvailability> {
@@ -475,20 +477,22 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   }
 
   async prepareRelocatedConversationSession(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<boolean> {
+  ): Promise<ProviderHistoryUpdate | null> {
+    const conversation = copyProviderHistoryState(input);
     const sessionId = this.resolveSessionIdForConversation(conversation);
     if (!vaultPath || !sessionId) {
-      return false;
+      return null;
     }
 
-    await this.hydrateConversationHistory(conversation, vaultPath, pathContext);
-    if (!this.hydratedConversations.has(conversation)) {
-      return false;
+    const hydration = await this.#readHistory(input, vaultPath, pathContext);
+    if (!hydration.complete) {
+      return null;
     }
 
+    Object.assign(conversation, hydration.changes);
     const state = { ...getClaudeState(conversation.providerState) };
     state.previousProviderSessionIds = [
       ...new Set([...(state.previousProviderSessionIds || []), sessionId]),
@@ -502,15 +506,16 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     conversation.sessionId = null;
     conversation.providerState = sanitizeProviderState(state);
-    return true;
+    return conversation;
   }
 
   async resolveMissingConversationSession(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     vaultPath: string | null,
     missingProviderSessionId?: string,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<'delete' | 'reset' | 'preserve'> {
+  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
+    const conversation = copyProviderHistoryState(input);
     const currentSessionId = this.resolveSessionIdForConversation(conversation);
     if (
       !vaultPath
@@ -518,10 +523,10 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       || (missingProviderSessionId
         && missingProviderSessionId.toLowerCase() !== currentSessionId.toLowerCase())
     ) {
-      return 'preserve';
+      return { outcome: 'preserve' };
     }
 
-    this.#synchronizeHistoryCache(conversation, vaultPath, pathContext);
+    this.#synchronizeHistoryCache(input, vaultPath, pathContext);
 
     const sessionIds = this.#getConversationSessionIds(conversation);
     const locations = await (pathContext
@@ -531,10 +536,9 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       sessionId => locations.get(sessionId)?.availability !== 'missing',
     );
     if (preservedSessionIds.length === 0) {
-      this.pendingSessionLocationsByConversation.delete(conversation);
-      this.relocatedSessionPathsByConversation.delete(conversation);
-      this.hydratedConversations.delete(conversation);
-      return 'delete';
+      this.pendingSessionLocationsByConversation.delete(input);
+      this.relocatedSessionPathsByConversation.delete(input);
+      return { outcome: 'delete' };
     }
 
     const state = { ...getClaudeState(conversation.providerState) };
@@ -547,19 +551,18 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     conversation.sessionId = null;
     conversation.providerState = sanitizeProviderState(state);
-    this.pendingSessionLocationsByConversation.delete(conversation);
-    this.hydratedConversations.delete(conversation);
-    return 'reset';
+    this.pendingSessionLocationsByConversation.delete(input);
+    return { outcome: 'reset', changes: conversation };
   }
 
-  isPendingForkConversation(conversation: Conversation): boolean {
+  isPendingForkConversation(conversation: ProviderHistoryInput): boolean {
     const state = getClaudeState(conversation.providerState);
     return !!state.forkSource
       && !state.providerSessionId
       && !conversation.sessionId;
   }
 
-  resolveSessionIdForConversation(conversation: Conversation | null): string | null {
+  resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null {
     if (!conversation) return null;
     const state = getClaudeState(conversation.providerState);
     return state.providerSessionId ?? conversation.sessionId ?? state.forkSource?.sessionId ?? null;
@@ -577,7 +580,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   }
 
   buildPersistedProviderState(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
   ): Record<string, unknown> | undefined {
     const providerState: ClaudeProviderState = {
       ...getClaudeState(conversation.providerState),
@@ -594,51 +597,60 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
   }
 
   async recoverConversationSessionReference(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<boolean> {
-    if (!vaultPath || this.resolveSessionIdForConversation(conversation)) {
-      return false;
+  ): Promise<ProviderHistoryUpdate | null> {
+    const conversation = copyProviderHistoryState(input);
+    if (input.createdAt === undefined || input.lastActivityAt === undefined || !vaultPath || this.resolveSessionIdForConversation(conversation)) {
+      return null;
     }
 
     const fingerprint = {
-      createdAt: conversation.createdAt,
-      lastActivityAt: conversation.lastActivityAt,
+      createdAt: input.createdAt,
+      lastActivityAt: input.lastActivityAt,
     };
     const recoveredSessionId = pathContext
       ? await recoverSDKSessionIdByTime(vaultPath, fingerprint, pathContext)
       : await recoverSDKSessionIdByTime(vaultPath, fingerprint);
-    if (!recoveredSessionId) return false;
+    if (!recoveredSessionId) return null;
 
     conversation.sessionId = recoveredSessionId;
     conversation.providerState = sanitizeProviderState({
       ...getClaudeState(conversation.providerState),
       providerSessionId: recoveredSessionId,
     });
-    return true;
+    return conversation;
   }
 
   async hydrateConversationHistory(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<void> {
+  ): Promise<ProviderHistoryUpdate> {
+    return (await this.#readHistory(input, vaultPath, pathContext)).changes;
+  }
+
+  async #readHistory(
+    input: ProviderHistoryInput,
+    vaultPath: string | null,
+    pathContext?: ProviderHistoryPathContext,
+  ): Promise<{ changes: ProviderHistoryState; complete: boolean }> {
+    const conversation = copyProviderHistoryState(input);
     if (!vaultPath) {
-      return;
+      return { changes: conversation, complete: false };
     }
 
-    await this.recoverConversationSessionReference(conversation, vaultPath, pathContext);
+    Object.assign(conversation, await this.recoverConversationSessionReference(input, vaultPath, pathContext));
     const allSessionIds = this.#getConversationSessionIds(conversation);
 
-    this.#synchronizeHistoryCache(conversation, vaultPath, pathContext);
-    if (this.hydratedConversations.has(conversation)) return;
+    this.#synchronizeHistoryCache(input, vaultPath, pathContext);
 
     const state = getClaudeState(conversation.providerState);
     const isPendingFork = this.isPendingForkConversation(conversation);
 
     if (allSessionIds.length === 0) {
-      return;
+      return { changes: conversation, complete: false };
     }
 
     const allSdkMessages: ChatMessage[] = [];
@@ -647,12 +659,12 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     let errorCount = 0;
     let successCount = 0;
     const relocatedSessionPaths = new Map(
-      this.relocatedSessionPathsByConversation.get(conversation) ?? [],
+      this.relocatedSessionPathsByConversation.get(input) ?? [],
     );
     const cachedLocations = new Map(
-      this.pendingSessionLocationsByConversation.get(conversation) ?? [],
+      this.pendingSessionLocationsByConversation.get(input) ?? [],
     );
-    this.pendingSessionLocationsByConversation.delete(conversation);
+    this.pendingSessionLocationsByConversation.delete(input);
     const unresolvedSessionIds = allSessionIds.filter(
       id => !relocatedSessionPaths.has(id) && !cachedLocations.has(id),
     );
@@ -666,7 +678,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
       }
     }
     if (relocatedSessionPaths.size > 0) {
-      this.relocatedSessionPathsByConversation.set(conversation, relocatedSessionPaths);
+      this.relocatedSessionPathsByConversation.set(input, relocatedSessionPaths);
     }
 
     const resumableSessionId = isPendingFork
@@ -717,7 +729,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     const allSessionsMissing = missingSessionCount === allSessionIds.length;
     if (successCount === 0 || allSessionsMissing) {
-      return;
+      return { changes: conversation, complete: false };
     }
 
     const filteredSdkMessages = allSdkMessages.filter(msg => !msg.isRebuiltContext);
@@ -739,17 +751,15 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     }
 
     conversation.messages = merged;
-    if (errorCount === 0 && unknownSessionCount === 0) {
-      this.hydratedConversations.add(conversation);
-    }
+    return { changes: conversation, complete: errorCount === 0 && unknownSessionCount === 0 };
   }
 
-  hasConversationModelRecoverySource(conversation: Conversation): boolean {
+  hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {
     return getClaudeConversationSessionIds(conversation).length > 0;
   }
 
   async recoverConversationModelSelection(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<string | null> {

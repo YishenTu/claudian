@@ -73,9 +73,10 @@ export class RuntimeSettingsCoordinator {
   reconcile(
     providerIds: ProviderId[] = ProviderRegistry.getRegisteredProviderIds(),
     invalidateConversations = true,
+    settings = this.options.getSettings(),
   ): SettingsReconciliationResult {
     const result = ProviderSettingsCoordinator.reconcileProviders(
-      this.options.getSettings(), [], providerIds, { invalidateConversations: false },
+      settings, [], providerIds, { invalidateConversations: false },
     );
     if (invalidateConversations) {
       result.invalidatedConversations = this.options.conversations.invalidateProviderSessions(
@@ -169,39 +170,25 @@ export class RuntimeSettingsCoordinator {
     }
 
     const removed = new Map<ProviderId, number>();
-    try {
-      await this.options.settings.mutateConditionally((settings) => {
-        const pending = readPendingProviderSessionInvalidations(settings);
-        for (const [providerId, generation] of completedGenerations) {
-          if (pending.get(providerId) === generation) {
-            pending.delete(providerId);
-            removed.set(providerId, generation);
-          }
+    await this.options.settings.mutateConditionally((settings) => {
+      const pending = readPendingProviderSessionInvalidations(settings);
+      for (const [providerId, generation] of completedGenerations) {
+        if (pending.get(providerId) === generation) {
+          pending.delete(providerId);
+          removed.set(providerId, generation);
         }
-        if (removed.size === 0) {
-          return false;
-        }
-        settings.pendingProviderSessionInvalidations =
-          serializePendingProviderSessionInvalidations(pending);
-        return true;
-      });
-    } catch (error) {
-      const pending = readPendingProviderSessionInvalidations(this.options.getSettings());
+      }
+      if (removed.size === 0) return false;
+      settings.pendingProviderSessionInvalidations =
+        serializePendingProviderSessionInvalidations(pending);
+      return true;
+    }, () => {
       for (const [providerId, generation] of removed) {
         if (this.pendingEnvironmentInvalidationGenerations.get(providerId) === generation) {
-          pending.set(providerId, generation);
+          this.pendingEnvironmentInvalidationGenerations.delete(providerId);
         }
       }
-      this.options.getSettings().pendingProviderSessionInvalidations =
-        serializePendingProviderSessionInvalidations(pending);
-      throw error;
-    }
-
-    for (const [providerId, generation] of removed) {
-      if (this.pendingEnvironmentInvalidationGenerations.get(providerId) === generation) {
-        this.pendingEnvironmentInvalidationGenerations.delete(providerId);
-      }
-    }
+    });
   }
 
   async commit(
@@ -231,7 +218,7 @@ export class RuntimeSettingsCoordinator {
     try {
       await this.options.settings.mutate(async (settings) => {
         await mutation(settings);
-        reconciliation = this.reconcile(providerIds, false);
+        reconciliation = this.reconcile(providerIds, false, settings);
         invalidationGenerations = this.stagePendingSessionInvalidations(
           settings,
           reconciliation.sessionInvalidationProviderIds,

@@ -438,8 +438,7 @@ describe('Tab provider execution ownership', () => {
       onWorkChanged,
     });
 
-    tab.session.activeTurn = Promise.resolve();
-    tab.session.activeTurn = null;
+    await tab.session.turns.run(async () => undefined);
     coordinatorDeps[0].onBackgroundWorkChanged?.(true);
     tab.services.subagentManager.refreshAsyncSubagent({
       asyncStatus: 'running',
@@ -2355,9 +2354,10 @@ describe('Tab provider execution ownership', () => {
     const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
     const coordinator = coordinatorInstances[0];
     let resolveTurn!: () => void;
-    tab.session.activeTurn = new Promise<void>((resolve) => {
+    const pendingTurn = new Promise<void>((resolve) => {
       resolveTurn = resolve;
     });
+    void tab.session.turns.run(() => pendingTurn);
     tab.state.currentConversationId = 'active-conversation';
     const save = jest.fn().mockResolvedValue(undefined);
     tab.controllers.conversationController = { save } as any;
@@ -2403,9 +2403,10 @@ describe('Tab provider execution ownership', () => {
     const tab = await createTestTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
     const coordinator = coordinatorInstances[0];
     let resolveTurn!: () => void;
-    tab.session.activeTurn = new Promise<void>((resolve) => {
+    const pendingTurn = new Promise<void>((resolve) => {
       resolveTurn = resolve;
     });
+    void tab.session.turns.run(() => pendingTurn);
 
     const drain = drainTabForShutdownSnapshot(tab);
     for (let attempt = 0; attempt < 10 && coordinator.cancel.mock.calls.length === 0; attempt += 1) {

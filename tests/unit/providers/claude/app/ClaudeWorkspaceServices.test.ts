@@ -1,5 +1,7 @@
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ClaudianSettings } from '@/core/types';
+type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { SlashCommand } from '@/core/types';
 import {
@@ -28,7 +30,7 @@ function createAdapter(): VaultFileAdapter {
 
 function createPlugin(
   executionLifecycleRegistry: ProviderExecutionLifecycleRegistry,
-): ProviderHost {
+): MutableTestHost {
   return {
     app: {
       workspace: { onLayoutReady: jest.fn() },
@@ -41,7 +43,7 @@ function createPlugin(
     loadData: jest.fn().mockResolvedValue({}),
     saveData: jest.fn().mockResolvedValue(undefined),
     settings: {},
-  } as unknown as ProviderHost;
+  } as unknown as MutableTestHost;
 }
 
 describe('ClaudeWorkspaceServices', () => {

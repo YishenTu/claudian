@@ -19,7 +19,7 @@ import type { ProviderCLIResolutionContext, ProviderId } from './types';
 export interface ProviderHost {
   readonly app: App;
   readonly executionLifecycleRegistry: ProviderExecutionLifecycleRegistry;
-  readonly settings: ClaudianSettings;
+  readonly settings: Readonly<ClaudianSettings>;
   readonly storage: SharedAppStorage;
   readonly manifest?: { version?: string };
 

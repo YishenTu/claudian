@@ -1,12 +1,18 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
+import { copyProviderHistoryState } from '@/core/providers/providerHistory';
+
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
   ProviderConversationHistoryService,
+  ProviderHistoryInput,
   ProviderHistoryPathContext,
+  ProviderHistoryResult,
+  ProviderHistoryState,
+  ProviderHistoryUpdate,
 } from '../../../core/providers/types';
-import type { ChatMessage, Conversation } from '../../../core/types';
+import type { ChatMessage } from '../../../core/types';
 import {
   addPiPreviousSession,
   buildPersistedPiState,
@@ -36,10 +42,8 @@ const PI_PROVIDER_STATE_KEYS = [
 ] as const;
 
 export class PiConversationHistoryService implements ProviderConversationHistoryService {
-  // A discarded repository draft must not mark another projection hydrated.
-  private hydratedKeys = new WeakMap<Conversation, string>();
 
-  hasConversationModelRecoverySource(conversation: Conversation): boolean {
+  hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {
     const state = getPiState(conversation.providerState);
     return !!(
       state.sessionFile
@@ -51,7 +55,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   }
 
   async recoverConversationModelSelection(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<string | null> {
@@ -79,10 +83,11 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   }
 
   async hydrateConversationHistory(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<void> {
+  ): Promise<ProviderHistoryUpdate> {
+    const conversation = copyProviderHistoryState(input);
     const state = getPiState(conversation.providerState);
     if (this.isPendingForkConversation(conversation)) {
       const sourceSessionFile = await this.#resolvePreviousSessionFile(
@@ -102,11 +107,10 @@ export class PiConversationHistoryService implements ProviderConversationHistory
         sourceSessionFile,
       );
       if (conversation.messages.length > 0) {
-        return;
+        return conversation;
       }
       if (!sourceSessionFile) {
-        this.hydratedKeys.delete(conversation);
-        return;
+        return conversation;
       }
 
       try {
@@ -117,16 +121,14 @@ export class PiConversationHistoryService implements ProviderConversationHistory
           syntheticIdNamespace: sourceSessionFile,
         });
         if (messages.length === 0) {
-          this.hydratedKeys.delete(conversation);
-          return;
+          return conversation;
         }
 
         conversation.messages = messages;
-        this.hydratedKeys.set(conversation, `fork::${sourceSessionFile}::${state.forkSource!.resumeAt}`);
       } catch {
-        this.hydratedKeys.delete(conversation);
+        // Retain the existing history when a native transcript cannot be read.
       }
-      return;
+      return conversation;
     }
 
     const currentSession: PiPreviousSession = {
@@ -147,8 +149,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
         : []),
     ];
     if (sources.length === 0) {
-      this.hydratedKeys.delete(conversation);
-      return;
+      return conversation;
     }
 
     const resolvedSources: Array<{
@@ -190,17 +191,10 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       }
     }
     if (resolvedSources.length === 0) {
-      this.hydratedKeys.delete(conversation);
-      return;
+      return conversation;
     }
 
-    const hydrationKey = JSON.stringify(resolvedSources);
-    if (
-      conversation.messages.length > 0
-      && this.hydratedKeys.get(conversation) === hydrationKey
-    ) {
-      return;
-    }
+
 
     const messages: ChatMessage[] = [];
     for (const source of resolvedSources) {
@@ -229,15 +223,14 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       }
     }
     if (messages.length === 0) {
-      this.hydratedKeys.delete(conversation);
-      return;
+      return conversation;
     }
 
     conversation.messages = dedupeMessages(messages);
-    this.hydratedKeys.set(conversation, hydrationKey);
+    return conversation;
   }
 
-  resolveSessionIdForConversation(conversation: Conversation | null): string | null {
+  resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null {
     const state = getPiState(conversation?.providerState);
     return state.sessionFile
       ?? state.sessionId
@@ -248,10 +241,11 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   }
 
   async resolveMissingConversationSession(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     _vaultPath: string | null,
     missingProviderSessionId?: string,
-  ): Promise<'delete' | 'reset' | 'preserve'> {
+  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
+    const conversation = copyProviderHistoryState(input);
     const state = getPiState(conversation.providerState);
     const currentTarget = state.sessionFile
       ?? state.sessionId
@@ -262,7 +256,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
       || !currentTarget
       || missingProviderSessionId !== currentTarget
     ) {
-      return 'preserve';
+      return { outcome: 'preserve' };
     }
 
     const hasFallbackTarget = Boolean(
@@ -295,11 +289,10 @@ export class PiConversationHistoryService implements ProviderConversationHistory
         ? providerState
         : undefined;
     }
-    this.hydratedKeys.delete(conversation);
-    return 'reset';
+    return { outcome: 'reset', changes: conversation };
   }
 
-  isPendingForkConversation(_conversation: Conversation): boolean {
+  isPendingForkConversation(_conversation: ProviderHistoryInput): boolean {
     const state = getPiState(_conversation.providerState);
     return !!state.forkSource && !state.sessionId && !state.sessionFile && !_conversation.sessionId;
   }
@@ -368,7 +361,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   }
 
   buildPersistedProviderState(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
   ): Record<string, unknown> | undefined {
     return mergePersistedProviderState(
       conversation.providerState,
@@ -380,7 +373,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   }
 
   #replaceResolvedPath(
-    conversation: Conversation,
+    conversation: ProviderHistoryState,
     field: 'forkSourceSessionFile' | 'sessionFile',
     persistedPath: string | undefined,
     resolvedPath: string | null,
@@ -437,7 +430,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
   }
 
   #replacePreviousSessionPath(
-    conversation: Conversation,
+    conversation: ProviderHistoryState,
     index: number,
     sessionFile: string,
   ): void {

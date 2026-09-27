@@ -90,7 +90,7 @@ describe('GrokConversationHistoryService', () => {
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
     const context = { environment: { HOME: tempRoot } };
 
-    await service.hydrateConversationHistory(conversation, vaultPath, context);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, vaultPath, context));
     expect(conversation.messages).toHaveLength(4);
     expect(conversation.providerState).toEqual({
       futureResumeCursor: { token: 'cursor-1' },
@@ -98,7 +98,7 @@ describe('GrokConversationHistoryService', () => {
     });
 
     await fs.writeFile(updatesPath, '', 'utf8');
-    await service.hydrateConversationHistory(conversation, vaultPath, context);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, vaultPath, context));
     expect(conversation.messages).toHaveLength(4);
 
     expect(await fs.readFile(updatesPath, 'utf8')).toBe('');
@@ -113,9 +113,9 @@ describe('GrokConversationHistoryService', () => {
       sessionDirectory,
     };
 
-    await service.hydrateConversationHistory(conversation, vaultPath, {
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, vaultPath, {
       environment: { HOME: tempRoot },
-    });
+    }));
 
     expect(conversation.messages.length).toBeGreaterThan(0);
     expect(conversation.providerState).toEqual({
@@ -145,9 +145,9 @@ describe('GrokConversationHistoryService', () => {
     const conversation = createConversation();
     conversation.sessionId = 'missing-session';
 
-    await service.hydrateConversationHistory(conversation, vaultPath, {
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, vaultPath, {
       environment: { HOME: tempRoot },
-    });
+    }));
 
     expect(conversation.messages).toEqual([]);
     expect(conversation.providerState).toBeUndefined();
@@ -165,11 +165,13 @@ describe('GrokConversationHistoryService', () => {
       };
       const service = new GrokConversationHistoryService();
 
-      await expect(service.resolveMissingConversationSession(
+      const update1 = await service.resolveMissingConversationSession(
         conversation,
         vaultPath,
         'session-fixture',
-      )).resolves.toBe('reset');
+      );
+      expect(update1.outcome).toBe('reset');
+      Object.assign(conversation, update1.changes);
 
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
@@ -187,11 +189,13 @@ describe('GrokConversationHistoryService', () => {
       };
       const service = new GrokConversationHistoryService();
 
-      await expect(service.resolveMissingConversationSession(
+      const update2 = await service.resolveMissingConversationSession(
         conversation,
         vaultPath,
         'stale-session',
-      )).resolves.toBe('preserve');
+      );
+      expect(update2.outcome).toBe('preserve');
+      Object.assign(conversation, update2.changes);
 
       expect(conversation.sessionId).toBe('session-fixture');
       expect(conversation.providerState).toEqual({
@@ -221,7 +225,7 @@ describe('GrokConversationHistoryService', () => {
     const conversation = createConversation();
     conversation.providerState = { sessionDirectory };
 
-    await service.hydrateConversationHistory(conversation, vaultPath, context);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, vaultPath, context));
 
     expect(conversation.providerState).toEqual({ sessionDirectory: customSessionDirectory });
     expect(conversation.messages.map(message => message.content)).toEqual([
@@ -232,7 +236,7 @@ describe('GrokConversationHistoryService', () => {
     await fs.rm(customSessionDirectory, { recursive: true });
     const missingCustomConversation = createConversation();
     missingCustomConversation.providerState = { sessionDirectory };
-    await service.hydrateConversationHistory(missingCustomConversation, vaultPath, context);
+    Object.assign(missingCustomConversation, await service.hydrateConversationHistory(missingCustomConversation, vaultPath, context));
 
     expect(missingCustomConversation.messages).toEqual([]);
     expect(missingCustomConversation.providerState).toBeUndefined();
@@ -263,9 +267,9 @@ describe('GrokConversationHistoryService', () => {
       forkSourceSessionDirectory: sessionDirectory,
     });
 
-    await service.hydrateConversationHistory(conversation, vaultPath, {
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, vaultPath, {
       environment: { HOME: tempRoot },
-    });
+    }));
 
     expect(conversation.messages.map(message => message.id)).toEqual([
       'user-1',
@@ -294,9 +298,9 @@ describe('GrokConversationHistoryService', () => {
       { sessionDirectory },
     );
 
-    await service.hydrateConversationHistory(conversation, vaultPath, {
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, vaultPath, {
       environment: { HOME: tempRoot },
-    });
+    }));
 
     expect(conversation.messages).toEqual([]);
   });
@@ -328,9 +332,9 @@ describe('GrokConversationHistoryService', () => {
     const service = new GrokConversationHistoryService();
     const conversation = createConversation();
 
-    await service.hydrateConversationHistory(conversation, vaultPath, {
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, vaultPath, {
       environment: { HOME: tempRoot },
-    });
+    }));
 
     expect(conversation.messages[0]).toMatchObject({
       content: 'Inspect this',

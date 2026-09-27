@@ -68,7 +68,7 @@ export function createHarness(options: {
     taskResultInterpreter: options.taskResultInterpreter,
     historyService: {
       buildForkProviderState: options.buildForkProviderState ?? (() => forkState),
-      hydrateConversationHistory: async () => undefined,
+      hydrateConversationHistory: async () => ({}),
       isPendingForkConversation: () => false,
       resolveSessionIdForConversation: () => 'main-session',
     },

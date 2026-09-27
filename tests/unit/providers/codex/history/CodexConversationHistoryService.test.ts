@@ -6,6 +6,8 @@ const fs = jest.requireActual<typeof fsType>('fs');
 const os = jest.requireActual<typeof osType>('os');
 const path = jest.requireActual<typeof pathType>('path');
 
+import { testDate } from '@test/helpers/testClock';
+
 import type { Conversation } from '@/core/types';
 import { CodexConversationHistoryService } from '@/providers/codex/history/CodexConversationHistoryService';
 
@@ -70,7 +72,12 @@ describe('CodexConversationHistoryService', () => {
     };
 
     const service = new CodexConversationHistoryService();
-    await service.hydrateConversationHistory(conversation, null);
+    conversation.messages = [{ id: 'local', role: 'assistant', content: 'Local placeholder', timestamp: testDate().getTime() }];
+    const before = structuredClone(conversation);
+    const first = await service.hydrateConversationHistory(conversation, null);
+    expect(conversation).toEqual(before);
+    expect(await service.hydrateConversationHistory(conversation, null)).toEqual(first);
+    Object.assign(conversation, first);
 
     expect(conversation.messages).toHaveLength(2);
     expect(conversation.messages[0]).toMatchObject({
@@ -303,10 +310,10 @@ describe('CodexConversationHistoryService', () => {
       messages: [],
     };
 
-    await new CodexConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new CodexConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
-    );
+    ));
 
     expect(conversation.messages).toHaveLength(2);
     expect(conversation.providerState).toEqual(expect.objectContaining({
@@ -362,11 +369,11 @@ describe('CodexConversationHistoryService', () => {
     };
 
     const service = new CodexConversationHistoryService();
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
     expect(conversation.messages).toHaveLength(2);
 
     conversation.messages = [];
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages).toHaveLength(2);
     expect(conversation.messages[1]).toMatchObject({
@@ -416,7 +423,7 @@ describe('CodexConversationHistoryService', () => {
     };
 
     const service = new CodexConversationHistoryService();
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages).toHaveLength(1);
     expect(conversation.messages[0]).toMatchObject({
@@ -467,7 +474,7 @@ describe('CodexConversationHistoryService', () => {
     };
 
     const service = new CodexConversationHistoryService();
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages).toHaveLength(1);
     expect((conversation.providerState as Record<string, unknown>).transcriptRootPath).toBe(
@@ -512,11 +519,11 @@ describe('CodexConversationHistoryService', () => {
       messages: [],
     };
 
-    await new CodexConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new CodexConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: tempHome } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted transcript.']);
     expect((conversation.providerState as Record<string, unknown>).sessionFilePath).toBe(trustedPath);
@@ -546,11 +553,11 @@ describe('CodexConversationHistoryService', () => {
       messages: [],
     };
 
-    await new CodexConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new CodexConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { CODEX_HOME: configuredHome, HOME: tempHome } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Configured transcript.']);
   });
@@ -587,7 +594,7 @@ describe('CodexConversationHistoryService', () => {
         id: 'fork', providerId: 'codex', title: 'Fork', createdAt: 1, lastActivityAt: 1,
         sessionId: null, messages: [], providerState: state,
       };
-      await service.hydrateConversationHistory(fork, null);
+      Object.assign(fork, await service.hydrateConversationHistory(fork, null));
       expect(fork.messages.map(message => message.content)).toEqual(['Hello', 'Hi']);
       expect(fs.readFileSync(transcriptPath, 'utf8')).toBe(transcript);
     });
@@ -619,7 +626,7 @@ describe('CodexConversationHistoryService', () => {
         id: 'fork', providerId: 'codex', title: 'Fork', createdAt: 1, lastActivityAt: 1,
         sessionId: null, messages: [], providerState: state,
       };
-      await service.hydrateConversationHistory(fork, null);
+      Object.assign(fork, await service.hydrateConversationHistory(fork, null));
       expect(fork.messages.map(message => message.content)).toEqual(['Hello', 'Hi']);
     });
   });
@@ -745,11 +752,13 @@ describe('CodexConversationHistoryService', () => {
         messages: [],
       };
 
-      await expect(new CodexConversationHistoryService().resolveMissingConversationSession(
+      const update1 = await new CodexConversationHistoryService().resolveMissingConversationSession(
         conversation,
         null,
         'thread-missing',
-      )).resolves.toBe('reset');
+      );
+      expect(update1.outcome).toBe('reset');
+      Object.assign(conversation, update1.changes);
 
       expect(conversation.sessionId).toBeNull();
       expect(conversation.resumeAtMessageId).toBe('fork-checkpoint');
@@ -788,11 +797,13 @@ describe('CodexConversationHistoryService', () => {
         messages: [],
       };
 
-      await expect(new CodexConversationHistoryService().resolveMissingConversationSession(
+      const update2 = await new CodexConversationHistoryService().resolveMissingConversationSession(
         conversation,
         null,
         missingSessionId,
-      )).resolves.toBe('preserve');
+      );
+      expect(update2.outcome).toBe('preserve');
+      Object.assign(conversation, update2.changes);
 
       expect(conversation.sessionId).toBe('thread-current');
       expect(conversation.providerState).toBe(providerState);
@@ -841,7 +852,7 @@ describe('CodexConversationHistoryService', () => {
       };
 
       const service = new CodexConversationHistoryService();
-      await service.hydrateConversationHistory(conversation, null);
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
       // Should only have messages from turn 1 and turn 2 (truncated at resumeAt)
       expect(conversation.messages).toHaveLength(4);
@@ -883,7 +894,7 @@ describe('CodexConversationHistoryService', () => {
       };
 
       const service = new CodexConversationHistoryService();
-      await service.hydrateConversationHistory(conversation, null);
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
       expect(conversation.messages).toEqual([]);
     });
@@ -903,7 +914,7 @@ describe('CodexConversationHistoryService', () => {
       };
 
       const service = new CodexConversationHistoryService();
-      await service.hydrateConversationHistory(conversation, null);
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
       expect(conversation.messages).toHaveLength(1);
       expect(conversation.messages[0].content).toBe('Cloned message');
@@ -975,7 +986,7 @@ describe('CodexConversationHistoryService', () => {
       };
 
       const service = new CodexConversationHistoryService();
-      await service.hydrateConversationHistory(conversation, null);
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
       // Expected: source prefix (turns 1+2) + fork-only turn
       // = SrcQ1, SrcA1, SrcQ2, SrcA2, ForkQ1, ForkA1
@@ -1040,7 +1051,7 @@ describe('CodexConversationHistoryService', () => {
       };
 
       const service = new CodexConversationHistoryService();
-      await service.hydrateConversationHistory(conversation, null);
+      Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
       expect(conversation.messages).toEqual([]);
     });
@@ -1070,7 +1081,7 @@ describe('CodexConversationHistoryService', () => {
     };
 
     const service = new CodexConversationHistoryService();
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
     expect(conversation.messages).toEqual([]);
 
     fs.writeFileSync(
@@ -1098,7 +1109,7 @@ describe('CodexConversationHistoryService', () => {
       'utf-8',
     );
 
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages).toHaveLength(2);
     expect(conversation.messages[0]).toMatchObject({
@@ -1106,4 +1117,18 @@ describe('CodexConversationHistoryService', () => {
       content: 'Second prompt',
     });
   });
+});
+
+
+test('missing-session recovery returns an update without mutating its input', async () => {
+  const conversation = {
+    id: 'immutable-history', providerId: 'codex' as const, title: 'History',
+    createdAt: testDate().getTime(), lastActivityAt: testDate({ seconds: 1 }).getTime(), sessionId: 'missing-thread',
+    providerState: { threadId: 'missing-thread' }, messages: [],
+  };
+  const before = structuredClone(conversation);
+  const result = await new CodexConversationHistoryService()
+    .resolveMissingConversationSession(conversation, null, 'missing-thread');
+  expect(conversation).toEqual(before);
+  expect(result).toMatchObject({ outcome: 'reset', changes: { sessionId: null } });
 });

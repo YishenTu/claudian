@@ -18,11 +18,11 @@ describe('OpenCode provider state', () => {
     });
     const service = new OpencodeConversationHistoryService();
 
-    await expect(service.hydrateConversationHistory(
+    Object.assign(conversation, await service.hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: '/missing-home', XDG_DATA_HOME: '/missing-data' } },
-    )).resolves.toBeUndefined();
+    ));
     expect(service.buildPersistedProviderState(conversation)).toEqual({
       futureResumeCursor: { token: 'cursor-1' },
     });

@@ -2114,3 +2114,25 @@ it('keeps a completed answer when cancellation loses to native completion', asyn
   await fixture.controller.sendMessage({ content: 'Work' });
   expect(fixture.state.messages.at(-1)?.isInterrupt).not.toBe(true);
 });
+
+it('queuing another input must retain the running turn drain handle', async () => {
+  const fixture = createFixture();
+  const gate = deferred<{ accepted: boolean; status: string }>();
+  fixture.coordinator.execute.mockImplementationOnce(() => gate.promise as any);
+  const first = fixture.controller.sendMessage({ content: 'first turn' });
+  await waitForCall(fixture.coordinator.execute);
+  try {
+    await fixture.controller.sendMessage({ content: 'queued follow-up' });
+    expect(fixture.state.queuedMessage?.content).toBe('queued follow-up');
+    expect(fixture.state.isStreaming).toBe(true);
+    let cancellationDrainFinished = false;
+    const drain = fixture.controller.cancelStreamingAndWait().then(() => { cancellationDrainFinished = true; });
+    for (let tick = 0; tick < 20; tick++) await Promise.resolve();
+    expect(cancellationDrainFinished).toBe(false);
+    void drain;
+  } finally {
+    fixture.state.queuedMessage = null;
+    gate.resolve({ accepted: true, status: 'completed' });
+    await first;
+  }
+});

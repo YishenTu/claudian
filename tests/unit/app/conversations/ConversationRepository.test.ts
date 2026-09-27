@@ -199,7 +199,7 @@ describe('ConversationRepository hydration', () => {
   it('persists the historically recovered model even when unavailable', async () => {
     const conversation = createConversation('retired-recovered-model');
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+      hydrateConversationHistory: jest.fn().mockResolvedValue({}),
       recoverConversationModelSelection: jest.fn()
         .mockResolvedValue('claude-code/retired-native-model'),
     } as any);
@@ -242,7 +242,7 @@ describe('ConversationRepository hydration', () => {
     (malformed as unknown as { selectedModel: unknown }).selectedModel = 42;
     const recoverable = createConversation('valid-missing-model');
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+      hydrateConversationHistory: jest.fn().mockResolvedValue({}),
       recoverConversationModelSelection: jest.fn().mockResolvedValue('opus'),
     } as any);
     const { repository } = createRepository(malformed);
@@ -268,7 +268,7 @@ describe('ConversationRepository hydration', () => {
       'openai-codex/gpt-5.5',
     );
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+      hydrateConversationHistory: jest.fn().mockResolvedValue({}),
       hasConversationModelRecoverySource: (conversation: Conversation) => (
         conversation.sessionId === 'thread-before-invalidation'
       ),
@@ -301,7 +301,7 @@ describe('ConversationRepository hydration', () => {
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce('openai-codex/gpt-5.5');
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+      hydrateConversationHistory: jest.fn().mockResolvedValue({}),
       hasConversationModelRecoverySource: (conversation: Conversation) => (
         conversation.sessionId === 'thread-before-invalidation'
       ),
@@ -361,7 +361,7 @@ describe('ConversationRepository hydration', () => {
         : null
     ));
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+      hydrateConversationHistory: jest.fn().mockResolvedValue({}),
       hasConversationModelRecoverySource: (conversation: Conversation) => (
         typeof conversation.sessionId === 'string'
       ),
@@ -426,7 +426,7 @@ describe('ConversationRepository hydration', () => {
       resolve => { finishRecovery = resolve; },
     ));
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+      hydrateConversationHistory: jest.fn().mockResolvedValue({}),
       recoverConversationModelSelection,
     } as any);
     const { repository } = createRepository(conversation);
@@ -451,7 +451,7 @@ describe('ConversationRepository hydration', () => {
       percentage: 1,
     };
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+      hydrateConversationHistory: jest.fn().mockResolvedValue({}),
       recoverConversationModelSelection: jest.fn().mockResolvedValue(null),
     } as any);
     const { repository, persistence } = createRepository(conversation);
@@ -473,7 +473,7 @@ describe('ConversationRepository hydration', () => {
     };
     const recoverConversationModelSelection = jest.fn().mockResolvedValue(null);
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+      hydrateConversationHistory: jest.fn().mockResolvedValue({}),
       hasConversationModelRecoverySource: jest.fn().mockReturnValue(false),
       recoverConversationModelSelection,
     } as any);
@@ -498,7 +498,7 @@ describe('ConversationRepository hydration', () => {
       percentage: 1,
     };
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-      hydrateConversationHistory: jest.fn().mockResolvedValue(undefined),
+      hydrateConversationHistory: jest.fn().mockResolvedValue({}),
       hasConversationModelRecoverySource: jest.fn().mockReturnValue(false),
       recoverConversationModelSelection: jest.fn().mockResolvedValue(null),
     } as any);
@@ -816,14 +816,13 @@ describe('ConversationRepository hydration', () => {
     conversation.sessionId = null;
     conversation.providerState = undefined;
     conversation.lastActivityAt = 42;
-    const recoverConversationSessionReference = jest.fn(async (target: Conversation) => {
-      target.sessionId = 'recovered-session';
-      target.providerState = { providerSessionId: 'recovered-session' };
-      return true;
-    });
+    const recoverConversationSessionReference = jest.fn(async () => ({
+      sessionId: 'recovered-session',
+      providerState: { providerSessionId: 'recovered-session' },
+    }));
     const getConversationSessionAvailability = jest.fn().mockResolvedValue('available');
-    const hydrateConversationHistory = jest.fn().mockImplementation(async (target: Conversation) => {
-      target.messages.push({ id: 'message-1', role: 'user', content: 'Recovered', timestamp: 1 });
+    const hydrateConversationHistory = jest.fn().mockResolvedValue({
+      messages: [{ id: 'message-1', role: 'user', content: 'Recovered', timestamp: 1 }],
     });
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
       recoverConversationSessionReference,
@@ -924,10 +923,10 @@ describe('ConversationRepository hydration', () => {
       releaseFirstHydration = resolve;
     });
     const hydrateConversationHistory = jest.fn()
-      .mockImplementationOnce(async (draft: Conversation) => {
+      .mockImplementationOnce(async () => {
         markFirstHydrationStarted();
         await firstHydrationRelease;
-        draft.messages = [{ id: 'old-message', role: 'assistant', content: 'Old session', timestamp: 1 }];
+        return { messages: [{ id: 'old-message', role: 'assistant', content: 'Old session', timestamp: 1 }] };
       })
       .mockResolvedValueOnce(undefined);
     jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({

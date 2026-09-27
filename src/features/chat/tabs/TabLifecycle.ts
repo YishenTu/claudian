@@ -112,9 +112,8 @@ async function drainTabForShutdownSnapshotOnce(
     'tab pending provider interaction',
     () => tab.controllers.inputController.dismissPendingApproval(),
   );
-  const activeTurn = tab.session.activeTurn;
-  const cancelledActiveTurn = activeTurn !== null;
-  if (activeTurn) {
+  const cancelledActiveTurn = tab.session.turns.isActive;
+  if (cancelledActiveTurn) {
     tab.state.cancelRequested = true;
     tab.state.bumpStreamGeneration();
     await captureTeardownFailure(
@@ -122,7 +121,7 @@ async function drainTabForShutdownSnapshotOnce(
       'tab active execution cancellation',
       () => tab.executionCoordinator.cancel(),
     );
-    await activeTurn.catch(() => undefined);
+    await tab.session.turns.drain().catch(() => undefined);
   }
   await captureTeardownFailure(
     cleanupFailures,

@@ -10,6 +10,8 @@ import type {
 } from '@/core/execution';
 import { isSteerableExecutionSession } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { ClaudianSettings } from '@/core/types';
+type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 
 const mockTransportRequest = jest.fn();
 const mockTransportNotify = jest.fn();
@@ -169,7 +171,7 @@ function createTurnResult(turnId: string) {
   };
 }
 
-function createPlugin(): ProviderHost {
+function createPlugin(): MutableTestHost {
   return {
     settings: {
       model: TEST_CODEX_MODEL,
@@ -200,7 +202,7 @@ function createPlugin(): ProviderHost {
         },
       },
     },
-  } as unknown as ProviderHost;
+  } as unknown as MutableTestHost;
 }
 
 function createInteractionPort(): ProviderInteractionPort {

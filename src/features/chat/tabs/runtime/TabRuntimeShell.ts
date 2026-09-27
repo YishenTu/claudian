@@ -252,7 +252,7 @@ function createTabExecutionCoordinator(
         return !state.isStreaming
           && !state.isRewinding
           && !state.requiresAction
-          && tab.session.activeTurn === null
+          && !tab.session.turns.isActive
           && tab.lifecycleState !== 'closing';
       },
       onWarmStateChanged: (isWarm) => {

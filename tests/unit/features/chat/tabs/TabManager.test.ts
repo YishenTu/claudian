@@ -391,7 +391,7 @@ describe('TabManager provider execution orchestration', () => {
 
   it.each([
     ['foreground streaming', (tab: any) => { tab.state.isStreaming = true; }],
-    ['turn orchestration', (tab: any) => { tab.session.activeTurn = Promise.resolve(); }],
+    ['turn orchestration', (tab: any) => { void tab.session.turns.run(() => Promise.resolve()); }],
     ['provider background work', (tab: any) => { tab.executionCoordinator.hasBackgroundWork = true; }],
     ['async subagent work', (tab: any) => {
       tab.services.subagentManager.hasActiveAsyncSubagents.mockReturnValue(true);

@@ -20,7 +20,7 @@ export class SettingsPostCommitError extends Error {
   }
 }
 
-function restoreSettings<T extends object>(settings: T, snapshot: T): void {
+function publishSettings<T extends object>(settings: T, snapshot: T): void {
   const target = settings as Record<string, unknown>;
   const source = snapshot as Record<string, unknown>;
   for (const key of Object.keys(target)) {
@@ -33,7 +33,6 @@ function restoreSettings<T extends object>(settings: T, snapshot: T): void {
 
 export class SettingsCoordinator<T extends object> {
   private tail: Promise<void> = Promise.resolve();
-  private pendingSnapshot: T | null = null;
 
   constructor(
     private readonly settings: T,
@@ -43,25 +42,28 @@ export class SettingsCoordinator<T extends object> {
 
   /** Excludes mutations whose persistence is still pending. Callers must not mutate this view. */
   getCommittedSettings(): Readonly<T> {
-    return this.pendingSnapshot ?? this.settings;
+    return this.settings;
   }
 
   mutate(
     mutation: SettingsMutation<T>,
     onCommitted?: SettingsCommit<T>,
   ): Promise<void> {
-    return this.#enqueueTransactional(async () => {
-      await mutation(this.settings);
-      await this.persist(this.settings);
+    return this.#enqueueTransactional(async (draft) => {
+      await mutation(draft);
+      await this.persist(draft);
     }, onCommitted);
   }
 
-  mutateConditionally(mutation: ConditionalSettingsMutation<T>): Promise<void> {
-    return this.#enqueueTransactional(async () => {
-      if (await mutation(this.settings)) {
-        await this.persist(this.settings);
+  mutateConditionally(
+    mutation: ConditionalSettingsMutation<T>,
+    onCommitted?: SettingsCommit<T>,
+  ): Promise<void> {
+    return this.#enqueueTransactional(async (draft) => {
+      if (await mutation(draft)) {
+        await this.persist(draft);
       }
-    });
+    }, onCommitted);
   }
 
   persistCurrent(): Promise<void> {
@@ -75,20 +77,14 @@ export class SettingsCoordinator<T extends object> {
   }
 
   #enqueueTransactional(
-    operation: () => Promise<void>,
+    operation: (draft: T) => Promise<void>,
     onCommitted?: SettingsCommit<T>,
   ): Promise<void> {
     return this.enqueue(async () => {
       const snapshot = structuredClone(this.settings);
-      this.pendingSnapshot = snapshot;
-      try {
-        await operation();
-      } catch (error) {
-        restoreSettings(this.settings, snapshot);
-        throw error;
-      } finally {
-        this.pendingSnapshot = null;
-      }
+      const draft = structuredClone(this.settings);
+      await operation(draft);
+      publishSettings(this.settings, draft);
       const errors: unknown[] = [];
       try { await onCommitted?.(this.settings); } catch (error) { errors.push(error); }
       try { await this.publish?.(this.settings, snapshot); } catch (error) { errors.push(error); }

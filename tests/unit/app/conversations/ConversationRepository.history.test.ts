@@ -90,14 +90,13 @@ test('does not publish recovered identity after concurrent deletion', async () =
   const conversation = createConversation();
   const { repository, persistence } = createRepository(conversation);
   jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-    hydrateConversationHistory: async () => undefined,
+    hydrateConversationHistory: async () => ({}),
     resolveSessionIdForConversation: value => value?.sessionId ?? null,
     isPendingForkConversation: () => false,
     buildForkProviderState: () => ({}),
-    recoverConversationSessionReference: async draft => {
-      draft.sessionId = 'recovered-session';
+    recoverConversationSessionReference: async () => {
       await repository.delete(conversation.id);
-      return true;
+      return { sessionId: 'recovered-session' };
     },
   });
   expect(await repository.ensureHydrated(conversation.id)).toBeNull();
@@ -131,11 +130,11 @@ test('OpenCode hydrates a fresh projection after another projection was discarde
     { id: 'native-response', role: 'assistant', content: 'Native history', timestamp: 2 },
   ];
   jest.spyOn(history, 'loadOpencodeSessionMessages').mockResolvedValue(nativeMessages);
-  await service.hydrateConversationHistory(first, '/vault');
+  Object.assign(first, await service.hydrateConversationHistory(first, '/vault'));
   const fresh = { ...createConversation(), providerId: 'opencode', messages: [
     { id: 'local-input', role: 'user' as const, content: 'Local draft', timestamp: 1 },
   ] };
-  await service.hydrateConversationHistory(fresh, '/vault');
+  Object.assign(fresh, await service.hydrateConversationHistory(fresh, '/vault'));
   expect(fresh.messages).toEqual(nativeMessages);
 });
 
@@ -171,7 +170,7 @@ test('late accepted binding survives a missing-session decision', async () => {
   const { repository } = createRepository(conversation);
   let updating: Promise<void> | undefined;
   jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-    hydrateConversationHistory: async () => undefined,
+    hydrateConversationHistory: async () => ({}),
     resolveSessionIdForConversation: value => value?.sessionId ?? null,
     isPendingForkConversation: () => false,
     buildForkProviderState: () => ({}),
@@ -179,7 +178,7 @@ test('late accepted binding survives a missing-session decision', async () => {
       queueMicrotask(() => queueMicrotask(() => queueMicrotask(() => {
         updating = repository.update(conversation.id, { sessionId: 'new-session' });
       })));
-      return 'delete';
+      return { outcome: 'delete' };
     },
   });
   const outcome = await repository.handleMissingProviderSession(conversation.id, 'session-1');

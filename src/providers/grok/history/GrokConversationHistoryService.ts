@@ -1,9 +1,13 @@
+import { copyProviderHistoryState } from '@/core/providers/providerHistory';
+
 import { mergePersistedProviderState } from '../../../core/providers/providerState';
 import type {
   ProviderConversationHistoryService,
+  ProviderHistoryInput,
   ProviderHistoryPathContext,
+  ProviderHistoryResult,
+  ProviderHistoryUpdate,
 } from '../../../core/providers/types';
-import type { Conversation } from '../../../core/types';
 import {
   buildPersistedGrokProviderState,
   parseGrokProviderState,
@@ -19,19 +23,17 @@ const GROK_PROVIDER_STATE_KEYS = [
 ] as const;
 
 export class GrokConversationHistoryService implements ProviderConversationHistoryService {
-  // A discarded repository draft must not mark another projection hydrated.
-  private readonly hydratedKeys = new WeakMap<Conversation, string>();
 
   async hydrateConversationHistory(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<void> {
+  ): Promise<ProviderHistoryUpdate> {
+    const conversation = copyProviderHistoryState(input);
     const state = parseGrokProviderState(conversation.providerState);
     if (this.isPendingForkConversation(conversation)) {
       if (!pathContext) {
-        this.hydratedKeys.delete(conversation);
-        return;
+        return conversation;
       }
       const forkSource = state.forkSource!;
       const sourceSessionDirectory = resolveGrokSessionDirectory(
@@ -50,30 +52,25 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
           }) as Record<string, unknown> | undefined,
         );
       }
-      if (conversation.messages.length > 0) return;
+      if (conversation.messages.length > 0) return conversation;
       if (!sourceSessionDirectory) {
-        this.hydratedKeys.delete(conversation);
-        return;
+        return conversation;
       }
-      const hydrationKey = `fork::${sourceSessionDirectory}::${forkSource.resumeAt}`;
       const parsed = await loadGrokHistory(
         sourceSessionDirectory,
         forkSource.sessionId,
         forkSource.resumeAt,
       );
       if (parsed.messages.length === 0) {
-        this.hydratedKeys.delete(conversation);
-        return;
+        return conversation;
       }
       conversation.messages = parsed.messages;
-      this.hydratedKeys.set(conversation, hydrationKey);
-      return;
+      return conversation;
     }
 
     const sessionId = conversation.sessionId;
     if (!sessionId || !pathContext) {
-      this.hydratedKeys.delete(conversation);
-      return;
+      return conversation;
     }
     const sessionDirectory = resolveGrokSessionDirectory(
       state.sessionDirectory,
@@ -92,21 +89,13 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
       );
     }
     if (!sessionDirectory) {
-      this.hydratedKeys.delete(conversation);
-      return;
+      return conversation;
     }
 
-    const hydrationKey = `${sessionId}::${sessionDirectory}`;
-    if (
-      conversation.messages.length > 0
-      && this.hydratedKeys.get(conversation) === hydrationKey
-    ) {
-      return;
-    }
+
     const parsed = await loadGrokHistory(sessionDirectory, sessionId);
     if (parsed.messages.length === 0) {
-      this.hydratedKeys.delete(conversation);
-      return;
+      return conversation;
     }
     conversation.messages = parsed.messages;
     const hydratedState = parseGrokProviderState(conversation.providerState);
@@ -120,25 +109,26 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
         }) as Record<string, unknown> | undefined,
       );
     }
-    this.hydratedKeys.set(conversation, hydrationKey);
+    return conversation;
   }
 
-  resolveSessionIdForConversation(conversation: Conversation | null): string | null {
+  resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null {
     const state = parseGrokProviderState(conversation?.providerState);
     return conversation?.sessionId ?? state.forkSource?.sessionId ?? null;
   }
 
   async resolveMissingConversationSession(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     _vaultPath: string | null,
     missingProviderSessionId?: string,
-  ): Promise<'delete' | 'reset' | 'preserve'> {
+  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
+    const conversation = copyProviderHistoryState(input);
     if (
       !conversation.sessionId
       || !missingProviderSessionId
       || conversation.sessionId !== missingProviderSessionId
     ) {
-      return 'preserve';
+      return { outcome: 'preserve' };
     }
 
     const providerState = { ...conversation.providerState };
@@ -147,11 +137,10 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
     conversation.providerState = Object.keys(providerState).length > 0
       ? providerState
       : undefined;
-    this.hydratedKeys.delete(conversation);
-    return 'reset';
+    return { outcome: 'reset', changes: conversation };
   }
 
-  isPendingForkConversation(conversation: Conversation): boolean {
+  isPendingForkConversation(conversation: ProviderHistoryInput): boolean {
     const state = parseGrokProviderState(conversation.providerState);
     return Boolean(state.forkSource && !conversation.sessionId);
   }
@@ -174,7 +163,7 @@ export class GrokConversationHistoryService implements ProviderConversationHisto
   }
 
   buildPersistedProviderState(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
   ): Record<string, unknown> | undefined {
     return mergePersistedProviderState(
       conversation.providerState,

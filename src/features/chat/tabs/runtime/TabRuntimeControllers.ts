@@ -367,7 +367,7 @@ export function buildTabRuntimeControllers(
     canStartTurn: () => shell.session.acceptsIntents,
     isClosing: () => shell.lifecycleState === 'closing',
     getSideChatController: () => sideChatController,
-    turnOwner: shell.session,
+    turnOwner: shell.session.turns,
     ensureExecutionInitialized,
     openConversation: openConversation
       ? async (conversationId) => {

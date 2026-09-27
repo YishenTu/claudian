@@ -37,7 +37,7 @@ process.stdin.resume(); process.stdin.on('end', () => server.close());
   const context = { settings: { providerConfigs: { opencode: { cliPath } } }, vaultPath: root, environment: { ...process.env, XDG_DATA_HOME: path.join(root, 'data'), OPENCODE_DB: path.join(root, 'untrusted.db') } };
   try {
     await expect(history.recoverConversationModelSelection!(conversation, root, context)).resolves.toBe('opencode:deepseek/chat');
-    await history.hydrateConversationHistory(conversation, root, context);
+    Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, context));
     expect(conversation.messages.map(message => message.content)).toEqual(['Native question', 'Native answer']);
     await expect(history.buildForkProviderState('ses_parent', '', conversation.providerState, root, context))
       .resolves.toMatchObject({ sessionId: 'ses_child', databasePath, nativeVersion: 2 });

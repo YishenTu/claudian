@@ -174,7 +174,7 @@ test('reopening uses provider messages as the authoritative history', async () =
     content: 'Provider text', displayContent: 'Provider text', timestamp: 2,
   };
   jest.spyOn(ProviderRegistry, 'getConversationHistoryService').mockReturnValue({
-    hydrateConversationHistory: async (target: Conversation) => { target.messages = [nativeMessage]; },
+    hydrateConversationHistory: async () => ({ messages: [nativeMessage] }),
   } as unknown as ReturnType<typeof ProviderRegistry.getConversationHistoryService>);
   await adapter.write(`${SESSIONS_PATH}/${metadata.id}.inputs.json`, JSON.stringify({
     schemaVersion: 1, conversationId: metadata.id, records: [{

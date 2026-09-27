@@ -30,7 +30,7 @@ describe('PiConversationHistoryService', () => {
     const conversation = createConversation(sessionFile);
     const service = new PiConversationHistoryService();
 
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages).toHaveLength(1);
     expect(conversation.messages[0]).toMatchObject({
@@ -119,11 +119,11 @@ describe('PiConversationHistoryService', () => {
     const conversation = createConversation(outsideFile);
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: home } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted']);
     expect(conversation.providerState).toEqual({
@@ -147,11 +147,11 @@ describe('PiConversationHistoryService', () => {
     conversation.providerState = { sessionFile };
     conversation.sessionId = null;
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: home } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['File only']);
     expect(conversation.providerState).toEqual({ sessionFile });
@@ -181,11 +181,11 @@ describe('PiConversationHistoryService', () => {
     conversation.sessionId = null;
     const service = new PiConversationHistoryService();
 
-    await service.hydrateConversationHistory(
+    Object.assign(conversation, await service.hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: home } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Detached history']);
     expect(service.resolveSessionIdForConversation(conversation)).toBe(sessionFile);
@@ -232,11 +232,11 @@ describe('PiConversationHistoryService', () => {
     };
     conversation.sessionId = 'active-session';
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: home } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Previous', 'Active']);
   });
@@ -265,11 +265,11 @@ describe('PiConversationHistoryService', () => {
       sessionId: 'active-session',
     };
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: home } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual([
       'Previous notice',
@@ -313,11 +313,11 @@ describe('PiConversationHistoryService', () => {
     conversation.sessionId = 'active-session';
     const service = new PiConversationHistoryService();
 
-    await service.hydrateConversationHistory(
+    Object.assign(conversation, await service.hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: home } },
-    );
+    ));
 
     await expect(service.buildForkProviderState(
       'active-session',
@@ -398,7 +398,7 @@ describe('PiConversationHistoryService', () => {
     };
     conversation.sessionId = null;
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       vault,
       {
@@ -407,7 +407,7 @@ describe('PiConversationHistoryService', () => {
           PI_CODING_AGENT_SESSION_DIR: newRoot,
         },
       },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Archived history']);
     expect(conversation.providerState).toEqual({
@@ -444,7 +444,7 @@ describe('PiConversationHistoryService', () => {
     };
     conversation.sessionId = null;
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       vault,
       {
@@ -453,7 +453,7 @@ describe('PiConversationHistoryService', () => {
           PI_CODING_AGENT_SESSION_DIR: newRoot,
         },
       },
-    );
+    ));
 
     expect(conversation.messages).toEqual([]);
     expect(conversation.providerState).toEqual({
@@ -475,11 +475,11 @@ describe('PiConversationHistoryService', () => {
     }));
     const conversation = createConversation(sessionFile);
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { PI_CODING_AGENT_SESSION_DIR: configuredDir } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Configured']);
   });
@@ -501,11 +501,11 @@ describe('PiConversationHistoryService', () => {
     }));
     const conversation = createConversation(outsideFile);
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       vault,
       { environment: { HOME: safeHome } },
-    );
+    ));
 
     expect(conversation.messages).toEqual([]);
   });
@@ -586,7 +586,7 @@ describe('PiConversationHistoryService', () => {
     conversation.sessionId = null;
     const service = new PiConversationHistoryService();
 
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['First', 'Done']);
   });
@@ -612,11 +612,11 @@ describe('PiConversationHistoryService', () => {
     };
     conversation.sessionId = null;
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: home } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted', 'Done']);
     expect(conversation.providerState).toEqual({
@@ -647,11 +647,11 @@ describe('PiConversationHistoryService', () => {
     };
     conversation.sessionId = null;
 
-    await new PiConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new PiConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: home } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Already loaded']);
     expect(conversation.providerState).toEqual({
@@ -678,7 +678,7 @@ describe('PiConversationHistoryService', () => {
     conversation.sessionId = null;
     const service = new PiConversationHistoryService();
 
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages).toEqual([]);
   });
@@ -732,11 +732,13 @@ describe('PiConversationHistoryService', () => {
       };
       const service = new PiConversationHistoryService();
 
-      await expect(service.resolveMissingConversationSession?.(
+      const update1 = await service.resolveMissingConversationSession?.(
         conversation,
         '/vault',
         '/trusted/missing.jsonl',
-      )).resolves.toBe('reset');
+      );
+      expect(update1.outcome).toBe('reset');
+      Object.assign(conversation, update1.changes);
 
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
@@ -766,11 +768,13 @@ describe('PiConversationHistoryService', () => {
       conversation.sessionId = missingPath;
       const service = new PiConversationHistoryService();
 
-      await expect(service.resolveMissingConversationSession?.(
+      const update2 = await service.resolveMissingConversationSession?.(
         conversation,
         '/vault',
         missingPath,
-      )).resolves.toBe('reset');
+      );
+      expect(update2.outcome).toBe('reset');
+      Object.assign(conversation, update2.changes);
 
       const recreatedConversation: Conversation = {
         ...conversation,
@@ -806,11 +810,13 @@ describe('PiConversationHistoryService', () => {
       };
       const service = new PiConversationHistoryService();
 
-      await expect(service.resolveMissingConversationSession?.(
+      const update3 = await service.resolveMissingConversationSession?.(
         conversation,
         '/vault',
         's1',
-      )).resolves.toBe('reset');
+      );
+      expect(update3.outcome).toBe('reset');
+      Object.assign(conversation, update3.changes);
 
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
@@ -833,11 +839,13 @@ describe('PiConversationHistoryService', () => {
       const providerState = conversation.providerState;
       const service = new PiConversationHistoryService();
 
-      await expect(service.resolveMissingConversationSession?.(
+      const update4 = await service.resolveMissingConversationSession?.(
         conversation,
         '/vault',
         'stale-id',
-      )).resolves.toBe('preserve');
+      );
+      expect(update4.outcome).toBe('preserve');
+      Object.assign(conversation, update4.changes);
 
       expect(conversation.sessionId).toBe('s1');
       expect(conversation.providerState).toBe(providerState);

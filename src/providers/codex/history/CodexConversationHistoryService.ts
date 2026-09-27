@@ -1,10 +1,15 @@
 import * as fs from 'node:fs/promises';
 
+import { copyProviderHistoryState } from '@/core/providers/providerHistory';
+
 import type {
   ProviderConversationHistoryService,
+  ProviderHistoryInput,
   ProviderHistoryPathContext,
+  ProviderHistoryResult,
+  ProviderHistoryState,
+  ProviderHistoryUpdate,
 } from '../../../core/providers/types';
-import type { Conversation } from '../../../core/types';
 import { encodeCodexModelSelectionId } from '../modelSelection';
 import type { CodexProviderState } from '../types';
 import { getCodexState } from '../types';
@@ -55,10 +60,8 @@ async function readSessionModel(
 }
 
 export class CodexConversationHistoryService implements ProviderConversationHistoryService {
-  // A discarded repository draft must not mark another projection hydrated.
-  private hydratedConversationPaths = new WeakMap<Conversation, string>();
 
-  hasConversationModelRecoverySource(conversation: Conversation): boolean {
+  hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {
     const state = getCodexState(conversation.providerState);
     return !!(
       state.threadId
@@ -70,7 +73,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   }
 
   async recoverConversationModelSelection(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
     _vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
   ): Promise<string | null> {
@@ -139,10 +142,11 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   }
 
   async hydrateConversationHistory(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     _vaultPath: string | null,
     pathContext?: ProviderHistoryPathContext,
-  ): Promise<void> {
+  ): Promise<ProviderHistoryUpdate> {
+    const conversation = copyProviderHistoryState(input);
     const lookupDeadline = Date.now() + CODEX_HISTORY_LOOKUP_TIMEOUT_MS;
     const state = getCodexState(conversation.providerState);
     const transcriptRootPath = resolveCodexTranscriptRootHint(
@@ -152,7 +156,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
     // Pending fork with existing in-memory messages: keep them as-is
     if (this.isPendingForkConversation(conversation) && conversation.messages.length > 0) {
-      return;
+      return conversation;
     }
 
     // Pending fork without messages: hydrate from source transcript truncated at resumeAt
@@ -162,17 +166,16 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         pathContext,
         lookupDeadline,
       );
-      if (!sourceSessionFile) return;
+      if (!sourceSessionFile) return conversation;
 
       const turns = await readSessionTurns(sourceSessionFile);
       const resumeAt = state.forkSource!.resumeAt;
       const truncated = this.#truncateTurnsAtCheckpoint(turns, resumeAt);
       if (!truncated) {
-        this.hydratedConversationPaths.delete(conversation);
-        return;
+        return conversation;
       }
       conversation.messages = truncated.flatMap(t => t.messages);
-      return;
+      return conversation;
     }
 
     // Established fork: source prefix + fork-only turns
@@ -202,8 +205,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         const resumeAt = state.forkSource.resumeAt;
         const sourcePrefix = this.#truncateTurnsAtCheckpoint(sourceTurns, resumeAt);
         if (!sourcePrefix) {
-          this.hydratedConversationPaths.delete(conversation);
-          return;
+          return conversation;
         }
         const sourceTurnIds = new Set(sourceTurns.map(t => t.turnId).filter(Boolean));
         const forkOnlyTurns = forkTurns.filter(t => !t.turnId || !sourceTurnIds.has(t.turnId));
@@ -214,14 +216,12 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         ];
 
         if (messages.length === 0) {
-          this.hydratedConversationPaths.delete(conversation);
-          return;
+          return conversation;
         }
 
         conversation.messages = messages;
-        this.hydratedConversationPaths.set(conversation, `fork::${state.threadId}`);
         this.#markNativeConversationContextEstablished(conversation);
-        return;
+        return conversation;
       }
     }
 
@@ -243,18 +243,10 @@ export class CodexConversationHistoryService implements ProviderConversationHist
       ?? deriveCodexSessionsRootFromSessionPath(sessionFilePath);
 
     if (!sessionFilePath) {
-      this.hydratedConversationPaths.delete(conversation);
-      return;
+      return conversation;
     }
 
-    const hydrationKey = `${threadId ?? ''}::${sessionFilePath}`;
-    if (
-      conversation.messages.length > 0
-      && this.hydratedConversationPaths.get(conversation) === hydrationKey
-    ) {
-      this.#markNativeConversationContextEstablished(conversation);
-      return;
-    }
+
 
     if (sessionFilePath !== state.sessionFilePath) {
       conversation.providerState = {
@@ -273,26 +265,26 @@ export class CodexConversationHistoryService implements ProviderConversationHist
 
     const sdkMessages = await parseCodexSessionFileAsync(sessionFilePath);
     if (sdkMessages.length === 0) {
-      this.hydratedConversationPaths.delete(conversation);
-      return;
+      return conversation;
     }
 
     conversation.messages = sdkMessages;
-    this.hydratedConversationPaths.set(conversation, hydrationKey);
     this.#markNativeConversationContextEstablished(conversation);
+    return conversation;
   }
 
-  resolveSessionIdForConversation(conversation: Conversation | null): string | null {
+  resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null {
     if (!conversation) return null;
     const state = getCodexState(conversation.providerState);
     return state.threadId ?? conversation.sessionId ?? state.forkSource?.sessionId ?? null;
   }
 
   async resolveMissingConversationSession(
-    conversation: Conversation,
+    input: ProviderHistoryInput,
     _vaultPath: string | null,
     missingProviderSessionId?: string,
-  ): Promise<'delete' | 'reset' | 'preserve'> {
+  ): Promise<ProviderHistoryResult<'delete' | 'reset' | 'preserve'>> {
+    const conversation = copyProviderHistoryState(input);
     const state = getCodexState(conversation.providerState);
     const currentSessionId = state.pendingForkTarget?.threadId
       ?? state.threadId
@@ -310,7 +302,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
       || missingProviderSessionId !== currentSessionId
       || liveSessionIds.some(sessionId => sessionId !== currentSessionId)
     ) {
-      return 'preserve';
+      return { outcome: 'preserve' };
     }
 
     const providerState = { ...(conversation.providerState ?? {}) };
@@ -321,17 +313,16 @@ export class CodexConversationHistoryService implements ProviderConversationHist
     conversation.providerState = Object.keys(providerState).length > 0
       ? providerState
       : undefined;
-    this.hydratedConversationPaths.delete(conversation);
-    return 'reset';
+    return { outcome: 'reset', changes: conversation };
   }
 
-  isPendingForkConversation(conversation: Conversation): boolean {
+  isPendingForkConversation(conversation: ProviderHistoryInput): boolean {
     const state = getCodexState(conversation.providerState);
     return !!state.forkSource && !state.threadId && !conversation.sessionId;
   }
 
   #markNativeConversationContextEstablished(
-    conversation: Conversation,
+    conversation: ProviderHistoryState,
   ): void {
     const state = getCodexState(conversation.providerState);
     if (state.nativeConversationContextEstablished !== false) return;
@@ -392,7 +383,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
   }
 
   buildPersistedProviderState(
-    conversation: Conversation,
+    conversation: ProviderHistoryInput,
   ): Record<string, unknown> | undefined {
     const entries = Object.entries(getCodexState(conversation.providerState))
       .filter(([, value]) => value !== undefined);

@@ -45,14 +45,14 @@ describe('OpencodeConversationHistoryService', () => {
         const { OpencodeConversationHistoryService: HistoryService } = await import(
           '@/providers/opencode/history/OpencodeConversationHistoryService'
         );
-        await new HistoryService().hydrateConversationHistory(conversation, null, {
+        Object.assign(conversation, await new HistoryService().hydrateConversationHistory(conversation, null, {
           environment: {
             ...process.env,
             OPENCODE_DB: dbPath,
             CLAUDIAN_HISTORY_TEST: 'configured',
             PATH: path.dirname(process.execPath),
           },
-        });
+        }));
       });
       expect(conversation.messages.map(message => message.content)).toEqual(['Configured history']);
       expect(environmentMarkers).toContain('configured');
@@ -91,7 +91,7 @@ describe('OpencodeConversationHistoryService', () => {
       db.close();
     }
 
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages).toHaveLength(1);
     expect(conversation.messages[0]).toMatchObject({
@@ -119,7 +119,7 @@ describe('OpencodeConversationHistoryService', () => {
       repairedDb.close();
     }
 
-    await service.hydrateConversationHistory(conversation, null);
+    Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
 
     expect(conversation.messages).toEqual([
       {
@@ -182,11 +182,11 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation(sessionId, outsidePath);
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
-    await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: tmpRoot, XDG_DATA_HOME: xdgDataHome } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Trusted prompt']);
     expect(conversation.providerState).toEqual({
@@ -207,7 +207,7 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation(sessionId, legacyPath);
     conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
 
-    await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       {
@@ -217,7 +217,7 @@ describe('OpencodeConversationHistoryService', () => {
           LOCALAPPDATA: path.join(home, 'AppData', 'Local'),
         },
       },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Current home prompt']);
     expect(conversation.providerState).toEqual({
@@ -244,11 +244,13 @@ describe('OpencodeConversationHistoryService', () => {
       conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
       const service = new OpencodeConversationHistoryService();
 
-      await expect(service.resolveMissingConversationSession(
+      const update1 = await service.resolveMissingConversationSession(
         conversation,
         null,
         'missing-session',
-      )).resolves.toBe('reset');
+      );
+      expect(update1.outcome).toBe('reset');
+      Object.assign(conversation, update1.changes);
 
       expect(conversation.sessionId).toBeNull();
       expect(conversation.providerState).toEqual({
@@ -263,11 +265,13 @@ describe('OpencodeConversationHistoryService', () => {
       conversation.providerState!.futureResumeCursor = { token: 'cursor-1' };
       const service = new OpencodeConversationHistoryService();
 
-      await expect(service.resolveMissingConversationSession(
+      const update2 = await service.resolveMissingConversationSession(
         conversation,
         null,
         'stale-session',
-      )).resolves.toBe('preserve');
+      );
+      expect(update2.outcome).toBe('preserve');
+      Object.assign(conversation, update2.changes);
 
       expect(conversation.sessionId).toBe('current-session');
       expect(conversation.providerState).toEqual({
@@ -287,10 +291,10 @@ describe('OpencodeConversationHistoryService', () => {
       nativeConversationContextEstablished: false,
     };
 
-    await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
-    );
+    ));
 
     expect(conversation.providerState).toEqual({
       databasePath: dbPath,
@@ -305,11 +309,11 @@ describe('OpencodeConversationHistoryService', () => {
     seedDatabase(configuredPath, sessionId, 'Configured prompt');
     const conversation = createConversation(sessionId, configuredPath);
 
-    await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: tmpRoot, OPENCODE_DB: configuredPath } },
-    );
+    ));
 
     expect(conversation.messages.map(message => message.content)).toEqual(['Configured prompt']);
   });
@@ -323,11 +327,11 @@ describe('OpencodeConversationHistoryService', () => {
     const conversation = createConversation('remote-session', outsidePath);
     conversation.sessionId = null;
 
-    await new OpencodeConversationHistoryService().hydrateConversationHistory(
+    Object.assign(conversation, await new OpencodeConversationHistoryService().hydrateConversationHistory(
       conversation,
       null,
       { environment: { HOME: tmpRoot, XDG_DATA_HOME: xdgDataHome } },
-    );
+    ));
 
     expect(conversation.providerState).toEqual({ databasePath: trustedPath });
   });

@@ -62,7 +62,6 @@ import {
   providerOutputEventToStreamChunk,
   type StreamController,
 } from './StreamController';
-import type { ActiveTurnOwner } from './TurnCoordinator';
 import { TurnCoordinator } from './TurnCoordinator';
 
 type ApprovalCallbackOptions = InlineApprovalOptions;
@@ -101,7 +100,7 @@ export interface InputControllerDeps {
   captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
   canStartTurn?: () => boolean;
   isClosing?: () => boolean;
-  turnOwner?: ActiveTurnOwner;
+  turnOwner?: TurnCoordinator;
   /** Destination seam for the shared composer; absent means main-only. */
   getSideChatController?: () => SideChatController | null;
 }
@@ -155,7 +154,7 @@ export class InputController {
     conversationId: string | null;
     report: () => void;
   } | null = null;
-  private readonly turnCoordinator: TurnCoordinator<SendMessageOptions>;
+  private readonly turnCoordinator: TurnCoordinator;
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
@@ -164,10 +163,7 @@ export class InputController {
       getSuppressedEl: () => this.deps.getInputContainerEl(),
       onBeforeShow: () => this.deps.streamController.hideThinkingIndicator(),
     });
-    this.turnCoordinator = new TurnCoordinator(
-      (options) => this.#executeSendMessage(options),
-      deps.turnOwner,
-    );
+    this.turnCoordinator = deps.turnOwner ?? new TurnCoordinator();
   }
 
   #getExecutionCoordinator(): ChatExecutionCoordinator | null {
@@ -212,7 +208,7 @@ export class InputController {
       new Notice(t('chat.selectAvailableModel'));
       return;
     }
-    await this.turnCoordinator.run(options);
+    await this.#dispatchMessage(options);
   }
 
   resumeQueuedTurnAfterIntentAdmission(): void {
@@ -257,16 +253,12 @@ export class InputController {
     }
   }
 
-  async #executeSendMessage(options?: SendMessageOptions): Promise<void> {
+  async #dispatchMessage(options?: SendMessageOptions): Promise<void> {
     const {
-      plugin,
       state,
-      renderer,
-      streamController,
       selectionController,
       browserSelectionController,
       canvasSelectionController,
-      conversationController
     } = this.deps;
     this.#discardDeferredReviewForDifferentConversation();
 
@@ -360,7 +352,7 @@ export class InputController {
     }
 
     // If agent is working, queue the message instead of dropping it
-    if (state.isStreaming) {
+    if (state.isStreaming || this.turnCoordinator.isActive) {
       const images = hasImages
         ? [...(imageOverride ?? imageContextManager?.getAttachedImages() ?? [])]
         : undefined;
@@ -389,6 +381,15 @@ export class InputController {
       return;
     }
 
+    await this.turnCoordinator.run(() => this.#executeMainTurn(content, options));
+  }
+
+  async #executeMainTurn(content: string, options?: SendMessageOptions): Promise<void> {
+    const { plugin, state, renderer, streamController, conversationController } = this.deps;
+    const inputEl = this.deps.getInputEl();
+    const imageContextManager = this.deps.getImageContextManager();
+    const imageOverride = options?.images;
+    const shouldUseInput = options?.content === undefined;
     state.acknowledgeReview();
 
     let turnConversationId = state.currentConversationId;
@@ -1707,7 +1708,7 @@ export class InputController {
 
   /** Cancels the active turn and waits for its cleanup and conversation persistence. */
   async cancelStreamingAndWait(): Promise<void> {
-    const activeTurn = this.turnCoordinator.current;
+    const activeTurn = this.turnCoordinator.drain();
     this.cancelStreaming();
     await activeTurn;
   }

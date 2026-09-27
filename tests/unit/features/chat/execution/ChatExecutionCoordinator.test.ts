@@ -2007,3 +2007,30 @@ describe('ChatExecutionCoordinator', () => {
     );
   });
 });
+
+
+test.each([undefined, 'provider-reported-model'])(
+  'attributes requested and background usage to execution while preserving native model %s',
+  async nativeModel => {
+    const harness = createHarness();
+    const { session, run, resultPromise } = await beginExecution(harness);
+    const usage = { inputTokens: 20, contextTokens: 20, contextWindow: 100, percentage: 20,
+      ...(nativeModel ? { model: nativeModel } : {}) };
+    run.events.push({ type: 'usage_updated', scope: requestedScope(session, run, 1), usage });
+    run.events.push({ type: 'turn_completed', scope: requestedScope(session, run, 2), reason: 'completed' });
+    run.events.end();
+    await resultPromise;
+    const scope = { kind: 'background' as const, sessionInstanceId: session.sessionInstanceId,
+      turnId: 'background-usage', sequence: 1 };
+    session.emit({ type: 'background_turn_started', scope });
+    session.emit({ type: 'usage_updated', scope: { ...scope, sequence: 2 }, usage });
+    session.emit({ type: 'background_turn_completed', scope: { ...scope, sequence: 3 }, reason: 'completed' });
+    for (const events of [harness.requestedEvents, harness.sessionEvents]) {
+      expect(events.find(event => event.type === 'usage_updated')).toMatchObject({
+        usage: { model: nativeModel ?? 'model-1' },
+      });
+    }
+    expect(usage.model).toBe(nativeModel);
+    await harness.coordinator.dispose();
+  },
+);

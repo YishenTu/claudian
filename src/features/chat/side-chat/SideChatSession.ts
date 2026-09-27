@@ -18,6 +18,7 @@ import type { ChatMessage, ImageAttachment, ProviderId } from '@/core/types';
 import { toError } from '@/utils/error';
 
 import { ExecutionSessionSupervisor } from '../execution/ExecutionSessionSupervisor';
+import { withExecutionUsageModel } from '../execution/usageModel';
 import type { WarmExecutionPool } from '../execution/WarmExecutionPool';
 
 export type SideChatTurnStatus =
@@ -73,6 +74,7 @@ interface ActiveSideExecution {
   readonly session: ProviderExecutionSession;
   readonly generation: number;
   readonly run: ProviderExecutionRun;
+  readonly model: string | undefined;
   readonly controller: AbortController;
   terminationOverride: 'cancelled' | 'invalidated' | null;
 }
@@ -88,7 +90,8 @@ export class SideChatSession {
   readonly #supervisor: ExecutionSessionSupervisor;
   readonly #fencedInteractionPort: ProviderInteractionPort;
   readonly #pendingInteractions = new Map<string, { turnId: string; sessionInstanceId: string }>();
-  readonly #backgroundTurnIds = new Set<string>();
+  readonly #backgroundModels = new Map<string, string | undefined>();
+  #model: string | undefined;
   #childResumeStatePromise: Promise<Readonly<Record<string, unknown>>> | null = null;
   #seed: ProviderNativeResumeSeed | null = null;
   #providerSessionId: string | undefined;
@@ -116,7 +119,7 @@ export class SideChatSession {
   }
 
   get hasBackgroundWork(): boolean {
-    return this.#backgroundTurnIds.size > 0 || this.#pendingWorkCount > 0;
+    return this.#backgroundModels.size > 0 || this.#pendingWorkCount > 0;
   }
 
   get hasPendingInteractions(): boolean {
@@ -157,6 +160,7 @@ export class SideChatSession {
       throw new Error('Side chat execution session became stale before handoff');
     }
 
+    this.#model = request.configuration.model;
     const run = session.execute({
       configuration: request.configuration,
       ...(request.context ? { context: request.context } : {}),
@@ -174,6 +178,7 @@ export class SideChatSession {
       controller,
       generation: supervised.generation,
       run,
+      model: request.configuration.model,
       session,
       terminationOverride: null,
     };
@@ -192,7 +197,7 @@ export class SideChatSession {
     this.#executionController?.abort();
     const active = this.#active;
     if (!active) {
-      if (this.#backgroundTurnIds.size > 0) this.#supervisor.current?.session.cancel();
+      if (this.#backgroundModels.size > 0) this.#supervisor.current?.session.cancel();
       return;
     }
     active.terminationOverride = 'cancelled';
@@ -212,7 +217,7 @@ export class SideChatSession {
       && this.#active === null
       && this.#pendingInteractions.size === 0
       && this.#pendingWorkCount === 0
-      && this.#backgroundTurnIds.size === 0
+      && this.#backgroundModels.size === 0
       // A child without a verified native identity cannot be resumed safely.
       && this.#providerSessionId !== undefined,
     );
@@ -344,7 +349,7 @@ export class SideChatSession {
         terminal = event;
       }
 
-      await this.#deliverRequestedEvent(event);
+      await this.#deliverRequestedEvent(withExecutionUsageModel(event, active.model));
       if (terminal) break;
     }
     if (active.terminationOverride
@@ -383,20 +388,23 @@ export class SideChatSession {
     const current = this.#supervisor.current;
     if (!current || event.scope.sessionInstanceId !== current.session.sessionInstanceId) return;
     if (event.type === 'background_turn_started') {
-      this.#backgroundTurnIds.add(event.scope.turnId);
+      this.#backgroundModels.set(event.scope.turnId, this.#model);
     } else if (event.type === 'background_turn_completed') {
-      this.#backgroundTurnIds.delete(event.scope.turnId);
+      this.#backgroundModels.delete(event.scope.turnId);
       this.#dismissInteractionsForTurn(event.scope.turnId, 'native-rejected');
     } else if (event.type === 'session_error') {
-      this.#backgroundTurnIds.clear();
+      this.#backgroundModels.clear();
+      this.#model = undefined;
       this.#dismissAllInteractions('native-rejected');
     }
     if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
       this.#applySnapshot(event.snapshot);
     }
     const isCurrent = () => !this.#disposed && this.#supervisor.current === current;
+    const attributed = withExecutionUsageModel(event, event.scope.kind === 'background'
+      ? this.#backgroundModels.get(event.scope.turnId) : undefined);
     const deliver = async () => {
-      if (isCurrent()) await this.deps.onSessionEvent?.(event, isCurrent);
+      if (isCurrent()) await this.deps.onSessionEvent?.(attributed, isCurrent);
     };
     // The renderer admits events synchronously, then owns its rendering queue.
     this.#trackWork(deliver());
@@ -404,7 +412,8 @@ export class SideChatSession {
 
   #handleInvalidation(reason: ProviderExecutionInvalidationReason): void {
     this.#invalidated = this.deps.ephemeral;
-    this.#backgroundTurnIds.clear();
+    this.#backgroundModels.clear();
+    this.#model = undefined;
     const active = this.#active;
     if (active) {
       active.terminationOverride = 'invalidated';
@@ -457,7 +466,8 @@ export class SideChatSession {
   }
 
   async #releaseSession(): Promise<void> {
-    this.#backgroundTurnIds.clear();
+    this.#backgroundModels.clear();
+    this.#model = undefined;
     try {
       await this.#supervisor.release();
     } finally {
@@ -571,7 +581,7 @@ export class SideChatSession {
       return false;
     }
     return this.#active?.run.turnId === request.turnId
-      || this.#backgroundTurnIds.has(request.turnId);
+      || this.#backgroundModels.has(request.turnId);
   }
 
   #dismissInteractionsForTurn(
