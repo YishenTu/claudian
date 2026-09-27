@@ -18,7 +18,7 @@ import {
   OpencodeSessionMissingError,
 } from './OpencodeSessionContract';
 
-type PendingPrompt = { resolve: (value: { stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }) => void; reject: (error: Error) => void; userMessageId?: string; started: boolean; steerable: boolean; idle: boolean };
+type PendingPrompt = { resolve: (value: { stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }) => void; reject: (error: Error) => void; userMessageId?: string; inputId?: string; announced: boolean; started: boolean; steerable: boolean; idle: boolean };
 /** A steer admitted to the native inbox stays owned by the prompt until delivered or recalled. */
 interface PendingSteer { text: string; admission: Promise<SteerAdmission>; resolve: (delivered: boolean) => void; reject: (error: Error) => void; recall: Promise<void> | null }
 type SteerAdmission = 'admitted' | 'refused' | 'unknown';
@@ -119,13 +119,13 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     let resolve!: PendingPrompt['resolve'];
     let reject!: PendingPrompt['reject'];
     const completion = new Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }>((yes, no) => { resolve = yes; reject = no; });
-    const pending: PendingPrompt = { resolve, reject, started: false, steerable: false, idle: false };
+    const pending: PendingPrompt = { resolve, reject, ...(command ? {} : { inputId: nativeMessageId() }), announced: false, started: false, steerable: false, idle: false };
     this.pending = pending;
     // A native error may arrive before the admission request resolves.
     void completion.catch(() => undefined);
     try {
       const admitted = await this.requireClient().request<{ data?: { id?: string } }>(`/api/session/${encodeURIComponent(request.sessionId)}/${command ? 'command' : 'prompt'}`, {
-        method: 'POST', ...(command ? { timeoutMs: 0 } : {}), body: { ...(command ? { name: command[1] } : { id: nativeMessageId() }), text: command ? command[2] ?? '' : text, ...(files.length ? { files } : {}) },
+        method: 'POST', ...(command ? { timeoutMs: 0 } : {}), body: { ...(command ? { name: command[1] } : { id: pending.inputId }), text: command ? command[2] ?? '' : text, ...(files.length ? { files } : {}) },
       });
       this.captureAdmission(admitted?.data?.id);
       // Steers queue behind an admitted prompt; commands have no native inbox item to steer.
@@ -248,6 +248,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       case 'session.execution.started':
         if (this.pending) { this.pending.started = true; this.pending.idle = false; }
         this.options.onNativeTurn?.('started', undefined, !!this.pending);
+        this.announcePrompt();
         break;
       case 'session.execution.succeeded':
         if (this.pending && this.steers.size > 0) this.pending.idle = true;
@@ -257,6 +258,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         const id = String(data.inboxID);
         const steer = this.steers.get(id);
         if (!steer) break;
+        this.announcePrompt();
         this.emit({ type: 'user_message_started', content: steer.text, nativeUserMessageId: id });
         this.settleSteer(id, true);
         break;
@@ -414,6 +416,13 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     if (this.pending) this.pending.userMessageId = id;
   }
   private emit(event: OpencodeNativeOutput, childSessionId?: string): void { this.options.onNativeOutput?.(event, childSessionId); }
+  /** Consumers treat the first user boundary as the submitted prompt, so it must precede any steer's. */
+  private announcePrompt(): void {
+    const pending = this.pending;
+    if (!pending?.inputId || pending.announced) return;
+    pending.announced = true;
+    this.emit({ type: 'user_message_started', nativeUserMessageId: pending.inputId });
+  }
   private settleSteer(id: string, outcome: boolean | Error): void {
     const steer = this.steers.get(id);
     if (!steer) return;

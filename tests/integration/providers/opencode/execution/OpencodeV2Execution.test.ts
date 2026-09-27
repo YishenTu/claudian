@@ -6,6 +6,7 @@ import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderF
 
 import { isSteerableExecutionSession, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ChatMessage } from '@/core/types';
 import { providerOutputEventToStreamChunk } from '@/features/chat/controllers/StreamController';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
@@ -75,7 +76,7 @@ const server = http.createServer(async (req, res) => {
   if (route.endsWith('/prompt') || route.endsWith('/command')) {
     if (body.text.includes('Old local history')) { res.writeHead(400).end(); return; }
     const assistantMessageID = 'msg_assistant_' + (++turn);
-    idle = false; res.end(JSON.stringify({ data: { id: 'msg_user' } }));
+    idle = false; res.end(JSON.stringify({ data: { id: body.id ?? 'msg_user' } }));
     if (process.env.LATE_CHILD_STAGE === 'prompt') lateChild?.();
     setTimeout(async () => {
       emit('session.execution.started', {});
@@ -382,8 +383,15 @@ describe('native steering', () => {
     try {
       const { events, background, accepted } = await steerDuring(f, text);
       expect(accepted).toBe(true);
-      const boundary = events.findIndex(event => event.type === 'user_message_started');
-      expect(events[boundary]).toMatchObject({ content: 'Also check tests', nativeUserMessageId: expect.stringMatching(/^msg_/) });
+      // Consumers bind the first user boundary to the submitted prompt, never to a steer.
+      const boundaries = events.filter(event => event.type === 'user_message_started');
+      expect(boundaries).toEqual([
+        expect.objectContaining({ nativeUserMessageId: expect.stringMatching(/^msg_/) }),
+        expect.objectContaining({ content: 'Also check tests', nativeUserMessageId: expect.stringMatching(/^msg_/) }),
+      ]);
+      expect(boundaries[0]).not.toHaveProperty('content');
+      expect(boundaries[0].nativeUserMessageId).not.toBe(boundaries[1].nativeUserMessageId);
+      const boundary = events.indexOf(boundaries[1]);
       expect(events.slice(boundary + 1).map(event => event.type)).toEqual(['assistant_message_started', 'text_delta', 'session_state_changed', 'turn_completed']);
       expect(events.filter(event => event.type === 'text_delta').map(event => event.text)).toEqual(['Working', 'Saw Also check tests']);
       expect(background.filter(event => event.type === 'background_turn_started')).toEqual([]);
@@ -409,9 +417,53 @@ describe('native steering', () => {
       expect(await steer(f, 'Before any run')).toBe(false);
       const { events, accepted } = await steerDuring(f, 'steer');
       expect(accepted).toBe(false);
-      expect(events.filter(event => event.type === 'user_message_started')).toEqual([]);
+      expect(events.filter(event => event.type === 'user_message_started' && event.content)).toEqual([]);
       expect(events.at(-1)?.type).toBe('turn_completed');
     } finally { await f.dispose(); }
+  }, 15000);
+
+  it.each(['steer', 'steer-late'])('keeps the submitted pair bound to the prompt across a %s delivery', async text => {
+    const env = await createForkTestEnvironment();
+    const cliPath = path.join(env.root, 'opencode.cjs');
+    writeFileSync(cliPath, fixture, { mode: 0o700 });
+    env.host.getResolvedProviderCliPath = async () => cliPath;
+    env.host.mutateSettings = async mutate => { await mutate(env.host.settings); };
+    env.host.mutateSettingsConditionally = async mutate => { await mutate(env.host.settings); };
+    env.host.notifyProviderChatOptionsChanged = () => undefined;
+    env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }] };
+    const serverService = new OpencodeServerService();
+    const backend = new OpencodeExecutionBackend(env.host, { serverService });
+    const conversation = await env.repository.create({ providerId: 'opencode' });
+    const events: ProviderExecutionEvent[] = [];
+    let steered: Promise<boolean> | undefined;
+    let ids = 0;
+    const turn = (submissionId: string, body: string, messages?: { user: ChatMessage; assistant: ChatMessage }) => ({
+      submissionId, timestamp: 1, rawDisplayText: body, canonicalText: body, images: [],
+      configuration: request().configuration, toolPolicy: { kind: 'provider-default' as const }, ...(messages ? { messages } : {}),
+    });
+    const coordinator: ChatExecutionCoordinator = new ChatExecutionCoordinator({
+      lifecycleRegistry: new ProviderExecutionLifecycleRegistry(), resolveBackend: () => backend,
+      persistence: env.repository, vaultWorkingDirectory: env.root, createId: () => `execution-${++ids}`,
+      resolveMissingProviderSession: async () => 'preserved',
+      interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} },
+      onRequestedEvent: event => {
+        events.push(event);
+        if (event.type === 'text_delta' && event.text === 'Working') steered ??= coordinator.steer(turn('user-steer', 'Also check tests'));
+      },
+    });
+    const user: ChatMessage = { id: 'user', role: 'user', content: text, timestamp: 1 };
+    const assistant: ChatMessage = { id: 'assistant', role: 'assistant', content: '', timestamp: 2 };
+    try {
+      await coordinator.bindConversation({ conversationId: conversation.id, providerId: 'opencode' });
+      const result = await coordinator.execute(turn('user-main', text, { user, assistant }));
+      expect(result.status).toBe('completed');
+      await expect(steered).resolves.toBe(true);
+      const [prompt, steer] = events.filter(event => event.type === 'user_message_started');
+      expect(steer).toMatchObject({ content: 'Also check tests' });
+      expect(user.userMessageId).toBe(prompt.nativeUserMessageId);
+      expect(user.userMessageId).not.toBe(steer.nativeUserMessageId);
+      expect(assistant.assistantMessageId).toMatch(/^msg_assistant_/);
+    } finally { await coordinator.dispose(); await serverService.dispose(); await env.dispose(); }
   }, 15000);
 });
 
