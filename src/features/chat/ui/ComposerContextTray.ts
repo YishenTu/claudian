@@ -20,7 +20,6 @@ export interface ComposerContextItem {
   kind: ComposerContextItemKind;
   label: string;
   icon?: string;
-  title?: string;
   ariaLabel?: string;
   status?: 'missing';
   onActivate?: () => void;
@@ -200,7 +199,7 @@ export class ComposerContextTray {
       })
       : chipEl.createSpan({ cls: 'claudian-context-chip-main' });
 
-    contentEl.setAttribute('aria-label', item.ariaLabel ?? item.title ?? item.label);
+    contentEl.setAttribute('aria-label', item.ariaLabel ?? item.label);
     if (item.onActivate) {
       contentEl.addEventListener('click', item.onActivate);
     }

@@ -87,7 +87,7 @@ describe('ComposerContextTray', () => {
       kind: 'selection',
       label: 'Architecture.md',
       icon: 'file-text',
-      title: 'notes/Architecture.md',
+      ariaLabel: 'notes/Architecture.md',
       onActivate,
       onRemove,
     }]);

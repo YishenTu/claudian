@@ -8,6 +8,9 @@ import { ContextUsageMeter } from '@/features/chat/ui/InputToolbar';
 
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+HTMLElement.prototype.toggleClass = function (classes, value) {
+  for (const name of typeof classes === 'string' ? [classes] : classes) this.classList.toggle(name, value);
+};
 
 it('uses one native context tooltip and updates its warning with usage', async () => {
   const host = document.body.createDiv();
