@@ -70,6 +70,32 @@
   color: var(--color-red);
 }
 
+.claudian-subagent-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  padding: 0 0 4px;
+  padding-inline-start: 24px;
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  min-width: 0;
+}
+
+.claudian-subagent-progress-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-subagent-progress-meta {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
 .claudian-subagent-content {
   padding: 4px 0;
   padding-inline-start: 16px;

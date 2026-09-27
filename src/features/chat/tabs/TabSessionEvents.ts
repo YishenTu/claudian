@@ -128,6 +128,11 @@ export function enqueueTabSessionEvent(
     discardBackgroundTurnBuffers(tab, context.bindingId);
     return undefined;
   }
+  // Display-only progress must not wait behind queued background rendering.
+  if (event.type === 'subagent_progress') {
+    tab.controllers.streamController.handleSubagentProgress(event.progress);
+    return undefined;
+  }
   if (event.type === 'background_turn_started') {
     getBackgroundTurnBuffers(tab, context.bindingId).set(event.scope.turnId, {
       events: [],

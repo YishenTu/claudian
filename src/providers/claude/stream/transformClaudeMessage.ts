@@ -9,7 +9,11 @@ import {
 } from '../modelTiers';
 import { isBlockedMessage } from '../sdk/messages';
 import { extractToolResultContent } from '../sdk/toolResultContent';
-import type { ClaudeAsyncSubagentCompletionEvent, TransformEvent } from '../sdk/types';
+import type {
+  ClaudeAsyncSubagentCompletionEvent,
+  ClaudeSubagentProgressEvent,
+  TransformEvent,
+} from '../sdk/types';
 import { createTransformStreamState, type TransformStreamState } from './toolInputStreamState';
 
 type ToolUseFields = { id: string; name: string; input: Record<string, unknown> };
@@ -82,6 +86,42 @@ function transformTaskNotification(message: SDKMessage): ClaudeAsyncSubagentComp
     status,
     result: normalizeTaskNotificationResult(status, record.summary),
     ...(typeof toolUseId === 'string' && toolUseId.length > 0 ? { toolUseId } : {}),
+  };
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+/** Progress is keyed to the spawning tool call; tasks without one have no card to update. */
+function transformTaskProgress(message: SDKMessage): ClaudeSubagentProgressEvent | null {
+  if (message.type !== 'system' || message.subtype !== 'task_progress') {
+    return null;
+  }
+
+  const toolCallId = nonEmptyString(message.tool_use_id);
+  if (!toolCallId) return null;
+
+  const usage = message.usage as Partial<typeof message.usage> | undefined;
+  const summary = nonEmptyString(message.summary);
+  const lastToolName = nonEmptyString(message.last_tool_name);
+  const toolUses = nonNegativeNumber(usage?.tool_uses);
+  const totalTokens = nonNegativeNumber(usage?.total_tokens);
+  const durationMs = nonNegativeNumber(usage?.duration_ms);
+  return {
+    type: 'subagent_progress',
+    progress: {
+      toolCallId,
+      ...(summary ? { summary } : {}),
+      ...(lastToolName ? { lastToolName } : {}),
+      ...(toolUses !== undefined ? { toolUses } : {}),
+      ...(totalTokens !== undefined ? { totalTokens } : {}),
+      ...(durationMs !== undefined ? { durationMs } : {}),
+    },
   };
 }
 
@@ -408,6 +448,11 @@ export function* transformSDKMessage(
         const notification = transformTaskNotification(message);
         if (notification) {
           yield notification;
+        }
+      } else if (message.subtype === 'task_progress') {
+        const progress = transformTaskProgress(message);
+        if (progress) {
+          yield progress;
         }
       } else if (message.subtype === 'permission_denied') {
         yield emitToolResult(message.agent_id ?? null, {

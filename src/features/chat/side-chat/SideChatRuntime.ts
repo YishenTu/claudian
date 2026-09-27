@@ -397,6 +397,11 @@ export class SideChatRuntime {
 
   #enqueueSessionEvent(event: ProviderSessionEvent, isCurrent: () => boolean): Promise<void> {
     if (this.#disposed || !isCurrent()) return Promise.resolve();
+    // Display-only progress must reach running cards before the requested turn settles.
+    if (event.type === 'subagent_progress') {
+      this.#stream.handleSubagentProgress(event.progress);
+      return Promise.resolve();
+    }
     if (event.type === 'background_turn_started') {
       this.#backgroundTurns.set(event.scope.turnId, {
         events: [],

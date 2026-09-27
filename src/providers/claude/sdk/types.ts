@@ -1,4 +1,4 @@
-import type { StreamChunk } from '../../../core/types';
+import type { StreamChunk, SubagentProgress } from '../../../core/types';
 
 export interface ClaudeAsyncSubagentCompletionEvent {
   type: 'async_subagent_completion';
@@ -7,6 +7,11 @@ export interface ClaudeAsyncSubagentCompletionEvent {
   toolUseId?: string;
   status: 'completed' | 'error';
   result?: string;
+}
+
+export interface ClaudeSubagentProgressEvent {
+  type: 'subagent_progress';
+  progress: SubagentProgress;
 }
 
 export interface SessionInitEvent {
@@ -24,4 +29,5 @@ export type TransformEvent =
   | StreamChunk
   | SessionInitEvent
   | ContextWindowEvent
-  | ClaudeAsyncSubagentCompletionEvent;
+  | ClaudeAsyncSubagentCompletionEvent
+  | ClaudeSubagentProgressEvent;

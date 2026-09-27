@@ -2106,6 +2106,29 @@ describe('Tab provider execution ownership', () => {
     expect(onReviewableSettlement).toHaveBeenCalledTimes(1);
   });
 
+  it('applies subagent progress without waiting behind queued background work', async () => {
+    const tab = await createTestTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
+    const handleSubagentProgress = jest.fn();
+    tab.controllers.streamController = { handleSubagentProgress } as any;
+    let releaseBackground!: () => void;
+    const release = new Promise<void>((resolve) => { releaseBackground = resolve; });
+    const blocked = tab.session.enqueueBackgroundWork(() => release);
+    const progress = { toolCallId: 'task-1', summary: 'Reading the auth module' };
+
+    try {
+      coordinatorDeps[0].onSessionEvent?.({
+        progress,
+        scope: { kind: 'session', sequence: 1, sessionInstanceId: 'session-instance-1' },
+        type: 'subagent_progress',
+      }, createEventContext());
+
+      expect(handleSubagentProgress).toHaveBeenCalledWith(progress);
+    } finally {
+      releaseBackground();
+      await blocked;
+    }
+  });
+
   it('drains deferred background rendering before a conversation transition can proceed', async () => {
     const oldConversation = createConversation();
     const nextConversation = {

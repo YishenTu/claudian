@@ -591,6 +591,10 @@ ClaudeExecutionStrategySink {
         });
         continue;
       }
+      if (normalized.type === 'subagent_progress') {
+        this.#emitSession({ type: 'subagent_progress', progress: normalized.event.progress });
+        continue;
+      }
       if (normalized.type === 'output') {
         // Task completion is independent of the currently running model response.
         if (normalized.event.type === 'task_notification') {

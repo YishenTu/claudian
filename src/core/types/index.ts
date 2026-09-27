@@ -61,6 +61,7 @@ export {
   type AsyncSubagentStatus,
   type SubagentInfo,
   type SubagentMode,
+  type SubagentProgress,
   type ToolCallInfo,
   type ToolDiffData,
   type ToolProviderPayload,

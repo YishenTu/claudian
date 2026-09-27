@@ -3,6 +3,7 @@ import type { ProviderTaskResultInterpreter } from '../../../core/providers/type
 import { TOOL_SUBAGENT } from '../../../core/tools/toolNames';
 import type {
   SubagentInfo,
+  SubagentProgress,
   ToolCallInfo,
 } from '../../../core/types';
 import {
@@ -15,6 +16,7 @@ import {
   markAsyncSubagentOrphaned,
   type SubagentState,
   updateAsyncSubagentRunning,
+  updateSubagentProgress,
   updateSubagentToolResult,
 } from '../rendering/SubagentRenderer';
 import type { PendingToolCall } from '../state/types';
@@ -446,6 +448,26 @@ export class SubagentManager {
 
     this.#publishAsyncState(subagent);
     return subagent;
+  }
+
+  /** Shows live progress on a running subagent's card; finished or unknown subagents ignore it. */
+  public applyProgress(progress: SubagentProgress): void {
+    const syncState = this.syncSubagents.get(progress.toolCallId);
+    if (syncState) {
+      updateSubagentProgress(syncState, progress);
+      return;
+    }
+
+    const record = this.asyncSubagents.get(progress.toolCallId);
+    const domState = this.asyncDomStates.get(progress.toolCallId);
+    if (
+      !record
+      || !domState
+      || (record.info.asyncStatus !== 'pending' && record.info.asyncStatus !== 'running')
+    ) {
+      return;
+    }
+    updateSubagentProgress(domState, progress);
   }
 
   public isPendingAsyncTask(taskToolId: string): boolean {

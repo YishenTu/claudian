@@ -190,6 +190,8 @@ export class ClaudeExecutionRequestEncoder {
         ...(claudeSettings.enableChrome ? { chrome: null } : {}),
       },
       includePartialMessages: true,
+      // Subagent cards show the SDK's periodic one-line summaries while they run.
+      agentProgressSummaries: true,
       enableFileCheckpointing: true,
       canUseTool,
       disallowedTools: [

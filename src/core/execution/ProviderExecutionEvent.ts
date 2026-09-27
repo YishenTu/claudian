@@ -2,6 +2,7 @@ import type {
   CitationGroup,
   PermissionMode,
   SDKToolUseResult,
+  SubagentProgress,
   ToolProviderPayload,
   TurnStats,
   UsageInfo,
@@ -298,6 +299,14 @@ export type ProviderAsyncSubagentCompletedEvent = ProviderEventBase<
     readonly snapshotRevision?: number;
   };
 
+export type ProviderSubagentProgressEvent = ProviderEventBase<
+  'subagent_progress',
+  ProviderSessionEventScope
+> &
+  ProviderOpaqueEventPayload & {
+    readonly progress: SubagentProgress;
+  };
+
 export type ProviderTaskNotificationEvent = ProviderEventBase<
   'task_notification',
   ProviderExecutionEventScope
@@ -346,6 +355,7 @@ export type ProviderSessionEvent =
   | ProviderBackgroundOutputEvent
   | ProviderBackgroundTurnCompletedEvent
   | ProviderAsyncSubagentCompletedEvent
+  | ProviderSubagentProgressEvent
   | (ProviderSessionStateChangedEvent & { readonly scope: ProviderSessionEventScope })
   | (ProviderPermissionModeChangedEvent & { readonly scope: ProviderSessionEventScope })
   | ProviderSessionErrorEvent;

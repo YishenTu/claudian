@@ -23,9 +23,11 @@ import {
   isContextWindowEvent,
   isSessionInitEvent,
   isStreamChunk,
+  isSubagentProgress,
 } from '../sdk/typeGuards';
 import type {
   ClaudeAsyncSubagentCompletionEvent,
+  ClaudeSubagentProgressEvent,
   SessionInitEvent,
 } from '../sdk/types';
 import {
@@ -60,6 +62,10 @@ export type ClaudeNormalizedExecutionEvent =
   | {
     readonly type: 'async_subagent_completion';
     readonly event: ClaudeAsyncSubagentCompletionEvent;
+  }
+  | {
+    readonly type: 'subagent_progress';
+    readonly event: ClaudeSubagentProgressEvent;
   }
   | {
     readonly type: 'output';
@@ -147,6 +153,10 @@ export class ClaudeExecutionEventNormalizer {
             event: { type: 'task_notification', content: event.result },
           });
         }
+        continue;
+      }
+      if (isSubagentProgress(event)) {
+        normalized.push({ type: 'subagent_progress', event });
         continue;
       }
       if (isContextWindowEvent(event)) {

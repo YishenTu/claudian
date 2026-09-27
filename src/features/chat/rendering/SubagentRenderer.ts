@@ -2,7 +2,8 @@ import { setIcon } from 'obsidian';
 
 import { getToolIcon } from '../../../core/tools/toolIcons';
 import { TOOL_SUBAGENT } from '../../../core/tools/toolNames';
-import type { SubagentInfo, ToolCallInfo } from '../../../core/types';
+import type { SubagentInfo, SubagentProgress, ToolCallInfo } from '../../../core/types';
+import { formatDurationMmSs } from '../../../utils/date';
 import { setupCollapsible } from './collapsible';
 import {
   getToolLabel,
@@ -38,6 +39,8 @@ export interface SubagentState {
   resultBodyEl: HTMLElement | null;
   toolElements: Map<string, SubagentToolView>;
   info: SubagentInfo;
+  progressEl: HTMLElement | null;
+  progress: SubagentProgress | null;
 }
 
 const SUBAGENT_TOOL_STATUS_ICONS: Partial<Record<ToolCallInfo['status'], string>> = {
@@ -167,6 +170,58 @@ function createSubagentToolView(parentEl: HTMLElement, toolCall: ToolCallInfo): 
   return view;
 }
 
+type SubagentProgressView = Pick<SubagentState, 'wrapperEl' | 'headerEl' | 'progressEl' | 'progress'>;
+
+function formatTokenCount(tokens: number): string {
+  if (tokens < 1000) return `${tokens} tokens`;
+  const thousands = tokens / 1000;
+  const value = thousands >= 100 ? String(Math.round(thousands)) : thousands.toFixed(1).replace(/\.0$/, '');
+  return `${value}k tokens`;
+}
+
+function formatProgressMeta(progress: SubagentProgress): string {
+  const parts: string[] = [];
+  if (progress.toolUses !== undefined) {
+    parts.push(`${progress.toolUses} ${progress.toolUses === 1 ? 'tool use' : 'tool uses'}`);
+  }
+  if (progress.totalTokens) parts.push(formatTokenCount(progress.totalTokens));
+  if (progress.durationMs) parts.push(formatDurationMmSs(Math.round(progress.durationMs / 1000)));
+  return parts.join(' · ');
+}
+
+/**
+ * Shows a running subagent's latest activity under its header. Fields missing
+ * from an update keep their previous values, so a summary stays visible
+ * between the provider's periodic summary refreshes.
+ */
+export function updateSubagentProgress(state: SubagentProgressView, update: SubagentProgress): void {
+  const progress: SubagentProgress = { ...state.progress, ...update };
+  state.progress = progress;
+
+  const activity = progress.summary
+    ?? (progress.lastToolName ? `Last tool: ${progress.lastToolName}` : '');
+  const meta = formatProgressMeta(progress);
+  if (!activity && !meta) return;
+
+  if (!state.progressEl) {
+    state.progressEl = state.wrapperEl.createDiv({ cls: 'claudian-subagent-progress' });
+    state.headerEl.after(state.progressEl);
+  }
+  state.progressEl.empty();
+  if (activity) {
+    state.progressEl.createDiv({ cls: 'claudian-subagent-progress-summary', text: activity });
+  }
+  if (meta) {
+    state.progressEl.createDiv({ cls: 'claudian-subagent-progress-meta', text: meta });
+  }
+}
+
+function clearSubagentProgress(state: SubagentProgressView): void {
+  state.progressEl?.remove();
+  state.progressEl = null;
+  state.progress = null;
+}
+
 function ensureResultSection(state: SubagentState): SubagentSection {
   if (state.resultSectionEl && state.resultBodyEl) {
     return { wrapperEl: state.resultSectionEl, bodyEl: state.resultBodyEl };
@@ -274,6 +329,8 @@ export function createSubagentBlock(
     resultBodyEl: null,
     toolElements: new Map<string, SubagentToolView>(),
     info,
+    progressEl: null,
+    progress: null,
   };
 
   updateSyncHeaderAria(state);
@@ -358,6 +415,7 @@ export function finalizeSubagentBlock(
     state.wrapperEl.addClass('error');
   }
 
+  clearSubagentProgress(state);
   const finalText = result?.trim() ? result : (isError ? 'ERROR' : 'DONE');
   setResultText(state, finalText);
 
@@ -385,6 +443,8 @@ export interface AsyncSubagentState {
   statusTextEl: HTMLElement;  // Running / Completed / Error / Orphaned
   statusEl: HTMLElement;
   info: SubagentInfo;
+  progressEl: HTMLElement | null;
+  progress: SubagentProgress | null;
 }
 
 function setAsyncWrapperStatus(wrapperEl: HTMLElement, status: string): void {
@@ -530,6 +590,8 @@ export function createAsyncSubagentBlock(
     statusTextEl,
     statusEl,
     info,
+    progressEl: null,
+    progress: null,
   };
 }
 
@@ -577,6 +639,7 @@ export function finalizeAsyncSubagent(
     state.wrapperEl.addClass('done');
   }
 
+  clearSubagentProgress(state);
   renderAsyncContentLikeSync(state.contentEl, state.info, isError ? 'error' : 'completed');
 }
 
@@ -597,6 +660,7 @@ export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
   state.wrapperEl.addClass('error');
   state.wrapperEl.addClass('orphaned');
 
+  clearSubagentProgress(state);
   renderAsyncContentLikeSync(state.contentEl, state.info, 'orphaned');
 }
 

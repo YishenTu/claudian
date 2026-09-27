@@ -2036,6 +2036,48 @@ describe('ClaudeExecutionBackend', () => {
     },
   );
 
+  it('requests progress summaries and publishes subagent progress while the turn is running', async () => {
+    const pause = createDeferred<unknown>();
+    const query = createScriptedPersistentQuery([[
+      { type: 'system', subtype: 'init', session_id: 'session-1' },
+      { type: 'system', subtype: 'task_progress', session_id: 'session-1', task_id: 'agent-1',
+        tool_use_id: 'task-1', description: 'Research', last_tool_name: 'Grep', summary: 'Reading the auth module',
+        usage: { total_tokens: 1200, tool_uses: 3, duration_ms: 4000 } },
+      { type: 'system', subtype: 'task_progress', session_id: 'session-1', task_id: 'bash-1',
+        description: 'Unowned', usage: { total_tokens: 0, tool_uses: 0, duration_ms: 0 } },
+      pause.promise,
+      { type: 'result', subtype: 'success' },
+    ]]);
+    let launchOptions: Record<string, unknown> | undefined;
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
+      .mockResolvedValueOnce(((params: { options?: Record<string, unknown> }) => {
+        launchOptions = params.options;
+        return query;
+      }) as never);
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    const events: ProviderSessionEvent[] = [];
+    session.onEvent(event => events.push(event));
+    const requested = collectEvents(session.execute(createRequest()).events);
+    try {
+      await waitFor(() => events.some(event => event.type === 'subagent_progress'));
+      expect(launchOptions).toMatchObject({ agentProgressSummaries: true });
+      expect(events.filter(event => event.type === 'subagent_progress')).toEqual([
+        expect.objectContaining({
+          scope: expect.objectContaining({ kind: 'session' }),
+          progress: {
+            toolCallId: 'task-1', summary: 'Reading the auth module', lastToolName: 'Grep',
+            toolUses: 3, totalTokens: 1200, durationMs: 4000,
+          },
+        }),
+      ]);
+    } finally {
+      pause.resolve(null);
+      await requested;
+      await query.finished;
+      await session.dispose();
+    }
+  });
+
   it.each(['before-tool', 'during-input'] as const)(
     'keeps an automatic native message and tool round together when input arrives %s', async (phase) => {
       const continuation = createDeferred<unknown>();

@@ -27,6 +27,7 @@ import type {
   ChatMessage,
   StreamChunk,
   SubagentInfo,
+  SubagentProgress,
   ToolCallInfo,
 } from '../../../core/types';
 import {
@@ -1409,6 +1410,10 @@ export class StreamController {
     await this.#hydrateAsyncSubagentHistory(handled);
 
     return isLinked || handled !== undefined;
+  }
+
+  public handleSubagentProgress(progress: SubagentProgress): void {
+    this.deps.subagentManager.applyProgress(progress);
   }
 
   public async handleAsyncSubagentCompletion(
