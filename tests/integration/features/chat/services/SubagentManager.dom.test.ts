@@ -478,6 +478,8 @@ it.each(['before spawn', 'after spawn'])('keeps the native Codex card updated wi
   if (timing === 'before spawn') await view.stream.handleStreamChunk(followup, laterMessage);
   expect(view.tools[0].subagent).toMatchObject({ status: 'completed', result: 'Ready.' });
   expect(laterMessage.toolCalls![0].subagent).toMatchObject({ id: 'followup', status: 'running', toolCalls: [] });
+  const liveHistory = within(view.state.currentContentEl!).getByRole('button', { name: 'Previous runs (1)' });
+  liveHistory.focus();
   for (const item of [
     { type: 'custom_tool_call', call_id: 'date-call', name: 'exec', input: "text(await tools.exec_command({cmd: \"bash -lc 'date'\"}));" },
     { type: 'custom_tool_call_output', call_id: 'date-call', output: [{ type: 'input_text', text: 'Date result' }] },
@@ -485,9 +487,20 @@ it.each(['before spawn', 'after spawn'])('keeps the native Codex card updated wi
   tracker.turnCompleted('child', { id: 'child-turn-2', status: 'completed', error: null, items: [
     { type: 'agentMessage', id: 'answer-2', text: 'Two.', phase: 'final_answer', memoryCitation: null },
   ] });
+  expect(document.activeElement).toBe(liveHistory);
   await view.stream.handleStreamChunk({ type: 'tool_result', id: 'followup', content: '' }, laterMessage);
   await view.stream.handleStreamChunk({ type: 'tool_use', id: 'wait', name: 'wait_agent', input: { targets: ['helper'] } }, laterMessage);
   await view.stream.handleStreamChunk({ type: 'tool_result', id: 'wait', content: 'aborted by user', isError: true }, laterMessage);
+  const finalMessage: ChatMessage = { id: 'final-run', role: 'assistant', content: '', timestamp: testDate().getTime(), toolCalls: [] };
+  view.state.addMessage(finalMessage);
+  view.state.currentContentEl = view.renderer.addMessage(finalMessage).querySelector('.claudian-message-content');
+  await view.stream.handleStreamChunk({ type: 'tool_use', id: 'followup-2', name: 'followup_task', input: { target: 'helper', message: 'One more run' } }, finalMessage);
+  tracker.activity({ ...started, id: 'followup-2', kind: 'interacted' }, 'final-parent-turn');
+  tracker.turnStarted('child', 'child-turn-3');
+  tracker.turnCompleted('child', { id: 'child-turn-3', status: 'completed', error: null, items: [
+    { type: 'agentMessage', id: 'answer-3', text: 'Three.', phase: 'final_answer', memoryCitation: null },
+  ] });
+  const savedMessages = JSON.stringify(view.state.messages);
   for (const reload of [false, true]) {
     if (reload) view.renderer.renderMessages(view.state.messages, () => 'Hello');
     const original = view.parent.querySelector('[data-message-id="response"]')! as HTMLElement;
@@ -501,7 +514,73 @@ it.each(['before spawn', 'after spawn'])('keeps the native Codex card updated wi
     expect(later.textContent).toContain('Date result');
     expect(later.textContent).not.toContain('Clock result');
     expect(view.parent.textContent).not.toContain('aborted by user');
+    expect(within(original).queryByRole('button', { name: /^Previous runs/ })).toBeNull();
+    const history = within(later).getByRole('button', { name: 'Previous runs (1)' });
+    expect(history.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(history);
+    const run = within(later).getByRole('button', { name: 'Run 1 · Completed' });
+    expect(run.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(run);
+    const runBody = document.getElementById(run.getAttribute('aria-controls')!)!;
+    expect(within(runBody).getByRole('button', { name: /^Result/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(later.textContent).toContain('Clock result');
+    expect(later.textContent).toContain('Ready.');
+    expect(later.textContent).not.toContain('Three.');
+    expect(later.querySelectorAll('[data-subagent-id="spawn"]')).toHaveLength(0);
+    const originalHeader = within(original).getByRole('button', { name: /Subagent task:/ });
+    const scroll = jest.fn();
+    originalHeader.scrollIntoView = scroll;
+    fireEvent.click(within(later).getByRole('button', { name: 'Go to original turn' }));
+    expect(document.activeElement).toBe(originalHeader);
+    expect(originalHeader.getAttribute('aria-expanded')).toBe('true');
+    expect(scroll).toHaveBeenCalled();
+    const final = view.parent.querySelector('[data-message-id="final-run"]')! as HTMLElement;
+    fireEvent.click(within(final).getByRole('button', { name: 'Previous runs (2)' }));
+    expect(within(final).getAllByRole('button', { name: /^Run \d/ }).map(button => button.textContent))
+      .toEqual(['Run 1 · Completed', 'Run 2 · Completed']);
+    fireEvent.click(within(final).getByRole('button', { name: 'Run 2 · Completed' }));
+    expect(final.textContent).toContain('Run bash date');
+    expect(final.textContent).toContain('Date result');
+    expect(final.textContent).toContain('Two.');
+    expect(final.textContent).not.toContain('Clock result');
+    expect(JSON.stringify(view.state.messages)).toBe(savedMessages);
+    expect(await axe(view.parent)).toHaveNoViolations();
   }
+});
+
+
+it('links previous runs to the original card after completed-turn regrouping and excludes other agents', async () => {
+  const view = createCodexLifecycleView();
+  const tool = (id: string, agentId: string): ToolCallInfo => ({
+    id, name: 'spawn_agent', input: {}, status: 'completed',
+    subagent: { id, agentId, lifecycleSource: 'session', description: 'Helper', status: 'completed',
+      prompt: `${id} prompt`, result: `${id} result`, isExpanded: false, toolCalls: [] },
+  });
+  const messages: ChatMessage[] = [
+    { id: 'intro', role: 'assistant', content: 'Starting', timestamp: testDate().getTime() },
+    { id: 'original', role: 'assistant', content: 'First answer', timestamp: testDate().getTime(), durationSeconds: 1,
+      responseContinuationOf: 'intro', toolCalls: [tool('other', 'other-child'), tool('first', 'child')],
+      contentBlocks: [{ type: 'tool_use', toolId: 'other' }, { type: 'tool_use', toolId: 'first' }, { type: 'text', content: 'First answer' }] },
+    { id: 'request', role: 'user', content: 'Continue', timestamp: testDate().getTime() },
+    { id: 'next', role: 'assistant', content: 'Next answer', timestamp: testDate().getTime(), durationSeconds: 2,
+      toolCalls: [tool('second', 'child')], contentBlocks: [{ type: 'tool_use', toolId: 'second' }, { type: 'text', content: 'Next answer' }] },
+  ];
+  view.renderer.renderMessages(messages, () => 'Hello');
+  const previousWork = within(view.parent).getByRole('button', { name: 'Worked for 00:01' });
+  expect(previousWork.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(within(view.parent).getByRole('button', { name: 'Worked for 00:02' }));
+  fireEvent.click(within(view.parent).getByRole('button', { name: 'Previous runs (1)' }));
+  fireEvent.click(within(view.parent).getByRole('button', { name: 'Run 1 · Completed' }));
+  const history = view.parent.querySelector<HTMLElement>('.claudian-subagent-history')!;
+  expect(history.textContent).toContain('first prompt');
+  expect(history.textContent).toContain('first result');
+  expect(history.textContent).not.toContain('other result');
+  const original = view.parent.querySelector<HTMLElement>('[data-subagent-id="first"] .claudian-subagent-header')!;
+  original.scrollIntoView = jest.fn();
+  fireEvent.click(within(history).getByRole('button', { name: 'Go to original turn' }));
+  expect(previousWork.getAttribute('aria-expanded')).toBe('true');
+  expect(document.activeElement).toBe(original);
+  expect(original.scrollIntoView).toHaveBeenCalled();
   expect(await axe(view.parent)).toHaveNoViolations();
 });
 

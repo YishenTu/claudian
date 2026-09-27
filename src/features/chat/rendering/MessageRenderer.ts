@@ -43,6 +43,7 @@ import { renderMermaidDiagrams } from './MermaidRenderer';
 import { getResponseSegments } from './NotificationBoundaries';
 import { createResponseTextBlock, getResponseElementKind, getResponseLayout, markResponseElement } from './ResponseLayout';
 import { resolveSubagentAdapter } from './subagentAdapterResolution';
+import { renderSubagentHistory } from './SubagentHistoryRenderer';
 import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
@@ -338,6 +339,10 @@ export class MessageRenderer {
       }
     } else if (msg.role === 'assistant') {
       this.#renderAssistantContent(msg, contentEl);
+      for (const card of contentEl.querySelectorAll<HTMLElement>('[data-subagent-id]')) {
+        const info = msg.toolCalls?.find(tool => tool.id === card.dataset.subagentId)?.subagent;
+        if (info) renderSubagentHistory(card, info, allMessages ?? [msg], this.messagesEl);
+      }
       if (msg.isInterrupt) {
         this.appendInterruptIndicator(contentEl);
       }

@@ -45,6 +45,7 @@ import { hasMermaidFence } from '../rendering/DisplayOnlyCodeFences';
 import type { MessageRenderer, RenderContentOptions } from '../rendering/MessageRenderer';
 import { createResponseTextBlock } from '../rendering/ResponseLayout';
 import { resolveSubagentAdapter } from '../rendering/subagentAdapterResolution';
+import { renderSubagentHistory } from '../rendering/SubagentHistoryRenderer';
 import {
   createThinkingBlock,
   finalizeThinkingBlock,
@@ -625,6 +626,10 @@ export class StreamController {
     state.toolCallElements.delete(id);
     for (const hiddenId of subagentManager.updateLifecycleSpawn(toolCall, msg.toolCalls ?? [], adapter, parent, previous)) {
       this.#removeProviderSubagentToolCard(hiddenId);
+    }
+    const card = subagentManager.getLifecycleElement(id);
+    if (card && toolCall.subagent) {
+      renderSubagentHistory(card, toolCall.subagent, state.messages, this.deps.getMessagesEl());
     }
   }
 
