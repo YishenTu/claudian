@@ -50,7 +50,9 @@ export async function continueResponseAfterNotification(
   if (host.isCurrent?.() === false
     || !host.state.messages.includes(message) || !host.state.messages.includes(preceding)) return message;
   host.stream.hideThinkingIndicator();
-  if (!message.content && !message.contentBlocks?.length && !message.toolCalls?.length) {
+  // Requested responses retain their starting position for the completed work disclosure.
+  if (message.isAutomaticResponse && !message.content
+    && !message.contentBlocks?.length && !message.toolCalls?.length) {
     host.state.messages = host.state.messages.filter(item => item !== message);
     host.renderer.removeMessage(message.id);
   }

@@ -40,6 +40,7 @@ import {
   restoreDisplayOnlyCodeFences,
 } from './DisplayOnlyCodeFences';
 import { renderMermaidDiagrams } from './MermaidRenderer';
+import { getResponseSegments } from './NotificationBoundaries';
 import { createResponseTextBlock, getResponseElementKind, getResponseLayout, markResponseElement } from './ResponseLayout';
 import { resolveSubagentAdapter } from './subagentAdapterResolution';
 import {
@@ -299,7 +300,11 @@ export class MessageRenderer {
       }
     }
     if (msg.role === 'assistant' && !this.#hasVisibleContent(msg)) {
-      return;
+      // A pre-output notification can leave an empty first segment that still
+      // anchors its continuation's work disclosure when the transcript rerenders.
+      const anchorsContinuation = allMessages?.some(message => message !== msg
+        && getResponseSegments(message, allMessages).includes(msg));
+      if (!anchorsContinuation) return;
     }
 
     const msgEl = this.messagesEl.createDiv({
@@ -344,7 +349,8 @@ export class MessageRenderer {
   finalizeResponse(msg: ChatMessage, messages: ChatMessage[], collapse = true): void {
     const msgEl = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${msg.id}"]`);
     const contentEl = msgEl?.querySelector<HTMLElement>('.claudian-message-content');
-    if (!msgEl || !contentEl || msgEl.querySelector('.claudian-work')) return;
+    if (!msgEl || !contentEl
+      || this.messagesEl.querySelector(`.claudian-work[data-work-message-id="${msg.id}"]`)) return;
 
     const { blocks, finalText, canCollapse, hasNotification, notificationPredecessor,
       automaticNotification, earlierMessages, keepEarlierCommentary, finalBlockCount } = getResponseLayout(msg, messages, collapse);
@@ -364,6 +370,12 @@ export class MessageRenderer {
       }
     }
     if (canCollapse && !automaticNotification) {
+      // Continuations can follow standalone notifications. Keep the disclosure at
+      // the start of its response while leaving commentary and notifications in place.
+      const workContentEl = keepEarlierCommentary && earlierMessages.length
+        ? this.messagesEl.querySelector<HTMLElement>(
+          `[data-message-id="${earlierMessages[0].id}"] .claudian-message-content`,
+        ) ?? contentEl : contentEl;
       const earlierEls = earlierMessages.flatMap(message => {
         const el = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`);
         if (!el) return [];
@@ -374,7 +386,7 @@ export class MessageRenderer {
         const work = children.filter(child => getResponseElementKind(child) !== 'text'
           && getResponseElementKind(child) !== 'citations'
           && getResponseElementKind(child) !== 'notification');
-        return work.length > 0 && work.length === children.length ? [el] : work;
+        return previousContent !== workContentEl && work.length > 0 && work.length === children.length ? [el] : work;
       });
       const children = (Array.from(contentEl.children) as HTMLElement[])
         .filter(child => getResponseElementKind(child) !== 'notification');
@@ -386,8 +398,10 @@ export class MessageRenderer {
       if (earlierEls.length || workEls.length || msg.durationSeconds !== undefined) {
         const seconds = Math.max(0, Math.floor(msg.durationSeconds ?? 0));
         const duration = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-        const wrapper = contentEl.createDiv({ cls: 'claudian-work' });
-        contentEl.insertBefore(wrapper, children[0] ?? contentEl.firstChild);
+        const wrapper = workContentEl.createDiv({
+          cls: 'claudian-work', attr: { 'data-work-message-id': msg.id },
+        });
+        workContentEl.insertBefore(wrapper, workContentEl.firstChild);
         const historyId = `claudian-work-history-${MessageRenderer.nextHistoryId++}`;
         const label = msg.durationSeconds === undefined ? 'Worked' : `Worked for ${duration}`;
         const header = wrapper.createEl('button', {

@@ -28,7 +28,9 @@ beforeEach(() => {
   });
 });
 
-it.each([false, true])('matches live and JSONL notification order with a late tool result=%s', async lateResult => {
+it.each(['early', 'late', 'none'])('matches live and JSONL notification order with tool result=%s', async resultTiming => {
+  const hasTool = resultTiming !== 'none';
+  const lateResult = resultTiming === 'late';
   const { renderSessionTaskNotification } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
@@ -40,43 +42,52 @@ it.each([false, true])('matches live and JSONL notification order with a late to
     getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
   let response: ChatMessage = { id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
   const order = () => {
+    const worked = within(messagesEl).getByRole('button', { name: /^Worked(?: for \d+:\d+)?$/ });
     const notification = within(messagesEl).getByRole('button', { name: 'Task notification' });
     const answer = within(messagesEl).getByText('Requested answer.');
+    expect(worked.compareDocumentPosition(notification) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     return (notification.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
   };
   try {
     state.addMessage(response);
     state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
-    await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, response);
+    if (hasTool) await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, response);
     renderSessionTaskNotification({ state, renderer, isConnected: () => true, createMessageId: () => 'notification' }, 'Task finished.');
     const toolMessage = response;
-    if (!lateResult) await stream.handleStreamChunk({ type: 'tool_result', id: 'read', content: 'The note.' }, response);
+    if (hasTool && !lateResult) await stream.handleStreamChunk({ type: 'tool_result', id: 'read', content: 'The note.' }, response);
     response = await continueResponseAfterNotification({ state, renderer, stream, createMessageId: () => 'continuation' }, response, { type: 'text', content: 'Requested answer.' });
     await stream.handleStreamChunk({ type: 'text', content: 'Requested answer.' }, response);
     if (lateResult) await stream.handleStreamChunk({ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }, response);
     if (lateResult) await stream.handleStreamChunk({ type: 'tool_output', id: 'read', content: 'Partial output' }, response);
-    expect(toolMessage.toolCalls?.[0].result).toBe(lateResult ? 'Partial output' : 'The note.');
+    expect(toolMessage.toolCalls?.[0].result).toBe(hasTool ? (lateResult ? 'Partial output' : 'The note.') : undefined);
     if (lateResult) await stream.handleStreamChunk({ type: 'tool_result', id: 'read', content: 'The note.' }, response);
-    expect(toolMessage.toolCalls).toEqual([expect.objectContaining({ id: 'read', status: 'completed', result: 'The note.' })]);
+    const completedTool = expect.objectContaining({ id: 'read', status: 'completed', result: 'The note.' });
+    expect(toolMessage.toolCalls ?? []).toEqual(hasTool ? [completedTool] : []);
     await stream.finalizeCurrentTextBlock(response);
     expect(response.contentBlocks).toEqual([{ type: 'text', content: 'Requested answer.' }]);
     response.durationSeconds = 18;
+    const toolElement = hasTool ? within(messagesEl).getByRole('button', { name: /Read.*note\.md/ }) : null;
     renderer.finalizeResponse(response, state.messages);
     const worked = within(messagesEl).getByRole('button', { name: 'Worked for 00:18' });
     const history = document.getElementById(worked.getAttribute('aria-controls')!);
-    const toolElement = messagesEl.querySelector(`[data-message-id="${toolMessage.id}"]`);
-    expect(history!.contains(toolElement)).toBe(true);
-    expect(toolElement!.closest('[hidden]')).not.toBeNull();
+    expect(history!.contains(toolElement)).toBe(hasTool);
+    expect(Boolean(toolElement?.closest('[hidden]'))).toBe(hasTool);
     fireEvent.click(worked);
-    expect(toolElement!.closest('[hidden]')).toBeNull();
+    expect(toolElement?.closest('[hidden]') ?? null).toBeNull();
     expect(within(messagesEl).getByText('Requested answer.').closest('[hidden]')).toBeNull();
     const liveNotificationBeforeAnswer = order();
+    renderer.finalizeResponse(response, state.messages);
+    expect(within(messagesEl).getAllByRole('button', { name: 'Worked for 00:18' })).toEqual([worked]);
     expect((await axe(messagesEl)).violations).toEqual([]);
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    expect(order()).toBe(true);
     const entries = [
       { type: 'user', uuid: 'u', timestamp: testTime({ seconds: 0 }), message: { content: 'Read a note' } },
-      { type: 'assistant', uuid: 'tool', parentUuid: 'u', timestamp: testTime({ seconds: 1 }), message: { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }] } },
+      ...(hasTool ? [{ type: 'assistant', uuid: 'tool', parentUuid: 'u', timestamp: testTime({ seconds: 1 }), message: { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'read', name: 'Read', input: { file_path: 'note.md' } }] } },
       { type: 'user', uuid: 'result', parentUuid: 'tool', timestamp: testTime({ seconds: 2 }), toolUseResult: { content: 'The note.' }, message: { content: [{ type: 'tool_result', tool_use_id: 'read', content: 'The note.' }] } },
-      { type: 'attachment', uuid: 'notification', parentUuid: 'result', timestamp: testTime({ seconds: 3 }), attachment: { type: 'queued_command', commandMode: 'task-notification', prompt: '<task-notification><task-id>task</task-id><status>completed</status><summary>Task finished.</summary></task-notification>' } },
+      ] : []),
+      { type: 'attachment', uuid: 'notification', parentUuid: hasTool ? 'result' : 'u', timestamp: testTime({ seconds: 3 }), attachment: { type: 'queued_command', commandMode: 'task-notification', prompt: '<task-notification><task-id>task</task-id><status>completed</status><summary>Task finished.</summary></task-notification>' } },
       { type: 'assistant', uuid: 'answer', parentUuid: 'notification', timestamp: testTime({ seconds: 5 }), message: { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Requested answer.' }] } },
     ];
     jest.mocked(reviewFs.readFile).mockResolvedValue(entries.map(entry => JSON.stringify(entry)).join('\n'));
