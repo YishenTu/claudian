@@ -2,6 +2,7 @@
 import '@/providers';
 
 import * as reviewFs from 'node:fs/promises';
+import { deserialize, serialize } from 'node:v8';
 
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
@@ -14,9 +15,21 @@ import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { continueResponseAfterNotification } from '@/features/chat/rendering/ResponseContinuation';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
+import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { loadSDKSessionMessages } from '@/providers/claude/history/ClaudeHistoryStore';
 
 jest.mock('node:fs/promises');
+const originalStructuredClone = globalThis.structuredClone;
+beforeAll(() => { globalThis.structuredClone = value => deserialize(serialize(value)); });
+afterAll(() => { globalThis.structuredClone = originalStructuredClone; });
+
+async function hydrateCachedMessages(messages: ChatMessage[]): Promise<ChatMessage[]> {
+  const history = await new ClaudeConversationHistoryService().hydrateConversationHistory({
+    sessionId: 'session', messages, providerState: {},
+  }, null);
+  return history.messages!;
+}
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
@@ -85,6 +98,9 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
     expect(within(messagesEl).getAllByRole('button', { name: 'Worked for 00:18' })).toEqual([worked]);
     expect((await axe(messagesEl)).violations).toEqual([]);
     renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    expect(order()).toBe(true);
+    renderer.renderMessages(await hydrateCachedMessages(state.messages), () => 'Welcome');
     await Promise.resolve();
     expect(order()).toBe(true);
     const entries = [
@@ -192,6 +208,28 @@ it.each(['between', 'during-second', 'after-second'])('groups an older task noti
     renderer.renderMessages(replay.messages, () => 'Welcome');
     await Promise.resolve();
     assertPlacement();
+    const locate = jest.spyOn(historyStore, 'locateSDKSessions').mockResolvedValue(new Map([
+      ['session', { availability: 'relocated', sessionPath: '/session.jsonl' }],
+    ]));
+    try {
+      const cachedOnly: ChatMessage = { id: 'cached-only', role: 'assistant', content: 'Cached commentary.',
+        timestamp: testDate({ seconds: 11 }).getTime() };
+      const cachedWithExtra = [...replay.messages];
+      cachedWithExtra.splice(cachedWithExtra.findIndex(message => message.id === 'second-user') + 1, 0, cachedOnly);
+      for (const cached of [[], replay.messages, cachedWithExtra]) {
+        const hydrated = await new ClaudeConversationHistoryService().hydrateConversationHistory({
+          sessionId: 'session', messages: cached, providerState: {},
+        }, '/vault');
+        expect(hydrated.messages!.filter(message => message.id !== cachedOnly.id).map(message => message.id))
+          .toEqual(replay.messages.map(message => message.id));
+        const secondUserIndex = hydrated.messages!.findIndex(message => message.id === 'second-user');
+        expect(hydrated.messages!.findIndex(message => message.id === cachedOnly.id))
+          .toBe(cached === cachedWithExtra ? secondUserIndex + 1 : -1);
+        renderer.renderMessages(hydrated.messages!, () => 'Welcome');
+        await Promise.resolve();
+        assertPlacement();
+      }
+    } finally { locate.mockRestore(); }
     expect((await axe(messagesEl)).violations).toEqual([]);
   } finally {
     stream.dispose(); subagents.clear(); renderer.dispose();
@@ -359,6 +397,9 @@ it('keeps a notification consumed by an automatic response outside an admitted r
     renderer.finalizeResponse(response, state.messages);
     assertOwnership();
     renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    assertOwnership();
+    renderer.renderMessages(await hydrateCachedMessages(state.messages), () => 'Welcome');
     await Promise.resolve();
     assertOwnership();
     expect((await axe(messagesEl)).violations).toEqual([]);

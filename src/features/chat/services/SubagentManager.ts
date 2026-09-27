@@ -809,7 +809,7 @@ export class SubagentManager {
     if (existing && (existing.info.mode ?? 'sync') === (info.mode ?? 'sync')) {
       existing.info = info;
       if (info.mode === 'async') updateAsyncSubagentBlock(existing.view as AsyncSubagentState, info);
-      else updateSubagentBlock(existing.view as SubagentState, info);
+      else updateSubagentBlock(existing.view, info);
       return;
     }
     const previous = existing?.view.wrapperEl ?? previousEl;

@@ -114,7 +114,7 @@ it.each(['sync', 'async'] as const)('renders %s snapshots without changing their
   fireEvent.click(within(parent).getByRole('button', { name: /Snapshot task/ }));
   fireEvent.click(within(parent).getByRole('button', { name: /^Read/ }));
   const completed = Object.freeze({ ...initial, status: 'completed' as const, asyncStatus: 'completed' as const, result: 'Snapshot result' });
-  if ('statusTextEl' in view) updateAsyncSubagentBlock(view, completed);
+  if ('statusTextEl' in view) updateAsyncSubagentBlock(view as ReturnType<typeof createAsyncSubagentBlock>, completed);
   else updateSubagentBlock(view, completed);
   expect(within(parent).getByText('Snapshot result')).toBeDefined();
   expect(initial.status).toBe('running');
@@ -137,4 +137,23 @@ it('preserves focus in a completed child result when a sibling tool updates', ()
   manager.addSyncToolCall('sync', { id: 'read', name: 'Read', input: { file_path: 'note.md' }, status: 'running' });
   expect(document.activeElement).toBe(link);
   expect(within(parent).getByRole('link', { name: 'Docs' })).toBe(link);
+});
+
+it('preserves async prompt expansion and focus on repeated tool snapshots', () => {
+  const parent = document.body.createDiv();
+  const manager = new SubagentManager(() => {}, new ClaudeTaskResultInterpreter());
+  const input = {run_in_background: true, description: 'Research', prompt: 'Find details'};
+  try {
+    manager.handleTaskToolUse('async', input, parent);
+    fireEvent.click(within(parent).getByRole('button', {name: /Background task: Research/}));
+    const prompt = within(parent).getByRole('button', {name: /^Prompt/});
+    fireEvent.click(prompt); prompt.focus();
+    expect(prompt.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(prompt);
+    manager.handleTaskToolUse('async', input, parent);
+    const updated = within(parent).getByRole('button', {name: /^Prompt/});
+    expect(updated).toBe(prompt);
+    expect(document.activeElement).toBe(prompt);
+    expect(updated.getAttribute('aria-expanded')).toBe('true');
+  } finally { manager.clear(); }
 });

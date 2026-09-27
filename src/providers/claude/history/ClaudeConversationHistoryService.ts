@@ -270,6 +270,48 @@ function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
   return result;
 }
 
+/** Native transcript order wins; cached-only messages keep their surrounding anchors. */
+function mergeHistoryMessages(cached: ChatMessage[], native: ChatMessage[]): ChatMessage[] {
+  const byId = new Map(dedupeMessages([...cached, ...native]).map(message => [message.id, message]));
+  const nativeIds = new Set(native.map(message => message.id));
+  const nextAnchors = new Map<string, string>();
+  let nextAnchor: string | undefined;
+  for (const message of [...cached].reverse()) {
+    if (nativeIds.has(message.id)) nextAnchor = message.id;
+    else if (nextAnchor) nextAnchors.set(message.id, nextAnchor);
+  }
+  const emitted = new Set<string>();
+  const result: ChatMessage[] = [];
+  const append = (message: ChatMessage) => {
+    if (emitted.has(message.id)) return;
+    emitted.add(message.id);
+    result.push(byId.get(message.id)!);
+  };
+  let cursor = 0;
+  for (const message of native) {
+    while (cursor < cached.length) {
+      const candidate = cached[cursor];
+      if (candidate.id === message.id) {
+        cursor++;
+        break;
+      }
+      if (emitted.has(candidate.id)) {
+        cursor++;
+        continue;
+      }
+      // A shared message anchors later cache entries; timestamps only place
+      // entries absent from native history, never reorder native messages.
+      if (nativeIds.has(candidate.id)
+        || (nextAnchors.get(candidate.id) !== message.id && candidate.timestamp > message.timestamp)) break;
+      append(candidate);
+      cursor++;
+    }
+    append(message);
+  }
+  for (; cursor < cached.length; cursor++) append(cached[cursor]);
+  return result;
+}
+
 async function enrichAsyncSubagentToolCalls(
   subagentData: Record<string, SubagentInfo>,
   vaultPath: string,
@@ -771,10 +813,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     const filteredSdkMessages = allSdkMessages.filter(msg => !msg.isRebuiltContext);
 
-    const merged = dedupeMessages([
-      ...conversation.messages,
-      ...filteredSdkMessages,
-    ]).sort((a, b) => a.timestamp - b.timestamp);
+    const merged = mergeHistoryMessages(conversation.messages, filteredSdkMessages);
 
     if (state.subagentData) {
       await enrichAsyncSubagentToolCalls(

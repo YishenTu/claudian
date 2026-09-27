@@ -228,12 +228,13 @@ function ensureResultSection(state: SubagentState): SubagentSection {
 
 function setResultText(state: SubagentState, text: string): void {
   const section = ensureResultSection(state);
+  if (section.bodyEl.textContent === text) return;
   section.bodyEl.empty();
   const resultEl = section.bodyEl.createDiv({ cls: 'claudian-subagent-result-output' });
   resultEl.setText(text);
 }
 
-export function createSubagentBlock(
+function createSubagentView(
   parentEl: HTMLElement,
   info: Readonly<SubagentInfo>,
 ): SubagentState {
@@ -283,15 +284,19 @@ export function createSubagentBlock(
     progress: null,
   };
 
+  return state;
+}
+
+export function createSubagentBlock(parentEl: HTMLElement, info: Readonly<SubagentInfo>): SubagentState {
+  const state = createSubagentView(parentEl, info);
   updateSubagentBlock(state, info);
   return state;
 }
 
-/** Applies a model snapshot without changing its lifecycle, result, or child tools. */
-export function updateSubagentBlock(state: SubagentState, info: Readonly<SubagentInfo>): void {
-  state.info = info;
-  state.labelEl.setText(truncateDescription(info.description));
-  setPromptText(state.promptBodyEl, info.prompt || '');
+function updateSubagentContent(state: SubagentState, info: Readonly<SubagentInfo>, result?: string): void {
+  if (state.promptBodyEl.textContent !== (info.prompt || 'No prompt provided')) {
+    setPromptText(state.promptBodyEl, info.prompt || '');
+  }
   for (const toolCall of info.toolCalls) {
     const view = state.toolElements.get(toolCall.id);
     if (view) updateSubagentToolView(view, toolCall);
@@ -303,6 +308,21 @@ export function updateSubagentBlock(state: SubagentState, info: Readonly<Subagen
       state.toolElements.delete(id);
     }
   }
+  if (result !== undefined) {
+    setResultText(state, result);
+  } else {
+    state.resultSectionEl?.remove();
+    state.resultSectionEl = null;
+    state.resultBodyEl = null;
+  }
+}
+
+/** Applies a model snapshot without changing its lifecycle, result, or child tools. */
+export function updateSubagentBlock(state: SubagentState, info: Readonly<SubagentInfo>): void {
+  state.info = info;
+  state.labelEl.setText(truncateDescription(info.description));
+  updateSubagentContent(state, info, info.status === 'running' ? undefined
+    : info.result?.trim() ? info.result : (info.status === 'error' ? 'ERROR' : 'DONE'));
   state.statusEl.className = `claudian-subagent-status status-${info.status}`;
   state.statusEl.empty();
   state.wrapperEl.removeClass('done', 'error');
@@ -310,11 +330,6 @@ export function updateSubagentBlock(state: SubagentState, info: Readonly<Subagen
     setIcon(state.statusEl, info.status === 'error' ? 'x' : 'check');
     state.wrapperEl.addClass(info.status === 'error' ? 'error' : 'done');
     clearSubagentProgress(state);
-    setResultText(state, info.result?.trim() ? info.result : (info.status === 'error' ? 'ERROR' : 'DONE'));
-  } else {
-    state.resultSectionEl?.remove();
-    state.resultSectionEl = null;
-    state.resultBodyEl = null;
   }
   updateSyncHeaderAria(state);
 }
@@ -326,16 +341,8 @@ export function renderStoredSubagent(
   return createSubagentBlock(parentEl, subagent).wrapperEl;
 }
 
-export interface AsyncSubagentState {
-  wrapperEl: HTMLElement;
-  contentEl: HTMLElement;
-  headerEl: HTMLElement;
-  labelEl: HTMLElement;
+export interface AsyncSubagentState extends SubagentState {
   statusTextEl: HTMLElement;  // Running / Completed / Error / Orphaned
-  statusEl: HTMLElement;
-  info: Readonly<SubagentInfo>;
-  progressEl: HTMLElement | null;
-  progress: SubagentProgress | null;
 }
 
 function setAsyncWrapperStatus(wrapperEl: HTMLElement, status: string): void {
@@ -384,93 +391,17 @@ function updateAsyncLabel(state: AsyncSubagentState): void {
   );
 }
 
-function renderAsyncContentLikeSync(
-  contentEl: HTMLElement,
-  subagent: Readonly<SubagentInfo>,
-  displayStatus: 'running' | 'completed' | 'error' | 'orphaned'
-): void {
-  contentEl.empty();
-
-  const promptSection = createSection(contentEl, 'Prompt', 'claudian-subagent-prompt-body');
-  promptSection.wrapperEl.addClass('claudian-subagent-section-prompt');
-  setPromptText(promptSection.bodyEl, subagent.prompt || '');
-
-  const toolsContainerEl = contentEl.createDiv({ cls: 'claudian-subagent-tools' });
-  for (const originalToolCall of subagent.toolCalls) {
-    const toolCall: ToolCallInfo = {
-      ...originalToolCall,
-      input: { ...originalToolCall.input },
-    };
-    createSubagentToolView(toolsContainerEl, toolCall);
-  }
-
-  if (displayStatus === 'running') {
-    return;
-  }
-
-  const resultSection = createSection(contentEl, 'Result', 'claudian-subagent-result-body');
-  resultSection.wrapperEl.addClass('claudian-subagent-section-result');
-  const resultEl = resultSection.bodyEl.createDiv({ cls: 'claudian-subagent-result-output' });
-
-  if (displayStatus === 'orphaned') {
-    resultEl.setText(subagent.result || 'Conversation ended before task completed');
-    return;
-  }
-
-  const fallback = displayStatus === 'error' ? 'ERROR' : 'DONE';
-  const finalText = subagent.result?.trim() ? subagent.result : fallback;
-  resultEl.setText(finalText);
-}
-
-/**
- * Create an async subagent block for a background Agent tool call.
- * Expandable to show the task prompt. Collapsed by default.
- */
+/** Create a background card with the same incremental content view as foreground tasks. */
 export function createAsyncSubagentBlock(
   parentEl: HTMLElement,
   info: Readonly<SubagentInfo>,
 ): AsyncSubagentState {
-  const { id: taskToolId, description } = info;
-
-  const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
-  setAsyncWrapperStatus(wrapperEl, 'pending');
-  wrapperEl.dataset.asyncSubagentId = taskToolId;
-
-  const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
-  headerEl.setAttribute('tabindex', '0');
-  headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-expanded', 'false');
-  headerEl.setAttribute('aria-label', `Background task: ${description} - Initializing - click to expand`);
-
-  const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
-  iconEl.setAttribute('aria-hidden', 'true');
-  setIcon(iconEl, getToolIcon(TOOL_SUBAGENT));
-
-  const labelEl = headerEl.createDiv({ cls: 'claudian-subagent-label' });
-  labelEl.setText(truncateDescription(description));
-
-  const statusTextEl = headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
-  statusTextEl.setText('Initializing');
-
-  const statusEl = headerEl.createDiv({ cls: 'claudian-subagent-status status-running' });
-  statusEl.setAttribute('aria-label', 'Status: running');
-
-  const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-  renderAsyncContentLikeSync(contentEl, info, 'running');
-
-  setupCollapsible(wrapperEl, headerEl, contentEl, { isExpanded: false });
-
-  const state: AsyncSubagentState = {
-    wrapperEl,
-    contentEl,
-    headerEl,
-    labelEl,
-    statusTextEl,
-    statusEl,
-    info,
-    progressEl: null,
-    progress: null,
-  };
+  const view = createSubagentView(parentEl, info);
+  delete view.wrapperEl.dataset.subagentId;
+  view.wrapperEl.dataset.asyncSubagentId = info.id;
+  const statusTextEl = view.headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
+  view.headerEl.insertBefore(statusTextEl, view.statusEl);
+  const state: AsyncSubagentState = { ...view, statusTextEl };
   updateAsyncSubagentBlock(state, info);
   return state;
 }
@@ -492,7 +423,9 @@ export function updateAsyncSubagentBlock(state: AsyncSubagentState, info: Readon
     state.wrapperEl.addClass(displayStatus === 'completed' ? 'done' : 'error');
     clearSubagentProgress(state);
   }
-  renderAsyncContentLikeSync(state.contentEl, info, displayStatus);
+  updateSubagentContent(state, info, displayStatus === 'running' ? undefined
+    : displayStatus === 'orphaned' ? (info.result || 'Conversation ended before task completed')
+      : info.result?.trim() ? info.result : (displayStatus === 'error' ? 'ERROR' : 'DONE'));
 }
 
 export function renderStoredAsyncSubagent(parentEl: HTMLElement, subagent: Readonly<SubagentInfo>): HTMLElement {

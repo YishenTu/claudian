@@ -6,10 +6,8 @@ const predecessors = new WeakMap<ChatMessage, {
   background?: ProviderBackgroundEventScope;
 }>();
 
-const responsePredecessors = new WeakMap<ChatMessage, ChatMessage>();
-
 export function recordResponseContinuation(message: ChatMessage, previous: ChatMessage): void {
-  responsePredecessors.set(message, previous);
+  message.responseContinuationOf = previous.id;
 }
 
 /** Display splits keep their response owner even when notifications interleave. */
@@ -17,7 +15,8 @@ export function getResponseSegments(message: ChatMessage, messages: ChatMessage[
   const segments = [message];
   let current = message;
   let previous: ChatMessage | undefined;
-  while ((previous = responsePredecessors.get(current))) {
+  while (current.responseContinuationOf
+    && (previous = messages.find(item => item.id === current.responseContinuationOf))) {
     const start = messages.indexOf(previous);
     const end = messages.indexOf(current);
     if (start < 0 || start >= end || messages.slice(start, end).some(item =>
