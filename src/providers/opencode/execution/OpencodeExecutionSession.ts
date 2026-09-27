@@ -13,6 +13,7 @@ import {
   type ProviderSessionEvent,
   type ProviderSessionSnapshot,
   type ProviderSessionStatus,
+  type SteerableExecutionSession,
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ChatMessage, PermissionMode } from '@/core/types';
@@ -124,7 +125,7 @@ class OpencodeExecutionRun implements ProviderExecutionRun {
   }
 }
 
-export class OpencodeExecutionSession implements ProviderExecutionSession {
+export class OpencodeExecutionSession implements ProviderExecutionSession, SteerableExecutionSession {
   readonly providerId = 'opencode' as const;
   readonly sessionInstanceId = randomUUID();
 
@@ -199,6 +200,32 @@ export class OpencodeExecutionSession implements ProviderExecutionSession {
     this.snapshot = this.#createInvalidatedSnapshot('cancelled', true, new Error('Cancelled'));
     this.#emitSessionSnapshot();
     void this.#disposeKernel();
+  }
+
+  /** Only kernels whose native protocol can steer accept; V1 ACP declines. */
+  async steer(request: ProviderExecutionRequest): Promise<boolean> {
+    try {
+      assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
+    } catch (error) {
+      if (error instanceof ProviderModelUnavailableError) return false;
+      throw error;
+    }
+    const run = this.activeRun;
+    const kernel = this.kernel;
+    const native = this.nativeInfo;
+    if (
+      !run
+      || run.terminal
+      || run.cancellationRequested
+      || !run.acceptingLiveOutput
+      || !kernel?.steer
+      || !native
+      || request.signal.aborted
+    ) return false;
+    return kernel.steer({
+      prompt: buildPromptBlocks(request, false),
+      sessionId: native.sessionId,
+    });
   }
 
   getSnapshot(): ProviderSessionSnapshot {

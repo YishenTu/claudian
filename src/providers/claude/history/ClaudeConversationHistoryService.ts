@@ -19,6 +19,7 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
+import { extractHandbackResult } from '../normalization/claudeSubagentResult';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
 import {
   type ClaudeProviderState,
@@ -81,11 +82,15 @@ function mergeSubagentInfo(
 ): SubagentInfo {
   const sdkSubagent = taskToolCall.subagent;
   const cachedAsyncStatus = normalizeAsyncStatus(cachedSubagent);
+  const isSync = sdkSubagent?.mode === 'sync' || cachedSubagent.mode === 'sync'
+    || taskToolCall.input.run_in_background === false;
+  const result = isSync ? (taskToolCall.result ?? cachedSubagent.result)
+    : chooseRicherResult(taskToolCall.result, cachedSubagent.result);
   if (!sdkSubagent) {
     return {
       ...cachedSubagent,
       asyncStatus: cachedAsyncStatus,
-      result: chooseRicherResult(taskToolCall.result, cachedSubagent.result),
+      result,
     };
   }
 
@@ -99,7 +104,7 @@ function mergeSubagentInfo(
   const mergedMode = sdkSubagent.mode
     ?? cachedSubagent.mode
     ?? (taskToolCall.input?.run_in_background === true ? 'async' : undefined);
-  const fallbackResult = chooseRicherResult(sdkResult, cachedSubagent.result);
+  const fallbackResult = isSync ? result : chooseRicherResult(sdkResult, cachedSubagent.result);
   const mergedResult = preferred === cachedSubagent
     ? (cachedSubagent.result ?? fallbackResult)
     : fallbackResult;
@@ -128,6 +133,9 @@ function ensureTaskToolCall(
   subagentId: string,
   subagent: SubagentInfo,
 ): ToolCallInfo {
+  if (subagent.mode !== 'async' && subagent.result !== undefined) {
+    subagent = { ...subagent, result: extractHandbackResult(subagent.result) ?? subagent.result };
+  }
   msg.toolCalls = msg.toolCalls || [];
   let taskToolCall = msg.toolCalls.find(
     tc => tc.id === subagentId && isClaudeSubagentToolName(tc.name),
@@ -212,8 +220,36 @@ function mergeImageAttachments(
   return merged;
 }
 
+/** Cached snapshots may predate native result normalization, including while offline. */
+function normalizeCachedSyncResults(messages: ChatMessage[]): void {
+  for (const message of messages) {
+    for (const tool of message.toolCalls ?? []) {
+      if (!isClaudeSubagentToolName(tool.name) || tool.input.run_in_background === true
+        || tool.subagent?.mode === 'async') continue;
+      if (tool.result !== undefined) tool.result = extractHandbackResult(tool.result) ?? tool.result;
+      if (tool.subagent?.result !== undefined) {
+        tool.subagent.result = extractHandbackResult(tool.subagent.result) ?? tool.subagent.result;
+      }
+    }
+  }
+}
+
 function mergeDuplicateMessage(target: ChatMessage, incoming: ChatMessage): void {
   target.images = mergeImageAttachments(target.images, incoming.images);
+  // Native sync results have structured metadata unavailable in old cached snapshots.
+  for (const nativeTool of incoming.toolCalls ?? []) {
+    if (!isClaudeSubagentToolName(nativeTool.name) || nativeTool.input.run_in_background === true
+      || nativeTool.subagent?.mode === 'async' || nativeTool.result === undefined) continue;
+    const cachedTool = target.toolCalls?.find(tool => tool.id === nativeTool.id);
+    if (!cachedTool || cachedTool.input.run_in_background === true
+      || cachedTool.subagent?.mode === 'async' || normalizeAsyncStatus(cachedTool.subagent) !== undefined) continue;
+    cachedTool.result = nativeTool.result;
+    cachedTool.status = nativeTool.status;
+    if (cachedTool.subagent) {
+      cachedTool.subagent.result = nativeTool.result;
+      cachedTool.subagent.status = nativeTool.status === 'error' ? 'error' : nativeTool.status === 'running' ? 'running' : 'completed';
+    }
+  }
 }
 
 function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -231,6 +267,48 @@ function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
     result.push(message);
   }
 
+  return result;
+}
+
+/** Native transcript order wins; cached-only messages keep their surrounding anchors. */
+function mergeHistoryMessages(cached: ChatMessage[], native: ChatMessage[]): ChatMessage[] {
+  const byId = new Map(dedupeMessages([...cached, ...native]).map(message => [message.id, message]));
+  const nativeIds = new Set(native.map(message => message.id));
+  const nextAnchors = new Map<string, string>();
+  let nextAnchor: string | undefined;
+  for (const message of [...cached].reverse()) {
+    if (nativeIds.has(message.id)) nextAnchor = message.id;
+    else if (nextAnchor) nextAnchors.set(message.id, nextAnchor);
+  }
+  const emitted = new Set<string>();
+  const result: ChatMessage[] = [];
+  const append = (message: ChatMessage) => {
+    if (emitted.has(message.id)) return;
+    emitted.add(message.id);
+    result.push(byId.get(message.id)!);
+  };
+  let cursor = 0;
+  for (const message of native) {
+    while (cursor < cached.length) {
+      const candidate = cached[cursor];
+      if (candidate.id === message.id) {
+        cursor++;
+        break;
+      }
+      if (emitted.has(candidate.id)) {
+        cursor++;
+        continue;
+      }
+      // A shared message anchors later cache entries; timestamps only place
+      // entries absent from native history, never reorder native messages.
+      if (nativeIds.has(candidate.id)
+        || (nextAnchors.get(candidate.id) !== message.id && candidate.timestamp > message.timestamp)) break;
+      append(candidate);
+      cursor++;
+    }
+    append(message);
+  }
+  for (; cursor < cached.length; cursor++) append(cached[cursor]);
   return result;
 }
 
@@ -637,6 +715,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     pathContext?: ProviderHistoryPathContext,
   ): Promise<{ changes: ProviderHistoryState; complete: boolean }> {
     const conversation = copyProviderHistoryState(input);
+    normalizeCachedSyncResults(conversation.messages);
     if (!vaultPath) {
       return { changes: conversation, complete: false };
     }
@@ -734,10 +813,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
 
     const filteredSdkMessages = allSdkMessages.filter(msg => !msg.isRebuiltContext);
 
-    const merged = dedupeMessages([
-      ...conversation.messages,
-      ...filteredSdkMessages,
-    ]).sort((a, b) => a.timestamp - b.timestamp);
+    const merged = mergeHistoryMessages(conversation.messages, filteredSdkMessages);
 
     if (state.subagentData) {
       await enrichAsyncSubagentToolCalls(

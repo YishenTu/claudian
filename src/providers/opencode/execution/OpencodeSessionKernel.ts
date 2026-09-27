@@ -35,6 +35,10 @@ export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
   openSession(...args: Parameters<OpencodeSessionKernel['openSession']>) { return this.requireKernel().openSession(...args); }
   setConfigOption(...args: Parameters<OpencodeSessionKernel['setConfigOption']>) { return this.requireKernel().setConfigOption(...args); }
   prompt(...args: Parameters<OpencodeSessionKernel['prompt']>) { return this.requireKernel().prompt(...args); }
+  steer(...args: Parameters<NonNullable<OpencodeSessionKernel['steer']>>): Promise<boolean> {
+    const kernel = this.disposed ? null : this.kernel;
+    return kernel?.steer ? kernel.steer(...args) : Promise.resolve(false);
+  }
   cancel(sessionId: string): void { this.kernel?.cancel(sessionId); }
   async dispose(): Promise<void> {
     this.disposed = true;

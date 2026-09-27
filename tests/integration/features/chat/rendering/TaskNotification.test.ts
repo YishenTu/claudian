@@ -3,6 +3,7 @@
 import '@/providers';
 
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
+import { testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { MarkdownRenderer } from 'obsidian';
@@ -16,7 +17,7 @@ import {
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
-import { ClaudeExecutionEventNormalizer } from '@/providers/claude/execution/ClaudeExecutionEventNormalizer';
+import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -33,56 +34,61 @@ beforeEach(() => {
   });
 });
 
-it('renders a native completion and its follow-up through the real chat stream pipeline', async () => {
+it.each([false, true])('renders a native notification and its follow-up through session and chat (consumption echo: %s)', async echoed => {
+  const { renderSessionTaskNotification, renderAutoTriggeredTurn } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
     { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
   const state = new ChatState();
   const subagentManager = new SubagentManager(() => undefined);
-  const stream = new StreamController({
-    plugin, state, renderer, subagentManager,
-    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined,
+  const stream = new StreamController({ plugin, state, renderer, subagentManager,
+    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
+  const session = new ClaudeExecutionSession({} as any, {
+    lifecycle: 'persistent', nativePersistence: 'enabled', vaultWorkingDirectory: '/vault', interactionPort: {} as any,
   });
-  const message: ChatMessage = {
-    id: 'automatic', role: 'assistant', isAutomaticResponse: true, timestamp: 1, content: '', contentBlocks: [],
-  };
-  const element = renderer.addMessage(message);
-  state.currentContentEl = element.querySelector<HTMLElement>('.claudian-message-content');
-  const scope: ProviderBackgroundEventScope = {
-    kind: 'background', sessionInstanceId: 'session', turnId: 'background', sequence: 1,
-  };
-  const normalizer = new ClaudeExecutionEventNormalizer();
-  try {
-    for (const native of [
-      { type: 'system', subtype: 'task_notification', session_id: 'session', task_id: 'task',
-        status: 'completed', summary: 'There are 22 Markdown files.', uuid: 'notification' },
-      { type: 'assistant', message: { content: [{ type: 'text', text: 'Agent complete: 22 files.' }] } },
-    ]) {
-      for (const event of normalizer.normalize(native as any, 'background')) {
-        if (event.type !== 'output') continue;
-        const chunk = providerOutputEventToStreamChunk({ ...event.event, scope } as ProviderBackgroundOutputEvent);
-        if (chunk) await stream.handleStreamChunk(chunk, message);
-      }
+  let id = 0;
+  const host = { state, renderer, stream, isConnected: () => true, createMessageId: () => `message-${++id}` };
+  const output: ProviderBackgroundOutputEvent[] = [];
+  session.onEvent(event => {
+    if (event.type === 'task_notification') {
+      renderSessionTaskNotification(host, event.content, event.afterRequestedEvent, event.afterBackgroundEvent);
+    } else if (event.scope.kind === 'background' && providerOutputEventToStreamChunk(event as ProviderBackgroundOutputEvent)) {
+      output.push(event as ProviderBackgroundOutputEvent);
     }
-    await stream.finalizeCurrentTextBlock(message);
-    renderer.finalizeResponse(message, [message]);
+  });
+  try {
+    await session.handleNativeMessage({ type: 'system', subtype: 'task_notification', session_id: 'session', task_id: 'task',
+      status: 'completed', summary: 'There are 22 Markdown files.', uuid: 'completion' } as any, 1);
+    expect(within(messagesEl).queryByRole('button', { name: 'Task notification' })).toBeNull();
+    await session.handleNativeMessage({ type: 'user', parent_tool_use_id: 'agent', message: { content: [{ type: 'tool_result', tool_use_id: 'child-bash', content: '(Bash completed with no output)' }] } } as any, 1);
+    await session.handleNativeMessage({ type: 'system', subtype: 'init', session_id: 'session' } as any, 1);
+    if (echoed) await session.handleNativeMessage({ type: 'user', session_id: 'session', uuid: '00000000-0000-4000-8000-000000000001', parent_tool_use_id: null,
+      isReplay: true, isSynthetic: true, timestamp: testTime(), message: { role: 'user', content:
+        '<task-notification><task-id>task</task-id><status>completed</status><summary>There are 22 Markdown files.</summary></task-notification>' } }, 1);
+    await session.handleNativeMessage({ type: 'assistant', parent_tool_use_id: 'agent', message: { id: 'child', content: [{ type: 'text', text: 'Child output' }] } } as any, 1);
+    expect(within(messagesEl).queryByRole('button', { name: 'Task notification' }) !== null).toBe(echoed);
+    await session.handleNativeMessage({ type: 'assistant', message: { id: 'followup', content: [{ type: 'text', text: 'Agent complete: 22 files.' }] } } as any, 1);
+    await session.handleNativeMessage({ type: 'result', subtype: 'success' } as any, 1);
+    await renderAutoTriggeredTurn(host, { events: output, metadata: {} }, () => true);
 
     const header = within(messagesEl).getByRole('button', { name: 'Task notification' });
     const result = within(messagesEl).getByText('There are 22 Markdown files.');
+    const answer = within(messagesEl).getByText('Agent complete: 22 files.');
     expect(result.closest('[hidden]')).not.toBeNull();
-    expect(within(messagesEl).getByText('Agent complete: 22 files.').closest('[hidden]')).toBeNull();
+    expect(answer.closest('[hidden]')).toBeNull();
+    expect(header.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(header);
     expect(result.closest('[hidden]')).toBeNull();
-    expect(message.contentBlocks).toEqual([
+    expect(state.messages.flatMap(message => message.contentBlocks ?? [])).toEqual([
       { type: 'task_notification', content: 'There are 22 Markdown files.' },
       { type: 'text', content: 'Agent complete: 22 files.' },
     ]);
     expect(within(messagesEl).queryByRole('button', { name: /^Worked/ })).toBeNull();
+    expect((await axe(messagesEl)).violations).toEqual([]);
   } finally {
-    stream.dispose();
-    subagentManager.clear();
-    renderer.dispose();
+    await session.dispose();
+    stream.dispose(); subagentManager.clear(); renderer.dispose();
   }
 });
 

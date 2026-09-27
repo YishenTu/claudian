@@ -5,8 +5,9 @@ import { providerOutputEventToStreamChunk, type StreamController } from '../cont
 import { ChatState } from '../state/ChatState';
 import { mergeReportedUsage } from '../utils/usageInfo';
 import { isStandaloneTaskNotification, type MessageRenderer } from './MessageRenderer';
-import { recordNotificationPredecessors } from './NotificationBoundaries';
+import { recordNotificationPredecessors, recordResponseContinuation } from './NotificationBoundaries';
 import { continueResponseAfterNotification } from './ResponseContinuation';
+import { getAutomaticNotificationPredecessor } from './ResponseLayout';
 
 interface BackgroundTurnRenderHost {
   readonly state: ChatState;
@@ -35,6 +36,8 @@ export function reserveBackgroundTurn(
     id: host.createMessageId(), role: 'assistant', isAutomaticResponse: true,
     content: '', timestamp: Date.now(), toolCalls: [], contentBlocks: [],
   };
+  const previous = host.state.messages.at(-1);
+  if (isStandaloneTaskNotification(previous)) recordResponseContinuation(message, previous);
   host.state.addMessage(message);
   const element = host.renderer.addMessage(message);
   element.hidden = true;
@@ -191,10 +194,9 @@ export async function renderAutoTriggeredTurn(
       if (metadata.assistantMessageId) assistantMessage.assistantMessageId = metadata.assistantMessageId;
       for (const segment of segments) {
         if (!host.state.messages.includes(segment)) continue;
-        const previous = host.state.messages[host.state.messages.indexOf(segment) - 1];
+        const previous = getAutomaticNotificationPredecessor(segment, host.state.messages);
         // Include only notification context, never another response's live work.
-        const responseMessages = isStandaloneTaskNotification(previous)
-          ? [previous, segment] : [segment];
+        const responseMessages = previous ? [previous, segment] : [segment];
         host.renderer.finalizeResponse(segment, responseMessages);
       }
     }

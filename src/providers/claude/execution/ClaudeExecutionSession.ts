@@ -51,6 +51,7 @@ import {
 } from './ClaudeExecutionStrategies';
 import { ClaudeInteractionHandler } from './ClaudeInteractionHandler';
 import { ClaudeResponseOwnership } from './ClaudeResponseOwnership';
+import { ClaudeTaskNotificationQueue } from './ClaudeTaskNotificationQueue';
 import { type ClaudeTurnInputs, getReplayedUserMessageId } from './ClaudeTurnInputs';
 
 interface ActiveRequestedRun {
@@ -133,6 +134,7 @@ ClaudeExecutionStrategySink {
   private lastAllowedTools: ReadonlySet<string> | null = null;
   private readonly eventNormalizer = new ClaudeExecutionEventNormalizer();
   private readonly responseOwnership = new ClaudeResponseOwnership();
+  private readonly taskNotifications = new ClaudeTaskNotificationQueue();
   private nativeQuery: Query | null = null;
   private authoritativeContextWindow: {
     readonly model: string;
@@ -390,6 +392,7 @@ ClaudeExecutionStrategySink {
       snapshot: this.getSnapshot(),
     });
     this.sessionListeners.clear();
+    this.taskNotifications.reset();
     this.backgroundTurn = null;
     this.suppressedPersistentQueryTokens.clear();
     this.suppressedEphemeralQueryTokens.clear();
@@ -502,7 +505,6 @@ ClaudeExecutionStrategySink {
     queryToken: number,
   ): Promise<void> {
     if (this.disposed) return;
-    this.nativeQueryToken = queryToken;
     if (this.cancelledBackgroundQueryToken === queryToken) {
       if (message.type === 'result') this.#finishCancelledBackground(queryToken);
       return;
@@ -520,12 +522,24 @@ ClaudeExecutionStrategySink {
       return;
     }
 
+    this.nativeQueryToken = queryToken;
+    this.taskNotifications.observe(message);
     const active = this.activeRun;
     const intendedModel = this.lastEncodedRequest?.model;
     const reportedContextWindow = intendedModel
       && this.authoritativeContextWindow?.model === intendedModel
       ? this.authoritativeContextWindow.contextWindow
       : undefined;
+    // Completion settles the card; the native user echo marks where the model
+    // actually consumed the notification (including folded queued commands).
+    if (message.type === 'user' && message.parent_tool_use_id == null
+      && (!message.uuid || !active?.inputs?.ids.includes(message.uuid))) {
+      const notification = this.taskNotifications.consume(message.message.content);
+      if (notification !== null) {
+        this.#emitTaskNotification(notification);
+        return;
+      }
+    }
     const replayedInputId = getReplayedUserMessageId(message);
     if (replayedInputId !== undefined) {
       // Replays acknowledge input only; they carry no output of their own.
@@ -540,6 +554,14 @@ ClaudeExecutionStrategySink {
     if (channel === 'requested' && isRequestedTurnEvidence(message)
       && !this.responseOwnership.hasPending('background')) {
       this.#finishBackgroundTurn('provider-ended');
+    }
+    // SDK 0.3.283 echoes folded notifications, but omits the synthetic user
+    // message that starts an automatic turn. Publish the completions selected
+    // at native init before reserving that response's transcript position.
+    if (channel === 'background'
+      && ((message.type === 'stream_event' && message.event.type === 'message_start')
+        || message.type === 'assistant') && message.parent_tool_use_id == null) {
+      for (const content of this.taskNotifications.takeTurnNotifications()) this.#emitTaskNotification(content);
     }
     const normalizedEvents = this.eventNormalizer.normalize(
       message,
@@ -576,6 +598,7 @@ ClaudeExecutionStrategySink {
       }
       if (normalized.type === 'async_subagent_completion') {
         const event = normalized.event;
+        this.taskNotifications.complete(message, event.result);
         this.#emitSession({
           type: 'async_subagent_completed',
           originatingTurnId: event.toolUseId
@@ -591,16 +614,11 @@ ClaudeExecutionStrategySink {
         });
         continue;
       }
+      if (normalized.type === 'subagent_progress') {
+        this.#emitSession({ type: 'subagent_progress', progress: normalized.event.progress });
+        continue;
+      }
       if (normalized.type === 'output') {
-        // Task completion is independent of the currently running model response.
-        if (normalized.event.type === 'task_notification') {
-          this.#emitSession({
-            ...normalized.event,
-            afterRequestedEvent: this.lastRequestedEventScope,
-            afterBackgroundEvent: this.lastBackgroundEventScope,
-          });
-          continue;
-        }
         const target = this.#getOutputTarget(channel);
         if (target) {
           this.#emitTurnOutput(target, normalized.event);
@@ -787,6 +805,7 @@ ClaudeExecutionStrategySink {
   handleNativeQueryOpened(query: Query): void {
     if (this.nativeQuery === query) return;
     this.nativeQuery = query;
+    this.taskNotifications.reset();
     this.commandSnapshot = undefined;
     this.authoritativeContextWindow = null;
   }
@@ -794,6 +813,7 @@ ClaudeExecutionStrategySink {
   handleNativeQueryClosed(query: Query): void {
     if (this.nativeQuery !== query) return;
     this.nativeQuery = null;
+    this.taskNotifications.reset();
     this.commandSnapshot = undefined;
     this.#emitSession({ type: 'commands_changed' });
     this.authoritativeContextWindow = null;
@@ -960,6 +980,14 @@ ClaudeExecutionStrategySink {
 
   #currentOutputChannel(): 'requested' | 'background' {
     return this.responseOwnership.current(this.activeRun?.nativeHandedOff === true);
+  }
+
+  #emitTaskNotification(content: string): void {
+    this.#emitSession({
+      type: 'task_notification', content,
+      afterRequestedEvent: this.lastRequestedEventScope,
+      afterBackgroundEvent: this.lastBackgroundEventScope,
+    });
   }
 
   #getOutputTarget(channel = this.#currentOutputChannel()): ActiveRequestedRun | BackgroundTurn | null {

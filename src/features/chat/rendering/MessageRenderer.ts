@@ -40,6 +40,8 @@ import {
   restoreDisplayOnlyCodeFences,
 } from './DisplayOnlyCodeFences';
 import { renderMermaidDiagrams } from './MermaidRenderer';
+import { getResponseSegments } from './NotificationBoundaries';
+import { createResponseTextBlock, getResponseElementKind, getResponseLayout, markResponseElement } from './ResponseLayout';
 import { resolveSubagentAdapter } from './subagentAdapterResolution';
 import {
   renderStoredAsyncSubagent,
@@ -49,6 +51,8 @@ import { renderStoredThinkingBlock } from './ThinkingBlockRenderer';
 import { renderStoredToolCall } from './ToolCallRenderer';
 import { createWelcomeElement } from './WelcomeRenderer';
 import { renderStoredWriteEdit } from './WriteEditRenderer';
+
+export { isStandaloneTaskNotification } from './ResponseLayout';
 
 export interface RenderContentOptions {
   deferMath?: boolean;
@@ -215,7 +219,7 @@ export class MessageRenderer {
     if (msg.role === 'user') {
       const textToShow = this.#getUserMessageTextToShow(msg);
       if (textToShow) {
-        const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
+        const textEl = createResponseTextBlock(contentEl);
         void this.renderContent(textEl, textToShow);
         this.#addUserCopyButton(msgEl, textToShow);
         this.#applyTocTitle(msgEl, textToShow);
@@ -301,7 +305,11 @@ export class MessageRenderer {
       }
     }
     if (msg.role === 'assistant' && !this.#hasVisibleContent(msg)) {
-      return;
+      // A pre-output notification can leave an empty first segment that still
+      // anchors its continuation's work disclosure when the transcript rerenders.
+      const anchorsContinuation = allMessages?.some(message => message !== msg
+        && getResponseSegments(message, allMessages).includes(msg));
+      if (!anchorsContinuation) return;
     }
 
     const msgEl = this.messagesEl.createDiv({
@@ -317,7 +325,7 @@ export class MessageRenderer {
     if (msg.role === 'user') {
       const textToShow = this.#getUserMessageTextToShow(msg);
       if (textToShow) {
-        const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
+        const textEl = createResponseTextBlock(contentEl);
         void this.renderContent(textEl, textToShow);
         this.#addUserCopyButton(msgEl, textToShow);
         this.#applyTocTitle(msgEl, textToShow);
@@ -347,65 +355,52 @@ export class MessageRenderer {
   finalizeResponse(msg: ChatMessage, messages: ChatMessage[], collapse = true): void {
     const msgEl = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${msg.id}"]`);
     const contentEl = msgEl?.querySelector<HTMLElement>('.claudian-message-content');
-    if (!msgEl || !contentEl || msgEl.querySelector('.claudian-work')) return;
+    if (!msgEl || !contentEl
+      || this.messagesEl.querySelector(`.claudian-work[data-work-message-id="${msg.id}"]`)) return;
 
-    const blocks = msg.contentBlocks?.length
-      ? msg.contentBlocks
-      : [{ type: 'text' as const, content: msg.content }];
-    let finalStart = blocks.length;
-    while (finalStart > 0 && ['text', 'citations'].includes(blocks[finalStart - 1].type)) finalStart--;
-    const finalText = blocks.slice(finalStart)
-      .flatMap(block => block.type === 'text' ? [block.content] : []).join('\n\n');
-    const canCollapse = collapse && !msg.isInterrupt && finalText.trim().length > 0
-      && !blocks.some(block => block.type === 'context_compacted');
-
-    const notificationIndex = blocks.findIndex(block => block.type === 'task_notification');
-    const previous = messages[messages.indexOf(msg) - 1];
-    const precedingNotificationHistory = notificationIndex === -1
-      && msg.isAutomaticResponse === true && isStandaloneTaskNotification(previous)
+    const { blocks, finalText, canCollapse, notificationPredecessor,
+      automaticNotification, earlierMessages, hasContinuation, finalBlockCount } = getResponseLayout(msg, messages, collapse);
+    const precedingNotificationHistory = notificationPredecessor
       ? this.messagesEl.querySelector<HTMLElement>(
-        `[data-message-id="${previous.id}"] .claudian-task-notification .claudian-work-history`,
-      )
-      : null;
-    const automaticNotification = msg.isAutomaticResponse === true
-      && (notificationIndex !== -1 || precedingNotificationHistory !== null);
+        `[data-message-id="${notificationPredecessor.id}"] .claudian-task-notification .claudian-work-history`,
+      ) : null;
     if (automaticNotification && canCollapse) {
       let history: HTMLElement | null = precedingNotificationHistory;
       for (const child of Array.from(contentEl.children) as HTMLElement[]) {
-        if (child.classList.contains('claudian-task-notification')) {
+        if (getResponseElementKind(child) === 'notification') {
           history = child.querySelector<HTMLElement>('.claudian-work-history');
-        } else if (history && !child.classList.contains('claudian-text-block')
-          && !child.classList.contains('claudian-citations')) {
+        } else if (history && getResponseElementKind(child) !== 'text'
+          && getResponseElementKind(child) !== 'citations') {
           history.appendChild(child);
         }
       }
     }
     if (canCollapse && !automaticNotification) {
-      const end = messages.indexOf(msg);
-      let start = end;
-      while (start > 0 && messages[start - 1].role === 'assistant'
-        && messages[start - 1].durationSeconds === undefined
-        && !messages[start - 1].isInterrupt
-        && !messages[start - 1].contentBlocks?.some(block => block.type === 'task_notification')
-        && !messages[start - 1].contentBlocks?.some(block => block.type === 'context_compacted')) start--;
-      const earlierEls = messages.slice(start, end).flatMap(message => {
+      // Keep the disclosure at the start of its response and fold consumed
+      // notifications with the work around them, preserving transcript order.
+      const workContentEl = hasContinuation && earlierMessages.length
+        ? this.messagesEl.querySelector<HTMLElement>(
+          `[data-message-id="${earlierMessages[0].id}"] .claudian-message-content`,
+        ) ?? contentEl : contentEl;
+      const earlierEls = earlierMessages.flatMap(message => {
         const el = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`);
-        return el ? [el] : [];
+        if (!el) return [];
+        const previousContent = el.querySelector<HTMLElement>('.claudian-message-content');
+        return previousContent === workContentEl ? Array.from(previousContent.children) as HTMLElement[] : [el];
       });
-      const children = (Array.from(contentEl.children) as HTMLElement[])
-        .filter(child => !child.classList.contains('claudian-task-notification'));
-      const textEls = children.filter(child => child.classList.contains('claudian-text-block')
-        || child.classList.contains('claudian-citations'));
-      const finalBlockCount = blocks.slice(finalStart).filter(block => block.type === 'citations'
-        || (block.type === 'text' && block.content.trim())).length;
-      const answerEls = new Set(notificationIndex === -1 ? textEls.slice(-finalBlockCount) : textEls);
+      const children = Array.from(contentEl.children) as HTMLElement[];
+      const textEls = children.filter(child => getResponseElementKind(child) === 'text'
+        || getResponseElementKind(child) === 'citations');
+      const answerEls = new Set(textEls.slice(-finalBlockCount));
       // Fallback tool calls can follow the answer in the DOM without belonging to the answer.
       const workEls = children.filter(child => !answerEls.has(child));
       if (earlierEls.length || workEls.length || msg.durationSeconds !== undefined) {
         const seconds = Math.max(0, Math.floor(msg.durationSeconds ?? 0));
         const duration = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-        const wrapper = contentEl.createDiv({ cls: 'claudian-work' });
-        contentEl.insertBefore(wrapper, children[0] ?? contentEl.firstChild);
+        const wrapper = workContentEl.createDiv({
+          cls: 'claudian-work', attr: { 'data-work-message-id': msg.id },
+        });
+        workContentEl.insertBefore(wrapper, workContentEl.firstChild);
         const historyId = `claudian-work-history-${MessageRenderer.nextHistoryId++}`;
         const label = msg.durationSeconds === undefined ? 'Worked' : `Worked for ${duration}`;
         const header = wrapper.createEl('button', {
@@ -427,7 +422,7 @@ export class MessageRenderer {
     const toolbar = this.#getOrCreateActionsToolbar(msgEl);
     toolbar.empty();
     for (const child of Array.from(contentEl.children)) {
-      if (child.classList.contains('claudian-text-block')) {
+      if (getResponseElementKind(child as HTMLElement) === 'text') {
         child.querySelector('.claudian-text-copy-btn')?.remove();
       }
     }
@@ -483,7 +478,7 @@ export class MessageRenderer {
   }
 
   appendInterruptIndicator(contentEl: HTMLElement): void {
-    const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
+    const textEl = createResponseTextBlock(contentEl);
     textEl.createSpan({ cls: 'claudian-interrupted', text: 'Interrupted' });
     textEl.appendText(' ');
     textEl.createSpan({
@@ -493,7 +488,7 @@ export class MessageRenderer {
   }
 
   renderTaskNotification(contentEl: HTMLElement, content: string): void {
-    const wrapper = contentEl.createDiv({ cls: 'claudian-task-notification' });
+    const wrapper = markResponseElement(contentEl.createDiv({ cls: 'claudian-task-notification' }), 'notification');
     const historyId = `claudian-task-notification-${MessageRenderer.nextHistoryId++}`;
     const header = wrapper.createEl('button', {
       cls: 'claudian-work-header',
@@ -528,7 +523,7 @@ export class MessageRenderer {
           if (!block.content.trim()) {
             continue;
           }
-          const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
+          const textEl = createResponseTextBlock(contentEl);
           void this.renderContent(textEl, block.content);
           this.addTextCopyButton(textEl, block.content);
         } else if (block.type === 'citations') {
@@ -569,7 +564,7 @@ export class MessageRenderer {
     } else {
       // Fallback for old conversations without contentBlocks
       if (msg.content.trim()) {
-        const textEl = contentEl.createDiv({ cls: 'claudian-text-block' });
+        const textEl = createResponseTextBlock(contentEl);
         void this.renderContent(textEl, msg.content);
         this.addTextCopyButton(textEl, msg.content);
       }
@@ -582,7 +577,7 @@ export class MessageRenderer {
   }
 
   renderCitationGroup(parentEl: HTMLElement, citations: CitationGroup): HTMLElement {
-    return renderCitationBlock(parentEl, citations);
+    return markResponseElement(renderCitationBlock(parentEl, citations), 'citations');
   }
 
   /**
@@ -1137,13 +1132,6 @@ export class MessageRenderer {
     }
   }
 
-}
-
-/** Live session notifications are separate from the automatic response they precede. */
-export function isStandaloneTaskNotification(message: ChatMessage | undefined): message is ChatMessage {
-  return message?.role === 'assistant' && message.isAutomaticResponse === true
-    && Boolean(message.contentBlocks?.length)
-    && message.contentBlocks?.every(block => block.type === 'task_notification') === true;
 }
 
 /** Rounds to tenths before splitting so 119.96s reads "2m 0s", not "1m 60s". */

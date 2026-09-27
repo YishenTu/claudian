@@ -47,6 +47,11 @@ export interface OpencodeSessionKernel {
     ACPPromptResponse,
     'usage' | 'userMessageId'
   > & Partial<Pick<ACPPromptResponse, 'stopReason'>>>;
+  /**
+   * Hands input to the running requested prompt under the neutral steer
+   * contract. Absent where the native protocol cannot steer a running turn.
+   */
+  steer?(request: ACPPromptRequest): Promise<boolean>;
   cancel(sessionId: string): void;
   dispose(): Promise<void>;
 }

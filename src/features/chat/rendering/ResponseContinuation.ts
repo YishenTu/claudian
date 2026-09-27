@@ -3,7 +3,7 @@ import type { ChatMessage, StreamChunk } from '../../../core/types';
 import type { StreamController } from '../controllers/StreamController';
 import type { ChatState } from '../state/ChatState';
 import { isStandaloneTaskNotification, type MessageRenderer } from './MessageRenderer';
-import { getNotificationPredecessor } from './NotificationBoundaries';
+import { getNotificationPredecessor, recordResponseContinuation } from './NotificationBoundaries';
 
 /** Keep new response content after independently delivered session notifications. */
 export async function continueResponseAfterNotification(
@@ -50,7 +50,9 @@ export async function continueResponseAfterNotification(
   if (host.isCurrent?.() === false
     || !host.state.messages.includes(message) || !host.state.messages.includes(preceding)) return message;
   host.stream.hideThinkingIndicator();
-  if (!message.content && !message.contentBlocks?.length && !message.toolCalls?.length) {
+  // Requested responses retain their starting position for the completed work disclosure.
+  if (message.isAutomaticResponse && !message.content
+    && !message.contentBlocks?.length && !message.toolCalls?.length) {
     host.state.messages = host.state.messages.filter(item => item !== message);
     host.renderer.removeMessage(message.id);
   }
@@ -59,6 +61,7 @@ export async function continueResponseAfterNotification(
     toolCalls: [], contentBlocks: [],
     ...(message.isAutomaticResponse ? { isAutomaticResponse: true } : {}),
   };
+  recordResponseContinuation(continuation, message.isAutomaticResponse ? preceding : message);
   const insertionIndex = host.state.messages.indexOf(preceding) + 1;
   const messages = host.state.messages;
   messages.splice(insertionIndex, 0, continuation);

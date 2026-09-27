@@ -116,6 +116,8 @@ export interface ChatMessage {
   completedAt?: number;
   /** Provider-triggered response without a new user request. */
   isAutomaticResponse?: boolean;
+  /** Previous transcript segment of this response, retained across history copies. */
+  responseContinuationOf?: string;
   toolCalls?: ToolCallInfo[];
   contentBlocks?: ContentBlock[];
   linkedContentPath?: string;

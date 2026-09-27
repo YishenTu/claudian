@@ -4,8 +4,9 @@ import * as path from 'node:path';
 
 import { createForkTestEnvironment } from '@test/helpers/features/chat/ProviderForkTestHarness';
 
-import { type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
+import { isSteerableExecutionSession, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ChatMessage } from '@/core/types';
 import { providerOutputEventToStreamChunk } from '@/features/chat/controllers/StreamController';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { OpencodeExecutionBackend } from '@/providers/opencode/execution/OpencodeExecutionBackend';
@@ -16,7 +17,7 @@ const fixture = `#!/usr/bin/env node
 const http = require('node:http');
 if (process.argv.includes('--version')) { console.log('opencode v2.0.12'); return; }
 if (!process.argv.includes('serve')) process.exit(3);
-let lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0;
+let onSteer, inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0;
 let activated = !process.env.ACTIVATION_DELAY_MS, activation;
 const emit = (type, data) => feed.write('data: ' + JSON.stringify({ type, data: { sessionID: 'ses_test', ...data } }) + '\\n\\n');
 const server = http.createServer(async (req, res) => {
@@ -52,6 +53,19 @@ const server = http.createServer(async (req, res) => {
   if (route === '/api/mcp') { res.end(JSON.stringify({ data: [] })); return; }
   if (route === '/api/session' && process.env.EXPECT_RESUME === '1') { res.writeHead(409).end(); return; }
   if (route === '/api/session' || (route === '/api/session/ses_test' && req.method === 'GET')) { res.end(JSON.stringify({ data: { id: 'ses_test' } })); return; }
+  if (route.endsWith('/prompt') && body.delivery === 'steer') {
+    if (process.env.STEER_ADMISSION === 'reject') { res.writeHead(400).end(); onSteer?.(null); return; }
+    inbox.push(body.id);
+    res.end(JSON.stringify({ data: { id: body.id, sessionID: 'ses_test', type: 'user', payload: { text: body.text }, delivery: 'steer' } }));
+    emit('session.inbox.enqueued', { inboxID: body.id, item: { type: 'user', payload: { text: body.text }, delivery: 'steer' } });
+    onSteer?.(body); return;
+  }
+  if (route.startsWith('/api/session/ses_test/inbox/') && req.method === 'DELETE') {
+    const id = decodeURIComponent(route.slice('/api/session/ses_test/inbox/'.length));
+    if (!inbox.includes(id)) { res.writeHead(409).end(JSON.stringify({ _tag: 'ConflictError' })); return; }
+    inbox = inbox.filter(item => item !== id);
+    emit('session.inbox.cancelled', { inboxID: id }); res.writeHead(204).end(); return;
+  }
   if (route.endsWith('/interrupt')) { emit('session.execution.interrupted', { reason: 'user' }); res.end(JSON.stringify({ interrupted: true })); return; }
   if (route.endsWith('/model') || route.endsWith('/agent')) { if (process.env.LATE_CHILD_STAGE === 'configuration') lateChild?.(); res.writeHead(204).end(); return; }
   if (route === '/api/session/ses_grand/permission/per_grand/reply') { grandApproval = body.decision; res.writeHead(204).end(); return; }
@@ -62,11 +76,31 @@ const server = http.createServer(async (req, res) => {
   if (route.endsWith('/prompt') || route.endsWith('/command')) {
     if (body.text.includes('Old local history')) { res.writeHead(400).end(); return; }
     const assistantMessageID = 'msg_assistant_' + (++turn);
-    idle = false; res.end(JSON.stringify({ data: { id: 'msg_user' } }));
+    idle = false; res.end(JSON.stringify({ data: { id: body.id ?? 'msg_user' } }));
     if (process.env.LATE_CHILD_STAGE === 'prompt') lateChild?.();
     setTimeout(async () => {
       emit('session.execution.started', {});
+      // Undelivered steers left in the native inbox fold into the next execution.
+      for (const inboxID of inbox.splice(0)) { emit('session.inbox.delivered', { inboxID }); emit('session.text.delta', { assistantMessageID, ordinal: 9, delta: 'Leaked steer ' }); }
       emit('session.step.started', { assistantMessageID });
+      if (body.text.startsWith('steer')) {
+        const deliver = steer => {
+          inbox = inbox.filter(item => item !== steer.id);
+          emit('session.inbox.delivered', { inboxID: steer.id });
+          emit('session.step.started', { assistantMessageID: 'msg_steered' });
+          emit('session.text.ended', { assistantMessageID: 'msg_steered', ordinal: 0, text: 'Saw ' + steer.text });
+          emit('session.execution.succeeded', {});
+        };
+        onSteer = steer => {
+          onSteer = undefined;
+          if (!steer) { emit('session.text.ended', { assistantMessageID, ordinal: 0, text: 'Working alone' }); emit('session.execution.succeeded', {}); return; }
+          if (body.text === 'steer') { emit('session.step.ended', {}); deliver(steer); }
+          // The execution ended as the steer was admitted; native starts another execution for it.
+          if (body.text === 'steer-late') { emit('session.execution.succeeded', {}); setTimeout(() => { emit('session.execution.started', {}); deliver(steer); }, 30); }
+        };
+        emit('session.text.delta', { assistantMessageID, ordinal: 0, delta: 'Working' });
+        return;
+      }
       if (process.env.ECHO_PROMPT === '1') {
         emit('session.text.ended', { assistantMessageID, ordinal: 0, text: JSON.stringify({ route, body }) });
         emit('session.execution.succeeded', {}); idle = true; waiter?.writeHead(204).end();
@@ -321,6 +355,117 @@ it('interrupts HTTP execution and continues the same native session on the next 
     expect(f.session.getSnapshot()).toMatchObject({ providerSessionId: 'ses_test' });
   } finally { await f.dispose(); }
 }, 15000);
+
+describe('native steering', () => {
+  function steer(f: ReturnType<typeof createFixture>, text: string): Promise<boolean> {
+    if (!isSteerableExecutionSession(f.session)) throw new Error('Missing steering');
+    return f.session.steer(request(text));
+  }
+
+  async function steerDuring(f: ReturnType<typeof createFixture>, text: string) {
+    const events: ProviderExecutionEvent[] = [];
+    const background: ProviderSessionEvent[] = [];
+    f.session.onEvent(event => background.push(event));
+    const run = f.session.execute(request(text));
+    let steered: Promise<boolean> | undefined;
+    for await (const event of run.events) {
+      events.push(event);
+      if (event.type === 'text_delta' && event.text === 'Working' && !steered) {
+        steered = steer(f, 'Also check tests');
+        if (text === 'steer-cancel') run.cancel();
+      }
+    }
+    return { events, background, accepted: await steered };
+  }
+
+  it.each(['steer', 'steer-late'])('keeps a %s delivery inside the requested run until the native inbox delivers it', async text => {
+    const f = createFixture();
+    try {
+      const { events, background, accepted } = await steerDuring(f, text);
+      expect(accepted).toBe(true);
+      // Consumers bind the first user boundary to the submitted prompt, never to a steer.
+      const boundaries = events.filter(event => event.type === 'user_message_started');
+      expect(boundaries).toEqual([
+        expect.objectContaining({ nativeUserMessageId: expect.stringMatching(/^msg_/) }),
+        expect.objectContaining({ content: 'Also check tests', nativeUserMessageId: expect.stringMatching(/^msg_/) }),
+      ]);
+      expect(boundaries[0]).not.toHaveProperty('content');
+      expect(boundaries[0].nativeUserMessageId).not.toBe(boundaries[1].nativeUserMessageId);
+      const boundary = events.indexOf(boundaries[1]);
+      expect(events.slice(boundary + 1).map(event => event.type)).toEqual(['assistant_message_started', 'text_delta', 'session_state_changed', 'turn_completed']);
+      expect(events.filter(event => event.type === 'text_delta').map(event => event.text)).toEqual(['Working', 'Saw Also check tests']);
+      expect(background.filter(event => event.type === 'background_turn_started')).toEqual([]);
+    } finally { await f.dispose(); }
+  }, 15000);
+
+  it('recalls an undelivered steer on cancel so it cannot leak into the next turn', async () => {
+    const f = createFixture();
+    try {
+      const { events, accepted } = await steerDuring(f, 'steer-cancel');
+      expect(events.at(-1)?.type).toBe('cancelled');
+      expect(accepted).toBe(false);
+      const continued: ProviderExecutionEvent[] = [];
+      for await (const event of f.session.execute(request('continue')).events) continued.push(event);
+      expect(continued.at(-1)?.type).toBe('turn_completed');
+      expect(continued.filter(event => event.type === 'text_delta').map(event => event.text).join('')).toBe('Finished review');
+    } finally { await f.dispose(); }
+  }, 15000);
+
+  it('reports a natively refused steer as definitely unsent and lets the run finish', async () => {
+    const f = createFixture(false, undefined, 'STEER_ADMISSION=reject');
+    try {
+      expect(await steer(f, 'Before any run')).toBe(false);
+      const { events, accepted } = await steerDuring(f, 'steer');
+      expect(accepted).toBe(false);
+      expect(events.filter(event => event.type === 'user_message_started' && event.content)).toEqual([]);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+    } finally { await f.dispose(); }
+  }, 15000);
+
+  it.each(['steer', 'steer-late'])('keeps the submitted pair bound to the prompt across a %s delivery', async text => {
+    const env = await createForkTestEnvironment();
+    const cliPath = path.join(env.root, 'opencode.cjs');
+    writeFileSync(cliPath, fixture, { mode: 0o700 });
+    env.host.getResolvedProviderCliPath = async () => cliPath;
+    env.host.mutateSettings = async mutate => { await mutate(env.host.settings); };
+    env.host.mutateSettingsConditionally = async mutate => { await mutate(env.host.settings); };
+    env.host.notifyProviderChatOptionsChanged = () => undefined;
+    env.host.settings.providerConfigs.opencode = { enabled: true, visibleModels: ['deepseek/chat'], discoveredModels: [{ rawId: 'deepseek/chat', label: 'DeepSeek' }] };
+    const serverService = new OpencodeServerService();
+    const backend = new OpencodeExecutionBackend(env.host, { serverService });
+    const conversation = await env.repository.create({ providerId: 'opencode' });
+    const events: ProviderExecutionEvent[] = [];
+    let steered: Promise<boolean> | undefined;
+    let ids = 0;
+    const turn = (submissionId: string, body: string, messages?: { user: ChatMessage; assistant: ChatMessage }) => ({
+      submissionId, timestamp: 1, rawDisplayText: body, canonicalText: body, images: [],
+      configuration: request().configuration, toolPolicy: { kind: 'provider-default' as const }, ...(messages ? { messages } : {}),
+    });
+    const coordinator: ChatExecutionCoordinator = new ChatExecutionCoordinator({
+      lifecycleRegistry: new ProviderExecutionLifecycleRegistry(), resolveBackend: () => backend,
+      persistence: env.repository, vaultWorkingDirectory: env.root, createId: () => `execution-${++ids}`,
+      resolveMissingProviderSession: async () => 'preserved',
+      interactionPort: { requestApproval: async request => ({ interactionId: request.interactionId, decision: 'allow' }), askUserQuestion: async request => ({ interactionId: request.interactionId, answers: {} }), dismissInteraction() {} },
+      onRequestedEvent: event => {
+        events.push(event);
+        if (event.type === 'text_delta' && event.text === 'Working') steered ??= coordinator.steer(turn('user-steer', 'Also check tests'));
+      },
+    });
+    const user: ChatMessage = { id: 'user', role: 'user', content: text, timestamp: 1 };
+    const assistant: ChatMessage = { id: 'assistant', role: 'assistant', content: '', timestamp: 2 };
+    try {
+      await coordinator.bindConversation({ conversationId: conversation.id, providerId: 'opencode' });
+      const result = await coordinator.execute(turn('user-main', text, { user, assistant }));
+      expect(result.status).toBe('completed');
+      await expect(steered).resolves.toBe(true);
+      const [prompt, steer] = events.filter(event => event.type === 'user_message_started');
+      expect(steer).toMatchObject({ content: 'Also check tests' });
+      expect(user.userMessageId).toBe(prompt.nativeUserMessageId);
+      expect(user.userMessageId).not.toBe(steer.nativeUserMessageId);
+      expect(assistant.assistantMessageId).toMatch(/^msg_assistant_/);
+    } finally { await coordinator.dispose(); await serverService.dispose(); await env.dispose(); }
+  }, 15000);
+});
 
 it('loads a bound native session without injecting old conversation history into its prompt', async () => {
   const f = createFixture(true);

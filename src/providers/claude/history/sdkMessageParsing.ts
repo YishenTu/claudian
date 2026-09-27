@@ -13,12 +13,15 @@ import {
   parseImageDataUri,
 } from '../../../utils/imageAttachment';
 import { isCompactionCanceledStderr, isInterruptSignalText } from '../../../utils/interrupt';
+import { extractXMLTag, parseClaudeTaskNotification } from '../normalization/claudeTaskNotification';
 import { extractToolResultContent } from '../sdk/toolResultContent';
 import type {
   AsyncSubagentResult,
   SDKNativeContentBlock,
   SDKNativeMessage,
 } from './sdkHistoryTypes';
+
+export { extractXMLTag } from '../normalization/claudeTaskNotification';
 
 function extractTextContent(content: string | SDKNativeContentBlock[] | undefined): string {
   if (!content) {
@@ -318,17 +321,6 @@ export function collectAsyncSubagentResults(
   return results;
 }
 
-export function extractXMLTag(content: string, tagName: string): string | null {
-  const regex = new RegExp(`<${tagName}>\\s*([\\s\\S]*?)\\s*</${tagName}>`, 'i');
-  const match = content.match(regex);
-  if (!match || !match[1]) {
-    return null;
-  }
-
-  const trimmed = match[1].trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 export function isCanonicalSDKUserMessage(record: SDKNativeMessage): boolean {
   const queuedPrompt = record.type === 'attachment'
     && record.attachment?.type === 'queued_command' && record.attachment.commandMode === 'prompt';
@@ -387,14 +379,7 @@ export function parseTaskNotification(sdkMsg: SDKNativeMessage): string | null {
       && attachment.commandMode === 'task-notification'
       ? attachment.prompt
       : undefined;
-  const text = extractTextContent(content);
-  if (!text?.trimStart().startsWith('<task-notification>')) return null;
-  if (!extractXMLTag(text, 'task-id')) return null;
-  const status = extractXMLTag(text, 'status');
-  if (!status) return null;
-  return extractXMLTag(text, 'result')
-    ?? extractXMLTag(text, 'summary')
-    ?? `Background task ${status}.`;
+  return parseClaudeTaskNotification(content)?.content ?? null;
 }
 
 export function mergeAssistantMessage(target: ChatMessage, source: ChatMessage): void {

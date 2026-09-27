@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-import { fireEvent, screen } from '@testing-library/dom';
+import { fireEvent, screen, within } from '@testing-library/dom';
 import fs from 'fs';
 import { axe } from 'jest-axe';
 import { tmpdir } from 'os';
@@ -7,6 +7,7 @@ import { join } from 'path';
 
 import { NOOP_TASK_RESULT_INTERPRETER } from '@/core/providers/NoopTaskResultInterpreter';
 import type { SubagentInfo } from '@/core/types';
+import { createAsyncSubagentBlock, createSubagentBlock, updateAsyncSubagentBlock, updateSubagentBlock } from '@/features/chat/rendering/SubagentRenderer';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ClaudeTaskResultInterpreter } from '@/providers/claude/runtime/ClaudeTaskResultInterpreter';
 
@@ -21,6 +22,15 @@ it('normalizes a completed synchronous answer containing not-ready prose', () =>
   const parent = document.createElement('div');
   document.body.append(parent);
   manager.handleTaskToolUse('sync', { run_in_background: false, description: 'Deployment check' }, parent);
+  manager.addSyncToolCall('sync', { id: 'read', name: 'Read', input: { file_path: 'note.md' }, status: 'running' });
+  manager.addSyncToolCall('sync', { id: 'read', name: 'Read', input: { limit: 10 }, status: 'running' });
+  manager.updateSyncToolResult('sync', 'read', {
+    ...manager.getSyncSubagent('sync')!.info.toolCalls[0], status: 'completed', result: 'The note.',
+  });
+  expect(manager.getSyncSubagent('sync')?.info.toolCalls).toEqual([
+    expect.objectContaining({ input: { file_path: 'note.md', limit: 10 }, status: 'completed', result: 'The note.' }),
+  ]);
+  expect(parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(1);
   const answer = 'Deployment is not ready.';
   const metadata = 'agentId: agent-sync\n<usage>total_tokens: 500</usage>';
 
@@ -88,4 +98,62 @@ it('renders and settles a managed task using provider-normalized mode, identity,
   fireEvent.click(screen.getByRole('button', { name: /Background task: Provider job - Completed/ }));
   expect(screen.getByText('Provider answer')).toBeDefined();
   expect(await axe(parent)).toHaveNoViolations();
+});
+
+
+it.each(['sync', 'async'] as const)('renders %s snapshots without changing their model or expansion state', async mode => {
+  const initial: SubagentInfo = {
+    id: 'snapshot', description: 'Snapshot task', mode, status: 'running', asyncStatus: 'running',
+    isExpanded: false, toolCalls: [{ id: 'read', name: 'Read', input: {}, status: 'running', isExpanded: false }],
+  };
+  Object.freeze(initial.toolCalls[0]);
+  Object.freeze(initial.toolCalls);
+  Object.freeze(initial);
+  const parent = document.body.createDiv();
+  const view = mode === 'sync' ? createSubagentBlock(parent, initial) : createAsyncSubagentBlock(parent, initial);
+  fireEvent.click(within(parent).getByRole('button', { name: /Snapshot task/ }));
+  fireEvent.click(within(parent).getByRole('button', { name: /^Read/ }));
+  const completed = Object.freeze({ ...initial, status: 'completed' as const, asyncStatus: 'completed' as const, result: 'Snapshot result' });
+  if ('statusTextEl' in view) updateAsyncSubagentBlock(view as ReturnType<typeof createAsyncSubagentBlock>, completed);
+  else updateSubagentBlock(view, completed);
+  expect(within(parent).getByText('Snapshot result')).toBeDefined();
+  expect(initial.status).toBe('running');
+  expect(initial.isExpanded).toBe(false);
+  expect(initial.toolCalls[0].isExpanded).toBe(false);
+  expect(completed.isExpanded).toBe(false);
+  expect(await axe(parent)).toHaveNoViolations();
+});
+
+it('preserves focus in a completed child result when a sibling tool updates', () => {
+  const manager = new SubagentManager(() => {}, new ClaudeTaskResultInterpreter());
+  const parent = document.body.createDiv();
+  manager.handleTaskToolUse('sync', { run_in_background: false, description: 'Search task' }, parent);
+  manager.addSyncToolCall('sync', { id: 'search', name: 'WebSearch', input: { query: 'Docs' }, status: 'completed',
+    result: 'Links: [{"title":"Docs","url":"https://example.com"}]' });
+  fireEvent.click(within(parent).getByRole('button', { name: /Subagent task: Search task/ }));
+  fireEvent.click(within(parent).getByRole('button', { name: /^WebSearch/ }));
+  const link = within(parent).getByRole('link', { name: 'Docs' });
+  link.focus();
+  manager.addSyncToolCall('sync', { id: 'read', name: 'Read', input: { file_path: 'note.md' }, status: 'running' });
+  expect(document.activeElement).toBe(link);
+  expect(within(parent).getByRole('link', { name: 'Docs' })).toBe(link);
+});
+
+it('preserves async prompt expansion and focus on repeated tool snapshots', () => {
+  const parent = document.body.createDiv();
+  const manager = new SubagentManager(() => {}, new ClaudeTaskResultInterpreter());
+  const input = {run_in_background: true, description: 'Research', prompt: 'Find details'};
+  try {
+    manager.handleTaskToolUse('async', input, parent);
+    fireEvent.click(within(parent).getByRole('button', {name: /Background task: Research/}));
+    const prompt = within(parent).getByRole('button', {name: /^Prompt/});
+    fireEvent.click(prompt); prompt.focus();
+    expect(prompt.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(prompt);
+    manager.handleTaskToolUse('async', input, parent);
+    const updated = within(parent).getByRole('button', {name: /^Prompt/});
+    expect(updated).toBe(prompt);
+    expect(document.activeElement).toBe(prompt);
+    expect(updated.getAttribute('aria-expanded')).toBe('true');
+  } finally { manager.clear(); }
 });

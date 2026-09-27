@@ -1,6 +1,7 @@
 import type { StreamChunk } from '../../../core/types';
 import type {
   ClaudeAsyncSubagentCompletionEvent,
+  ClaudeSubagentProgressEvent,
   ContextWindowEvent,
   SessionInitEvent,
   TransformEvent,
@@ -20,8 +21,15 @@ export function isAsyncSubagentCompletion(
   return event.type === 'async_subagent_completion';
 }
 
+export function isSubagentProgress(
+  event: TransformEvent,
+): event is ClaudeSubagentProgressEvent {
+  return event.type === 'subagent_progress';
+}
+
 export function isStreamChunk(event: TransformEvent): event is StreamChunk {
   return event.type !== 'session_init'
     && event.type !== 'context_window'
-    && event.type !== 'async_subagent_completion';
+    && event.type !== 'async_subagent_completion'
+    && event.type !== 'subagent_progress';
 }

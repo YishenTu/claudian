@@ -76,3 +76,15 @@ export interface SubagentInfo {
   startedAt?: number;
   completedAt?: number;
 }
+
+/** Display-only snapshot of a running subagent; newer snapshots replace older ones and none is persisted. */
+export interface SubagentProgress {
+  /** Tool call that spawned the subagent. */
+  toolCallId: string;
+  /** One-line description of what the subagent is doing now. */
+  summary?: string;
+  lastToolName?: string;
+  toolUses?: number;
+  totalTokens?: number;
+  durationMs?: number;
+}

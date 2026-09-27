@@ -3,6 +3,7 @@ import '@/providers';
 
 import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { screen, waitFor } from '@testing-library/dom';
+import { axe } from 'jest-axe';
 import { MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -98,6 +99,68 @@ it('settles an async subagent from a session notification after the requested tu
   });
   await waitFor(() => expect(screen.getByRole('button', { name: /Background research.*Completed/i })).toBeDefined());
   expect(screen.getByText('Background finding')).toBeDefined();
+});
+
+it('shows live progress on a foreground subagent card until its result arrives', async () => {
+  const harness = createHarness({ subagentAdapter, taskResultInterpreter });
+  const { started } = await startSideChat(harness);
+  const native = harness.backend.latest;
+  native.establishChild('side-session');
+  native.emitOutput({
+    type: 'tool_started', toolCallId: 'task-1', toolScope: { kind: 'main' }, name: 'Agent',
+    input: { description: 'Audit auth', prompt: 'Review auth', run_in_background: false },
+  });
+  await waitFor(() => expect(screen.getByRole('button', { name: /Subagent task: Audit auth/ })).toBeDefined());
+  native.emitSessionEvent({ type: 'subagent_progress', progress: { toolCallId: 'task-1', lastToolName: 'Grep', toolUses: 1 } });
+  await waitFor(() => expect(screen.getByText('Last tool: Grep')).toBeDefined());
+  expect(screen.getByText('1 tool use')).toBeDefined();
+  native.emitSessionEvent({
+    type: 'subagent_progress',
+    progress: { toolCallId: 'task-1', summary: 'Reading the auth module', toolUses: 3, totalTokens: 12_300, durationMs: 64_000 },
+  });
+  await waitFor(() => expect(screen.getByText('Reading the auth module')).toBeDefined());
+  expect(screen.queryByText('Last tool: Grep')).toBeNull();
+  expect(screen.getByText('3 tool uses · 12.3k tokens · 1m 4s')).toBeDefined();
+  const card = screen.getByRole('button', { name: /Subagent task: Audit auth/ }).closest('.claudian-subagent-list')!;
+  expect(await axe(card)).toHaveNoViolations();
+  native.emitSessionEvent({ type: 'subagent_progress', progress: { toolCallId: 'task-1', lastToolName: 'Read', toolUses: 4 } });
+  await waitFor(() => expect(screen.getByText('4 tool uses · 12.3k tokens · 1m 4s')).toBeDefined());
+  expect(screen.getByText('Reading the auth module')).toBeDefined();
+
+  native.emitOutput({ type: 'tool_completed', toolCallId: 'task-1', toolScope: { kind: 'main' }, content: 'Auth looks fine' });
+  native.complete();
+  await started;
+  expect(screen.queryByText('Reading the auth module')).toBeNull();
+  native.emitSessionEvent({ type: 'subagent_progress', progress: { toolCallId: 'task-1', summary: 'Late summary' } });
+  await Promise.resolve();
+  expect(screen.queryByText('Late summary')).toBeNull();
+});
+
+it('shows live progress on a background subagent card after the requested turn', async () => {
+  const harness = createHarness({ subagentAdapter, taskResultInterpreter });
+  const { started } = await startSideChat(harness);
+  const native = harness.backend.latest;
+  native.establishChild('side-session');
+  native.emitOutput({
+    type: 'tool_started', toolCallId: 'task-1', toolScope: { kind: 'main' }, name: 'Agent',
+    input: { description: 'Background research', prompt: 'Find details', run_in_background: true },
+  });
+  native.emitOutput({
+    type: 'tool_completed', toolCallId: 'task-1', toolScope: { kind: 'main' }, content: 'Launched',
+    toolUseResult: { isAsync: true, status: 'async_launched', agentId: 'agent-1' },
+  });
+  native.complete();
+  await started;
+  native.emitSessionEvent({
+    type: 'subagent_progress', progress: { toolCallId: 'task-1', summary: 'Searching release notes' },
+  });
+  await waitFor(() => expect(screen.getByText('Searching release notes')).toBeDefined());
+  native.emitSessionEvent({
+    type: 'async_subagent_completed', originatingTurnId: 'task-1', subagentId: 'agent-1',
+    providerSessionId: 'side-session', status: 'completed', result: 'Background finding',
+  });
+  await waitFor(() => expect(screen.getByRole('button', { name: /Background research.*Completed/i })).toBeDefined());
+  expect(screen.queryByText('Searching release notes')).toBeNull();
 });
 
 it('leaves the working state and drops queued input when background execution fails', async () => {
@@ -214,8 +277,12 @@ it('preserves all requested text positions across two notifications in one batch
   native.emitText('Last segment.');
   native.complete('last-checkpoint');
   await started;
-  const notifications = screen.getAllByRole('button', { name: 'Task notification' });
+  const notifications = screen.getAllByRole('button', { name: 'Task notification', hidden: true });
   const elements = [screen.getByText(/First segment\./), notifications[0], screen.getByText(/Middle segment\./), notifications[1], screen.getByText(/Last segment\./)];
+  const worked = screen.getByRole('button', { name: /^Worked/ });
+  const history = document.getElementById(worked.getAttribute('aria-controls')!)!;
+  for (const element of elements.slice(0, -1)) expect(history.contains(element)).toBe(true);
+  expect(elements.at(-1)!.closest('[hidden]')).toBeNull();
   for (let index = 1; index < elements.length; index++) {
     expect(elements[index - 1].compareDocumentPosition(elements[index]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }
