@@ -78,11 +78,14 @@
     "ws": "8.21.2"
   },
   "overrides": {
+    "@babel/core": "7.29.7",
     "@codemirror/state": "$@codemirror/state",
     "@codemirror/view": "$@codemirror/view",
-    "@babel/core": "7.29.7",
     "@hono/node-server": "2.0.11",
+    "@humanfs/node": "0.16.8",
+    "baseline-browser-mapping": "2.11.13",
     "body-parser": "2.3.0",
+    "browserslist": "4.28.8",
     "fast-uri": "3.1.6",
     "hono": "4.13.7",
     "ip-address": "10.3.1",
