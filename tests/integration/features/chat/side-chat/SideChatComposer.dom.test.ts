@@ -53,8 +53,8 @@ it('opens expanded with a joined border, then collapses to an idle chip over the
 
   const collapse = within(panel as HTMLElement).getByRole('button', { name: 'Collapse' });
   expect(collapse.textContent).toBe('');
-  expect(collapse.getAttribute('title')).toBe('Collapse');
-  expect(within(panel as HTMLElement).getByRole('button', { name: 'Discard' }).getAttribute('title')).toBe('Discard');
+  expect(collapse.hasAttribute('title')).toBe(false);
+  expect(within(panel as HTMLElement).getByRole('button', { name: 'Discard' }).hasAttribute('title')).toBe(false);
   expect(collapse.getAttribute('aria-expanded')).toBe('true');
   expect(collapse.getAttribute('aria-controls')).toBe(panel.id);
   fireEvent.click(collapse);

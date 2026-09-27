@@ -1121,7 +1121,6 @@ export class InputController {
       cls: 'claudian-queue-indicator-icon-action',
       attr: {
         'aria-label': label,
-        title: label,
         type: 'button',
       },
     });

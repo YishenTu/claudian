@@ -400,7 +400,7 @@ export class MessageRenderer {
         const header = wrapper.createEl('button', {
           cls: 'claudian-work-header',
           text: label,
-          attr: { type: 'button', 'aria-label': label, 'aria-expanded': 'false', 'aria-controls': historyId },
+          attr: { type: 'button', 'aria-expanded': 'false', 'aria-controls': historyId },
         });
         const history = wrapper.createDiv({ cls: 'claudian-work-history', attr: { id: historyId } });
         history.hidden = true;

@@ -64,7 +64,7 @@ export class SideChatPanel {
     this.#collapseEl = actionsEl.createEl('button', {
       attr: {
         'aria-controls': panelId, 'aria-expanded': 'true', type: 'button',
-        'aria-label': t('chat.sideChat.collapse'), title: t('chat.sideChat.collapse'),
+        'aria-label': t('chat.sideChat.collapse'),
       },
       cls: 'claudian-side-chat-icon-button',
     });
@@ -73,7 +73,7 @@ export class SideChatPanel {
 
     const discardEl = actionsEl.createEl('button', {
       attr: {
-        type: 'button', 'aria-label': t('chat.sideChat.discard'), title: t('chat.sideChat.discard'),
+        type: 'button', 'aria-label': t('chat.sideChat.discard'),
       },
       cls: 'claudian-side-chat-icon-button',
     });

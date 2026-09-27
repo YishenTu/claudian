@@ -200,10 +200,7 @@ export class ComposerContextTray {
       })
       : chipEl.createSpan({ cls: 'claudian-context-chip-main' });
 
-    if (item.title) {
-      contentEl.setAttribute('title', item.title);
-    }
-    contentEl.setAttribute('aria-label', item.ariaLabel ?? item.label);
+    contentEl.setAttribute('aria-label', item.ariaLabel ?? item.title ?? item.label);
     if (item.onActivate) {
       contentEl.addEventListener('click', item.onActivate);
     }

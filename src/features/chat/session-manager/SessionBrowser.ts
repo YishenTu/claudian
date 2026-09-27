@@ -530,10 +530,6 @@ export class SessionBrowser {
         'aria-label',
         `New chat for ${section.label ?? contentPath}`,
       );
-      newConversationButton.setAttribute(
-        'title',
-        `New chat for ${section.label ?? contentPath}`,
-      );
       const startConversation = (): void => {
         runConversationAction(
           () => startLinkedContentConversation(contentPath),

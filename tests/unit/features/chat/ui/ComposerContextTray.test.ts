@@ -97,7 +97,7 @@ describe('ComposerContextTray', () => {
 
     expect(mainButton?.tagName).toBe('BUTTON');
     expect(removeButton?.tagName).toBe('BUTTON');
-    expect(mainButton?.getAttribute('title')).toBe('notes/Architecture.md');
+    expect(mainButton?.getAttribute('aria-label')).toBe('notes/Architecture.md');
 
     mainButton?.click();
     removeButton?.click();

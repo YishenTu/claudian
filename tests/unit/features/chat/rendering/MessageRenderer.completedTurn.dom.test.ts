@@ -10,10 +10,12 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
+import { createThinkingBlock, finalizeThinkingBlock } from '@/features/chat/rendering/ThinkingBlockRenderer';
 
 HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
+HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 
 function setup(providerId = 'claude') {
   const messagesEl = document.body.createDiv();
@@ -54,6 +56,8 @@ it('collapses completed history above the answer and puts copy, fork, time below
   renderer.renderMessages(messages, () => 'Hello');
   await Promise.resolve();
   const header = within(messagesEl).getByRole('button', { name: 'Worked for 01:05' });
+  expect(header.hasAttribute('aria-label')).toBe(false);
+  expect(header.hasAttribute('title')).toBe(false);
   expect(header.getAttribute('aria-expanded')).toBe('false');
   const history = document.getElementById(header.getAttribute('aria-controls')!)!;
   expect(history.hidden).toBe(true);
@@ -63,6 +67,12 @@ it('collapses completed history above the answer and puts copy, fork, time below
   fireEvent.click(header);
   expect(history.hidden).toBe(false);
   expect(header.getAttribute('aria-expanded')).toBe('true');
+  const thinking = within(history).getByRole('button', { name: 'Thought' });
+  expect(thinking.hasAttribute('aria-label')).toBe(false);
+  expect(thinking.hasAttribute('title')).toBe(false);
+  fireEvent.keyDown(thinking, { key: 'Enter' });
+  expect(thinking.getAttribute('aria-expanded')).toBe('true');
+  expect((await axe(history)).violations).toEqual([]);
   fireEvent.click(header);
   expect(history.hidden).toBe(true);
 
@@ -83,6 +93,20 @@ it('collapses completed history above the answer and puts copy, fork, time below
     .toBe(user.querySelector('.claudian-message-timestamp'));
   expect((await axe(answer)).violations).toEqual([]);
   renderer.dispose();
+});
+
+it('keeps live and finalized thinking accessible without hover tooltip attributes', async () => {
+  const host = document.body.createDiv();
+  const state = createThinkingBlock(host);
+  const header = within(host).getByRole('button', { name: 'Thinking 0s...' });
+  expect(header.hasAttribute('aria-label')).toBe(false);
+  expect(header.hasAttribute('title')).toBe(false);
+  fireEvent.keyDown(header, { key: ' ' });
+  expect(header.getAttribute('aria-expanded')).toBe('true');
+  finalizeThinkingBlock(state);
+  expect(within(host).getByRole('button', { name: /^Thought for \d+s$/ })).toBe(header);
+  expect(header.getAttribute('aria-expanded')).toBe('false');
+  expect((await axe(host)).violations).toEqual([]);
 });
 
 it('keeps live output in place until completion, then preserves the same content elements', async () => {

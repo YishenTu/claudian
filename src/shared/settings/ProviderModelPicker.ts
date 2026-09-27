@@ -199,7 +199,6 @@ export function renderProviderModelPicker(
         'aria-label',
         `Reorder ${defaultLabel}; drag or use the Up and Down Arrow keys`,
       );
-      dragHandle.setAttribute('title', 'Drag or use arrow keys to reorder');
       dragHandle.draggable = state.selectedIds.length > 1;
       dragHandle.addEventListener('dragstart', (event) => {
         draggedModelId = modelId;
@@ -271,7 +270,7 @@ export function renderProviderModelPicker(
       aliasInput.placeholder = defaultLabel;
       aliasInput.value = state.aliases[model.id] ?? '';
       aliasInput.setAttribute('aria-label', `Alias for ${defaultLabel}`);
-      aliasInput.title = 'Custom label shown in the model selector. Leave empty to use the default.';
+      aliasInput.setAttribute('aria-description', 'Custom label shown in the model selector. Leave empty to use the default.');
       aliasInput.addEventListener('blur', () => {
         void persistAlias(model.id, aliasInput.value);
       });

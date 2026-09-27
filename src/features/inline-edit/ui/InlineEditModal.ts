@@ -649,7 +649,7 @@ export class InlineEditSession {
       attr: {
         type: 'button',
         'aria-label': `${label} inline edit`,
-        title: variant === 'accept' ? 'Accept (enter)' : 'Reject (esc)',
+        'aria-keyshortcuts': variant === 'accept' ? 'Enter' : 'Escape',
       },
     });
     button.addEventListener('click', (event: MouseEvent) => {

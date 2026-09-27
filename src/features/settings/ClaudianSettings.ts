@@ -805,7 +805,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         value: currentAlias,
       });
       aliasInputEl.setAttribute('aria-label', `Alias for ${modelId}`);
-      aliasInputEl.title = 'Custom label shown in the model selector. Leave empty to use the default.';
+      aliasInputEl.setAttribute('aria-description', 'Custom label shown in the model selector. Leave empty to use the default.');
 
       const inputEl = inputWrapper.createEl('input', {
         type: 'text',

@@ -1097,7 +1097,6 @@ export class ClaudianView extends ItemView {
     const newControl = container.createDiv({ cls: 'claudian-session-new-control' });
     newControl.setAttribute('role', 'button');
     newControl.setAttribute('tabindex', '0');
-    newControl.setAttribute('aria-label', 'New');
     const newIcon = newControl.createSpan({ cls: 'claudian-session-new-icon' });
     setIcon(newIcon, 'square-pen');
     newControl.createSpan({ cls: 'claudian-session-new-label', text: 'New' });
@@ -1169,7 +1168,6 @@ export class ClaudianView extends ItemView {
       const searchControl = container.createDiv({ cls: 'claudian-session-search-control' });
       searchControl.setAttribute('role', 'button');
       searchControl.setAttribute('tabindex', '0');
-      searchControl.setAttribute('aria-label', 'Search');
       const searchIcon = searchControl.createSpan({ cls: 'claudian-session-nav-icon' });
       setIcon(searchIcon, 'search');
       searchControl.createSpan({ cls: 'claudian-session-nav-label', text: 'Search' });
@@ -1187,7 +1185,6 @@ export class ClaudianView extends ItemView {
     archiveControl.setAttribute('role', 'button');
     archiveControl.setAttribute('tabindex', '0');
     const archiveLabel = this.isArchiveSessionView ? 'Sessions' : 'Archive';
-    archiveControl.setAttribute('aria-label', archiveLabel);
     const archiveIcon = archiveControl.createSpan({ cls: 'claudian-session-nav-icon' });
     setIcon(archiveIcon, this.isArchiveSessionView ? 'arrow-left' : 'archive');
     archiveControl.createSpan({

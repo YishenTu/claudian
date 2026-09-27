@@ -36,6 +36,7 @@ it.each(['mermaid', 'Mermaid', 'MERMAID'])('renders %s directly and retains acce
   expect(render).toHaveBeenCalledWith(expect.any(String), source, expect.any(HTMLElement));
   const toggle = within(host).getByRole('button', { name: 'Show diagram source' });
   expect(toggle.getAttribute('type')).toBe('button');
+  expect(toggle.hasAttribute('title')).toBe(false);
   expect(within(host).queryByRole('button', { name: 'Copy' })).toBeNull();
   toggle.focus();
   expect(document.activeElement).toBe(toggle);

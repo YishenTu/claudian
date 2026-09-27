@@ -617,7 +617,7 @@ export class ContextUsageMeter {
     if (usage.percentage > 80) {
       tooltip += ' (Approaching limit, run `/compact` to continue)';
     }
-    this.container.setAttribute('data-tooltip', tooltip);
+    this.container.setAttribute('aria-label', `Context usage: ${tooltip}`);
     this.container.setAttribute('aria-valuenow', String(usage.percentage));
     this.container.setAttribute(
       'aria-valuetext',
