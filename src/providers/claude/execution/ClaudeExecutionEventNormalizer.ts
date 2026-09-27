@@ -5,7 +5,6 @@ import type {
   ProviderCitationsEvent,
   ProviderContextCompactedEvent,
   ProviderNoticeEvent,
-  ProviderTaskNotificationEvent,
   ProviderTextDeltaEvent,
   ProviderThinkingDeltaEvent,
   ProviderToolCompletedEvent,
@@ -42,7 +41,6 @@ type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
 export type ClaudeNormalizedOutputEvent = WithoutScope<
   | ProviderUserMessageStartedEvent
   | ProviderAssistantMessageStartedEvent
-  | ProviderTaskNotificationEvent
   | ProviderTextDeltaEvent
   | ProviderThinkingDeltaEvent
   | ProviderCitationsEvent
@@ -111,8 +109,6 @@ interface NormalizationState {
 }
 
 export class ClaudeExecutionEventNormalizer {
-  // Native tasks can outlive a requested turn and finish on either output channel.
-  private readonly taskBackgroundModes = new Map<string, boolean>();
   private readonly states: Record<
     ClaudeExecutionEventChannel,
     NormalizationState
@@ -129,18 +125,6 @@ export class ClaudeExecutionEventNormalizer {
       readonly reportedContextWindow?: number;
     } = {},
   ): ClaudeNormalizedExecutionEvent[] {
-    if (message.type === 'system') {
-      if (message.subtype === 'task_started' && message.is_backgrounded !== undefined) {
-        this.taskBackgroundModes.set(message.task_id, message.is_backgrounded);
-      } else if (message.subtype === 'task_updated' && message.patch.is_backgrounded !== undefined) {
-        this.taskBackgroundModes.set(message.task_id, message.patch.is_backgrounded);
-      }
-    }
-    const foregroundCompletion = message.type === 'system' && message.subtype === 'task_notification'
-      && this.taskBackgroundModes.get(message.task_id) === false;
-    if (message.type === 'system' && message.subtype === 'task_notification') {
-      this.taskBackgroundModes.delete(message.task_id);
-    }
     const state = this.states[channel];
     const normalized: ClaudeNormalizedExecutionEvent[] = [];
     for (const event of transformSDKMessage(message, {
@@ -160,13 +144,6 @@ export class ClaudeExecutionEventNormalizer {
           type: 'async_subagent_completion',
           event,
         });
-        if (message.type === 'system' && message.subtype === 'task_notification'
-          && !message.skip_transcript && !foregroundCompletion && event.result) {
-          normalized.push({
-            type: 'output',
-            event: { type: 'task_notification', content: event.result },
-          });
-        }
         continue;
       }
       if (isSubagentProgress(event)) {
@@ -445,7 +422,7 @@ function toOutputEvent(
         type: 'context_compacted',
       };
     case 'task_notification':
-      return { type: 'task_notification', content: chunk.content };
+      return null;
     case 'notice':
       return {
         type: 'notice',

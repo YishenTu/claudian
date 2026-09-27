@@ -2013,6 +2013,7 @@ describe('ClaudeExecutionBackend', () => {
         ...(phase === 'background' ? [{ type: 'assistant', message: { content: [{ type: 'text', text: 'Automatic work' }] } }] : []),
         { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task-1',
           status: 'completed', summary: 'Task finished' },
+        consumedTaskNotification(),
         pause.promise,
         { type: 'result', subtype: 'success' },
       ]]);
@@ -2111,6 +2112,7 @@ describe('ClaudeExecutionBackend', () => {
         ] } },
         { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task-1',
           status: 'completed', output_file: '/tmp/task-output', summary: 'Task finished' },
+        consumedTaskNotification(),
         { type: 'user', message: { content: [
           { type: 'tool_result', tool_use_id: 'read-background', content: 'First output' },
           { type: 'tool_result', tool_use_id: 'read-second', content: 'Second output' },
@@ -3504,6 +3506,7 @@ it.each([false, true])('anchors session notifications after emitted events with 
     { type: 'assistant', uuid: 'before-checkpoint', message: { id: 'before', content: [{ type: 'text', text: 'Before notification' }] } },
     ...(completed ? [{ type: 'result', subtype: 'success' }] : []),
     { type: 'system', subtype: 'task_notification', task_id: 'task', session_id: 'session-1', status: 'completed', summary: 'Task finished', uuid: 'notification' },
+    consumedTaskNotification(),
     ...(!completed ? [{ type: 'result', subtype: 'success' }] : []),
     keepOpen.promise,
   ]]);
@@ -3534,6 +3537,7 @@ it.each([false, true])('anchors notifications after automatic events with native
     { type: 'assistant', uuid: 'automatic-checkpoint', message: { id: 'automatic', content: [{ type: 'text', text: 'Automatic answer' }] } },
     ...(completed ? [{ type: 'result', subtype: 'success' }] : []),
     { type: 'system', subtype: 'task_notification', task_id: 'task', session_id: 'session-1', status: 'completed', summary: 'Task finished', uuid: 'notification' },
+    consumedTaskNotification(),
     ...(!completed ? [{ type: 'result', subtype: 'success' }] : []),
     keepOpen.promise,
   ]]);
@@ -3554,3 +3558,78 @@ it.each([false, true])('anchors notifications after automatic events with native
     jest.restoreAllMocks();
   }
 });
+
+it.each([false, true])('places a consumed task notification at its native boundary (mid-turn: %s)', async midTurn => {
+  const historyDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-notification-order-'));
+  const completed = createDeferred<unknown>();
+  const keepOpen = createDeferred<unknown>();
+  const notification = '<task-notification><task-id>task</task-id><status>completed</status><summary>Task finished</summary></task-notification>';
+  const answer = { type: 'assistant', uuid: 'answer', message: { id: 'answer', content: [{ type: 'text', text: 'Requested answer' }] } };
+  const consumed = { type: 'user', uuid: 'consumed', parent_tool_use_id: null, isSynthetic: true,
+    ...(midTurn ? { isReplay: true } : {}), message: { role: 'user', content: notification } };
+  const query = createScriptedPersistentQuery([[
+    { type: 'system', subtype: 'init', session_id: 'session-1' },
+    { type: 'system', subtype: 'task_notification', session_id: 'session-1', task_id: 'task', status: 'completed', summary: 'Task finished' },
+    completed.promise,
+    ...(midTurn ? [consumed, answer] : [answer]),
+    { type: 'result', subtype: 'success' },
+    ...(!midTurn ? [consumed, { type: 'assistant', message: { id: 'followup', content: [{ type: 'text', text: 'Automatic follow-up' }] } },
+      { type: 'result', subtype: 'success' }] : []),
+    keepOpen.promise,
+  ]]);
+  jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
+    .mockResolvedValueOnce((() => query) as never);
+  const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+  const sessionEvents: ProviderSessionEvent[] = [];
+  const order: string[] = [];
+  session.onEvent(event => {
+    sessionEvents.push(event);
+    if (event.type === 'task_notification') order.push(event.content);
+    if (event.type === 'text_delta') order.push(event.text);
+  });
+  const requested = (async () => {
+    for await (const event of session.execute(createRequest()).events) {
+      if (event.type === 'text_delta') order.push(event.text);
+    }
+  })();
+  try {
+    await waitFor(() => sessionEvents.some(event => event.type === 'async_subagent_completed'));
+    expect(sessionEvents.filter(event => event.type === 'task_notification')).toEqual([]);
+    completed.resolve(null);
+    await requested;
+    await waitFor(() => sessionEvents.some(event => event.type === 'task_notification'));
+    if (!midTurn) await waitFor(() => sessionEvents.some(event => event.type === 'background_turn_completed'));
+    expect(order).toEqual(midTurn ? ['Task finished', 'Requested answer']
+      : ['Requested answer', 'Task finished', 'Automatic follow-up']);
+    // Native JSONL records consumption as a queued attachment mid-turn, or a
+    // user message starting the automatic turn. It never records the SDK edge.
+    const historyNotification = midTurn
+      ? { type: 'attachment', attachment: { type: 'queued_command', commandMode: 'task-notification', prompt: notification } }
+      : { type: 'user', message: { content: notification } };
+    const transcript = [
+      { type: 'user', message: { content: 'Hello' } },
+      ...(midTurn ? [historyNotification, answer] : [answer, historyNotification,
+        { type: 'assistant', message: { content: [{ type: 'text', text: 'Automatic follow-up' }] } }]),
+    ].map((entry, index) => ({ ...entry, uuid: `entry-${index}`, parentUuid: index ? `entry-${index - 1}` : null,
+      timestamp: testTime({ seconds: index }) }));
+    const historyPath = path.join(historyDirectory, 'session.jsonl');
+    await fs.writeFile(historyPath, transcript.map(entry => JSON.stringify(entry)).join('\n'));
+    const replay = await historyStore.loadSDKSessionMessages('/vault', 'session-1', undefined, historyPath);
+    expect(replay.error).toBeUndefined();
+    const replayOrder = replay.messages.filter(message => message.role === 'assistant')
+      .flatMap(message => message.contentBlocks ?? [])
+      .flatMap(block => block.type === 'text' || block.type === 'task_notification' ? [block.content] : []);
+    expect(order).toEqual(replayOrder);
+
+    expect(sessionEvents.filter(event => event.type === 'task_notification')).toHaveLength(1);
+  } finally {
+    completed.resolve(null); keepOpen.resolve(null);
+    await requested; await session.dispose(); jest.restoreAllMocks();
+    await fs.rm(historyDirectory, { recursive: true, force: true });
+  }
+});
+
+function consumedTaskNotification() {
+  return { type: 'user', uuid: 'notification-consumed', parent_tool_use_id: null, isReplay: true, isSynthetic: true,
+    message: { role: 'user', content: '<task-notification><task-id>task</task-id><status>completed</status><summary>Task finished</summary></task-notification>' } };
+}

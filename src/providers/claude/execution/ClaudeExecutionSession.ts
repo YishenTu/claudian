@@ -33,6 +33,7 @@ import {
   isSessionMissingError,
 } from '../../../utils/session';
 import { loadClaudeTurnStats } from '../history/ClaudeTurnStats';
+import { parseClaudeTaskNotification } from '../normalization/claudeTaskNotification';
 import { assertClaudeModelAvailable } from '../runtime/ClaudeModelAvailability';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
 import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
@@ -526,6 +527,20 @@ ClaudeExecutionStrategySink {
       && this.authoritativeContextWindow?.model === intendedModel
       ? this.authoritativeContextWindow.contextWindow
       : undefined;
+    // Completion settles the card; the native user echo marks where the model
+    // actually consumed the notification (including folded queued commands).
+    if (message.type === 'user' && message.parent_tool_use_id == null
+      && (!message.uuid || !active?.inputs?.ids.includes(message.uuid))) {
+      const notification = parseClaudeTaskNotification(message.message.content);
+      if (notification !== null) {
+        this.#emitSession({
+          type: 'task_notification', content: notification,
+          afterRequestedEvent: this.lastRequestedEventScope,
+          afterBackgroundEvent: this.lastBackgroundEventScope,
+        });
+        return;
+      }
+    }
     const replayedInputId = getReplayedUserMessageId(message);
     if (replayedInputId !== undefined) {
       // Replays acknowledge input only; they carry no output of their own.
@@ -596,15 +611,6 @@ ClaudeExecutionStrategySink {
         continue;
       }
       if (normalized.type === 'output') {
-        // Task completion is independent of the currently running model response.
-        if (normalized.event.type === 'task_notification') {
-          this.#emitSession({
-            ...normalized.event,
-            afterRequestedEvent: this.lastRequestedEventScope,
-            afterBackgroundEvent: this.lastBackgroundEventScope,
-          });
-          continue;
-        }
         const target = this.#getOutputTarget(channel);
         if (target) {
           this.#emitTurnOutput(target, normalized.event);
