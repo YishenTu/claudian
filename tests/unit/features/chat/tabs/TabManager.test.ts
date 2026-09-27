@@ -141,9 +141,6 @@ const commandCatalog = {
   listDropdownEntries: jest.fn().mockResolvedValue([]),
   setCommandSnapshot: jest.fn(),
 };
-const warmupPolicy = {
-  resolveMode: jest.fn().mockReturnValue('none'),
-};
 
 jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
   ProviderWorkspaceRegistry: {
@@ -151,7 +148,6 @@ jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
     getCommandCatalog: jest.fn().mockImplementation(() => commandCatalog),
     getIfInitialized: jest.fn().mockReturnValue({}),
     getCommandLoader: jest.fn().mockImplementation(() => commandLoader),
-    getTabWarmupPolicy: jest.fn().mockImplementation(() => warmupPolicy),
   },
 }));
 
@@ -221,7 +217,7 @@ function createManager(plugin = createPlugin(), callbacks: Record<string, unknow
 
 function expectTabMetadataReleased(manager: TabManager, tabId: string): void {
   const internals = manager as any;
-  expect(internals.providerRuntimeCommandWarmups.has(tabId)).toBe(false);
+  expect(internals.providerRuntimeCommandLoads.has(tabId)).toBe(false);
   expect(internals.providerRuntimeCommandCache.has(tabId)).toBe(false);
   expect(internals.providerCommandDiscoveryStores.has(tabId)).toBe(false);
   expect(internals.tabCommandContextRevisions.has(tabId)).toBe(false);
@@ -254,7 +250,6 @@ describe('TabManager provider execution orchestration', () => {
       providerId: 'claude',
       supportsProviderCommands: true,
     });
-    warmupPolicy.resolveMode.mockReturnValue('none');
     commandLoader.loadCommands.mockResolvedValue({
       status: 'ready',
       items: [{ description: 'Review changes', name: 'review' }],
@@ -277,7 +272,7 @@ describe('TabManager provider execution orchestration', () => {
     const { manager } = createManager(createPlugin());
     if (phase === 'command lookup') await manager.createTab();
     boundary.register('claude', {
-      initialize: async () => ({ commandCatalog, commandLoader: commandsA, tabWarmupPolicy: warmupPolicy }),
+      initialize: async () => ({ commandCatalog, commandLoader: commandsA }),
     });
     await boundary.ensureInitialized(hostA, 'claude', 'host-a');
     jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(id => boundary.getIfInitialized(id));
@@ -1915,7 +1910,7 @@ describe('TabManager provider execution orchestration', () => {
     expect(await manager.getProviderCommandDiscovery(first!.id)).toEqual({ status: 'empty' });
   });
 
-  it('runs command discovery without a runtime or provider session', async () => {
+  it('runs on-demand command discovery without a runtime or provider session', async () => {
     const { manager } = createManager();
     await manager.createTab();
 
@@ -1924,10 +1919,28 @@ describe('TabManager provider execution orchestration', () => {
     ]);
 
     expect(commandLoader.loadCommands).toHaveBeenCalledWith(expect.objectContaining({
-      allowIsolatedMetadataCreation: false,
+      allowIsolatedMetadataCreation: true,
       conversation: null,
     }));
     expect(commandLoader.loadCommands.mock.calls[0][0]).not.toHaveProperty('runtime');
+  });
+
+  it('does not start isolated command metadata for a background tab', async () => {
+    const conversation = { id: 'background-conversation', providerId: 'claude' };
+    const { manager } = createManager(createPlugin({
+      getCachedConversation: jest.fn().mockReturnValue(conversation),
+      getConversationSync: jest.fn().mockReturnValue(conversation),
+    }));
+    await manager.createTab();
+    const background = await manager.createTab('background-conversation', 'background', { activate: false });
+    expect(background!.conversationId).toBe('background-conversation');
+
+    await manager.getSdkCommands(background!.id);
+
+    expect(commandLoader.loadCommands).toHaveBeenCalledTimes(1);
+    expect(commandLoader.loadCommands).toHaveBeenCalledWith(expect.objectContaining({
+      allowIsolatedMetadataCreation: false,
+    }));
   });
 
   it('lets provider-owned command discovery outlive the shared deadline', async () => {
@@ -2074,18 +2087,6 @@ describe('TabManager provider execution orchestration', () => {
       { description: 'Fresh command', name: 'fresh' },
     ]);
     await executionLifecycleRegistry.dispose();
-  });
-
-  it('does not warm tab execution during metadata warmup', async () => {
-    const { manager } = createManager();
-    const tab = await manager.createTab();
-    warmupPolicy.resolveMode.mockReturnValue('execution');
-
-    manager.primeProviderExecution();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(tab!.executionCoordinator.prepare).not.toHaveBeenCalled();
   });
 
   it.each(['checkpoint', 'full-session'] as const)('preserves linked content and provider state for a %s fork', async (forkMode) => {

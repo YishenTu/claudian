@@ -94,7 +94,7 @@ describe('ClaudianView model refresh routing', () => {
     jest.restoreAllMocks();
   });
 
-  it('refreshes matching bound tabs and all blank tabs without priming runtimes', () => {
+  it('refreshes model UI without starting provider command discovery', () => {
     jest.spyOn(ProviderSettingsCoordinator, 'getProviderSettingsSnapshot')
       .mockImplementation((_settings, providerId) => ({
         customContextLimits: {},
@@ -117,7 +117,6 @@ describe('ClaudianView model refresh routing', () => {
     const codexTab = createModelRefreshTab('codex');
     const grokTab = createModelRefreshTab('grok');
     const blankGrokTab = createBlankModelRefreshTab('grok');
-    const primeProviderExecution = jest.fn();
     const view = Object.create(ClaudianView.prototype) as any;
     attachSessionBrowser(view);
     view.plugin = {
@@ -131,7 +130,6 @@ describe('ClaudianView model refresh routing', () => {
       getTabIdentities() { return this.getAllTabs(); },
       getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([codexTab, grokTab, blankGrokTab]),
-      primeProviderExecution,
       reconcileProviderAvailability: jest.fn(),
     };
 
@@ -144,7 +142,12 @@ describe('ClaudianView model refresh routing', () => {
     expect(blankGrokTab.ui.modelSelector.updateDisplay).toHaveBeenCalled();
     expect(blankGrokTab.ui.modelSelector.renderOptions).toHaveBeenCalled();
     expect(view.tabManager.reconcileProviderAvailability).toHaveBeenCalledTimes(1);
-    expect(primeProviderExecution).not.toHaveBeenCalled();
+
+    // A global refresh re-renders every tab; command discovery waits for the picker.
+    view.refreshModelSelector();
+
+    expect(grokTab.ui.modelSelector.updateDisplay).toHaveBeenCalledTimes(1);
+    expect(view.tabManager.reconcileProviderAvailability).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -38,7 +38,6 @@ export interface ChatTabManagerHost {
   isTabWorking(tabId: TabId): boolean;
   switchToTab(tabId: TabId): Promise<void>;
   closeTab(tabId: TabId, force?: boolean): Promise<boolean>;
-  primeProviderExecution(providerIds?: ProviderId | ProviderId[]): void;
   invalidateProviderResources(providerIds: ProviderId | ProviderId[], generation: number): void;
 }
 

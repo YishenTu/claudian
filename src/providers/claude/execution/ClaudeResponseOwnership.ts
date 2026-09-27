@@ -32,9 +32,9 @@ export class ClaudeResponseOwnership {
     return this.tools.get(toolId)?.channel;
   }
 
-  resolve(message: SDKMessage, requested: boolean, inputId?: string): ClaudeExecutionEventChannel {
+  resolve(message: SDKMessage, requested: boolean, inputIds?: readonly string[]): ClaudeExecutionEventChannel {
     const fallback = this.current(requested);
-    if (message.type === 'result' && getClaudeInputMatch(message, inputId) === false) return 'background';
+    if (message.type === 'result' && getClaudeInputMatch(message, inputIds) === false) return 'background';
     if (message.type !== 'assistant' && message.type !== 'stream_event' && message.type !== 'user') {
       if ('tool_use_id' in message && typeof message.tool_use_id === 'string') {
         return this.toolChannel(message.tool_use_id) ?? fallback;
@@ -47,7 +47,7 @@ export class ClaudeResponseOwnership {
       const existing = message.type === 'assistant'
         ? this.messages.get(message.message.id)
         : message.event.type === 'message_start' ? undefined : this.streams.get('main');
-      const inputMatch = getClaudeInputMatch(message, inputId);
+      const inputMatch = getClaudeInputMatch(message, inputIds);
       if (inputMatch !== undefined) this.echoedChannel = inputMatch && requested ? 'requested' : 'background';
       // A consumption echo can arrive inside an already-started message. Keep
       // that message intact; the echo governs subsequent uncorrelated output.
@@ -105,8 +105,8 @@ export class ClaudeResponseOwnership {
 }
 
 /** Undefined preserves compatibility with producers that omit consumption echoes. */
-export function getClaudeInputMatch(message: SDKMessage, inputId?: string): boolean | undefined {
-  if (!inputId || (message.type !== 'assistant' && message.type !== 'stream_event' && message.type !== 'result')) {
+export function getClaudeInputMatch(message: SDKMessage, inputIds?: readonly string[]): boolean | undefined {
+  if (!inputIds?.length || (message.type !== 'assistant' && message.type !== 'stream_event' && message.type !== 'result')) {
     return undefined;
   }
   if (!message.user_message_uuid && !message.user_message_uuids?.length) {
@@ -115,5 +115,5 @@ export function getClaudeInputMatch(message: SDKMessage, inputId?: string): bool
     if (message.type === 'result' && 'queued_turn_count' in message && (message.queued_turn_count ?? 0) > 0) return false;
     return undefined;
   }
-  return message.user_message_uuid === inputId || message.user_message_uuids?.includes(inputId) === true;
+  return inputIds.some(id => message.user_message_uuid === id || message.user_message_uuids?.includes(id) === true);
 }

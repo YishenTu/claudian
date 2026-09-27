@@ -2,7 +2,6 @@ import type { ProviderCommandCatalog } from '../../../core/providers/commands/Pr
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
-  ProviderTabWarmupPolicy,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
@@ -19,12 +18,6 @@ export interface OpencodeWorkspaceServices extends ProviderWorkspaceServices {
   metadataService: OpencodeMetadataService;
   serverService: OpencodeServerService;
 }
-
-const opencodeTabWarmupPolicy: ProviderTabWarmupPolicy = {
-  resolveMode() {
-    return 'commands';
-  },
-};
 
 export async function createOpencodeWorkspaceServices(
   plugin: ProviderHost,
@@ -48,7 +41,6 @@ export async function createOpencodeWorkspaceServices(
     serverService,
     commandLoader: new OpencodeCommandLoader(metadataService),
     settingsTabRenderer: createOpencodeSettingsTabRenderer({ cliResolver, metadataService, modelCatalog }),
-    tabWarmupPolicy: opencodeTabWarmupPolicy,
     dispose: async () => {
       unregister();
       unregisterModels();

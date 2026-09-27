@@ -2,7 +2,6 @@ import type { ProviderCommandCatalog } from '../../../core/providers/commands/Pr
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import type {
-  ProviderTabWarmupPolicy,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
@@ -25,12 +24,6 @@ export interface GrokWorkspaceServices extends ProviderWorkspaceServices {
 export interface GrokWorkspaceServicesOptions {
   readonly commandMetadataProbe?: GrokCommandMetadataProbe;
 }
-
-const grokTabWarmupPolicy: ProviderTabWarmupPolicy = {
-  resolveMode() {
-    return 'commands';
-  },
-};
 
 export async function createGrokWorkspaceServices(
   plugin: ProviderHost,
@@ -75,7 +68,6 @@ export async function createGrokWorkspaceServices(
     modelCatalogCoordinator,
     commandLoader: new GrokCommandLoader(commandMetadataProbe),
     settingsTabRenderer: grokSettingsTabRenderer,
-    tabWarmupPolicy: grokTabWarmupPolicy,
     modelCatalog,
     async dispose() {
       unregisterTransitionHook();

@@ -87,6 +87,11 @@ export interface ClaudeEncodedExecutionRequest {
   readonly allowedTools: ReadonlySet<string> | null;
 }
 
+export interface ClaudeEncodedSteer {
+  readonly prompt: string;
+  readonly images: ImageAttachment[];
+}
+
 export interface ClaudeExecutionRequestEncoderDeps {
   readonly host: ProviderHost;
 }
@@ -180,6 +185,8 @@ export class ClaudeExecutionRequestEncoder {
       // Auto mode stays available so safe-mode switches remain live setters.
       extraArgs: {
         'enable-auto-mode': null,
+        // Replays acknowledge when a streamed send, including a steer, enters a native turn.
+        'replay-user-messages': null,
         ...(claudeSettings.enableChrome ? { chrome: null } : {}),
       },
       includePartialMessages: true,
@@ -208,9 +215,7 @@ export class ClaudeExecutionRequestEncoder {
 
     return {
       prompt,
-      images: request.input
-        .filter((block) => block.type === 'image')
-        .map((block) => ({ ...block.image })),
+      images: encodeImages(request),
       options,
       model,
       effort,
@@ -226,6 +231,14 @@ export class ClaudeExecutionRequestEncoder {
         persistSession: options.persistSession,
       }),
       allowedTools: policy.allowedTools,
+    };
+  }
+
+  /** A steer joins the live turn, so it carries only its own input and context. */
+  encodeSteer(request: ProviderExecutionRequest): ClaudeEncodedSteer {
+    return {
+      prompt: this.#encodePrompt(request, false),
+      images: encodeImages(request),
     };
   }
 
@@ -288,6 +301,12 @@ export class ClaudeExecutionRequestEncoder {
       [...history],
     );
   }
+}
+
+function encodeImages(request: ProviderExecutionRequest): ImageAttachment[] {
+  return request.input
+    .filter((block) => block.type === 'image')
+    .map((block) => ({ ...block.image }));
 }
 
 function resolveToolPolicy(request: ProviderExecutionRequest): {

@@ -659,6 +659,9 @@ export class ChatExecutionCoordinator {
     let nativeUserMessageId: string | undefined;
     let nativeAssistantMessageId: string | undefined;
     let nativeCheckpointId: string | undefined;
+    let sawSubmittedUserMessage = false;
+    // Messages after a steer boundary belong to the steered exchange, not this submission's pair.
+    let submittedMessages = active.submission.messages;
     let terminalSinkFailure: { readonly error: unknown } | undefined;
     let terminal:
       | Extract<
@@ -683,17 +686,22 @@ export class ChatExecutionCoordinator {
         accepted = true;
         attachSubmittedContent(active.submission);
         nativeUserMessageId = event.nativeUserMessageId ?? nativeUserMessageId;
-        attachUserMessageId(active.submission.messages, nativeUserMessageId);
+        attachUserMessageId(submittedMessages, nativeUserMessageId);
         await this.deps.persistence.recordConversationActivity(
           active.binding.conversation.conversationId, active.submission.timestamp,
         );
       } else if (event.type === 'user_message_started' && accepted) {
-        nativeUserMessageId = event.nativeUserMessageId ?? nativeUserMessageId;
-        attachUserMessageId(active.submission.messages, nativeUserMessageId);
+        if (sawSubmittedUserMessage) {
+          submittedMessages = undefined;
+        } else {
+          sawSubmittedUserMessage = true;
+          nativeUserMessageId = event.nativeUserMessageId ?? nativeUserMessageId;
+          attachUserMessageId(submittedMessages, nativeUserMessageId);
+        }
       } else if (event.type === 'assistant_message_started') {
         nativeAssistantMessageId =
           event.nativeAssistantId ?? nativeAssistantMessageId;
-        attachAssistantMessageId(active.submission.messages, nativeAssistantMessageId);
+        attachAssistantMessageId(submittedMessages, nativeAssistantMessageId);
       } else if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
         await this.#persistSnapshot(active.binding, event.snapshot);
       } else if (event.type === 'turn_completed') {
@@ -703,7 +711,7 @@ export class ChatExecutionCoordinator {
         nativeCheckpointId =
           event.nativeCheckpointId ?? nativeCheckpointId;
         attachAssistantMessageId(
-          active.submission.messages,
+          submittedMessages,
           nativeAssistantMessageId ?? nativeCheckpointId,
         );
       } else if (event.type === 'cancelled' || event.type === 'execution_error') {

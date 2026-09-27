@@ -23,6 +23,7 @@ import {
   type ProviderSessionSnapshot,
   type ProviderSessionStatus,
   type RewindableExecutionSession,
+  type SteerableExecutionSession,
 } from '../../../core/execution';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
@@ -34,6 +35,7 @@ import {
 import { loadClaudeTurnStats } from '../history/ClaudeTurnStats';
 import { assertClaudeModelAvailable } from '../runtime/ClaudeModelAvailability';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
+import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
 import { getClaudeState } from '../types/providerState';
 import { ClaudeExecutionEventNormalizer } from './ClaudeExecutionEventNormalizer';
 import {
@@ -48,7 +50,8 @@ import {
   ClaudePersistentExecutionStrategy,
 } from './ClaudeExecutionStrategies';
 import { ClaudeInteractionHandler } from './ClaudeInteractionHandler';
-import { ClaudeResponseOwnership, getClaudeInputMatch } from './ClaudeResponseOwnership';
+import { ClaudeResponseOwnership } from './ClaudeResponseOwnership';
+import { type ClaudeTurnInputs, getReplayedUserMessageId } from './ClaudeTurnInputs';
 
 interface ActiveRequestedRun {
   readonly executionId: string;
@@ -64,9 +67,17 @@ interface ActiveRequestedRun {
   nativeHandedOff: boolean;
   nativeCompleted?: boolean;
   historyReplayGeneration: number | null;
-  nativeUserMessageId?: string;
+  inputs: ClaudeTurnInputs | null;
+  readonly steers: Map<string, PendingClaudeSteer>;
   nativeAssistantId?: string;
   terminal: boolean;
+}
+
+/** A steer handed to native input whose delivery into the run is not yet known. */
+interface PendingClaudeSteer {
+  readonly content: string;
+  resolve(accepted: boolean): void;
+  reject(error: Error): void;
 }
 
 interface BackgroundTurn {
@@ -80,6 +91,7 @@ export class ClaudeExecutionSession
 implements
 ProviderExecutionSession,
 RewindableExecutionSession,
+SteerableExecutionSession,
 ClaudeExecutionStrategySink {
   readonly providerId = 'claude' as const;
   readonly sessionInstanceId = randomUUID();
@@ -210,6 +222,8 @@ ClaudeExecutionStrategySink {
       nativeFork: false,
       nativeHandedOff: false,
       historyReplayGeneration: null,
+      inputs: null,
+      steers: new Map(),
       terminal: false,
     };
     this.activeRun = active;
@@ -269,6 +283,46 @@ ClaudeExecutionStrategySink {
       reason: 'Cancelled',
     });
     this.#endActiveRun(active);
+  }
+
+  async steer(request: ProviderExecutionRequest): Promise<boolean> {
+    try {
+      assertClaudeModelAvailable(this.host.settings, request.configuration.model);
+    } catch (error) {
+      if (error instanceof ProviderModelUnavailableError) return false;
+      throw error;
+    }
+    const active = this.activeRun;
+    if (
+      this.disposed
+      || !active
+      || active.terminal
+      || !active.nativeHandedOff
+      || active.nativeCompleted
+      || !active.inputs
+      || active.abortController.signal.aborted
+      || request.signal.aborted
+    ) {
+      return false;
+    }
+    const encoded = this.encoder.encodeSteer(request);
+    const message = buildClaudeSDKUserMessage(
+      encoded.prompt,
+      this.providerSessionId ?? '',
+      encoded.images,
+    );
+    const acceptance = new Promise<boolean>((resolve, reject) => {
+      active.steers.set(message.uuid, {
+        content: getInputText(request),
+        resolve,
+        reject,
+      });
+    });
+    if (!this.strategy.steerTurn(message, active.queryToken)) {
+      active.steers.delete(message.uuid);
+      return false;
+    }
+    return acceptance;
   }
 
   getSnapshot(): ProviderSessionSnapshot {
@@ -426,12 +480,9 @@ ClaudeExecutionStrategySink {
     return this.#getNativeResumeSessionId();
   }
 
-  setPendingNativeUserMessageId(
-    nativeUserMessageId: string,
-    queryToken: number,
-  ): void {
+  bindNativeTurnInputs(inputs: ClaudeTurnInputs, queryToken: number): void {
     if (this.activeRun?.queryToken === queryToken) {
-      this.activeRun.nativeUserMessageId = nativeUserMessageId;
+      this.activeRun.inputs = inputs;
     }
   }
 
@@ -475,8 +526,17 @@ ClaudeExecutionStrategySink {
       && this.authoritativeContextWindow?.model === intendedModel
       ? this.authoritativeContextWindow.contextWindow
       : undefined;
-    const inputMatch = getClaudeInputMatch(message, active?.nativeUserMessageId);
-    const channel = this.responseOwnership.resolve(message, active?.nativeHandedOff === true, active?.nativeUserMessageId);
+    const replayedInputId = getReplayedUserMessageId(message);
+    if (replayedInputId !== undefined) {
+      // Replays acknowledge input only; they carry no output of their own.
+      if (active?.nativeHandedOff && active.inputs?.ids.includes(replayedInputId)) {
+        this.#ensureRequestedAccepted(active);
+        this.#acceptDeliveredSteer(active, replayedInputId);
+      }
+      return;
+    }
+    const inputMatch = active?.inputs?.matches(message);
+    const channel = this.responseOwnership.resolve(message, active?.nativeHandedOff === true, active?.inputs?.ids);
     if (channel === 'requested' && isRequestedTurnEvidence(message)
       && !this.responseOwnership.hasPending('background')) {
       this.#finishBackgroundTurn('provider-ended');
@@ -586,6 +646,9 @@ ClaudeExecutionStrategySink {
         this.#finishBackgroundTurn('completed');
         const active = this.activeRun;
         if (active?.nativeHandedOff && inputMatch !== false) {
+          // A steer Claude queued behind this result keeps the run open.
+          if (active.inputs && !active.inputs.settled) continue;
+          this.#settleConsumedSteers(active);
           active.nativeCompleted = true;
           let turnStats = normalized.turnStats;
           if (turnStats && this.lastEncodedRequest?.options.persistSession !== false) {
@@ -935,19 +998,42 @@ ClaudeExecutionStrategySink {
   #ensureRequestedAccepted(active: ActiveRequestedRun): void {
     if (active.accepted || active.terminal) return;
     active.accepted = true;
+    const nativeUserMessageId = active.inputs?.primaryId;
     this.#emitRequested(active, {
       type: 'turn_started',
       accepted: true,
-      nativeUserMessageId: active.nativeUserMessageId,
+      nativeUserMessageId,
     });
     this.#emitRequested(active, {
       type: 'user_message_started',
-      nativeUserMessageId: active.nativeUserMessageId,
+      nativeUserMessageId,
     });
     const historyReplayGeneration = active.historyReplayGeneration;
     active.historyReplayGeneration = null;
     if (historyReplayGeneration !== null) {
       this.#clearHistoryReplayPending(historyReplayGeneration);
+    }
+  }
+
+  #acceptDeliveredSteer(active: ActiveRequestedRun, nativeUserMessageId: string): void {
+    const steer = active.steers.get(nativeUserMessageId);
+    if (!steer || active.terminal) return;
+    active.steers.delete(nativeUserMessageId);
+    this.eventNormalizer.beginUserBoundary('requested');
+    this.#emitRequested(active, {
+      type: 'user_message_started',
+      content: steer.content,
+      nativeUserMessageId,
+    });
+    steer.resolve(true);
+  }
+
+  /** Consumption without a replay is still definite; history supplies the message. */
+  #settleConsumedSteers(active: ActiveRequestedRun): void {
+    for (const [id, steer] of active.steers) {
+      if (!active.inputs?.wasConsumed(id)) continue;
+      active.steers.delete(id);
+      steer.resolve(true);
     }
   }
 
@@ -1150,6 +1236,11 @@ ClaudeExecutionStrategySink {
       active.onRequestAbort,
     );
     active.events.close();
+    for (const steer of active.steers.values()) {
+      // Handed-off input with unknown delivery must not be resent as unsent.
+      steer.reject(new Error('Claude run ended before the steer was delivered.'));
+    }
+    active.steers.clear();
     if (this.activeRun === active) {
       this.activeRun = null;
     }
@@ -1368,6 +1459,13 @@ function mapSDKCommand(command: SDKSlashCommand): SlashCommand {
     content: '',
     source: 'sdk',
   };
+}
+
+function getInputText(request: ProviderExecutionRequest): string {
+  return request.input
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n\n');
 }
 
 function createRewindPreparationRequest(): ProviderExecutionRequest {

@@ -28,11 +28,14 @@ function buildUserContentBlocks(prompt: string, images?: ImageAttachment[]): Use
   return content;
 }
 
+/** Every Claudian send carries a UUID so native echoes can correlate it. */
+export type ClaudeSDKUserMessage = SDKUserMessage & { readonly uuid: string };
+
 export function buildClaudeSDKUserMessage(
   prompt: string,
   sessionId: string,
   images?: ImageAttachment[],
-): SDKUserMessage {
+): ClaudeSDKUserMessage {
   if (!images || images.length === 0) {
     return {
       type: 'user',
