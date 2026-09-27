@@ -67,6 +67,11 @@ const server = http.createServer(async (req, res) => {
     setTimeout(async () => {
       emit('session.execution.started', {});
       emit('session.step.started', { assistantMessageID });
+      if (process.env.ECHO_PROMPT === '1') {
+        emit('session.text.ended', { assistantMessageID, ordinal: 0, text: JSON.stringify({ route, body }) });
+        emit('session.execution.succeeded', {}); idle = true; waiter?.writeHead(204).end();
+        return;
+      }
       if (body.text.startsWith('mcp-form')) {
         const nativeForm = { id: 'frm_mcp', sessionID: 'global', title: 'probe is requesting input', metadata: { kind: 'mcp-elicitation', server: 'probe', message: 'Choose a color' }, fields: [{ key: 'q0', type: (body.text.endsWith('unsupported') || body.text.endsWith('cancel-race')) ? 'external' : 'string', title: 'Color', options: [{ label: 'Blue', value: 'blue' }], custom: false, required: true }] };
         if (body.text.endsWith('values')) nativeForm.fields[0].options = [{ value: 'Blue', label: 'Red' }, { value: 'green', label: 'Blue' }];
@@ -200,6 +205,42 @@ function request(text = '/review changes'): ProviderExecutionRequest {
     toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal,
   };
 }
+
+it.each([
+  ['', 'prompt', ''],
+  ['Inspect these images', 'prompt', 'Inspect these images'],
+  ['/review these images', 'command', 'these images'],
+])('sends images through the native HTTP boundary for %j', async (text, route, nativeText) => {
+  const f = createFixture(false, undefined, 'ECHO_PROMPT=1');
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute({
+      ...request(text),
+      input: [
+        ...(text ? [{ type: 'text' as const, text }] : []),
+        {
+          type: 'image',
+          image: { id: 'image-1', name: 'first.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste' },
+        },
+        {
+          type: 'image',
+          image: { id: 'image-2', name: 'second.webp', mediaType: 'image/webp', data: 'd29ybGQ=', size: 5, source: 'drop' },
+        },
+      ],
+    }).events) events.push(event);
+    expect(events.at(-1)?.type).toBe('turn_completed');
+    const received = JSON.parse(events.flatMap(event => event.type === 'text_delta' ? [event.text] : []).join(''));
+    const nativeIdentity = { prompt: { id: expect.any(String) }, command: { name: 'review' } };
+    expect(received).toEqual({
+      route: `/api/session/ses_test/${route}`,
+      body: {
+        ...(route === 'command' ? nativeIdentity.command : nativeIdentity.prompt),
+        text: nativeText,
+        files: [{ uri: 'data:image/png;base64,aGVsbG8=' }, { uri: 'data:image/webp;base64,d29ybGQ=' }],
+      },
+    });
+  } finally { await f.dispose(); }
+});
 
 it('runs YOLO with automatic native approvals while still answering questions', async () => {
   const f = createFixture(false, async () => { throw new Error('Manual approvals are unavailable'); });

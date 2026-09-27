@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 
@@ -324,6 +327,18 @@ async function collectEvents(
   return result;
 }
 
+function createImageRequest(): ProviderExecutionRequest {
+  return createRequest(undefined, {
+    input: [{
+      type: 'image',
+      image: {
+        id: 'image-1', name: 'pasted.png', mediaType: 'image/png',
+        data: 'aGVsbG8=', size: 5, source: 'paste',
+      },
+    }],
+  });
+}
+
 async function collectUntil(
   events: AsyncIterable<ProviderExecutionEvent>,
   predicate: (event: ProviderExecutionEvent) => boolean,
@@ -417,6 +432,67 @@ describe('CodexExecutionBackend', () => {
         canRepresentHostPath: () => true,
       },
     });
+  });
+
+  it.each(['completion', 'failure', 'cancellation', 'disposal'] as const)(
+    'sends image bytes through a temporary file and removes it on %s',
+    async outcome => {
+      const startResult = createDeferred<ReturnType<typeof createTurnResult>>();
+      configureSteerTransport('thread-image', 'turn-image', () => ({}));
+      const transport = mockTransportRequest.getMockImplementation()!;
+      mockTransportRequest.mockImplementation((method: string, ...args: unknown[]) => (
+        method === 'turn/start' ? startResult.promise : transport(method, ...args)
+      ));
+      const session = new CodexExecutionBackend(createPlugin()).createSession(createSessionConfig());
+      try {
+        const run = session.execute(createImageRequest());
+        const events = collectEvents(run.events);
+        await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start'));
+        const input = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/start')![1].input;
+        expect(input).toEqual([{ type: 'localImage', path: expect.any(String) }]);
+        const filePath = input[0].path;
+        expect(readFileSync(filePath)).toEqual(Buffer.from('hello'));
+
+        if (outcome === 'failure') {
+          startResult.reject(new Error('Native turn rejected'));
+        } else {
+          startResult.resolve(createTurnResult('turn-image'));
+        }
+        await flushMicrotasks();
+        expect(existsSync(filePath)).toBe(outcome !== 'failure');
+        if (outcome === 'completion') completeTurn('thread-image', 'turn-image');
+        else if (outcome === 'cancellation') run.cancel();
+        else if (outcome === 'disposal') await session.dispose();
+        expect((await events).at(-1)?.type).toBe(
+          outcome === 'completion' ? 'turn_completed' : outcome === 'failure' ? 'execution_error' : 'cancelled',
+        );
+        expect(existsSync(dirname(filePath))).toBe(false);
+      } finally {
+        await session.dispose();
+      }
+    },
+  );
+
+  it.each([true, false])('retains steering image bytes until native acknowledgement (accepted: %s)', async accepted => {
+    const steerResult = createDeferred<{ turnId: string }>();
+    configureSteerTransport('thread-image', 'turn-image', () => steerResult.promise);
+    const { run, session } = await createActiveSteerSession();
+    try {
+      const steering = session.steer(createImageRequest());
+      await waitForCondition(() => mockTransportRequest.mock.calls.some(([method]) => method === 'turn/steer'));
+      const input = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input;
+      expect(input).toEqual([{ type: 'localImage', path: expect.any(String) }]);
+      const filePath = input[0].path;
+      expect(readFileSync(filePath)).toEqual(Buffer.from('hello'));
+      if (accepted) steerResult.resolve({ turnId: 'turn-image' });
+      else steerResult.reject(new CodexRPCResponseError({ code: -32602, message: 'Rejected image' }));
+      await expect(steering).resolves.toBe(accepted);
+      expect(existsSync(dirname(filePath))).toBe(false);
+    } finally {
+      run.cancel();
+      await collectEvents(run.events);
+      await session.dispose();
+    }
   });
 
   it('matches live TurnStats to the rollout from a captured native Codex turn', async () => {
@@ -3420,14 +3496,14 @@ describe('CodexExecutionBackend', () => {
     );
     const { run, session } = await createActiveSteerSession();
 
-    const steering = session.steer(createRequest(
-      new AbortController().signal,
-      { input: [{ type: 'text', text: 'redirect' }] },
-    ));
+    const steering = session.steer(createImageRequest());
     await waitForCondition(() => mockTransportRequest.mock.calls.some(
       ([method]) => method === 'turn/steer',
     ));
+    const filePath = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input[0].path;
+    expect(readFileSync(filePath)).toEqual(Buffer.from('hello'));
     const disposing = session.dispose();
+    expect(existsSync(dirname(filePath))).toBe(false);
     steerResult.reject(new Error('Transport disposed after steer handoff'));
 
     await expect(steering).rejects.toThrow(

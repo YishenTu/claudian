@@ -286,17 +286,20 @@ describe('ImageContextManager - Private Helpers', () => {
       expect(Notice).toHaveBeenCalledWith(expect.stringContaining('limit'));
     });
 
-    it('should reject files with unsupported media type', async () => {
+    it.each(['', 'image/bmp', 'image/svg+xml'])('rejects unsupported MIME type %s before reading image bytes', async (type) => {
       const file = {
         name: 'test.bmp',
-        type: '',
+        type,
         size: 1024,
-        arrayBuffer: jest.fn(),
+        arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(4)),
       } as unknown as File;
 
-      const result = await manager['addImageFromFile'](file, 'drop');
+      const result = await manager['addImageFromFile'](file, 'paste');
       expect(result).toBe(false);
       expect(Notice).toHaveBeenCalledWith('Unsupported image type.');
+      expect(file.arrayBuffer).not.toHaveBeenCalled();
+      expect(manager.getAttachedImages()).toEqual([]);
+      expect(callbacks.onUserImagesChanged).not.toHaveBeenCalled();
     });
 
     it('should add valid image file and invoke callback', async () => {
@@ -368,27 +371,25 @@ describe('ImageContextManager - Private Helpers', () => {
       expect(images[0].name).toMatch(/^image-\d+\.png$/);
     });
 
-    it('should use file.type as fallback media type when getMediaType returns null', async () => {
-      const mockBuffer = new ArrayBuffer(4);
-      // File with .svg extension (not in IMAGE_EXTENSIONS), but valid image/* type
+    it.each([
+      ['image/jpeg', 'image/jpeg'],
+      ['image/jpg', 'image/jpeg'],
+      ['image/png', 'image/png'],
+      ['image/gif', 'image/gif'],
+      ['image/webp', 'image/webp'],
+    ])('normalizes supported fallback MIME type %s to %s', async (type, mediaType) => {
       const file = {
-        name: 'icon.svg',
-        type: 'image/svg+xml',
-        size: 512,
-        arrayBuffer: jest.fn().mockResolvedValue(mockBuffer),
+        name: 'clipboard',
+        type,
+        size: 5,
+        arrayBuffer: jest.fn().mockResolvedValue(new TextEncoder().encode('hello').buffer),
       } as unknown as File;
 
-      // The getMediaType for .svg returns null, so file.type is used as fallback
-      const callbacks = createMockCallbacks();
-      const { container } = createContainerWithInputWrapper();
-      const inputEl = createMockTextArea();
-      const mgr: any = new ImageContextManager(container, inputEl, callbacks);
-
-      const result = await mgr['addImageFromFile'](file, 'paste');
+      const result = await manager['addImageFromFile'](file, 'paste');
       expect(result).toBe(true);
-
-      const images = mgr.getAttachedImages();
-      expect(images[0].mediaType).toBe('image/svg+xml');
+      expect(manager.getAttachedImages()).toEqual([
+        expect.objectContaining({ mediaType, data: 'aGVsbG8=' }),
+      ]);
     });
   });
 

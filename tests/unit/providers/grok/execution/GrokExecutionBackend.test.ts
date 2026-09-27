@@ -389,6 +389,39 @@ describe('GrokExecutionBackend', () => {
     );
   });
 
+  it.each(['', 'Inspect these images'])('sends native ACP image blocks with text %j', async text => {
+    const native = new FakeNativeConnection();
+    const session = new GrokExecutionBackend(createGrokHost(), {
+      nativeFactory: { create: () => native },
+    }).createSession(sessionConfig);
+    try {
+      const events = await collect(session.execute({
+        ...executionRequest(text),
+        input: [
+          ...(text ? [{ type: 'text' as const, text }] : []),
+          {
+            type: 'image',
+            image: { id: 'image-1', name: 'first.png', mediaType: 'image/png', data: 'aGVsbG8=', size: 5, source: 'paste' },
+          },
+          {
+            type: 'image',
+            image: { id: 'image-2', name: 'second.webp', mediaType: 'image/webp', data: 'd29ybGQ=', size: 5, source: 'drop' },
+          },
+        ],
+      }).events);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+      expect(native.promptRequests).toEqual([expect.objectContaining({
+        prompt: [
+          ...(text ? [{ type: 'text', text }] : []),
+          { type: 'image', mimeType: 'image/png', data: 'aGVsbG8=' },
+          { type: 'image', mimeType: 'image/webp', data: 'd29ybGQ=' },
+        ],
+      })]);
+    } finally {
+      await session.dispose();
+    }
+  });
+
   it('preserves standard Grok message IDs across assistant messages', async () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = async () => {

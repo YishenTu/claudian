@@ -4,6 +4,7 @@ import * as path from 'path';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 import type { ImageAttachment, ImageMediaType } from '../../../core/types';
+import { normalizeImageMediaType } from '../../../utils/imageAttachment';
 import { ComposerContextTray } from './ComposerContextTray';
 import { ImagePreviewModal } from './ImagePreviewModal';
 
@@ -253,7 +254,7 @@ export class ImageContextManager {
       return false;
     }
 
-    const mediaType = this.getMediaType(file.name) || (file.type as ImageMediaType);
+    const mediaType = this.getMediaType(file.name) ?? normalizeImageMediaType(file.type);
     if (!mediaType) {
       this.notifyImageError('Unsupported image type.');
       return false;
