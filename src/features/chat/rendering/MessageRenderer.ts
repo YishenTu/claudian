@@ -950,11 +950,17 @@ export class MessageRenderer {
 
   refreshBranchButtonState(): void {
     this.messagesEl.querySelectorAll<HTMLButtonElement>('[data-branch-action]').forEach(button => {
-      const busy = !!this.branchActions?.isBusy();
-      button.disabled = busy || button.dataset.branchUnavailable === 'true';
-      button.setAttribute('aria-description', busy ? 'Wait for the current response to finish.'
-        : button.dataset.branchUnavailable === 'true' ? button.dataset.branchUnavailableReason ?? '' : '');
+      this.#updateBranchButtonState(button);
     });
+  }
+
+  #updateBranchButtonState(button: HTMLButtonElement): void {
+    const busy = !!this.branchActions?.isBusy();
+    const unavailable = button.dataset.branchUnavailable === 'true';
+    button.disabled = busy || unavailable;
+    // Obsidian uses aria-label for its tooltip; title would add a second one.
+    button.setAttribute('aria-description', busy ? 'Wait for the current response to finish.'
+      : unavailable ? button.dataset.branchUnavailableReason ?? '' : '');
   }
 
   #addBranchButtons(element: HTMLElement, message: ChatMessage, pendingNativeIdentity = false): void {
@@ -971,10 +977,7 @@ export class MessageRenderer {
       });
       toolbar.insertBefore(button, anchor);
       setIcon(button, icon);
-      const busy = this.branchActions!.isBusy();
-      button.disabled = busy || unavailable;
-      // Obsidian uses aria-label for its tooltip; title would add a second one.
-      button.setAttribute('aria-description', busy ? 'Wait for the current response to finish.' : unavailable ? reason : '');
+      this.#updateBranchButtonState(button);
       button.addEventListener('click', event => {
         event.stopPropagation();
         if (this.branchActions!.isBusy() || unavailable) return;

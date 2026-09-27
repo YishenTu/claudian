@@ -80,7 +80,7 @@ type BranchState =
   | { kind: 'idle' }
   | { kind: 'preview'; draft: BranchDraft }
   | { kind: 'committing'; draft?: BranchDraft }
-  | { kind: 'recovery'; draft?: BranchDraft; conversationId: string; error: string };
+  | { kind: 'recovery'; draft?: BranchDraft };
 
 export class ConversationController {
   private deps: ConversationControllerDeps;
@@ -596,8 +596,7 @@ export class ConversationController {
       if (!isCurrent()) this.branchState = { kind: 'idle' };
       else if (result.status === 'committed') this.branchState = { kind: 'idle' };
       else if (result.status === 'recovery-required' || (previous.kind === 'recovery' && result.status === 'failed')) {
-        this.branchState = { kind: 'recovery', conversationId, draft,
-          error: 'error' in result ? result.error : 'Branch recovery is incomplete.' };
+        this.branchState = { kind: 'recovery', draft };
       } else this.branchState = draft ? { kind: 'preview', draft } : { kind: 'idle' };
       state.isRewinding = false;
       renderer.refreshBranchButtonState();

@@ -50,11 +50,9 @@ export class TabSession {
       && !this.turns.isActive && !this.coordinator.hasBackgroundWork && !this.isConversationBusy();
   }
 
-  async runConversationNavigation<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T | undefined> {
-    if (!this.canNavigateConversation) return undefined;
-    let result: T | undefined;
-    await this.turns.run(async signal => { result = await operation(signal); }, 'navigation');
-    return result;
+  async runConversationNavigation(operation: (signal: AbortSignal) => Promise<unknown>): Promise<void> {
+    if (!this.canNavigateConversation) return;
+    await this.turns.run(async signal => { await operation(signal); }, 'navigation');
   }
 
   bindConversation(conversationId: string | null, providerId: ProviderId | null): void {

@@ -275,8 +275,10 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const content = await fsp.readFile(state.sessionFile, 'utf8');
     const parsed = parsePiSessionEntries(content);
     const cursor = state.treeCursor ? resolvePiTreeCursor(parsed.entries, state.treeCursor) : undefined;
-    const nativeMessages = parsePiSessionContent(content, cursor
-      ? { leafEntryId: cursor.leafId, requireLeafEntryId: true } : {});
+    const nativeMessages = parsePiSessionContent(content, {
+      includeBranches: false,
+      ...(cursor ? { leafEntryId: cursor.leafId, requireLeafEntryId: true } : {}),
+    });
     return {
       branches: getPiConversationBranches(parsed.entries),
       userMessageIds: correlatePiUserMessages(messages, nativeMessages),

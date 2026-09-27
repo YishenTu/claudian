@@ -802,12 +802,12 @@ export class InputController {
 
   #restoreMessageToInput(
     message: QueuedMessage | null,
-    options: { mergeWithComposer?: boolean; focus?: boolean } = {},
+    options: { mergeWithComposer?: boolean } = {},
   ): void {
     if (!message) return;
 
     this.deps.drafts.restore('main', message, {
-      merge: options.mergeWithComposer, focus: options.focus !== false,
+      merge: options.mergeWithComposer, focus: true,
     });
   }
 
