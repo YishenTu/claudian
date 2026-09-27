@@ -8,18 +8,18 @@ import type {
 
 import { loadClaudeAgentQuery } from '../loadClaudeAgentSDK';
 import { MessageChannel } from '../runtime/ClaudeMessageChannel';
-import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
+import {
+  buildClaudeSDKUserMessage,
+  type ClaudeSDKUserMessage,
+} from '../runtime/ClaudeUserMessageFactory';
 import type { ClaudeEncodedExecutionRequest } from './ClaudeExecutionRequestEncoder';
-import { getClaudeInputMatch } from './ClaudeResponseOwnership';
+import { ClaudeTurnInputs } from './ClaudeTurnInputs';
 
 export interface ClaudeExecutionStrategySink {
   readonly sessionInstanceId: string;
   getProviderSessionId(): string | null;
   assertModelAvailable(model: string): void;
-  setPendingNativeUserMessageId(
-    nativeUserMessageId: string,
-    queryToken: number,
-  ): void;
+  bindNativeTurnInputs(inputs: ClaudeTurnInputs, queryToken: number): void;
   markNativeTurnHandedOff(queryToken: number): void;
   handleNativeMessage(message: SDKMessage, queryToken: number): Promise<void>;
   handleNativeFailure(error: unknown, queryToken: number): void;
@@ -40,6 +40,11 @@ export interface ClaudeExecutionStrategy {
     request: ClaudeEncodedExecutionRequest,
     queryToken: number,
   ): Promise<void>;
+  /**
+   * Hands a steer to the live native turn for `queryToken`. Returns false only
+   * when nothing was handed off.
+   */
+  steerTurn(message: ClaudeSDKUserMessage, queryToken: number): boolean;
   cancel(queryToken: number | null, nativeTurnHandedOff: boolean): void;
   getRewindQuery(): Query | null;
   ensureReadyForRewind(
@@ -54,7 +59,7 @@ type PersistentNativeTurnOutcome =
   | { readonly type: 'failed'; readonly error: unknown };
 
 interface PersistentNativeTurn {
-  readonly nativeInputId?: string;
+  readonly inputs: ClaudeTurnInputs;
   readonly query: Query;
   readonly queryToken: number;
   readonly completion: Promise<PersistentNativeTurnOutcome>;
@@ -116,14 +121,13 @@ implements ClaudeExecutionStrategy {
         this.sink.getProviderSessionId() ?? '',
         request.images,
       );
-      if (message.uuid) {
-        this.sink.setPendingNativeUserMessageId(message.uuid, queryToken);
-      }
+      const inputs = new ClaudeTurnInputs(message.uuid);
+      this.sink.bindNativeTurnInputs(inputs, queryToken);
       requestSignal?.throwIfAborted();
       const query = this.query;
       this.sink.assertModelAvailable(request.model);
       this.messageChannel.enqueue(message);
-      this.activeNativeTurn = createPersistentNativeTurn(query, queryToken, message.uuid);
+      this.activeNativeTurn = createPersistentNativeTurn(query, queryToken, inputs);
       this.hasNonPersistentContext ||= request.options.persistSession === false;
       this.sink.markNativeTurnHandedOff(queryToken);
     } finally {
@@ -131,6 +135,26 @@ implements ClaudeExecutionStrategy {
         this.preparingTurnToken = null;
       }
     }
+  }
+
+  steerTurn(message: ClaudeSDKUserMessage, queryToken: number): boolean {
+    const nativeTurn = this.activeNativeTurn;
+    if (
+      this.disposed
+      || !nativeTurn
+      || nativeTurn.queryToken !== queryToken
+      || nativeTurn.query !== this.query
+      || nativeTurn.inputs.settled
+      || !this.messageChannel
+      // Recalling a queued steer restarts the process, which non-persistent context cannot survive.
+      || this.hasNonPersistentContext
+    ) {
+      return false;
+    }
+    nativeTurn.inputs.addSteer(message.uuid);
+    // 'next' folds at the next native boundary; 'now' would abort the running tool.
+    this.messageChannel.enqueue({ ...message, priority: 'next' });
+    return true;
   }
 
   cancel(
@@ -145,13 +169,19 @@ implements ClaudeExecutionStrategy {
       void this.#closeCurrentQuery().catch(() => undefined);
       return;
     }
+    const nativeTurn = this.activeNativeTurn;
     if (
       nativeTurnHandedOff
       && (
         queryToken === null
-        || this.activeNativeTurn?.queryToken === queryToken
+        || nativeTurn?.queryToken === queryToken
       )
     ) {
+      if (nativeTurn?.inputs.hasUndeliveredSteers()) {
+        // Queued sends survive a native interrupt; ending the process recalls them.
+        void this.#closeCurrentQuery().catch(() => undefined);
+        return;
+      }
       void this.query?.interrupt().catch(() => undefined);
     }
   }
@@ -351,11 +381,12 @@ implements ClaudeExecutionStrategy {
           this.sink.publishCommands(query, message.commands);
         }
         const nativeTurn = this.#getNativeTurn(query);
+        nativeTurn?.inputs.observe(message);
         await this.sink.handleNativeMessage(
           message,
           nativeTurn?.queryToken ?? queryToken,
         );
-        if (message.type === 'result' && getClaudeInputMatch(message, nativeTurn?.nativeInputId) !== false) {
+        if (message.type === 'result' && nativeTurn?.inputs.settled) {
           this.#finishNativeTurn(query, { type: 'completed' });
         }
       }
@@ -460,9 +491,8 @@ implements ClaudeExecutionStrategy {
       this.sink.getProviderSessionId() ?? '',
       request.images,
     );
-    if (message.uuid) {
-      this.sink.setPendingNativeUserMessageId(message.uuid, queryToken);
-    }
+    const inputs = new ClaudeTurnInputs(message.uuid);
+    this.sink.bindNativeTurnInputs(inputs, queryToken);
     const prompt = toSingleMessagePrompt(message);
     this.activeAbortController = abortController;
     let query: Query | null = null;
@@ -482,6 +512,7 @@ implements ClaudeExecutionStrategy {
         if (message.type === 'system' && message.subtype === 'commands_changed') {
           this.sink.publishCommands(query, message.commands);
         }
+        inputs.observe(message);
         await this.sink.handleNativeMessage(message, queryToken);
         if (message.type === 'result') break;
       }
@@ -502,6 +533,11 @@ implements ClaudeExecutionStrategy {
       }
       this.sink.releaseNativeTurnFence(queryToken);
     }
+  }
+
+  steerTurn(): boolean {
+    // A single-message prompt closes native input after its first send.
+    return false;
   }
 
   cancel(
@@ -548,7 +584,7 @@ async function* toSingleMessagePrompt(
 function createPersistentNativeTurn(
   query: Query,
   queryToken: number,
-  nativeInputId?: string,
+  inputs: ClaudeTurnInputs,
 ): PersistentNativeTurn {
   let resolve!: (outcome: PersistentNativeTurnOutcome) => void;
   const completion = new Promise<PersistentNativeTurnOutcome>(
@@ -560,7 +596,7 @@ function createPersistentNativeTurn(
   return {
     query,
     queryToken,
-    nativeInputId,
+    inputs,
     completion,
     settle: (outcome) => {
       if (settled) return;

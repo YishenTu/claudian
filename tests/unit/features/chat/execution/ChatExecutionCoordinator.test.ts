@@ -554,6 +554,48 @@ describe('ChatExecutionCoordinator', () => {
     expect(assistant.assistantMessageId).toBe('turn-checkpoint');
   });
 
+  it('keeps the submitted pair bound to its own identities across a steer boundary', async () => {
+    const harness = createHarness();
+    const user: ChatMessage = { id: 'user', role: 'user', content: 'Hello', timestamp: 1 };
+    const assistant: ChatMessage = { id: 'assistant', role: 'assistant', content: '', timestamp: 2 };
+    const { session, run, resultPromise } = await beginExecution(
+      harness, createSubmission({ messages: { user, assistant } }),
+    );
+    run.events.push({
+      type: 'turn_started', scope: requestedScope(session, run, 1), accepted: true,
+      nativeUserMessageId: 'native-user',
+    });
+    run.events.push({
+      type: 'user_message_started', scope: requestedScope(session, run, 2),
+      nativeUserMessageId: 'native-user',
+    });
+    run.events.push({
+      type: 'assistant_message_started', scope: requestedScope(session, run, 3),
+      nativeAssistantId: 'native-assistant',
+    });
+    run.events.push({
+      type: 'user_message_started', scope: requestedScope(session, run, 4),
+      content: 'Steer', nativeUserMessageId: 'steer-user',
+    });
+    run.events.push({
+      type: 'assistant_message_started', scope: requestedScope(session, run, 5),
+      nativeAssistantId: 'steer-assistant',
+    });
+    run.events.push({
+      type: 'turn_completed', scope: requestedScope(session, run, 6), reason: 'completed',
+      nativeAssistantId: 'steer-assistant',
+    });
+    run.events.end();
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'completed',
+      nativeUserMessageId: 'native-user',
+      nativeAssistantMessageId: 'steer-assistant',
+    });
+    expect(user.userMessageId).toBe('native-user');
+    expect(assistant.assistantMessageId).toBe('native-assistant');
+  });
+
   it('revalidates conversation authority immediately before provider handoff', async () => {
     const harness = createHarness();
     const cause = new Error('conversation assigned to another device');

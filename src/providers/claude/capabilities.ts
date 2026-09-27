@@ -9,6 +9,6 @@ export const CLAUDE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Obje
   supportsFork: true,
   supportsProviderCommands: true,
   supportsImageAttachments: true,
-  supportsTurnSteer: false,
+  supportsTurnSteer: true,
   reasoningControl: 'effort',
 });
