@@ -3,7 +3,7 @@ import type { ChatMessage, StreamChunk } from '../../../core/types';
 import type { StreamController } from '../controllers/StreamController';
 import type { ChatState } from '../state/ChatState';
 import { isStandaloneTaskNotification, type MessageRenderer } from './MessageRenderer';
-import { getNotificationPredecessor } from './NotificationBoundaries';
+import { getNotificationPredecessor, recordResponseContinuation } from './NotificationBoundaries';
 
 /** Keep new response content after independently delivered session notifications. */
 export async function continueResponseAfterNotification(
@@ -59,6 +59,7 @@ export async function continueResponseAfterNotification(
     toolCalls: [], contentBlocks: [],
     ...(message.isAutomaticResponse ? { isAutomaticResponse: true } : {}),
   };
+  recordResponseContinuation(continuation, message);
   const insertionIndex = host.state.messages.indexOf(preceding) + 1;
   const messages = host.state.messages;
   messages.splice(insertionIndex, 0, continuation);

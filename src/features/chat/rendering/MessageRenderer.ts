@@ -40,6 +40,7 @@ import {
   restoreDisplayOnlyCodeFences,
 } from './DisplayOnlyCodeFences';
 import { renderMermaidDiagrams } from './MermaidRenderer';
+import { getResponseSegments } from './NotificationBoundaries';
 import { resolveSubagentAdapter } from './subagentAdapterResolution';
 import {
   renderStoredAsyncSubagent,
@@ -382,9 +383,19 @@ export class MessageRenderer {
         && !messages[start - 1].isInterrupt
         && !messages[start - 1].contentBlocks?.some(block => block.type === 'task_notification')
         && !messages[start - 1].contentBlocks?.some(block => block.type === 'context_compacted')) start--;
-      const earlierEls = messages.slice(start, end).flatMap(message => {
+      const segments = getResponseSegments(msg, messages);
+      const earlierMessages = segments.length > 1 ? segments.slice(0, -1) : messages.slice(start, end);
+      const earlierEls = earlierMessages.flatMap(message => {
         const el = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`);
-        return el ? [el] : [];
+        if (!el) return [];
+        if (segments.length === 1) return [el];
+        const previousContent = el.querySelector<HTMLElement>('.claudian-message-content');
+        const children = Array.from(previousContent?.children ?? []) as HTMLElement[];
+        // As on replay, commentary stays on its side of a notification boundary.
+        const work = children.filter(child => !child.classList.contains('claudian-text-block')
+          && !child.classList.contains('claudian-citations')
+          && !child.classList.contains('claudian-task-notification'));
+        return work.length > 0 && work.length === children.length ? [el] : work;
       });
       const children = (Array.from(contentEl.children) as HTMLElement[])
         .filter(child => !child.classList.contains('claudian-task-notification'));

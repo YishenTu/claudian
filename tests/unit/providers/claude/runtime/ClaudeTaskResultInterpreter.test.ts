@@ -46,6 +46,14 @@ describe('ClaudeTaskResultInterpreter', () => {
     }
   });
 
+  it.each([
+    'An ordinary answer mentioning [Subagent hand-back] and agentId: example.',
+    '[Subagent hand-back] The text below is the final report of a subagent. The report follows:\nUnindented user content\nagentId: example (metadata)\n<usage>tokens: 1</usage>',
+    '[Subagent hand-back] The text below is the final report of a subagent. The report follows:\n  A report with no native trailer.',
+  ])('preserves text that does not form a native hand-back envelope', text => {
+    expect(new ClaudeTaskResultInterpreter().interpretResult(text, false, { mode: 'sync' }).result).toBe(text);
+  });
+
   describe('interpretLaunch', () => {
     it('does not treat completed sync metadata with agentId as an async launch', () => {
       const interpreter = new ClaudeTaskResultInterpreter();

@@ -316,6 +316,28 @@ describe('ClaudeExecutionEventNormalizer api error messages', () => {
 });
 
 describe('Claude task notification presentation', () => {
+  it.each([false, true])('keeps foreground completion off the transcript with background transition=%s', backgrounded => {
+    const normalizer = new ClaudeExecutionEventNormalizer();
+    normalizer.normalize(msg({ type: 'system', subtype: 'task_started', task_id: 'sync',
+      tool_use_id: 'sync-tool', is_backgrounded: false } as any), 'requested');
+    if (backgrounded) {
+      normalizer.normalize(msg({ type: 'system', subtype: 'task_updated', task_id: 'sync',
+        patch: { is_backgrounded: true } } as any), 'requested');
+    }
+    // Native tasks outlive requested turns and may complete on the background channel.
+    normalizer.reset('requested');
+    const events = normalizer.normalize(msg({ type: 'system', subtype: 'task_notification',
+      task_id: 'sync', tool_use_id: 'sync-tool', status: 'completed', summary: 'Agent answer' } as any), 'background');
+    expect(events).toContainEqual(expect.objectContaining({ type: 'async_subagent_completion' }));
+    expect(events.some(event => event.type === 'output' && event.event.type === 'task_notification')).toBe(backgrounded);
+    // Resuming a foreground agent registers it in the background under the same task ID.
+    normalizer.normalize(msg({ type: 'system', subtype: 'task_started', task_id: 'sync',
+      is_backgrounded: true } as any), 'requested');
+    const resumed = normalizer.normalize(msg({ type: 'system', subtype: 'task_notification',
+      task_id: 'sync', status: 'completed', summary: 'Second answer' } as any), 'background');
+    expect(resumed).toContainEqual({ type: 'output', event: { type: 'task_notification', content: 'Second answer' } });
+  });
+
   it.each(['b0ziu71bi', 'af5dfc0e508259ca4'])('exposes completion content for task %s', (taskId) => {
     const events = new ClaudeExecutionEventNormalizer().normalize(msg({
       type: 'system', subtype: 'task_notification', task_id: taskId,
