@@ -372,6 +372,38 @@ describe('PiExecutionBackend', () => {
     }
   });
 
+  it('restores a saved tree edit position before model configuration and input after restart', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-tree-resume-'));
+    const sessionFile = path.join(root, 'session.jsonl');
+    await fs.writeFile(sessionFile, JSON.stringify({ type: 'session', id: 'pi-session-1', cwd: root }) + '\n');
+    const harness = createHarness(createConfig({
+      vaultWorkingDirectory: root,
+      resumeSeed: { providerSessionId: 'pi-session-1', providerState: {
+        sessionId: 'pi-session-1', sessionFile,
+        treeCursor: { targetId: 'first-user', leafId: null },
+      } },
+    }));
+    harness.responses.set('get_state', { sessionId: 'pi-session-1', sessionFile });
+    harness.responses.set('claudian_tree', { cancelled: false, leafId: null, sessionId: 'pi-session-1', sessionFile });
+    try {
+      const events = collect(harness.session.execute(createRequest()).events);
+      await waitFor(() => (harness.kernels[0]?.requests.some(r => r.type === 'prompt') ?? false) || harness.session.getStatus() !== 'executing');
+      if (!harness.kernels[0]?.requests.some(r => r.type === 'prompt')) {
+        throw new Error(JSON.stringify(await events));
+      }
+      const requests = harness.kernels[0].requests;
+      expect(requests.find(r => r.type === 'claudian_tree')?.payload).toMatchObject({
+        operation: 'restore', targetId: 'first-user', leafId: null,
+      });
+      expect(requests.findIndex(r => r.type === 'claudian_tree')).toBeLessThan(requests.findIndex(r => r.type === 'set_model'));
+      completeTurn(harness.kernels[0]);
+      await events;
+    } finally {
+      await harness.session.dispose();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('uses an isolated no-session kernel for command metadata probes', async () => {
     const responses = new Map<string, unknown>([
       ['get_commands', {

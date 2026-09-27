@@ -1,3 +1,11 @@
+export {
+  type BranchableExecutionSession,
+  type ConversationBranchRecoveryRequest,
+  type ConversationBranchRequest,
+  type ConversationBranchResult,
+  type ConversationBranchState,
+  isBranchableExecutionSession,
+} from './BranchableExecutionSession';
 export { ExecutionEventQueue } from './ExecutionEventQueue';
 export {
   type ProviderExecutionBackend,

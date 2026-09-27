@@ -35,11 +35,13 @@ export function buildTabRuntimeShell(
   options.registerCleanup('tab DOM root', () => contentEl.remove());
 
   const dom = buildTabDOM(contentEl, options);
-  const state = new ChatState({
+  const state: ChatState = new ChatState({
     onStreamingStateChanged: isStreaming => {
+      runtimeRef.requirePublished().renderer.refreshBranchButtonState();
       options.onStreamingChanged?.(runtimeRef.requirePublished(), isStreaming);
     },
     onRewindingStateChanged: isRewinding => {
+      runtimeRef.requirePublished().renderer.refreshBranchButtonState();
       options.onRewindingChanged?.(runtimeRef.requirePublished(), isRewinding);
     },
     onAttentionChanged: attention => {
@@ -70,7 +72,12 @@ export function buildTabRuntimeShell(
   const session = new TabSession(
     sessionState,
     executionCoordinator,
-    () => options.onWorkChanged?.(runtimeRef.requirePublished()),
+    () => {
+      const tab = runtimeRef.requirePublished();
+      tab.renderer.refreshBranchButtonState();
+      options.onWorkChanged?.(tab);
+    },
+    () => state.isStreaming || state.isRewinding || state.isCreatingConversation || state.isSwitchingConversation,
   );
   options.registerCleanup(
     'tab execution coordinator',
@@ -237,7 +244,9 @@ function createTabExecutionCoordinator(
       return enqueueTabSessionEvent(tab, plugin, event, context);
     },
     onBackgroundWorkChanged: () => {
-      options.onWorkChanged?.(runtimeRef.requirePublished());
+      const tab = runtimeRef.requirePublished();
+      tab.renderer.refreshBranchButtonState();
+      options.onWorkChanged?.(tab);
     },
     resolveMissingProviderSession: (conversationId, missingProviderSessionId) =>
       plugin.handleMissingProviderSession(conversationId, missingProviderSessionId),

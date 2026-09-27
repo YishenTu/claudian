@@ -15,9 +15,11 @@ export interface BuildPiLaunchSpecParams {
   settings: PiProviderSettings;
   systemPrompt?: string;
   thinkingLevel?: string | null;
+  enableTreeBridge?: boolean;
 }
 
 export interface PiLaunchSpec {
+  enableTreeBridge?: boolean;
   args: string[];
   command: string;
   cwd: string;
@@ -65,6 +67,7 @@ export function buildPiLaunchSpec(params: BuildPiLaunchSpecParams): PiLaunchSpec
   }
 
   return {
+    ...(params.enableTreeBridge ? { enableTreeBridge: true } : {}),
     args,
     command: params.command,
     cwd: params.cwd,

@@ -5,6 +5,7 @@ import { Notice } from 'obsidian';
 import type { ProviderExecutionErrorEvent, ProviderExecutionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ImageAttachment } from '@/core/types';
+import { ConversationController } from '@/features/chat/controllers/ConversationController';
 import { ChatExecutionPreHandoffError, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 
 jest.mock('@/core/providers/ProviderRegistry', () => ({
@@ -1947,4 +1948,36 @@ it('queuing another input must retain the running turn drain handle', async () =
     gate.resolve({ accepted: true, status: 'completed' });
     await first;
   }
+});
+
+
+describe('branch draft submission', () => {
+  it.each([false, true])('waits for native branch navigation before sending and preserves cancelled drafts (%s)', async cancelled => {
+    const fixture = createFixture();
+    const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: Date.now(), userMessageId: 'native-first' };
+    const prompt = { id: 'second', role: 'user' as const, content: 'Original', timestamp: Date.now(), userMessageId: 'native-second' };
+    fixture.state.messages = [first, prompt];
+    const navigation = deferred<{ status: string; messages?: typeof first[] }>();
+    const navigateConversationBranch = jest.fn().mockReturnValue(navigation.promise);
+    Object.assign(fixture.coordinator, { navigateConversationBranch });
+    Object.assign(fixture.deps.renderer, { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() });
+    const conversation = new ConversationController({ ...fixture.deps,
+      setWelcomeEl: jest.fn(),
+    } as any);
+    fixture.deps.conversationController = conversation;
+    await conversation.navigateBranch('second');
+    fixture.input.value = 'Edited';
+    const sending = fixture.controller.sendMessage();
+    await waitForCall(navigateConversationBranch);
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    conversation.cancelBranchDraft(); // Focus changes during admitted submission must not undo it.
+    expect(fixture.input.value).toBe('');
+    navigation.resolve(cancelled ? { status: 'cancelled' } : { status: 'committed', messages: [first] });
+    await sending;
+    expect(fixture.coordinator.execute.mock.calls.map(([request]) => request.canonicalText)).toEqual(cancelled ? [] : ['Edited']);
+    expect(fixture.input.value).toBe(cancelled ? 'Edited' : '');
+    expect(fixture.state.messages.some(message => message.id === 'second')).toBe(cancelled);
+    conversation.cancelBranchDraft();
+    expect(fixture.state.messages.some(message => message.content === 'Edited')).toBe(!cancelled);
+  });
 });

@@ -12,17 +12,15 @@ import { t } from '../../../i18n/i18n';
 import { getVaultPath } from '../../../utils/path';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import { getChatSettingsSnapshot } from '../ChatSettings';
+import type { ComposerDraftController } from '../composer/ComposerDraftController';
 import {
   captureLatestCompletedForkSource,
   type ForkSourceUnavailableReason,
 } from '../tabs/TabForking';
 import type { AssembledTabRuntime } from '../tabs/types';
-import type { ImageContextManager } from '../ui/ImageContext';
 import { SideChatPanel } from './SideChatPanel';
 import { SideChatRuntime } from './SideChatRuntime';
 import {
-  EMPTY_SIDE_CHAT_DRAFT,
-  type SideChatComposerDraft,
   type SideChatDestination,
   type SideChatSettingsProjection,
   type SideChatSource,
@@ -35,7 +33,7 @@ export interface SideChatControllerDeps {
   readonly composerEl: HTMLElement;
   readonly inputWrapperEl: HTMLElement;
   readonly getInputEl: () => ComposerInputElement;
-  readonly getImageContextManager: () => ImageContextManager | null;
+  readonly drafts: ComposerDraftController;
   readonly getTab: () => AssembledTabRuntime;
   readonly isRuntimeLive: (tab: AssembledTabRuntime) => boolean;
   readonly onDestinationChanged: () => void;
@@ -54,8 +52,6 @@ export class SideChatController {
   #runtime: SideChatRuntime | null = null;
   #collapsedHost: HTMLElement | null = null;
   #boundConversationId: string | null = null;
-  #mainDraft: SideChatComposerDraft = EMPTY_SIDE_CHAT_DRAFT;
-  #sideDraft: SideChatComposerDraft = EMPTY_SIDE_CHAT_DRAFT;
   #mainPlaceholder: string | null = null;
   #startSequence = 0;
   #starting = false;
@@ -152,16 +148,6 @@ export class SideChatController {
     return true;
   }
 
-  /** Main retries restore behind the expanded side composer without changing destination. */
-  getMainDraft(): SideChatComposerDraft {
-    return this.destination === 'side' ? this.#mainDraft : this.#captureDraft();
-  }
-
-  restoreMainDraft(draft: SideChatComposerDraft): void {
-    this.#mainDraft = { content: draft.content, images: [...draft.images] };
-    if (this.destination === 'main') this.#restoreDraft(this.#mainDraft);
-  }
-
   cancelSide(): void {
     this.#runtime?.cancel();
   }
@@ -181,13 +167,15 @@ export class SideChatController {
     this.#startSequence += 1;
     const wasSideSelected = this.destination === 'side';
     const runtime = this.#runtime;
-    this.#runtime = null;
-    this.#sideDraft = EMPTY_SIDE_CHAT_DRAFT;
-    this.#boundConversationId = null;
-    this.#teardownPanel();
-    this.#applyDestinationPresentation('main');
-    // Collapsed discards leave the live main draft alone.
-    if (wasSideSelected) this.#restoreDraft(this.#mainDraft);
+    const removePanel = () => {
+      this.#runtime = null;
+      this.#boundConversationId = null;
+      this.#teardownPanel();
+      this.#applyDestinationPresentation('main');
+    };
+    if (wasSideSelected) this.deps.drafts.changeDestination(removePanel);
+    else removePanel();
+    this.deps.drafts.restore('side', { content: '', images: [] });
     try {
       this.deps.onDestinationChanged();
     } finally {
@@ -256,11 +244,9 @@ export class SideChatController {
       this.#boundConversationId = source.conversationId;
       // The submitted command and its attachments are consumed by the side turn,
       // so only residual composer content survives as the main draft.
-      this.#mainDraft = detectSideChatCommand(this.deps.getInputEl().value)
-        ? EMPTY_SIDE_CHAT_DRAFT
-        : this.#captureDraft();
-      this.#mountPanel(source);
-      this.#clearComposer();
+      if (detectSideChatCommand(this.deps.getInputEl().value)) this.#clearComposer();
+      this.deps.drafts.changeDestination(() => this.#mountPanel(source));
+      this.deps.onDestinationChanged();
       await this.submitToSide(argument, images, context);
       return true;
     } catch (error) {
@@ -352,7 +338,6 @@ export class SideChatController {
     // The panel is created expanded, so Side becomes the destination immediately.
     this.#applyDestinationPresentation('side');
     this.#refreshPanel();
-    this.deps.onDestinationChanged();
   }
 
   #teardownPanel(): void {
@@ -366,13 +351,10 @@ export class SideChatController {
     const panel = this.#panel;
     if (!panel || panel.isExpanded === expanded) return;
 
-    const outgoing = this.#captureDraft();
-    if (expanded) this.#mainDraft = outgoing;
-    else this.#sideDraft = outgoing;
-
-    panel.setExpanded(expanded);
-    this.#applyDestinationPresentation(expanded ? 'side' : 'main');
-    this.#restoreDraft(expanded ? this.#sideDraft : this.#mainDraft);
+    this.deps.drafts.changeDestination(() => {
+      panel.setExpanded(expanded);
+      this.#applyDestinationPresentation(expanded ? 'side' : 'main');
+    });
     this.deps.onDestinationChanged();
   }
 
@@ -405,20 +387,8 @@ export class SideChatController {
     this.deps.onStatusChanged?.();
   }
 
-  #captureDraft(): SideChatComposerDraft {
-    const images = this.deps.getImageContextManager()?.getAttachedImages() ?? [];
-    return { content: this.deps.getInputEl().value, images: [...images] };
-  }
-
-  #restoreDraft(draft: SideChatComposerDraft): void {
-    const inputEl = this.deps.getInputEl();
-    inputEl.value = draft.content;
-    this.deps.getImageContextManager()?.setImages([...draft.images]);
-  }
-
   #clearComposer(): void {
-    this.deps.getInputEl().value = '';
-    this.deps.getImageContextManager()?.clearImages();
+    this.deps.drafts.consume();
   }
 }
 

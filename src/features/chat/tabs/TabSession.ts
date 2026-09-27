@@ -27,11 +27,12 @@ export class TabSession {
     private readonly state: TabSessionState,
     private readonly coordinator: ChatExecutionCoordinator,
     private readonly onWorkChanged?: () => void,
+    private readonly isConversationBusy: () => boolean = () => false,
   ) {
     this.turns = new TurnCoordinator(() => {
       this.onWorkChanged?.();
       if (!this.turns.isActive) this.coordinator.notifyMayCool();
-    });
+    }, () => this.acceptsIntents && this.lifecycleState !== 'closing' && !this.identitySealed && !this.isConversationBusy());
   }
 
   get id(): string { return this.state.id; }
@@ -43,6 +44,18 @@ export class TabSession {
   get acceptsIntents(): boolean { return this.intentAdmissionPauseDepth === 0; }
   get userOwnershipRevision(): number { return this.userOwnershipRevisionValue; }
   get identityRevision(): number { return this.identityRevisionValue; }
+
+  get canNavigateConversation(): boolean {
+    return this.acceptsIntents && this.lifecycleState !== 'closing' && !this.identitySealed
+      && !this.turns.isActive && !this.coordinator.hasBackgroundWork && !this.isConversationBusy();
+  }
+
+  async runConversationNavigation<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T | undefined> {
+    if (!this.canNavigateConversation) return undefined;
+    let result: T | undefined;
+    await this.turns.run(async signal => { result = await operation(signal); }, 'navigation');
+    return result;
+  }
 
   bindConversation(conversationId: string | null, providerId: ProviderId | null): void {
     this.replaceIdentity(conversationId, providerId, null);

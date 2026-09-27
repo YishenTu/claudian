@@ -1,5 +1,6 @@
 import type { FakeRun } from '@test/helpers/ChatExecutionHarness';
 import { beginExecution, createHarness, createSubmission, deferred, FakeSession, requestedScope, reserveProtectedWarmSlots } from '@test/helpers/ChatExecutionHarness';
+import { testDate } from '@test/helpers/testClock';
 
 import { type ProviderExecutionEvent, type ProviderSessionSnapshot } from '@/core/execution';
 import type { ChatMessage } from '@/core/types';
@@ -530,7 +531,7 @@ describe('ChatExecutionCoordinator', () => {
     expect(assistantMessage.assistantMessageId).toBe('native-assistant');
   });
 
-  it('uses the terminal assistant identity for fork projections', async () => {
+  it('attaches late native user and assistant identities without reloading history', async () => {
     const harness = createHarness();
     const user: ChatMessage = { id: 'user', role: 'user', content: 'Hello', timestamp: 1 };
     const assistant: ChatMessage = { id: 'assistant', role: 'assistant', content: '', timestamp: 2 };
@@ -545,6 +546,7 @@ describe('ChatExecutionCoordinator', () => {
     run.events.push({
       type: 'turn_completed', scope: requestedScope(session, run, 3), reason: 'completed',
       nativeAssistantId: 'turn-checkpoint', nativeCheckpointId: 'turn-checkpoint',
+      nativeUserMessageId: 'late-native-user',
     });
     run.events.end();
 
@@ -552,6 +554,7 @@ describe('ChatExecutionCoordinator', () => {
       status: 'completed', nativeAssistantMessageId: 'turn-checkpoint',
     });
     expect(assistant.assistantMessageId).toBe('turn-checkpoint');
+    expect(user.userMessageId).toBe('late-native-user');
   });
 
   it('keeps the submitted pair bound to its own identities across a steer boundary', async () => {
@@ -583,7 +586,7 @@ describe('ChatExecutionCoordinator', () => {
     });
     run.events.push({
       type: 'turn_completed', scope: requestedScope(session, run, 6), reason: 'completed',
-      nativeAssistantId: 'steer-assistant',
+      nativeAssistantId: 'steer-assistant', nativeUserMessageId: 'steer-user',
     });
     run.events.end();
 
@@ -1733,3 +1736,50 @@ test.each([undefined, 'provider-reported-model'])(
     await harness.coordinator.dispose();
   },
 );
+
+it('protects branch navigation from cooling and concurrent input and persists the resulting native cursor', async () => {
+  const harness = createHarness();
+  await harness.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  await harness.coordinator.prepare();
+  const session = harness.backends.get('claude')!.sessions[0];
+  const navigation = deferred<{ status: string; messages: ChatMessage[] }>();
+  const navigate = jest.fn(() => navigation.promise);
+  Object.assign(session, { navigateConversationBranch: navigate, getConversationBranches: async () => ({}),
+    reconcileConversationBranch: async () => ({ status: 'committed', messages: [] }) });
+  const request = { userMessageId: 'user', configuration: { systemInstructions: { kind: 'provider-default' as const } } };
+  const pending = harness.coordinator.navigateConversationBranch(request);
+  await new Promise(resolve => setImmediate(resolve));
+  expect(navigate).toHaveBeenCalledWith({ ...request, signal: expect.any(AbortSignal) });
+  expect(harness.coordinator.canCool()).toBe(false);
+  await expect(harness.coordinator.execute(createSubmission())).rejects.toThrow('already active');
+  navigation.resolve({ status: 'committed', messages: [] });
+  await expect(pending).resolves.toEqual({ status: 'committed', messages: [] });
+  await harness.coordinator.dispose();
+});
+
+it('reports recovery after native branching succeeds but snapshot persistence fails', async () => {
+  const harness = createHarness();
+  await harness.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  await harness.coordinator.prepare();
+  const session = harness.backends.get('claude')!.sessions[0];
+  const messages: ChatMessage[] = [{ id: 'selected', role: 'user', content: 'Selected branch', timestamp: testDate().getTime() }];
+  Object.assign(session, {
+    getConversationBranches: async () => ({}),
+    navigateConversationBranch: async () => {
+      session.snapshot = { ...session.snapshot, revision: 1, providerState: { leaf: 'selected' } };
+      return { status: 'committed', messages };
+    },
+    reconcileConversationBranch: async () => ({ status: 'committed', messages }),
+  });
+  harness.repository.persistExecutionSnapshot.mockRejectedValueOnce(new Error('Storage unavailable'));
+  await expect(harness.coordinator.navigateConversationBranch({ userMessageId: 'old', configuration: { systemInstructions: { kind: 'provider-default' } } }))
+    .resolves.toMatchObject({ status: 'recovery-required', messages });
+  expect(harness.coordinator.canCool()).toBe(false);
+  await expect(harness.coordinator.execute(createSubmission())).rejects.toThrow('recovery must finish');
+  await expect(harness.coordinator.reconcileConversationBranch({ configuration: { systemInstructions: { kind: 'provider-default' } } }))
+    .resolves.toEqual({ status: 'committed', messages });
+  expect(harness.repository.persistExecutionSnapshot).toHaveBeenLastCalledWith(
+    'conversation-1', expect.any(String), expect.any(Number), expect.objectContaining({ revision: 1 }),
+  );
+  await harness.coordinator.dispose();
+});

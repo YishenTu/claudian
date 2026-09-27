@@ -29,6 +29,7 @@ export interface ProviderCapabilities {
   supportsEphemeralSessions: boolean;
   supportsRewind: boolean;
   supportsFork: boolean;
+  supportsConversationBranches?: boolean;
   /** Whether forked children can be non-persistent; defaults to supportsEphemeralSessions. */
   supportsEphemeralFork?: boolean;
   /** Omitted means checkpoint forking; full-session providers can fork only the latest reply. */

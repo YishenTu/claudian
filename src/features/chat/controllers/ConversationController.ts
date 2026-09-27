@@ -1,10 +1,9 @@
 import { Notice } from 'obsidian';
 
-import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
-
 import type {
   ChatRewindConflict,
   ChatRewindMode,
+  ConversationBranchResult,
 } from '../../../core/execution';
 import type {
   ChatMessage,
@@ -16,6 +15,7 @@ import { t } from '../../../i18n/i18n';
 import { confirm } from '../../../shared/modals/ConfirmModal';
 import { extractUserDisplayContent } from '../../../utils/context';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
+import type { ComposerDraft, ComposerDraftController } from '../composer/ComposerDraftController';
 import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
 import type { LinkedContentController } from '../linked-content';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
@@ -24,7 +24,7 @@ import { createWelcomeElement, renderWelcomeContent } from '../rendering/Welcome
 import { findRewindContext } from '../rewind';
 import type { SubagentManager } from '../services/SubagentManager';
 import type { ChatState } from '../state/ChatState';
-import type { ImageContextManager } from '../ui/ImageContext';
+import type { TabSession } from '../tabs/TabSession';
 
 const MAX_REWIND_CONFLICT_PATHS = 5;
 
@@ -54,10 +54,9 @@ export interface ConversationControllerDeps {
   getWelcomeEl: () => HTMLElement | null;
   setWelcomeEl: (el: HTMLElement | null) => void;
   getMessagesEl: () => HTMLElement;
-  getInputEl: () => ComposerInputElement;
-  restoreMessageToComposer?: (message: Pick<ChatMessage, 'content' | 'images'>) => void;
+  drafts: ComposerDraftController;
+  navigation: Pick<TabSession, 'canNavigateConversation' | 'runConversationNavigation'>;
   getLinkedContentController: () => LinkedContentController;
-  getImageContextManager: () => ImageContextManager | null;
   clearQueuedMessage: () => void;
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   ensureExecutionInitialized?: () => Promise<boolean>;
@@ -76,9 +75,17 @@ type SaveOptions = {
   resetProviderSession?: boolean;
 };
 
+type BranchDraft = { conversationId: string; message: ChatMessage; previousDraft: ComposerDraft; scrollTop: number };
+type BranchState =
+  | { kind: 'idle' }
+  | { kind: 'preview'; draft: BranchDraft }
+  | { kind: 'committing'; draft?: BranchDraft }
+  | { kind: 'recovery'; draft?: BranchDraft; conversationId: string; error: string };
+
 export class ConversationController {
   private deps: ConversationControllerDeps;
   private callbacks: ConversationCallbacks;
+  private branchState: BranchState = { kind: 'idle' };
   private switchRequestRevision = 0;
   private switchTail: Promise<void> = Promise.resolve();
 
@@ -111,6 +118,7 @@ export class ConversationController {
     if (state.isSwitchingConversation) return;
 
     // Set flag to block message sending during reset
+    this.cancelBranchDraft();
     state.isCreatingConversation = true;
 
     try {
@@ -146,6 +154,7 @@ export class ConversationController {
       state.isStreaming = false;
 
       // Reset to entry point state - no conversation created yet
+      this.branchState = { kind: 'idle' };
       state.currentConversationId = null;
       state.clearMessages();
       state.usage = null;
@@ -160,16 +169,16 @@ export class ConversationController {
       const welcomeEl = createWelcomeElement(messagesEl, this.getGreeting());
       this.deps.setWelcomeEl(welcomeEl);
 
-      this.deps.getInputEl().value = '';
+      this.deps.drafts.restore('main', { content: '', images: [] });
 
       this.deps.getLinkedContentController().resetAutoDraft();
 
-      this.deps.getImageContextManager()?.clearImages();
       this.deps.clearQueuedMessage();
 
       this.callbacks.onNewConversation?.();
     } finally {
       state.isCreatingConversation = false;
+      this.deps.renderer.refreshBranchButtonState();
     }
   }
 
@@ -187,6 +196,7 @@ export class ConversationController {
 
     // No active conversation - start at entry point
     if (!conversation) {
+      this.branchState = { kind: 'idle' };
       state.currentConversationId = null;
       state.clearMessages();
       state.usage = null;
@@ -241,6 +251,7 @@ export class ConversationController {
     if (state.isSwitchingConversation) return;
     if (state.isCreatingConversation) return;
 
+    this.cancelBranchDraft();
     state.isSwitchingConversation = true;
 
     try {
@@ -263,7 +274,7 @@ export class ConversationController {
       await this.deps.ensureExecutionForConversation?.(conversation);
       if (this.deps.isDisposed?.()) return;
 
-      this.deps.getInputEl().value = '';
+      this.deps.drafts.restore('main', { content: '', images: [] });
       this.deps.clearQueuedMessage();
 
       this.#restoreConversation(conversation);
@@ -271,6 +282,7 @@ export class ConversationController {
       this.updateWelcomeVisibility();
     } finally {
       state.isSwitchingConversation = false;
+      this.deps.renderer.refreshBranchButtonState();
     }
     this.callbacks.onConversationSwitched?.();
   }
@@ -427,16 +439,7 @@ export class ConversationController {
       const restoredContent = userMsg.displayContent
         ?? extractUserDisplayContent(userMsg.content)
         ?? userMsg.content;
-      if (this.deps.restoreMessageToComposer) {
-        this.deps.restoreMessageToComposer({
-          content: restoredContent,
-          images: userMsg.images,
-        });
-      } else {
-        const inputEl = this.deps.getInputEl();
-        inputEl.value = restoredContent;
-        inputEl.focus();
-      }
+      this.deps.drafts.restore('main', { content: restoredContent, images: userMsg.images }, { focus: true, notify: true });
 
       const welcomeEl = renderer.renderMessages(state.messages, () => this.getGreeting());
       this.deps.setWelcomeEl(welcomeEl);
@@ -474,6 +477,130 @@ export class ConversationController {
       );
     } finally {
       state.isRewinding = false;
+    }
+  }
+
+  async navigateBranch(messageId: string, branchMessageId?: string): Promise<void> {
+    const { state, renderer, drafts, navigation } = this.deps;
+    if (drafts.destination !== 'main') {
+      new Notice('Collapse side chat before changing conversation branches.');
+      return;
+    }
+    if (!navigation.canNavigateConversation) return;
+    if (this.branchState.kind === 'recovery') {
+      await navigation.runConversationNavigation(signal => this.#changeBranch(undefined, undefined, signal));
+      return;
+    }
+    const message = state.messages.find(item => item.id === messageId);
+    const conversationId = state.currentConversationId;
+    if (!conversationId || !message || message.role !== 'user' || message.isInterrupt || message.isRebuiltContext) return;
+    if (state.messages.find(item => item.role === 'user' && !item.isInterrupt && !item.isRebuiltContext) === message) return;
+    if (!message.userMessageId) {
+      new Notice('Branching is available after this prompt is saved.');
+      return;
+    }
+    const previousDraft = drafts.capture('main');
+    if (previousDraft.content.trim() || previousDraft.images.length) {
+      new Notice('Save or clear your draft before changing conversation branches.');
+      return;
+    }
+    if (!branchMessageId) {
+      this.branchState = { kind: 'preview', draft: { conversationId, message, previousDraft,
+        scrollTop: this.deps.getMessagesEl().scrollTop } };
+      const content = message.displayContent ?? extractUserDisplayContent(message.content) ?? message.content;
+      this.deps.setWelcomeEl(renderer.renderMessages(state.messages.slice(0, state.messages.indexOf(message)), () => this.getGreeting()));
+      drafts.restore('main', { content, images: message.images }, { focus: true, notify: true });
+      return;
+    }
+    await navigation.runConversationNavigation(signal => this.#changeBranch(message, branchMessageId, signal));
+  }
+
+  cancelBranchDraft(): void {
+    if (this.branchState.kind !== 'preview') return;
+    const { draft } = this.branchState;
+    this.branchState = { kind: 'idle' };
+    const { state, renderer } = this.deps;
+    if (this.deps.isDisposed?.() || state.currentConversationId !== draft.conversationId) return;
+    this.deps.drafts.restore('main', draft.previousDraft);
+    this.deps.setWelcomeEl(renderer.renderMessages(state.messages, () => this.getGreeting()));
+    this.updateWelcomeVisibility();
+    this.deps.getMessagesEl().scrollTop = draft.scrollTop;
+  }
+
+  get hasBranchDraft(): boolean {
+    return this.branchState.kind !== 'idle';
+  }
+
+  /** Runs inside the already admitted main turn, without taking a second operation. */
+  async commitBranchDraft(signal?: AbortSignal): Promise<ConversationBranchResult> {
+    const branch = this.branchState;
+    if (branch.kind === 'idle') return { status: 'committed', messages: this.deps.state.messages };
+    if (branch.kind === 'committing') return { status: 'failed', error: 'Branch navigation is in progress.' };
+    if (branch.kind === 'recovery') return this.#changeBranch(undefined, undefined, signal);
+    if (this.deps.state.currentConversationId !== branch.draft.conversationId
+      || !this.deps.state.messages.includes(branch.draft.message)) return { status: 'failed', error: 'Conversation changed.' };
+    return this.#changeBranch(branch.draft.message, undefined, signal);
+  }
+
+  async #changeBranch(message?: ChatMessage, branchMessageId?: string, signal?: AbortSignal): Promise<ConversationBranchResult> {
+    const { state, renderer } = this.deps;
+    const conversationId = state.currentConversationId;
+    if (!conversationId) return { status: 'failed', error: 'Conversation is missing.' };
+    const previous = this.branchState;
+    let draft = previous.kind === 'idle' ? undefined : previous.draft;
+    let coordinator: ChatExecutionCoordinator | null = null;
+    const isCurrent = () => !this.deps.isDisposed?.() && state.currentConversationId === conversationId
+      && (!coordinator || coordinator === this.#getExecutionCoordinator());
+    this.branchState = { kind: 'committing', draft };
+    state.isRewinding = true;
+    let result: ConversationBranchResult = { status: 'failed', error: 'Execution is unavailable.' };
+    try {
+      if (this.deps.ensureExecutionInitialized && !await this.deps.ensureExecutionInitialized()) return result;
+      coordinator = this.#getExecutionCoordinator();
+      if (!coordinator || !isCurrent()) return result;
+      const request = { configuration: { model: this.deps.getSelectedModel?.() ?? undefined,
+        systemInstructions: { kind: 'provider-default' as const } }, signal };
+      result = message
+        ? await coordinator.navigateConversationBranch({ ...request, userMessageId: message.userMessageId!, branchMessageId })
+        : await coordinator.reconcileConversationBranch(request);
+      if (!isCurrent()) return { status: 'failed', error: 'Conversation changed.' };
+      // Recover once immediately. Further retries use reconciliation, never replay the navigation.
+      if (result.status === 'recovery-required') {
+        const recovered = await coordinator.reconcileConversationBranch(request);
+        result = recovered.status === 'committed' || recovered.status === 'cancelled' ? recovered : { status: 'recovery-required',
+          error: 'error' in recovered ? recovered.error : 'Branch recovery was cancelled.' };
+      }
+      if (!isCurrent()) return { status: 'failed', error: 'Conversation changed.' };
+      if ((result.status === 'committed' || result.status === 'cancelled') && result.messages) {
+        state.messages = result.messages;
+        state.usage = result.usage ?? null;
+        if (result.status === 'cancelled' && draft) {
+          const restored = state.messages.find(item => item.userMessageId === draft!.message.userMessageId);
+          draft = restored ? { ...draft, message: restored } : undefined;
+        }
+        const visible = result.status === 'cancelled' && draft
+          ? state.messages.slice(0, state.messages.indexOf(draft.message)) : state.messages;
+        this.deps.setWelcomeEl(renderer.renderMessages(visible, () => this.getGreeting()));
+        this.updateWelcomeVisibility();
+        try { await this.save(); }
+        catch (error) { result = { status: 'recovery-required', messages: result.messages, error: String(error) }; }
+      }
+      if (!isCurrent()) return { status: 'failed', error: 'Conversation changed.' };
+      if (result.status === 'failed' || result.status === 'recovery-required') new Notice(result.error);
+      return result;
+    } catch (error) {
+      result = { status: 'recovery-required', error: String(error) };
+      new Notice(`Could not reconcile conversation branch: ${result.error}`);
+      return result;
+    } finally {
+      if (!isCurrent()) this.branchState = { kind: 'idle' };
+      else if (result.status === 'committed') this.branchState = { kind: 'idle' };
+      else if (result.status === 'recovery-required' || (previous.kind === 'recovery' && result.status === 'failed')) {
+        this.branchState = { kind: 'recovery', conversationId, draft,
+          error: 'error' in result ? result.error : 'Branch recovery is incomplete.' };
+      } else this.branchState = draft ? { kind: 'preview', draft } : { kind: 'idle' };
+      state.isRewinding = false;
+      renderer.refreshBranchButtonState();
     }
   }
 
@@ -520,6 +647,20 @@ export class ConversationController {
 
     await plugin.updateConversation(state.currentConversationId!, updates);
     state.hasPendingConversationSave = false;
+    const conversationId = state.currentConversationId;
+    const coordinator = this.#getExecutionCoordinator();
+    if (coordinator?.supportsConversationBranches && !state.isStreaming) {
+      const branchState = await coordinator.getConversationBranches(state.messages).catch(() => null);
+      if (!branchState) return;
+      const { branches, userMessageIds } = branchState;
+      if (state.currentConversationId === conversationId && coordinator === this.#getExecutionCoordinator()) {
+        for (const message of state.messages) {
+          if (!message.userMessageId && userMessageIds[message.id]) message.userMessageId = userMessageIds[message.id];
+          if (message.userMessageId && branches[message.userMessageId]) message.treeBranches = branches[message.userMessageId];
+        }
+        this.deps.renderer.refreshBranchButtons(state.messages);
+      }
+    }
   }
 
   /**
@@ -529,6 +670,7 @@ export class ConversationController {
   #restoreConversation(conversation: Conversation): void {
     const { plugin, state, renderer } = this.deps;
 
+    this.branchState = { kind: 'idle' };
     state.currentConversationId = conversation.id;
     state.messages = [...conversation.messages];
     state.usage = conversation.usage ?? null;

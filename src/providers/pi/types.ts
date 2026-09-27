@@ -12,6 +12,8 @@ export interface PiPreviousSession {
 }
 
 export interface PiProviderState {
+  treeCursor?: PiTreeCursor;
+  treeSelections?: Record<string, PiTreeCursor>;
   forkSource?: PiForkSource;
   forkSourceSessionFile?: string;
   leafEntryId?: string;
@@ -19,6 +21,22 @@ export interface PiProviderState {
   previousSessions?: PiPreviousSession[];
   sessionFile?: string;
   sessionId?: string;
+}
+
+export interface PiTreeCursor {
+  targetId: string;
+  leafId: string | null;
+  /** Last append observed when this cursor was selected, including other branches. */
+  appendId?: string;
+}
+
+function getTreeCursor(value: unknown): PiTreeCursor | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const record = value as Record<string, unknown>;
+  return typeof record.targetId === 'string' && record.targetId.length > 0
+    && (record.leafId === null || (typeof record.leafId === 'string' && record.leafId.length > 0))
+    ? { targetId: record.targetId, leafId: record.leafId,
+      ...(typeof record.appendId === 'string' ? { appendId: record.appendId } : {}) } : undefined;
 }
 
 export function getPiState(value: unknown): PiProviderState {
@@ -29,7 +47,15 @@ export function getPiState(value: unknown): PiProviderState {
   const record = value as Record<string, unknown>;
   const forkSource = getPiForkSource(record.forkSource);
   const previousSessions = getPiPreviousSessions(record.previousSessions);
+  const treeCursor = getTreeCursor(record.treeCursor);
+  const treeSelections = record.treeSelections && typeof record.treeSelections === 'object'
+    ? Object.fromEntries(Object.entries(record.treeSelections).flatMap(([id, value]) => {
+      const cursor = getTreeCursor(value);
+      return cursor ? [[id, cursor]] : [];
+    })) : undefined;
   return {
+    ...(treeCursor ? { treeCursor } : {}),
+    ...(treeSelections ? { treeSelections } : {}),
     ...(forkSource ? { forkSource } : {}),
     ...(typeof record.forkSourceSessionFile === 'string' && record.forkSourceSessionFile.trim()
       ? { forkSourceSessionFile: record.forkSourceSessionFile.trim() }
@@ -52,6 +78,8 @@ export function getPiState(value: unknown): PiProviderState {
 
 export function buildPersistedPiState(state: PiProviderState): PiProviderState | undefined {
   const persisted: PiProviderState = {
+    ...(state.treeCursor ? { treeCursor: state.treeCursor } : {}),
+    ...(state.treeSelections ? { treeSelections: state.treeSelections } : {}),
     ...(state.forkSource ? { forkSource: state.forkSource } : {}),
     ...(state.forkSourceSessionFile ? { forkSourceSessionFile: state.forkSourceSessionFile } : {}),
     ...(state.leafEntryId ? { leafEntryId: state.leafEntryId } : {}),
@@ -96,6 +124,8 @@ export function clearPiResumeState(conversation: Pick<Conversation, 'sessionId' 
   delete providerState.forkSource;
   delete providerState.forkSourceSessionFile;
   delete providerState.leafEntryId;
+  delete providerState.treeCursor;
+  delete providerState.treeSelections;
   delete providerState.parentSession;
   delete providerState.sessionFile;
   delete providerState.sessionId;

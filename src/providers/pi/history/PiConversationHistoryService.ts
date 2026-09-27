@@ -29,9 +29,12 @@ import {
   parsePiSessionEntries,
   parsePiSessionModel,
   readPiSessionHeader,
+  resolvePiTreeCursor,
 } from './PiHistoryStore';
 
 const PI_PROVIDER_STATE_KEYS = [
+  'treeCursor',
+  'treeSelections',
   'forkSource',
   'forkSourceSessionFile',
   'leafEntryId',
@@ -73,10 +76,9 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     if (!sessionFile) return null;
 
     try {
-      return parsePiSessionModel(
-        await fs.readFile(sessionFile, 'utf8'),
-        isPendingFork ? state.forkSource!.resumeAt : state.leafEntryId,
-      );
+      const content = await fs.readFile(sessionFile, 'utf8');
+      const cursor = state.treeCursor ? resolvePiTreeCursor(parsePiSessionEntries(content).entries, state.treeCursor) : undefined;
+      return parsePiSessionModel(content, isPendingFork ? state.forkSource!.resumeAt : cursor ? cursor.leafId : state.leafEntryId);
     } catch {
       return null;
     }
@@ -197,14 +199,24 @@ export class PiConversationHistoryService implements ProviderConversationHistory
 
 
     const messages: ChatMessage[] = [];
+    let readCurrent = false;
     for (const source of resolvedSources) {
       try {
         const content = await fs.readFile(source.sessionFile, 'utf-8');
+        const cursor = source.kind === 'current' && state.treeCursor
+          ? resolvePiTreeCursor(parsePiSessionEntries(content).entries, state.treeCursor) : undefined;
         const sourceMessages = parsePiSessionContent(content, {
-          leafEntryId: source.leafEntryId,
-          requireLeafEntryId: source.kind === 'previous' && !!source.leafEntryId,
+          leafEntryId: cursor ? cursor.leafId : source.leafEntryId,
+          includeBranches: source.kind === 'current',
+          requireLeafEntryId: !!source.leafEntryId || !!state.treeCursor,
           syntheticIdNamespace: source.sessionFile,
         });
+        if (source.kind === 'current') readCurrent = true;
+        if (cursor) {
+          conversation.providerState = { ...conversation.providerState, treeCursor: cursor };
+          if (cursor.leafId === null) delete conversation.providerState.leafEntryId;
+          else conversation.providerState.leafEntryId = cursor.leafId;
+        }
         messages.push(...sourceMessages);
         if (
           source.kind === 'previous'
@@ -222,7 +234,7 @@ export class PiConversationHistoryService implements ProviderConversationHistory
         // One unavailable segment must not hide the remaining replayable history.
       }
     }
-    if (messages.length === 0) {
+    if (messages.length === 0 && !readCurrent) {
       return conversation;
     }
 

@@ -135,6 +135,8 @@ export interface ChatMessage {
   durationFlavorWord?: string;
   /** Provider-native user message identifier used for rewind. */
   userMessageId?: string;
+  /** Provider-projected sibling prompt IDs, including this prompt, in branch order. */
+  treeBranches?: readonly string[];
   /** Provider-native assistant message identifier used for rewind/fork checkpoints. */
   assistantMessageId?: string;
 }

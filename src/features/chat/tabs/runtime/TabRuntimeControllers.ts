@@ -6,6 +6,7 @@ import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
 import { t } from '../../../../i18n/i18n';
 import { getVaultPath } from '../../../../utils/path';
+import { ComposerDraftController } from '../../composer/ComposerDraftController';
 import { BrowserSelectionController } from '../../controllers/BrowserSelectionController';
 import { CanvasSelectionController } from '../../controllers/CanvasSelectionController';
 import { ConversationController } from '../../controllers/ConversationController';
@@ -114,6 +115,10 @@ export function buildTabRuntimeControllers(
         )
       : undefined,
     () => getTabCapabilities(runtimeRef.requirePublished(), plugin),
+    {
+      navigate: (id, branchId) => runtimeRef.requirePublished().controllers.conversationController.navigateBranch(id, branchId),
+      isBusy: () => !shell.session.canNavigateConversation,
+    },
   );
   options.registerCleanup('tab message renderer', () => renderer.dispose());
 
@@ -226,11 +231,18 @@ export function buildTabRuntimeControllers(
     renderVisibilityObserver.observe(dom.messagesEl);
   }
 
+  const drafts = new ComposerDraftController({
+    getInput: () => dom.inputEl,
+    getImages: () => ui.imageContextManager,
+    getDestination: () => runtimeRef.current()?.controllers.sideChatController.destination ?? 'main',
+  });
+
   const conversationController = new ConversationController(
     {
       plugin,
       state,
       renderer,
+      drafts,
       subagentManager: services.subagentManager,
       getWelcomeEl: () => dom.welcomeEl,
       setWelcomeEl: (element) => {
@@ -242,13 +254,8 @@ export function buildTabRuntimeControllers(
         }
       },
       getMessagesEl: () => dom.messagesEl,
-      getInputEl: () => dom.inputEl,
-      restoreMessageToComposer: message => (
-        runtimeRef.requirePublished().controllers.inputController
-          .restoreRewoundMessageToComposer(message)
-      ),
+      navigation: shell.session,
       getLinkedContentController: () => ui.linkedContentController,
-      getImageContextManager: () => ui.imageContextManager,
       clearQueuedMessage: () => (
         runtimeRef.requirePublished().controllers.inputController.clearQueuedMessage()
       ),
@@ -325,7 +332,7 @@ export function buildTabRuntimeControllers(
   const sideChatController = new SideChatController({
     component,
     composerEl: dom.inputComposerEl,
-    getImageContextManager: () => ui.imageContextManager,
+    drafts,
     getInputEl: () => dom.inputEl,
     getTab: () => runtimeRef.requirePublished(),
     inputWrapperEl: dom.inputWrapper,
@@ -333,6 +340,7 @@ export function buildTabRuntimeControllers(
     onDestinationChanged: () => {
       const tab = runtimeRef.current();
       if (!tab) return;
+      if (tab.controllers.sideChatController.destination === 'side') conversationController.cancelBranchDraft();
       ui.composerDropdown.setBuiltInsEnabled(
         tab.controllers.sideChatController.destination === 'main',
       );
@@ -352,12 +360,12 @@ export function buildTabRuntimeControllers(
     browserSelectionController,
     canvasSelectionController,
     conversationController,
+    drafts,
     getInputEl: () => dom.inputEl,
     getInputContainerEl: () => dom.inputContainerEl,
     getWelcomeEl: () => dom.welcomeEl,
     getMessagesEl: () => dom.messagesEl,
     getLinkedContentController: () => ui.linkedContentController,
-    getImageContextManager: () => ui.imageContextManager,
     getTitleGenerationService: () => services.titleGenerationService,
     generateId: createTabMessageId,
     getSettings: () => getTabSettingsSnapshot(runtimeRef.requirePublished(), plugin),

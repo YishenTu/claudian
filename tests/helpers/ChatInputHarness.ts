@@ -1,3 +1,4 @@
+import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
@@ -138,6 +139,8 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
       getContext: jest.fn().mockReturnValue(null),
     },
     conversationController: {
+      commitBranchDraft: jest.fn().mockResolvedValue(true),
+      cancelBranchDraft: jest.fn(),
       clearTerminalSubagentsFromMessages: jest.fn(),
       createNew: jest.fn().mockResolvedValue(undefined),
       generateFallbackTitle: jest.fn().mockReturnValue('Fallback title'),
@@ -174,6 +177,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
         }
       : {}),
   } as unknown as InputControllerDeps;
+  Object.assign(deps, createConversationPorts(deps as any));
   return {
     controller: new InputController(deps),
     coordinator,

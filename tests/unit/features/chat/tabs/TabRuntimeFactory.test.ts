@@ -1,3 +1,4 @@
+import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 import { within } from '@testing-library/dom';
 import { JSDOM } from 'jsdom';
@@ -330,6 +331,7 @@ function installTransitionController(
   plugin: ReturnType<typeof createPlugin>,
 ): ConversationController {
   const controller = new ConversationController({
+    ...createConversationPorts({ state: tab.state, getInputEl: () => tab.dom.inputEl, getImageContextManager: () => tab.ui.imageContextManager }),
     plugin,
     state: tab.state,
     renderer: tab.renderer!,
@@ -337,9 +339,7 @@ function installTransitionController(
     getWelcomeEl: () => tab.dom.welcomeEl,
     setWelcomeEl: (element) => { tab.dom.welcomeEl = element; },
     getMessagesEl: () => tab.dom.messagesEl,
-    getInputEl: () => tab.dom.inputEl,
     getLinkedContentController: () => tab.ui.linkedContentController,
-    getImageContextManager: () => null,
     clearQueuedMessage: jest.fn(),
     getExecutionCoordinator: () => tab.executionCoordinator,
     awaitBackgroundWork: () => tab.session.awaitBackgroundWork(),
@@ -452,6 +452,32 @@ describe('Tab provider execution ownership', () => {
 
     expect(onWorkChanged).toHaveBeenCalledTimes(4);
     expect(onWorkChanged).toHaveBeenCalledWith(tab);
+  });
+
+  it('blocks branch admission until the main turn has finished its finalization', async () => {
+    const tab = await createTestTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
+    tab.state.currentConversationId = 'conversation';
+    tab.state.messages = [
+      { id: 'first', role: 'user', content: 'First', timestamp: Date.now(), userMessageId: 'native-first' },
+      { id: 'second', role: 'user', content: 'Second', timestamp: Date.now(), userMessageId: 'native-second' },
+    ];
+    const render = jest.spyOn(tab.renderer, 'renderMessages').mockReturnValue(null);
+    const refresh = jest.spyOn(tab.renderer, 'refreshBranchButtonState');
+    await tab.session.turns.run(async () => {
+      expect(tab.state.isStreaming).toBe(false);
+      await tab.controllers.conversationController.navigateBranch('second');
+      expect(tab.dom.inputEl.value).toBe('');
+      expect(render).not.toHaveBeenCalled();
+    });
+    expect(refresh).toHaveBeenCalledTimes(2);
+    tab.session.pauseIntentAdmission();
+    await tab.controllers.conversationController.navigateBranch('second');
+    expect(tab.dom.inputEl.value).toBe('');
+    await expect(tab.session.turns.run(async () => undefined)).rejects.toThrow('admission is closed');
+    tab.session.resumeIntentAdmission();
+    await tab.controllers.conversationController.navigateBranch('second');
+    expect(tab.dom.inputEl.value).toBe('Second');
+    expect(render).toHaveBeenCalledTimes(1);
   });
 
   it('leaves Enter on a composer link available for native link activation', async () => {
@@ -2136,6 +2162,7 @@ describe('Tab provider execution ownership', () => {
       addMessage: jest.fn().mockReturnValue(assistantEl),
       finalizeResponse: jest.fn(),
       renderMessages: jest.fn().mockReturnValue(createMockEl()),
+      refreshBranchButtonState: jest.fn(),
       scrollToBottom: jest.fn(),
     } as any;
     let releaseRender!: () => void;
@@ -2222,6 +2249,7 @@ describe('Tab provider execution ownership', () => {
     tab.state.currentConversationId = oldConversation.id;
     tab.renderer = {
       renderMessages: jest.fn().mockReturnValue(createMockEl()),
+      refreshBranchButtonState: jest.fn(),
     } as any;
     let releaseRecovery!: (applied: boolean) => void;
     const recoveryBlocked = new Promise<boolean>((resolve) => {

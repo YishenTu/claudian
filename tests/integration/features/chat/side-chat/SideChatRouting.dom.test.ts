@@ -1,6 +1,8 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { deferred } from '@test/helpers/ChatInputHarness';
+import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import {
   createHarness,
   releaseSideChatHarnesses,
@@ -11,6 +13,7 @@ import { waitFor } from '@testing-library/dom';
 
 import type { ProviderExecutionContext } from '@/core/execution';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
+import { ConversationController } from '@/features/chat/controllers/ConversationController';
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatExecutionPreHandoffError } from '@/features/chat/execution/ChatExecutionCoordinator';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
@@ -38,17 +41,18 @@ function createRouting(
     hasPendingConversationSave: false,
     isStreaming: false,
     isSwitchingConversation: false,
-    messages: [],
+    messages: [] as ChatMessage[],
     responseStartTime: null,
     streamGeneration: 1,
     queuedMessage: null as unknown,
     queueIndicatorEl: null,
   };
-  const controller = new InputController({
+  const deps = {
+    drafts: harness.drafts,
     getSettings: () => ({ model: 'claude-model', reasoning: 'high', permissionMode: 'normal', serviceTier: 'default' }),
     canvasSelectionController: { getContext: () => context.canvasSelection ?? null },
     browserSelectionController: { getContext: () => context.browserSelection ?? null },
-    conversationController: { save: async () => undefined },
+    conversationController: { save: async () => undefined, commitBranchDraft: async () => true, cancelBranchDraft: () => undefined },
     ensureExecutionInitialized: async () => failAt !== 'initialization',
     getExecutionCoordinator: () => failAt === 'missing-coordinator' ? null : ({
       cancel: () => { mainExecutions.push('<cancelled>'); },
@@ -91,13 +95,14 @@ function createRouting(
       hideThinkingIndicator: () => undefined,
       showThinkingIndicator: () => undefined,
     },
-  } as unknown as InputControllerDeps);
+  } as unknown as InputControllerDeps;
+  const controller = new InputController(deps);
 
   const tab = {
     controllers: { inputController: controller, sideChatController: harness.controller },
     state,
   } as unknown as AssembledTabRuntime;
-  return { controller, mainExecutions, mainMessages, state, tab };
+  return { controller, deps, mainExecutions, mainMessages, state, tab };
 }
 
 it('starts a side chat from a submitted command instead of sending it to main', async () => {
@@ -459,4 +464,84 @@ it('rejects a full-session side fork when main advances during native preparatio
   await started;
   expect(harness.controller.runtime?.status).toBe('error');
   expect(harness.controller.runtime?.lastError).toMatch(/source.*changed/i);
+});
+
+
+it('protects parked main drafts and cancels branch previews when switching to side chat', async () => {
+  const harness = createHarness({ onDestinationChanged: () => {
+    if (harness.controller.destination === 'side') conversation.cancelBranchDraft();
+  } });
+  const routing = createRouting(harness);
+  const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Old prompt', timestamp: Date.now(), userMessageId: 'native-second' };
+  const history: ChatMessage[] = [{ id: 'first', role: 'user', content: 'First', timestamp: Date.now() }, prompt];
+  routing.state.messages = history;
+  const conversation = new ConversationController({
+    state: routing.state, drafts: harness.drafts, navigation: createConversationPorts(routing.deps as any).navigation, plugin: { settings: {} },
+    renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
+    getInputEl: () => harness.inputEl, getMessagesEl: () => document.body,
+    getImageContextManager: () => harness.imageContextManager,
+    getWelcomeEl: () => null, setWelcomeEl: jest.fn(),
+    isMainComposerActive: () => harness.controller.destination === 'main',
+  } as any);
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.establishChild('child-session');
+  harness.backend.latest.complete();
+  await started;
+  harness.controller.collapse();
+  harness.inputEl.value = 'Parked main draft';
+  harness.controller.expand();
+  await conversation.navigateBranch('second');
+  expect(harness.drafts.capture('main').content).toBe('Parked main draft');
+  expect(harness.inputEl.value).toBe('');
+  harness.inputEl.value = 'Side draft';
+  harness.controller.collapse();
+  harness.inputEl.value = '';
+  await conversation.navigateBranch('second');
+  expect(harness.inputEl.value).toBe('Old prompt');
+  harness.controller.expand();
+  expect(harness.inputEl.value).toBe('Side draft');
+  expect(harness.drafts.capture('main').content).toBe('');
+  harness.controller.collapse();
+  expect(harness.inputEl.value).toBe('');
+  expect(routing.state.messages).toEqual(history);
+});
+
+
+it.each([false, true])('keeps side drafts separate while a branch submission settles (cancelled: %s)', async cancelled => {
+  const harness = createHarness();
+  const routing = createRouting(harness);
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.establishChild('child-session');
+  harness.backend.latest.complete();
+  await started;
+  const sideImage = { id: 'side', name: 'side.png', data: 'side-data', mediaType: 'image/png' } as ImageAttachment;
+  const mainImage = { id: 'main', name: 'main.png', data: 'main-data', mediaType: 'image/png' } as ImageAttachment;
+  harness.inputEl.value = 'Unsent side draft';
+  harness.imageContextManager.setImages([sideImage]);
+  harness.controller.collapse();
+  const first: ChatMessage = { id: 'first', role: 'user', content: 'First', timestamp: Date.now() };
+  const prompt: ChatMessage = { id: 'second', role: 'user', content: 'Original', images: [mainImage], timestamp: Date.now(), userMessageId: 'native-second' };
+  routing.state.messages = [first, prompt];
+  routing.state.addMessage = message => { routing.mainMessages.push(message); routing.state.messages.push(message); };
+  const navigation = deferred<{ status: string; messages: ChatMessage[] }>();
+  const coordinator = { navigateConversationBranch: jest.fn().mockReturnValue(navigation.promise) };
+  const conversation = new ConversationController({
+    ...routing.deps, navigation: createConversationPorts(routing.deps as any).navigation, plugin: { settings: {}, updateConversation: jest.fn() },
+    renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
+    setWelcomeEl: jest.fn(), getExecutionCoordinator: () => coordinator,
+  } as any);
+  routing.deps.conversationController = conversation;
+  await conversation.navigateBranch('second');
+  harness.inputEl.value = 'Edited main';
+  const sending = routing.controller.sendMessage();
+  await waitFor(() => expect(coordinator.navigateConversationBranch).toHaveBeenCalled());
+  harness.controller.expand();
+  conversation.cancelBranchDraft();
+  navigation.resolve({ status: cancelled ? 'cancelled' : 'committed', messages: [first] });
+  await sending;
+  expect(harness.inputEl.value).toBe('Unsent side draft');
+  expect(harness.imageContextManager.getAttachedImages()).toEqual([sideImage]);
+  expect(routing.mainExecutions).toEqual(cancelled ? [] : ['Edited main']);
+  expect(routing.mainMessages.filter(message => message.role === 'user').map(message => message.images)).toEqual(cancelled ? [] : [[mainImage]]);
+  expect(harness.drafts.capture('main').content).toBe(cancelled ? 'Edited main' : '');
 });

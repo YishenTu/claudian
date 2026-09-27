@@ -10,8 +10,6 @@ export {
   type SideChatTurnStatus,
 } from './SideChatSession';
 export {
-  EMPTY_SIDE_CHAT_DRAFT,
-  type SideChatComposerDraft,
   type SideChatDestination,
   type SideChatSettingsProjection,
   type SideChatSource,

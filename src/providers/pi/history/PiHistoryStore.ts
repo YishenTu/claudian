@@ -16,6 +16,7 @@ import {
   normalizePiToolInput,
   normalizePiToolName,
 } from '../normalizations/piToolNormalization';
+import type { PiTreeCursor } from '../types';
 import { decodePiRecoveryPrompt } from './PiRecoveryPromptCodec';
 
 export interface PiSessionEntry {
@@ -32,7 +33,8 @@ export interface ParsedPiSessionEntries {
 }
 
 export interface ParsePiSessionContentOptions {
-  leafEntryId?: string;
+  leafEntryId?: string | null;
+  includeBranches?: boolean;
   requireLeafEntryId?: boolean;
   syntheticIdNamespace?: string;
 }
@@ -67,6 +69,7 @@ export function parsePiSessionContent(
   options: ParsePiSessionContentOptions = {},
 ): ChatMessage[] {
   const parsed = parsePiSessionEntries(content);
+  if (options.leafEntryId === null) return [];
   const leafEntryId = options.leafEntryId?.trim();
   if (
     options.requireLeafEntryId
@@ -75,16 +78,105 @@ export function parsePiSessionContent(
     return [];
   }
 
-  return mapPiSessionEntries(
+  const messages = mapPiSessionEntries(
     resolvePiActivePath(parsed.entries, leafEntryId),
     options.syntheticIdNamespace,
   );
+  if (options.includeBranches !== false) {
+    const branches = getPiConversationBranches(parsed.entries);
+    for (const message of messages) {
+      if (message.userMessageId && branches[message.userMessageId]) {
+        message.treeBranches = branches[message.userMessageId];
+      }
+    }
+  }
+  return messages;
+}
+
+/** Configuration entries between prompts do not create conversation alternatives. */
+/** Match ordered gaps between native IDs, preserving unconsumed steering input as unbound. */
+export function correlatePiUserMessages(live: readonly ChatMessage[], native: readonly ChatMessage[]): Record<string, string> {
+  const users = live.filter(message => message.role === 'user' && !message.isInterrupt && !message.isRebuiltContext);
+  const nativeUsers = native.filter(message => message.role === 'user' && message.userMessageId);
+  const nativeIndexes = new Map(nativeUsers.map((message, index) => [message.userMessageId!, index]));
+  const result: Record<string, string> = {};
+  let localStart = 0;
+  let nativeStart = 0;
+  const matchGap = (localEnd: number, nativeEnd: number) => {
+    const nativeCount = nativeEnd - nativeStart;
+    if (localEnd - localStart < nativeCount) return;
+    const gap = users.slice(localStart, localStart + nativeCount);
+    if (localEnd - localStart > nativeCount) {
+      // Only main submitted inputs carry an accepted execution snapshot. Extra
+      // steering rows can be acknowledged locally before Pi consumes the queue.
+      if (!gap.every(message => message.executionInput)
+        || users.slice(localStart + nativeCount, localEnd).some(message => message.executionInput)) return;
+    }
+    if (!gap.every((message, offset) => {
+      const candidate = nativeUsers[nativeStart + offset];
+      const text = (item: ChatMessage) => extractUserQuery(item.displayContent ?? item.content);
+      return !message.userMessageId && text(message) === text(candidate)
+        && (message.images?.length ?? 0) === (candidate.images?.length ?? 0)
+        && (message.images ?? []).every((image, index) => image.data === candidate.images![index].data
+          && image.mediaType === candidate.images![index].mediaType);
+    })) return;
+    gap.forEach((message, offset) => { result[message.id] = nativeUsers[nativeStart + offset].userMessageId!; });
+  };
+  for (let index = 0; index < users.length; index++) {
+    const id = users[index].userMessageId;
+    if (!id) continue;
+    const nativeIndex = nativeIndexes.get(id);
+    if (nativeIndex === undefined) {
+      // Previous-session messages precede the active native transcript.
+      if (nativeStart === 0) localStart = index + 1;
+      continue;
+    }
+    if (nativeIndex < nativeStart) continue;
+    matchGap(index, nativeIndex);
+    result[users[index].id] = id;
+    localStart = index + 1;
+    nativeStart = nativeIndex + 1;
+  }
+  matchGap(users.length, nativeUsers.length);
+  return result;
+}
+
+export function getPiConversationBranches(entries: readonly PiSessionEntry[]): Record<string, string[]> {
+  const byId = new Map(entries.filter(entry => entry.id).map(entry => [entry.id!, entry]));
+  const groups = new Map<string | undefined, string[]>();
+  for (const entry of entries) {
+    if (!entry.id || entry.message?.role !== 'user') continue;
+    if (!entry.parentId && entry.raw.parentId !== null && entry.raw.parent_id !== null) continue;
+    let parent = entry.parentId;
+    const visited = new Set<string>();
+    while (parent && !visited.has(parent)) {
+      visited.add(parent);
+      const ancestor = byId.get(parent);
+      if (!ancestor || ancestor.message || ancestor.type === 'branch_summary') break;
+      parent = ancestor.parentId;
+    }
+    const group = groups.get(parent) ?? [];
+    group.push(entry.id);
+    groups.set(parent, group);
+  }
+  return Object.fromEntries([...groups.values()].flatMap(ids => ids.map(id => [id, ids])));
+}
+
+/** Native appends after a selected cursor include interrupted turns and configuration entries. */
+export function resolvePiTreeCursor(entries: PiSessionEntry[], cursor: PiTreeCursor): PiTreeCursor {
+  const latest = entries.at(-1)?.id;
+  if (!cursor.appendId || !latest || latest === cursor.appendId) return cursor;
+  if (!entries.some(entry => entry.id === cursor.appendId)) throw new Error('Pi branch history changed since navigation.');
+  const path = resolvePiActivePath(entries, latest);
+  if (cursor.leafId !== null && !path.some(entry => entry.id === cursor.leafId)) return cursor;
+  return { targetId: latest, leafId: latest, appendId: latest };
 }
 
 export function parsePiSessionModel(
   content: string,
-  leafEntryId?: string,
+  leafEntryId?: string | null,
 ): string | null {
+  if (leafEntryId === null) return null;
   const parsed = parsePiSessionEntries(content);
   const persistedLeafEntryId = leafEntryId?.trim();
   if (

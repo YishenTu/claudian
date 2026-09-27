@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { testDate, testTime } from '@test/helpers/testClock';
 
 import {
+  correlatePiUserMessages,
   createPiForkSessionFile,
   getPiTurnStats,
   parsePiSessionContent,
@@ -16,6 +17,45 @@ import {
 import { encodePiRecoveryPrompt } from '@/providers/pi/history/PiRecoveryPromptCodec';
 
 describe('PiHistoryStore', () => {
+  it('correlates repeated live prompts by their anchored order and leaves unsaved input unbound', () => {
+    const native = parsePiSessionContent([
+      { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'Repeat' } },
+      { type: 'message', id: 'u2', parentId: 'u1', message: { role: 'user', content: 'Repeat' } },
+      { type: 'message', id: 'u3', parentId: 'u2', message: { role: 'user', content: 'Repeat' } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+    const live = native.map((message, index) => ({ ...message, id: `local-${index}`,
+      userMessageId: index === 1 ? 'u2' : undefined }));
+    expect(correlatePiUserMessages(live, native)).toEqual({ 'local-0': 'u1', 'local-1': 'u2', 'local-2': 'u3' });
+    expect(correlatePiUserMessages([...live, { ...live[2], id: 'unsaved' }], native)).toEqual({ 'local-0': 'u1', 'local-1': 'u2' });
+  });
+
+  it('projects sibling prompts across configuration entries without mixing their continuations', () => {
+    const content = [
+      { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'A' } },
+      { type: 'message', id: 'a1', parentId: 'u1', message: { role: 'assistant', content: 'Answer A' } },
+      { type: 'model_change', id: 'model', parentId: null },
+      { type: 'message', id: 'u2', parentId: 'model', message: { role: 'user', content: 'B' } },
+      { type: 'message', id: 'a2', parentId: 'u2', message: { role: 'assistant', content: 'Answer B' } },
+    ].map(entry => JSON.stringify(entry)).join('\n');
+    expect(parsePiSessionContent(content, { leafEntryId: 'a1' })).toMatchObject([
+      { content: 'A', treeBranches: ['u1', 'u2'] }, { content: 'Answer A' },
+    ]);
+    expect(parsePiSessionContent(content, { leafEntryId: 'a2' })).toMatchObject([
+      { content: 'B', treeBranches: ['u1', 'u2'] }, { content: 'Answer B' },
+    ]);
+  });
+
+  it('recovers the accepted prompt when an acknowledged steer was never consumed', () => {
+    const native = parsePiSessionContent([
+      { type: 'message', id: 'u1', parentId: null, message: { role: 'user', content: 'First' } },
+      { type: 'message', id: 'u2', parentId: 'u1', message: { role: 'user', content: 'Second' } },
+    ].map(entry => JSON.stringify(entry)).join('\n'));
+    const live = [native[0], { ...native[1], id: 'accepted', userMessageId: undefined,
+      executionInput: { schemaVersion: 1 as const, canonicalText: 'Second' } },
+    { ...native[1], id: 'queued', content: 'Queued steer', userMessageId: undefined }];
+    expect(correlatePiUserMessages(live, native)).toEqual({ u1: 'u1', accepted: 'u2' });
+  });
+
   it('parses linear user and assistant messages', () => {
     const content = [
       JSON.stringify({ type: 'session', id: 's1' }),
@@ -36,6 +76,7 @@ describe('PiHistoryStore', () => {
     const messages = parsePiSessionContent(content);
 
     expect(messages).toHaveLength(2);
+    expect(messages[0].treeBranches).toBeUndefined();
     expect(messages[0]).toMatchObject({
       content: 'Hello',
       role: 'user',

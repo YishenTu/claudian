@@ -1,5 +1,5 @@
 import type { ProviderId } from '../../../core/providers/types';
-import type { ChatMessage, ImageAttachment } from '../../../core/types';
+import type { ChatMessage } from '../../../core/types';
 
 /** Composer destination derived from side panel expansion; never separately mutable. */
 export type SideChatDestination = 'main' | 'side';
@@ -33,18 +33,3 @@ export interface SideChatSettingsProjection {
   reasoning?: string | null;
   serviceTier?: string;
 }
-
-/**
- * Destination-owned composer draft. Editor/browser/canvas selection context is
- * read live from the shared composer at submission, so only restorable state
- * lives here.
- */
-export interface SideChatComposerDraft {
-  readonly content: string;
-  readonly images: readonly ImageAttachment[];
-}
-
-export const EMPTY_SIDE_CHAT_DRAFT: SideChatComposerDraft = Object.freeze({
-  content: '',
-  images: Object.freeze([]),
-});

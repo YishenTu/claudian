@@ -2,6 +2,10 @@ import type {
   ChatRewindMode,
   ChatRewindPreview,
   ChatRewindResult,
+  ConversationBranchRecoveryRequest,
+  ConversationBranchRequest,
+  ConversationBranchResult,
+  ConversationBranchState,
   ProviderExecutionBackend,
   ProviderExecutionConfiguration,
   ProviderExecutionEvent,
@@ -18,6 +22,7 @@ import type {
   ProviderToolPolicy,
 } from '@/core/execution';
 import {
+  isBranchableExecutionSession,
   isRewindableExecutionSession,
   isSteerableExecutionSession,
 } from '@/core/execution';
@@ -203,6 +208,7 @@ export class ChatExecutionCoordinator {
   #sessionBinding: SessionBinding | null = null;
   #activeExecution: ActiveExecution | null = null;
   #requestController: AbortController | null = null;
+  #branchRecoveryRequired = false;
   readonly #pendingInteractions = new Map<string, PendingInteraction>();
   readonly #pendingSteerAttempts = new Map<string, PendingSteerAttempt>();
   #disposed = false;
@@ -273,6 +279,7 @@ export class ChatExecutionCoordinator {
     this.#invalidateActiveExecution('invalidated', 'conversation-switched');
     this.#pendingSteerAttempts.clear();
     this.#conversation = conversation;
+    this.#branchRecoveryRequired = false;
     this.#stale = false;
     await this.#releaseSessionBinding();
   }
@@ -362,6 +369,7 @@ export class ChatExecutionCoordinator {
 
   async execute(submission: ChatTurnSubmission, signal?: AbortSignal): Promise<ChatExecutionResult> {
     this.#assertAvailable();
+    if (this.#branchRecoveryRequired) throw new ChatExecutionPreHandoffError('Conversation branch recovery must finish before sending.');
     if (this.#requestController) throw new Error('A chat execution is already active');
     const controller = new AbortController();
     this.#requestController = controller;
@@ -444,6 +452,7 @@ export class ChatExecutionCoordinator {
   }
 
   async #steerProtected(submission: ChatTurnSubmission): Promise<boolean> {
+    if (this.#branchRecoveryRequired) return false;
     this.#assertAvailable();
     await this.#touchWarmSlot();
     const binding = this.#requireCurrentSessionBinding();
@@ -534,6 +543,72 @@ export class ChatExecutionCoordinator {
     ));
   }
 
+  async getConversationBranches(messages: readonly ChatMessage[] = []): Promise<ConversationBranchState> {
+    const binding = this.#sessionBinding;
+    if (!binding || !this.#isBindingCurrent(binding) || !isBranchableExecutionSession(binding.session)) return { branches: {}, userMessageIds: {} };
+    const result = await binding.session.getConversationBranches(messages);
+    return this.#isBindingCurrent(binding) ? result : { branches: {}, userMessageIds: {} };
+  }
+
+  get supportsConversationBranches(): boolean {
+    const binding = this.#sessionBinding;
+    return !!binding && this.#isBindingCurrent(binding) && isBranchableExecutionSession(binding.session);
+  }
+
+  navigateConversationBranch(request: ConversationBranchRequest): Promise<ConversationBranchResult> {
+    return this.#changeConversationBranch(request);
+  }
+
+  reconcileConversationBranch(request: ConversationBranchRecoveryRequest): Promise<ConversationBranchResult> {
+    return this.#changeConversationBranch(request);
+  }
+
+  async #changeConversationBranch(request: ConversationBranchRequest | ConversationBranchRecoveryRequest): Promise<ConversationBranchResult> {
+    if (this.#branchRecoveryRequired && 'userMessageId' in request) {
+      return { status: 'recovery-required', error: 'Reconcile the current branch before navigating again.' };
+    }
+    if (this.#requestController || this.#protectedOperationCount > 0 || this.hasBackgroundWork || this.#pendingInteractions.size) {
+      return { status: 'failed', error: 'Conversation is busy.' };
+    }
+    const controller = new AbortController();
+    this.#requestController = controller;
+    const conversation = this.#conversation;
+    const abort = () => controller.abort(request.signal?.reason);
+    request.signal?.addEventListener('abort', abort, { once: true });
+    if (request.signal?.aborted) abort();
+    try {
+      return await this.#runProtectedOperation<ConversationBranchResult>(async () => {
+        await this.prepare();
+        const binding = this.#requireCurrentSessionBinding();
+        if (conversation !== this.#conversation || !isBranchableExecutionSession(binding.session)) {
+          return { status: 'failed', error: 'Conversation branching is unavailable.' };
+        }
+        await this.deps.persistence.assertConversationExecutionAuthority(
+          binding.conversation.conversationId, binding.bindingId, binding.generation,
+        );
+        if (!this.#isBindingCurrent(binding) || controller.signal.aborted) return { status: 'cancelled' };
+        const result = 'userMessageId' in request
+          ? await binding.session.navigateConversationBranch({ ...request, signal: controller.signal })
+          : await binding.session.reconcileConversationBranch({ ...request, signal: controller.signal });
+        if (!this.#isBindingCurrent(binding)) return { status: 'failed', error: 'Conversation changed during branching.' };
+        try {
+          await this.#persistSnapshot(binding, binding.session.getSnapshot(), true);
+          if (result.status !== 'failed') this.#branchRecoveryRequired = result.status === 'recovery-required';
+          return result;
+        } catch (error) {
+          this.#branchRecoveryRequired = true;
+          return { status: 'recovery-required', error: String(error),
+            ...('messages' in result ? { messages: result.messages } : {}) };
+        }
+      });
+    } catch (error) {
+      return { status: 'failed', error: String(error) };
+    } finally {
+      request.signal?.removeEventListener('abort', abort);
+      this.#requestController = null;
+    }
+  }
+
   async #previewRewindProtected(
     userMessageId: string,
     assistantMessageId: string | undefined,
@@ -615,6 +690,7 @@ export class ChatExecutionCoordinator {
     return Boolean(
       binding
       && !this.#disposed
+      && !this.#branchRecoveryRequired
       && this.#protectedOperationCount === 0
       && this.#activeExecution === null
       && this.#pendingInteractions.size === 0
@@ -706,6 +782,10 @@ export class ChatExecutionCoordinator {
         await this.#persistSnapshot(active.binding, event.snapshot);
       } else if (event.type === 'turn_completed') {
         terminal = event;
+        if (submittedMessages) {
+          nativeUserMessageId = event.nativeUserMessageId ?? nativeUserMessageId;
+          attachUserMessageId(submittedMessages, nativeUserMessageId);
+        }
         nativeAssistantMessageId =
           event.nativeAssistantId ?? nativeAssistantMessageId;
         nativeCheckpointId =
@@ -889,6 +969,7 @@ export class ChatExecutionCoordinator {
   async #persistSnapshot(
     binding: SessionBinding,
     snapshot: ProviderSessionSnapshot,
+    requirePersistence = false,
   ): Promise<void> {
     if (
       !this.#isBindingCurrent(binding)
@@ -903,6 +984,7 @@ export class ChatExecutionCoordinator {
       binding.generation,
       snapshot,
     );
+    if (!persisted && requirePersistence) throw new Error('Branch snapshot was not persisted.');
     if (persisted) {
       binding.lastSnapshotRevision = Math.max(binding.lastSnapshotRevision, snapshot.revision);
     }

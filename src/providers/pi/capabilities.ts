@@ -7,6 +7,7 @@ export const PI_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object.f
   supportsEphemeralSessions: true,
   supportsRewind: false,
   supportsFork: true,
+  supportsConversationBranches: true,
   supportsProviderCommands: true,
   supportsImageAttachments: true,
   supportsTurnSteer: true,

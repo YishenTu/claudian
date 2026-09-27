@@ -300,6 +300,7 @@
 }
 
 .claudian-message-user > .claudian-message-content {
+  position: relative;
   max-width: 100%;
   box-sizing: border-box;
   padding: 10px 14px;
@@ -592,6 +593,46 @@ button.claudian-work-header:disabled {
 .claudian-message-actions:focus-within {
   opacity: 1;
   pointer-events: auto;
+}
+
+.claudian-branch-position {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  font-variant-numeric: tabular-nums;
+}
+
+.claudian-message-user.claudian-message-branched {
+  max-width: min(95%, calc(100% - 26px));
+}
+
+/* Keep the marker outside the bubble visible while long prompt content scrolls. */
+.claudian-message-branched > .claudian-message-content {
+  overflow: visible;
+}
+
+.claudian-message-branched > .claudian-message-content > .claudian-text-block {
+  overflow-x: auto;
+}
+
+.claudian-branch-marker {
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  color: var(--text-faint);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.claudian-branch-marker svg {
+  width: 14px;
+  height: 14px;
+}
+
+.claudian-message-user:hover .claudian-branch-marker,
+.claudian-message-user:focus-within .claudian-branch-marker {
+  opacity: 0;
 }
 
 .claudian-message-actions .claudian-message-timestamp {

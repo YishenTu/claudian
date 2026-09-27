@@ -1,3 +1,4 @@
+import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
@@ -23,9 +24,11 @@ function deferred<T>(): {
   return { promise, resolve };
 }
 
-function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps {
+type FixtureDeps = ConversationControllerDeps & { getInputEl: () => HTMLTextAreaElement; getImageContextManager: () => any };
+
+function createMockDeps(overrides: Record<string, unknown> = {}): FixtureDeps {
   const state = new ChatState();
-  const inputEl = { value: '', focus: jest.fn() } as unknown as HTMLTextAreaElement;
+  const inputEl = { value: '', focus: jest.fn(), dispatchEvent: jest.fn() } as unknown as HTMLTextAreaElement;
   let welcomeEl: any = createMockEl();
   const messagesEl = createMockEl();
 
@@ -34,7 +37,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     lock: jest.fn(),
   };
 
-  return {
+  const deps = {
     plugin: {
       createConversation: jest.fn().mockResolvedValue({
         id: 'new-conv',
@@ -63,6 +66,8 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     state,
     renderer: {
       renderMessages: jest.fn().mockReturnValue(createMockEl()),
+      refreshBranchButtons: jest.fn(),
+      refreshBranchButtonState: jest.fn(),
     } as any,
     subagentManager: {
       orphanAllActive: jest.fn(),
@@ -75,11 +80,13 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     getLinkedContentController: () => linkedContentController as any,
     getImageContextManager: () => ({
       clearImages: jest.fn(),
+      hasImages: jest.fn().mockReturnValue(false), getAttachedImages: jest.fn().mockReturnValue([]), setImages: jest.fn(),
     }) as any,
     clearQueuedMessage: jest.fn(),
     getExecutionCoordinator: () => null,
     ...overrides,
-  } as ReturnType<typeof createMockDeps>;
+  } as unknown as FixtureDeps;
+  return Object.assign(deps, createConversationPorts(deps));
 }
 
 describe('ConversationController', () => {
@@ -1012,10 +1019,8 @@ describe('ConversationController - Rewind', () => {
   });
 
   it('should restore the rewound message through the composer owner', async () => {
-    const restoreMessageToComposer = jest.fn();
     deps = createMockDeps({
       getExecutionCoordinator: () => mockCoordinator,
-      restoreMessageToComposer,
     });
     controller = new ConversationController(deps);
     const images = [{ id: 'image-1', name: 'reference.png' }];
@@ -1036,10 +1041,8 @@ describe('ConversationController - Rewind', () => {
 
     await controller.rewind('m2');
 
-    expect(restoreMessageToComposer).toHaveBeenCalledWith({
-      content: 'restore this prompt',
-      images,
-    });
+    expect(deps.getInputEl().value).toBe('restore this prompt');
+    expect(deps.getInputEl().focus).toHaveBeenCalled();
   });
 
   it('should rewind to before the first user message and clear provider session state', async () => {
@@ -1209,4 +1212,118 @@ describe('ConversationController - Rewind', () => {
     const msg = mockNotice.mock.calls[0][0] as string;
     expect(msg).toContain('Save failed');
   });
+});
+
+describe('ConversationController conversation branches', () => {
+  it.each([undefined, 'other-user'])('restores only the selected history and restores the edited prompt with images (target %s)', async target => {
+    const retained = [{ id: 'shared', role: 'assistant' as const, content: 'Shared answer', timestamp: Date.now() }];
+    const usage = { contextTokens: 12500, inputTokens: 12500, contextWindow: 200000, percentage: 6 };
+    const navigateConversationBranch = jest.fn().mockResolvedValue({ status: 'committed', messages: retained, usage });
+    const coordinator = { navigateConversationBranch };
+    const deps = createMockDeps({
+      getExecutionCoordinator: () => coordinator });
+    deps.state.currentConversationId = 'conversation';
+    const images = [{ id: 'image', name: 'image.png', data: 'abc', mimeType: 'image/png' }];
+    deps.state.messages = [{ id: 'first', role: 'user', content: 'First', timestamp: 1 }, { id: 'user', role: 'user', content: 'raw', displayContent: 'Visible prompt', timestamp: Date.now(),
+      images: images as any, userMessageId: 'native-user' }];
+    const controller = new ConversationController(deps);
+    await controller.navigateBranch('user', target);
+    expect(navigateConversationBranch).toHaveBeenCalledTimes(target ? 1 : 0);
+    expect(deps.plugin.updateConversation).toHaveBeenCalledTimes(target ? 1 : 0);
+    expect(await controller.commitBranchDraft()).toMatchObject({ status: 'committed' });
+    expect(navigateConversationBranch).toHaveBeenCalledWith(expect.objectContaining({ userMessageId: 'native-user', branchMessageId: target }));
+    expect(deps.state.messages).toEqual(retained);
+    expect(deps.state.usage).toEqual(usage);
+    expect(deps.getInputEl().value).toBe(target ? '' : 'Visible prompt');
+    expect(deps.plugin.updateConversation).toHaveBeenCalledWith('conversation', expect.objectContaining({ messages: retained, usage }));
+    expect(deps.state.isRewinding).toBe(false);
+  });
+
+  it('preserves a draft and cancelled navigation without replacing history', async () => {
+    const navigateConversationBranch = jest.fn().mockResolvedValue({ status: 'cancelled' });
+    const coordinator = { navigateConversationBranch };
+    const deps = createMockDeps({ getExecutionCoordinator: () => coordinator });
+    deps.state.currentConversationId = 'conversation';
+    const messages = [{ id: 'first', role: 'user' as const, content: 'First', timestamp: 1 }, { id: 'user', role: 'user' as const, content: 'Original', timestamp: Date.now(),
+      userMessageId: 'native-user', treeBranches: ['native-user'] }];
+    deps.state.messages = messages;
+    deps.getInputEl().value = 'Draft';
+    const controller = new ConversationController(deps);
+    await controller.navigateBranch('user');
+    expect(navigateConversationBranch).not.toHaveBeenCalled();
+    expect(deps.getInputEl().value).toBe('Draft');
+    deps.getInputEl().value = '';
+    await controller.navigateBranch('user');
+    expect(await controller.commitBranchDraft()).toMatchObject({ status: 'cancelled' });
+    expect(deps.state.messages).toEqual(messages);
+    controller.cancelBranchDraft();
+    expect(deps.getInputEl().value).toBe('');
+    expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
+  });
+});
+
+it('reconciles a moved branch after save failure without replaying navigation or discarding the retry draft', async () => {
+  const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: testDate().getTime() };
+  const prompt = { id: 'second', role: 'user' as const, content: 'Second', timestamp: testDate().getTime(), userMessageId: 'native-second' };
+  const coordinator = {
+    navigateConversationBranch: jest.fn().mockResolvedValue({ status: 'committed', messages: [first] }),
+    reconcileConversationBranch: jest.fn().mockResolvedValue({ status: 'committed', messages: [first] }),
+  };
+  const deps = createMockDeps({ getExecutionCoordinator: () => coordinator });
+  deps.state.currentConversationId = 'conversation';
+  deps.state.messages = [first, prompt];
+  jest.mocked(deps.plugin.updateConversation).mockRejectedValueOnce(new Error('Save unavailable'));
+  const controller = new ConversationController(deps);
+  await controller.navigateBranch('second');
+  deps.getInputEl().value = 'Edited';
+  expect(await controller.commitBranchDraft()).toMatchObject({ status: 'recovery-required' });
+  controller.cancelBranchDraft();
+  expect(deps.getInputEl().value).toBe('Edited');
+  expect(deps.state.messages).toEqual([first]);
+  expect(await controller.commitBranchDraft()).toMatchObject({ status: 'committed' });
+  expect(coordinator.navigateConversationBranch).toHaveBeenCalledTimes(1);
+  expect(coordinator.reconcileConversationBranch).toHaveBeenCalledTimes(1);
+  expect(controller.hasBranchDraft).toBe(false);
+});
+
+it('keeps an unconfirmed branch edit retryable after reconciliation replaces message identities', async () => {
+  const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: testDate().getTime() };
+  const prompt = { id: 'second', role: 'user' as const, content: 'Second', timestamp: testDate().getTime(), userMessageId: 'native-second' };
+  const coordinator = {
+    navigateConversationBranch: jest.fn().mockResolvedValueOnce({ status: 'recovery-required', error: 'Reply lost' })
+      .mockResolvedValue({ status: 'committed', messages: [first] }),
+    reconcileConversationBranch: jest.fn().mockResolvedValue({ status: 'cancelled', messages: [first, { ...prompt, id: 'reloaded' }] }),
+  };
+  const deps = createMockDeps({ getExecutionCoordinator: () => coordinator });
+  deps.state.currentConversationId = 'conversation';
+  deps.state.messages = [first, prompt];
+  const controller = new ConversationController(deps);
+  await controller.navigateBranch('second');
+  expect(await controller.commitBranchDraft()).toMatchObject({ status: 'cancelled' });
+  expect(controller.hasBranchDraft).toBe(true);
+  expect(await controller.commitBranchDraft()).toMatchObject({ status: 'committed' });
+  expect(coordinator.navigateConversationBranch).toHaveBeenCalledTimes(2);
+  expect(coordinator.navigateConversationBranch).toHaveBeenLastCalledWith(expect.objectContaining({ userMessageId: 'native-second' }));
+});
+
+it.each(['conversation', 'coordinator'])('does not publish recovery after its %s owner changes', async owner => {
+  const first = { id: 'first', role: 'user' as const, content: 'First', timestamp: testDate().getTime() };
+  const prompt = { id: 'second', role: 'user' as const, content: 'Second', timestamp: testDate().getTime(), userMessageId: 'native-second' };
+  const coordinator = {
+    navigateConversationBranch: jest.fn().mockResolvedValue({ status: 'recovery-required', error: 'Reply lost' }),
+    reconcileConversationBranch: jest.fn(),
+  };
+  const deps = createMockDeps({ getExecutionCoordinator: () => coordinator });
+  deps.state.currentConversationId = 'conversation';
+  deps.state.messages = [first, prompt];
+  coordinator.reconcileConversationBranch.mockImplementation(async () => {
+    if (owner === 'conversation') deps.state.currentConversationId = 'replacement';
+    else deps.getExecutionCoordinator = () => null;
+    return { status: 'committed', messages: [first] };
+  });
+  const controller = new ConversationController(deps);
+  await controller.navigateBranch('second');
+  expect(await controller.commitBranchDraft()).toMatchObject({ status: 'failed' });
+  expect(deps.state.messages).toEqual([first, prompt]);
+  expect(deps.plugin.updateConversation).not.toHaveBeenCalled();
 });

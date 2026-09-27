@@ -4,6 +4,7 @@ import { waitFor } from '@testing-library/dom';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
+import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
 import { WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
@@ -46,6 +47,7 @@ export async function releaseSideChatHarnesses(): Promise<void> {
 }
 
 export function createHarness(options: {
+  onDestinationChanged?: () => void;
   subagentAdapter?: ProviderRegistration['subagentAdapter'];
   taskResultInterpreter?: ProviderRegistration['taskResultInterpreter'];
   supportsFork?: boolean;
@@ -122,15 +124,18 @@ export function createHarness(options: {
   } as never;
 
   const destinationChanges: string[] = [];
+  const drafts: ComposerDraftController = new ComposerDraftController({
+    getInput: () => inputEl, getImages: () => imageContextManager as never, getDestination: () => controller.destination,
+  });
   const controller = new SideChatController({
     component: { register: () => undefined } as never,
     composerEl,
-    getImageContextManager: () => imageContextManager as never,
+    drafts,
     getInputEl: () => inputEl as never,
     getTab: () => tab,
     inputWrapperEl,
     isRuntimeLive: () => true,
-    onDestinationChanged: () => { destinationChanges.push(controller.destination); },
+    onDestinationChanged: () => { destinationChanges.push(controller.destination); options.onDestinationChanged?.(); },
     plugin,
   });
   cleanups.push(async () => {
@@ -138,7 +143,7 @@ export function createHarness(options: {
     await lifecycleRegistry.dispose();
   });
   return {
-    backend, composerEl, controller, destinationChanges, imageContextManager,
+    backend, composerEl, controller, drafts, destinationChanges, imageContextManager,
     inputContainerEl, inputEl, inputWrapperEl, lifecycleRegistry, plugin, tab,
   };
 }

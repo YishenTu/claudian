@@ -402,6 +402,23 @@ describe('TabManager provider execution orchestration', () => {
     ]);
   });
 
+  it('keeps branch navigation admitted without showing a session work spinner', async () => {
+    const { manager } = createManager();
+    const tab = (await manager.createTab())!;
+    const navigation = deferred<void>();
+    const pending = tab.session.runConversationNavigation(() => navigation.promise);
+    expect(tab.session.turns.isActive).toBe(true);
+    expect(tab.session.canNavigateConversation).toBe(false);
+    expect(manager.isTabWorking(tab.id)).toBe(false);
+    expect(manager.getTabBarItems()).toEqual([
+      expect.objectContaining({ id: tab.id, isWorking: false }),
+    ]);
+    navigation.resolve();
+    await pending;
+    expect(tab.session.turns.isActive).toBe(false);
+    expect(manager.isTabWorking(tab.id)).toBe(false);
+  });
+
   it('keeps an unread result while projecting later work as active', async () => {
     const { manager } = createManager();
     const tab = await manager.createTab();

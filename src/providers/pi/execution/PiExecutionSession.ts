@@ -3,6 +3,10 @@ import * as fsp from 'node:fs/promises';
 import * as path from 'node:path';
 
 import {
+  type ConversationBranchRecoveryRequest,
+  type ConversationBranchRequest,
+  type ConversationBranchResult,
+  type ConversationBranchState,
   ExecutionEventQueue,
   type ProviderExecutionErrorCategory,
   type ProviderExecutionEvent,
@@ -44,17 +48,22 @@ import {
   getHistoryImages,
 } from '../../../utils/session';
 import type { PiWorkspaceServices } from '../app/PiWorkspaceServices';
+import { PiConversationHistoryService } from '../history/PiConversationHistoryService';
 import {
   isPiSessionPathReference,
   resolvePiSessionFileHint,
 } from '../history/PiHistoryPathResolver';
 import {
+  correlatePiUserMessages,
   type CreatedPiForkSessionFile,
   type createPiForkSessionFile,
   findPiSessionFile,
+  getPiConversationBranches,
   getPiTurnStats,
+  parsePiSessionContent,
   parsePiSessionEntries,
   resolvePiActivePath,
+  resolvePiTreeCursor,
   type rollbackCreatedPiForkSessionFile,
 } from '../history/PiHistoryStore';
 import { encodePiRecoveryPrompt } from '../history/PiRecoveryPromptCodec';
@@ -77,7 +86,8 @@ import {
 } from '../runtime/PiLaunchSpec';
 import { assertPiModelAvailable } from '../runtime/PiModelAvailability';
 import { buildPiSetModelPayload } from '../runtime/PiRPCPayloads';
-import type { PiRPCRecord } from '../runtime/PiRPCTransport';
+import { type PiRPCRecord, PiRPCResponseError } from '../runtime/PiRPCTransport';
+import { PI_TREE_COMMAND } from '../runtime/PiTreeBridge';
 import {
   getPiProviderSettings,
   type PiProviderSettings,
@@ -85,6 +95,7 @@ import {
 import {
   getPiState,
   type PiProviderState,
+  type PiTreeCursor,
 } from '../types';
 import { normalizePiRuntimeCommands } from './PiCommandMetadataProbe';
 import {
@@ -142,6 +153,8 @@ interface Deferred<T> {
 }
 
 const PI_NATIVE_PROVIDER_STATE_KEYS = [
+  'treeCursor',
+  'treeSelections',
   'sessionId',
   'sessionFile',
   'leafEntryId',
@@ -156,6 +169,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
   readonly sessionInstanceId = randomUUID();
 
   private activeRun: ActiveRun | null = null;
+  // A recreated session can recover its cursor, but cannot attest a prior caller's move.
+  private branchMutationConfirmed = false;
   private disposalPromise: Promise<void> | null = null;
   private disposed = false;
   private forkMaterializationFlight: Promise<void> | null = null;
@@ -250,6 +265,174 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         if (this.activeRun === active) this.cancel();
       },
     };
+  }
+
+  async getConversationBranches(messages: readonly ChatMessage[] = []): Promise<ConversationBranchState> {
+    // Cancellation closes its event stream before the native writer has exited.
+    await this.shutdownPromise;
+    const state = getPiState(this.providerState);
+    if (!state.sessionFile) return { branches: {}, userMessageIds: {} };
+    const content = await fsp.readFile(state.sessionFile, 'utf8');
+    const parsed = parsePiSessionEntries(content);
+    const cursor = state.treeCursor ? resolvePiTreeCursor(parsed.entries, state.treeCursor) : undefined;
+    const nativeMessages = parsePiSessionContent(content, cursor
+      ? { leafEntryId: cursor.leafId, requireLeafEntryId: true } : {});
+    return {
+      branches: getPiConversationBranches(parsed.entries),
+      userMessageIds: correlatePiUserMessages(messages, nativeMessages),
+    };
+  }
+
+  navigateConversationBranch(request: ConversationBranchRequest): Promise<ConversationBranchResult> {
+    return this.#runBranchOperation(request);
+  }
+
+  reconcileConversationBranch(request: ConversationBranchRecoveryRequest): Promise<ConversationBranchResult> {
+    return this.#runBranchOperation(request);
+  }
+
+  async #runBranchOperation(request: ConversationBranchRequest | ConversationBranchRecoveryRequest): Promise<ConversationBranchResult> {
+    if (this.disposed || this.activeRun || this.lifecycleError || request.signal?.aborted || this.#shouldDisableNativePersistence()) {
+      throw new Error('Pi conversation is unavailable for branching.');
+    }
+    if ('userMessageId' in request) this.branchMutationConfirmed = false;
+    const executionRequest: ProviderExecutionRequest = {
+      input: [], configuration: request.configuration,
+      toolPolicy: { kind: 'provider-default' }, signal: request.signal ?? new AbortController().signal,
+    };
+    const active = this.#createActiveRun(executionRequest);
+    // Control operations have no requested turn consumer.
+    void active.terminalSignal.promise.catch(() => undefined);
+    this.activeRun = active;
+    this.#setStatus('executing');
+    const flight = this.#navigateBranch(active, executionRequest, request).catch((error: unknown): ConversationBranchResult => ({
+      status: 'recovery-required', error: String(error),
+    }));
+    const tracked = flight.then(() => undefined);
+    this.runFlights.add(tracked);
+    try { return await flight; }
+    finally {
+      this.runFlights.delete(tracked);
+      void tracked.catch(() => undefined);
+      active.requestSignal.removeEventListener('abort', active.onRequestAbort);
+      active.events.close();
+      if (this.activeRun === active) this.activeRun = null;
+      if (!this.disposed) this.#setStatus('idle');
+    }
+  }
+
+  async #navigateBranch(
+    active: ActiveRun,
+    executionRequest: ProviderExecutionRequest,
+    request: ConversationBranchRequest | ConversationBranchRecoveryRequest,
+  ): Promise<ConversationBranchResult> {
+    const encoded = await this.#encodeRequest(active, executionRequest);
+    await this.#ensureKernel(encoded.launchSpec, active);
+    await this.#validateKernelResume(active.abortController.signal);
+    await this.#restoreTreeCursor(active.abortController.signal);
+    if (!this.isActive(active) || !this.kernel) throw new Error('Pi navigation was cancelled.');
+    const state = getPiState(this.providerState);
+    if (!state.sessionFile || !state.sessionId) throw new Error('Pi session is missing.');
+    if (!('userMessageId' in request)) {
+      const history = await this.#readBranchHistory(encoded.model, active.abortController.signal);
+      return this.branchMutationConfirmed ? history : { ...history, status: 'cancelled' };
+    }
+    const parsed = parsePiSessionEntries(await fsp.readFile(state.sessionFile, 'utf8'));
+    const branches = getPiConversationBranches(parsed.entries);
+    if (!branches[request.userMessageId]) throw new Error('Pi prompt is missing.');
+    const current = await this.#treeRequest({ operation: 'inspect' }, active.abortController.signal);
+    const oldLeaf = current.leafId;
+    const oldPath = oldLeaf === null ? [] : resolvePiActivePath(parsed.entries, oldLeaf);
+    if (!oldPath.some(entry => entry.id === request.userMessageId)) throw new Error('Pi prompt is no longer on the active branch.');
+    const selections = { ...state.treeSelections };
+    const oldCursor = state.treeCursor?.leafId === oldLeaf
+      ? state.treeCursor : { targetId: oldLeaf!, leafId: oldLeaf, appendId: parsed.entries.at(-1)?.id };
+    for (const entry of oldPath) {
+      if (entry.id && entry.message?.role === 'user') selections[entry.id] = oldCursor;
+    }
+    let cursor: PiTreeCursor;
+    if (request.branchMessageId) {
+      const target = request.branchMessageId;
+      if (!branches[request.userMessageId].includes(target)) throw new Error('Pi branch is not an alternative to this prompt.');
+      const descendants = new Set([target]);
+      for (const entry of parsed.entries) {
+        if (entry.id && entry.parentId && descendants.has(entry.parentId)) descendants.add(entry.id);
+      }
+      const remembered = selections[target];
+      const leafId = [...parsed.entries].reverse().find(entry => entry.id && descendants.has(entry.id))?.id;
+      if (!leafId) throw new Error('Pi branch is missing.');
+      cursor = remembered && remembered.leafId && descendants.has(remembered.leafId)
+        ? remembered : { targetId: leafId, leafId };
+    } else {
+      const entry = parsed.entries.find(item => item.id === request.userMessageId)!;
+      cursor = { targetId: request.userMessageId, leafId: entry.parentId ?? null };
+    }
+    cursor = { ...cursor, appendId: parsed.entries.at(-1)?.id };
+    // Keep a confirmed rollback cursor until the native reply proves the requested move.
+    this.#setProviderStateValue('treeCursor', oldCursor);
+    const result = await this.#treeRequest({ operation: 'restore', ...cursor }, active.abortController.signal);
+    if (result.cancelled) return { status: 'cancelled' };
+    if (!this.isActive(active)) throw new Error('Pi navigation was cancelled.');
+    if (result.leafId !== cursor.leafId) cursor = { targetId: result.leafId!, leafId: result.leafId, appendId: result.leafId! };
+    this.#setProviderStateValue('treeCursor', cursor);
+    this.#setProviderStateValue('treeSelections', selections);
+    this.branchMutationConfirmed = true;
+    this.#setOptionalProviderStateValue('leafEntryId', cursor.leafId ?? undefined);
+    this.#bumpRevision();
+    return this.#readBranchHistory(encoded.model, active.abortController.signal);
+  }
+
+  async #readBranchHistory(model: string, signal: AbortSignal): Promise<Extract<ConversationBranchResult, { status: 'committed' }>> {
+    const history = await new PiConversationHistoryService().hydrateConversationHistory({
+      sessionId: this.providerSessionId, providerState: this.providerState, messages: [],
+    }, this.config.vaultWorkingDirectory);
+    // Pi computes context usage from the selected native branch, including compaction.
+    const usage = await this.#fetchUsage(model, signal).catch(() => null);
+    return { status: 'committed', messages: history.messages ?? [], usage };
+  }
+
+  async #treeRequest(payload: Record<string, unknown>, signal: AbortSignal): Promise<{ cancelled: boolean; leafId: string | null }> {
+    if (!this.kernel || signal.aborted) throw new Error('Pi navigation is unavailable.');
+    const state = getPiState(this.providerState);
+    const result = await this.kernel.request<Record<string, unknown>>('claudian_tree', {
+      ...payload, sessionFile: state.sessionFile, sessionId: state.sessionId,
+    }, 10_000, signal).catch(async (error: unknown) => {
+      // A timed-out extension may still be awaiting a native hook. Fence it before accepting more input.
+      if (!(error instanceof PiRPCResponseError)) await this.#shutdownKernel();
+      throw error;
+    });
+    if (result?.cancelled === true) {
+      if (result.reloadRequired === true) await this.#shutdownKernel();
+      return { cancelled: true, leafId: null };
+    }
+    if (result?.cancelled !== false || result.sessionId !== state.sessionId
+      || result.sessionFile !== state.sessionFile || (result.leafId !== null && typeof result.leafId !== 'string')) {
+      throw new Error('Invalid Pi branch identity or cursor.');
+    }
+    if (payload.operation === 'restore' && result.leafId !== payload.leafId) {
+      const parsed = parsePiSessionEntries(await fsp.readFile(state.sessionFile!, 'utf8'));
+      const anchor = parsed.entries.find(entry => entry.id === result.leafId);
+      if (anchor?.type !== 'custom' || anchor.raw.customType !== 'claudian-tree-anchor' || anchor.parentId !== payload.leafId) {
+        throw new Error('Pi navigation did not reach the selected branch.');
+      }
+    }
+    return { cancelled: false, leafId: result.leafId };
+  }
+
+  async #restoreTreeCursor(signal: AbortSignal): Promise<void> {
+    const state = getPiState(this.providerState);
+    let cursor = state.treeCursor;
+    if (!cursor) return;
+    if (state.sessionFile) {
+      const parsed = parsePiSessionEntries(await fsp.readFile(state.sessionFile, 'utf8'));
+      cursor = resolvePiTreeCursor(parsed.entries, cursor);
+    }
+    const result = await this.#treeRequest({ operation: 'restore', ...cursor }, signal);
+    if (result.cancelled) throw new Error('Pi branch restoration was cancelled.');
+    if (result.leafId !== cursor.leafId) cursor = { targetId: result.leafId!, leafId: result.leafId, appendId: result.leafId! };
+    this.#setProviderStateValue('treeCursor', cursor);
+    this.#setOptionalProviderStateValue('leafEntryId', cursor.leafId ?? undefined);
+    this.#bumpRevision();
   }
 
   cancel(): void {
@@ -399,6 +582,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
 
       await this.#validateKernelResume(active.abortController.signal);
       if (!this.isActive(active) || !this.kernel) return;
+      await this.#restoreTreeCursor(active.abortController.signal);
+      if (!this.isActive(active) || !this.kernel) return;
       await this.#applyModelConfiguration(encoded, active.abortController.signal);
       if (!this.isActive(active)) return;
       assertPiModelAvailable(this.host.settings, request.configuration.model);
@@ -447,6 +632,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.#setStatus('idle');
       this.#emitRequestedState(active);
       this.#finishRequested(active, {
+        nativeUserMessageId: active.nativeUserMessageId,
         nativeAssistantId: active.nativeAssistantId,
         nativeCheckpointId: getPiState(this.providerState).leafEntryId,
         ...(active.turnStats ? { turnStats: active.turnStats } : {}),
@@ -511,6 +697,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     this.#validateResumeSeed(env);
     const toolProfile = resolveToolProfile(request.toolPolicy, settings);
     const launchSpec = buildPiLaunchSpec({
+      enableTreeBridge: !this.#shouldDisableNativePersistence(),
       command: await this.host.getResolvedProviderCliPath('pi') ?? 'pi',
       cwd: this.config.vaultWorkingDirectory,
       env,
@@ -700,6 +887,12 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       reportedIdentity,
     )) {
       this.kernelResumeValidationTarget = null;
+      if (reportedIdentity.sessionFile) this.#setProviderStateValue('sessionFile', reportedIdentity.sessionFile);
+      if (reportedIdentity.sessionId) {
+        this.providerSessionId = reportedIdentity.sessionId;
+        this.#setProviderStateValue('sessionId', reportedIdentity.sessionId);
+      }
+      this.#bumpRevision();
       return;
     }
 
@@ -1013,11 +1206,20 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     const sessionFile = getPiState(this.providerState).sessionFile;
     if (!sessionFile) return;
     try {
+      // Live completion follows the appended native branch, not the saved resume leaf.
+      const treeState = getPiState(this.providerState);
+      const treeResult = treeState.treeCursor
+        ? await this.#treeRequest({ operation: 'inspect' }, active.abortController.signal) : null;
+      if (!this.isActive(active)) return;
+      if (treeResult?.cancelled) throw new Error('Pi branch inspection was cancelled.');
+      if (treeResult && treeResult.leafId !== null) {
+        this.#setProviderStateValue('treeCursor', { targetId: treeResult.leafId, leafId: treeResult.leafId, appendId: treeResult.leafId });
+        this.#setOptionalProviderStateValue('leafEntryId', treeResult.leafId);
+      }
       const content = await fsp.readFile(sessionFile, 'utf8');
       const parsed = parsePiSessionEntries(content);
       if (!this.isActive(active)) return;
-      // Live completion follows the appended native branch, not the saved resume leaf.
-      const path = resolvePiActivePath(parsed.entries);
+      const path = treeResult?.leafId === null ? [] : resolvePiActivePath(parsed.entries, treeResult?.leafId);
       const leafEntryId = [...path].reverse().find(entry => entry.id)?.id;
       if (leafEntryId) this.#setOptionalProviderStateValue('leafEntryId', leafEntryId);
       const previousIndex = previousLeafId
@@ -1055,7 +1257,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       const response = await kernel.request<unknown>('get_commands', {}, 10_000);
       if (!this.#isCurrentKernel(kernel, generation) || this.disposed) return;
       this.services.commandCatalog.setCommandSnapshot(
-        normalizePiRuntimeCommands(response),
+        normalizePiRuntimeCommands(response).filter(command => command.name !== PI_TREE_COMMAND),
       );
     } catch {
       // Command metadata is non-blocking; the provider-owned probe can retry.

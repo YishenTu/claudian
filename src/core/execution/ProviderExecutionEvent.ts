@@ -209,6 +209,8 @@ export type ProviderTurnCompletedEvent = ProviderEventBase<
   ProviderRequestedEventScope
 > &
   ProviderOpaqueEventPayload & {
+    /** Native identity of the final user message in this turn, including late correlation. */
+    readonly nativeUserMessageId?: string;
     readonly nativeAssistantId?: string;
     readonly nativeCheckpointId?: string;
     readonly turnStats?: TurnStats;

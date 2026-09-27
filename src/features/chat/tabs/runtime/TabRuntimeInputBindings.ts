@@ -65,6 +65,16 @@ export function buildTabRuntimeInputBindings(
     () => dom.inputEl.removeEventListener('input', inputHandler),
   );
 
+  const composerFocusOut = (event: FocusEvent) => {
+    const target = event.relatedTarget as Node | null;
+    if (target && dom.inputComposerEl.contains(target)) return;
+    controllers.conversationController.cancelBranchDraft();
+  };
+  dom.inputComposerEl.addEventListener('focusout', composerFocusOut);
+  options.registerCleanup('tab branch draft focus binding', () => {
+    dom.inputComposerEl.removeEventListener('focusout', composerFocusOut);
+  });
+
   const scrollThreshold = 20;
   let navigationScrollIntent: 'away' | 'bottom' | null = null;
 

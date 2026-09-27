@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
+import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 import { Menu, Notice, setIcon } from 'obsidian';
 
@@ -26,7 +27,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     lock: jest.fn(),
   };
 
-  return {
+  const deps = {
     plugin: {
       createConversation: jest.fn().mockResolvedValue({
         id: 'new-conv',
@@ -84,7 +85,8 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     getTitleGenerationService: () => null,
     getExecutionCoordinator: () => null,
     ...overrides,
-  } as ReturnType<typeof createMockDeps>;
+  } as unknown as ReturnType<typeof createMockDeps>;
+  return Object.assign(deps, createConversationPorts(deps as any));
 }
 
 function createBrowser(deps: ReturnType<typeof createMockDeps>): SessionBrowser {
