@@ -34,9 +34,13 @@ export function findCLIBinaryPath(
     : [binaryName];
   const searchEntries = platform === process.platform
     ? parsePathEntries(getEnhancedPath(additionalPath))
-    : parsePathEntriesForPlatform(additionalPath, platform);
+    : parseCLIPathEntries(additionalPath, platform);
 
-  for (const dir of searchEntries) {
+  return findBinaryInDirectories(searchEntries, binaryNames);
+}
+
+export function findBinaryInDirectories(entries: string[], binaryNames: string[]): string | null {
+  for (const dir of entries) {
     if (!dir) continue;
 
     for (const candidateName of binaryNames) {
@@ -50,7 +54,10 @@ export function findCLIBinaryPath(
   return null;
 }
 
-function parsePathEntriesForPlatform(pathValue: string | undefined, platform: NodeJS.Platform): string[] {
+export function parseCLIPathEntries(pathValue: string | undefined, platform: NodeJS.Platform): string[] {
+  if (platform === process.platform) {
+    return parsePathEntries(pathValue);
+  }
   if (!pathValue) {
     return [];
   }

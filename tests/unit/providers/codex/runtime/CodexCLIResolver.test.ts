@@ -43,6 +43,51 @@ describe('CodexCLIResolver', () => {
     expect(resolved).toBe('/current/codex');
   });
 
+  it.each(['host-native', 'native-windows'])(
+    'preserves the cache policy for %s installations',
+    (method) => {
+      const files = new Set(['/current/codex', '/legacy/codex']);
+      mockedStat.mockImplementation((filePath: string) => ({ isFile: () => files.has(filePath) }));
+      const resolver = new CodexCLIResolver();
+      const settings = {
+        providerConfigs: { codex: { cliPathsByHost: { 'current-host': '/current/codex' }, cliPath: '/legacy/codex' } },
+      };
+      const context = { executionTarget: { method, platformFamily: 'windows', platformOs: 'windows' } };
+
+      expect(resolver.resolveFromSettings(settings, context)).toBe('/current/codex');
+      files.delete('/current/codex');
+      expect(resolver.resolveFromSettings(settings, context))
+        .toBe(method === 'native-windows' ? '/legacy/codex' : '/current/codex');
+      resolver.reset();
+      expect(resolver.resolveFromSettings(settings, context)).toBe('/legacy/codex');
+    },
+  );
+
+  it('retries missing installations without a settings change', () => {
+    mockedStat.mockReturnValue({ isFile: () => false });
+    const resolver = new CodexCLIResolver();
+    const settings = { providerConfigs: { codex: { cliPathsByHost: { 'current-host': '/installed/codex' } } } };
+    const context = { executionTarget: { method: 'host-native', platformFamily: 'unix', platformOs: 'linux' } };
+
+    expect(resolver.resolveFromSettings(settings, context)).toBeNull();
+    mockedStat.mockImplementation((filePath: string) => ({ isFile: () => filePath === '/installed/codex' }));
+    expect(resolver.resolveFromSettings(settings, context)).toBe('/installed/codex');
+  });
+
+  it('invalidates a cached native path when switching to WSL', () => {
+    const cliPath = 'C:\\tools\\codex.exe';
+    mockedStat.mockImplementation((filePath: string) => ({ isFile: () => filePath === cliPath }));
+    const resolver = new CodexCLIResolver();
+    const settings = { providerConfigs: { codex: { cliPathsByHost: { 'current-host': cliPath } } } };
+
+    expect(resolver.resolveFromSettings(settings, {
+      executionTarget: { method: 'host-native', platformFamily: 'windows', platformOs: 'windows' },
+    })).toBe(cliPath);
+    expect(resolver.resolveFromSettings(settings, {
+      executionTarget: { method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' },
+    })).toBe('codex');
+  });
+
   it('falls back to the legacy path when the current host has no custom path', async () => {
     mockedExists.mockImplementation((filePath: string) => filePath === '/legacy/codex');
     mockedStat.mockReturnValue({ isFile: () => true });

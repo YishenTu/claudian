@@ -1,76 +1,31 @@
-import * as fs from 'fs';
+import { CachedProviderCLIResolver } from '@/core/providers/cli/CachedProviderCLIResolver';
+import { getRuntimeEnvironmentText } from '@/core/providers/providerEnvironment';
 
-import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvironment';
-import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
-import { normalizeConfiguredCLIPath } from '../../../utils/path';
-import { findClaudeCLIPath } from '../cli/findClaudeCLIPath';
 import { getClaudeProviderSettings } from '../settings';
+import { findClaudeBinaryPath } from './ClaudeBinaryLocator';
 
 export class ClaudeCLIResolver {
-  private resolvedPath: string | null = null;
-  private lastHostnamePath = '';
-  private lastLegacyPath = '';
-  private lastEnvText = '';
-  private readonly cachedHostname = getHostnameKey();
+  private readonly resolver = new CachedProviderCLIResolver({
+    binaryName: 'claude',
+    findBinaryPath: findClaudeBinaryPath,
+    getSettingsProjection: (settings) => {
+      const providerSettings = getClaudeProviderSettings(settings);
+      return {
+        cliPathsByHost: providerSettings.cliPathsByHost,
+        environmentText: getRuntimeEnvironmentText(settings, 'claude'),
+        legacyCliPath: providerSettings.cliPath,
+      };
+    },
+    providerId: 'claude',
+    // A missing installation can appear before the next settings change.
+    shouldCache: result => result !== null,
+  });
 
-  /**
-   * Resolves CLI path with priority: device-specific -> legacy -> auto-detect.
-   * @param settings Full app settings bag
-   */
   resolveFromSettings(settings: Record<string, unknown>): string | null {
-    const hostnameKey = this.cachedHostname;
-    const claudeSettings = getClaudeProviderSettings(settings);
-
-    const hostnamePath = (claudeSettings.cliPathsByHost[hostnameKey] ?? '').trim();
-    const normalizedLegacy = claudeSettings.cliPath.trim();
-    const normalizedEnv = getRuntimeEnvironmentText(settings, 'claude');
-
-    if (
-      this.resolvedPath &&
-      hostnamePath === this.lastHostnamePath &&
-      normalizedLegacy === this.lastLegacyPath &&
-      normalizedEnv === this.lastEnvText
-    ) {
-      return this.resolvedPath;
-    }
-
-    this.lastHostnamePath = hostnamePath;
-    this.lastLegacyPath = normalizedLegacy;
-    this.lastEnvText = normalizedEnv;
-
-    this.resolvedPath = resolveClaudeCLIPath(hostnamePath, normalizedLegacy, normalizedEnv);
-    return this.resolvedPath;
+    return this.resolver.resolveFromSettings(settings);
   }
 
   reset(): void {
-    this.resolvedPath = null;
-    this.lastHostnamePath = '';
-    this.lastLegacyPath = '';
-    this.lastEnvText = '';
+    this.resolver.reset();
   }
-}
-
-function resolveConfiguredPath(rawPath: string | undefined): string | null {
-  try {
-    const expanded = normalizeConfiguredCLIPath(rawPath);
-    if (!expanded) return null;
-    if (fs.existsSync(expanded) && fs.statSync(expanded).isFile()) {
-      return expanded;
-    }
-  } catch {
-    // Fall through
-  }
-  return null;
-}
-
-export function resolveClaudeCLIPath(
-  hostnamePath: string | undefined,
-  legacyPath: string | undefined,
-  envText: string,
-): string | null {
-  return (
-    resolveConfiguredPath(hostnamePath) ??
-    resolveConfiguredPath(legacyPath) ??
-    findClaudeCLIPath(parseEnvironmentVariables(envText || '').PATH)
-  );
 }

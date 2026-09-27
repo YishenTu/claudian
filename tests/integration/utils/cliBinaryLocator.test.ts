@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { findCLIBinaryPath } from '@/utils/cliBinaryLocator';
 import { getEnhancedPath } from '@/utils/env';
 
-describe('mise CLI discovery and subprocess PATH', () => {
+describe('enhanced CLI discovery and subprocess PATH', () => {
   const originalEnv = process.env;
   const isWindows = process.platform === 'win32';
   let directory: string;
@@ -14,7 +14,7 @@ describe('mise CLI discovery and subprocess PATH', () => {
   beforeEach(() => {
     directory = mkdtempSync(path.join(tmpdir(), 'claudian mise '));
     process.env = { ...originalEnv, PATH: '' };
-    for (const key of ['MISE_SHIMS_DIR', 'MISE_DATA_DIR', 'XDG_DATA_HOME', 'HOME', 'USERPROFILE', 'LOCALAPPDATA']) {
+    for (const key of ['MISE_SHIMS_DIR', 'MISE_DATA_DIR', 'XDG_DATA_HOME', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'npm_config_prefix']) {
       delete process.env[key];
     }
     // Windows normally supplies USERPROFILE even when HOME is absent.
@@ -27,11 +27,18 @@ describe('mise CLI discovery and subprocess PATH', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  it.each(['default', 'home fallback', 'XDG_DATA_HOME', 'MISE_DATA_DIR', 'MISE_SHIMS_DIR'])(
-    'discovers and launches a CLI from mise shims using %s',
+  it.each(['default', 'home fallback', 'XDG_DATA_HOME', 'MISE_DATA_DIR', 'MISE_SHIMS_DIR', 'npm_config_prefix', ...(!isWindows ? ['.npm-global'] : [])])(
+    'discovers and launches a CLI using %s',
     (configuration) => {
       let shims: string;
       switch (configuration) {
+        case 'npm_config_prefix':
+          process.env.npm_config_prefix = path.join(directory, 'npm prefix');
+          shims = isWindows ? process.env.npm_config_prefix : path.join(process.env.npm_config_prefix, 'bin');
+          break;
+        case '.npm-global':
+          shims = path.join(directory, '.npm-global', 'bin');
+          break;
         case 'MISE_SHIMS_DIR':
           process.env.MISE_SHIMS_DIR = path.join(directory, 'custom shims');
           process.env.MISE_DATA_DIR = path.join(directory, 'unused data');

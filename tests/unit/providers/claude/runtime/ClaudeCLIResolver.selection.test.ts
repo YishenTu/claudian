@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 
-import { findClaudeCLIPath } from '@/providers/claude/cli/findClaudeCLIPath';
-import { ClaudeCLIResolver, resolveClaudeCLIPath } from '@/providers/claude/runtime/ClaudeCLIResolver';
+import { findClaudeBinaryPath } from '@/providers/claude/runtime/ClaudeBinaryLocator';
+import { ClaudeCLIResolver } from '@/providers/claude/runtime/ClaudeCLIResolver';
 import { getHostnameKey } from '@/utils/env';
 
 jest.mock('fs');
@@ -12,17 +12,16 @@ jest.mock('@/utils/env', () => {
     getHostnameKey: jest.fn(() => 'test-host'),
   };
 });
-jest.mock('@/providers/claude/cli/findClaudeCLIPath', () => {
-  const actual = jest.requireActual('@/providers/claude/cli/findClaudeCLIPath');
+jest.mock('@/providers/claude/runtime/ClaudeBinaryLocator', () => {
+  const actual = jest.requireActual('@/providers/claude/runtime/ClaudeBinaryLocator');
   return {
     ...actual,
-    findClaudeCLIPath: jest.fn(),
+    findClaudeBinaryPath: jest.fn(),
   };
 });
 
-const mockedExists = fs.existsSync as jest.Mock;
 const mockedStat = fs.statSync as jest.Mock;
-const mockedFind = findClaudeCLIPath as jest.Mock;
+const mockedFind = findClaudeBinaryPath as jest.Mock;
 const mockedDeviceKey = getHostnameKey as jest.Mock;
 
 describe('ClaudeCLIResolver', () => {
@@ -33,8 +32,7 @@ describe('ClaudeCLIResolver', () => {
 
   describe('hostname-based resolution', () => {
     it('should use hostname path when available', () => {
-      mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
-      mockedStat.mockReturnValue({ isFile: () => true });
+      mockedStat.mockImplementation((p: string) => ({ isFile: () => p === '/hostname/claude' }));
 
       const resolver = new ClaudeCLIResolver();
       const resolved = resolver.resolveFromSettings({
@@ -46,8 +44,7 @@ describe('ClaudeCLIResolver', () => {
     });
 
     it('should fall back to legacy path when hostname not found', () => {
-      mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
-      mockedStat.mockReturnValue({ isFile: () => true });
+      mockedStat.mockImplementation((p: string) => ({ isFile: () => p === '/legacy/claude' }));
 
       const resolver = new ClaudeCLIResolver();
       const resolved = resolver.resolveFromSettings({
@@ -59,7 +56,7 @@ describe('ClaudeCLIResolver', () => {
     });
 
     it('should auto-detect when no paths configured', () => {
-      mockedExists.mockReturnValue(false);
+      mockedStat.mockImplementation(() => { throw new Error('Not found'); });
       mockedFind.mockReturnValue('/auto/claude');
 
       const resolver = new ClaudeCLIResolver();
@@ -74,9 +71,19 @@ describe('ClaudeCLIResolver', () => {
   });
 
   describe('caching', () => {
+    it('retries a missing installation without a settings change', () => {
+      mockedStat.mockImplementation(() => { throw new Error('Not found'); });
+      mockedFind.mockReturnValueOnce(null).mockReturnValue('/installed/claude');
+      const resolver = new ClaudeCLIResolver();
+
+      expect(resolver.resolveFromSettings({})).toBeNull();
+      expect(resolver.resolveFromSettings({})).toBe('/installed/claude');
+      expect(resolver.resolveFromSettings({})).toBe('/installed/claude');
+      expect(mockedFind).toHaveBeenCalledTimes(2);
+    });
+
     it('should cache resolved path and return same result', () => {
-      mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
-      mockedStat.mockReturnValue({ isFile: () => true });
+      mockedStat.mockImplementation((p: string) => ({ isFile: () => p === '/hostname/claude' }));
 
       const resolver = new ClaudeCLIResolver();
       const first = resolver.resolveFromSettings({
@@ -90,12 +97,11 @@ describe('ClaudeCLIResolver', () => {
 
       expect(first).toBe('/hostname/claude');
       expect(second).toBe('/hostname/claude');
-      // existsSync should be called only once due to caching
-      expect(mockedExists).toHaveBeenCalledTimes(1);
+      // statSync should be called only once due to caching
+      expect(mockedStat).toHaveBeenCalledTimes(1);
     });
 
     it('should invalidate cache when hostname path changes', () => {
-      mockedExists.mockReturnValue(true);
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCLIResolver();
@@ -113,7 +119,6 @@ describe('ClaudeCLIResolver', () => {
     });
 
     it('should clear cache on reset()', () => {
-      mockedExists.mockReturnValue(true);
       mockedStat.mockReturnValue({ isFile: () => true });
 
       const resolver = new ClaudeCLIResolver();
@@ -130,14 +135,13 @@ describe('ClaudeCLIResolver', () => {
       });
 
       // Should be called twice because cache was cleared
-      expect(mockedExists).toHaveBeenCalledTimes(2);
+      expect(mockedStat).toHaveBeenCalledTimes(2);
     });
   });
 
   describe('legacy compatibility', () => {
     it('should use legacy path as fallback when hostname paths are empty', () => {
-      mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
-      mockedStat.mockReturnValue({ isFile: () => true });
+      mockedStat.mockImplementation((p: string) => ({ isFile: () => p === '/legacy/claude' }));
       mockedFind.mockReturnValue('/auto/claude');
 
       const resolver = new ClaudeCLIResolver();
@@ -151,8 +155,7 @@ describe('ClaudeCLIResolver', () => {
     });
 
     it('should use legacy path when hostname paths are undefined', () => {
-      mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
-      mockedStat.mockReturnValue({ isFile: () => true });
+      mockedStat.mockImplementation((p: string) => ({ isFile: () => p === '/legacy/claude' }));
       mockedFind.mockReturnValue('/auto/claude');
 
       const resolver = new ClaudeCLIResolver();
@@ -167,14 +170,13 @@ describe('ClaudeCLIResolver', () => {
   });
 });
 
-describe('resolveClaudeCLIPath', () => {
+describe('ClaudeCLIResolver path selection', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('should return hostname path when valid file exists', () => {
-    mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
-    mockedStat.mockReturnValue({ isFile: () => true });
+    mockedStat.mockImplementation((p: string) => ({ isFile: () => p === '/hostname/claude' }));
 
     const result = resolveClaudeCLIPath('/hostname/claude', '/legacy/claude', '');
 
@@ -182,7 +184,6 @@ describe('resolveClaudeCLIPath', () => {
   });
 
   it('should skip hostname path if it is a directory', () => {
-    mockedExists.mockReturnValue(true);
     mockedStat.mockImplementation((p: string) => ({
       isFile: () => p !== '/hostname/claude',
     }));
@@ -193,8 +194,7 @@ describe('resolveClaudeCLIPath', () => {
   });
 
   it('should handle empty hostname path gracefully', () => {
-    mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
-    mockedStat.mockReturnValue({ isFile: () => true });
+    mockedStat.mockImplementation((p: string) => ({ isFile: () => p === '/legacy/claude' }));
 
     const result = resolveClaudeCLIPath('', '/legacy/claude', '');
 
@@ -202,8 +202,7 @@ describe('resolveClaudeCLIPath', () => {
   });
 
   it('should trim whitespace from paths', () => {
-    mockedExists.mockImplementation((p: string) => p === '/hostname/claude');
-    mockedStat.mockReturnValue({ isFile: () => true });
+    mockedStat.mockImplementation((p: string) => ({ isFile: () => p === '/hostname/claude' }));
 
     const result = resolveClaudeCLIPath('  /hostname/claude  ', '', '');
 
@@ -211,8 +210,7 @@ describe('resolveClaudeCLIPath', () => {
   });
 
   it('should handle null/undefined hostname path', () => {
-    mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
-    mockedStat.mockReturnValue({ isFile: () => true });
+    mockedStat.mockImplementation((p: string) => ({ isFile: () => p === '/legacy/claude' }));
 
     const result = resolveClaudeCLIPath(undefined, '/legacy/claude', '');
 
@@ -220,7 +218,7 @@ describe('resolveClaudeCLIPath', () => {
   });
 
   it('should handle null/undefined legacy path', () => {
-    mockedExists.mockReturnValue(false);
+    mockedStat.mockImplementation(() => { throw new Error('Not found'); });
     mockedFind.mockReturnValue('/auto/claude');
 
     const result = resolveClaudeCLIPath('', undefined, '');
@@ -228,29 +226,30 @@ describe('resolveClaudeCLIPath', () => {
     expect(result).toBe('/auto/claude');
   });
 
-  it('should fall through hostname path when existsSync returns false', () => {
-    mockedExists.mockImplementation((p: string) => p === '/legacy/claude');
-    mockedStat.mockReturnValue({ isFile: () => true });
-
-    const result = resolveClaudeCLIPath('/nonexistent/claude', '/legacy/claude', '');
-
-    expect(result).toBe('/legacy/claude');
-  });
-
-  it('should fall through hostname path when existsSync throws', () => {
-    mockedExists.mockImplementation((p: string) => {
-      if (p.includes('nonexistent')) throw new Error('Access denied');
-      return p === '/legacy/claude';
+  it('should fall through a missing hostname path', () => {
+    mockedStat.mockImplementation((p: string) => {
+      if (p === '/nonexistent/claude') throw new Error('Not found');
+      return { isFile: () => p === '/legacy/claude' };
     });
-    mockedStat.mockReturnValue({ isFile: () => true });
 
     const result = resolveClaudeCLIPath('/nonexistent/claude', '/legacy/claude', '');
 
     expect(result).toBe('/legacy/claude');
   });
 
-  it('should fall through legacy path when existsSync throws', () => {
-    mockedExists.mockImplementation(() => {
+  it('should fall through hostname path when statSync throws', () => {
+    mockedStat.mockImplementation((p: string) => {
+      if (p.includes('nonexistent')) throw new Error('Access denied');
+      return { isFile: () => p === '/legacy/claude' };
+    });
+
+    const result = resolveClaudeCLIPath('/nonexistent/claude', '/legacy/claude', '');
+
+    expect(result).toBe('/legacy/claude');
+  });
+
+  it('should fall through legacy path when statSync throws', () => {
+    mockedStat.mockImplementation(() => {
       throw new Error('Access denied');
     });
     mockedFind.mockReturnValue('/auto/claude');
@@ -261,7 +260,6 @@ describe('resolveClaudeCLIPath', () => {
   });
 
   it('should skip legacy path if it is a directory', () => {
-    mockedExists.mockReturnValue(true);
     mockedStat.mockReturnValue({ isFile: () => false });
     mockedFind.mockReturnValue('/auto/claude');
 
@@ -270,8 +268,8 @@ describe('resolveClaudeCLIPath', () => {
     expect(result).toBe('/auto/claude');
   });
 
-  it('should pass env PATH to findClaudeCLIPath', () => {
-    mockedExists.mockReturnValue(false);
+  it('should pass env PATH to findClaudeBinaryPath', () => {
+    mockedStat.mockImplementation(() => { throw new Error('Not found'); });
     mockedFind.mockReturnValue(null);
 
     resolveClaudeCLIPath('', '', 'PATH=/custom/bin');
@@ -279,3 +277,10 @@ describe('resolveClaudeCLIPath', () => {
     expect(mockedFind).toHaveBeenCalledWith('/custom/bin');
   });
 });
+
+function resolveClaudeCLIPath(hostnamePath: string | undefined, legacyPath: string | undefined, envText: string): string | null {
+  return new ClaudeCLIResolver().resolveFromSettings({
+    providerConfigs: { claude: { cliPathsByHost: { [getHostnameKey()]: hostnamePath }, cliPath: legacyPath } },
+    sharedEnvironmentVariables: envText,
+  });
+}

@@ -2,11 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { findCLIBinaryPath, resolveConfiguredCLIPath } from '../../../utils/cliBinaryLocator';
-import { parseEnvironmentVariables } from '../../../utils/env';
-import { expandHomePath, stripSurroundingQuotes } from '../../../utils/path';
-import type { CodexInstallationMethod } from '../settings';
-import type { CodexExecutionTarget } from './codexLaunchTypes';
+import { findBinaryInDirectories, findCLIBinaryPath, isExistingFile, parseCLIPathEntries } from '@/utils/cliBinaryLocator';
+import { expandHomePath, stripSurroundingQuotes } from '@/utils/path';
 
 export function isWindowsStyleCLIReference(value: string | null | undefined): boolean {
   const trimmed = (value ?? '').trim();
@@ -23,46 +20,26 @@ export function findCodexBinaryPath(
   additionalPath?: string,
   platform: NodeJS.Platform = process.platform,
 ): string | null {
-  const explicitPathBinary = findCodexBinaryInDirs(
-    parsePathEntriesForPlatform(additionalPath, platform),
-    platform,
+  const binaryNames = platform === 'win32'
+    ? ['codex.exe', 'codex.cmd', 'codex']
+    : ['codex'];
+  const explicitPathBinary = findBinaryInDirectories(
+    parseCLIPathEntries(additionalPath, platform),
+    binaryNames,
   );
   if (explicitPathBinary) {
     return explicitPathBinary;
   }
 
-  const preferredBinary = findCodexBinaryInDirs(
+  const preferredBinary = findBinaryInDirectories(
     getPreferredCodexBinaryDirs(platform),
-    platform,
+    binaryNames,
   );
   if (preferredBinary) {
     return preferredBinary;
   }
 
   return findCLIBinaryPath('codex', additionalPath, platform);
-}
-
-function getCodexBinaryNames(platform: NodeJS.Platform): string[] {
-  return platform === 'win32'
-    ? ['codex.exe', 'codex.cmd', 'codex']
-    : ['codex'];
-}
-
-function findCodexBinaryInDirs(dirs: string[], platform: NodeJS.Platform): string | null {
-  const binaryNames = getCodexBinaryNames(platform);
-
-  for (const dir of dirs) {
-    if (!dir) continue;
-
-    for (const binaryName of binaryNames) {
-      const candidate = path.join(dir, binaryName);
-      if (isExistingFile(candidate)) {
-        return candidate;
-      }
-    }
-  }
-
-  return null;
 }
 
 function getPreferredCodexBinaryDirs(platform: NodeJS.Platform): string[] {
@@ -140,63 +117,12 @@ function getHomeDir(): string {
   return process.env.HOME || process.env.USERPROFILE || os.homedir();
 }
 
-function isExistingFile(filePath: string): boolean {
-  try {
-    return fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function parsePathEntriesForPlatform(pathValue: string | undefined, platform: NodeJS.Platform): string[] {
-  if (!pathValue) {
-    return [];
-  }
-
-  const delimiter = platform === 'win32' ? ';' : ':';
-  return pathValue
-    .split(delimiter)
-    .map(segment => stripSurroundingQuotes(segment.trim()))
-    .filter(segment => {
-      if (!segment) return false;
-      const upper = segment.toUpperCase();
-      return upper !== '$PATH' && upper !== '${PATH}' && upper !== '%PATH%';
-    })
-    .map(segment => expandHomePath(segment));
-}
-
-export function resolveCodexCLIPath(
+export function resolveCodexWSLCLIPath(
   hostnamePath: string | undefined,
   legacyPath: string | undefined,
-  envText: string,
-  options: {
-    executionTarget?: CodexExecutionTarget;
-    installationMethod?: CodexInstallationMethod;
-    hostPlatform?: NodeJS.Platform;
-  } = {},
-): string | null {
-  const hostPlatform = options.hostPlatform ?? process.platform;
-  const isWslTarget = options.executionTarget
-    ? options.executionTarget.method === 'wsl'
-    : hostPlatform === 'win32' && options.installationMethod === 'wsl';
-
-  if (isWslTarget) {
-    const configuredCommand = [hostnamePath, legacyPath]
-      .map(value => stripSurroundingQuotes((value ?? '').trim()))
-      .find(value => value.length > 0 && !isWindowsStyleCLIReference(value));
-    return configuredCommand || 'codex';
-  }
-
-  const configuredHostnamePath = resolveConfiguredCLIPath(hostnamePath);
-  if (configuredHostnamePath) {
-    return configuredHostnamePath;
-  }
-
-  const configuredLegacyPath = resolveConfiguredCLIPath(legacyPath);
-  if (configuredLegacyPath) {
-    return configuredLegacyPath;
-  }
-
-  const customEnv = parseEnvironmentVariables(envText || '');
-  return findCodexBinaryPath(customEnv.PATH, hostPlatform);
+): string {
+  const configuredCommand = [hostnamePath, legacyPath]
+    .map(value => stripSurroundingQuotes((value ?? '').trim()))
+    .find(value => value.length > 0 && !isWindowsStyleCLIReference(value));
+  return configuredCommand || 'codex';
 }

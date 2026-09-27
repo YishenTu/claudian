@@ -4,8 +4,9 @@ import * as path from 'path';
 
 import {
   findCodexBinaryPath,
-  resolveCodexCLIPath,
 } from '@/providers/codex/runtime/CodexBinaryLocator';
+import { CodexCLIResolver } from '@/providers/codex/runtime/CodexCLIResolver';
+import { getHostnameKey } from '@/utils/env';
 
 describe('CodexBinaryLocator', () => {
   let tempDir: string;
@@ -147,9 +148,7 @@ describe('CodexBinaryLocator', () => {
     const runtimePath = `"${path.join(tempDir, 'missing')}";"${explicitDir}"`;
 
     expect(findCodexBinaryPath(runtimePath, 'win32')).toBe(shim);
-    expect(resolveCodexCLIPath(configured, '', `PATH=${runtimePath}`, {
-      hostPlatform: 'win32',
-    })).toBe(configured);
+    expect(resolveCodexCLIPath(configured, '', `PATH=${runtimePath}`, { method: 'native-windows' })).toBe(configured);
   });
 
   it('falls back from an incomplete install override to a complete desktop runtime', () => {
@@ -260,7 +259,7 @@ describe('CodexBinaryLocator', () => {
       'codex',
       '',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { method: 'wsl' },
     )).toBe('codex');
   });
 
@@ -269,13 +268,13 @@ describe('CodexBinaryLocator', () => {
       '"/home/user/my tools/codex"',
       '',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { method: 'wsl' },
     )).toBe('/home/user/my tools/codex');
     expect(resolveCodexCLIPath(
       "'/home/user/codex'",
       '',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { method: 'wsl' },
     )).toBe('/home/user/codex');
   });
 
@@ -287,13 +286,13 @@ describe('CodexBinaryLocator', () => {
         '"~/tools/codex"',
         '',
         '',
-        { installationMethod: 'wsl', hostPlatform: 'win32' },
+        { method: 'wsl' },
       )).toBe('~/tools/codex');
       expect(resolveCodexCLIPath(
         '"$TEST_WSL_CODEX_ROOT/bin/codex"',
         '',
         '',
-        { installationMethod: 'wsl', hostPlatform: 'win32' },
+        { method: 'wsl' },
       )).toBe('$TEST_WSL_CODEX_ROOT/bin/codex');
     } finally {
       if (originalRoot === undefined) {
@@ -309,7 +308,7 @@ describe('CodexBinaryLocator', () => {
       '',
       '',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { method: 'wsl' },
     )).toBe('codex');
   });
 
@@ -318,7 +317,7 @@ describe('CodexBinaryLocator', () => {
       'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe',
       '',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { method: 'wsl' },
     )).toBe('codex');
   });
 
@@ -327,7 +326,7 @@ describe('CodexBinaryLocator', () => {
       '"C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe"',
       '"/home/user/legacy tools/codex"',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { method: 'wsl' },
     )).toBe('/home/user/legacy tools/codex');
   });
 
@@ -336,7 +335,19 @@ describe('CodexBinaryLocator', () => {
       '"C:\\Users\\user\\AppData\\Roaming\\npm\\codex.exe"',
       '',
       '',
-      { installationMethod: 'wsl', hostPlatform: 'win32' },
+      { method: 'wsl' },
     )).toBe('codex');
   });
 });
+
+function resolveCodexCLIPath(
+  hostnamePath: string,
+  legacyPath: string,
+  envText: string,
+  target: { method: 'host-native' | 'native-windows' | 'wsl' } = { method: 'host-native' },
+): string | null | Promise<string | null> {
+  return new CodexCLIResolver().resolveFromSettings({
+    providerConfigs: { codex: { cliPathsByHost: { [getHostnameKey()]: hostnamePath }, cliPath: legacyPath } },
+    sharedEnvironmentVariables: envText,
+  }, { executionTarget: { ...target, platformFamily: 'unix', platformOs: 'linux' } });
+}

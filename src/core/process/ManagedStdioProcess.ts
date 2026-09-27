@@ -1,5 +1,5 @@
-import type {
-  ChildProcessWithoutNullStreams,
+import {
+  type ChildProcessWithoutNullStreams,
   spawn as nodeSpawn,
 } from 'node:child_process';
 import type { Readable, Writable } from 'node:stream';
@@ -22,6 +22,8 @@ export interface ManagedStdioProcessOptions {
   command: string;
   cwd: string;
   env: NodeJS.ProcessEnv;
+  /** Bypass cross-spawn's implicit Windows shell fallback. */
+  directSpawn?: boolean;
   finalShutdownTimeoutMs?: number;
   killProcessTree?: boolean;
   sigkillTimeoutMs?: number;
@@ -79,7 +81,8 @@ export class ManagedStdioProcess {
 
     let proc: ChildProcessWithoutNullStreams;
     try {
-      proc = spawn(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
+      const spawnProcess = this.options.directSpawn ? nodeSpawn : spawn;
+      proc = spawnProcess(resolvedSpawnSpec.command, resolvedSpawnSpec.args, {
         cwd: this.options.cwd,
         env: this.options.env,
         stdio: this.options.stdio ?? 'pipe',

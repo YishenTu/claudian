@@ -2,45 +2,12 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { parsePathEntries, resolveNvmDefaultBin } from '../../../utils/path';
+import { findBinaryInDirectories, isExistingFile } from '@/utils/cliBinaryLocator';
+import { getEnhancedPath } from '@/utils/env';
+import { parsePathEntries } from '@/utils/path';
 
 const CLAUDE_CODE_PACKAGE_SEGMENTS = ['node_modules', '@anthropic-ai', 'claude-code'];
 const CLAUDE_CODE_NODE_ENTRYPOINTS = ['cli-wrapper.cjs', 'cli.js'];
-
-function getEnvValue(name: string): string | undefined {
-  return process.env[name];
-}
-
-function dedupePaths(entries: string[]): string[] {
-  const seen = new Set<string>();
-  return entries.filter(entry => {
-    const key = process.platform === 'win32' ? entry.toLowerCase() : entry;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function findFirstExistingPath(entries: string[], candidates: string[]): string | null {
-  for (const dir of entries) {
-    if (!dir) continue;
-    for (const candidate of candidates) {
-      const fullPath = path.join(dir, candidate);
-      if (isExistingFile(fullPath)) {
-        return fullPath;
-      }
-    }
-  }
-  return null;
-}
-
-function isExistingFile(filePath: string): boolean {
-  try {
-    return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
 
 function findClaudeCodeNodeEntrypoint(packageRoot: string): string | null {
   for (const entrypoint of CLAUDE_CODE_NODE_ENTRYPOINTS) {
@@ -95,14 +62,14 @@ function resolveClaudeFromPathEntries(
   }
 
   if (!isWindows) {
-    const unixCandidate = findFirstExistingPath(entries, ['claude']);
+    const unixCandidate = findBinaryInDirectories(entries, ['claude']);
     return unixCandidate;
   }
 
   // An extension-less `claude` on a Windows PATH entry is npm's POSIX sh shim, which
   // cannot be spawned directly. Skip it like the .cmd shim and fall through to the
   // Node-backed package entrypoint below.
-  const exeCandidate = findFirstExistingPath(entries, ['claude.exe']);
+  const exeCandidate = findBinaryInDirectories(entries, ['claude.exe']);
   if (exeCandidate) {
     return exeCandidate;
   }
@@ -171,88 +138,39 @@ function getNpmClaudeCodeEntrypointPaths(): string[] {
   return entrypointPaths;
 }
 
-export function findClaudeCLIPath(pathValue?: string): string | null {
+export function findClaudeBinaryPath(pathValue?: string): string | null {
   const homeDir = os.homedir();
   const isWindows = process.platform === 'win32';
-
-  const customEntries = dedupePaths(parsePathEntries(pathValue));
-
-  if (customEntries.length > 0) {
-    const customResolution = resolveClaudeFromPathEntries(customEntries, isWindows);
-    if (customResolution) {
-      return customResolution;
-    }
+  const customResolution = resolveClaudeFromPathEntries(parsePathEntries(pathValue), isWindows);
+  if (customResolution) {
+    return customResolution;
   }
 
-  // On Windows, prefer native .exe, then Node-backed package entrypoints. Avoid .cmd fallback
-  // because it requires shell: true and breaks SDK stdio streaming.
+  const nativeDirectories = [path.join(homeDir, '.claude', 'local')];
   if (isWindows) {
-    const exePaths: string[] = [
-      path.join(homeDir, '.claude', 'local', 'claude.exe'),
-      path.join(homeDir, 'AppData', 'Local', 'Claude', 'claude.exe'),
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude', 'claude.exe'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude', 'claude.exe'),
-      path.join(homeDir, '.local', 'bin', 'claude.exe'),
-    ];
-
-    for (const p of exePaths) {
-      if (isExistingFile(p)) {
-        return p;
-      }
-    }
-
-    const packageEntrypointPaths = getNpmClaudeCodeEntrypointPaths();
-    for (const p of packageEntrypointPaths) {
-      if (isExistingFile(p)) {
-        return p;
-      }
-    }
-
+    nativeDirectories.push(
+      path.join(homeDir, 'AppData', 'Local', 'Claude'),
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Claude'),
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Claude'),
+    );
+  }
+  // Claude's native installer uses this directory; prefer it over system installs.
+  nativeDirectories.push(path.join(homeDir, '.local', 'bin'));
+  const nativePath = findBinaryInDirectories(nativeDirectories, [isWindows ? 'claude.exe' : 'claude']);
+  if (nativePath) {
+    return nativePath;
   }
 
-  const commonPaths: string[] = [
-    path.join(homeDir, '.claude', 'local', 'claude'),
-    path.join(homeDir, '.local', 'bin', 'claude'),
-    path.join(homeDir, '.volta', 'bin', 'claude'),
-    path.join(homeDir, '.asdf', 'shims', 'claude'),
-    path.join(homeDir, '.asdf', 'bin', 'claude'),
-    '/usr/local/bin/claude',
-    '/opt/homebrew/bin/claude',
-    path.join(homeDir, 'bin', 'claude'),
-    path.join(homeDir, '.npm-global', 'bin', 'claude'),
-  ];
-
-  const npmPrefix = getNpmGlobalPrefix();
-  if (npmPrefix) {
-    commonPaths.push(path.join(npmPrefix, 'bin', 'claude'));
+  // Share PATH discovery with the other providers, while keeping Claude's SDK-safe
+  // Windows launcher selection (.exe or a Node entrypoint, never a shell shim).
+  const sharedResolution = resolveClaudeFromPathEntries(parsePathEntries(getEnhancedPath()), isWindows);
+  if (sharedResolution) {
+    return sharedResolution;
   }
 
-  // NVM: resolve default version bin when NVM_BIN env var is not available (GUI apps)
-  const nvmBin = resolveNvmDefaultBin(homeDir);
-  if (nvmBin) {
-    commonPaths.push(path.join(nvmBin, 'claude'));
-  }
-
-  for (const p of commonPaths) {
-    if (isExistingFile(p)) {
-      return p;
-    }
-  }
-
-  if (!isWindows) {
-    const packageEntrypointPaths = getNpmClaudeCodeEntrypointPaths();
-    for (const p of packageEntrypointPaths) {
-      if (isExistingFile(p)) {
-        return p;
-      }
-    }
-  }
-
-  const envEntries = dedupePaths(parsePathEntries(getEnvValue('PATH')));
-  if (envEntries.length > 0) {
-    const envResolution = resolveClaudeFromPathEntries(envEntries, isWindows);
-    if (envResolution) {
-      return envResolution;
+  for (const entrypoint of getNpmClaudeCodeEntrypointPaths()) {
+    if (isExistingFile(entrypoint)) {
+      return entrypoint;
     }
   }
 

@@ -1,3 +1,4 @@
+import { spawn as nativeSpawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -5,12 +6,18 @@ import * as path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 
 jest.mock('cross-spawn', () => jest.fn());
+jest.mock('node:child_process', () => ({
+  ...jest.requireActual('node:child_process'),
+  spawn: jest.fn(),
+}));
 
 import spawn from 'cross-spawn';
 
 import { PiSubprocess } from '@/providers/pi/runtime/PiSubprocess';
+import * as env from '@/utils/env';
 
 const mockSpawn = spawn as jest.MockedFunction<typeof spawn>;
+const mockNativeSpawn = jest.mocked(nativeSpawn);
 
 function createMockProcess(): any {
   const proc = new EventEmitter() as any;
@@ -146,10 +153,12 @@ describe('PiSubprocess', () => {
     jest.clearAllMocks();
     proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
+    mockNativeSpawn.mockReturnValue(proc);
   });
 
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
+    jest.restoreAllMocks();
     jest.useRealTimers();
   });
 
@@ -191,7 +200,7 @@ describe('PiSubprocess', () => {
 
     subprocess.start();
 
-    expect(mockSpawn).toHaveBeenCalledWith(
+    expect(mockNativeSpawn).toHaveBeenCalledWith(
       expect.stringMatching(/node(?:\.exe)?$/i),
       [
         windowsPiBin,
@@ -212,6 +221,30 @@ describe('PiSubprocess', () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  it('attempts node when discovery misses it and reports the process error', () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
+    proc.pid = undefined;
+    const subprocess = new PiSubprocess({
+      args: ['--mode', 'rpc'],
+      command: windowsPiBin,
+      cwd: 'C:\\Vault',
+      env: { PATH: '' },
+    });
+    const onClose = jest.fn();
+    subprocess.onClose(onClose);
+    subprocess.start();
+
+    expect(mockNativeSpawn).toHaveBeenCalledWith(
+      'node', [windowsPiBin, '--mode', 'rpc'], expect.any(Object),
+    );
+    expect(mockSpawn).not.toHaveBeenCalled();
+    const error = Object.assign(new Error('spawn node ENOENT'), { code: 'ENOENT' });
+    proc.emit('error', error);
+    expect(onClose).toHaveBeenCalledWith(error);
+    expect(subprocess.isAlive()).toBe(false);
   });
 
   it('fails closed when a Windows Pi shim targets an unowned script', () => {
@@ -276,7 +309,7 @@ describe('PiSubprocess', () => {
 
     subprocess.start();
 
-    expect(mockSpawn).toHaveBeenCalledWith(
+    expect(mockNativeSpawn).toHaveBeenCalledWith(
       expect.stringMatching(/node(?:\.exe)?$/i),
       [getBin(), '--mode', 'rpc', '--system-prompt', 'First line\nSecond line'],
       expect.objectContaining({ windowsHide: true }),

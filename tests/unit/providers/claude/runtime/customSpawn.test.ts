@@ -1,19 +1,29 @@
 import type { SpawnOptions } from '@anthropic-ai/claude-agent-sdk';
+import { spawn as nativeSpawn } from 'child_process';
 import spawn from 'cross-spawn';
 
 import { createCustomSpawnFunction } from '@/providers/claude/runtime/customSpawn';
 import * as env from '@/utils/env';
 
 jest.mock('cross-spawn', () => jest.fn());
+jest.mock('child_process', () => ({
+  ...jest.requireActual('child_process'),
+  spawn: jest.fn(),
+}));
 
 describe('createCustomSpawnFunction', () => {
   const originalPlatform = process.platform;
   const spawnMock = spawn as jest.MockedFunction<typeof spawn>;
 
+  beforeEach(() => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+  });
+
   afterEach(() => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
     jest.restoreAllMocks();
     spawnMock.mockReset();
+    jest.mocked(nativeSpawn).mockReset();
   });
 
   const createMockProcess = () => {
@@ -105,6 +115,27 @@ describe('createCustomSpawnFunction', () => {
       ['/npm/node_modules/@anthropic-ai/claude-code/cli-wrapper.cjs', '--output-format', 'stream-json'],
       expect.any(Object)
     );
+  });
+
+  it.each([null, 'C:\\nodejs\\node.exe'])('uses direct spawning on Windows with Node discovery returning %s', (nodePath) => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    const mockProcess = createMockProcess();
+    jest.mocked(nativeSpawn).mockReturnValue(mockProcess as unknown as ReturnType<typeof nativeSpawn>);
+    spawnMock.mockReturnValue(mockProcess as unknown as ReturnType<typeof spawn>);
+    jest.spyOn(env, 'findNodeExecutable').mockReturnValue(nodePath);
+
+    const spawnFn = createCustomSpawnFunction('/enhanced/path');
+    spawnFn({
+      command: '/npm/claude/cli-wrapper.cjs',
+      args: ['--system-prompt', 'First line\nSecond line'],
+      cwd: '/tmp',
+      env: {},
+    } as SpawnOptions);
+
+    expect(nativeSpawn).toHaveBeenCalledWith(
+      nodePath ?? 'node', ['/npm/claude/cli-wrapper.cjs', '--system-prompt', 'First line\nSecond line'], expect.any(Object),
+    );
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
   it('pipes stderr only when DEBUG_CLAUDE_AGENT_SDK is set', () => {

@@ -23,6 +23,7 @@ import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecu
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { buildClaudeSDKUserMessage } from '@/providers/claude/runtime/ClaudeUserMessageFactory';
+import * as env from '@/utils/env';
 
 jest.mock('@/providers/claude/runtime/ClaudeUserMessageFactory', () => {
   const actual = jest.requireActual('@/providers/claude/runtime/ClaudeUserMessageFactory');
@@ -158,6 +159,22 @@ describe('ClaudeExecutionBackend', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('passes Node-backed CLI paths to the SDK even when Node discovery misses', async () => {
+    jest.spyOn(env, 'findNodeExecutable').mockReturnValue(null);
+    const host = createHost();
+    jest.mocked(host.getResolvedProviderCliPath).mockResolvedValue('/npm/claude/cli-wrapper.cjs');
+    const session = new ClaudeExecutionBackend(host).createSession(createConfig());
+
+    try {
+      await collectEvents(session.execute(createRequest()).events);
+
+      expect(sdkMock.getQueryCallCount()).toBe(1);
+      expect(sdkMock.getLastOptions()?.pathToClaudeCodeExecutable).toBe('/npm/claude/cli-wrapper.cjs');
+    } finally {
+      await session.dispose();
+    }
   });
 
   it('rejects ambiguous saved model identities even if only one matching row is enabled', async () => {

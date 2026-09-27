@@ -101,6 +101,49 @@ describe('CachedProviderCLIResolver', () => {
     expect(resolution).toHaveBeenCalledTimes(5);
   });
 
+  it('uses provider discovery only after configured paths fail', () => {
+    const findBinaryPath = jest.fn(() => '/native/provider');
+    const resolver = new CachedProviderCLIResolver({
+      binaryName: 'provider',
+      getSettingsProjection: () => createProjection(),
+      hostnameKey: 'current',
+      providerId: 'test-provider',
+      findBinaryPath,
+    });
+    mockedResolveConfiguredCLIPath.mockReturnValue('/configured/provider');
+    expect(resolver.resolveFromSettings({})).toBe('/configured/provider');
+    expect(findBinaryPath).not.toHaveBeenCalled();
+
+    resolver.reset();
+    mockedResolveConfiguredCLIPath.mockReturnValue(null);
+    expect(resolver.resolveFromSettings({})).toBe('/native/provider');
+    expect(findBinaryPath).toHaveBeenCalledWith('/provider/bin');
+    expect(mockedFindCLIBinaryPath).not.toHaveBeenCalled();
+  });
+
+  it('retries uncached misses and refreshes provider targets that disable caching', () => {
+    const resolution = jest.fn<string | null, []>(() => null);
+    const resolver = new CachedProviderCLIResolver({
+      binaryName: 'provider',
+      getSettingsProjection: () => createProjection(),
+      hostnameKey: 'current',
+      providerId: 'test-provider',
+      resolve: resolution,
+      shouldCache: (result, context) => result !== null && context.resolutionInputs?.method !== 'dynamic',
+    });
+
+    expect(resolver.resolveFromSettings({})).toBeNull();
+    resolution.mockReturnValue('/installed/provider');
+    expect(resolver.resolveFromSettings({})).toBe('/installed/provider');
+    expect(resolver.resolveFromSettings({})).toBe('/installed/provider');
+    expect(resolution).toHaveBeenCalledTimes(2);
+
+    expect(resolver.resolveFromSettings({}, { method: 'dynamic' })).toBe('/installed/provider');
+    resolution.mockReturnValue('/updated/provider');
+    expect(resolver.resolveFromSettings({}, { method: 'dynamic' })).toBe('/updated/provider');
+    expect(resolution).toHaveBeenCalledTimes(4);
+  });
+
   it('projects settings before resolving and ignores unrelated settings fields', () => {
     const resolution = jest.fn(() => '/resolved/provider');
     const resolver = new CachedProviderCLIResolver({

@@ -114,7 +114,7 @@ export function resolvePiProcessSpec(
   enhancedPath: string,
 ): Pick<
   ConstructorParameters<typeof ManagedStdioProcess>[0],
-  'args' | 'command' | 'killProcessTree'
+  'args' | 'command' | 'directSpawn' | 'killProcessTree'
 > {
   const command = launchSpec.command.trim();
   if (process.platform !== 'win32') {
@@ -137,15 +137,10 @@ export function resolvePiProcessSpec(
     return { args: launchSpec.args, command, killProcessTree: false };
   }
 
-  const nodeExecutable = findNodeExecutable(enhancedPath);
-  if (!nodeExecutable) {
-    throw new Error(
-      'Pi requires Node.js, but node.exe was not found on PATH. Install Node.js or configure a native Pi executable.',
-    );
-  }
   return {
     args: [nodeEntrypoint, ...launchSpec.args],
-    command: nodeExecutable,
+    command: findNodeExecutable(enhancedPath) ?? 'node',
+    directSpawn: true,
     killProcessTree: true,
   };
 }

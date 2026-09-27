@@ -107,7 +107,7 @@ async function expectProcessGone(pid: number): Promise<void> {
   throw new Error(`Native fixture process ${pid} survived shutdown`);
 }
 
-it('delivers opaque arguments, cwd, environment and stdin through a real executable', async () => {
+it.each([false, true])('delivers opaque arguments, cwd, environment and stdin with directSpawn=%s', async (directSpawn) => {
   const args = ['', 'two words', 'line one\r\nline two', '"quoted" %PATH% !caret^ & | < >', '文档\\session.jsonl'];
   const payload = { text: 'stdin 文档\nsecond line' };
   const { managed, closed, readRecord } = await launch(`
@@ -121,11 +121,29 @@ it('delivers opaque arguments, cwd, environment and stdin through a real executa
         environment: process.env.CLAUDIAN_NATIVE_TEST, input: JSON.parse(input),
       }) + '\\n');
     });
-  `, args);
+  `, args, { directSpawn });
   managed.stdin.end(JSON.stringify(payload));
   expect(await readRecord()).toEqual({ args, cwd: directory, environment: 'env 文档', input: payload });
   expect(await withinDeadline(closed, managed)).toMatchObject({ closed: true, code: 0, signal: null });
   expect(managed.getStderrSnapshot()).toBe('diagnostic only');
+  expect(managed.isAlive()).toBe(false);
+});
+
+it('reports a missing executable through the direct spawn error path', async () => {
+  const managed = new ManagedStdioProcess({
+    command: path.join(directory, 'missing-node.exe'),
+    args: ['first line\nsecond line'],
+    cwd: directory,
+    env: { ...process.env },
+    directSpawn: true,
+  });
+  const failed = new Promise<Error>(resolve => managed.onError(resolve));
+  const closed = new Promise<ManagedStdioProcessExitState>(resolve => managed.onClose(resolve));
+  managed.start();
+  processes.push(managed);
+
+  expect(await withinDeadline(failed, managed)).toMatchObject({ code: 'ENOENT' });
+  expect(await withinDeadline(closed, managed)).toMatchObject({ closed: true, error: { code: 'ENOENT' } });
   expect(managed.isAlive()).toBe(false);
 });
 

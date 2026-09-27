@@ -36,7 +36,6 @@ import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
 } from '../../../utils/session';
-import { getMissingNodeError } from '../cli/claudeLaunchValidation';
 import {
   findClaudeModelOption,
   getClaudeModelCatalog,
@@ -112,10 +111,6 @@ export class ClaudeExecutionRequestEncoder {
       this.deps.host.getActiveEnvironmentVariables('claude'),
     );
     const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
-    const missingNodeError = getMissingNodeError(cliPath, enhancedPath);
-    if (missingNodeError) {
-      throw new Error(missingNodeError);
-    }
 
     const settings = this.#resolveSettings(request);
     const claudeSettings = getClaudeProviderSettings(settings);

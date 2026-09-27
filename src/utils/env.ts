@@ -169,6 +169,7 @@ function getExtraBinaryPaths(): string[] {
       paths.push(path.join(home, '.bun', 'bin'));
       paths.push(path.join(home, '.opencode', 'bin'));
       paths.push(path.join(home, '.docker', 'bin'));
+      paths.push(path.join(home, '.npm-global', 'bin'));
       paths.push(path.join(home, '.volta', 'bin'));
       paths.push(path.join(home, '.asdf', 'shims'));
       paths.push(path.join(home, '.asdf', 'bin'));
@@ -185,6 +186,11 @@ function getExtraBinaryPaths(): string[] {
         }
       }
     }
+  }
+
+  const npmPrefix = process.env.npm_config_prefix;
+  if (npmPrefix) {
+    paths.push(isWindows ? npmPrefix : path.join(npmPrefix, 'bin'));
   }
 
   const miseShims = getMiseShimsDir(home);
