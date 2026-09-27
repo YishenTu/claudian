@@ -1,6 +1,7 @@
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
+import { ClaudeTaskResultInterpreter } from '../runtime/ClaudeTaskResultInterpreter';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { ClaudeTurnStats } from './ClaudeTurnStats';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
@@ -188,6 +189,20 @@ export async function loadSDKSessionMessages(
 
   flushPendingAssistant(true);
 
+  const taskResults = new ClaudeTaskResultInterpreter();
+  for (const message of chatMessages) {
+    for (const toolCall of message.toolCalls ?? []) {
+      if (!isClaudeSubagentToolName(toolCall.name) || toolCall.input.run_in_background === true
+        || toolCall.result === undefined) continue;
+      const metadata = toolUseResults.get(toolCall.id);
+      const mode = taskResults.describeTask(toolCall.input).mode
+        ?? taskResults.interpretLaunch(toolCall.result, toolCall.status === 'error', metadata).mode;
+      if (mode === 'async') continue;
+      const result = taskResults.interpretResult(toolCall.result, toolCall.status === 'error',
+        { mode: 'sync' }, metadata);
+      toolCall.result = result.result;
+    }
+  }
   hydrateStructuredToolResults(chatMessages, toolUseResults);
   hydrateFallbackAskUserAnswers(chatMessages);
 

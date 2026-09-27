@@ -47,6 +47,10 @@ describe('ClaudeTaskResultInterpreter', () => {
   });
 
   it.each([
+    'Use <result>value</result> in the XML response.',
+    '{"result":"example","other":"keep this field"}',
+    '{"text":"example","other":"keep this field"}',
+    '    indented code\n    next line\n',
     'An ordinary answer mentioning [Subagent hand-back] and agentId: example.',
     '[Subagent hand-back] The text below is the final report of a subagent. The report follows:\nUnindented user content\nagentId: example (metadata)\n<usage>tokens: 1</usage>',
     '[Subagent hand-back] The text below is the final report of a subagent. The report follows:\n  A report with no native trailer.',

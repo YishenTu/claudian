@@ -9,6 +9,7 @@ import { MarkdownRenderer } from 'obsidian';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage } from '@/core/types';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
+import { createResponseTextBlock } from '@/features/chat/rendering/ResponseLayout';
 
 HTMLElement.prototype.appendText = function (text) { this.append(document.createTextNode(text)); };
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -91,7 +92,8 @@ it('keeps live output in place until completion, then preserves the same content
   const el = renderer.addMessage(msg);
   const content = el.querySelector<HTMLElement>('.claudian-message-content')!;
   const work = content.createDiv({ cls: 'claudian-thinking-block', text: 'Working' });
-  const answer = content.createDiv({ cls: 'claudian-text-block', text: 'Done.' });
+  const answer = createResponseTextBlock(content);
+  answer.setText('Done.');
   expect(within(messagesEl).queryByRole('button', { name: /Worked/ })).toBeNull();
   expect(work.parentElement).toBe(content);
   msg.durationSeconds = 0;

@@ -27,7 +27,7 @@ jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({
   renderStoredThinkingBlock: jest.fn(),
 }));
 jest.mock('@/features/chat/rendering/CitationRenderer', () => ({
-  renderCitationGroup: jest.fn(),
+  renderCitationGroup: jest.fn((parent: HTMLElement) => parent.createDiv()),
 }));
 jest.mock('@/features/chat/rendering/ToolCallRenderer', () => ({
   renderStoredToolCall: jest.fn(),

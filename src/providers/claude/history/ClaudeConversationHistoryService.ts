@@ -19,6 +19,7 @@ import type {
   SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
+import { extractHandbackResult } from '../normalization/claudeSubagentResult';
 import { isClaudeSubagentToolName } from '../subagentToolNames';
 import {
   type ClaudeProviderState,
@@ -81,11 +82,15 @@ function mergeSubagentInfo(
 ): SubagentInfo {
   const sdkSubagent = taskToolCall.subagent;
   const cachedAsyncStatus = normalizeAsyncStatus(cachedSubagent);
+  const isSync = sdkSubagent?.mode === 'sync' || cachedSubagent.mode === 'sync'
+    || taskToolCall.input.run_in_background === false;
+  const result = isSync ? (taskToolCall.result ?? cachedSubagent.result)
+    : chooseRicherResult(taskToolCall.result, cachedSubagent.result);
   if (!sdkSubagent) {
     return {
       ...cachedSubagent,
       asyncStatus: cachedAsyncStatus,
-      result: chooseRicherResult(taskToolCall.result, cachedSubagent.result),
+      result,
     };
   }
 
@@ -99,7 +104,7 @@ function mergeSubagentInfo(
   const mergedMode = sdkSubagent.mode
     ?? cachedSubagent.mode
     ?? (taskToolCall.input?.run_in_background === true ? 'async' : undefined);
-  const fallbackResult = chooseRicherResult(sdkResult, cachedSubagent.result);
+  const fallbackResult = isSync ? result : chooseRicherResult(sdkResult, cachedSubagent.result);
   const mergedResult = preferred === cachedSubagent
     ? (cachedSubagent.result ?? fallbackResult)
     : fallbackResult;
@@ -128,6 +133,9 @@ function ensureTaskToolCall(
   subagentId: string,
   subagent: SubagentInfo,
 ): ToolCallInfo {
+  if (subagent.mode !== 'async' && subagent.result !== undefined) {
+    subagent = { ...subagent, result: extractHandbackResult(subagent.result) ?? subagent.result };
+  }
   msg.toolCalls = msg.toolCalls || [];
   let taskToolCall = msg.toolCalls.find(
     tc => tc.id === subagentId && isClaudeSubagentToolName(tc.name),
@@ -212,8 +220,36 @@ function mergeImageAttachments(
   return merged;
 }
 
+/** Cached snapshots may predate native result normalization, including while offline. */
+function normalizeCachedSyncResults(messages: ChatMessage[]): void {
+  for (const message of messages) {
+    for (const tool of message.toolCalls ?? []) {
+      if (!isClaudeSubagentToolName(tool.name) || tool.input.run_in_background === true
+        || tool.subagent?.mode === 'async') continue;
+      if (tool.result !== undefined) tool.result = extractHandbackResult(tool.result) ?? tool.result;
+      if (tool.subagent?.result !== undefined) {
+        tool.subagent.result = extractHandbackResult(tool.subagent.result) ?? tool.subagent.result;
+      }
+    }
+  }
+}
+
 function mergeDuplicateMessage(target: ChatMessage, incoming: ChatMessage): void {
   target.images = mergeImageAttachments(target.images, incoming.images);
+  // Native sync results have structured metadata unavailable in old cached snapshots.
+  for (const nativeTool of incoming.toolCalls ?? []) {
+    if (!isClaudeSubagentToolName(nativeTool.name) || nativeTool.input.run_in_background === true
+      || nativeTool.subagent?.mode === 'async' || nativeTool.result === undefined) continue;
+    const cachedTool = target.toolCalls?.find(tool => tool.id === nativeTool.id);
+    if (!cachedTool || cachedTool.input.run_in_background === true
+      || cachedTool.subagent?.mode === 'async' || normalizeAsyncStatus(cachedTool.subagent) !== undefined) continue;
+    cachedTool.result = nativeTool.result;
+    cachedTool.status = nativeTool.status;
+    if (cachedTool.subagent) {
+      cachedTool.subagent.result = nativeTool.result;
+      cachedTool.subagent.status = nativeTool.status === 'error' ? 'error' : nativeTool.status === 'running' ? 'running' : 'completed';
+    }
+  }
 }
 
 function dedupeMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -637,6 +673,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     pathContext?: ProviderHistoryPathContext,
   ): Promise<{ changes: ProviderHistoryState; complete: boolean }> {
     const conversation = copyProviderHistoryState(input);
+    normalizeCachedSyncResults(conversation.messages);
     if (!vaultPath) {
       return { changes: conversation, complete: false };
     }

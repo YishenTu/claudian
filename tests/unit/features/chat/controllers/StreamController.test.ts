@@ -17,6 +17,7 @@ import {
   StreamController,
   type StreamControllerDeps,
 } from '@/features/chat/controllers/StreamController';
+import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
 
 jest.mock('@/core/tools/toolInput', () => ({
@@ -25,17 +26,10 @@ jest.mock('@/core/tools/toolInput', () => ({
 }));
 
 jest.mock('@/features/chat/rendering/SubagentRenderer', () => ({
-  createAsyncSubagentBlock: jest.fn().mockReturnValue({
-    info: { id: 'task-1', description: 'test', mode: 'async', status: 'running', toolCalls: [] },
-    labelEl: { setText: jest.fn() },
-  }),
-  createSubagentBlock: jest.fn().mockReturnValue({
-    info: { id: 'task-1', description: 'test', status: 'running', toolCalls: [] },
-    labelEl: { setText: jest.fn() },
-  }),
-  finalizeAsyncSubagent: jest.fn(),
-  finalizeSubagentBlock: jest.fn(),
-  updateAsyncSubagentRunning: jest.fn(),
+  createAsyncSubagentBlock: jest.fn((_parent: any, info: any) => ({ info, statusTextEl: {} })),
+  createSubagentBlock: jest.fn((_parent: any, info: any) => ({ info })),
+  updateSubagentBlock: jest.fn((state: any, info: any) => { state.info = info; }),
+  updateAsyncSubagentBlock: jest.fn((state: any, info: any) => { state.info = info; }),
 }));
 
 jest.mock('@/features/chat/rendering/ThinkingBlockRenderer', () => ({
@@ -133,7 +127,7 @@ function createMockDeps(): MockStreamControllerDeps {
       addTextCopyButton: jest.fn(),
       renderCitationGroup: jest.fn(),
     } as any,
-    subagentManager: {
+    subagentManager: Object.assign(new SubagentManager(() => undefined), {
       isPendingAsyncTask: jest.fn().mockReturnValue(false),
       isLinkedAgentOutputTool: jest.fn().mockReturnValue(false),
       handleAgentOutputToolResult: jest.fn().mockReturnValue(undefined),
@@ -151,8 +145,8 @@ function createMockDeps(): MockStreamControllerDeps {
       updateSyncToolResult: jest.fn(),
       finalizeSyncSubagent: jest.fn().mockReturnValue(null),
       resetStreamingState: jest.fn(),
-      subagentsSpawnedThisStream: 0,
-    } as any,
+      resetLifecycleState: jest.fn(),
+    }) as any,
     getMessagesEl: () => messagesEl,
     updateQueueIndicator: jest.fn(),
     getProviderId: () => 'claude',
@@ -1333,7 +1327,7 @@ describe('StreamController - Text Content', () => {
   describe('Usage handling - edge cases', () => {
     it('should skip usage when subagentsSpawnedThisStream > 0', async () => {
       const msg = createTestMessage();
-      (deps.subagentManager as any).subagentsSpawnedThisStream = 1;
+      jest.spyOn(deps.subagentManager, 'subagentsSpawnedThisStream', 'get').mockReturnValue(1);
 
       const usage = createMockUsage({ inputTokens: 100, contextWindow: 200, contextTokens: 100, percentage: 50 });
 
@@ -1498,10 +1492,14 @@ describe('StreamController - Text Content', () => {
       const toolScope = { kind: 'subagent' as const, subagentId: 'parent' };
       const output = providerOutputEventToStreamChunk({ type: 'tool_output', toolCallId: 'read', toolScope, scope, content: 'partial' })!;
       await controller.handleStreamChunk(output, msg);
-      expect(toolCall).toMatchObject({ status: 'running', result: 'partial' });
+      expect(deps.subagentManager.updateSyncToolResult).toHaveBeenLastCalledWith(
+        'parent', 'read', expect.objectContaining({ status: 'running', result: 'partial' }),
+      );
       const completion = providerOutputEventToStreamChunk({ type: 'tool_completed', toolCallId: 'read', toolScope, scope, content: 'complete', providerPayload: { rawOutput: { native: true } } })!;
       await controller.handleStreamChunk(completion, msg);
-      expect(toolCall).toMatchObject({ status: 'completed', result: 'complete', providerPayload: { rawOutput: { native: true } } });
+      expect(deps.subagentManager.updateSyncToolResult).toHaveBeenLastCalledWith(
+        'parent', 'read', expect.objectContaining({ status: 'completed', result: 'complete', providerPayload: { rawOutput: { native: true } } }),
+      );
       expect(msg.toolCalls ?? []).toEqual([]);
     });
 
@@ -2948,6 +2946,9 @@ describe('StreamController - Text Content', () => {
 
   describe('Sync subagent finalization', () => {
     it('tool_result for a sync subagent calls finalizeSyncSubagent and updates Task toolCall', async () => {
+      (deps.subagentManager.finalizeSyncSubagent as jest.Mock).mockImplementationOnce(
+        SubagentManager.prototype.finalizeSyncSubagent.bind(deps.subagentManager),
+      );
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
 
@@ -2975,7 +2976,8 @@ describe('StreamController - Text Content', () => {
         'task-1',
         'Task completed successfully',
         false,
-        undefined
+        undefined,
+        expect.objectContaining({ id: 'task-1' }),
       );
 
       expect(msg.toolCalls![0].status).toBe('completed');
@@ -2987,7 +2989,7 @@ describe('StreamController - Text Content', () => {
 
   describe('Codex subagent lifecycle', () => {
     it('renders prompt immediately and final result after wait_agent resolves', async () => {
-      const { createSubagentBlock, finalizeSubagentBlock } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
+      const { createSubagentBlock, updateSubagentBlock } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
       deps.getProviderId = () => 'codex';
@@ -3036,24 +3038,16 @@ describe('StreamController - Text Content', () => {
         msg,
       );
 
-      expect(createSubagentBlock).toHaveBeenCalledWith(
-        expect.anything(),
-        'spawn-1',
-        expect.objectContaining({
+      expect(createSubagentBlock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
           description: 'Codex subagent (gpt-5.4-mini)',
           prompt: 'Inspect utils.ts and return the final patch summary.',
-        }),
-      );
+        }));
       expect(subagentState.info.description).toBe('Zeno (gpt-5.4-mini)');
-      expect(finalizeSubagentBlock).toHaveBeenCalledWith(
-        subagentState,
-        'Patched utils.ts and verified imports.',
-        false,
-      );
+      expect(updateSubagentBlock).toHaveBeenCalledWith(subagentState, expect.objectContaining({ result: 'Patched utils.ts and verified imports.', status: 'completed' }));
     });
 
     it('updates current task-name agents from list_agents after global wait timeouts', async () => {
-      const { createSubagentBlock, finalizeSubagentBlock } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
+      const { createSubagentBlock, updateSubagentBlock } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
       const { updateToolCallResult } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const msg = createTestMessage();
       deps.state.currentContentEl = createMockEl();
@@ -3088,7 +3082,7 @@ describe('StreamController - Text Content', () => {
         content: '{"message":"Agents are still running.","timed_out":true}',
       }, msg);
 
-      expect(finalizeSubagentBlock).not.toHaveBeenCalled();
+      expect(msg.toolCalls?.find(tool => tool.id === 'spawn-current')?.subagent?.status).toBe('running');
 
       await controller.handleStreamChunk({
         type: 'tool_use',
@@ -3107,11 +3101,7 @@ describe('StreamController - Text Content', () => {
         }),
       }, msg);
 
-      expect(finalizeSubagentBlock).toHaveBeenCalledWith(
-        subagentState,
-        'Provider integration is sound.',
-        false,
-      );
+      expect(updateSubagentBlock).toHaveBeenCalledWith(subagentState, expect.objectContaining({ result: 'Provider integration is sound.', status: 'completed' }));
       expect(updateToolCallResult).toHaveBeenCalledWith(
         'list-current',
         expect.objectContaining({
@@ -3169,7 +3159,7 @@ describe('StreamController - Text Content', () => {
     it('converts a pending generic tool into one background subagent block', async () => {
       const {
         createAsyncSubagentBlock,
-        finalizeAsyncSubagent,
+        updateAsyncSubagentBlock,
       } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
       const wrapperEl = createMockEl();
       const asyncState = {
@@ -3230,11 +3220,7 @@ describe('StreamController - Text Content', () => {
       ]);
       expect(deps.state.pendingTools.has('late-spawn')).toBe(false);
       expect(createAsyncSubagentBlock).toHaveBeenCalledTimes(1);
-      expect(finalizeAsyncSubagent).toHaveBeenCalledWith(
-        asyncState,
-        'Inspection complete.',
-        false,
-      );
+      expect(updateAsyncSubagentBlock).toHaveBeenCalledWith(asyncState, expect.objectContaining({ result: 'Inspection complete.', status: 'completed' }));
     });
 
     it('keeps a reclassified pending spawn before later pending tools', async () => {
@@ -3344,8 +3330,7 @@ describe('StreamController - Text Content', () => {
       const {
         createAsyncSubagentBlock,
         createSubagentBlock,
-        updateAsyncSubagentRunning,
-      } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
+        } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
       deps.state.currentContentEl = parentEl;
@@ -3400,16 +3385,12 @@ describe('StreamController - Text Content', () => {
       expect(parentEl.children).toEqual([asyncEl]);
       expect(createSubagentBlock).toHaveBeenCalledTimes(1);
       expect(createAsyncSubagentBlock).toHaveBeenCalledTimes(1);
-      expect(updateAsyncSubagentRunning).toHaveBeenCalledWith(
-        asyncState,
-        'task-refined-mode',
-      );
+      expect(createAsyncSubagentBlock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ agentId: 'task-refined-mode' }));
     });
 
     it('finalizes a generic tool that is reclassified as a completed sync spawn', async () => {
       const {
         createSubagentBlock,
-        finalizeSubagentBlock,
       } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
       const subagentState = {
         wrapperEl: createMockEl(),
@@ -3438,18 +3419,14 @@ describe('StreamController - Text Content', () => {
         input: { description: 'Inspect tools', prompt: 'Inspect them.' },
       }, msg);
 
-      expect(finalizeSubagentBlock).toHaveBeenCalledWith(
-        subagentState,
-        'Inspection complete.',
-        false,
-      );
+      expect(createSubagentBlock).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ result: 'Inspection complete.', status: 'completed' }));
     });
 
     it('removes a rendered wait card after a late spawn binding links it', async () => {
       const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       const {
         createAsyncSubagentBlock,
-        finalizeAsyncSubagent,
+        updateAsyncSubagentBlock,
       } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
       const parentEl = createMockEl();
       installOrderedMockParent(parentEl);
@@ -3516,11 +3493,7 @@ describe('StreamController - Text Content', () => {
       expect(waitEl.remove).toHaveBeenCalled();
       expect(deps.state.toolCallElements.has('early-wait')).toBe(false);
       expect(msg.contentBlocks).toContainEqual({ type: 'tool_use', toolId: 'early-wait' });
-      expect(finalizeAsyncSubagent).toHaveBeenCalledWith(
-        asyncState,
-        'Inspection complete.',
-        false,
-      );
+      expect(updateAsyncSubagentBlock).toHaveBeenCalledWith(asyncState, expect.objectContaining({ result: 'Inspection complete.', status: 'completed' }));
     });
 
     it('removes a rendered generic card when refined wait input links it', async () => {
@@ -3577,7 +3550,7 @@ describe('StreamController - Text Content', () => {
     });
 
     it('replays a terminal generic result when the call is reclassified as output', async () => {
-      const { createAsyncSubagentBlock, finalizeAsyncSubagent } = jest.requireMock(
+      const { createAsyncSubagentBlock, updateAsyncSubagentBlock } = jest.requireMock(
         '@/features/chat/rendering/SubagentRenderer',
       );
       const asyncState = {
@@ -3630,16 +3603,12 @@ describe('StreamController - Text Content', () => {
         input: { task_ids: ['task-terminal-output'] },
       }, msg);
 
-      expect(finalizeAsyncSubagent).toHaveBeenCalledWith(
-        asyncState,
-        'Inspection complete.',
-        false,
-      );
+      expect(updateAsyncSubagentBlock).toHaveBeenCalledWith(asyncState, expect.objectContaining({ result: 'Inspection complete.', status: 'completed' }));
     });
 
     it('removes a rendered output card when late raw output identifies its subagent', async () => {
       const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
-      const { createAsyncSubagentBlock, finalizeAsyncSubagent } = jest.requireMock(
+      const { createAsyncSubagentBlock, updateAsyncSubagentBlock } = jest.requireMock(
         '@/features/chat/rendering/SubagentRenderer',
       );
       const parentEl = createMockEl();
@@ -3708,11 +3677,7 @@ describe('StreamController - Text Content', () => {
         content: 'Inspection complete.',
       }, msg);
 
-      expect(finalizeAsyncSubagent).toHaveBeenCalledWith(
-        expect.objectContaining({ info: expect.objectContaining({ id: 'raw-output-spawn' }) }),
-        'Inspection complete.',
-        false,
-      );
+      expect(updateAsyncSubagentBlock).toHaveBeenCalledWith(expect.objectContaining({ info: expect.objectContaining({ id: 'raw-output-spawn' }) }), expect.objectContaining({ result: 'Inspection complete.', status: 'completed' }));
     });
 
     it('restores a hidden output card when later evidence reveals a command target', async () => {
@@ -3757,7 +3722,7 @@ describe('StreamController - Text Content', () => {
       );
       const {
         createAsyncSubagentBlock,
-        finalizeAsyncSubagent,
+        updateAsyncSubagentBlock,
       } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
       const outputEl = createMockEl();
       const asyncState = {
@@ -3819,19 +3784,14 @@ describe('StreamController - Text Content', () => {
         expect.objectContaining({ result: 'Subagent and command finished.' }),
         expect.any(Map),
       );
-      expect(finalizeAsyncSubagent).toHaveBeenCalledWith(
-        asyncState,
-        'Inspection complete.',
-        false,
-      );
+      expect(updateAsyncSubagentBlock).toHaveBeenCalledWith(asyncState, expect.objectContaining({ result: 'Inspection complete.', status: 'completed' }));
     });
 
     it('updates one background block across refined spawn input and output completion', async () => {
       const {
         createAsyncSubagentBlock,
-        finalizeAsyncSubagent,
-        updateAsyncSubagentRunning,
-      } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
+        updateAsyncSubagentBlock,
+        } = jest.requireMock('@/features/chat/rendering/SubagentRenderer');
       const asyncState = {
         info: {
           id: 'spawn-1',
@@ -3903,16 +3863,12 @@ describe('StreamController - Text Content', () => {
         }),
       }));
       expect(createAsyncSubagentBlock).toHaveBeenCalledTimes(1);
-      expect(updateAsyncSubagentRunning).toHaveBeenCalledWith(asyncState, 'task-7');
-      expect(finalizeAsyncSubagent).toHaveBeenCalledWith(
-        asyncState,
-        'Renderer mappings verified.',
-        false,
-      );
+      expect(updateAsyncSubagentBlock).toHaveBeenCalledWith(asyncState, expect.objectContaining({ agentId: 'task-7' }));
+      expect(updateAsyncSubagentBlock).toHaveBeenCalledWith(asyncState, expect.objectContaining({ result: 'Renderer mappings verified.', status: 'completed' }));
     });
 
     it('finalizes a foreground spawn directly from its terminal result', async () => {
-      const { createSubagentBlock, finalizeSubagentBlock } = jest.requireMock(
+      const { createSubagentBlock, updateSubagentBlock } = jest.requireMock(
         '@/features/chat/rendering/SubagentRenderer',
       );
       const syncState = {
@@ -3940,11 +3896,11 @@ describe('StreamController - Text Content', () => {
         },
       }, msg);
 
-      expect(finalizeSubagentBlock).toHaveBeenCalledWith(syncState, 'No material findings.', false);
+      expect(updateSubagentBlock).toHaveBeenCalledWith(syncState, expect.objectContaining({ result: 'No material findings.', status: 'completed' }));
     });
 
     it('finalizes a killed background task as an error', async () => {
-      const { createAsyncSubagentBlock, finalizeAsyncSubagent } = jest.requireMock(
+      const { createAsyncSubagentBlock, updateAsyncSubagentBlock } = jest.requireMock(
         '@/features/chat/rendering/SubagentRenderer',
       );
       const asyncState = {
@@ -3968,11 +3924,7 @@ describe('StreamController - Text Content', () => {
         type: 'tool_result', id: 'kill-3', content: 'Task task-3 cancelled',
       }, msg);
 
-      expect(finalizeAsyncSubagent).toHaveBeenCalledWith(
-        asyncState,
-        'Task task-3 cancelled',
-        true,
-      );
+      expect(updateAsyncSubagentBlock).toHaveBeenCalledWith(asyncState, expect.objectContaining({ result: 'Task task-3 cancelled', status: 'error' }));
     });
 
     it('keeps the shared output tool visible for a background command', async () => {

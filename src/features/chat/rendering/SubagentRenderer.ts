@@ -14,6 +14,7 @@ import {
 } from './ToolCallRenderer';
 
 interface SubagentToolView {
+  renderedToolCall?: Readonly<ToolCallInfo>;
   wrapperEl: HTMLElement;
   nameEl: HTMLElement;
   summaryEl: HTMLElement;
@@ -38,7 +39,7 @@ export interface SubagentState {
   resultSectionEl: HTMLElement | null;
   resultBodyEl: HTMLElement | null;
   toolElements: Map<string, SubagentToolView>;
-  info: SubagentInfo;
+  info: Readonly<SubagentInfo>;
   progressEl: HTMLElement | null;
   progress: SubagentProgress | null;
 }
@@ -48,14 +49,6 @@ const SUBAGENT_TOOL_STATUS_ICONS: Partial<Record<ToolCallInfo['status'], string>
   error: 'x',
   blocked: 'shield-off',
 };
-
-function extractTaskDescription(input: Record<string, unknown>): string {
-  return (input.description as string) || 'Subagent task';
-}
-
-function extractTaskPrompt(input: Record<string, unknown>): string {
-  return (input.prompt as string) || '';
-}
 
 function truncateDescription(description: string, maxLength = 40): string {
   if (description.length <= maxLength) return description;
@@ -122,6 +115,8 @@ function setSubagentToolStatus(view: SubagentToolView, status: ToolCallInfo['sta
 }
 
 function updateSubagentToolView(view: SubagentToolView, toolCall: ToolCallInfo): void {
+  if (view.renderedToolCall === toolCall) return;
+  view.renderedToolCall = toolCall;
   view.wrapperEl.className = `claudian-subagent-tool-item claudian-subagent-tool-${toolCall.status}`;
   view.nameEl.setText(getToolName(toolCall.name, toolCall.input));
   view.summaryEl.setText(getToolSummary(toolCall.name, toolCall.input));
@@ -152,9 +147,6 @@ function createSubagentToolView(parentEl: HTMLElement, toolCall: ToolCallInfo): 
   const collapseState = { isExpanded: toolCall.isExpanded ?? false };
   setupCollapsible(wrapperEl, headerEl, contentEl, collapseState, {
     initiallyExpanded: toolCall.isExpanded ?? false,
-    onToggle: (expanded) => {
-      toolCall.isExpanded = expanded;
-    },
     baseAriaLabel: getToolLabel(toolCall.name, toolCall.input),
   });
 
@@ -241,53 +233,11 @@ function setResultText(state: SubagentState, text: string): void {
   resultEl.setText(text);
 }
 
-function hydrateSyncSubagentStateFromStored(state: SubagentState, subagent: SubagentInfo): void {
-  state.info.description = subagent.description;
-  state.info.prompt = subagent.prompt;
-  state.info.mode = subagent.mode;
-  state.info.status = subagent.status;
-  state.info.result = subagent.result;
-
-  state.labelEl.setText(truncateDescription(subagent.description));
-  setPromptText(state.promptBodyEl, subagent.prompt || '');
-
-  for (const originalToolCall of subagent.toolCalls) {
-    const toolCall: ToolCallInfo = {
-      ...originalToolCall,
-      input: { ...originalToolCall.input },
-    };
-    addSubagentToolCall(state, toolCall);
-    if (toolCall.status !== 'running' || toolCall.result) {
-      updateSubagentToolResult(state, toolCall.id, toolCall);
-    }
-  }
-
-  if (subagent.status === 'completed' || subagent.status === 'error') {
-    const fallback = subagent.status === 'error' ? 'ERROR' : 'DONE';
-    finalizeSubagentBlock(state, subagent.result || fallback, subagent.status === 'error');
-  } else {
-    state.statusEl.className = 'claudian-subagent-status status-running';
-    state.statusEl.empty();
-    updateSyncHeaderAria(state);
-  }
-}
-
 export function createSubagentBlock(
   parentEl: HTMLElement,
-  taskToolId: string,
-  taskInput: Record<string, unknown>
+  info: Readonly<SubagentInfo>,
 ): SubagentState {
-  const description = extractTaskDescription(taskInput);
-  const prompt = extractTaskPrompt(taskInput);
-
-  const info: SubagentInfo = {
-    id: taskToolId,
-    description,
-    prompt,
-    status: 'running',
-    toolCalls: [],
-    isExpanded: false,
-  };
+  const { id: taskToolId, description, prompt = '' } = info;
 
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
   wrapperEl.dataset.subagentId = taskToolId;
@@ -314,7 +264,7 @@ export function createSubagentBlock(
 
   const toolsContainerEl = contentEl.createDiv({ cls: 'claudian-subagent-tools' });
 
-  setupCollapsible(wrapperEl, headerEl, contentEl, info);
+  setupCollapsible(wrapperEl, headerEl, contentEl, { isExpanded: false });
 
   const state: SubagentState = {
     wrapperEl,
@@ -333,106 +283,47 @@ export function createSubagentBlock(
     progress: null,
   };
 
-  updateSyncHeaderAria(state);
+  updateSubagentBlock(state, info);
   return state;
 }
 
-export function addSubagentToolCall(
-  state: SubagentState,
-  toolCall: ToolCallInfo
-): void {
-  const existingIndex = state.info.toolCalls.findIndex(tc => tc.id === toolCall.id);
-  if (existingIndex >= 0) {
-    const existingToolCall = state.info.toolCalls[existingIndex];
-    const mergedToolCall: ToolCallInfo = {
-      ...existingToolCall,
-      ...toolCall,
-      input: {
-        ...existingToolCall.input,
-        ...toolCall.input,
-      },
-      result: toolCall.result ?? existingToolCall.result,
-      isExpanded: toolCall.isExpanded ?? existingToolCall.isExpanded,
-    };
-
-    state.info.toolCalls[existingIndex] = mergedToolCall;
-
-    const existingView = state.toolElements.get(toolCall.id);
-    if (existingView) {
-      updateSubagentToolView(existingView, mergedToolCall);
+/** Applies a model snapshot without changing its lifecycle, result, or child tools. */
+export function updateSubagentBlock(state: SubagentState, info: Readonly<SubagentInfo>): void {
+  state.info = info;
+  state.labelEl.setText(truncateDescription(info.description));
+  setPromptText(state.promptBodyEl, info.prompt || '');
+  for (const toolCall of info.toolCalls) {
+    const view = state.toolElements.get(toolCall.id);
+    if (view) updateSubagentToolView(view, toolCall);
+    else state.toolElements.set(toolCall.id, createSubagentToolView(state.toolsContainerEl, toolCall));
+  }
+  for (const [id, view] of state.toolElements) {
+    if (!info.toolCalls.some(tool => tool.id === id)) {
+      view.wrapperEl.remove();
+      state.toolElements.delete(id);
     }
-
-    updateSyncHeaderAria(state);
-    return;
   }
-
-  state.info.toolCalls.push(toolCall);
-
-  const toolView = createSubagentToolView(state.toolsContainerEl, toolCall);
-  state.toolElements.set(toolCall.id, toolView);
-
-  updateSyncHeaderAria(state);
-}
-
-export function updateSubagentToolResult(
-  state: SubagentState,
-  toolId: string,
-  toolCall: ToolCallInfo
-): void {
-  const idx = state.info.toolCalls.findIndex(tc => tc.id === toolId);
-  if (idx !== -1) {
-    state.info.toolCalls[idx] = toolCall;
-  }
-
-  const toolView = state.toolElements.get(toolId);
-  if (!toolView) {
-    return;
-  }
-
-  updateSubagentToolView(toolView, toolCall);
-}
-
-export function finalizeSubagentBlock(
-  state: SubagentState,
-  result: string,
-  isError: boolean
-): void {
-  state.info.status = isError ? 'error' : 'completed';
-  state.info.result = result;
-
-  state.labelEl.setText(truncateDescription(state.info.description));
-
-  state.statusEl.className = 'claudian-subagent-status';
-  state.statusEl.addClass(`status-${state.info.status}`);
+  state.statusEl.className = `claudian-subagent-status status-${info.status}`;
   state.statusEl.empty();
-  if (state.info.status === 'completed') {
-    setIcon(state.statusEl, 'check');
-    state.wrapperEl.removeClass('error');
-    state.wrapperEl.addClass('done');
+  state.wrapperEl.removeClass('done', 'error');
+  if (info.status !== 'running') {
+    setIcon(state.statusEl, info.status === 'error' ? 'x' : 'check');
+    state.wrapperEl.addClass(info.status === 'error' ? 'error' : 'done');
+    clearSubagentProgress(state);
+    setResultText(state, info.result?.trim() ? info.result : (info.status === 'error' ? 'ERROR' : 'DONE'));
   } else {
-    setIcon(state.statusEl, 'x');
-    state.wrapperEl.removeClass('done');
-    state.wrapperEl.addClass('error');
+    state.resultSectionEl?.remove();
+    state.resultSectionEl = null;
+    state.resultBodyEl = null;
   }
-
-  clearSubagentProgress(state);
-  const finalText = result?.trim() ? result : (isError ? 'ERROR' : 'DONE');
-  setResultText(state, finalText);
-
   updateSyncHeaderAria(state);
 }
 
 export function renderStoredSubagent(
   parentEl: HTMLElement,
-  subagent: SubagentInfo
+  subagent: Readonly<SubagentInfo>
 ): HTMLElement {
-  const state = createSubagentBlock(parentEl, subagent.id, {
-    description: subagent.description,
-    prompt: subagent.prompt,
-  });
-
-  hydrateSyncSubagentStateFromStored(state, subagent);
-  return state.wrapperEl;
+  return createSubagentBlock(parentEl, subagent).wrapperEl;
 }
 
 export interface AsyncSubagentState {
@@ -442,7 +333,7 @@ export interface AsyncSubagentState {
   labelEl: HTMLElement;
   statusTextEl: HTMLElement;  // Running / Completed / Error / Orphaned
   statusEl: HTMLElement;
-  info: SubagentInfo;
+  info: Readonly<SubagentInfo>;
   progressEl: HTMLElement | null;
   progress: SubagentProgress | null;
 }
@@ -495,7 +386,7 @@ function updateAsyncLabel(state: AsyncSubagentState): void {
 
 function renderAsyncContentLikeSync(
   contentEl: HTMLElement,
-  subagent: SubagentInfo,
+  subagent: Readonly<SubagentInfo>,
   displayStatus: 'running' | 'completed' | 'error' | 'orphaned'
 ): void {
   contentEl.empty();
@@ -537,22 +428,9 @@ function renderAsyncContentLikeSync(
  */
 export function createAsyncSubagentBlock(
   parentEl: HTMLElement,
-  taskToolId: string,
-  taskInput: Record<string, unknown>
+  info: Readonly<SubagentInfo>,
 ): AsyncSubagentState {
-  const description = (taskInput.description as string) || 'Background task';
-  const prompt = (taskInput.prompt as string) || '';
-
-  const info: SubagentInfo = {
-    id: taskToolId,
-    description,
-    prompt,
-    mode: 'async',
-    status: 'running',
-    toolCalls: [],
-    isExpanded: false,
-    asyncStatus: 'pending',
-  };
+  const { id: taskToolId, description } = info;
 
   const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
   setAsyncWrapperStatus(wrapperEl, 'pending');
@@ -580,9 +458,9 @@ export function createAsyncSubagentBlock(
   const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
   renderAsyncContentLikeSync(contentEl, info, 'running');
 
-  setupCollapsible(wrapperEl, headerEl, contentEl, info);
+  setupCollapsible(wrapperEl, headerEl, contentEl, { isExpanded: false });
 
-  return {
+  const state: AsyncSubagentState = {
     wrapperEl,
     contentEl,
     headerEl,
@@ -593,150 +471,30 @@ export function createAsyncSubagentBlock(
     progressEl: null,
     progress: null,
   };
+  updateAsyncSubagentBlock(state, info);
+  return state;
 }
 
-export function updateAsyncSubagentRunning(
-  state: AsyncSubagentState,
-  agentId: string
-): void {
-  state.info.asyncStatus = 'running';
-  state.info.agentId = agentId;
-
-  setAsyncWrapperStatus(state.wrapperEl, 'running');
+/** Live updates and history use the same passive card rendering. */
+export function updateAsyncSubagentBlock(state: AsyncSubagentState, info: Readonly<SubagentInfo>): void {
+  state.info = info;
+  const displayStatus = getAsyncDisplayStatus(info.asyncStatus);
+  setAsyncWrapperStatus(state.wrapperEl, info.asyncStatus ?? 'running');
+  state.wrapperEl.removeClass('done', 'error');
   updateAsyncLabel(state);
-
-  state.statusTextEl.setText('Running in background');
-
-  renderAsyncContentLikeSync(state.contentEl, state.info, 'running');
-}
-
-export function finalizeAsyncSubagent(
-  state: AsyncSubagentState,
-  result: string,
-  isError: boolean
-): void {
-  state.info.asyncStatus = isError ? 'error' : 'completed';
-  state.info.status = isError ? 'error' : 'completed';
-  state.info.result = result;
-
-  setAsyncWrapperStatus(state.wrapperEl, isError ? 'error' : 'completed');
-  updateAsyncLabel(state);
-
-  state.statusTextEl.setText(isError ? 'Error' : '');
-
-  state.statusEl.className = 'claudian-subagent-status';
-  state.statusEl.addClass(`status-${isError ? 'error' : 'completed'}`);
+  state.statusTextEl.setText(getAsyncStatusText(info.asyncStatus));
+  const status = displayStatus === 'orphaned' ? 'error' : displayStatus;
+  state.statusEl.className = `claudian-subagent-status status-${status}`;
+  state.statusEl.setAttribute('aria-label', `Status: ${getAsyncStatusAriaLabel(info.asyncStatus)}`);
   state.statusEl.empty();
-  if (isError) {
-    setIcon(state.statusEl, 'x');
-  } else {
-    setIcon(state.statusEl, 'check');
+  if (displayStatus !== 'running') {
+    setIcon(state.statusEl, displayStatus === 'orphaned' ? 'alert-circle' : displayStatus === 'error' ? 'x' : 'check');
+    state.wrapperEl.addClass(displayStatus === 'completed' ? 'done' : 'error');
+    clearSubagentProgress(state);
   }
-
-  if (isError) {
-    state.wrapperEl.addClass('error');
-  } else {
-    state.wrapperEl.addClass('done');
-  }
-
-  clearSubagentProgress(state);
-  renderAsyncContentLikeSync(state.contentEl, state.info, isError ? 'error' : 'completed');
+  renderAsyncContentLikeSync(state.contentEl, info, displayStatus);
 }
 
-export function markAsyncSubagentOrphaned(state: AsyncSubagentState): void {
-  state.info.asyncStatus = 'orphaned';
-  state.info.status = 'error';
-  state.info.result = 'Conversation ended before task completed';
-
-  setAsyncWrapperStatus(state.wrapperEl, 'orphaned');
-  updateAsyncLabel(state);
-
-  state.statusTextEl.setText('Orphaned');
-
-  state.statusEl.className = 'claudian-subagent-status status-error';
-  state.statusEl.empty();
-  setIcon(state.statusEl, 'alert-circle');
-
-  state.wrapperEl.addClass('error');
-  state.wrapperEl.addClass('orphaned');
-
-  clearSubagentProgress(state);
-  renderAsyncContentLikeSync(state.contentEl, state.info, 'orphaned');
-}
-
-/**
- * Render a stored async subagent from conversation history.
- * Expandable to show the task prompt. Collapsed by default.
- */
-export function renderStoredAsyncSubagent(
-  parentEl: HTMLElement,
-  subagent: SubagentInfo
-): HTMLElement {
-  const wrapperEl = parentEl.createDiv({ cls: 'claudian-subagent-list' });
-  const displayStatus = getAsyncDisplayStatus(subagent.asyncStatus);
-  setAsyncWrapperStatus(wrapperEl, displayStatus);
-
-  if (displayStatus === 'completed') {
-    wrapperEl.addClass('done');
-  } else if (displayStatus === 'error' || displayStatus === 'orphaned') {
-    wrapperEl.addClass('error');
-  }
-  wrapperEl.dataset.asyncSubagentId = subagent.id;
-
-  const statusText = getAsyncStatusText(subagent.asyncStatus);
-  const statusAriaLabel = getAsyncStatusAriaLabel(subagent.asyncStatus);
-
-  const headerEl = wrapperEl.createDiv({ cls: 'claudian-subagent-header' });
-  headerEl.setAttribute('tabindex', '0');
-  headerEl.setAttribute('role', 'button');
-  headerEl.setAttribute('aria-expanded', 'false');
-  headerEl.setAttribute(
-    'aria-label',
-    `Background task: ${subagent.description} - ${statusAriaLabel} - click to expand`
-  );
-
-  const iconEl = headerEl.createDiv({ cls: 'claudian-subagent-icon' });
-  iconEl.setAttribute('aria-hidden', 'true');
-  setIcon(iconEl, getToolIcon(TOOL_SUBAGENT));
-
-  const labelEl = headerEl.createDiv({ cls: 'claudian-subagent-label' });
-  labelEl.setText(truncateDescription(subagent.description));
-
-  const statusTextEl = headerEl.createDiv({ cls: 'claudian-subagent-status-text' });
-  statusTextEl.setText(statusText);
-
-  let statusIconClass: string;
-  switch (displayStatus) {
-    case 'error':
-    case 'orphaned':
-      statusIconClass = 'status-error';
-      break;
-    case 'completed':
-      statusIconClass = 'status-completed';
-      break;
-    default:
-      statusIconClass = 'status-running';
-  }
-  const statusEl = headerEl.createDiv({ cls: `claudian-subagent-status ${statusIconClass}` });
-  statusEl.setAttribute('aria-label', `Status: ${statusAriaLabel}`);
-
-  switch (displayStatus) {
-    case 'completed':
-      setIcon(statusEl, 'check');
-      break;
-    case 'error':
-      setIcon(statusEl, 'x');
-      break;
-    case 'orphaned':
-      setIcon(statusEl, 'alert-circle');
-      break;
-  }
-
-  const contentEl = wrapperEl.createDiv({ cls: 'claudian-subagent-content' });
-  renderAsyncContentLikeSync(contentEl, subagent, displayStatus);
-
-  const state = { isExpanded: false };
-  setupCollapsible(wrapperEl, headerEl, contentEl, state);
-
-  return wrapperEl;
+export function renderStoredAsyncSubagent(parentEl: HTMLElement, subagent: Readonly<SubagentInfo>): HTMLElement {
+  return createAsyncSubagentBlock(parentEl, subagent).wrapperEl;
 }
