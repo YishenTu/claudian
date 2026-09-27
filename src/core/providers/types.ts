@@ -6,6 +6,7 @@ import type {
 } from '../execution';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
+  AskUserAnswers,
   AuxiliaryContinuityReset,
   Conversation,
   SessionMetadata,
@@ -52,6 +53,12 @@ export const DEFAULT_CHAT_PROVIDER_ID = 'claude' as const satisfies ProviderId;
  * Provider-owned workspace services (CLI resolution, commands, agents,
  * settings tabs) live behind `src/providers/<id>/app/`.
  */
+/** Native reply content is provider-owned; chat routes it as ordinary user input. */
+export interface ProviderQuestionReply {
+  content: string;
+  displayContent: string;
+}
+
 export interface ProviderRegistration {
   displayName: string;
   blankTabOrder: number;
@@ -67,6 +74,7 @@ export interface ProviderRegistration {
   historyService: ProviderConversationHistoryService;
   taskResultInterpreter: ProviderTaskResultInterpreter;
   subagentAdapter?: ProviderSubagentAdapter;
+  formatQuestionReply?: (tool: ToolCallInfo, answers: AskUserAnswers) => ProviderQuestionReply | null;
 }
 
 export interface ProviderModule extends ProviderRegistration {

@@ -100,7 +100,7 @@
   padding: 4px 0;
   padding-inline-start: 16px;
   margin-inline-start: 7px;
-  border-inline-start: 2px solid var(--background-modifier-border);
+  border-inline-start: 1px solid var(--background-modifier-border);
 }
 
 .claudian-subagent-section {

@@ -14,6 +14,30 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('text streaming', () => {
+    it.each([false, true])('deduplicates async question notifications and tool calls (notification first: %s)', notificationFirst => {
+      router.beginTurn();
+      const input = { questions: [{ title: 'Which check?', options: ['History', 'Rendering'] }] };
+      const item = { type: 'agentMessage', id: 'ask', text: 'Which check?\nHistory or Rendering', delivery: 'async', ...input };
+      const notify = () => {
+        router.handleNotification('item/started', { item });
+        router.handleNotification('item/completed', { item });
+      };
+      if (notificationFirst) notify();
+      router.handleNotification('rawResponseItem/completed', { item: {
+        type: 'function_call', name: 'request_user_input_async', call_id: 'ask', arguments: JSON.stringify(input),
+      } });
+      if (!notificationFirst) notify();
+      router.handleNotification('rawResponseItem/completed', { item: {
+        type: 'function_call_output', call_id: 'ask', output: '{"accepted":true}',
+      } });
+      router.handleNotification('turn/completed', { turn: { id: 'turn', items: [], status: 'completed', error: null } });
+      expect(chunks.filter(chunk => chunk.type === 'text' || chunk.type === 'assistant_message_start')).toEqual([]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toEqual([expect.objectContaining({
+        id: 'ask', name: 'AskUserQuestion', input: expect.objectContaining({ replyMode: 'user-message' }),
+      })]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
+    });
+
     it('accumulates multiple deltas', () => {
       router.handleNotification('item/agentMessage/delta', {
         threadId: 't1', turnId: 'turn1', itemId: 'msg1', delta: 'Hello',
@@ -678,6 +702,40 @@ describe('CodexNotificationRouter', () => {
 
       expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
       expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
+    });
+
+    it.each([false, true])('keeps an undecoded script running across cell waits (failure: %s)', (failed) => {
+      router.beginTurn();
+      const notify = (item: Record<string, unknown>) => router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1', turnId: 'turn1', item,
+      });
+      const source = 'const values = [1, 2]; text(values.map(n => n * 2));';
+      notify({ type: 'custom_tool_call', name: 'exec', call_id: 'script', input: source });
+      expect(chunks).toEqual([{ type: 'tool_use', id: 'script', name: 'exec', input: { raw: source } }]);
+      notify({ type: 'custom_tool_call_output', call_id: 'script',
+        output: 'Script running with cell ID 42\nWall time 0.1 seconds\nOutput:\nstarted' });
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([]);
+      notify({ type: 'function_call', name: 'wait', call_id: 'wait1', arguments: '{"cell_id":"42"}' });
+      notify({ type: 'function_call_output', call_id: 'wait1',
+        output: 'Script running with cell ID 43\nWall time 0.1 seconds\nOutput:\nstill running' });
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([]);
+      notify({ type: 'function_call', name: 'wait', call_id: 'wait2', arguments: '{"cell_id":"43"}' });
+      const finalText = failed ? 'Script error: fixture failure' : 'finished';
+      notify({ type: 'function_call_output', call_id: 'wait2',
+        output: `Script ${failed ? 'failed' : 'completed'}\nWall time 0.1 seconds\nOutput:\n${finalText}` });
+      router.handleNotification('turn/completed', {
+        threadId: 't1', turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+      expect(chunks.filter(chunk => chunk.type === 'tool_use')).toEqual([
+        { type: 'tool_use', id: 'script', name: 'exec', input: { raw: source } },
+      ]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_output')).toEqual([
+        { type: 'tool_output', id: 'script', content: 'started' },
+        { type: 'tool_output', id: 'script', content: '\nstill running' },
+      ]);
+      expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([
+        { type: 'tool_result', id: 'script', content: `started\nstill running\n${finalText}`, isError: failed },
+      ]);
     });
 
     it('keeps yielded exec envelopes running until their wait call completes', () => {
@@ -3698,6 +3756,41 @@ describe('CodexNotificationRouter', () => {
   });
 
   describe('webSearch tool', () => {
+    it.each([false, true])('keeps all raw web actions when a same-id native event summarizes one (native first: %s)', nativeFirst => {
+      router.beginTurn();
+      const native = { type: 'webSearch', id: 'web-call', action: { type: 'open_page', url: 'https://example.com/one' }, status: 'completed' };
+      if (nativeFirst) router.handleNotification('item/started', { item: native });
+      router.handleNotification('rawResponseItem/completed', { item: {
+        type: 'custom_tool_call', name: 'exec', call_id: 'web-call',
+        input: 'text(await tools.web__run({open:[{ref_id:"https://example.com/one"},{ref_id:"https://example.com/two"}]}));',
+      } });
+      router.handleNotification('item/completed', { item: native });
+      const uses = chunks.filter(chunk => chunk.type === 'tool_use');
+      expect(uses.at(-1)).toMatchObject({ id: 'web-call', name: 'WebSearch', input: { actions: [
+        { actionType: 'open_page', url: 'https://example.com/one' },
+        { actionType: 'open_page', url: 'https://example.com/two' },
+      ] } });
+    });
+
+    it.each([false, true])('correlates multi-action wrappers with different native IDs (native first: %s)', nativeFirst => {
+      router.beginTurn();
+      const native = { type: 'webSearch', id: 'exec-web', action: { type: 'open_page', url: 'https://example.com/one' }, status: 'completed' };
+      if (nativeFirst) router.handleNotification('item/started', { item: native });
+      router.handleNotification('rawResponseItem/completed', { item: {
+        type: 'custom_tool_call', name: 'exec', call_id: 'call-web',
+        input: 'text(await tools.web__run({open:[{ref_id:"https://example.com/one"},{ref_id:"https://example.com/two"}]}));',
+      } });
+      router.handleNotification('item/completed', { item: native });
+      router.handleNotification('rawResponseItem/completed', { item: { type: 'custom_tool_call_output', call_id: 'call-web', output: 'Opened pages' } });
+      router.handleNotification('turn/completed', { turn: { status: 'completed' } });
+      const uses = chunks.filter(chunk => chunk.type === 'tool_use');
+      expect(new Set(uses.map(chunk => chunk.id))).toEqual(new Set(['exec-web']));
+      expect(uses.at(-1)).toMatchObject({ input: { actions: [
+        { actionType: 'open_page', url: 'https://example.com/one' },
+        { actionType: 'open_page', url: 'https://example.com/two' },
+      ] } });
+    });
+
     // Shapes captured from the 2026-09-20 native research session.
     it.each([
       {

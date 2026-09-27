@@ -8,6 +8,7 @@ import type {
   ProviderInteractionPort,
 } from '../execution';
 import { resolveTitleGenerationLocale } from '../prompt/titleGeneration';
+import type { AskUserAnswers, ToolCallInfo } from '../types';
 import { findAvailableModelOption } from './models/modelOptions';
 import { ProviderModelUnavailableError } from './models/ProviderModelUnavailableError';
 import { decodeProviderModelSelectionId } from './modelSelection';
@@ -146,6 +147,10 @@ export class ProviderRegistry {
     providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID,
   ): ProviderSubagentAdapter | null {
     return this.getProviderRegistration(providerId).subagentAdapter ?? null;
+  }
+
+  static formatQuestionReply(providerId: ProviderId, tool: ToolCallInfo, answers: AskUserAnswers) {
+    return this.getProviderRegistration(providerId).formatQuestionReply?.(tool, answers) ?? null;
   }
 
   static getCapabilities(providerId: ProviderId = DEFAULT_CHAT_PROVIDER_ID): ProviderCapabilities {

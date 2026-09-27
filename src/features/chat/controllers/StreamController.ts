@@ -41,6 +41,7 @@ import { hasStreamingMathDelimiters } from '../../../utils/markdownMath';
 import { getVaultPath, normalizePathForVault } from '../../../utils/path';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import { FLAVOR_TEXTS } from '../constants';
+import type { QuestionAnswerHandler } from '../rendering/AsyncQuestionRenderer';
 import { hasMermaidFence } from '../rendering/DisplayOnlyCodeFences';
 import type { MessageRenderer, RenderContentOptions } from '../rendering/MessageRenderer';
 import { createResponseTextBlock } from '../rendering/ResponseLayout';
@@ -68,6 +69,7 @@ import { mergeReportedUsage } from '../utils/usageInfo';
 import { StreamingRenderCoordinator } from './StreamingRenderCoordinator';
 
 export interface StreamControllerDeps {
+  createQuestionAnswerHandler?: (tool: ToolCallInfo) => QuestionAnswerHandler | undefined;
   plugin: ChatFeatureHost;
   state: ChatState;
   renderer: MessageRenderer;
@@ -468,6 +470,7 @@ export class StreamController {
     } else {
       state.writeEditStates.delete(toolCall.id);
       replacementEl = renderToolCall(parentEl, toolCall, state.toolCallElements, {
+        onAnswer: this.deps.createQuestionAnswerHandler?.(toolCall),
         initiallyExpanded,
       });
       state.toolCallElements.set(toolCall.id, replacementEl);
@@ -544,7 +547,8 @@ export class StreamController {
       state.toolCallElements.set(toolId, writeEditState.wrapperEl);
     } else {
       renderToolCall(parentEl, toolCall, state.toolCallElements, {
-        initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH && this.#shouldExpandFileEditsByDefault(),
+        onAnswer: this.deps.createQuestionAnswerHandler?.(toolCall),
+        initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH ? this.#shouldExpandFileEditsByDefault() : toolCall.input.replyMode === 'user-message' ? undefined : false,
       });
     }
     state.pendingTools.delete(toolId);

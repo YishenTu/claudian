@@ -26,6 +26,7 @@ import {
   normalizeCodexMemoryCitation,
   stripCodexMemoryCitationMarkup,
 } from '../normalization/CodexMemoryCitation';
+import { parseCodexQuestionReply } from '../normalization/codexQuestionNormalization';
 import {
   appendCodexCommandOutput,
   decodeCodexExecEnvelope,
@@ -101,6 +102,7 @@ interface PersistedMCPToolCallPayload {
 }
 
 interface PersistedEventPayload {
+  item?: { type?: string; id?: string; delivery?: string; questions?: unknown[] };
   type?: string;
   text?: string;
   message?: string;
@@ -824,6 +826,18 @@ function applyPersistedToolOutput(
   ctx: PersistedParseContext,
   options: { allowImplicitCommandCompletion?: boolean } = {},
 ): void {
+  if (toolCall.name === 'exec') {
+    toolCall.result = appendCodexCommandOutput(toolCall.result, normalizeCodexToolResult('exec', rawOutputText));
+    const cellId = extractCodexExecCellId(rawOutputText);
+    if (cellId) {
+      ctx.execCellToCommandId.set(cellId, toolCall.id);
+      toolCall.status = 'running';
+    } else {
+      toolCall.status = isCodexToolOutputError(rawOutputText) ? 'error' : 'completed';
+    }
+    return;
+  }
+
   if (toolCall.name === 'Bash') {
     const commandResult = readPersistedCommandToolResult(rawOutputText);
     toolCall.result = appendCodexCommandOutput(toolCall.result, commandResult.output);
@@ -847,8 +861,7 @@ function applyPersistedToolOutput(
   }
 
   toolCall.result = normalizePersistedToolOutput(toolCall, rawOutputValue, rawOutputText);
-  toolCall.status = (toolCall.name === 'exec' && ctx.failedExecCallIds.has(toolCall.id))
-    || isCodexToolOutputError(rawOutputText) ? 'error' : 'completed';
+  toolCall.status = isCodexToolOutputError(rawOutputText) ? 'error' : 'completed';
 }
 
 function normalizePersistedToolOutput(
@@ -952,6 +965,13 @@ function processPersistedPayload(
 
       if (messagePayload.role === 'user') {
         const text = extractUserMessageText(messagePayload.content);
+        for (const reply of parseCodexQuestionReply(text)) {
+          const tool = findPersistedToolCallById(ctx, reply.callId);
+          const question: unknown = Array.isArray(tool?.input.questions) ? tool.input.questions[reply.index] : undefined;
+          if (tool?.input.replyMode === 'user-message' && question && typeof question === 'object' && 'question' in question && question.question === reply.question) {
+            tool.resolvedAnswers = { ...tool.resolvedAnswers, [String(('id' in question ? question.id : undefined) ?? reply.index)]: reply.answer };
+          }
+        }
         const visibleText = extractCodexUserVisibleText(text);
         const hasImages = hasMessageImages(messagePayload.content);
         if (visibleText === null && !hasImages) break;
@@ -1037,6 +1057,21 @@ function processEventMsg(
   if (!payload?.type) return;
 
   switch (payload.type) {
+    case 'item_completed': {
+      const item = payload.item;
+      if ((item?.type !== 'AgentMessage' && item?.type !== 'agentMessage')
+        || item.delivery !== 'async' || !item.id || !Array.isArray(item.questions)) break;
+      if (!findPersistedToolCallById(ctx, item.id)) {
+        processPersistedToolCall({ type: 'function_call', call_id: item.id, name: 'request_user_input_async', arguments: JSON.stringify({ questions: item.questions }) }, timestamp, ctx);
+      }
+      const tool = findPersistedToolCallById(ctx, item.id);
+      if (tool && tool.status === 'running') {
+        tool.status = 'completed';
+        tool.result = 'Question sent. Awaiting your reply.';
+      }
+      break;
+    }
+
     case 'task_started': {
       const serverTurnId = extractServerTurnId(payload);
       const id = nextTurnId(ctx);

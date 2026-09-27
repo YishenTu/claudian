@@ -4,6 +4,7 @@ import { Notice } from 'obsidian';
 import { resolveNewConversationModel } from '../../../../core/providers/conversationModel';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
+import type { ToolCallInfo } from '../../../../core/types';
 import { t } from '../../../../i18n/i18n';
 import { getVaultPath } from '../../../../utils/path';
 import { ComposerDraftController } from '../../composer/ComposerDraftController';
@@ -19,6 +20,7 @@ import {
 import { NavigationController } from '../../controllers/NavigationController';
 import { SelectionController } from '../../controllers/SelectionController';
 import { StreamController } from '../../controllers/StreamController';
+import type { QuestionAnswerHandler } from '../../rendering/AsyncQuestionRenderer';
 import { MessageRenderer } from '../../rendering/MessageRenderer';
 import { SideChatController } from '../../side-chat/SideChatController';
 import { getTabProviderId, requireTabProviderId } from '../providerResolution';
@@ -100,6 +102,12 @@ export function buildTabRuntimeControllers(
     }
   };
 
+  const createQuestionAnswerHandler = (tool: ToolCallInfo): QuestionAnswerHandler | undefined => {
+    if (tool.input.replyMode !== 'user-message') return undefined;
+    const conversationId = state.currentConversationId;
+    return answers => runtimeRef.requirePublished().controllers.inputController.answerQuestion(tool, answers, conversationId);
+  };
+
   const renderer = new MessageRenderer(
     plugin,
     component,
@@ -119,6 +127,7 @@ export function buildTabRuntimeControllers(
       navigate: (id, branchId) => runtimeRef.requirePublished().controllers.conversationController.navigateBranch(id, branchId),
       isBusy: () => !shell.session.canNavigateConversation,
     },
+    createQuestionAnswerHandler,
   );
   options.registerCleanup('tab message renderer', () => renderer.dispose());
 
@@ -168,6 +177,7 @@ export function buildTabRuntimeControllers(
   );
 
   const streamController = new StreamController({
+    createQuestionAnswerHandler,
     plugin,
     state,
     renderer,

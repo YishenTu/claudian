@@ -109,7 +109,7 @@
   padding: 4px 0;
   padding-inline-start: 16px;
   margin-inline-start: 7px;
-  border-inline-start: 2px solid var(--background-modifier-border);
+  border-inline-start: 1px solid var(--background-modifier-border);
 }
 
 /* Tool content variants that render inline widgets instead of bordered results */
@@ -264,4 +264,33 @@
 
 .claudian-tool-result-item:last-child {
   margin-bottom: 0;
+}
+
+
+.claudian-tool-script-label {
+  color: var(--text-faint);
+  font-size: 11px;
+  padding: 4px 0;
+}
+
+.claudian-tool-content .claudian-tool-script-code,
+.claudian-tool-content .claudian-tool-script-output {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 300px;
+  overflow: auto;
+  padding: 6px 8px;
+  margin: 0 0 4px;
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+}
+
+.claudian-tool-content .claudian-tool-script-code code {
+  font: inherit;
+  white-space: inherit;
+  background: none;
+  padding: 0;
 }

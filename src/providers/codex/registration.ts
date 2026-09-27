@@ -9,6 +9,7 @@ import { codexSettingsReconciler } from './env/CodexSettingsReconciler';
 import { CodexExecutionBackend } from './execution/CodexExecutionBackend';
 import { CodexConversationHistoryService } from './history/CodexConversationHistoryService';
 import { findCodexModel } from './models';
+import { formatCodexQuestionReply } from './normalization/codexQuestionNormalization';
 import { codexSubagentLifecycleAdapter } from './normalization/codexSubagentNormalization';
 import {
   getCodexProviderSettings, getVisibleCodexModelIds,
@@ -48,5 +49,6 @@ export const codexProviderRegistration: ProviderModule = {
   historyService: new CodexConversationHistoryService(),
   taskResultInterpreter: NOOP_TASK_RESULT_INTERPRETER,
   subagentAdapter: codexSubagentLifecycleAdapter,
+  formatQuestionReply: formatCodexQuestionReply,
   workspace: codexWorkspaceRegistration,
 };

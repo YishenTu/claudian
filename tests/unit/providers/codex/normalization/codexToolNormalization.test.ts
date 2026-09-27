@@ -382,6 +382,12 @@ describe('Codex MCP normalization helpers', () => {
 });
 
 describe('normalizeCodexToolResult', () => {
+  it('strips only the script envelope while preserving arbitrary script output', () => {
+    const output = '{"output":"keep this object","count":2}\nOutput:\nkeep this label';
+    expect(normalizeCodexToolResult('exec', `Script completed\nWall time 0.1 seconds\nOutput:\n${output}`)).toBe(output);
+    expect(normalizeCodexToolResult('exec', output)).toBe(output);
+  });
+
   it('unwraps JSON { output: "..." } for Bash', () => {
     const result = normalizeCodexToolResult('Bash', '{"output":"hello world"}');
     expect(result).toBe('hello world');
@@ -413,6 +419,10 @@ describe('normalizeCodexToolResult', () => {
 });
 
 describe('isCodexToolOutputError', () => {
+  it('recognizes script failures even after a successful nested command', () => {
+    expect(isCodexToolOutputError('Script failed\nWall time 0.1 seconds\nOutput:\nProcess exited with code 0\nScript error: fixture failure')).toBe(true);
+  });
+
   it('detects non-zero exit code', () => {
     expect(isCodexToolOutputError('Exit code: 1\nOutput:\nerror')).toBe(true);
   });

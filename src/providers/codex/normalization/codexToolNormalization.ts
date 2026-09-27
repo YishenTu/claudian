@@ -16,6 +16,8 @@ const TOOL_NAME_MAP: Record<string, string> = {
   exec_command: 'Bash',
   update_plan: 'TodoWrite',
   request_user_input: 'AskUserQuestion',
+  request_user_input_async: 'AskUserQuestion',
+  web__run: 'WebSearch',
   view_image: 'Read',
   web_search: 'WebSearch',
   web_search_call: 'WebSearch',
@@ -471,6 +473,15 @@ export function normalizeCodexToolInput(
     case 'request_user_input':
       return { questions: normalizeQuestions(input) };
 
+    case 'request_user_input_async':
+      return {
+        questions: normalizeQuestions(input).map((question, index) => ({ ...question, id: String(index), isOther: true })),
+        replyMode: 'user-message',
+      };
+
+    case 'web__run':
+      return normalizeWebRunInput(input);
+
     case 'view_image':
       return {
         ...input,
@@ -539,7 +550,7 @@ function normalizeQuestions(input: Record<string, unknown>): Array<Record<string
       : [];
 
     return {
-      question: stringifyCodexValue(item.question) || `Question ${index + 1}`,
+      question: firstNonEmptyString(item.question, item.title) || `Question ${index + 1}`,
       ...(item.id ? { id: stringifyCodexValue(item.id) } : {}),
       header: typeof item.header === 'string' && item.header.trim()
         ? String(item.header)
@@ -572,6 +583,42 @@ function stringifyCodexValue(value: unknown): string {
   } catch {
     return '';
   }
+}
+
+function normalizeWebRunInput(input: Record<string, unknown>): Record<string, unknown> {
+  const actions: Record<string, unknown>[] = [];
+  const records = (key: string): Record<string, unknown>[] => Array.isArray(input[key])
+    ? input[key].filter((value): value is Record<string, unknown> => (
+      value !== null && typeof value === 'object' && !Array.isArray(value)
+    ))
+    : [];
+  const queries = [...records('search_query'), ...records('image_query')]
+    .map(query => firstNonEmptyString(query.q)).filter(Boolean);
+  if (queries.length > 0) {
+    actions.push({ actionType: 'search', query: queries[0], ...(queries.length > 1 ? { queries } : {}) });
+  }
+  for (const request of records('open')) {
+    const url = firstNonEmptyString(request.ref_id, request.url);
+    if (url) actions.push({ actionType: 'open_page', url });
+  }
+  for (const request of records('find')) {
+    const url = firstNonEmptyString(request.ref_id, request.url);
+    const pattern = firstNonEmptyString(request.pattern);
+    if (url && pattern) actions.push({ actionType: 'find_in_page', url, pattern });
+  }
+  for (const request of records('click')) {
+    const url = firstNonEmptyString(request.ref_id, request.url);
+    if (url) actions.push({ actionType: 'click', url, linkId: stringifyCodexValue(request.id) });
+  }
+  for (const [operation, requests] of Object.entries(input)) {
+    if (!['search_query', 'image_query', 'open', 'find', 'click'].includes(operation)
+      && Array.isArray(requests) && requests.length > 0) {
+      actions.push({ actionType: operation, requests });
+    }
+  }
+  return actions.length > 0
+    ? { ...actions[0], ...(actions.length > 1 ? { actions } : {}) }
+    : input;
 }
 
 function normalizeWebSearchInput(input: Record<string, unknown>): Record<string, unknown> {
@@ -727,6 +774,22 @@ export function normalizeCodexToolResult(
   rawResult: string,
 ): string {
   if (!rawResult) return rawResult;
+  if (normalizedName === 'AskUserQuestion') {
+    try {
+      const result = JSON.parse(rawResult) as Record<string, unknown> | null;
+      if (result?.accepted === true && Object.keys(result).length === 1) {
+        return 'Question sent. Awaiting your reply.';
+      }
+    } catch { /* Keep non-JSON question results intact. */ }
+  }
+  if (normalizedName === 'exec') {
+    // Only remove the transport envelope; arbitrary script output may itself
+    // contain JSON objects or "Output:" labels that must remain intact.
+    return rawResult.replace(
+      /^Script (?:completed|failed|running with cell ID [^\r\n]+)\r?\nWall time [^\r\n]+\r?\nOutput:\r?\n/,
+      '',
+    );
+  }
   if (!TERMINAL_RESULT_TOOLS.has(normalizedName)) return rawResult;
   return unwrapTerminalResult(rawResult);
 }
@@ -804,6 +867,7 @@ function unwrapTerminalResult(raw: string): string {
 // ---------------------------------------------------------------------------
 
 export function isCodexToolOutputError(output: string): boolean {
+  if (/^Script failed(?:\r?\n|$)/.test(output.trimStart())) return true;
   const exitCodeMatch = output.match(/(?:Exit code:|Process exited with code)\s*(\d+)/i);
   if (exitCodeMatch) {
     return Number(exitCodeMatch[1]) !== 0;

@@ -241,3 +241,36 @@ it('defers live diff rows while keeping statistics and final status current', ()
   fireEvent.keyDown(state.headerEl, { key: 'Enter' });
   expect(state.contentEl.textContent).toContain('latest');
 });
+
+
+it.each(['raw', 'value'])('renders stored exec %s source safely with a Script header and separate output', async (key) => {
+  const source = '// @exec: {"yield_time_ms": 1000}\nconst label = `<img src=x onerror=alert(1)>`;\ntext(label);';
+  const block = renderStoredToolCall(document.body.createDiv(), {
+    id: 'script', name: 'exec', input: { [key]: source }, status: 'completed', result: 'Script fixture complete',
+  });
+  const header = within(block).getByRole('button', { name: /Script: const label/ });
+  expect(header.textContent).not.toContain('@exec');
+  expect(block.querySelector('code')).toBeNull();
+  fireEvent.keyDown(header, { key: 'Enter' });
+  expect(within(block).getByText('JavaScript')).toBeDefined();
+  expect(block.querySelector('code')?.textContent).toBe(source);
+  expect(block.querySelector('img')).toBeNull();
+  expect(within(block).getByText('Output')).toBeDefined();
+  expect(within(block).getByText('Script fixture complete')).toBeDefined();
+  expect((await axe(block)).violations).toEqual([]);
+});
+
+it('shows live Script source before output, then preserves it through completion and failure', () => {
+  const source = 'const values = [1, 2, 3]; text(values.map(n => n * 2));';
+  const tool: ToolCallInfo = { id: 'script', name: 'exec', input: { raw: source }, status: 'running' };
+  const elements = new Map<string, HTMLElement>();
+  const block = renderToolCall(document.body.createDiv(), tool, elements, { initiallyExpanded: true });
+  expect(block.querySelector('code')?.textContent).toBe(source);
+  expect(within(block).getByText('Running...')).toBeDefined();
+  for (const status of ['running', 'completed', 'error'] as const) {
+    const updated = { ...tool, status, result: status === 'error' ? 'Script error: fixture failure' : '[2,4,6]' };
+    updateToolCallResult(tool.id, updated, elements);
+    expect(block.querySelector('code')?.textContent).toBe(source);
+    expect(within(block).getByText(updated.result)).toBeDefined();
+  }
+});

@@ -121,6 +121,8 @@ export interface UserMessageItem {
 }
 
 export interface AgentMessageItem {
+  delivery?: 'async' | null;
+  questions?: Array<{ title: string; options: string[] | null }> | null;
   type: 'agentMessage';
   id: string;
   text: string;

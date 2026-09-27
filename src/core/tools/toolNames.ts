@@ -24,10 +24,15 @@ export const TOOL_ENTER_PLAN_MODE = 'EnterPlanMode' as const;
 export const TOOL_EXIT_PLAN_MODE = 'ExitPlanMode' as const;
 
 // Runtime-managed tools exposed through provider adapters.
+export const TOOL_EXEC = 'exec' as const;
 export const TOOL_APPLY_PATCH = 'apply_patch' as const;
 export const TOOL_WRITE_STDIN = 'write_stdin' as const;
 export const TOOL_SPAWN_AGENT = 'spawn_agent' as const;
 export const TOOL_SEND_INPUT = 'send_input' as const;
+export const TOOL_SEND_MESSAGE = 'send_message' as const;
+export const TOOL_FOLLOWUP_TASK = 'followup_task' as const;
+export const TOOL_LIST_AGENTS = 'list_agents' as const;
+export const TOOL_INTERRUPT_AGENT = 'interrupt_agent' as const;
 export const TOOL_WAIT = 'wait' as const;
 export const TOOL_WAIT_AGENT = 'wait_agent' as const;
 export const TOOL_RESUME_AGENT = 'resume_agent' as const;
@@ -36,6 +41,10 @@ export const TOOL_CLOSE_AGENT = 'close_agent' as const;
 export const AGENT_LIFECYCLE_TOOLS = [
   TOOL_SPAWN_AGENT,
   TOOL_SEND_INPUT,
+  TOOL_SEND_MESSAGE,
+  TOOL_FOLLOWUP_TASK,
+  TOOL_LIST_AGENTS,
+  TOOL_INTERRUPT_AGENT,
   TOOL_WAIT,
   TOOL_WAIT_AGENT,
   TOOL_RESUME_AGENT,

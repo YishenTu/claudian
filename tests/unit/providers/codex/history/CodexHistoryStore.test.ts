@@ -795,6 +795,35 @@ describe('CodexHistoryStore', () => {
       ]);
     });
 
+    it.each([
+      ['completed', 'Script completed\nWall time 0.1 seconds\nOutput:\nfinished'],
+      ['error', 'Script failed\nWall time 0.1 seconds\nOutput:\nScript error: fixture failure'],
+    ])('restores an undecoded script and its cell waits as one %s tool', (status, finalOutput) => {
+      const source = 'const values = [1, 2]; text(values.map(n => n * 2));';
+      const records: Array<Record<string, unknown>> = [];
+      const add = (payload: Record<string, unknown>) => records.push({
+        timestamp: testTime({ seconds: records.length }), type: 'response_item', payload,
+      });
+      add({ type: 'custom_tool_call', name: 'exec', call_id: 'script', input: source });
+      add({ type: 'custom_tool_call_output', call_id: 'script',
+        output: 'Script running with cell ID 42\nWall time 0.1 seconds\nOutput:\nstarted' });
+      const readTools = () => parseCodexSessionContent(records.map(record => JSON.stringify(record)).join('\n'))
+        .flatMap(message => message.toolCalls ?? []);
+      expect(readTools()).toEqual([expect.objectContaining({
+        name: 'exec', status: 'running', result: 'started', input: { raw: source },
+      })]);
+      add({ type: 'function_call', name: 'wait', call_id: 'wait1', arguments: '{"cell_id":"42"}' });
+      add({ type: 'function_call_output', call_id: 'wait1',
+        output: 'Script running with cell ID 43\nWall time 0.1 seconds\nOutput:\nstill running' });
+      expect(readTools()).toEqual([expect.objectContaining({ status: 'running', result: 'started\nstill running' })]);
+      add({ type: 'function_call', name: 'wait', call_id: 'wait2', arguments: '{"cell_id":"43"}' });
+      add({ type: 'function_call_output', call_id: 'wait2', output: finalOutput });
+      expect(readTools()).toEqual([expect.objectContaining({
+        id: 'script', name: 'exec', status,
+        result: `started\nstill running\n${status === 'error' ? 'Script error: fixture failure' : 'finished'}`,
+      })]);
+    });
+
     it('restores yielded exec envelopes as one completed Bash tool', () => {
       const content = [
         JSON.stringify({

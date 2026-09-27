@@ -10,13 +10,14 @@ import type {
 } from '../../../core/execution';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '../../../core/providers/types';
-import type { ChatMessage, ImageAttachment } from '../../../core/types';
+import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import {
   providerOutputEventToStreamChunk,
   StreamController,
 } from '../controllers/StreamController';
 import type { WarmExecutionPool } from '../execution/WarmExecutionPool';
+import type { QuestionAnswerHandler } from '../rendering/AsyncQuestionRenderer';
 import { type BackgroundTurnRenderTarget, discardBackgroundTurn, renderAutoTriggeredTurn, renderSessionTaskNotification, reserveBackgroundTurn } from '../rendering/BackgroundTurnRenderer';
 import { InlineInteractionPrompts } from '../rendering/InlineInteractionPrompts';
 import { MessageRenderer } from '../rendering/MessageRenderer';
@@ -48,7 +49,9 @@ export interface SideChatRuntimeDeps {
 }
 
 export interface SideChatSubmission {
+  readonly onDelivery?: (accepted: boolean) => void;
   readonly content: string;
+  readonly displayContent?: string;
   readonly images?: readonly ImageAttachment[];
   readonly context?: ProviderExecutionContext;
 }
@@ -66,6 +69,7 @@ export class SideChatRuntime {
   readonly #session: SideChatSession;
   readonly #prompts: InlineInteractionPrompts;
   readonly #settings: SideChatSettingsProjection;
+  #activeDelivery: SideChatSubmission['onDelivery'];
   #activeAssistant: ChatMessage | null = null;
   #status: SideChatStatus = 'preparing';
   #lastError: string | null = null;
@@ -84,6 +88,27 @@ export class SideChatRuntime {
       onAttentionChanged: () => this.#refreshStatus(),
       onStreamingStateChanged: () => this.#refreshStatus(),
     });
+    const createQuestionAnswerHandler = (tool: ToolCallInfo): QuestionAnswerHandler | undefined => {
+      if (tool.input.replyMode !== 'user-message') return undefined;
+      return async answers => {
+        if (this.#disposed || !this.state.messages.some(message => message.toolCalls?.includes(tool))) {
+          throw new Error('This side chat is no longer available.');
+        }
+        const reply = ProviderRegistry.formatQuestionReply(this.providerId, tool, answers);
+        if (!reply) throw new Error('This question cannot accept that reply.');
+        await new Promise<void>((resolve, reject) => {
+          const submission: SideChatSubmission = {
+            ...reply,
+            onDelivery: accepted => accepted ? resolve() : reject(new Error('The answer was not sent. Please try again.')),
+          };
+          if (this.isWorking) {
+            if (!this.enqueue(submission)) submission.onDelivery?.(false);
+          } else {
+            void this.submit(submission).catch(reject);
+          }
+        });
+      };
+    };
     this.renderer = new MessageRenderer(
       deps.plugin,
       deps.component,
@@ -91,6 +116,8 @@ export class SideChatRuntime {
       undefined,
       undefined,
       () => this.capabilities,
+      undefined,
+      createQuestionAnswerHandler,
     );
     this.#subagents = new SubagentManager(() => undefined);
     this.#prompts = new InlineInteractionPrompts({
@@ -98,6 +125,7 @@ export class SideChatRuntime {
       onBeforeShow: () => this.#stream.hideThinkingIndicator(),
     });
     this.#stream = new StreamController({
+      createQuestionAnswerHandler,
       getMessagesEl: () => deps.messagesEl,
       getProviderId: () => deps.source.providerId,
       getProviderSessionId: () => this.#session.providerSessionId ?? null,
@@ -114,7 +142,7 @@ export class SideChatRuntime {
       lifecycleRegistry: deps.lifecycleRegistry,
       onError: error => deps.onError?.(error),
       onInvalidated: () => {
-        this.#queuedSubmissions.length = 0;
+        this.#discardQueuedSubmissions();
         this.#discardBackgroundTurns();
         this.#lastError = ephemeral
           ? 'This side chat has ended. Discard it and start a new side chat.'
@@ -185,13 +213,16 @@ export class SideChatRuntime {
   enqueue(submission: SideChatSubmission): boolean {
     if (this.#disposed || !this.isWorking || !submission.content.trim()) return false;
     // Submission data contains only text, image metadata and plain selection context.
-    this.#queuedSubmissions.push(JSON.parse(JSON.stringify(submission)) as SideChatSubmission);
+    this.#queuedSubmissions.push({ ...JSON.parse(JSON.stringify(submission)) as SideChatSubmission, onDelivery: submission.onDelivery });
     this.#refreshStatus();
     return true;
   }
 
   async submit(submission: SideChatSubmission): Promise<void> {
-    if (this.#disposed || this.isWorking) return;
+    if (this.#disposed || this.isWorking) {
+      submission.onDelivery?.(false);
+      return;
+    }
     this.#draining = true;
     try {
       let next: SideChatSubmission | undefined = submission;
@@ -212,6 +243,7 @@ export class SideChatRuntime {
       await this.#runRequestedTurn(submission);
     } finally {
       this.#requestedSettlement = null;
+      submission.onDelivery?.(false);
       settle();
     }
   }
@@ -226,7 +258,7 @@ export class SideChatRuntime {
     this.#lastError = null;
     const userMessage: ChatMessage = {
       content,
-      displayContent: content,
+      displayContent: submission.displayContent ?? content,
       id: createSideMessageId(),
       images: images.length > 0 ? images : undefined,
       role: 'user',
@@ -266,6 +298,7 @@ export class SideChatRuntime {
         // Dynamic system context is best-effort, as it is for main chat.
       }
       if (this.#disposed || this.state.cancelRequested) return;
+      this.#activeDelivery = submission.onDelivery;
       const result = await this.#session.execute({
         ...(submission.context ? { context: submission.context } : {}),
         configuration: {
@@ -290,6 +323,7 @@ export class SideChatRuntime {
         toolPolicy: { kind: 'provider-default' },
       });
 
+      if (result.accepted) submission.onDelivery?.(true);
       if (result.status === 'completed') {
         const finalAssistant = this.#activeAssistant ?? assistantMessage;
         finalAssistant.completedAt = Date.now();
@@ -308,12 +342,13 @@ export class SideChatRuntime {
       this.#lastError = error instanceof Error ? error.message : String(error);
       await this.#stream.appendText(`\n\n**Error:** ${this.#lastError}`);
     } finally {
+      this.#activeDelivery = undefined;
       const finalAssistant = this.#activeAssistant ?? assistantMessage;
       this.state.clearFlavorTimerInterval();
       this.#stream.hideThinkingIndicator();
       const wasCancelled = interrupted || this.state.cancelRequested;
       if (wasCancelled) {
-        this.#queuedSubmissions.length = 0;
+        this.#discardQueuedSubmissions();
         finalAssistant.isInterrupt = true;
         if (this.state.currentContentEl) {
           this.renderer.appendInterruptIndicator(this.state.currentContentEl);
@@ -342,8 +377,12 @@ export class SideChatRuntime {
     }
   }
 
+  #discardQueuedSubmissions(): void {
+    for (const submission of this.#queuedSubmissions.splice(0)) submission.onDelivery?.(false);
+  }
+
   cancel(): void {
-    this.#queuedSubmissions.length = 0;
+    this.#discardQueuedSubmissions();
     this.#refreshStatus();
     if (this.state.isStreaming) this.state.cancelRequested = true;
     this.#session.cancel();
@@ -353,7 +392,7 @@ export class SideChatRuntime {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#discardBackgroundTurns();
-    this.#queuedSubmissions.length = 0;
+    this.#discardQueuedSubmissions();
     this.#titleService?.cancel();
     this.#titleService = null;
     this.state.cancelRequested = true;
@@ -443,7 +482,7 @@ export class SideChatRuntime {
       return;
     }
     if (event.type === 'session_error') {
-      this.#queuedSubmissions.length = 0;
+      this.#discardQueuedSubmissions();
       this.#lastError = event.message;
       this.#discardBackgroundTurns();
       this.#refreshStatus();
@@ -473,6 +512,7 @@ export class SideChatRuntime {
   async #handleExecutionEvent(event: Parameters<
     NonNullable<ConstructorParameters<typeof SideChatSession>[0]['onRequestedEvent']>
   >[0]): Promise<void> {
+    if (event.type === 'turn_started' && event.accepted) this.#activeDelivery?.(true);
     const assistant = this.#activeAssistant;
     if (!assistant) return;
     if (event.type === 'turn_completed') {

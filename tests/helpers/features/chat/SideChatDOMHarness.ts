@@ -47,6 +47,7 @@ export async function releaseSideChatHarnesses(): Promise<void> {
 }
 
 export function createHarness(options: {
+  formatQuestionReply?: ProviderRegistration['formatQuestionReply'];
   onDestinationChanged?: () => void;
   subagentAdapter?: ProviderRegistration['subagentAdapter'];
   taskResultInterpreter?: ProviderRegistration['taskResultInterpreter'];
@@ -62,6 +63,7 @@ export function createHarness(options: {
   const lifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   const forkState = { forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } };
   ProviderRegistry.register('claude', {
+    formatQuestionReply: options.formatQuestionReply,
     capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, forkMode: options.forkMode },
     modelPolicy: ProviderRegistry.getModelPolicy('claude'),
     chatUIConfig: ProviderRegistry.getChatUIConfig('claude'),

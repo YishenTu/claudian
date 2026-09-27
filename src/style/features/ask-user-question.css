@@ -321,3 +321,40 @@
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
 }
+
+
+.claudian-ask-async fieldset {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  margin: 8px 0;
+  padding: 8px;
+  min-width: 0;
+}
+
+.claudian-ask-async-option,
+.claudian-ask-async-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.claudian-ask-async-custom {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.claudian-ask-async-custom input,
+.claudian-ask-async-custom input:hover,
+.claudian-ask-async-custom input:focus,
+.claudian-ask-async-custom input:active,
+.claudian-ask-async-custom input:disabled {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.claudian-ask-async-custom:focus-within {
+  outline: 1px solid var(--interactive-accent);
+  outline-offset: 2px;
+}

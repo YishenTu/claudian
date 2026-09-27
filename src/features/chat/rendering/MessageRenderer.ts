@@ -34,6 +34,7 @@ import type { ChatFeatureHost } from '../ChatFeatureHost';
 import { findRewindContext } from '../rewind';
 import { ImagePreviewModal } from '../ui/ImagePreviewModal';
 import { formatConversationDirectoryTitle } from '../utils/conversationDirectoryTitle';
+import type { QuestionAnswerHandler } from './AsyncQuestionRenderer';
 import { renderCitationGroup as renderCitationBlock } from './CitationRenderer';
 import {
   prepareDisplayOnlyCodeFences,
@@ -97,6 +98,7 @@ export class MessageRenderer {
       navigate(messageId: string, branchMessageId?: string): Promise<void>;
       isBusy(): boolean;
     },
+    private readonly createQuestionAnswerHandler?: (tool: ToolCallInfo) => QuestionAnswerHandler | undefined,
   ) {
     this.app = plugin.app;
     this.plugin = plugin;
@@ -605,7 +607,8 @@ export class MessageRenderer {
       this.#renderProviderLifecycleSubagent(contentEl, toolCall, msg);
     } else {
       renderStoredToolCall(contentEl, toolCall, {
-        initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH && this.#shouldExpandFileEditsByDefault(),
+        onAnswer: this.createQuestionAnswerHandler?.(toolCall),
+        initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH ? this.#shouldExpandFileEditsByDefault() : toolCall.input.replyMode === 'user-message' ? undefined : false,
       });
     }
   }

@@ -10,6 +10,7 @@ import {
   TOOL_BASH,
   TOOL_EDIT,
   TOOL_ENTER_PLAN_MODE,
+  TOOL_EXEC,
   TOOL_EXIT_PLAN_MODE,
   TOOL_GLOB,
   TOOL_GREP,
@@ -27,6 +28,7 @@ import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo } from '.
 import type { DiffStats } from '../../../core/types/diff';
 import { appendMCPIcon } from '../../../shared/icons';
 import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '../../../utils/diff';
+import { type QuestionAnswerHandler, renderAsyncQuestionForm } from './AsyncQuestionRenderer';
 import { setupCollapsible } from './collapsible';
 import { renderDiffContent, renderDiffStats } from './DiffRenderer';
 import { renderTodoItems } from './todoUtils';
@@ -66,6 +68,16 @@ export function getToolName(name: string, input: Record<string, unknown>): strin
       }
       return 'Tasks';
     }
+    case 'send_message':
+      return 'Message agent';
+    case 'followup_task':
+      return 'Continue agent';
+    case 'list_agents':
+      return 'List agents';
+    case 'interrupt_agent':
+      return 'Interrupt agent';
+    case TOOL_EXEC:
+      return 'Script';
     case TOOL_ENTER_PLAN_MODE:
       return 'Entering plan mode';
     case TOOL_EXIT_PLAN_MODE:
@@ -83,6 +95,8 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
       const filePath = getInputText(input, 'file_path');
       return fileNameOnly(filePath);
     }
+    case TOOL_EXEC:
+      return getScriptSummary(input);
     case TOOL_BASH: {
       const cmd = getInputText(input, 'command');
       return truncateText(cmd, 60);
@@ -117,6 +131,8 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
 /** Combined name+summary for ARIA labels (collapsible regions need a single descriptive phrase). */
 export function getToolLabel(name: string, input: Record<string, unknown>): string {
   switch (name) {
+    case TOOL_EXEC:
+      return `Script: ${getScriptSummary(input) || 'JavaScript'}`;
     case TOOL_READ:
       return `Read: ${shortenPath(getInputText(input, 'file_path')) || 'file'}`;
     case TOOL_WRITE:
@@ -171,7 +187,7 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
     default:
       if (isAgentLifecycleTool(name)) {
         const summary = getAgentLifecycleSummary(name, input);
-        return summary ? `${name}: ${summary}` : name;
+        return summary ? `${getToolName(name, input)}: ${summary}` : getToolName(name, input);
       }
       return name;
   }
@@ -181,6 +197,19 @@ export function fileNameOnly(filePath: string): string {
   if (!filePath) return '';
   const normalized = filePath.replace(/\\/g, '/');
   return normalized.split('/').pop() ?? normalized;
+}
+
+function getScriptSource(input: Record<string, unknown>): string {
+  return [input.raw, input.value].find((value): value is string => (
+    typeof value === 'string' && value.trim().length > 0
+  )) ?? '';
+}
+
+function getScriptSummary(input: Record<string, unknown>): string {
+  const firstLine = getScriptSource(input).split('\n')
+    .map(line => line.trim())
+    .find(line => line && !line.startsWith('//'));
+  return truncateText(firstLine ?? '', 60);
 }
 
 function getApplyPatchSummary(input: Record<string, unknown>): string {
@@ -215,6 +244,13 @@ function getWriteStdinSummary(input: Record<string, unknown>): string {
 
 function getAgentLifecycleSummary(name: string, input: Record<string, unknown>): string {
   switch (name) {
+    case 'send_message':
+    case 'followup_task':
+      return truncateText([getInputText(input, 'target'), getInputText(input, 'message')].filter(Boolean).join(': '), 60);
+    case 'list_agents':
+      return getInputText(input, 'path_prefix', 'All agents');
+    case 'interrupt_agent':
+      return getInputText(input, 'target');
     case 'spawn_agent': {
       const msg = typeof input.message === 'string' ? input.message : '';
       return msg.length > 50 ? `${msg.slice(0, 50)}...` : msg;
@@ -223,6 +259,7 @@ function getAgentLifecycleSummary(name: string, input: Record<string, unknown>):
       const msg = typeof input.message === 'string' ? input.message : '';
       return msg.length > 40 ? `${msg.slice(0, 40)}...` : msg;
     }
+    case 'wait_agent':
     case 'wait': {
       const ids = Array.isArray(input.ids) ? input.ids.length : 0;
       const timeoutMs = typeof input.timeout_ms === 'number' ? input.timeout_ms : undefined;
@@ -270,6 +307,7 @@ interface WebSearchDisplayData {
   queries: string[];
   url: string;
   pattern: string;
+  linkId: string;
 }
 
 function normalizeWebSearchDisplayData(input: Record<string, unknown>): WebSearchDisplayData {
@@ -291,13 +329,19 @@ function normalizeWebSearchDisplayData(input: Record<string, unknown>): WebSearc
   const actionType = explicitActionType
     || (url && pattern ? 'find_in_page' : url ? 'open_page' : (query || queries.length > 0) ? 'search' : '');
 
-  return { actionType, query, queries, url, pattern };
+  return { actionType, query, queries, url, pattern, linkId: getInputText(input, 'linkId') };
 }
 
 function getWebSearchSummary(input: Record<string, unknown>, maxLength: number): string {
+  if (Array.isArray(input.actions) && input.actions.length > 1) {
+    return `${input.actions.length} web operations`;
+  }
+  if (Array.isArray(input.requests)) return getWebOperationLabel(getInputText(input, 'actionType'));
   const data = normalizeWebSearchDisplayData(input);
 
   switch (data.actionType) {
+    case 'click':
+      return truncateText(`Click link ${data.linkId} in ${data.url}`, maxLength);
     case 'open_page':
       return truncateText(`Open ${data.url || 'page'}`, maxLength);
     case 'find_in_page': {
@@ -318,6 +362,13 @@ function getWebSearchLabel(input: Record<string, unknown>, maxLength: number): s
 }
 
 function appendToolLink(parent: HTMLElement, title: string, url: string): void {
+  // Native page references are useful text, not navigable URLs.
+  let isWebURL = false;
+  try { isWebURL = ['https:', 'http:'].includes(new URL(url).protocol); } catch { /* Reference or malformed URL. */ }
+  if (!isWebURL) {
+    parent.createDiv({ cls: 'claudian-tool-line claudian-tool-line-wrap', text: title });
+    return;
+  }
   const linkEl = parent.createEl('a', { cls: 'claudian-tool-link' });
   linkEl.setAttribute('href', url);
   linkEl.setAttribute('target', '_blank');
@@ -351,7 +402,28 @@ function parseWebSearchResult(result: string): { links: WebSearchLink[]; summary
   }
 }
 
+function getWebOperationLabel(actionType: string): string {
+  const label = actionType.replace(/_/g, ' ');
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function renderWebSearchActionExpanded(container: HTMLElement, input: Record<string, unknown>): boolean {
+  if (Array.isArray(input.actions)) {
+    let rendered = false;
+    for (const action of input.actions) {
+      if (action && typeof action === 'object' && !Array.isArray(action)) {
+        const { actions: _nested, ...single } = action as Record<string, unknown>;
+        rendered = renderWebSearchActionExpanded(container, single) || rendered;
+      }
+    }
+    return rendered;
+  }
+  if (Array.isArray(input.requests)) {
+    const lines = container.createDiv({ cls: 'claudian-tool-lines' });
+    lines.createDiv({ cls: 'claudian-tool-line', text: getWebOperationLabel(getInputText(input, 'actionType')) });
+    renderLinesExpanded(container, JSON.stringify(input.requests, null, 2), 20);
+    return true;
+  }
   const data = normalizeWebSearchDisplayData(input);
   const hasStructuredData = Boolean(data.actionType || data.query || data.queries.length || data.url || data.pattern);
   if (!hasStructuredData) {
@@ -361,6 +433,10 @@ function renderWebSearchActionExpanded(container: HTMLElement, input: Record<str
   const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
 
   switch (data.actionType) {
+    case 'click':
+      linesEl.createDiv({ cls: 'claudian-tool-line', text: `Click link ${data.linkId}` });
+      if (data.url) appendToolLink(linesEl, data.url, data.url);
+      return true;
     case 'open_page':
       linesEl.createDiv({ cls: 'claudian-tool-line', text: 'Open page' });
       if (data.url) {
@@ -410,6 +486,8 @@ function renderWebSearchExpanded(
   input: Record<string, unknown>,
   result: string | undefined,
 ): void {
+  const hasActions = Array.isArray(input.actions);
+  if (hasActions) renderWebSearchActionExpanded(container, input);
   const parsed = result ? parseWebSearchResult(result) : null;
   if (parsed && parsed.links.length > 0) {
     const linksEl = container.createDiv({ cls: 'claudian-tool-lines' });
@@ -425,11 +503,13 @@ function renderWebSearchExpanded(
   }
 
   const data = normalizeWebSearchDisplayData(input);
-  const shouldRenderAction = Boolean(data.actionType || data.query || data.queries.length || data.url || data.pattern)
+  const shouldRenderAction = !hasActions && Boolean(data.actionType || data.query || data.queries.length || data.url || data.pattern)
     && (!result
       || isPlaceholderWebSearchResult(result)
       || data.actionType === 'open_page'
-      || data.actionType === 'find_in_page');
+      || data.actionType === 'find_in_page'
+      || data.actionType === 'click'
+      || Array.isArray(input.requests));
 
   if (shouldRenderAction && renderWebSearchActionExpanded(container, input)) {
     if (result && !isPlaceholderWebSearchResult(result)) {
@@ -438,10 +518,11 @@ function renderWebSearchExpanded(
     return;
   }
 
-  if (result) {
+  if (result && !isPlaceholderWebSearchResult(result)) {
     renderLinesExpanded(container, result, 20);
     return;
   }
+  if (hasActions) return;
 
   if (renderWebSearchActionExpanded(container, input)) {
     return;
@@ -640,7 +721,23 @@ function getDiffStatsAriaLabel(stats: DiffStats): string {
   return `Changes: +${stats.added} -${stats.removed}`;
 }
 
-function renderAgentLifecycleExpanded(container: HTMLElement, result: string): void {
+function renderAgentLifecycleExpanded(
+  container: HTMLElement,
+  result: string,
+  input: Record<string, unknown>,
+  initialText?: string,
+): void {
+  const target = getInputText(input, 'target');
+  const message = getInputText(input, 'message');
+  if (target || message) {
+    const inputEl = container.createDiv({ cls: 'claudian-tool-lines' });
+    if (target) inputEl.createDiv({ cls: 'claudian-tool-line', text: `Agent: ${target}` });
+    if (message) inputEl.createDiv({ cls: 'claudian-tool-line claudian-tool-line-wrap', text: message });
+  }
+  if (!result) {
+    contentFallback(container, initialText ?? 'No output');
+    return;
+  }
   // Try to parse as JSON for structured display
   const trimmed = result.trim();
   if (trimmed.startsWith('{')) {
@@ -666,7 +763,7 @@ function formatToolDisplayValue(value: unknown): string {
   if (value === null || value === undefined) {
     return '';
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value, null, 2);
 }
 
 export function renderExpandedContent(
@@ -675,19 +772,22 @@ export function renderExpandedContent(
   result: string | undefined,
   input: Record<string, unknown> = {},
 ): void {
-  if (!result && toolName !== TOOL_WEB_SEARCH && toolName !== TOOL_BASH && toolName !== TOOL_APPLY_PATCH) {
+  if (isAgentLifecycleTool(toolName)) {
+    renderAgentLifecycleExpanded(container, result ?? '', input);
+    return;
+  }
+
+  if (!result && toolName !== TOOL_WEB_SEARCH && toolName !== TOOL_BASH && toolName !== TOOL_EXEC && toolName !== TOOL_APPLY_PATCH) {
     container.createDiv({ cls: 'claudian-tool-empty', text: 'No result' });
     return;
   }
 
   const resolvedResult = result ?? '';
 
-  if (isAgentLifecycleTool(toolName)) {
-    renderAgentLifecycleExpanded(container, resolvedResult);
-    return;
-  }
-
   switch (toolName) {
+    case TOOL_EXEC:
+      renderScriptContent(container, input, resolvedResult);
+      break;
     case TOOL_BASH:
       renderBashContent(container, input, resolvedResult);
       break;
@@ -817,6 +917,7 @@ interface ToolElementStructure {
 }
 
 export interface ToolCallRenderOptions {
+  onAnswer?: QuestionAnswerHandler;
   initiallyExpanded?: boolean;
 }
 
@@ -873,10 +974,12 @@ function resolveAskUserAnswers(toolCall: ToolCallInfo): Record<string, unknown> 
 }
 
 function renderAskUserQuestionResult(container: HTMLElement, toolCall: ToolCallInfo): boolean {
-  container.empty();
   const questions = toolCall.input.questions as AskUserQuestionItem[] | undefined;
   const answers = resolveAskUserAnswers(toolCall);
   if (!questions || !Array.isArray(questions) || !answers) return false;
+  if (!questions.some(question => (question.id && question.id in answers) || question.question in answers)) return false;
+  if (toolCall.input.replyMode === 'user-message' && !questions.every(question => (question.id && question.id in answers) || question.question in answers)) return false;
+  container.empty();
 
   const reviewEl = container.createDiv({ cls: 'claudian-ask-review' });
   for (let i = 0; i < questions.length; i++) {
@@ -895,6 +998,28 @@ function renderAskUserQuestionResult(container: HTMLElement, toolCall: ToolCallI
   }
 
   return true;
+}
+
+const questionAnswerHandlers = new WeakMap<HTMLElement, QuestionAnswerHandler>();
+const currentQuestionTools = new WeakMap<HTMLElement, ToolCallInfo>();
+
+function renderQuestionContent(container: HTMLElement, tool: ToolCallInfo, initialText?: string): void {
+  currentQuestionTools.set(container, tool);
+  if (renderAskUserQuestionResult(container, tool)) return;
+  const onAnswer = questionAnswerHandlers.get(container);
+  if (onAnswer && tool.input.replyMode === 'user-message' && tool.status !== 'error' && tool.status !== 'blocked') {
+    if (container.querySelector('.claudian-ask-async')) return;
+    container.empty();
+    const questions = Array.isArray(tool.input.questions) ? tool.input.questions as AskUserQuestionItem[] : [];
+    renderAsyncQuestionForm(container, questions, async answers => {
+      await onAnswer(answers);
+      const current = currentQuestionTools.get(container) ?? tool;
+      current.resolvedAnswers = answers;
+      renderAskUserQuestionResult(container, current);
+    });
+    return;
+  }
+  renderAskUserQuestionFallback(container, tool, initialText);
 }
 
 function renderAskUserQuestionFallback(container: HTMLElement, toolCall: ToolCallInfo, initialText?: string): void {
@@ -965,6 +1090,26 @@ function contentFallback(container: HTMLElement, text: string): void {
   resultText.setText(text);
 }
 
+function renderScriptContent(
+  container: HTMLElement,
+  input: Record<string, unknown>,
+  result: string,
+  initialText?: string,
+): void {
+  const source = getScriptSource(input);
+  if (source) {
+    container.createDiv({ cls: 'claudian-tool-script-label', text: 'JavaScript' });
+    const sourceEl = container.createEl('pre', { cls: 'claudian-tool-script-code' });
+    sourceEl.createEl('code', { text: source });
+  }
+  container.createDiv({ cls: 'claudian-tool-script-label', text: 'Output' });
+  if (result) {
+    container.createEl('pre', { cls: 'claudian-tool-script-output', text: result });
+  } else {
+    contentFallback(container, initialText ?? 'No result');
+  }
+}
+
 function renderBashContent(
   container: HTMLElement,
   input: Record<string, unknown>,
@@ -1023,11 +1168,11 @@ function renderToolContent(
     renderTodoWriteResult(content, toolCall.input);
   } else if (toolCall.name === TOOL_ASK_USER_QUESTION) {
     content.addClass('claudian-tool-content-ask');
-    if (initialText) {
-      renderAskUserQuestionFallback(content, toolCall, 'Waiting for answer...');
-    } else if (!renderAskUserQuestionResult(content, toolCall)) {
-      renderAskUserQuestionFallback(content, toolCall);
-    }
+    renderQuestionContent(content, toolCall, initialText ? 'Waiting for answer...' : undefined);
+  } else if (isAgentLifecycleTool(toolCall.name)) {
+    renderAgentLifecycleExpanded(content, toolCall.result ?? '', toolCall.input, initialText);
+  } else if (toolCall.name === TOOL_EXEC) {
+    renderScriptContent(content, toolCall.input, toolCall.result ?? '', initialText);
   } else if (toolCall.name === TOOL_BASH) {
     renderBashContent(content, toolCall.input, toolCall.result ?? '', initialText);
   } else if (initialText) {
@@ -1047,13 +1192,14 @@ export function renderToolCall(
 ): HTMLElement {
   const { toolEl, header, statusEl, content, currentTaskEl } =
     createToolElementStructure(parentEl, toolCall);
+  if (options.onAnswer) questionAnswerHandlers.set(content, options.onAnswer);
 
   toolEl.dataset.toolId = toolCall.id;
   toolCallElements.set(toolCall.id, toolEl);
 
   setGenericToolHeaderRight(statusEl, toolCall);
 
-  const initiallyExpanded = options.initiallyExpanded ?? false;
+  const initiallyExpanded = options.initiallyExpanded ?? (Boolean(options.onAnswer) && !toolCall.resolvedAnswers);
   const state = { isExpanded: initiallyExpanded };
   let currentTool = toolCall;
   let initial = true;
@@ -1126,9 +1272,7 @@ export function updateToolCallResult(
     const content = toolEl.querySelector('.claudian-tool-content') as HTMLElement;
     if (content) {
       content.addClass('claudian-tool-content-ask');
-      if (!renderAskUserQuestionResult(content, toolCall)) {
-        renderAskUserQuestionFallback(content, toolCall);
-      }
+      renderQuestionContent(content, toolCall);
     }
     return;
   }
@@ -1154,6 +1298,7 @@ export function renderStoredToolCall(
 ): HTMLElement {
   const { toolEl, header, statusEl, content, currentTaskEl } =
     createToolElementStructure(parentEl, toolCall);
+  if (options.onAnswer) questionAnswerHandlers.set(content, options.onAnswer);
 
   if (toolCall.name === TOOL_TODO_WRITE) {
     setTodoWriteStatus(statusEl, toolCall.input);
@@ -1175,7 +1320,7 @@ export function renderStoredToolCall(
   const state = { isExpanded: false };
   const todoStatusEl = toolCall.name === TOOL_TODO_WRITE ? statusEl : null;
   setupCollapsible(toolEl, header, content, state, {
-    initiallyExpanded: options.initiallyExpanded ?? false,
+    initiallyExpanded: options.initiallyExpanded ?? (Boolean(options.onAnswer) && !toolCall.resolvedAnswers),
     onToggle: createTodoToggleHandler(currentTaskEl, todoStatusEl, (expanded) => {
       if (expanded) renderContentOnce();
     }),

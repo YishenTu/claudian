@@ -4,12 +4,13 @@ import { Notice } from 'obsidian';
 
 import type { ProviderExecutionErrorEvent, ProviderExecutionEvent } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
-import type { ImageAttachment } from '@/core/types';
+import type { ImageAttachment, ToolCallInfo } from '@/core/types';
 import { ConversationController } from '@/features/chat/controllers/ConversationController';
 import { ChatExecutionPreHandoffError, type ChatTurnSubmission } from '@/features/chat/execution/ChatExecutionCoordinator';
 
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
+    formatQuestionReply: jest.fn(),
     resolveTitleGenerationSelection: jest.fn().mockReturnValue(null),
     getCapabilities: jest.fn().mockReturnValue({
       providerId: 'claude',
@@ -1979,5 +1980,75 @@ describe('branch draft submission', () => {
     expect(fixture.state.messages.some(message => message.id === 'second')).toBe(cancelled);
     conversation.cancelBranchDraft();
     expect(fixture.state.messages.some(message => message.content === 'Edited')).toBe(!cancelled);
+  });
+});
+
+
+describe('async question answer submission', () => {
+  const createQuestion = (): ToolCallInfo => ({
+    id: 'ask', name: 'AskUserQuestion', status: 'completed', input: { replyMode: 'user-message', questions: [] },
+  });
+
+  beforeEach(() => {
+    jest.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: 'Question?\nAnswer' });
+  });
+
+  it('uses the native payload for execution and friendly text for display without consuming the composer draft', async () => {
+    const fixture = createFixture();
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    fixture.input.value = 'Keep my draft';
+    await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: 'Question?\nAnswer' });
+    expect(fixture.input.value).toBe('Keep my draft');
+  });
+
+  it.each(['clearQueuedMessage', 'withdrawQueuedMessageToComposer'] as const)('keeps native reply content pending and rejects on %s', async action => {
+    const fixture = createFixture();
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    fixture.state.isStreaming = true;
+    let accepted = false;
+    const answering = fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1').then(() => { accepted = true; });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(accepted).toBe(false);
+    expect(fixture.state.queuedMessage).toMatchObject({ content: 'Question?\nAnswer', turnRequest: { text: 'native reply payload' } });
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    fixture.controller[action]();
+    await expect(answering).rejects.toThrow('not sent');
+    expect(accepted).toBe(false);
+  });
+
+  it.each(['/clear', '/new', '/side', '/compact'])('treats question text starting with %s as display text, never as a command', async command => {
+    const fixture = createFixture();
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    jest.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: `${command}\nYes` });
+    await fixture.controller.answerQuestion(tool, { '0': 'Yes' }, 'conversation-1');
+    expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: `${command}\nYes` });
+    expect(fixture.deps.conversationController.createNew).not.toHaveBeenCalled();
+  });
+
+  it('delivers merged queued answers through the existing steer action', async () => {
+    const fixture = createFixture();
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    fixture.state.isStreaming = true;
+    const answering = fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    await fixture.controller.sendMessage({ content: 'Also check rendering' });
+    await (fixture.controller as any).steerQueuedMessage();
+    await answering;
+    expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload\n\nAlso check rendering' });
+  });
+
+  it('rejects answers from another conversation or when admission is blocked', async () => {
+    const fixture = createFixture({ canStartTurn: () => false });
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    await expect(fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'other-conversation')).rejects.toThrow('different conversation');
+    await expect(fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1')).rejects.toThrow('not sent');
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.state.queuedMessage).toBeNull();
   });
 });
