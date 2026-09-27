@@ -3,12 +3,13 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-import type {
-  ProviderExecutionEvent,
-  ProviderExecutionRequest,
-  ProviderInteractionPort,
-  ProviderSessionConfig,
-  ProviderSessionEvent,
+import {
+  isSteerableExecutionSession,
+  type ProviderExecutionEvent,
+  type ProviderExecutionRequest,
+  type ProviderInteractionPort,
+  type ProviderSessionConfig,
+  type ProviderSessionEvent,
 } from '@/core/execution';
 import type { SlashCommand } from '@/core/types';
 
@@ -1126,6 +1127,21 @@ describe('OpencodeExecutionBackend', () => {
         type: 'permission_mode_changed',
       }),
     ]);
+  });
+
+  it('declines to steer a running turn whose native kernel cannot steer', async () => {
+    const harness = createHarness();
+    if (!isSteerableExecutionSession(harness.session)) throw new Error('Missing steering');
+    const run = harness.session.execute(createRequest());
+    await waitForPrompt(harness.kernels[0]);
+
+    await expect(harness.session.steer(createRequest({
+      input: [{ type: 'text', text: 'also this' }],
+    }))).resolves.toBe(false);
+    harness.kernels[0].completePrompt();
+
+    expect((await collect(run.events)).at(-1)?.type).toBe('turn_completed');
+    expect(harness.kernels[0].prompts).toHaveLength(1);
   });
 
   it('cancels, invalidates, fences late events, and resumes lazily on a fresh kernel', async () => {
