@@ -15,10 +15,15 @@ export async function hydrateOpencodeV2Subagents(
   depth = 0,
 ): Promise<void> {
   if (depth >= MAX_CHILD_DEPTH) return;
-  const spawns = messages.flatMap(message => message.toolCalls ?? []).filter(tool => tool.name === TOOL_SUBAGENT);
-  await Promise.all(spawns.map(async (spawn) => {
+  // Follow-ups can reuse a child session, so spawns are grouped by it in parent order.
+  const spawnsBySession = new Map<string, ToolCallInfo[]>();
+  for (const spawn of messages.flatMap(message => message.toolCalls ?? [])) {
+    if (spawn.name !== TOOL_SUBAGENT) continue;
     const sessionId = getChildSessionId(spawn);
-    if (!sessionId) return;
+    if (!sessionId) continue;
+    spawnsBySession.set(sessionId, [...spawnsBySession.get(sessionId) ?? [], spawn]);
+  }
+  await Promise.all([...spawnsBySession].map(async ([sessionId, spawns]) => {
     let child: ChatMessage[];
     try {
       child = await readChildMessages(sessionId);
@@ -26,8 +31,38 @@ export async function hydrateOpencodeV2Subagents(
       return;
     }
     await hydrateOpencodeV2Subagents(child, readChildMessages, depth + 1);
-    spawn.subagent = buildSubagentInfo(spawn, sessionId, child);
+    const turns = assignChildTurns(spawns, splitChildTurns(child));
+    spawns.forEach((spawn, index) => {
+      const turn = turns[index];
+      if (turn) spawn.subagent = buildSubagentInfo(spawn, sessionId, turn);
+    });
   }));
+}
+
+/** Each task sent to a child session starts a turn at its user prompt. */
+function splitChildTurns(child: ChatMessage[]): ChatMessage[][] {
+  const turns: ChatMessage[][] = [];
+  for (const message of child) {
+    if (message.role === 'user' || turns.length === 0) turns.push([]);
+    turns[turns.length - 1].push(message);
+  }
+  return turns;
+}
+
+/**
+ * Pairs spawns with child turns in order, preferring a turn whose prompt matches the
+ * spawn's. A spawn with no remaining turn keeps the plain card rather than borrowing another task's.
+ */
+function assignChildTurns(spawns: ToolCallInfo[], turns: ChatMessage[][]): Array<ChatMessage[] | undefined> {
+  let next = 0;
+  return spawns.map((spawn) => {
+    const prompt = opencodeTaskResultInterpreter.describeTask(spawn.input).prompt?.trim();
+    const matched = prompt ? turns.findIndex((turn, index) => index >= next && turn[0]?.role === 'user' && turn[0].content.trim() === prompt) : -1;
+    const index = matched >= 0 ? matched : next;
+    if (index >= turns.length) return undefined;
+    next = index + 1;
+    return turns[index];
+  });
 }
 
 function getChildSessionId(spawn: ToolCallInfo): string | null {
