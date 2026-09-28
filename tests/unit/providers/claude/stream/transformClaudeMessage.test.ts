@@ -407,6 +407,33 @@ describe('transformSDKMessage', () => {
       ]);
     });
 
+    it('omits base64 image payloads from tool_result content', () => {
+      const data = 'a'.repeat(4096);
+      const message = msg({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'tool-image',
+              content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data } }],
+              is_error: false,
+            },
+          ],
+        },
+      });
+
+      const [result] = [...transformSDKMessage(message)];
+
+      expect(result.type).toBe('tool_result');
+      expect(result).toMatchObject({ id: 'tool-image', isError: false });
+      const content = 'content' in result ? result.content : undefined;
+      expect(content).not.toContain(data);
+      expect(JSON.parse(content as string)).toEqual([
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: '' } },
+      ]);
+    });
+
     it('handles tool_result with is_error flag', () => {
       const message = msg({
         type: 'user',

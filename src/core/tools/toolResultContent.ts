@@ -12,15 +12,36 @@ export function extractToolResultContent(
   if (Array.isArray(content)) {
     const textParts = content.filter(isTextBlock).map((block) => block.text);
     if (textParts.length > 0) return textParts.join('\n');
-    if (content.length > 0) return JSON.stringify(content, null, options?.fallbackIndent);
+    if (content.length > 0) {
+      return JSON.stringify(content, omitToolResultImageData, options?.fallbackIndent);
+    }
     return '';
   }
 
-  return JSON.stringify(content, null, options?.fallbackIndent);
+  return JSON.stringify(content, omitToolResultImageData, options?.fallbackIndent);
+}
+
+/**
+ * Drops base64 payloads from image blocks. Tool results only display them as text, and the
+ * native transcript keeps the bytes. Works as a JSON.stringify replacer or a JSON.parse reviver.
+ */
+export function omitToolResultImageData(_key: string, value: unknown): unknown {
+  if (!isBase64ImageBlock(value)) return value;
+  return { ...value, source: { ...value.source, data: '' } };
 }
 
 function isTextBlock(block: unknown): block is { type: 'text'; text: string } {
   if (!block || typeof block !== 'object') return false;
   const record = block as Record<string, unknown>;
   return record.type === 'text' && typeof record.text === 'string';
+}
+
+function isBase64ImageBlock(
+  block: unknown,
+): block is { type: 'image'; source: { type: 'base64'; data: string } } {
+  if (!block || typeof block !== 'object') return false;
+  const record = block as Record<string, unknown>;
+  if (record.type !== 'image' || !record.source || typeof record.source !== 'object') return false;
+  const source = record.source as Record<string, unknown>;
+  return source.type === 'base64' && typeof source.data === 'string' && source.data.length > 0;
 }

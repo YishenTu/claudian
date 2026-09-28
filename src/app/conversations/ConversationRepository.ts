@@ -1573,10 +1573,19 @@ export class ConversationRepository {
     const historyService = ProviderRegistry.getConversationHistoryService(
       conversation.providerId,
     );
-    const providerState = !options.preserveProviderState
-      && historyService.buildPersistedProviderState
-      ? historyService.buildPersistedProviderState(conversation)
+    const providerState = historyService.buildPersistedProviderState
+      ? historyService.buildPersistedProviderState(conversation, options)
       : conversation.providerState;
+    const modelRecoverySource = !getStoredModelSelection(conversation.selectedModel)
+      && conversation.modelRecoverySource
+      ? cloneModelRecoverySource(conversation.modelRecoverySource)
+      : undefined;
+    if (modelRecoverySource && historyService.buildPersistedProviderState) {
+      modelRecoverySource.providerState = historyService.buildPersistedProviderState(
+        { ...modelRecoverySource, messages: [] },
+        { preserveProviderState: true },
+      );
+    }
     return {
       id: conversation.id,
       providerId: conversation.providerId,
@@ -1590,14 +1599,7 @@ export class ConversationRepository {
         providerState && Object.keys(providerState).length > 0
           ? providerState
           : undefined,
-      ...(!getStoredModelSelection(conversation.selectedModel)
-        && conversation.modelRecoverySource
-        ? {
-            modelRecoverySource: cloneModelRecoverySource(
-              conversation.modelRecoverySource,
-            ),
-          }
-        : {}),
+      ...(modelRecoverySource ? { modelRecoverySource } : {}),
       linkedContentPath,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,

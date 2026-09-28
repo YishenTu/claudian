@@ -491,8 +491,12 @@ export interface ProviderConversationHistoryService {
     pathContext?: ProviderHistoryPathContext,
     options?: { lifecycle: 'persistent' | 'ephemeral' },
   ): Record<string, unknown> | Promise<Record<string, unknown>>;
-  /** Adds provider-owned persisted metadata to ProviderHistoryInput.providerState before session save. */
-  buildPersistedProviderState?(conversation: ProviderHistoryInput): Record<string, unknown> | undefined;
+  /** Projects provider state for storage without changing live state or native history. */
+  buildPersistedProviderState?(
+    conversation: ProviderHistoryInput,
+    /** Preserve existing history state instead of rebuilding it from unloaded messages. */
+    options?: { preserveProviderState?: boolean },
+  ): Record<string, unknown> | undefined;
 }
 
 export interface ProviderSubagentHistoryRequest {

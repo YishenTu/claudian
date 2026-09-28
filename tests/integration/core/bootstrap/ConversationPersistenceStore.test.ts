@@ -16,7 +16,7 @@ import { CLAUDIAN_SETTINGS_PATH, getDeviceSessionsPath, SESSIONS_PATH } from '@/
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import type { Conversation, SessionMetadata } from '@/core/types';
+import type { Conversation, SessionMetadata, SubagentInfo } from '@/core/types';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 
 const DEVICE_KEY = `device-${'a'.repeat(64)}`;
@@ -105,6 +105,84 @@ test('execution snapshots avoid history payload serialization while persistence 
   } finally {
     await session.dispose();
   }
+});
+
+test.each(['unloaded', 'model-recovery'] as const)('strips image payloads when saving %s metadata without loading native history', async kind => {
+  const now = testDate().getTime();
+  const data = 'a'.repeat(512 * 1024);
+  const result = JSON.stringify([
+    { type: 'text', text: 'Archive scan' },
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data } },
+  ]);
+  const subagent: SubagentInfo = {
+    id: 'task-images', description: 'Read scans', isExpanded: true, mode: 'async',
+    status: 'completed', result: 'Transcription complete', agentId: 'agent-images',
+    toolCalls: [{ id: 'read-image', name: 'Read', input: { file_path: '/scan.png' }, status: 'completed', result }],
+  };
+  const state = {
+    providerSessionId: 'native-images', previousProviderSessionIds: ['previous-native'],
+    subagentData: { [subagent.id]: subagent }, futureField: { cursor: 'keep' },
+  };
+  const conversation: Conversation = {
+    ...metadata, providerId: 'claude', createdAt: now, lastActivityAt: now, messages: [],
+    sessionId: kind === 'unloaded' ? 'native-images' : null,
+    ...(kind === 'unloaded'
+      ? { providerState: state }
+      : { modelRecoverySource: { sessionId: 'native-images', providerState: state, resumeAtMessageId: 'checkpoint' } }),
+  };
+  const nativePath = 'provider/session.jsonl';
+  await adapter.write(nativePath, result);
+  const repository = createRepository();
+  repository.mergeMetadataConversations([conversation], 'unscoped');
+  const before = repository.getSync(conversation.id);
+  const history = ProviderRegistry.getConversationHistoryService('claude');
+  const hydrate = jest.spyOn(history, 'hydrateConversationHistory');
+
+  // Assignment persists an unloaded shell with its existing state intact.
+  await repository.assignToCurrentDevice(conversation.id);
+
+  const serialized = await adapter.read(`${DEVICE_PATH}/${metadata.id}.meta.json`);
+  const saved = JSON.parse(serialized) as SessionMetadata;
+  const savedState = kind === 'unloaded' ? saved.providerState : saved.modelRecoverySource?.providerState;
+  expect(serialized.includes(data)).toBe(false);
+  expect(savedState).toEqual({
+    ...state,
+    subagentData: { [subagent.id]: { ...subagent, toolCalls: [{
+      ...subagent.toolCalls[0],
+      result: JSON.stringify([
+        { type: 'text', text: 'Archive scan' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: '' } },
+      ]),
+    }] } },
+  });
+  expect(saved.sessionId).toBe(conversation.sessionId);
+  expect(saved.providerState).toEqual(kind === 'unloaded' ? savedState : undefined);
+  expect(saved.modelRecoverySource?.sessionId).toBe(kind === 'model-recovery' ? 'native-images' : undefined);
+  expect(saved.modelRecoverySource?.resumeAtMessageId).toBe(kind === 'model-recovery' ? 'checkpoint' : undefined);
+  expect(repository.getSync(conversation.id)).toEqual(before);
+  expect(hydrate).not.toHaveBeenCalled();
+  expect(await adapter.read(nativePath)).toBe(result);
+});
+
+test.each([
+  { providerId: 'codex' as const, locator: { threadId: 'native', sessionFilePath: '/history/codex.jsonl' } },
+  { providerId: 'grok' as const, locator: { sessionDirectory: '/history/grok', nativeConversationContextEstablished: true } },
+  { providerId: 'pi' as const, locator: { sessionId: 'native', sessionFile: '/history/pi.jsonl', leafEntryId: 'leaf' } },
+  { providerId: 'opencode' as const, locator: { sessionId: 'native', databasePath: '/history/opencode.db', nativeVersion: 2 } },
+])('preserves $providerId native locators and opaque state in unloaded and recovery records', async ({ providerId, locator }) => {
+  const state = { ...locator, futureField: { cursor: 'keep' } };
+  const recoverySource = { sessionId: 'recovery-session', providerState: state, resumeAtMessageId: 'checkpoint' };
+  const conversation: Conversation = {
+    ...metadata, providerId, sessionId: null, messages: [], providerState: state,
+    modelRecoverySource: recoverySource,
+  };
+  const repository = createRepository();
+  repository.mergeMetadataConversations([conversation], 'unscoped');
+
+  await repository.assignToCurrentDevice(conversation.id);
+
+  const saved = await store.metadataReader.loadMetadata(conversation.id);
+  expect(saved).toMatchObject({ sessionId: null, providerState: state, modelRecoverySource: recoverySource });
 });
 
 test('initial metadata loading reads unchanged payloads once through the storage adapter', async () => {

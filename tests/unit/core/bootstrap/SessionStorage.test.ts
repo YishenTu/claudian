@@ -11,7 +11,7 @@ import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderId } from '@/core/providers/types';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
-import type { Conversation, SessionMetadata, UsageInfo } from '@/core/types';
+import type { Conversation, SessionMetadata, SubagentInfo, UsageInfo } from '@/core/types';
 
 const DEVICE_KEY = `device-${'a'.repeat(64)}`;
 
@@ -568,6 +568,48 @@ describe('SessionStorage', () => {
         description: 'Test subagent',
         status: 'completed',
       }));
+    });
+
+    it.each(['sync', 'async'] as const)('omits base64 images from persisted %s subagent results without changing live results', mode => {
+      const now = testDate().getTime();
+      const imageData = 'a'.repeat(512 * 1024);
+      const image = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: imageData } };
+      const text = { type: 'text', text: 'Archive scan transcription' };
+      const imageResult = JSON.stringify([text, image]);
+      const nested: SubagentInfo = {
+        id: 'nested', description: 'Nested reader', status: 'completed', isExpanded: false,
+        result: JSON.stringify([image]),
+        toolCalls: [{ id: 'read-nested', name: 'Read', input: { file_path: '/scan.png' }, status: 'completed', result: imageResult }],
+      };
+      const subagent: SubagentInfo = {
+        id: 'task-images', description: 'Read scans', status: 'completed', isExpanded: false, mode,
+        toolCalls: [
+          { id: 'read', name: 'Read', input: { file_path: '/scan.png' }, status: 'completed', result: imageResult },
+          { id: 'text', name: 'Read', input: {}, status: 'completed', result: 'plain text mentioning "base64"' },
+          { id: 'json', name: 'Read', input: {}, status: 'completed', result: '[ {"type":"text","text":"base64"} ]' },
+          { id: 'nested', name: 'Agent', input: {}, status: 'completed', result: 'Done', subagent: nested },
+        ],
+      };
+      const conversation: Conversation = {
+        id: 'images', providerId: 'claude', title: 'Scans', createdAt: now, lastActivityAt: now, sessionId: 'native',
+        messages: [{ id: 'msg', role: 'assistant', content: '', timestamp: now,
+          toolCalls: [{ id: subagent.id, name: 'Agent', input: {}, status: 'completed', subagent }],
+        }],
+      };
+      const liveSnapshot = structuredClone(conversation);
+
+      const metadata = toSessionMetadata(conversation);
+      const persisted = (metadata.providerState?.subagentData as Record<string, SubagentInfo>)[subagent.id];
+      const strippedImage = { ...image, source: { ...image.source, data: '' } };
+
+      expect(JSON.stringify(metadata).includes(imageData)).toBe(false);
+      expect(JSON.parse(persisted.toolCalls[0].result!)).toEqual([text, strippedImage]);
+      expect(persisted.toolCalls[0].input).toEqual({ file_path: '/scan.png' });
+      expect(persisted.toolCalls[1].result).toBe(subagent.toolCalls[1].result);
+      expect(persisted.toolCalls[2].result).toBe(subagent.toolCalls[2].result);
+      expect(JSON.parse(persisted.toolCalls[3].subagent!.result!)).toEqual([strippedImage]);
+      expect(JSON.parse(persisted.toolCalls[3].subagent!.toolCalls[0].result!)).toEqual([text, strippedImage]);
+      expect(conversation).toEqual(liveSnapshot);
     });
 
     it('returns undefined subagentData when no subagents present', () => {
