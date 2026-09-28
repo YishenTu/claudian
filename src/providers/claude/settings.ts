@@ -23,7 +23,7 @@ export interface ClaudeProviderSettings {
   loadUserSettings: boolean;
   enableChrome: boolean;
   discoveredModels: ClaudeDiscoveredModel[];
-  /** Records that the one-time selected-model effort metadata migration completed. */
+  /** Ordered enabled SDK identities; null seeds selections from legacy configuration. */
   visibleModels: string[] | null;
   modelAliases: Record<string, string>;
   environmentVariables: string;

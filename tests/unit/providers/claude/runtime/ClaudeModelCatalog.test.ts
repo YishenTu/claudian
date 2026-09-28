@@ -3,6 +3,7 @@ import '@/providers';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { getClaudeModelOptions } from '@/providers/claude/modelOptions';
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { ClaudeModelCatalog } from '@/providers/claude/runtime/ClaudeModelCatalog';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
@@ -19,6 +20,72 @@ function setup(enabled = true) {
 }
 
 describe('Claude panel model discovery', () => {
+  it.each([
+    { selected: null, expected: ['haiku', 'sonnet', 'opus[1m]', 'fable'] },
+    { selected: ['opus', 'opus[1m]', 'removed-model'], expected: ['opus[1m]', 'removed-model'] },
+    { selected: [], expected: [] },
+    { selected: ['claude-opus-4', 'sonnet[1m]'], expected: ['opus[1m]', 'sonnet[1m]'] },
+  ])('repairs legacy selections $selected without enabling other models', async ({ selected, expected }) => {
+    const { settings, host } = setup();
+    updateClaudeProviderSettings(settings, {
+      visibleModels: selected,
+      modelAliases: { opus: 'Old label', 'opus[1m]': 'Explicit label' },
+    });
+    await new ClaudeModelCatalog(host, async () => [
+      ...rows, { value: 'opus[1m]', label: 'Opus', description: '' },
+    ]).refresh();
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual(expected);
+    expect(getClaudeProviderSettings(settings).modelAliases['opus[1m]']).toBe('Explicit label');
+  });
+
+  it('migrates a family selection to its highest reported version', async () => {
+    const { settings, host } = setup();
+    updateClaudeProviderSettings(settings, { visibleModels: ['opus'] });
+    await new ClaudeModelCatalog(host, async () => [
+      { value: 'opus[1m]', label: 'Opus 1M', description: '' },
+      { value: 'claude-opus-5-5', label: 'Opus', description: '' },
+    ]).refresh();
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['claude-opus-5-5']);
+    expect(getClaudeModelOptions(settings).map(model => model.value)).toEqual(['claude-code/claude-opus-5-5']);
+  });
+
+  it('follows a retired pinned version to its successor on the next discovery', async () => {
+    const { settings, host } = setup();
+    updateClaudeProviderSettings(settings, { visibleModels: ['fable', 'sonnet'], modelAliases: { fable: 'My Fable' } });
+    const shared = [
+      { ...rows[0], reasoningMetadataResolved: true },
+      { value: 'opus[1m]', label: 'Opus', description: '', resolvedModel: 'claude-opus-5-5[1m]', reasoningMetadataResolved: true },
+    ];
+    await new ClaudeModelCatalog(host, async () => [
+      ...shared, { value: 'claude-fable-5-1', label: 'Fable', description: '', reasoningMetadataResolved: true },
+    ]).refresh();
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['claude-fable-5-1', 'sonnet']);
+    expect(getClaudeProviderSettings(settings).modelAliases).toEqual({ 'claude-fable-5-1': 'My Fable' });
+
+    await new ClaudeModelCatalog(host, async () => [
+      ...shared, { value: 'claude-fable-5-2', label: 'Fable', description: '', reasoningMetadataResolved: true },
+    ]).refresh();
+
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual(['claude-fable-5-2', 'sonnet']);
+    expect(getClaudeProviderSettings(settings).modelAliases).toEqual({ 'claude-fable-5-2': 'My Fable' });
+    expect(getClaudeModelOptions(settings).map(model => [model.value, model.label]))
+      .toEqual([['claude-code/claude-fable-5-2', 'My Fable'], ['sonnet', 'SDK Sonnet']]);
+    expect(claudeProviderRegistration.settingsStorage?.needsReasoningMetadata?.(settings)).toBe(false);
+  });
+
+  it('respects deselection while native discovery is pending', async () => {
+    const { settings, host } = setup();
+    updateClaudeProviderSettings(settings, { visibleModels: ['opus'] });
+    let finish!: (value: Array<{ value: string; label: string; description: string }>) => void;
+    const catalog = new ClaudeModelCatalog(host, () => new Promise(resolve => { finish = resolve; }));
+    const refresh = catalog.refresh();
+    updateClaudeProviderSettings(settings, { visibleModels: [] });
+    finish([{ value: 'opus[1m]', label: 'Opus', description: '' }]);
+    await refresh;
+    expect(getClaudeProviderSettings(settings).visibleModels).toEqual([]);
+    expect(getClaudeModelOptions(settings)).toEqual([]);
+  });
+
   it('keeps a legacy title selection when discovery canonicalizes its enabled SDK identity', async () => {
     const { settings, host } = setup();
     settings.titleGenerationModel = 'gateway-model';

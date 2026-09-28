@@ -1,6 +1,11 @@
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ProviderModelCatalogRefreshResult } from '../../../core/providers/types';
-import { findClaudeModelOption, getClaudeModelCatalog, getClaudeVisibleModelIds } from '../modelOptions';
+import {
+  findClaudeModelOption,
+  getClaudeModelCatalog,
+  getClaudeVisibleModelIds,
+  hasClaudeModelIdentity,
+} from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { probeClaudeModels } from './probeClaudeModels';
@@ -45,18 +50,24 @@ export class ClaudeModelCatalog {
       const models = await this.probe(this.host, controller.signal);
       await this.host.mutateSettingsConditionally(settings => {
         if (!current()) return false;
-        const migrateLegacySelection = getClaudeProviderSettings(settings).visibleModels === null;
+        const config = getClaudeProviderSettings(settings);
         const selected = getClaudeVisibleModelIds(settings);
         updateClaudeProviderSettings(settings, { discoveredModels: models });
-        if (migrateLegacySelection) {
-          const catalog = getClaudeModelCatalog(settings);
-          updateClaudeProviderSettings(settings, {
-            visibleModels: [...new Set(selected.map(id => {
-              const option = findClaudeModelOption(catalog, id);
-              return option ? toClaudeRuntimeModelId(option.value) : id;
-            }))],
-          });
-        }
+        const catalog = getClaudeModelCatalog(settings);
+        const modelAliases = { ...config.modelAliases };
+        const visibleModels = [...new Set(selected.map(id => {
+          // Legacy seeds canonicalize to SDK values. Saved choices keep any identity the SDK
+          // still reports; only retired ones follow their family successor.
+          if (config.visibleModels !== null && hasClaudeModelIdentity(catalog, id)) return id;
+          const option = findClaudeModelOption(catalog, id);
+          const nextId = option ? toClaudeRuntimeModelId(option.value) : id;
+          if (nextId !== id && modelAliases[id]) {
+            modelAliases[nextId] ??= modelAliases[id];
+            delete modelAliases[id];
+          }
+          return nextId;
+        }))];
+        updateClaudeProviderSettings(settings, { visibleModels, modelAliases });
         return true;
       });
       if (!current()) return { changed: false };

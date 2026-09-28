@@ -36,11 +36,7 @@ import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
 } from '../../../utils/session';
-import {
-  findClaudeModelOption,
-  getClaudeModelCatalog,
-  getClaudeModelOptions,
-} from '../modelOptions';
+import { findEnabledClaudeModelOption } from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { createCustomSpawnFunction } from '../runtime/customSpawn';
 import {
@@ -119,9 +115,8 @@ export class ClaudeExecutionRequestEncoder {
 
     const settings = this.#resolveSettings(request);
     const claudeSettings = getClaudeProviderSettings(settings);
-    const selected = findClaudeModelOption(getClaudeModelCatalog(this.deps.host.settings), settings.model);
-    if (!getClaudeProviderSettings(this.deps.host.settings).enabled || !selected
-      || !getClaudeModelOptions(this.deps.host.settings).some(option => option.value === selected.value)) {
+    const selected = findEnabledClaudeModelOption(this.deps.host.settings, settings.model);
+    if (!getClaudeProviderSettings(this.deps.host.settings).enabled || !selected) {
       throw new ProviderModelUnavailableError('Claude');
     }
     const model = toClaudeRuntimeModelId(selected.value);

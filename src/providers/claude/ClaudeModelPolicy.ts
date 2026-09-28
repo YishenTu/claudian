@@ -7,6 +7,7 @@ import type {
 import { getCustomModelIds } from './env/claudeModelEnv';
 import {
   findClaudeModelOption,
+  findClaudeModelSelectionOption,
   getClaudeModelCatalog,
   getClaudeModelOptions,
   getClaudeSupportedEffortLevels,
@@ -64,11 +65,11 @@ export const claudeModelPolicy: ProviderModelPolicy = {
   applyModelProjectionDefaults: applyClaudeEffortSetting,
 
   normalizeModelVariant(model: string, settings) {
-    return findClaudeModelOption(getClaudeModelCatalog(settings), model)?.value ?? model;
+    return findClaudeModelSelectionOption(settings, model)?.value ?? model;
   },
 
   normalizeAvailableModelSelection(model: string, settings) {
-    return findClaudeModelOption(getClaudeModelCatalog(settings), model)?.value ?? model;
+    return findClaudeModelSelectionOption(settings, model)?.value ?? model;
   },
 
   getCustomModelIds(envVars: Record<string, string>): Set<string> {

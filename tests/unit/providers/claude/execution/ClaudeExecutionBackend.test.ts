@@ -17,6 +17,7 @@ import type {
   ProviderSessionEvent,
   ProviderSessionSnapshot,
 } from '@/core/execution';
+import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
@@ -25,6 +26,7 @@ import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecu
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
+import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { buildClaudeSDKUserMessage } from '@/providers/claude/runtime/ClaudeUserMessageFactory';
 import * as env from '@/utils/env';
 
@@ -178,6 +180,49 @@ describe('ClaudeExecutionBackend', () => {
     } finally {
       await session.dispose();
     }
+  });
+
+  it('executes a migrated family alias using its enabled model and effort metadata', async () => {
+    const host = createHost();
+    host.settings.providerConfigs = { claude: {
+      discoveredModels: [
+        { value: 'claude-fable-5-10', label: 'Selected', description: '', supportedEffortLevels: ['high'] },
+        { value: 'claude-fable-6-0', label: 'Unselected', description: '', supportedEffortLevels: ['low'] },
+      ],
+      visibleModels: ['claude-fable-5-10'],
+    } };
+    const session = new ClaudeExecutionBackend(host).createSession(createConfig());
+    const request = createRequest();
+    try {
+      const events = await collectEvents(session.execute({
+        ...request, configuration: { ...request.configuration, model: 'fable', reasoning: 'high' },
+      }).events);
+      expect(events).not.toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+      expect(sdkMock.getLastOptions()?.model).toBe('claude-fable-5-10');
+      expect(sdkMock.getLastOptions()?.effort).toBe('high');
+    } finally {
+      await session.dispose();
+    }
+  });
+
+  it('rejects a bare alias whose exact SDK identity exists but is unselected', async () => {
+    const host = createHost();
+    host.settings.providerConfigs = { claude: {
+      discoveredModels: [
+        { value: 'opus', label: 'Opus', description: '' },
+        { value: 'opus[1m]', label: 'Opus 1M', description: '' },
+      ],
+      visibleModels: ['opus[1m]'],
+    } };
+    expect(() => assertClaudeModelAvailable(host.settings, 'opus')).toThrow(ProviderModelUnavailableError);
+    const session = new ClaudeExecutionBackend(host).createSession(createConfig());
+    const request = createRequest();
+    const events = await collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, model: 'opus' },
+    }).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', category: 'configuration' }));
+    expect(sdkMock.getQueryCallCount()).toBe(0);
+    await session.dispose();
   });
 
   it('rejects ambiguous saved model identities even if only one matching row is enabled', async () => {

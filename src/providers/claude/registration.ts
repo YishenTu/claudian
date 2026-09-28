@@ -8,7 +8,7 @@ import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';
 import { ClaudeSubagentHistoryService } from './history/ClaudeSubagentHistoryService';
-import { findClaudeModelOption, getClaudeVisibleModelIds } from './modelOptions';
+import { findClaudeModelOption, getClaudeVisibleModelIds, hasClaudeModelIdentity } from './modelOptions';
 import { projectClaudeModelSettings } from './modelPersistence';
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
@@ -32,7 +32,9 @@ export const claudeProviderRegistration: ProviderModule = {
       const models = getClaudeProviderSettings(settings).discoveredModels;
       return getClaudeVisibleModelIds(settings).some(id => {
         const model = findClaudeModelOption(models, id);
-        return !model || (!model.supportedEffortLevels?.length && !model.reasoningMetadataResolved);
+        return !model
+          || !hasClaudeModelIdentity(models, id)
+          || (!model.supportedEffortLevels?.length && !model.reasoningMetadataResolved);
       });
     },
     hostScopedFields: ['cliPathsByHost'],

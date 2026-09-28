@@ -6,11 +6,15 @@ import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage'
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { migrateSelectedModelMetadata } from '@/app/settings/SelectedModelMetadataMigration';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { findProviderModelOption, resolveConversationModel, resolveNewConversationModel } from '@/core/providers/conversationModel';
 import { ProviderModelCatalogController } from '@/core/providers/models/ProviderModelCatalog';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import { getClaudeModelOptions, getClaudeSupportedEffortLevels } from '@/providers/claude/modelOptions';
+import { ClaudeModelCatalog } from '@/providers/claude/runtime/ClaudeModelCatalog';
+import { createClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { updateCurrentGrokCatalog, updateGrokProviderSettings } from '@/providers/grok/settings';
@@ -33,6 +37,7 @@ function makeHost() {
   const coordinator = new SettingsCoordinator(settings, value => storage.save(value));
   const host = {
     settings, mutateSettings: coordinator.mutate.bind(coordinator),
+    mutateSettingsConditionally: coordinator.mutateConditionally.bind(coordinator),
     notifyProviderChatOptionsChanged: jest.fn(),
   } as unknown as ProviderHost;
   return { host, storage, read: () => JSON.parse(content) };
@@ -44,6 +49,100 @@ beforeEach(() => {
 afterEach(() => {
   for (const { id } of cases) ProviderWorkspaceRegistry.setServices(id, undefined);
   jest.restoreAllMocks();
+});
+
+it.each([false, true])('repairs saved Claude family aliases through startup discovery and reload (cached: %s)', async cached => {
+  const { host, storage, read } = makeHost();
+  const rows = [
+    { value: 'default', label: 'Default', description: '', resolvedModel: 'claude-opus-4-1-20250805[1m]', reasoningMetadataResolved: true },
+    { value: 'claude-opus-4-20250514', label: 'Older Opus', description: '', reasoningMetadataResolved: true },
+    { value: 'opus[1m]', label: 'Opus', description: '', resolvedModel: 'claude-opus-4-1-20250805[1m]', reasoningMetadataResolved: true },
+    { value: 'claude-fable-5-2', label: 'Older Fable', description: '', reasoningMetadataResolved: true },
+    { value: 'claude-fable-5-10', label: 'Fable', description: '', resolvedModel: 'claude-fable-5-10', reasoningMetadataResolved: true },
+    { value: 'sonnet', label: 'Sonnet', description: '', reasoningMetadataResolved: true },
+    { value: 'haiku', label: 'Haiku', description: '', reasoningMetadataResolved: true },
+  ];
+  updateClaudeProviderSettings(host.settings, {
+    enabled: true,
+    visibleModels: ['fable', 'haiku', 'opus', 'sonnet'],
+    discoveredModels: cached ? rows : [],
+    modelAliases: { fable: 'My Fable' },
+  });
+  await storage.save(host.settings);
+  expect(read().providerConfigs.claude.selectedModels.map((model: { value: string }) => model.value))
+    .toEqual(cached ? ['opus[1m]', 'claude-fable-5-10', 'sonnet', 'haiku'] : []);
+  Object.assign(host.settings, await storage.load());
+  const probe = jest.fn(async () => rows);
+  const native = new ClaudeModelCatalog(host, probe);
+  const catalog = createClaudeModels(host, native);
+  ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalog });
+
+  await migrateSelectedModelMetadata(host, new AbortController().signal);
+
+  const expected = ['claude-fable-5-10', 'haiku', 'opus[1m]', 'sonnet'];
+  expect(read().providerConfigs.claude.visibleModels).toEqual(expected);
+  expect(read().providerConfigs.claude.selectedModels.map((model: { value: string }) => model.value))
+    .toEqual(['opus[1m]', 'claude-fable-5-10', 'sonnet', 'haiku']);
+  const restored = await storage.load();
+  expect(getClaudeModelOptions(restored).map(model => [model.value, model.label])).toEqual([
+    ['claude-code/claude-fable-5-10', 'My Fable'], ['haiku', 'Haiku'],
+    ['claude-code/opus[1m]', 'Opus'], ['sonnet', 'Sonnet'],
+  ]);
+  expect(findProviderModelOption('claude', 'opus', restored)).toBe('claude-code/opus[1m]');
+  expect(findProviderModelOption('claude', 'fable', restored)).toBe('claude-code/claude-fable-5-10');
+  Object.assign(host.settings, restored);
+  await migrateSelectedModelMetadata(host, new AbortController().signal);
+  expect(probe).toHaveBeenCalledTimes(1);
+  await catalog.dispose();
+  await native.dispose();
+});
+
+it('keeps saved family aliases enabled after discovering a newer unselected version', async () => {
+  const { host, storage } = makeHost();
+  await host.mutateSettings(settings => {
+    settings.titleGenerationModel = 'fable';
+    settings.lastSelectedChatModel = { providerId: 'claude', model: 'fable' };
+    updateClaudeProviderSettings(settings, {
+      enabled: true, visibleModels: ['fable'], discoveredModels: [],
+    });
+  });
+  const selected = { value: 'claude-fable-5-10', label: 'Selected Fable', description: '', supportedEffortLevels: ['high'] as const };
+  const probe = jest.fn()
+    .mockResolvedValueOnce([selected])
+    .mockResolvedValueOnce([selected, {
+      value: 'claude-fable-6-0', label: 'New Fable', description: '', resolvedModel: 'claude-fable-6-0', supportedEffortLevels: ['low'],
+    }]);
+  const native = new ClaudeModelCatalog(host, probe);
+  const catalog = createClaudeModels(host, native);
+  ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalog });
+  await migrateSelectedModelMetadata(host, new AbortController().signal);
+  expect(ProviderRegistry.resolveTitleGenerationSelection(host.settings)?.model).toBe('claude-code/claude-fable-5-10');
+
+  await catalog.refresh({ force: true });
+
+  // Resolve references only after the second catalog has arrived, including unopened chats.
+  for (const settings of [host.settings, await storage.load()]) {
+    expect(ProviderRegistry.resolveTitleGenerationSelection(settings)).toEqual({
+      providerId: 'claude', model: 'claude-code/claude-fable-5-10',
+    });
+    expect(resolveConversationModel(settings, 'claude', { selectedModel: 'fable' }).model)
+      .toBe('claude-code/claude-fable-5-10');
+    expect(resolveNewConversationModel(settings)?.model).toBe('claude-code/claude-fable-5-10');
+    expect(ProviderRegistry.getModelPolicy('claude').normalizeModelVariant('fable', settings))
+      .toBe('claude-code/claude-fable-5-10');
+    expect(getClaudeSupportedEffortLevels(settings, 'fable')).toEqual(['high']);
+    // A retired explicit ID follows the enabled family member.
+    expect(findProviderModelOption('claude', 'claude-fable-4-0', settings)).toBe('claude-code/claude-fable-5-10');
+  }
+  // A reported but unselected ID stays unavailable; storage keeps only selected rows, so after
+  // reload it is indistinguishable from a retired one until the next discovery.
+  expect(findProviderModelOption('claude', 'claude-fable-6-0', host.settings)).toBeNull();
+  expect(findProviderModelOption('claude', 'claude-fable-6-0', await storage.load())).toBe('claude-code/claude-fable-5-10');
+  await catalog.changeSelection({ type: 'clear' });
+  expect(ProviderRegistry.resolveTitleGenerationSelection(host.settings)).toBeNull();
+  expect(findProviderModelOption('claude', 'fable', host.settings)).toBeNull();
+  await catalog.dispose();
+  await native.dispose();
 });
 
 it.each(cases.flatMap(entry => [false, true].map(deselectDuringQuery => ({ ...entry, deselectDuringQuery }))))(
