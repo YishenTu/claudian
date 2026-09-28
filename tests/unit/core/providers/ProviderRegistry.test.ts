@@ -56,6 +56,7 @@ describe('ProviderRegistry', () => {
   it.each([undefined, 1, 2] as const)('resolves OpenCode fork mode for native version %s without changing other providers', nativeVersion => {
     const state = nativeVersion ? { nativeVersion } : undefined;
     expect(ProviderRegistry.getCapabilities('opencode', state).forkMode).toBe(nativeVersion === 2 ? 'checkpoint' : 'full-session');
+    expect(ProviderRegistry.getCapabilities('opencode', state).supportsEphemeralFork).toBe(nativeVersion === 2);
     expect(ProviderRegistry.getCapabilities('claude', state)).toEqual(ProviderRegistry.getCapabilities('claude'));
     expect(ProviderRegistry.getCapabilities('opencode').forkMode).toBe('full-session');
   });

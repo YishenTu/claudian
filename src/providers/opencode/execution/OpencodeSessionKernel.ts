@@ -4,13 +4,14 @@ import { assertOpencodeSessionCompatibility, detectOpencodeNativeVersion } from 
 import { DefaultOpencodeACPSessionKernel } from './OpencodeACPSessionKernel';
 import { OpencodeHTTPSessionKernel } from './OpencodeHTTPSessionKernel';
 import type { OpencodeKernelConnectOptions,OpencodeSessionKernel, OpencodeSessionKernelOptions } from './OpencodeSessionContract';
+import type { OpencodeSessionPersistence } from './OpencodeSessionPersistence';
 
 /** Chooses the native transport once per independent execution lease. */
 export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
   private kernel: OpencodeSessionKernel | null = null;
   private disposed = false;
   private connecting: Promise<void> | null = null;
-  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly serverService: OpencodeServerService) {}
+  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly serverService: OpencodeServerService, private readonly persistence: OpencodeSessionPersistence) {}
 
   connect(options: OpencodeKernelConnectOptions): Promise<void> {
     if (this.disposed) return Promise.reject(new Error('OpenCode session is disposed'));
@@ -23,12 +24,11 @@ export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
     const version = await detectOpencodeNativeVersion(cliPath, environment);
     if (this.disposed) throw new Error('OpenCode session is disposed');
     assertOpencodeSessionCompatibility(this.options.nativeVersion, version);
-    // V2 keeps saved credentials in its native database; its kernel discards unpersisted sessions instead.
+    const nativeOptions = { ...this.options, databasePath: this.persistence.databasePath(version, this.options.databasePath) };
+    const nativeEnvironment = buildOpencodeRuntimeEnv(this.options.plugin.settings, cliPath, nativeOptions.databasePath);
     this.kernel = version === 2
-      ? new OpencodeHTTPSessionKernel(this.options, cliPath, this.options.databasePath === ':memory:'
-        ? buildOpencodeRuntimeEnv(this.options.plugin.settings, cliPath)
-        : environment, this.serverService)
-      : new DefaultOpencodeACPSessionKernel(this.options, { cliPath, environment, version });
+      ? new OpencodeHTTPSessionKernel(nativeOptions, cliPath, nativeEnvironment, this.serverService, this.persistence)
+      : new DefaultOpencodeACPSessionKernel(nativeOptions, { cliPath, environment: nativeEnvironment, version });
     await this.kernel.connect(options);
   }
 

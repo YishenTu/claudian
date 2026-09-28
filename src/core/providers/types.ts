@@ -482,13 +482,14 @@ export interface ProviderConversationHistoryService {
   ): Promise<ProviderHistoryUpdate>;
   resolveSessionIdForConversation(conversation: ProviderHistoryInput | null): string | null;
   isPendingForkConversation(conversation: ProviderHistoryInput): boolean;
-  /** Builds opaque provider state for a forked conversation. */
+  /** Builds opaque fork state; ephemeral creation may be deferred to its execution owner. */
   buildForkProviderState(
     sourceSessionId: string,
     resumeAt: string,
     sourceProviderState?: Record<string, unknown>,
     vaultPath?: string | null,
     pathContext?: ProviderHistoryPathContext,
+    options?: { lifecycle: 'persistent' | 'ephemeral' },
   ): Record<string, unknown> | Promise<Record<string, unknown>>;
   /** Adds provider-owned persisted metadata to ProviderHistoryInput.providerState before session save. */
   buildPersistedProviderState?(conversation: ProviderHistoryInput): Record<string, unknown> | undefined;

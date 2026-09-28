@@ -48,6 +48,8 @@ export async function releaseSideChatHarnesses(): Promise<void> {
 
 export function createHarness(options: {
   formatQuestionReply?: ProviderRegistration['formatQuestionReply'];
+  getConversationCapabilities?: ProviderRegistration['getConversationCapabilities'];
+  providerState?: Record<string, unknown>;
   onDestinationChanged?: () => void;
   subagentAdapter?: ProviderRegistration['subagentAdapter'];
   taskResultInterpreter?: ProviderRegistration['taskResultInterpreter'];
@@ -64,6 +66,7 @@ export function createHarness(options: {
   const forkState = { forkSource: { resumeAt: 'checkpoint-1', sessionId: 'main-session' } };
   ProviderRegistry.register('claude', {
     formatQuestionReply: options.formatQuestionReply,
+    getConversationCapabilities: options.getConversationCapabilities,
     capabilities: { providerId: 'claude', supportsFork: options.supportsFork ?? true, supportsEphemeralSessions: true, supportsEphemeralFork: options.supportsEphemeralFork, forkMode: options.forkMode },
     modelPolicy: ProviderRegistry.getModelPolicy('claude'),
     chatUIConfig: ProviderRegistry.getChatUIConfig('claude'),
@@ -118,7 +121,7 @@ export function createHarness(options: {
   const plugin = {
     app,
     getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
-    getConversationSync: () => null,
+    getConversationSync: () => options.providerState ? { id: 'conversation-1', providerId: 'claude', providerState: options.providerState } : null,
     getMainAgentDynamicSystemPromptSections: options.getMainAgentDynamicSystemPromptSections,
     providerHost: { app, settings, executionLifecycleRegistry: lifecycleRegistry },
     settings,

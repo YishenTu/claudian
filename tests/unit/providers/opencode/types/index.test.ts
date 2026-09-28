@@ -64,6 +64,14 @@ describe('OpenCode provider state', () => {
     },
   );
 
+  it.each([null, 'source', {}, { sessionId: 'source', resumeAt: '' }, { sessionId: 1, resumeAt: 'reply' }])('drops an invalid deferred fork: %p', forkSource => {
+    expect(getOpencodeState({ forkSource })).toEqual({});
+  });
+
+  it('retains the typed source checkpoint for a deferred fork', () => {
+    expect(getOpencodeState({ forkSource: { sessionId: 'source', resumeAt: 'reply' } })).toEqual({ forkSource: { sessionId: 'source', resumeAt: 'reply' } });
+  });
+
   it.each([undefined, null, [], 'invalid', 42])(
     'treats a non-record provider state as empty: %p',
     (providerState) => {

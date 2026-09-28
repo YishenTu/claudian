@@ -304,6 +304,7 @@ export class SideChatController {
               settings: this.deps.plugin.settings,
               vaultPath,
             },
+            { lifecycle: 'ephemeral' },
           );
         this.#assertForkSourceCurrent(source);
         return state;

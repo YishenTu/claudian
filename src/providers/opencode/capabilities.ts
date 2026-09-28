@@ -19,6 +19,7 @@ export const OPENCODE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Ob
 const OPENCODE_V2_CAPABILITIES: Readonly<ProviderCapabilities> = Object.freeze({
   ...OPENCODE_PROVIDER_CAPABILITIES,
   forkMode: 'checkpoint',
+  supportsEphemeralFork: true,
 });
 
 export function getOpencodeConversationCapabilities(providerState?: Record<string, unknown>): ProviderCapabilities {

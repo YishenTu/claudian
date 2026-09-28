@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import type { ACPPromptRequest, ACPSessionConfigOption } from '@/providers/acp';
 
+import { forkOpencodeHTTPSession } from '../history/OpencodeSessionFork';
 import { isRecord, OpencodeHTTPError, type OpencodeHTTPEvent, pollOpencodeUntil } from '../http/OpencodeHTTPClient';
 import { projectOpencodeFormQuestions } from '../http/OpencodeHTTPForms';
 import type { OpencodeServerLease, OpencodeServerService } from '../http/OpencodeServerService';
@@ -17,6 +18,7 @@ import {
   type OpencodeSessionKernelOptions,
   OpencodeSessionMissingError,
 } from './OpencodeSessionContract';
+import type { OpencodeSessionPersistence } from './OpencodeSessionPersistence';
 
 type PendingPrompt = { resolve: (value: { stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }) => void; reject: (error: Error) => void; userMessageId?: string; inputId?: string; announced: boolean; started: boolean; steerable: boolean; idle: boolean };
 /** A steer admitted to the native inbox stays owned by the prompt until delivered or recalled. */
@@ -33,7 +35,6 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private autoApprove = false;
   private readonly controller = new AbortController();
   private sessionId: string | null = null;
-  private createdSessionId: Promise<string | null> | null = null;
   private databasePath: string | null = null;
   private model: NativeModel | null = null;
   private models: Array<Record<string, unknown>> = [];
@@ -49,7 +50,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private cancellation: Promise<unknown> | null = null;
 
   private agents: Record<string, string> = {};
-  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly cliPath: string, private readonly environment: NodeJS.ProcessEnv, private readonly serverService: OpencodeServerService) {}
+  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly cliPath: string, private readonly environment: NodeJS.ProcessEnv, private readonly serverService: OpencodeServerService, private readonly persistence: OpencodeSessionPersistence) {}
 
   async connect(options: OpencodeKernelConnectOptions): Promise<void> {
     this.profile = options.profile;
@@ -73,21 +74,24 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   }
 
   async openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo> {
-    let data: Record<string, unknown>;
+    let sessionId: string;
     try {
-      const response = this.requireClient().request<{ data: Record<string, unknown> }>(resumeSessionId ? `/api/session/${encodeURIComponent(resumeSessionId)}` : '/api/session',
-        resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.vaultWorkingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_SAFE_MODE_ID : AUX_AGENT_IDS[this.profile]] } });
-      // Disposal can overtake the response; the created id is still needed to discard the session.
-      if (!resumeSessionId) this.createdSessionId = response.then(({ data }) => typeof data.id === 'string' ? data.id : null, () => null);
-      ({ data } = await response);
+      sessionId = await this.persistence.openSession(async () => {
+        const client = this.requireClient();
+        const fork = !resumeSessionId ? this.options.forkSource : undefined;
+        if (fork) return forkOpencodeHTTPSession(client, fork.sessionId, fork.resumeAt);
+        const { data } = await client.request<{ data: Record<string, unknown> }>(resumeSessionId ? `/api/session/${encodeURIComponent(resumeSessionId)}` : '/api/session',
+          resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.vaultWorkingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_SAFE_MODE_ID : AUX_AGENT_IDS[this.profile]] } });
+        if (typeof data.id !== 'string' || (resumeSessionId && data.id !== resumeSessionId)) throw new Error('Invalid OpenCode session response.');
+        return data.id;
+      }, () => this.serverService.acquire(this.cliPath, this.options.config.vaultWorkingDirectory, this.environment));
     } catch (error) {
       if (resumeSessionId && error instanceof OpencodeHTTPError && error.status === 404) throw new OpencodeSessionMissingError(resumeSessionId, error);
       throw error;
     }
-    if (typeof data.id !== 'string' || (resumeSessionId && data.id !== resumeSessionId)) throw new Error('Invalid OpenCode session response.');
-    this.sessionId = data.id;
+    this.sessionId = sessionId;
     await this.requireClient().refreshGlobalForms();
-    return { sessionId: data.id, nativeVersion: 2, databasePath: this.databasePath, models: { currentModelId: '', availableModels: this.models.map(model => ({ modelId: `${model.providerID}/${model.id}`, name: `${model.providerID}/${model.name}` })) } };
+    return { sessionId, nativeVersion: 2, databasePath: this.databasePath, models: { currentModelId: '', availableModels: this.models.map(model => ({ modelId: `${model.providerID}/${model.id}`, name: `${model.providerID}/${model.name}` })) } };
   }
 
   async setConfigOption(request: Record<string, unknown>): Promise<{ configOptions?: ACPSessionConfigOption[] }> {
@@ -197,10 +201,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.pending = null;
     await Promise.all([this.cancellation, ...interruptions, recalls]);
     for (const id of [...this.steers.keys()]) this.settleSteer(id, new Error('OpenCode session disposed before the steer was delivered.'));
-    if (this.options.databasePath === ':memory:' && this.client?.isReusable()) {
-      const sessionId = await this.createdSessionId ?? this.sessionId;
-      if (sessionId) await this.client.request(`/api/session/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }).catch(() => undefined);
-    }
+    await this.persistence.settle();
     await this.client?.dispose();
   }
 

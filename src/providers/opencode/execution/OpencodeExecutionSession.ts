@@ -49,6 +49,7 @@ import {
   OpencodeSessionMissingError,
 } from './OpencodeSessionContract';
 import { DefaultOpencodeSessionKernel } from './OpencodeSessionKernel';
+import { OpencodeSessionPersistence } from './OpencodeSessionPersistence';
 
 export type OpencodeACPSessionKernelFactory = (
   options: OpencodeSessionKernelOptions,
@@ -129,6 +130,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   readonly providerId = 'opencode' as const;
   readonly sessionInstanceId = randomUUID();
 
+  private readonly persistence: OpencodeSessionPersistence;
   private readonly createKernel: OpencodeACPSessionKernelFactory;
   private readonly listeners = new Set<(event: ProviderSessionEvent) => void>();
   private activeRun: OpencodeExecutionRun | null = null;
@@ -155,8 +157,9 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     private readonly config: ProviderSessionConfig,
     private readonly options: OpencodeExecutionSessionOptions,
   ) {
+    this.persistence = new OpencodeSessionPersistence(config);
     this.createKernel = options.createKernel
-      ?? ((kernelOptions) => new DefaultOpencodeSessionKernel(kernelOptions, options.serverService));
+      ?? ((kernelOptions) => new DefaultOpencodeSessionKernel(kernelOptions, options.serverService, this.persistence));
     const providerState = getOpencodeState(config.resumeSeed?.providerState);
     this.nativeSessionId = config.resumeSeed?.providerSessionId ?? providerState.sessionId ?? null;
     this.seedProviderState = Object.freeze({ ...providerState });
@@ -257,7 +260,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     this.backgroundTurn = null;
     this.listeners.clear();
     this.snapshot = this.#createSnapshot('disposed');
-    this.disposePromise = this.#disposeKernel();
+    this.disposePromise = this.#disposeKernel().finally(() => this.persistence.dispose());
     return this.disposePromise;
   }
 
@@ -292,7 +295,8 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         const kernelGeneration = ++this.kernelGeneration;
         kernel = this.createKernel({
           config: this.config,
-          databasePath: this.#resolveDatabasePath(),
+          databasePath: this.databasePath ?? undefined,
+          forkSource: getOpencodeState(this.seedProviderState).forkSource,
           nativeVersion: this.nativeVersion,
           getActiveTurnId: () => this.activeRun?.turnId ?? this.backgroundTurn?.id ?? null,
           openNativeInteraction: () => {
@@ -764,19 +768,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     } else {
       this.#emitSessionSnapshot();
     }
-  }
-
-  #resolveDatabasePath(): string | undefined {
-    if (
-      this.config.nativePersistence === 'disabled-if-supported'
-      || (
-        this.config.nativePersistence === 'provider-default'
-        && this.config.lifecycle === 'ephemeral'
-      )
-    ) {
-      return ':memory:';
-    }
-    return this.databasePath ?? undefined;
   }
 
   #isRunCurrent(

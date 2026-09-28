@@ -155,6 +155,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     sourceProviderState?: Record<string, unknown>,
     vaultPath?: string | null,
     pathContext?: ProviderHistoryPathContext,
+    options?: { lifecycle: 'persistent' | 'ephemeral' },
   ): Promise<Record<string, unknown>> {
     const cwd = vaultPath ?? pathContext?.vaultPath;
     if (!cwd) throw new Error('OpenCode fork requires a workspace directory.');
@@ -162,6 +163,9 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const databasePath = resolveOpencodeDatabasePathHint(source.databasePath, pathContext);
     if (!databasePath || databasePath === ':memory:') {
       throw new Error('OpenCode fork requires a persistent native database.');
+    }
+    if (options?.lifecycle === 'ephemeral' && source.nativeVersion === 2) {
+      return { databasePath, nativeVersion: 2, forkSource: { sessionId: sourceSessionId, resumeAt }, nativeConversationContextEstablished: true };
     }
     const settings = pathContext?.settings ?? {};
     const cliPath = new OpencodeCLIResolver().resolveFromSettings(settings) ?? 'opencode';

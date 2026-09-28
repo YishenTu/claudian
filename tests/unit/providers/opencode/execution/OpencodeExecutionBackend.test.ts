@@ -903,12 +903,12 @@ describe('OpencodeExecutionBackend', () => {
   });
 
   it.each([
-    ['ephemeral', 'provider-default', undefined, ':memory:'],
-    ['persistent', 'provider-default', '/persisted/opencode.db', '/persisted/opencode.db'],
-    ['ephemeral', 'enabled', '/persisted/opencode.db', '/persisted/opencode.db'],
+    ['ephemeral', 'provider-default', undefined],
+    ['persistent', 'provider-default', '/persisted/opencode.db'],
+    ['ephemeral', 'enabled', '/persisted/opencode.db'],
   ] as const)(
-    'resolves %s %s persistence to %s',
-    async (lifecycle, nativePersistence, persistedDatabasePath, expectedDatabasePath) => {
+    'forwards %s %s persistence with the trusted database hint %s',
+    async (lifecycle, nativePersistence, persistedDatabasePath) => {
       const harness = createHarness(createConfig({
         lifecycle,
         nativePersistence,
@@ -927,7 +927,8 @@ describe('OpencodeExecutionBackend', () => {
       harness.kernels[0].completePrompt();
       await collect(run.events);
 
-      expect(harness.kernels[0].options.databasePath).toBe(expectedDatabasePath);
+      expect(harness.kernels[0].options.databasePath).toBe(persistedDatabasePath);
+      expect(harness.kernels[0].options.config).toMatchObject({ lifecycle, nativePersistence });
       await harness.session.dispose();
     },
   );
@@ -980,9 +981,6 @@ describe('OpencodeExecutionBackend', () => {
     await collect(run.events);
 
     expect(harness.kernels[0].connectCalls[0]).toMatchObject({ profile });
-    expect(harness.kernels[0].options.databasePath).toBe(
-      kind === 'provider-default' ? undefined : ':memory:',
-    );
   });
 
   it('fails an arbitrary tool allow-list closed without enabling unnamed read tools', async () => {

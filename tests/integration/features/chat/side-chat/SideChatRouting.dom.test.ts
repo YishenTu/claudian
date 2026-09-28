@@ -12,6 +12,7 @@ import {
 import { waitFor } from '@testing-library/dom';
 
 import type { ProviderExecutionContext } from '@/core/execution';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import { ConversationController } from '@/features/chat/controllers/ConversationController';
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
@@ -433,11 +434,25 @@ it('uses saved native execution when the provider requires persistent forks', as
   expect(await started).toBe(true);
 });
 
+it('uses the captured conversation capabilities for ephemeral side execution', async () => {
+  const base = ProviderRegistry.getCapabilities('claude');
+  const state = { version: 'supports-ephemeral-forks' };
+  const harness = createHarness({
+    supportsEphemeralFork: false, providerState: state,
+    getConversationCapabilities: providerState => ({ ...base, supportsEphemeralFork: providerState?.version === state.version }),
+  });
+  const { started } = await startSideChat(harness);
+  expect(harness.backend.latest.config).toMatchObject({ lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported' });
+  harness.backend.latest.complete();
+  expect(await started).toBe(true);
+});
+
 it('uses the configured provider environment when preparing the native side fork', async () => {
   let database: string | undefined;
   const harness = createHarness({
     settings: { providerConfigs: { claude: { environmentVariables: 'OPENCODE_DB=/custom/chat.db' } } },
-    buildForkProviderState: (_session, _checkpoint, _state, _vault, context) => {
+    buildForkProviderState: (_session, _checkpoint, _state, _vault, context, options) => {
+      expect(options).toEqual({ lifecycle: 'ephemeral' });
       database = context?.environment.OPENCODE_DB;
       return {};
     },
