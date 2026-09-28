@@ -36,3 +36,18 @@ it.each([
   fireEvent.keyDown(root, { key: 'Enter' });
   expect(resolve).toHaveBeenCalledWith({ 'Allow this command?': expected });
 });
+
+it('checks the multi-select custom answer as soon as text is typed', () => {
+  const panel = new InlineAskUserQuestion(document.body.createDiv(), {
+    questions: [{ question: 'Which checks?', isOther: true, multiSelect: true, options: [{ label: 'Lint' }] }],
+  }, jest.fn());
+  panel.render();
+  const input = within(document.body).getByRole('textbox', { name: 'Which checks?' });
+  const customRow = input.closest('.claudian-ask-custom-item')!;
+
+  fireEvent.input(input, { target: { value: 'Typecheck' } });
+  expect(customRow.querySelector('.claudian-ask-check')?.classList.contains('is-checked')).toBe(true);
+
+  fireEvent.input(input, { target: { value: '' } });
+  expect(customRow.querySelector('.claudian-ask-check')?.classList.contains('is-checked')).toBe(false);
+});
