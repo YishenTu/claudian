@@ -8,10 +8,11 @@ import { OpencodeExecutionBackend } from '@/providers/opencode/execution/Opencod
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
 import { OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
-// The native boundary is exclusive; copied messages receive new IDs.
+// OpenCode 2.0.18 uses an exclusive `before` boundary and ignores `messageID`.
+// Copied messages receive new IDs.
 const fixture = `#!/usr/bin/env node
 const fs = require('node:fs'), http = require('node:http');
-if (process.argv.includes('--version')) { console.log('2.0.14'); return; }
+if (process.argv.includes('--version')) { console.log('2.0.18'); return; }
 const file = process.env.OPENCODE_DB;
 const server = http.createServer(async (req, res) => {
  const url = new URL(req.url, 'http://localhost'), [, , , id, action] = url.pathname.split('/');
@@ -26,7 +27,7 @@ const server = http.createServer(async (req, res) => {
  }
  if (action === 'fork') {
    state.requests.push(body);
-   const messages = state.sessions[id], boundary = body.messageID ? messages.findIndex(m => m.id === body.messageID) : messages.length;
+   const messages = state.sessions[id], boundary = body.before ? messages.findIndex(m => m.id === body.before) : messages.length;
    if (boundary < 0) { res.writeHead(400).end(); return; }
    const child = 'child-' + state.requests.length;
    state.sessions[child] = messages.slice(0, boundary).map((m, i) => ({...m, id:child + '-' + i}));
@@ -85,7 +86,7 @@ describe('OpenCode v2 checkpoint forks', () => {
     const restored = { ...child!, ...await history.hydrateConversationHistory(child!, env.root, context()) };
     const expected = turn === 0 ? ['Remember apples', 'Apples remembered'] : ['Remember apples', 'Apples remembered', 'Remember pears', 'Pears remembered'];
     expect(restored.messages.map(message => message.content)).toEqual(expected);
-    expect(state().requests).toEqual([turn === 0 ? { messageID: 'x-idle' } : {}]);
+    expect(state().requests).toEqual([turn === 0 ? { before: 'x-idle' } : {}]);
     expect(state().sessions.source).toEqual(nativeMessages);
     await env.repository.update(restored.id, { messages: restored.messages });
     const nested = await env.fork(await env.open(backend, restored), restored.messages[1], context());

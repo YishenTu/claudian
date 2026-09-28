@@ -25,7 +25,7 @@ export async function forkOpencodeSession(options: OpencodeSessionForkOptions): 
   assertOpencodeSessionCompatibility(options.nativeVersion, version);
   if (version === 2) {
     return withOpencodeServerLease(options.serverService, options.cliPath, options.cwd, options.environment, async client => {
-      let messageID: string | undefined;
+      let before: string | undefined;
       if (options.resumeAt) {
         const messages = await readOpencodeHTTPMessages(client, options.sourceSessionId);
         const index = messages.findIndex(message => message.id === options.resumeAt && message.type === 'assistant');
@@ -34,10 +34,10 @@ export async function forkOpencodeSession(options: OpencodeSessionForkOptions): 
         const next = messages[index + 1];
         if (next) {
           if (typeof next.id !== 'string' || !next.id.trim()) throw new Error('OpenCode fork boundary has an invalid message ID.');
-          messageID = next.id;
+          before = next.id;
         }
       }
-      const child = await client.request<{ data: { id: string } }>(`/api/session/${encodeURIComponent(options.sourceSessionId)}/fork`, { method: 'POST', body: messageID ? { messageID } : {} });
+      const child = await client.request<{ data: { id: string } }>(`/api/session/${encodeURIComponent(options.sourceSessionId)}/fork`, { method: 'POST', body: before ? { before } : {} });
       if (typeof child.data?.id !== 'string' || !child.data.id.trim() || child.data.id === options.sourceSessionId) throw new Error('OpenCode fork returned an invalid child session.');
       options.onNativeVersion?.(2);
       return child.data.id;
