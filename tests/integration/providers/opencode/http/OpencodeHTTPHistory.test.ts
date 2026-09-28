@@ -57,7 +57,7 @@ process.stdin.resume(); process.stdin.on('end', () => server.close());
     expect(conversation.messages.map(message => message.content)).toEqual(['Native question', 'Native answer']);
     // The child session's own tools are restored into the parent's subagent card.
     expect(conversation.messages[1].toolCalls?.[0].subagent).toMatchObject({
-      id: 'call_worker', agentId: 'ses_worker', description: 'Inspect notes', mode: 'sync', status: 'completed',
+      id: 'call_worker', agentId: 'ses_worker', description: 'Inspect notes', mode: 'sync', status: 'completed', result: 'Worker summary',
       toolCalls: [{ id: 'call_read', name: 'Read', status: 'completed', result: 'Notes body' }],
     });
     // A background launch only acknowledges the child, so its answer comes from the child session.
