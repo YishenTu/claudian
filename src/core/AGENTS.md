@@ -15,7 +15,7 @@
 - Persisted provider settings require runtime decoding; invalid permission/tool/sandbox modes fail closed. Writers merge provider-owned configuration.
 - Runtime-discovered commands are read-only. Auxiliary queries own processes/sessions independently from chat.
 - The shared model catalog owns selection policy; providers retain discovery, native metadata, and persistence. Only selected models persist. Startup fills missing selected-model reasoning metadata through provider-native discovery; no hardcoded model effort migrations. Unavailable selections stay visible as unavailable rather than silently defaulting.
-- Explicit selected-model order is durable user preference, including a full-list order; do not collapse it to legacy null/native-default ordering. Every provider's chat options reverse that order only to compensate for the upward-opening toolbar; settings and default resolution must not reverse it.
+- Explicit selected-model order is durable user preference, including a full-list order; do not collapse it to legacy null/native-default ordering. Chat options, the toolbar, settings, and default resolution preserve that order; the first saved model appears at the top of the dropdown.
 
 ## Persistence and model resolution
 

@@ -16,7 +16,8 @@ export type BuiltInCommandAction =
   | 'side';
 type BuiltInCommandCapability =
   | 'supportsNativeHistory'
-  | 'supportsFork';
+  | 'supportsFork'
+  | 'supportsFastMode';
 type BuiltInCommandCapabilityContext =
   Partial<Pick<ProviderCapabilities, BuiltInCommandCapability>>
   & Partial<Pick<ProviderCapabilities, 'providerId'>>;
@@ -31,8 +32,6 @@ export interface BuiltInCommand {
   argumentHint?: string;
   /** When set, provider capabilities must expose this feature. */
   requiredCapability?: BuiltInCommandCapability;
-  /** When set, only these providers expose and execute the command. */
-  supportedProviderIds?: ProviderId[];
 }
 
 export interface BuiltInCommandResult {
@@ -64,7 +63,7 @@ export const BUILT_IN_COMMANDS: BuiltInCommand[] = [
     name: 'fast',
     description: 'Toggle fast mode',
     action: 'fast',
-    supportedProviderIds: ['codex'],
+    requiredCapability: 'supportsFastMode',
   },
   {
     name: 'side',
@@ -102,28 +101,12 @@ function resolveCapabilities(
   }
 }
 
-function isBuiltInCommandProviderSupported(
-  command: BuiltInCommand,
-  context?: BuiltInCommandSupportContext,
-): boolean {
-  if (!command.supportedProviderIds || !context) {
-    return true;
-  }
-
-  const providerId = typeof context === 'string' ? context : context.providerId;
-  return Boolean(providerId && command.supportedProviderIds.includes(providerId));
-}
-
 export function isBuiltInCommandSupported(
   command: BuiltInCommand,
   context?: BuiltInCommandSupportContext,
 ): boolean {
   if (!context) {
     return true;
-  }
-
-  if (!isBuiltInCommandProviderSupported(command, context)) {
-    return false;
   }
 
   if (!command.requiredCapability) {
@@ -171,15 +154,11 @@ export interface SideChatCommandMatch {
  * Recognizes a complete leading side-chat command token, including multiline
  * arguments that the single-line built-in matcher deliberately rejects.
  */
-export function detectSideChatCommand(
-  input: string,
-  context?: BuiltInCommandSupportContext,
-): SideChatCommandMatch | null {
+export function detectSideChatCommand(input: string): SideChatCommandMatch | null {
   const match = /^\/([a-zA-Z0-9_-]+)(?:[ \t]+([\s\S]*))?$/.exec(input.trim());
   if (!match) return null;
   const command = commandMap.get(match[1].toLowerCase());
   if (!command || command.action !== 'side') return null;
-  if (context && !isBuiltInCommandProviderSupported(command, context)) return null;
   return { alias: match[1].toLowerCase(), argument: (match[2] ?? '').trim() };
 }
 

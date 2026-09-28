@@ -16,7 +16,6 @@ import { renderEnvironmentSettingsSection } from '../../../shared/settings/Envir
 import type { ProviderEnablementSettingOptions } from '../../../shared/settings/ProviderEnablementSetting';
 import { renderLastEnabledProviderWarning, renderProviderModelEnablementWarning } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
-import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import {
   getClaudeModelOptions,
@@ -80,7 +79,7 @@ export function createClaudeSettingsTabRenderer(
         providerName: 'Claude',
       });
 
-      const hostnameKey = getHostnameKey();
+      const hostnameKey = context.plugin.storage.installationKey;
       const validatePath = (value: string): string | null => {
         const trimmed = value.trim();
         if (!trimmed) return null;

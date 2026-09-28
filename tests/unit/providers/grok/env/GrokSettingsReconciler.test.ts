@@ -6,9 +6,9 @@ import {
 } from '@/providers/grok/env/GrokSettingsReconciler';
 import { getGrokProviderSettings } from '@/providers/grok/settings';
 
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => 'current-host',
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => 'current-host',
 }));
 
 describe('GrokSettingsReconciler', () => {

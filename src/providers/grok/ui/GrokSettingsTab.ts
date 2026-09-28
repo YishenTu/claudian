@@ -22,7 +22,6 @@ import {
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
-import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import type { GrokWorkspaceServices } from '../app/GrokWorkspaceServices';
 import {
@@ -35,7 +34,7 @@ const GROK_PROVIDER_ID = 'grok' as const;
 export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
   render(container, context) {
     const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
-    const hostnameKey = getHostnameKey();
+    const hostnameKey = context.plugin.storage.installationKey;
     const workspace = getGrokWorkspaceServices();
 
     const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {

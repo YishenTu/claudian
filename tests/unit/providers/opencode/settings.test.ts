@@ -1,17 +1,17 @@
 import { projectOpencodeModelSettings } from '@/providers/opencode/settings';
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 
-jest.mock('../../../../src/utils/env', () => ({
-  ...jest.requireActual('../../../../src/utils/env'),
-  getHostnameKey: () => mockGetHostnameKey(),
-}));
-
 import {
   getOpencodeProviderSettings,
   normalizeOpencodeModelAliases,
   normalizeOpencodePreferredThinkingByModel,
   updateOpencodeProviderSettings
 } from '../../../../src/providers/opencode/settings';
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => mockGetHostnameKey(),
+}));
 
 describe('OpenCode settings normalization', () => {
   const discoveredModels = [

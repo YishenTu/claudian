@@ -81,6 +81,7 @@ export async function createGrokWorkspaceServices(
 }
 
 export const grokWorkspaceRegistration: ProviderWorkspaceRegistration<GrokWorkspaceServices> = {
+  consumesAgentSkills: true,
   initialize: async ({ plugin }) => createGrokWorkspaceServices(plugin),
 };
 

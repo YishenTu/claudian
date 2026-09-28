@@ -19,8 +19,7 @@ export function getCodexModelOptions(settings: Record<string, unknown>): Provide
     model.model,
     model,
   ] as const));
-  const visibleDiscoveredModels = [...visibleModelIds]
-    .reverse()
+  const visibleDiscoveredModels = visibleModelIds
     .map(modelId => discoveredModelsById.get(modelId))
     .filter((model): model is NonNullable<typeof model> => Boolean(
       model

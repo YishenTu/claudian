@@ -1,3 +1,5 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+
 import {
   type CLIPathFingerprintInputs,
   createCLIPathFingerprintInputs,
@@ -7,7 +9,7 @@ import { getRuntimeEnvironmentText } from '../../../core/providers/providerEnvir
 import { createRuntimeInputFingerprint } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
-import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
+import { parseEnvironmentVariables } from '../../../utils/env';
 import {
   getOpencodeProviderSettings,
   updateOpencodeProviderSettings
@@ -63,7 +65,7 @@ export const opencodeSettingsReconciler = {
     const envText = getRuntimeEnvironmentText(settings, 'opencode');
     const opencodeSettings = getOpencodeProviderSettings(settings);
     const cliPathInputs = createCLIPathFingerprintInputs(
-      opencodeSettings.cliPathsByHost[getHostnameKey()],
+      opencodeSettings.cliPathsByHost[getInstallationKey()],
       opencodeSettings.cliPath,
     );
     const currentHash = computeOpencodeRuntimeFingerprint(envText, cliPathInputs);

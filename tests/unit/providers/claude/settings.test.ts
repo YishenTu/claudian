@@ -1,11 +1,11 @@
 const mockGetHostnameKey = jest.fn(() => 'device:current');
 
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => mockGetHostnameKey(),
-}));
-
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => mockGetHostnameKey(),
+}));
 
 describe('Claude settings normalization', () => {
   it.each(['Default', 'Concise'] as const)('persists the %s response style while preserving other settings', (responseStyle) => {

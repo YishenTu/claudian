@@ -110,11 +110,6 @@ jest.mock('@/shared/settings/ProviderModelsSection', () => ({
   renderProviderModelsSection: (...args: unknown[]) => mockRenderCodexModelPicker(...args),
 }));
 
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => mockGetHostnameKey(),
-}));
-
 interface MockTextComponent {
   value: string;
   placeholder: string;
@@ -306,6 +301,7 @@ function createContainer(): any {
 
 function createPlugin(overrides: Record<string, unknown> = {}): any {
   const plugin: any = {
+    storage: { installationKey: mockGetHostnameKey() },
     settings: {
       settingsProvider: 'codex',
       model: 'my-custom-model',
@@ -403,6 +399,11 @@ function findSetting(name: string) {
 function findOptionalSetting(name: string) {
   return createdSettings.find(candidate => candidate.name === name);
 }
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => mockGetHostnameKey(),
+}));
 
 describe('CodexSettingsTab', () => {
   const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;

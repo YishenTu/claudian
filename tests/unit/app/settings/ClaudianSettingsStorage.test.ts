@@ -21,18 +21,18 @@ const mockGetHostnameKey = jest.fn(() => 'host-a');
 const mockGetLegacyDeviceSettingsKey = jest.fn<string | null, []>(() => null);
 const originalPlatform = process.platform;
 
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => mockGetHostnameKey(),
-  getLegacyDeviceSettingsKey: () => mockGetLegacyDeviceSettingsKey(),
-}));
-
 const mockAdapter = {
   exists: jest.fn(),
   read: jest.fn(),
   write: jest.fn(),
   delete: jest.fn(),
 } as unknown as jest.Mocked<VaultFileAdapter>;
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => mockGetHostnameKey(),
+  getLegacyDeviceSettingsKey: () => mockGetLegacyDeviceSettingsKey(),
+}));
 
 describe('ClaudianSettingsStorage', () => {
   let storage: ClaudianSettingsStorage;

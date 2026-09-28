@@ -6,6 +6,15 @@ import {
 } from '@/core/commands/builtInCommands';
 
 describe('builtInCommands', () => {
+  it('uses fast-mode capability rather than a provider name for detection and display', () => {
+    const capable = { providerId: 'test-provider', supportsFastMode: true };
+    const incapable = { providerId: 'codex', supportsFastMode: false };
+    expect(detectBuiltInCommand('/fast', capable)?.command.action).toBe('fast');
+    expect(getBuiltInCommandsForDropdown(capable).map(command => command.name)).toContain('fast');
+    expect(detectBuiltInCommand('/fast', incapable)).toBeNull();
+    expect(getBuiltInCommandsForDropdown(incapable).map(command => command.name)).not.toContain('fast');
+  });
+
   describe('detectBuiltInCommand', () => {
     it('detects /clear command', () => {
       const result = detectBuiltInCommand('/clear');
@@ -90,9 +99,9 @@ describe('builtInCommands', () => {
       expect(result?.args).toBe('');
     });
 
-    it('leaves provider-restricted commands to other providers', () => {
+    it('leaves unsupported commands to provider handling', () => {
       expect(detectBuiltInCommand('/fast', 'claude')).toBeNull();
-      expect(detectBuiltInCommand('/fast', 'codex')?.command.action).toBe('fast');
+      expect(detectBuiltInCommand('/fast', { supportsFastMode: true })?.command.action).toBe('fast');
     });
   });
 
@@ -139,12 +148,13 @@ describe('builtInCommands', () => {
       )).toBe(false);
     });
 
-    it('enforces explicit provider restrictions', () => {
+    it('requires an explicit fast capability', () => {
       const fastCmd = BUILT_IN_COMMANDS.find((c) => c.name === 'fast')!;
-      expect(isBuiltInCommandSupported(fastCmd, 'codex')).toBe(true);
+      expect(isBuiltInCommandSupported(fastCmd, { supportsFastMode: true })).toBe(true);
       expect(isBuiltInCommandSupported(fastCmd, 'claude')).toBe(false);
       expect(isBuiltInCommandSupported(fastCmd, {
         providerId: 'codex',
+        supportsFastMode: true,
         supportsNativeHistory: true,
         supportsFork: true,
       })).toBe(true);

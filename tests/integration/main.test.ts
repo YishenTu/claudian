@@ -6,6 +6,7 @@ import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersi
 import type { SessionMetadataReadResult } from '@/core/bootstrap/SessionStorage';
 import { SessionStorage } from '@/core/bootstrap/SessionStorage';
 import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
+import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -27,7 +28,6 @@ import {
   updateCurrentGrokCatalog,
   updateGrokProviderSettings,
 } from '@/providers/grok/settings';
-import { getHostnameKey } from '@/utils/env';
 
 // Mock fs for ClaudianService
 jest.mock('fs');

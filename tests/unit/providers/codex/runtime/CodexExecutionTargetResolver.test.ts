@@ -1,8 +1,8 @@
+import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import {
   parseDefaultWslDistroListOutput,
   resolveCodexExecutionTarget,
 } from '@/providers/codex/runtime/CodexExecutionTargetResolver';
-import { getHostnameKey } from '@/utils/env';
 
 describe('resolveCodexExecutionTarget', () => {
   it('infers the WSL distro from a \\\\wsl$ workspace path', () => {

@@ -120,7 +120,8 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
     getConversationHistoryService: jest.fn().mockReturnValue({
       resolveSessionIdForConversation: jest.fn().mockReturnValue(null),
     }),
-    getBlankTabProviderIds: jest.fn().mockReturnValue(['claude']),
+    getBlankTabProviderIds: jest.fn((settings: Record<string, unknown>) =>
+      ProviderRegistry.getEnabledProviderIds(settings)),
     getEnabledProviderIds: jest.fn().mockReturnValue(['claude']),
     getRegisteredProviderIds: jest.fn().mockReturnValue(['claude', 'codex']),
     getProviderDisplayName: jest.fn().mockReturnValue('Claude'),

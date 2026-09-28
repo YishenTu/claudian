@@ -130,14 +130,6 @@ jest.mock('@/i18n/i18n', () => ({
   } as Record<string, string>)[key] ?? key,
 }));
 
-jest.mock('@/utils/env', () => {
-  const actual = jest.requireActual('@/utils/env');
-  return {
-    ...actual,
-    getHostnameKey: () => 'host-a',
-  };
-});
-
 interface MockInputEl {
   [key: string]: unknown;
   rows: number;
@@ -332,6 +324,7 @@ function createContainer(): any {
 
 function createPlugin(overrides: Record<string, unknown> = {}): any {
   const plugin: any = {
+    storage: { installationKey: 'host-a' },
     settings: {
       settingsProvider: 'claude',
       model: 'claude-opus-4-6',
@@ -390,6 +383,11 @@ function findSetting(name: string) {
   }
   return setting;
 }
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => 'host-a',
+}));
 
 describe('ClaudeSettingsTab', () => {
   const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;

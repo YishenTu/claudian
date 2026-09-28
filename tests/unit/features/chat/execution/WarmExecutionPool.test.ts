@@ -1,3 +1,4 @@
+import { normalizeWarmExecutionLimit } from '@/core/settings/warmExecutionLimits';
 import {
   WarmExecutionCapacityError,
   type WarmExecutionOwner,
@@ -17,7 +18,7 @@ function createOwner(id: string, canCool = true): WarmExecutionOwner & {
 
 describe('WarmExecutionPool', () => {
   it('enforces five as the minimum concurrent running session limit', async () => {
-    const pool = new WarmExecutionPool(() => 3);
+    const pool = new WarmExecutionPool(() => normalizeWarmExecutionLimit(3));
     const protectedOwners = Array.from(
       { length: 5 },
       (_, index) => createOwner(`protected-${index}`, false),

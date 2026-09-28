@@ -47,6 +47,7 @@ import type {
   ProviderCLIResolutionContext,
   ProviderId,
 } from './core/providers/types';
+import { normalizeWarmExecutionLimit } from './core/settings/warmExecutionLimits';
 import type {
   ClaudianSettings,
   Conversation,
@@ -59,11 +60,7 @@ import {
 import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings';
 import { ClaudianView } from './features/chat/ClaudianView';
 import type { ChatExecutionPersistence } from './features/chat/execution/ChatExecutionCoordinator';
-import {
-  DEFAULT_MAX_WARM_AGENT_PROCESSES,
-  normalizeWarmExecutionLimit,
-  WarmExecutionPool,
-} from './features/chat/execution/WarmExecutionPool';
+import { WarmExecutionPool } from './features/chat/execution/WarmExecutionPool';
 import { registerFileMenu } from './features/chat/fileMenu';
 import { InlineEditSessionOwner } from './features/inline-edit/InlineEditSessionOwner';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
@@ -82,7 +79,7 @@ export default class ClaudianPlugin extends Plugin {
   private settingsTab: ClaudianSettingTab | null = null;
   readonly providerHost = new ClaudianProviderHost(this);
   readonly warmExecutionPool = new WarmExecutionPool(
-    () => this.settings?.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES,
+    () => normalizeWarmExecutionLimit(this.settings?.maxWarmAgentProcesses),
   );
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private chatModelSelectionCoordinator!: ChatModelSelectionCoordinator;
@@ -623,14 +620,16 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   async notifyAgentSkillsChanged(): Promise<void> {
-    const providerIds: ProviderId[] = ['codex', 'grok', 'pi', 'opencode'];
+    const providerIds = ProviderWorkspaceRegistry.getAgentSkillProviderIds();
     const generation = ++this.agentSkillResourceGeneration;
 
     for (const view of this.getAllViews()) {
       view.invalidateProviderResources(providerIds, generation);
     }
 
-    await ProviderWorkspaceRegistry.getIfInitialized('codex')?.commandCatalog?.refresh();
+    await Promise.all(providerIds.map(async providerId => {
+      await ProviderWorkspaceRegistry.getIfInitialized(providerId)?.onAgentSkillsChanged?.();
+    }));
   }
 
   async mutateSettingsConditionally(

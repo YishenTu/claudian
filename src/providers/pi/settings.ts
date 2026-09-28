@@ -1,3 +1,5 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+
 import { selectModelMetadata } from '../../core/providers/models/selectedModelMetadata';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
@@ -7,7 +9,6 @@ import {
   readStoredString,
 } from '../../core/providers/settings/storedSettings';
 import type { HostnameCLIPaths } from '../../core/types/settings';
-import { getHostnameKey } from '../../utils/env';
 import {
   clampPiThinkingLevel,
   decodePiModelId,
@@ -119,7 +120,7 @@ export function updatePiProviderSettings(
   updates: Partial<PiProviderSettings>,
 ): PiProviderSettings {
   const current = getPiProviderSettings(settings);
-  const hostnameKey = getHostnameKey();
+  const hostnameKey = getInstallationKey();
   const nextDiscoveredModels = normalizePiDiscoveredModels(
     updates.discoveredModels ?? current.discoveredModels,
   );

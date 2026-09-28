@@ -2,8 +2,8 @@ import type * as fsType from 'fs';
 import type * as osType from 'os';
 import * as path from 'path';
 
+import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { ClaudeCLIResolver } from '@/providers/claude/runtime/ClaudeCLIResolver';
-import { getHostnameKey } from '@/utils/env';
 
 const fs = jest.requireActual<typeof fsType>('fs');
 const os = jest.requireActual<typeof osType>('os');

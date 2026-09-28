@@ -50,6 +50,7 @@ export async function createOpencodeWorkspaceServices(
 }
 
 export const opencodeWorkspaceRegistration: ProviderWorkspaceRegistration<OpencodeWorkspaceServices> = {
+  consumesAgentSkills: true,
   initialize: async ({ plugin }) => (
     createOpencodeWorkspaceServices(plugin)
   ),

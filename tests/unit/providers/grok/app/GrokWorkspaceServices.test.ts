@@ -45,9 +45,9 @@ function createPlugin(cached = true): any {
   };
 }
 
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => 'device:current',
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => 'device:current',
 }));
 
 describe('GrokWorkspaceServices', () => {

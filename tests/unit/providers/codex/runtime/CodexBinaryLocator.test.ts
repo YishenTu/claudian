@@ -2,11 +2,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import {
   findCodexBinaryPath,
 } from '@/providers/codex/runtime/CodexBinaryLocator';
 import { CodexCLIResolver } from '@/providers/codex/runtime/CodexCLIResolver';
-import { getHostnameKey } from '@/utils/env';
 
 describe('CodexBinaryLocator', () => {
   let tempDir: string;

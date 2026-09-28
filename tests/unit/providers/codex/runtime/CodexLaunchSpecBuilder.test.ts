@@ -1,7 +1,7 @@
 import type * as ChildProcess from 'child_process';
 
+import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
-import { getHostnameKey } from '@/utils/env';
 
 const childProcess = jest.requireActual<typeof ChildProcess>('child_process');
 

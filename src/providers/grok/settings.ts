@@ -1,9 +1,10 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+
 import { selectModelMetadata } from '../../core/providers/models/selectedModelMetadata';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
 import { normalizeHostnameStringMap } from '../../core/providers/settings/HostnameStringMap';
 import type { HostnameCLIPaths } from '../../core/types/settings';
-import { getHostnameKey } from '../../utils/env';
 import {
   decodeGrokModelId,
   getGrokAvailableReasoningEfforts,
@@ -90,7 +91,7 @@ export function getGrokProviderSettings(
   settings: Record<string, unknown>,
 ): GrokProviderSettings {
   const config = getProviderConfig(settings, 'grok');
-  const currentHostKey = getHostnameKey();
+  const currentHostKey = getInstallationKey();
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
   const catalogsByHost = normalizeGrokCatalogsByHost(config.catalogsByHost ?? config.selectedModelsByHost);
   const currentCatalog = catalogsByHost[currentHostKey] ?? null;
@@ -145,7 +146,7 @@ export function updateGrokProviderSettings(
   updates: Partial<PersistedGrokProviderSettings>,
 ): GrokProviderSettings {
   const current = getGrokProviderSettings(settings);
-  const currentHostKey = getHostnameKey();
+  const currentHostKey = getInstallationKey();
   const cliPathsByHost = updates.cliPathsByHost !== undefined
     ? normalizeHostnameStringMap(updates.cliPathsByHost)
     : { ...current.cliPathsByHost };
@@ -228,7 +229,7 @@ export function updateCurrentGrokCatalog(
   updateGrokProviderSettings(settings, {
     catalogsByHost: {
       ...current.catalogsByHost,
-      [getHostnameKey()]: normalized,
+      [getInstallationKey()]: normalized,
     },
   });
   return normalized;

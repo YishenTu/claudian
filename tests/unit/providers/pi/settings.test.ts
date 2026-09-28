@@ -1,10 +1,5 @@
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 
-jest.mock('../../../../src/utils/env', () => ({
-  ...jest.requireActual('../../../../src/utils/env'),
-  getHostnameKey: () => mockGetHostnameKey(),
-}));
-
 import '@/providers';
 
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -14,6 +9,11 @@ import {
   normalizePiVisibleModels,
   updatePiProviderSettings
 } from '@/providers/pi/settings';
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => mockGetHostnameKey(),
+}));
 
 describe('Pi settings normalization', () => {
   const discoveredModels = [

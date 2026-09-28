@@ -1,3 +1,4 @@
+import type { InstallationKey } from '../device/InstallationKey';
 import type { AppTabManagerState } from '../providers/types';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type { SessionMetadataReader } from './SessionStorage';
@@ -12,6 +13,7 @@ import type { SessionMetadataReader } from './SessionStorage';
  * agents, MCP config) live behind provider-owned modules.
  */
 export interface SharedAppStorage {
+  readonly installationKey: InstallationKey;
   initialize(): Promise<{ claudian: Record<string, unknown> }>;
   saveClaudianSettings(settings: Record<string, unknown>): Promise<void>;
   getTabManagerState(): Promise<AppTabManagerState | null>;

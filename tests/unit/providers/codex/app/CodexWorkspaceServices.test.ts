@@ -17,10 +17,6 @@ jest.mock('@/providers/codex/runtime/CodexModelDiscoveryService', () => ({
   })),
 }));
 
-jest.mock('@/providers/codex/commands/CodexSkillCatalog', () => ({
-  CodexSkillCatalog: jest.fn(),
-}));
-
 jest.mock('@/providers/codex/skills/CodexSkillListingService', () => ({
   CodexSkillListingService: jest.fn().mockImplementation(() => ({
     beginEnvironmentTransition: mockSkillBeginTransition,
@@ -105,6 +101,18 @@ function createPlugin(
 describe('CodexWorkspaceServices', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('refreshes native skill listings when shared agent skills change', async () => {
+    const invalidate = jest.fn();
+    const listSkills = jest.fn().mockResolvedValue([]);
+    const services = await createCodexWorkspaceServices(createPlugin(true), {
+      skillListingService: { invalidate, listSkills } as unknown as CodexSkillListingService,
+    });
+    expect(listSkills).not.toHaveBeenCalled();
+    await services.onAgentSkillsChanged?.();
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(listSkills).toHaveBeenCalledWith({ forceReload: true });
   });
 
   it('defers discovery during initialization and persists an explicitly refreshed catalog', async () => {

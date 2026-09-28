@@ -33,6 +33,10 @@ export class ProviderWorkspaceRegistry {
     this.boundary.register(providerId, registration);
   }
 
+  static getAgentSkillProviderIds(): ProviderId[] {
+    return this.boundary.getAgentSkillProviderIds();
+  }
+
   static async ensureInitialized(
     plugin: ProviderHost,
     providerId: ProviderId,

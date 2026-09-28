@@ -6,6 +6,7 @@ export const CODEX_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Objec
   supportsNativeHistory: true,
   supportsEphemeralSessions: true,
   supportsRewind: false,
+  supportsFastMode: true,
   supportsFork: true,
   supportsProviderCommands: true,
   supportsImageAttachments: true,

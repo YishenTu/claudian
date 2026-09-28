@@ -77,11 +77,6 @@ jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
 jest.mock('@/shared/settings/EnvironmentSettingsSection', () => ({
   renderEnvironmentSettingsSection: (...args: unknown[]) => mockRenderEnvironmentSettingsSection(...args),
 }));
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => mockGetHostnameKey(),
-}));
-
 interface MockTextComponent {
   inputEl: {
     [key: string]: unknown;
@@ -238,6 +233,7 @@ function makeCatalog() {
 
 function createPlugin(): any {
   const plugin: any = {
+    storage: { installationKey: mockGetHostnameKey() },
     getEnvironmentVariablesForScope: jest.fn(() => ''),
     mutateSettings: jest.fn(async (mutation: (settings: Record<string, unknown>) => void | Promise<void>) => {
       await mutation(plugin.settings);
@@ -287,6 +283,11 @@ function findSetting(name: string): MockSetting {
   }
   return setting;
 }
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => mockGetHostnameKey(),
+}));
 
 describe('GrokSettingsTab', () => {
   const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;

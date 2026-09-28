@@ -44,6 +44,12 @@ export class ProviderInitializationBoundary {
     this.registrations[providerId] = registration;
   }
 
+  getAgentSkillProviderIds(): ProviderId[] {
+    return Object.entries(this.registrations)
+      .filter(([, registration]) => registration?.consumesAgentSkills)
+      .map(([providerId]) => providerId);
+  }
+
   async ensureInitialized(
     plugin: ProviderHost,
     providerId: ProviderId,

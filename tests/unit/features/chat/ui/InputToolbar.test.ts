@@ -201,17 +201,16 @@ describe('ModelSelector', () => {
     expect(label?.textContent).toBe('Model unavailable');
   });
 
-  it('should render model options in reverse order', () => {
+  it('should preserve model option order', () => {
     const dropdown = parentEl.querySelector('.claudian-model-dropdown');
     expect(dropdown).not.toBeNull();
-    // DEFAULT_CLAUDE_MODELS is [haiku, sonnet, opus] -> reversed is [opus, sonnet, haiku]
     const options = dropdown?.children || [];
     expect(options.length).toBe(3);
     expect(options.filter((option: any) => option.hasClass('claudian-model-group'))).toHaveLength(0);
     // Text is in child span, check first child's textContent
-    expect(options[0]?.children[0]?.textContent).toBe('Opus');
+    expect(options[0]?.children[0]?.textContent).toBe('Haiku');
     expect(options[1]?.children[0]?.textContent).toBe('Sonnet');
-    expect(options[2]?.children[0]?.textContent).toBe('Haiku');
+    expect(options[2]?.children[0]?.textContent).toBe('Opus');
   });
 
   it('should reread model options before the dropdown becomes visible', () => {
@@ -232,8 +231,8 @@ describe('ModelSelector', () => {
     expect(parentEl.querySelector('.claudian-model-label')?.textContent).toBe('GPT New');
     const options = parentEl.querySelector('.claudian-model-dropdown')?.children ?? [];
     expect(options.map((option: any) => option.children[0]?.textContent)).toEqual([
-      'GPT Fast',
       'GPT New',
+      'GPT Fast',
     ]);
   });
 
@@ -321,11 +320,10 @@ describe('ModelSelector', () => {
 
     const dropdown = parentEl.querySelector('.claudian-model-dropdown');
     const children = dropdown?.children || [];
-    // Reversed: [Codex group, built-in Codex model, Claude group, Sonnet, Opus]
     const groups = children.filter((c: any) => c.hasClass('claudian-model-group'));
     expect(groups.length).toBe(2);
-    expect(groups[0]?.textContent).toBe('Codex');
-    expect(groups[1]?.textContent).toBe('Claude');
+    expect(groups[0]?.textContent).toBe('Claude');
+    expect(groups[1]?.textContent).toBe('Codex');
   });
 
   it('should render provider-supplied model variants', () => {

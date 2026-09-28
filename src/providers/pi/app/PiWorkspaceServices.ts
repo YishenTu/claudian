@@ -62,6 +62,7 @@ export async function createPiWorkspaceServices(
 }
 
 export const piWorkspaceRegistration: ProviderWorkspaceRegistration<PiWorkspaceServices> = {
+  consumesAgentSkills: true,
   initialize: async ({ plugin }) => createPiWorkspaceServices(plugin),
 };
 

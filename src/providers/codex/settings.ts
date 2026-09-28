@@ -1,3 +1,5 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+
 import { selectModelMetadata } from '../../core/providers/models/selectedModelMetadata';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
@@ -8,7 +10,6 @@ import {
   readStoredString,
 } from '../../core/providers/settings/storedSettings';
 import type { HostnameCLIPaths } from '../../core/types/settings';
-import { getHostnameKey } from '../../utils/env';
 import {
   type CodexDiscoveredModel,
   findCodexModel,
@@ -356,7 +357,7 @@ function getNormalizedCodexStoredConfigContext(
 ): Required<NormalizeCodexStoredConfigContext> {
   return {
     platform: context.platform ?? process.platform,
-    hostnameKey: context.hostnameKey ?? getHostnameKey(),
+    hostnameKey: context.hostnameKey ?? getInstallationKey(),
   };
 }
 
@@ -410,7 +411,7 @@ export function normalizeCodexStoredConfig(
 export function getCodexProviderSettings(
   settings: Record<string, unknown>,
 ): CodexProviderSettings {
-  const hostnameKey = getHostnameKey();
+  const hostnameKey = getInstallationKey();
   const storedConfig = getCodexStoredConfig(settings);
   return {
     ...storedConfig,
@@ -426,7 +427,7 @@ export function updateCodexProviderSettings(
   updates: Partial<CodexProviderSettings>,
 ): CodexProviderSettings {
   const current = getCodexProviderSettings(settings);
-  const hostnameKey = getHostnameKey();
+  const hostnameKey = getInstallationKey();
   const persistInstallationSettings = shouldPersistCodexInstallationSettings();
   const updatedInstallationMethodsByHost = 'installationMethodsByHost' in updates
     ? normalizeInstallationMethodsByHost(updates.installationMethodsByHost)

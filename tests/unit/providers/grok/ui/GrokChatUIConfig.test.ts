@@ -51,9 +51,9 @@ function makeSettings(overrides: Record<string, unknown> = {}): Record<string, u
   };
 }
 
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => 'device:current',
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => 'device:current',
 }));
 
 describe('GrokChatUIConfig', () => {
@@ -85,8 +85,8 @@ describe('GrokChatUIConfig', () => {
         },
       },
     })).map(option => option.value)).toEqual([
-      'grok/kimi-coding',
       'grok/grok-4',
+      'grok/kimi-coding',
     ]);
   });
 
@@ -134,8 +134,8 @@ describe('GrokChatUIConfig', () => {
 
     expect(grokChatUIConfig.getDefaultModel?.(settings)).toBe('grok/kimi-coding');
     expect(grokChatUIConfig.getModelOptions(settings).map(option => option.value)).toEqual([
-      'grok/grok-4',
       'grok/kimi-coding',
+      'grok/grok-4',
     ]);
   });
 

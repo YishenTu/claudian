@@ -1,8 +1,8 @@
+import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import {
   resolveCodexSessionFileHint,
   resolveCodexTranscriptRootHint,
 } from '@/providers/codex/history/CodexHistoryPathResolver';
-import { getHostnameKey } from '@/utils/env';
 
 function createWslContext(distroOverride = '') {
   return {

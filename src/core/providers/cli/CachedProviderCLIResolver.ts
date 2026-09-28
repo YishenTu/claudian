@@ -1,5 +1,7 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+
 import { findCLIBinaryPath, resolveConfiguredCLIPath } from '../../../utils/cliBinaryLocator';
-import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
+import { parseEnvironmentVariables } from '../../../utils/env';
 import { createRuntimeInputFingerprint } from '../settings/RuntimeInputFingerprint';
 import { createCLIPathFingerprintInputs } from './CLIPathFingerprintInputs';
 
@@ -38,7 +40,7 @@ export class CachedProviderCLIResolver {
   private readonly hostnameKey: string;
 
   constructor(private readonly options: CachedProviderCLIResolverOptions) {
-    this.hostnameKey = options.hostnameKey ?? getHostnameKey();
+    this.hostnameKey = options.hostnameKey ?? getInstallationKey();
   }
 
   resolveFromSettings(

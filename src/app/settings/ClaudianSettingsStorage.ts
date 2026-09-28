@@ -1,3 +1,5 @@
+import { getInstallationKey, getLegacyDeviceSettingsKey } from '@/core/device/InstallationKey';
+
 import {
   CLAUDIAN_SETTINGS_PATH,
 } from '../../core/bootstrap/storagePaths';
@@ -23,7 +25,6 @@ import {
   type SessionManagerOrganization,
   type StoredChatModelSelection,
 } from '../../core/types/settings';
-import { getHostnameKey, getLegacyDeviceSettingsKey } from '../../utils/env';
 import { DEFAULT_CLAUDIAN_SETTINGS } from './defaultSettings';
 
 export {
@@ -135,7 +136,7 @@ function normalizeProviderConfigs(value: unknown): ProviderConfigMap {
 function migrateCurrentDeviceProviderConfigKeys(
   providerConfigs: ProviderConfigMap,
 ): { changed: boolean; providerConfigs: ProviderConfigMap } {
-  const currentKey = getHostnameKey();
+  const currentKey = getInstallationKey();
   const legacyKey = getLegacyDeviceSettingsKey();
   if (!legacyKey || legacyKey === currentKey) {
     return { changed: false, providerConfigs };

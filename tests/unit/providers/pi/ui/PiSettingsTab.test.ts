@@ -102,11 +102,6 @@ jest.mock('@/providers/pi/runtime/PiModelDiscoveryService', () => ({
     discoverModels: mockDiscoverModels,
   })),
 }));
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => 'current-host',
-}));
-
 import { getPiProviderSettings } from '@/providers/pi/settings';
 import { createPiSettingsTabRenderer } from '@/providers/pi/ui/PiSettingsTab';
 
@@ -268,6 +263,7 @@ function createContext(settings: Record<string, unknown>) {
   }));
   return {
     plugin: {
+      storage: { installationKey: 'current-host' },
       applyProviderRuntimeSettings,
       runProviderExecutionTransition,
       saveSettings,
@@ -293,6 +289,11 @@ function findSetting(name: string): MockSetting {
   }
   return setting;
 }
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => 'current-host',
+}));
 
 describe('PiSettingsTab', () => {
   beforeEach(() => {

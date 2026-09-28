@@ -4,7 +4,6 @@ import { codexModelPolicy } from '../CodexModelPolicy';
 
 export const codexChatUIConfig: ProviderChatUIConfig = {
   ...codexModelPolicy,
-  getModelOptions: settings => codexModelPolicy.getModelOptions(settings).slice().reverse(),
   getPermissionModeToggle() {
     return { ...codexModelPolicy.permissionModes!, inactiveLabel: 'Safe', activeLabel: 'YOLO' };
   },

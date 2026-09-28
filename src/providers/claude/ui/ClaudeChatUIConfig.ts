@@ -4,7 +4,6 @@ import { claudeModelPolicy } from '../ClaudeModelPolicy';
 
 export const claudeChatUIConfig: ProviderChatUIConfig = {
   ...claudeModelPolicy,
-  getModelOptions: settings => claudeModelPolicy.getModelOptions(settings).slice().reverse(),
   getPermissionModeToggle() {
     return { ...claudeModelPolicy.permissionModes!, inactiveLabel: 'Safe', activeLabel: 'YOLO' };
   },

@@ -48,7 +48,7 @@ import {
 } from '@/providers/grok/settings';
 
 function createGrokHost(model = 'grok-4'): ProviderHost {
-  const host = { settings: { model: `grok/${model}`, providerConfigs: { grok: { enabled: true, visibleModels: [model, "grok-3"] } } } } as unknown as ProviderHost;
+  const host = { getResolvedProviderCliPath: async () => 'grok', settings: { model: `grok/${model}`, providerConfigs: { grok: { enabled: true, visibleModels: [model, "grok-3"] } } } } as unknown as ProviderHost;
   updateCurrentGrokCatalog(host.settings, { defaultModelId: model, fingerprint: 'fixture', refreshedAt: 1, models: [{ rawId: "grok-3", displayName: "Grok 3", supportsReasoning: false, reasoningEfforts: [] }, { rawId: model, displayName: model, supportsReasoning: true, reasoningEfforts: [] }] });
   return host;
 }
@@ -996,6 +996,7 @@ describe('GrokExecutionBackend', () => {
   it('keeps the full Grok prompt replacement when adding provider-default dynamic sections', async () => {
     const native = new FakeNativeConnection();
     const host = {
+      ...createGrokHost(),
       settings: {
         ...createGrokHost().settings,
         mediaFolder: 'media',
@@ -2008,6 +2009,7 @@ describe('GrokExecutionBackend', () => {
   it('forks from provider-owned checkpoint metadata and loads the child with system instructions', async () => {
     const native = new FakeNativeConnection();
     const host = {
+      ...createGrokHost(),
       settings: { ...createGrokHost().settings, systemPrompt: 'Keep the Grok replacement.' },
     } as unknown as ProviderHost;
     const session = new GrokExecutionBackend(

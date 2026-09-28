@@ -475,10 +475,7 @@ RewindableExecutionSession {
   ): Promise<GrokExecutionNativeConnection> {
     const previousOwner = this.nativeOwner;
     if (previousOwner) await this.#shutdownNativeOwner(previousOwner);
-    const host = this.plugin as ProviderHost & {
-      getResolvedProviderCliPath?: ProviderHost['getResolvedProviderCliPath'];
-    };
-    const command = await host.getResolvedProviderCliPath?.('grok') ?? 'grok';
+    const command = await this.plugin.getResolvedProviderCliPath('grok') ?? 'grok';
     if (quarantineGeneration !== this.quarantineGeneration || this.disposed) {
       throw new Error('Grok native startup was cancelled.');
     }

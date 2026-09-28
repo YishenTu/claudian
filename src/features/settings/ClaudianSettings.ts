@@ -11,6 +11,11 @@ import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId, ProviderSettingsTabRenderHandle } from '../../core/providers/types';
+import {
+  DEFAULT_MAX_WARM_AGENT_PROCESSES,
+  MAX_WARM_AGENT_PROCESSES,
+  MIN_WARM_AGENT_PROCESSES,
+} from '../../core/settings/warmExecutionLimits';
 import { AgentSkillRepository } from '../../core/skills/AgentSkillRepository';
 import type {
   ChatViewPlacement,
@@ -20,10 +25,6 @@ import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i
 import type { Locale, TranslationKey } from '../../i18n/types';
 import { renderEnvironmentSettingsSection } from '../../shared/settings/EnvironmentSettingsSection';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
-import {
-  MAX_WARM_AGENT_PROCESSES,
-  MIN_WARM_AGENT_PROCESSES,
-} from '../chat/execution/WarmExecutionPool';
 import type { FeatureHost } from '../FeatureHost';
 import { AgentSkillManagementCoordinator } from './AgentSkillManagementCoordinator';
 import { AgentSkillSettings } from './AgentSkillSettings';
@@ -710,7 +711,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .addSlider((slider) => {
         slider
           .setLimits(MIN_WARM_AGENT_PROCESSES, MAX_WARM_AGENT_PROCESSES, 1)
-          .setValue(this.plugin.settings.maxWarmAgentProcesses ?? 5)
+          .setValue(this.plugin.settings.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES)
           .onChange(async (value) => {
             await this.plugin.mutateSettings((settings) => {
               settings.maxWarmAgentProcesses = value;

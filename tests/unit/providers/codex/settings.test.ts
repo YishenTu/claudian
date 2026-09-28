@@ -16,9 +16,9 @@ import {
 const mockGetHostnameKey = jest.fn(() => 'host-a');
 const originalPlatform = process.platform;
 
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => mockGetHostnameKey(),
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => mockGetHostnameKey(),
 }));
 
 describe('codex settings', () => {

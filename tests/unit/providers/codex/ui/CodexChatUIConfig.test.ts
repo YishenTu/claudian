@@ -52,7 +52,7 @@ function withDiscoveredModels(settings: Record<string, unknown> = {}): Record<st
 
 describe('CodexChatUIConfig', () => {
   describe('getModelOptions', () => {
-    it('returns models in reverse app-server catalog order', () => {
+    it('returns models in app-server catalog order', () => {
       const options = codexChatUIConfig.getModelOptions({
         providerConfigs: {
           codex: {
@@ -90,14 +90,14 @@ describe('CodexChatUIConfig', () => {
 
       expect(options).toEqual([
         {
-          value: 'openai-codex/gpt-5.6-luna',
-          label: 'GPT-5.6-Luna',
-          description: 'Fast and affordable agentic coding model.',
-        },
-        {
           value: 'openai-codex/gpt-5.6-sol',
           label: 'GPT-5.6-Sol',
           description: 'Latest frontier agentic coding model.',
+        },
+        {
+          value: 'openai-codex/gpt-5.6-luna',
+          label: 'GPT-5.6-Luna',
+          description: 'Fast and affordable agentic coding model.',
         },
       ]);
     });
@@ -127,14 +127,14 @@ describe('CodexChatUIConfig', () => {
 
       expect(options).toEqual([
         {
-          value: 'openai-codex/gpt-5.4-mini',
-          label: 'GPT-5.4 Mini',
-          description: 'Fast',
-        },
-        {
           value: `openai-codex/${TEST_CODEX_MODEL}`,
           label: 'GPT-5.5',
           description: 'Latest',
+        },
+        {
+          value: 'openai-codex/gpt-5.4-mini',
+          label: 'GPT-5.4 Mini',
+          description: 'Fast',
         },
       ]);
     });
@@ -143,7 +143,7 @@ describe('CodexChatUIConfig', () => {
       const options = codexChatUIConfig.getModelOptions(withDiscoveredModels({
         environmentVariables: 'OPENAI_MODEL=my-custom-model',
       }));
-      expect(options.map(option => option.value)).toEqual(['openai-codex/gpt-5.4-mini', `openai-codex/${TEST_CODEX_MODEL}`]);
+      expect(options.map(option => option.value)).toEqual([`openai-codex/${TEST_CODEX_MODEL}`, 'openai-codex/gpt-5.4-mini']);
     });
 
     it('ignores environment and retired manual model lists', () => {
@@ -157,8 +157,8 @@ describe('CodexChatUIConfig', () => {
       }));
 
       expect(options.map(option => option.value)).toEqual([
-        'openai-codex/gpt-5.4-mini',
         `openai-codex/${TEST_CODEX_MODEL}`,
+        'openai-codex/gpt-5.4-mini',
       ]);
     });
 
@@ -268,7 +268,7 @@ describe('CodexChatUIConfig', () => {
   });
 
   describe('getDefaultModel', () => {
-    it('keeps the app-server default independent from reverse picker order', () => {
+    it('uses the first app-server catalog model by default', () => {
       expect(codexChatUIConfig.getDefaultModel!(withDiscoveredModels())).toBe(`openai-codex/${TEST_CODEX_MODEL}`);
     });
 

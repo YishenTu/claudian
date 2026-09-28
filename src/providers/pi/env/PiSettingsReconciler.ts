@@ -1,3 +1,5 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+
 import {
   type CLIPathFingerprintInputs,
   createCLIPathFingerprintInputs,
@@ -10,7 +12,7 @@ import {
 } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
-import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
+import { parseEnvironmentVariables } from '../../../utils/env';
 import {
   getPiProviderSettings,
   updatePiProviderSettings
@@ -82,7 +84,7 @@ export const piSettingsReconciler = {
     const envText = getRuntimeEnvironmentText(settings, 'pi');
     const piSettings = getPiProviderSettings(settings);
     const cliPathInputs = createCLIPathFingerprintInputs(
-      piSettings.cliPathsByHost[getHostnameKey()],
+      piSettings.cliPathsByHost[getInstallationKey()],
       piSettings.cliPath,
     );
     const currentHash = computePiRuntimeFingerprint(envText, cliPathInputs);
@@ -112,7 +114,7 @@ export const piSettingsReconciler = {
 
     const envText = getRuntimeEnvironmentText(settings, 'pi');
     const cliPathInputs = createCLIPathFingerprintInputs(
-      piSettings.cliPathsByHost[getHostnameKey()],
+      piSettings.cliPathsByHost[getInstallationKey()],
       piSettings.cliPath,
     );
     if (isCurrentLegacyPiFingerprint(

@@ -35,7 +35,7 @@ describe('detectSideChatCommand', () => {
   });
 
   it('stays reserved for providers without fork support so it never reaches provider chat', () => {
-    expect(detectSideChatCommand('/side explore', forkIncapable)).toEqual({
+    expect(detectSideChatCommand('/side explore')).toEqual({
       alias: 'side',
       argument: 'explore',
     });

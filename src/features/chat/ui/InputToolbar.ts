@@ -109,10 +109,9 @@ export class ModelSelector {
     if (!models.length) {
       this.dropdownEl.createDiv({ text: 'No models available. Check provider settings and refresh the model list if discovery failed.', attr: { role: 'status' } });
     }
-    const reversed = [...models].reverse();
 
     let lastGroup: string | undefined;
-    for (const model of reversed) {
+    for (const model of models) {
       if (model.group && model.group !== lastGroup) {
         const separator = this.dropdownEl.createDiv({ cls: 'claudian-model-group' });
         separator.setText(model.group);

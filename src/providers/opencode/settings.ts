@@ -1,3 +1,5 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+
 import { selectModelMetadata } from '../../core/providers/models/selectedModelMetadata';
 import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { getProviderEnvironmentVariables } from '../../core/providers/providerEnvironment';
@@ -7,7 +9,6 @@ import {
   readStoredString,
 } from '../../core/providers/settings/storedSettings';
 import type { HostnameCLIPaths } from '../../core/types/settings';
-import { getHostnameKey } from '../../utils/env';
 import {
   getOpencodeDiscoveryState,
   updateOpencodeDiscoveryState,
@@ -177,7 +178,7 @@ export function updateOpencodeProviderSettings(
   updates: Partial<OpencodeProviderSettings>,
 ): OpencodeProviderSettings {
   const current = getOpencodeProviderSettings(settings);
-  const hostnameKey = getHostnameKey();
+  const hostnameKey = getInstallationKey();
   if ('availableModes' in updates || 'discoveredModels' in updates || 'thinkingOptionsByModel' in updates) {
     updateOpencodeDiscoveryState(settings, {
       ...(updates.availableModes !== undefined ? { availableModes: updates.availableModes } : {}),

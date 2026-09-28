@@ -21,7 +21,6 @@ import {
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
-import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCLIPath } from '../../../utils/path';
 import { resolvePiProcessSpec } from '../runtime/PiSubprocess';
 import {
@@ -35,7 +34,7 @@ export function createPiSettingsTabRenderer(
   return {
     render(container, context) {
       const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
-      const hostnameKey = getHostnameKey();
+      const hostnameKey = context.plugin.storage.installationKey;
 
       const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
         getValue: () => getPiProviderSettings(settingsBag).enabled,

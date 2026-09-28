@@ -1,6 +1,6 @@
-
 import { getDefaultHiddenProviderCommands } from '../../core/providers/commands/hiddenCommands';
 import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
+import { DEFAULT_MAX_WARM_AGENT_PROCESSES } from '../../core/settings/warmExecutionLimits';
 import { type ClaudianSettings } from '../../core/types/settings';
 import { getBuiltInProviderDefaultConfigs } from '../../providers/defaultProviderConfigs';
 
@@ -45,7 +45,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   savedProviderPermissionMode: {},
   pendingProviderSessionInvalidations: {},
 
-  maxWarmAgentProcesses: 5,
+  maxWarmAgentProcesses: DEFAULT_MAX_WARM_AGENT_PROCESSES,
   enableAutoScroll: true,
   showMessageTimestamps: false,
   deferMathRenderingDuringStreaming: true,

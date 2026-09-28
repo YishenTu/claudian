@@ -1,10 +1,5 @@
 const mockGetHostnameKey = jest.fn(() => 'device:current');
 
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => mockGetHostnameKey(),
-}));
-
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import {
   computeGrokEnvironmentHash,
@@ -168,6 +163,11 @@ function completedResult(overrides: Partial<Extract<GrokModelCatalogDiscoveryRes
     ...overrides,
   };
 }
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => mockGetHostnameKey(),
+}));
 
 describe('GrokModelCatalogCoordinator', () => {
   beforeEach(() => {

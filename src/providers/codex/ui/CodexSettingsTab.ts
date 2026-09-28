@@ -16,7 +16,6 @@ import {
   renderProviderModelEnablementWarning,
 } from '../../../shared/settings/ProviderModelEnablementWarning';
 import { renderProviderModelsSection } from '../../../shared/settings/ProviderModelsSection';
-import { getHostnameKey } from '../../../utils/env';
 import { normalizeConfiguredCLIPath, stripSurroundingQuotes } from '../../../utils/path';
 import { getCodexModelOptions } from '../modelOptions';
 import { isWindowsStyleCLIReference } from '../runtime/CodexBinaryLocator';
@@ -30,7 +29,7 @@ export function createCodexSettingsTabRenderer(
     render(container, context) {
       const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
       const codexSettings = getCodexProviderSettings(settingsBag);
-      const hostnameKey = getHostnameKey();
+      const hostnameKey = context.plugin.storage.installationKey;
       const isWindowsHost = process.platform === 'win32';
       let installationMethod = codexSettings.installationMethod;
 

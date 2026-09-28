@@ -153,7 +153,7 @@ describe('opencodeChatUIConfig', () => {
     ]);
   });
 
-  it('returns visible model selector options in reverse order with aliases', () => {
+  it('returns visible model selector options in saved order with aliases', () => {
     const options = opencodeChatUIConfig.getModelOptions({
       providerConfigs: {
         opencode: {
@@ -175,13 +175,13 @@ describe('opencodeChatUIConfig', () => {
     expect(options).toEqual([
       {
         description: 'ACP runtime',
-        label: 'OpenAI/GPT-5',
-        value: 'opencode:openai/gpt-5',
+        label: 'Sonnet',
+        value: 'opencode:anthropic/claude-sonnet-4',
       },
       {
         description: 'ACP runtime',
-        label: 'Sonnet',
-        value: 'opencode:anthropic/claude-sonnet-4',
+        label: 'OpenAI/GPT-5',
+        value: 'opencode:openai/gpt-5',
       },
     ]);
     expect(opencodeChatUIConfig.getDefaultModel!({

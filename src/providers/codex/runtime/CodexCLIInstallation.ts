@@ -3,7 +3,6 @@ import * as path from 'node:path';
 import { runProcessProbe } from '@/core/process/ProcessProbe';
 import { type CLIInstallation, parseCLIVersion, probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import { getHostnameKey } from '@/utils/env';
 import { stripSurroundingQuotes } from '@/utils/path';
 
 import { getCodexProviderSettings } from '../settings';
@@ -14,7 +13,7 @@ import { buildCodexLaunchSpec } from './CodexLaunchSpecBuilder';
 export async function inspectCodexInstallation(host: ProviderHost): Promise<CLIInstallation> {
   const settings = host.settings as unknown as Record<string, unknown>;
   const config = getCodexProviderSettings(settings);
-  const configuredPath = config.cliPathsByHost[getHostnameKey()] || config.cliPath;
+  const configuredPath = config.cliPathsByHost[host.storage.installationKey] || config.cliPath;
   const hostVaultPath = getCodexAppServerWorkingDirectory(host);
   const target = await resolveCodexExecutionTargetAsync({ settings, hostVaultPath });
   const command = await host.getResolvedProviderCliPath('codex', { executionTarget: target });

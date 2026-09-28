@@ -45,7 +45,7 @@ export type TabProviderSettings = Record<string, unknown> & {
 export function getBlankTabModelOptions(
   settings: Record<string, unknown>,
 ): ProviderUIOption[] {
-  return ProviderRegistry.getEnabledProviderIds(settings).flatMap((providerId) => {
+  return ProviderRegistry.getBlankTabProviderIds(settings).flatMap((providerId) => {
     const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
     const providerIcon = uiConfig.getProviderIcon?.() ?? undefined;
     const group = ProviderRegistry.getProviderDisplayName(providerId);

@@ -1,3 +1,5 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+
 import {
   type CLIPathFingerprintInputs,
   createCLIPathFingerprintInputs,
@@ -10,7 +12,7 @@ import {
 } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
-import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
+import { parseEnvironmentVariables } from '../../../utils/env';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
 import { clearClaudeResumeState } from '../types/providerState';
 import { CLAUDE_MODEL_ENV_KEYS } from './claudeModelEnv';
@@ -24,7 +26,7 @@ function getConfiguredCLIPathInputs(
 ): CLIPathFingerprintInputs {
   const claudeSettings = getClaudeProviderSettings(settings);
   return createCLIPathFingerprintInputs(
-    claudeSettings.cliPathsByHost[getHostnameKey()],
+    claudeSettings.cliPathsByHost[getInstallationKey()],
     claudeSettings.cliPath,
   );
 }

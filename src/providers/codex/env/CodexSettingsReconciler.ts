@@ -1,3 +1,5 @@
+import { getInstallationKey } from '@/core/device/InstallationKey';
+
 import {
   createCLIPathFingerprintInputs,
   hasCLIPathFingerprintInputs,
@@ -9,7 +11,7 @@ import {
 } from '../../../core/providers/settings/RuntimeInputFingerprint';
 import type { ProviderSettingsReconciler } from '../../../core/providers/types';
 import type { Conversation } from '../../../core/types';
-import { getHostnameKey, parseEnvironmentVariables } from '../../../utils/env';
+import { parseEnvironmentVariables } from '../../../utils/env';
 import { codexModelPolicy } from '../CodexModelPolicy';
 import { resolveCodexModelSelection } from '../modelOptions';
 import { getCodexProviderSettings, updateCodexProviderSettings } from '../settings';
@@ -65,7 +67,7 @@ function getCodexRuntimeFingerprintState(settings: Record<string, unknown>): {
   const environmentText = getRuntimeEnvironmentText(settings, 'codex');
   const codexSettings = getCodexProviderSettings(settings);
   const cliPathInputs = createCLIPathFingerprintInputs(
-    codexSettings.cliPathsByHost[getHostnameKey()],
+    codexSettings.cliPathsByHost[getInstallationKey()],
     codexSettings.cliPath,
   );
   const additionalInputs = {

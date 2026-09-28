@@ -61,6 +61,7 @@ export async function createCodexWorkspaceServices(
   const cliResolver = new CodexCLIResolver();
   return {
     commandCatalog,
+    onAgentSkillsChanged: () => commandCatalog.refresh(),
     cliResolver,
     modelCatalogCoordinator,
     settingsTabRenderer: createCodexSettingsTabRenderer({ cliResolver, modelCatalog }),
@@ -79,6 +80,7 @@ export async function createCodexWorkspaceServices(
 }
 
 export const codexWorkspaceRegistration: ProviderWorkspaceRegistration<CodexWorkspaceServices> = {
+  consumesAgentSkills: true,
   initialize: async ({ plugin }) => createCodexWorkspaceServices(plugin),
 };
 

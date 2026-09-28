@@ -4,7 +4,6 @@ import { grokModelPolicy } from '../GrokModelPolicy';
 
 export const grokChatUIConfig: ProviderChatUIConfig = {
   ...grokModelPolicy,
-  getModelOptions: settings => grokModelPolicy.getModelOptions(settings).slice().reverse(),
   getPermissionModeToggle() {
     return { ...grokModelPolicy.permissionModes!, inactiveLabel: 'Safe', activeLabel: 'YOLO' };
   },

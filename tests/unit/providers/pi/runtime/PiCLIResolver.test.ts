@@ -4,12 +4,12 @@ import * as path from 'path';
 import { PiCLIResolver } from '@/providers/pi/runtime/PiCLIResolver';
 
 jest.mock('fs');
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => 'current-host',
-}));
-
 const mockedStat = fs.statSync as jest.Mock;
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => 'current-host',
+}));
 
 describe('PiCLIResolver', () => {
   beforeEach(() => {

@@ -1,21 +1,18 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { CodexCLIResolver } from '@/providers/codex/runtime/CodexCLIResolver';
-import { getHostnameKey } from '@/utils/env';
 
 jest.mock('fs');
-jest.mock('@/utils/env', () => {
-  const actual = jest.requireActual('@/utils/env');
-  return {
-    ...actual,
-    getHostnameKey: jest.fn(() => 'current-host'),
-  };
-});
-
 const mockedExists = fs.existsSync as jest.Mock;
 const mockedStat = fs.statSync as jest.Mock;
 const mockedDeviceKey = getHostnameKey as jest.Mock;
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: jest.fn(() => 'current-host'),
+}));
 
 describe('CodexCLIResolver', () => {
   beforeEach(() => {

@@ -1,17 +1,10 @@
 import * as fs from 'fs';
 
+import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import { findClaudeBinaryPath } from '@/providers/claude/runtime/ClaudeBinaryLocator';
 import { ClaudeCLIResolver } from '@/providers/claude/runtime/ClaudeCLIResolver';
-import { getHostnameKey } from '@/utils/env';
 
 jest.mock('fs');
-jest.mock('@/utils/env', () => {
-  const actual = jest.requireActual('@/utils/env');
-  return {
-    ...actual,
-    getHostnameKey: jest.fn(() => 'test-host'),
-  };
-});
 jest.mock('@/providers/claude/runtime/ClaudeBinaryLocator', () => {
   const actual = jest.requireActual('@/providers/claude/runtime/ClaudeBinaryLocator');
   return {
@@ -23,6 +16,11 @@ jest.mock('@/providers/claude/runtime/ClaudeBinaryLocator', () => {
 const mockedStat = fs.statSync as jest.Mock;
 const mockedFind = findClaudeBinaryPath as jest.Mock;
 const mockedDeviceKey = getHostnameKey as jest.Mock;
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: jest.fn(() => 'test-host'),
+}));
 
 describe('ClaudeCLIResolver', () => {
   beforeEach(() => {

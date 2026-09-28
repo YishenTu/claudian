@@ -88,11 +88,6 @@ function createSettingsRenderer() {
   });
 }
 
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'),
-  getHostnameKey: () => mockGetHostnameKey(),
-}));
-
 interface MockTextComponent {
   value: string;
   placeholder: string;
@@ -279,6 +274,7 @@ function createContainer(): any {
 
 function createPlugin(overrides: Record<string, unknown> = {}): any {
   const plugin: any = {
+    storage: { installationKey: mockGetHostnameKey() },
     settings: {
       providerConfigs: {
         opencode: {
@@ -362,6 +358,11 @@ function findSetting(name: string): MockSettingRecord {
   }
   return setting;
 }
+
+jest.mock('@/core/device/InstallationKey', () => ({
+  ...jest.requireActual('@/core/device/InstallationKey'),
+  getInstallationKey: () => mockGetHostnameKey(),
+}));
 
 describe('OpencodeSettingsTab', () => {
   const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;

@@ -39,6 +39,7 @@ export interface ProviderCapabilities {
   supportsProviderCommands: boolean;
   supportsImageAttachments: boolean;
   supportsTurnSteer?: boolean;
+  supportsFastMode?: boolean;
   /** Can report authoritative main-agent output tokens and elapsed turn time. */
   supportsResponseThroughput?: boolean;
   reasoningControl: 'effort' | 'token-budget' | 'none';
@@ -360,6 +361,7 @@ export interface ProviderCommandLoader {
 }
 
 export interface ProviderWorkspaceServices {
+  onAgentSkillsChanged?(): Promise<void> | void;
   commandCatalog?: ProviderCommandCatalog | null;
   vaultCommandRepository?: ProviderVaultEntryRepository | null;
   cliResolver?: ProviderCLIResolver | null;
@@ -412,6 +414,8 @@ export interface ProviderWorkspaceInitContext {
 export interface ProviderWorkspaceRegistration<
   TServices extends ProviderWorkspaceServices = ProviderWorkspaceServices,
 > {
+  /** Shared skill changes invalidate resources even before lazy initialization. */
+  consumesAgentSkills?: boolean;
   initialize(context: ProviderWorkspaceInitContext): Promise<TServices>;
 }
 

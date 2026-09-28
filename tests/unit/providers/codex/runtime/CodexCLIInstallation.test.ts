@@ -5,9 +5,9 @@ jest.mock('cross-spawn', () => jest.fn());
 
 import spawn from 'cross-spawn';
 
+import { getInstallationKey as getHostnameKey } from '@/core/device/InstallationKey';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { inspectCodexInstallation } from '@/providers/codex/runtime/CodexCLIInstallation';
-import { getHostnameKey } from '@/utils/env';
 
 function respond(stdout: string, code = 0) {
   const child = Object.assign(new EventEmitter(), {
@@ -38,6 +38,7 @@ describe('Codex CLI installation', () => {
 
   function host(command = 'codex'): ProviderHost {
     return {
+      storage: { installationKey: getHostnameKey() },
       settings: {
         providerConfigs: { codex: {
           installationMethodsByHost: { [getHostnameKey()]: 'wsl' },
