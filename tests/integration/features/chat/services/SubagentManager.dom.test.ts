@@ -11,6 +11,7 @@ import { join } from 'path';
 import { NOOP_TASK_RESULT_INTERPRETER } from '@/core/providers/NoopTaskResultInterpreter';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderSubagentLifecycleAdapter } from '@/core/providers/types';
+import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '@/core/types';
 import { StreamController } from '@/features/chat/controllers/StreamController';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
@@ -614,4 +615,58 @@ it.each([undefined, '', '   '])('hides an unavailable prompt (%s) and reveals a 
   expect(parent.textContent).toContain('Read this file.');
   updateSubagentBlock(state, { ...info, prompt: undefined });
   expect(within(parent).queryByRole('button', { name: /^Prompt/ })).toBeNull();
+});
+
+function createOpencodeView() {
+  const parent = document.body.createDiv();
+  const manager = new SubagentManager(() => {}, ProviderRegistry.getTaskResultInterpreter('opencode'));
+  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const renderer = new MessageRenderer(plugin,
+    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, parent,
+    undefined, undefined, () => ProviderRegistry.getCapabilities('opencode'));
+  const state = new ChatState();
+  const stream = new StreamController({ plugin, state, renderer, subagentManager: manager,
+    getMessagesEl: () => parent, getProviderId: () => 'opencode', updateQueueIndicator: () => {} });
+  const addMessage = (id: string): ChatMessage => {
+    const message: ChatMessage = { id, role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [], toolCalls: [] };
+    state.addMessage(message);
+    state.currentContentEl = renderer.addMessage(message).querySelector('.claudian-message-content');
+    return message;
+  };
+  cleanups.push(() => { stream.dispose(); manager.clear(); renderer.dispose(); });
+  return { parent, renderer, state, stream, addMessage };
+}
+
+it('shows previous runs of reused OpenCode subagents live and after reload', async () => {
+  const view = createOpencodeView();
+  const runs = [
+    { message: 'first', sync: 'Answer A', background: 'Survey A' },
+    { message: 'second', sync: 'Answer B', background: 'Survey B' },
+  ];
+  for (const [index, run] of runs.entries()) {
+    const message = view.addMessage(run.message);
+    await view.stream.handleStreamChunk({ type: 'tool_use', id: `sync-${index}`, name: TOOL_SUBAGENT, input: { description: 'Worker', prompt: `Task ${index}` } }, message);
+    await view.stream.handleStreamChunk({ type: 'tool_result', id: `sync-${index}`, content: `<subagent sessionID="ses_worker" state="completed">\n${run.sync}\n</subagent>` }, message);
+    await view.stream.handleStreamChunk({ type: 'tool_use', id: `bg-${index}`, name: TOOL_SUBAGENT, input: { description: 'Surveyor', prompt: `Survey ${index}`, run_in_background: true } }, message);
+    await view.stream.handleStreamChunk({ type: 'tool_result', id: `bg-${index}`, content: 'The subagent is working in the background (sessionID: ses_background)' }, message);
+    await view.stream.handleStreamChunk({ type: 'done' }, message);
+  }
+  for (const reload of [false, true]) {
+    if (reload) view.renderer.renderMessages(view.state.messages, () => 'Hello');
+    const first = view.parent.querySelector<HTMLElement>('[data-message-id="first"]')!;
+    const second = view.parent.querySelector<HTMLElement>('[data-message-id="second"]')!;
+    expect(within(first).queryByRole('button', { name: /^Previous runs/ })).toBeNull();
+    const [syncHistory, backgroundHistory] = within(second).getAllByRole('button', { name: 'Previous runs (1)' });
+    fireEvent.click(syncHistory);
+    fireEvent.click(backgroundHistory);
+    const [syncRun, backgroundRun] = within(second).getAllByRole('button', { name: /^Run 1 · / });
+    fireEvent.click(syncRun);
+    fireEvent.click(backgroundRun);
+    const histories = second.querySelectorAll<HTMLElement>('.claudian-subagent-history');
+    expect(histories[0].textContent).toContain('Answer A');
+    expect(histories[0].textContent).not.toContain('Answer B');
+    expect(histories[1].textContent).toContain('Survey 0');
+    expect(histories[1].textContent).not.toContain('Answer A');
+    expect(await axe(view.parent)).toHaveNoViolations();
+  }
 });

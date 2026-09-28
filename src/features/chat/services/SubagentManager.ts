@@ -307,6 +307,8 @@ export class SubagentManager {
     const outcome = this.taskResultInterpreter.interpretResult(result, isError, { mode: 'sync' }, toolUseResult);
     info.status = outcome.status;
     info.result = outcome.result;
+    // A reusable native agent identity links this run to its later follow-ups.
+    info.agentId ??= this.taskResultInterpreter.interpretLaunch(result, isError, toolUseResult).agentId ?? undefined;
     if (view) updateSubagentBlock(view, info);
     this.syncSubagents.delete(toolId);
     return info;

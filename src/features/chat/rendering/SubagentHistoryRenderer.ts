@@ -4,13 +4,14 @@ import { createSubagentBlock } from './SubagentRenderer';
 let nextHistoryId = 0;
 
 function previousRuns(messages: ChatMessage[], info: SubagentInfo): ToolCallInfo[] {
-  if (info.lifecycleSource !== 'session' || !info.agentId) return [];
+  // Native agent identity links runs of a reused subagent across separate cards.
+  if (!info.agentId) return [];
   const runs: ToolCallInfo[] = [];
   for (const message of messages) {
     if (message.isRebuiltContext) continue;
     for (const tool of message.toolCalls ?? []) {
       if (tool.id === info.id) return runs;
-      if (tool.subagent?.lifecycleSource === 'session' && tool.subagent.agentId === info.agentId) {
+      if (tool.subagent?.agentId === info.agentId) {
         runs.push(tool);
       }
     }

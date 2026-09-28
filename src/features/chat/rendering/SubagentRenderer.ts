@@ -221,6 +221,9 @@ function ensureResultSection(state: SubagentState): SubagentSection {
 
   const section = createSection(state.contentEl, 'Result', 'claudian-subagent-result-body');
   section.wrapperEl.addClass('claudian-subagent-section-result');
+  // Earlier runs stay below the current run's result.
+  const history = state.contentEl.querySelector(':scope > .claudian-subagent-history');
+  if (history) state.contentEl.insertBefore(section.wrapperEl, history);
   state.resultSectionEl = section.wrapperEl;
   state.resultBodyEl = section.bodyEl;
   return section;

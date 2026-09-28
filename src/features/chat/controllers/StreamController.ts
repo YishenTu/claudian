@@ -745,7 +745,7 @@ export class StreamController {
     }
 
     // Check if it's an async task result
-    if (await this.#handleAsyncTaskToolResult(chunk)) {
+    if (await this.#handleAsyncTaskToolResult(chunk, msg)) {
       this.showThinkingIndicator();
       return;
     }
@@ -1156,9 +1156,20 @@ export class StreamController {
 
     if (finalized) {
       this.#applySubagentToTaskToolCall(taskToolCall, finalized);
+      this.#renderManagedSubagentHistory(msg, finalized);
     }
 
     this.showThinkingIndicator();
+  }
+
+  /** Managed cards learn their native agent identity from the task result, then show earlier runs of it. */
+  #renderManagedSubagentHistory(msg: ChatMessage, info: SubagentInfo | undefined): void {
+    const content = this.#getMessageContentEl(msg);
+    if (!info?.agentId || !content) return;
+    const card = [...content.querySelectorAll<HTMLElement>('[data-subagent-id], [data-async-subagent-id]')]
+      .find(element => (element.dataset.subagentId ?? element.dataset.asyncSubagentId) === info.id);
+    const { messages } = this.deps.state;
+    if (card) renderSubagentHistory(card, info, messages.includes(msg) ? messages : [...messages, msg]);
   }
 
   // ============================================
@@ -1185,7 +1196,8 @@ export class StreamController {
   }
 
   async #handleAsyncTaskToolResult(
-    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: unknown }
+    chunk: { type: 'tool_result'; id: string; content: string; isError?: boolean; toolUseResult?: unknown },
+    msg: ChatMessage,
   ): Promise<boolean> {
     const { subagentManager } = this.deps;
     if (
@@ -1199,6 +1211,7 @@ export class StreamController {
     await this.#hydrateAsyncSubagentHistory(
       subagentManager.getByTaskId(chunk.id),
     );
+    this.#renderManagedSubagentHistory(msg, subagentManager.getByTaskId(chunk.id));
     return true;
   }
 

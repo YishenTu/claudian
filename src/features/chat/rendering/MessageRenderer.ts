@@ -350,8 +350,9 @@ export class MessageRenderer {
       }
     } else if (msg.role === 'assistant') {
       this.#renderAssistantContent(msg, contentEl);
-      for (const card of contentEl.querySelectorAll<HTMLElement>('[data-subagent-id]')) {
-        const info = msg.toolCalls?.find(tool => tool.id === card.dataset.subagentId)?.subagent;
+      for (const card of contentEl.querySelectorAll<HTMLElement>('[data-subagent-id], [data-async-subagent-id]')) {
+        const id = card.dataset.subagentId ?? card.dataset.asyncSubagentId;
+        const info = msg.toolCalls?.find(tool => tool.id === id)?.subagent;
         if (info) renderSubagentHistory(card, info, allMessages ?? [msg]);
       }
       if (msg.isInterrupt) {
