@@ -23,7 +23,7 @@ type PendingPrompt = { resolve: (value: { stopReason: 'end_turn' | 'cancelled'; 
 interface PendingSteer { text: string; admission: Promise<SteerAdmission>; resolve: (delivered: boolean) => void; reject: (error: Error) => void; recall: Promise<void> | null }
 type SteerAdmission = 'admitted' | 'refused' | 'unknown';
 interface NativeModel { providerID: string; id: string; variant?: string }
-interface NativeChild { outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string> }
+interface NativeChild { outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
 interface NativeTool { name: string; input: Record<string, unknown> }
 
 /** V2 uses native HTTP events and interactions; ACP is only the v1 wire protocol. */
@@ -229,6 +229,10 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     if (nativeSessionId !== this.sessionId && !child) return;
     if (child) {
       if (event.type === 'session.text.ended') child.text.set(`${data.assistantMessageID}:${data.ordinal}`, String(data.text));
+      if (event.type === 'session.step.ended') {
+        child.progress.totalTokens += countTokens(data.tokens);
+        this.emitChildProgress(child);
+      }
       if (event.type.startsWith('session.execution.') && event.type !== 'session.execution.started') {
         if (child.background) this.options.onNativeTaskCompleted?.({
           type: 'async_subagent_completed', originatingTurnId: child.turnId, subagentId: nativeSessionId,
@@ -289,7 +293,13 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         const tool = this.tools.get(key);
         if (!tool) break;
         tool.input = normalizeOpencodeToolInput(tool.name, isRecord(data.input) ? data.input : {});
-        this.emit({ type: 'tool_started', ...identity, name: normalizeOpencodeToolName(tool.name), input: tool.input, providerPayload: { rawName: tool.name, rawInput: data.input } }, child?.outputSessionId);
+        const name = normalizeOpencodeToolName(tool.name);
+        this.emit({ type: 'tool_started', ...identity, name, input: tool.input, providerPayload: { rawName: tool.name, rawInput: data.input } }, child?.outputSessionId);
+        if (child) {
+          child.progress.toolUses += 1;
+          child.progress.lastToolName = name;
+          this.emitChildProgress(child);
+        }
         break;
       }
       case 'session.tool.progress': {
@@ -299,7 +309,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         if (tool?.name === 'subagent' && typeof metadata.sessionID === 'string' && turnId && !this.children.has(metadata.sessionID)) {
           const background = tool.input.run_in_background === true;
           const interactionTurnId = (background ? this.options.onNativeTaskStarted?.(metadata.sessionID, turnId) : undefined) ?? child?.interactionTurnId ?? turnId;
-          this.children.set(metadata.sessionID, { outputSessionId: background ? metadata.sessionID : child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background, text: new Map() });
+          this.children.set(metadata.sessionID, { outputSessionId: background ? metadata.sessionID : child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background, text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
         }
         if (typeof metadata.output === 'string') this.emit({ type: 'tool_output', ...identity, content: metadata.output }, child?.outputSessionId);
         break;
@@ -397,14 +407,13 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
 
   private emitUsage(value: unknown): void {
     if (!isRecord(value)) return;
-    const count = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
     const cache = isRecord(value.cache) ? value.cache : {};
     const model = this.models.find(model => model.id === this.model?.id && model.providerID === this.model?.providerID);
     const contextWindow = isRecord(model?.limit) ? count(model.limit.context) : 0;
     const inputTokens = count(value.input);
     const cacheReadInputTokens = count(cache.read);
     const cacheCreationInputTokens = count(cache.write);
-    const contextTokens = inputTokens + cacheReadInputTokens + cacheCreationInputTokens + count(value.output) + count(value.reasoning);
+    const contextTokens = countTokens(value);
     this.emit({ type: 'usage_updated', usage: {
       model: this.model ? `${this.model.providerID}/${this.model.id}` : undefined,
       inputTokens, cacheReadInputTokens, cacheCreationInputTokens, contextTokens, contextWindow,
@@ -416,6 +425,15 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     if (this.pending) this.pending.userMessageId = id;
   }
   private emit(event: OpencodeNativeOutput, childSessionId?: string): void { this.options.onNativeOutput?.(event, childSessionId); }
+
+  /** Child activity is display-only; the card owning the child's spawn tool shows it. */
+  private emitChildProgress(child: NativeChild): void {
+    const { startedAt, toolUses, totalTokens, lastToolName } = child.progress;
+    this.options.onNativeSubagentProgress?.({
+      toolCallId: child.toolCallId, toolUses, durationMs: Date.now() - startedAt,
+      ...(lastToolName ? { lastToolName } : {}), ...(totalTokens > 0 ? { totalTokens } : {}),
+    });
+  }
   /** Consumers treat the first user boundary as the submitted prompt, so it must precede any steer's. */
   private announcePrompt(): void {
     const pending = this.pending;
@@ -491,6 +509,17 @@ function toNativeInput(request: ACPPromptRequest): { text: string; files: Array<
 
 function nativeMessageId(): string {
   return `msg_${randomUUID().replaceAll('-', '')}`;
+}
+
+function count(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+/** Every token a native step processed, including cached input. */
+function countTokens(value: unknown): number {
+  if (!isRecord(value)) return 0;
+  const cache = isRecord(value.cache) ? value.cache : {};
+  return count(value.input) + count(cache.read) + count(cache.write) + count(value.output) + count(value.reasoning);
 }
 
 function errorText(error: unknown): string {

@@ -158,6 +158,7 @@ const server = http.createServer(async (req, res) => {
         emit('session.tool.input.started', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'tool_read', name: 'read' });
         emit('session.tool.called', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'tool_read', input: { path: '/workspace/notes.md' } });
         emit('session.tool.success', { sessionID: 'ses_child', assistantMessageID: 'msg_child', id: 'tool_read', content: [{ type: 'text', text: 'Child read result' }] });
+        emit('session.step.ended', { sessionID: 'ses_child', assistantMessageID: 'msg_child', tokens: { input: 900, output: 200, reasoning: 100, cache: { read: 300, write: 0 } } });
         if (body.text === 'background-overlap') {
           lateChild = () => {
             lateChild = undefined;
@@ -332,6 +333,11 @@ it('delivers child completion and automatic parent replies after the requested t
       providerPayload: { rawOutput: { content: [{ type: 'text', text: 'Child read result' }] } },
     });
     await background;
+    // Child activity reaches the parent card as display-only session progress.
+    expect(events.flatMap(event => event.type === 'subagent_progress' ? [event.progress] : [])).toEqual([
+      expect.objectContaining({ toolCallId: 'tool_child', toolUses: 1, lastToolName: 'Read' }),
+      expect.objectContaining({ toolCallId: 'tool_child', toolUses: 1, lastToolName: 'Read', totalTokens: 1500, durationMs: expect.any(Number) }),
+    ]);
     expect(events).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'async_subagent_completed', subagentId: 'ses_child', result: 'Child result', status: 'completed' }),
       expect.objectContaining({ type: 'text_delta', text: 'Automatic reply', scope: expect.objectContaining({ kind: 'background' }) }),

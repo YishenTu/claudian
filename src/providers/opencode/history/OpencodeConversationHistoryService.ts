@@ -25,6 +25,7 @@ import {
   mapOpencodeV2NativeMessages,
 } from './OpencodeHistoryStore';
 import { forkOpencodeSession } from './OpencodeSessionFork';
+import { hydrateOpencodeV2Subagents } from './OpencodeSubagentHistory';
 
 const OPENCODE_PROVIDER_STATE_KEYS = [
   'databasePath',
@@ -88,9 +89,14 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
 
 
     const messages = state.nativeVersion === 2
-      ? await this.withHttp(databasePath, vaultPath, pathContext, async client => mapOpencodeV2NativeMessages(
-          await readOpencodeHTTPMessages(client, sessionId), { sessionId, databasePath: databasePath ?? undefined },
-        )).catch(error => [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath: databasePath ?? undefined, reason: error instanceof Error ? error.message : String(error) })])
+      ? await this.withHttp(databasePath, vaultPath, pathContext, async client => {
+          const read = async (id: string) => mapOpencodeV2NativeMessages(
+            await readOpencodeHTTPMessages(client, id), { sessionId: id, databasePath: databasePath ?? undefined },
+          );
+          const messages = await read(sessionId);
+          await hydrateOpencodeV2Subagents(messages, read);
+          return messages;
+        }).catch(error => [createOpencodeHydrationDiagnosticMessage({ sessionId, databasePath: databasePath ?? undefined, reason: error instanceof Error ? error.message : String(error) })])
       : await loadOpencodeSessionMessages(
           sessionId,
           { databasePath: databasePath ?? undefined, nativeVersion: state.nativeVersion },

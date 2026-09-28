@@ -1,5 +1,6 @@
 import type { ProviderAsyncSubagentCompletedEvent, ProviderBackgroundOutputEvent, ProviderSessionConfig, ProviderSystemInstructions } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { SubagentProgress } from '@/core/types';
 import type { ACPPromptRequest, ACPPromptResponse, ACPSessionConfigOption, ACPSessionModelState, ACPSessionModeState, ACPSessionNotification } from '@/providers/acp';
 
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
@@ -26,6 +27,7 @@ export interface OpencodeSessionKernelOptions {
   readonly onNativeTaskStarted?: (sessionId: string, originatingTurnId: string) => string | undefined;
   readonly onNativeTaskCompleted?: (event: Omit<ProviderAsyncSubagentCompletedEvent, 'scope'>) => void;
   readonly onNativeOutput?: (event: OpencodeNativeOutput, childSessionId?: string) => void;
+  readonly onNativeSubagentProgress?: (progress: SubagentProgress) => void;
   readonly onNativeTurn?: (status: 'started' | 'completed', error?: string, requested?: boolean) => void;
   readonly config: ProviderSessionConfig;
   readonly databasePath?: string;

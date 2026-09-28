@@ -20,10 +20,26 @@ const server = http.createServer((req, res) => {
  const url = new URL(req.url, 'http://localhost');
  if (req.headers.authorization !== 'Basic ' + Buffer.from('opencode:' + process.env.OPENCODE_PASSWORD).toString('base64')) { res.writeHead(403).end(); return; }
  let data, cursor = {};
- if (url.pathname.endsWith('/message')) {
+ if (url.pathname === '/api/session/ses_worker/message') {
+   data = [
+     { id: 'msg_worker_user', type: 'user', time: { created: 3 }, text: 'Inspect notes' },
+     { id: 'msg_worker', type: 'assistant', time: { created: 4 }, content: [
+       { type: 'tool', id: 'call_read', name: 'read', state: { status: 'completed', input: { filePath: '/vault/notes.md' }, content: [{ type: 'text', text: 'Notes body' }] } },
+       { type: 'text', text: 'Worker summary' },
+     ] },
+   ];
+ } else if (url.pathname === '/api/session/ses_background/message') {
+   data = [{ id: 'msg_background', type: 'assistant', time: { created: 5 }, content: [{ type: 'text', text: 'Background answer' }] }];
+ } else if (url.pathname.endsWith('/message')) {
    if (url.searchParams.has('cursor')) {
      if (url.searchParams.has('order')) { res.writeHead(400).end(); return; }
-     data = [{ id: 'msg_answer', type: 'assistant', time: { created: 2 }, content: [{ type: 'text', text: 'Native answer' }] }];
+     data = [{ id: 'msg_answer', type: 'assistant', time: { created: 2 }, content: [
+       { type: 'tool', id: 'call_worker', name: 'subagent', state: { status: 'completed', input: { description: 'Inspect notes', prompt: 'Inspect notes', agent: 'worker' },
+         metadata: { sessionID: 'ses_worker' }, content: [{ type: 'text', text: '<subagent sessionID="ses_worker" state="completed">Worker summary</subagent>' }] } },
+       { type: 'tool', id: 'call_background', name: 'subagent', state: { status: 'completed', input: { description: 'Survey vault', prompt: 'Survey vault', background: true },
+         content: [{ type: 'text', text: 'The subagent is working in the background (sessionID: ses_background)' }] } },
+       { type: 'text', text: 'Native answer' },
+     ] }];
    } else { data = [{ id: 'msg_user', type: 'user', time: { created: 1 }, text: 'Native question' }]; cursor.next = 'opaque-next'; }
  } else if (url.pathname.endsWith('/fork') && req.method === 'POST') data = { id: 'ses_child' };
  else data = { id: 'ses_parent', model: { providerID: 'deepseek', id: 'chat' } };
@@ -39,6 +55,15 @@ process.stdin.resume(); process.stdin.on('end', () => server.close());
     await expect(history.recoverConversationModelSelection!(conversation, root, context)).resolves.toBe('opencode:deepseek/chat');
     Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, context));
     expect(conversation.messages.map(message => message.content)).toEqual(['Native question', 'Native answer']);
+    // The child session's own tools are restored into the parent's subagent card.
+    expect(conversation.messages[1].toolCalls?.[0].subagent).toMatchObject({
+      id: 'call_worker', agentId: 'ses_worker', description: 'Inspect notes', mode: 'sync', status: 'completed',
+      toolCalls: [{ id: 'call_read', name: 'Read', status: 'completed', result: 'Notes body' }],
+    });
+    // A background launch only acknowledges the child, so its answer comes from the child session.
+    expect(conversation.messages[1].toolCalls?.[1].subagent).toMatchObject({
+      id: 'call_background', agentId: 'ses_background', mode: 'async', asyncStatus: 'completed', result: 'Background answer', toolCalls: [],
+    });
     await expect(history.buildForkProviderState('ses_parent', '', conversation.providerState, root, context))
       .resolves.toMatchObject({ sessionId: 'ses_child', databasePath, nativeVersion: 2 });
   } finally { rmSync(root, { recursive: true, force: true }); }
