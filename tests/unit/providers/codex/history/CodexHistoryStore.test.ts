@@ -33,8 +33,13 @@ describe('CodexHistoryStore', () => {
     ];
     const tools = parseCodexSessionContent(records.map(record => JSON.stringify(record)).join('\n'))
       .flatMap(message => message.toolCalls ?? []);
-    expect(tools).toHaveLength(1);
-    expect(tools[0].subagent).toMatchObject({ id: 'spawn', agentId: 'child', lifecycleSource: 'session', status: 'error', prompt: '' });
+    expect(tools).toHaveLength(2);
+    expect(tools[0].subagent).toMatchObject({ id: 'spawn', agentId: 'child', lifecycleSource: 'session', status: 'completed', prompt: '', completedAt: testDate({ seconds: 5 }).getTime() });
+    expect(tools[1].subagent).toMatchObject({ id: 'followup', agentId: 'child', lifecycleSource: 'session', status: 'error', startedAt: testDate({ seconds: 7 }).getTime(), completedAt: testDate({ seconds: 9 }).getTime() });
+    const idleTools = parseCodexSessionContent(records.slice(0, -1).map(record => JSON.stringify(record)).join('\n'))
+      .flatMap(message => message.toolCalls ?? []);
+    expect(idleTools.filter(tool => tool.subagent)).toHaveLength(1);
+    expect(idleTools[1]).toMatchObject({ id: 'followup', name: 'send_input', status: 'completed' });
     const prefix = parseCodexSessionTurns(records.map(record => JSON.stringify(record)).join('\n'), 'first');
     expect(prefix.flatMap(turn => turn.messages.flatMap(message => message.toolCalls ?? []))[0].subagent)
       .toMatchObject({ status: 'completed', completedAt: testDate({ seconds: 5 }).getTime() });

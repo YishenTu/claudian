@@ -25,21 +25,37 @@ describe('CodexConversationHistoryService', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
-  it.each(['normal', 'pending fork', 'established fork'])('hydrates the completed child answer and identity from %s history', async mode => {
+  it.each(['normal', 'pending fork', 'established fork'].flatMap(mode =>
+    ['raw first', 'raw later', 'native only'].map(events => ({ mode, events })),
+  ))('hydrates separate child runs from $mode history with $events events', async ({ mode, events }) => {
     const root = path.join(tempHome, '.codex', 'sessions');
     fs.mkdirSync(root, { recursive: true });
     const record = (type: string, payload: Record<string, unknown>, seconds: number) => JSON.stringify({ type, payload, timestamp: testDate({ seconds }).toISOString() });
     const parentPath = path.join(root, 'rollout-parent.jsonl');
+    const followup = record('response_item', { type: 'function_call', call_id: 'followup', name: 'followup_task', namespace: 'collaboration', arguments: '{"target":"helper","message":"Run date"}' }, 6);
     fs.writeFileSync(parentPath, [
       record('event_msg', { type: 'task_started', turn_id: 'parent-turn' }, 0),
       record('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'spawn', kind: 'started', agent_thread_id: 'child', agent_path: '/root/helper' } }, 1),
+      record('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'running-message', kind: 'interacted', agent_thread_id: 'child', agent_path: '/root/helper' } }, 2),
       record('event_msg', { type: 'task_complete', turn_id: 'parent-turn' }, 2),
       record('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'done', kind: 'completed', agent_thread_id: 'child', agent_path: '/root/helper' } }, 5),
+      record('event_msg', { type: 'task_started', turn_id: 'earlier-idle-turn' }, 5.1),
+      record('event_msg', { type: 'item_completed', turn_id: 'earlier-idle-turn', item: { type: 'SubAgentActivity', id: 'earlier-idle-message', kind: 'interacted', agent_thread_id: 'child', agent_path: '/root/helper' } }, 5.2),
+      record('event_msg', { type: 'task_complete', turn_id: 'earlier-idle-turn' }, 5.3),
       record('event_msg', { type: 'task_started', turn_id: 'later-parent-turn' }, 6),
-      record('response_item', { type: 'function_call', call_id: 'followup', name: 'followup_task', namespace: 'collaboration', arguments: '{"target":"helper","message":"Run date"}' }, 6),
-      record('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'followup', kind: 'interacted', agent_thread_id: 'child', agent_path: '/root/helper' } }, 6),
-      record('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'done-2', kind: 'completed', agent_thread_id: 'child', agent_path: '/root/helper' } }, 9),
-      record('event_msg', { type: 'task_complete', turn_id: 'later-parent-turn' }, 10),
+      ...(events === 'raw first' ? [followup] : []),
+      record('event_msg', { type: 'item_completed', turn_id: 'later-parent-turn', item: { type: 'SubAgentActivity', id: 'followup', kind: 'interacted', agent_thread_id: 'child', agent_path: '/root/helper' } }, 6),
+      ...(events === 'raw later' ? [followup] : []),
+      record('event_msg', { type: 'item_completed', turn_id: 'later-parent-turn', item: { type: 'SubAgentActivity', id: 'same-turn-message', kind: 'interacted', agent_thread_id: 'child', agent_path: '/root/helper' } }, 7),
+      record('event_msg', { type: 'task_complete', turn_id: 'later-parent-turn' }, 7),
+      record('event_msg', { type: 'task_started', turn_id: 'steering-parent-turn' }, 8),
+      record('event_msg', { type: 'item_completed', turn_id: 'steering-parent-turn', item: { type: 'SubAgentActivity', id: 'followup-running-message', kind: 'interacted', agent_thread_id: 'child', agent_path: '/root/helper' } }, 8),
+      record('event_msg', { type: 'item_completed', turn_id: 'later-parent-turn', item: { type: 'SubAgentActivity', id: 'done-2', kind: 'completed', agent_thread_id: 'child', agent_path: '/root/helper' } }, 9),
+      record('event_msg', { type: 'task_complete', turn_id: 'steering-parent-turn' }, 10),
+      record('event_msg', { type: 'task_started', turn_id: 'idle-parent-turn' }, 11),
+      ...(events === 'native only' ? [] : [record('response_item', { type: 'function_call', call_id: 'idle-message', name: 'send_message', arguments: '{"target":"helper","message":"Thanks"}' }, 12)]),
+      record('event_msg', { type: 'item_completed', item: { type: 'SubAgentActivity', id: 'idle-message', kind: 'interacted', agent_thread_id: 'child', agent_path: '/root/helper' } }, 12),
+      record('event_msg', { type: 'task_complete', turn_id: 'idle-parent-turn' }, 13),
     ].join('\n'));
     fs.writeFileSync(path.join(root, 'rollout-child.jsonl'), [
       record('session_meta', { id: 'child', source: { subagent: { thread_spawn: { agent_nickname: 'Bohr', parent_thread_id: 'parent' } } } }, 1),
@@ -69,10 +85,19 @@ describe('CodexConversationHistoryService', () => {
       expect(readFile.mock.calls.filter(([file]) => file === parentPath)).toHaveLength(1);
       const cards = result.messages!.flatMap(message => message.toolCalls ?? []).filter(tool => tool.subagent);
       expect(cards).toHaveLength(mode === 'normal' ? 2 : 1);
-      const laterCards = mode === 'normal' ? [{ id: 'followup', result: 'Future answer.', toolCalls: [{ id: 'date-call' }] }] : [];
+      const owner = result.messages!.find(message => message.toolCalls?.some(tool => tool.id === 'followup'));
+      expect(owner?.timestamp).toBe(mode === 'normal' ? testDate({ seconds: 6 }).getTime() : undefined);
+      const tools = result.messages!.flatMap(message => message.toolCalls ?? []);
+      expect(tools.filter(tool => tool.id === 'idle-message')).toHaveLength(mode === 'normal' ? 1 : 0);
+      expect(tools.find(tool => tool.id === 'idle-message')?.subagent).toBeUndefined();
+      expect(tools.find(tool => tool.id === 'earlier-idle-message')?.subagent).toBeUndefined();
+      expect(tools.find(tool => tool.id === 'same-turn-message')?.subagent).toBeUndefined();
+      expect(tools.find(tool => tool.id === 'running-message')?.subagent).toBeUndefined();
+      expect(tools.find(tool => tool.id === 'followup-running-message')?.subagent).toBeUndefined();
+      const laterCards = mode === 'normal' ? [{ id: 'followup', status: 'completed', startedAt: testDate({ seconds: 6 }).getTime(), completedAt: testDate({ seconds: 9 }).getTime(), prompt: events === 'native only' ? '' : 'Run date', result: 'Future answer.', toolCalls: [{ id: 'date-call' }] }] : [];
       expect(cards.slice(1).map(tool => tool.subagent)).toMatchObject(laterCards);
       expect(cards[0].subagent).toMatchObject({
-        status: 'completed', result: 'Ready.', description: 'Bohr (child-model, high)',
+        status: 'completed', completedAt: testDate({ seconds: 5 }).getTime(), result: 'Ready.', description: 'Bohr (child-model, high)',
         toolCalls: [expect.objectContaining({ id: 'clock-call', status: 'completed', result: expect.stringContaining('Clock result') })],
       });
     } finally { readFile.mockRestore(); }
