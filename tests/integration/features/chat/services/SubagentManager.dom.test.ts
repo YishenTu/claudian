@@ -1,4 +1,7 @@
 /** @jest-environment jsdom */
+import '@/providers';
+
+import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, screen, within } from '@testing-library/dom';
 import fs from 'fs';
 import { axe } from 'jest-axe';
@@ -6,16 +9,273 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { NOOP_TASK_RESULT_INTERPRETER } from '@/core/providers/NoopTaskResultInterpreter';
-import type { SubagentInfo } from '@/core/types';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ProviderSubagentLifecycleAdapter } from '@/core/providers/types';
+import type { ChatMessage, SubagentInfo, ToolCallInfo } from '@/core/types';
+import { StreamController } from '@/features/chat/controllers/StreamController';
+import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { createAsyncSubagentBlock, createSubagentBlock, updateAsyncSubagentBlock, updateSubagentBlock } from '@/features/chat/rendering/SubagentRenderer';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
+import { ChatState } from '@/features/chat/state/ChatState';
 import { ClaudeTaskResultInterpreter } from '@/providers/claude/runtime/ClaudeTaskResultInterpreter';
+import { CodexSubagentTracker } from '@/providers/codex/execution/CodexSubagentTracker';
+import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
+import { codexSubagentLifecycleAdapter } from '@/providers/codex/normalization/codexSubagentNormalization';
+import type { Thread } from '@/providers/codex/runtime/codexAppServerTypes';
+import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 
-afterEach(() => document.body.replaceChildren());
+const cleanups: Array<() => void> = [];
+afterEach(() => {
+  cleanups.splice(0).forEach(cleanup => cleanup());
+  document.body.replaceChildren();
+});
+
+function createCodexLifecycleView() {
+  const parent = document.body.createDiv();
+  const manager = new SubagentManager(() => {}, NOOP_TASK_RESULT_INTERPRETER);
+  const tools: ToolCallInfo[] = [];
+  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const renderer = new MessageRenderer(plugin,
+    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, parent,
+    undefined, undefined, () => ProviderRegistry.getCapabilities('codex'));
+  const state = new ChatState();
+  const stream = new StreamController({ plugin, state, renderer, subagentManager: manager,
+    getMessagesEl: () => parent, getProviderId: () => 'codex', updateQueueIndicator: () => {} });
+  const message: ChatMessage = {
+    id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [], toolCalls: tools,
+  };
+  state.addMessage(message);
+  state.currentContentEl = renderer.addMessage(message).querySelector('.claudian-message-content');
+  let pending = Promise.resolve();
+  const router = new CodexNotificationRouter(chunk => {
+    pending = pending.then(() => stream.handleStreamChunk(chunk, message));
+  }, '/workspace');
+  cleanups.push(() => { stream.dispose(); manager.clear(); renderer.dispose(); });
+  return { parent, manager, tools, router, renderer, message, stream, state, flush: () => pending };
+}
+
+it.each(['native', 'raw-first', 'canonical-first'])('renders %s Codex identity, progress, and final output without losing the answer on close', async source => {
+  const { parent, tools, router, flush } = createCodexLifecycleView();
+  const notify = (id: string, tool: string, status: string, message: string | null) => {
+    router.handleNotification('item/completed', {
+      threadId: 'main', turnId: 'turn', item: {
+        type: 'collabAgentToolCall', id, tool, status: 'completed', senderThreadId: 'main',
+        receiverThreadIds: ['child'], prompt: tool === 'spawnAgent' ? 'Review the storage code.' : null,
+        model: tool === 'spawnAgent' ? 'test-model' : null, reasoningEffort: tool === 'spawnAgent' ? 'high' : null,
+        agentsStates: { child: { status, message } },
+      },
+    });
+  };
+
+  const rawSpawn = () => {
+    router.handleNotification('rawResponseItem/completed', {
+      threadId: 'main', turnId: 'turn', item: {
+        type: 'function_call', call_id: 'spawn', name: 'spawn_agent',
+        arguments: JSON.stringify({ message: 'Review the storage code.', agent_type: 'explorer', task_name: 'reviewer' }),
+      },
+    });
+  };
+  if (source === 'raw-first') rawSpawn();
+  router.handleNotification('item/started', {
+    threadId: 'main', turnId: 'turn', item: {
+      type: 'collabAgentToolCall', id: 'spawn', tool: 'spawnAgent', status: 'inProgress',
+      prompt: 'Review the storage code.', model: 'test-model', reasoningEffort: 'high', receiverThreadIds: [], agentsStates: {},
+    },
+  });
+  if (source === 'canonical-first') rawSpawn();
+  notify('spawn', 'spawnAgent', 'running', null);
+  await flush();
+  expect(tools[0].subagent).toMatchObject({ agentId: 'child', prompt: 'Review the storage code.' });
+  expect(tools[0].input.agent_type).toBe(source === 'native' ? undefined : 'explorer');
+  expect(tools[0].input.task_name).toBe(source === 'native' ? undefined : 'reviewer');
+  const header = within(parent).getByRole('button', { name: /Subagent task:.*test-model.*high/ });
+  fireEvent.click(header);
+  fireEvent.click(within(parent).getByRole('button', { name: /^Prompt/ }));
+  expect(within(parent).getByText('Review the storage code.')).toBeDefined();
+
+  notify('list', 'listAgents', 'running', 'Checking storage invariants.');
+  await flush();
+  expect(within(parent).getByText('Checking storage invariants.')).toBeDefined();
+  expect(tools[0].subagent?.result).toBeUndefined();
+  expect(tools[0].subagent).not.toHaveProperty('progress');
+
+  notify('wait', 'wait', 'completed', 'Storage invariants hold.');
+  await flush();
+  expect(within(parent).queryByText('Checking storage invariants.')).toBeNull();
+  const result = within(parent).getByRole('button', { name: /^Result/ });
+  fireEvent.click(result);
+  result.focus();
+  notify('close', 'closeAgent', 'shutdown', null);
+  await flush();
+  expect(tools[0].subagent).toMatchObject({ status: 'completed', result: 'Storage invariants hold.' });
+  expect(within(parent).getByText('Storage invariants hold.')).toBeDefined();
+  expect(document.activeElement).toBe(result);
+  notify('followup', 'followupTask', 'running', 'Checking the follow-up.');
+  await flush();
+  expect(tools[0].subagent).toMatchObject({ status: 'running', result: undefined });
+  expect(within(parent).getByText('Checking the follow-up.')).toBeDefined();
+  notify('cancel-followup', 'closeAgent', 'shutdown', null);
+  await flush();
+  expect(tools[0].subagent).toMatchObject({ status: 'error', result: 'Agent shut down' });
+  expect(within(parent).queryByText('Checking the follow-up.')).toBeNull();
+  expect(await axe(parent)).toHaveNoViolations();
+});
+
+it.each(['native', 'raw'])('matches %s lifecycle updates to an agent with a task name and thread ID', async source => {
+  const { parent, tools, router, renderer, message, flush } = createCodexLifecycleView();
+  for (const item of [
+    { type: 'function_call', call_id: 'spawn', name: 'spawn_agent', arguments: '{"task_name":"reviewer","message":"Review"}' },
+    { type: 'function_call_output', call_id: 'spawn', output: '{"task_name":"reviewer"}' },
+  ]) router.handleNotification('rawResponseItem/completed', { threadId: 'main', turnId: 'turn', item });
+  router.handleNotification('item/completed', {
+    threadId: 'main', turnId: 'turn', item: {
+      type: 'collabAgentToolCall', id: 'spawn', tool: 'spawnAgent', status: 'completed',
+      receiverThreadIds: ['child-thread'], agentsStates: { 'child-thread': { status: 'running', message: null } },
+    },
+  });
+  await flush();
+  expect(tools[0].subagent).toMatchObject({ agentId: 'child-thread', description: 'reviewer' });
+  if (source === 'raw') {
+    for (const item of [
+      { type: 'function_call', call_id: 'wait', name: 'wait_agent', arguments: '{"targets":["reviewer"]}' },
+      { type: 'function_call_output', call_id: 'wait', output: '{"status":{"reviewer":{"completed":"Review complete"}}}' },
+    ]) router.handleNotification('rawResponseItem/completed', { threadId: 'main', turnId: 'turn', item });
+  }
+  router.handleNotification('item/completed', {
+    threadId: 'main', turnId: 'turn', item: {
+      type: 'collabAgentToolCall', id: 'wait', tool: 'wait', status: 'completed',
+      receiverThreadIds: source === 'raw' ? [] : ['child-thread'],
+      agentsStates: source === 'raw' ? {} : { 'child-thread': { status: 'completed', message: 'Review complete' } },
+    },
+  });
+  await flush();
+  expect(tools[0].subagent).toMatchObject({ status: 'completed', result: 'Review complete' });
+  parent.replaceChildren();
+  const retained = { ...message, contentBlocks: tools.map(tool => ({ type: 'tool_use' as const, toolId: tool.id })) };
+  renderer.renderStoredMessage(retained, [retained], 0);
+  expect(within(parent).queryByRole('button', { name: /^wait(?:_agent)? - click to expand$/i, hidden: true })).toBeNull();
+  fireEvent.click(within(parent).getByRole('button', { name: /Subagent task: reviewer/ }));
+  fireEvent.click(within(parent).getByRole('button', { name: /^Result/ }));
+  expect(within(parent).getByText('Review complete')).toBeDefined();
+});
+
+it.each(['live', 'history'] as const)('keeps raw Codex identity and completion details in %s cards', async mode => {
+  const { parent, manager, tools, router, flush } = createCodexLifecycleView();
+  const calls = [
+    { id: 'spawn', name: 'spawn_agent', input: { message: 'Review storage.', model: 'test-model-with-a-long-name', reasoning_effort: 'high', agent_type: 'explorer' },
+      output: { agent_id: 'child', nickname: 'Ada' } },
+    { id: 'wait', name: 'wait', input: { ids: ['child'] }, output: { status: { child: { completed: 'Storage is correct.' } } } },
+    { id: 'close', name: 'close_agent', input: { id: 'child' }, output: { previous_status: { completed: 'Storage is correct.' } } },
+  ];
+  const payloads = calls.flatMap(call => [
+    { type: 'function_call', call_id: call.id, name: call.name, arguments: JSON.stringify(call.input) },
+    { type: 'function_call_output', call_id: call.id, output: JSON.stringify(call.output) },
+  ]);
+  if (mode === 'live') {
+    for (const item of payloads) {
+      router.handleNotification('rawResponseItem/completed', { threadId: 'main', turnId: 'turn', item });
+      if (item.type === 'function_call_output') {
+        // Canonical snapshots must not replace richer raw output (including the nickname).
+        router.handleNotification('item/completed', {
+          threadId: 'main', turnId: 'turn', item: {
+            type: 'collabAgentToolCall', id: item.call_id,
+            tool: item.call_id === 'spawn' ? 'spawnAgent' : item.call_id === 'close' ? 'closeAgent' : 'wait',
+            status: 'completed', receiverThreadIds: ['child'],
+            agentsStates: { child: { status: item.call_id === 'spawn' ? 'running' : item.call_id === 'close' ? 'shutdown' : 'completed', message: null } },
+          },
+        });
+      }
+    }
+    await flush();
+  } else {
+    const messages = parseCodexSessionContent(payloads.map((payload, index) => JSON.stringify({
+      type: 'response_item', timestamp: testTime({ seconds: index }), payload,
+    })).join('\n'));
+    tools.push(...messages.flatMap(message => message.toolCalls ?? []));
+    manager.updateLifecycleSpawn(tools[0], tools, codexSubagentLifecycleAdapter, parent);
+  }
+  expect(tools[0].subagent).toMatchObject({
+    agentId: 'child', description: 'Ada (explorer, test-model-with-a-long-name, high)', prompt: 'Review storage.',
+    result: 'Storage is correct.', status: 'completed',
+  });
+  const header = within(parent).getByRole('button', { name: /Subagent task: Ada.*test-model-with-a-long-name, high/ });
+  expect(header.title).toBe('Ada (explorer, test-model-with-a-long-name, high)');
+  fireEvent.click(header);
+  fireEvent.click(within(parent).getByRole('button', { name: /^Result/ }));
+  expect(within(parent).getByText('Storage is correct.')).toBeDefined();
+});
+
+it.each(['raw-output', 'item-result', 'text-output'])(
+  'combines %s acknowledgements with native follow-up state', async source => {
+    const { parent, tools, router, flush } = createCodexLifecycleView();
+    const complete = (id: string, tool: string, status: string, message: string | null, result?: unknown) => {
+      router.handleNotification('item/completed', {
+        threadId: 'main', turnId: 'turn', item: {
+          type: 'collabAgentToolCall', id, tool, status: 'completed',
+          receiverThreadIds: ['child'], agentsStates: { child: { status, message } }, result,
+        },
+      });
+    };
+    complete('spawn', 'spawnAgent', 'running', null);
+    complete('wait', 'wait', 'completed', 'First answer');
+    await flush();
+    expect(tools[0].subagent).toMatchObject({ status: 'completed', result: 'First answer' });
+
+    const acknowledgement = source === 'text-output' ? 'Queued follow-up' : { submission_id: 'submission' };
+    if (source !== 'item-result') {
+      for (const item of [
+        { type: 'function_call', call_id: 'followup', name: 'send_input', arguments: '{"id":"child","message":"Check again"}' },
+        { type: 'function_call_output', call_id: 'followup', output: typeof acknowledgement === 'string' ? acknowledgement : JSON.stringify(acknowledgement) },
+      ]) router.handleNotification('rawResponseItem/completed', { threadId: 'main', turnId: 'turn', item });
+    }
+    complete('followup', 'sendInput', 'running', 'Checking the follow-up', source === 'item-result' ? acknowledgement : undefined);
+    await flush();
+    expect(tools[0].subagent).toMatchObject({ status: 'running', result: undefined });
+    expect(within(parent).queryByText('First answer')).toBeNull();
+    expect(within(parent).getByText('Checking the follow-up')).toBeDefined();
+    expect(tools.find(tool => tool.id === 'followup')?.result).toContain(source === 'text-output' ? 'Queued follow-up' : 'submission');
+    complete('wait-again', 'wait', 'completed', 'Second answer');
+    await flush();
+    expect(tools[0].subagent).toMatchObject({ status: 'completed', result: 'Second answer' });
+    expect(within(parent).queryByText('Checking the follow-up')).toBeNull();
+  },
+);
+
+it('honors provider lifecycle state and ignores late progress after completion', () => {
+  const parent = document.body.createDiv();
+  const manager = new SubagentManager(() => {}, NOOP_TASK_RESULT_INTERPRETER);
+  const spawn: ToolCallInfo = { id: 'spawn', name: 'launch', input: {}, status: 'completed' };
+  const close: ToolCallInfo = { id: 'close', name: 'close', input: { target: 'alias' }, status: 'running' };
+  const tools = [spawn, close];
+  const adapter: ProviderSubagentLifecycleAdapter = {
+    protocol: 'lifecycle', isHiddenTool: () => true,
+    isToolCallFullyOwned: (tool, identities) => identities.has(String(tool.input.target)),
+    isSpawnTool: name => name === 'launch', isWaitTool: () => false, isCloseTool: name => name === 'close',
+    resolveSpawnToolIds: (tool, identities) => {
+      const id = identities.get(String(tool.input.target));
+      return id ? [id] : [];
+    },
+    extractSpawnResult: () => ({ agentId: 'child', aliases: ['alias'] }),
+    extractWaitResult: () => ({ statuses: {}, timedOut: false }),
+    buildSubagentInfo: () => ({
+      id: 'spawn', description: 'Provider task', agentId: 'child', isExpanded: false, toolCalls: [],
+      status: close.status === 'completed' ? 'completed' : 'running',
+      result: close.status === 'completed' ? 'Provider answer' : undefined,
+    }),
+    getProgress: () => ({ toolCallId: 'spawn', summary: 'Provider activity' }),
+  };
+  manager.updateLifecycleSpawn(spawn, tools, adapter, parent);
+  expect(within(parent).getByText('Provider activity')).toBeDefined();
+  manager.handleLifecycleResult(close, 'Closed', false, tools, adapter);
+  manager.applyProgress({ toolCallId: 'spawn', summary: 'Late activity' });
+  expect(within(parent).queryByText('Provider activity')).toBeNull();
+  expect(within(parent).queryByText('Late activity')).toBeNull();
+  expect(spawn.subagent).toMatchObject({ status: 'completed', result: 'Provider answer' });
+});
 
 it('normalizes a completed synchronous answer containing not-ready prose', () => {
   const manager = new SubagentManager(() => {}, new ClaudeTaskResultInterpreter());
@@ -156,4 +416,202 @@ it('preserves async prompt expansion and focus on repeated tool snapshots', () =
     expect(document.activeElement).toBe(prompt);
     expect(updated.getAttribute('aria-expanded')).toBe('true');
   } finally { manager.clear(); }
+});
+
+
+it.each(['before spawn', 'after spawn', 'native only'])('keeps the native Codex card updated with session events %s, parent settlement, and a follow-up', async timing => {
+  const view = createCodexLifecycleView();
+  let tracker = new CodexSubagentTracker(info => view.stream.handleSubagentUpdate(info), async () => {
+    throw new Error('Child read unavailable');
+  });
+  const started = { type: 'subAgentActivity' as const, id: 'spawn', kind: 'started' as const,
+    agentThreadId: 'child', agentPath: '/root/helper' };
+  if (timing === 'before spawn') tracker.activity(started, 'parent-turn');
+  view.router.handleNotification('rawResponseItem/completed', { threadId: 'parent', turnId: 'parent-turn', item: {
+    type: 'function_call', call_id: 'spawn', name: 'spawn_agent',
+    arguments: JSON.stringify({ task_name: 'helper', message: 'gAAAAAEncryptedPrompt==' }),
+  } });
+  await view.flush();
+  if (timing !== 'before spawn') tracker.activity(started, 'parent-turn');
+  view.router.handleNotification('item/completed', { threadId: 'parent', turnId: 'parent-turn', item: started });
+  await view.flush();
+  expect(view.parent.querySelectorAll('.claudian-subagent-list')).toHaveLength(1);
+  expect(view.parent.textContent).not.toContain('gAAAAA');
+  expect(within(view.parent).queryByRole('button', { name: /^Prompt/ })).toBeNull();
+  expect(view.parent.textContent).not.toContain('No prompt provided');
+  expect(view.tools).toHaveLength(1);
+  view.stream.resetStreamingState();
+  view.renderer.renderMessages(view.state.messages, () => 'Hello');
+  tracker.turnStarted('child', 'child-turn');
+  for (const item of [
+    { type: 'custom_tool_call', call_id: 'clock-call', name: 'exec', input: 'const t = await tools.clock__curr_time({}); text(t.current_time);' },
+    { type: 'custom_tool_call_output', call_id: 'clock-call', output: [{ type: 'input_text', text: 'Clock result' }] },
+  ]) tracker.handleNotification('child', 'child-turn', 'rawResponseItem/completed', { threadId: 'child', turnId: 'child-turn', item });
+  tracker.turnCompleted('child', { id: 'child-turn', status: 'completed', error: null, items: [
+    { type: 'agentMessage', id: 'answer', text: 'Ready.', phase: 'final_answer', memoryCitation: null },
+  ] });
+  expect(view.tools[0].subagent).toMatchObject({ status: 'completed', result: 'Ready.' });
+  expect(view.parent.textContent).toContain('Ready.');
+  expect(view.parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(1);
+  expect(view.parent.textContent).toContain('clock__curr_time');
+  expect(view.parent.textContent).toContain('Clock result');
+  // A reopened conversation already has raw-only child tools from history.
+  tracker = new CodexSubagentTracker(info => view.stream.handleSubagentUpdate(info), async () => ({
+    id: 'child', turns: [{ id: 'child-turn', status: 'completed', error: null, items: [
+      { type: 'agentMessage', id: 'answer', phase: 'final_answer', text: 'Ready.', memoryCitation: null },
+    ] }],
+  } as Thread));
+  tracker.seed({ id: 'parent', turns: [{ id: 'parent-turn', status: 'completed', error: null,
+    items: [started, { ...started, id: 'completed', kind: 'completed' }],
+  }] } as Thread);
+  tracker.activity({ ...started, id: 'idle-message', kind: 'interacted' }, 'later-parent-turn');
+  await Promise.resolve();
+  expect(view.parent.querySelectorAll('.claudian-subagent-tool-item')).toHaveLength(1);
+  expect(view.parent.textContent).toContain('Ready.');
+  const laterMessage: ChatMessage = { id: 'later', role: 'assistant', content: '', timestamp: testDate().getTime(), toolCalls: [] };
+  view.state.addMessage(laterMessage);
+  view.state.currentContentEl = view.renderer.addMessage(laterMessage).querySelector('.claudian-message-content');
+  const followup = { type: 'tool_use' as const, id: 'followup', name: 'followup_task', input: { target: 'helper', message: 'Run bash date' } };
+  let followupWork = Promise.resolve();
+  const followupRouter = new CodexNotificationRouter(chunk => {
+    followupWork = followupWork.then(() => view.stream.handleStreamChunk(chunk, laterMessage));
+  }, '/workspace');
+  const emitFollowupRaw = () => {
+    followupRouter.handleNotification('rawResponseItem/completed', { threadId: 'parent', turnId: 'later-parent-turn', item: {
+      type: 'function_call', call_id: followup.id, name: followup.name, arguments: JSON.stringify(followup.input),
+    } });
+    return followupWork;
+  };
+  if (timing === 'after spawn') await emitFollowupRaw();
+  const interaction = { ...started, id: 'followup', kind: 'interacted' as const };
+  tracker.activity(interaction, 'later-parent-turn');
+  followupRouter.handleNotification('item/completed', { threadId: 'parent', turnId: 'later-parent-turn', item: interaction });
+  await followupWork;
+  tracker.turnStarted('child', 'child-turn-2');
+  if (timing === 'before spawn') await emitFollowupRaw();
+  expect(view.tools[0].subagent).toMatchObject({ status: 'completed', result: 'Ready.' });
+  expect(laterMessage.toolCalls![0].subagent).toMatchObject({ id: 'followup', status: 'running', toolCalls: [] });
+  followupRouter.handleNotification('item/started', { threadId: 'parent', turnId: 'later-parent-turn', item: {
+    type: 'collabAgentToolCall', id: 'native-wait', tool: 'wait', status: 'inProgress', senderThreadId: 'parent',
+    receiverThreadIds: [], agentsStates: {},
+  } });
+  await followupWork;
+  await view.stream.handleStreamChunk({ type: 'done' }, laterMessage);
+  expect(view.state.currentContentEl!.querySelector('[data-tool-id="native-wait"]')).toBeNull();
+  const liveHistory = within(view.state.currentContentEl!).getByRole('button', { name: 'Previous runs (1)' });
+  liveHistory.focus();
+  const dateItems = timing === 'native only' ? [
+    { type: 'commandExecution', id: 'date-call', command: "bash -lc 'date'", cwd: '/workspace',
+      commandActions: [{ type: 'unknown', command: "bash -lc 'date'" }], status: 'completed',
+      aggregatedOutput: 'Date result', exitCode: 0, durationMs: 1 },
+  ] : [
+    { type: 'custom_tool_call', call_id: 'date-call', name: 'exec', input: "text(await tools.exec_command({cmd: \"bash -lc 'date'\"}));" },
+    { type: 'custom_tool_call_output', call_id: 'date-call', output: [{ type: 'input_text', text: 'Date result' }] },
+  ];
+  for (const item of dateItems) tracker.handleNotification('child', 'child-turn-2',
+    item.type === 'commandExecution' ? 'item/completed' : 'rawResponseItem/completed',
+    { threadId: 'child', turnId: 'child-turn-2', item });
+  expect(view.state.currentContentEl!.textContent).toContain('Date result');
+  tracker.turnCompleted('child', { id: 'child-turn-2', status: 'completed', error: null, items: [
+    { type: 'agentMessage', id: 'answer-2', text: 'Two.', phase: 'final_answer', memoryCitation: null },
+  ] });
+  expect(document.activeElement).toBe(liveHistory);
+  await view.stream.handleStreamChunk({ type: 'tool_result', id: 'followup', content: '' }, laterMessage);
+  await view.stream.handleStreamChunk({ type: 'tool_use', id: 'wait', name: 'wait_agent', input: { targets: ['helper'] } }, laterMessage);
+  await view.stream.handleStreamChunk({ type: 'tool_result', id: 'wait', content: 'aborted by user', isError: true }, laterMessage);
+  const finalMessage: ChatMessage = { id: 'final-run', role: 'assistant', content: '', timestamp: testDate().getTime(), toolCalls: [] };
+  view.state.addMessage(finalMessage);
+  view.state.currentContentEl = view.renderer.addMessage(finalMessage).querySelector('.claudian-message-content');
+  await view.stream.handleStreamChunk({ type: 'tool_use', id: 'followup-2', name: 'followup_task', input: { target: 'helper', message: 'One more run' } }, finalMessage);
+  tracker.activity({ ...started, id: 'followup-2', kind: 'interacted' }, 'final-parent-turn');
+  tracker.turnStarted('child', 'child-turn-3');
+  tracker.turnCompleted('child', { id: 'child-turn-3', status: 'completed', error: null, items: [
+    { type: 'agentMessage', id: 'answer-3', text: 'Three.', phase: 'final_answer', memoryCitation: null },
+  ] });
+  const savedMessages = JSON.stringify(view.state.messages);
+  for (const reload of [false, true]) {
+    if (reload) view.renderer.renderMessages(view.state.messages, () => 'Hello');
+    const original = view.parent.querySelector('[data-message-id="response"]')! as HTMLElement;
+    const later = view.parent.querySelector('[data-message-id="later"]')! as HTMLElement;
+    expect(original.querySelectorAll('.claudian-subagent-list')).toHaveLength(1);
+    expect(original.textContent).toContain('Ready.');
+    expect(original.textContent).toContain('Clock result');
+    expect(original.textContent).not.toContain('Date result');
+    expect(later.querySelectorAll('.claudian-subagent-list')).toHaveLength(1);
+    expect(later.textContent).toContain('Two.');
+    expect(later.textContent).toContain('Date result');
+    expect(later.textContent).not.toContain('Clock result');
+    expect(view.parent.textContent).not.toContain('aborted by user');
+    expect(within(original).queryByRole('button', { name: /^Previous runs/ })).toBeNull();
+    const history = within(later).getByRole('button', { name: 'Previous runs (1)' });
+    expect(history.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(history);
+    const run = within(later).getByRole('button', { name: 'Run 1 · Completed' });
+    expect(run.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(run);
+    const runBody = document.getElementById(run.getAttribute('aria-controls')!)!;
+    expect(within(runBody).getByRole('button', { name: /^Result/ }).getAttribute('aria-expanded')).toBe('true');
+    expect(later.textContent).toContain('Clock result');
+    expect(later.textContent).toContain('Ready.');
+    expect(later.textContent).not.toContain('Three.');
+    expect(later.querySelectorAll('[data-subagent-id="spawn"]')).toHaveLength(0);
+    expect(within(later).queryByRole('button', { name: 'Go to original turn' })).toBeNull();
+    const final = view.parent.querySelector('[data-message-id="final-run"]')! as HTMLElement;
+    fireEvent.click(within(final).getByRole('button', { name: 'Previous runs (2)' }));
+    expect(within(final).getAllByRole('button', { name: /^Run \d/ }).map(button => button.textContent))
+      .toEqual(['Run 1 · Completed', 'Run 2 · Completed']);
+    fireEvent.click(within(final).getByRole('button', { name: 'Run 2 · Completed' }));
+    expect(final.textContent!.includes('Run bash date')).toBe(timing !== 'native only');
+    expect(final.textContent).toContain('Date result');
+    expect(final.textContent).toContain('Two.');
+    expect(final.textContent).not.toContain('Clock result');
+    expect(JSON.stringify(view.state.messages)).toBe(savedMessages);
+    expect(await axe(view.parent)).toHaveNoViolations();
+  }
+});
+
+
+it('shows previous runs after completed-turn regrouping without navigation or other agents', async () => {
+  const view = createCodexLifecycleView();
+  const tool = (id: string, agentId: string): ToolCallInfo => ({
+    id, name: 'spawn_agent', input: {}, status: 'completed',
+    subagent: { id, agentId, lifecycleSource: 'session', description: 'Helper', status: 'completed',
+      prompt: `${id} prompt`, result: `${id} result`, isExpanded: false, toolCalls: [] },
+  });
+  const messages: ChatMessage[] = [
+    { id: 'intro', role: 'assistant', content: 'Starting', timestamp: testDate().getTime() },
+    { id: 'original', role: 'assistant', content: 'First answer', timestamp: testDate().getTime(), durationSeconds: 1,
+      responseContinuationOf: 'intro', toolCalls: [tool('other', 'other-child'), tool('first', 'child')],
+      contentBlocks: [{ type: 'tool_use', toolId: 'other' }, { type: 'tool_use', toolId: 'first' }, { type: 'text', content: 'First answer' }] },
+    { id: 'request', role: 'user', content: 'Continue', timestamp: testDate().getTime() },
+    { id: 'next', role: 'assistant', content: 'Next answer', timestamp: testDate().getTime(), durationSeconds: 2,
+      toolCalls: [tool('second', 'child')], contentBlocks: [{ type: 'tool_use', toolId: 'second' }, { type: 'text', content: 'Next answer' }] },
+  ];
+  view.renderer.renderMessages(messages, () => 'Hello');
+  const previousWork = within(view.parent).getByRole('button', { name: 'Worked for 00:01' });
+  expect(previousWork.getAttribute('aria-expanded')).toBe('false');
+  fireEvent.click(within(view.parent).getByRole('button', { name: 'Worked for 00:02' }));
+  fireEvent.click(within(view.parent).getByRole('button', { name: 'Previous runs (1)' }));
+  fireEvent.click(within(view.parent).getByRole('button', { name: 'Run 1 · Completed' }));
+  const history = view.parent.querySelector<HTMLElement>('.claudian-subagent-history')!;
+  expect(history.textContent).toContain('first prompt');
+  expect(history.textContent).toContain('first result');
+  expect(history.textContent).not.toContain('other result');
+  expect(within(history).queryByRole('button', { name: 'Go to original turn' })).toBeNull();
+  expect(previousWork.getAttribute('aria-expanded')).toBe('false');
+  expect(await axe(view.parent)).toHaveNoViolations();
+});
+
+
+it.each([undefined, '', '   '])('hides an unavailable prompt (%s) and reveals a later readable prompt', prompt => {
+  const parent = document.body.createDiv();
+  const info: SubagentInfo = { id: 'empty-prompt', description: 'Helper', prompt, status: 'running', isExpanded: true, toolCalls: [] };
+  const state = createSubagentBlock(parent, info);
+  fireEvent.click(within(parent).getByRole('button', { name: /Subagent task: Helper/ }));
+  expect(within(parent).queryByRole('button', { name: /^Prompt/ })).toBeNull();
+  updateSubagentBlock(state, { ...info, prompt: 'Read this file.' });
+  expect(within(parent).getByRole('button', { name: /^Prompt/ })).toBeTruthy();
+  expect(parent.textContent).toContain('Read this file.');
+  updateSubagentBlock(state, { ...info, prompt: undefined });
+  expect(within(parent).queryByRole('button', { name: /^Prompt/ })).toBeNull();
 });

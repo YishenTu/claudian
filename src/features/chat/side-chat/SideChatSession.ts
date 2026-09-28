@@ -119,7 +119,8 @@ export class SideChatSession {
   }
 
   get hasBackgroundWork(): boolean {
-    return this.#backgroundModels.size > 0 || this.#pendingWorkCount > 0;
+    return this.#backgroundModels.size > 0 || this.#pendingWorkCount > 0
+      || (this.#supervisor.current?.session.hasBackgroundWork?.() ?? false);
   }
 
   get hasPendingInteractions(): boolean {
@@ -217,6 +218,7 @@ export class SideChatSession {
       && this.#active === null
       && this.#pendingInteractions.size === 0
       && this.#pendingWorkCount === 0
+      && !this.#supervisor.current.session.hasBackgroundWork?.()
       && this.#backgroundModels.size === 0
       // A child without a verified native identity cannot be resumed safely.
       && this.#providerSessionId !== undefined,

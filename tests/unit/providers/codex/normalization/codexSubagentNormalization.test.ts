@@ -8,6 +8,60 @@ import {
 } from '@/providers/codex/normalization/codexSubagentNormalization';
 
 describe('codexSubagentNormalization', () => {
+  it.each([
+    ['completed', 'Reviewed successfully.', 'completed', 'Reviewed successfully.'],
+    ['completed', '', 'completed', 'DONE'],
+    ['errored', 'Could not start.', 'error', 'Could not start.'],
+    ['shutdown', null, 'error', 'Agent shut down'],
+    ['notFound', null, 'error', 'Agent not found'],
+    ['pendingInit', null, 'running', undefined],
+  ])('normalizes native %s agent states', (status, message, expectedStatus, result) => {
+    const spawn: ToolCallInfo = {
+      id: 'spawn', name: TOOL_SPAWN_AGENT, input: { message: 'Review', agent_type: 'explorer' },
+      status: 'completed', result: '{"agent_id":"agent"}',
+    };
+    const wait: ToolCallInfo = {
+      id: 'wait', name: TOOL_WAIT, input: { ids: ['agent'] }, status: 'completed',
+      result: JSON.stringify({ status: { agent: { status, message } } }),
+    };
+    expect(buildCodexSubagentInfo(spawn, [spawn, wait])).toMatchObject({
+      description: 'explorer', status: expectedStatus, result,
+    });
+  });
+
+  it.each(['list_agents', 'followup_task', 'send_input', 'send_message', 'resume_agent'])(
+    'preserves completed output through cleanup until %s reports a new running cycle', name => {
+    const spawn: ToolCallInfo = {
+      id: 'spawn', name: TOOL_SPAWN_AGENT, input: {}, status: 'completed', result: '{"agent_id":"agent"}',
+    };
+    const wait: ToolCallInfo = {
+      id: 'wait', name: TOOL_WAIT, input: { ids: ['agent'] }, status: 'completed',
+      result: '{"status":{"agent":{"completed":"Review complete."}}}',
+    };
+    const close: ToolCallInfo = {
+      id: 'close', name: 'close_agent', input: { id: 'agent' }, status: 'completed',
+      result: '{"previous_status":{"completed":"Review complete."}}',
+    };
+    const failed: ToolCallInfo = {
+      id: 'failed', name: 'interrupt_agent', input: { target: 'agent' }, status: 'error', result: 'Not authorized',
+    };
+    expect(buildCodexSubagentInfo(spawn, [spawn, wait, close, failed])).toMatchObject({
+      status: 'completed', result: 'Review complete.',
+    });
+    expect(codexSubagentLifecycleAdapter.resolveSpawnToolIds(close, new Map([['agent', 'spawn']]))).toEqual(['spawn']);
+    for (const status of ['shutdown', 'notFound']) {
+      const list: ToolCallInfo = {
+        id: 'list', name: 'list_agents', input: {}, status: 'completed',
+        result: JSON.stringify({ status: { agent: { status, message: null } } }),
+      };
+      expect(buildCodexSubagentInfo(spawn, [spawn, wait, close, list])).toMatchObject({
+        status: 'completed', result: 'Review complete.',
+      });
+      const running = { ...list, id: 'running', name, result: '{"status":{"agent":{"status":"running","message":"Checking follow-up."}}}' };
+      expect(buildCodexSubagentInfo(spawn, [spawn, wait, close, running, list])).toMatchObject({ status: 'error' });
+    }
+  });
+
   it('extracts agent id and nickname from spawn result', () => {
     expect(
       extractCodexSpawnResult('{"agent_id":"agent-1","nickname":"Zeno"}')
@@ -15,6 +69,22 @@ describe('codexSubagentNormalization', () => {
       agentId: 'agent-1',
       nickname: 'Zeno',
     });
+  });
+
+  it('uses the targeted raw resume status to begin another cycle', () => {
+    const spawn: ToolCallInfo = {
+      id: 'spawn', name: TOOL_SPAWN_AGENT, input: {}, status: 'completed', result: '{"agent_id":"agent"}',
+    };
+    const wait: ToolCallInfo = {
+      id: 'wait', name: TOOL_WAIT, input: { ids: ['agent'] }, status: 'completed',
+      result: '{"status":{"agent":{"completed":"First answer"}}}',
+    };
+    const resume: ToolCallInfo = {
+      id: 'resume', name: 'resume_agent', input: { agent_id: 'agent' }, status: 'completed', result: '{"status":"resumed"}',
+    };
+    expect(buildCodexSubagentInfo(spawn, [spawn, wait, resume])).toMatchObject({ status: 'running', result: undefined });
+    expect(buildCodexSubagentInfo(spawn, [spawn, wait, { ...resume, input: { agent_id: 'other' } }]))
+      .toMatchObject({ status: 'completed', result: 'First answer' });
   });
 
   it('extracts wait statuses and timeout flag', () => {

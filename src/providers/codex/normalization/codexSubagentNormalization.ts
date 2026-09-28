@@ -10,6 +10,7 @@ import type { SubagentInfo, ToolCallInfo } from '../../../core/types';
 interface CodexSpawnResult {
   agentId?: string;
   nickname?: string;
+  aliases?: string[];
 }
 
 interface CodexWaitStatus {
@@ -27,10 +28,13 @@ interface CodexAgentSnapshot {
   agentId: string;
   result?: string;
   status: SubagentInfo['status'];
+  unavailable?: boolean;
 }
 
-const CODEX_LIST_AGENTS = 'list_agents';
 const CODEX_INTERRUPT_AGENT = 'interrupt_agent';
+const CODEX_STATUS_TOOLS = new Set([
+  TOOL_WAIT, TOOL_WAIT_AGENT, 'list_agents', 'followup_task', 'send_input', 'send_message', 'resume_agent',
+]);
 
 function parseJSONObject(raw: string | undefined): Record<string, unknown> | null {
   if (!raw) return null;
@@ -63,10 +67,13 @@ export function extractCodexSpawnResult(
   const nickname = parsed && typeof parsed.nickname === 'string'
     ? parsed.nickname
     : undefined;
+  const aliases = [...new Set([parsed?.task_name, inputTaskName]
+    .filter((value): value is string => typeof value === 'string' && !!value && value !== agentId))];
 
   return {
     ...(agentId ? { agentId } : {}),
     ...(nickname ? { nickname } : {}),
+    ...(aliases.length ? { aliases } : {}),
   };
 }
 
@@ -76,7 +83,6 @@ export function extractCodexWaitResult(raw: string | undefined): CodexWaitResult
     return { statuses: {}, timedOut: false };
   }
 
-  const rawStatuses = parsed.status;
   const statuses: Record<string, CodexWaitStatus> = {};
 
   for (const snapshot of extractCodexAgentSnapshots(parsed)) {
@@ -87,19 +93,6 @@ export function extractCodexWaitResult(raw: string | undefined): CodexWaitResult
     }
   }
 
-  if (rawStatuses && typeof rawStatuses === 'object' && !Array.isArray(rawStatuses)) {
-    for (const [agentId, value] of Object.entries(rawStatuses as Record<string, unknown>)) {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-      const status = value as Record<string, unknown>;
-      const normalized = normalizeCodexAgentStatus(status);
-      if (normalized?.status === 'completed') {
-        statuses[agentId] = { completed: normalized.result || 'DONE' };
-      } else if (normalized?.status === 'error') {
-        statuses[agentId] = { error: normalized.result || 'Agent stopped' };
-      }
-    }
-  }
-
   return {
     statuses,
     timedOut: parsed.timed_out === true,
@@ -107,15 +100,20 @@ export function extractCodexWaitResult(raw: string | undefined): CodexWaitResult
 }
 
 function extractCodexAgentSnapshots(parsed: Record<string, unknown>): CodexAgentSnapshot[] {
-  if (!Array.isArray(parsed.agents)) return [];
-
-  return parsed.agents.flatMap((value): CodexAgentSnapshot[] => {
+  const snapshots = (Array.isArray(parsed.agents) ? parsed.agents : []).flatMap((value): CodexAgentSnapshot[] => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
     const agent = value as Record<string, unknown>;
     const agentId = firstString(agent, ['agent_name', 'task_name', 'agent_id', 'name']);
     const status = normalizeCodexAgentStatus(agent.agent_status ?? agent.status);
     return agentId && status ? [{ agentId, ...status }] : [];
   });
+  if (parsed.status && typeof parsed.status === 'object' && !Array.isArray(parsed.status)) {
+    for (const [agentId, value] of Object.entries(parsed.status)) {
+      const status = normalizeCodexAgentStatus(value);
+      if (status) snapshots.push({ agentId, ...status });
+    }
+  }
+  return snapshots;
 }
 
 function normalizeCodexAgentStatus(
@@ -124,13 +122,15 @@ function normalizeCodexAgentStatus(
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
     if (!normalized) return null;
+    if (normalized === 'shutdown') return { status: 'error', result: 'Agent shut down', unavailable: true };
+    if (normalized === 'notfound') return { status: 'error', result: 'Agent not found', unavailable: true };
     if (/interrupt|cancel|error|fail|kill/.test(normalized)) {
       return { result: value.trim(), status: 'error' };
     }
     if (/complete|success|finish|done/.test(normalized)) {
       return { result: 'DONE', status: 'completed' };
     }
-    if (/pending|running|progress|start|waiting/.test(normalized)) {
+    if (/pending|running|progress|start|waiting|resumed/.test(normalized)) {
       return { status: 'running' };
     }
     return null;
@@ -138,8 +138,9 @@ function normalizeCodexAgentStatus(
 
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const status = value as Record<string, unknown>;
-  const completed = firstString(status, ['completed']);
-  if (completed) return { result: completed, status: 'completed' };
+  if (typeof status.completed === 'string') {
+    return { result: status.completed || 'DONE', status: 'completed' };
+  }
   const failure = firstString(status, ['error', 'failed', 'interrupted']);
   if (failure) return { result: failure, status: 'error' };
 
@@ -162,8 +163,13 @@ function firstString(
   return undefined;
 }
 
+export function isCodexEncryptedMessage(value: unknown): boolean {
+  return typeof value === 'string' && /^gAAAAA[A-Za-z0-9_-]+={0,2}$/.test(value);
+}
+
 function getCodexSubagentPrompt(input: Record<string, unknown>): string {
-  return typeof input.message === 'string' ? input.message : '';
+  const message = typeof input.message === 'string' ? input.message : '';
+  return isCodexEncryptedMessage(message) ? '' : message;
 }
 
 function getCodexSubagentModel(input: Record<string, unknown>): string {
@@ -173,11 +179,13 @@ function getCodexSubagentModel(input: Record<string, unknown>): string {
 function getCodexSubagentDescription(
   nickname: string | undefined,
   model: string,
+  input: Record<string, unknown>,
 ): string {
-  if (nickname && model) return `${nickname} (${model})`;
-  if (nickname) return nickname;
-  if (model) return `Codex subagent (${model})`;
-  return 'Codex subagent';
+  const role = firstString(input, ['agent_type']);
+  const effort = firstString(input, ['reasoning_effort']);
+  const label = nickname ?? role ?? 'Codex subagent';
+  const details = [nickname ? role : undefined, model, effort].filter(Boolean);
+  return details.length ? `${label} (${details.join(', ')})` : label;
 }
 
 function resolveCodexWaitCompletion(
@@ -185,70 +193,64 @@ function resolveCodexWaitCompletion(
   spawnToolCall: ToolCallInfo,
   siblingToolCalls: ToolCallInfo[],
 ): { status: SubagentInfo['status']; result?: string } {
-  let completion: { status: SubagentInfo['status']; result?: string } = { status: 'running' };
+  const spawnSnapshot = parseJSONObject(spawnToolCall.result);
+  let completion: { status: SubagentInfo['status']; result?: string } = spawnSnapshot
+    ? findCodexAgentSnapshot(spawnSnapshot, spawnResult)
+      ?? { status: 'running' }
+    : { status: 'running' };
   const spawnIndex = siblingToolCalls.indexOf(spawnToolCall);
   const followingToolCalls = spawnIndex >= 0
     ? siblingToolCalls.slice(spawnIndex + 1)
     : siblingToolCalls;
 
   for (const toolCall of followingToolCalls) {
-    if (toolCall.name === CODEX_LIST_AGENTS && spawnResult.agentId) {
-      const parsed = parseJSONObject(toolCall.result);
-      const snapshot = parsed
-        ? extractCodexAgentSnapshots(parsed).find(agent => agent.agentId === spawnResult.agentId)
-        : undefined;
-      if (snapshot) {
-        completion = {
-          status: snapshot.status,
-          ...(snapshot.result ? { result: snapshot.result } : {}),
-        };
-      }
-      continue;
-    }
-
+    if (toolCall.status !== 'completed') continue;
     if (isCodexCloseTool(toolCall.name)) {
       if (
         spawnResult.agentId
-        && getCodexLifecycleTargetIds(toolCall).includes(spawnResult.agentId)
-        && toolCall.status !== 'running'
+        && getCodexLifecycleTargetIds(toolCall).some(id => id === spawnResult.agentId || spawnResult.aliases?.includes(id))
+        && completion.status === 'running'
       ) {
-        completion = {
+        const parsed = parseJSONObject(toolCall.result);
+        const previous = parsed ? normalizeCodexAgentStatus(parsed.previous_status) : null;
+        const snapshot = parsed
+          ? findCodexAgentSnapshot(parsed, spawnResult)
+          : undefined;
+        completion = previous?.status === 'completed' ? previous
+          : snapshot && snapshot.status !== 'running' ? snapshot : {
           status: 'error',
-          result: toolCall.result || 'Agent interrupted',
+          result: 'Agent interrupted',
         };
       }
       continue;
     }
 
-    if (toolCall.name !== TOOL_WAIT && toolCall.name !== TOOL_WAIT_AGENT) {
-      continue;
-    }
+    if (!CODEX_STATUS_TOOLS.has(toolCall.name)) continue;
 
-    const waitResult = extractCodexWaitResult(toolCall.result);
-    const statusEntries = Object.entries(waitResult.statuses);
-    if (statusEntries.length === 0 && !waitResult.timedOut) {
-      continue;
+    const parsed = parseJSONObject(toolCall.result);
+    let snapshot: Omit<CodexAgentSnapshot, 'agentId'> | undefined = parsed
+      ? findCodexAgentSnapshot(parsed, spawnResult) : undefined;
+    if (!snapshot && toolCall.name === 'resume_agent' && spawnResult.agentId
+      && getCodexLifecycleTargetIds(toolCall).some(id => id === spawnResult.agentId || spawnResult.aliases?.includes(id))) {
+      snapshot = normalizeCodexAgentStatus(parsed?.status) ?? undefined;
     }
-
-    let agentStatus: CodexWaitStatus | undefined;
-    if (spawnResult.agentId) {
-      agentStatus = waitResult.statuses[spawnResult.agentId];
-    } else if (statusEntries.length === 1) {
-      agentStatus = statusEntries[0][1];
-    }
-
-    if (agentStatus?.completed) {
-      completion = { status: 'completed', result: agentStatus.completed };
-      continue;
-    }
-
-    const failure = agentStatus?.error ?? agentStatus?.failed;
-    if (failure) {
-      completion = { status: 'error', result: failure };
-    }
+    // Disposing a finished agent does not invalidate its answer. A subsequent
+    // running snapshot still starts a new cycle and can settle independently.
+    if (snapshot && !(completion.status === 'completed' && snapshot.unavailable)) completion = snapshot;
   }
 
   return completion;
+}
+
+function findCodexAgentSnapshot(parsed: Record<string, unknown>, spawn: CodexSpawnResult): CodexAgentSnapshot | undefined {
+  const snapshots = extractCodexAgentSnapshots(parsed);
+  if (!spawn.agentId) return snapshots.length === 1 ? snapshots[0] : undefined;
+  // Named raw snapshots may retain more output than their native thread snapshot.
+  for (const id of [...(spawn.aliases ?? []), spawn.agentId]) {
+    const snapshot = snapshots.find(agent => agent.agentId === id);
+    if (snapshot) return snapshot;
+  }
+  return undefined;
 }
 
 export function buildCodexSubagentInfo(
@@ -256,12 +258,15 @@ export function buildCodexSubagentInfo(
   siblingToolCalls: ToolCallInfo[] = [],
 ): SubagentInfo {
   const prompt = getCodexSubagentPrompt(spawnToolCall.input);
+  if (spawnToolCall.subagent?.lifecycleSource === 'session') {
+    return prompt ? { ...spawnToolCall.subagent, prompt } : spawnToolCall.subagent;
+  }
   const model = getCodexSubagentModel(spawnToolCall.input);
   const spawnResult = extractCodexSpawnResult(spawnToolCall.result, spawnToolCall);
   const taskName = typeof spawnToolCall.input.task_name === 'string'
     ? spawnToolCall.input.task_name
     : undefined;
-  const description = getCodexSubagentDescription(spawnResult.nickname ?? taskName, model);
+  const description = getCodexSubagentDescription(spawnResult.nickname ?? taskName ?? spawnResult.aliases?.[0], model, spawnToolCall.input);
 
   if (spawnToolCall.status === 'error') {
     return {
@@ -285,7 +290,7 @@ export function buildCodexSubagentInfo(
     mode: 'sync',
     isExpanded: false,
     status: completion.status,
-    result: completion.result,
+    result: completion.status === 'running' ? undefined : completion.result,
     toolCalls: [],
     ...(spawnResult.agentId ? { agentId: spawnResult.agentId } : {}),
   };
@@ -297,7 +302,7 @@ export function isCodexSubagentSpawnToolCall(toolCall: ToolCallInfo): boolean {
 
 function getCodexLifecycleTargetIds(toolCall: ToolCallInfo): string[] {
   const targetIds = new Set(Object.keys(extractCodexWaitResult(toolCall.result).statuses));
-  for (const key of ['target', 'agent_id', 'task_name'] as const) {
+  for (const key of ['id', 'target', 'agent_id', 'task_name'] as const) {
     const target = toolCall.input[key];
     if (typeof target === 'string' && target) targetIds.add(target);
   }
@@ -319,7 +324,8 @@ function getCodexLifecycleTargetIds(toolCall: ToolCallInfo): string[] {
 }
 
 function isCodexGlobalWaitToolCall(toolCall: ToolCallInfo): boolean {
-  return toolCall.name === TOOL_WAIT_AGENT
+  return (toolCall.name === TOOL_WAIT_AGENT || toolCall.name === TOOL_WAIT)
+    && !('cell_id' in toolCall.input)
     && getCodexLifecycleTargetIds(toolCall).length === 0;
 }
 
@@ -343,7 +349,7 @@ export const codexSubagentLifecycleAdapter: ProviderSubagentLifecycleAdapter = {
     return name === TOOL_SPAWN_AGENT;
   },
   isWaitTool(name: string): boolean {
-    return name === TOOL_WAIT || name === TOOL_WAIT_AGENT || name === CODEX_LIST_AGENTS;
+    return CODEX_STATUS_TOOLS.has(name);
   },
   isCloseTool(name: string): boolean {
     return isCodexCloseTool(name);
@@ -367,6 +373,13 @@ export const codexSubagentLifecycleAdapter: ProviderSubagentLifecycleAdapter = {
   },
   buildSubagentInfo(spawnToolCall, siblingToolCalls = []): SubagentInfo {
     return buildCodexSubagentInfo(spawnToolCall, siblingToolCalls);
+  },
+  getProgress(spawnToolCall, siblingToolCalls) {
+    const completion = resolveCodexWaitCompletion(
+      extractCodexSpawnResult(spawnToolCall.result, spawnToolCall), spawnToolCall, siblingToolCalls,
+    );
+    return completion.status === 'running' && completion.result
+      ? { toolCallId: spawnToolCall.id, summary: completion.result } : undefined;
   },
   extractSpawnResult(raw: string | undefined, toolCall?: ToolCallInfo) {
     return extractCodexSpawnResult(raw, toolCall);

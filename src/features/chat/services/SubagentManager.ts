@@ -50,6 +50,7 @@ export class SubagentManager {
   private syncSubagents: Map<string, { info: SubagentInfo; view: SubagentState }> = new Map();
   private lifecycleSubagents = new Map<string, { info: SubagentInfo; view: SubagentState | AsyncSubagentState }>();
   private lifecycleAgentIds = new Map<string, string>();
+  private sessionSubagentUpdates = new Map<string, SubagentInfo>();
   private pendingTasks: Map<string, PendingToolCall> = new Map();
   private _spawnedThisStream = 0;
 
@@ -471,6 +472,11 @@ export class SubagentManager {
 
   /** Shows live progress on a running subagent's card; finished or unknown subagents ignore it. */
   public applyProgress(progress: SubagentProgress): void {
+    const lifecycle = this.lifecycleSubagents.get(progress.toolCallId);
+    if (lifecycle) {
+      if (lifecycle.info.status === 'running') updateSubagentProgress(lifecycle.view, progress);
+      return;
+    }
     const syncState = this.syncSubagents.get(progress.toolCallId);
     if (syncState) {
       updateSubagentProgress(syncState.view, progress);
@@ -540,9 +546,19 @@ export class SubagentManager {
     }
   }
 
-  public resetLifecycleState(): void {
+  public resetLifecycleState(preserveSessionOwned = false): void {
+    if (preserveSessionOwned) {
+      for (const [id, record] of this.lifecycleSubagents) {
+        if (record.info.lifecycleSource !== 'session') this.lifecycleSubagents.delete(id);
+      }
+      for (const [alias, id] of this.lifecycleAgentIds) {
+        if (!this.lifecycleSubagents.has(id) && !this.sessionSubagentUpdates.has(id)) this.lifecycleAgentIds.delete(alias);
+      }
+      return;
+    }
     this.lifecycleSubagents.clear();
     this.lifecycleAgentIds.clear();
+    this.sessionSubagentUpdates.clear();
   }
 
   public orphanAllActive(): SubagentInfo[] {
@@ -733,10 +749,20 @@ export class SubagentManager {
     parentEl?: HTMLElement | null,
     previousEl?: HTMLElement,
   ): string[] {
-    const info = adapter.buildSubagentInfo(toolCall, toolCalls);
+    const update = this.sessionSubagentUpdates.get(toolCall.id);
+    const info = { ...adapter.buildSubagentInfo(toolCall, toolCalls), ...update };
     toolCall.subagent = info;
     this.#renderLifecycleState(info, parentEl, previousEl);
+    this.#applyLifecycleProgress(toolCall, toolCalls, adapter);
     return this.#bindLifecycleAgent(toolCall.id, info.agentId, toolCalls, adapter);
+  }
+
+  public applySessionUpdate(info: SubagentInfo): void {
+    this.sessionSubagentUpdates.set(info.id, info);
+  }
+
+  public hasSessionSubagent(id: string): boolean {
+    return this.sessionSubagentUpdates.has(id);
   }
 
   public getLifecycleElement(id: string): HTMLElement | undefined {
@@ -761,12 +787,13 @@ export class SubagentManager {
     if (adapter.isHiddenTool(toolCall.name) && linkedIds.length === 0) {
       return { consumed: false, hiddenToolIds };
     }
-    if (adapter.isSpawnTool(toolCall.name)) {
+    if (adapter.isSpawnTool(toolCall.name) || toolCall.subagent?.lifecycleSource === 'session') {
       Object.assign(toolCall, resolved);
       const info = adapter.buildSubagentInfo(toolCall, toolCalls);
       const agentId = adapter.extractSpawnResult(content, toolCall).agentId ?? info.agentId;
       toolCall.subagent = { ...info, ...(agentId ? { agentId } : {}) };
       this.#renderLifecycleState(toolCall.subagent);
+      this.#applyLifecycleProgress(toolCall, toolCalls, adapter);
       hiddenToolIds.push(...this.#bindLifecycleAgent(toolCall.id, agentId, toolCalls, adapter));
       return { consumed: true, hiddenToolIds };
     }
@@ -777,17 +804,22 @@ export class SubagentManager {
         const spawn = toolCalls.find(tool => tool.id === id);
         if (!spawn) continue;
         const info = adapter.buildSubagentInfo(spawn, toolCalls);
-        if (closing) {
-          info.status = 'error';
-          if (info.mode === 'async') info.asyncStatus = 'error';
-          info.result ||= 'Task cancelled';
-        }
         spawn.subagent = info;
         this.#renderLifecycleState(info);
+        this.#applyLifecycleProgress(spawn, toolCalls, adapter);
       }
       return { consumed: owned && (closing || adapter.isHiddenTool(toolCall.name)), hiddenToolIds };
     }
     return { consumed: false, hiddenToolIds };
+  }
+
+  #applyLifecycleProgress(
+    spawn: ToolCallInfo,
+    tools: ToolCallInfo[],
+    adapter: ProviderSubagentLifecycleAdapter,
+  ): void {
+    const progress = adapter.getProgress?.(spawn, tools);
+    if (progress) this.applyProgress(progress);
   }
 
   #bindLifecycleAgent(
@@ -796,8 +828,12 @@ export class SubagentManager {
     tools: ToolCallInfo[],
     adapter: ProviderSubagentLifecycleAdapter,
   ): string[] {
-    if (!agentId || this.lifecycleAgentIds.get(agentId) === spawnId) return [];
-    this.lifecycleAgentIds.set(agentId, spawnId);
+    if (!agentId) return [];
+    const spawn = tools.find(tool => tool.id === spawnId);
+    const launch = spawn ? adapter.extractSpawnResult(spawn.result, spawn) : undefined;
+    const identifiers = [agentId, ...(launch?.agentId ? [launch.agentId] : []), ...(launch?.aliases ?? [])];
+    if (identifiers.every(id => this.lifecycleAgentIds.get(id) === spawnId)) return [];
+    for (const id of identifiers) this.lifecycleAgentIds.set(id, spawnId);
     return tools.filter(tool => adapter.isHiddenTool(tool.name)
       && this.isLifecycleToolOwned(tool, adapter)
       && adapter.resolveSpawnToolIds(tool, this.lifecycleAgentIds).includes(spawnId))
@@ -806,13 +842,14 @@ export class SubagentManager {
 
   #renderLifecycleState(info: SubagentInfo, parentEl?: HTMLElement | null, previousEl?: HTMLElement): void {
     const existing = this.lifecycleSubagents.get(info.id);
-    if (existing && (existing.info.mode ?? 'sync') === (info.mode ?? 'sync')) {
+    if (existing && (!previousEl || previousEl === existing.view.wrapperEl)
+      && (existing.info.mode ?? 'sync') === (info.mode ?? 'sync')) {
       existing.info = info;
       if (info.mode === 'async') updateAsyncSubagentBlock(existing.view as AsyncSubagentState, info);
       else updateSubagentBlock(existing.view, info);
       return;
     }
-    const previous = existing?.view.wrapperEl ?? previousEl;
+    const previous = previousEl ?? existing?.view.wrapperEl;
     const parent = previous?.parentElement ?? parentEl;
     if (!parent) return;
     const view = info.mode === 'async' ? createAsyncSubagentBlock(parent, info) : createSubagentBlock(parent, info);

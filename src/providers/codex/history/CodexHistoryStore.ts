@@ -14,6 +14,7 @@ import type {
   CitationGroup,
   ContentBlock,
   ImageAttachment,
+  SubagentInfo,
   ToolCallInfo,
 } from '../../../core/types';
 import { createTurnStats, isTokenCount } from '../../../core/types';
@@ -27,6 +28,8 @@ import {
   stripCodexMemoryCitationMarkup,
 } from '../normalization/CodexMemoryCitation';
 import { parseCodexQuestionReply } from '../normalization/codexQuestionNormalization';
+import { applyCodexSubagentActivity, normalizeCodexSubagentActivity } from '../normalization/codexSubagentActivity';
+import { buildCodexSubagentInfo } from '../normalization/codexSubagentNormalization';
 import {
   appendCodexCommandOutput,
   decodeCodexExecEnvelope,
@@ -1064,6 +1067,10 @@ function processEventMsg(
 
   switch (payload.type) {
     case 'item_completed': {
+      const activity = normalizeCodexSubagentActivity((payload as Record<string, unknown>).item);
+      if (activity?.kind === 'started' && !ctx.toolCallToTurn.has(activity.id)) {
+        pushPersistedNormalizedToolCall(activity.id, { name: 'spawn_agent', input: { task_name: activity.agentPath } }, timestamp, ctx);
+      }
       const item = payload.item;
       if ((item?.type !== 'AgentMessage' && item?.type !== 'agentMessage')
         || item.delivery !== 'async' || !item.id || !Array.isArray(item.questions)) break;
@@ -1519,13 +1526,24 @@ export function parseCodexSessionModel(
   return resumeAtTurnId ? null : model;
 }
 
-export function parseCodexSessionTurns(content: string): CodexParsedTurn[] {
+export function parseCodexSessionTurns(content: string, throughTurnId?: string): CodexParsedTurn[] {
   const records = content
     .split('\n')
     .filter(line => line.trim())
     .map(parseSessionRecord)
     .filter((record): record is ParsedSessionRecord => record !== null);
 
+  if (throughTurnId) {
+    let reached = false;
+    const nextTurn = records.findIndex(record => {
+      const payload = record.payload as Record<string, unknown> | undefined;
+      if (record.type !== 'event_msg' || payload?.type !== 'task_started') return false;
+      if (reached && payload.turn_id !== throughTurnId) return true;
+      if (payload.turn_id === throughTurnId) reached = true;
+      return false;
+    });
+    if (nextTurn >= 0) return parseModernSessionTurns(records.slice(0, nextTurn));
+  }
   return parseModernSessionTurns(records);
 }
 
@@ -1537,6 +1555,7 @@ function parseModernSessionTurns(records: ParsedSessionRecord[]): CodexParsedTur
   const ctx = createPersistedParseContext();
   let threadId: string | undefined;
   const turnOutputTokens = new Map<string, number | undefined>();
+  const rawCallIds = new Set<string>();
   const compactedRecordsWithEvent = new Set<ParsedSessionRecord>();
   let pendingCompactionRecord: ParsedSessionRecord | undefined;
 
@@ -1544,6 +1563,11 @@ function parseModernSessionTurns(records: ParsedSessionRecord[]): CodexParsedTur
   // older compaction records with their explicit marker without replaying context.
   for (const record of records) {
     const payload = record.payload;
+    if (record.type === 'response_item'
+      && (payload?.type === 'function_call' || payload?.type === 'custom_tool_call')) {
+      const call = payload as PersistedToolCallPayload;
+      if (call.call_id) rawCallIds.add(call.call_id);
+    }
     if (record.type === 'response_item'
       && (payload?.type === 'custom_tool_call_output' || payload?.type === 'function_call_output')) {
       const output = payload as PersistedToolCallOutputPayload;
@@ -1579,6 +1603,12 @@ function parseModernSessionTurns(records: ParsedSessionRecord[]): CodexParsedTur
     }
 
     if (parsed.type === 'event_msg') {
+      const activity = payload?.type === 'item_completed' ? normalizeCodexSubagentActivity(payload.item) : undefined;
+      if (activity?.kind === 'interacted' && !rawCallIds.has(activity.id) && !ctx.toolCallToTurn.has(activity.id)) {
+        // Keep the interaction in its parent turn even when raw calls are missing.
+        pushPersistedNormalizedToolCall(activity.id, { name: 'send_input', input: { id: activity.agentThreadId } }, timestamp, ctx);
+        processPersistedToolOutput({ type: 'function_call_output', call_id: activity.id, output: '' }, timestamp, ctx);
+      }
       processEventMsg(parsed.payload as PersistedEventPayload, timestamp, ctx);
       continue;
     }
@@ -1600,7 +1630,44 @@ function parseModernSessionTurns(records: ParsedSessionRecord[]): CodexParsedTur
   for (const turn of ctx.turns.values()) {
     if (turn.serverTurnId) turn.outputTokens = turnOutputTokens.get(turn.serverTurnId);
   }
-  return flushBubbleTurnsGrouped(ctx.turns, ctx.turnOrder);
+  const turns = flushBubbleTurnsGrouped(ctx.turns, ctx.turnOrder);
+  const tools = turns.flatMap(turn => turn.messages.flatMap(message => message.toolCalls ?? []));
+  const agents = new Map<string, ToolCallInfo>();
+  const pendingInteractions = new Map<string, { tool: ToolCallInfo; info: SubagentInfo }>();
+  for (const record of records) {
+    if (record.type !== 'event_msg') continue;
+    const payload = record.payload as Record<string, unknown>;
+    if (payload.type !== 'item_completed') continue;
+    const activity = normalizeCodexSubagentActivity(payload.item);
+    if (!activity) continue;
+    const interaction = tools.find(candidate => candidate.id === activity.id);
+    // Completion may arrive during a later parent turn that only messaged the child.
+    const interactionKey = JSON.stringify([activity.agentThreadId, payload.turn_id]);
+    const canonicalInteraction = activity.kind === 'interacted' && !rawCallIds.has(activity.id);
+    const startsWork = activity.kind === 'started' || (activity.kind === 'interacted'
+      && !canonicalInteraction && ['followup_task', 'resume_agent', 'send_input'].includes(interaction?.name ?? ''));
+    const previous = agents.get(activity.agentThreadId);
+    if (canonicalInteraction && interaction) {
+      // Idle messages do not start runs, and messages to a running child belong
+      // to that run. A later terminal activity confirms an idle child's follow-up.
+      if (previous?.subagent?.status !== 'running' && !pendingInteractions.has(interactionKey)) {
+        const info = applyCodexSubagentActivity(activity, buildCodexSubagentInfo(interaction), record.timestamp, true);
+        if (previous?.subagent) info.description = previous.subagent.description;
+        pendingInteractions.set(interactionKey, { tool: interaction, info });
+      }
+      continue;
+    }
+    const pending = pendingInteractions.get(interactionKey);
+    const completesPending = pending && (activity.kind === 'completed' || activity.kind === 'interrupted');
+    const tool = startsWork ? interaction : completesPending ? pending.tool : previous;
+    if (!tool) continue;
+    const initial = completesPending ? pending.info : tool.subagent ?? buildCodexSubagentInfo(tool);
+    if (startsWork && previous?.subagent) initial.description = previous.subagent.description;
+    tool.subagent = applyCodexSubagentActivity(activity, initial, record.timestamp, startsWork);
+    if (startsWork || completesPending) pendingInteractions.delete(interactionKey);
+    agents.set(activity.agentThreadId, tool);
+  }
+  return turns;
 }
 
 function flushBubbleTurnsGrouped(

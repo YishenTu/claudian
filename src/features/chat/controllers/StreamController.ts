@@ -45,6 +45,7 @@ import { hasMermaidFence } from '../rendering/DisplayOnlyCodeFences';
 import type { MessageRenderer, RenderContentOptions } from '../rendering/MessageRenderer';
 import { createResponseTextBlock } from '../rendering/ResponseLayout';
 import { resolveSubagentAdapter } from '../rendering/subagentAdapterResolution';
+import { renderSubagentHistory } from '../rendering/SubagentHistoryRenderer';
 import {
   createThinkingBlock,
   finalizeThinkingBlock,
@@ -240,7 +241,7 @@ export class StreamController {
           break;
         }
         if (subagentAdapter?.protocol === 'lifecycle') {
-          if (subagentAdapter.isSpawnTool(chunk.name)) {
+          if (subagentAdapter.isSpawnTool(chunk.name) || this.deps.subagentManager.hasSessionSubagent(chunk.id)) {
             this.#handleProviderSubagentSpawn(chunk, msg, subagentAdapter);
             break;
           }
@@ -611,9 +612,12 @@ export class StreamController {
   #placeProviderSubagent(toolCall: ToolCallInfo, msg: ChatMessage, adapter: ProviderSubagentLifecycleAdapter): void {
     const { state, subagentManager } = this.deps;
     const id = toolCall.id;
-    const previous = subagentManager.getLifecycleElement(id) ?? state.toolCallElements.get(id);
+    const content = this.#getMessageContentEl(msg);
+    const restored = content ? [...content.querySelectorAll<HTMLElement>('[data-subagent-id]')]
+      .find(element => element.dataset.subagentId === id) : undefined;
+    const previous = restored ?? subagentManager.getLifecycleElement(id) ?? state.toolCallElements.get(id);
     const pending = state.pendingTools.get(id);
-    const parent = previous?.parentElement ?? pending?.parentEl ?? state.currentContentEl;
+    const parent = previous?.parentElement ?? pending?.parentEl ?? content;
     this.#cancelPendingToolOutputRender(id);
     if (pending) {
       this.#flushPendingToolsBefore(id);
@@ -625,6 +629,10 @@ export class StreamController {
     state.toolCallElements.delete(id);
     for (const hiddenId of subagentManager.updateLifecycleSpawn(toolCall, msg.toolCalls ?? [], adapter, parent, previous)) {
       this.#removeProviderSubagentToolCard(hiddenId);
+    }
+    const card = subagentManager.getLifecycleElement(id);
+    if (card && toolCall.subagent) {
+      renderSubagentHistory(card, toolCall.subagent, state.messages);
     }
   }
 
@@ -696,7 +704,9 @@ export class StreamController {
     const adapter = this.getSubagentAdapter(existingToolCall.name);
     if (!adapter || adapter.protocol !== 'lifecycle') return false;
     const result = this.deps.subagentManager.handleLifecycleResult(
-      existingToolCall, normalizedContent, chunk.isError === true, msg.toolCalls ?? [], adapter,
+      existingToolCall, normalizedContent, chunk.isError === true,
+      (this.deps.state.messages.includes(msg) ? this.deps.state.messages : [...this.deps.state.messages, msg])
+        .flatMap(message => message.toolCalls ?? []), adapter,
     );
     for (const id of result.hiddenToolIds) this.#removeProviderSubagentToolCard(id);
     return result.consumed;
@@ -1209,6 +1219,19 @@ export class StreamController {
     await this.#hydrateAsyncSubagentHistory(handled);
 
     return isLinked || handled !== undefined;
+  }
+
+  public handleSubagentUpdate(info: SubagentInfo): boolean {
+    this.deps.subagentManager.applySessionUpdate(info);
+    for (const message of this.deps.state.messages) {
+      const tool = message.toolCalls?.find(candidate => candidate.id === info.id);
+      if (!tool) continue;
+      const adapter = this.getSubagentAdapter(tool.name);
+      if (adapter?.protocol !== 'lifecycle') return false;
+      this.#placeProviderSubagent(tool, message, adapter);
+      return true;
+    }
+    return false;
   }
 
   public handleSubagentProgress(progress: SubagentProgress): void {
@@ -1745,7 +1768,7 @@ export class StreamController {
     state.currentTextContent = '';
     state.currentThinkingState = null;
     this.resetSubagentStreamingState();
-    this.deps.subagentManager.resetLifecycleState();
+    this.deps.subagentManager.resetLifecycleState(true);
     state.pendingTools.clear();
     // Reset response timer (duration already captured at this point)
     state.responseStartTime = null;

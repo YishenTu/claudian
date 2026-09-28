@@ -1,4 +1,4 @@
-import { testTime } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 import * as path from 'path';
 
 import {
@@ -13,6 +13,38 @@ import {
 const FIXTURES_DIR = path.join(__dirname, '../../../../fixtures/providers/codex/history');
 
 describe('CodexHistoryStore', () => {
+  it('replays native activity after parent completion and across follow-up turns', () => {
+    let seconds = 0;
+    const event = (type: string, payload: Record<string, unknown>) => ({ type, timestamp: testDate({ seconds: seconds++ }).toISOString(), payload });
+    const activity = (id: string, kind: string) => event('event_msg', { type: 'item_completed', item: {
+      type: 'SubAgentActivity', id, kind, agent_thread_id: 'child', agent_path: '/root/helper',
+    } });
+    const records = [
+      event('event_msg', { type: 'task_started', turn_id: 'first' }),
+      event('response_item', { type: 'function_call', name: 'spawn_agent', call_id: 'spawn', arguments: JSON.stringify({ task_name: 'helper', message: 'gAAAAAEncryptedPrompt==' }) }),
+      activity('spawn', 'started'),
+      event('response_item', { type: 'function_call_output', call_id: 'spawn', output: '{"task_name":"/root/helper"}' }),
+      event('event_msg', { type: 'task_complete', turn_id: 'first' }),
+      activity('complete-1', 'completed'),
+      event('event_msg', { type: 'task_started', turn_id: 'second' }),
+      activity('followup', 'interacted'),
+      event('event_msg', { type: 'task_complete', turn_id: 'second' }),
+      activity('complete-2', 'interrupted'),
+    ];
+    const tools = parseCodexSessionContent(records.map(record => JSON.stringify(record)).join('\n'))
+      .flatMap(message => message.toolCalls ?? []);
+    expect(tools).toHaveLength(2);
+    expect(tools[0].subagent).toMatchObject({ id: 'spawn', agentId: 'child', lifecycleSource: 'session', status: 'completed', prompt: '', completedAt: testDate({ seconds: 5 }).getTime() });
+    expect(tools[1].subagent).toMatchObject({ id: 'followup', agentId: 'child', lifecycleSource: 'session', status: 'error', startedAt: testDate({ seconds: 7 }).getTime(), completedAt: testDate({ seconds: 9 }).getTime() });
+    const idleTools = parseCodexSessionContent(records.slice(0, -1).map(record => JSON.stringify(record)).join('\n'))
+      .flatMap(message => message.toolCalls ?? []);
+    expect(idleTools.filter(tool => tool.subagent)).toHaveLength(1);
+    expect(idleTools[1]).toMatchObject({ id: 'followup', name: 'send_input', status: 'completed' });
+    const prefix = parseCodexSessionTurns(records.map(record => JSON.stringify(record)).join('\n'), 'first');
+    expect(prefix.flatMap(turn => turn.messages.flatMap(message => message.toolCalls ?? []))[0].subagent)
+      .toMatchObject({ status: 'completed', completedAt: testDate({ seconds: 5 }).getTime() });
+  });
+
   it('settles lookup at the deadline when a directory read never resolves', async () => {
     jest.useFakeTimers();
     try {

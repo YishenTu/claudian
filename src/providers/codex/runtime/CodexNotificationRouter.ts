@@ -90,6 +90,7 @@ interface DeferredRawExecCall {
     claimed: boolean;
     canonicalItemId?: string;
     canonicalCompleted?: boolean;
+    fallbackId?: string;
   }>;
   hasRawOutput?: boolean;
   rawOutput?: unknown;
@@ -101,6 +102,10 @@ const COLLAB_AGENT_TOOL_MAP: Record<string, string> = {
   sendInput: 'send_input',
   resumeAgent: 'resume_agent',
   closeAgent: 'close_agent',
+  sendMessage: 'send_message',
+  followupTask: 'followup_task',
+  interruptAgent: 'interrupt_agent',
+  listAgents: 'list_agents',
 };
 
 export class CodexNotificationRouter {
@@ -148,10 +153,21 @@ export class CodexNotificationRouter {
   #suppressedRawCallIds = new Set<string>();
   #fileChangeInputsById = new Map<string, Record<string, unknown>>();
 
+  private readonly rawExecAliases = new Map<string, string>();
+
   constructor(
-    private readonly emit: ChunkEmitter,
+    private readonly emitChunk: ChunkEmitter,
     private readonly workingDirectory?: string,
+    private readonly streamRawExecCalls = false,
   ) {}
+
+  private emit(chunk: StreamChunk): void {
+    if (chunk.type === 'tool_use' || chunk.type === 'tool_result' || chunk.type === 'tool_output') {
+      const id = this.rawExecAliases.get(chunk.id);
+      if (id) { this.emitChunk({ ...chunk, id }); return; }
+    }
+    this.emitChunk(chunk);
+  }
 
   #resetAssistantTextTracking(): void {
     this.#streamedAssistantTurnText = '';
@@ -199,6 +215,7 @@ export class CodexNotificationRouter {
   }
 
   beginTurn(): void {
+    this.rawExecAliases.clear();
     this.#startedUserMessageIds.clear();
     this.#startedAgentMessageIds.clear();
     this.#streamedAgentMessageTextById.clear();
@@ -237,6 +254,7 @@ export class CodexNotificationRouter {
   }
 
   endTurn(): void {
+    this.rawExecAliases.clear();
     this.#startedUserMessageIds.clear();
     this.#startedAgentMessageIds.clear();
     this.#streamedAgentMessageTextById.clear();
@@ -428,6 +446,24 @@ export class CodexNotificationRouter {
   #onItemCompleted(params: ItemCompletedNotification): void {
     const item = params.item;
     if (item.type === 'agentMessage' && this.#handleAsyncQuestion(item, true)) return;
+    if (item.type === 'subAgentActivity') {
+      // Resumed threads can omit raw function calls. Keep an interaction anchor so
+      // session-owned child updates have a tool to attach to when work starts.
+      if (item.kind === 'interacted' && !this.#rawStartedCallIds.has(item.id)) {
+        this.emit({ type: 'tool_use', id: item.id, name: 'send_input', input: { id: item.agentThreadId } });
+        this.emit({ type: 'tool_result', id: item.id, content: '', isError: false });
+      }
+      if (item.kind === 'started' && !this.#completedCanonicalToolItemIds.has(item.id)) {
+        this.#completedCanonicalToolItemIds.add(item.id);
+        this.emit({ type: 'tool_use', id: item.id, name: 'spawn_agent', input: normalizeCodexToolInput('spawn_agent', {
+          task_name: item.agentPath, ...this.#rawToolInputsByCallId.get(item.id),
+        }) });
+        this.emit({ type: 'tool_result', id: item.id, content: JSON.stringify({
+          agent_id: item.agentThreadId, task_name: item.agentPath,
+        }), isError: false });
+      }
+      return;
+    }
     const itemId = getItemId(item);
     if (itemId && isCanonicalToolItem(item)) {
       if (this.#completedCanonicalToolItemIds.has(itemId)) {
@@ -494,7 +530,12 @@ export class CodexNotificationRouter {
         break;
 
       case 'collabAgentToolCall':
-        this.#emitToolResultFromCollabAgent(item);
+        if ((hadCanonicalToolUse || this.#rawStartedCallIds.has(item.id))
+          && (item.prompt || item.model || item.reasoningEffort
+            || (item.tool === 'spawnAgent' && this.#rawToolInputsByCallId.has(item.id)))) {
+          this.#emitToolUseFromCollabAgent(item);
+        }
+        this.#emitToolResultFromCollabAgent(item, rawResult);
         break;
 
       case 'mcpToolCall':
@@ -675,6 +716,8 @@ export class CodexNotificationRouter {
           }),
         });
         this.#claimActiveCanonicalProjections();
+        const deferred = this.#deferredRawExecCalls.get(callId);
+        if (this.streamRawExecCalls && deferred) this.#emitDeferredRawExecFallback(deferred);
         return;
       }
     }
@@ -800,6 +843,7 @@ export class CodexNotificationRouter {
       if (deferredExec.expectedCalls.length > 0) {
         deferredExec.hasRawOutput = true;
         deferredExec.rawOutput = item.output;
+        if (this.streamRawExecCalls) this.#emitDeferredRawExecFallback(deferredExec, item.output, true);
         if (deferredExec.expectedCalls.every(call => (
           call.claimed && call.canonicalCompleted
         ))) {
@@ -1113,7 +1157,7 @@ export class CodexNotificationRouter {
     const rawOutputText = stringifyCodexToolOutput(rawOutput);
     deferredExec.expectedCalls.forEach((call, index) => {
       if (call.claimed) {
-        if (!call.canonicalCompleted && call.canonicalItemId) {
+        if (emitResult && !call.canonicalCompleted && call.canonicalItemId) {
           this.#completedCanonicalToolItemIds.add(call.canonicalItemId);
           this.emit({
             type: 'tool_result',
@@ -1129,13 +1173,11 @@ export class CodexNotificationRouter {
       const fallbackId = deferredExec.expectedCalls.length === 1
         ? deferredExec.callId
         : `${deferredExec.callId}:${index + 1}`;
-      this.#resetAssistantSegmentText();
-      this.emit({
-        type: 'tool_use',
-        id: fallbackId,
-        name: call.name,
-        input: call.input,
-      });
+      if (!call.fallbackId) {
+        this.#resetAssistantSegmentText();
+        this.emit({ type: 'tool_use', id: fallbackId, name: call.name, input: call.input });
+        if (this.streamRawExecCalls) call.fallbackId = fallbackId;
+      }
       if (emitResult) {
         this.emit({
           type: 'tool_result',
@@ -1277,6 +1319,7 @@ export class CodexNotificationRouter {
         this.emit({ type: 'tool_use', id: canonicalItemId, name: 'WebSearch', input: expectedCall.input });
       }
     }
+    if (expectedCall.fallbackId && canonicalItemId) this.rawExecAliases.set(canonicalItemId, expectedCall.fallbackId);
     expectedCall.claimed = true;
     expectedCall.canonicalItemId = canonicalItemId;
     expectedCall.canonicalCompleted = canonicalCompleted;
@@ -1582,20 +1625,16 @@ export class CodexNotificationRouter {
       type: 'tool_use',
       id: item.id,
       name: toolName,
-      input: item.arguments ?? {},
+      input: normalizeCodexToolInput(toolName, { ...this.#rawToolInputsByCallId.get(item.id), ...getCollabAgentInput(item) }),
     });
   }
 
-  #emitToolResultFromCollabAgent(item: CollabAgentToolCallItem): void {
-    const resultText = item.result && typeof item.result === 'object'
-      ? JSON.stringify(item.result)
-      : item.status === 'completed' ? 'Completed' : item.status ?? 'Done';
-
+  #emitToolResultFromCollabAgent(item: CollabAgentToolCallItem, rawResult?: RawToolResult): void {
     this.emit({
       type: 'tool_result',
       id: item.id,
-      content: resultText,
-      isError: item.status === 'failed' || item.status === 'error',
+      content: getCollabAgentResult(item, rawResult),
+      isError: rawResult?.isError || item.status === 'failed' || item.status === 'error',
     });
   }
 
@@ -1978,7 +2017,7 @@ function buildCanonicalToolProjection(
       return {
         itemId: item.id,
         name: COLLAB_AGENT_TOOL_MAP[item.tool] ?? item.tool,
-        input: item.arguments ?? {},
+        input: getCollabAgentInput(item),
       };
 
     case 'mcpToolCall':
@@ -1999,6 +2038,47 @@ function buildCanonicalToolProjection(
     default:
       return null;
   }
+}
+
+function getCollabAgentResult(item: CollabAgentToolCallItem, rawResult?: RawToolResult): string {
+  // A failed tool request does not establish a new agent lifecycle state.
+  if (rawResult?.isError) return rawResult.content;
+  let rawRecord: Record<string, unknown> | null = null;
+  if (rawResult?.content) {
+    try {
+      rawRecord = asRecord(JSON.parse(rawResult.content));
+    } catch {
+      // Plain-text acknowledgements are retained alongside native state below.
+    }
+  }
+  const itemRecord = asRecord(item.result);
+  const result = { ...itemRecord, ...rawRecord };
+  // Raw answers can be richer than the native snapshot. Fill missing agents
+  // from native state without discarding acknowledgement or identity fields.
+  const statuses = { ...item.agentsStates, ...asRecord(itemRecord?.status), ...asRecord(rawRecord?.status) };
+  if (Object.keys(statuses).length) result.status = statuses;
+  if (item.tool === 'spawnAgent' && item.receiverThreadIds?.length === 1 && !result.agent_id) {
+    result.agent_id = item.receiverThreadIds[0];
+  }
+  const text = rawResult ? (rawRecord ? undefined : rawResult.content)
+    : typeof item.result === 'string' ? item.result : undefined;
+  if (Object.keys(result).length) {
+    if (text) result.output = text;
+    return JSON.stringify(result);
+  }
+  return text ?? rawResult?.content ?? (item.result !== undefined ? JSON.stringify(item.result)
+    : item.status === 'completed' ? 'Completed' : item.status ?? 'Done');
+}
+
+function getCollabAgentInput(item: CollabAgentToolCallItem): Record<string, unknown> {
+  return {
+    ...(item.prompt != null ? { message: item.prompt } : {}),
+    ...(item.model ? { model: item.model } : {}),
+    ...(item.reasoningEffort ? { reasoning_effort: item.reasoningEffort } : {}),
+    ...(item.tool !== 'spawnAgent' && item.receiverThreadIds?.length
+      ? { ids: item.receiverThreadIds } : {}),
+    ...item.arguments,
+  };
 }
 
 function readCanonicalCommand(item: CommandExecutionItem): string {

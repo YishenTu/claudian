@@ -43,6 +43,7 @@ import { renderMermaidDiagrams } from './MermaidRenderer';
 import { getResponseSegments } from './NotificationBoundaries';
 import { createResponseTextBlock, getResponseElementKind, getResponseLayout, markResponseElement } from './ResponseLayout';
 import { resolveSubagentAdapter } from './subagentAdapterResolution';
+import { renderSubagentHistory } from './SubagentHistoryRenderer';
 import {
   renderStoredAsyncSubagent,
   renderStoredSubagent,
@@ -349,6 +350,10 @@ export class MessageRenderer {
       }
     } else if (msg.role === 'assistant') {
       this.#renderAssistantContent(msg, contentEl);
+      for (const card of contentEl.querySelectorAll<HTMLElement>('[data-subagent-id]')) {
+        const info = msg.toolCalls?.find(tool => tool.id === card.dataset.subagentId)?.subagent;
+        if (info) renderSubagentHistory(card, info, allMessages ?? [msg]);
+      }
       if (msg.isInterrupt) {
         this.appendInterruptIndicator(contentEl);
       }
@@ -610,7 +615,7 @@ export class MessageRenderer {
       this.#renderTaskSubagent(contentEl, toolCall);
     } else if (
       subagentAdapter?.protocol === 'lifecycle'
-      && subagentAdapter.isSpawnTool(toolCall.name)
+      && (subagentAdapter.isSpawnTool(toolCall.name) || toolCall.subagent?.lifecycleSource === 'session')
       && msg
     ) {
       this.#renderProviderLifecycleSubagent(contentEl, toolCall, msg);
@@ -647,11 +652,12 @@ export class MessageRenderer {
   ): boolean {
     const agentIdToSpawnId = new Map<string, string>();
     for (const sibling of msg.toolCalls ?? []) {
-      if (!adapter.isSpawnTool(sibling.name)) continue;
+      if (!adapter.isSpawnTool(sibling.name) && sibling.subagent?.lifecycleSource !== 'session') continue;
       const spawnResult = adapter.extractSpawnResult(sibling.result, sibling);
       const agentId = spawnResult.agentId
         ?? adapter.buildSubagentInfo(sibling, msg.toolCalls ?? []).agentId;
       if (agentId) agentIdToSpawnId.set(agentId, sibling.id);
+      for (const alias of spawnResult.aliases ?? []) agentIdToSpawnId.set(alias, sibling.id);
     }
     return adapter.isToolCallFullyOwned(toolCall, agentIdToSpawnId);
   }

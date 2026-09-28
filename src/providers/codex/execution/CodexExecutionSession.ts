@@ -57,6 +57,7 @@ import {
   resolveCodexAppServerLaunchSpec,
 } from '../runtime/codexAppServerSupport';
 import type {
+  ItemCompletedNotification,
   SandboxPolicy,
   ServerRequestResolvedNotification,
   ThreadCompactStartResult,
@@ -101,6 +102,7 @@ import type {
 } from '../types';
 import { adaptCodexStreamChunk } from './CodexExecutionEventAdapter';
 import { CodexExecutionServerRequestRouter } from './CodexExecutionServerRequestRouter';
+import { CodexSubagentTracker } from './CodexSubagentTracker';
 
 const PASSIVE_INSTRUCTIONS =
   'Do not invoke tools. Complete the request only from the supplied input and context.';
@@ -258,6 +260,18 @@ export class CodexExecutionSession
   private completionRecovery: CompletionRecovery | null = null;
   private disposed = false;
   private lifecycleGeneration = 0;
+
+  private sessionSequence = 0;
+  private readonly subagents = new CodexSubagentTracker(
+    subagent => this.#emitSessionEvent({ type: 'subagent_updated', subagent }),
+    async threadId => {
+      if (!this.transport) throw new Error('Codex transport is unavailable');
+      return (await this.transport.request<ThreadReadResult>('thread/read', { threadId, includeTurns: true }, 5_000)).thread;
+    },
+    () => this.#resolveTargetWorkingDirectory(),
+  );
+
+  hasBackgroundWork(): boolean { return this.subagents.hasBackgroundWork(); }
 
   private threadId: string | null;
   private loadedThreadId: string | null = null;
@@ -725,6 +739,24 @@ export class CodexExecutionSession
       return;
     }
 
+    if (method === 'item/completed') {
+      const notification = params as ItemCompletedNotification;
+      if (notification.threadId === this.threadId && notification.item.type === 'subAgentActivity') {
+        this.subagents.activity(notification.item, notification.turnId);
+      }
+    }
+    if (method === 'turn/started') {
+      const started = params as TurnStartedNotification;
+      if (this.subagents.turnStarted(started.threadId, started.turn.id)) return;
+    }
+    if (method === 'turn/completed') {
+      const completed = params as TurnCompletedNotification;
+      if (this.subagents.turnCompleted(completed.threadId, completed.turn)) return;
+    }
+
+    const childScope = extractNotificationScope(method, params);
+    if (childScope && this.subagents.handleNotification(childScope.threadId, childScope.turnId, method, params)) return;
+
     const run = this.activeRun;
     if (!run || run.isTerminal || run.isCancellationRequested) return;
     if (method === 'turn/started') {
@@ -1105,6 +1137,7 @@ export class CodexExecutionSession
             : {}),
         },
       );
+      this.subagents.seed(result.thread);
       this.loadedThreadId = result.thread.id;
       this.loadedThreadBaseInstructions = baseInstructions;
       return {
@@ -1585,6 +1618,7 @@ export class CodexExecutionSession
 
     this.launchSpec = null;
     this.runtimeContext = null;
+    this.subagents.clear();
     this.loadedThreadId = null;
     this.loadedThreadBaseInstructions = null;
     this.dynamicToolRegistry = new CodexDynamicToolRegistry();
@@ -1632,21 +1666,16 @@ export class CodexExecutionSession
   }
 
   #emitSessionState(): void {
-    const event: ProviderSessionEvent = {
-      type: 'session_state_changed',
-      scope: {
-        kind: 'session',
-        sessionInstanceId: this.sessionInstanceId,
-        sequence: this.snapshot.revision,
-      },
-      snapshot: this.snapshot,
-    };
+    this.#emitSessionEvent({ type: 'session_state_changed', snapshot: this.snapshot });
+  }
+
+  #emitSessionEvent(event: Omit<Extract<ProviderSessionEvent, { type: 'session_state_changed' }>, 'scope'>
+    | Omit<Extract<ProviderSessionEvent, { type: 'subagent_updated' }>, 'scope'>): void {
+    const scoped = { ...event, scope: {
+      kind: 'session' as const, sessionInstanceId: this.sessionInstanceId, sequence: ++this.sessionSequence,
+    } };
     for (const listener of this.sessionEventListeners) {
-      try {
-        listener(event);
-      } catch {
-        // Session listeners cannot interfere with native lifecycle cleanup.
-      }
+      try { listener(scoped); } catch { /* Listeners cannot interrupt native event handling. */ }
     }
   }
 

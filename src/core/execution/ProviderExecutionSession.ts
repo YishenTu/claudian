@@ -40,6 +40,8 @@ export interface ProviderExecutionSession {
   cancel(): void;
   getSnapshot(): ProviderSessionSnapshot;
   getStatus(): ProviderSessionStatus;
+  /** Native work that outlives a requested turn protects the process from cooling. */
+  hasBackgroundWork?(): boolean;
   /**
    * Current native query commands; undefined means no authoritative snapshot is available.
    * Reading never starts provider work. Implementations emit commands_changed when it changes or clears.
