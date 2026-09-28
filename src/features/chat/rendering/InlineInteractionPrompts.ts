@@ -47,6 +47,7 @@ export interface InlineInteractionPromptsDeps {
 export class InlineInteractionPrompts {
   private readonly pending = new Map<string, InlineAskUserQuestion>();
   private suppressDepth = 0;
+  private active = true;
 
   constructor(private readonly deps: InlineInteractionPromptsDeps) {}
 
@@ -133,13 +134,21 @@ export class InlineInteractionPrompts {
     interactionId: string,
     input: Record<string, unknown>,
     signal?: AbortSignal,
+    config?: InlineAskQuestionConfig,
   ): Promise<Record<string, string | string[]> | null> {
     return this.#showInline(
       interactionId,
       this.#requireParentEl(),
       input,
       signal,
+      config,
     );
+  }
+
+  setActive(active: boolean): void {
+    this.active = active;
+    for (const inline of this.pending.values()) inline.setVisible(active);
+    this.#syncSuppression();
   }
 
   dismiss(interactionId: string): void {
@@ -154,7 +163,7 @@ export class InlineInteractionPrompts {
   resetSuppression(): void {
     if (this.suppressDepth <= 0) return;
     this.suppressDepth = 0;
-    this.deps.getSuppressedEl?.()?.removeClass('claudian-hidden');
+    this.#syncSuppression();
   }
 
   #showInline(
@@ -187,6 +196,7 @@ export class InlineInteractionPrompts {
       this.pending.set(interactionId, inline);
       try {
         inline.render();
+        inline.setVisible(this.active);
       } catch (error) {
         this.pending.delete(interactionId);
         this.#restore();
@@ -205,16 +215,19 @@ export class InlineInteractionPrompts {
   }
 
   #suppress(): void {
-    const el = this.deps.getSuppressedEl?.();
-    if (!el) return;
     this.suppressDepth += 1;
-    el.addClass('claudian-hidden');
+    this.#syncSuppression();
   }
 
   #restore(): void {
+    this.suppressDepth = Math.max(0, this.suppressDepth - 1);
+    this.#syncSuppression();
+  }
+
+  #syncSuppression(): void {
     const el = this.deps.getSuppressedEl?.();
-    if (!el || this.suppressDepth <= 0) return;
-    this.suppressDepth -= 1;
-    if (this.suppressDepth === 0) el.removeClass('claudian-hidden');
+    if (!el) return;
+    if (this.active && this.suppressDepth > 0) el.addClass('claudian-hidden');
+    else el.removeClass('claudian-hidden');
   }
 }

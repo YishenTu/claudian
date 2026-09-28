@@ -10,14 +10,14 @@ import type {
 } from '../../../core/execution';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '../../../core/providers/types';
-import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
+import type { AskUserAnswers, ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import {
   providerOutputEventToStreamChunk,
   StreamController,
 } from '../controllers/StreamController';
 import type { WarmExecutionPool } from '../execution/WarmExecutionPool';
-import type { QuestionAnswerHandler } from '../rendering/AsyncQuestionRenderer';
+import { AsyncQuestionPrompts } from '../rendering/AsyncQuestionPrompts';
 import { type BackgroundTurnRenderTarget, discardBackgroundTurn, renderAutoTriggeredTurn, renderSessionTaskNotification, reserveBackgroundTurn } from '../rendering/BackgroundTurnRenderer';
 import { InlineInteractionPrompts } from '../rendering/InlineInteractionPrompts';
 import { MessageRenderer } from '../rendering/MessageRenderer';
@@ -68,6 +68,7 @@ export class SideChatRuntime {
   readonly #subagents: SubagentManager;
   readonly #session: SideChatSession;
   readonly #prompts: InlineInteractionPrompts;
+  readonly #asyncQuestions: AsyncQuestionPrompts;
   readonly #settings: SideChatSettingsProjection;
   #activeDelivery: SideChatSubmission['onDelivery'];
   #activeAssistant: ChatMessage | null = null;
@@ -88,26 +89,23 @@ export class SideChatRuntime {
       onAttentionChanged: () => this.#refreshStatus(),
       onStreamingStateChanged: () => this.#refreshStatus(),
     });
-    const createQuestionAnswerHandler = (tool: ToolCallInfo): QuestionAnswerHandler | undefined => {
-      if (tool.input.replyMode !== 'user-message') return undefined;
-      return async answers => {
-        if (this.#disposed || !this.state.messages.some(message => message.toolCalls?.includes(tool))) {
-          throw new Error('This side chat is no longer available.');
+    const answerQuestion = async (tool: ToolCallInfo, answers: AskUserAnswers): Promise<void> => {
+      if (this.#disposed || !this.state.messages.some(message => message.toolCalls?.includes(tool))) {
+        throw new Error('This side chat is no longer available.');
+      }
+      const reply = ProviderRegistry.formatQuestionReply(this.providerId, tool, answers);
+      if (!reply) throw new Error('This question cannot accept that reply.');
+      await new Promise<void>((resolve, reject) => {
+        const submission: SideChatSubmission = {
+          ...reply,
+          onDelivery: accepted => accepted ? resolve() : reject(new Error('The answer was not sent. Please try again.')),
+        };
+        if (this.isWorking) {
+          if (!this.enqueue(submission)) submission.onDelivery?.(false);
+        } else {
+          void this.submit(submission).catch(reject);
         }
-        const reply = ProviderRegistry.formatQuestionReply(this.providerId, tool, answers);
-        if (!reply) throw new Error('This question cannot accept that reply.');
-        await new Promise<void>((resolve, reject) => {
-          const submission: SideChatSubmission = {
-            ...reply,
-            onDelivery: accepted => accepted ? resolve() : reject(new Error('The answer was not sent. Please try again.')),
-          };
-          if (this.isWorking) {
-            if (!this.enqueue(submission)) submission.onDelivery?.(false);
-          } else {
-            void this.submit(submission).catch(reject);
-          }
-        });
-      };
+      });
     };
     this.renderer = new MessageRenderer(
       deps.plugin,
@@ -117,15 +115,20 @@ export class SideChatRuntime {
       undefined,
       () => this.capabilities,
       undefined,
-      createQuestionAnswerHandler,
     );
     this.#subagents = new SubagentManager(() => undefined);
     this.#prompts = new InlineInteractionPrompts({
       getPromptParentEl: () => deps.getPromptParentEl(),
       onBeforeShow: () => this.#stream.hideThinkingIndicator(),
     });
+    this.#asyncQuestions = new AsyncQuestionPrompts({
+      prompts: this.#prompts,
+      answer: answerQuestion,
+      onChange: tool => this.renderer.updateQuestionTool(tool),
+      onPendingChange: (id, pending) => pending ? this.state.beginActionRequired(id) : this.state.endActionRequired(id),
+    });
     this.#stream = new StreamController({
-      createQuestionAnswerHandler,
+      onQuestionToolChanged: tool => this.#asyncQuestions.update(tool),
       getMessagesEl: () => deps.messagesEl,
       getProviderId: () => deps.source.providerId,
       getProviderSessionId: () => this.#session.providerSessionId ?? null,
@@ -142,6 +145,7 @@ export class SideChatRuntime {
       lifecycleRegistry: deps.lifecycleRegistry,
       onError: error => deps.onError?.(error),
       onInvalidated: () => {
+        this.#asyncQuestions.expireAll();
         this.#discardQueuedSubmissions();
         this.#discardBackgroundTurns();
         this.#lastError = ephemeral
@@ -203,6 +207,10 @@ export class SideChatRuntime {
 
   updateSettings(patch: SideChatSettingsProjection): void {
     Object.assign(this.#settings, patch);
+  }
+
+  setPromptActive(active: boolean): void {
+    this.#prompts.setActive(active);
   }
 
   setTabActive(active: boolean): void {
@@ -397,6 +405,7 @@ export class SideChatRuntime {
     this.#titleService = null;
     this.state.cancelRequested = true;
     this.#session.cancel();
+    this.#asyncQuestions.expireAll();
     this.#prompts.dismissAll();
     await this.#session.dispose();
     this.state.clearFlavorTimerInterval();

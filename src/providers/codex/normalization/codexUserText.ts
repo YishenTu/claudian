@@ -1,4 +1,4 @@
-import { displayCodexQuestionReply } from './codexQuestionNormalization';
+import { stripCodexQuestionReplies } from './codexQuestionNormalization';
 
 const CODEX_IMAGE_OPEN_TAG_PATTERN = /^<image\b[^>]*>$/i;
 const CODEX_IMAGE_CLOSE_TAG_PATTERN = /^<\/image>$/i;
@@ -101,7 +101,7 @@ export function joinCodexUserTextParts(parts: readonly string[], separator = '')
 }
 
 export function extractCodexUserVisibleText(text: string): string | null {
-  text = displayCodexQuestionReply(text);
+  text = stripCodexQuestionReplies(text);
   const withoutImagePlaceholders = stripCodexImagePlaceholderText(text);
   const visible = stripCodexImagePlaceholderText(
     stripLeadingCodexControlMetadata(withoutImagePlaceholders),

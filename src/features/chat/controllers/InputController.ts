@@ -45,6 +45,7 @@ import type {
   LinkedContentController,
   LinkedContentSubmissionToken,
 } from '../linked-content';
+import { AsyncQuestionPrompts } from '../rendering/AsyncQuestionPrompts';
 import {
   type InlineApprovalOptions,
   InlineInteractionPrompts,
@@ -148,6 +149,7 @@ export class InputController {
   private activeDelivery: SendMessageOptions['onDelivery'];
   private activeResumeDropdown: ResumeSessionDropdown | null = null;
   private readonly inlinePrompts: InlineInteractionPrompts;
+  private readonly asyncQuestions: AsyncQuestionPrompts;
   private readonly pendingSteersByConversation = new Map<string, PendingSteerState>();
   private activeStreamingAssistantMessage: ChatMessage | null = null;
   private pendingProviderUserMessages: PendingProviderUserMessage[] = [];
@@ -165,6 +167,14 @@ export class InputController {
       getPromptParentEl: () => this.deps.getInputContainerEl().parentElement,
       getSuppressedEl: () => this.deps.getInputContainerEl(),
       onBeforeShow: () => this.deps.streamController.hideThinkingIndicator(),
+    });
+    this.asyncQuestions = new AsyncQuestionPrompts({
+      prompts: this.inlinePrompts,
+      answer: (tool, answers) => this.answerQuestion(tool, answers, this.deps.state.currentConversationId),
+      onChange: tool => this.deps.renderer.updateQuestionTool(tool),
+      onPendingChange: (id, pending) => pending
+        ? this.deps.state.beginActionRequired(id)
+        : this.deps.state.endActionRequired(id),
     });
     this.turnCoordinator = deps.turnOwner ?? new TurnCoordinator();
   }
@@ -217,6 +227,14 @@ export class InputController {
     } finally {
       if (!queued) options?.onDelivery?.(false);
     }
+  }
+
+  setPromptActive(active: boolean): void {
+    this.inlinePrompts.setActive(active);
+  }
+
+  updateAsyncQuestion(tool: ToolCallInfo): void {
+    this.asyncQuestions.update(tool);
   }
 
   async answerQuestion(tool: ToolCallInfo, answers: AskUserAnswers, conversationId: string | null): Promise<void> {
@@ -305,7 +323,7 @@ export class InputController {
     const hasImages = imageOverride !== undefined
       ? imageOverride.length > 0
       : (composerDraft.images.length > 0);
-    if (!content && !hasImages) {
+    if (!content && !hasImages && !options?.turnRequestOverride?.text.trim()) {
       this.#reportDeferredReviewableSettlement();
       return;
     }
@@ -611,6 +629,7 @@ export class InputController {
       if (result.status === 'cancelled') {
         wasInterrupted = true;
       } else if (result.status === 'invalidated') {
+        this.asyncQuestions.expireAll();
         wasInvalidated = true;
       } else if (result.status === 'missing-session') {
         const retryMessage = result.accepted
@@ -1448,7 +1467,7 @@ export class InputController {
     const displayContent = expected?.displayContent ?? chunk.content;
     const persistedContent = expected?.persistedContent ?? displayContent;
     const images = expected?.images;
-    if (displayContent || (images?.length ?? 0) > 0) {
+    if (displayContent || expected?.persistedContent || (images?.length ?? 0) > 0) {
       const userMessage: ChatMessage = {
         id: this.deps.generateId(),
         role: 'user',
@@ -1762,6 +1781,7 @@ export class InputController {
   }
 
   dismissPendingApproval(): void {
+    this.asyncQuestions.expireAll();
     this.inlinePrompts.dismissAll();
   }
 

@@ -949,6 +949,18 @@ function processPersistedMCPToolCall(
   });
 }
 
+function applyQuestionReplies(text: string, ctx: PersistedParseContext): boolean {
+  const replies = parseCodexQuestionReply(text);
+  for (const reply of replies) {
+    const tool = findPersistedToolCallById(ctx, reply.callId);
+    const question: unknown = Array.isArray(tool?.input.questions) ? tool.input.questions[reply.index] : undefined;
+    if (tool?.input.replyMode === 'user-message' && question && typeof question === 'object' && 'question' in question && question.question === reply.question) {
+      tool.resolvedAnswers = { ...tool.resolvedAnswers, [String(('id' in question ? question.id : undefined) ?? reply.index)]: reply.answer };
+    }
+  }
+  return replies.length > 0;
+}
+
 function processPersistedPayload(
   payload: PersistedPayload,
   timestamp: number,
@@ -965,16 +977,10 @@ function processPersistedPayload(
 
       if (messagePayload.role === 'user') {
         const text = extractUserMessageText(messagePayload.content);
-        for (const reply of parseCodexQuestionReply(text)) {
-          const tool = findPersistedToolCallById(ctx, reply.callId);
-          const question: unknown = Array.isArray(tool?.input.questions) ? tool.input.questions[reply.index] : undefined;
-          if (tool?.input.replyMode === 'user-message' && question && typeof question === 'object' && 'question' in question && question.question === reply.question) {
-            tool.resolvedAnswers = { ...tool.resolvedAnswers, [String(('id' in question ? question.id : undefined) ?? reply.index)]: reply.answer };
-          }
-        }
+        const isQuestionReply = applyQuestionReplies(text, ctx);
         const visibleText = extractCodexUserVisibleText(text);
         const hasImages = hasMessageImages(messagePayload.content);
-        if (visibleText === null && !hasImages) break;
+        if (visibleText === null && !hasImages && !isQuestionReply) break;
 
         // Close any active bubble in the current turn before starting user content
         if (ctx.currentTurnId) {
@@ -986,8 +992,8 @@ function processPersistedPayload(
         ctx.currentTurnId = null;
         const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), null, timestamp);
         ctx.currentTurnId = turn.id;
-        if (visibleText !== null) {
-          appendUserChunk(turn, visibleText, timestamp);
+        if (isQuestionReply || visibleText !== null) {
+          appendUserChunk(turn, isQuestionReply ? text : visibleText!, timestamp);
         }
         appendUserImages(turn, messagePayload.content, timestamp);
       } else if (messagePayload.role === 'assistant') {
@@ -1117,9 +1123,10 @@ function processEventMsg(
       const turn = ensureTurn(ctx.turns, ctx.turnOrder, nextTurnId(ctx), ctx.currentTurnId, timestamp);
       const msg = payload.message;
       if (typeof msg === 'string') {
+        const isQuestionReply = applyQuestionReplies(msg, ctx);
         const visibleText = extractCodexUserVisibleText(msg);
-        if (visibleText !== null) {
-          appendUserChunk(turn, visibleText, timestamp);
+        if (isQuestionReply || visibleText !== null) {
+          appendUserChunk(turn, isQuestionReply ? msg : visibleText!, timestamp);
         }
       }
       break;
@@ -1189,14 +1196,17 @@ function flushBubbleTurnMessages(
 ): { messages: ChatMessage[]; nextMsgIndex: number } {
   const messages: ChatMessage[] = [];
 
-  const visibleUserText = extractCodexUserVisibleText(turn.userChunks.join('\n'));
+  const rawUserText = turn.userChunks.join('\n');
+  const isQuestionReply = parseCodexQuestionReply(rawUserText).length > 0;
+  const visibleUserText = extractCodexUserVisibleText(rawUserText);
   const userImages = turn.userImages.length > 0 ? turn.userImages : undefined;
-  if (visibleUserText || userImages) {
-    const displayContent = visibleUserText ? extractUserDisplayContent(visibleUserText) : undefined;
+  if (visibleUserText || userImages || isQuestionReply) {
+    const extractedDisplay = visibleUserText ? extractUserDisplayContent(visibleUserText) : undefined;
+    const displayContent = extractedDisplay ?? (isQuestionReply ? visibleUserText ?? '' : undefined);
     messages.push({
       id: `codex-msg-${msgIndex}`,
       role: 'user',
-      content: visibleUserText ?? '',
+      content: isQuestionReply ? rawUserText : visibleUserText ?? '',
       ...(displayContent !== undefined ? { displayContent } : {}),
       ...(userImages ? { images: userImages } : {}),
       ...(turn.serverTurnId ? { userMessageId: turn.serverTurnId } : {}),

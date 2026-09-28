@@ -7,6 +7,7 @@ import {
   normalizeCodexMemoryCitation,
   stripCodexMemoryCitationMarkup,
 } from '../normalization/CodexMemoryCitation';
+import { parseCodexQuestionReply } from '../normalization/codexQuestionNormalization';
 import {
   appendCodexCommandOutput,
   decodeCodexExecEnvelopeCalls,
@@ -1713,16 +1714,17 @@ export class CodexNotificationRouter {
 
     const rawContent = this.#extractUserMessageText(item.content);
     const visibleContent = extractCodexUserVisibleText(rawContent);
+    const isQuestionReply = parseCodexQuestionReply(rawContent).length > 0;
     this.#startedUserMessageIds.add(item.id);
 
-    if (visibleContent === null && rawContent.trim()) {
+    if (visibleContent === null && rawContent.trim() && !isQuestionReply) {
       return;
     }
 
     this.emit({
       type: 'user_message_start',
       itemId: item.id,
-      content: visibleContent ?? rawContent,
+      content: visibleContent ?? (isQuestionReply ? '' : rawContent),
     });
   }
 

@@ -31,6 +31,8 @@ describe('getToolIcon', () => {
     [TOOL_NOTEBOOK_EDIT, 'file-pen'],
     [TOOL_BASH, 'terminal'],
     [TOOL_EXEC, 'code'],
+    ['js', 'code'],
+    ['mcp__cua_repl__js', 'code'],
     [TOOL_BASH_OUTPUT, 'terminal'],
     [TOOL_KILL_SHELL, 'terminal'],
     [TOOL_GLOB, 'folder-search'],
@@ -52,6 +54,7 @@ describe('getToolIcon', () => {
 
   it('should return MCP_ICON_MARKER for mcp__ prefixed tools', () => {
     expect(getToolIcon('mcp__server__tool')).toBe(MCP_ICON_MARKER);
+    expect(getToolIcon('mcp__other__js')).toBe(MCP_ICON_MARKER);
     expect(getToolIcon('mcp__github__search')).toBe(MCP_ICON_MARKER);
     expect(getToolIcon('mcp__')).toBe(MCP_ICON_MARKER);
   });

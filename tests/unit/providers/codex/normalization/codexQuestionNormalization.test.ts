@@ -1,4 +1,4 @@
-import { displayCodexQuestionReply, formatCodexQuestionReply, parseCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
+import { formatCodexQuestionReply, parseCodexQuestionReply,stripCodexQuestionReplies } from '@/providers/codex/normalization/codexQuestionNormalization';
 
 it('serializes each answer with its native call and question index and restores the reply', () => {
   const reply = formatCodexQuestionReply({
@@ -9,7 +9,7 @@ it('serializes each answer with its native call and question index and restores 
   }, { '0': 'History', '1': 'Keep <tags> and "quotes".' });
   expect(reply).toEqual({
     content: '<send_user_message_question_reply>\n[{"questionItemId":"[\\"request_user_input_async\\",\\"call_question\\",0]","question":"Which check?","answer":"History"},{"questionItemId":"[\\"request_user_input_async\\",\\"call_question\\",1]","question":"Any details?","answer":"Keep \\u003ctags> and \\"quotes\\"."}]\n</send_user_message_question_reply>',
-    displayContent: 'Which check?\nHistory\n\nAny details?\nKeep <tags> and "quotes".',
+    displayContent: '',
   });
   expect(parseCodexQuestionReply(reply!.content)).toEqual([
     { callId: 'call_question', index: 0, question: 'Which check?', answer: 'History' },
@@ -32,5 +32,13 @@ it('recognizes replies inside merged input and preserves ordinary content and de
   const reply = formatCodexQuestionReply(tool, { '0': '</send_user_message_question_reply>' })!;
   const merged = `Existing queued message\n\n${reply.content}\n\nAnother message`;
   expect(parseCodexQuestionReply(merged)).toEqual([{ callId: 'call', index: 0, question: 'Details?', answer: '</send_user_message_question_reply>' }]);
-  expect(displayCodexQuestionReply(merged)).toBe('Existing queued message\n\nDetails?\n</send_user_message_question_reply>\n\nAnother message');
+  expect(stripCodexQuestionReplies(merged)).toBe('Existing queued message\n\n\n\nAnother message');
+});
+
+
+it('keeps malformed reply text visible', () => {
+  for (const body of ['not JSON', '[]', '[{"question":"Ordinary text"}]']) {
+    const text = `<send_user_message_question_reply>${body}</send_user_message_question_reply>`;
+    expect(stripCodexQuestionReplies(text)).toBe(text);
+  }
 });

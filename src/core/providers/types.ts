@@ -56,6 +56,7 @@ export const DEFAULT_CHAT_PROVIDER_ID = 'claude' as const satisfies ProviderId;
 /** Native reply content is provider-owned; chat routes it as ordinary user input. */
 export interface ProviderQuestionReply {
   content: string;
+  /** Empty when the reply is presented only in its question renderer. */
   displayContent: string;
 }
 

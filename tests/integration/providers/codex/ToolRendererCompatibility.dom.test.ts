@@ -1,4 +1,5 @@
 /** @jest-environment jsdom */
+import '@/providers';
 
 import { testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
@@ -6,6 +7,10 @@ import { axe } from 'jest-axe';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { StreamChunk, ToolCallInfo } from '@/core/types';
+import { AsyncQuestionPrompts } from '@/features/chat/rendering/AsyncQuestionPrompts';
+import type { QuestionAnswerHandler } from '@/features/chat/rendering/InlineAskUserQuestion';
+import { InlineInteractionPrompts } from '@/features/chat/rendering/InlineInteractionPrompts';
+import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { renderStoredToolCall, renderToolCall, updateToolCallResult } from '@/features/chat/rendering/ToolCallRenderer';
 import { parseCodexSessionContent } from '@/providers/codex/history/CodexHistoryStore';
 import { formatCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
@@ -14,6 +19,11 @@ import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotifica
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
+HTMLElement.prototype.toggleClass = function (names, enabled) {
+  for (const name of Array.isArray(names) ? names : [names]) this.classList.toggle(name, enabled);
+};
+HTMLElement.prototype.scrollIntoView = function () {};
+HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
 
 beforeEach(() => document.body.replaceChildren());
 
@@ -42,6 +52,20 @@ function restoreTool(mode: 'live' | 'history', name: string, input: unknown, out
 }
 
 describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode => {
+  it.each(['js', 'mcp__cua_repl__js'])('renders %s with its title, JavaScript source, and output', async name => {
+    const source = "const app = await cua.getApp('Obsidian');\nnodeRepl.write(await app.getState());";
+    const output = 'Wall time: 0.5 seconds\nOutput:\nWindow: Obsidian\n  button Send';
+    const tool = restoreTool(mode, name, { code: source, title: 'Inspect Obsidian', timeout_ms: 30000 }, output);
+    const block = renderStoredToolCall(document.body.createDiv(), tool);
+    expect(getToolIcon(tool.name)).toBe('code');
+    const header = within(block).getByRole('button', { name: /^Script: Inspect Obsidian/ });
+    expect(header.textContent).toContain('Script');
+    fireEvent.keyDown(header, { key: 'Enter' });
+    expect(block.querySelector('code')?.textContent).toBe(source);
+    expect(block.querySelector('.claudian-tool-script-output')?.textContent).toBe(output);
+    expect((await axe(block)).violations).toEqual([]);
+  });
+
   it.each([
     ['send_message', 'Message agent', { target: '/root/reviewer', message: 'Check the race condition.' }, ''],
     ['followup_task', 'Continue agent', { target: '/root/reviewer', message: 'Review the repair.' }, ''],
@@ -118,6 +142,23 @@ it('shows async question options while live and the actual answer when resolved'
 });
 
 
+function showQuestion(tool: ToolCallInfo, onAnswer: QuestionAnswerHandler) {
+  const composer = document.body.createDiv();
+  const input = composer.createEl('textarea');
+  input.value = 'Keep my draft';
+  const panelHost = document.body.createDiv();
+  const elements = new Map<string, HTMLElement>();
+  const block = renderToolCall(document.body.createDiv(), tool, elements, { initiallyExpanded: true });
+  const prompts = new AsyncQuestionPrompts({
+    prompts: new InlineInteractionPrompts({ getPromptParentEl: () => panelHost, getSuppressedEl: () => composer }),
+    answer: (_tool, answers) => onAnswer(answers),
+    onChange: current => updateToolCallResult(current.id, current, elements),
+    onPendingChange: () => undefined,
+  });
+  prompts.update(tool);
+  return { composer, input, panelHost, elements, block, prompts };
+}
+
 it('submits a selected option and a free-text answer once, then restores both answers from native history', async () => {
   const input = { questions: [{ title: 'Which check?', options: ['Rendering', 'History'] }, { title: 'Any details?' }] };
   const tool = restoreTool('history', 'request_user_input_async', input, '{"accepted":true}');
@@ -127,21 +168,30 @@ it('submits a selected option and a free-text answer once, then restores both an
     reply = formatCodexQuestionReply(tool, answers)!.content;
     await new Promise<void>(resolve => { finish = resolve; });
   });
-  const elements = new Map<string, HTMLElement>();
-  const block = renderToolCall(document.body.createDiv(), tool, elements, { onAnswer });
-  expect(within(block).getByRole('button', { name: /AskUserQuestion/ }).getAttribute('aria-expanded')).toBe('true');
-  fireEvent.click(within(block).getByRole('radio', { name: 'History' }));
-  fireEvent.input(within(block).getByRole('textbox', { name: 'Your answer to Any details?' }), { target: { value: 'Preserve my notes.' } });
+  const { block, panelHost, elements, composer, input: draft, prompts } = showQuestion(tool, onAnswer);
+  expect(composer.classList.contains('claudian-hidden')).toBe(true);
+  expect(within(block).queryByRole('region', { name: 'Question' })).toBeNull();
+  fireEvent.click(within(panelHost).getByRole('button', { name: 'History' }));
+  fireEvent.input(within(panelHost).getByRole('textbox', { name: 'Any details?' }), { target: { value: 'Preserve my notes.' } });
   // Acknowledgement must not erase a selection made before it arrives.
   updateToolCallResult(tool.id, tool, elements);
-  expect((within(block).getByRole('radio', { name: 'History' }) as HTMLInputElement).checked).toBe(true);
-  fireEvent.click(within(block).getByRole('button', { name: 'Send answer' }));
-  fireEvent.submit(block.querySelector('form')!);
+  prompts.update(tool);
+  const panel = within(panelHost).getByRole('region', { name: 'Question' });
+  fireEvent.click(within(panel).getByRole('button', { name: 'Submit' }));
+  expect(within(panel).getByText('History')).toBeDefined();
+  expect(within(panel).getByText('Preserve my notes.')).toBeDefined();
+  expect((await axe(panel)).violations).toEqual([]);
+  fireEvent.click(within(panelHost).getByRole('button', { name: 'Submit answers' }));
+  fireEvent.keyDown(panel, { key: 'Enter' });
+  fireEvent.click(within(panel).getByRole('button', { name: 'Sending...' }));
   expect(onAnswer).toHaveBeenCalledTimes(1);
-  expect((within(block).getByRole('button', { name: 'Sending...' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((within(panelHost).getByRole('button', { name: 'Sending...' }) as HTMLButtonElement).disabled).toBe(true);
   finish();
+  await waitFor(() => expect(within(panelHost).queryByRole('button', { name: 'Sending...' })).toBeNull());
+  expect(composer.classList.contains('claudian-hidden')).toBe(false);
+  expect(draft.value).toBe('Keep my draft');
   await waitFor(() => expect(within(block).getByText('Preserve my notes.')).toBeDefined());
-  expect(within(block).queryByRole('button', { name: 'Send answer' })).toBeNull();
+  expect(within(block).queryByRole('button', { name: 'Submit answers' })).toBeNull();
   const payloads = [
     { type: 'function_call', name: 'request_user_input_async', call_id: 'tool', arguments: JSON.stringify(input) },
     { type: 'function_call_output', call_id: 'tool', output: '{"accepted":true}' },
@@ -152,25 +202,43 @@ it('submits a selected option and a free-text answer once, then restores both an
   })).join('\n'));
   const restored = messages.flatMap(message => message.toolCalls ?? [])[0];
   expect(restored.resolvedAnswers).toEqual({ '0': 'History', '1': 'Preserve my notes.' });
-  expect(messages.find(message => message.role === 'user')?.content).toBe('Which check?\nHistory\n\nAny details?\nPreserve my notes.');
-  const restoredBlock = renderStoredToolCall(document.body.createDiv(), restored, { onAnswer, initiallyExpanded: true });
-  expect(within(restoredBlock).queryByRole('button', { name: 'Send answer' })).toBeNull();
+  expect(messages.find(message => message.role === 'user')?.displayContent).toBe('');
+  const transcript = document.body.createDiv();
+  const renderer = new MessageRenderer(
+    { app: {}, settings: {} } as any,
+    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any,
+    transcript, undefined, undefined,
+    () => ({ providerId: 'codex', supportsConversationBranches: true }) as any,
+    { navigate: async () => undefined, isBusy: () => false },
+  );
+  renderer.addMessage(messages.find(message => message.role === 'user')!);
+  expect(transcript.querySelector('.claudian-message-user')).toBeNull();
+  renderer.renderMessages(messages, () => 'Welcome');
+  expect(transcript.querySelector('.claudian-message-user')).toBeNull();
+  expect(within(transcript).getByText('Preserve my notes.')).toBeDefined();
+  renderer.addMessage({ id: 'ordinary', role: 'user', content: 'Keep this message', timestamp: Date.now() });
+  expect(transcript.querySelectorAll('.claudian-message-user')).toHaveLength(1);
+  renderer.dispose();
+  const restoredBlock = renderStoredToolCall(document.body.createDiv(), restored, { initiallyExpanded: true });
+  expect(within(restoredBlock).queryByRole('button', { name: 'Submit answers' })).toBeNull();
   expect((await axe(restoredBlock)).violations).toEqual([]);
 });
 
 it('keeps answer controls usable after rejected submission and disables controls on a failed tool', async () => {
   const tool = restoreTool('history', 'request_user_input_async', { questions: [{ title: 'Which check?', options: ['History'] }] }, '{"accepted":true}');
   const onAnswer = jest.fn().mockRejectedValue(new Error('Conversation changed.'));
-  const elements = new Map<string, HTMLElement>();
-  const block = renderToolCall(document.body.createDiv(), tool, elements, { onAnswer, initiallyExpanded: true });
-  fireEvent.click(within(block).getByRole('radio', { name: 'History' }));
-  fireEvent.click(within(block).getByRole('button', { name: 'Send answer' }));
-  await waitFor(() => expect(within(block).getByRole('alert').textContent).toBe('Conversation changed.'));
-  expect((within(block).getByRole('button', { name: 'Send answer' }) as HTMLButtonElement).disabled).toBe(false);
+  const { block, panelHost, composer, prompts } = showQuestion(tool, onAnswer);
+  fireEvent.click(within(panelHost).getByRole('button', { name: 'History' }));
+  fireEvent.click(within(panelHost).getByRole('button', { name: 'Submit answers' }));
+  await waitFor(() => expect(within(panelHost).getByRole('alert').textContent).toBe('Conversation changed.'));
+  expect((within(panelHost).getByRole('button', { name: 'Submit answers' }) as HTMLButtonElement).disabled).toBe(false);
   expect(tool.resolvedAnswers).toBeUndefined();
   expect((await axe(block)).violations).toEqual([]);
-  updateToolCallResult(tool.id, { ...tool, status: 'error', result: 'Request failed' }, elements);
-  expect(within(block).queryByRole('button', { name: 'Send answer' })).toBeNull();
+  tool.status = 'error';
+  prompts.update(tool);
+  await waitFor(() => expect(within(panelHost).queryByRole('button', { name: 'Submit answers' })).toBeNull());
+  expect(composer.classList.contains('claudian-hidden')).toBe(false);
+  expect(within(block).getByText('Question expired.')).toBeDefined();
 });
 
 
@@ -183,4 +251,57 @@ it('restores native async question items without a raw function call and dedupli
     expect(tools).toHaveLength(1);
     expect(tools[0]).toMatchObject({ id: 'ask-native', name: 'AskUserQuestion', status: 'completed', input: { replyMode: 'user-message', questions: [{ question: 'Which check?' }] } });
   }
+});
+
+
+it('shows js source before output arrives and preserves it after a live failure', () => {
+  const tool: ToolCallInfo = { id: 'js-live', name: 'js', status: 'running', input: { code: 'await app.getState();' } };
+  const elements = new Map<string, HTMLElement>();
+  const block = renderToolCall(document.body.createDiv(), tool, elements, { initiallyExpanded: true });
+  expect(within(block).getByRole('button', { name: /^Script: await app\.getState\(\);/ })).toBeDefined();
+  expect(block.querySelector('code')?.textContent).toBe('await app.getState();');
+  expect(block.textContent).toContain('Running...');
+  updateToolCallResult(tool.id, { ...tool, status: 'error', result: 'ReferenceError: app is not defined' }, elements);
+  expect(block.querySelector('code')?.textContent).toBe('await app.getState();');
+  expect(block.querySelector('.claudian-tool-script-output')?.textContent).toBe('ReferenceError: app is not defined');
+});
+
+
+it('expires dismissed questions and keeps history replay read-only', async () => {
+  const tool = restoreTool('history', 'request_user_input_async', { questions: [{ title: 'Which check?', options: ['History'] }] }, '{"accepted":true}');
+  const onAnswer = jest.fn();
+  const { panelHost, composer, block, prompts } = showQuestion(tool, onAnswer);
+  const panel = within(panelHost).getByRole('region', { name: 'Question' });
+  expect((await axe(panel)).violations).toEqual([]);
+  fireEvent.keyDown(panel, { key: 'Escape' });
+  await waitFor(() => expect(tool.questionStatus).toBe('expired'));
+  expect(composer.classList.contains('claudian-hidden')).toBe(false);
+  expect(onAnswer).not.toHaveBeenCalled();
+  expect(tool.resolvedAnswers).toBeUndefined();
+  expect(within(block).getByText('Question expired.')).toBeDefined();
+  prompts.update(tool);
+  const restored = renderStoredToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
+  expect(within(restored).queryByRole('region', { name: 'Question' })).toBeNull();
+  expect(within(restored).getByText('Question expired.')).toBeDefined();
+  expect(within(panelHost).queryByRole('region', { name: 'Question' })).toBeNull();
+});
+
+
+it.each(['', 'Also check the web renderer.'])('retains native user boundaries while hiding question replies (ordinary text: %s)', ordinary => {
+  const tool = restoreTool('history', 'request_user_input_async', { questions: [{ title: 'Which check?', options: ['History'] }] });
+  const reply = formatCodexQuestionReply(tool, { '0': 'History' })!;
+  const text = [reply.content, ordinary].filter(Boolean).join('\n\n');
+  const chunks: StreamChunk[] = [];
+  const router = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace');
+  router.beginTurn();
+  const item = { type: 'userMessage', id: 'answer', content: [{ type: 'text', text }] };
+  router.handleNotification('item/started', { item });
+  router.handleNotification('item/completed', { item });
+  expect(chunks.filter(chunk => chunk.type === 'user_message_start')).toEqual([
+    { type: 'user_message_start', itemId: 'answer', content: ordinary },
+  ]);
+  const history = parseCodexSessionContent(JSON.stringify({ type: 'response_item', timestamp: testTime(), payload: {
+    type: 'message', role: 'user', content: [{ type: 'input_text', text }],
+  } }));
+  expect(history.find(message => message.role === 'user')?.displayContent).toBe(ordinary);
 });

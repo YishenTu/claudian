@@ -5,12 +5,12 @@ import { getToolIcon, MCP_ICON_MARKER } from '../../../core/tools/toolIcons';
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
   isAgentLifecycleTool,
+  isScriptTool,
   TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_EDIT,
   TOOL_ENTER_PLAN_MODE,
-  TOOL_EXEC,
   TOOL_EXIT_PLAN_MODE,
   TOOL_GLOB,
   TOOL_GREP,
@@ -28,7 +28,6 @@ import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo } from '.
 import type { DiffStats } from '../../../core/types/diff';
 import { appendMCPIcon } from '../../../shared/icons';
 import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '../../../utils/diff';
-import { type QuestionAnswerHandler, renderAsyncQuestionForm } from './AsyncQuestionRenderer';
 import { setupCollapsible } from './collapsible';
 import { renderDiffContent, renderDiffStats } from './DiffRenderer';
 import { renderTodoItems } from './todoUtils';
@@ -59,6 +58,7 @@ function getInputText(input: Record<string, unknown>, key: string, fallback = ''
 }
 
 export function getToolName(name: string, input: Record<string, unknown>): string {
+  if (isScriptTool(name)) return 'Script';
   switch (name) {
     case TOOL_TODO_WRITE: {
       const todos = input.todos as Array<{ status: string }> | undefined;
@@ -76,8 +76,6 @@ export function getToolName(name: string, input: Record<string, unknown>): strin
       return 'List agents';
     case 'interrupt_agent':
       return 'Interrupt agent';
-    case TOOL_EXEC:
-      return 'Script';
     case TOOL_ENTER_PLAN_MODE:
       return 'Entering plan mode';
     case TOOL_EXIT_PLAN_MODE:
@@ -88,6 +86,7 @@ export function getToolName(name: string, input: Record<string, unknown>): strin
 }
 
 export function getToolSummary(name: string, input: Record<string, unknown>): string {
+  if (isScriptTool(name)) return getScriptSummary(input);
   switch (name) {
     case TOOL_READ:
     case TOOL_WRITE:
@@ -95,8 +94,6 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
       const filePath = getInputText(input, 'file_path');
       return fileNameOnly(filePath);
     }
-    case TOOL_EXEC:
-      return getScriptSummary(input);
     case TOOL_BASH: {
       const cmd = getInputText(input, 'command');
       return truncateText(cmd, 60);
@@ -130,9 +127,8 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
 
 /** Combined name+summary for ARIA labels (collapsible regions need a single descriptive phrase). */
 export function getToolLabel(name: string, input: Record<string, unknown>): string {
+  if (isScriptTool(name)) return `Script: ${getScriptSummary(input) || 'JavaScript'}`;
   switch (name) {
-    case TOOL_EXEC:
-      return `Script: ${getScriptSummary(input) || 'JavaScript'}`;
     case TOOL_READ:
       return `Read: ${shortenPath(getInputText(input, 'file_path')) || 'file'}`;
     case TOOL_WRITE:
@@ -200,12 +196,14 @@ export function fileNameOnly(filePath: string): string {
 }
 
 function getScriptSource(input: Record<string, unknown>): string {
-  return [input.raw, input.value].find((value): value is string => (
+  return [input.code, input.raw, input.value].find((value): value is string => (
     typeof value === 'string' && value.trim().length > 0
   )) ?? '';
 }
 
 function getScriptSummary(input: Record<string, unknown>): string {
+  const title = getInputText(input, 'title').trim();
+  if (title) return truncateText(title, 60);
   const firstLine = getScriptSource(input).split('\n')
     .map(line => line.trim())
     .find(line => line && !line.startsWith('//'));
@@ -777,7 +775,11 @@ export function renderExpandedContent(
     return;
   }
 
-  if (!result && toolName !== TOOL_WEB_SEARCH && toolName !== TOOL_BASH && toolName !== TOOL_EXEC && toolName !== TOOL_APPLY_PATCH) {
+  if (isScriptTool(toolName)) {
+    renderScriptContent(container, input, result ?? '');
+    return;
+  }
+  if (!result && toolName !== TOOL_WEB_SEARCH && toolName !== TOOL_BASH && toolName !== TOOL_APPLY_PATCH) {
     container.createDiv({ cls: 'claudian-tool-empty', text: 'No result' });
     return;
   }
@@ -785,9 +787,6 @@ export function renderExpandedContent(
   const resolvedResult = result ?? '';
 
   switch (toolName) {
-    case TOOL_EXEC:
-      renderScriptContent(container, input, resolvedResult);
-      break;
     case TOOL_BASH:
       renderBashContent(container, input, resolvedResult);
       break;
@@ -917,7 +916,6 @@ interface ToolElementStructure {
 }
 
 export interface ToolCallRenderOptions {
-  onAnswer?: QuestionAnswerHandler;
   initiallyExpanded?: boolean;
 }
 
@@ -926,6 +924,7 @@ function createToolElementStructure(
   toolCall: ToolCallInfo
 ): ToolElementStructure {
   const toolEl = parentEl.createDiv({ cls: 'claudian-tool-call' });
+  toolEl.dataset.toolId = toolCall.id;
   if (toolCall.name === TOOL_BASH) {
     toolEl.addClass('claudian-tool-call-bash');
   }
@@ -1000,26 +999,12 @@ function renderAskUserQuestionResult(container: HTMLElement, toolCall: ToolCallI
   return true;
 }
 
-const questionAnswerHandlers = new WeakMap<HTMLElement, QuestionAnswerHandler>();
-const currentQuestionTools = new WeakMap<HTMLElement, ToolCallInfo>();
-
 function renderQuestionContent(container: HTMLElement, tool: ToolCallInfo, initialText?: string): void {
-  currentQuestionTools.set(container, tool);
   if (renderAskUserQuestionResult(container, tool)) return;
-  const onAnswer = questionAnswerHandlers.get(container);
-  if (onAnswer && tool.input.replyMode === 'user-message' && tool.status !== 'error' && tool.status !== 'blocked') {
-    if (container.querySelector('.claudian-ask-async')) return;
-    container.empty();
-    const questions = Array.isArray(tool.input.questions) ? tool.input.questions as AskUserQuestionItem[] : [];
-    renderAsyncQuestionForm(container, questions, async answers => {
-      await onAnswer(answers);
-      const current = currentQuestionTools.get(container) ?? tool;
-      current.resolvedAnswers = answers;
-      renderAskUserQuestionResult(container, current);
-    });
-    return;
-  }
-  renderAskUserQuestionFallback(container, tool, initialText);
+  const prompt = tool.input.replyMode === 'user-message'
+    ? tool.questionStatus === 'pending' ? 'Answer in the question panel below.' : 'Question expired.'
+    : initialText;
+  renderAskUserQuestionFallback(container, tool, prompt);
 }
 
 function renderAskUserQuestionFallback(container: HTMLElement, toolCall: ToolCallInfo, initialText?: string): void {
@@ -1171,7 +1156,7 @@ function renderToolContent(
     renderQuestionContent(content, toolCall, initialText ? 'Waiting for answer...' : undefined);
   } else if (isAgentLifecycleTool(toolCall.name)) {
     renderAgentLifecycleExpanded(content, toolCall.result ?? '', toolCall.input, initialText);
-  } else if (toolCall.name === TOOL_EXEC) {
+  } else if (isScriptTool(toolCall.name)) {
     renderScriptContent(content, toolCall.input, toolCall.result ?? '', initialText);
   } else if (toolCall.name === TOOL_BASH) {
     renderBashContent(content, toolCall.input, toolCall.result ?? '', initialText);
@@ -1192,14 +1177,12 @@ export function renderToolCall(
 ): HTMLElement {
   const { toolEl, header, statusEl, content, currentTaskEl } =
     createToolElementStructure(parentEl, toolCall);
-  if (options.onAnswer) questionAnswerHandlers.set(content, options.onAnswer);
 
-  toolEl.dataset.toolId = toolCall.id;
   toolCallElements.set(toolCall.id, toolEl);
 
   setGenericToolHeaderRight(statusEl, toolCall);
 
-  const initiallyExpanded = options.initiallyExpanded ?? (Boolean(options.onAnswer) && !toolCall.resolvedAnswers);
+  const initiallyExpanded = options.initiallyExpanded ?? false;
   const state = { isExpanded: initiallyExpanded };
   let currentTool = toolCall;
   let initial = true;
@@ -1298,7 +1281,6 @@ export function renderStoredToolCall(
 ): HTMLElement {
   const { toolEl, header, statusEl, content, currentTaskEl } =
     createToolElementStructure(parentEl, toolCall);
-  if (options.onAnswer) questionAnswerHandlers.set(content, options.onAnswer);
 
   if (toolCall.name === TOOL_TODO_WRITE) {
     setTodoWriteStatus(statusEl, toolCall.input);
@@ -1320,7 +1302,7 @@ export function renderStoredToolCall(
   const state = { isExpanded: false };
   const todoStatusEl = toolCall.name === TOOL_TODO_WRITE ? statusEl : null;
   setupCollapsible(toolEl, header, content, state, {
-    initiallyExpanded: options.initiallyExpanded ?? (Boolean(options.onAnswer) && !toolCall.resolvedAnswers),
+    initiallyExpanded: options.initiallyExpanded ?? false,
     onToggle: createTodoToggleHandler(currentTaskEl, todoStatusEl, (expanded) => {
       if (expanded) renderContentOnce();
     }),

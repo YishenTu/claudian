@@ -19,7 +19,7 @@ export function formatCodexQuestionReply(tool: ToolCallInfo, answers: AskUserAns
   if (replies.length === 0 || replies.some(reply => !reply.question || typeof reply.answer !== 'string' || !reply.answer.trim())) return null;
   return {
     content: `<send_user_message_question_reply>\n${JSON.stringify(replies).replace(/</g, '\\u003c')}\n</send_user_message_question_reply>`,
-    displayContent: replies.map(reply => `${reply.question}\n${reply.answer}`).join('\n\n'),
+    displayContent: '',
   };
 }
 
@@ -29,10 +29,10 @@ export function parseCodexQuestionReply(text: string): CodexQuestionReply[] {
   return [...text.matchAll(QUESTION_REPLY_PATTERN)].flatMap(match => decodeQuestionReplies(match[1]));
 }
 
-export function displayCodexQuestionReply(text: string): string {
+export function stripCodexQuestionReplies(text: string): string {
   return text.replace(QUESTION_REPLY_PATTERN, (original, body: string) => {
     const replies = decodeQuestionReplies(body);
-    return replies.length > 0 ? replies.map(reply => `${reply.question}\n${reply.answer}`).join('\n\n') : original;
+    return replies.length > 0 ? '' : original;
   });
 }
 

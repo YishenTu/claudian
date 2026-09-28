@@ -1,4 +1,5 @@
 import {
+  isScriptTool,
   TOOL_AGENT_OUTPUT,
   TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
@@ -7,7 +8,6 @@ import {
   TOOL_CLOSE_AGENT,
   TOOL_EDIT,
   TOOL_ENTER_PLAN_MODE,
-  TOOL_EXEC,
   TOOL_EXIT_PLAN_MODE,
   TOOL_FOLLOWUP_TASK,
   TOOL_GLOB,
@@ -62,7 +62,6 @@ const TOOL_ICONS: Record<string, string> = {
   [TOOL_ENTER_PLAN_MODE]: 'map',
   [TOOL_EXIT_PLAN_MODE]: 'check-circle',
   // Runtime-managed tools
-  [TOOL_EXEC]: 'code',
   [TOOL_APPLY_PATCH]: 'file-pen',
   [TOOL_WRITE_STDIN]: 'terminal',
   [TOOL_SPAWN_AGENT]: 'bot',
@@ -81,6 +80,7 @@ const TOOL_ICONS: Record<string, string> = {
 export const MCP_ICON_MARKER = '__mcp_icon__';
 
 export function getToolIcon(toolName: string): string {
+  if (isScriptTool(toolName)) return 'code';
   if (toolName.startsWith('mcp__')) {
     return MCP_ICON_MARKER;
   }

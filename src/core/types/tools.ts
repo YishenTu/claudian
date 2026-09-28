@@ -46,6 +46,8 @@ export interface ToolCallInfo {
   isExpanded?: boolean;
   diffData?: ToolDiffData;
   resolvedAnswers?: AskUserAnswers;
+  /** Live async question presentation; replay alone never opens a prompt. */
+  questionStatus?: 'pending' | 'expired';
   subagent?: SubagentInfo;
 }
 

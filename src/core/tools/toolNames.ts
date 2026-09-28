@@ -38,6 +38,12 @@ export const TOOL_WAIT_AGENT = 'wait_agent' as const;
 export const TOOL_RESUME_AGENT = 'resume_agent' as const;
 export const TOOL_CLOSE_AGENT = 'close_agent' as const;
 
+const SCRIPT_TOOLS: readonly string[] = [TOOL_EXEC, 'js', 'mcp__cua_repl__js'];
+
+export function isScriptTool(name: string): boolean {
+  return SCRIPT_TOOLS.includes(name);
+}
+
 export const AGENT_LIFECYCLE_TOOLS = [
   TOOL_SPAWN_AGENT,
   TOOL_SEND_INPUT,

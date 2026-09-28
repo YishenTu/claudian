@@ -1990,7 +1990,7 @@ describe('async question answer submission', () => {
   });
 
   beforeEach(() => {
-    jest.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: 'Question?\nAnswer' });
+    jest.mocked(ProviderRegistry.formatQuestionReply).mockReturnValue({ content: 'native reply payload', displayContent: '' });
   });
 
   it('uses the native payload for execution and friendly text for display without consuming the composer draft', async () => {
@@ -1999,7 +1999,7 @@ describe('async question answer submission', () => {
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
     fixture.input.value = 'Keep my draft';
     await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
-    expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: 'Question?\nAnswer' });
+    expect(fixture.coordinator.execute.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: '' });
     expect(fixture.input.value).toBe('Keep my draft');
   });
 
@@ -2013,7 +2013,7 @@ describe('async question answer submission', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(accepted).toBe(false);
-    expect(fixture.state.queuedMessage).toMatchObject({ content: 'Question?\nAnswer', turnRequest: { text: 'native reply payload' } });
+    expect(fixture.state.queuedMessage).toMatchObject({ content: '', turnRequest: { text: 'native reply payload' } });
     expect(fixture.coordinator.execute).not.toHaveBeenCalled();
     fixture.controller[action]();
     await expect(answering).rejects.toThrow('not sent');
@@ -2039,7 +2039,7 @@ describe('async question answer submission', () => {
     await fixture.controller.sendMessage({ content: 'Also check rendering' });
     await (fixture.controller as any).steerQueuedMessage();
     await answering;
-    expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload\n\nAlso check rendering' });
+    expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload\n\nAlso check rendering', rawDisplayText: 'Also check rendering' });
   });
 
   it('rejects answers from another conversation or when admission is blocked', async () => {

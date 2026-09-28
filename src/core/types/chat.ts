@@ -109,7 +109,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  /** Display-only content (e.g., "/tests" when content is the expanded prompt). */
+  /** Display-only content; an empty string suppresses a user bubble while retaining its native turn. */
   displayContent?: string;
   timestamp: number;
   /** Assistant completion time; absent until the response finishes. */

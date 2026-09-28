@@ -12,6 +12,35 @@
   padding: 6px 10px 0;
 }
 
+:is(button.claudian-ask-tab, button.claudian-ask-item, button.claudian-ask-review-pair),
+:is(button.claudian-ask-tab, button.claudian-ask-item, button.claudian-ask-review-pair):is(:hover, :focus, :active, :disabled) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.4;
+  justify-content: flex-start;
+  height: auto;
+  min-height: 0;
+  text-align: start;
+}
+
+:is(button.claudian-ask-tab, button.claudian-ask-item, button.claudian-ask-review-pair):focus-visible {
+  outline: 1px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+button.claudian-ask-review-pair {
+  width: 100%;
+  padding: 0;
+}
+
+button.claudian-ask-review-pair .claudian-ask-review-body > span {
+  display: block;
+}
+
 /* ── Tab bar ─────────────────────────────────── */
 
 .claudian-ask-tab-bar {
@@ -40,7 +69,7 @@
   color: var(--text-normal);
 }
 
-.claudian-ask-tab.is-active {
+button.claudian-ask-tab.is-active {
   background: hsla(55, 30%, 50%, 0.18);
   color: var(--text-normal);
 }
@@ -95,7 +124,7 @@
   border-radius: 3px;
 }
 
-.claudian-ask-item:hover {
+button.claudian-ask-item:hover {
   background: var(--background-modifier-hover);
 }
 
@@ -320,41 +349,4 @@
 .claudian-ask-approval-desc:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
-}
-
-
-.claudian-ask-async fieldset {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--radius-s);
-  margin: 8px 0;
-  padding: 8px;
-  min-width: 0;
-}
-
-.claudian-ask-async-option,
-.claudian-ask-async-custom {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0;
-}
-
-.claudian-ask-async-custom {
-  flex-direction: column;
-  align-items: stretch;
-}
-
-.claudian-ask-async-custom input,
-.claudian-ask-async-custom input:hover,
-.claudian-ask-async-custom input:focus,
-.claudian-ask-async-custom input:active,
-.claudian-ask-async-custom input:disabled {
-  background: transparent;
-  border: none;
-  box-shadow: none;
-}
-
-.claudian-ask-async-custom:focus-within {
-  outline: 1px solid var(--interactive-accent);
-  outline-offset: 2px;
 }

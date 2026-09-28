@@ -341,6 +341,7 @@ export class SideChatController {
   }
 
   #teardownPanel(): void {
+    this.deps.composerEl.removeClass('claudian-side-chat-prompt');
     this.#panel?.destroy();
     this.#panel = null;
     this.#previewActive = false;
@@ -360,7 +361,9 @@ export class SideChatController {
 
   #applyDestinationPresentation(destination: SideChatDestination): void {
     const isSide = destination === 'side';
+    this.#runtime?.setPromptActive(isSide);
     this.deps.composerEl.toggleClass('claudian-side-chat-expanded', isSide);
+    this.#syncPromptPresentation();
     this.#previewActive = false;
     this.deps.inputWrapperEl.removeClass('claudian-input-side-chat-preview');
 
@@ -375,7 +378,13 @@ export class SideChatController {
     }
   }
 
+  #syncPromptPresentation(): void {
+    this.deps.composerEl.toggleClass('claudian-side-chat-prompt',
+      this.isExpanded && this.#runtime?.state.attention?.kind === 'action-required');
+  }
+
   #refreshPanel(): void {
+    this.#syncPromptPresentation();
     const runtime = this.#runtime;
     const panel = this.#panel;
     if (!runtime || !panel) return;

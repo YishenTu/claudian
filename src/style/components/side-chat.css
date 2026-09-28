@@ -188,3 +188,8 @@
 .claudian-side-chat-prompts:empty {
   display: none;
 }
+
+/* An active side question or permission uses the shared composer's space. */
+.claudian-input-composer.claudian-side-chat-prompt > .claudian-input-container {
+  display: none;
+}
