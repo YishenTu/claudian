@@ -2,52 +2,27 @@
 
 .claudian-ask-question-inline {
   --claudian-ask-accent: var(--interactive-accent);
-  --claudian-ask-accent-soft: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
-  --claudian-ask-accent-border: color-mix(in srgb, var(--interactive-accent) 55%, transparent);
-  --claudian-ask-radius: 8px;
   display: flex;
   flex-direction: column;
   font-family: var(--font-interface);
   font-size: var(--font-ui-small);
   line-height: 1.45;
   color: var(--text-normal);
-  background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
-  border-radius: 10px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
-  overflow: hidden;
+  border-radius: 6px;
   outline: none;
 }
 
-.claudian-ask-question-inline:focus-visible {
-  border-color: var(--claudian-ask-accent-border);
-}
-
 .claudian-ask-inline-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px 0;
+  padding: 10px 12px 0;
   font-size: var(--font-ui-smaller);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.claudian-ask-inline-title::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--claudian-brand, var(--claudian-ask-accent));
-  box-shadow: 0 0 0 3px rgba(var(--claudian-brand-rgb, 0, 0, 0), 0.18);
+  color: var(--text-faint);
 }
 
 :is(button.claudian-ask-tab, button.claudian-ask-item, button.claudian-ask-review-pair),
 :is(button.claudian-ask-tab, button.claudian-ask-item, button.claudian-ask-review-pair):is(:hover, :focus, :active, :disabled) {
   background: transparent;
-  border: 1px solid transparent;
+  border: 0;
   box-shadow: none;
   font-family: inherit;
   font-size: inherit;
@@ -60,7 +35,7 @@
 }
 
 :is(button.claudian-ask-tab, button.claudian-ask-item, button.claudian-ask-review-pair):focus-visible {
-  outline: 2px solid var(--claudian-ask-accent);
+  outline: 1px solid var(--claudian-ask-accent);
   outline-offset: 1px;
 }
 
@@ -72,44 +47,38 @@ button.claudian-ask-review-pair .claudian-ask-review-body > span {
   display: block;
 }
 
-/* ── Step tabs ───────────────────────────────── */
+/* ── Tabs ────────────────────────────────────── */
 
 .claudian-ask-tab-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px;
-  padding: 10px 14px 0;
+  padding: 8px 12px 0;
 }
 
 button.claudian-ask-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px 3px 4px;
+  gap: 4px;
+  padding: 2px 10px;
   border-radius: 999px;
   cursor: pointer;
   user-select: none;
   color: var(--text-muted);
   transition:
     background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease;
+    color 0.15s ease;
 }
 
 button.claudian-ask-tab:hover {
+  color: var(--text-normal);
+}
+
+button.claudian-ask-tab.is-active,
+button.claudian-ask-tab.is-active:is(:hover, :focus, :active) {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
-}
-
-button.claudian-ask-tab.is-active {
-  background: var(--claudian-ask-accent-soft);
-  border-color: var(--claudian-ask-accent-border);
-  color: var(--text-normal);
-}
-
-button.claudian-ask-tab.claudian-ask-tab--submit {
-  padding-inline-start: 10px;
 }
 
 button.claudian-ask-tab--submit.is-ready {
@@ -117,32 +86,15 @@ button.claudian-ask-tab--submit.is-ready {
 }
 
 .claudian-ask-tab-step {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--background-modifier-border);
-  color: var(--text-muted);
   font-size: 10px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  color: var(--color-green);
 }
 
-.claudian-ask-tab.is-active .claudian-ask-tab-step {
-  background: var(--claudian-ask-accent);
-  color: var(--text-on-accent);
-}
-
-.claudian-ask-tab.is-answered .claudian-ask-tab-step {
-  background: var(--color-green);
-  color: var(--text-on-accent);
+.claudian-ask-tab-step:empty {
+  display: none;
 }
 
 .claudian-ask-tab-label {
-  font-weight: 500;
   max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -152,24 +104,26 @@ button.claudian-ask-tab--submit.is-ready {
 /* ── Content area ────────────────────────────── */
 
 .claudian-ask-content {
-  padding: 12px 14px 10px;
+  padding: 10px 12px;
 }
 
 .claudian-ask-question-text {
-  font-size: var(--font-ui-medium);
   font-weight: 600;
   color: var(--text-normal);
-  margin-bottom: 10px;
-  line-height: 1.4;
+  margin-bottom: 8px;
 }
 
-/* ── Option cards ────────────────────────────── */
+/* ── Options ─────────────────────────────────── */
 
 .claudian-ask-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: 2px;
+  margin: 0 -8px 8px;
+}
+
+.claudian-ask-list:last-child {
+  margin-bottom: 0;
 }
 
 .claudian-ask-item {
@@ -178,37 +132,17 @@ button.claudian-ask-tab--submit.is-ready {
   gap: 10px;
   box-sizing: border-box;
   width: 100%;
-  padding: 8px 10px;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: var(--claudian-ask-radius);
-  background: var(--background-primary);
+  padding: 6px 8px;
+  border-radius: 6px;
+  line-height: 20px;
   cursor: pointer;
   color: var(--text-normal);
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
-}
-
-/* Beat the shared transparent-border reset on buttons. */
-button.claudian-ask-item,
-button.claudian-ask-item:is(:hover, :focus, :active, :disabled) {
-  border-color: var(--background-modifier-border);
 }
 
 .claudian-ask-item:hover,
-button.claudian-ask-item:hover {
-  background: var(--background-modifier-hover);
-}
-
 .claudian-ask-item.is-focused,
-button.claudian-ask-item.is-focused {
-  border-color: var(--claudian-ask-accent-border);
-}
-
-.claudian-ask-item.is-selected,
-button.claudian-ask-item.is-selected {
-  background: var(--claudian-ask-accent-soft);
-  border-color: var(--claudian-ask-accent);
+button.claudian-ask-item:is(:hover, .is-focused) {
+  background: var(--background-modifier-hover);
 }
 
 .claudian-ask-item.is-disabled,
@@ -234,58 +168,81 @@ button.claudian-ask-item.is-disabled {
 }
 
 .claudian-ask-item-label {
-  font-weight: 500;
   overflow-wrap: anywhere;
+}
+
+.claudian-ask-item.is-selected .claudian-ask-item-label {
+  color: var(--claudian-ask-accent);
 }
 
 .claudian-ask-item-desc {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
-  font-weight: 400;
-  line-height: 1.4;
-  margin-top: 2px;
   overflow-wrap: anywhere;
 }
 
 /* ── Leading indicators ──────────────────────── */
 
-/* Single-select: numbered badge that turns into a check. */
-.claudian-ask-item-num,
-.claudian-ask-check {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
+/* Single-select: radio. */
+.claudian-ask-radio {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
   flex-shrink: 0;
   box-sizing: border-box;
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--text-faint);
+  border-radius: 50%;
+  transition: border-color 0.15s ease;
+}
+
+.claudian-ask-radio.is-checked {
+  border-color: var(--claudian-ask-accent);
+}
+
+.claudian-ask-radio.is-checked::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--claudian-ask-accent);
+}
+
+/* Multi-select: hairline checkbox. */
+.claudian-ask-check {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--text-faint);
+  border-radius: 3px;
   transition:
     background 0.15s ease,
-    border-color 0.15s ease,
-    color 0.15s ease;
+    border-color 0.15s ease;
 }
 
-.claudian-ask-item-num {
-  border-radius: 50%;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  color: var(--text-muted);
-}
-
-/* Multi-select: rounded checkbox. */
-.claudian-ask-check {
-  border-radius: 5px;
-  border: 1.5px solid var(--text-faint);
-  color: var(--text-on-accent);
-}
-
-:is(.claudian-ask-item-num, .claudian-ask-check).is-checked {
+.claudian-ask-check.is-checked {
   background: var(--claudian-ask-accent);
   border-color: var(--claudian-ask-accent);
-  color: var(--text-on-accent);
+}
+
+/* Drawn tick: a glyph's side bearings would sit it off-center. */
+.claudian-ask-check.is-checked::after {
+  content: "";
+  position: absolute;
+  top: 0.5px;
+  left: 4px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--text-on-accent);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.claudian-ask-custom-item :is(.claudian-ask-check, .claudian-ask-radio) {
+  margin-top: 0;
 }
 
 /* ── Custom input ────────────────────────────── */
@@ -295,14 +252,15 @@ button.claudian-ask-item.is-disabled {
   cursor: text;
 }
 
-.claudian-ask-custom-item:not(.is-selected) {
-  border-style: dashed;
+.claudian-ask-item input.claudian-ask-custom-text:focus {
+  border-bottom-color: var(--claudian-ask-accent);
 }
 
 .claudian-ask-item input.claudian-ask-custom-text,
 .claudian-ask-item input.claudian-ask-custom-text:hover,
 .claudian-ask-item input.claudian-ask-custom-text:focus {
   border: none;
+  border-bottom: 1px solid var(--background-modifier-border);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -313,14 +271,10 @@ button.claudian-ask-item.is-disabled {
   padding: 0;
   width: 0;
   height: auto;
-  min-height: 20px;
+  min-height: 18px;
   line-height: 1.45;
   flex: 1 1 0;
   min-width: 0;
-}
-
-.claudian-ask-custom-item:focus-within {
-  border-color: var(--claudian-ask-accent);
 }
 
 .claudian-ask-custom-text::placeholder {
@@ -330,17 +284,20 @@ button.claudian-ask-item.is-disabled {
 /* ── Review & submit ─────────────────────────── */
 
 .claudian-ask-review-title {
-  font-size: var(--font-ui-medium);
   font-weight: 600;
   color: var(--text-normal);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .claudian-ask-review {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 1px;
+  margin-bottom: 10px;
+}
+
+.claudian-ask-question-inline .claudian-ask-review {
+  margin-inline: -8px;
 }
 
 .claudian-tool-content .claudian-ask-review {
@@ -355,60 +312,35 @@ button.claudian-ask-item.is-disabled {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--claudian-ask-radius, 8px);
-  background: var(--background-secondary);
+  padding: 6px 8px;
+  border-radius: 6px;
 }
 
-button.claudian-ask-review-pair,
-button.claudian-ask-review-pair:is(:focus, :active, :disabled) {
+button.claudian-ask-review-pair {
   box-sizing: border-box;
   cursor: pointer;
-  background: var(--background-secondary);
 }
 
 button.claudian-ask-review-pair:hover {
   background: var(--background-modifier-hover);
 }
 
-.claudian-ask-review-num {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--background-modifier-border);
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.claudian-ask-review-num.is-answered {
-  background: var(--color-green);
-  color: var(--text-on-accent);
-}
-
 .claudian-ask-review-body {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
 .claudian-ask-review-body .claudian-ask-list {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
 }
 
 .claudian-ask-review-q-text {
   color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
 }
 
 .claudian-ask-review-a-text {
   color: var(--text-normal);
-  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
@@ -425,29 +357,26 @@ button.claudian-ask-review-pair:hover {
 .claudian-ask-actions {
   display: flex;
   justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: 6px;
 }
 
-button.claudian-ask-item.claudian-ask-action {
+button.claudian-ask-item.claudian-ask-action,
+button.claudian-ask-item.claudian-ask-action:is(:hover, :focus, :active, .is-focused) {
   width: auto;
   align-items: center;
-  justify-content: center;
-  padding: 6px 14px;
+  padding: 4px 14px;
   order: 1;
-}
-
-button.claudian-ask-action .claudian-ask-item-label {
-  font-weight: 600;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  color: var(--text-normal);
 }
 
 /* Filled primary surface: explicit modifier per the control-reset rule. */
 button.claudian-ask-action.claudian-ask-action--primary,
-button.claudian-ask-action.claudian-ask-action--primary:is(:hover, :focus, :active) {
+button.claudian-ask-action.claudian-ask-action--primary:is(:hover, :focus, :active, .is-focused) {
   order: 2;
-  background: var(--interactive-accent);
   border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
   color: var(--text-on-accent);
 }
 
@@ -455,13 +384,13 @@ button.claudian-ask-action.claudian-ask-action--primary:hover {
   background: var(--interactive-accent-hover);
 }
 
-button.claudian-ask-action.claudian-ask-action--primary.is-focused {
-  box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 4px var(--claudian-ask-accent-border);
+button.claudian-ask-item.claudian-ask-action.is-focused {
+  outline: 1px solid var(--claudian-ask-accent);
+  outline-offset: 2px;
 }
 
-button.claudian-ask-action.claudian-ask-action--primary.is-disabled,
-button.claudian-ask-action.claudian-ask-action--primary:disabled {
-  opacity: 0.5;
+button.claudian-ask-action.claudian-ask-action--primary:is(.is-disabled, :disabled) {
+  opacity: 0.4;
   cursor: default;
 }
 
@@ -470,48 +399,14 @@ button.claudian-ask-action.claudian-ask-action--primary .claudian-ask-item-label
 }
 
 .claudian-ask-error {
-  margin-bottom: 10px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: rgba(var(--claudian-error-rgb, 220, 53, 69), 0.1);
+  margin-top: 8px;
   color: var(--text-error);
-}
-
-/* ── Keyboard hints ──────────────────────────── */
-
-.claudian-ask-hints {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  padding-top: 8px;
-  border-top: 1px solid var(--background-modifier-border);
-  font-size: var(--font-ui-smaller);
-  color: var(--text-faint);
-}
-
-.claudian-ask-hint {
-  white-space: nowrap;
-}
-
-kbd.claudian-ask-kbd {
-  display: inline-block;
-  min-width: 18px;
-  padding: 0 5px;
-  border: 1px solid var(--background-modifier-border);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  background: var(--background-secondary);
-  font-family: var(--font-interface);
-  font-size: 10px;
-  line-height: 16px;
-  text-align: center;
-  color: var(--text-muted);
 }
 
 /* ── Approval header (inline permission request) ── */
 
 .claudian-ask-approval-info {
-  padding: 10px 14px 0;
+  padding: 10px 12px 0;
 }
 
 .claudian-ask-approval-tool {

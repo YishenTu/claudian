@@ -2,14 +2,6 @@ import type { AskUserAnswers, AskUserQuestionItem, AskUserQuestionOption } from 
 
 const CHECK_GLYPH = '\u2713';
 
-const HINTS: ReadonlyArray<readonly [key: string, action: string]> = [
-  ['Enter', 'select'],
-  ['\u2191\u2193', 'move'],
-  ['Tab', 'next question'],
-  ['Esc', 'cancel'],
-];
-const HINTS_IMMEDIATE = HINTS.filter(([key]) => key !== 'Tab');
-
 export type QuestionAnswerHandler = (answers: AskUserAnswers) => Promise<void>;
 
 export interface InlineAskQuestionConfig {
@@ -209,7 +201,7 @@ export class InlineAskUserQuestion {
       const answered = this.#isQuestionAnswered(idx);
       const tab = this.tabBar.createEl('button', { cls: 'claudian-ask-tab', attr: { type: 'button', 'aria-label': this.questions[idx].header ?? `Q${idx + 1}` } });
       tab.disabled = this.submitting;
-      tab.createSpan({ text: answered ? CHECK_GLYPH : String(idx + 1), cls: 'claudian-ask-tab-step', attr: { 'aria-hidden': 'true' } });
+      tab.createSpan({ text: answered ? CHECK_GLYPH : '', cls: 'claudian-ask-tab-step', attr: { 'aria-hidden': 'true' } });
       tab.createSpan({ text: this.questions[idx].header, cls: 'claudian-ask-tab-label' });
       tab.setAttribute('title', this.questions[idx].question);
 
@@ -286,7 +278,7 @@ export class InlineAskUserQuestion {
       if (isFocused) row.addClass('is-focused');
       if (isSelected) row.addClass('is-selected');
 
-      this.#renderIndicator(row, isMulti, isSelected, optIdx);
+      this.#renderIndicator(row, isMulti, isSelected);
 
       const labelBlock = row.createSpan({ cls: 'claudian-ask-item-content' });
       const labelRow = labelBlock.createSpan({ cls: 'claudian-ask-label-row' });
@@ -315,7 +307,7 @@ export class InlineAskUserQuestion {
       if (customFocused) customRow.addClass('is-focused');
 
       if (hasCustomText) customRow.addClass('is-selected');
-      this.#renderIndicator(customRow, isMulti, hasCustomText, customIdx);
+      this.#renderIndicator(customRow, isMulti, hasCustomText);
 
       const inputEl = customRow.createEl('input', {
         cls: 'claudian-ask-custom-text',
@@ -329,7 +321,7 @@ export class InlineAskUserQuestion {
         this.customInputs.set(idx, inputEl.value);
         const hasText = inputEl.value.trim().length > 0;
         customRow.toggleClass('is-selected', hasText);
-        this.#setIndicator(customRow, isMulti, hasText, customIdx);
+        this.#setIndicator(customRow, isMulti, hasText);
         if (!isMulti && inputEl.value.trim()) {
           selected.clear();
           this.#updateOptionVisuals(idx);
@@ -351,8 +343,6 @@ export class InlineAskUserQuestion {
 
       this.currentItems.push(customRow);
     }
-
-    this.#renderHints(this.config.immediateSelect ? HINTS_IMMEDIATE : HINTS);
   }
 
   #renderSubmitTab(): void {
@@ -369,7 +359,6 @@ export class InlineAskUserQuestion {
 
       const pairEl = reviewEl.createEl('button', { cls: 'claudian-ask-review-pair', attr: { type: 'button', 'aria-label': `Edit answer to ${q.question}` } });
       pairEl.disabled = this.submitting;
-      pairEl.createSpan({ text: answerText ? CHECK_GLYPH : String(idx + 1), cls: `claudian-ask-review-num${answerText ? ' is-answered' : ''}`, attr: { 'aria-hidden': 'true' } });
       const bodyEl = pairEl.createSpan({ cls: 'claudian-ask-review-body' });
       bodyEl.createSpan({ text: q.question, cls: 'claudian-ask-review-q-text' });
       bodyEl.createSpan({
@@ -411,17 +400,6 @@ export class InlineAskUserQuestion {
     this.currentItems.push(cancelRow);
     if (this.submissionError) {
       this.contentArea.createDiv({ text: this.submissionError, cls: 'claudian-ask-error', attr: { role: 'alert' } });
-    }
-
-    this.#renderHints(HINTS);
-  }
-
-  #renderHints(hints: ReadonlyArray<readonly [key: string, action: string]>): void {
-    const hintsEl = this.contentArea.createDiv({ cls: 'claudian-ask-hints' });
-    for (const [key, action] of hints) {
-      const hintEl = hintsEl.createSpan({ cls: 'claudian-ask-hint' });
-      hintEl.createEl('kbd', { text: key, cls: 'claudian-ask-kbd' });
-      hintEl.createSpan({ text: ` ${action}` });
     }
   }
 
@@ -470,25 +448,18 @@ export class InlineAskUserQuestion {
     }
   }
 
-  /** Leading marker: a numbered badge for single-select, a checkbox for multi-select. */
-  #renderIndicator(parent: HTMLElement, isMulti: boolean, checked: boolean, index: number): void {
+  /** Leading marker: a radio for single-select, a checkbox for multi-select. */
+  #renderIndicator(parent: HTMLElement, isMulti: boolean, checked: boolean): void {
     parent.createSpan({
-      text: this.#indicatorText(isMulti, checked, index),
-      cls: `${isMulti ? 'claudian-ask-check' : 'claudian-ask-item-num'}${checked ? ' is-checked' : ''}`,
+      cls: `${isMulti ? 'claudian-ask-check' : 'claudian-ask-radio'}${checked ? ' is-checked' : ''}`,
       attr: { 'aria-hidden': 'true' },
     });
   }
 
-  #setIndicator(parent: HTMLElement, isMulti: boolean, checked: boolean, index: number): void {
-    const indicator = parent.querySelector(isMulti ? '.claudian-ask-check' : '.claudian-ask-item-num');
+  #setIndicator(parent: HTMLElement, isMulti: boolean, checked: boolean): void {
+    const indicator = parent.querySelector(isMulti ? '.claudian-ask-check' : '.claudian-ask-radio');
     if (!indicator) return;
-    indicator.textContent = this.#indicatorText(isMulti, checked, index);
     indicator.toggleClass('is-checked', checked);
-  }
-
-  #indicatorText(isMulti: boolean, checked: boolean, index: number): string {
-    if (checked) return CHECK_GLYPH;
-    return isMulti ? '' : String(index + 1);
   }
 
   #updateOptionVisuals(qIdx: number): void {
@@ -502,7 +473,7 @@ export class InlineAskUserQuestion {
 
       item.toggleClass('is-selected', isSelected);
       item.setAttribute('aria-pressed', String(isSelected));
-      this.#setIndicator(item, isMulti, isSelected, i);
+      this.#setIndicator(item, isMulti, isSelected);
     }
 
     if (!isMulti && this.#canShowCustomInputForQuestion(q)) {
@@ -510,7 +481,7 @@ export class InlineAskUserQuestion {
       const hasCustomText = this.customInputs.get(qIdx)!.trim().length > 0;
       if (customRow) {
         customRow.toggleClass('is-selected', hasCustomText);
-        this.#setIndicator(customRow, false, hasCustomText, q.options.length);
+        this.#setIndicator(customRow, false, hasCustomText);
       }
     }
   }
@@ -533,7 +504,7 @@ export class InlineAskUserQuestion {
       const step = tab.querySelector('.claudian-ask-tab-step');
       const answered = this.#isQuestionAnswered(idx);
       tab.toggleClass('is-answered', answered);
-      if (step) step.textContent = answered ? CHECK_GLYPH : String(idx + 1);
+      if (step) step.textContent = answered ? CHECK_GLYPH : '';
     }
     const submitTab = this.tabElements[this.questions.length];
     if (submitTab) {
