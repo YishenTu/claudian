@@ -67,6 +67,7 @@ export interface ProviderRegistration {
   isEnabled: (settings: Record<string, unknown>) => boolean;
   setEnabled?: (settings: Record<string, unknown>, enabled: boolean) => void;
   capabilities: ProviderCapabilities;
+  getConversationCapabilities?: (providerState?: Record<string, unknown>) => ProviderCapabilities;
   environmentKeyPatterns?: RegExp[];
   modelPolicy: ProviderModelPolicy;
   chatUIConfig: ProviderChatUIConfig;

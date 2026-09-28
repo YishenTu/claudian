@@ -388,6 +388,9 @@ test('context controls read detached metadata without copying the transcript', a
   const previous = repository.getSummary(conversation.id)!;
   expect(previous).not.toHaveProperty('messages');
   expect(previous).not.toHaveProperty('providerState');
+  expect(previous.capabilities).toMatchObject({ providerId: 'claude', supportsFork: true });
+  (previous.capabilities as { supportsFork: boolean }).supportsFork = false;
+  expect(repository.getSummary(conversation.id)?.capabilities?.supportsFork).toBe(true);
   await repository.update(conversation.id, { selectedModel: 'opus' });
   refreshTabContextUsage(tab, host);
   expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ contextWindow: 200_000, percentage: 25 }));

@@ -4,6 +4,7 @@ import {
   ACPSubprocess,
 } from '@/providers/acp';
 
+import { readOpencodeHTTPMessages } from '../http/OpencodeHTTPHistory';
 import { type OpencodeServerService, withOpencodeServerLease } from '../http/OpencodeServerService';
 import { assertOpencodeSessionCompatibility, detectOpencodeNativeVersion, parseOpencodeNativeVersion } from '../runtime/OpencodeVersion';
 
@@ -15,6 +16,7 @@ export interface OpencodeSessionForkOptions {
   cwd: string;
   environment: NodeJS.ProcessEnv;
   sourceSessionId: string;
+  resumeAt?: string;
 }
 
 /** Fork immediately so subsequent source turns cannot enter the child's context. */
@@ -23,7 +25,19 @@ export async function forkOpencodeSession(options: OpencodeSessionForkOptions): 
   assertOpencodeSessionCompatibility(options.nativeVersion, version);
   if (version === 2) {
     return withOpencodeServerLease(options.serverService, options.cliPath, options.cwd, options.environment, async client => {
-      const child = await client.request<{ data: { id: string } }>(`/api/session/${encodeURIComponent(options.sourceSessionId)}/fork`, { method: 'POST', body: {} });
+      let messageID: string | undefined;
+      if (options.resumeAt) {
+        const messages = await readOpencodeHTTPMessages(client, options.sourceSessionId);
+        const index = messages.findIndex(message => message.id === options.resumeAt && message.type === 'assistant');
+        if (index === -1) throw new Error('OpenCode fork checkpoint not found. Reload the conversation and try again.');
+        // The native boundary is exclusive; retain the selected assistant reply.
+        const next = messages[index + 1];
+        if (next) {
+          if (typeof next.id !== 'string' || !next.id.trim()) throw new Error('OpenCode fork boundary has an invalid message ID.');
+          messageID = next.id;
+        }
+      }
+      const child = await client.request<{ data: { id: string } }>(`/api/session/${encodeURIComponent(options.sourceSessionId)}/fork`, { method: 'POST', body: messageID ? { messageID } : {} });
       if (typeof child.data?.id !== 'string' || !child.data.id.trim() || child.data.id === options.sourceSessionId) throw new Error('OpenCode fork returned an invalid child session.');
       options.onNativeVersion?.(2);
       return child.data.id;

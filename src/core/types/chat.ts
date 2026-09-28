@@ -1,3 +1,4 @@
+import type { ProviderCapabilities } from '../providers/types';
 import type { SDKToolUseResult } from './diff';
 import type { ProviderId } from './provider';
 import type { SubagentMode, ToolCallInfo, ToolProviderPayload } from './tools';
@@ -180,6 +181,7 @@ export interface Conversation {
 
 /** Detached metadata for controls that do not need transcript or native session state. */
 export type ConversationSummary = Readonly<Pick<Conversation, 'id' | 'providerId' | 'title' | 'selectedModel' | 'isPinned'> & {
+  capabilities?: Readonly<ProviderCapabilities>;
   usage?: Readonly<Pick<UsageInfo, 'model'>>;
 }>;
 

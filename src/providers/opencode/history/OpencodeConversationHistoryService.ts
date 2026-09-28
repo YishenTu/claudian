@@ -151,7 +151,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
 
   async buildForkProviderState(
     sourceSessionId: string,
-    _resumeAt: string,
+    resumeAt: string,
     sourceProviderState?: Record<string, unknown>,
     vaultPath?: string | null,
     pathContext?: ProviderHistoryPathContext,
@@ -174,6 +174,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       cwd,
       environment,
       sourceSessionId,
+      resumeAt,
       serverService: this.getServerService?.(),
     });
     return { sessionId, databasePath, ...(nativeVersion ? { nativeVersion } : {}), nativeConversationContextEstablished: true };

@@ -12,6 +12,7 @@ import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersi
 import { type ProviderExecutionBackend, ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ProviderHistoryPathContext } from '@/core/providers/types';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { ChatMessage, Conversation, ProviderId } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
@@ -60,7 +61,7 @@ export async function createForkTestEnvironment() {
   });
   const plugin = {
     app, settings,
-    getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
+    getConversationSummary: (id: string) => repository.getSummary(id),
     getConversationSync: (id: string) => repository.getSync(id),
   } as unknown as ChatFeatureHost;
   const coordinators: ChatExecutionCoordinator[] = [];
@@ -107,7 +108,7 @@ export async function createForkTestEnvironment() {
     return assistant;
   }
 
-  async function fork(chat: Awaited<ReturnType<typeof open>>, message: ChatMessage) {
+  async function fork(chat: Awaited<ReturnType<typeof open>>, message: ChatMessage, pathContext?: ProviderHistoryPathContext) {
     let child: Conversation | undefined;
     const tab = {
       conversationId: chat.conversation.id, providerId: chat.conversation.providerId,
@@ -118,7 +119,7 @@ export async function createForkTestEnvironment() {
       const providerId = context.providerId as ProviderId;
       // The fork callback's public provider/repository seams are shared with TabManager.
       const providerState = await ProviderRegistry.getConversationHistoryService(providerId)
-        .buildForkProviderState(context.sourceSessionId, context.resumeAt, context.sourceProviderState, root);
+        .buildForkProviderState(context.sourceSessionId, context.resumeAt, context.sourceProviderState, root, pathContext);
       child = await repository.create({ providerId });
       await repository.update(child.id, { messages: context.messages, providerState });
       child = repository.getSync(child.id)!;

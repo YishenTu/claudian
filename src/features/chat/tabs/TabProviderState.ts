@@ -61,7 +61,12 @@ export function getTabCapabilities(
   conversation?: Conversation | null,
 ): ProviderCapabilities {
   const providerId = getTabProviderId(tab, plugin, conversation);
-  return providerId ? ProviderRegistry.getCapabilities(providerId) : UNRESOLVED_TAB_CAPABILITIES;
+  if (!providerId) return UNRESOLVED_TAB_CAPABILITIES;
+  if (conversation === undefined && tab.conversationId) {
+    const summary = plugin.getConversationSummary(tab.conversationId);
+    if (summary?.capabilities) return summary.capabilities;
+  }
+  return ProviderRegistry.getCapabilities(providerId, conversation?.providerState);
 }
 
 export function getTabChatUIConfig(

@@ -1,4 +1,5 @@
 import type { ProviderCapabilities } from '../../core/providers/types';
+import { getOpencodeState } from './types';
 
 export const OPENCODE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Object.freeze({
   providerId: 'opencode',
@@ -14,3 +15,14 @@ export const OPENCODE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Ob
   supportsTurnSteer: true,
   reasoningControl: 'effort',
 });
+
+const OPENCODE_V2_CAPABILITIES: Readonly<ProviderCapabilities> = Object.freeze({
+  ...OPENCODE_PROVIDER_CAPABILITIES,
+  forkMode: 'checkpoint',
+});
+
+export function getOpencodeConversationCapabilities(providerState?: Record<string, unknown>): ProviderCapabilities {
+  return getOpencodeState(providerState).nativeVersion === 2
+    ? OPENCODE_V2_CAPABILITIES
+    : OPENCODE_PROVIDER_CAPABILITIES;
+}

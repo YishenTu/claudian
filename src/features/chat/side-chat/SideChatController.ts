@@ -261,7 +261,7 @@ export class SideChatController {
 
   #assertForkSourceCurrent(source: SideChatSource): void {
     const tab = this.deps.getTab();
-    const fullSession = ProviderRegistry.getCapabilities(source.providerId).forkMode === 'full-session';
+    const fullSession = ProviderRegistry.getCapabilities(source.providerId, source.providerState).forkMode === 'full-session';
     if (!this.deps.isRuntimeLive(tab)
       || tab.conversationId !== source.conversationId
       || (fullSession && (tab.state.isStreaming || tab.state.messages.at(-1)?.id !== source.messages.at(-1)?.id))) {

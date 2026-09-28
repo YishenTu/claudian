@@ -53,6 +53,13 @@ describe('ProviderRegistry', () => {
     expect(caps.supportsFork).toBe(true);
   });
 
+  it.each([undefined, 1, 2] as const)('resolves OpenCode fork mode for native version %s without changing other providers', nativeVersion => {
+    const state = nativeVersion ? { nativeVersion } : undefined;
+    expect(ProviderRegistry.getCapabilities('opencode', state).forkMode).toBe(nativeVersion === 2 ? 'checkpoint' : 'full-session');
+    expect(ProviderRegistry.getCapabilities('claude', state)).toEqual(ProviderRegistry.getCapabilities('claude'));
+    expect(ProviderRegistry.getCapabilities('opencode').forkMode).toBe('full-session');
+  });
+
   it('registers provider-owned subagent protocols outside the capability matrix', () => {
     const claudeAdapter = ProviderRegistry.getSubagentAdapter('claude');
     expect(claudeAdapter).toMatchObject({
