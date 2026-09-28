@@ -13,6 +13,11 @@
   outline: none;
 }
 
+/* The flex display above would otherwise defeat the widget's hidden attribute. */
+.claudian-ask-question-inline[hidden] {
+  display: none;
+}
+
 .claudian-ask-inline-title {
   padding: 10px 12px 0;
   font-size: var(--font-ui-smaller);
