@@ -175,7 +175,7 @@ describe('GrokModelCatalogService', () => {
     const result = await new GrokModelCatalogService(makeHost(), { runner, probe: unavailableProbe }).discoverCatalog();
 
     expect(result).toMatchObject({
-      diagnostics: 'Grok models returned no available models',
+      diagnostics: 'Grok Build models command returned no available models',
       kind: 'completed',
       models: [],
     });
@@ -192,7 +192,7 @@ describe('GrokModelCatalogService', () => {
     const result = await new GrokModelCatalogService(makeHost(), { runner, probe: unavailableProbe }).discoverCatalog();
 
     expect(result).toMatchObject({
-      diagnostics: 'Grok models exited with code 17',
+      diagnostics: 'Grok Build models command exited with code 17',
       kind: 'completed',
       models: [],
     });
@@ -209,7 +209,7 @@ describe('GrokModelCatalogService', () => {
     const result = await new GrokModelCatalogService(makeHost(), { runner, probe: unavailableProbe }).discoverCatalog();
 
     expect(result).toMatchObject({
-      diagnostics: 'Grok models timed out',
+      diagnostics: 'Grok Build models command timed out',
       kind: 'completed',
       models: [],
     });

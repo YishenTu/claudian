@@ -78,7 +78,7 @@ it('preserves provider group display order while keeping saved order inside each
     getUIConfig: () => ({ getModelOptions: getBlankTabModelOptions }),
   } as unknown as ToolbarCallbacks);
   const dropdown = host.querySelector<HTMLElement>('.claudian-model-dropdown')!;
-  expect(within(dropdown).getAllByText(/^(Claude|Codex|haiku|opus|GPT-5.4 Mini|GPT-5.5)$/)
-    .map(node => node.textContent)).toEqual(['Claude', 'haiku', 'opus', 'Codex', 'GPT-5.4 Mini', 'GPT-5.5']);
+  expect(within(dropdown).getAllByText(/^(Claude Code|Codex CLI|haiku|opus|GPT-5.4 Mini|GPT-5.5)$/)
+    .map(node => node.textContent)).toEqual(['Claude Code', 'haiku', 'opus', 'Codex CLI', 'GPT-5.4 Mini', 'GPT-5.5']);
   host.remove();
 });

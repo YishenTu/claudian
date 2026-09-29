@@ -142,7 +142,7 @@
     },
     "safety": "Seguridad",
     "loadUserSettings": {
-      "name": "Cargar configuración de usuario Claude",
+      "name": "Cargar configuración de usuario de Claude Code",
       "desc": "Carga la configuración de Claude Code a nivel de usuario desde ~/.claude: settings.json, skills, comandos, agentes y plugins. Si está deshabilitado, solo está disponible la configuración a nivel de bóveda. Si está habilitado, las reglas de permisos del usuario pueden eludir el modo seguro."
     },
     "claudeSafeMode": {
@@ -160,7 +160,7 @@
     },
     "customVariables": {
       "name": "Variables personalizadas",
-      "desc": "Solo variables de ejecución propiedad de Claude. Úsalo para ANTHROPIC_* y opciones específicas de Claude."
+      "desc": "Solo variables de ejecución propiedad de Claude Code. Úsalo para ANTHROPIC_* y opciones específicas de Claude Code."
     },
     "envSnippets": {
       "name": "Fragmentos",
@@ -199,7 +199,7 @@
     },
     "enableChrome": {
       "name": "Habilitar extensión de Chrome",
-      "desc": "Permitir que Claude interactúe con Chrome a través de la extensión claude-in-chrome. Requiere que la extensión esté instalada. Requiere reinicio de sesión."
+      "desc": "Permitir que Claude Code interactúe con Chrome a través de la extensión claude-in-chrome. Requiere que la extensión esté instalada. Requiere reinicio de sesión."
     },
     "maxWarmAgentProcesses": {
       "name": "Máximo de sesiones en ejecución simultáneas",
@@ -254,7 +254,7 @@
       "saveFailed": "No se pudo guardar la ruta. Inténtalo de nuevo."
     },
     "cliPath": {
-      "name": "Ruta CLI Claude",
+      "name": "Ruta de la CLI de Claude Code",
       "genericName": "Ruta de la CLI",
       "validation": {
         "notExist": "La ruta no existe",
@@ -307,7 +307,7 @@
     "claude": {
       "responseStyle": {
         "name": "Estilo de respuesta",
-        "desc": "Predeterminado usa el estilo habitual de Claude. Conciso empieza con los resultados y omite preámbulos. Requiere Claude Code 2.1.237 o posterior.",
+        "desc": "Predeterminado usa el estilo habitual de Claude Code. Conciso empieza con los resultados y omite preámbulos. Requiere Claude Code 2.1.237 o posterior.",
         "default": "Predeterminado",
         "concise": "Conciso"
       }
@@ -315,12 +315,12 @@
     "codex": {
       "installationMethod": {
         "name": "Método de instalación",
-        "desc": "Cómo debe iniciar Claudian Codex en Windows. Windows nativo usa una ruta de ejecutable de Windows. WSL inicia la CLI de Linux dentro de una distribución seleccionada.",
+        "desc": "Cómo debe iniciar Claudian Codex CLI en Windows. Windows nativo usa una ruta de ejecutable de Windows. WSL inicia la CLI de Linux dentro de una distribución seleccionada.",
         "nativeWindows": "Windows nativo",
         "wsl": "WSL"
       },
       "cliPath": {
-        "name": "Ruta de la CLI de Codex",
+        "name": "Ruta de Codex CLI",
         "validation": {
           "wslWindowsPath": "El modo WSL espera un comando Linux o una ruta absoluta de Linux, no una ruta de ejecutable de Windows."
         }
@@ -335,7 +335,7 @@
       },
       "responseStyle": {
         "name": "Estilo de respuesta",
-        "desc": "Elige cómo se comunica Codex en los modelos compatibles. Se aplica a partir del siguiente mensaje.",
+        "desc": "Elige cómo se comunica Codex CLI en los modelos compatibles. Se aplica a partir del siguiente mensaje.",
         "pragmatic": "Pragmático",
         "friendly": "Amigable"
       },
@@ -352,8 +352,8 @@
         "desc": "Muestra Ultra en el selector de esfuerzo para los modelos Codex compatibles. Ultra usa el razonamiento máximo con delegación automática de tareas."
       },
       "environment": {
-        "name": "Entorno de Codex",
-        "desc": "Solo variables de ejecución propiedad de Codex. Úsalo para ajustes OPENAI_* y CODEX_*. Si la autodetección de Codex necesita ayuda, añade su directorio de instalación al PATH compartido en lugar de esta sección del proveedor."
+        "name": "Entorno de Codex CLI",
+        "desc": "Solo variables de ejecución propiedad de Codex CLI. Úsalo para ajustes OPENAI_* y CODEX_*. Si la autodetección de Codex CLI necesita ayuda, añade su directorio de instalación al PATH compartido en lugar de esta sección del proveedor."
       }
     },
     "agentSkills": {
@@ -411,17 +411,17 @@
     },
     "grok": {
       "environment": {
-        "name": "Variables de entorno de Grok",
-        "desc": "Variables de entorno que se pasan solo a Grok. Los secretos de los modelos personalizados permanecen en el ámbito de este proveedor y se referencian desde la configuración nativa mediante env_key."
+        "name": "Variables de entorno de Grok Build",
+        "desc": "Variables de entorno que se pasan solo a Grok Build. Los secretos de los modelos personalizados permanecen en el ámbito de este proveedor y se referencian desde la configuración nativa mediante env_key."
       }
     },
     "skills": {
       "subTabs": {
-        "claude": "Claude",
+        "claude": "Claude Code",
         "shared": "Otros proveedores"
       },
-      "claudeHelp": "Skills de Claude en .claude/skills/ y comandos en .claude/commands/.",
-      "sharedHelp": "Skills compartidos en .agents/skills/ para Codex, OpenCode, Pi y Grok.",
+      "claudeHelp": "Skills de Claude Code en .claude/skills/ y comandos en .claude/commands/.",
+      "sharedHelp": "Skills compartidos en .agents/skills/ para Codex CLI, OpenCode, Pi y Grok Build.",
       "status": {
         "error": "No se pudieron leer las carpetas de skills: {message}"
       },
@@ -431,8 +431,8 @@
         "resync": "Volver a sincronizar"
       },
       "commands": {
-        "title": "Comandos de Claude",
-        "hint": "Los comandos solo funcionan en Claude. Se recomienda convertirlos en skills.",
+        "title": "Comandos de Claude Code",
+        "hint": "Los comandos solo funcionan en Claude Code. Se recomienda convertirlos en skills.",
         "badge": "comando",
         "empty": "No hay comandos en .claude/commands.",
         "convert": "Convertir en skill",
@@ -457,14 +457,14 @@
         "title": "Sincronizar skills",
         "repairTitle": "Reparar el enlace de skills",
         "loading": "Comprobando las carpetas de skills...",
-        "intro": "La sincronización reúne los skills y comandos de Claude en .agents/skills y enlaza .claude/skills allí.",
+        "intro": "La sincronización reúne los skills y comandos de Claude Code en .agents/skills y enlaza .claude/skills allí.",
         "pros": {
           "oneList": "Una sola lista para todos los proveedores.",
           "newSkills": "Los skills nuevos aparecen en todas partes."
         },
         "cons": {
           "dropped": "Solo se conservan el nombre y la descripción; se eliminan los ajustes específicos de cada proveedor y el comportamiento puede cambiar.",
-          "claudeSyntax": "La sintaxis exclusiva de Claude no funciona en otros proveedores: {names}"
+          "claudeSyntax": "La sintaxis exclusiva de Claude Code no funciona en otros proveedores: {names}"
         },
         "attentionTitle": "Requiere atención",
         "nothingNeedsAttention": "Nada requiere atención.",
@@ -489,7 +489,7 @@
         "confirmTitle": "¿Reemplazar .claude/skills por un enlace?",
         "confirmBody": ".claude/skills se reemplazará por un enlace a .agents/skills. Esta acción no se puede deshacer.",
         "repairBody": ".claude/skills se reemplazará por un enlace a .agents/skills. La carpeta a la que apunta ahora no se modifica.",
-        "linkBody": "Crea .claude/skills como enlace a .agents/skills para que Claude use los skills compartidos. No se mueve ningún archivo.",
+        "linkBody": "Crea .claude/skills como enlace a .agents/skills para que Claude Code use los skills compartidos. No se mueve ningún archivo.",
         "linkWithItemsBody": "Los comandos se convierten en skills y luego .claude/skills se crea como enlace a .agents/skills. Esta acción no se puede deshacer.",
         "devicesWarning": "¿Sincronizas este vault entre dispositivos? Puede que el enlace no se sincronice; sincroniza en cada dispositivo.",
         "confirm": "Sincronizar y enlazar",

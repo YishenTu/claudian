@@ -142,7 +142,7 @@
     },
     "safety": "セキュリティ",
     "loadUserSettings": {
-      "name": "ユーザーClaude設定を読み込む",
+      "name": "ユーザーの Claude Code 設定を読み込む",
       "desc": "~/.claude からユーザーレベルの Claude Code 設定（settings.json、スキル、コマンド、エージェント、プラグイン）を読み込みます。無効にすると、Vault レベルの設定のみ利用できます。有効にすると、ユーザーの許可ルールがセキュリティモードをバイパスする可能性があります。"
     },
     "claudeSafeMode": {
@@ -160,7 +160,7 @@
     },
     "customVariables": {
       "name": "カスタム変数",
-      "desc": "Claude が所有するランタイム変数のみ。ANTHROPIC_* と Claude 固有の切り替えに使用します。"
+      "desc": "Claude Code が所有するランタイム変数のみ。ANTHROPIC_* と Claude Code 固有の切り替えに使用します。"
     },
     "envSnippets": {
       "name": "スニペット",
@@ -199,7 +199,7 @@
     },
     "enableChrome": {
       "name": "Chrome拡張機能を有効化",
-      "desc": "claude-in-chrome拡張機能を通じてClaudeがChromeと連携できるようにします。拡張機能のインストールが必要です。セッションの再起動が必要です。"
+      "desc": "claude-in-chrome 拡張機能を通じて Claude Code が Chrome と連携できるようにします。拡張機能のインストールが必要です。セッションの再起動が必要です。"
     },
     "maxWarmAgentProcesses": {
       "name": "同時実行セッションの上限",
@@ -254,7 +254,7 @@
       "saveFailed": "パスを保存できません。再試行してください。"
     },
     "cliPath": {
-      "name": "Claude CLI パス",
+      "name": "Claude Code CLI パス",
       "genericName": "CLI パス",
       "validation": {
         "notExist": "パスが存在しません",
@@ -307,7 +307,7 @@
     "claude": {
       "responseStyle": {
         "name": "応答スタイル",
-        "desc": "デフォルトは Claude の通常のスタイルです。簡潔モードは結果を先に示し、前置きを省きます。Claude Code 2.1.237 以降が必要です。",
+        "desc": "デフォルトは Claude Code の通常のスタイルです。簡潔モードは結果を先に示し、前置きを省きます。Claude Code 2.1.237 以降が必要です。",
         "default": "デフォルト",
         "concise": "簡潔"
       }
@@ -315,7 +315,7 @@
     "codex": {
       "installationMethod": {
         "name": "インストール方式",
-        "desc": "Windows で Claudian が Codex を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
+        "desc": "Windows で Claudian が Codex CLI を起動する方法。ネイティブ Windows は Windows 実行ファイルパスを使い、WSL は選択したディストリビューション内で Linux CLI を起動します。",
         "nativeWindows": "ネイティブ Windows",
         "wsl": "WSL"
       },
@@ -335,7 +335,7 @@
       },
       "responseStyle": {
         "name": "応答スタイル",
-        "desc": "対応モデルでの Codex の話し方を選択します。次のメッセージから適用されます。",
+        "desc": "対応モデルでの Codex CLI の話し方を選択します。次のメッセージから適用されます。",
         "pragmatic": "実用的",
         "friendly": "フレンドリー"
       },
@@ -352,8 +352,8 @@
         "desc": "Ultra をサポートする Codex モデルの推論レベル選択に表示します。Ultra は最大限の推論とタスクの自動委任を使用します。"
       },
       "environment": {
-        "name": "Codex 環境",
-        "desc": "Codex が所有するランタイム変数のみ。OPENAI_* と CODEX_* 設定に使用します。Codex の自動検出に補助が必要な場合は、このプロバイダー環境ではなく共有 PATH にインストールディレクトリを追加してください。"
+        "name": "Codex CLI 環境",
+        "desc": "Codex CLI が所有するランタイム変数のみ。OPENAI_* と CODEX_* 設定に使用します。Codex CLI の自動検出に補助が必要な場合は、このプロバイダー環境ではなく共有 PATH にインストールディレクトリを追加してください。"
       }
     },
     "agentSkills": {
@@ -411,17 +411,17 @@
     },
     "grok": {
       "environment": {
-        "name": "Grok 環境変数",
-        "desc": "Grok にのみ渡す環境変数。カスタムモデルのシークレットはこのプロバイダーのスコープ内に留まり、ネイティブ設定からは env_key で参照されます。"
+        "name": "Grok Build 環境変数",
+        "desc": "Grok Build にのみ渡す環境変数。カスタムモデルのシークレットはこのプロバイダーのスコープ内に留まり、ネイティブ設定からは env_key で参照されます。"
       }
     },
     "skills": {
       "subTabs": {
-        "claude": "Claude",
+        "claude": "Claude Code",
         "shared": "その他のプロバイダー"
       },
-      "claudeHelp": ".claude/skills/ の Claude スキルと .claude/commands/ のコマンド。",
-      "sharedHelp": "Codex、OpenCode、Pi、Grok 用の .agents/skills/ にある共有スキル。",
+      "claudeHelp": ".claude/skills/ の Claude Code スキルと .claude/commands/ のコマンド。",
+      "sharedHelp": "Codex CLI、OpenCode、Pi、Grok Build 用の .agents/skills/ にある共有スキル。",
       "status": {
         "error": "スキルフォルダーを読み取れませんでした: {message}"
       },
@@ -431,8 +431,8 @@
         "resync": "再同期"
       },
       "commands": {
-        "title": "Claude コマンド",
-        "hint": "コマンドは Claude でのみ動作します。スキルへの変換をおすすめします。",
+        "title": "Claude Code コマンド",
+        "hint": "コマンドは Claude Code でのみ動作します。スキルへの変換をおすすめします。",
         "badge": "コマンド",
         "empty": ".claude/commands にコマンドはありません。",
         "convert": "スキルに変換",
@@ -457,14 +457,14 @@
         "title": "スキルを同期",
         "repairTitle": "スキルのリンクを修復",
         "loading": "スキルフォルダーを確認しています...",
-        "intro": "同期すると、Claude のスキルとコマンドを .agents/skills にまとめ、.claude/skills をそこへのリンクにします。",
+        "intro": "同期すると、Claude Code のスキルとコマンドを .agents/skills にまとめ、.claude/skills をそこへのリンクにします。",
         "pros": {
           "oneList": "すべてのプロバイダーで 1 つのリスト。",
           "newSkills": "新しいスキルはどこでも使えます。"
         },
         "cons": {
           "dropped": "名前と説明だけが残ります。プロバイダー固有の設定は削除され、動作が変わる可能性があります。",
-          "claudeSyntax": "Claude 専用の構文は他のプロバイダーでは動作しません: {names}"
+          "claudeSyntax": "Claude Code 専用の構文は他のプロバイダーでは動作しません: {names}"
         },
         "attentionTitle": "確認が必要",
         "nothingNeedsAttention": "確認が必要な項目はありません。",
@@ -489,7 +489,7 @@
         "confirmTitle": ".claude/skills をリンクに置き換えますか?",
         "confirmBody": ".claude/skills は .agents/skills へのリンクに置き換えられます。この操作は元に戻せません。",
         "repairBody": ".claude/skills は .agents/skills へのリンクに置き換えられます。現在のリンク先のフォルダーは変更されません。",
-        "linkBody": ".claude/skills を .agents/skills へのリンクとして作成し、Claude が共有スキルを使えるようにします。ファイルは移動しません。",
+        "linkBody": ".claude/skills を .agents/skills へのリンクとして作成し、Claude Code が共有スキルを使えるようにします。ファイルは移動しません。",
         "linkWithItemsBody": "コマンドがスキルになり、その後 .claude/skills が .agents/skills へのリンクとして作成されます。この操作は元に戻せません。",
         "devicesWarning": "この保管庫を複数のデバイスで同期していますか? リンクは同期されない可能性があるため、各デバイスで同期してください。",
         "confirm": "同期してリンク",

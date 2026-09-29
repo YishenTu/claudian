@@ -195,7 +195,7 @@ function getDescription(spawnToolCall: ToolCallInfo): string {
   if (typeof spawnToolCall.input.subagent_type === 'string' && spawnToolCall.input.subagent_type.trim()) {
     return `${spawnToolCall.input.subagent_type.trim()} subagent`;
   }
-  return 'Grok subagent';
+  return 'Grok Build subagent';
 }
 
 function getPrompt(spawnToolCall: ToolCallInfo): string {

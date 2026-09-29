@@ -416,7 +416,7 @@ export default class ClaudianPlugin extends Plugin {
     try {
       await deleteLegacyMCPConfig(sharedStorage.getAdapter());
     } catch {
-      new Notice('Failed to remove obsolete Claude configuration');
+      new Notice('Failed to remove obsolete Claude Code configuration');
     }
     const { claudian } = await sharedStorage.initialize();
     this.settings = {

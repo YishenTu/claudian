@@ -288,7 +288,7 @@ export class GrokModelCatalogCoordinator {
       if (discovery.diagnostics) {
         return {
           ...this.#completedResult(),
-          diagnostics: discovery.diagnostics ?? 'Grok models returned no available models',
+          diagnostics: discovery.diagnostics ?? 'Grok Build models command returned no available models',
         };
       }
 
@@ -316,7 +316,7 @@ export class GrokModelCatalogCoordinator {
       }
       return {
         ...this.#completedResult(),
-        diagnostics: 'Grok model catalog refresh failed',
+        diagnostics: 'Grok Build model catalog refresh failed',
       };
     } finally {
       if (this.abortController === abortController) {

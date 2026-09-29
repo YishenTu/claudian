@@ -238,8 +238,8 @@ describe('ClaudeExecutionBackend', () => {
       ...request, configuration: { ...request.configuration, model: 'gateway-model' },
     }).events);
     expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error', category: 'configuration' }));
-    expect(JSON.stringify(events)).toContain('selected Claude model is unavailable');
-    expect(JSON.stringify(events)).toContain('Open Claudian settings → Claude');
+    expect(JSON.stringify(events)).toContain('selected Claude Code model is unavailable');
+    expect(JSON.stringify(events)).toContain('Open Claudian settings → Claude Code');
     expect(sdkMock.getQueryCallCount()).toBe(0);
     await session.dispose();
   });
@@ -2415,7 +2415,7 @@ describe('ClaudeExecutionBackend', () => {
     const eventsPromise = collectEvents(run.events);
 
     expect(() => session.execute(createRequest())).toThrow(
-      'Claude execution session already has an active run',
+      'Claude Code execution session already has an active run',
     );
     await waitFor(() => query.supportedCommands.mock.calls.length > 0);
     run.cancel();
@@ -2430,7 +2430,7 @@ describe('ClaudeExecutionBackend', () => {
     await session.dispose();
     await session.dispose();
     expect(() => session.execute(createRequest())).toThrow(
-      'Claude execution session is disposed',
+      'Claude Code execution session is disposed',
     );
   });
 

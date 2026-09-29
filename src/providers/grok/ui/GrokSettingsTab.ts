@@ -39,7 +39,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
       getValue: () => getGrokProviderSettings(settingsBag).enabled,
-      name: t('settings.providerEnablement.name', { provider: 'Grok' }),
+      name: t('settings.providerEnablement.name', { provider: 'Grok Build' }),
       onChange: async (enabled) => {
         if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
           settingsBag,
@@ -80,11 +80,11 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
       },
       getIsEnabled: () => getGrokProviderSettings(settingsBag).enabled,
       providerId: GROK_PROVIDER_ID,
-      providerName: 'Grok',
+      providerName: 'Grok Build',
     });
 
     renderCLIInstallationSetting({
-      cliName: 'Grok CLI',
+      cliName: 'Grok Build',
       icon: GROK_PROVIDER_ICON,
       inspect: async () => {
         const settings = context.plugin.settings as unknown as Record<string, unknown>;
@@ -132,7 +132,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
     });
 
     new Setting(container).setName('Models').setHeading();
-    const modelPicker = renderProviderModelsSection(container, 'grok', 'Grok', workspace.modelCatalog!, () => modelWarning.refresh());
+    const modelPicker = renderProviderModelsSection(container, 'grok', 'Grok Build', workspace.modelCatalog!, () => modelWarning.refresh());
 
     renderEnvironmentSettingsSection({
       container,

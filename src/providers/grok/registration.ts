@@ -29,7 +29,7 @@ export const grokProviderRegistration: ProviderModule = {
     });
   },
 
-  displayName: 'Grok',
+  displayName: 'Grok Build',
   environmentKeyPatterns: [/^GROK_/i, /^XAI_/i],
   historyService: new GrokConversationHistoryService(),
   isEnabled: settings => getGrokProviderSettings(settings).enabled,

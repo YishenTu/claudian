@@ -1493,7 +1493,7 @@ describe('ClaudianPlugin', () => {
       await expect(plugin.loadSettings()).resolves.toBeUndefined();
 
       expect(plugin.settings).toBeDefined();
-      expect(Notice).toHaveBeenCalledWith('Failed to remove obsolete Claude configuration');
+      expect(Notice).toHaveBeenCalledWith('Failed to remove obsolete Claude Code configuration');
     });
 
     it('should merge saved data with defaults', async () => {

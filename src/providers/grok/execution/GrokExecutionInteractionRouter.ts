@@ -36,7 +36,7 @@ export class GrokExecutionInteractionRouter {
     if (normalized === 'x.ai/exit_plan_mode') {
       return { outcome: 'abandoned' };
     }
-    throw new Error(`Unsupported Grok server request: ${method}`);
+    throw new Error(`Unsupported Grok Build server request: ${method}`);
   }
 
   dismissAll(reason: ProviderInteractionDismissReason): void {

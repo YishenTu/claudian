@@ -175,14 +175,14 @@ export class CodexModelCatalogCoordinator {
           kind: 'completed',
           models: this.getCachedCatalog(),
           refreshed: false,
-          diagnostics: discoveryResult.diagnostics ?? 'Codex app-server returned no visible models',
+          diagnostics: discoveryResult.diagnostics ?? 'Codex CLI app-server returned no visible models',
         };
       }
 
       if (!catalogFingerprint) {
         throw catalogFingerprintError instanceof Error
           ? catalogFingerprintError
-          : new Error('Codex catalog fingerprint resolution failed');
+          : new Error('Codex CLI catalog fingerprint resolution failed');
       }
       const persistedResult = await this.#persistCatalog(
         discoveryResult.models,
@@ -214,7 +214,7 @@ export class CodexModelCatalogCoordinator {
       if (!this.#isCurrentRefresh(generation)) {
         return this.#supersededResult();
       }
-      const message = error instanceof Error ? error.message : 'Codex model discovery failed';
+      const message = error instanceof Error ? error.message : 'Codex CLI model discovery failed';
       return {
         kind: 'completed',
         models: this.getCachedCatalog(),

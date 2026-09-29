@@ -574,7 +574,7 @@ describe('ClaudeSettingsTab', () => {
     expect(headings).toEqual(expect.arrayContaining(['settings.models', 'settings.safety']));
     expect(headings.indexOf('settings.models')).toBeLessThan(headings.indexOf('settings.safety'));
     expect(mockRenderModelPicker).toHaveBeenCalledWith(
-      container, 'claude', 'Claude', mockModelCatalog, expect.any(Function),
+      container, 'claude', 'Claude Code', mockModelCatalog, expect.any(Function),
     );
   });
 

@@ -143,7 +143,7 @@ implements GrokExecutionNativeConnection {
       || !Array.isArray(hooks.decisions)
       || !hooks.decisions.includes('deny')
     ) {
-      throw new Error('Grok does not support blocking tool hooks. Update Grok to the latest version.');
+      throw new Error('Grok Build does not support blocking tool hooks. Update Grok Build to the latest version.');
     }
   }
 
@@ -176,7 +176,7 @@ implements GrokExecutionNativeConnection {
       { signal, timeoutMs: 5_000 },
     );
     if (!Array.isArray(response.commands)) {
-      throw new Error('Grok returned malformed command metadata.');
+      throw new Error('Grok Build returned malformed command metadata.');
     }
     return normalizeACPAvailableCommands(response.commands);
   }

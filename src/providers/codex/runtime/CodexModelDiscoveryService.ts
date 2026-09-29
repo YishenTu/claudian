@@ -47,7 +47,7 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
     if (signal?.aborted) {
       return {
         kind: 'completed',
-        diagnostics: 'Codex model discovery was cancelled',
+        diagnostics: 'Codex CLI model discovery was cancelled',
         models: [],
       };
     }
@@ -65,7 +65,7 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
       if (signal?.aborted) {
         return {
           kind: 'completed',
-          diagnostics: 'Codex model discovery was cancelled',
+          diagnostics: 'Codex CLI model discovery was cancelled',
           models: [],
         };
       }
@@ -87,7 +87,7 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
       if (signal?.aborted) {
         return {
           kind: 'completed',
-          diagnostics: 'Codex model discovery was cancelled',
+          diagnostics: 'Codex CLI model discovery was cancelled',
           models: [],
         };
       }
@@ -107,7 +107,7 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
           ? result.nextCursor
           : null;
         if (nextCursor && seenCursors.has(nextCursor)) {
-          throw new Error('Codex model/list returned a repeated cursor');
+          throw new Error('Codex CLI model/list returned a repeated cursor');
         }
         if (nextCursor) {
           seenCursors.add(nextCursor);
@@ -117,7 +117,7 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
         if (signal?.aborted) {
           return {
             kind: 'completed',
-            diagnostics: 'Codex model discovery was cancelled',
+            diagnostics: 'Codex CLI model discovery was cancelled',
             models: [],
           };
         }
@@ -131,11 +131,11 @@ export class CodexModelDiscoveryService implements CodexModelDiscoveryServiceLik
       if (signal?.aborted) {
         return {
           kind: 'completed',
-          diagnostics: 'Codex model discovery was cancelled',
+          diagnostics: 'Codex CLI model discovery was cancelled',
           models: [],
         };
       }
-      const message = error instanceof Error ? error.message : 'Codex model discovery failed';
+      const message = error instanceof Error ? error.message : 'Codex CLI model discovery failed';
       const stderr = process?.getStderrSnapshot() ?? '';
       return {
         diagnostics: stderr ? `${message}\n\n${stderr}` : message,

@@ -96,7 +96,7 @@ implements ClaudeExecutionStrategy {
       await this.#ensureQuery(request, queryToken);
       requestSignal?.throwIfAborted();
       if (!this.query || !this.messageChannel) {
-        throw new Error('Claude persistent query is unavailable');
+        throw new Error('Claude Code persistent query is unavailable');
       }
 
       await this.#applyDynamicUpdates(request);
@@ -196,7 +196,7 @@ implements ClaudeExecutionStrategy {
       this.sink.handleNativeQueryClosed(query);
       this.#finishNativeTurn(query, {
         type: 'failed',
-        error: new Error('Claude persistent query was disposed.'),
+        error: new Error('Claude Code persistent query was disposed.'),
       });
       await query.interrupt().catch(() => undefined);
     }
@@ -212,7 +212,7 @@ implements ClaudeExecutionStrategy {
     const requestSignal = request.options.abortController?.signal;
     requestSignal?.throwIfAborted();
     if (this.disposed) {
-      throw new Error('Claude persistent strategy is disposed');
+      throw new Error('Claude Code persistent strategy is disposed');
     }
     if (
       this.hasNonPersistentContext
@@ -222,7 +222,7 @@ implements ClaudeExecutionStrategy {
       )
     ) {
       throw new Error(
-        'This non-persistent Claude session cannot be restored after its configuration or process changes. Start a new request.',
+        'This non-persistent Claude Code session cannot be restored after its configuration or process changes. Start a new request.',
       );
     }
     if (
@@ -319,7 +319,7 @@ implements ClaudeExecutionStrategy {
       if (this.query === query && !this.disposed) {
         const nativeTurn = this.#getNativeTurn(query);
         const nativeTurnToken = nativeTurn?.queryToken ?? queryToken;
-        const error = new Error('Claude persistent query ended unexpectedly.');
+        const error = new Error('Claude Code persistent query ended unexpectedly.');
         this.#detachCurrentQuery(query);
         this.sink.handleNativeEnd(nativeTurnToken);
         this.#finishNativeTurn(query, { type: 'failed', error });
@@ -341,7 +341,7 @@ implements ClaudeExecutionStrategy {
       this.#detachCurrentQuery(query);
       this.#finishNativeTurn(query, {
         type: 'failed',
-        error: new Error('Claude persistent query was replaced.'),
+        error: new Error('Claude Code persistent query was replaced.'),
       });
     }
     if (query) {
@@ -402,7 +402,7 @@ implements ClaudeExecutionStrategy {
     queryToken: number,
   ): Promise<void> {
     if (this.disposed) {
-      throw new Error('Claude ephemeral strategy is disposed');
+      throw new Error('Claude Code ephemeral strategy is disposed');
     }
     const abortController = request.options.abortController
       ?? new AbortController();

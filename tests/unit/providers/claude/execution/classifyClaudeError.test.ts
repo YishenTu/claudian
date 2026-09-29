@@ -12,8 +12,8 @@ describe('classifyClaudeError', () => {
   it.each([
     ['a missing expected session', new Error('No conversation found with session ID: abc-1'), 'provider-session-missing'],
     ['a missing session other than the expected one', new Error('No conversation found with session ID: other'), 'provider'],
-    ['an unavailable model', new ProviderModelUnavailableError('Claude'), 'configuration'],
-    ['an unresolved CLI', new Error('Claude CLI not found'), 'configuration'],
+    ['an unavailable model', new ProviderModelUnavailableError('Claude Code'), 'configuration'],
+    ['an unresolved CLI', new Error('Claude Code CLI not found'), 'configuration'],
     ['an authentication failure', new Error('Invalid API key provided'), 'authentication'],
     ['an SDK process exit', new Error('Claude Code process exited with code 1'), 'process-exited'],
     ['a broken stdin pipe', errnoError('EPIPE', 'write failed'), 'process-exited'],

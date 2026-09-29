@@ -94,7 +94,7 @@ export function createClaudeModels(
     providerId: 'claude',
     host,
     update: updateClaudeProviderSettings,
-    providerName: 'Claude',
+    providerName: 'Claude Code',
     read: (settings = host.settings) => {
       const current = getClaudeProviderSettings(settings);
       const models = getClaudeModelCatalog(settings);

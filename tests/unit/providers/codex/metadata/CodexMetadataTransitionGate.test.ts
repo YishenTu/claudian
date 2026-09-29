@@ -11,7 +11,7 @@ describe('CodexMetadataTransitionGate', () => {
 
     await expect(availability).rejects.toMatchObject({
       cause: 'caller cancelled',
-      message: 'Codex metadata transition wait aborted',
+      message: 'Codex CLI metadata transition wait aborted',
     });
     gate.dispose();
   });

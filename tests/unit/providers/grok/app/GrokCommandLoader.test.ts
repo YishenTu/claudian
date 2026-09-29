@@ -89,7 +89,7 @@ describe('GrokCommandLoader', () => {
     await expect(loader.loadCommands(createContext({
       allowIsolatedMetadataCreation: true,
     }))).resolves.toEqual({
-      message: 'Could not load Grok skills and commands.',
+      message: 'Could not load Grok Build skills and commands.',
       retryable: true,
       status: 'error',
     });

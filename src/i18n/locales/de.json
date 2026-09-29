@@ -142,7 +142,7 @@
     },
     "safety": "Sicherheit",
     "loadUserSettings": {
-      "name": "Benutzer-Claude-Einstellungen laden",
+      "name": "Claude-Code-Benutzereinstellungen laden",
       "desc": "Lädt die Claude-Code-Konfiguration auf Benutzerebene aus ~/.claude: settings.json, Skills, Befehle, Agenten und Plugins. Wenn deaktiviert, ist nur die Konfiguration auf Vault-Ebene verfügbar. Wenn aktiviert, können Benutzer-Berechtigungsregeln den Sicherheitsmodus umgehen."
     },
     "claudeSafeMode": {
@@ -160,7 +160,7 @@
     },
     "customVariables": {
       "name": "Benutzerdefinierte Variablen",
-      "desc": "Nur Claude-eigene Laufzeitvariablen. Verwenden Sie dies für ANTHROPIC_* und Claude-spezifische Schalter."
+      "desc": "Nur Laufzeitvariablen, die Claude Code gehören. Verwenden Sie dies für ANTHROPIC_* und Claude-Code-spezifische Schalter."
     },
     "envSnippets": {
       "name": "Snippets",
@@ -199,7 +199,7 @@
     },
     "enableChrome": {
       "name": "Chrome-Erweiterung aktivieren",
-      "desc": "Erlaubt Claude die Interaktion mit Chrome über die claude-in-chrome-Erweiterung. Die Erweiterung muss installiert sein. Erfordert Neustart der Sitzung."
+      "desc": "Erlaubt Claude Code die Interaktion mit Chrome über die claude-in-chrome-Erweiterung. Die Erweiterung muss installiert sein. Erfordert Neustart der Sitzung."
     },
     "maxWarmAgentProcesses": {
       "name": "Maximale gleichzeitig laufende Sitzungen",
@@ -254,7 +254,7 @@
       "saveFailed": "Pfad konnte nicht gespeichert werden. Erneut versuchen."
     },
     "cliPath": {
-      "name": "Claude CLI-Pfad",
+      "name": "Claude-Code-CLI-Pfad",
       "genericName": "CLI-Pfad",
       "validation": {
         "notExist": "Pfad existiert nicht",
@@ -307,7 +307,7 @@
     "claude": {
       "responseStyle": {
         "name": "Antwortstil",
-        "desc": "Standard verwendet Claudes üblichen Stil. Knapp beginnt mit Ergebnissen und verzichtet auf Einleitungen. Erfordert Claude Code 2.1.237 oder neuer.",
+        "desc": "Standard verwendet den üblichen Stil von Claude Code. Knapp beginnt mit Ergebnissen und verzichtet auf Einleitungen. Erfordert Claude Code 2.1.237 oder neuer.",
         "default": "Standard",
         "concise": "Knapp"
       }
@@ -315,7 +315,7 @@
     "codex": {
       "installationMethod": {
         "name": "Installationsmethode",
-        "desc": "Wie Claudian Codex unter Windows starten soll. Native Windows verwendet einen Windows-Programmpfad. WSL startet die Linux-CLI in einer ausgewählten Distribution.",
+        "desc": "Wie Claudian Codex CLI unter Windows starten soll. Native Windows verwendet einen Windows-Programmpfad. WSL startet die Linux-CLI in einer ausgewählten Distribution.",
         "nativeWindows": "Natives Windows",
         "wsl": "WSL"
       },
@@ -335,7 +335,7 @@
       },
       "responseStyle": {
         "name": "Antwortstil",
-        "desc": "Wähle den Kommunikationsstil von Codex bei unterstützten Modellen. Gilt ab der nächsten Nachricht.",
+        "desc": "Wähle den Kommunikationsstil von Codex CLI bei unterstützten Modellen. Gilt ab der nächsten Nachricht.",
         "pragmatic": "Pragmatisch",
         "friendly": "Freundlich"
       },
@@ -352,8 +352,8 @@
         "desc": "Ultra in der Auswahl für Codex-Modelle anzeigen, die es unterstützen. Ultra nutzt maximale Denktiefe mit automatischer Aufgabendelegation."
       },
       "environment": {
-        "name": "Codex-Umgebung",
-        "desc": "Nur Codex-eigene Laufzeitvariablen. Verwende dies für OPENAI_*- und CODEX_*-Einstellungen. Wenn die Codex-Autoerkennung Hilfe braucht, füge das Installationsverzeichnis dem gemeinsamen PATH hinzu statt diesem Anbieterabschnitt."
+        "name": "Codex-CLI-Umgebung",
+        "desc": "Nur Laufzeitvariablen, die Codex CLI gehören. Verwende dies für OPENAI_*- und CODEX_*-Einstellungen. Wenn die Autoerkennung von Codex CLI Hilfe braucht, füge das Installationsverzeichnis dem gemeinsamen PATH hinzu statt diesem Anbieterabschnitt."
       }
     },
     "agentSkills": {
@@ -411,17 +411,17 @@
     },
     "grok": {
       "environment": {
-        "name": "Grok-Umgebungsvariablen",
-        "desc": "Umgebungsvariablen, die nur an Grok übergeben werden. Geheimnisse für benutzerdefinierte Modelle bleiben in diesem Anbieterbereich und werden in der nativen Konfiguration über env_key referenziert."
+        "name": "Grok-Build-Umgebungsvariablen",
+        "desc": "Umgebungsvariablen, die nur an Grok Build übergeben werden. Geheimnisse für benutzerdefinierte Modelle bleiben in diesem Anbieterbereich und werden in der nativen Konfiguration über env_key referenziert."
       }
     },
     "skills": {
       "subTabs": {
-        "claude": "Claude",
+        "claude": "Claude Code",
         "shared": "Andere Anbieter"
       },
-      "claudeHelp": "Claude-Skills in .claude/skills/ und Befehle in .claude/commands/.",
-      "sharedHelp": "Gemeinsame Skills in .agents/skills/ für Codex, OpenCode, Pi und Grok.",
+      "claudeHelp": "Claude-Code-Skills in .claude/skills/ und Befehle in .claude/commands/.",
+      "sharedHelp": "Gemeinsame Skills in .agents/skills/ für Codex CLI, OpenCode, Pi und Grok Build.",
       "status": {
         "error": "Die Skill-Ordner konnten nicht gelesen werden: {message}"
       },
@@ -431,8 +431,8 @@
         "resync": "Neu synchronisieren"
       },
       "commands": {
-        "title": "Claude-Befehle",
-        "hint": "Befehle funktionieren nur in Claude. Es wird empfohlen, sie in Skills umzuwandeln.",
+        "title": "Claude-Code-Befehle",
+        "hint": "Befehle funktionieren nur in Claude Code. Es wird empfohlen, sie in Skills umzuwandeln.",
         "badge": "Befehl",
         "empty": "Keine Befehle in .claude/commands.",
         "convert": "In Skill umwandeln",
@@ -457,14 +457,14 @@
         "title": "Skills synchronisieren",
         "repairTitle": "Skills-Link reparieren",
         "loading": "Skill-Ordner werden geprüft...",
-        "intro": "Die Synchronisierung führt Claudes Skills und Befehle in .agents/skills zusammen und verlinkt .claude/skills dorthin.",
+        "intro": "Die Synchronisierung führt die Skills und Befehle von Claude Code in .agents/skills zusammen und verlinkt .claude/skills dorthin.",
         "pros": {
           "oneList": "Eine Liste für alle Anbieter.",
           "newSkills": "Neue Skills erscheinen überall."
         },
         "cons": {
           "dropped": "Nur Name und Beschreibung bleiben erhalten; anbieterspezifische Einstellungen entfallen und das Verhalten kann sich ändern.",
-          "claudeSyntax": "Nur für Claude gültige Syntax funktioniert bei anderen Anbietern nicht: {names}"
+          "claudeSyntax": "Nur für Claude Code gültige Syntax funktioniert bei anderen Anbietern nicht: {names}"
         },
         "attentionTitle": "Braucht Aufmerksamkeit",
         "nothingNeedsAttention": "Nichts braucht Aufmerksamkeit.",
@@ -489,7 +489,7 @@
         "confirmTitle": ".claude/skills durch einen Link ersetzen?",
         "confirmBody": ".claude/skills wird durch einen Link auf .agents/skills ersetzt. Dies kann nicht rückgängig gemacht werden.",
         "repairBody": ".claude/skills wird durch einen Link auf .agents/skills ersetzt. Der Ordner, auf den er jetzt verweist, bleibt unverändert.",
-        "linkBody": "Erstellt .claude/skills als Link auf .agents/skills, damit Claude die gemeinsamen Skills nutzt. Es werden keine Dateien verschoben.",
+        "linkBody": "Erstellt .claude/skills als Link auf .agents/skills, damit Claude Code die gemeinsamen Skills nutzt. Es werden keine Dateien verschoben.",
         "linkWithItemsBody": "Befehle werden zu Skills, dann wird .claude/skills als Link auf .agents/skills erstellt. Dies kann nicht rückgängig gemacht werden.",
         "devicesWarning": "Wird dieser Vault zwischen Geräten synchronisiert? Der Link wird eventuell nicht übertragen; synchronisiere auf jedem Gerät.",
         "confirm": "Synchronisieren und verlinken",

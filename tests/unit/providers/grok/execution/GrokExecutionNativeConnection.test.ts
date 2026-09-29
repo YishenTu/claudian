@@ -158,7 +158,7 @@ describe('GrokExecutionNativeConnection', () => {
     }));
 
     await expect(connection.initialize()).rejects.toThrow(
-      'Grok does not support blocking tool hooks. Update Grok to the latest version.',
+      'Grok Build does not support blocking tool hooks. Update Grok Build to the latest version.',
     );
   });
 

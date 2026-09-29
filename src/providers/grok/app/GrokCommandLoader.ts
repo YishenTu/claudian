@@ -33,10 +33,10 @@ export class GrokCommandLoader implements ProviderCommandLoaderContract {
     return loadRuntimeCommands({
       allowIsolatedMetadataCreation: context.allowIsolatedMetadataCreation,
       discover: signal => this.metadataProbe.load(signal),
-      errorMessage: 'Could not load Grok skills and commands.',
+      errorMessage: 'Could not load Grok Build skills and commands.',
       projectItems: commands => commands,
       readyCommandSnapshot: context.readyCommandSnapshot,
-      requiresSessionMessage: 'Grok command metadata has not been loaded for this tab.',
+      requiresSessionMessage: 'Grok Build command metadata has not been loaded for this tab.',
       signal: context.signal,
     });
   }

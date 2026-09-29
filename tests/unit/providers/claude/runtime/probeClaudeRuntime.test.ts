@@ -117,7 +117,7 @@ describe('Claude runtime probe', () => {
 
   it.each([
     [undefined, { name: 'AbortError' }],
-    ['caller cancelled', { message: 'Claude runtime discovery cancelled', cause: 'caller cancelled' }],
+    ['caller cancelled', { message: 'Claude Code runtime discovery cancelled', cause: 'caller cancelled' }],
   ])('aborts the SDK process and rejects with the caller reason (%s)', async (reason, expected) => {
     const conversation = nativeQuery();
     conversation.next.mockImplementation(() => new Promise(() => undefined));

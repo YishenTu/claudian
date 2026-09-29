@@ -142,7 +142,7 @@
     },
     "safety": "安全",
     "loadUserSettings": {
-      "name": "加载用户 Claude 设置",
+      "name": "加载用户 Claude Code 设置",
       "desc": "从 ~/.claude 加载用户级 Claude Code 配置：settings.json、技能、命令、智能体和插件。禁用时仅可使用仓库级配置。启用后，用户的权限规则可能绕过安全模式。"
     },
     "claudeSafeMode": {
@@ -160,7 +160,7 @@
     },
     "customVariables": {
       "name": "自定义变量",
-      "desc": "仅限 Claude 拥有的运行时变量。用于 ANTHROPIC_* 和 Claude 专属开关。"
+      "desc": "仅限 Claude Code 拥有的运行时变量。用于 ANTHROPIC_* 和 Claude Code 专属开关。"
     },
     "envSnippets": {
       "name": "片段",
@@ -199,7 +199,7 @@
     },
     "enableChrome": {
       "name": "启用 Chrome 扩展",
-      "desc": "允许 Claude 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"
+      "desc": "允许 Claude Code 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"
     },
     "maxWarmAgentProcesses": {
       "name": "最大并发运行会话数",
@@ -254,7 +254,7 @@
       "saveFailed": "无法保存路径，请重试。"
     },
     "cliPath": {
-      "name": "Claude CLI 路径",
+      "name": "Claude Code CLI 路径",
       "genericName": "CLI 路径",
       "validation": {
         "notExist": "路径不存在",
@@ -307,7 +307,7 @@
     "claude": {
       "responseStyle": {
         "name": "回复风格",
-        "desc": "默认使用 Claude 的常规风格。简洁模式先给出结果，省略开场白。需要 Claude Code 2.1.237 或更高版本。",
+        "desc": "默认使用 Claude Code 的常规风格。简洁模式先给出结果，省略开场白。需要 Claude Code 2.1.237 或更高版本。",
         "default": "默认",
         "concise": "简洁"
       }
@@ -315,7 +315,7 @@
     "codex": {
       "installationMethod": {
         "name": "安装方式",
-        "desc": "Claudian 在 Windows 上启动 Codex 的方式。原生 Windows 使用 Windows 可执行文件路径；WSL 会在所选发行版内启动 Linux CLI。",
+        "desc": "Claudian 在 Windows 上启动 Codex CLI 的方式。原生 Windows 使用 Windows 可执行文件路径；WSL 会在所选发行版内启动 Linux CLI。",
         "nativeWindows": "原生 Windows",
         "wsl": "WSL"
       },
@@ -335,7 +335,7 @@
       },
       "responseStyle": {
         "name": "回复风格",
-        "desc": "选择支持此功能的模型中 Codex 的沟通风格。从下一条消息开始生效。",
+        "desc": "选择支持此功能的模型中 Codex CLI 的沟通风格。从下一条消息开始生效。",
         "pragmatic": "务实",
         "friendly": "友好"
       },
@@ -352,8 +352,8 @@
         "desc": "在支持 Ultra 的 Codex 模型的推理强度选择器中显示此选项。Ultra 使用最高推理强度并自动委派任务。"
       },
       "environment": {
-        "name": "Codex 环境",
-        "desc": "仅限 Codex 拥有的运行时变量。用于 OPENAI_* 和 CODEX_* 设置。如果 Codex 自动检测需要帮助，请把安装目录添加到共享 PATH，而不是此提供商环境。"
+        "name": "Codex CLI 环境",
+        "desc": "仅限 Codex CLI 拥有的运行时变量。用于 OPENAI_* 和 CODEX_* 设置。如果 Codex CLI 自动检测需要帮助，请把安装目录添加到共享 PATH，而不是此提供商环境。"
       }
     },
     "agentSkills": {
@@ -411,17 +411,17 @@
     },
     "grok": {
       "environment": {
-        "name": "Grok 环境变量",
-        "desc": "仅传递给 Grok 的环境变量。自定义模型的密钥保留在此提供商范围内，并在原生配置中通过 env_key 引用。"
+        "name": "Grok Build 环境变量",
+        "desc": "仅传递给 Grok Build 的环境变量。自定义模型的密钥保留在此提供商范围内，并在原生配置中通过 env_key 引用。"
       }
     },
     "skills": {
       "subTabs": {
-        "claude": "Claude",
+        "claude": "Claude Code",
         "shared": "其他服务商"
       },
-      "claudeHelp": ".claude/skills/ 中的 Claude 技能和 .claude/commands/ 中的命令。",
-      "sharedHelp": ".agents/skills/ 中供 Codex、OpenCode、Pi 和 Grok 使用的共享技能。",
+      "claudeHelp": ".claude/skills/ 中的 Claude Code 技能和 .claude/commands/ 中的命令。",
+      "sharedHelp": ".agents/skills/ 中供 Codex CLI、OpenCode、Pi 和 Grok Build 使用的共享技能。",
       "status": {
         "error": "无法读取技能文件夹:{message}"
       },
@@ -431,8 +431,8 @@
         "resync": "重新同步"
       },
       "commands": {
-        "title": "Claude 命令",
-        "hint": "命令仅在 Claude 中可用。建议将其转换为技能。",
+        "title": "Claude Code 命令",
+        "hint": "命令仅在 Claude Code 中可用。建议将其转换为技能。",
         "badge": "命令",
         "empty": ".claude/commands 中没有命令。",
         "convert": "转换为技能",
@@ -457,14 +457,14 @@
         "title": "同步技能",
         "repairTitle": "修复技能链接",
         "loading": "正在检查技能文件夹...",
-        "intro": "同步会把 Claude 的技能和命令合并到 .agents/skills,并将 .claude/skills 链接到那里。",
+        "intro": "同步会把 Claude Code 的技能和命令合并到 .agents/skills,并将 .claude/skills 链接到那里。",
         "pros": {
           "oneList": "所有服务商共用一个列表。",
           "newSkills": "新技能在所有地方可用。"
         },
         "cons": {
           "dropped": "仅保留名称和描述;服务商专属的设置会被移除,行为可能改变。",
-          "claudeSyntax": "仅 Claude 支持的语法在其他服务商中无效:{names}"
+          "claudeSyntax": "仅 Claude Code 支持的语法在其他服务商中无效:{names}"
         },
         "attentionTitle": "需要处理",
         "nothingNeedsAttention": "没有需要处理的项目。",
@@ -489,7 +489,7 @@
         "confirmTitle": "用链接替换 .claude/skills?",
         "confirmBody": ".claude/skills 将被替换为指向 .agents/skills 的链接。此操作无法撤销。",
         "repairBody": ".claude/skills 将被替换为指向 .agents/skills 的链接。它当前指向的文件夹不会被修改。",
-        "linkBody": "将 .claude/skills 创建为指向 .agents/skills 的链接,让 Claude 使用共享技能。不会移动任何文件。",
+        "linkBody": "将 .claude/skills 创建为指向 .agents/skills 的链接,让 Claude Code 使用共享技能。不会移动任何文件。",
         "linkWithItemsBody": "命令将变成技能,随后 .claude/skills 被创建为指向 .agents/skills 的链接。此操作无法撤销。",
         "devicesWarning": "此库在多台设备间同步?链接可能不会同步,请在每台设备上执行同步。",
         "confirm": "同步并链接",

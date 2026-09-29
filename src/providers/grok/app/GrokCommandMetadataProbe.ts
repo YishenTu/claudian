@@ -20,8 +20,8 @@ interface GrokCommandProbeResource {
   readonly native: GrokExecutionNativeConnection;
 }
 
-const ABORT_MESSAGE = 'Grok command metadata probe aborted';
-const DISPOSED_MESSAGE = 'Grok command metadata probe is disposed.';
+const ABORT_MESSAGE = 'Grok Build command metadata probe aborted';
+const DISPOSED_MESSAGE = 'Grok Build command metadata probe is disposed.';
 
 export class GrokCommandMetadataProbe {
   private disposeFlight: Promise<void> | null = null;

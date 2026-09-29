@@ -38,7 +38,7 @@ export function createClaudeSettingsTabRenderer(
 
       const enablement: Omit<ProviderEnablementSettingOptions, 'container' | 'description'> = {
         getValue: () => getClaudeProviderSettings(settingsBag).enabled,
-        name: t('settings.providerEnablement.name', { provider: 'Claude' }),
+        name: t('settings.providerEnablement.name', { provider: 'Claude Code' }),
         onChange: async (value) => {
           if (!ProviderSettingsCoordinator.canApplyProviderEnablement(
             settingsBag,
@@ -74,7 +74,7 @@ export function createClaudeSettingsTabRenderer(
         getHasEnabledModels: () => getClaudeModelOptions(settingsBag).length > 0,
         getIsEnabled: () => getClaudeProviderSettings(settingsBag).enabled,
         providerId: 'claude',
-        providerName: 'Claude',
+        providerName: 'Claude Code',
       });
 
       const hostnameKey = context.plugin.storage.installationKey;
@@ -143,7 +143,7 @@ export function createClaudeSettingsTabRenderer(
       // --- Models ---
 
       new Setting(container).setName(t('settings.models')).setHeading();
-      const modelPicker = renderProviderModelsSection(container, 'claude', 'Claude', claudeWorkspace.modelCatalog, () => modelWarning.refresh());
+      const modelPicker = renderProviderModelsSection(container, 'claude', 'Claude Code', claudeWorkspace.modelCatalog, () => modelWarning.refresh());
 
       new Setting(container)
         .setName(t('settings.claude.responseStyle.name'))

@@ -2246,7 +2246,7 @@ describe('GrokExecutionBackend', () => {
     const failedEvents = await collect(session.execute(executionRequest('fork')).events);
 
     expect(failedEvents.at(-1)).toMatchObject({
-      message: 'Grok returned a fork for an unexpected parent session.',
+      message: 'Grok Build returned a fork for an unexpected parent session.',
       type: 'execution_error',
     });
     expect(session.getSnapshot()).toMatchObject({

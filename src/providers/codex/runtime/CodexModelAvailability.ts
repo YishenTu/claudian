@@ -10,6 +10,6 @@ export function assertCodexModelAvailable(settings: Record<string, unknown>, req
   const candidate = config.discoveredModels.find(entry => entry.model === id);
   if (!(config.enabled && getVisibleCodexModelIds(config.visibleModels, config.discoveredModels).includes(id)
     && Boolean(candidate && isCodexModelAvailable(candidate, config.enableUltraEffort)))) {
-    throw new ProviderModelUnavailableError('Codex');
+    throw new ProviderModelUnavailableError('Codex CLI');
   }
 }

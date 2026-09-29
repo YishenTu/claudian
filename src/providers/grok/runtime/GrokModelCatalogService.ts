@@ -183,7 +183,7 @@ export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
         if (signal?.aborted) {
           return {
             defaultModelId: null,
-            diagnostics: 'Grok models was cancelled',
+            diagnostics: 'Grok Build models command was cancelled',
             fingerprint,
             kind: 'completed',
             models: [],
@@ -214,7 +214,7 @@ export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
       if (parsed.models.length === 0) {
         return {
           ...parsed,
-          diagnostics: 'Grok models returned no available models',
+          diagnostics: 'Grok Build models command returned no available models',
           fingerprint,
           kind: 'completed',
         };
@@ -223,7 +223,7 @@ export class GrokModelCatalogService implements GrokModelCatalogServiceLike {
     } catch {
       return {
         defaultModelId: null,
-        diagnostics: 'Grok models could not be started',
+        diagnostics: 'Grok Build models command could not be started',
         fingerprint: buildGrokCatalogFingerprint({
           command: '',
           environmentKeys: [],
@@ -345,17 +345,17 @@ export class SpawnGrokCatalogCommandRunner implements GrokCatalogCommandRunner {
 function describeModelsCommandFailure(result: GrokCatalogCommandResult): string | null {
   switch (result.termination) {
     case 'abort':
-      return 'Grok models was cancelled';
+      return 'Grok Build models command was cancelled';
     case 'error':
-      return 'Grok models could not be started';
+      return 'Grok Build models command could not be started';
     case 'output-limit':
-      return 'Grok models returned too much output';
+      return 'Grok Build models command returned too much output';
     case 'timeout':
-      return 'Grok models timed out';
+      return 'Grok Build models command timed out';
     default:
       return result.exitCode === 0
         ? null
-        : `Grok models exited with code ${result.exitCode ?? 'unknown'}`;
+        : `Grok Build models command exited with code ${result.exitCode ?? 'unknown'}`;
   }
 }
 

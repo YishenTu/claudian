@@ -24,7 +24,7 @@ const RETIRED_CLAUDE_CONFIG_KEYS = ['defaultModel', 'effortMetadataMigrated'];
 
 export const claudeProviderRegistration: ProviderModule = {
   id: 'claude',
-  displayName: 'Claude',
+  displayName: 'Claude Code',
   blankTabOrder: 20,
   isEnabled: settings => getClaudeProviderSettings(settings).enabled,
   setEnabled: (settings, enabled) => updateClaudeProviderSettings(settings, { enabled }),

@@ -42,7 +42,7 @@ export class ClaudeInteractionHandler {
     if (!turnId) {
       return {
         behavior: 'deny',
-        message: 'No current Claude turn owns this interaction.',
+        message: 'No current Claude Code turn owns this interaction.',
         interrupt: true,
       };
     }

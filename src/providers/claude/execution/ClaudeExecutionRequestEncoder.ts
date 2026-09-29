@@ -100,14 +100,14 @@ export class ClaudeExecutionRequestEncoder {
   ): Promise<ClaudeEncodedExecutionRequest> {
     const cliPath = await this.deps.host.getResolvedProviderCliPath('claude');
     if (!cliPath) {
-      throw new Error('Claude CLI not found');
+      throw new Error('Claude Code CLI not found');
     }
 
     const settings = this.#resolveSettings(request);
     const claudeSettings = getClaudeProviderSettings(settings);
     const selected = findEnabledClaudeModelOption(this.deps.host.settings, settings.model);
     if (!getClaudeProviderSettings(this.deps.host.settings).enabled || !selected) {
-      throw new ProviderModelUnavailableError('Claude');
+      throw new ProviderModelUnavailableError('Claude Code');
     }
     const model = toClaudeRuntimeModelId(selected.value);
     const effort = request.configuration.reasoning === null

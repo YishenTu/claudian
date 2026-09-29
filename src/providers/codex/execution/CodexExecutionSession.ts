@@ -265,7 +265,7 @@ export class CodexExecutionSession
   private readonly subagents = new CodexSubagentTracker(
     subagent => this.#emitSessionEvent({ type: 'subagent_updated', subagent }),
     async threadId => {
-      if (!this.transport) throw new Error('Codex transport is unavailable');
+      if (!this.transport) throw new Error('Codex CLI transport is unavailable');
       return (await this.transport.request<ThreadReadResult>('thread/read', { threadId, includeTurns: true }, 5_000)).thread;
     },
     () => this.#resolveTargetWorkingDirectory(),
@@ -317,10 +317,10 @@ export class CodexExecutionSession
 
   execute(request: ProviderExecutionRequest): ProviderExecutionRun {
     if (this.disposed) {
-      throw new Error('Codex execution session has been disposed.');
+      throw new Error('Codex CLI execution session has been disposed.');
     }
     if (this.activeRun) {
-      throw new Error('Codex execution session already has an active requested run.');
+      throw new Error('Codex CLI execution session already has an active requested run.');
     }
 
     const run = new CodexExecutionRun(
@@ -387,7 +387,7 @@ export class CodexExecutionSession
         || typeof result !== 'object'
         || result.turnId !== nativeTurnId
       ) {
-        throw new Error('Codex returned an ambiguous steer acknowledgement.');
+        throw new Error('Codex CLI returned an ambiguous steer acknowledgement.');
       }
       return true;
     } catch (error) {
@@ -447,7 +447,7 @@ export class CodexExecutionSession
         this.#finishError(
           run,
           'configuration',
-          'No Codex model is selected. Enable a model in Claudian settings.',
+          'No Codex CLI model is selected. Enable a model in Claudian settings.',
           true,
         );
         return;
@@ -461,7 +461,7 @@ export class CodexExecutionSession
         this.#finishError(
           run,
           'configuration',
-          'Codex app-server does not support exact allow-list enforcement for provider built-in tools.',
+          'Codex CLI app-server does not support exact allow-list enforcement for provider built-in tools.',
           false,
         );
         return;
@@ -474,7 +474,7 @@ export class CodexExecutionSession
         this.#finishError(
           run,
           'configuration',
-          'Codex cannot compact before its native context is restored. Send a normal prompt first.',
+          'Codex CLI cannot compact before its native context is restored. Send a normal prompt first.',
           true,
         );
         return;
@@ -589,7 +589,7 @@ export class CodexExecutionSession
   async #ensureProcess(generation: number): Promise<void> {
     await this.processDisposalPromise;
     if (this.disposed || generation !== this.lifecycleGeneration) {
-      throw new Error('Codex execution session has been disposed.');
+      throw new Error('Codex CLI execution session has been disposed.');
     }
     if (
       this.process
@@ -600,15 +600,15 @@ export class CodexExecutionSession
     }
 
     if (this.#resolveNativePersistence() === false && this.threadId) {
-      throw new Error('This non-persistent Codex session cannot be restored after its process ends. Start a new side chat.');
+      throw new Error('This non-persistent Codex CLI session cannot be restored after its process ends. Start a new side chat.');
     }
     await this.#shutdownDeadProcess();
     if (this.disposed || generation !== this.lifecycleGeneration) {
-      throw new Error('Codex execution session has been disposed.');
+      throw new Error('Codex CLI execution session has been disposed.');
     }
     const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
     if (this.disposed || generation !== this.lifecycleGeneration) {
-      throw new Error('Codex execution session has been disposed.');
+      throw new Error('Codex CLI execution session has been disposed.');
     }
 
     const process = new CodexAppServerProcess(launchSpec);
@@ -621,17 +621,17 @@ export class CodexExecutionSession
     try {
       process.start();
       if (this.disposed || generation !== this.lifecycleGeneration) {
-        throw new Error('Codex execution session has been disposed.');
+        throw new Error('Codex CLI execution session has been disposed.');
       }
       const transport = new CodexRPCTransport(process);
       this.transport = transport;
       transport.start();
       if (this.disposed || generation !== this.lifecycleGeneration) {
-        throw new Error('Codex execution session has been disposed.');
+        throw new Error('Codex CLI execution session has been disposed.');
       }
       const initializeResult = await initializeCodexAppServerTransport(transport);
       if (this.disposed || generation !== this.lifecycleGeneration) {
-        throw new Error('Codex execution session has been disposed.');
+        throw new Error('Codex CLI execution session has been disposed.');
       }
 
       this.runtimeContext = createCodexRuntimeContext(launchSpec, initializeResult);
@@ -705,7 +705,7 @@ export class CodexExecutionSession
         method,
         (requestId, params) => {
           if (!this.#isTransportCurrent(transport, generation)) {
-            return Promise.reject(new Error('Stale Codex app-server transport.'));
+            return Promise.reject(new Error('Stale Codex CLI app-server transport.'));
           }
           return this.serverRequestRouter.handleServerRequest(
             requestId,
@@ -922,7 +922,7 @@ export class CodexExecutionSession
     this.#finishError(
       recovery.run,
       'provider',
-      'Codex became idle, but its completed turn could not be recovered.',
+      'Codex CLI became idle, but its completed turn could not be recovered.',
       true,
     );
   }
@@ -1061,7 +1061,7 @@ export class CodexExecutionSession
         this.#finishError(
           run,
           'provider',
-          completion.errorMessage ?? 'Codex turn failed.',
+          completion.errorMessage ?? 'Codex CLI turn failed.',
           true,
         );
       } else if (
@@ -1114,7 +1114,7 @@ export class CodexExecutionSession
       )
     ) {
       if (persistExtendedHistory === false) {
-        throw new Error('This non-persistent Codex session cannot be restored after its configuration changes. Start a new side chat.');
+        throw new Error('This non-persistent Codex CLI session cannot be restored after its configuration changes. Start a new side chat.');
       }
       const result = await this.transport!.request<ThreadResumeResult>(
         'thread/resume',
@@ -1212,7 +1212,7 @@ export class CodexExecutionSession
     if (this.forkSetupPromise) return this.forkSetupPromise;
     const transport = this.transport;
     if (!transport || !this.pendingFork) {
-      return Promise.reject(new Error('Codex fork setup is not available.'));
+      return Promise.reject(new Error('Codex CLI fork setup is not available.'));
     }
 
     const setup = this.#materializeForkThread(
@@ -1246,7 +1246,7 @@ export class CodexExecutionSession
     transport: CodexRPCTransport,
   ): Promise<CodexEnsuredThread> {
     const fork = this.pendingFork;
-    if (!fork) throw new Error('Codex fork source is not available.');
+    if (!fork) throw new Error('Codex CLI fork source is not available.');
 
     let target = this.pendingForkTarget;
     if (!target) {
@@ -1265,7 +1265,7 @@ export class CodexExecutionSession
     }
 
     if (!this.#isRunCurrent(run, generation)) {
-      throw new Error('Codex fork setup was interrupted after child adoption.');
+      throw new Error('Codex CLI fork setup was interrupted after child adoption.');
     }
 
     if (persistExtendedHistory === false) {
@@ -1298,10 +1298,10 @@ export class CodexExecutionSession
       },
     );
     if (!this.#isRunCurrent(run, generation)) {
-      throw new Error('Codex fork setup was interrupted while resuming the child.');
+      throw new Error('Codex CLI fork setup was interrupted while resuming the child.');
     }
     if (resumeResult.thread.id !== target.threadId) {
-      throw new Error('Codex resumed a different thread than the owned fork target.');
+      throw new Error('Codex CLI resumed a different thread than the owned fork target.');
     }
 
     this.loadedThreadId = target.threadId;
@@ -1322,10 +1322,10 @@ export class CodexExecutionSession
         },
       );
       if (!this.#isRunCurrent(run, generation)) {
-        throw new Error('Codex fork setup was interrupted while rolling back the child.');
+        throw new Error('Codex CLI fork setup was interrupted while rolling back the child.');
       }
       if (rollbackResult.thread.id !== target.threadId) {
-        throw new Error('Codex rolled back a different thread than the owned fork target.');
+        throw new Error('Codex CLI rolled back a different thread than the owned fork target.');
       }
     }
 
@@ -1354,7 +1354,7 @@ export class CodexExecutionSession
     ).then((forkResult) => {
       const threadId = normalizeString(forkResult.thread.id);
       if (!threadId) {
-        throw new Error('Codex fork did not return a child thread ID.');
+        throw new Error('Codex CLI fork did not return a child thread ID.');
       }
       const sessionFilePath = forkResult.thread.path
         ? pathMapper?.toHostPath(forkResult.thread.path) ?? forkResult.thread.path
@@ -1546,7 +1546,7 @@ export class CodexExecutionSession
   ): void {
     const message = error instanceof Error
       ? error.message
-      : 'Unknown Codex error';
+      : 'Unknown Codex CLI error';
     if (isMissingThreadError(message)) {
       this.#finishError(
         run,
@@ -1577,7 +1577,7 @@ export class CodexExecutionSession
           this.#finishError(
             run,
             'process-exited',
-            'Codex app-server process exited unexpectedly.',
+            'Codex CLI app-server process exited unexpectedly.',
             true,
           );
         });
@@ -1585,7 +1585,7 @@ export class CodexExecutionSession
         this.#finishError(
           run,
           'process-exited',
-          'Codex app-server process exited unexpectedly.',
+          'Codex CLI app-server process exited unexpectedly.',
           true,
         );
       }
@@ -1593,7 +1593,7 @@ export class CodexExecutionSession
       this.#updateSnapshot('invalidated', {
         reason: 'process-exited',
         recoverable: true,
-        message: 'Codex app-server process exited unexpectedly.',
+        message: 'Codex CLI app-server process exited unexpectedly.',
       });
       this.#emitSessionState();
     }
@@ -1826,10 +1826,10 @@ export class CodexExecutionSession
     if (request.configuration.reasoning !== undefined && (effort !== request.configuration.reasoning
       || (modelMetadata && !getCodexReasoningEffortOptions(modelMetadata, codexSettings.enableUltraEffort)
         .some(option => option.value === request.configuration.reasoning)))) {
-      throw new Error(`Codex model "${model}" does not support reasoning effort "${request.configuration.reasoning}".`);
+      throw new Error(`Codex CLI model "${model}" does not support reasoning effort "${request.configuration.reasoning}".`);
     }
     if (!effort) {
-      throw new Error(`Codex model "${model}" has no enabled reasoning efforts.`);
+      throw new Error(`Codex CLI model "${model}" has no enabled reasoning efforts.`);
     }
     return effort;
   }
@@ -2056,7 +2056,7 @@ export class CodexExecutionSession
     const targetPath = this.#mapHostPathToTarget(hostPath);
     if (!targetPath) {
       throw new Error(
-        `Codex cannot access path from the selected target: ${hostPath}`,
+        `Codex CLI cannot access path from the selected target: ${hostPath}`,
       );
     }
     return targetPath;

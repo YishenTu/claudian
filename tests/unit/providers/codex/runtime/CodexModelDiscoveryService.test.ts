@@ -229,7 +229,7 @@ describe('CodexModelDiscoveryService', () => {
 
     await expect(discoveryPromise).resolves.toEqual({
       kind: 'completed',
-      diagnostics: 'Codex model discovery was cancelled',
+      diagnostics: 'Codex CLI model discovery was cancelled',
       models: [],
     });
     expect(mockProcessStart).not.toHaveBeenCalled();

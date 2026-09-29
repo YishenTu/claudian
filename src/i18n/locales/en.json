@@ -142,7 +142,7 @@
     },
     "safety": "Safety",
     "loadUserSettings": {
-      "name": "Load user Claude settings",
+      "name": "Load user Claude Code settings",
       "desc": "Load user-level Claude Code configuration from ~/.claude: settings.json, skills, commands, agents, and plugins. When disabled, only vault-level configuration is available. When enabled, user permission rules may bypass Safe mode."
     },
     "claudeSafeMode": {
@@ -160,7 +160,7 @@
     },
     "customVariables": {
       "name": "Custom variables",
-      "desc": "Claude-owned runtime variables only. Use this for ANTHROPIC_* and Claude-specific toggles."
+      "desc": "Runtime variables owned by Claude Code only. Use this for ANTHROPIC_* and Claude Code-specific toggles."
     },
     "envSnippets": {
       "name": "Snippets",
@@ -199,7 +199,7 @@
     },
     "enableChrome": {
       "name": "Enable Chrome extension",
-      "desc": "Allow Claude to interact with Chrome via the claude-in-chrome extension. Requires the extension to be installed. Requires session restart."
+      "desc": "Allow Claude Code to interact with Chrome via the claude-in-chrome extension. Requires the extension to be installed. Requires session restart."
     },
     "maxWarmAgentProcesses": {
       "name": "Maximum concurrent running sessions",
@@ -254,7 +254,7 @@
       "saveFailed": "Could not save the path. Try again."
     },
     "cliPath": {
-      "name": "Claude CLI path",
+      "name": "Claude Code CLI path",
       "genericName": "CLI path",
       "validation": {
         "notExist": "Path does not exist",
@@ -307,7 +307,7 @@
     "claude": {
       "responseStyle": {
         "name": "Response style",
-        "desc": "Default uses Claude’s normal style. Concise leads with results and skips preamble. Requires Claude Code 2.1.237 or later.",
+        "desc": "Default uses Claude Code’s normal style. Concise leads with results and skips preamble. Requires Claude Code 2.1.237 or later.",
         "default": "Default",
         "concise": "Concise"
       }
@@ -315,7 +315,7 @@
     "codex": {
       "installationMethod": {
         "name": "Installation method",
-        "desc": "How Claudian should launch Codex on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",
+        "desc": "How Claudian should launch Codex CLI on Windows. Native Windows uses a Windows executable path. WSL launches the Linux CLI inside a selected distro.",
         "nativeWindows": "Native Windows",
         "wsl": "WSL"
       },
@@ -335,7 +335,7 @@
       },
       "responseStyle": {
         "name": "Response style",
-        "desc": "Choose how Codex communicates on supported models. Applies from the next message.",
+        "desc": "Choose how Codex CLI communicates on supported models. Applies from the next message.",
         "pragmatic": "Pragmatic",
         "friendly": "Friendly"
       },
@@ -352,8 +352,8 @@
         "desc": "Allow Ultra in the effort selector for Codex models that advertise support. Ultra uses maximum reasoning with automatic task delegation."
       },
       "environment": {
-        "name": "Codex environment",
-        "desc": "Codex-owned runtime variables only. Use this for OPENAI_* and CODEX_* settings. If Codex auto-detection needs help, add its install directory to shared PATH instead of this provider section."
+        "name": "Codex CLI environment",
+        "desc": "Runtime variables owned by Codex CLI only. Use this for OPENAI_* and CODEX_* settings. If Codex CLI auto-detection needs help, add its install directory to shared PATH instead of this provider section."
       }
     },
     "agentSkills": {
@@ -411,17 +411,17 @@
     },
     "grok": {
       "environment": {
-        "name": "Grok environment variables",
-        "desc": "Environment variables passed only to Grok. Custom-model secrets stay in this provider scope and are referenced from native config by env_key."
+        "name": "Grok Build environment variables",
+        "desc": "Environment variables passed only to Grok Build. Custom-model secrets stay in this provider scope and are referenced from native config by env_key."
       }
     },
     "skills": {
       "subTabs": {
-        "claude": "Claude",
+        "claude": "Claude Code",
         "shared": "Other providers"
       },
-      "claudeHelp": "Claude skills in .claude/skills/ and commands in .claude/commands/.",
-      "sharedHelp": "Shared skills in .agents/skills/ for Codex, OpenCode, Pi and Grok.",
+      "claudeHelp": "Claude Code skills in .claude/skills/ and commands in .claude/commands/.",
+      "sharedHelp": "Shared skills in .agents/skills/ for Codex CLI, OpenCode, Pi and Grok Build.",
       "status": {
         "error": "Could not read the skill folders: {message}"
       },
@@ -431,8 +431,8 @@
         "resync": "Resync"
       },
       "commands": {
-        "title": "Claude commands",
-        "hint": "Commands work only in Claude. Converting them to skills is recommended.",
+        "title": "Claude Code commands",
+        "hint": "Commands work only in Claude Code. Converting them to skills is recommended.",
         "badge": "command",
         "empty": "No commands in .claude/commands.",
         "convert": "Convert to skill",
@@ -457,14 +457,14 @@
         "title": "Sync Skills",
         "repairTitle": "Repair Skills Link",
         "loading": "Checking skill folders...",
-        "intro": "Sync merges Claude's skills and commands into .agents/skills and links .claude/skills to it.",
+        "intro": "Sync merges Claude Code's skills and commands into .agents/skills and links .claude/skills to it.",
         "pros": {
           "oneList": "One list for every provider.",
           "newSkills": "New skills appear everywhere."
         },
         "cons": {
           "dropped": "Only name and description are kept; provider-specific settings are dropped and behavior may change.",
-          "claudeSyntax": "Claude-only syntax won't work in other providers: {names}"
+          "claudeSyntax": "Claude Code-only syntax won't work in other providers: {names}"
         },
         "attentionTitle": "Needs attention",
         "nothingNeedsAttention": "Nothing needs attention.",
@@ -489,7 +489,7 @@
         "confirmTitle": "Replace .claude/skills with a link?",
         "confirmBody": ".claude/skills will be replaced by a link to .agents/skills. This can't be undone.",
         "repairBody": ".claude/skills will be replaced by a link to .agents/skills. The folder it points to now is not changed.",
-        "linkBody": "Creates .claude/skills as a link to .agents/skills so Claude uses the shared skills. No files move.",
+        "linkBody": "Creates .claude/skills as a link to .agents/skills so Claude Code uses the shared skills. No files move.",
         "linkWithItemsBody": "Commands become skills, then .claude/skills is created as a link to .agents/skills. This can't be undone.",
         "devicesWarning": "Syncing this vault across devices? The link may not sync; run Sync on each device.",
         "confirm": "Sync and link",

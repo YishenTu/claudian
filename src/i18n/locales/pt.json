@@ -142,7 +142,7 @@
     },
     "safety": "Segurança",
     "loadUserSettings": {
-      "name": "Carregar configurações do usuário Claude",
+      "name": "Carregar configurações do usuário do Claude Code",
       "desc": "Carrega a configuração do Claude Code no nível do usuário a partir de ~/.claude: settings.json, skills, comandos, agentes e plugins. Quando desabilitado, apenas a configuração no nível do cofre fica disponível. Quando habilitado, as regras de permissão do usuário podem ignorar o modo seguro."
     },
     "claudeSafeMode": {
@@ -160,7 +160,7 @@
     },
     "customVariables": {
       "name": "Variáveis personalizadas",
-      "desc": "Somente variáveis de runtime pertencentes ao Claude. Use isto para ANTHROPIC_* e opções específicas do Claude."
+      "desc": "Somente variáveis de runtime pertencentes ao Claude Code. Use isto para ANTHROPIC_* e opções específicas do Claude Code."
     },
     "envSnippets": {
       "name": "Trechos",
@@ -199,7 +199,7 @@
     },
     "enableChrome": {
       "name": "Habilitar extensão do Chrome",
-      "desc": "Permitir que o Claude interaja com o Chrome através da extensão claude-in-chrome. Requer que a extensão esteja instalada. Requer reinício de sessão."
+      "desc": "Permitir que o Claude Code interaja com o Chrome através da extensão claude-in-chrome. Requer que a extensão esteja instalada. Requer reinício de sessão."
     },
     "maxWarmAgentProcesses": {
       "name": "Máximo de sessões em execução simultâneas",
@@ -254,7 +254,7 @@
       "saveFailed": "Não foi possível salvar o caminho. Tente novamente."
     },
     "cliPath": {
-      "name": "Caminho CLI Claude",
+      "name": "Caminho da CLI do Claude Code",
       "genericName": "Caminho da CLI",
       "validation": {
         "notExist": "Caminho não existe",
@@ -307,7 +307,7 @@
     "claude": {
       "responseStyle": {
         "name": "Estilo de resposta",
-        "desc": "Padrão usa o estilo habitual do Claude. Conciso começa pelos resultados e omite preâmbulos. Requer Claude Code 2.1.237 ou posterior.",
+        "desc": "Padrão usa o estilo habitual do Claude Code. Conciso começa pelos resultados e omite preâmbulos. Requer Claude Code 2.1.237 ou posterior.",
         "default": "Padrão",
         "concise": "Conciso"
       }
@@ -315,12 +315,12 @@
     "codex": {
       "installationMethod": {
         "name": "Método de instalação",
-        "desc": "Como o Claudian deve iniciar o Codex no Windows. Windows nativo usa um caminho de executável do Windows. WSL inicia a CLI Linux dentro de uma distro selecionada.",
+        "desc": "Como o Claudian deve iniciar o Codex CLI no Windows. Windows nativo usa um caminho de executável do Windows. WSL inicia a CLI Linux dentro de uma distro selecionada.",
         "nativeWindows": "Windows nativo",
         "wsl": "WSL"
       },
       "cliPath": {
-        "name": "Caminho da CLI do Codex",
+        "name": "Caminho do Codex CLI",
         "validation": {
           "wslWindowsPath": "O modo WSL espera um comando Linux ou caminho absoluto Linux, não um caminho de executável do Windows."
         }
@@ -335,7 +335,7 @@
       },
       "responseStyle": {
         "name": "Estilo de resposta",
-        "desc": "Escolha como o Codex se comunica nos modelos compatíveis. Aplica-se a partir da próxima mensagem.",
+        "desc": "Escolha como o Codex CLI se comunica nos modelos compatíveis. Aplica-se a partir da próxima mensagem.",
         "pragmatic": "Pragmático",
         "friendly": "Amigável"
       },
@@ -352,8 +352,8 @@
         "desc": "Exibe Ultra no seletor de esforço para modelos Codex compatíveis. Ultra usa o raciocínio máximo com delegação automática de tarefas."
       },
       "environment": {
-        "name": "Ambiente do Codex",
-        "desc": "Somente variáveis de runtime pertencentes ao Codex. Use isto para configurações OPENAI_* e CODEX_*. Se a autodetecção do Codex precisar de ajuda, adicione o diretório de instalação ao PATH compartilhado em vez desta seção do provedor."
+        "name": "Ambiente do Codex CLI",
+        "desc": "Somente variáveis de runtime pertencentes ao Codex CLI. Use isto para configurações OPENAI_* e CODEX_*. Se a autodetecção do Codex CLI precisar de ajuda, adicione o diretório de instalação ao PATH compartilhado em vez desta seção do provedor."
       }
     },
     "agentSkills": {
@@ -411,17 +411,17 @@
     },
     "grok": {
       "environment": {
-        "name": "Variáveis de ambiente do Grok",
-        "desc": "Variáveis de ambiente passadas somente ao Grok. Os segredos de modelos personalizados permanecem no escopo deste provedor e são referenciados na configuração nativa por env_key."
+        "name": "Variáveis de ambiente do Grok Build",
+        "desc": "Variáveis de ambiente passadas somente ao Grok Build. Os segredos de modelos personalizados permanecem no escopo deste provedor e são referenciados na configuração nativa por env_key."
       }
     },
     "skills": {
       "subTabs": {
-        "claude": "Claude",
+        "claude": "Claude Code",
         "shared": "Outros provedores"
       },
-      "claudeHelp": "Skills do Claude em .claude/skills/ e comandos em .claude/commands/.",
-      "sharedHelp": "Skills compartilhados em .agents/skills/ para Codex, OpenCode, Pi e Grok.",
+      "claudeHelp": "Skills do Claude Code em .claude/skills/ e comandos em .claude/commands/.",
+      "sharedHelp": "Skills compartilhados em .agents/skills/ para Codex CLI, OpenCode, Pi e Grok Build.",
       "status": {
         "error": "Não foi possível ler as pastas de skills: {message}"
       },
@@ -431,8 +431,8 @@
         "resync": "Sincronizar novamente"
       },
       "commands": {
-        "title": "Comandos do Claude",
-        "hint": "Os comandos só funcionam no Claude. É recomendado convertê-los em skills.",
+        "title": "Comandos do Claude Code",
+        "hint": "Os comandos só funcionam no Claude Code. É recomendado convertê-los em skills.",
         "badge": "comando",
         "empty": "Nenhum comando em .claude/commands.",
         "convert": "Converter em skill",
@@ -457,14 +457,14 @@
         "title": "Sincronizar skills",
         "repairTitle": "Reparar o link de skills",
         "loading": "Verificando as pastas de skills...",
-        "intro": "A sincronização reúne os skills e comandos do Claude em .agents/skills e vincula .claude/skills a ele.",
+        "intro": "A sincronização reúne os skills e comandos do Claude Code em .agents/skills e vincula .claude/skills a ele.",
         "pros": {
           "oneList": "Uma lista para todos os provedores.",
           "newSkills": "Novos skills aparecem em todo lugar."
         },
         "cons": {
           "dropped": "Apenas nome e descrição são mantidos; configurações específicas de cada provedor são removidas e o comportamento pode mudar.",
-          "claudeSyntax": "A sintaxe exclusiva do Claude não funciona em outros provedores: {names}"
+          "claudeSyntax": "A sintaxe exclusiva do Claude Code não funciona em outros provedores: {names}"
         },
         "attentionTitle": "Precisa de atenção",
         "nothingNeedsAttention": "Nada precisa de atenção.",
@@ -489,7 +489,7 @@
         "confirmTitle": "Substituir .claude/skills por um link?",
         "confirmBody": ".claude/skills será substituído por um link para .agents/skills. Isso não pode ser desfeito.",
         "repairBody": ".claude/skills será substituído por um link para .agents/skills. A pasta para a qual ele aponta agora não é alterada.",
-        "linkBody": "Cria .claude/skills como um link para .agents/skills para que o Claude use os skills compartilhados. Nenhum arquivo é movido.",
+        "linkBody": "Cria .claude/skills como um link para .agents/skills para que o Claude Code use os skills compartilhados. Nenhum arquivo é movido.",
         "linkWithItemsBody": "Os comandos viram skills e depois .claude/skills é criado como um link para .agents/skills. Isso não pode ser desfeito.",
         "devicesWarning": "Sincroniza este cofre entre dispositivos? O link pode não ser sincronizado; sincronize em cada dispositivo.",
         "confirm": "Sincronizar e vincular",

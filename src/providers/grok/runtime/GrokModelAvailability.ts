@@ -8,6 +8,6 @@ export function assertGrokModelAvailable(settings: Record<string, unknown>, requ
   const id = decodeGrokModelId(model) ?? '';
   if (!(config.enabled && getOrderedGrokVisibleModelIds(config).includes(id)
     && Boolean(config.currentCatalog?.models.some(candidate => candidate.rawId === id)))) {
-    throw new ProviderModelUnavailableError('Grok');
+    throw new ProviderModelUnavailableError('Grok Build');
   }
 }

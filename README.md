@@ -15,17 +15,17 @@
 
 ![Preview](assets/Preview.png)
 
-An Obsidian plugin that embeds AI coding agents (Claude Code, Codex, Grok, Opencode, Pi, and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
+An Obsidian plugin that embeds AI coding agents (Claude Code, Codex CLI, Grok Build, OpenCode, Pi, and more to come) in your vault. Your vault becomes the agent's working directory — file read/write, search, bash, and multi-step workflows all work out of the box.
 
 ## Features & Usage
 
-Open the chat sidebar from the ribbon icon or command palette. Select text and use the shortcut for inline editing. Everything works like your familiar coding agent, Claude Code, Codex, Grok, Opencode, and Pi — talk to the agent, and it reads, writes, edits, and searches files in your vault.
+Open Claudian interface from the ribbon icon or command palette. Everything works like your familiar coding agent, Claude Code, Codex CLI, Grok Build, OpenCode, and Pi — talk to the agent, and it reads, writes, edits, searches and run commands in your vault.
 
 **Inline Edit** — Select text or start at the cursor position + hotkey to edit directly in notes with word-level diff preview.
 
 **Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
 
-**`@mention`** — Type `@` to reference vault files and folders.
+**@mention** — Type `@` to reference vault files and folders.
 
 **Side Chat (`/side` or `/btw`)** — Explore a separate, temporary conversation with follow-ups and tools while keeping the main chat unchanged.
 
@@ -38,7 +38,7 @@ Open the chat sidebar from the ribbon icon or command palette. Select text and u
 ## Requirements
 
 - At least one of the following harnesses:
-  - [Claude Code CLI](https://code.claude.com/docs/en/overview)
+  - [Claude Code](https://code.claude.com/docs/en/overview)
   - [Codex CLI](https://github.com/openai/codex)
   - [Grok Build](https://github.com/xai-org/grok-build)
   - [OpenCode](https://github.com/anomalyco/opencode)
@@ -98,9 +98,9 @@ The following sections use Claude Code as an example.
 
 ### Provider CLI not found
 
-If Claudian cannot auto-detect a provider CLI, verify that the CLI is installed and available to GUI applications through PATH. Typical errors include `spawn claude ENOENT` and `Claude CLI not found`. This issue is common with Node version managers (nvm, fnm, volta).
+If Claudian cannot auto-detect a provider CLI, verify that the CLI is installed and available to GUI applications through PATH. Typical errors include `spawn claude ENOENT` and `Claude Code CLI not found`. This issue is common with Node version managers (nvm, fnm, volta).
 
-Leave the CLI path setting empty first so Claudian can auto-detect the CLI. If auto-detection fails, find the executable path and set it in Settings → Advanced → Claude CLI path.
+Leave the CLI path setting empty first so Claudian can auto-detect the CLI. If auto-detection fails, find the executable path and set it in Settings → Advanced → Claude Code CLI path.
 
 | Platform | Command | Example Path |
 |----------|---------|--------------|
@@ -149,7 +149,7 @@ src/
 │   ├── claude/                  # Claude SDK adaptor, prompt encoding, storage, MCP, plugins
 │   ├── codex/                   # Codex app-server adaptor, JSON-RPC transport, JSONL history
 │   ├── grok/                    # Grok Build ACP adaptor, native history, models, and tools
-│   ├── opencode/                # Opencode adaptor
+│   ├── opencode/                # OpenCode adaptor
 │   ├── pi/                      # Pi RPC adaptor, model discovery, JSONL history
 │   └── acp/                     # Agent Client Protocol shared transport
 ├── features/

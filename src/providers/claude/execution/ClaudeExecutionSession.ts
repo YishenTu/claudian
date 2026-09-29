@@ -188,10 +188,10 @@ ClaudeExecutionStrategySink {
 
   execute(request: ProviderExecutionRequest): ProviderExecutionRun {
     if (this.disposed) {
-      throw new Error('Claude execution session is disposed');
+      throw new Error('Claude Code execution session is disposed');
     }
     if (this.activeRun) {
-      throw new Error('Claude execution session already has an active run');
+      throw new Error('Claude Code execution session already has an active run');
     }
 
     const executionId = randomUUID();
@@ -397,7 +397,7 @@ ClaudeExecutionStrategySink {
     if (!this.#hasRewindSeed()) {
       return {
         canRewind: false,
-        error: 'No Claude session is available to rewind.',
+        error: 'No Claude Code session is available to rewind.',
       };
     }
     if (mode === 'conversation') {
@@ -410,7 +410,7 @@ ClaudeExecutionStrategySink {
     if (!query) {
       return {
         canRewind: false,
-        error: 'Claude rewind requires a persistent resumed session.',
+        error: 'Claude Code rewind requires a persistent resumed session.',
       };
     }
     const result = await query.rewindFiles(userMessageId, { dryRun: true });
@@ -429,7 +429,7 @@ ClaudeExecutionStrategySink {
     if (!this.#hasRewindSeed()) {
       return {
         canRewind: false,
-        error: 'No Claude session is available to rewind.',
+        error: 'No Claude Code session is available to rewind.',
       };
     }
     const query = mode === 'conversation'
@@ -438,7 +438,7 @@ ClaudeExecutionStrategySink {
     if (mode !== 'conversation' && !query) {
       return {
         canRewind: false,
-        error: 'Claude rewind requires a persistent resumed session.',
+        error: 'Claude Code rewind requires a persistent resumed session.',
       };
     }
     const result = await executeClaudeRewind(userMessageId, {
@@ -448,7 +448,7 @@ ClaudeExecutionStrategySink {
         if (!query) {
           return {
             canRewind: false,
-            error: 'Claude rewind query is unavailable.',
+            error: 'Claude Code rewind query is unavailable.',
           };
         }
         return await query.rewindFiles(id, { dryRun });
@@ -722,7 +722,7 @@ ClaudeExecutionStrategySink {
       if (replacement && replacement.queryToken !== queryToken) {
         this.#finishError(
           replacement,
-          new Error('Claude persistent query ended unexpectedly.'),
+          new Error('Claude Code persistent query ended unexpectedly.'),
         );
       }
       return;
@@ -736,7 +736,7 @@ ClaudeExecutionStrategySink {
       } else {
         this.#finishError(
           active,
-          new Error('Claude ended before accepting the request.'),
+          new Error('Claude Code ended before accepting the request.'),
         );
       }
     } else if (!hadBackground) {
@@ -744,7 +744,7 @@ ClaudeExecutionStrategySink {
       this.#setInvalidated({
         reason: 'transport-closed',
         recoverable: true,
-        message: 'Claude query ended unexpectedly.',
+        message: 'Claude Code query ended unexpectedly.',
       });
       this.#emitSession({
         type: 'session_state_changed',
@@ -753,7 +753,7 @@ ClaudeExecutionStrategySink {
       this.#emitSession({
         type: 'session_error',
         category: 'transport',
-        message: 'Claude query ended unexpectedly.',
+        message: 'Claude Code query ended unexpectedly.',
         recoverable: true,
       });
     }
@@ -1139,7 +1139,7 @@ ClaudeExecutionStrategySink {
     active.events.close();
     for (const steer of active.steers.values()) {
       // Handed-off input with unknown delivery must not be resent as unsent.
-      steer.reject(new Error('Claude run ended before the steer was delivered.'));
+      steer.reject(new Error('Claude Code run ended before the steer was delivered.'));
     }
     active.steers.clear();
     if (this.activeRun === active) {

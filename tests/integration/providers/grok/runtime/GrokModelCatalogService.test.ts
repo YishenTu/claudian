@@ -107,7 +107,7 @@ it.each(['hang-initialize', 'hang-list'])(
     onWaiting = () => controller.abort();
 
     expect(await makeService(scenario).discoverCatalog(controller.signal)).toMatchObject({
-      kind: 'completed', models: [], diagnostics: 'Grok models was cancelled',
+      kind: 'completed', models: [], diagnostics: 'Grok Build models command was cancelled',
     });
     expectProcessesClosed();
   },

@@ -178,7 +178,7 @@ describe('GrokCommandMetadataProbe', () => {
 
     await expect(load).rejects.toMatchObject({
       cause: 'caller cancelled',
-      message: 'Grok command metadata probe aborted',
+      message: 'Grok Build command metadata probe aborted',
     });
     await probe.dispose();
   });

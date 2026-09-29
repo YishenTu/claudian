@@ -50,7 +50,7 @@ export class GrokModelCatalogProbe implements GrokModelCatalogProbeLike {
       );
       // xAI wraps the model state inside an extension result within the JSON-RPC result.
       const models = response?.error == null ? parseGrokModelUpdateState(response?.result) : null;
-      if (!models) throw new Error('Grok returned malformed model metadata.');
+      if (!models) throw new Error('Grok Build returned malformed model metadata.');
       const catalog = normalizeGrokSessionModelMetadata({ models });
       // The catalog is a complete capability snapshot; session updates may be partial.
       return {

@@ -183,7 +183,7 @@ function getCodexSubagentDescription(
 ): string {
   const role = firstString(input, ['agent_type']);
   const effort = firstString(input, ['reasoning_effort']);
-  const label = nickname ?? role ?? 'Codex subagent';
+  const label = nickname ?? role ?? 'Codex CLI subagent';
   const details = [nickname ? role : undefined, model, effort].filter(Boolean);
   return details.length ? `${label} (${details.join(', ')})` : label;
 }

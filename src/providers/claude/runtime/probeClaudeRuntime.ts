@@ -12,7 +12,7 @@ import { loadClaudeAgentQuery } from '../loadClaudeAgentSDK';
 import { getClaudeProviderSettings, resolveClaudeSettingSources } from '../settings';
 import { createCustomSpawnFunction } from './customSpawn';
 
-const PROBE_CANCELLED = 'Claude runtime discovery cancelled';
+const PROBE_CANCELLED = 'Claude Code runtime discovery cancelled';
 const PROBE_TIMEOUT_MS = 30_000;
 // Session init waits on MCP server startup; cap it so one slow server cannot stall discovery.
 const PROBE_MCP_TIMEOUT_MS = '5000';
@@ -70,7 +70,7 @@ export async function probeClaudeRuntime(
   const cancel = (): void => controller.abort(signal?.reason);
   signal?.addEventListener('abort', cancel, { once: true });
   const timeout = window.setTimeout(
-    () => controller.abort(new Error('Claude runtime discovery timed out')),
+    () => controller.abort(new Error('Claude Code runtime discovery timed out')),
     PROBE_TIMEOUT_MS,
   );
   let conversation: Query | undefined;
@@ -81,7 +81,7 @@ export async function probeClaudeRuntime(
   });
   const initialize = async (): Promise<SDKControlInitializeResponse> => {
     const cwd = getVaultPath(host.app);
-    if (!cwd) throw new ClaudeRuntimeUnavailableError('Claude discovery requires a local vault');
+    if (!cwd) throw new ClaudeRuntimeUnavailableError('Claude Code discovery requires a local vault');
     const cliPath = await host.getResolvedProviderCliPath('claude');
     throwIfAborted(controller.signal, PROBE_CANCELLED);
     if (!cliPath) throw new ClaudeRuntimeUnavailableError('Claude Code installation not found');
@@ -106,7 +106,7 @@ export async function probeClaudeRuntime(
     // supportedCommands() tracks the latest push, so read commands only after init.
     for (;;) {
       const next = await conversation.next();
-      if (next.done) throw new Error('Claude runtime discovery ended before initialization');
+      if (next.done) throw new Error('Claude Code runtime discovery ended before initialization');
       if (next.value.type === 'system' && next.value.subtype === 'init') break;
     }
     const [initialization, commands] = await Promise.all([

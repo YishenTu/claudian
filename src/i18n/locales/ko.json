@@ -142,7 +142,7 @@
     },
     "safety": "보안",
     "loadUserSettings": {
-      "name": "사용자 Claude 설정 로드",
+      "name": "사용자 Claude Code 설정 로드",
       "desc": "~/.claude에서 사용자 수준 Claude Code 구성(settings.json, 스킬, 명령, 에이전트, 플러그인)을 로드합니다. 비활성화하면 Vault 수준 구성만 사용할 수 있습니다. 활성화하면 사용자의 허용 규칙이 보안 모드를 우회할 수 있습니다."
     },
     "claudeSafeMode": {
@@ -160,7 +160,7 @@
     },
     "customVariables": {
       "name": "커스텀 변수",
-      "desc": "Claude 전용 런타임 변수만 입력하세요. ANTHROPIC_* 및 Claude 전용 설정에 사용합니다."
+      "desc": "Claude Code 전용 런타임 변수만 입력하세요. ANTHROPIC_* 및 Claude Code 전용 설정에 사용합니다."
     },
     "envSnippets": {
       "name": "스니펫",
@@ -199,7 +199,7 @@
     },
     "enableChrome": {
       "name": "Chrome 확장 프로그램 활성화",
-      "desc": "claude-in-chrome 확장 프로그램을 통해 Claude가 Chrome과 상호작용할 수 있도록 합니다. 확장 프로그램이 설치되어 있어야 합니다. 세션 재시작이 필요합니다."
+      "desc": "claude-in-chrome 확장 프로그램을 통해 Claude Code가 Chrome과 상호작용할 수 있도록 합니다. 확장 프로그램이 설치되어 있어야 합니다. 세션 재시작이 필요합니다."
     },
     "maxWarmAgentProcesses": {
       "name": "최대 동시 실행 세션 수",
@@ -254,7 +254,7 @@
       "saveFailed": "경로를 저장할 수 없습니다. 다시 시도하세요."
     },
     "cliPath": {
-      "name": "Claude CLI 경로",
+      "name": "Claude Code CLI 경로",
       "genericName": "CLI 경로",
       "validation": {
         "notExist": "경로가 존재하지 않습니다",
@@ -307,7 +307,7 @@
     "claude": {
       "responseStyle": {
         "name": "응답 스타일",
-        "desc": "기본은 Claude의 일반 스타일입니다. 간결 모드는 결과부터 제시하고 서두를 생략합니다. Claude Code 2.1.237 이상이 필요합니다.",
+        "desc": "기본은 Claude Code의 일반 스타일입니다. 간결 모드는 결과부터 제시하고 서두를 생략합니다. Claude Code 2.1.237 이상이 필요합니다.",
         "default": "기본",
         "concise": "간결"
       }
@@ -315,7 +315,7 @@
     "codex": {
       "installationMethod": {
         "name": "설치 방식",
-        "desc": "Windows에서 Claudian이 Codex를 실행하는 방식입니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
+        "desc": "Windows에서 Claudian이 Codex CLI를 실행하는 방식입니다. 네이티브 Windows는 Windows 실행 파일 경로를 사용하고, WSL은 선택한 배포판 안에서 Linux CLI를 실행합니다.",
         "nativeWindows": "네이티브 Windows",
         "wsl": "WSL"
       },
@@ -335,7 +335,7 @@
       },
       "responseStyle": {
         "name": "응답 스타일",
-        "desc": "지원되는 모델에서 Codex의 대화 스타일을 선택합니다. 다음 메시지부터 적용됩니다.",
+        "desc": "지원되는 모델에서 Codex CLI의 대화 스타일을 선택합니다. 다음 메시지부터 적용됩니다.",
         "pragmatic": "실용적",
         "friendly": "친근함"
       },
@@ -352,8 +352,8 @@
         "desc": "Ultra를 지원하는 Codex 모델의 추론 강도 선택기에 표시합니다. Ultra는 최대 추론과 자동 작업 위임을 사용합니다."
       },
       "environment": {
-        "name": "Codex 환경",
-        "desc": "Codex 전용 런타임 변수만 입력하세요. OPENAI_* 및 CODEX_* 설정에 사용합니다. Codex 자동 감지에 도움이 필요하면 이 공급자 섹션 대신 공유 PATH에 설치 디렉터리를 추가하세요."
+        "name": "Codex CLI 환경",
+        "desc": "Codex CLI 전용 런타임 변수만 입력하세요. OPENAI_* 및 CODEX_* 설정에 사용합니다. Codex CLI 자동 감지에 도움이 필요하면 이 공급자 섹션 대신 공유 PATH에 설치 디렉터리를 추가하세요."
       }
     },
     "agentSkills": {
@@ -411,17 +411,17 @@
     },
     "grok": {
       "environment": {
-        "name": "Grok 환경 변수",
-        "desc": "Grok에만 전달되는 환경 변수입니다. 사용자 지정 모델의 비밀 값은 이 제공자 범위에 남아 있으며 네이티브 구성에서 env_key로 참조됩니다."
+        "name": "Grok Build 환경 변수",
+        "desc": "Grok Build에만 전달되는 환경 변수입니다. 사용자 지정 모델의 비밀 값은 이 제공자 범위에 남아 있으며 네이티브 구성에서 env_key로 참조됩니다."
       }
     },
     "skills": {
       "subTabs": {
-        "claude": "Claude",
+        "claude": "Claude Code",
         "shared": "기타 제공자"
       },
-      "claudeHelp": ".claude/skills/의 Claude 스킬과 .claude/commands/의 명령.",
-      "sharedHelp": "Codex, OpenCode, Pi, Grok용 .agents/skills/의 공유 스킬.",
+      "claudeHelp": ".claude/skills/의 Claude Code 스킬과 .claude/commands/의 명령.",
+      "sharedHelp": "Codex CLI, OpenCode, Pi, Grok Build용 .agents/skills/의 공유 스킬.",
       "status": {
         "error": "스킬 폴더를 읽을 수 없습니다: {message}"
       },
@@ -431,8 +431,8 @@
         "resync": "다시 동기화"
       },
       "commands": {
-        "title": "Claude 명령",
-        "hint": "명령은 Claude에서만 작동합니다. 스킬로 변환하는 것을 권장합니다.",
+        "title": "Claude Code 명령",
+        "hint": "명령은 Claude Code에서만 작동합니다. 스킬로 변환하는 것을 권장합니다.",
         "badge": "명령",
         "empty": ".claude/commands에 명령이 없습니다.",
         "convert": "스킬로 변환",
@@ -457,14 +457,14 @@
         "title": "스킬 동기화",
         "repairTitle": "스킬 링크 복구",
         "loading": "스킬 폴더를 확인하는 중...",
-        "intro": "동기화하면 Claude의 스킬과 명령을 .agents/skills로 모으고 .claude/skills를 그곳으로 연결합니다.",
+        "intro": "동기화하면 Claude Code의 스킬과 명령을 .agents/skills로 모으고 .claude/skills를 그곳으로 연결합니다.",
         "pros": {
           "oneList": "모든 제공자가 하나의 목록을 사용합니다.",
           "newSkills": "새 스킬이 어디서나 나타납니다."
         },
         "cons": {
           "dropped": "이름과 설명만 유지됩니다. 제공자별 설정은 제거되며 동작이 바뀔 수 있습니다.",
-          "claudeSyntax": "Claude 전용 문법은 다른 제공자에서 작동하지 않습니다: {names}"
+          "claudeSyntax": "Claude Code 전용 문법은 다른 제공자에서 작동하지 않습니다: {names}"
         },
         "attentionTitle": "확인 필요",
         "nothingNeedsAttention": "확인할 항목이 없습니다.",
@@ -489,7 +489,7 @@
         "confirmTitle": ".claude/skills를 링크로 바꿀까요?",
         "confirmBody": ".claude/skills가 .agents/skills로의 링크로 바뀝니다. 되돌릴 수 없습니다.",
         "repairBody": ".claude/skills는 .agents/skills로의 링크로 바뀝니다. 현재 가리키는 폴더는 변경되지 않습니다.",
-        "linkBody": ".claude/skills를 .agents/skills로의 링크로 만들어 Claude가 공유 스킬을 사용하게 합니다. 파일은 이동하지 않습니다.",
+        "linkBody": ".claude/skills를 .agents/skills로의 링크로 만들어 Claude Code가 공유 스킬을 사용하게 합니다. 파일은 이동하지 않습니다.",
         "linkWithItemsBody": "명령이 스킬이 된 다음 .claude/skills가 .agents/skills로의 링크로 만들어집니다. 되돌릴 수 없습니다.",
         "devicesWarning": "이 보관함을 여러 기기에서 동기화하나요? 링크는 동기화되지 않을 수 있으니 각 기기에서 동기화하세요.",
         "confirm": "동기화 후 연결",

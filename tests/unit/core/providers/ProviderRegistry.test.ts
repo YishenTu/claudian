@@ -205,15 +205,15 @@ describe('ProviderRegistry', () => {
     });
 
     expect(options.find(option => option.value === `openai-codex/${TEST_CODEX_MODEL}`)?.label)
-      .toBe(`Codex: ${TEST_CODEX_MODEL_LABEL}`);
+      .toBe(`Codex CLI: ${TEST_CODEX_MODEL_LABEL}`);
     expect(options.find(option => option.value === 'sonnet')?.label)
-      .toBe('Claude: Sonnet');
+      .toBe('Claude Code: Sonnet');
   });
 
   it('returns the display name from provider registration metadata', () => {
-    expect(ProviderRegistry.getProviderDisplayName('claude')).toBe('Claude');
-    expect(ProviderRegistry.getProviderDisplayName('codex')).toBe('Codex');
-    expect(ProviderRegistry.getProviderDisplayName('grok')).toBe('Grok');
+    expect(ProviderRegistry.getProviderDisplayName('claude')).toBe('Claude Code');
+    expect(ProviderRegistry.getProviderDisplayName('codex')).toBe('Codex CLI');
+    expect(ProviderRegistry.getProviderDisplayName('grok')).toBe('Grok Build');
   });
 
   it('requires an explicit title model instead of selecting Claude automatically', async () => {

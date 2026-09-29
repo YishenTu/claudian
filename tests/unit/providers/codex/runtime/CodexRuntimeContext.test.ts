@@ -68,7 +68,7 @@ describe('createCodexRuntimeContext', () => {
         platformFamily: 'windows',
         platformOs: 'windows',
       },
-    )).toThrow('Codex target mismatch');
+    )).toThrow('Codex CLI target mismatch');
   });
 
   it('falls back to HOME when initialize omits codexHome for host-native targets', () => {
