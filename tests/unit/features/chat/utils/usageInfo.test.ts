@@ -1,7 +1,6 @@
 import type { UsageInfo } from '@/core/types';
 import {
   calculateUsagePercentage,
-  clearReportedContextWindowForModel,
   mergeReportedUsage,
   projectContextUsageDisplay,
 } from '@/features/chat/utils/usageInfo';
@@ -86,9 +85,8 @@ describe('usageInfo', () => {
         const model = 'opencode:anthropic/claude-sonnet-5';
         expect(projectContextUsageDisplay(raw, { providerId: 'opencode', model, customContextLimits }))
           .toMatchObject({ contextWindow: 200_000, percentage: 25 });
-        expect(clearReportedContextWindowForModel(raw, model, 'opencode')).toBe(raw);
         expect(projectContextUsageDisplay(raw, { providerId: 'opencode', model: 'opencode:other/model' }))
-          .toBeNull();
+          .toMatchObject({ model: raw.model, contextWindow: 200_000, percentage: 25 });
       },
     );
 
@@ -101,13 +99,18 @@ describe('usageInfo', () => {
       }
     });
 
-    it('does not apply another model’s reported window', () => {
+    it('keeps the last report when selection changes', () => {
       expect(projectContextUsageDisplay(
         usage({ contextWindow: 200_000 }),
         context({ 'model-b': 100_000 }, 'model-b'),
-      )).toMatchObject({ contextWindow: 100_000, percentage: 50 });
+      )).toMatchObject({ model: 'model-a', contextWindow: 200_000, percentage: 25 });
       expect(projectContextUsageDisplay(usage({ contextWindow: 200_000 }), context({}, 'model-b')))
-        .toBeNull();
+        .toMatchObject({ model: 'model-a', contextWindow: 200_000, percentage: 25 });
+    });
+
+    it('uses the reported model for custom limits after selection changes', () => {
+      expect(projectContextUsageDisplay(usage(), context({ 'model-a': 200_000, 'model-b': 100_000 }, 'model-b')))
+        .toMatchObject({ model: 'model-a', contextWindow: 200_000, percentage: 25 });
     });
 
     it('keeps the raw usage unchanged', () => {
@@ -134,12 +137,13 @@ describe('usageInfo', () => {
       )).toMatchObject({ contextWindow: 400_000, percentage: 13 });
     });
 
-    it('does not carry a window across models or from missing usage', () => {
-      expect(mergeReportedUsage(
-        usage({ contextWindow: 200_000 }),
-        usage({ model: 'model-b' }),
-      )).toMatchObject({ contextWindow: 0, percentage: 0 });
-      expect(mergeReportedUsage(null, usage())).toMatchObject({ contextWindow: 0 });
+    it('retains the complete previous report until the new model reports a window', () => {
+      const previous = usage({ contextWindow: 200_000, percentage: 25 });
+      const partial = usage({ model: 'model-b', contextTokens: 100_000 });
+      expect(mergeReportedUsage(previous, partial)).toBe(previous);
+      const complete = { ...partial, contextWindow: 1_000_000, percentage: 10 };
+      expect(mergeReportedUsage(previous, complete)).toBe(complete);
+      expect(mergeReportedUsage(null, partial)).toMatchObject({ model: 'model-b', contextWindow: 0 });
     });
 
     it('normalizes invalid reported windows to zero', () => {
@@ -148,17 +152,4 @@ describe('usageInfo', () => {
     });
   });
 
-  describe('clearReportedContextWindowForModel', () => {
-    it('clears the previous model’s reported window on a model change', () => {
-      expect(clearReportedContextWindowForModel(
-        usage({ contextWindow: 200_000, percentage: 25 }),
-        'model-b',
-      )).toEqual(usage({ model: 'model-b', contextWindow: 0, percentage: 0 }));
-    });
-
-    it('keeps usage for the same model', () => {
-      const current = usage({ contextWindow: 200_000, percentage: 25 });
-      expect(clearReportedContextWindowForModel(current, 'model-a')).toBe(current);
-    });
-  });
 });

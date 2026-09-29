@@ -53,7 +53,11 @@ export {
  */
 const PENDING_READ_TTL_MS = 30_000;
 const MAX_PENDING_READS = 4;
-const pendingModelReads = new Map<string, { fingerprint: string; read: SDKSessionReadResult; expiresAt: number }>();
+const pendingModelReads = new Map<string, {
+  fingerprint: string;
+  read: SDKSessionReadResult;
+  expiryTimer: number;
+}>();
 
 function resolveSessionPath(
   vaultPath: string,
@@ -78,10 +82,10 @@ async function getSessionFingerprint(sessionPath: string): Promise<string | null
   }
 }
 
-function prunePendingModelReads(now: number): void {
-  for (const [sessionPath, entry] of pendingModelReads) {
-    if (entry.expiresAt <= now) pendingModelReads.delete(sessionPath);
-  }
+function deletePendingModelRead(sessionPath: string): void {
+  const entry = pendingModelReads.get(sessionPath);
+  if (entry) window.clearTimeout(entry.expiryTimer);
+  pendingModelReads.delete(sessionPath);
 }
 
 async function readSessionEntries(
@@ -96,10 +100,9 @@ async function readSessionEntries(
 }
 
 async function takePendingModelRead(sessionPath: string | null): Promise<SDKSessionReadResult | null> {
-  prunePendingModelReads(Date.now());
   const entry = sessionPath ? pendingModelReads.get(sessionPath) : undefined;
   if (!sessionPath || !entry) return null;
-  pendingModelReads.delete(sessionPath);
+  deletePendingModelRead(sessionPath);
   return await getSessionFingerprint(sessionPath) === entry.fingerprint ? entry.read : null;
 }
 
@@ -395,13 +398,13 @@ export async function loadSDKSessionModel(
   if (result.error) return null;
 
   if (resolvedPath && fingerprint) {
-    const now = Date.now();
-    prunePendingModelReads(now);
-    pendingModelReads.delete(resolvedPath);
-    pendingModelReads.set(resolvedPath, { fingerprint, read: result, expiresAt: now + PENDING_READ_TTL_MS });
+    deletePendingModelRead(resolvedPath);
+    const expiryTimer = window.setTimeout(() => pendingModelReads.delete(resolvedPath), PENDING_READ_TTL_MS);
+    (expiryTimer as unknown as { unref?: () => void }).unref?.();
+    pendingModelReads.set(resolvedPath, { fingerprint, read: result, expiryTimer });
     for (const oldest of pendingModelReads.keys()) {
       if (pendingModelReads.size <= MAX_PENDING_READS) break;
-      pendingModelReads.delete(oldest);
+      deletePendingModelRead(oldest);
     }
   }
   return getLastSDKSessionModel(result.messages, resumeAtMessageId);

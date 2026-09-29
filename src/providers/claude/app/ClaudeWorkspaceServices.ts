@@ -69,9 +69,7 @@ export async function createClaudeWorkspaceServices(
     modelCatalog,
     async publishSessionModels(models) {
       // A session reporting across an environment transition may describe the old runtime.
-      if (await applySessionClaudeModels(plugin, models, () => !disposed && !transitioning)) {
-        modelCatalog.notifyChanged();
-      }
+      await applySessionClaudeModels(plugin, models, () => !disposed && !transitioning);
     },
     dispose() {
       if (disposePromise) return disposePromise;

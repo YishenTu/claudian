@@ -7,6 +7,7 @@ import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/
 import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { axe } from 'jest-axe';
 import { App, Notice } from 'obsidian';
 
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
@@ -233,6 +234,49 @@ it('restores the tab effort when returning to a previously selected model', asyn
     await expectSubmission(tab, sessions, 'openai-codex/gpt-alternate', 'high');
     await selectModel('GPT-5.5');
     await expectSubmission(tab, sessions, 'openai-codex/gpt-5.5', 'low');
+  } finally {
+    for (const tab of tabs) await destroyTab(tab);
+  }
+});
+
+it('keeps the displayed SDK report across model selection until the new model reports a window', async () => {
+  const entry = modelCatalogCases.find(candidate => candidate.id === 'codex')!;
+  const settings = createSettings(entry);
+  const catalog = getCodexProviderSettings(settings).discoveredModels;
+  updateCodexProviderSettings(settings, {
+    visibleModels: [entry.selected, 'gpt-alternate'],
+    discoveredModels: [catalog[0], { ...catalog[0], model: 'gpt-alternate', displayName: 'Alternate' }],
+  });
+  const { createTab, tabs } = createChatHarness(settings, entry.id, entry.selected);
+  try {
+    const tab = await createTab();
+    const ui = within(tab.dom.inputComposerEl);
+    const report = async (model: string, contextTokens: number, contextWindow: number) => {
+      await tab.controllers.streamController.handleStreamChunk({ type: 'usage', usage: {
+        model, contextTokens, contextWindow, inputTokens: contextTokens,
+        cacheCreationInputTokens: 0, cacheReadInputTokens: 0,
+        percentage: contextWindow ? Math.round(contextTokens / contextWindow * 100) : 0,
+      } }, tab.state.messages[0]);
+    };
+    const selectModel = async (label: string) => {
+      // The existing model picker exposes text options rather than option roles.
+      fireEvent.click(ui.getByText(label, { selector: '.claudian-model-option span' }));
+      await waitFor(() => expect(ui.getByText(label, { selector: '.claudian-model-label' })).toBeDefined());
+    };
+    await report('gpt-5.5', 100_000, 1_000_000);
+    const meter = ui.getByRole('progressbar', { name: 'Context usage: 100k / 1000k' });
+    await selectModel('Alternate');
+    expect(ui.getByRole('progressbar', { name: 'Context usage: 100k / 1000k' })).toBe(meter);
+    expect(meter.classList.contains('claudian-hidden')).toBe(false);
+    await report('gpt-alternate', 50_000, 0);
+    expect(meter.getAttribute('aria-valuetext')).toBe('100k / 1000k');
+    await report('gpt-alternate', 50_000, 200_000);
+    expect(meter.getAttribute('aria-valuetext')).toBe('50k / 200k');
+    expect(meter.getAttribute('aria-valuenow')).toBe('25');
+    await selectModel('GPT-5.5');
+    expect(meter.getAttribute('aria-valuetext')).toBe('50k / 200k');
+    expect(meter.classList.contains('claudian-hidden')).toBe(false);
+    expect((await axe(meter)).violations).toEqual([]);
   } finally {
     for (const tab of tabs) await destroyTab(tab);
   }

@@ -24,7 +24,6 @@ import { ImageContextManager } from '../../ui/ImageContext';
 import { createInputToolbar } from '../../ui/InputToolbar';
 import { NavigationSidebar } from '../../ui/NavigationSidebar';
 import { installTextareaSizing } from '../../ui/textareaSizing';
-import { clearReportedContextWindowForModel } from '../../utils/usageInfo';
 import { getTabProviderId } from '../providerResolution';
 import { commitProvisionalTab } from '../TabLifecycle';
 import { TabModelSelectionCoordinator } from '../TabModelSelectionCoordinator';
@@ -331,15 +330,6 @@ function buildInputToolbar(
       tab.ui.serviceTierToggle.updateDisplay();
       tab.ui.modelSelector.updateDisplay();
       tab.ui.modelSelector.renderOptions();
-
-      const currentUsage = tab.state.usage;
-      if (currentUsage) {
-        tab.state.usage = clearReportedContextWindowForModel(
-          currentUsage,
-          normalizedModel,
-          boundProvider,
-        );
-      }
     },
     onModeChange: async (mode: string) => {
       const tab = runtimeRef.requirePublished();

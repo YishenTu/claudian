@@ -130,7 +130,6 @@ let mockSupportedCommandsImplementation: (() => Promise<Array<{
 }>>) | null = null;
 let mockSupportedModels: ModelInfo[] = [];
 let mockContextUsage: { rawMaxTokens: number } | null = null;
-let mockContextUsageImplementation: (() => Promise<{ rawMaxTokens: number }>) | null = null;
 let lastResponse: (AsyncGenerator<any> & {
   interrupt: jest.Mock;
   setModel: jest.Mock;
@@ -159,7 +158,6 @@ export function resetMockMessages() {
   mockSupportedCommandsImplementation = null;
   mockSupportedModels = [];
   mockContextUsage = null;
-  mockContextUsageImplementation = null;
   lastResponse = null;
   queryCallCount = 0;
 }
@@ -186,12 +184,6 @@ export function setMockSupportedModels(models: ModelInfo[]) {
 
 export function setMockContextUsage(contextUsage: { rawMaxTokens: number } | null) {
   mockContextUsage = contextUsage;
-}
-
-export function setMockContextUsageImplementation(
-  implementation: (() => Promise<{ rawMaxTokens: number }>) | null,
-) {
-  mockContextUsageImplementation = implementation;
 }
 
 /**
@@ -281,9 +273,7 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
     available_output_styles: [],
   }));
   gen.getContextUsage = jest.fn().mockImplementation(() => (
-    mockContextUsageImplementation
-      ? mockContextUsageImplementation()
-      : mockContextUsage
+    mockContextUsage
       ? Promise.resolve(mockContextUsage)
       : Promise.reject(new Error('Context usage unavailable'))
   ));

@@ -73,9 +73,6 @@ const sdkMock = sdkModule as unknown as {
   setMockContextUsage: (
     contextUsage: { rawMaxTokens: number } | null,
   ) => void;
-  setMockContextUsageImplementation: (
-    implementation: (() => Promise<{ rawMaxTokens: number }>) | null,
-  ) => void;
 };
 
 function createInteractionPort(): jest.Mocked<ProviderInteractionPort> {
@@ -403,11 +400,6 @@ describe('ClaudeExecutionBackend', () => {
       notifyProviderChatOptionsChanged: jest.fn(),
     });
     const services = await createClaudeWorkspaceServices(host, { commandProbe: async () => [], modelProbe: jest.fn() });
-    // The settings tab re-renders only through catalog observers.
-    const observedModelIds: string[][] = [];
-    services.modelCatalog!.observe(() => {
-      observedModelIds.push(services.modelCatalog!.getSnapshot().models.map(model => model.id));
-    });
     const publications: Array<Promise<void>> = [];
     const backend = new ClaudeExecutionBackend(host, {
       publishSessionModels: models => {
@@ -443,8 +435,6 @@ describe('ClaudeExecutionBackend', () => {
       });
       expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledTimes(1);
       expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('claude');
-      expect(observedModelIds).toHaveLength(1);
-      expect(observedModelIds[0]).toContain('claude-fable-6-0');
     } finally {
       await services.dispose();
       await registry.dispose();
@@ -923,7 +913,7 @@ describe('ClaudeExecutionBackend', () => {
     }));
   });
 
-  it('prefers the result model window over the compaction window from context discovery', async () => {
+  it('uses the result model window without polling the autocompact threshold', async () => {
     // getContextUsage reports the autocompact window, which compaction policy can set below the
     // model window; result modelUsage reports the model window itself.
     sdkMock.setMockContextUsage({ rawMaxTokens: 200_000 });
@@ -957,7 +947,7 @@ describe('ClaudeExecutionBackend', () => {
       },
     })).events);
 
-    expect(sdkMock.getLastResponse()?.getContextUsage).toHaveBeenCalledWith({ detail: 'summary' });
+    expect(sdkMock.getLastResponse()?.getContextUsage).not.toHaveBeenCalled();
     const usageEvents = events.filter((event) => event.type === 'usage_updated');
     expect(usageEvents.at(-1)).toEqual(expect.objectContaining({
       type: 'usage_updated',
@@ -970,308 +960,37 @@ describe('ClaudeExecutionBackend', () => {
     }));
   });
 
-  it('keeps the result model window when context discovery resolves after the result', async () => {
-    const lateContextUsage = createDeferred<{ rawMaxTokens: number }>();
-    const getContextUsage = jest.fn().mockReturnValue(lateContextUsage.promise);
-    const queryFactory = jest.fn((request: {
-      prompt: AsyncIterable<sdkModule.SDKUserMessage>;
-    }) => attachContextUsage(
-      createPromptDrivenPersistentQuery(request.prompt, (prompt) => (
-        prompt.includes('First turn')
-          ? [
-            { type: 'system', subtype: 'init', session_id: 'session-1' },
-            {
-              type: 'assistant',
-              message: {
-                content: [{ type: 'text', text: 'First response' }],
-                usage: { input_tokens: 100_000 },
-              },
-            },
-            {
-              type: 'result',
-              subtype: 'success',
-              modelUsage: { 'custom-model': { contextWindow: 1_000_000 } },
-            },
-          ]
-          : [
-            {
-              type: 'assistant',
-              message: {
-                content: [{ type: 'text', text: 'Second response' }],
-                usage: { input_tokens: 100_000 },
-              },
-            },
-            { type: 'result', subtype: 'success' },
-          ]
-      )),
-      getContextUsage,
-    ));
-    jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSDK'),
-      'loadClaudeAgentQuery',
-    ).mockResolvedValueOnce(queryFactory as never);
-    const session = new ClaudeExecutionBackend(createHost())
-      .createSession(createConfig());
-    const configuration = {
-      systemInstructions: { kind: 'provider-default' },
-      model: 'custom-model',
-      reasoning: 'medium',
-      permissionMode: 'ask',
-    } as const;
-
-    await collectEvents(session.execute(createRequest({
-      input: [{ type: 'text', text: 'First turn' }],
-      configuration,
-    })).events);
-    lateContextUsage.resolve({ rawMaxTokens: 200_000 });
-    await new Promise(resolve => setImmediate(resolve));
-    const secondEvents = await collectEvents(session.execute(createRequest({
-      input: [{ type: 'text', text: 'Second turn' }],
-      configuration,
-    })).events);
-
-    const secondUsage = secondEvents.filter((event) => event.type === 'usage_updated');
-    expect(secondUsage.length).toBeGreaterThan(0);
-    expect(secondUsage).not.toContainEqual(expect.objectContaining({
-      usage: expect.objectContaining({ contextWindow: 200_000 }),
-    }));
-    expect(secondUsage.at(-1)).toEqual(expect.objectContaining({
-      usage: expect.objectContaining({ contextWindow: 1_000_000, percentage: 10 }),
-    }));
-    expect(getContextUsage).toHaveBeenCalledTimes(1);
-    await session.dispose();
-  });
-
-  it('corrects live usage when runtime context discovery resolves after usage', async () => {
-    const contextUsage = createDeferred<{ rawMaxTokens: number }>();
-    const resultBarrier = createDeferred<null>();
-    sdkMock.setMockContextUsageImplementation(() => contextUsage.promise);
-    sdkMock.setMockMessages([
-      {
-        type: 'assistant',
-        parent_tool_use_id: null,
-        message: {
-          content: [{ type: 'text', text: 'Hello' }],
-          usage: { input_tokens: 250_000 },
+  it('reuses only the last reported model window on a persistent query', async () => {
+    const queryFactory = jest.fn((request: { prompt: AsyncIterable<sdkModule.SDKUserMessage> }) =>
+      createPromptDrivenPersistentQuery(request.prompt, (prompt) => [
+        { type: 'assistant', message: {
+          content: [{ type: 'text', text: 'Response' }], usage: { input_tokens: 100_000 },
+        } },
+        { type: 'result', subtype: 'success', modelUsage: prompt.includes('Other model')
+          ? { 'custom-model-b': { contextWindow: 200_000 } }
+          : { 'custom-model': { contextWindow: 1_000_000 } } },
+      ]));
+    jest.spyOn(await import('@/providers/claude/loadClaudeAgentSDK'), 'loadClaudeAgentQuery')
+      .mockResolvedValueOnce(queryFactory as never);
+    const session = new ClaudeExecutionBackend(createHost()).createSession(createConfig());
+    const execute = async (model: string, text: string) => {
+      const events = await collectEvents(session.execute(createRequest({
+        input: [{ type: 'text', text }],
+        configuration: {
+          systemInstructions: { kind: 'provider-default' }, model, reasoning: 'medium', permissionMode: 'ask',
         },
-      },
-      resultBarrier.promise,
-      { type: 'result', subtype: 'success' },
-    ], { appendResult: false });
-    const session = new ClaudeExecutionBackend(createHost())
-      .createSession(createConfig());
-    const collected: ProviderExecutionEvent[] = [];
-    const run = session.execute(createRequest({
-      configuration: {
-        systemInstructions: { kind: 'provider-default' },
-        model: 'custom-model',
-        reasoning: 'medium',
-        permissionMode: 'ask',
-      },
-    }));
-    const collection = (async () => {
-      for await (const event of run.events) {
-        collected.push(event);
-      }
-    })();
-
-    await waitFor(() => collected.some((event) => (
-      event.type === 'usage_updated'
-      && event.usage.contextWindow === 0
-    )));
-    contextUsage.resolve({ rawMaxTokens: 1_000_000 });
-    await waitFor(() => collected.some((event) => (
-      event.type === 'usage_updated'
-      && event.usage.contextWindow === 1_000_000
-    )));
-    resultBarrier.resolve(null);
-    await collection;
-
-    expect(collected.filter((event) => event.type === 'usage_updated').at(-1))
-      .toEqual(expect.objectContaining({
-        usage: expect.objectContaining({
-          contextWindow: 1_000_000,
-          percentage: 25,
-        }),
-      }));
-  });
-
-  it('ignores a delayed context window after the persistent model changes', async () => {
-    const staleContextUsage = createDeferred<{ rawMaxTokens: number }>();
-    const secondResultBarrier = createDeferred<null>();
-    const getContextUsage = jest.fn()
-      .mockReturnValueOnce(staleContextUsage.promise)
-      .mockResolvedValueOnce({ rawMaxTokens: 500_000 });
-    const queryFactory = jest.fn((request: {
-      prompt: AsyncIterable<sdkModule.SDKUserMessage>;
-    }) => {
-      const query = attachContextUsage(
-        createPromptDrivenPersistentQuery(request.prompt, (prompt) => (
-          prompt.includes('First model')
-            ? [
-              { type: 'system', subtype: 'init', session_id: 'session-1' },
-              {
-                type: 'assistant',
-                message: {
-                  content: [{ type: 'text', text: 'First response' }],
-                  usage: { input_tokens: 250_000 },
-                },
-              },
-              { type: 'result', subtype: 'success' },
-            ]
-            : [
-              {
-                type: 'assistant',
-                message: {
-                  content: [{ type: 'text', text: 'Second response' }],
-                  usage: { input_tokens: 250_000 },
-                },
-              },
-              secondResultBarrier.promise,
-              { type: 'result', subtype: 'success' },
-            ]
-        )),
-        getContextUsage,
-      );
-      return query;
-    });
-    jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSDK'),
-      'loadClaudeAgentQuery',
-    ).mockResolvedValueOnce(queryFactory as never);
-    const session = new ClaudeExecutionBackend(createHost())
-      .createSession(createConfig());
-
-    await collectEvents(session.execute(createRequest({
-      input: [{ type: 'text', text: 'First model' }],
-      configuration: {
-        systemInstructions: { kind: 'provider-default' },
-        model: 'custom-model-a',
-        reasoning: 'medium',
-        permissionMode: 'ask',
-      },
-    })).events);
-    const secondEvents: ProviderExecutionEvent[] = [];
-    const secondRun = session.execute(createRequest({
-      input: [{ type: 'text', text: 'Second model' }],
-      configuration: {
-        systemInstructions: { kind: 'provider-default' },
-        model: 'custom-model-b',
-        reasoning: 'medium',
-        permissionMode: 'ask',
-      },
-    }));
-    const secondCollection = (async () => {
-      for await (const event of secondRun.events) {
-        secondEvents.push(event);
-      }
-    })();
-
-    await waitFor(() => secondEvents.some((event) => (
-      event.type === 'usage_updated'
-      && event.usage.contextWindow === 500_000
-    )));
-    staleContextUsage.resolve({ rawMaxTokens: 1_000_000 });
-    await new Promise(resolve => setImmediate(resolve));
-
-    expect(secondEvents).not.toContainEqual(expect.objectContaining({
-      type: 'usage_updated',
-      usage: expect.objectContaining({ contextWindow: 1_000_000 }),
-    }));
-    secondResultBarrier.resolve(null);
-    await secondCollection;
-    expect(getContextUsage).toHaveBeenCalledTimes(2);
-    await session.dispose();
-  });
-
-  it('ignores context discovery from a replaced persistent query', async () => {
-    const staleContextUsage = createDeferred<{ rawMaxTokens: number }>();
-    const replacementResultBarrier = createDeferred<null>();
-    const getStaleContextUsage = jest.fn().mockReturnValue(staleContextUsage.promise);
-    const getReplacementContextUsage = jest.fn().mockResolvedValue({ rawMaxTokens: 500_000 });
-    const staleFactory = jest.fn((request: {
-      prompt: AsyncIterable<sdkModule.SDKUserMessage>;
-    }) => {
-      const staleQuery = attachContextUsage(
-        createPromptDrivenPersistentQuery(request.prompt, () => [
-          { type: 'system', subtype: 'init', session_id: 'session-1' },
-          { type: 'result', subtype: 'success' },
-        ]),
-        getStaleContextUsage,
-      );
-      return staleQuery;
-    });
-    const replacementFactory = jest.fn((request: {
-      prompt: AsyncIterable<sdkModule.SDKUserMessage>;
-    }) => {
-      const replacementQuery = attachContextUsage(
-        createPromptDrivenPersistentQuery(request.prompt, () => [
-          { type: 'system', subtype: 'init', session_id: 'session-2' },
-          {
-            type: 'assistant',
-            message: {
-              content: [{ type: 'text', text: 'Replacement response' }],
-              usage: { input_tokens: 250_000 },
-            },
-          },
-          replacementResultBarrier.promise,
-          { type: 'result', subtype: 'success' },
-        ]),
-        getReplacementContextUsage,
-      );
-      return replacementQuery;
-    });
-    jest.spyOn(
-      await import('@/providers/claude/loadClaudeAgentSDK'),
-      'loadClaudeAgentQuery',
-    )
-      .mockResolvedValueOnce(staleFactory as never)
-      .mockResolvedValueOnce(replacementFactory as never);
-    const session = new ClaudeExecutionBackend(createHost())
-      .createSession(createConfig());
-
-    await collectEvents(session.execute(createRequest({
-      configuration: {
-        systemInstructions: { kind: 'provider-default' },
-        model: 'custom-model',
-        reasoning: 'medium',
-        permissionMode: 'ask',
-      },
-    })).events);
-    const replacementEvents: ProviderExecutionEvent[] = [];
-    const replacementRun = session.execute(createRequest({
-      configuration: {
-        systemInstructions: {
-          kind: 'explicit',
-          instructions: 'Use replacement instructions.',
-        },
-        model: 'custom-model',
-        reasoning: 'medium',
-        permissionMode: 'ask',
-      },
-    }));
-    const replacementCollection = (async () => {
-      for await (const event of replacementRun.events) {
-        replacementEvents.push(event);
-      }
-    })();
-
-    await waitFor(() => replacementEvents.some((event) => (
-      event.type === 'usage_updated'
-      && event.usage.contextWindow === 500_000
-    )));
-    staleContextUsage.resolve({ rawMaxTokens: 1_000_000 });
-    await new Promise(resolve => setImmediate(resolve));
-
-    expect(replacementEvents).not.toContainEqual(expect.objectContaining({
-      type: 'usage_updated',
-      usage: expect.objectContaining({ contextWindow: 1_000_000 }),
-    }));
-    replacementResultBarrier.resolve(null);
-    await replacementCollection;
-    expect(getStaleContextUsage).toHaveBeenCalledTimes(1);
-    expect(getReplacementContextUsage).toHaveBeenCalledTimes(1);
-    await session.dispose();
+      })).events);
+      return events.filter(event => event.type === 'usage_updated').map(event => event.usage.contextWindow);
+    };
+    try {
+      expect(await execute('custom-model', 'First turn')).toEqual([0, 1_000_000]);
+      expect(await execute('custom-model', 'Same model')).toEqual([1_000_000]);
+      expect(await execute('custom-model-b', 'Other model')).toEqual([0, 200_000]);
+      expect(await execute('custom-model', 'Return to first model')).toEqual([0, 1_000_000]);
+      expect(queryFactory).toHaveBeenCalledTimes(1);
+    } finally {
+      await session.dispose();
+    }
   });
 
   it('corrects custom-model usage from result model metadata', async () => {
@@ -3602,17 +3321,6 @@ type ScriptedQuery = AsyncGenerator<unknown> & {
   rewindFiles: jest.Mock;
   finished: Promise<void>;
 };
-
-type ContextAwareScriptedQuery = ScriptedQuery & {
-  getContextUsage: jest.Mock;
-};
-
-function attachContextUsage(
-  query: ScriptedQuery,
-  getContextUsage: jest.Mock,
-): ContextAwareScriptedQuery {
-  return Object.assign(query, { getContextUsage });
-}
 
 function attachQueryMethods(
   query: AsyncGenerator<unknown>,

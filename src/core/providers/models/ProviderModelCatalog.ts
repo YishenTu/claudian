@@ -216,11 +216,6 @@ export class ProviderModelCatalogController implements ProviderModelCatalog {
     this.publish();
   }
 
-  /** Publishes a catalog the provider persisted outside discovery, such as a live session report. */
-  notifyChanged(): void {
-    this.publish();
-  }
-
   observe(observer: () => void): () => void {
     if (this.disposed) return () => {};
     this.observers.add(observer);

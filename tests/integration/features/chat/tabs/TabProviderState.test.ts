@@ -84,7 +84,7 @@ describe('tab context usage projection', () => {
   it.each([
     { model: 'claude-fable-5', reportedModel: 'fable' },
     { model: 'sonnet[1m]', reportedModel: 'sonnet' },
-  ])('does not transfer a report from $reportedModel to $model', ({ model, reportedModel }) => {
+  ])('keeps the report from $reportedModel when $model is selected', ({ model, reportedModel }) => {
     const { tab, plugin, update } = createTab(model, {}, {
       model: reportedModel,
       contextWindow: 200_000,
@@ -92,6 +92,6 @@ describe('tab context usage projection', () => {
 
     refreshTabContextUsage(tab, plugin);
 
-    expect(update).toHaveBeenLastCalledWith(null);
+    expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ model: reportedModel, contextWindow: 200_000, percentage: 25 }));
   });
 });

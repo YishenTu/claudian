@@ -31,17 +31,6 @@ function toRuntimeModelId(providerId: ProviderId | null, model: string): string 
   return providerId ? toProviderRuntimeModelId(providerId, trimmed) : trimmed;
 }
 
-/** Saved usage from before model identity was recorded cannot prove a mismatch. */
-function isSameModel(
-  providerId: ProviderId | null,
-  usageModel: string | undefined,
-  model: string | null | undefined,
-): boolean {
-  if (!usageModel || !model) return true;
-  return usageModel === model
-    || toRuntimeModelId(providerId, usageModel) === toRuntimeModelId(providerId, model);
-}
-
 function resolveCustomContextLimit(
   context: ContextUsageDisplayContext,
 ): number | null {
@@ -68,7 +57,7 @@ function resolveCustomContextLimit(
 
 /**
  * Projects raw provider usage into the context meter's display value. A valid
- * provider-reported window for the current model wins; the user's custom limit
+ * provider-reported window wins; the reporting model's custom limit
  * is only a fallback. Returns null when the meter should stay hidden.
  */
 export function projectContextUsageDisplay(
@@ -78,20 +67,24 @@ export function projectContextUsageDisplay(
   if (!usage || usage.contextTokens <= 0) return null;
 
   const reportedWindow = isValidContextWindow(usage.contextWindow)
-    && isSameModel(context.providerId, usage.model, context.model)
     ? usage.contextWindow
     : null;
   const contextWindow = reportedWindow
-    ?? resolveCustomContextLimit(context);
+    ?? resolveCustomContextLimit({ ...context, model: usage.model ?? context.model });
   return contextWindow === null ? null : withContextWindow(usage, contextWindow);
 }
 
 /**
  * Applies a raw usage update. A partial update without a valid window keeps the
- * last reported window of the same model; windows never cross models.
+ * last reported window of the same model. For a different model, keep the whole
+ * previous report until a complete report arrives, so counts and windows agree.
  */
 export function mergeReportedUsage(previous: UsageInfo | null, next: UsageInfo): UsageInfo {
   if (isValidContextWindow(next.contextWindow)) return next;
+
+  if (previous && previous.model !== next.model && isValidContextWindow(previous.contextWindow)) {
+    return previous;
+  }
 
   const retainedWindow = previous
     && previous.model === next.model
@@ -99,14 +92,4 @@ export function mergeReportedUsage(previous: UsageInfo | null, next: UsageInfo):
     ? previous.contextWindow
     : 0;
   return withContextWindow(next, retainedWindow);
-}
-
-/** A model change drops the previous model's reported window from raw usage. */
-export function clearReportedContextWindowForModel(
-  usage: UsageInfo,
-  model: string,
-  providerId: ProviderId | null = null,
-): UsageInfo {
-  if (usage.model && isSameModel(providerId, usage.model, model)) return usage;
-  return { ...usage, model, contextWindow: 0, percentage: 0 };
 }

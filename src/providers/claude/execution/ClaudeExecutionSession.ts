@@ -135,11 +135,10 @@ ClaudeExecutionStrategySink {
   private readonly responseOwnership = new ClaudeResponseOwnership();
   private readonly taskNotifications = new ClaudeTaskNotificationQueue();
   private nativeQuery: Query | null = null;
-  /** Result windows are the model window; discovered windows only fill in until a result reports. */
+  /** The most recent model window reported by result metadata. */
   private knownContextWindow: {
     readonly model: string;
     readonly contextWindow: number;
-    readonly source: 'discovered' | 'result';
   } | null = null;
 
   constructor(
@@ -648,7 +647,6 @@ ClaudeExecutionStrategySink {
         this.knownContextWindow = {
           model: normalized.model,
           contextWindow: normalized.contextWindow,
-          source: 'result',
         };
         continue;
       }
@@ -815,36 +813,6 @@ ClaudeExecutionStrategySink {
     this.commandSnapshot = undefined;
     this.#emitSession({ type: 'commands_changed' });
     this.knownContextWindow = null;
-  }
-
-  handleDiscoveredContextWindow(
-    query: Query,
-    model: string,
-    contextWindow: number,
-  ): void {
-    if (
-      this.nativeQuery !== query
-      || !Number.isFinite(contextWindow)
-      || contextWindow <= 0
-      || (this.knownContextWindow?.model === model && this.knownContextWindow.source === 'result')
-    ) {
-      return;
-    }
-    this.knownContextWindow = { model, contextWindow, source: 'discovered' };
-    if (!this.activeRun && !this.backgroundTurn) return;
-    const channel = this.#currentOutputChannel();
-    const correctedUsage = this.eventNormalizer.updateContextWindow(
-      channel,
-      model,
-      contextWindow,
-    );
-    const target = channel === 'requested' ? this.activeRun : this.backgroundTurn;
-    if (correctedUsage && target) {
-      this.#emitTurnOutput(target, {
-        type: 'usage_updated',
-        usage: correctedUsage,
-      });
-    }
   }
 
   async #startExecution(

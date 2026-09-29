@@ -393,7 +393,7 @@ test('context controls read detached metadata without copying the transcript', a
   expect(repository.getSummary(conversation.id)?.capabilities?.supportsFork).toBe(true);
   await repository.update(conversation.id, { selectedModel: 'opus' });
   refreshTabContextUsage(tab, host);
-  expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ contextWindow: 200_000, percentage: 25 }));
+  expect(update).toHaveBeenLastCalledWith(expect.objectContaining({ contextWindow: 100_000, percentage: 50 }));
   expect(previous.selectedModel).toBe('sonnet');
   expect(fullRead).not.toHaveBeenCalled();
 });

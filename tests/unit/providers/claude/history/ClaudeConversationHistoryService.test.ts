@@ -2,7 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { testTime } from '@test/helpers/testClock';
+import { testDate, testTime } from '@test/helpers/testClock';
 
 import type { Conversation, ToolCallInfo } from '@/core/types';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
@@ -244,6 +244,59 @@ describe('ClaudeConversationHistoryService', () => {
       } finally {
         readSpy.mockRestore();
         await fs.rm(configDir, { recursive: true, force: true });
+      }
+    });
+
+    it('releases an unused parsed transcript after 30 seconds without another history read', async () => {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-read-expiry-'));
+      const sessionPath = path.join(directory, 'session-1.jsonl');
+      await fs.writeFile(sessionPath, JSON.stringify({
+        type: 'assistant', uuid: 'a1', timestamp: testTime(),
+        message: { model: 'claude-opus-4-6', content: [{ type: 'text', text: 'Answer' }] },
+      }));
+      jest.useFakeTimers({ now: testDate() });
+      // Observe release without accessing history again, which would hide lazy expiry.
+      const deleteSpy = jest.spyOn(Map.prototype, 'delete');
+      try {
+        await expect(historyStore.loadSDKSessionModel(directory, 'session-1', undefined, sessionPath))
+          .resolves.toBe('claude-opus-4-6');
+        deleteSpy.mockClear();
+        jest.advanceTimersByTime(29_999);
+        expect(deleteSpy).not.toHaveBeenCalledWith(sessionPath);
+        jest.advanceTimersByTime(1);
+        expect(deleteSpy).toHaveBeenCalledWith(sessionPath);
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        deleteSpy.mockRestore();
+        jest.useRealTimers();
+        await fs.rm(directory, { recursive: true, force: true });
+      }
+    });
+
+    it('cancels expiry timers when a pending parse is replaced, evicted, or consumed', async () => {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-read-lifecycle-'));
+      const sessionPaths = Array.from({ length: 5 }, (_, index) => path.join(directory, `${index}.jsonl`));
+      const entry = JSON.stringify({ type: 'assistant', uuid: 'a1', timestamp: testTime(),
+        message: { model: 'claude-opus-4-6', content: [{ type: 'text', text: 'Answer' }] } });
+      await Promise.all(sessionPaths.map(sessionPath => fs.writeFile(sessionPath, entry)));
+      jest.useFakeTimers({ now: testDate() });
+      const read = (sessionPath: string) => historyStore.loadSDKSessionModel(directory, 'session', undefined, sessionPath);
+      try {
+        await read(sessionPaths[0]);
+        jest.advanceTimersByTime(10_000);
+        await read(sessionPaths[0]);
+        expect(jest.getTimerCount()).toBe(1);
+        jest.advanceTimersByTime(20_000);
+        expect(jest.getTimerCount()).toBe(1);
+        for (const sessionPath of sessionPaths.slice(1)) await read(sessionPath);
+        expect(jest.getTimerCount()).toBe(4);
+        await historyStore.loadSDKSessionMessages(directory, 'session', undefined, sessionPaths[4]);
+        expect(jest.getTimerCount()).toBe(3);
+        jest.advanceTimersByTime(30_000);
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        jest.useRealTimers();
+        await fs.rm(directory, { recursive: true, force: true });
       }
     });
 
