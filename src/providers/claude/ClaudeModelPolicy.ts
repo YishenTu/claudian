@@ -2,7 +2,6 @@ import { formatReasoningValueLabel } from '../../core/providers/reasoning';
 import type {
   ProviderModelPolicy,
   ProviderReasoningOption,
-  ProviderUIOption,
 } from '../../core/providers/types';
 import { getCustomModelIds } from './env/claudeModelEnv';
 import {
@@ -14,13 +13,14 @@ import {
   getClaudeVisibleModelIds,
 } from './modelOptions';
 import { isClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
-import { isClaudeModelTier } from './modelTiers';
+import { CLAUDE_MODEL_TIER_PATTERN, isClaudeModelTier } from './modelTiers';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
 import {
   isDefaultClaudeModel,
   resolveSupportedEffortLevel
 } from './types/models';
 
+const VERSIONED_CLAUDE_MODEL = new RegExp(`^claude-(?:${CLAUDE_MODEL_TIER_PATTERN})-`);
 
 export const claudeModelPolicy: ProviderModelPolicy = {
   permissionModes: { inactiveValue: 'normal', activeValue: 'yolo' },
@@ -38,11 +38,13 @@ export const claudeModelPolicy: ProviderModelPolicy = {
 
   ownsModel(model: string, settings: Record<string, unknown>): boolean {
     const runtimeModel = toClaudeRuntimeModelId(model);
-    return /^claude-(?:haiku|sonnet|opus)-/.test(model) || isClaudeModelSelectionId(model) || isClaudeModelTier(runtimeModel)
+    return VERSIONED_CLAUDE_MODEL.test(model) || isClaudeModelSelectionId(model) || isClaudeModelTier(runtimeModel)
       || getClaudeVisibleModelIds(settings).some(id => toClaudeRuntimeModelId(id) === runtimeModel)
       || Boolean(findClaudeModelOption(getClaudeModelCatalog(settings), model));
   },
 
+  // Claude reasoning is effort-only: every model reads `effortLevel`, never a thinking budget.
+  // ModelInfo.supportsAdaptiveThinking describes the native thinking mode, not this setting choice.
   isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
     return true;
   },
@@ -64,18 +66,21 @@ export const claudeModelPolicy: ProviderModelPolicy = {
 
   applyModelProjectionDefaults: applyClaudeEffortSetting,
 
-  normalizeModelVariant(model: string, settings) {
-    return findClaudeModelSelectionOption(settings, model)?.value ?? model;
-  },
+  normalizeModelVariant: normalizeClaudeModelSelection,
 
-  normalizeAvailableModelSelection(model: string, settings) {
-    return findClaudeModelSelectionOption(settings, model)?.value ?? model;
-  },
+  // Claude's variant normalization applies no fallback policy: a reported identity keeps its meaning,
+  // anything else may only follow an enabled model, and an unresolved model is returned unchanged.
+  // Availability canonicalization is therefore the same operation.
+  normalizeAvailableModelSelection: normalizeClaudeModelSelection,
 
   getCustomModelIds(envVars: Record<string, string>): Set<string> {
     return getCustomModelIds(envVars);
   }
 };
+
+function normalizeClaudeModelSelection(model: string, settings: Record<string, unknown>): string {
+  return findClaudeModelSelectionOption(settings, model)?.value ?? model;
+}
 
 function applyClaudeEffortSetting(model: string, settings: unknown): void {
   const target = settings as Record<string, unknown>;
@@ -90,6 +95,3 @@ function resolveClaudeEffortSetting(model: string, settings: Record<string, unkn
   const saved = typeof settings.effortLevel === 'string' ? settings.effortLevel : '';
   return resolveSupportedEffortLevel(getClaudeSupportedEffortLevels(settings, model), saved) ?? saved;
 }
-
-/** Re-export for type-only use in provider registration. */
-export type { ProviderUIOption };

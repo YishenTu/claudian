@@ -13,11 +13,21 @@ import type {
 import { extractToolResultContent } from '../../../core/tools/toolResultContent';
 import {
   extractAgentIdFromToolUseResult,
+  hasAgentOutputReport,
   resolveToolUseResultStatus,
 } from '../history/sdkAsyncSubagent';
-import { extractXMLTag } from '../history/sdkMessageParsing';
 import { extractFinalResultFromSubagentJSONL } from '../history/subagentJSONL';
 import { extractHandbackResult } from '../normalization/claudeSubagentResult';
+import { extractXMLTag } from '../normalization/claudeTaskNotification';
+
+/*
+ * Legacy history compatibility (2026-09-29, SDK 0.3.283): the SDK documents that "the TaskOutput
+ * tool was removed" (Options.taskOutputMaxChars). Current Claude reports background results through
+ * <task-notification> and the Agent tool's structured AgentOutput. TaskOutput-era payloads
+ * (`retrieval_status`, `not_ready`, the `agents` map, `[Truncated. Full output: ...]` temp files,
+ * bare 8-hex task ids) only appear in transcripts and cached snapshots recorded before the removal.
+ */
+const LEGACY_RUNNING_TASK_STATUSES = new Set(['running', 'pending', 'not_ready']);
 
 function extractAgentIdFromString(value: string): string | null {
   const regexPatterns = [
@@ -37,31 +47,24 @@ function extractAgentIdFromString(value: string): string | null {
   return null;
 }
 
-function extractResultFromTaskObject(task: unknown): string | null {
-  if (!task || typeof task !== 'object') {
-    return null;
-  }
-
-  const record = task as Record<string, unknown>;
-  const result = typeof record.result === 'string' ? record.result.trim() : '';
-  if (result.length > 0) {
-    return result;
-  }
-
-  const output = typeof record.output === 'string' ? record.output.trim() : '';
-  return output.length > 0 ? output : null;
+/** The structured report is rendered as-is; the SDK keeps the model-directed trailer out of it. */
+function extractAgentOutputReport(toolUseResult: unknown): string | null {
+  if (!hasAgentOutputReport(toolUseResult)) return null;
+  const text = toolUseResult.content
+    .flatMap(block => isRecord(block) && block.type === 'text' && typeof block.text === 'string' ? [block.text] : [])
+    .join('\n');
+  return text.trim().length > 0 ? text : null;
 }
 
-function extractTextFromContentBlocks(content: unknown, agentId: unknown): string | null {
-  if (!Array.isArray(content)) return null;
-  const texts = content.flatMap(block => isRecord(block) && block.type === 'text'
-    && typeof block.text === 'string' ? [block.text] : []);
-  // Claude can append a separate metadata block after the answer. Require its
-  // full native shape and matching structured identity; literal tags remain text.
-  const trailer = texts.at(-1)?.match(/^agentId: ([a-zA-Z0-9_-]+)(?: \([^\r\n]*\))?\r?\n<usage>[^]*<\/usage>\s*$/);
-  if (texts.length > 1 && trailer && trailer[1] === agentId) texts.pop();
-  const text = texts.join('\n');
-  return text.trim().length > 0 ? text : null;
+function isTerminalTaskStatus(record: unknown): boolean {
+  return resolveToolUseResultStatus(record, 'running') !== 'running';
+}
+
+function isLegacyTaskOutputPayload(payload: string): boolean {
+  const parsed = parseJSONRecord(payload);
+  return parsed
+    ? 'retrieval_status' in parsed || isRecord(parsed.agents) || isRecord(parsed.task)
+    : extractXMLTag(payload, 'retrieval_status') !== null || extractXMLTag(payload, 'task_id') !== null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -98,7 +101,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
     const text = extractToolResultContent(result, { fallbackIndent: 2 });
     return {
       mode: this.#inferModeFromTaskResult(text, isError, toolUseResult),
-      agentId: this.#extractAgentId(toolUseResult) ?? this.#parseAgentId(text),
+      agentId: extractAgentIdFromToolUseResult(toolUseResult) ?? this.#parseAgentId(text),
       result: text,
     };
   }
@@ -113,11 +116,9 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
     if (context.mode === 'sync') {
       // Sync reports are answer text. Only the complete native hand-back frame
       // is an envelope; TaskOutput's JSON/XML recovery belongs to async results.
-      const answer = isRecord(toolUseResult)
-        ? extractTextFromContentBlocks(toolUseResult.content, toolUseResult.agentId) : null;
       return {
         status: this.#resolveTerminalStatus(toolUseResult, isError ? 'error' : 'completed'),
-        result: answer ?? extractHandbackResult(text) ?? text,
+        result: extractAgentOutputReport(toolUseResult) ?? extractHandbackResult(text) ?? text,
       };
     }
     const resolvedId = context.agentId ?? this.#inferAgentIdFromResult(text);
@@ -130,113 +131,12 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
     };
   }
 
-  #hasAsyncLaunchMarker(toolUseResult: unknown): boolean {
-    if (!toolUseResult || typeof toolUseResult !== 'object') {
-      return false;
-    }
-
-    const record = toolUseResult as Record<string, unknown>;
-    if (record.isAsync === true) {
-      return true;
-    }
-
-    const rawStatus = record.retrieval_status ?? record.status;
-    if (typeof rawStatus === 'string' && rawStatus.toLowerCase() === 'async_launched') {
-      return true;
-    }
-
-    // Sync Task results can still carry agentId metadata, so only treat
-    // output files as async when an explicit async marker is otherwise absent.
-    return typeof record.outputFile === 'string' && record.outputFile.length > 0;
-  }
-
-  #extractAgentId(toolUseResult: unknown): string | null {
-    const directId = extractAgentIdFromToolUseResult(toolUseResult);
-    if (directId) {
-      return directId;
-    }
-
-    if (!toolUseResult || typeof toolUseResult !== 'object') {
-      return null;
-    }
-
-    const record = toolUseResult as Record<string, unknown>;
-    if (Array.isArray(record.content)) {
-      for (const block of record.content) {
-        if (typeof block === 'string') {
-          const extracted = extractAgentIdFromString(block);
-          if (extracted) {
-            return extracted;
-          }
-          continue;
-        }
-
-        if (!block || typeof block !== 'object') {
-          continue;
-        }
-
-        const text = (block as Record<string, unknown>).text;
-        if (typeof text !== 'string') {
-          continue;
-        }
-
-        const extracted = extractAgentIdFromString(text);
-        if (extracted) {
-          return extracted;
-        }
-      }
-    }
-
-    if (typeof record.content === 'string') {
-      return extractAgentIdFromString(record.content);
-    }
-
-    return null;
-  }
-
-  #extractStructuredResult(toolUseResult: unknown): string | null {
-    if (!toolUseResult || typeof toolUseResult !== 'object') {
-      return null;
-    }
-
-    const record = toolUseResult as Record<string, unknown>;
-    if (record.retrieval_status === 'error') {
-      const errorMsg = typeof record.error === 'string' ? record.error : 'Task retrieval failed';
-      return `Error: ${errorMsg}`;
-    }
-
-    const taskResult = extractResultFromTaskObject(record.task);
-    if (taskResult) {
-      return taskResult;
-    }
-
-    const result = typeof record.result === 'string' ? record.result.trim() : '';
-    if (result.length > 0) {
-      return result;
-    }
-
-    const output = typeof record.output === 'string' ? record.output.trim() : '';
-    if (output.length > 0) {
-      return output;
-    }
-
-    return null;
-  }
-
   #resolveTerminalStatus(
     toolUseResult: unknown,
     fallbackStatus: ProviderTaskTerminalStatus,
   ): ProviderTaskTerminalStatus {
     const resolved = resolveToolUseResultStatus(toolUseResult, fallbackStatus);
-    if (resolved === 'error') {
-      return 'error';
-    }
-
-    if (resolved === 'completed') {
-      return 'completed';
-    }
-
-    return fallbackStatus;
+    return resolved === 'error' || resolved === 'completed' ? resolved : fallbackStatus;
   }
 
   #resolveTaskMode(taskInput: Record<string, unknown>): 'sync' | 'async' | null {
@@ -260,7 +160,13 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
     if (isError) {
       return 'sync';
     }
-    if (this.#hasAsyncLaunchMarker(taskToolUseResult)) {
+    // Sync results carry agentId too, so only an explicit launch status or
+    // an output file marks an async launch.
+    if (
+      resolveToolUseResultStatus(taskToolUseResult, 'completed') === 'running'
+      || (isRecord(taskToolUseResult) && typeof taskToolUseResult.outputFile === 'string'
+        && taskToolUseResult.outputFile.length > 0)
+    ) {
       return 'async';
     }
     // Only promote to async for launch-shaped payloads. Completed sync results
@@ -276,24 +182,19 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
 
     const parsed = parseJSONRecord(payload);
     if (parsed) {
-      if (this.#hasTerminalTaskStatus(parsed)) {
+      if (isTerminalTaskStatus(parsed)) {
         return null;
       }
-
-      const directAgentId = this.#extractAgentIdFromRecord(parsed);
-      if (directAgentId) {
-        return directAgentId;
+      const agentId = extractAgentIdFromToolUseResult(parsed);
+      if (agentId) {
+        return agentId;
       }
-
-      const taskRecord = parsed.task;
-      if (isRecord(taskRecord)) {
-        return this.#extractAgentIdFromRecord(taskRecord);
-      }
+      return isRecord(parsed.task) ? extractAgentIdFromToolUseResult(parsed.task) : null;
     }
 
     const xmlStatus = extractXMLTag(payload, 'retrieval_status')
       ?? extractXMLTag(payload, 'status');
-    if (this.#isTerminalTaskStatusValue(xmlStatus)) {
+    if (isTerminalTaskStatus({ status: xmlStatus })) {
       return null;
     }
 
@@ -301,72 +202,33 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
     return exactLineMatch?.[1] ?? null;
   }
 
-  #hasTerminalTaskStatus(value: unknown): boolean {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return false;
+  #parseAgentId(result: string): string | null {
+    const agentId = extractAgentIdFromString(result);
+    if (agentId) return agentId;
+
+    const parsed = parseJSONRecord(result);
+    if (parsed) {
+      const parsedId = extractAgentIdFromToolUseResult(parsed)
+        ?? (typeof parsed.id === 'string' && parsed.id.length > 0 ? parsed.id : null);
+      if (parsedId) return parsedId;
     }
 
-    const record = value as Record<string, unknown>;
-    const rawStatus = record.retrieval_status ?? record.status;
-    return this.#isTerminalTaskStatusValue(rawStatus);
+    // Legacy: a TaskOutput payload could name its task only by a bare 8-hex id.
+    // Ordinary result text (commit hashes, colors) must not become an agent id.
+    return isLegacyTaskOutputPayload(result) ? result.match(/\b([a-f0-9]{8})\b/)?.[1] ?? null : null;
   }
 
-  #isTerminalTaskStatusValue(rawStatus: unknown): boolean {
-    if (typeof rawStatus !== 'string') {
-      return false;
-    }
-
-    const normalized = rawStatus.toLowerCase();
-    return normalized === 'completed' || normalized === 'success' || normalized === 'error';
-  }
-
-  #extractAgentIdFromRecord(record: Record<string, unknown>): string | null {
-    const direct = record.agent_id ?? record.agentId;
-    if (typeof direct === 'string' && direct.length > 0) {
-      return direct;
-    }
-
-    const data = record.data;
-    if (!data || typeof data !== 'object' || Array.isArray(data)) {
-      return null;
-    }
-
-    const nested = (data as Record<string, unknown>).agent_id ?? (data as Record<string, unknown>).agentId;
-    return typeof nested === 'string' && nested.length > 0 ? nested : null;
-  }
-
+  // Legacy TaskOutput history compatibility; see the note at the top of this file.
   #isStillRunningResult(result: string, isError: boolean): boolean {
-    const trimmed = result?.trim() || '';
-    const payload = this.#unwrapTextPayload(trimmed);
-
-    if (isError) return false;
-    if (!trimmed) return false;
+    const payload = this.#unwrapTextPayload(result.trim());
+    if (isError || !payload) return false;
 
     const parsed = parseJSONRecord(payload);
     if (parsed) {
       const status = parsed.retrieval_status ?? parsed.status;
-      const agents = isRecord(parsed.agents) ? parsed.agents : null;
-      const hasAgents = agents !== null && Object.keys(agents).length > 0;
-
-      if (status === 'not_ready' || status === 'running' || status === 'pending') {
-        return true;
-      }
-
-      if (hasAgents && agents) {
-        const agentStatuses = Object.values(agents)
-          .map((agent) => (isRecord(agent) && typeof agent.status === 'string') ? agent.status.toLowerCase() : '');
-        const anyRunning = agentStatuses.some(s =>
-          s === 'running' || s === 'pending' || s === 'not_ready'
-        );
-        if (anyRunning) return true;
-        return false;
-      }
-
-      if (status === 'success' || status === 'completed') {
-        return false;
-      }
-
-      return false;
+      if (typeof status === 'string' && LEGACY_RUNNING_TASK_STATUSES.has(status)) return true;
+      return isRecord(parsed.agents) && Object.values(parsed.agents).some(agent => isRecord(agent)
+        && typeof agent.status === 'string' && LEGACY_RUNNING_TASK_STATUSES.has(agent.status.toLowerCase()));
     }
 
     const lowerResult = payload.toLowerCase();
@@ -374,30 +236,14 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
       return true;
     }
 
-    const xmlStatusMatch = lowerResult.match(/<status>([^<]+)<\/status>/);
-    if (xmlStatusMatch) {
-      const status = xmlStatusMatch[1].trim();
-      if (status === 'running' || status === 'pending' || status === 'not_ready') {
-        return true;
-      }
-    }
-
-    return false;
+    const xmlStatus = lowerResult.match(/<status>([^<]+)<\/status>/)?.[1].trim();
+    return xmlStatus !== undefined && LEGACY_RUNNING_TASK_STATUSES.has(xmlStatus);
   }
 
   #extractAsyncResult(result: string, agentId: string, toolUseResult?: unknown): string {
-    const structuredResult = this.#extractStructuredResult(toolUseResult);
-    const normalizedStructuredResult = this.#extractResultFromCandidateString(structuredResult);
-    if (normalizedStructuredResult) {
-      return normalizedStructuredResult;
-    }
-    if (structuredResult) {
-      return structuredResult;
-    }
-
-    const structuredText = isRecord(toolUseResult)
-      ? extractTextFromContentBlocks(toolUseResult.content, toolUseResult.agentId) : null;
-    if (structuredText !== null) return structuredText;
+    const structuredResult = this.#extractStructuredResult(toolUseResult)
+      ?? extractAgentOutputReport(toolUseResult);
+    if (structuredResult !== null) return structuredResult;
 
     const payload = this.#unwrapTextPayload(result);
 
@@ -411,64 +257,44 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
         return taskResult;
       }
 
-      const agents = isRecord(parsed.agents) ? parsed.agents : null;
-      const agentData = agents && agentId ? agents[agentId] : null;
-      if (isRecord(agentData)) {
-        const parsedResult = this.#extractResultFromCandidateString(agentData.result);
-        if (parsedResult) {
-          return parsedResult;
-        }
-        const parsedOutput = this.#extractResultFromCandidateString(agentData.output);
-        if (parsedOutput) {
-          return parsedOutput;
-        }
-        return JSON.stringify(agentData, null, 2);
+      // Legacy TaskOutput `agents` map: prefer the owned agent, else the first entry.
+      const agents = isRecord(parsed.agents) ? parsed.agents : {};
+      const agentKey = agentId && isRecord(agents[agentId]) ? agentId : Object.keys(agents)[0];
+      if (agentKey !== undefined) {
+        const agent = agents[agentKey];
+        return this.#extractResultFromTaskObject(agent) ?? JSON.stringify(agent, null, 2);
       }
 
-      if (agents) {
-        const agentIds = Object.keys(agents);
-        if (agentIds.length > 0) {
-          const firstAgent = agents[agentIds[0]];
-          if (isRecord(firstAgent)) {
-            const parsedResult = this.#extractResultFromCandidateString(firstAgent.result);
-            if (parsedResult) {
-              return parsedResult;
-            }
-            const parsedOutput = this.#extractResultFromCandidateString(firstAgent.output);
-            if (parsedOutput) {
-              return parsedOutput;
-            }
-          }
-          return JSON.stringify(firstAgent, null, 2);
-        }
-      }
-
-      const parsedResult = this.#extractResultFromCandidateString(parsed.result);
+      const parsedResult = this.#extractResultFromTaskObject(parsed);
       if (parsedResult) {
         return parsedResult;
       }
-
-      const parsedOutput = this.#extractResultFromCandidateString(parsed.output);
-      if (parsedOutput) {
-        return parsedOutput;
-      }
     }
 
-    const taggedResult = this.#extractResultFromTaggedPayload(payload);
-    if (taggedResult) {
-      return taggedResult;
+    return this.#extractResultFromTaggedPayload(payload) ?? payload;
+  }
+
+  // Legacy TaskOutput `toolUseResult` fields (`retrieval_status`, `task`, `result`, `output`).
+  #extractStructuredResult(toolUseResult: unknown): string | null {
+    if (!isRecord(toolUseResult)) {
+      return null;
     }
 
-    return payload;
+    if (toolUseResult.retrieval_status === 'error') {
+      const errorMsg = typeof toolUseResult.error === 'string' ? toolUseResult.error : 'Task retrieval failed';
+      return `Error: ${errorMsg}`;
+    }
+
+    return this.#extractResultFromTaskObject(toolUseResult.task)
+      ?? this.#extractResultFromTaskObject(toolUseResult);
   }
 
   #extractResultFromTaskObject(task: unknown): string | null {
-    if (!task || typeof task !== 'object') {
+    if (!isRecord(task)) {
       return null;
     }
-    const taskRecord = task as Record<string, unknown>;
-    return this.#extractResultFromCandidateString(taskRecord.result)
-      ?? this.#extractResultFromCandidateString(taskRecord.output);
+    return this.#extractResultFromCandidateString(task.result)
+      ?? this.#extractResultFromCandidateString(task.output);
   }
 
   #extractResultFromCandidateString(candidate: unknown): string | null {
@@ -481,53 +307,14 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
       return null;
     }
 
-    const taggedResult = this.#extractResultFromTaggedPayload(trimmed);
-    if (taggedResult) {
-      return taggedResult;
-    }
-
-    const jsonlResult = this.#extractResultFromOutputJsonl(trimmed);
-    if (jsonlResult) {
-      return jsonlResult;
-    }
-
-    return trimmed;
-  }
-
-  #parseAgentId(result: string): string | null {
-    const agentId = extractAgentIdFromString(result) ?? result.match(/\b([a-f0-9]{8})\b/)?.[1];
-    if (agentId) return agentId;
-
-    const parsed = parseJSONRecord(result);
-    if (parsed) {
-      const agentId = parsed.agent_id || parsed.agentId;
-
-      if (typeof agentId === 'string' && agentId.length > 0) {
-        return agentId;
-      }
-
-      const data = parsed.data;
-      if (isRecord(data) && typeof data.agent_id === 'string') {
-        return data.agent_id;
-      }
-
-      if (parsed.id && typeof parsed.id === 'string') {
-        return parsed.id;
-      }
-    }
-
-    return null;
+    return this.#extractResultFromTaggedPayload(trimmed)
+      ?? this.#extractResultFromOutputJsonl(trimmed)
+      ?? trimmed;
   }
 
   #inferAgentIdFromResult(result: string): string | null {
     const parsed = parseJSONRecord(result);
-    if (parsed) {
-      const agents = isRecord(parsed.agents) ? parsed.agents : null;
-      if (agents) {
-        return Object.keys(agents)[0] ?? null;
-      }
-    }
-    return null;
+    return parsed && isRecord(parsed.agents) ? Object.keys(parsed.agents)[0] ?? null : null;
   }
 
   #unwrapTextPayload(raw: string): string {
@@ -579,6 +366,7 @@ export class ClaudeTaskResultInterpreter implements ProviderTaskResultInterprete
     return extractFinalResultFromSubagentJSONL(fullOutput);
   }
 
+  // Legacy TaskOutput truncation marker pointing at a temp file.
   #extractFullOutputPath(content: string): string | null {
     const truncatedPattern = /\[Truncated\.\s*Full output:\s*([^\]\n]+)\]/i;
     const match = content.match(truncatedPattern);

@@ -1,3 +1,9 @@
+/*
+ * The partial-JSON tokenizer and repair below are adapted from @anthropic-ai/sdk's vendored
+ * copy (src/_vendor/partial-json-parser/parser.ts, MIT) of the npm package partial-json-parser,
+ * which that SDK uses to preview streamed tool input.
+ */
+
 type JSONTokenType = 'brace' | 'bracket' | 'separator' | 'delimiter' | 'string' | 'number' | 'name';
 
 type JSONToken = {
@@ -5,17 +11,17 @@ type JSONToken = {
   value: string;
 };
 
-type ToolUseSnapshot = {
+export type ToolUseFields = {
   id: string;
   name: string;
   input: Record<string, unknown>;
-  partialJson: string;
 };
 
-type ToolUseFields = {
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
+type ToolUseSnapshot = ToolUseFields & {
+  partialJson: string;
+  /** Lexical position at the end of partialJson, carried across deltas. */
+  inString: boolean;
+  escaped: boolean;
 };
 
 export interface TransformStreamState {
@@ -28,12 +34,10 @@ export interface TransformStreamState {
 
 const MAIN_AGENT_STREAM = '__main__';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function normalizeToolInput(value: unknown): Record<string, unknown> {
-  return isRecord(value) ? value : {};
+export function normalizeToolInput(value: unknown): Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 function getContentBlockKey(parentToolUseId: string | null, index: number): string {
@@ -266,6 +270,32 @@ function parsePartialToolInput(input: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Scans only the new delta and reports whether it can change the repaired parse. Text inside an
+ * unterminated string and whitespace between tokens are dropped by the tokenizer, so deltas made
+ * only of those leave the snapshot unchanged and need no reparse of the accumulated buffer.
+ */
+function consumeDelta(snapshot: ToolUseSnapshot, delta: string): boolean {
+  let changesParse = false;
+  for (const char of delta) {
+    if (snapshot.inString) {
+      if (snapshot.escaped) {
+        snapshot.escaped = false;
+      } else if (char === '\\') {
+        snapshot.escaped = true;
+      } else if (char === '"') {
+        snapshot.inString = false;
+        changesParse = true;
+      }
+    } else if (char === '"') {
+      snapshot.inString = true;
+    } else if (!/\s/.test(char)) {
+      changesParse = true;
+    }
+  }
+  return changesParse;
+}
+
 export function createTransformStreamState(): TransformStreamState {
   const activeToolUses = new Map<string, ToolUseSnapshot>();
 
@@ -273,8 +303,9 @@ export function createTransformStreamState(): TransformStreamState {
     registerToolUse(parentToolUseId, index, toolUse) {
       activeToolUses.set(getContentBlockKey(parentToolUseId, index), {
         ...toolUse,
-        input: { ...toolUse.input },
         partialJson: '',
+        inString: false,
+        escaped: false,
       });
     },
     applyInputJsonDelta(parentToolUseId, index, partialJson) {
@@ -284,21 +315,17 @@ export function createTransformStreamState(): TransformStreamState {
       }
 
       snapshot.partialJson += partialJson;
+      if (!consumeDelta(snapshot, partialJson)) {
+        return null;
+      }
       const parsedInput = parsePartialToolInput(snapshot.partialJson);
       if (parsedInput === null) {
         return null;
       }
 
-      snapshot.input = {
-        ...snapshot.input,
-        ...parsedInput,
-      };
-
-      return {
-        id: snapshot.id,
-        name: snapshot.name,
-        input: { ...snapshot.input },
-      };
+      // Replaced rather than mutated, so emitted inputs stay stable after later deltas.
+      snapshot.input = { ...snapshot.input, ...parsedInput };
+      return { id: snapshot.id, name: snapshot.name, input: snapshot.input };
     },
     clearContentBlock(parentToolUseId, index) {
       activeToolUses.delete(getContentBlockKey(parentToolUseId, index));

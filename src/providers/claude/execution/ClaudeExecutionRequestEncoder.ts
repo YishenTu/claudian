@@ -29,16 +29,12 @@ import {
 } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import {
-  getEnhancedPath,
-  parseEnvironmentVariables,
-} from '../../../utils/env';
-import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
 } from '../../../utils/session';
 import { findEnabledClaudeModelOption } from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
-import { createCustomSpawnFunction } from '../runtime/customSpawn';
+import { buildClaudeLaunchOptions } from '../runtime/probeClaudeRuntime';
 import {
   DISABLED_BUILTIN_SUBAGENTS,
   DISABLED_BUILTIN_TASK_TOOLS,
@@ -47,7 +43,6 @@ import {
 import {
   type ClaudeResponseStyle,
   getClaudeProviderSettings,
-  resolveClaudeSettingSources,
 } from '../settings';
 import {
   type EffortLevel,
@@ -108,11 +103,6 @@ export class ClaudeExecutionRequestEncoder {
       throw new Error('Claude CLI not found');
     }
 
-    const customEnv = parseEnvironmentVariables(
-      this.deps.host.getActiveEnvironmentVariables('claude'),
-    );
-    const enhancedPath = getEnhancedPath(customEnv.PATH, cliPath);
-
     const settings = this.#resolveSettings(request);
     const claudeSettings = getClaudeProviderSettings(settings);
     const selected = findEnabledClaudeModelOption(this.deps.host.settings, settings.model);
@@ -154,7 +144,12 @@ export class ClaudeExecutionRequestEncoder {
           : undefined,
       });
     const options: Options = {
-      cwd: sessionConfig.vaultWorkingDirectory,
+      ...buildClaudeLaunchOptions(
+        this.deps.host,
+        sessionConfig.vaultWorkingDirectory,
+        cliPath,
+        { settings },
+      ),
       systemPrompt: {
         type: 'custom',
         prompt: systemPrompt,
@@ -165,18 +160,8 @@ export class ClaudeExecutionRequestEncoder {
       settings: { outputStyle: claudeSettings.responseStyle },
       thinking: { type: 'adaptive' },
       abortController,
-      pathToClaudeCodeExecutable: cliPath,
-      env: {
-        ...process.env,
-        ...customEnv,
-        PATH: enhancedPath,
-      },
       permissionMode: sdkPermissionMode,
       allowDangerouslySkipPermissions: true,
-      settingSources: resolveClaudeSettingSources(
-        claudeSettings.loadUserSettings,
-      ),
-      spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
       // Auto mode stays available so safe-mode switches remain live setters.
       extraArgs: {
         'enable-auto-mode': null,
@@ -261,10 +246,7 @@ export class ClaudeExecutionRequestEncoder {
     request: ProviderExecutionRequest,
     replayConversationHistory: boolean,
   ): string {
-    let prompt = request.input
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('\n\n');
+    let prompt = getRequestInputText(request);
     const context = request.context;
     if (context?.linkedContent) {
       prompt = context.linkedContent.content === undefined
@@ -298,6 +280,14 @@ export class ClaudeExecutionRequestEncoder {
       [...history],
     );
   }
+}
+
+/** The user's own text, before context blocks or history are appended. */
+export function getRequestInputText(request: ProviderExecutionRequest): string {
+  return request.input
+    .filter((block) => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n\n');
 }
 
 function encodeImages(request: ProviderExecutionRequest): ImageAttachment[] {
@@ -345,10 +335,8 @@ function resolveToolPolicy(request: ProviderExecutionRequest): {
 function createReadOnlyHook(): HookCallbackMatcher {
   return {
     hooks: [async (hookInput) => {
-      const record = hookInput as unknown as Record<string, unknown>;
-      const toolName = isRecord(record)
-        && typeof record.tool_name === 'string'
-        ? record.tool_name
+      const toolName = hookInput.hook_event_name === 'PreToolUse'
+        ? hookInput.tool_name
         : '';
       if (isReadOnlyTool(toolName)) {
         return { continue: true };
@@ -373,8 +361,4 @@ function isPermissionMode(value: unknown): value is PermissionMode {
 
 function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values.filter((value) => value.trim().length > 0))];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

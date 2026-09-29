@@ -35,9 +35,7 @@ export interface ExecuteClaudeRewindDeps {
   assistantMessageId: string | undefined;
   mode: ChatRewindMode;
   rewindFiles: (userMessageId: string, dryRun?: boolean) => Promise<RewindFilesResult>;
-  closePersistentQuery: (reason: string) => void;
-  setPendingResumeAt: (assistantMessageId: string) => void;
-  resetSession: () => void;
+  closePersistentQuery: () => void;
   vaultPath: string | null;
 }
 
@@ -75,6 +73,10 @@ async function copyDir(from: string, to: string): Promise<void> {
   }
 }
 
+/**
+ * SDK file checkpointing performs the rewind, but a rewind that throws or declines
+ * after partial writes leaves no SDK-side undo; this snapshot restores the pre-rewind state.
+ */
 export async function createClaudeRewindBackup(
   filesChanged: string[] | undefined,
   vaultPath: string | null,
@@ -171,12 +173,7 @@ export async function executeClaudeRewind(
   deps: ExecuteClaudeRewindDeps,
 ): Promise<ChatRewindResult> {
   if (deps.mode === 'conversation') {
-    if (deps.assistantMessageId) {
-      deps.setPendingResumeAt(deps.assistantMessageId);
-      deps.closePersistentQuery('conversation rewind');
-    } else {
-      deps.resetSession();
-    }
+    if (deps.assistantMessageId) deps.closePersistentQuery();
     return { canRewind: true, filesChanged: [] };
   }
 
@@ -191,16 +188,11 @@ export async function executeClaudeRewind(
     const result = await deps.rewindFiles(userMessageId);
     if (!result.canRewind) {
       await backup?.restore();
-      deps.closePersistentQuery('rewind failed');
+      deps.closePersistentQuery();
       return result;
     }
 
-    if (deps.assistantMessageId) {
-      deps.setPendingResumeAt(deps.assistantMessageId);
-      deps.closePersistentQuery('rewind');
-    } else {
-      deps.resetSession();
-    }
+    if (deps.assistantMessageId) deps.closePersistentQuery();
     return {
       ...result,
       filesChanged: preview.filesChanged,
@@ -211,14 +203,14 @@ export async function executeClaudeRewind(
     try {
       await backup?.restore();
     } catch (rollbackError) {
-      deps.closePersistentQuery('rewind failed');
+      deps.closePersistentQuery();
       throw new Error(
         `Rewind failed and files could not be fully restored: ${rollbackError instanceof Error ? rollbackError.message : 'Unknown error'}`,
         { cause: rollbackError },
       );
     }
 
-    deps.closePersistentQuery('rewind failed');
+    deps.closePersistentQuery();
     throw new Error(
       `Rewind failed but files were restored: ${error instanceof Error ? error.message : 'Unknown error'}`,
       { cause: error },

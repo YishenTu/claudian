@@ -12,6 +12,11 @@ export class ClaudeResponseOwnership {
     pending: boolean;
     main: boolean;
   }>();
+  // Pending main-scope tools per channel; hasPending runs for every SDK message.
+  private readonly pendingMainTools: Record<ClaudeExecutionEventChannel, number> = {
+    requested: 0,
+    background: 0,
+  };
 
   current(requested: boolean): ClaudeExecutionEventChannel {
     const stream = this.streams.get('main');
@@ -25,7 +30,7 @@ export class ClaudeResponseOwnership {
   hasPending(channel: ClaudeExecutionEventChannel): boolean {
     // Async child streams must not hold ownership of the main response.
     return this.streams.get('main') === channel
-      || [...this.tools.values()].some(tool => tool.channel === channel && tool.main && tool.pending);
+      || this.pendingMainTools[channel] > 0;
   }
 
   toolChannel(toolId: string): ClaudeExecutionEventChannel | undefined {
@@ -88,9 +93,12 @@ export class ClaudeResponseOwnership {
       if (normalized.type !== 'output') continue;
       const event = normalized.event;
       if (event.type === 'tool_started' && !this.tools.has(event.toolCallId)) {
-        this.tools.set(event.toolCallId, { channel, pending: true, main: event.toolScope.kind === 'main' });
+        const main = event.toolScope.kind === 'main';
+        this.tools.set(event.toolCallId, { channel, pending: true, main });
+        if (main) this.pendingMainTools[channel] += 1;
       } else if (event.type === 'tool_completed') {
         const tool = this.tools.get(event.toolCallId);
+        if (tool?.pending && tool.main) this.pendingMainTools[tool.channel] -= 1;
         if (tool) tool.pending = false;
       }
     }
@@ -101,6 +109,7 @@ export class ClaudeResponseOwnership {
     for (const [key, owner] of this.streams) if (owner === channel) this.streams.delete(key);
     for (const [key, owner] of this.messages) if (owner === channel) this.messages.delete(key);
     for (const [key, tool] of this.tools) if (tool.channel === channel) this.tools.delete(key);
+    this.pendingMainTools[channel] = 0;
   }
 }
 

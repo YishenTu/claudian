@@ -1,16 +1,14 @@
 import { selectModelMetadata } from '../../core/providers/models/selectedModelMetadata';
 import { getProviderConfig } from '../../core/providers/providerConfig';
-import { findClaudeModelOption, getClaudeVisibleModelIds } from './modelOptions';
+import { resolveClaudeVisibleModels } from './modelOptions';
+import { toClaudeRuntimeModelId } from './modelSelection';
 import { getClaudeProviderSettings } from './settings';
 
 export function projectClaudeModelSettings(settings: Record<string, unknown>): Record<string, unknown> {
   const current = getClaudeProviderSettings(settings);
-  const visibleModels = getClaudeVisibleModelIds(settings);
-  const selected = new Set(visibleModels);
-  for (const id of visibleModels) {
-    const model = findClaudeModelOption(current.discoveredModels, id);
-    if (model) selected.add(model.value);
-  }
+  const resolved = resolveClaudeVisibleModels(settings);
+  const visibleModels = resolved.map(({ id }) => id);
+  const selected = new Set(resolved.flatMap(({ id, option }) => option ? [id, toClaudeRuntimeModelId(option.value)] : [id]));
   const selectedModels = current.discoveredModels.filter(model => selected.has(model.value)
     || (model.resolvedModel !== undefined && selected.has(model.resolvedModel)));
   const aliasIds = new Set([...visibleModels, ...selectedModels.map(model => model.value)]);

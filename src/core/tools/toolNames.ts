@@ -1,3 +1,5 @@
+// Legacy history compatibility (2026-09-29, SDK 0.3.283): "the TaskOutput tool was removed",
+// so only transcripts recorded before the removal contain it.
 export const TOOL_AGENT_OUTPUT = 'TaskOutput' as const;
 export const TOOL_ASK_USER_QUESTION = 'AskUserQuestion' as const;
 export const TOOL_BASH = 'Bash' as const;

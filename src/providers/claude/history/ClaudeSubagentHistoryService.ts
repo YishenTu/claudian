@@ -1,5 +1,4 @@
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import { ProviderSettingsCoordinator } from '../../../core/providers/ProviderSettingsCoordinator';
 import type {
   ProviderHistoryPathContext,
   ProviderSubagentHistoryRequest,
@@ -41,10 +40,6 @@ export class ClaudeSubagentHistoryService implements ProviderSubagentHistoryServ
     return {
       environment: { ...process.env, ...customEnvironment },
       hostPlatform: process.platform,
-      settings: ProviderSettingsCoordinator.getProviderSettingsSnapshot(
-        this.host.settings,
-        'claude',
-      ),
       vaultPath,
     };
   }

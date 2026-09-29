@@ -1,4 +1,5 @@
 import { TextDecoder, TextEncoder } from 'node:util';
+import { deserialize, serialize } from 'node:v8';
 
 import type * as JestAxe from 'jest-axe';
 
@@ -18,6 +19,13 @@ const testWindow = globalThis as TestWindow;
 
 if (!globalThis.TextEncoder) {
   Object.assign(globalThis, { TextDecoder, TextEncoder });
+}
+
+// jsdom omits Node's structuredClone; V8 serialization implements the same algorithm.
+if (typeof globalThis.structuredClone !== 'function') {
+  Object.assign(globalThis, {
+    structuredClone: <T>(value: T): T => deserialize(serialize(value)) as T,
+  });
 }
 
 if (!testWindow.requestAnimationFrame) {

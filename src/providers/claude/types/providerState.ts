@@ -17,13 +17,21 @@ export function getClaudeState(
   return (providerState ?? {});
 }
 
+/** A fork that has not started its own native session yet still resumes from its source session. */
+function getPendingForkSource(
+  conversation: Pick<Conversation, 'sessionId' | 'providerState'>,
+): ForkSource | undefined {
+  const state = getClaudeState(conversation.providerState);
+  return state.forkSource && !state.providerSessionId && !conversation.sessionId
+    ? state.forkSource
+    : undefined;
+}
+
 export function getClaudeConversationSessionIds(conversation: Pick<Conversation, 'sessionId' | 'providerState'>): string[] {
   const state = getClaudeState(conversation.providerState);
-  const isPendingFork = !!state.forkSource
-    && !state.providerSessionId
-    && !conversation.sessionId;
-  if (isPendingFork) {
-    return [state.forkSource!.sessionId];
+  const pendingForkSource = getPendingForkSource(conversation);
+  if (pendingForkSource) {
+    return [pendingForkSource.sessionId];
   }
 
   return [...new Set([
@@ -34,9 +42,7 @@ export function getClaudeConversationSessionIds(conversation: Pick<Conversation,
 
 export function clearClaudeResumeState(conversation: Conversation): boolean {
   const providerState = { ...getClaudeState(conversation.providerState) };
-  const isPendingFork = !!providerState.forkSource
-    && !providerState.providerSessionId
-    && !conversation.sessionId;
+  const pendingForkSource = getPendingForkSource(conversation);
   const hadResumeState = conversation.sessionId != null
     || typeof providerState.providerSessionId === 'string'
     || providerState.forkSource !== undefined;
@@ -51,8 +57,8 @@ export function clearClaudeResumeState(conversation: Conversation): boolean {
   } else {
     delete providerState.previousProviderSessionIds;
   }
-  if (isPendingFork) {
-    conversation.resumeAtMessageId = providerState.forkSource!.resumeAt;
+  if (pendingForkSource) {
+    conversation.resumeAtMessageId = pendingForkSource.resumeAt;
   }
 
   conversation.sessionId = null;

@@ -24,7 +24,7 @@ export const DEFAULT_CLAUDE_MODELS: { value: ClaudeModel; label: string; descrip
 /** Effort levels for adaptive thinking models. */
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
-export const EFFORT_LEVEL_VALUES: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+const EFFORT_LEVEL_VALUES: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 export function isEffortLevel(value: unknown): value is EffortLevel {
   return typeof value === 'string'

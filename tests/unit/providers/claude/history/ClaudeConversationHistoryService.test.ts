@@ -2,7 +2,9 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import type { Conversation } from '@/core/types';
+import { testTime } from '@test/helpers/testClock';
+
+import type { Conversation, ToolCallInfo } from '@/core/types';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import type { SDKSessionLocation } from '@/providers/claude/history/sdkSessionPaths';
@@ -32,7 +34,7 @@ describe('ClaudeConversationHistoryService', () => {
         createConversation(),
         '/vault',
       )).resolves.toBe('missing');
-      expect(availabilitySpy).toHaveBeenCalledWith('/vault', 'session-1');
+      expect(availabilitySpy).toHaveBeenCalledWith('/vault', 'session-1', undefined);
 
       availabilitySpy.mockRestore();
     });
@@ -83,7 +85,7 @@ describe('ClaudeConversationHistoryService', () => {
         }),
         '/vault',
       )).resolves.toBe('missing');
-      expect(availabilitySpy).toHaveBeenCalledWith('/vault', 'source-session');
+      expect(availabilitySpy).toHaveBeenCalledWith('/vault', 'source-session', undefined);
 
       availabilitySpy.mockRestore();
     });
@@ -204,6 +206,95 @@ describe('ClaudeConversationHistoryService', () => {
 
       locationsSpy.mockRestore();
       modelSpy.mockRestore();
+    });
+  });
+
+  describe('conversation open without a stored model', () => {
+    it.each([false, true])('parses the transcript once unless it changes before hydration (changed: %s)', async (changed) => {
+      const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-model-read-'));
+      const vaultPath = path.join(configDir, 'vault');
+      const pathContext = { environment: { CLAUDE_CONFIG_DIR: configDir }, vaultPath };
+      const sessionDir = path.join(historyStore.getSDKProjectsPath(pathContext), historyStore.encodeVaultPathForSDK(vaultPath));
+      const sessionPath = path.join(sessionDir, 'session-1.jsonl');
+      const entry = (value: Record<string, unknown>) => JSON.stringify(value);
+      await fs.mkdir(sessionDir, { recursive: true });
+      await fs.writeFile(sessionPath, [
+        entry({ type: 'user', uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', message: { content: 'Question' } }),
+        entry({ type: 'assistant', uuid: 'a1', parentUuid: 'u1', timestamp: '2026-01-01T00:00:01Z',
+          message: { model: 'claude-opus-4-6', content: [{ type: 'text', text: 'Answer' }] } }),
+      ].join('\n'));
+      // Spy on the module object that the history reader's namespace import delegates to.
+      const readSpy = jest.spyOn(jest.requireActual<typeof fs>('fs/promises'), 'readFile');
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation();
+
+      try {
+        // The repository hands each call its own copy of the conversation.
+        await expect(service.recoverConversationModelSelection(structuredClone(conversation), vaultPath, pathContext))
+          .resolves.toBe('claude-code/claude-opus-4-6');
+        if (changed) {
+          await fs.appendFile(sessionPath, '\n' + entry({ type: 'user', uuid: 'u2', parentUuid: 'a1',
+            timestamp: '2026-01-01T00:00:02Z', message: { content: 'Follow-up' } }));
+        }
+        const history = await service.hydrateConversationHistory(structuredClone(conversation), vaultPath, pathContext);
+
+        expect(history.messages?.map(message => message.content))
+          .toEqual(changed ? ['Question', 'Answer', 'Follow-up'] : ['Question', 'Answer']);
+        expect(readSpy.mock.calls.filter(([file]) => file === sessionPath)).toHaveLength(changed ? 2 : 1);
+      } finally {
+        readSpy.mockRestore();
+        await fs.rm(configDir, { recursive: true, force: true });
+      }
+    });
+
+    it('shares relocated session lookups between copies of the same session state only', async () => {
+      const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-relocated-open-'));
+      const vaultPath = path.join(configDir, 'vault');
+      const pathContext = { environment: { CLAUDE_CONFIG_DIR: configDir }, vaultPath };
+      const projectsPath = historyStore.getSDKProjectsPath(pathContext);
+      const writeSession = async (project: string, sessionId: string, text: string) => {
+        const sessionPath = path.join(projectsPath, project, `${sessionId}.jsonl`);
+        await fs.mkdir(path.dirname(sessionPath), { recursive: true });
+        await fs.writeFile(sessionPath, [
+          JSON.stringify({ type: 'user', uuid: `${sessionId}-u`, timestamp: testTime(), message: { content: text } }),
+          JSON.stringify({ type: 'assistant', uuid: `${sessionId}-a`, parentUuid: `${sessionId}-u`,
+            timestamp: testTime({ seconds: 1 }), message: { model: 'claude-opus-4-6', content: [{ type: 'text', text: 'Answer' }] } }),
+        ].join('\n'));
+        return sessionPath;
+      };
+      const sessionPath = await writeSession('old-project', 'session-1', 'Relocated');
+      await writeSession('other-project', 'session-2', 'Replacement');
+      const actualFs = jest.requireActual<typeof fs>('fs/promises');
+      const readdirSpy = jest.spyOn(actualFs, 'readdir');
+      const readSpy = jest.spyOn(actualFs, 'readFile');
+      const rootScans = () => readdirSpy.mock.calls.filter(([directory]) => directory === projectsPath).length;
+      const service = new ClaudeConversationHistoryService();
+      const conversation = createConversation();
+
+      try {
+        // The repository hands each call its own copy of the conversation.
+        await expect(service.getConversationSessionAvailability(structuredClone(conversation), vaultPath, pathContext))
+          .resolves.toBe('relocated');
+        await expect(service.recoverConversationModelSelection(structuredClone(conversation), vaultPath, pathContext))
+          .resolves.toBe('claude-code/claude-opus-4-6');
+        const history = await service.hydrateConversationHistory(structuredClone(conversation), vaultPath, pathContext);
+
+        expect(history.messages?.map(message => message.content)).toEqual(['Relocated', 'Answer']);
+        expect(rootScans()).toBe(1);
+        expect(readSpy.mock.calls.filter(([file]) => file === sessionPath)).toHaveLength(1);
+
+        const replaced = await service.hydrateConversationHistory(
+          createConversation({ sessionId: 'session-2' }),
+          vaultPath,
+          pathContext,
+        );
+        expect(replaced.messages?.map(message => message.content)).toEqual(['Replacement', 'Answer']);
+        expect(rootScans()).toBe(2);
+      } finally {
+        readdirSpy.mockRestore();
+        readSpy.mockRestore();
+        await fs.rm(configDir, { recursive: true, force: true });
+      }
     });
   });
 
@@ -350,7 +441,7 @@ describe('ClaudeConversationHistoryService', () => {
       expect(recoverySpy).toHaveBeenCalledWith('/vault', {
         createdAt: 1_000,
         lastActivityAt: 2_000,
-      });
+      }, undefined);
       expect(conversation).toMatchObject({
         sessionId: 'recovered-session',
         providerState: { providerSessionId: 'recovered-session' },
@@ -451,7 +542,7 @@ describe('ClaudeConversationHistoryService', () => {
       await service.getConversationSessionAvailability(conversation, '/vault');
       Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
 
-      expect(loadSpy).toHaveBeenCalledWith('/vault', 'session-1', undefined);
+      expect(loadSpy).toHaveBeenCalledWith('/vault', 'session-1', undefined, undefined, undefined);
 
       currentLocationSpy.mockRestore();
       locationsSpy.mockRestore();
@@ -482,11 +573,65 @@ describe('ClaudeConversationHistoryService', () => {
         'session-1',
         undefined,
         '/old-project/session-1.jsonl',
+        undefined,
       );
 
       currentLocationSpy.mockRestore();
       locationsSpy.mockRestore();
       loadSpy.mockRestore();
+    });
+
+    it('loads cached async subagent sidecars concurrently and searches segments in order', async () => {
+      const service = new ClaudeConversationHistoryService();
+      const subagent = (agentId: string) => ({
+        id: `task-${agentId}`, description: agentId, mode: 'async' as const, status: 'completed' as const,
+        asyncStatus: 'completed' as const, agentId, isExpanded: false, toolCalls: [],
+      });
+      const conversation = createConversation({
+        sessionId: 'session-current',
+        providerState: {
+          previousProviderSessionIds: ['session-previous'],
+          providerSessionId: 'session-current',
+          subagentData: { 'task-agent-a': subagent('agent-a'), 'task-agent-b': subagent('agent-b') },
+        },
+      });
+      const settle = async () => {
+        for (let turn = 0; turn < 5; turn++) await new Promise(resolve => setTimeout(resolve, 0));
+      };
+      const locationSpy = jest.spyOn(historyStore, 'locateSDKSessions')
+        .mockImplementation(async (_vaultPath, sessionIds) => new Map(
+          sessionIds.map(sessionId => [sessionId, { availability: 'available' as const, sessionPath: `/${sessionId}.jsonl` }]),
+        ));
+      const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
+        .mockResolvedValue({ messages: [], skippedLines: 0 });
+      const pending = new Map<string, (toolCalls: ToolCallInfo[]) => void>();
+      const sidecarSpy = jest.spyOn(historyStore, 'loadSubagentToolCalls')
+        .mockImplementation((_vaultPath, sessionId, agentId) => new Promise(resolve => {
+          pending.set(`${sessionId}:${agentId}`, resolve);
+        }));
+
+      try {
+        const hydration = service.hydrateConversationHistory(conversation, '/vault');
+        await settle();
+        expect([...pending.keys()]).toEqual(['session-previous:agent-a', 'session-previous:agent-b']);
+
+        pending.get('session-previous:agent-a')!([{ id: 'a-tool', name: 'Read', input: {}, status: 'completed' }]);
+        pending.get('session-previous:agent-b')!([]);
+        await settle();
+        expect([...pending.keys()]).toContain('session-current:agent-b');
+        pending.get('session-current:agent-b')!([{ id: 'b-tool', name: 'Grep', input: {}, status: 'completed' }]);
+
+        const history = await hydration;
+        const toolCallIds = (id: string) => history.messages?.flatMap(message => message.toolCalls ?? [])
+          .find(toolCall => toolCall.id === id)?.subagent?.toolCalls.map(toolCall => toolCall.id);
+        expect(toolCallIds('task-agent-a')).toEqual(['a-tool']);
+        expect(toolCallIds('task-agent-b')).toEqual(['b-tool']);
+        expect(sidecarSpy).toHaveBeenCalledTimes(3);
+      } finally {
+        locationSpy.mockRestore();
+        loadSpy.mockRestore();
+        sidecarSpy.mockRestore();
+      }
     });
 
     it('replays every relocated session segment from its discovered path', async () => {
@@ -526,12 +671,14 @@ describe('ClaudeConversationHistoryService', () => {
         'session-previous',
         undefined,
         '/old-project/session-previous.jsonl',
+        undefined,
       );
       expect(loadSpy).toHaveBeenCalledWith(
         '/vault',
         'session-current',
         undefined,
         '/old-project/session-current.jsonl',
+        undefined,
       );
 
       locationSpy.mockRestore();

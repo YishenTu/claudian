@@ -1,6 +1,6 @@
 import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 
-export const LEGACY_MCP_CONFIG_PATH = '.claude/mcp.json';
+const LEGACY_MCP_CONFIG_PATH = '.claude/mcp.json';
 
 export async function deleteLegacyMCPConfig(
   adapter: VaultFileAdapter,

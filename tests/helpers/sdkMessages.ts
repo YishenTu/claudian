@@ -56,8 +56,6 @@ export type AssistantMessageInput = {
 
 export type UserMessageInput = {
   type: 'user';
-  _blocked?: boolean;
-  _blockReason?: string;
 } & Record<string, unknown>;
 
 export type StreamEventMessageInput = {
@@ -265,17 +263,8 @@ export function buildSDKMessage(input: SDKTestMessageInput): SDKMessage {
       return buildCompactBoundaryMessage(input);
     case 'assistant':
       return buildAssistantMessage(input);
-    case 'user': {
-      const message = buildUserMessage(input);
-      if (input._blocked === true) {
-        return {
-          ...message,
-          _blocked: true,
-          _blockReason: input._blockReason ?? 'Blocked by hook',
-        } as SDKMessage;
-      }
-      return message;
-    }
+    case 'user':
+      return buildUserMessage(input);
     case 'stream_event':
       return buildStreamEventMessage(input);
     case 'result':

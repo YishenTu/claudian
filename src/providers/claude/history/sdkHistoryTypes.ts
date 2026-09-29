@@ -1,3 +1,5 @@
+import type { SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
+
 import type { AsyncSubagentStatus, ChatMessage } from '../../../core/types';
 
 export interface SDKSessionReadResult {
@@ -8,7 +10,7 @@ export interface SDKSessionReadResult {
 
 /** Stored in session JSONL files. Based on Claude Agent SDK internal format. */
 export interface SDKNativeMessage {
-  type: 'user' | 'assistant' | 'system' | 'result' | 'file-history-snapshot' | 'queue-operation' | 'attachment';
+  type: 'user' | 'assistant' | 'system' | 'result' | 'file-history-snapshot' | 'queue-operation' | 'attachment' | 'progress';
   attachment?: {
     type?: string;
     prompt?: string | SDKNativeContentBlock[];
@@ -22,12 +24,14 @@ export interface SDKNativeMessage {
   requestId?: string;
   message?: {
     id?: string;
+    /** Persisted transcripts are untrusted; readers validate the count. */
     usage?: { output_tokens?: unknown };
     role?: string;
     content?: string | SDKNativeContentBlock[];
     model?: string;
-    stop_reason?: string | null;
+    stop_reason?: SDKAssistantMessage['message']['stop_reason'];
   };
+  /** Includes transcript-only subtypes such as `turn_duration` that the SDK message types omit. */
   subtype?: string;
   durationMs?: number;
   duration_ms?: number;

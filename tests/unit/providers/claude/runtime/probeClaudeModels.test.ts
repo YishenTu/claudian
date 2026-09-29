@@ -1,69 +1,44 @@
-import type { Options } from '@anthropic-ai/claude-agent-sdk';
-
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { probeClaudeModels } from '@/providers/claude/runtime/probeClaudeModels';
+import { getVaultPath } from '@/utils/path';
 
 const mockQuery = jest.fn();
 jest.mock('@/providers/claude/loadClaudeAgentSDK', () => ({ loadClaudeAgentQuery: async () => mockQuery }));
-jest.mock('@/utils/path', () => ({ getVaultPath: () => '/vault' }));
-jest.mock('@/utils/env', () => ({
-  ...jest.requireActual('@/utils/env'), getEnhancedPath: () => '/bin',
-}));
+jest.mock('@/utils/path', () => ({ ...jest.requireActual('@/utils/path'), getVaultPath: jest.fn(() => '/vault') }));
 
-function host(loadUserSettings = true): ProviderHost {
+function host(): ProviderHost {
   return {
     app: {},
-    settings: { model: 'selected-chat-model', providerConfigs: { claude: { loadUserSettings } } },
+    settings: { providerConfigs: { claude: {} } },
     getResolvedProviderCliPath: jest.fn().mockResolvedValue('/bin/claude'),
-    getActiveEnvironmentVariables: () => 'ANTHROPIC_BASE_URL=https://gateway.example\nANTHROPIC_MODEL=my-model',
+    getActiveEnvironmentVariables: () => '',
   } as unknown as ProviderHost;
 }
 
 describe('Claude SDK model probe', () => {
-  afterEach(() => { jest.useRealTimers(); jest.clearAllMocks(); });
+  afterEach(() => { jest.clearAllMocks(); });
 
-  it.each([true, false])('uses native settings sources (user settings: %s) without overriding the configured model', async enabled => {
-    const close = jest.fn();
+  it('maps reported models, retaining known effort levels and dropping malformed ones', async () => {
     mockQuery.mockReturnValue({
-      supportedModels: async () => [{ value: 'my-model', displayName: 'Gateway model', description: 'Configured by SDK' }],
-      close,
-    });
-    expect(await probeClaudeModels(host(enabled))).toEqual([
-      { value: 'my-model', label: 'Gateway model', description: 'Configured by SDK', supportedEffortLevels: [], reasoningMetadataResolved: true },
-    ]);
-    const { options, prompt } = mockQuery.mock.calls[0][0] as { options: Options; prompt: AsyncGenerator };
-    expect(options.model).toBeUndefined();
-    expect(options.settingSources).toEqual(enabled ? ['user', 'project', 'local'] : ['project', 'local']);
-    expect(options.env).toMatchObject({ ANTHROPIC_BASE_URL: 'https://gateway.example', ANTHROPIC_MODEL: 'my-model' });
-    expect(options.persistSession).toBe(false);
-    expect(await prompt.next()).toEqual({ done: true, value: undefined });
-    expect(close).toHaveBeenCalledTimes(1);
-  });
-
-  it('retains reported effort levels and drops malformed ones', async () => {
-    mockQuery.mockReturnValue({
-      supportedModels: async () => [
-        { value: 'opus', displayName: 'Opus', description: '', reasoningMetadataResolved: true, supportedEffortLevels: ['low', 'high', 'max'] },
-        { value: 'haiku', displayName: 'Haiku', description: '', reasoningMetadataResolved: true, supportedEffortLevels: [] },
-        { value: 'other', displayName: 'Other', description: '', reasoningMetadataResolved: true, supportedEffortLevels: ['low', 'turbo', 7] },
-      ],
+      initializationResult: async () => ({ models: [
+        { value: 'opus', displayName: 'Opus', description: 'Capable', resolvedModel: 'claude-opus-5-5', supportedEffortLevels: ['low', 'high', 'max'] },
+        { value: 'haiku', displayName: 'Haiku', description: '' },
+        { value: 'my-model', displayName: '', description: 'Configured by SDK', resolvedModel: '', supportedEffortLevels: ['low', 'turbo', 7] },
+      ] }),
+      supportedCommands: async () => [],
+      next: async () => ({ done: false, value: { type: 'system', subtype: 'init' } }),
       close: jest.fn(),
     });
     expect(await probeClaudeModels(host())).toEqual([
-      { value: 'opus', label: 'Opus', description: '', reasoningMetadataResolved: true, supportedEffortLevels: ['low', 'high', 'max'] },
+      { value: 'opus', label: 'Opus', description: 'Capable', resolvedModel: 'claude-opus-5-5', reasoningMetadataResolved: true, supportedEffortLevels: ['low', 'high', 'max'] },
       { value: 'haiku', label: 'Haiku', description: '', reasoningMetadataResolved: true, supportedEffortLevels: [] },
-      { value: 'other', label: 'Other', description: '', reasoningMetadataResolved: true, supportedEffortLevels: ['low'] },
+      { value: 'my-model', label: 'my-model', description: 'Configured by SDK', reasoningMetadataResolved: true, supportedEffortLevels: ['low'] },
     ]);
   });
 
-  it('cancels and closes an in-flight SDK process', async () => {
-    const close = jest.fn();
-    mockQuery.mockReturnValue({ supportedModels: () => new Promise(() => {}), close });
-    const controller = new AbortController();
-    const pending = probeClaudeModels(host(), controller.signal);
-    await Promise.resolve(); await Promise.resolve();
-    controller.abort();
-    await expect(pending).rejects.toThrow();
-    expect(close).toHaveBeenCalledTimes(1);
+  it('reports a missing local vault as a discovery failure', async () => {
+    jest.mocked(getVaultPath).mockReturnValueOnce(null);
+    await expect(probeClaudeModels(host())).rejects.toThrow('requires a local vault');
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });

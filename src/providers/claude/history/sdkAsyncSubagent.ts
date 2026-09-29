@@ -1,39 +1,45 @@
+import type { AgentOutput } from '@anthropic-ai/claude-agent-sdk/sdk-tools';
+
 import type { SubagentInfo, ToolCallInfo } from '../../../core/types';
 import type { AsyncSubagentResult, ResolvedAsyncStatus } from './sdkHistoryTypes';
 
-export function extractAgentIdFromToolUseResult(toolUseResult: unknown): string | null {
-  if (!toolUseResult || typeof toolUseResult !== 'object') {
-    return null;
-  }
+type CompletedAgentOutput = Extract<AgentOutput, { status: 'completed' }>;
 
-  const record = toolUseResult as Record<string, unknown>;
-  const directAgentId = record.agentId ?? record.agent_id;
-  if (typeof directAgentId === 'string' && directAgentId.length > 0) {
-    return directAgentId;
-  }
-
-  const data = record.data;
-  if (data && typeof data === 'object') {
-    const nested = data as Record<string, unknown>;
-    const nestedAgentId = nested.agent_id ?? nested.agentId;
-    if (typeof nestedAgentId === 'string' && nestedAgentId.length > 0) {
-      return nestedAgentId;
-    }
-  }
-
-  return null;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * Completed Agent/Task `toolUseResult`. The SDK documents `content` as the subagent's final report
+ * without the model-directed agentId/usage trailer. Older transcripts may omit run totals, so only
+ * the report array is required.
+ */
+export function hasAgentOutputReport(
+  toolUseResult: unknown,
+): toolUseResult is Pick<CompletedAgentOutput, 'content'> & Partial<Omit<CompletedAgentOutput, 'content'>> {
+  return isRecord(toolUseResult) && Array.isArray(toolUseResult.content);
+}
+
+/** Native `AgentOutput.agentId`, then the TaskOutput-era `agent_id` and `data` nesting kept for old transcripts. */
+export function extractAgentIdFromToolUseResult(toolUseResult: unknown): string | null {
+  if (!isRecord(toolUseResult)) return null;
+  const readId = (record: Record<string, unknown>): string | null => {
+    const id = record.agentId ?? record.agent_id;
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  };
+  return readId(toolUseResult) ?? (isRecord(toolUseResult.data) ? readId(toolUseResult.data) : null);
+}
+
+/** `AgentOutput.status`, plus the TaskOutput-era `retrieval_status` alias kept for old transcripts. */
 export function resolveToolUseResultStatus(
   toolUseResult: unknown,
   fallbackStatus: ResolvedAsyncStatus,
 ): ResolvedAsyncStatus {
-  if (!toolUseResult || typeof toolUseResult !== 'object') {
+  if (!isRecord(toolUseResult)) {
     return fallbackStatus;
   }
 
-  const record = toolUseResult as Record<string, unknown>;
-  const rawStatus = record.retrieval_status ?? record.status;
+  const rawStatus = toolUseResult.retrieval_status ?? toolUseResult.status;
   const status = typeof rawStatus === 'string' ? rawStatus.toLowerCase() : '';
 
   if (status === 'error' || status === 'failed' || status === 'stopped' || status === 'killed') {
@@ -42,7 +48,7 @@ export function resolveToolUseResultStatus(
   if (status === 'completed' || status === 'success') {
     return 'completed';
   }
-  if (record.isAsync === true || status === 'async_launched') {
+  if (toolUseResult.isAsync === true || status === 'async_launched') {
     return 'running';
   }
 

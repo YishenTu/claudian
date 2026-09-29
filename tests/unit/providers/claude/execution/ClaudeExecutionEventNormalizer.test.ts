@@ -181,18 +181,18 @@ describe('ClaudeExecutionEventNormalizer api error messages', () => {
     }));
   });
 
-  it('falls back to the error code when the API error message has no text block', () => {
+  it('falls back to the described error code when the API error message has no text block', () => {
     const normalizer = new ClaudeExecutionEventNormalizer();
 
     const events = normalizer.normalize(apiErrorMessage([]), 'requested');
 
     expect(events).toContainEqual(expect.objectContaining({
       type: 'native_error',
-      message: 'rate_limit',
+      message: 'Claude rate limit reached. Try again later.',
     }));
   });
 
-  it('falls back to the error code when the API error text is only whitespace', () => {
+  it('falls back to the described error code when the API error text is only whitespace', () => {
     const normalizer = new ClaudeExecutionEventNormalizer();
 
     const events = normalizer.normalize(
@@ -202,7 +202,7 @@ describe('ClaudeExecutionEventNormalizer api error messages', () => {
 
     expect(events).toContainEqual(expect.objectContaining({
       type: 'native_error',
-      message: 'rate_limit',
+      message: 'Claude rate limit reached. Try again later.',
     }));
   });
 
@@ -216,7 +216,7 @@ describe('ClaudeExecutionEventNormalizer api error messages', () => {
 
     expect(events).toContainEqual(expect.objectContaining({
       type: 'native_error',
-      message: 'rate_limit',
+      message: 'Claude rate limit reached. Try again later.',
     }));
   });
 
@@ -259,7 +259,7 @@ describe('ClaudeExecutionEventNormalizer api error messages', () => {
     }));
   });
 
-  it('keeps the error code for an assistant error without synthetic markers', () => {
+  it('keeps partial prose as a reply for an error on a real model message', () => {
     const normalizer = new ClaudeExecutionEventNormalizer();
 
     const events = normalizer.normalize(msg({
@@ -273,12 +273,24 @@ describe('ClaudeExecutionEventNormalizer api error messages', () => {
 
     expect(events).toContainEqual(expect.objectContaining({
       type: 'native_error',
-      message: 'max_output_tokens',
+      message: 'Claude reached the output token limit for this response.',
     }));
     expect(events).toContainEqual(expect.objectContaining({
       type: 'output',
       event: expect.objectContaining({ type: 'text_delta', text: 'Partial response' }),
     }));
+  });
+
+  it('uses synthetic max_output_tokens prose as the error without echoing it as a reply', () => {
+    const prose = "API Error: Claude's response exceeded the 32000 output token maximum.";
+    const events = new ClaudeExecutionEventNormalizer().normalize(msg({
+      type: 'assistant',
+      error: 'max_output_tokens',
+      message: { model: '<synthetic>', content: [{ type: 'text', text: prose }] },
+    }), 'requested');
+
+    expect(events).toContainEqual({ type: 'native_error', message: prose });
+    expect(events.filter(event => event.type === 'output')).toEqual([]);
   });
 
   it('leaves synthetic assistant messages without an error field unchanged', () => {

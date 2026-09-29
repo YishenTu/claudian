@@ -1,19 +1,26 @@
-import { getProviderConfig } from '../../core/providers/providerConfig';
+import { getProviderConfig, setProviderConfig } from '../../core/providers/providerConfig';
 import { hasStoredConfigNormalization } from '../../core/providers/settings/storedSettings';
 import type { ProviderModule } from '../../core/providers/types';
-import { claudeWorkspaceRegistration } from './app/ClaudeWorkspaceServices';
+import { claudeWorkspaceRegistration, getClaudeWorkspaceServices } from './app/ClaudeWorkspaceServices';
 import { CLAUDE_PROVIDER_CAPABILITIES } from './capabilities';
 import { claudeModelPolicy } from './ClaudeModelPolicy';
 import { claudeSettingsReconciler } from './env/ClaudeSettingsReconciler';
 import { ClaudeExecutionBackend } from './execution/ClaudeExecutionBackend';
 import { ClaudeConversationHistoryService } from './history/ClaudeConversationHistoryService';
 import { ClaudeSubagentHistoryService } from './history/ClaudeSubagentHistoryService';
-import { findClaudeModelOption, getClaudeVisibleModelIds, hasClaudeModelIdentity } from './modelOptions';
+import {
+  getClaudeModelCatalog,
+  getClaudeVisibleModelIds,
+  hasClaudeModelIdentity,
+  resolveClaudeVisibleModels,
+} from './modelOptions';
 import { projectClaudeModelSettings } from './modelPersistence';
 import { ClaudeTaskResultInterpreter } from './runtime/ClaudeTaskResultInterpreter';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
 import { claudeSubagentAdapter } from './subagentAdapter';
 import { claudeChatUIConfig } from './ui/ClaudeChatUIConfig';
+
+const RETIRED_CLAUDE_CONFIG_KEYS = ['defaultModel', 'effortMetadataMigrated'];
 
 export const claudeProviderRegistration: ProviderModule = {
   id: 'claude',
@@ -29,13 +36,10 @@ export const claudeProviderRegistration: ProviderModule = {
   settingsStorage: {
     projectPersistedConfig: projectClaudeModelSettings,
     needsReasoningMetadata(settings) {
-      const models = getClaudeProviderSettings(settings).discoveredModels;
-      return getClaudeVisibleModelIds(settings).some(id => {
-        const model = findClaudeModelOption(models, id);
-        return !model
-          || !hasClaudeModelIdentity(models, id)
-          || (!model.supportedEffortLevels?.length && !model.reasoningMetadataResolved);
-      });
+      const catalog = getClaudeModelCatalog(settings);
+      return resolveClaudeVisibleModels(settings, catalog).some(({ id, option }) => !option
+        || !hasClaudeModelIdentity(catalog, id)
+        || (!option.supportedEffortLevels?.length && !option.reasoningMetadataResolved));
     },
     hostScopedFields: ['cliPathsByHost'],
     normalizeStored(target, stored) {
@@ -45,13 +49,16 @@ export const claudeProviderRegistration: ProviderModule = {
         ...storedSettings,
         visibleModels: getClaudeVisibleModelIds(stored),
       });
-      return 'effortMetadataMigrated' in storedConfig || hasStoredConfigNormalization(
-        storedConfig,
-        getProviderConfig(target, 'claude'),
-      );
+      const targetConfig = getProviderConfig(target, 'claude');
+      for (const key of RETIRED_CLAUDE_CONFIG_KEYS) delete targetConfig[key];
+      setProviderConfig(target, 'claude', targetConfig);
+      return RETIRED_CLAUDE_CONFIG_KEYS.some(key => key in storedConfig)
+        || hasStoredConfigNormalization(storedConfig, targetConfig);
     },
   },
-  createExecutionBackend: plugin => new ClaudeExecutionBackend(plugin),
+  createExecutionBackend: plugin => new ClaudeExecutionBackend(plugin, {
+    publishSessionModels: models => getClaudeWorkspaceServices()?.publishSessionModels(models),
+  }),
   createSubagentHistoryService: plugin => new ClaudeSubagentHistoryService(plugin),
 
   historyService: new ClaudeConversationHistoryService(),

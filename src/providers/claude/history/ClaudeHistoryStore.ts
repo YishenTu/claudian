@@ -1,3 +1,5 @@
+import * as fs from 'fs/promises';
+
 import type { ProviderHistoryPathContext } from '../../../core/providers/types';
 import type { ChatMessage, SubagentInfo, ToolCallInfo } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
@@ -6,13 +8,11 @@ import { isClaudeSubagentToolName } from '../subagentToolNames';
 import { ClaudeTurnStats } from './ClaudeTurnStats';
 import { buildAsyncSubagentInfo } from './sdkAsyncSubagent';
 import { filterActiveBranch } from './sdkBranchFilter';
-import type { SDKNativeMessage, SDKSessionLoadResult } from './sdkHistoryTypes';
+import type { SDKNativeMessage, SDKSessionLoadResult, SDKSessionReadResult } from './sdkHistoryTypes';
 import {
   collectAsyncSubagentResults,
   collectStructuredPatchResults,
   collectToolResults,
-  extractXMLTag,
-  hydrateFallbackAskUserAnswers,
   hydrateStructuredToolResults,
   isCanonicalSDKUserMessage,
   isSystemInjectedMessage,
@@ -24,7 +24,6 @@ import {
   encodeVaultPathForSDK,
   getSDKProjectsPath,
   getSDKSessionPath,
-  isValidSessionId,
   locateSDKSession,
   locateSDKSessions,
   readSDKSession,
@@ -36,42 +35,73 @@ import {
   loadSubagentToolCalls,
 } from './sdkSubagentSidecar';
 
-export type {
-  ClaudeSessionTimeCandidate,
-  ClaudeSessionTimeFingerprint,
-} from './ClaudeSessionRecovery';
+export { recoverSDKSessionIdByTime } from './ClaudeSessionRecovery';
 export {
-  recoverSDKSessionIdByTime,
-  selectClaudeSessionRecoveryCandidate,
-} from './ClaudeSessionRecovery';
-export type {
-  AsyncSubagentResult,
-  ResolvedAsyncStatus,
-  SDKNativeContentBlock,
-  SDKNativeMessage,
-  SDKSessionLoadResult,
-  SDKSessionReadResult,
-} from './sdkHistoryTypes';
-export {
-  collectAsyncSubagentResults,
   encodeVaultPathForSDK,
-  extractXMLTag,
-  filterActiveBranch,
   getSDKProjectsPath,
-  getSDKSessionPath,
-  isValidSessionId,
   loadSubagentFinalResult,
   loadSubagentToolCalls,
   locateSDKSession,
   locateSDKSessions,
-  parseSDKMessageToChat,
-  readSDKSession,
-  readSDKSessionFile,
 };
-export {
-  extractAgentIdFromToolUseResult,
-  resolveToolUseResultStatus,
-} from './sdkAsyncSubagent';
+
+/**
+ * Opening a conversation without a stored model reads its transcript for the model and then
+ * hydrates the same transcript. A model read hands its parse to the next message load of the
+ * unchanged file instead of parsing it twice. Entries are taken once, so the load may mutate
+ * them; unopened entries expire so bulk model recovery does not retain transcripts.
+ */
+const PENDING_READ_TTL_MS = 30_000;
+const MAX_PENDING_READS = 4;
+const pendingModelReads = new Map<string, { fingerprint: string; read: SDKSessionReadResult; expiresAt: number }>();
+
+function resolveSessionPath(
+  vaultPath: string,
+  sessionId: string,
+  sessionPath: string | undefined,
+  pathContext: ProviderHistoryPathContext | undefined,
+): string | null {
+  if (sessionPath) return sessionPath;
+  try {
+    return getSDKSessionPath(vaultPath, sessionId, pathContext);
+  } catch {
+    return null;
+  }
+}
+
+async function getSessionFingerprint(sessionPath: string): Promise<string | null> {
+  try {
+    const { mtimeMs, size } = await fs.stat(sessionPath);
+    return `${mtimeMs}:${size}`;
+  } catch {
+    return null;
+  }
+}
+
+function prunePendingModelReads(now: number): void {
+  for (const [sessionPath, entry] of pendingModelReads) {
+    if (entry.expiresAt <= now) pendingModelReads.delete(sessionPath);
+  }
+}
+
+async function readSessionEntries(
+  vaultPath: string,
+  sessionId: string,
+  sessionPath: string | undefined,
+  pathContext: ProviderHistoryPathContext | undefined,
+): Promise<SDKSessionReadResult> {
+  return sessionPath
+    ? readSDKSessionFile(sessionPath)
+    : readSDKSession(vaultPath, sessionId, pathContext);
+}
+
+async function takePendingModelRead(sessionPath: string | null): Promise<SDKSessionReadResult | null> {
+  prunePendingModelReads(Date.now());
+  const entry = sessionPath ? pendingModelReads.get(sessionPath) : undefined;
+  if (!sessionPath || !entry) return null;
+  pendingModelReads.delete(sessionPath);
+  return await getSessionFingerprint(sessionPath) === entry.fingerprint ? entry.read : null;
+}
 
 export async function loadSDKSessionMessages(
   vaultPath: string,
@@ -80,11 +110,8 @@ export async function loadSDKSessionMessages(
   sessionPath?: string,
   pathContext?: ProviderHistoryPathContext,
 ): Promise<SDKSessionLoadResult> {
-  const result = sessionPath
-    ? await readSDKSessionFile(sessionPath)
-    : await (pathContext
-      ? readSDKSession(vaultPath, sessionId, pathContext)
-      : readSDKSession(vaultPath, sessionId));
+  const result = await takePendingModelRead(resolveSessionPath(vaultPath, sessionId, sessionPath, pathContext))
+    ?? await readSessionEntries(vaultPath, sessionId, sessionPath, pathContext);
 
   if (result.error) {
     return { messages: [], skippedLines: result.skippedLines, error: result.error };
@@ -204,7 +231,6 @@ export async function loadSDKSessionMessages(
     }
   }
   hydrateStructuredToolResults(chatMessages, toolUseResults);
-  hydrateFallbackAskUserAnswers(chatMessages);
 
   // Build SubagentInfo for async Agent tool calls from toolUseResult + queue-operation data
   if (toolUseResults.size > 0 || asyncSubagentResults.size > 0) {
@@ -232,15 +258,13 @@ export async function loadSDKSessionMessages(
 
           // Load tool calls from subagent sidecar JSONL in parallel
           if (subagent.agentId && isValidAgentId(subagent.agentId)) {
-            const promise = pathContext
-              ? loadSubagentToolCalls(
-                vaultPath,
-                sessionId,
-                subagent.agentId,
-                sessionPath,
-                pathContext,
-              )
-              : loadSubagentToolCalls(vaultPath, sessionId, subagent.agentId, sessionPath);
+            const promise = loadSubagentToolCalls(
+              vaultPath,
+              sessionId,
+              subagent.agentId,
+              sessionPath,
+              pathContext,
+            );
             sidecarLoads.push({ subagent, promise });
           }
         }
@@ -365,14 +389,22 @@ export async function loadSDKSessionModel(
   sessionPath?: string,
   pathContext?: ProviderHistoryPathContext,
 ): Promise<string | null> {
-  const result = sessionPath
-    ? await readSDKSessionFile(sessionPath)
-    : await (pathContext
-      ? readSDKSession(vaultPath, sessionId, pathContext)
-      : readSDKSession(vaultPath, sessionId));
-  return result.error
-    ? null
-    : getLastSDKSessionModel(result.messages, resumeAtMessageId);
+  const resolvedPath = resolveSessionPath(vaultPath, sessionId, sessionPath, pathContext);
+  const fingerprint = resolvedPath ? await getSessionFingerprint(resolvedPath) : null;
+  const result = await readSessionEntries(vaultPath, sessionId, sessionPath, pathContext);
+  if (result.error) return null;
+
+  if (resolvedPath && fingerprint) {
+    const now = Date.now();
+    prunePendingModelReads(now);
+    pendingModelReads.delete(resolvedPath);
+    pendingModelReads.set(resolvedPath, { fingerprint, read: result, expiresAt: now + PENDING_READ_TTL_MS });
+    for (const oldest of pendingModelReads.keys()) {
+      if (pendingModelReads.size <= MAX_PENDING_READS) break;
+      pendingModelReads.delete(oldest);
+    }
+  }
+  return getLastSDKSessionModel(result.messages, resumeAtMessageId);
 }
 
 function normalizeTaskToolCalls(

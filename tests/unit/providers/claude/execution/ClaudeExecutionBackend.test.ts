@@ -9,25 +9,28 @@ import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { createProviderRecoveryTestHarness } from '@test/helpers/features/chat/ProviderRecoveryTestHarness';
 import { testTime } from '@test/helpers/testClock';
 
-import type {
-  ProviderExecutionEvent,
-  ProviderExecutionRequest,
-  ProviderInteractionPort,
-  ProviderSessionConfig,
-  ProviderSessionEvent,
-  ProviderSessionSnapshot,
+import {
+  type ProviderExecutionEvent,
+  ProviderExecutionLifecycleRegistry,
+  type ProviderExecutionRequest,
+  type ProviderInteractionPort,
+  type ProviderSessionConfig,
+  type ProviderSessionEvent,
+  type ProviderSessionSnapshot,
 } from '@/core/execution';
 import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 import type { Conversation } from '@/core/types';
+import { createClaudeWorkspaceServices } from '@/providers/claude/app/ClaudeWorkspaceServices';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
 import { ClaudeExecutionSession } from '@/providers/claude/execution/ClaudeExecutionSession';
 import { ClaudeConversationHistoryService } from '@/providers/claude/history/ClaudeConversationHistoryService';
 import * as historyStore from '@/providers/claude/history/ClaudeHistoryStore';
 import { assertClaudeModelAvailable } from '@/providers/claude/runtime/ClaudeModelAvailability';
 import { buildClaudeSDKUserMessage } from '@/providers/claude/runtime/ClaudeUserMessageFactory';
+import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import * as env from '@/utils/env';
 
 jest.mock('@/providers/claude/runtime/ClaudeUserMessageFactory', () => {
@@ -66,6 +69,7 @@ const sdkMock = sdkModule as unknown as {
       argumentHint?: string;
     }>,
   ) => void;
+  setMockSupportedModels: (models: sdkModule.ModelInfo[]) => void;
   setMockContextUsage: (
     contextUsage: { rawMaxTokens: number } | null,
   ) => void;
@@ -386,6 +390,66 @@ describe('ClaudeExecutionBackend', () => {
       }
     },
   );
+
+  it('writes a live session model list back once and leaves unchanged catalogs alone', async () => {
+    const host = createHost();
+    const registry = new ProviderExecutionLifecycleRegistry();
+    let writes = 0;
+    Object.assign(host, {
+      executionLifecycleRegistry: registry,
+      mutateSettingsConditionally: jest.fn(async (mutation: (settings: ClaudianSettings) => Promise<boolean> | boolean) => {
+        if (await mutation(host.settings)) writes += 1;
+      }),
+      notifyProviderChatOptionsChanged: jest.fn(),
+    });
+    const services = await createClaudeWorkspaceServices(host, { commandProbe: async () => [], modelProbe: jest.fn() });
+    // The settings tab re-renders only through catalog observers.
+    const observedModelIds: string[][] = [];
+    services.modelCatalog!.observe(() => {
+      observedModelIds.push(services.modelCatalog!.getSnapshot().models.map(model => model.id));
+    });
+    const publications: Array<Promise<void>> = [];
+    const backend = new ClaudeExecutionBackend(host, {
+      publishSessionModels: models => {
+        const publication = services.publishSessionModels(models);
+        publications.push(publication);
+        return publication;
+      },
+    });
+    const reported = getClaudeProviderSettings(host.settings).discoveredModels.map(model => ({
+      value: model.value, displayName: model.label, description: model.description,
+      supportedEffortLevels: model.supportedEffortLevels,
+    }));
+    sdkMock.setMockSupportedModels([
+      ...reported,
+      { value: 'claude-fable-6-0', displayName: 'Fable 6', description: 'Newest', supportedEffortLevels: ['low', 'high'] },
+    ]);
+
+    try {
+      for (let sessionIndex = 1; sessionIndex <= 2; sessionIndex += 1) {
+        const session = backend.createSession(createConfig());
+        await collectEvents(session.execute(createRequest()).events);
+        await waitFor(() => publications.length === sessionIndex);
+        await Promise.all(publications);
+        await session.dispose();
+        expect(writes).toBe(1);
+      }
+      expect(getClaudeProviderSettings(host.settings).discoveredModels).toContainEqual({
+        value: 'claude-fable-6-0',
+        label: 'Fable 6',
+        description: 'Newest',
+        reasoningMetadataResolved: true,
+        supportedEffortLevels: ['low', 'high'],
+      });
+      expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledTimes(1);
+      expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('claude');
+      expect(observedModelIds).toHaveLength(1);
+      expect(observedModelIds[0]).toContain('claude-fable-6-0');
+    } finally {
+      await services.dispose();
+      await registry.dispose();
+    }
+  });
 
   it('creates a persistent session that normalizes SDK output and publishes commands', async () => {
     sdkMock.setMockSupportedCommands([
@@ -859,8 +923,10 @@ describe('ClaudeExecutionBackend', () => {
     }));
   });
 
-  it('keeps the persistent runtime context window when result metadata disagrees', async () => {
-    sdkMock.setMockContextUsage({ rawMaxTokens: 1_000_000 });
+  it('prefers the result model window over the compaction window from context discovery', async () => {
+    // getContextUsage reports the autocompact window, which compaction policy can set below the
+    // model window; result modelUsage reports the model window itself.
+    sdkMock.setMockContextUsage({ rawMaxTokens: 200_000 });
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       {
@@ -868,14 +934,14 @@ describe('ClaudeExecutionBackend', () => {
         parent_tool_use_id: null,
         message: {
           content: [{ type: 'text', text: 'Hello' }],
-          usage: { input_tokens: 250_000 },
+          usage: { input_tokens: 100_000 },
         },
       },
       {
         type: 'result',
         subtype: 'success',
         modelUsage: {
-          'custom-model': { contextWindow: 200_000 },
+          'custom-model': { contextWindow: 1_000_000 },
         },
       },
     ], { appendResult: false });
@@ -897,11 +963,83 @@ describe('ClaudeExecutionBackend', () => {
       type: 'usage_updated',
       usage: expect.objectContaining({
         model: 'custom-model',
-        contextTokens: 250_000,
+        contextTokens: 100_000,
         contextWindow: 1_000_000,
-                percentage: 25,
+        percentage: 10,
       }),
     }));
+  });
+
+  it('keeps the result model window when context discovery resolves after the result', async () => {
+    const lateContextUsage = createDeferred<{ rawMaxTokens: number }>();
+    const getContextUsage = jest.fn().mockReturnValue(lateContextUsage.promise);
+    const queryFactory = jest.fn((request: {
+      prompt: AsyncIterable<sdkModule.SDKUserMessage>;
+    }) => attachContextUsage(
+      createPromptDrivenPersistentQuery(request.prompt, (prompt) => (
+        prompt.includes('First turn')
+          ? [
+            { type: 'system', subtype: 'init', session_id: 'session-1' },
+            {
+              type: 'assistant',
+              message: {
+                content: [{ type: 'text', text: 'First response' }],
+                usage: { input_tokens: 100_000 },
+              },
+            },
+            {
+              type: 'result',
+              subtype: 'success',
+              modelUsage: { 'custom-model': { contextWindow: 1_000_000 } },
+            },
+          ]
+          : [
+            {
+              type: 'assistant',
+              message: {
+                content: [{ type: 'text', text: 'Second response' }],
+                usage: { input_tokens: 100_000 },
+              },
+            },
+            { type: 'result', subtype: 'success' },
+          ]
+      )),
+      getContextUsage,
+    ));
+    jest.spyOn(
+      await import('@/providers/claude/loadClaudeAgentSDK'),
+      'loadClaudeAgentQuery',
+    ).mockResolvedValueOnce(queryFactory as never);
+    const session = new ClaudeExecutionBackend(createHost())
+      .createSession(createConfig());
+    const configuration = {
+      systemInstructions: { kind: 'provider-default' },
+      model: 'custom-model',
+      reasoning: 'medium',
+      permissionMode: 'ask',
+    } as const;
+
+    await collectEvents(session.execute(createRequest({
+      input: [{ type: 'text', text: 'First turn' }],
+      configuration,
+    })).events);
+    lateContextUsage.resolve({ rawMaxTokens: 200_000 });
+    await new Promise(resolve => setImmediate(resolve));
+    const secondEvents = await collectEvents(session.execute(createRequest({
+      input: [{ type: 'text', text: 'Second turn' }],
+      configuration,
+    })).events);
+
+    const secondUsage = secondEvents.filter((event) => event.type === 'usage_updated');
+    expect(secondUsage.length).toBeGreaterThan(0);
+    expect(secondUsage).not.toContainEqual(expect.objectContaining({
+      usage: expect.objectContaining({ contextWindow: 200_000 }),
+    }));
+    expect(secondUsage.at(-1)).toEqual(expect.objectContaining({
+      usage: expect.objectContaining({ contextWindow: 1_000_000, percentage: 10 }),
+    }));
+    expect(getContextUsage).toHaveBeenCalledTimes(1);
+    await session.dispose();
   });
 
   it('corrects live usage when runtime context discovery resolves after usage', async () => {

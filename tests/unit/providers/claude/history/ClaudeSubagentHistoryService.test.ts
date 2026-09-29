@@ -16,10 +16,6 @@ describe('ClaudeSubagentHistoryService', () => {
     const host = {
       getActiveEnvironmentVariables: jest.fn()
         .mockReturnValue('CLAUDE_CONFIG_DIR=/tmp/claude-config'),
-      settings: {
-        model: 'claude-sonnet-4-5',
-        providerConfigs: {},
-      },
     } as any;
     const service = new ClaudeSubagentHistoryService(host);
     const request = {
@@ -36,7 +32,6 @@ describe('ClaudeSubagentHistoryService', () => {
         CLAUDE_CONFIG_DIR: '/tmp/claude-config',
       }),
       hostPlatform: process.platform,
-      settings: expect.objectContaining({ model: 'claude-sonnet-4-5' }),
       vaultPath: '/vault',
     });
     expect(loadToolCalls).toHaveBeenCalledWith(

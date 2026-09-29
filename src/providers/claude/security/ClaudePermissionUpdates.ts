@@ -35,15 +35,10 @@ export function buildPersistentPermissionUpdates(
     if (!isNonEmptyDerivedScope(pattern)) {
       return [];
     }
-    const ruleValue: { toolName: string; ruleContent?: string } = { toolName };
-    if (pattern && !pattern.startsWith('{')) {
-      ruleValue.ruleContent = pattern;
-    }
-
     processed.unshift({
       type: 'addRules',
       behavior: 'allow',
-      rules: [ruleValue],
+      rules: [{ toolName, ruleContent: pattern }],
       destination: 'projectSettings',
     });
   }

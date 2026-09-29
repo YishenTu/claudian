@@ -63,10 +63,8 @@ it.each([
         input: { description: 'Sync test agent', run_in_background: false } }] } },
       { type: 'user', parent_tool_use_id: null,
         message: { content: [{ type: 'tool_result', tool_use_id: 'sync-tool', content: [{ type: 'text', text: rawResult }] }] },
-        ...(structured ? { tool_use_result: { status: 'completed', agentId: 'sync-agent', content: [
-          ...structuredAnswer.split('\n').map(text => ({ type: 'text', text })),
-          { type: 'text', text: 'agentId: sync-agent\n<usage>total_tokens: 50</usage>' },
-        ] } } : {}),
+        ...(structured ? { tool_use_result: { status: 'completed', agentId: 'sync-agent',
+          content: structuredAnswer.split('\n').map(text => ({ type: 'text', text })) } } : {}),
       },
     ] as const;
     if (source === 'live') for (const native of nativeMessages) {

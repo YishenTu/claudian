@@ -28,6 +28,13 @@ describe('claudeChatUIConfig', () => {
     expect(claudeChatUIConfig.getDefaultModel?.(settings)).toBeNull();
   });
 
+  it.each(['claude-haiku-4-5', 'claude-sonnet-5', 'claude-opus-5-5', 'claude-fable-5-1'])(
+    'owns versioned %s before discovery reports it', model => {
+      const settings = { providerConfigs: { claude: { visibleModels: [], discoveredModels: [] } } };
+      expect(claudeChatUIConfig.ownsModel(model, settings)).toBe(true);
+    },
+  );
+
   it('never normalizes a deselected SDK variant to its enabled sibling', () => {
     const settings = { providerConfigs: { claude: {
       discoveredModels: ['sonnet', 'sonnet[1m]'].map(value => ({ value, label: value, resolvedModel: 'same-model' })),

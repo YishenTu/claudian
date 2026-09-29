@@ -12,7 +12,7 @@ import { type ClaudeDiscoveredModel, decodeClaudeModels } from './modelCatalog';
 export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
 export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
 export type ClaudeResponseStyle = 'Default' | 'Concise';
-export type ClaudeSettingSource = 'user' | 'project' | 'local';
+type ClaudeSettingSource = 'user' | 'project' | 'local';
 
 export interface ClaudeProviderSettings {
   enabled: boolean;
@@ -125,8 +125,6 @@ export function updateClaudeProviderSettings(
 ): ClaudeProviderSettings {
   const current = getClaudeProviderSettings(settings);
   const stored = getProviderConfig(settings, 'claude');
-  delete stored.defaultModel;
-  delete stored.effortMetadataMigrated;
   const next = {
     ...stored,
     ...current,

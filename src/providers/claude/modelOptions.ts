@@ -14,11 +14,11 @@ export interface ClaudeModelOption extends ProviderUIOption {
 }
 
 export function getClaudeModelCatalog(settings: Record<string, unknown>): ClaudeModelOption[] {
-  const aliases = getClaudeProviderSettings(settings).modelAliases;
-  return getClaudeProviderSettings(settings).discoveredModels.filter(model => isSelectableClaudeModel(model.value)).map(model => ({
+  const { discoveredModels, modelAliases } = getClaudeProviderSettings(settings);
+  return discoveredModels.filter(model => isSelectableClaudeModel(model.value)).map(model => ({
     ...model,
     value: isClaudeModelTier(model.value) ? model.value : encodeClaudeModelSelectionId(model.value),
-    label: aliases?.[model.value] || model.label,
+    label: modelAliases[model.value] || model.label,
   }));
 }
 
@@ -46,13 +46,26 @@ export function findClaudeModelOption(
   return findClaudeFamilySuccessor(options, runtimeModel);
 }
 
-export function getClaudeModelOptions(settings: Record<string, unknown>): ClaudeModelOption[] {
-  const catalog = getClaudeModelCatalog(settings);
-  const selected = getClaudeVisibleModelIds(settings);
-  return [...new Set(selected.flatMap(id => {
-    const option = findClaudeModelOption(catalog, id);
-    return option ? [option] : [];
-  }))];
+export interface ClaudeVisibleModel {
+  /** Saved enabled identity. */
+  id: string;
+  /** Catalog row the identity runs as; absent while Claude Code reports nothing it resolves to. */
+  option?: ClaudeModelOption;
+}
+
+/** The single resolution of enabled identities onto catalog rows, in enabled order. */
+export function resolveClaudeVisibleModels(
+  settings: Record<string, unknown>,
+  catalog: readonly ClaudeModelOption[] = getClaudeModelCatalog(settings),
+): ClaudeVisibleModel[] {
+  return getClaudeVisibleModelIds(settings).map(id => ({ id, option: findClaudeModelOption(catalog, id) }));
+}
+
+export function getClaudeModelOptions(
+  settings: Record<string, unknown>,
+  catalog: readonly ClaudeModelOption[] = getClaudeModelCatalog(settings),
+): ClaudeModelOption[] {
+  return [...new Set(resolveClaudeVisibleModels(settings, catalog).flatMap(({ option }) => option ? [option] : []))];
 }
 
 /** Whether the SDK reports the model as a value or a resolved identity, as opposed to a family successor. */
@@ -65,17 +78,20 @@ export function hasClaudeModelIdentity(options: readonly ClaudeModelOption[], mo
 /** Identities the catalog reports keep their meaning; anything else may only follow enabled models. */
 export function findClaudeModelSelectionOption(
   settings: Record<string, unknown>, model: string,
+  catalog: readonly ClaudeModelOption[] = getClaudeModelCatalog(settings),
 ): ClaudeModelOption | undefined {
-  const catalog = getClaudeModelCatalog(settings);
-  return findClaudeModelOption(hasClaudeModelIdentity(catalog, model) ? catalog : getClaudeModelOptions(settings), model);
+  return findClaudeModelOption(
+    hasClaudeModelIdentity(catalog, model) ? catalog : getClaudeModelOptions(settings, catalog), model,
+  );
 }
 
 /** The enabled option a saved selection runs as; undefined when its identity is unselected or unknown. */
 export function findEnabledClaudeModelOption(
   settings: Record<string, unknown>, model: string,
 ): ClaudeModelOption | undefined {
-  const selected = findClaudeModelSelectionOption(settings, model);
-  return selected && getClaudeModelOptions(settings).some(option => option.value === selected.value)
+  const catalog = getClaudeModelCatalog(settings);
+  const selected = findClaudeModelSelectionOption(settings, model, catalog);
+  return selected && getClaudeModelOptions(settings, catalog).some(option => option.value === selected.value)
     ? selected
     : undefined;
 }

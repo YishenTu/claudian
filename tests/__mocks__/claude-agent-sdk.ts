@@ -104,6 +104,14 @@ export type PermissionResult =
   | { behavior: 'allow'; updatedInput?: Record<string, unknown>; updatedPermissions?: PermissionUpdate[]; toolUseID?: string }
   | { behavior: 'deny'; message: string; interrupt?: boolean; toolUseID?: string };
 
+export type ModelInfo = {
+  value: string;
+  displayName: string;
+  description: string;
+  resolvedModel?: string;
+  supportedEffortLevels?: string[];
+};
+
 // Default mock messages for testing
 const mockMessages = [
   { type: 'system', subtype: 'init', session_id: 'test-session-123' },
@@ -120,6 +128,7 @@ let mockSupportedCommandsImplementation: (() => Promise<Array<{
   description: string;
   argumentHint?: string;
 }>>) | null = null;
+let mockSupportedModels: ModelInfo[] = [];
 let mockContextUsage: { rawMaxTokens: number } | null = null;
 let mockContextUsageImplementation: (() => Promise<{ rawMaxTokens: number }>) | null = null;
 let lastResponse: (AsyncGenerator<any> & {
@@ -130,6 +139,7 @@ let lastResponse: (AsyncGenerator<any> & {
   applyFlagSettings: jest.Mock;
   setMcpServers: jest.Mock;
   supportedCommands: jest.Mock;
+  initializationResult: jest.Mock;
   getContextUsage: jest.Mock;
 }) | null = null;
 
@@ -147,6 +157,7 @@ export function resetMockMessages() {
   lastOptions = undefined;
   mockSupportedCommands = [];
   mockSupportedCommandsImplementation = null;
+  mockSupportedModels = [];
   mockContextUsage = null;
   mockContextUsageImplementation = null;
   lastResponse = null;
@@ -167,6 +178,10 @@ export function setMockSupportedCommandsImplementation(
   }>>,
 ) {
   mockSupportedCommandsImplementation = implementation;
+}
+
+export function setMockSupportedModels(models: ModelInfo[]) {
+  mockSupportedModels = models;
 }
 
 export function setMockContextUsage(contextUsage: { rawMaxTokens: number } | null) {
@@ -194,35 +209,6 @@ export function getLastResponse(): typeof lastResponse {
   return lastResponse;
 }
 
-// Helper to run PreToolUse hooks
-async function runPreToolUseHooks(
-  hooks: HookCallbackMatcher[] | undefined,
-  toolName: string,
-  toolInput: Record<string, unknown>,
-  toolId: string
-): Promise<{ blocked: boolean; reason?: string }> {
-  if (!hooks) return { blocked: false };
-
-  for (const hookMatcher of hooks) {
-    // Check if matcher matches the tool (no matcher = match all)
-    if (hookMatcher.matcher && hookMatcher.matcher !== toolName) {
-      continue;
-    }
-
-    for (const hookFn of hookMatcher.hooks) {
-      const hookInput = { tool_name: toolName, tool_input: toolInput };
-      const result = await hookFn(hookInput, toolId, {});
-
-      if (!result.continue) {
-        const reason = result.hookSpecificOutput?.permissionDecisionReason || 'Blocked by hook';
-        return { blocked: true, reason };
-      }
-    }
-  }
-
-  return { blocked: false };
-}
-
 // Mock query function that returns an async generator
 function isAsyncIterable(value: any): value is AsyncIterable<any> {
   return !!value && typeof value[Symbol.asyncIterator] === 'function';
@@ -237,44 +223,11 @@ function getMessagesForPrompt(): any[] {
   return messages;
 }
 
-async function* emitMessages(messages: any[], options: Options) {
+// Pending entries act as barriers; one that resolves to null emits nothing.
+async function* emitMessages(messages: any[]) {
   for (const pendingMessage of messages) {
-    const msg = await pendingMessage;
-    // Check for tool_use in assistant messages and run hooks
-    if (msg.type === 'assistant' && msg.message?.content) {
-      let wasBlocked = false;
-      for (const block of msg.message.content) {
-        if (block.type === 'tool_use') {
-          const hookResult = await runPreToolUseHooks(
-            options.hooks?.PreToolUse,
-            block.name,
-            block.input,
-            block.id || `tool-${Date.now()}`
-          );
-
-          if (hookResult.blocked) {
-            // Yield the assistant message first (with tool_use)
-            yield msg;
-            // Then yield a blocked indicator as a user message with error
-            yield {
-              type: 'user',
-              parent_tool_use_id: block.id,
-              tool_use_result: `BLOCKED: ${hookResult.reason}`,
-              message: { content: [] },
-              _blocked: true,
-              _blockReason: hookResult.reason,
-            };
-            wasBlocked = true;
-            break; // Exit inner loop since we already handled this message
-          }
-        }
-      }
-      // If the message was blocked, don't yield it again
-      if (wasBlocked) {
-        continue;
-      }
-    }
-    yield msg;
+    const message = await pendingMessage;
+    if (message != null) yield message;
   }
 }
 
@@ -287,13 +240,13 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
       for await (const _ of prompt) {
         void _; // Consume async iterable input
         const messages = getMessagesForPrompt();
-        yield* emitMessages(messages, options);
+        yield* emitMessages(messages);
       }
       return;
     }
 
     const messages = getMessagesForPrompt();
-    yield* emitMessages(messages, options);
+    yield* emitMessages(messages);
   };
 
   const gen = generator() as AsyncGenerator<any> & {
@@ -304,6 +257,7 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
     applyFlagSettings: jest.Mock;
     setMcpServers: jest.Mock;
     supportedCommands: jest.Mock;
+    initializationResult: jest.Mock;
     getContextUsage: jest.Mock;
   };
   gen.interrupt = jest.fn().mockResolvedValue(undefined);
@@ -318,6 +272,14 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
       ? mockSupportedCommandsImplementation()
       : Promise.resolve(mockSupportedCommands)
   ));
+  gen.initializationResult = jest.fn().mockImplementation(async () => ({
+    commands: mockSupportedCommands,
+    models: mockSupportedModels,
+    agents: [],
+    account: {},
+    output_style: 'default',
+    available_output_styles: [],
+  }));
   gen.getContextUsage = jest.fn().mockImplementation(() => (
     mockContextUsageImplementation
       ? mockContextUsageImplementation()

@@ -27,6 +27,22 @@ describe('ClaudeCommandCatalog', () => {
       expect(commitEntry!.insertPrefix).toBe('/');
     });
 
+    it('scopes Claude Code built-in commands apart from runtime-defined ones', async () => {
+      const catalog = new ClaudeCommandCatalog();
+      catalog.setCommandSnapshot([
+        { id: 'sdk:compact', name: 'compact', content: '', source: 'builtin' },
+        { id: 'sdk:review', name: 'review', content: '', source: 'sdk' },
+      ]);
+
+      const entries = await catalog.listDropdownEntries({ includeBuiltIns: false });
+
+      expect(entries.map(({ name, scope, source, isEditable, isDeletable }) => ({ name, scope, source, isEditable, isDeletable })))
+        .toEqual([
+          { name: 'compact', scope: 'builtin', source: 'builtin', isEditable: false, isDeletable: false },
+          { name: 'review', scope: 'runtime', source: 'sdk', isEditable: false, isDeletable: false },
+        ]);
+    });
+
     it('returns empty when no runtime commands and no probe', async () => {
       const catalog = new ClaudeCommandCatalog();
 

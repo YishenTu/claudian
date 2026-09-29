@@ -27,12 +27,13 @@ export interface ClaudeExecutionStrategySink {
   releaseNativeTurnFence(queryToken: number): void;
   handleNativeQueryOpened(query: Query): void;
   handleNativeQueryClosed(query: Query): void;
-  handleAuthoritativeContextWindow(
+  handleDiscoveredContextWindow(
     query: Query,
     model: string,
     contextWindow: number,
   ): void;
   publishCommands(query: Query, commands?: SlashCommand[]): void;
+  publishModels(query: Query): void;
 }
 
 export interface ClaudeExecutionStrategy {
@@ -74,7 +75,7 @@ implements ClaudeExecutionStrategy {
   private consumerPromise: Promise<void> | null = null;
   private currentConfig: ClaudeEncodedExecutionRequest | null = null;
   private activeNativeTurn: PersistentNativeTurn | null = null;
-  private authoritativeContextWindow: {
+  private discoveredContextWindow: {
     readonly query: Query;
     readonly model: string;
     readonly contextWindow: number;
@@ -115,7 +116,7 @@ implements ClaudeExecutionStrategy {
 
       await this.#applyDynamicUpdates(request);
       requestSignal?.throwIfAborted();
-      void this.#refreshAuthoritativeContextWindow(request.model);
+      void this.#refreshDiscoveredContextWindow(request.model);
       const message = buildClaudeSDKUserMessage(
         request.prompt,
         this.sink.getProviderSessionId() ?? '',
@@ -207,7 +208,7 @@ implements ClaudeExecutionStrategy {
     this.query = null;
     this.messageChannel = null;
     this.abortController = null;
-    this.authoritativeContextWindow = null;
+    this.discoveredContextWindow = null;
     this.contextWindowDiscovery = null;
     if (query) {
       this.sink.handleNativeQueryClosed(query);
@@ -276,7 +277,7 @@ implements ClaudeExecutionStrategy {
     this.messageChannel = messageChannel;
     this.query = query;
     this.currentConfig = request;
-    this.authoritativeContextWindow = null;
+    this.discoveredContextWindow = null;
     this.contextWindowDiscovery = null;
     this.sink.handleNativeQueryOpened(query);
     this.consumerPromise = this.#consume(query, queryToken);
@@ -312,14 +313,14 @@ implements ClaudeExecutionStrategy {
     this.currentConfig = request;
   }
 
-  #refreshAuthoritativeContextWindow(model: string): Promise<void> {
+  #refreshDiscoveredContextWindow(model: string): Promise<void> {
     const query = this.query;
-    if (!query || typeof query.getContextUsage !== 'function') {
+    if (!query) {
       return Promise.resolve();
     }
     if (
-      this.authoritativeContextWindow?.query === query
-      && this.authoritativeContextWindow.model === model
+      this.discoveredContextWindow?.query === query
+      && this.discoveredContextWindow.model === model
     ) {
       return Promise.resolve();
     }
@@ -345,12 +346,14 @@ implements ClaudeExecutionStrategy {
         ) {
           return;
         }
+        // rawMaxTokens is the autocompact window: the model window unless compaction policy
+        // lowers it. It only fills in until result modelUsage reports the model window.
         const contextWindow = contextUsage.rawMaxTokens;
         if (!isFinitePositiveNumber(contextWindow)) {
           return;
         }
-        this.authoritativeContextWindow = { query, model, contextWindow };
-        this.sink.handleAuthoritativeContextWindow(
+        this.discoveredContextWindow = { query, model, contextWindow };
+        this.sink.handleDiscoveredContextWindow(
           query,
           model,
           contextWindow,
@@ -376,6 +379,7 @@ implements ClaudeExecutionStrategy {
         }
         if (message.type === 'system' && message.subtype === 'init') {
           this.sink.publishCommands(query);
+          this.sink.publishModels(query);
         }
         if (message.type === 'system' && message.subtype === 'commands_changed') {
           this.sink.publishCommands(query, message.commands);
@@ -447,7 +451,7 @@ implements ClaudeExecutionStrategy {
     this.messageChannel = null;
     this.abortController = null;
     this.currentConfig = null;
-    this.authoritativeContextWindow = null;
+    this.discoveredContextWindow = null;
     this.contextWindowDiscovery = null;
     this.sink.handleNativeQueryClosed(query);
   }
@@ -508,6 +512,7 @@ implements ClaudeExecutionStrategy {
         if (this.activeQuery !== query || this.disposed) break;
         if (message.type === 'system' && message.subtype === 'init') {
           this.sink.publishCommands(query);
+          this.sink.publishModels(query);
         }
         if (message.type === 'system' && message.subtype === 'commands_changed') {
           this.sink.publishCommands(query, message.commands);

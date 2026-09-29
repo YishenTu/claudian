@@ -9,6 +9,8 @@ import { isSkill } from '../../../utils/slashCommand';
 
 function slashCommandToEntry(cmd: SlashCommand): ProviderCommandEntry {
   const skill = isSkill(cmd);
+  // Claude Code owns every command it reports; only Claudian-authored vault commands are editable.
+  const native = cmd.source === 'sdk' || cmd.source === 'builtin';
   return {
     id: cmd.id,
     providerId: 'claude',
@@ -24,10 +26,10 @@ function slashCommandToEntry(cmd: SlashCommand): ProviderCommandEntry {
     context: cmd.context,
     agent: cmd.agent,
     hooks: cmd.hooks,
-    scope: cmd.source === 'sdk' ? 'runtime' : 'vault',
+    scope: cmd.source === 'builtin' ? 'builtin' : native ? 'runtime' : 'vault',
     source: cmd.source ?? 'user',
-    isEditable: cmd.source !== 'sdk',
-    isDeletable: cmd.source !== 'sdk',
+    isEditable: !native,
+    isDeletable: !native,
     displayPrefix: '/',
     insertPrefix: '/',
   };

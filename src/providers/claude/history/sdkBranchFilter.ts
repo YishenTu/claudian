@@ -35,7 +35,7 @@ export function filterActiveBranch(
   const progressUuids = new Set<string>();
   const progressParentOf = new Map<string, string | null>();
   for (const entry of deduped) {
-    if ((entry.type as string) === 'progress' && entry.uuid) {
+    if (entry.type === 'progress' && entry.uuid) {
       progressUuids.add(entry.uuid);
       progressParentOf.set(entry.uuid, entry.parentUuid ?? null);
     }
@@ -58,7 +58,7 @@ export function filterActiveBranch(
     return current;
   }
 
-  const conversationEntries = deduped.filter(entry => (entry.type as string) !== 'progress');
+  const conversationEntries = deduped.filter(entry => entry.type !== 'progress');
   const byUuid = new Map<string, SDKNativeMessage>();
   const childrenOf = new Map<string, Set<string>>();
 

@@ -3,24 +3,22 @@ import * as fsPromises from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
+import { extractToolResultContent } from '@/core/tools/toolResultContent';
 import {
-  collectAsyncSubagentResults,
   encodeVaultPathForSDK,
-  filterActiveBranch,
   getLastSDKSessionModel,
   getSDKProjectsPath,
-  getSDKSessionPath,
-  isValidSessionId,
   loadSDKSessionMessages,
   loadSubagentFinalResult,
   loadSubagentToolCalls,
   locateSDKSession,
-  parseSDKMessageToChat,
-  readSDKSession,
-  resolveToolUseResultStatus,
-  type SDKNativeMessage,
 } from '@/providers/claude/history/ClaudeHistoryStore';
-import { extractToolResultContent } from '@/providers/claude/sdk/toolResultContent';
+import { resolveToolUseResultStatus } from '@/providers/claude/history/sdkAsyncSubagent';
+import { filterActiveBranch } from '@/providers/claude/history/sdkBranchFilter';
+import type { SDKNativeMessage } from '@/providers/claude/history/sdkHistoryTypes';
+import { collectAsyncSubagentResults, parseSDKMessageToChat } from '@/providers/claude/history/sdkMessageParsing';
+import { getSDKSessionPath, isValidSessionId, readSDKSession } from '@/providers/claude/history/sdkSessionPaths';
+import { parseClaudeTaskNotification } from '@/providers/claude/normalization/claudeTaskNotification';
 
 // Mock fs, fs/promises, and os modules
 jest.mock('fs', () => ({
@@ -1320,11 +1318,14 @@ describe('sdkSession', () => {
       });
     });
 
-    it('hydrates AskUserQuestion answers from result text when toolUseResult has no answers', async () => {
+    it.each([
+      ['has no answers', '"toolUseResult":{},'],
+      ['is absent from the transcript', ''],
+    ])('hydrates AskUserQuestion answers from result text when toolUseResult %s', async (_case, toolUseResult) => {
       mockExistsSync.mockReturnValue(true);
       mockFsPromises.readFile.mockResolvedValue([
         '{"type":"assistant","uuid":"a1","timestamp":"2024-01-15T10:01:00Z","message":{"content":[{"type":"tool_use","id":"ask-1","name":"AskUserQuestion","input":{"questions":[{"question":"Color?","options":["Blue","Red"]}]}}]}}',
-        '{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:02:00Z","toolUseResult":{},"message":{"content":[{"type":"tool_result","tool_use_id":"ask-1","content":"\\"Color?\\"=\\"Blue\\""}]}}',
+        `{"type":"user","uuid":"u1","timestamp":"2024-01-15T10:02:00Z",${toolUseResult}"message":{"content":[{"type":"tool_result","tool_use_id":"ask-1","content":"\\"Color?\\"=\\"Blue\\""}]}}`,
       ].join('\n'));
 
       const result = await loadSDKSessionMessages(vaultPath, 'session-ask-result-fallback');
@@ -2143,9 +2144,9 @@ describe('sdkSession', () => {
         { type: 'user', uuid: 'tr1', parentUuid: 'a1', toolUseResult: {} },  // tool result
         { type: 'assistant', uuid: 'a2', parentUuid: 'tr1' },  // response after tool
         // Progress chain branching off a1 (subagent execution logs):
-        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p1', parentUuid: 'a1' },
-        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p2', parentUuid: 'p1' },
-        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p3', parentUuid: 'p2' },
+        { type: 'progress', uuid: 'p1', parentUuid: 'a1' },
+        { type: 'progress', uuid: 'p2', parentUuid: 'p1' },
+        { type: 'progress', uuid: 'p3', parentUuid: 'p2' },
         // Next conversation message parented to end of progress chain:
         { type: 'user', uuid: 'u2', parentUuid: 'p3' },
         { type: 'assistant', uuid: 'a3', parentUuid: 'u2' },
@@ -2156,7 +2157,7 @@ describe('sdkSession', () => {
 
       // All conversation entries should be present, progress entries excluded
       expect(uuids).toEqual(['u1', 'a1', 'tr1', 'a2', 'u2', 'a3']);
-      expect(result.every(e => (e.type as string) !== 'progress')).toBe(true);
+      expect(result.every(e => e.type !== 'progress')).toBe(true);
     });
 
     it('reparents through long progress chains to preserve full conversation', () => {
@@ -2171,8 +2172,8 @@ describe('sdkSession', () => {
         { type: 'assistant', uuid: 'a1-think2', parentUuid: 'tr1' },
         { type: 'assistant', uuid: 'a1-text', parentUuid: 'a1-think2' },
         // Progress chain off a1-tool:
-        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p1', parentUuid: 'a1-tool' },
-        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p2', parentUuid: 'p1' },
+        { type: 'progress', uuid: 'p1', parentUuid: 'a1-tool' },
+        { type: 'progress', uuid: 'p2', parentUuid: 'p1' },
         // System entry chained to progress:
         { type: 'system', uuid: 'sys1', parentUuid: 'p2' },
         // Second turn parented to system (which is parented to progress chain):
@@ -2227,8 +2228,8 @@ describe('sdkSession', () => {
         { type: 'user', uuid: 'u2-old', parentUuid: 'a1' },
         { type: 'assistant', uuid: 'a2-old', parentUuid: 'u2-old' },
         // Progress entries off a1:
-        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p1', parentUuid: 'a1' },
-        { type: 'progress' as SDKNativeMessage['type'], uuid: 'p2', parentUuid: 'p1' },
+        { type: 'progress', uuid: 'p1', parentUuid: 'a1' },
+        { type: 'progress', uuid: 'p2', parentUuid: 'p1' },
         // Rewind: new user message also branching off a1
         { type: 'user', uuid: 'u2-new', parentUuid: 'a1' },
         { type: 'assistant', uuid: 'a2-new', parentUuid: 'u2-new' },
@@ -2461,7 +2462,7 @@ describe('sdkSession', () => {
       expect(results.size).toBe(0);
     });
 
-    it('skips entries without task-id or result', () => {
+    it('skips notifications without a task-id or status', () => {
       const entries: SDKNativeMessage[] = [
         {
           type: 'queue-operation',
@@ -2471,7 +2472,7 @@ describe('sdkSession', () => {
         {
           type: 'queue-operation',
           operation: 'enqueue',
-          content: '<task-notification><task-id>has-id</task-id><status>completed</status></task-notification>',
+          content: '<task-notification><task-id>no-status</task-id><result>Done</result></task-notification>',
         },
       ];
 
@@ -2479,17 +2480,26 @@ describe('sdkSession', () => {
       expect(results.size).toBe(0);
     });
 
-    it('defaults status to completed when status tag is missing', () => {
+    it('describes a notification without result or summary by its status', () => {
       const entries: SDKNativeMessage[] = [
         {
           type: 'queue-operation',
           operation: 'enqueue',
-          content: '<task-notification><task-id>no-status</task-id><result>Done</result></task-notification>',
+          content: '<task-notification><task-id>has-id</task-id><status>completed</status></task-notification>',
         },
       ];
 
-      const results = collectAsyncSubagentResults(entries);
-      expect(results.get('no-status')!.status).toBe('completed');
+      expect(collectAsyncSubagentResults(entries).get('has-id'))
+        .toEqual({ result: 'Background task completed.', status: 'completed' });
+    });
+
+    it('reads a summary-only notification as the live notification parser does', () => {
+      const content = '<task-notification><task-id>failed-agent</task-id><status>failed</status>'
+        + '<summary>Agent "Review code" failed</summary></task-notification>';
+
+      expect(parseClaudeTaskNotification(content)).toEqual({ taskId: 'failed-agent', content: 'Agent "Review code" failed' });
+      expect(collectAsyncSubagentResults([{ type: 'queue-operation', operation: 'enqueue', content }]).get('failed-agent'))
+        .toEqual({ result: 'Agent "Review code" failed', status: 'failed' });
     });
 
     it('ignores non-queue-operation messages', () => {

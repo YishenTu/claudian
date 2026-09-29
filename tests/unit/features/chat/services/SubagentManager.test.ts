@@ -873,7 +873,7 @@ ${outputLines}
         status: 'completed',
         content: [
           { type: 'text', text: 'Main result text here.' },
-          { type: 'text', text: 'agentId: agent-multi\n<usage>total_tokens: 100</usage>' },
+          { type: 'text', text: 'Second report block.' },
         ],
         agentId: 'agent-multi',
       };
@@ -884,8 +884,8 @@ ${outputLines}
         false,
         sdkToolUseResult
       );
-      // Should return the first text block (actual result), not the metadata block
-      expect(result?.result).toBe('Main result text here.');
+      // The structured report carries no model-directed trailer; every text block is the answer.
+      expect(result?.result).toBe('Main result text here.\nSecond report block.');
     });
 
     it('reads full output file when inline output is truncated', () => {
@@ -1507,7 +1507,6 @@ Only this is the final result.
         status: 'completed',
         content: [
           { type: 'text', text: 'Full sync subagent result with multiple lines.\n\nSecond paragraph.' },
-          { type: 'text', text: 'agentId: agent-sync\n<usage>total_tokens: 500</usage>' },
         ],
         agentId: 'agent-sync',
       };
@@ -1515,7 +1514,7 @@ Only this is the final result.
       const info = manager.finalizeSyncSubagent('task-sdk', '{}', false, sdkToolUseResult);
 
       expect(info).not.toBeNull();
-      // Verify the extracted result (first content block) was passed to the renderer
+      // Verify the extracted result (structured report) was passed to the renderer
       expect(updateSubagentBlock).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ result: 'Full sync subagent result with multiple lines.\n\nSecond paragraph.', status: 'completed' })

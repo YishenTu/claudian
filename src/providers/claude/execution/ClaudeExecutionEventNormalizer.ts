@@ -14,18 +14,12 @@ import type {
   ProviderUserMessageStartedEvent,
   ToolExecutionScope,
 } from '../../../core/execution';
-import type { StreamChunk, TurnStats, UsageInfo } from '../../../core/types';
+import type { TurnStats, UsageInfo } from '../../../core/types';
 import { createTurnStats } from '../../../core/types';
 import { ClaudeTaskToolNormalizer } from '../normalization/ClaudeTaskToolNormalizer';
-import {
-  isAsyncSubagentCompletion,
-  isContextWindowEvent,
-  isSessionInitEvent,
-  isStreamChunk,
-  isSubagentProgress,
-} from '../sdk/typeGuards';
 import type {
   ClaudeAsyncSubagentCompletionEvent,
+  ClaudeOutputChunk,
   ClaudeSubagentProgressEvent,
   SessionInitEvent,
 } from '../sdk/types';
@@ -76,6 +70,7 @@ export type ClaudeNormalizedExecutionEvent =
   | {
     readonly type: 'native_error';
     readonly message: string;
+    /** Never set by Claude; retained for consumers shared with other providers' error shape. */
     readonly code?: 'provider_session_missing';
     readonly providerSessionId?: string;
   }
@@ -132,58 +127,26 @@ export class ClaudeExecutionEventNormalizer {
       streamState: state.streamState,
       usageState: state.usageState,
     })) {
-      if (isSessionInitEvent(event)) {
-        normalized.push({
-          type: 'session_init',
-          event,
-        });
-        continue;
-      }
-      if (isAsyncSubagentCompletion(event)) {
-        normalized.push({
-          type: 'async_subagent_completion',
-          event,
-        });
-        continue;
-      }
-      if (isSubagentProgress(event)) {
-        normalized.push({ type: 'subagent_progress', event });
-        continue;
-      }
-      if (isContextWindowEvent(event)) {
-        const model = options.intendedModel ?? state.lastUsage?.model ?? 'sonnet';
-        const reportedContextWindow = isFinitePositiveNumber(
-          options.reportedContextWindow,
-        )
-          ? options.reportedContextWindow
-          : undefined;
-        if (reportedContextWindow === undefined) {
-          normalized.push({
-            type: 'context_window',
-            model,
-            contextWindow: event.contextWindow,
-          });
-        }
-        const correctedUsage = this.updateContextWindow(
-          channel,
-          model,
-          reportedContextWindow ?? event.contextWindow,
-        );
-        if (correctedUsage) {
-          normalized.push({
-            type: 'output',
-            event: {
-              type: 'usage_updated',
-              usage: correctedUsage,
-            },
-          });
-        }
-        continue;
-      }
-      if (isStreamChunk(event)) {
-        for (const chunk of normalizeTaskToolChunk(event, state.taskToolNormalizer)) {
-          this.#normalizeStreamChunk(message, chunk, state, normalized);
-        }
+      switch (event.type) {
+        case 'session_init':
+          normalized.push({ type: 'session_init', event });
+          break;
+        case 'async_subagent_completion':
+          normalized.push({ type: 'async_subagent_completion', event });
+          break;
+        case 'subagent_progress':
+          normalized.push({ type: 'subagent_progress', event });
+          break;
+        case 'context_window':
+          this.#normalizeContextWindow(channel, event.contextWindow, options, normalized);
+          break;
+        case 'error':
+          normalized.push({ type: 'native_error', message: event.content });
+          break;
+        default:
+          for (const chunk of normalizeTaskToolChunk(event, state.taskToolNormalizer)) {
+            this.#normalizeOutputChunk(message, chunk, state, normalized);
+          }
       }
     }
 
@@ -246,27 +209,31 @@ export class ClaudeExecutionEventNormalizer {
     state.sawStreamThinking = false;
   }
 
-  #normalizeStreamChunk(
+  /** Result modelUsage reports the model window, which supersedes any discovered compaction window. */
+  #normalizeContextWindow(
+    channel: ClaudeExecutionEventChannel,
+    contextWindow: number,
+    options: { readonly intendedModel?: string },
+    target: ClaudeNormalizedExecutionEvent[],
+  ): void {
+    const state = this.states[channel];
+    const model = options.intendedModel ?? state.lastUsage?.model ?? 'sonnet';
+    target.push({ type: 'context_window', model, contextWindow });
+    const correctedUsage = this.updateContextWindow(channel, model, contextWindow);
+    if (correctedUsage) {
+      target.push({
+        type: 'output',
+        event: { type: 'usage_updated', usage: correctedUsage },
+      });
+    }
+  }
+
+  #normalizeOutputChunk(
     message: SDKMessage,
-    chunk: StreamChunk,
+    chunk: ClaudeOutputChunk,
     state: NormalizationState,
     target: ClaudeNormalizedExecutionEvent[],
   ): void {
-    if (chunk.type === 'done') return;
-    if (chunk.type === 'error') {
-      target.push({
-        type: 'native_error',
-        message: (isSyntheticApiErrorMessage(message) ? extractApiErrorText(message) : null)
-          ?? chunk.content,
-        code: chunk.code,
-        providerSessionId: chunk.providerSessionId,
-      });
-      return;
-    }
-
-    // The native_error above already carries this text; rendering it again would duplicate it.
-    if (chunk.type === 'text' && isSyntheticApiErrorMessage(message)) return;
-
     if (
       (chunk.type === 'text' || chunk.type === 'thinking')
       && message.type === 'stream_event'
@@ -297,13 +264,10 @@ export class ClaudeExecutionEventNormalizer {
       });
     }
 
-    const event = toOutputEvent(chunk, state);
-    if (event) {
-      target.push({
-        type: 'output',
-        event,
-      });
-    }
+    target.push({
+      type: 'output',
+      event: toOutputEvent(chunk, state),
+    });
   }
 }
 
@@ -322,9 +286,9 @@ function createNormalizationState(): NormalizationState {
 }
 
 function normalizeTaskToolChunk(
-  chunk: StreamChunk,
+  chunk: ClaudeOutputChunk,
   normalizer: ClaudeTaskToolNormalizer,
-): StreamChunk[] {
+): ClaudeOutputChunk[] {
   if (chunk.type === 'tool_use') {
     const normalized = normalizer.normalizeToolUse(chunk.id, chunk.name, chunk.input);
     if (!normalized) return [chunk];
@@ -362,22 +326,10 @@ function normalizeTaskToolChunk(
 }
 
 function toOutputEvent(
-  chunk: Exclude<StreamChunk, { type: 'done' | 'error' }>,
+  chunk: ClaudeOutputChunk,
   state: NormalizationState,
-): ClaudeNormalizedOutputEvent | null {
+): ClaudeNormalizedOutputEvent {
   switch (chunk.type) {
-    case 'user_message_start':
-      return {
-        type: 'user_message_started',
-        content: chunk.content,
-        nativeUserMessageId: chunk.itemId,
-      };
-    case 'assistant_message_start':
-      state.assistantStarted = true;
-      return {
-        type: 'assistant_message_started',
-        nativeAssistantId: chunk.itemId,
-      };
     case 'text':
       return {
         type: 'text_delta',
@@ -388,29 +340,12 @@ function toOutputEvent(
         type: 'thinking_delta',
         text: chunk.content,
       };
-    case 'citations':
-      return {
-        type: 'citations',
-        citations: chunk.citations,
-      };
     case 'tool_use':
     case 'subagent_tool_use':
       return normalizeToolStarted(chunk, state);
     case 'tool_result':
     case 'subagent_tool_result':
       return normalizeToolCompleted(chunk, state);
-    case 'subagent_tool_output':
-      return { type: 'tool_output', toolCallId: chunk.id, toolScope: { kind: 'subagent', subagentId: chunk.subagentId }, content: chunk.content };
-    case 'tool_output': {
-      const identity = state.toolScopes.get(chunk.id)
-        ?? { toolScope: { kind: 'main' as const } };
-      return {
-        type: 'tool_output',
-        toolCallId: chunk.id,
-        ...identity,
-        content: chunk.content,
-      };
-    }
     case 'usage':
       state.lastUsage = chunk.usage;
       return {
@@ -420,14 +355,6 @@ function toOutputEvent(
     case 'context_compacted':
       return {
         type: 'context_compacted',
-      };
-    case 'task_notification':
-      return null;
-    case 'notice':
-      return {
-        type: 'notice',
-        message: chunk.content,
-        level: chunk.level,
       };
   }
 }
@@ -442,9 +369,7 @@ function isFinitePositiveNumber(value: unknown): value is number {
 }
 
 function normalizeToolStarted(
-  chunk:
-    | Extract<StreamChunk, { type: 'tool_use' }>
-    | Extract<StreamChunk, { type: 'subagent_tool_use' }>,
+  chunk: Extract<ClaudeOutputChunk, { type: 'tool_use' | 'subagent_tool_use' }>,
   state: NormalizationState,
 ): ClaudeNormalizedOutputEvent {
   const identity: ToolIdentity = chunk.type === 'subagent_tool_use'
@@ -472,9 +397,7 @@ function normalizeToolStarted(
 }
 
 function normalizeToolCompleted(
-  chunk:
-    | Extract<StreamChunk, { type: 'tool_result' }>
-    | Extract<StreamChunk, { type: 'subagent_tool_result' }>,
+  chunk: Extract<ClaudeOutputChunk, { type: 'tool_result' | 'subagent_tool_result' }>,
   state: NormalizationState,
 ): ClaudeNormalizedOutputEvent {
   if (chunk.isBlocked) {
@@ -503,49 +426,10 @@ function normalizeToolCompleted(
   };
 }
 
-// Claude reports quota and other API failures as a synthetic assistant message whose only
-// payload is human-readable text (e.g. the session-limit reset time). `error` alone is not
-// enough to detect it: errors such as `max_output_tokens` ride on real assistant messages
-// carrying real partial prose, which must not be mistaken for error copy. `isApiErrorMessage`
-// and `apiErrorStatus` are wire-only fields the SDK does not declare, so they are treated as
-// optional hints alongside the typed `<synthetic>` model marker.
-function isSyntheticApiErrorMessage(message: SDKMessage): boolean {
-  if (message.type !== 'assistant') return false;
-  if (typeof message.error !== 'string' || message.error.trim() === '') return false;
-  const wireOnly = message as unknown as {
-    isApiErrorMessage?: unknown;
-    apiErrorStatus?: unknown;
-  };
-  return (
-    wireOnly.isApiErrorMessage === true
-    || typeof wireOnly.apiErrorStatus === 'number'
-    || (message.message as { model?: unknown } | undefined)?.model === '<synthetic>'
-  );
-}
-
-function extractApiErrorText(message: SDKMessage): string | null {
-  if (message.type !== 'assistant') return null;
-  const content = (message.message as { content?: unknown } | undefined)?.content;
-  if (!Array.isArray(content)) return null;
-  const text = content
-    .filter((block): block is { type: 'text'; text: string } => (
-      typeof block === 'object'
-      && block !== null
-      && (block as { type?: unknown }).type === 'text'
-      && typeof (block as { text?: unknown }).text === 'string'
-      && (block as { text: string }).text.trim() !== '(no content)'
-    ))
-    .map(block => block.text)
-    .join('\n')
-    .trim();
-  return text === '' ? null : text;
-}
-
-function isAssistantOutputChunk(chunk: StreamChunk): boolean {
+function isAssistantOutputChunk(chunk: ClaudeOutputChunk): boolean {
   return (
     chunk.type === 'text'
     || chunk.type === 'thinking'
-    || chunk.type === 'citations'
     || chunk.type === 'tool_use'
     || chunk.type === 'subagent_tool_use'
   );

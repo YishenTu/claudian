@@ -46,14 +46,16 @@ describe('Claude effort metadata migration', () => {
     expect(getClaudeProviderSettings(loaded).discoveredModels[1].supportedEffortLevels).toBeUndefined();
   });
 
-  it('removes the retired completion flag without treating missing metadata as complete', async () => {
+  it('removes retired keys without treating missing metadata as complete', async () => {
     const { storage, read, adapter } = createStorage({
-      providerConfigs: { claude: { effortMetadataMigrated: true, visibleModels: ['haiku'], selectedModels: [
+      providerConfigs: { claude: { effortMetadataMigrated: true, defaultModel: 'haiku', visibleModels: ['haiku'], selectedModels: [
         { value: 'haiku', label: 'Haiku', description: '' },
       ] } },
     });
-    await storage.load();
+    const loaded = await storage.load();
     expect(read().providerConfigs.claude.effortMetadataMigrated).toBeUndefined();
+    expect(read().providerConfigs.claude.defaultModel).toBeUndefined();
+    expect((loaded.providerConfigs as Record<string, Record<string, unknown>>).claude).not.toHaveProperty('defaultModel');
 
     const settings = read();
     settings.providerConfigs.claude.visibleModels = ['claude-sonnet-5'];

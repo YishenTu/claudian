@@ -2,7 +2,30 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import type { AgentOutput } from '@anthropic-ai/claude-agent-sdk/sdk-tools';
+
 import { ClaudeTaskResultInterpreter } from '@/providers/claude/runtime/ClaudeTaskResultInterpreter';
+
+function completedAgentOutput(agentId: string, texts: string[]): AgentOutput {
+  return {
+    status: 'completed',
+    agentId,
+    prompt: 'Explain the bookkeeping',
+    content: texts.map(text => ({ type: 'text', text })),
+    totalToolUseCount: 0,
+    totalDurationMs: 1,
+    totalTokens: 5,
+    usage: {
+      input_tokens: 3,
+      output_tokens: 2,
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
+      server_tool_use: null,
+      service_tier: null,
+      cache_creation: null,
+    },
+  };
+}
 
 describe('ClaudeTaskResultInterpreter', () => {
   it('waits for partial task input before determining mode', () => {
@@ -58,7 +81,23 @@ describe('ClaudeTaskResultInterpreter', () => {
     expect(new ClaudeTaskResultInterpreter().interpretResult(text, false, { mode: 'sync' }).result).toBe(text);
   });
 
+  it.each(['sync', 'async'] as const)('renders a structured %s AgentOutput report verbatim, including trailer-shaped text', mode => {
+    // The SDK documents the structured report as free of the model-directed agentId/usage trailer.
+    const report = ['Agent bookkeeping looks like this:', 'agentId: agent-1\n<usage>total_tokens: 5</usage>'];
+    const result = new ClaudeTaskResultInterpreter().interpretResult(
+      'Model-facing text', false, { mode, agentId: 'agent-1' }, completedAgentOutput('agent-1', report));
+
+    expect(result).toEqual({ status: 'completed', result: report.join('\n') });
+  });
+
   describe('interpretLaunch', () => {
+    it('does not treat an 8-hex token in ordinary result text as an agent id', () => {
+      const launch = new ClaudeTaskResultInterpreter().interpretLaunch('Fixed in commit deadbeef.', false);
+
+      expect(launch).toEqual({ mode: 'sync', agentId: null, result: 'Fixed in commit deadbeef.' });
+    });
+
+
     it('does not treat completed sync metadata with agentId as an async launch', () => {
       const interpreter = new ClaudeTaskResultInterpreter();
 

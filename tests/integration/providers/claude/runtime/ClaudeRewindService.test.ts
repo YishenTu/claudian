@@ -17,12 +17,10 @@ describe('Claude rewind filesystem recovery', () => {
     await fs.mkdir(target);
     await fs.writeFile(path.join(target, 'untouched.txt'), 'Link target');
     await fs.symlink(target, path.join(root, 'link'), 'junction');
-    let sessionTransition: string | null = null;
+    let closeCount = 0;
     const rewind = executeClaudeRewind('user-1', {
       assistantMessageId: 'assistant-1', mode: 'code-and-conversation', vaultPath: root,
-      closePersistentQuery: reason => { sessionTransition = reason; },
-      setPendingResumeAt: () => { throw new Error('Failed rewind must not set a resume checkpoint'); },
-      resetSession: () => { throw new Error('Failed rewind must not reset the session'); },
+      closePersistentQuery: () => { closeCount += 1; },
       rewindFiles: async (_id, dryRun) => {
         if (dryRun) return { canRewind: true, filesChanged: ['existing.txt', 'directory', 'link', 'created.txt'] };
         await fs.writeFile(path.join(root, 'existing.txt'), 'Partially rewound');
@@ -49,7 +47,7 @@ describe('Claude rewind filesystem recovery', () => {
     expect(await fs.realpath(path.join(root, 'link'))).toBe(await fs.realpath(target));
     expect(await fs.readFile(path.join(root, 'link/untouched.txt'), 'utf8')).toBe('Link target');
     await expect(fs.stat(path.join(root, 'created.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(sessionTransition).toBe('rewind failed');
+    expect(closeCount).toBe(1);
   });
 
   it('surfaces restoration failure and still restores the other affected files', async () => {
@@ -60,8 +58,6 @@ describe('Claude rewind filesystem recovery', () => {
     const rewind = executeClaudeRewind('user-1', {
       assistantMessageId: 'assistant-1', mode: 'code-and-conversation', vaultPath: root,
       closePersistentQuery: () => { closed = true; },
-      setPendingResumeAt: () => { throw new Error('Failed rewind must not set a resume checkpoint'); },
-      resetSession: () => { throw new Error('Failed rewind must not reset the session'); },
       rewindFiles: async (_id, dryRun) => {
         if (dryRun) return { canRewind: true, filesChanged: ['blocked/note.txt', 'other.txt'] };
         await fs.rm(path.join(root, 'blocked'), { recursive: true });

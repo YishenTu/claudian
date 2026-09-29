@@ -13,7 +13,7 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ProviderSettingsTabRendererContext } from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
 import { ModelSelector, type ToolbarCallbacks } from '@/features/chat/ui/InputToolbar';
-import type { ClaudeModelCatalog } from '@/providers/claude/runtime/ClaudeModelCatalog';
+import type { ClaudeModelDiscovery } from '@/providers/claude/runtime/ClaudeModels';
 import { createClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
@@ -48,9 +48,9 @@ HTMLElement.prototype.toggleClass = function (names, value) {
 };
 HTMLElement.prototype.appendText = function (text) { this.append(text); };
 
-function renderModels(container: HTMLElement, context: ProviderSettingsTabRendererContext, native: Pick<ClaudeModelCatalog, 'refresh'>) {
+function renderModels(container: HTMLElement, context: ProviderSettingsTabRendererContext, native: { refresh: ClaudeModelDiscovery }) {
   context.plugin.notifyProviderChatOptionsChanged = jest.fn();
-  return renderProviderModelsSection(container, 'claude', 'Claude', createClaudeModels(context.plugin, native as ClaudeModelCatalog));
+  return renderProviderModelsSection(container, 'claude', 'Claude', createClaudeModels(context.plugin, signal => native.refresh(signal)));
 }
 
 describe('Claude model picker', () => {
@@ -248,7 +248,7 @@ it.each(['selections', 'aliases'] as const)(
         coordinator.mutate(draft => mutation(draft as unknown as ClaudianSettings)),
       notifyProviderChatOptionsChanged: notify,
     } as unknown as ProviderHost;
-    const catalog = createClaudeModels(host, { refresh: async () => ({ changed: false }) });
+    const catalog = createClaudeModels(host, async () => ({ changed: false }));
     await catalog.refresh();
     const container = document.body.createDiv();
     const picker = renderProviderModelsSection(container, 'claude', 'Claude', catalog);

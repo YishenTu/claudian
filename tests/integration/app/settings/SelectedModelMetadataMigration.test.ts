@@ -13,8 +13,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeModelOptions, getClaudeSupportedEffortLevels } from '@/providers/claude/modelOptions';
-import { ClaudeModelCatalog } from '@/providers/claude/runtime/ClaudeModelCatalog';
-import { createClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
+import { createClaudeModels, discoverClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { updateCurrentGrokCatalog, updateGrokProviderSettings } from '@/providers/grok/settings';
@@ -73,8 +72,7 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
     .toEqual(cached ? ['opus[1m]', 'claude-fable-5-10', 'sonnet', 'haiku'] : []);
   Object.assign(host.settings, await storage.load());
   const probe = jest.fn(async () => rows);
-  const native = new ClaudeModelCatalog(host, probe);
-  const catalog = createClaudeModels(host, native);
+  const catalog = createClaudeModels(host, signal => discoverClaudeModels(host, signal, probe));
   ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalog });
 
   await migrateSelectedModelMetadata(host, new AbortController().signal);
@@ -94,7 +92,6 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
   await migrateSelectedModelMetadata(host, new AbortController().signal);
   expect(probe).toHaveBeenCalledTimes(1);
   await catalog.dispose();
-  await native.dispose();
 });
 
 it('keeps saved family aliases enabled after discovering a newer unselected version', async () => {
@@ -112,8 +109,7 @@ it('keeps saved family aliases enabled after discovering a newer unselected vers
     .mockResolvedValueOnce([selected, {
       value: 'claude-fable-6-0', label: 'New Fable', description: '', resolvedModel: 'claude-fable-6-0', supportedEffortLevels: ['low'],
     }]);
-  const native = new ClaudeModelCatalog(host, probe);
-  const catalog = createClaudeModels(host, native);
+  const catalog = createClaudeModels(host, signal => discoverClaudeModels(host, signal, probe));
   ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalog });
   await migrateSelectedModelMetadata(host, new AbortController().signal);
   expect(ProviderRegistry.resolveTitleGenerationSelection(host.settings)?.model).toBe('claude-code/claude-fable-5-10');
@@ -142,7 +138,6 @@ it('keeps saved family aliases enabled after discovering a newer unselected vers
   expect(ProviderRegistry.resolveTitleGenerationSelection(host.settings)).toBeNull();
   expect(findProviderModelOption('claude', 'fable', host.settings)).toBeNull();
   await catalog.dispose();
-  await native.dispose();
 });
 
 it.each(cases.flatMap(entry => [false, true].map(deselectDuringQuery => ({ ...entry, deselectDuringQuery }))))(

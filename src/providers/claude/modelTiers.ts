@@ -2,7 +2,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
   {
     id: 'haiku',
     label: 'Haiku',
-    agentLabel: 'Haiku',
     description: 'Fast and efficient',
     environmentKey: 'ANTHROPIC_DEFAULT_HAIKU_MODEL',
     supportsOneMillionSuffix: false,
@@ -10,7 +9,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
   {
     id: 'sonnet',
     label: 'Sonnet',
-    agentLabel: 'Sonnet',
     description: 'Balanced performance',
     environmentKey: 'ANTHROPIC_DEFAULT_SONNET_MODEL',
     supportsOneMillionSuffix: true,
@@ -18,7 +16,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
   {
     id: 'opus',
     label: 'Opus',
-    agentLabel: 'Opus',
     description: 'Most capable',
     environmentKey: 'ANTHROPIC_DEFAULT_OPUS_MODEL',
     supportsOneMillionSuffix: true,
@@ -26,7 +23,6 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
   {
     id: 'fable',
     label: 'Fable',
-    agentLabel: 'Fable',
     description: "Anthropic's most capable model — premium pricing above Opus",
     environmentKey: 'ANTHROPIC_DEFAULT_FABLE_MODEL',
     supportsOneMillionSuffix: false,
@@ -34,7 +30,7 @@ export const CLAUDE_MODEL_TIER_DEFINITIONS = [
 ] as const;
 
 export type ClaudeModelTier = typeof CLAUDE_MODEL_TIER_DEFINITIONS[number]['id'];
-export type ClaudeModelTierDefinition = typeof CLAUDE_MODEL_TIER_DEFINITIONS[number];
+type ClaudeModelTierDefinition = typeof CLAUDE_MODEL_TIER_DEFINITIONS[number];
 export type ClaudeModelTierEnvironmentKey = ClaudeModelTierDefinition['environmentKey'];
 
 export const CLAUDE_MODEL_TIER_PATTERN = CLAUDE_MODEL_TIER_DEFINITIONS

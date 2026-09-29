@@ -40,7 +40,7 @@ it.each(modelCatalogCases)('$id keeps native selection, aliases and metadata beh
   const warmModelsMetadata = jest.fn(async () => true);
   mockPiDiscover.mockResolvedValue({ kind: 'completed', models: read(settings) });
   const factories: Record<string, () => ProviderModelCatalog> = {
-    claude: () => createClaudeModels(host, { refresh: discovery }),
+    claude: () => createClaudeModels(host, discovery),
     codex: () => createCodexModels(host, { refresh: discovery }),
     grok: () => createGrokModels(host, { refresh: discovery }),
     opencode: () => createOpencodeModels(host, { discoverModels: async () => { await discovery(); return true; }, warmModelsMetadata }),
