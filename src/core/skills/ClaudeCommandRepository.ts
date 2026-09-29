@@ -132,6 +132,14 @@ export class ClaudeCommandRepository {
     });
   }
 
+  /** Throws a revision conflict when the command changed since `expectedRevision` was read. */
+  async assertRevision(name: string, expectedRevision: string): Promise<void> {
+    const current = await this.#readDocument(this.#filePath(name));
+    if (current.revision !== expectedRevision) {
+      throw new ClaudeCommandRevisionConflictError(name);
+    }
+  }
+
   async trash(name: string, expectedRevision: string): Promise<void> {
     await this.#withMutation(async () => {
       const current = await this.#readDocument(this.#filePath(name));

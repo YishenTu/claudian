@@ -113,14 +113,31 @@ export class AgentSkillManagementCoordinator {
     return this.#completeMutation(undefined);
   }
 
-  /** Creates the skill first so a failed conversion never loses the command. */
+  /**
+   * Checks the command is unchanged, creates the skill, then trashes the command.
+   * If the command cannot be removed, the new skill is trashed so the command
+   * stays the only copy and a retry does not collide.
+   */
   async convertCommand(
     command: ClaudeCommandDocument,
     input: AgentSkillInput,
   ): Promise<AgentSkillMutationResult<AgentSkillDocument>> {
     const commands = this.#requireCommands();
+    await commands.assertRevision(command.name, command.revision);
     const value = await this.repository.create(input, { frontmatter: command.frontmatter });
-    await commands.trash(command.name, command.revision);
+    try {
+      await commands.trash(command.name, command.revision);
+    } catch (error) {
+      try {
+        await this.repository.trash(value.name, value.revision);
+      } catch (rollbackError) {
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}; the new skill "${value.name}" could not be removed`,
+          { cause: rollbackError },
+        );
+      }
+      throw error;
+    }
     return this.#completeMutation(value);
   }
 

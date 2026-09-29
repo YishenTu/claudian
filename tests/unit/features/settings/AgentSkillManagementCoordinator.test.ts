@@ -1,6 +1,14 @@
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
+
 import type { AgentSkillDocument, AgentSkillInput } from '@/core/skills/AgentSkill';
 import type { AgentSkillRepository } from '@/core/skills/AgentSkillRepository';
-import { AgentSkillRevisionConflictError } from '@/core/skills/AgentSkillRepository';
+import {
+  AgentSkillRepository as VaultAgentSkillRepository,
+  AgentSkillRevisionConflictError,
+  CLAUDE_COMMANDS_ROOT,
+  CLAUDE_SKILLS_ROOT,
+} from '@/core/skills/AgentSkillRepository';
+import { ClaudeCommandRepository, ClaudeCommandRevisionConflictError } from '@/core/skills/ClaudeCommandRepository';
 import { AgentSkillManagementCoordinator } from '@/features/settings/AgentSkillManagementCoordinator';
 
 function makeSkill(name = 'shared-skill', revision = 'revision-1'): AgentSkillDocument {
@@ -142,5 +150,50 @@ describe('AgentSkillManagementCoordinator', () => {
       status: 'rejected',
       reason: expect.any(AgentSkillRevisionConflictError),
     }));
+  });
+
+  describe('converting a command on a filesystem-backed vault', () => {
+    let vault: DesktopVault;
+    let commands: ClaudeCommandRepository;
+    let coordinator: AgentSkillManagementCoordinator;
+    const input: AgentSkillInput = { name: 'deploy', description: 'Deploy', instructions: 'Deploy it' };
+
+    beforeEach(async () => {
+      vault = await DesktopVault.create();
+      await vault.write(`${CLAUDE_COMMANDS_ROOT}/deploy.md`, '---\ndescription: Deploy\n---\nDeploy it\n');
+      commands = new ClaudeCommandRepository(vault.files);
+      coordinator = new AgentSkillManagementCoordinator(
+        new VaultAgentSkillRepository(vault.files, { root: CLAUDE_SKILLS_ROOT, readPolicy: 'lenient' }),
+        jest.fn(),
+        commands,
+      );
+    });
+
+    afterEach(async () => {
+      await vault.dispose();
+    });
+
+    it('creates nothing when the command changed after the draft was opened', async () => {
+      const [command] = (await commands.list()).commands;
+      await vault.write(`${CLAUDE_COMMANDS_ROOT}/deploy.md`, '---\ndescription: Deploy\n---\nEdited elsewhere\n');
+
+      await expect(coordinator.convertCommand(command, input)).rejects.toBeInstanceOf(ClaudeCommandRevisionConflictError);
+
+      expect(await vault.exists(`${CLAUDE_SKILLS_ROOT}/deploy`)).toBe(false);
+      expect(await vault.read(`${CLAUDE_COMMANDS_ROOT}/deploy.md`)).toContain('Edited elsewhere');
+      const [fresh] = (await commands.list()).commands;
+      await expect(coordinator.convertCommand(fresh, input)).resolves.toBeTruthy();
+      expect(await vault.exists(`${CLAUDE_COMMANDS_ROOT}/deploy.md`)).toBe(false);
+    });
+
+    it('removes the new skill when the command cannot be removed', async () => {
+      const [command] = (await commands.list()).commands;
+      jest.spyOn(commands, 'trash').mockRejectedValueOnce(new ClaudeCommandRevisionConflictError('deploy'));
+
+      await expect(coordinator.convertCommand(command, input)).rejects.toBeInstanceOf(ClaudeCommandRevisionConflictError);
+
+      expect(await vault.exists(`${CLAUDE_SKILLS_ROOT}/deploy`)).toBe(false);
+      expect(await vault.exists(`${CLAUDE_COMMANDS_ROOT}/deploy.md`)).toBe(true);
+    });
   });
 });
