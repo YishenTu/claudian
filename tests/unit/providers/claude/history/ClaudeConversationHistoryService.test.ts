@@ -254,7 +254,7 @@ describe('ClaudeConversationHistoryService', () => {
         type: 'assistant', uuid: 'a1', timestamp: testTime(),
         message: { model: 'claude-opus-4-6', content: [{ type: 'text', text: 'Answer' }] },
       }));
-      jest.useFakeTimers({ now: testDate() });
+      jest.useFakeTimers({ now: testDate().getTime() });
       // Observe release without accessing history again, which would hide lazy expiry.
       const deleteSpy = jest.spyOn(Map.prototype, 'delete');
       try {
@@ -279,7 +279,7 @@ describe('ClaudeConversationHistoryService', () => {
       const entry = JSON.stringify({ type: 'assistant', uuid: 'a1', timestamp: testTime(),
         message: { model: 'claude-opus-4-6', content: [{ type: 'text', text: 'Answer' }] } });
       await Promise.all(sessionPaths.map(sessionPath => fs.writeFile(sessionPath, entry)));
-      jest.useFakeTimers({ now: testDate() });
+      jest.useFakeTimers({ now: testDate().getTime() });
       const read = (sessionPath: string) => historyStore.loadSDKSessionModel(directory, 'session', undefined, sessionPath);
       try {
         await read(sessionPaths[0]);
