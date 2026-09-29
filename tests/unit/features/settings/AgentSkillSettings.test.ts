@@ -56,6 +56,7 @@ describe('AgentSkillSettings', () => {
     save(dialog);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect((await repository.list()).skills).toEqual([expect.objectContaining({ name: 'shared-skill', instructions: 'Shared instructions' })]);
+    expect(await screen.findByText('shared-skill')).toBeTruthy();
     await settings.refresh();
     expect(screen.getByText('Provider setup remains visible')).toBe(sibling);
   });
@@ -274,6 +275,8 @@ describe('AgentSkillSettings with Claude commands and frontmatter policies', () 
     expect(skill.frontmatter).toMatchObject({ 'argument-hint': '[env]' });
     expect((await commands.list()).commands).toEqual([]);
     expect(adapter.trashed).toEqual([`${CLAUDE_COMMANDS_ROOT}/ops/Deploy.md`]);
+    await waitFor(() => expect(screen.queryByText('/ops/Deploy')).toBeNull());
+    expect(screen.getByText('ops-deploy')).toBeTruthy();
   });
 
   it('strips command frontmatter when converting after sync', async () => {

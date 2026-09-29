@@ -15,11 +15,10 @@ import {
   CLAUDE_COMMANDS_ROOT,
   CLAUDE_SKILLS_ROOT,
 } from './AgentSkillRepository';
-import { parseClaudeCommandMarkdown } from './ClaudeCommandRepository';
+import { ClaudeCommandRepository, commandNameFromPath, commandSkillName } from './ClaudeCommandRepository';
 import { collectAgentSkillInputErrors } from './validateAgentSkill';
 
 const SKILL_FILENAME = 'SKILL.md';
-const COMMAND_EXTENSION = '.md';
 const FRONTMATTER_START = /^---\r?\n/;
 
 /**
@@ -75,7 +74,6 @@ export interface SkillSyncResult {
   converted: string[];
   trashed: string[];
   unlinked: string[];
-  skipped: string[];
   failed: Array<{ id: string; message: string }>;
 }
 
@@ -112,13 +110,6 @@ function findClaudeSyntax(body: string): string[] {
   return [...matches];
 }
 
-function commandSkillName(commandPath: string): string {
-  return commandPath
-    .slice(CLAUDE_COMMANDS_ROOT.length + 1, -COMMAND_EXTENSION.length)
-    .replace(/\//g, '-')
-    .toLowerCase();
-}
-
 function fileChanged(): Error {
   return new Error('Changed since the preview');
 }
@@ -139,9 +130,11 @@ function isMovable(item: SkillSyncItem): boolean {
  */
 export class ClaudeSkillSync {
   private readonly sharedSkills: AgentSkillRepository;
+  private readonly commands: ClaudeCommandRepository;
 
   constructor(private readonly files: VaultFileAdapter) {
     this.sharedSkills = new AgentSkillRepository(files);
+    this.commands = new ClaudeCommandRepository(files);
   }
 
   readState(): Promise<FolderLinkState> {
@@ -202,7 +195,7 @@ export class ClaudeSkillSync {
 
   async execute(plan: SkillSyncPlan, resolutions: SkillSyncResolutions): Promise<SkillSyncResult> {
     const result: SkillSyncResult = {
-      linked: false, moved: [], converted: [], trashed: [], unlinked: [], skipped: [], failed: [],
+      linked: false, moved: [], converted: [], trashed: [], unlinked: [], failed: [],
     };
     const state = await this.readState();
     if (state !== plan.state) throw new SkillSyncStaleError();
@@ -227,7 +220,7 @@ export class ClaudeSkillSync {
       }
     }
     try {
-      await this.#pruneCommandFolders(CLAUDE_COMMANDS_ROOT);
+      await this.#removeEmptyCommandsRoot();
     } catch (error) {
       result.failed.push({ id: CLAUDE_COMMANDS_ROOT, message: errorMessage(error) });
     }
@@ -263,11 +256,10 @@ export class ClaudeSkillSync {
     if (resolution?.action === 'skip' || alreadyShared) {
       // A copy discarded without asking must still match its shared skill.
       if (resolution?.action !== 'skip' && !await this.#isIdenticalToShared(item.id)) throw fileChanged();
+      // A skipped command stays where it is.
       if (item.kind !== 'command') {
         await this.files.trash(item.id);
         result.trashed.push(item.id);
-      } else {
-        result.skipped.push(item.id);
       }
       return;
     }
@@ -302,12 +294,12 @@ export class ClaudeSkillSync {
       return;
     }
 
-    if (digest(await this.files.readManagedFile(item.id)) !== item.fingerprint) {
-      throw new Error('Changed since the preview');
-    }
+    // Trashing the command re-checks its revision and removes emptied subfolders.
+    const commandName = commandNameFromPath(item.id);
+    await this.commands.assertRevision(commandName, item.fingerprint);
     if (resolution?.action === 'apply' && resolution.replaceExisting) await this.#trashShared(input.name);
     await this.sharedSkills.create(input);
-    await this.files.trash(item.id);
+    await this.commands.trash(commandName, item.fingerprint);
     result.converted.push(item.id);
   }
 
@@ -408,31 +400,20 @@ export class ClaudeSkillSync {
   }
 
   async #planCommands(): Promise<SkillSyncItem[]> {
-    const exists = await this.files.verifyManagedPath(CLAUDE_COMMANDS_ROOT, {
-      expectedType: 'folder',
-      allowMissing: true,
-    });
-    if (!exists) return [];
-    const files = (await this.#listFilesRecursive(CLAUDE_COMMANDS_ROOT))
-      .filter(file => file.endsWith(COMMAND_EXTENSION))
-      .sort((left, right) => left.localeCompare(right));
-    const items: SkillSyncItem[] = [];
-    for (const file of files) {
-      const raw = await this.files.readManagedFile(file);
-      const parsed = parseClaudeCommandMarkdown(raw);
+    const { commands } = await this.commands.list();
+    return commands.map(command => {
       const item: SkillSyncItem = {
-        id: file,
+        id: command.filePath,
         kind: 'command',
-        proposedName: commandSkillName(file),
-        description: parsed.description,
-        instructions: parsed.instructions,
-        fingerprint: digest(raw),
+        proposedName: commandSkillName(command.name),
+        description: command.description,
+        instructions: command.instructions,
+        fingerprint: command.revision,
         issues: [],
       };
-      this.#addContentIssues(item, parsed.frontmatter);
-      items.push(item);
-    }
-    return items;
+      this.#addContentIssues(item, command.frontmatter);
+      return item;
+    });
   }
 
   #addContentIssues(item: SkillSyncItem, frontmatter: Record<string, unknown>): void {
@@ -489,16 +470,13 @@ export class ClaudeSkillSync {
     ];
   }
 
-  async #pruneCommandFolders(folder: string): Promise<boolean> {
-    const exists = await this.files.verifyManagedPath(folder, { expectedType: 'folder', allowMissing: true });
-    if (!exists) return true;
-    const listing = await this.files.listManagedFolder(folder);
-    let empty = listing.files.length === 0;
-    for (const child of listing.folders.filter(candidate => path.posix.dirname(candidate) === folder)) {
-      empty = await this.#pruneCommandFolders(child) && empty;
+  async #removeEmptyCommandsRoot(): Promise<void> {
+    const exists = await this.files.verifyManagedPath(CLAUDE_COMMANDS_ROOT, {
+      expectedType: 'folder',
+      allowMissing: true,
+    });
+    if (exists && (await this.files.listManagedFolderEntries(CLAUDE_COMMANDS_ROOT)).length === 0) {
+      await this.files.removeManagedFolderIfEmpty(CLAUDE_COMMANDS_ROOT);
     }
-    if (!empty) return false;
-    await this.files.removeManagedFolderIfEmpty(folder);
-    return true;
   }
 }

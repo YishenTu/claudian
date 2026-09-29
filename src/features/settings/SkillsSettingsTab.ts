@@ -29,7 +29,6 @@ export class SkillsSettingsTab {
   private activeSubTab: SkillsSubTab = 'claude';
   private renderGeneration = 0;
   private readonly panels: AgentSkillSettings[] = [];
-  private readonly coordinators: AgentSkillManagementCoordinator[] = [];
   private readonly sync: ClaudeSkillSync;
   private readonly bodyEl: HTMLElement;
 
@@ -181,7 +180,6 @@ export class SkillsSettingsTab {
       () => this.host.notifyAgentSkillsChanged(),
       commands,
     );
-    this.coordinators.push(coordinator);
     // Refresh re-reads the link state too, which can change outside Obsidian.
     this.panels.push(new AgentSkillSettings(container, coordinator, this.app, {
       ...options,
@@ -212,8 +210,6 @@ export class SkillsSettingsTab {
 
   #disposePanels(): void {
     for (const panel of this.panels) panel.dispose();
-    for (const coordinator of this.coordinators) coordinator.resetSubscriptions();
     this.panels.length = 0;
-    this.coordinators.length = 0;
   }
 }

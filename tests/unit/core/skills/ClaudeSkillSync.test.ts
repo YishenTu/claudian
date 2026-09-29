@@ -392,7 +392,7 @@ describe('ClaudeSkillSync', () => {
         `${AGENT_SKILLS_ROOT}/shared`,
         `${CLAUDE_SKILLS_ROOT}/unwanted`,
       ]));
-      expect(result.skipped).toEqual([`${CLAUDE_COMMANDS_ROOT}/keep-me.md`]);
+      expect(await vault.exists(`${CLAUDE_COMMANDS_ROOT}/keep-me.md`)).toBe(true);
       expect(await vault.read(`${CLAUDE_COMMANDS_ROOT}/keep-me.md`)).toBe('Command body\n');
     });
 

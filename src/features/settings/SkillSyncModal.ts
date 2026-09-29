@@ -1,6 +1,6 @@
 import { type App, Modal } from 'obsidian';
 
-import { CLAUDE_COMMANDS_ROOT } from '../../core/skills/AgentSkillRepository';
+import { commandNameFromPath } from '../../core/skills/ClaudeCommandRepository';
 import {
   type ClaudeSkillSync,
   type SkillSyncBlockingReason,
@@ -65,7 +65,7 @@ function sameNeeds(left: CardNeeds | undefined, right: CardNeeds): boolean {
 
 function itemLabel(item: SkillSyncItem): string {
   if (item.kind === 'command') {
-    return `/${item.id.slice(CLAUDE_COMMANDS_ROOT.length + 1, -'.md'.length)}`;
+    return `/${commandNameFromPath(item.id)}`;
   }
   return item.id.slice(item.id.lastIndexOf('/') + 1);
 }

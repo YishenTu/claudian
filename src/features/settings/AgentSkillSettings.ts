@@ -11,11 +11,9 @@ import {
   ClaudeCommandCollisionError,
   type ClaudeCommandDocument,
   ClaudeCommandRevisionConflictError,
+  commandSkillName,
 } from '../../core/skills/ClaudeCommandRepository';
-import {
-  AgentSkillValidationError,
-  validateAgentSkillInput,
-} from '../../core/skills/validateAgentSkill';
+import { AgentSkillValidationError } from '../../core/skills/validateAgentSkill';
 import {
   ManagedResourcePathError,
   ManagedResourceRelocationError,
@@ -61,30 +59,18 @@ function showSaveError(error: unknown, name: string): void {
   new Notice(t('settings.agentSkills.saveFailed', { message: errorMessage(error) }));
 }
 
-function validateCommandInput(input: AgentSkillInput): void {
-  if (!input.name) throw new AgentSkillValidationError('name', 'Command name is required');
-  if (!input.instructions.trim()) {
-    throw new AgentSkillValidationError('instructions', 'Command instructions are required');
-  }
-}
-
-function commandSkillName(commandName: string): string {
-  return commandName.replace(/\//g, '-').toLowerCase();
-}
-
-export interface AgentSkillEditorOptions {
+interface AgentSkillEditorOptions {
   title: string;
   initial: AgentSkillInput | null;
   nameDesc?: string;
   descriptionDesc?: string;
   /** Frontmatter keys the save will remove; shown as a warning before saving. */
   droppedKeys?: readonly string[];
-  validate(input: AgentSkillInput): void;
   save(input: AgentSkillInput): Promise<AgentSkillMutationResult<{ name: string }>>;
   successMessage(name: string): string;
 }
 
-export class AgentSkillModal extends Modal {
+class AgentSkillModal extends Modal {
   private nameInput!: HTMLInputElement;
   private descriptionInput!: HTMLInputElement;
   private instructionsArea!: HTMLTextAreaElement;
@@ -150,7 +136,6 @@ export class AgentSkillModal extends Modal {
         instructions: this.instructionsArea.value,
       };
       try {
-        this.options.validate(input);
         const result = await this.options.save(input);
         new Notice(result.refreshFailed
           ? t('settings.agentSkills.savedRefreshFailed')
@@ -183,7 +168,7 @@ export class AgentSkillModal extends Modal {
   }
 }
 
-export interface AgentSkillDeleteOptions {
+interface AgentSkillDeleteOptions {
   title: string;
   description: string;
   path: string;
@@ -191,7 +176,7 @@ export interface AgentSkillDeleteOptions {
   successMessage: string;
 }
 
-export class AgentSkillDeleteModal extends Modal {
+class AgentSkillDeleteModal extends Modal {
   constructor(app: App, private readonly options: AgentSkillDeleteOptions) {
     super(app);
   }
@@ -261,8 +246,8 @@ export interface AgentSkillSettingsOptions {
 /** Lists one skills folder and, when the coordinator manages them, Claude commands. */
 export class AgentSkillSettings {
   private renderGeneration = 0;
+  private disposed = false;
   private readonly rootEl: HTMLDivElement;
-  private readonly unsubscribe: () => void;
 
   constructor(
     containerEl: HTMLElement,
@@ -271,12 +256,13 @@ export class AgentSkillSettings {
     private readonly options: AgentSkillSettingsOptions = {},
   ) {
     this.rootEl = containerEl.createDiv({ cls: 'claudian-agent-skills-manager' });
-    this.unsubscribe = coordinator.subscribe(() => this.render());
     void this.render();
   }
 
+  /** Drops any in-flight render so a disposed panel never repaints. */
   dispose(): void {
-    this.unsubscribe();
+    this.disposed = true;
+    this.renderGeneration += 1;
   }
 
   async refresh(): Promise<void> {
@@ -284,6 +270,7 @@ export class AgentSkillSettings {
   }
 
   async render(): Promise<void> {
+    if (this.disposed) return;
     const generation = ++this.renderGeneration;
     let result;
     let commands;
@@ -385,13 +372,13 @@ export class AgentSkillSettings {
     const actions = item.createDiv({ cls: 'claudian-sp-item-actions' });
     this.#actionButton(actions, t('common.edit'), 'pencil', () => this.#openSkillEditor(skill));
     this.#actionButton(actions, t('common.delete'), 'trash-2', () => {
-      new AgentSkillDeleteModal(this.app, {
+      this.#openDelete({
         title: t('settings.agentSkills.delete.title'),
         description: t('settings.agentSkills.delete.description'),
         path: skill.directoryPath,
         remove: () => this.coordinator.trash(skill.name, skill.revision),
         successMessage: t('settings.agentSkills.deleted', { name: skill.name }),
-      }).open();
+      });
     }, 'claudian-settings-delete-btn');
   }
 
@@ -429,13 +416,13 @@ export class AgentSkillSettings {
         () => this.#openConvertEditor(command),
       );
       this.#actionButton(actions, t('common.delete'), 'trash-2', () => {
-        new AgentSkillDeleteModal(this.app, {
+        this.#openDelete({
           title: t('settings.skills.commands.deleteTitle'),
           description: t('settings.skills.commands.deleteDescription'),
           path: command.filePath,
           remove: () => this.coordinator.trashCommand(command),
           successMessage: t('settings.skills.commands.deleted', { name: command.name }),
-        }).open();
+        });
       }, 'claudian-settings-delete-btn');
     }
   }
@@ -453,13 +440,13 @@ export class AgentSkillSettings {
       void this.#openRepairEditor(name);
     });
     this.#actionButton(actions, t('common.delete'), 'trash-2', () => {
-      new AgentSkillDeleteModal(this.app, {
+      this.#openDelete({
         title: t('settings.agentSkills.delete.title'),
         description: t('settings.agentSkills.delete.description'),
         path: diagnostic.directoryPath,
         remove: () => this.coordinator.trashBroken(name),
         successMessage: t('settings.agentSkills.deleted', { name }),
-      }).open();
+      });
     }, 'claudian-settings-delete-btn');
   }
 
@@ -471,14 +458,32 @@ export class AgentSkillSettings {
       new Notice(t('settings.agentSkills.saveFailed', { message: errorMessage(error) }));
       return;
     }
-    new AgentSkillModal(this.app, {
+    this.#openEditor({
       title: t('settings.agentSkills.modal.titleFix'),
       initial: draft.input,
       droppedKeys: this.#droppedKeys(draft.frontmatter),
-      validate: validateAgentSkillInput,
       save: input => this.coordinator.repair(name, draft.revision, input),
       successMessage: fixedName => t('settings.agentSkills.fixed', { name: fixedName }),
+    });
+  }
+
+  #openEditor(options: AgentSkillEditorOptions): void {
+    new AgentSkillModal(this.app, {
+      ...options,
+      save: async input => this.#renderAfter(await options.save(input)),
     }).open();
+  }
+
+  #openDelete(options: AgentSkillDeleteOptions): void {
+    new AgentSkillDeleteModal(this.app, {
+      ...options,
+      remove: async () => this.#renderAfter(await options.remove()),
+    }).open();
+  }
+
+  #renderAfter<T>(result: T): T {
+    void this.render();
+    return result;
   }
 
   #actionButton(
@@ -501,11 +506,10 @@ export class AgentSkillSettings {
   }
 
   #openSkillEditor(existing: AgentSkillDocument | null): void {
-    new AgentSkillModal(this.app, {
+    this.#openEditor({
       title: t(existing ? 'settings.agentSkills.modal.titleEdit' : 'settings.agentSkills.modal.titleAdd'),
       initial: existing,
       droppedKeys: existing ? this.#droppedKeys(existing.frontmatter) : [],
-      validate: validateAgentSkillInput,
       save: input => (
         existing
           ? this.coordinator.update(existing.name, existing.revision, input)
@@ -515,24 +519,23 @@ export class AgentSkillSettings {
         existing ? 'settings.agentSkills.updated' : 'settings.agentSkills.created',
         { name },
       ),
-    }).open();
+    });
   }
 
   #openCommandEditor(command: ClaudeCommandDocument): void {
-    new AgentSkillModal(this.app, {
+    this.#openEditor({
       title: t('settings.skills.commands.editTitle'),
       initial: command,
       nameDesc: t('settings.skills.commands.nameDesc'),
       descriptionDesc: t('settings.skills.commands.descriptionDesc'),
       droppedKeys: this.#droppedKeys(command.frontmatter),
-      validate: validateCommandInput,
       save: input => this.coordinator.updateCommand(command, input),
       successMessage: name => t('settings.skills.commands.updated', { name }),
-    }).open();
+    });
   }
 
   #openConvertEditor(command: ClaudeCommandDocument): void {
-    new AgentSkillModal(this.app, {
+    this.#openEditor({
       title: t('settings.skills.commands.convertTitle'),
       initial: {
         name: commandSkillName(command.name),
@@ -540,9 +543,8 @@ export class AgentSkillSettings {
         instructions: command.instructions,
       },
       droppedKeys: this.#droppedKeys(command.frontmatter),
-      validate: validateAgentSkillInput,
       save: input => this.coordinator.convertCommand(command, input),
       successMessage: name => t('settings.skills.commands.converted', { name }),
-    }).open();
+    });
   }
 }

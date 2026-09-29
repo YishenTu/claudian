@@ -47,12 +47,22 @@ export class ClaudeCommandRevisionConflictError extends AgentSkillRepositoryErro
   }
 }
 
+/** The command name for a file under `.claude/commands`, e.g. `git/commit`. */
+export function commandNameFromPath(filePath: string): string {
+  return filePath.slice(CLAUDE_COMMANDS_ROOT.length + 1, -COMMAND_EXTENSION.length);
+}
+
+/** The skill name a command converts to: nested segments joined by `-`, lowercased. */
+export function commandSkillName(commandName: string): string {
+  return commandName.replace(/\//g, '-').toLowerCase();
+}
+
 function digest(content: string): string {
   return createHash('sha256').update(content, 'utf8').digest('hex');
 }
 
 /** Parses a Claude command file; frontmatter is optional and malformed YAML falls back to the raw body. */
-export function parseClaudeCommandMarkdown(raw: string): {
+function parseClaudeCommandMarkdown(raw: string): {
   description: string;
   instructions: string;
   frontmatter: Record<string, unknown>;
@@ -179,10 +189,6 @@ export class ClaudeCommandRepository {
     return `${CLAUDE_COMMANDS_ROOT}/${name}${COMMAND_EXTENSION}`;
   }
 
-  #nameFromPath(filePath: string): string {
-    return filePath.slice(CLAUDE_COMMANDS_ROOT.length + 1, -COMMAND_EXTENSION.length);
-  }
-
   async #listCommandFiles(folder: string): Promise<string[]> {
     const listing = await this.files.listManagedFolder(folder);
     const nested = await Promise.all(
@@ -222,7 +228,7 @@ export class ClaudeCommandRepository {
   #documentFromRaw(filePath: string, raw: string): ClaudeCommandDocument {
     return {
       ...parseClaudeCommandMarkdown(raw),
-      name: this.#nameFromPath(filePath),
+      name: commandNameFromPath(filePath),
       filePath,
       revision: digest(raw),
     };

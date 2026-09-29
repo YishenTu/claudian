@@ -16,13 +16,13 @@ export interface AgentSkillMutationResult<T> {
   refreshFailed: boolean;
 }
 
-export type AgentSkillPanelRefresh = () => void | Promise<void>;
 export type AgentSkillsChangedCallback = () => void | Promise<void>;
 
-/** Manages one skills folder and, for Claude, the vault command files beside it. */
+/**
+ * Manages one skills folder and, for Claude, the vault command files beside it.
+ * Every successful mutation invalidates provider skill resources.
+ */
 export class AgentSkillManagementCoordinator {
-  private readonly panelRefreshers = new Set<AgentSkillPanelRefresh>();
-
   constructor(
     private readonly repository: AgentSkillRepository,
     private readonly notifyAgentSkillsChanged: AgentSkillsChangedCallback,
@@ -47,17 +47,6 @@ export class AgentSkillManagementCoordinator {
 
   async listCommands(): Promise<ClaudeCommandListResult> {
     return this.commands ? this.commands.list() : { commands: [], diagnostics: [] };
-  }
-
-  subscribe(refresh: AgentSkillPanelRefresh): () => void {
-    this.panelRefreshers.add(refresh);
-    return () => {
-      this.panelRefreshers.delete(refresh);
-    };
-  }
-
-  resetSubscriptions(): void {
-    this.panelRefreshers.clear();
   }
 
   async create(input: AgentSkillInput): Promise<AgentSkillMutationResult<AgentSkillDocument>> {
@@ -147,14 +136,11 @@ export class AgentSkillManagementCoordinator {
   }
 
   async #completeMutation<T>(value: T): Promise<AgentSkillMutationResult<T>> {
-    const refreshers = [...this.panelRefreshers];
-    const [providerRefresh] = await Promise.all([
-      Promise.resolve().then(() => this.notifyAgentSkillsChanged()).then(
-        () => false,
-        () => true,
-      ),
-      Promise.allSettled(refreshers.map(refresh => Promise.resolve().then(refresh))),
-    ]);
-    return { value, refreshFailed: providerRefresh };
+    try {
+      await this.notifyAgentSkillsChanged();
+      return { value, refreshFailed: false };
+    } catch {
+      return { value, refreshFailed: true };
+    }
   }
 }
