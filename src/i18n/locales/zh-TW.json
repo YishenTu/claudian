@@ -4,23 +4,12 @@
     "cancel": "取消",
     "delete": "刪除",
     "edit": "編輯",
-    "preview": "預覽",
     "add": "添加",
-    "remove": "移除",
-    "clear": "清除",
     "clearAll": "清除全部",
-    "loading": "加載中",
     "error": "錯誤",
-    "success": "成功",
-    "warning": "警告",
     "confirm": "確認",
-    "settings": "設置",
     "advanced": "高級",
-    "enabled": "已啟用",
-    "disabled": "已禁用",
-    "platform": "平台",
-    "refresh": "重新整理",
-    "rewind": "回退"
+    "refresh": "重新整理"
   },
   "chat": {
     "selectAvailableModel": "請先選擇可用的模型再傳送。",
@@ -53,7 +42,6 @@
       "failed": "分叉失敗：{error}",
       "unavailableStreaming": "串流回應中無法分叉",
       "unavailableNoUuid": "無法分叉：缺少訊息識別碼",
-      "unavailableNoResponse": "無法分叉：沒有可分叉的回應",
       "errorMessageNotFound": "找不到訊息",
       "errorNoSession": "沒有可用的工作階段 ID",
       "errorNoActiveTab": "沒有使用中的分頁",
@@ -88,19 +76,19 @@
     }
   },
   "settings": {
-    "title": "Claudian 設定",
     "tabs": {
       "general": "一般",
       "providers": "提供者",
-      "skills": "技能",
-      "claude": "Claude",
-      "codex": "Codex"
+      "skills": "技能"
+    },
+    "providerSettings": {
+      "unavailable": "無法使用提供者設定。",
+      "loadFailed": "無法載入提供者設定：{message}"
     },
     "display": "顯示",
     "conversations": "對話",
     "content": "內容",
     "input": "輸入",
-    "setup": "設定",
     "models": "模型",
     "experimental": "實驗性功能",
     "userName": {
@@ -152,12 +140,6 @@
     "newSessionHotkey": {
       "name": "取代目前對話"
     },
-    "newTabHotkey": {
-      "name": "新增"
-    },
-    "closeTabHotkey": {
-      "name": "關閉分頁"
-    },
     "safety": "安全",
     "loadUserSettings": {
       "name": "載入使用者 Claude 設定",
@@ -172,15 +154,20 @@
       "desc": "啟用 Safe 開關時使用的沙盒模式。"
     },
     "environment": "環境",
+    "sharedEnvironment": {
+      "name": "共用環境",
+      "desc": "與提供者無關、所有提供者共用的執行階段變數。用於 PATH、Proxy、憑證和暫存目錄變數。"
+    },
     "customVariables": {
       "name": "自訂變數",
-      "desc": "Claude SDK 的環境變數（KEY=VALUE 格式，每行一個）。支援 export 前綴。"
+      "desc": "僅限 Claude 擁有的執行階段變數。用於 ANTHROPIC_* 和 Claude 專屬開關。"
     },
     "envSnippets": {
       "name": "片段",
       "addBtn": "新增片段",
       "noSnippets": "尚無保存的環境變數片段。點擊 + 保存當前配置。",
       "nameRequired": "請輸入片段名稱",
+      "insert": "插入",
       "modal": {
         "titleEdit": "編輯片段",
         "titleSave": "保存片段",
@@ -193,18 +180,21 @@
         "save": "保存",
         "update": "更新",
         "cancel": "取消"
-      }
+      },
+      "insertFailed": "無法插入片段",
+      "deleteConfirm": "要刪除環境變數片段「{name}」嗎？",
+      "deleteFailed": "無法刪除片段"
     },
     "customModelOverrides": {
       "name": "自訂模型覆寫",
       "desc": "為自訂模型設定模型選擇器別名和上下文視窗大小。"
     },
     "customModelAliases": {
-      "placeholder": "別名"
+      "placeholder": "別名",
+      "ariaLabel": "{model} 的別名",
+      "ariaDescription": "顯示在模型選擇器中的自訂標籤。留空則使用預設值。"
     },
     "customContextLimits": {
-      "name": "自訂上下文限制",
-      "desc": "為您的自訂模型設定上下文視窗大小。留空使用預設值（200k 權杖）。",
       "invalid": "格式無效。使用：256k、1m 或精確數量（1000-10000000）。"
     },
     "enableChrome": {
@@ -222,10 +212,6 @@
     "restoreTabsOnStartup": {
       "name": "啟動時還原分頁",
       "desc": "單欄模式下重新開啟所有分頁，雙欄模式下僅重新開啟上次使用的分頁。"
-    },
-    "enableFilePane": {
-      "name": "啟用檔案面板",
-      "desc": "在雙欄模式的工作階段管理器中顯示「檔案」分頁。"
     },
     "dualPaneSide": {
       "name": "雙欄位置",
@@ -269,12 +255,14 @@
     },
     "cliPath": {
       "name": "Claude CLI 路徑",
-      "desc": "Claude Code CLI 的自訂路徑。留空使用自動檢測。",
-      "descWindows": "對於原生安裝程式，使用 claude.exe。對於 npm/pnpm/yarn 或其他套件管理器安裝，使用 cli-wrapper.cjs 路徑（不是 claude.cmd）。",
-      "descUnix": "貼上 \"which claude\" 的輸出 - 適用於原生安裝和 npm/pnpm/yarn 安裝。",
+      "genericName": "CLI 路徑",
       "validation": {
         "notExist": "路徑不存在",
-        "isDirectory": "路徑是目錄，不是檔案"
+        "isDirectory": "路徑是目錄，不是檔案",
+        "mustBeAbsolute": "路徑必須是絕對路徑",
+        "notFile": "路徑必須指向檔案",
+        "notAccessible": "無法存取路徑",
+        "notExecutable": "路徑必須可執行"
       }
     },
     "language": {
@@ -283,9 +271,38 @@
     },
     "providerEnablement": {
       "name": "啟用 {provider}",
-      "desc": "讓已啟用的 {provider} 模型可用於新對話。停用後，現有工作階段仍會保留。",
       "lastProviderWarning": "至少需要啟用一個提供者，Claudian 才能正常運作。",
       "noModelsWarning": "未啟用任何 {provider} 模型。請前往下方的「模型」區段並至少啟用一個模型。"
+    },
+    "modelPicker": {
+      "name": "顯示的模型",
+      "desc": "選擇在聊天選擇器中可用的模型。拖曳即可調整順序；提供者會將第一個目前可用的模型作為預設模型。至少選擇一個模型才能使用此提供者。",
+      "browse": "瀏覽模型",
+      "filterLabel": "篩選 {provider} 模型",
+      "searchPlaceholder": "依模型、提供者或 ID 篩選...",
+      "providerFilterLabel": "篩選模型提供者",
+      "allProviders": "所有提供者（{count}）",
+      "discover": "探索",
+      "visible": "顯示: ",
+      "ofDiscovered": " / 已探索到 {count} 個",
+      "oneProvider": " | 1 個提供者",
+      "manyProviders": " | {count} 個提供者",
+      "loadingModels": "正在載入模型...",
+      "loading": "正在載入...",
+      "available": "{count} 個可用",
+      "noneDiscovered": "尚未探索到任何模型",
+      "selected": "已選取（{count}）",
+      "clearAllLabel": "清除所有已選取的 {provider} 模型",
+      "reorderLabel": "調整 {model} 的順序；拖曳或使用上、下方向鍵",
+      "default": "預設",
+      "unavailable": "無法使用",
+      "unavailableTitle": "{provider} 目前未回報此已設定的模型",
+      "aliasLabel": "別名（選用）",
+      "removeLabel": "移除 {model}",
+      "noMatch": "沒有符合篩選條件的模型。",
+      "emptyCatalog": "{provider} 未回報任何模型。請檢查設定並點擊「探索」。",
+      "loadingCatalog": "正在載入 {provider} 模型…",
+      "stale": "{provider} 模型目錄已過時。點擊「探索」以重新整理。"
     },
     "claude": {
       "responseStyle": {
@@ -304,9 +321,6 @@
       },
       "cliPath": {
         "name": "Codex CLI 路徑",
-        "descUnix": "本機 Codex CLI 的自訂路徑。留空會優先使用已知 Codex 安裝，然後查找 PATH。",
-        "descWindows": "本機 Codex CLI 的自訂路徑。留空會從 PATH 自動偵測。請使用原生 Windows 可執行檔路徑，通常為 `codex.exe`。",
-        "descWsl": "在 WSL 內執行的 Linux 端 Codex 命令或絕對路徑。留空會在所選發行版內查找 PATH。",
         "validation": {
           "wslWindowsPath": "WSL 模式需要 Linux 命令或 Linux 絕對路徑，而不是 Windows 可執行檔路徑。"
         }
@@ -343,40 +357,62 @@
       }
     },
     "agentSkills": {
-      "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
-      "noSkills": "No shared skills configured. Click + to create one.",
-      "skillBadge": "skill",
-      "diagnosticsTitle": "Skills needing attention",
-      "loadFailed": "Could not load shared skills.",
-      "savedRefreshFailed": "Saved, but provider refresh failed.",
-      "validationFailed": "Invalid skill: {message}",
-      "collisionFailed": "A skill named \"{name}\" already exists.",
-      "saveFailed": "Failed to save shared skill: {message}",
-      "deleteFailed": "Failed to move shared skill to trash: {message}",
-      "staleConflict": "This skill changed elsewhere; refresh before saving.",
-      "created": "Shared skill \"{name}\" created.",
-      "updated": "Shared skill \"{name}\" updated.",
-      "deleted": "Shared skill \"{name}\" moved to trash.",
+      "sharedExpectation": "為相容的供應商管理 .agents/skills/ 中的共用技能。",
+      "noSkills": "尚未設定共用技能。點擊 + 建立一個。",
+      "skillBadge": "技能",
+      "diagnosticsTitle": "需要處理的技能",
+      "loadFailed": "無法載入共用技能。",
+      "savedRefreshFailed": "已儲存，但重新整理供應商失敗。",
+      "validationFailed": "技能無效：{message}",
+      "collisionFailed": "名為「{name}」的技能已存在。",
+      "saveFailed": "無法儲存共用技能：{message}",
+      "deleteFailed": "無法將共用技能移至垃圾桶：{message}",
+      "staleConflict": "此技能已在其他地方變更；請先重新整理再儲存。",
+      "created": "已建立共用技能「{name}」。",
+      "updated": "已更新共用技能「{name}」。",
+      "deleted": "已將共用技能「{name}」移至垃圾桶。",
       "fix": "修復",
       "fixed": "已修復技能「{name}」。",
       "modal": {
-        "titleEdit": "Edit Shared Skill",
-        "titleAdd": "Add Shared Skill",
+        "titleEdit": "編輯共用技能",
+        "titleAdd": "新增共用技能",
         "titleFix": "修復技能",
-        "name": "Skill name",
-        "nameDesc": "Lowercase letters and numbers separated by single hyphens",
+        "name": "技能名稱",
+        "nameDesc": "小寫字母與數字，以單一連字號分隔",
         "namePlaceholder": "code-reviewer",
-        "description": "Description",
-        "descriptionDesc": "Required portable description used by providers to select the skill",
-        "descriptionPlaceholder": "Reviews code for correctness and maintainability",
-        "instructions": "Instructions",
-        "instructionsDesc": "Required SKILL.md instructions",
-        "instructionsPlaceholder": "Review the supplied code and report actionable findings..."
+        "description": "描述",
+        "descriptionDesc": "必填的通用描述，供供應商選擇技能時使用",
+        "descriptionPlaceholder": "審查程式碼的正確性與可維護性",
+        "instructions": "指示",
+        "instructionsDesc": "必填的 SKILL.md 指示",
+        "instructionsPlaceholder": "審查提供的程式碼並回報可採取行動的發現..."
       },
       "delete": {
-        "title": "Delete Shared Skill",
-        "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
-        "confirm": "Move to trash"
+        "title": "刪除共用技能",
+        "description": "整個技能資料夾（包括指令碼、參考資料與資源）將移至垃圾桶。",
+        "confirm": "移至垃圾桶"
+      }
+    },
+    "opencode": {
+      "environment": {
+        "name": "OpenCode 環境變數",
+        "desc": "傳遞給 OpenCode 的額外環境變數。"
+      },
+      "migrationNotice": {
+        "text": "Claudian 現已支援 OpenCode v2。OpenCode v1 的支援將於 2026 年 10 月 30 日結束。",
+        "link": "遷移至 OpenCode v2"
+      }
+    },
+    "pi": {
+      "environment": {
+        "name": "Pi 環境變數",
+        "desc": "僅傳遞給 Pi 的環境變數。"
+      }
+    },
+    "grok": {
+      "environment": {
+        "name": "Grok 環境變數",
+        "desc": "僅傳遞給 Grok 的環境變數。自訂模型的密鑰保留在此提供者範圍內，並在原生設定中透過 env_key 參照。"
       }
     },
     "skills": {

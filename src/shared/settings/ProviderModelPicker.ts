@@ -1,9 +1,9 @@
 import { Setting } from 'obsidian';
 
 import type { ProviderCatalogModel, ProviderModelCatalogSnapshot, ProviderModelSelectionChange } from '../../core/providers/models/ProviderModelCatalog';
+import { t } from '../../i18n/i18n';
 
 const ALL_PROVIDERS_KEY = 'all';
-const VISIBLE_MODELS_DESCRIPTION = 'Choose which models are available in the chat selector. Drag to reorder them; the provider uses the first currently usable model as its default. Select at least one model to use this provider.';
 
 export interface ProviderModelPickerController {
   refresh(): void;
@@ -28,8 +28,8 @@ export function renderProviderModelPicker(
   options: ProviderModelPickerOptions,
 ): ProviderModelPickerController {
   const visibleModelsSetting = new Setting(options.container)
-    .setName('Visible models')
-    .setDesc(VISIBLE_MODELS_DESCRIPTION);
+    .setName(t('settings.modelPicker.name'))
+    .setDesc(t('settings.modelPicker.desc'));
   visibleModelsSetting.settingEl.addClass('claudian-provider-model-picker-setting');
 
   const pickerEl = options.container.createDiv({
@@ -51,7 +51,7 @@ export function renderProviderModelPicker(
   });
   catalogSummaryEl.createSpan({
     cls: 'claudian-provider-model-picker-catalog-title',
-    text: 'Browse models',
+    text: t('settings.modelPicker.browse'),
   });
   const catalogSummaryCountEl = catalogSummaryEl.createSpan({
     cls: 'claudian-provider-model-picker-catalog-count',
@@ -62,8 +62,8 @@ export function renderProviderModelPicker(
     cls: 'claudian-provider-model-picker-search',
     type: 'search',
   });
-  searchInput.setAttribute('aria-label', `Filter ${options.providerName} models`);
-  searchInput.placeholder = options.searchPlaceholder ?? 'Filter by model, provider, or ID...';
+  searchInput.setAttribute('aria-label', t('settings.modelPicker.filterLabel', { provider: options.providerName }));
+  searchInput.placeholder = options.searchPlaceholder ?? t('settings.modelPicker.searchPlaceholder');
   searchInput.addEventListener('input', () => {
     searchQuery = searchInput.value.trim().toLowerCase();
     renderList();
@@ -72,7 +72,7 @@ export function renderProviderModelPicker(
   const providerSelectEl = controlsEl.createEl('select', {
     cls: 'claudian-provider-model-picker-provider',
   });
-  providerSelectEl.setAttribute('aria-label', 'Filter model providers');
+  providerSelectEl.setAttribute('aria-label', t('settings.modelPicker.providerFilterLabel'));
   providerSelectEl.addEventListener('change', () => {
     providerFilter = providerSelectEl.value;
     renderList();
@@ -80,7 +80,7 @@ export function renderProviderModelPicker(
 
   const catalogActionEl = controlsEl.createEl('button', {
     cls: 'claudian-provider-model-picker-action',
-    text: 'Discover',
+    text: t('settings.modelPicker.discover'),
   });
   catalogActionEl.setAttribute('type', 'button');
   catalogActionEl.addEventListener('click', () => {
@@ -96,31 +96,35 @@ export function renderProviderModelPicker(
       state.models.map(model => model.providerKey).filter((key): key is string => Boolean(key)),
     ).size;
 
-    summaryEl.createSpan({ text: 'Visible: ' });
+    summaryEl.createSpan({ text: t('settings.modelPicker.visible') });
     summaryEl.createSpan({
       cls: 'claudian-provider-model-picker-summary-value',
       text: String(state.selectedIds.length),
     });
     summaryEl.createSpan({
-      text: providerCount > 0
-        ? ` of ${state.discoveredCount} discovered | ${providerCount} ${providerCount === 1 ? 'provider' : 'providers'}`
-        : ` of ${state.discoveredCount} discovered`,
+      text: t('settings.modelPicker.ofDiscovered', { count: state.discoveredCount }) + (
+        providerCount === 0
+          ? ''
+          : providerCount === 1
+          ? t('settings.modelPicker.oneProvider')
+          : t('settings.modelPicker.manyProviders', { count: providerCount })
+      ),
     });
 
     catalogSummaryCountEl.setText(
       isLoading()
-        ? 'Loading models...'
+        ? t('settings.modelPicker.loadingModels')
         : state.discoveredCount > 0
-        ? `${state.discoveredCount} available`
-        : 'No models discovered yet',
+        ? t('settings.modelPicker.available', { count: state.discoveredCount })
+        : t('settings.modelPicker.noneDiscovered'),
     );
     catalogActionEl.disabled = isLoading();
     catalogActionEl.setText(
       isLoading()
-        ? 'Loading...'
+        ? t('settings.modelPicker.loading')
         : state.discoveredCount > 0
-        ? 'Refresh'
-        : 'Discover',
+        ? t('common.refresh')
+        : t('settings.modelPicker.discover'),
     );
   };
 
@@ -143,14 +147,14 @@ export function renderProviderModelPicker(
     const headerEl = selectedEl.createDiv({ cls: 'claudian-provider-model-picker-selected-header' });
     headerEl.createSpan({
       cls: 'claudian-provider-model-picker-selected-label',
-      text: `Selected (${state.selectedIds.length})`,
+      text: t('settings.modelPicker.selected', { count: state.selectedIds.length }),
     });
     const clearAllButton = headerEl.createEl('button', {
       cls: 'claudian-provider-model-picker-selected-clear',
-      text: 'Clear all',
+      text: t('common.clearAll'),
     });
     clearAllButton.setAttribute('type', 'button');
-    clearAllButton.setAttribute('aria-label', `Clear all selected ${options.providerName} models`);
+    clearAllButton.setAttribute('aria-label', t('settings.modelPicker.clearAllLabel', { provider: options.providerName }));
     clearAllButton.addEventListener('click', () => {
       void persistSelection({ type: 'clear' });
     });
@@ -197,7 +201,7 @@ export function renderProviderModelPicker(
       dragHandle.setAttribute('type', 'button');
       dragHandle.setAttribute(
         'aria-label',
-        `Reorder ${defaultLabel}; drag or use the Up and Down Arrow keys`,
+        t('settings.modelPicker.reorderLabel', { model: defaultLabel }),
       );
       dragHandle.draggable = state.selectedIds.length > 1;
       dragHandle.addEventListener('dragstart', (event) => {
@@ -241,7 +245,7 @@ export function renderProviderModelPicker(
       if (modelId === defaultModelId) {
         titleEl.createSpan({
           cls: 'claudian-provider-model-picker-selected-default',
-          text: 'Default',
+          text: t('settings.modelPicker.default'),
         });
       }
       if (model.isAvailable === false && model.unavailableMessage) {
@@ -261,7 +265,7 @@ export function renderProviderModelPicker(
       });
       aliasFieldEl.createSpan({
         cls: 'claudian-provider-model-picker-selected-alias-label',
-        text: 'Alias (optional)',
+        text: t('settings.modelPicker.aliasLabel'),
       });
       const aliasInput = aliasFieldEl.createEl('input', {
         cls: 'claudian-provider-model-picker-selected-alias',
@@ -269,8 +273,8 @@ export function renderProviderModelPicker(
       });
       aliasInput.placeholder = defaultLabel;
       aliasInput.value = state.aliases[model.id] ?? '';
-      aliasInput.setAttribute('aria-label', `Alias for ${defaultLabel}`);
-      aliasInput.setAttribute('aria-description', 'Custom label shown in the model selector. Leave empty to use the default.');
+      aliasInput.setAttribute('aria-label', t('settings.customModelAliases.ariaLabel', { model: defaultLabel }));
+      aliasInput.setAttribute('aria-description', t('settings.customModelAliases.ariaDescription'));
       aliasInput.addEventListener('blur', () => {
         void persistAlias(model.id, aliasInput.value);
       });
@@ -290,7 +294,7 @@ export function renderProviderModelPicker(
         text: '×',
       });
       removeButton.setAttribute('type', 'button');
-      removeButton.setAttribute('aria-label', `Remove ${defaultLabel}`);
+      removeButton.setAttribute('aria-label', t('settings.modelPicker.removeLabel', { model: defaultLabel }));
       removeButton.addEventListener('click', () => {
         void persistSelection({ type: 'set', modelId: model.id, selected: false });
       });
@@ -315,7 +319,7 @@ export function renderProviderModelPicker(
     providerSelectEl.toggleClass('claudian-hidden', providers.size === 0);
     providerSelectEl.empty();
     providerSelectEl.createEl('option', {
-      text: `All providers (${models.length})`,
+      text: t('settings.modelPicker.allProviders', { count: models.length }),
       value: ALL_PROVIDERS_KEY,
     });
     for (const [key, { count, label }] of Array.from(providers.entries())
@@ -362,7 +366,7 @@ export function renderProviderModelPicker(
           ? options.loadingCatalogText
           : state.models.length === 0
           ? options.emptyCatalogText
-          : 'No models match your filter.',
+          : t('settings.modelPicker.noMatch'),
       });
       return;
     }
@@ -388,7 +392,7 @@ export function renderProviderModelPicker(
         text: model.name,
       });
       const badgeLabel = model.isAvailable === false
-        ? 'Unavailable'
+        ? t('settings.modelPicker.unavailable')
         : model.providerLabel;
       if (badgeLabel) {
         const badgeEl = headerEl.createSpan({
@@ -397,7 +401,7 @@ export function renderProviderModelPicker(
         });
         if (model.isAvailable === false) {
           badgeEl.classList.add('claudian-provider-model-picker-row-badge--unavailable');
-          badgeEl.title = model.unavailableMessage ?? `Configured model not currently reported by ${options.providerName}`;
+          badgeEl.title = model.unavailableMessage ?? t('settings.modelPicker.unavailableTitle', { provider: options.providerName });
         }
       }
       textEl.createDiv({

@@ -4,23 +4,12 @@
     "cancel": "Cancelar",
     "delete": "Eliminar",
     "edit": "Editar",
-    "preview": "Vista previa",
     "add": "Agregar",
-    "remove": "Eliminar",
-    "clear": "Limpiar",
     "clearAll": "Limpiar todo",
-    "loading": "Cargando",
     "error": "Error",
-    "success": "Éxito",
-    "warning": "Advertencia",
     "confirm": "Confirmar",
-    "settings": "Configuración",
     "advanced": "Avanzado",
-    "enabled": "Habilitado",
-    "disabled": "Deshabilitado",
-    "platform": "Plataforma",
-    "refresh": "Actualizar",
-    "rewind": "Rebobinar"
+    "refresh": "Actualizar"
   },
   "chat": {
     "selectAvailableModel": "Selecciona un modelo disponible antes de enviar.",
@@ -53,7 +42,6 @@
       "failed": "Error al bifurcar: {error}",
       "unavailableStreaming": "No se puede bifurcar durante la transmisión",
       "unavailableNoUuid": "No se puede bifurcar: faltan identificadores de mensaje",
-      "unavailableNoResponse": "No se puede bifurcar: no hay respuesta para bifurcar",
       "errorMessageNotFound": "Mensaje no encontrado",
       "errorNoSession": "No hay ningún ID de sesión disponible",
       "errorNoActiveTab": "No hay ninguna pestaña activa",
@@ -88,19 +76,19 @@
     }
   },
   "settings": {
-    "title": "Configuración de Claudian",
     "tabs": {
       "general": "General",
       "providers": "Proveedores",
-      "skills": "Skills",
-      "claude": "Claude",
-      "codex": "Codex"
+      "skills": "Skills"
+    },
+    "providerSettings": {
+      "unavailable": "Los ajustes del proveedor no están disponibles.",
+      "loadFailed": "No se pudieron cargar los ajustes del proveedor: {message}"
     },
     "display": "Pantalla",
     "conversations": "Conversaciones",
     "content": "Contenido",
     "input": "Entrada",
-    "setup": "Configuración",
     "models": "Modelos",
     "experimental": "Experimental",
     "userName": {
@@ -152,12 +140,6 @@
     "newSessionHotkey": {
       "name": "Reemplazar conversación actual"
     },
-    "newTabHotkey": {
-      "name": "Nuevo"
-    },
-    "closeTabHotkey": {
-      "name": "Cerrar pestaña"
-    },
     "safety": "Seguridad",
     "loadUserSettings": {
       "name": "Cargar configuración de usuario Claude",
@@ -172,15 +154,20 @@
       "desc": "Modo de sandbox usado cuando el interruptor Seguro está activo."
     },
     "environment": "Entorno",
+    "sharedEnvironment": {
+      "name": "Entorno compartido",
+      "desc": "Variables de ejecución independientes del proveedor, compartidas entre todos los proveedores. Úsalo para variables de PATH, proxy, certificados y archivos temporales."
+    },
     "customVariables": {
       "name": "Variables personalizadas",
-      "desc": "Variables de entorno para Claude SDK (formato KEY=VALUE, una por línea). Prefijo export soportado."
+      "desc": "Solo variables de ejecución propiedad de Claude. Úsalo para ANTHROPIC_* y opciones específicas de Claude."
     },
     "envSnippets": {
       "name": "Fragmentos",
       "addBtn": "Añadir fragmento",
       "noSnippets": "No hay fragmentos de entorno guardados. Haga clic en + para guardar su configuración actual.",
       "nameRequired": "Por favor ingrese un nombre para el fragmento",
+      "insert": "Insertar",
       "modal": {
         "titleEdit": "Editar fragmento",
         "titleSave": "Guardar fragmento",
@@ -193,18 +180,21 @@
         "save": "Guardar",
         "update": "Actualizar",
         "cancel": "Cancelar"
-      }
+      },
+      "insertFailed": "No se pudo insertar el snippet",
+      "deleteConfirm": "¿Eliminar el snippet de entorno \"{name}\"?",
+      "deleteFailed": "No se pudo eliminar el snippet"
     },
     "customModelOverrides": {
       "name": "Anulaciones de modelos personalizados",
       "desc": "Configure alias en el selector de modelos y tamaños de ventana de contexto para modelos personalizados."
     },
     "customModelAliases": {
-      "placeholder": "Alias"
+      "placeholder": "Alias",
+      "ariaLabel": "Alias de {model}",
+      "ariaDescription": "Etiqueta personalizada que se muestra en el selector de modelos. Déjalo vacío para usar la predeterminada."
     },
     "customContextLimits": {
-      "name": "Límites de contexto personalizados",
-      "desc": "Establezca tamaños de ventana de contexto para sus modelos personalizados. Deje vacío para usar el valor predeterminado (200k tokens).",
       "invalid": "Formato inválido. Use: 256k, 1m o número exacto (1000-10000000)."
     },
     "enableChrome": {
@@ -222,10 +212,6 @@
     "restoreTabsOnStartup": {
       "name": "Restaurar pestañas al iniciar",
       "desc": "Volver a abrir todas las pestañas en el modo de panel único o solo la última pestaña activa en el modo de panel doble."
-    },
-    "enableFilePane": {
-      "name": "Activar panel de archivos",
-      "desc": "Mostrar una pestaña Archivos en el gestor de sesiones del modo de panel doble."
     },
     "dualPaneSide": {
       "name": "Lado del panel doble",
@@ -269,12 +255,14 @@
     },
     "cliPath": {
       "name": "Ruta CLI Claude",
-      "desc": "Ruta personalizada a Claude Code CLI. Dejar vacío para detección automática.",
-      "descWindows": "Para el instalador nativo, use claude.exe. Para instalaciones con npm/pnpm/yarn u otros gestores de paquetes, use la ruta cli-wrapper.cjs (no claude.cmd).",
-      "descUnix": "Pegue la salida de \"which claude\" — funciona tanto para instalaciones nativas como npm/pnpm/yarn.",
+      "genericName": "Ruta de la CLI",
       "validation": {
         "notExist": "La ruta no existe",
-        "isDirectory": "La ruta es un directorio, no un archivo"
+        "isDirectory": "La ruta es un directorio, no un archivo",
+        "mustBeAbsolute": "La ruta debe ser absoluta",
+        "notFile": "La ruta debe apuntar a un archivo",
+        "notAccessible": "La ruta no es accesible",
+        "notExecutable": "La ruta debe ser ejecutable"
       }
     },
     "language": {
@@ -283,9 +271,38 @@
     },
     "providerEnablement": {
       "name": "Activar {provider}",
-      "desc": "Hacer que los modelos de {provider} activados estén disponibles para conversaciones nuevas. Las sesiones existentes se conservan al desactivar el proveedor.",
       "lastProviderWarning": "Debe haber al menos un proveedor habilitado para que Claudian funcione.",
       "noModelsWarning": "No hay modelos de {provider} activados. Ve a Modelos más abajo y activa al menos uno."
+    },
+    "modelPicker": {
+      "name": "Modelos visibles",
+      "desc": "Elige qué modelos están disponibles en el selector del chat. Arrástralos para reordenarlos; el proveedor usa como predeterminado el primer modelo utilizable en ese momento. Selecciona al menos un modelo para usar este proveedor.",
+      "browse": "Explorar modelos",
+      "filterLabel": "Filtrar modelos de {provider}",
+      "searchPlaceholder": "Filtrar por modelo, proveedor o ID...",
+      "providerFilterLabel": "Filtrar proveedores de modelos",
+      "allProviders": "Todos los proveedores ({count})",
+      "discover": "Descubrir",
+      "visible": "Visibles: ",
+      "ofDiscovered": " de {count} descubiertos",
+      "oneProvider": " | 1 proveedor",
+      "manyProviders": " | {count} proveedores",
+      "loadingModels": "Cargando modelos...",
+      "loading": "Cargando...",
+      "available": "{count} disponibles",
+      "noneDiscovered": "Aún no se han descubierto modelos",
+      "selected": "Seleccionados ({count})",
+      "clearAllLabel": "Quitar todos los modelos de {provider} seleccionados",
+      "reorderLabel": "Reordenar {model}; arrastra o usa las teclas de flecha arriba y abajo",
+      "default": "Predeterminado",
+      "unavailable": "No disponible",
+      "unavailableTitle": "{provider} no informa actualmente del modelo configurado",
+      "aliasLabel": "Alias (opcional)",
+      "removeLabel": "Quitar {model}",
+      "noMatch": "Ningún modelo coincide con tu filtro.",
+      "emptyCatalog": "{provider} no ha informado de ningún modelo. Revisa tu configuración y haz clic en Descubrir.",
+      "loadingCatalog": "Cargando modelos de {provider}…",
+      "stale": "El catálogo de modelos de {provider} está desactualizado. Haz clic en Descubrir para actualizarlo."
     },
     "claude": {
       "responseStyle": {
@@ -304,9 +321,6 @@
       },
       "cliPath": {
         "name": "Ruta de la CLI de Codex",
-        "descUnix": "Ruta personalizada a la CLI local de Codex. Déjala vacía para preferir instalaciones conocidas de Codex y luego PATH.",
-        "descWindows": "Ruta personalizada a la CLI local de Codex. Déjala vacía para autodetectar desde PATH. Usa la ruta del ejecutable nativo de Windows, normalmente `codex.exe`.",
-        "descWsl": "Comando de Codex del lado Linux o ruta absoluta para ejecutar dentro de WSL. Déjala vacía para buscar en PATH dentro de la distribución seleccionada.",
         "validation": {
           "wslWindowsPath": "El modo WSL espera un comando Linux o una ruta absoluta de Linux, no una ruta de ejecutable de Windows."
         }
@@ -343,40 +357,62 @@
       }
     },
     "agentSkills": {
-      "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
-      "noSkills": "No shared skills configured. Click + to create one.",
+      "sharedExpectation": "Gestiona los skills compartidos en .agents/skills/ para los proveedores compatibles.",
+      "noSkills": "No hay skills compartidos configurados. Haz clic en + para crear uno.",
       "skillBadge": "skill",
-      "diagnosticsTitle": "Skills needing attention",
-      "loadFailed": "Could not load shared skills.",
-      "savedRefreshFailed": "Saved, but provider refresh failed.",
-      "validationFailed": "Invalid skill: {message}",
-      "collisionFailed": "A skill named \"{name}\" already exists.",
-      "saveFailed": "Failed to save shared skill: {message}",
-      "deleteFailed": "Failed to move shared skill to trash: {message}",
-      "staleConflict": "This skill changed elsewhere; refresh before saving.",
-      "created": "Shared skill \"{name}\" created.",
-      "updated": "Shared skill \"{name}\" updated.",
-      "deleted": "Shared skill \"{name}\" moved to trash.",
+      "diagnosticsTitle": "Skills que requieren atención",
+      "loadFailed": "No se pudieron cargar los skills compartidos.",
+      "savedRefreshFailed": "Guardado, pero no se pudo actualizar el proveedor.",
+      "validationFailed": "Skill no válido: {message}",
+      "collisionFailed": "Ya existe un skill llamado \"{name}\".",
+      "saveFailed": "No se pudo guardar el skill compartido: {message}",
+      "deleteFailed": "No se pudo mover el skill compartido a la papelera: {message}",
+      "staleConflict": "Este skill se ha modificado en otro lugar; actualiza antes de guardar.",
+      "created": "Skill compartido \"{name}\" creado.",
+      "updated": "Skill compartido \"{name}\" actualizado.",
+      "deleted": "Skill compartido \"{name}\" movido a la papelera.",
       "fix": "Corregir",
       "fixed": "Skill \"{name}\" corregido.",
       "modal": {
-        "titleEdit": "Edit Shared Skill",
-        "titleAdd": "Add Shared Skill",
+        "titleEdit": "Editar skill compartido",
+        "titleAdd": "Añadir skill compartido",
         "titleFix": "Corregir skill",
-        "name": "Skill name",
-        "nameDesc": "Lowercase letters and numbers separated by single hyphens",
+        "name": "Nombre del skill",
+        "nameDesc": "Letras minúsculas y números separados por guiones simples",
         "namePlaceholder": "code-reviewer",
-        "description": "Description",
-        "descriptionDesc": "Required portable description used by providers to select the skill",
-        "descriptionPlaceholder": "Reviews code for correctness and maintainability",
-        "instructions": "Instructions",
-        "instructionsDesc": "Required SKILL.md instructions",
-        "instructionsPlaceholder": "Review the supplied code and report actionable findings..."
+        "description": "Descripción",
+        "descriptionDesc": "Descripción portable obligatoria que usan los proveedores para seleccionar el skill",
+        "descriptionPlaceholder": "Revisa el código para comprobar su corrección y mantenibilidad",
+        "instructions": "Instrucciones",
+        "instructionsDesc": "Instrucciones de SKILL.md obligatorias",
+        "instructionsPlaceholder": "Revisa el código proporcionado e informa de hallazgos accionables..."
       },
       "delete": {
-        "title": "Delete Shared Skill",
-        "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
-        "confirm": "Move to trash"
+        "title": "Eliminar skill compartido",
+        "description": "Toda la carpeta del skill, incluidos scripts, referencias y recursos, se moverá a la papelera.",
+        "confirm": "Mover a la papelera"
+      }
+    },
+    "opencode": {
+      "environment": {
+        "name": "Variables de entorno de OpenCode",
+        "desc": "Variables de entorno adicionales que se pasan a OpenCode."
+      },
+      "migrationNotice": {
+        "text": "Claudian ahora es compatible con OpenCode v2. La compatibilidad con OpenCode v1 finaliza el 30 de octubre de 2026.",
+        "link": "Migrar a OpenCode v2"
+      }
+    },
+    "pi": {
+      "environment": {
+        "name": "Variables de entorno de Pi",
+        "desc": "Variables de entorno que se pasan solo a Pi."
+      }
+    },
+    "grok": {
+      "environment": {
+        "name": "Variables de entorno de Grok",
+        "desc": "Variables de entorno que se pasan solo a Grok. Los secretos de los modelos personalizados permanecen en el ámbito de este proveedor y se referencian desde la configuración nativa mediante env_key."
       }
     },
     "skills": {

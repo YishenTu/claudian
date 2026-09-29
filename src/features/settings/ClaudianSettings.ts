@@ -195,7 +195,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         providerContent.empty();
         const renderer = ProviderWorkspaceRegistry.getSettingsTabRenderer(providerId);
         if (!renderer) {
-          providerContent.createDiv({ text: 'Provider settings are unavailable.' });
+          providerContent.createDiv({ text: t('settings.providerSettings.unavailable') });
           return;
         }
         const handle = renderer.render(providerContent, {
@@ -216,7 +216,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         const message = error instanceof Error ? error.message : 'Unknown error';
         providerContent.createDiv({
           cls: 'claudian-setting-validation claudian-setting-validation-error',
-          text: `Could not load provider settings: ${message}`,
+          text: t('settings.providerSettings.loadFailed', { message }),
         });
       }
     };
@@ -691,8 +691,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
       plugin: this.plugin.providerHost,
       scope: 'shared',
       heading: t('settings.environment'),
-      name: 'Shared environment',
-      desc: 'Provider-neutral runtime variables shared across all providers. Use this for PATH, proxy, cert, and temp variables.',
+      name: t('settings.sharedEnvironment.name'),
+      desc: t('settings.sharedEnvironment.desc'),
       placeholder: 'PATH=/opt/homebrew/bin:/usr/local/bin\nHTTPS_PROXY=http://proxy.example.com:8080\nSSL_CERT_FILE=/path/to/cert.pem',
     });
 
@@ -779,8 +779,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
         cls: 'claudian-context-alias-input',
         value: currentAlias,
       });
-      aliasInputEl.setAttribute('aria-label', `Alias for ${modelId}`);
-      aliasInputEl.setAttribute('aria-description', 'Custom label shown in the model selector. Leave empty to use the default.');
+      aliasInputEl.setAttribute('aria-label', t('settings.customModelAliases.ariaLabel', { model: modelId }));
+      aliasInputEl.setAttribute('aria-description', t('settings.customModelAliases.ariaDescription'));
 
       const inputEl = inputWrapper.createEl('input', {
         type: 'text',

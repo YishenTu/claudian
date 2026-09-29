@@ -4,23 +4,12 @@
     "cancel": "キャンセル",
     "delete": "削除",
     "edit": "編集",
-    "preview": "プレビュー",
     "add": "追加",
-    "remove": "削除",
-    "clear": "クリア",
     "clearAll": "すべてクリア",
-    "loading": "読み込み中",
     "error": "エラー",
-    "success": "成功",
-    "warning": "警告",
     "confirm": "確認",
-    "settings": "設定",
     "advanced": "詳細",
-    "enabled": "有効",
-    "disabled": "無効",
-    "platform": "プラットフォーム",
-    "refresh": "更新",
-    "rewind": "巻き戻し"
+    "refresh": "更新"
   },
   "chat": {
     "selectAvailableModel": "送信する前に利用可能なモデルを選択してください。",
@@ -53,7 +42,6 @@
       "failed": "分岐に失敗：{error}",
       "unavailableStreaming": "ストリーミング中は分岐できません",
       "unavailableNoUuid": "分岐できません：メッセージ識別子がありません",
-      "unavailableNoResponse": "分岐できません：分岐元の応答がありません",
       "errorMessageNotFound": "メッセージが見つかりません",
       "errorNoSession": "セッション ID がありません",
       "errorNoActiveTab": "アクティブなタブがありません",
@@ -88,19 +76,19 @@
     }
   },
   "settings": {
-    "title": "Claudian 設定",
     "tabs": {
       "general": "一般",
       "providers": "プロバイダー",
-      "skills": "スキル",
-      "claude": "Claude",
-      "codex": "Codex"
+      "skills": "スキル"
+    },
+    "providerSettings": {
+      "unavailable": "プロバイダー設定を利用できません。",
+      "loadFailed": "プロバイダー設定を読み込めませんでした: {message}"
     },
     "display": "表示",
     "conversations": "会話",
     "content": "コンテンツ",
     "input": "入力",
-    "setup": "セットアップ",
     "models": "モデル",
     "experimental": "実験的機能",
     "userName": {
@@ -152,12 +140,6 @@
     "newSessionHotkey": {
       "name": "現在の会話を置き換える"
     },
-    "newTabHotkey": {
-      "name": "新規"
-    },
-    "closeTabHotkey": {
-      "name": "タブを閉じる"
-    },
     "safety": "セキュリティ",
     "loadUserSettings": {
       "name": "ユーザーClaude設定を読み込む",
@@ -172,15 +154,20 @@
       "desc": "Safe トグルが有効なときに使用するサンドボックスモードです。"
     },
     "environment": "環境",
+    "sharedEnvironment": {
+      "name": "共有環境",
+      "desc": "すべてのプロバイダーで共有される、プロバイダー非依存のランタイム変数。PATH、プロキシ、証明書、一時ディレクトリの変数に使用します。"
+    },
     "customVariables": {
       "name": "カスタム変数",
-      "desc": "Claude SDKの環境変数（KEY=VALUE形式、1行に1つ）。exportプレフィックス対応。"
+      "desc": "Claude が所有するランタイム変数のみ。ANTHROPIC_* と Claude 固有の切り替えに使用します。"
     },
     "envSnippets": {
       "name": "スニペット",
       "addBtn": "スニペットを追加",
       "noSnippets": "保存された環境変数スニペットはありません。+をクリックして現在の設定を保存してください。",
       "nameRequired": "スニペットの名前を入力してください",
+      "insert": "挿入",
       "modal": {
         "titleEdit": "スニペットを編集",
         "titleSave": "スニペットを保存",
@@ -193,18 +180,21 @@
         "save": "保存",
         "update": "更新",
         "cancel": "キャンセル"
-      }
+      },
+      "insertFailed": "スニペットの挿入に失敗しました",
+      "deleteConfirm": "環境変数スニペット「{name}」を削除しますか?",
+      "deleteFailed": "スニペットの削除に失敗しました"
     },
     "customModelOverrides": {
       "name": "カスタムモデルの上書き",
       "desc": "カスタムモデルのモデルセレクター表示名とコンテキストウィンドウサイズを設定します。"
     },
     "customModelAliases": {
-      "placeholder": "エイリアス"
+      "placeholder": "エイリアス",
+      "ariaLabel": "{model} のエイリアス",
+      "ariaDescription": "モデルセレクターに表示されるカスタムラベル。空欄の場合はデフォルトを使用します。"
     },
     "customContextLimits": {
-      "name": "カスタムコンテキスト制限",
-      "desc": "カスタムモデルのコンテキストウィンドウサイズを設定します。デフォルト（200kトークン）を使用する場合は空欄のままにしてください。",
       "invalid": "無効な形式です。使用：256k、1m、または正確な数値（1000-10000000）。"
     },
     "enableChrome": {
@@ -222,10 +212,6 @@
     "restoreTabsOnStartup": {
       "name": "起動時にタブを復元",
       "desc": "シングルペインモードではすべてのタブを、デュアルペインモードでは最後にアクティブだったタブのみを再度開きます。"
-    },
-    "enableFilePane": {
-      "name": "ファイルペインを有効化",
-      "desc": "デュアルペインモードのセッションマネージャーに「ファイル」タブを表示します。"
     },
     "dualPaneSide": {
       "name": "デュアルペインの位置",
@@ -269,12 +255,14 @@
     },
     "cliPath": {
       "name": "Claude CLI パス",
-      "desc": "Claude Code CLI のカスタムパス。空欄で自動検出を使用。",
-      "descWindows": "ネイティブインストーラーの場合は claude.exe を使用。npm/pnpm/yarn やその他のパッケージマネージャーでのインストールの場合は cli-wrapper.cjs パスを使用（claude.cmd ではない）。",
-      "descUnix": "\"which claude\" の出力を貼り付けてください - ネイティブと npm/pnpm/yarn インストールの両方で動作します。",
+      "genericName": "CLI パス",
       "validation": {
         "notExist": "パスが存在しません",
-        "isDirectory": "パスはディレクトリでファイルではありません"
+        "isDirectory": "パスはディレクトリでファイルではありません",
+        "mustBeAbsolute": "パスは絶対パスである必要があります",
+        "notFile": "パスはファイルを指している必要があります",
+        "notAccessible": "パスにアクセスできません",
+        "notExecutable": "パスは実行可能である必要があります"
       }
     },
     "language": {
@@ -283,9 +271,38 @@
     },
     "providerEnablement": {
       "name": "{provider} を有効化",
-      "desc": "有効にした {provider} モデルを新しい会話で使用できるようにします。無効にしても既存のセッションは保持されます。",
       "lastProviderWarning": "Claudian を使用するには、少なくとも 1 つのプロバイダーを有効にする必要があります。",
       "noModelsWarning": "有効な {provider} モデルがありません。下の「モデル」で少なくとも1つのモデルを有効にしてください。"
+    },
+    "modelPicker": {
+      "name": "表示するモデル",
+      "desc": "チャットのセレクターで利用できるモデルを選択します。ドラッグして並べ替えられます。プロバイダーは現在利用可能な最初のモデルをデフォルトとして使用します。このプロバイダーを使うには少なくとも1つのモデルを選択してください。",
+      "browse": "モデルを参照",
+      "filterLabel": "{provider} モデルを絞り込む",
+      "searchPlaceholder": "モデル、プロバイダー、ID で絞り込み...",
+      "providerFilterLabel": "モデルプロバイダーを絞り込む",
+      "allProviders": "すべてのプロバイダー ({count})",
+      "discover": "検出",
+      "visible": "表示: ",
+      "ofDiscovered": " / 検出 {count}",
+      "oneProvider": " | 1 プロバイダー",
+      "manyProviders": " | {count} プロバイダー",
+      "loadingModels": "モデルを読み込んでいます...",
+      "loading": "読み込み中...",
+      "available": "{count} 件利用可能",
+      "noneDiscovered": "まだモデルが検出されていません",
+      "selected": "選択済み ({count})",
+      "clearAllLabel": "選択したすべての {provider} モデルをクリア",
+      "reorderLabel": "{model} を並べ替え。ドラッグするか上下の矢印キーを使用します",
+      "default": "デフォルト",
+      "unavailable": "利用不可",
+      "unavailableTitle": "設定済みのモデルは現在 {provider} から報告されていません",
+      "aliasLabel": "エイリアス(任意)",
+      "removeLabel": "{model} を削除",
+      "noMatch": "フィルターに一致するモデルはありません。",
+      "emptyCatalog": "{provider} からモデルが報告されていません。設定を確認して「検出」をクリックしてください。",
+      "loadingCatalog": "{provider} モデルを読み込んでいます…",
+      "stale": "{provider} のモデルカタログが古くなっています。「検出」をクリックして更新してください。"
     },
     "claude": {
       "responseStyle": {
@@ -304,9 +321,6 @@
       },
       "cliPath": {
         "name": "Codex CLI パス",
-        "descUnix": "ローカル Codex CLI のカスタムパス。空欄の場合は既知の Codex インストール、次に PATH を優先します。",
-        "descWindows": "ローカル Codex CLI のカスタムパス。空欄の場合は PATH から自動検出します。通常は `codex.exe` のネイティブ Windows 実行ファイルパスを使用してください。",
-        "descWsl": "WSL 内で実行する Linux 側の Codex コマンドまたは絶対パス。空欄の場合は選択したディストリビューション内の PATH を検索します。",
         "validation": {
           "wslWindowsPath": "WSL モードでは Windows 実行ファイルパスではなく、Linux コマンドまたは Linux 絶対パスが必要です。"
         }
@@ -343,40 +357,62 @@
       }
     },
     "agentSkills": {
-      "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
-      "noSkills": "No shared skills configured. Click + to create one.",
-      "skillBadge": "skill",
-      "diagnosticsTitle": "Skills needing attention",
-      "loadFailed": "Could not load shared skills.",
-      "savedRefreshFailed": "Saved, but provider refresh failed.",
-      "validationFailed": "Invalid skill: {message}",
-      "collisionFailed": "A skill named \"{name}\" already exists.",
-      "saveFailed": "Failed to save shared skill: {message}",
-      "deleteFailed": "Failed to move shared skill to trash: {message}",
-      "staleConflict": "This skill changed elsewhere; refresh before saving.",
-      "created": "Shared skill \"{name}\" created.",
-      "updated": "Shared skill \"{name}\" updated.",
-      "deleted": "Shared skill \"{name}\" moved to trash.",
+      "sharedExpectation": "対応プロバイダー向けに .agents/skills/ の共有スキルを管理します。",
+      "noSkills": "共有スキルは設定されていません。+ をクリックして作成してください。",
+      "skillBadge": "スキル",
+      "diagnosticsTitle": "確認が必要なスキル",
+      "loadFailed": "共有スキルを読み込めませんでした。",
+      "savedRefreshFailed": "保存しましたが、プロバイダーの更新に失敗しました。",
+      "validationFailed": "無効なスキル: {message}",
+      "collisionFailed": "「{name}」という名前のスキルはすでに存在します。",
+      "saveFailed": "共有スキルの保存に失敗しました: {message}",
+      "deleteFailed": "共有スキルをゴミ箱に移動できませんでした: {message}",
+      "staleConflict": "このスキルは別の場所で変更されました。保存する前に更新してください。",
+      "created": "共有スキル「{name}」を作成しました。",
+      "updated": "共有スキル「{name}」を更新しました。",
+      "deleted": "共有スキル「{name}」をゴミ箱に移動しました。",
       "fix": "修正",
       "fixed": "スキル「{name}」を修正しました。",
       "modal": {
-        "titleEdit": "Edit Shared Skill",
-        "titleAdd": "Add Shared Skill",
+        "titleEdit": "共有スキルを編集",
+        "titleAdd": "共有スキルを追加",
         "titleFix": "スキルを修正",
-        "name": "Skill name",
-        "nameDesc": "Lowercase letters and numbers separated by single hyphens",
+        "name": "スキル名",
+        "nameDesc": "小文字と数字を単一のハイフンで区切ったもの",
         "namePlaceholder": "code-reviewer",
-        "description": "Description",
-        "descriptionDesc": "Required portable description used by providers to select the skill",
-        "descriptionPlaceholder": "Reviews code for correctness and maintainability",
-        "instructions": "Instructions",
-        "instructionsDesc": "Required SKILL.md instructions",
-        "instructionsPlaceholder": "Review the supplied code and report actionable findings..."
+        "description": "説明",
+        "descriptionDesc": "プロバイダーがスキルを選択するために使う、移植可能な必須の説明",
+        "descriptionPlaceholder": "コードの正確性と保守性をレビューします",
+        "instructions": "指示",
+        "instructionsDesc": "SKILL.md の必須の指示",
+        "instructionsPlaceholder": "提供されたコードをレビューし、対応可能な指摘を報告してください..."
       },
       "delete": {
-        "title": "Delete Shared Skill",
-        "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
-        "confirm": "Move to trash"
+        "title": "共有スキルを削除",
+        "description": "スクリプト、参照資料、アセットを含むスキルフォルダー全体がゴミ箱に移動されます。",
+        "confirm": "ゴミ箱に移動"
+      }
+    },
+    "opencode": {
+      "environment": {
+        "name": "OpenCode 環境変数",
+        "desc": "OpenCode に渡す追加の環境変数。"
+      },
+      "migrationNotice": {
+        "text": "Claudian は OpenCode v2 に対応しました。OpenCode v1 のサポートは 2026年10月30日に終了します。",
+        "link": "OpenCode v2 に移行"
+      }
+    },
+    "pi": {
+      "environment": {
+        "name": "Pi 環境変数",
+        "desc": "Pi にのみ渡す環境変数。"
+      }
+    },
+    "grok": {
+      "environment": {
+        "name": "Grok 環境変数",
+        "desc": "Grok にのみ渡す環境変数。カスタムモデルのシークレットはこのプロバイダーのスコープ内に留まり、ネイティブ設定からは env_key で参照されます。"
       }
     },
     "skills": {

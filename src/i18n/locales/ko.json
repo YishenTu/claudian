@@ -4,23 +4,12 @@
     "cancel": "취소",
     "delete": "삭제",
     "edit": "편집",
-    "preview": "미리보기",
     "add": "추가",
-    "remove": "제거",
-    "clear": "지우기",
     "clearAll": "모두 지우기",
-    "loading": "로딩 중",
     "error": "오류",
-    "success": "성공",
-    "warning": "경고",
     "confirm": "확인",
-    "settings": "설정",
     "advanced": "고급",
-    "enabled": "활성화",
-    "disabled": "비활성화",
-    "platform": "플랫폼",
-    "refresh": "새로고침",
-    "rewind": "되감기"
+    "refresh": "새로고침"
   },
   "chat": {
     "selectAvailableModel": "전송하기 전에 사용 가능한 모델을 선택하세요.",
@@ -53,7 +42,6 @@
       "failed": "분기 실패: {error}",
       "unavailableStreaming": "스트리밍 중에는 분기할 수 없습니다",
       "unavailableNoUuid": "분기 불가: 메시지 식별자 누락",
-      "unavailableNoResponse": "분기 불가: 분기할 응답이 없습니다",
       "errorMessageNotFound": "메시지를 찾을 수 없습니다",
       "errorNoSession": "사용 가능한 세션 ID가 없습니다",
       "errorNoActiveTab": "활성 탭이 없습니다",
@@ -88,19 +76,19 @@
     }
   },
   "settings": {
-    "title": "Claudian 설정",
     "tabs": {
       "general": "일반",
       "providers": "제공자",
-      "skills": "스킬",
-      "claude": "Claude",
-      "codex": "Codex"
+      "skills": "스킬"
+    },
+    "providerSettings": {
+      "unavailable": "제공자 설정을 사용할 수 없습니다.",
+      "loadFailed": "제공자 설정을 불러올 수 없습니다: {message}"
     },
     "display": "표시",
     "conversations": "대화",
     "content": "콘텐츠",
     "input": "입력",
-    "setup": "설정",
     "models": "모델",
     "experimental": "실험적 기능",
     "userName": {
@@ -152,12 +140,6 @@
     "newSessionHotkey": {
       "name": "현재 대화 바꾸기"
     },
-    "newTabHotkey": {
-      "name": "새로 만들기"
-    },
-    "closeTabHotkey": {
-      "name": "탭 닫기"
-    },
     "safety": "보안",
     "loadUserSettings": {
       "name": "사용자 Claude 설정 로드",
@@ -172,15 +154,20 @@
       "desc": "Safe 토글이 활성화되었을 때 사용하는 샌드박스 모드입니다."
     },
     "environment": "환경",
+    "sharedEnvironment": {
+      "name": "공유 환경",
+      "desc": "모든 제공자가 함께 사용하는 제공자 중립 런타임 변수입니다. PATH, 프록시, 인증서, 임시 디렉터리 변수에 사용하세요."
+    },
     "customVariables": {
       "name": "커스텀 변수",
-      "desc": "Claude SDK 환경 변수 (KEY=VALUE 형식, 한 줄에 하나). export 접두사 지원."
+      "desc": "Claude 전용 런타임 변수만 입력하세요. ANTHROPIC_* 및 Claude 전용 설정에 사용합니다."
     },
     "envSnippets": {
       "name": "스니펫",
       "addBtn": "스니펫 추가",
       "noSnippets": "저장된 환경 변수 스니펫이 없습니다. +를 클릭하여 현재 구성을 저장하세요.",
       "nameRequired": "스니펫 이름을 입력하세요",
+      "insert": "삽입",
       "modal": {
         "titleEdit": "스니펫 편집",
         "titleSave": "스니펫 저장",
@@ -193,18 +180,21 @@
         "save": "저장",
         "update": "업데이트",
         "cancel": "취소"
-      }
+      },
+      "insertFailed": "스니펫을 삽입하지 못했습니다",
+      "deleteConfirm": "환경 변수 스니펫 \"{name}\"을(를) 삭제할까요?",
+      "deleteFailed": "스니펫을 삭제하지 못했습니다"
     },
     "customModelOverrides": {
       "name": "사용자 정의 모델 재정의",
       "desc": "사용자 정의 모델의 모델 선택기 별칭과 컨텍스트 창 크기를 설정합니다."
     },
     "customModelAliases": {
-      "placeholder": "별칭"
+      "placeholder": "별칭",
+      "ariaLabel": "{model}의 별칭",
+      "ariaDescription": "모델 선택기에 표시되는 사용자 지정 레이블입니다. 비워 두면 기본값을 사용합니다."
     },
     "customContextLimits": {
-      "name": "사용자 정의 컨텍스트 제한",
-      "desc": "사용자 정의 모델의 컨텍스트 창 크기를 설정합니다. 기본값(200k 토큰)을 사용하려면 비워두세요.",
       "invalid": "잘못된 형식입니다. 사용: 256k, 1m 또는 정확한 숫자(1000-10000000)."
     },
     "enableChrome": {
@@ -222,10 +212,6 @@
     "restoreTabsOnStartup": {
       "name": "시작할 때 탭 복원",
       "desc": "단일 창 모드에서는 모든 탭을, 이중 창 모드에서는 마지막 활성 탭만 다시 엽니다."
-    },
-    "enableFilePane": {
-      "name": "파일 창 활성화",
-      "desc": "이중 창 모드의 세션 관리자에 파일 탭을 표시합니다."
     },
     "dualPaneSide": {
       "name": "이중 창 위치",
@@ -269,12 +255,14 @@
     },
     "cliPath": {
       "name": "Claude CLI 경로",
-      "desc": "Claude Code CLI의 사용자 정의 경로. 비워두면 자동 감지 사용.",
-      "descWindows": "네이티브 설치 프로그램의 경우 claude.exe를 사용하세요. npm/pnpm/yarn 또는 기타 패키지 관리자 설치의 경우 cli-wrapper.cjs 경로를 사용하세요 (claude.cmd가 아님).",
-      "descUnix": "\"which claude\"의 출력을 붙여넣으세요 - 네이티브 및 npm/pnpm/yarn 설치 모두에서 작동합니다.",
+      "genericName": "CLI 경로",
       "validation": {
         "notExist": "경로가 존재하지 않습니다",
-        "isDirectory": "경로가 디렉토리입니다 파일이 아닙니다"
+        "isDirectory": "경로가 디렉토리입니다 파일이 아닙니다",
+        "mustBeAbsolute": "경로는 절대 경로여야 합니다",
+        "notFile": "경로는 파일을 가리켜야 합니다",
+        "notAccessible": "경로에 접근할 수 없습니다",
+        "notExecutable": "경로는 실행 가능해야 합니다"
       }
     },
     "language": {
@@ -283,9 +271,38 @@
     },
     "providerEnablement": {
       "name": "{provider} 활성화",
-      "desc": "활성화된 {provider} 모델을 새 대화에서 사용할 수 있게 합니다. 비활성화해도 기존 세션은 유지됩니다.",
       "lastProviderWarning": "Claudian을 사용하려면 하나 이상의 제공자를 활성화해야 합니다.",
       "noModelsWarning": "활성화된 {provider} 모델이 없습니다. 아래 모델 섹션에서 하나 이상의 모델을 활성화하세요."
+    },
+    "modelPicker": {
+      "name": "표시할 모델",
+      "desc": "채팅 선택기에서 사용할 모델을 선택합니다. 드래그하여 순서를 바꿀 수 있으며, 제공자는 현재 사용 가능한 첫 번째 모델을 기본값으로 사용합니다. 이 제공자를 사용하려면 모델을 하나 이상 선택하세요.",
+      "browse": "모델 찾아보기",
+      "filterLabel": "{provider} 모델 필터",
+      "searchPlaceholder": "모델, 제공자 또는 ID로 필터...",
+      "providerFilterLabel": "모델 제공자 필터",
+      "allProviders": "모든 제공자 ({count})",
+      "discover": "검색",
+      "visible": "표시: ",
+      "ofDiscovered": " / 발견된 {count}개",
+      "oneProvider": " | 제공자 1개",
+      "manyProviders": " | 제공자 {count}개",
+      "loadingModels": "모델을 불러오는 중...",
+      "loading": "불러오는 중...",
+      "available": "{count}개 사용 가능",
+      "noneDiscovered": "아직 발견된 모델이 없습니다",
+      "selected": "선택됨 ({count})",
+      "clearAllLabel": "선택한 {provider} 모델 모두 지우기",
+      "reorderLabel": "{model} 순서 변경. 드래그하거나 위/아래 화살표 키를 사용하세요",
+      "default": "기본값",
+      "unavailable": "사용 불가",
+      "unavailableTitle": "구성된 모델이 현재 {provider}에서 보고되지 않습니다",
+      "aliasLabel": "별칭 (선택)",
+      "removeLabel": "{model} 제거",
+      "noMatch": "필터와 일치하는 모델이 없습니다.",
+      "emptyCatalog": "보고된 {provider} 모델이 없습니다. 구성을 확인하고 검색을 클릭하세요.",
+      "loadingCatalog": "{provider} 모델을 불러오는 중…",
+      "stale": "{provider} 모델 카탈로그가 오래되었습니다. 검색을 클릭하여 새로 고치세요."
     },
     "claude": {
       "responseStyle": {
@@ -304,9 +321,6 @@
       },
       "cliPath": {
         "name": "Codex CLI 경로",
-        "descUnix": "로컬 Codex CLI의 사용자 지정 경로입니다. 비워 두면 알려진 Codex 설치를 먼저 사용한 뒤 PATH를 찾습니다.",
-        "descWindows": "로컬 Codex CLI의 사용자 지정 경로입니다. 비워 두면 PATH에서 자동 감지합니다. 일반적으로 `codex.exe`인 네이티브 Windows 실행 파일 경로를 사용하세요.",
-        "descWsl": "WSL 안에서 실행할 Linux 측 Codex 명령 또는 절대 경로입니다. 비워 두면 선택한 배포판의 PATH에서 찾습니다.",
         "validation": {
           "wslWindowsPath": "WSL 모드에는 Windows 실행 파일 경로가 아니라 Linux 명령 또는 Linux 절대 경로가 필요합니다."
         }
@@ -343,40 +357,62 @@
       }
     },
     "agentSkills": {
-      "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
-      "noSkills": "No shared skills configured. Click + to create one.",
-      "skillBadge": "skill",
-      "diagnosticsTitle": "Skills needing attention",
-      "loadFailed": "Could not load shared skills.",
-      "savedRefreshFailed": "Saved, but provider refresh failed.",
-      "validationFailed": "Invalid skill: {message}",
-      "collisionFailed": "A skill named \"{name}\" already exists.",
-      "saveFailed": "Failed to save shared skill: {message}",
-      "deleteFailed": "Failed to move shared skill to trash: {message}",
-      "staleConflict": "This skill changed elsewhere; refresh before saving.",
-      "created": "Shared skill \"{name}\" created.",
-      "updated": "Shared skill \"{name}\" updated.",
-      "deleted": "Shared skill \"{name}\" moved to trash.",
+      "sharedExpectation": "호환되는 제공자를 위해 .agents/skills/의 공유 스킬을 관리합니다.",
+      "noSkills": "구성된 공유 스킬이 없습니다. +를 클릭하여 만드세요.",
+      "skillBadge": "스킬",
+      "diagnosticsTitle": "확인이 필요한 스킬",
+      "loadFailed": "공유 스킬을 불러올 수 없습니다.",
+      "savedRefreshFailed": "저장했지만 제공자 새로 고침에 실패했습니다.",
+      "validationFailed": "잘못된 스킬: {message}",
+      "collisionFailed": "\"{name}\" 스킬이 이미 있습니다.",
+      "saveFailed": "공유 스킬을 저장하지 못했습니다: {message}",
+      "deleteFailed": "공유 스킬을 휴지통으로 옮기지 못했습니다: {message}",
+      "staleConflict": "이 스킬이 다른 곳에서 변경되었습니다. 저장하기 전에 새로 고치세요.",
+      "created": "공유 스킬 \"{name}\"을(를) 만들었습니다.",
+      "updated": "공유 스킬 \"{name}\"을(를) 업데이트했습니다.",
+      "deleted": "공유 스킬 \"{name}\"을(를) 휴지통으로 옮겼습니다.",
       "fix": "수정",
       "fixed": "스킬 \"{name}\"을(를) 수정했습니다.",
       "modal": {
-        "titleEdit": "Edit Shared Skill",
-        "titleAdd": "Add Shared Skill",
+        "titleEdit": "공유 스킬 편집",
+        "titleAdd": "공유 스킬 추가",
         "titleFix": "스킬 수정",
-        "name": "Skill name",
-        "nameDesc": "Lowercase letters and numbers separated by single hyphens",
+        "name": "스킬 이름",
+        "nameDesc": "소문자와 숫자를 하이픈 하나로 구분하여 입력",
         "namePlaceholder": "code-reviewer",
-        "description": "Description",
-        "descriptionDesc": "Required portable description used by providers to select the skill",
-        "descriptionPlaceholder": "Reviews code for correctness and maintainability",
-        "instructions": "Instructions",
-        "instructionsDesc": "Required SKILL.md instructions",
-        "instructionsPlaceholder": "Review the supplied code and report actionable findings..."
+        "description": "설명",
+        "descriptionDesc": "제공자가 스킬을 선택할 때 사용하는 필수 공통 설명",
+        "descriptionPlaceholder": "코드의 정확성과 유지보수성을 검토합니다",
+        "instructions": "지침",
+        "instructionsDesc": "필수 SKILL.md 지침",
+        "instructionsPlaceholder": "제공된 코드를 검토하고 조치 가능한 결과를 보고하세요..."
       },
       "delete": {
-        "title": "Delete Shared Skill",
-        "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
-        "confirm": "Move to trash"
+        "title": "공유 스킬 삭제",
+        "description": "스크립트, 참조 자료, 에셋을 포함한 스킬 폴더 전체가 휴지통으로 이동합니다.",
+        "confirm": "휴지통으로 이동"
+      }
+    },
+    "opencode": {
+      "environment": {
+        "name": "OpenCode 환경 변수",
+        "desc": "OpenCode에 전달되는 추가 환경 변수입니다."
+      },
+      "migrationNotice": {
+        "text": "Claudian이 이제 OpenCode v2를 지원합니다. OpenCode v1 지원은 2026년 10월 30일에 종료됩니다.",
+        "link": "OpenCode v2로 마이그레이션"
+      }
+    },
+    "pi": {
+      "environment": {
+        "name": "Pi 환경 변수",
+        "desc": "Pi에만 전달되는 환경 변수입니다."
+      }
+    },
+    "grok": {
+      "environment": {
+        "name": "Grok 환경 변수",
+        "desc": "Grok에만 전달되는 환경 변수입니다. 사용자 지정 모델의 비밀 값은 이 제공자 범위에 남아 있으며 네이티브 구성에서 env_key로 참조됩니다."
       }
     },
     "skills": {

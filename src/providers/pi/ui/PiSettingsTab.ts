@@ -98,7 +98,7 @@ export function createPiSettingsTabRenderer(
           const config = getPiProviderSettings(settingsBag);
           return config.cliPathsByHost[hostnameKey] || config.cliPath;
         },
-        name: 'CLI path',
+        name: t('settings.cliPath.genericName'),
         onChange: async (value) => {
           const cliPathsByHost = {
             ...getPiProviderSettings(settingsBag).cliPathsByHost,
@@ -131,9 +131,9 @@ export function createPiSettingsTabRenderer(
 
       renderEnvironmentSettingsSection({
         container,
-        desc: 'Environment variables passed only to Pi.',
-        heading: 'Environment',
-        name: 'Pi environment variables',
+        desc: t('settings.pi.environment.desc'),
+        heading: t('settings.environment'),
+        name: t('settings.pi.environment.name'),
         placeholder: 'PI_CODING_AGENT_SESSION_DIR=/path/to/sessions',
         plugin: context.plugin,
         scope: 'provider:pi',
@@ -151,11 +151,11 @@ function validateCLIPath(value: string): string | null {
 
   const expandedPath = normalizeConfiguredCLIPath(trimmed);
   if (!fs.existsSync(expandedPath)) {
-    return 'Path does not exist';
+    return t('settings.cliPath.validation.notExist');
   }
 
   if (!fs.statSync(expandedPath).isFile()) {
-    return 'Path must point to a file';
+    return t('settings.cliPath.validation.notFile');
   }
 
   return null;

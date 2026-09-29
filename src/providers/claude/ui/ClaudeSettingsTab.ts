@@ -207,7 +207,7 @@ export function createClaudeSettingsTabRenderer(
         scope: 'provider:claude',
         heading: t('settings.environment'),
         name: t('settings.customVariables.name'),
-        desc: 'Claude-owned runtime variables only. Use this for ANTHROPIC_* and Claude-specific toggles.',
+        desc: t('settings.customVariables.desc'),
         placeholder: 'ANTHROPIC_API_KEY=your-key\nANTHROPIC_BASE_URL=https://api.example.com\nANTHROPIC_MODEL=custom-model\nCLAUDE_CODE_USE_BEDROCK=1',
         renderCustomContextLimits: (target) => context.renderCustomContextLimits(target, 'claude'),
       });

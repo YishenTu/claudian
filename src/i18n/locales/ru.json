@@ -4,23 +4,12 @@
     "cancel": "Отмена",
     "delete": "Удалить",
     "edit": "Редактировать",
-    "preview": "Предпросмотр",
     "add": "Добавить",
-    "remove": "Удалить",
-    "clear": "Очистить",
     "clearAll": "Очистить всё",
-    "loading": "Загрузка",
     "error": "Ошибка",
-    "success": "Успех",
-    "warning": "Предупреждение",
     "confirm": "Подтвердить",
-    "settings": "Настройки",
     "advanced": "Дополнительно",
-    "enabled": "Включено",
-    "disabled": "Отключено",
-    "platform": "Платформа",
-    "refresh": "Обновить",
-    "rewind": "Откатить"
+    "refresh": "Обновить"
   },
   "chat": {
     "selectAvailableModel": "Перед отправкой выберите доступную модель.",
@@ -53,7 +42,6 @@
       "failed": "Ошибка ответвления: {error}",
       "unavailableStreaming": "Невозможно ответвить во время потоковой передачи",
       "unavailableNoUuid": "Невозможно ответвить: отсутствуют идентификаторы сообщений",
-      "unavailableNoResponse": "Невозможно ответвить: нет ответа для ответвления",
       "errorMessageNotFound": "Сообщение не найдено",
       "errorNoSession": "Идентификатор сессии недоступен",
       "errorNoActiveTab": "Нет активной вкладки",
@@ -88,19 +76,19 @@
     }
   },
   "settings": {
-    "title": "Настройки Claudian",
     "tabs": {
       "general": "Общие",
       "providers": "Провайдеры",
-      "skills": "Навыки",
-      "claude": "Claude",
-      "codex": "Codex"
+      "skills": "Навыки"
+    },
+    "providerSettings": {
+      "unavailable": "Настройки провайдера недоступны.",
+      "loadFailed": "Не удалось загрузить настройки провайдера: {message}"
     },
     "display": "Отображение",
     "conversations": "Разговоры",
     "content": "Содержание",
     "input": "Ввод",
-    "setup": "Настройка",
     "models": "Модели",
     "experimental": "Экспериментальное",
     "userName": {
@@ -152,12 +140,6 @@
     "newSessionHotkey": {
       "name": "Заменить текущий диалог"
     },
-    "newTabHotkey": {
-      "name": "Новое"
-    },
-    "closeTabHotkey": {
-      "name": "Закрыть вкладку"
-    },
     "safety": "Безопасность",
     "loadUserSettings": {
       "name": "Загружать пользовательские настройки Claude",
@@ -172,15 +154,20 @@
       "desc": "Режим песочницы, используемый, когда переключатель Safe активен."
     },
     "environment": "Окружение",
+    "sharedEnvironment": {
+      "name": "Общее окружение",
+      "desc": "Независимые от провайдера переменные среды выполнения, общие для всех провайдеров. Используйте для PATH, прокси, сертификатов и временных каталогов."
+    },
     "customVariables": {
       "name": "Пользовательские переменные",
-      "desc": "Переменные окружения для Claude SDK (формат KEY=VALUE, по одной в строке). Префикс export поддерживается."
+      "desc": "Только переменные среды выполнения, принадлежащие Claude. Используйте для ANTHROPIC_* и переключателей, специфичных для Claude."
     },
     "envSnippets": {
       "name": "Сниппеты",
       "addBtn": "Добавить сниппет",
       "noSnippets": "Нет сохраненных сниппетов окружения. Нажмите +, чтобы сохранить текущую конфигурацию.",
       "nameRequired": "Пожалуйста, введите название сниппета",
+      "insert": "Вставить",
       "modal": {
         "titleEdit": "Редактировать сниппет",
         "titleSave": "Сохранить сниппет",
@@ -193,18 +180,21 @@
         "save": "Сохранить",
         "update": "Обновить",
         "cancel": "Отмена"
-      }
+      },
+      "insertFailed": "Не удалось вставить сниппет",
+      "deleteConfirm": "Удалить сниппет окружения «{name}»?",
+      "deleteFailed": "Не удалось удалить сниппет"
     },
     "customModelOverrides": {
       "name": "Переопределения пользовательских моделей",
       "desc": "Настройте псевдонимы в селекторе моделей и размеры окна контекста для пользовательских моделей."
     },
     "customModelAliases": {
-      "placeholder": "Псевдоним"
+      "placeholder": "Псевдоним",
+      "ariaLabel": "Псевдоним для {model}",
+      "ariaDescription": "Пользовательская метка в селекторе моделей. Оставьте пустым, чтобы использовать значение по умолчанию."
     },
     "customContextLimits": {
-      "name": "Пользовательские лимиты контекста",
-      "desc": "Установите размеры окна контекста для ваших пользовательских моделей. Оставьте пустым для использования значения по умолчанию (200k токенов).",
       "invalid": "Неверный формат. Используйте: 256k, 1m или точное число (1000-10000000)."
     },
     "enableChrome": {
@@ -222,10 +212,6 @@
     "restoreTabsOnStartup": {
       "name": "Восстанавливать вкладки при запуске",
       "desc": "Повторно открывать все вкладки в однопанельном режиме или только последнюю активную вкладку в двухпанельном режиме."
-    },
-    "enableFilePane": {
-      "name": "Включить панель файлов",
-      "desc": "Показывать вкладку «Файлы» в менеджере сессий двухпанельного режима."
     },
     "dualPaneSide": {
       "name": "Сторона второй панели",
@@ -269,12 +255,14 @@
     },
     "cliPath": {
       "name": "Путь к CLI Claude",
-      "desc": "Пользовательский путь к Claude Code CLI. Оставьте пустым для автоматического определения.",
-      "descWindows": "Для нативного установщика используйте claude.exe. Для установок через npm/pnpm/yarn или другие менеджеры пакетов используйте путь к cli-wrapper.cjs (не claude.cmd).",
-      "descUnix": "Вставьте вывод команды \"which claude\" — работает как для нативных установок, так и для npm/pnpm/yarn.",
+      "genericName": "Путь к CLI",
       "validation": {
         "notExist": "Путь не существует",
-        "isDirectory": "Путь является директорией, а не файлом"
+        "isDirectory": "Путь является директорией, а не файлом",
+        "mustBeAbsolute": "Путь должен быть абсолютным",
+        "notFile": "Путь должен указывать на файл",
+        "notAccessible": "Путь недоступен",
+        "notExecutable": "Путь должен быть исполняемым"
       }
     },
     "language": {
@@ -283,9 +271,38 @@
     },
     "providerEnablement": {
       "name": "Включить {provider}",
-      "desc": "Сделать включённые модели {provider} доступными для новых бесед. Существующие сеансы сохраняются после отключения.",
       "lastProviderWarning": "Для работы Claudian должен быть включён хотя бы один провайдер.",
       "noModelsWarning": "Нет включённых моделей {provider}. В разделе «Модели» ниже включите хотя бы одну модель."
+    },
+    "modelPicker": {
+      "name": "Видимые модели",
+      "desc": "Выберите, какие модели доступны в селекторе чата. Перетаскивайте их, чтобы изменить порядок; провайдер использует первую доступную сейчас модель по умолчанию. Выберите хотя бы одну модель, чтобы использовать этого провайдера.",
+      "browse": "Обзор моделей",
+      "filterLabel": "Фильтр моделей {provider}",
+      "searchPlaceholder": "Фильтр по модели, провайдеру или ID...",
+      "providerFilterLabel": "Фильтр провайдеров моделей",
+      "allProviders": "Все провайдеры ({count})",
+      "discover": "Обнаружить",
+      "visible": "Видимых: ",
+      "ofDiscovered": " из {count} обнаруженных",
+      "oneProvider": " | провайдеров: 1",
+      "manyProviders": " | провайдеров: {count}",
+      "loadingModels": "Загрузка моделей...",
+      "loading": "Загрузка...",
+      "available": "Доступно: {count}",
+      "noneDiscovered": "Модели пока не обнаружены",
+      "selected": "Выбрано ({count})",
+      "clearAllLabel": "Снять выбор со всех моделей {provider}",
+      "reorderLabel": "Изменить порядок {model}; перетащите или используйте клавиши со стрелками вверх и вниз",
+      "default": "По умолчанию",
+      "unavailable": "Недоступна",
+      "unavailableTitle": "Настроенная модель сейчас не сообщается провайдером {provider}",
+      "aliasLabel": "Псевдоним (необязательно)",
+      "removeLabel": "Удалить {model}",
+      "noMatch": "Нет моделей, соответствующих фильтру.",
+      "emptyCatalog": "{provider} не сообщил ни одной модели. Проверьте конфигурацию и нажмите «Обнаружить».",
+      "loadingCatalog": "Загрузка моделей {provider}…",
+      "stale": "Каталог моделей {provider} устарел. Нажмите «Обнаружить», чтобы обновить его."
     },
     "claude": {
       "responseStyle": {
@@ -304,9 +321,6 @@
       },
       "cliPath": {
         "name": "Путь к Codex CLI",
-        "descUnix": "Пользовательский путь к локальному Codex CLI. Оставьте пустым, чтобы сначала использовать известные установки Codex, затем PATH.",
-        "descWindows": "Пользовательский путь к локальному Codex CLI. Оставьте пустым для автоопределения через PATH. Используйте путь к нативному Windows-исполняемому файлу, обычно `codex.exe`.",
-        "descWsl": "Linux-команда Codex или абсолютный путь для запуска внутри WSL. Оставьте пустым для поиска в PATH выбранного дистрибутива.",
         "validation": {
           "wslWindowsPath": "В режиме WSL ожидается Linux-команда или абсолютный Linux-путь, а не путь к Windows-исполняемому файлу."
         }
@@ -343,40 +357,62 @@
       }
     },
     "agentSkills": {
-      "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
-      "noSkills": "No shared skills configured. Click + to create one.",
-      "skillBadge": "skill",
-      "diagnosticsTitle": "Skills needing attention",
-      "loadFailed": "Could not load shared skills.",
-      "savedRefreshFailed": "Saved, but provider refresh failed.",
-      "validationFailed": "Invalid skill: {message}",
-      "collisionFailed": "A skill named \"{name}\" already exists.",
-      "saveFailed": "Failed to save shared skill: {message}",
-      "deleteFailed": "Failed to move shared skill to trash: {message}",
-      "staleConflict": "This skill changed elsewhere; refresh before saving.",
-      "created": "Shared skill \"{name}\" created.",
-      "updated": "Shared skill \"{name}\" updated.",
-      "deleted": "Shared skill \"{name}\" moved to trash.",
+      "sharedExpectation": "Управляйте общими навыками в .agents/skills/ для совместимых провайдеров.",
+      "noSkills": "Общие навыки не настроены. Нажмите +, чтобы создать навык.",
+      "skillBadge": "навык",
+      "diagnosticsTitle": "Навыки, требующие внимания",
+      "loadFailed": "Не удалось загрузить общие навыки.",
+      "savedRefreshFailed": "Сохранено, но не удалось обновить провайдер.",
+      "validationFailed": "Недопустимый навык: {message}",
+      "collisionFailed": "Навык «{name}» уже существует.",
+      "saveFailed": "Не удалось сохранить общий навык: {message}",
+      "deleteFailed": "Не удалось переместить общий навык в корзину: {message}",
+      "staleConflict": "Этот навык был изменён в другом месте; обновите перед сохранением.",
+      "created": "Общий навык «{name}» создан.",
+      "updated": "Общий навык «{name}» обновлён.",
+      "deleted": "Общий навык «{name}» перемещён в корзину.",
       "fix": "Исправить",
       "fixed": "Навык «{name}» исправлен.",
       "modal": {
-        "titleEdit": "Edit Shared Skill",
-        "titleAdd": "Add Shared Skill",
+        "titleEdit": "Изменить общий навык",
+        "titleAdd": "Добавить общий навык",
         "titleFix": "Исправить навык",
-        "name": "Skill name",
-        "nameDesc": "Lowercase letters and numbers separated by single hyphens",
+        "name": "Имя навыка",
+        "nameDesc": "Строчные буквы и цифры, разделённые одиночными дефисами",
         "namePlaceholder": "code-reviewer",
-        "description": "Description",
-        "descriptionDesc": "Required portable description used by providers to select the skill",
-        "descriptionPlaceholder": "Reviews code for correctness and maintainability",
-        "instructions": "Instructions",
-        "instructionsDesc": "Required SKILL.md instructions",
-        "instructionsPlaceholder": "Review the supplied code and report actionable findings..."
+        "description": "Описание",
+        "descriptionDesc": "Обязательное переносимое описание, по которому провайдеры выбирают навык",
+        "descriptionPlaceholder": "Проверяет код на корректность и удобство сопровождения",
+        "instructions": "Инструкции",
+        "instructionsDesc": "Обязательные инструкции SKILL.md",
+        "instructionsPlaceholder": "Проверьте предоставленный код и сообщите о замечаниях, требующих действий..."
       },
       "delete": {
-        "title": "Delete Shared Skill",
-        "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
-        "confirm": "Move to trash"
+        "title": "Удалить общий навык",
+        "description": "Вся папка навыка, включая скрипты, справочные материалы и ресурсы, будет перемещена в корзину.",
+        "confirm": "Переместить в корзину"
+      }
+    },
+    "opencode": {
+      "environment": {
+        "name": "Переменные окружения OpenCode",
+        "desc": "Дополнительные переменные окружения, передаваемые в OpenCode."
+      },
+      "migrationNotice": {
+        "text": "Claudian теперь поддерживает OpenCode v2. Поддержка OpenCode v1 прекращается 30 октября 2026 г.",
+        "link": "Перейти на OpenCode v2"
+      }
+    },
+    "pi": {
+      "environment": {
+        "name": "Переменные окружения Pi",
+        "desc": "Переменные окружения, передаваемые только в Pi."
+      }
+    },
+    "grok": {
+      "environment": {
+        "name": "Переменные окружения Grok",
+        "desc": "Переменные окружения, передаваемые только в Grok. Секреты пользовательских моделей остаются в области этого провайдера, а нативная конфигурация ссылается на них через env_key."
       }
     },
     "skills": {

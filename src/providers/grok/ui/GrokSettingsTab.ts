@@ -102,7 +102,7 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
         const current = getGrokProviderSettings(settingsBag);
         return current.cliPathsByHost[hostnameKey] ?? current.cliPath ?? '';
       },
-      name: 'CLI path',
+      name: t('settings.cliPath.genericName'),
       onChange: async (value) => {
         const cliPathsByHost = {
           ...getGrokProviderSettings(settingsBag).cliPathsByHost,
@@ -136,9 +136,9 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
 
     renderEnvironmentSettingsSection({
       container,
-      desc: 'Environment variables passed only to Grok. Custom-model secrets stay in this provider scope and are referenced from native config by env_key.',
-      heading: 'Environment',
-      name: 'Grok environment variables',
+      desc: t('settings.grok.environment.desc'),
+      heading: t('settings.environment'),
+      name: t('settings.grok.environment.name'),
       placeholder: 'GROK_HOME=/path/to/grok-home\nGROK_DEFAULT_MODEL=grok-code-fast-1',
       plugin: context.plugin,
       renderCustomContextLimits: target => context.renderCustomContextLimits(target, GROK_PROVIDER_ID),
@@ -155,22 +155,22 @@ function validateCLIPath(value: string): string | null {
   }
   const expandedPath = normalizeConfiguredCLIPath(trimmed);
   if (!path.posix.isAbsolute(expandedPath) && !path.win32.isAbsolute(expandedPath)) {
-    return 'Path must be absolute';
+    return t('settings.cliPath.validation.mustBeAbsolute');
   }
   try {
     if (!fs.existsSync(expandedPath)) {
-      return 'Path does not exist';
+      return t('settings.cliPath.validation.notExist');
     }
     if (!fs.statSync(expandedPath).isFile()) {
-      return 'Path must point to a file';
+      return t('settings.cliPath.validation.notFile');
     }
     if (process.platform !== 'win32') {
       fs.accessSync(expandedPath, fs.constants.X_OK);
     }
   } catch {
     return process.platform === 'win32'
-      ? 'Path is not accessible'
-      : 'Path must be executable';
+      ? t('settings.cliPath.validation.notAccessible')
+      : t('settings.cliPath.validation.notExecutable');
   }
   return null;
 }

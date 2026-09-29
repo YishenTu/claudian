@@ -4,23 +4,12 @@
     "cancel": "Cancel",
     "delete": "Delete",
     "edit": "Edit",
-    "preview": "Preview",
     "add": "Add",
-    "remove": "Remove",
-    "clear": "Clear",
     "clearAll": "Clear all",
-    "loading": "Loading",
     "error": "Error",
-    "success": "Success",
-    "warning": "Warning",
     "confirm": "Confirm",
-    "settings": "Settings",
     "advanced": "Advanced",
-    "enabled": "Enabled",
-    "disabled": "Disabled",
-    "platform": "Platform",
-    "refresh": "Refresh",
-    "rewind": "Rewind"
+    "refresh": "Refresh"
   },
   "chat": {
     "selectAvailableModel": "Select an available model before sending.",
@@ -53,7 +42,6 @@
       "failed": "Fork failed: {error}",
       "unavailableStreaming": "Cannot fork while streaming",
       "unavailableNoUuid": "Cannot fork: missing message identifiers",
-      "unavailableNoResponse": "Cannot fork: no response to fork from",
       "errorMessageNotFound": "Message not found",
       "errorNoSession": "No session ID available",
       "errorNoActiveTab": "No active tab",
@@ -88,19 +76,19 @@
     }
   },
   "settings": {
-    "title": "Claudian Settings",
     "tabs": {
       "general": "General",
       "providers": "Providers",
-      "skills": "Skills",
-      "claude": "Claude",
-      "codex": "Codex"
+      "skills": "Skills"
+    },
+    "providerSettings": {
+      "unavailable": "Provider settings are unavailable.",
+      "loadFailed": "Could not load provider settings: {message}"
     },
     "display": "Display",
     "conversations": "Conversations",
     "content": "Content",
     "input": "Input",
-    "setup": "Setup",
     "models": "Models",
     "experimental": "Experimental",
     "userName": {
@@ -152,12 +140,6 @@
     "newSessionHotkey": {
       "name": "Replace Current Conversation"
     },
-    "newTabHotkey": {
-      "name": "New"
-    },
-    "closeTabHotkey": {
-      "name": "Close Tab"
-    },
     "safety": "Safety",
     "loadUserSettings": {
       "name": "Load user Claude settings",
@@ -172,15 +154,20 @@
       "desc": "Sandbox mode used when the Safe toggle is active."
     },
     "environment": "Environment",
+    "sharedEnvironment": {
+      "name": "Shared environment",
+      "desc": "Provider-neutral runtime variables shared across all providers. Use this for PATH, proxy, cert, and temp variables."
+    },
     "customVariables": {
       "name": "Custom variables",
-      "desc": "Environment variables for Claude SDK (KEY=VALUE format, one per line). Shell export prefix supported."
+      "desc": "Claude-owned runtime variables only. Use this for ANTHROPIC_* and Claude-specific toggles."
     },
     "envSnippets": {
       "name": "Snippets",
       "addBtn": "Add snippet",
       "noSnippets": "No saved environment snippets yet. Click + to save your current environment configuration.",
       "nameRequired": "Please enter a name for the snippet",
+      "insert": "Insert",
       "modal": {
         "titleEdit": "Edit snippet",
         "titleSave": "Save snippet",
@@ -193,18 +180,21 @@
         "save": "Save",
         "update": "Update",
         "cancel": "Cancel"
-      }
+      },
+      "insertFailed": "Failed to insert snippet",
+      "deleteConfirm": "Delete environment snippet \"{name}\"?",
+      "deleteFailed": "Failed to delete snippet"
     },
     "customModelOverrides": {
       "name": "Custom model overrides",
       "desc": "Set model selector aliases and context window sizes for custom models."
     },
     "customModelAliases": {
-      "placeholder": "Alias"
+      "placeholder": "Alias",
+      "ariaLabel": "Alias for {model}",
+      "ariaDescription": "Custom label shown in the model selector. Leave empty to use the default."
     },
     "customContextLimits": {
-      "name": "Custom Context Limits",
-      "desc": "Set context window sizes for your custom models. Leave empty to use the default (200k tokens).",
       "invalid": "Invalid format. Use: 256k, 1m, or exact count (1000-10000000)."
     },
     "enableChrome": {
@@ -222,10 +212,6 @@
     "restoreTabsOnStartup": {
       "name": "Restore tabs on startup",
       "desc": "Reopen all tabs in single-pane mode or the last active tab in dual-pane mode."
-    },
-    "enableFilePane": {
-      "name": "Enable file pane",
-      "desc": "Show a Files tab in the dual-pane session manager."
     },
     "dualPaneSide": {
       "name": "Dual-pane side",
@@ -269,12 +255,14 @@
     },
     "cliPath": {
       "name": "Claude CLI path",
-      "desc": "Custom path to Claude Code CLI. Leave empty for auto-detection.",
-      "descWindows": "For the native installer, use claude.exe. For npm/pnpm/yarn or other package manager installs, use the cli-wrapper.cjs path (not claude.cmd).",
-      "descUnix": "Paste the output of \"which claude\" — works for both native and npm/pnpm/yarn installs.",
+      "genericName": "CLI path",
       "validation": {
         "notExist": "Path does not exist",
-        "isDirectory": "Path is a directory, not a file"
+        "isDirectory": "Path is a directory, not a file",
+        "mustBeAbsolute": "Path must be absolute",
+        "notFile": "Path must point to a file",
+        "notAccessible": "Path is not accessible",
+        "notExecutable": "Path must be executable"
       }
     },
     "language": {
@@ -283,9 +271,38 @@
     },
     "providerEnablement": {
       "name": "Enable {provider}",
-      "desc": "Make enabled {provider} models available for new conversations. Existing sessions are preserved when disabled.",
       "lastProviderWarning": "At least one provider must remain enabled for Claudian to work.",
       "noModelsWarning": "No {provider} models are enabled. Go to Models below and enable at least one model."
+    },
+    "modelPicker": {
+      "name": "Visible models",
+      "desc": "Choose which models are available in the chat selector. Drag to reorder them; the provider uses the first currently usable model as its default. Select at least one model to use this provider.",
+      "browse": "Browse models",
+      "filterLabel": "Filter {provider} models",
+      "searchPlaceholder": "Filter by model, provider, or ID...",
+      "providerFilterLabel": "Filter model providers",
+      "allProviders": "All providers ({count})",
+      "discover": "Discover",
+      "visible": "Visible: ",
+      "ofDiscovered": " of {count} discovered",
+      "oneProvider": " | 1 provider",
+      "manyProviders": " | {count} providers",
+      "loadingModels": "Loading models...",
+      "loading": "Loading...",
+      "available": "{count} available",
+      "noneDiscovered": "No models discovered yet",
+      "selected": "Selected ({count})",
+      "clearAllLabel": "Clear all selected {provider} models",
+      "reorderLabel": "Reorder {model}; drag or use the Up and Down Arrow keys",
+      "default": "Default",
+      "unavailable": "Unavailable",
+      "unavailableTitle": "Configured model not currently reported by {provider}",
+      "aliasLabel": "Alias (optional)",
+      "removeLabel": "Remove {model}",
+      "noMatch": "No models match your filter.",
+      "emptyCatalog": "No {provider} models reported. Check your configuration and click Discover.",
+      "loadingCatalog": "Loading {provider} models…",
+      "stale": "{provider} model catalog is stale. Click Discover to refresh it."
     },
     "claude": {
       "responseStyle": {
@@ -304,9 +321,6 @@
       },
       "cliPath": {
         "name": "Codex CLI path",
-        "descUnix": "Custom path to the local Codex CLI. Leave empty to prefer known Codex installs, then PATH.",
-        "descWindows": "Custom path to the local Codex CLI. Leave empty to auto-detect from PATH. Use the native Windows executable path, usually `codex.exe`.",
-        "descWsl": "Linux-side Codex command or absolute path to run inside WSL. Leave empty for PATH lookup inside the selected distro.",
         "validation": {
           "wslWindowsPath": "WSL mode expects a Linux command or Linux absolute path, not a Windows executable path."
         }
@@ -377,6 +391,28 @@
         "title": "Delete Shared Skill",
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
+      }
+    },
+    "opencode": {
+      "environment": {
+        "name": "OpenCode environment variables",
+        "desc": "Extra environment variables passed to OpenCode."
+      },
+      "migrationNotice": {
+        "text": "Claudian now supports OpenCode v2. OpenCode v1 support ends on October 30, 2026.",
+        "link": "Migrate to OpenCode v2"
+      }
+    },
+    "pi": {
+      "environment": {
+        "name": "Pi environment variables",
+        "desc": "Environment variables passed only to Pi."
+      }
+    },
+    "grok": {
+      "environment": {
+        "name": "Grok environment variables",
+        "desc": "Environment variables passed only to Grok. Custom-model secrets stay in this provider scope and are referenced from native config by env_key."
       }
     },
     "skills": {
