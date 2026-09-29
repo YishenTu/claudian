@@ -36,7 +36,7 @@ import type { CodexSkillListingService } from '@/providers/codex/skills/CodexSki
 function makeDiscoveredModel(model: string) {
   return {
     model,
-    displayName: model,
+    displayName: `${model} name`,
     description: `${model} description`,
     supportedReasoningEfforts: [{ value: 'medium', description: 'Balanced' }],
     defaultReasoningEffort: 'medium',

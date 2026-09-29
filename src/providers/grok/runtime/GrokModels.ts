@@ -1,5 +1,6 @@
 import { ProviderModelCatalogController } from '../../../core/providers/models/ProviderModelCatalog';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
+import { getGrokModelLabel } from '../models';
 import { getGrokProviderSettings, getOrderedGrokVisibleModelIds, updateGrokProviderSettings } from '../settings';
 import type { GrokModelCatalogCoordinator } from './GrokModelCatalogCoordinator';
 
@@ -14,7 +15,7 @@ export function createGrokModels(host: ProviderHost, native: Pick<GrokModelCatal
       return {
         enabled: current.enabled,
         models: (current.currentCatalog?.models ?? []).map(model => ({
-          id: model.rawId, name: model.displayName, description: model.description,
+          id: model.rawId, name: getGrokModelLabel(model), description: model.description,
         })),
         selectedIds: getOrderedGrokVisibleModelIds(current),
         aliases: current.modelAliases,

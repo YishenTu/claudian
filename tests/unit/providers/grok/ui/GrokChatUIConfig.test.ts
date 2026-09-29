@@ -90,6 +90,24 @@ describe('GrokChatUIConfig', () => {
     ]);
   });
 
+  it('formats raw Grok ids as display names when the catalog has no richer name', () => {
+    const models = [
+      { displayName: 'grok-4.7', rawId: 'grok-4.7', reasoningEfforts: [], supportsReasoning: false },
+      { displayName: 'grok-code-fast-1', rawId: 'grok-code-fast-1', reasoningEfforts: [], supportsReasoning: false },
+      { displayName: 'kimi-coding', rawId: 'kimi-coding', reasoningEfforts: [], supportsReasoning: false },
+      { displayName: 'Grok 4 Heavy', rawId: 'grok-4-heavy', reasoningEfforts: [], supportsReasoning: false },
+    ];
+
+    expect(grokChatUIConfig.getModelOptions(makeSettings({
+      providerConfigs: {
+        grok: {
+          catalogsByHost: { 'device:current': { ...catalog, models } },
+          visibleModels: null,
+        },
+      },
+    })).map(option => option.label)).toEqual(['Grok 4.7', 'Grok Code Fast 1', 'kimi-coding', 'Grok 4 Heavy']);
+  });
+
   it('does not expose active or saved selections that the user disabled', () => {
     const options = grokChatUIConfig.getModelOptions(makeSettings({
       model: 'grok/kimi-coding',

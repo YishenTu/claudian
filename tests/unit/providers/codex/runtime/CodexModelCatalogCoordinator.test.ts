@@ -18,7 +18,7 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
   },
 }));
 
-function makeModel(model: string, displayName = model): CodexDiscoveredModel {
+function makeModel(model: string, displayName = `${model} name`): CodexDiscoveredModel {
   return {
     model,
     displayName,

@@ -156,7 +156,7 @@ export function normalizeCodexDiscoveredModels(value: unknown): CodexDiscoveredM
     seen.add(model);
     models.push({
       model,
-      displayName: normalizeNonEmptyString(entry.displayName) ?? formatCodexModelLabel(model),
+      displayName: formatCodexModelLabel(normalizeNonEmptyString(entry.displayName) ?? model),
       description: normalizeNonEmptyString(entry.description) ?? '',
       supportedReasoningEfforts,
       defaultReasoningEffort,

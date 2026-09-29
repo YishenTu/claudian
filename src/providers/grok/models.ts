@@ -95,6 +95,19 @@ export function mergeGrokDiscoveredModels(
   return merged;
 }
 
+/** Native names win; a bare `grok-*` id formats as `Grok 4.7`. */
+export function getGrokModelLabel(model: Pick<GrokDiscoveredModel, 'displayName' | 'rawId'>): string {
+  if (model.displayName !== model.rawId) {
+    return model.displayName;
+  }
+  const match = model.rawId.match(/^grok-(\S+)$/i);
+  if (!match) {
+    return model.rawId;
+  }
+  return ['Grok', ...match[1].split('-').filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))].join(' ');
+}
+
 export function findGrokModel(
   models: GrokDiscoveredModel[],
   modelId: string,
