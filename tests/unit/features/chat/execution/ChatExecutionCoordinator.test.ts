@@ -1296,6 +1296,39 @@ describe('ChatExecutionCoordinator', () => {
     );
   });
 
+  it('publishes background work only when running children and background turns change it', async () => {
+    const onBackgroundWorkChanged = jest.fn();
+    const harness = createHarness({ onBackgroundWorkChanged });
+    await harness.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'codex' });
+    await harness.coordinator.prepare();
+    const session = harness.backends.get('codex')!.sessions[0];
+    let childrenRunning = false;
+    Object.assign(session, { hasBackgroundWork: () => childrenRunning });
+    let sessionSequence = 0;
+    const subagentUpdate = (status: 'running' | 'completed') => session.emit({
+      type: 'subagent_updated',
+      scope: { kind: 'session', sessionInstanceId: session.sessionInstanceId, sequence: ++sessionSequence },
+      subagent: { id: 'spawn', description: 'Helper', status, isExpanded: false, toolCalls: [] },
+    });
+    const backgroundScope = (sequence: number) => ({
+      kind: 'background' as const, sessionInstanceId: session.sessionInstanceId, turnId: 'background-1', sequence,
+    });
+
+    childrenRunning = true;
+    for (let index = 0; index < 5; index += 1) subagentUpdate('running');
+    session.emit({ type: 'background_turn_started', scope: backgroundScope(1) });
+    session.emit({ type: 'background_turn_completed', scope: backgroundScope(2), reason: 'completed' });
+    expect(harness.coordinator.hasBackgroundWork).toBe(true);
+    expect(onBackgroundWorkChanged.mock.calls).toEqual([[true]]);
+
+    childrenRunning = false;
+    subagentUpdate('completed');
+    subagentUpdate('completed');
+    expect(onBackgroundWorkChanged.mock.calls).toEqual([[true], [false]]);
+    await harness.coordinator.dispose();
+    await harness.registry.dispose();
+  });
+
   it('exposes session-event context validity and fences it before binding release awaits', async () => {
     const harness = createHarness();
     await harness.coordinator.bindConversation({

@@ -88,7 +88,7 @@ const patchSdkImportMeta = {
   setup(build) {
     build.onLoad(
       {
-        filter: /[\\/]node_modules[\\/](?:@openai[\\/]codex-sdk[\\/]dist[\\/]index\.js|@anthropic-ai[\\/]claude-agent-sdk[\\/]sdk\.mjs)$/,
+        filter: /[\\/]node_modules[\\/](?:@openai[\\/]codex-sdk[\\/]dist[\\/]index\.js|@anthropic-ai[\\/]claude-agent-sdk[\\/](?:sdk|core(?:-[A-Za-z0-9]+)?)\.mjs)$/,
       },
       async (args) => {
         const contents = await fsPromises.readFile(args.path, 'utf8');
@@ -98,6 +98,30 @@ const patchSdkImportMeta = {
         };
       },
     );
+  },
+};
+
+// The Claude SDK `/core` entry imports its zod and MCP peers only for
+// `createSdkMcpServer()`, which Claudian does not use. Marking those
+// SDK-issued imports side-effect-free lets esbuild drop them when unused
+// instead of evaluating their module graphs for their top-level effects.
+const omitUnusedClaudeSdkPeers = {
+  name: 'omit-unused-claude-sdk-peers',
+  setup(build) {
+    build.onResolve({ filter: /^(?:zod|@modelcontextprotocol\/sdk)(?:\/|$)/ }, async (args) => {
+      if (args.pluginData?.omitUnusedClaudeSdkPeers) return undefined;
+      if (!/[\\/]node_modules[\\/]@anthropic-ai[\\/]claude-agent-sdk[\\/]/.test(args.importer)) {
+        return undefined;
+      }
+
+      const result = await build.resolve(args.path, {
+        importer: args.importer,
+        kind: args.kind,
+        pluginData: { omitUnusedClaudeSdkPeers: true },
+        resolveDir: args.resolveDir,
+      });
+      return result.errors.length > 0 ? result : { ...result, sideEffects: false };
+    });
   },
 };
 
@@ -196,6 +220,7 @@ const mainContext = await esbuild.context({
   bundle: true,
   plugins: [
     patchSdkImportMeta,
+    omitUnusedClaudeSdkPeers,
     createCompressedStaticAssetsPlugin(),
     createPatchRendererUnsafeUnref(['main.js']),
     copyToObsidian,

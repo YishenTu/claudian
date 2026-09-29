@@ -27,6 +27,8 @@ import type { ChatState } from '../state/ChatState';
 import type { TabSession } from '../tabs/TabSession';
 
 const MAX_REWIND_CONFLICT_PATHS = 5;
+/** Longest a progress-only change waits for its coalesced save. */
+const PROGRESS_SAVE_DELAY_MS = 1_000;
 
 function buildRewindConflictConfirmation(conflicts: readonly ChatRewindConflict[]): string {
   const visiblePaths = conflicts
@@ -88,6 +90,7 @@ export class ConversationController {
   private branchState: BranchState = { kind: 'idle' };
   private switchRequestRevision = 0;
   private switchTail: Promise<void> = Promise.resolve();
+  private pendingProgressSave: { supersede: () => void } | null = null;
 
   constructor(deps: ConversationControllerDeps, callbacks: ConversationCallbacks = {}) {
     this.deps = deps;
@@ -613,6 +616,9 @@ export class ConversationController {
    * only metadata is saved - the SDK handles message persistence.
    */
   async save(updateLastActivity = false, options?: SaveOptions): Promise<void> {
+    // Every save persists the whole current state, including any coalesced progress.
+    this.pendingProgressSave?.supersede();
+    this.pendingProgressSave = null;
     if (this.deps.isConversationHydrated?.() === false) return;
     const { plugin, state } = this.deps;
 
@@ -660,6 +666,31 @@ export class ConversationController {
         this.deps.renderer.refreshBranchButtons(state.messages);
       }
     }
+  }
+
+  /**
+   * Coalesces display-only progress into one trailing save. The next direct save of any kind,
+   * including close, teardown, and navigation saves, supersedes it without another write.
+   * `persist` runs the save from its owner's queue; only the scheduling call receives the promise.
+   */
+  scheduleProgressSave(persist: () => Promise<void> | null | undefined): Promise<void> | undefined {
+    if (this.pendingProgressSave) return undefined;
+    let pending!: { supersede: () => void };
+    const due = new Promise<boolean>((resolve) => {
+      const timer = window.setTimeout(() => resolve(true), PROGRESS_SAVE_DELAY_MS);
+      pending = {
+        supersede: () => {
+          window.clearTimeout(timer);
+          resolve(false);
+        },
+      };
+    });
+    this.pendingProgressSave = pending;
+    return due.then(async (isDue) => {
+      if (!isDue) return;
+      if (this.pendingProgressSave === pending) this.pendingProgressSave = null;
+      await persist();
+    });
   }
 
   /**

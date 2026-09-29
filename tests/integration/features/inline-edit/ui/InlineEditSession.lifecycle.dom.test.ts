@@ -221,6 +221,51 @@ it('continues provider execution when vault mentions cannot load and reports one
   ]);
 });
 
+describe('Vault paths that resemble environment variables', () => {
+  const variable = 'CLAUDIAN_INLINE_MENTION_VAR';
+  const percentPath = `notes/a%${variable}%b.md`;
+  const dollarPath = `notes/$${variable}.md`;
+  let previous: string | undefined;
+
+  beforeEach(() => {
+    previous = process.env[variable];
+    process.env[variable] = 'expanded';
+  });
+
+  afterEach(() => {
+    if (previous === undefined) delete process.env[variable];
+    else process.env[variable] = previous;
+  });
+
+  function withVaultFiles(h: ReturnType<typeof createHarness>): void {
+    h.app.vault.getFiles = () => [percentPath, dollarPath].map(filePath => {
+      const name = filePath.split('/').pop()!;
+      return { basename: name.replace(/\.md$/, ''), extension: 'md', name, path: filePath, stat: { ctime: 1, mtime: 1, size: 1 } };
+    });
+  }
+
+  it('attaches mentioned files by their literal Vault paths', async () => {
+    const h = createHarness();
+    withVaultFiles(h);
+    h.createSession().show();
+    submitInstruction(`Improve @${percentPath} using @${dollarPath}`);
+    await waitFor(() => expect(h.backend.sessions[0]?.getStatus()).toBe('executing'));
+    const prompt = h.backend.sessions[0].requests[0].input
+      .map(block => block.type === 'text' ? block.text : '')
+      .join('\n');
+    expect(prompt).toContain(`<context_files>\n<context_file path="${percentPath}" />\n<context_file path="${dollarPath}" />\n</context_files>`);
+  });
+
+  it('inserts the literal Vault path of a selected suggestion', async () => {
+    const h = createHarness();
+    withVaultFiles(h);
+    h.createSession().show();
+    typeInstruction(`@a%${variable}`);
+    fireEvent.click(await screen.findByRole('option', { name: percentPath }));
+    expect(input().value).toBe(`@${percentPath} `);
+  });
+});
+
 it('uses provider-scoped hidden commands and cancels widget-owned discovery on replacement', async () => {
   const h = createHarness();
   const signals: AbortSignal[] = [];

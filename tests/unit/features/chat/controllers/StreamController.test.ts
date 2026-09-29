@@ -17,8 +17,10 @@ import {
   StreamController,
   type StreamControllerDeps,
 } from '@/features/chat/controllers/StreamController';
+import * as displayOnlyCodeFences from '@/features/chat/rendering/DisplayOnlyCodeFences';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
+import * as markdownMath from '@/utils/markdownMath';
 
 jest.mock('@/core/tools/toolInput', () => ({
   extractResolvedAnswers: jest.fn().mockReturnValue(undefined),
@@ -273,6 +275,54 @@ describe('StreamController - Text Content', () => {
         deps.state.currentTextEl,
         'First second'
       );
+    });
+
+    it('scans for deferred math and diagrams only when a text render runs', async () => {
+      const mathSpy = jest.spyOn(markdownMath, 'hasStreamingMathDelimiters');
+      const mermaidSpy = jest.spyOn(displayOnlyCodeFences, 'hasMermaidFence');
+      try {
+        deps.state.currentTextEl = createMockEl();
+        controller.setTabActive(false);
+        for (let i = 0; i < 20; i += 1) {
+          await controller.appendText('$x$ ');
+        }
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+
+        expect(deps.renderer.renderContent).not.toHaveBeenCalled();
+        expect(mathSpy).not.toHaveBeenCalled();
+        expect(mermaidSpy).not.toHaveBeenCalled();
+
+        controller.setTabActive(true);
+        jest.advanceTimersByTime(16);
+        await Promise.resolve();
+        expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+        expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(
+          deps.state.currentTextEl, '$x$ '.repeat(20), { deferMath: true }
+        );
+        const scansAfterFirstRender = mathSpy.mock.calls.length;
+        expect(mermaidSpy).toHaveBeenCalledTimes(scansAfterFirstRender);
+
+        for (let i = 0; i < 20; i += 1) {
+          await controller.appendText('$y$ ');
+        }
+        jest.advanceTimersByTime(16);
+        await Promise.resolve();
+        expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
+        expect(mathSpy).toHaveBeenCalledTimes(scansAfterFirstRender);
+        expect(mermaidSpy).toHaveBeenCalledTimes(scansAfterFirstRender);
+
+        jest.advanceTimersByTime(150);
+        await Promise.resolve();
+        expect(deps.renderer.renderContent).toHaveBeenCalledTimes(2);
+        expect(deps.renderer.renderContent).toHaveBeenLastCalledWith(
+          deps.state.currentTextEl, '$x$ '.repeat(20) + '$y$ '.repeat(20), { deferMath: true }
+        );
+        expect(mathSpy).toHaveBeenCalledTimes(2 * scansAfterFirstRender);
+      } finally {
+        mathSpy.mockRestore();
+        mermaidSpy.mockRestore();
+      }
     });
 
     it('should catch up with the latest text when a hidden tab becomes active', async () => {
@@ -1827,6 +1877,26 @@ describe('StreamController - Text Content', () => {
 
       expect(deps.renderer.renderContent).toHaveBeenCalledTimes(1);
       expect(deps.renderer.renderContent).toHaveBeenCalledWith(contentEl, 'Hidden reasoning');
+    });
+
+    it('does not scan collapsed thinking deltas for deferred math or diagrams', async () => {
+      const mathSpy = jest.spyOn(markdownMath, 'hasStreamingMathDelimiters');
+      const mermaidSpy = jest.spyOn(displayOnlyCodeFences, 'hasMermaidFence');
+      try {
+        const msg = createTestMessage();
+        for (let i = 0; i < 20; i += 1) {
+          await controller.handleStreamChunk({ type: 'thinking', content: '$x$ ' }, msg);
+        }
+        jest.advanceTimersByTime(500);
+        await Promise.resolve();
+
+        expect(deps.renderer.renderContent).not.toHaveBeenCalled();
+        expect(mathSpy).not.toHaveBeenCalled();
+        expect(mermaidSpy).not.toHaveBeenCalled();
+      } finally {
+        mathSpy.mockRestore();
+        mermaidSpy.mockRestore();
+      }
     });
 
     it('should render accumulated thinking through the coordinator when expanded', async () => {

@@ -14,7 +14,6 @@ import type {
 export interface MentionSourceCallbacks {
   readonly getCachedVaultFiles: () => readonly TFile[];
   readonly getCachedVaultFolders: () => readonly FolderMentionItem[];
-  readonly normalizePathForVault: (path: string | undefined | null) => string | null;
 }
 
 export interface MentionSourceOptions {
@@ -177,7 +176,6 @@ export class MentionSource implements ComposerDropdownSource {
     return [...folders, ...fileItems]
       .sort(compare)
       .map((scored): ComposerDropdownValueItem => {
-        const normalized = this.callbacks.normalizePathForVault(scored.path) ?? scored.path;
         if (scored.type === 'folder') {
           return {
             className: 'is-vault-folder',
@@ -185,7 +183,7 @@ export class MentionSource implements ComposerDropdownSource {
             id: `vault-folder:${scored.path}`,
             kind: 'value',
             label: `@${scored.path}/`,
-            replacement: `@${normalized}/ `,
+            replacement: `@${scored.path}/ `,
           };
         }
         return {
@@ -193,7 +191,7 @@ export class MentionSource implements ComposerDropdownSource {
           id: `vault-file:${scored.path}`,
           kind: 'value',
           label: scored.path,
-          replacement: (this.options.formatVaultFileMention ?? formatVaultFileMention)(normalized),
+          replacement: (this.options.formatVaultFileMention ?? formatVaultFileMention)(scored.path),
         };
       });
   }

@@ -1,7 +1,9 @@
+import type { StreamChunk } from '@/core/types';
 import {
   createPiEventNormalizationState,
   getPiTerminalErrorMessage,
   normalizePiRPCEvent,
+  type PiEventNormalizationState,
 } from '@/providers/pi/normalizations/piEventNormalization';
 
 describe('Pi event normalization', () => {
@@ -52,6 +54,80 @@ describe('Pi event normalization', () => {
       toolUseResult: { content: [{ text: 'done', type: 'text' }] },
       type: 'tool_result',
     }]);
+  });
+
+  describe('cumulative partial results', () => {
+    // Pi's partialResult is the tool's latest snapshot (native bash emits its
+    // rolling output tail), while the neutral tool_output chunk is a delta that
+    // consumers append. Fold emitted chunks the way the stream consumer does.
+    const update = (state: PiEventNormalizationState, toolCallId: string, text: string) =>
+      normalizePiRPCEvent({
+        partialResult: { content: [{ text, type: 'text' }] },
+        toolCallId,
+        toolName: 'bash',
+        type: 'tool_execution_update',
+      }, state);
+    const appended = (chunks: StreamChunk[], id: string) => chunks
+      .flatMap(chunk => (chunk.type === 'tool_output' && chunk.id === id ? [chunk.content] : []))
+      .join('');
+
+    it('emits only the new suffix of growing snapshots per tool', () => {
+      const state = createPiEventNormalizationState();
+      const chunks = [
+        ...update(state, 'bash-1', 'a'),
+        ...update(state, 'bash-2', 'x'),
+        ...update(state, 'bash-1', 'ab'),
+        ...update(state, 'bash-1', 'ab'),
+        ...update(state, 'bash-2', 'xy'),
+        ...update(state, 'bash-1', 'abc'),
+      ];
+
+      expect(chunks).toEqual([
+        { content: 'a', id: 'bash-1', type: 'tool_output' },
+        { content: 'x', id: 'bash-2', type: 'tool_output' },
+        { content: 'b', id: 'bash-1', type: 'tool_output' },
+        { content: 'y', id: 'bash-2', type: 'tool_output' },
+        { content: 'c', id: 'bash-1', type: 'tool_output' },
+      ]);
+      expect(appended(chunks, 'bash-1')).toBe('abc');
+    });
+
+    it('stops live output when a snapshot no longer extends the streamed text and lets completion replace it', () => {
+      const state = createPiEventNormalizationState();
+      const chunks = [
+        ...update(state, 'bash-1', 'line1\nline2\n'),
+        // Rolling window shifted past line1: not an extension of what was streamed.
+        ...update(state, 'bash-1', 'line2\nline3\n'),
+        // Extends the latest snapshot, but appending it would skip line3.
+        ...update(state, 'bash-1', 'line2\nline3\nline4\n'),
+      ];
+
+      expect(appended(chunks, 'bash-1')).toBe('line1\nline2\n');
+      expect(normalizePiRPCEvent({
+        result: { content: [{ text: 'line3\nline4\nline5\n', type: 'text' }] },
+        toolCallId: 'bash-1',
+        type: 'tool_execution_end',
+      }, state)).toEqual([expect.objectContaining({
+        content: 'line3\nline4\nline5\n',
+        id: 'bash-1',
+        type: 'tool_result',
+      })]);
+    });
+
+    it('stops live output when a snapshot resets and completes with the latest snapshot when the result has no text', () => {
+      const state = createPiEventNormalizationState();
+      const chunks = [
+        ...update(state, 'bash-1', 'Deploying...'),
+        ...update(state, 'bash-1', 'Done'),
+      ];
+
+      expect(appended(chunks, 'bash-1')).toBe('Deploying...');
+      expect(normalizePiRPCEvent({
+        toolCallId: 'bash-1',
+        type: 'tool_execution_end',
+      }, state)).toEqual([expect.objectContaining({ content: 'Done', id: 'bash-1', type: 'tool_result' })]);
+      expect(state.toolOutputs.has('bash-1')).toBe(false);
+    });
   });
 
   it('normalizes Pi RPC toolName and args to shared renderer tool shapes', () => {

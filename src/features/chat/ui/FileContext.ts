@@ -3,10 +3,6 @@ import type { App, TFile } from 'obsidian';
 import { MentionSource } from '../../../shared/composer-dropdown/MentionSource';
 import type { FolderMentionItem } from '../../../shared/mention/types';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
-import {
-  getVaultPath,
-  normalizePathForVault as normalizePathForVaultUtil,
-} from '../../../utils/path';
 import { formatComposerWikilink } from '../composer/composerWikilinks';
 
 /**
@@ -22,7 +18,6 @@ export class FileContextManager {
     this.mentionSource = new MentionSource({
       getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
       getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
-      normalizePathForVault: rawPath => this.normalizePathForVault(rawPath),
     }, {
       formatVaultFileMention: formatComposerWikilink,
     });
@@ -52,9 +47,5 @@ export class FileContextManager {
 
   destroy(): void {
     this.mentionSource.destroy();
-  }
-
-  private normalizePathForVault(rawPath: string | undefined | null): string | null {
-    return normalizePathForVaultUtil(rawPath, getVaultPath(this.app));
   }
 }

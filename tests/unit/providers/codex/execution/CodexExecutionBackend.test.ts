@@ -1,5 +1,7 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import type * as fsType from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
@@ -2058,6 +2060,127 @@ describe('CodexExecutionBackend', () => {
     ).toHaveLength(2);
 
     await session.dispose();
+  });
+
+  describe('when a native thread omits its rollout path', () => {
+    const realFs = jest.requireActual<typeof fsType>('node:fs');
+    let codexHome: string;
+    let sessionsRoot: string;
+    let probes: jest.SpyInstance[];
+
+    beforeEach(() => {
+      codexHome = mkdtempSync(join(tmpdir(), 'claudian-codex-home-'));
+      sessionsRoot = join(codexHome, 'sessions');
+      mkdirSync(join(sessionsRoot, 'nested'), { recursive: true });
+      probes = [
+        jest.spyOn(realFs, 'existsSync'),
+        jest.spyOn(realFs, 'readdirSync'),
+        jest.spyOn(realFs.promises, 'access'),
+        jest.spyOn(realFs.promises, 'readdir'),
+      ];
+    });
+
+    afterEach(() => {
+      for (const probe of probes) probe.mockRestore();
+      rmSync(codexHome, { recursive: true, force: true });
+    });
+
+    function writeRollout(threadId: string): string {
+      const rolloutPath = join(sessionsRoot, 'nested', `rollout-${threadId}.jsonl`);
+      writeFileSync(rolloutPath, '');
+      return rolloutPath;
+    }
+
+    function countTranscriptRootProbes(): number {
+      return probes.reduce(
+        (count, probe) => count + probe.mock.calls.filter(([target]) => String(target) === sessionsRoot).length,
+        0,
+      );
+    }
+
+    function mockPathlessThread(threadId: string, ephemeral: boolean): void {
+      let turnIndex = 0;
+      mockTransportRequest.mockImplementation(async (method: string) => {
+        if (method === 'initialize') {
+          return { userAgent: 'test', codexHome, platformFamily: 'unix', platformOs: 'macos' };
+        }
+        if (method === 'thread/start') {
+          const result = createThreadResult(threadId);
+          return { ...result, thread: { ...result.thread, ephemeral, path: null } };
+        }
+        if (method === 'turn/start') {
+          turnIndex += 1;
+          const turnId = `${threadId}-turn-${turnIndex}`;
+          queueMicrotask(() => completeTurn(threadId, turnId));
+          return createTurnResult(turnId);
+        }
+        throw new Error(`Unexpected method: ${method}`);
+      });
+    }
+
+    it('never searches the transcript root for a non-persistent thread', async () => {
+      mockPathlessThread('thread-ephemeral-pathless', true);
+      writeRollout('thread-ephemeral-pathless');
+      const session = new CodexExecutionBackend(createPlugin()).createSession(
+        createSessionConfig({ lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported' }),
+      );
+
+      await collectEvents(session.execute(createRequest()).events);
+      await collectEvents(session.execute(createRequest()).events);
+      await flushMicrotasks();
+
+      expect(countTranscriptRootProbes()).toBe(0);
+      expect(session.getSnapshot().providerState?.sessionFilePath).toBeUndefined();
+
+      await session.dispose();
+    });
+
+    it('adopts a persistent rollout found after release and publishes it as session state', async () => {
+      mockPathlessThread('thread-persistent-pathless', false);
+      const rolloutPath = writeRollout('thread-persistent-pathless');
+      const session = new CodexExecutionBackend(createPlugin()).createSession(createSessionConfig());
+      const adopted = new Promise<ProviderSessionEvent>((resolve) => {
+        session.onEvent((event) => {
+          if (
+            event.type === 'session_state_changed'
+            && event.snapshot.providerState?.sessionFilePath
+          ) {
+            resolve(event);
+          }
+        });
+      });
+
+      const events = await collectEvents(session.execute(createRequest()).events);
+
+      expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+      await expect(adopted).resolves.toMatchObject({
+        scope: { kind: 'session' },
+        snapshot: {
+          providerSessionId: 'thread-persistent-pathless',
+          providerState: { sessionFilePath: rolloutPath },
+        },
+      });
+      expect(session.getSnapshot().providerState?.sessionFilePath).toBe(rolloutPath);
+      expect(probes[1].mock.calls).toHaveLength(0);
+
+      await session.dispose();
+    });
+
+    it('searches once per persistent thread instead of after every run', async () => {
+      mockPathlessThread('thread-persistent-missing', false);
+      const session = new CodexExecutionBackend(createPlugin()).createSession(createSessionConfig());
+
+      await collectEvents(session.execute(createRequest()).events);
+      const probesAfterFirstRun = countTranscriptRootProbes();
+      await collectEvents(session.execute(createRequest()).events);
+      await flushMicrotasks();
+
+      expect(probesAfterFirstRun).toBeGreaterThan(0);
+      expect(countTranscriptRootProbes()).toBe(probesAfterFirstRun);
+      expect(session.getSnapshot().providerState?.sessionFilePath).toBeUndefined();
+
+      await session.dispose();
+    });
   });
 
   it('forks, resumes, and rolls back to the requested checkpoint before executing', async () => {

@@ -8,11 +8,15 @@ import {
 
 export interface PiEventNormalizationState {
   emittedToolIds: Set<string>;
+  /** Latest native partial-result snapshot per running tool. */
   toolOutputs: Map<string, string>;
+  /** Running tools whose snapshot stopped extending the text already streamed. */
+  divergedToolOutputIds: Set<string>;
 }
 
 export function createPiEventNormalizationState(): PiEventNormalizationState {
   return {
+    divergedToolOutputIds: new Set<string>(),
     emittedToolIds: new Set<string>(),
     toolOutputs: new Map<string, string>(),
   };
@@ -138,8 +142,23 @@ function normalizeToolOutput(
     return [];
   }
 
+  // Pi's partialResult is the tool's latest snapshot (native bash sends its
+  // rolling output tail), but tool_output chunks are appended by consumers.
+  // Stream only suffix growth. Once a snapshot stops extending the streamed
+  // text (window shift, reset, or replacement), the neutral contract cannot
+  // replace it, so live output stops until tool_result supplies the final text.
+  const previous = state.toolOutputs.get(id) ?? '';
   state.toolOutputs.set(id, content);
-  return [{ type: 'tool_output', id, content }];
+  if (state.divergedToolOutputIds.has(id)) {
+    return [];
+  }
+  if (!content.startsWith(previous)) {
+    state.divergedToolOutputIds.add(id);
+    return [];
+  }
+
+  const delta = content.slice(previous.length);
+  return delta ? [{ type: 'tool_output', id, content: delta }] : [];
 }
 
 function normalizeToolResult(
@@ -154,6 +173,8 @@ function normalizeToolResult(
   const content = extractPiToolTextContent(event.result ?? event.output ?? event.content)
     || state.toolOutputs.get(id)
     || '';
+  state.toolOutputs.delete(id);
+  state.divergedToolOutputIds.delete(id);
   const toolUseResult = getNestedRecord(event, 'result');
   return [{
     type: 'tool_result',

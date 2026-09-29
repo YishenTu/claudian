@@ -4,7 +4,7 @@ import { ConversationRepository } from '@/app/conversations/ConversationReposito
 import type { ConversationPersistence } from '@/core/bootstrap/ConversationPersistenceStore';
 import type { SessionMetadataReader } from '@/core/bootstrap/SessionStorage';
 import type { ProviderSessionSnapshot } from '@/core/execution';
-import type { Conversation } from '@/core/types';
+import type { ChatMessage, Conversation } from '@/core/types';
 
 function createConversation(id = 'conversation-1'): Conversation {
   return {
@@ -171,6 +171,57 @@ describe('ConversationRepository persistence queue and binding fences', () => {
       retainedFutureField: 'preserve-me',
       cursor: 2,
     });
+  });
+
+  it('copies saved history once while isolating queued, persisted, and committed state', async () => {
+    const conversation = createConversation();
+    const persistence = createPersistence();
+    const barrier = deferred<void>();
+    persistence.saveMetadata.mockImplementationOnce(async () => {
+      await barrier.promise;
+    });
+    const { repository } = createRepository(conversation, persistence);
+    const messages: ChatMessage[] = [
+      { id: 'user', role: 'user', content: 'Delegate', timestamp: 1 },
+      {
+        id: 'assistant', role: 'assistant', content: '', timestamp: 2,
+        toolCalls: [{
+          id: 'agent', name: 'Agent', input: { description: 'Helper' }, status: 'completed',
+          subagent: {
+            id: 'agent', description: 'Helper', status: 'completed', result: 'Done',
+            isExpanded: false, toolCalls: [],
+          },
+        }],
+      },
+    ];
+    const blockingSave = repository.rename(conversation.id, 'Queued title');
+    const clone = jest.spyOn(globalThis, 'structuredClone');
+    const saving = repository.update(conversation.id, { messages });
+    // The caller keeps mutating live chat state while the save waits in the queue.
+    messages[1].toolCalls![0].subagent!.result = 'Changed while queued';
+    messages.push({ id: 'late', role: 'user', content: 'Late', timestamp: 3 });
+    barrier.resolve();
+    await Promise.all([blockingSave, saving]);
+    const historyCopies = clone.mock.calls.filter(([value]) => (
+      (value as { messages?: unknown[] } | null)?.messages?.length
+    ));
+    clone.mockRestore();
+
+    expect(historyCopies).toHaveLength(1);
+    const saved = persistence.saveMetadata.mock.calls.at(-1)![0];
+    expect(saved.providerState).toEqual({
+      subagentData: { agent: expect.objectContaining({ status: 'completed', result: 'Done' }) },
+    });
+    messages[1].toolCalls![0].subagent!.result = 'Changed after commit';
+    expect((saved.providerState as any).subagentData.agent.result).toBe('Done');
+    const committed = repository.getSync(conversation.id)!;
+    expect(committed.messages.map(message => message.id)).toEqual(['user', 'assistant']);
+    expect(committed.messages[1].toolCalls![0].subagent!.result).toBe('Done');
+
+    // A later save replaces committed history without reaching the earlier persisted projection.
+    await repository.update(conversation.id, { messages: [committed.messages[0]] });
+    expect((saved.providerState as any).subagentData.agent.result).toBe('Done');
+    expect(persistence.saveMetadata.mock.calls.at(-1)![0].providerState).toBeUndefined();
   });
 
   it('rejects the wrong binding or generation and lets a released binding drain', async () => {

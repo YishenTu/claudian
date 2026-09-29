@@ -232,7 +232,6 @@ describe('ComposerDropdownController', () => {
       const mention = new MentionSource({
         getCachedVaultFiles,
         getCachedVaultFolders,
-        normalizePathForVault: path => path ?? null,
       });
       const controller = new ComposerDropdownController(container, input, [mention]);
 

@@ -214,6 +214,7 @@ export class ChatExecutionCoordinator {
   #disposed = false;
   #disposePromise: Promise<void> | null = null;
   #stale = false;
+  #publishedBackgroundWork = false;
   #protectedOperationCount = 0;
   #conversationBindingGeneration = 0;
   #preparationTail: Promise<void> = Promise.resolve();
@@ -247,6 +248,14 @@ export class ChatExecutionCoordinator {
   get hasBackgroundWork(): boolean {
     return (this.#sessionBinding?.backgroundTurns.size ?? 0) > 0
       || (this.#sessionBinding?.session.hasBackgroundWork?.() ?? false);
+  }
+
+  /** Work observers recompute from current state, so only transitions are published. */
+  #publishBackgroundWork(): void {
+    const isWorking = this.hasBackgroundWork;
+    if (isWorking === this.#publishedBackgroundWork) return;
+    this.#publishedBackgroundWork = isWorking;
+    this.deps.onBackgroundWorkChanged?.(isWorking);
   }
 
   isEventContextCurrent(context: ChatExecutionEventContext): boolean {
@@ -929,9 +938,8 @@ export class ChatExecutionCoordinator {
         ) {
           return;
         }
-        const wasIdle = binding.backgroundTurns.size === 0;
         binding.backgroundTurns.set(event.scope.turnId, { sequence: event.scope.sequence, model: binding.model });
-        if (wasIdle) this.deps.onBackgroundWorkChanged?.(true);
+        this.#publishBackgroundWork();
         this.#fireAndReport(this.#touchWarmSlot());
       } else {
         if (previous === undefined || event.scope.sequence <= previous.sequence) return;
@@ -942,7 +950,7 @@ export class ChatExecutionCoordinator {
       binding.sessionSequence = event.scope.sequence;
     }
 
-    if (event.type === 'subagent_updated') this.deps.onBackgroundWorkChanged?.(this.hasBackgroundWork);
+    if (event.type === 'subagent_updated') this.#publishBackgroundWork();
     const eventWork: Promise<unknown>[] = [];
     if (event.type === 'session_state_changed' || event.type === 'permission_mode_changed') {
       eventWork.push(this.#persistSnapshot(binding, event.snapshot));
@@ -962,9 +970,7 @@ export class ChatExecutionCoordinator {
     if (event.type === 'background_turn_completed') {
       binding.backgroundTurns.delete(event.scope.turnId);
       binding.completedBackgroundTurns.add(event.scope.turnId);
-      if (binding.backgroundTurns.size === 0) {
-        this.deps.onBackgroundWorkChanged?.(false);
-      }
+      this.#publishBackgroundWork();
       this.notifyMayCool();
     }
   }
@@ -1014,9 +1020,7 @@ export class ChatExecutionCoordinator {
     const binding = this.#sessionBinding;
     if (!binding) return;
     this.#sessionBinding = null;
-    if (binding.backgroundTurns.size > 0) {
-      this.deps.onBackgroundWorkChanged?.(false);
-    }
+    this.#publishBackgroundWork();
     this.#stale = true;
     this.#pendingSteerAttempts.clear();
     this.#invalidateActiveExecution('invalidated', 'provider-transition');
@@ -1030,9 +1034,7 @@ export class ChatExecutionCoordinator {
   async #releaseSessionBinding(): Promise<void> {
     const binding = this.#sessionBinding;
     this.#sessionBinding = null;
-    if (binding && binding.backgroundTurns.size > 0) {
-      this.deps.onBackgroundWorkChanged?.(false);
-    }
+    this.#publishBackgroundWork();
     try {
       await this.#supervisor.release();
     } finally {

@@ -97,7 +97,8 @@ export interface SubagentHistoryRecoveryRequest {
 interface StreamingContentSnapshot {
   el: HTMLElement;
   content: string;
-  options?: RenderContentOptions;
+  /** Final renders never defer math or diagrams. */
+  final?: true;
 }
 
 const STREAMING_RENDER_MIN_INTERVAL_MS = 150;
@@ -144,7 +145,9 @@ export class StreamController {
     return new StreamingRenderCoordinator({
       getOwnerWindow,
       minIntervalMs: STREAMING_RENDER_MIN_INTERVAL_MS,
-      render: async ({ el, content, options }) => {
+      render: async ({ el, content, final }) => {
+        // Derive options only when a render runs so hidden or throttled deltas skip the scans.
+        const options = final ? undefined : this.#getStreamingRenderOptions(content);
         if (options) {
           await this.deps.renderer.renderContent(el, content, options);
         } else {
@@ -153,14 +156,6 @@ export class StreamController {
         this.scrollToBottom();
       },
     });
-  }
-
-  #createStreamingSnapshot(
-    el: HTMLElement,
-    content: string
-  ): StreamingContentSnapshot {
-    const options = this.#getStreamingRenderOptions(content);
-    return options ? { el, content, options } : { el, content };
   }
 
   #getActiveProviderId(): ProviderId {
@@ -844,9 +839,10 @@ export class StreamController {
     }
 
     state.currentTextContent += text;
-    this.textRenderCoordinator.request(
-      this.#createStreamingSnapshot(state.currentTextEl, state.currentTextContent)
-    );
+    this.textRenderCoordinator.request({
+      el: state.currentTextEl,
+      content: state.currentTextContent,
+    });
   }
 
   async finalizeCurrentTextBlock(msg?: ChatMessage): Promise<void> {
@@ -858,7 +854,7 @@ export class StreamController {
       textEl
       && this.#getStreamingRenderOptions(content)
     ) {
-      this.textRenderCoordinator.request({ el: textEl, content });
+      this.textRenderCoordinator.request({ el: textEl, content, final: true });
     }
     await this.textRenderCoordinator.flush();
 
@@ -922,12 +918,10 @@ export class StreamController {
     }
 
     state.currentThinkingState.content += content;
-    this.thinkingRenderCoordinator.request(
-      this.#createStreamingSnapshot(
-        state.currentThinkingState.contentEl,
-        state.currentThinkingState.content
-      )
-    );
+    this.thinkingRenderCoordinator.request({
+      el: state.currentThinkingState.contentEl,
+      content: state.currentThinkingState.content,
+    });
   }
 
   async finalizeCurrentThinkingBlock(msg?: ChatMessage): Promise<void> {
@@ -939,6 +933,7 @@ export class StreamController {
       this.thinkingRenderCoordinator.request({
         el: thinkingState.contentEl,
         content: thinkingState.content,
+        final: true,
       });
     }
     await this.thinkingRenderCoordinator.flush();

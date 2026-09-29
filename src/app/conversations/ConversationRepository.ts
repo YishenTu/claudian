@@ -602,7 +602,10 @@ export class ConversationRepository {
     ));
   }
 
-  /** Serializes a metadata decision through persistence and committed publication. */
+  /**
+   * Serializes a metadata decision through persistence and committed publication.
+   * `createPatch` must return a repository-owned patch; it is committed without another copy.
+   */
   #mutateMetadata(
     id: string,
     createPatch: (conversation: Conversation) => ConversationMutablePatch | null,
@@ -630,7 +633,8 @@ export class ConversationRepository {
       if (!this.#isConversationRetained(conversation)) return;
       // Session invalidation cannot cancel an unrelated committed title or pin edit.
       discardSupersededSessionFields();
-      Object.assign(conversation, structuredClone(patch));
+      // update() already cloned caller input and #writeMetadata keeps only its own projection.
+      Object.assign(conversation, patch);
       if ('sessionId' in patch || 'providerState' in patch || 'resumeAtMessageId' in patch) {
         this.hydratedConversationIds.delete(id);
         this.#invalidateConversation(id);
@@ -1546,7 +1550,9 @@ export class ConversationRepository {
     conversation: Conversation,
     options: { preserveProviderState?: boolean } = {},
   ): Promise<void> {
-    const metadata = this.toSessionMetadata(structuredClone(conversation), options);
+    // Metadata excludes message history: snapshot the projection, not the whole conversation.
+    // The shallow copy keeps projection-time repairs off the caller's record.
+    const metadata = structuredClone(this.toSessionMetadata({ ...conversation }, options));
     const target = this.#requireMetadataTarget(conversation.id);
     return target === 'device'
       ? this.persistence.saveMetadata(metadata)

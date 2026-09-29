@@ -41,7 +41,7 @@ import {
 import {
   deriveCodexMemoriesDirFromSessionsRoot,
   deriveCodexSessionsRootFromSessionPath,
-  findCodexSessionFile,
+  findCodexSessionFileAsync,
 } from '../history/CodexHistoryStore';
 import { getCodexModelOptions } from '../modelOptions';
 import {
@@ -277,6 +277,7 @@ export class CodexExecutionSession
   private loadedThreadId: string | null = null;
   private loadedThreadBaseInstructions: string | null = null;
   private sessionFilePath: string | null;
+  private sessionFileLookupThreadId: string | null = null;
   private workspaceDependencyToolVersion: number | null;
   private pendingFork: CodexProviderState['forkSource'];
   private pendingForkTarget: CodexPendingForkTarget | undefined;
@@ -2087,14 +2088,43 @@ export class CodexExecutionSession
   }
 
   #discoverSessionFile(): void {
-    if (this.sessionFilePath || !this.threadId) return;
-    const found = findCodexSessionFile(
-      this.threadId,
+    const threadId = this.threadId;
+    if (
+      this.sessionFilePath
+      || !threadId
+      // Non-persistent threads are started and forked ephemeral; they never write a rollout.
+      || this.#resolveNativePersistence() === false
+      || this.sessionFileLookupThreadId === threadId
+    ) {
+      return;
+    }
+    // One bounded background lookup per thread; a miss is not retried after later runs.
+    this.sessionFileLookupThreadId = threadId;
+    void findCodexSessionFileAsync(
+      threadId,
       this.#resolveTranscriptRootHost() ?? undefined,
+    ).then(
+      found => this.#adoptDiscoveredSessionFile(threadId, found),
+      () => undefined,
     );
-    if (found) {
-      this.sessionFilePath = found;
-      this.#updateSnapshot(this.snapshot.status);
+  }
+
+  #adoptDiscoveredSessionFile(threadId: string, found: string | null): void {
+    if (!found || this.disposed || this.threadId !== threadId || this.sessionFilePath) {
+      return;
+    }
+    this.sessionFilePath = found;
+    const currentSnapshot = this.snapshot;
+    if (currentSnapshot.status === 'invalidated') {
+      this.#updateSnapshot('invalidated', currentSnapshot.invalidation);
+    } else {
+      this.#updateSnapshot(currentSnapshot.status);
+    }
+    const run = this.activeRun;
+    if (run && !run.isTerminal) {
+      this.#emitSnapshot(run);
+    } else {
+      this.#emitSessionState();
     }
   }
 

@@ -4,6 +4,7 @@ import type {
   ProviderBackgroundOutputEvent,
   ProviderSessionEvent,
 } from '../../../core/execution';
+import type { ChatMessage, SubagentInfo } from '../../../core/types';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import type { ChatExecutionEventContext } from '../execution/ChatExecutionCoordinator';
 import { type BackgroundTurnRenderTarget, discardBackgroundTurn, renderAutoTriggeredTurn, renderSessionTaskNotification, reserveBackgroundTurn } from '../rendering/BackgroundTurnRenderer';
@@ -134,8 +135,17 @@ export function enqueueTabSessionEvent(
     return undefined;
   }
   // Display-only progress must not wait behind queued background rendering.
-  if (event.type === 'subagent_updated' && !tab.controllers.streamController.handleSubagentUpdate(event.subagent)) {
-    return undefined;
+  if (event.type === 'subagent_updated') {
+    const previousStatus = findSubagentStatus(tab.state.messages, event.subagent.id);
+    if (!tab.controllers.streamController.handleSubagentUpdate(event.subagent)) return undefined;
+    // Lifecycle transitions persist in order below; same-status progress shares one trailing save.
+    if (previousStatus === event.subagent.status) {
+      return tab.controllers.conversationController.scheduleProgressSave(() => enqueueTabBackgroundWork(tab, async () => {
+        if (!isCurrent()) return;
+        await tab.controllers.conversationController.save(true);
+        tab.executionCoordinator.notifyMayCool();
+      }));
+    }
   }
   if (event.type === 'subagent_progress') {
     tab.controllers.streamController.handleSubagentProgress(event.progress);
@@ -160,6 +170,17 @@ export function enqueueTabSessionEvent(
     discardBackgroundTurnBuffers(tab, context.bindingId);
   }
   return pending ?? undefined;
+}
+
+function findSubagentStatus(
+  messages: readonly ChatMessage[],
+  id: string,
+): SubagentInfo['status'] | undefined {
+  for (const message of messages) {
+    const tool = message.toolCalls?.find(candidate => candidate.id === id);
+    if (tool) return tool.subagent?.status;
+  }
+  return undefined;
 }
 
 function getBackgroundTurnBuffers(

@@ -1,6 +1,6 @@
 import * as fsp from 'node:fs/promises';
 
-import * as fs from 'fs';
+import type * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -1333,49 +1333,6 @@ export function deriveCodexMemoriesDirFromSessionsRoot(
 
   const pathModule = getPathModuleForSessionPath(sessionsDir);
   return pathModule.join(pathModule.dirname(sessionsDir), 'memories');
-}
-
-export function findCodexSessionFile(
-  threadId: string,
-  root: string = path.join(os.homedir(), '.codex', 'sessions'),
-): string | null {
-  if (!threadId || !SAFE_SESSION_ID_PATTERN.test(threadId) || !fs.existsSync(root)) {
-    return null;
-  }
-
-  const directPath = path.join(root, `${threadId}.jsonl`);
-  if (fs.existsSync(directPath)) {
-    return directPath;
-  }
-
-  const stack = [root];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current) {
-      continue;
-    }
-
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(fullPath);
-        continue;
-      }
-
-      if (entry.isFile() && entry.name.endsWith(`-${threadId}.jsonl`)) {
-        return fullPath;
-      }
-    }
-  }
-
-  return null;
 }
 
 export async function findCodexSessionFileAsync(
