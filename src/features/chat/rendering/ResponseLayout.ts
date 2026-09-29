@@ -35,7 +35,7 @@ export function getAutomaticNotificationPredecessor(message: ChatMessage, messag
 }
 
 /** Shared live/replay policy. Renderers only map these decisions to existing elements. */
-export function getResponseLayout(message: ChatMessage, messages: ChatMessage[], collapse: boolean) {
+export function getResponseLayout(message: ChatMessage, messages: ChatMessage[], collapse: boolean, index?: number) {
   const blocks = message.contentBlocks?.length
     ? message.contentBlocks : [{ type: 'text' as const, content: message.content }];
   let finalStart = blocks.length;
@@ -45,7 +45,7 @@ export function getResponseLayout(message: ChatMessage, messages: ChatMessage[],
   const canCollapse = collapse && !message.isInterrupt && finalText.trim().length > 0
     && !blocks.some(block => block.type === 'context_compacted');
   const hasNotification = blocks.some(block => block.type === 'task_notification');
-  const end = messages.indexOf(message);
+  const end = index ?? messages.indexOf(message);
   const notificationPredecessor = getAutomaticNotificationPredecessor(message, messages);
   const automaticNotification = message.isAutomaticResponse === true
     && (hasNotification || notificationPredecessor !== undefined);

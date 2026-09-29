@@ -1,4 +1,6 @@
-import { type App, Setting } from 'obsidian';
+import { type App, Notice, Setting } from 'obsidian';
+
+import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 
 import { normalizeHiddenCommandList } from '../../core/providers/commands/hiddenCommands';
 import {
@@ -9,6 +11,7 @@ import {
 import { ClaudeCommandRepository } from '../../core/skills/ClaudeCommandRepository';
 import { ClaudeSkillSync } from '../../core/skills/ClaudeSkillSync';
 import type { FolderLinkState, VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
+import type { ClaudianSettings } from '../../core/types/settings';
 import { t } from '../../i18n/i18n';
 import type { TranslationKey } from '../../i18n/types';
 import type { FeatureHost } from '../FeatureHost';
@@ -27,6 +30,7 @@ export type SkillsSettingsHost = Pick<FeatureHost, 'settings' | 'mutateSettings'
  */
 export class SkillsSettingsTab {
   private activeSubTab: SkillsSubTab = 'claude';
+  private readonly textEdits: DebouncedSettingsWriter<ClaudianSettings>;
   private renderGeneration = 0;
   private readonly panels: AgentSkillSettings[] = [];
   private readonly sync: ClaudeSkillSync;
@@ -38,13 +42,20 @@ export class SkillsSettingsTab {
     private readonly files: VaultFileAdapter,
     private readonly host: SkillsSettingsHost,
   ) {
+    this.textEdits = new DebouncedSettingsWriter(mutation => host.mutateSettings(mutation),
+      () => { new Notice('Failed to save settings'); });
     this.sync = new ClaudeSkillSync(files);
     this.bodyEl = containerEl.createDiv({ cls: 'claudian-skills-tab' });
     this.#renderHiddenCommands(containerEl);
     void this.render();
   }
 
+  flush(): void {
+    void this.textEdits.flush();
+  }
+
   dispose(): void {
+    void this.textEdits.flush();
     this.renderGeneration += 1;
     this.#disposePanels();
   }
@@ -197,11 +208,12 @@ export class SkillsSettingsTab {
         text
           .setPlaceholder(t('settings.skills.hidden.placeholder'))
           .setValue(this.host.settings.hiddenCommands.join('\n'))
-          .onChange(async (value) => {
-            await this.host.mutateSettings((settings) => {
+          .onChange((value) => {
+            this.textEdits.schedule('hiddenCommands', (settings) => {
               settings.hiddenCommands = normalizeHiddenCommandList(value.split(/\r?\n/));
             });
           });
+        text.inputEl.addEventListener('blur', () => { void this.textEdits.flush(); });
         text.inputEl.rows = 4;
         text.inputEl.cols = 30;
         text.inputEl.setAttribute('aria-label', t('settings.skills.hidden.name'));

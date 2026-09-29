@@ -7,6 +7,7 @@ import { forkOpencodeHTTPSession } from '../history/OpencodeSessionFork';
 import { isRecord, OpencodeHTTPError, type OpencodeHTTPEvent, pollOpencodeUntil } from '../http/OpencodeHTTPClient';
 import { projectOpencodeFormQuestions } from '../http/OpencodeHTTPForms';
 import type { OpencodeServerLease, OpencodeServerService } from '../http/OpencodeServerService';
+import { OpencodeShellOutput } from '../http/OpencodeShellOutput';
 import { OPENCODE_SAFE_MODE_ID, OPENCODE_YOLO_MODE_ID } from '../modes';
 import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolUseResult } from '../normalization/opencodeToolNormalization';
 import { AUX_AGENT_IDS, buildOpencodeSystemPrompt, getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
@@ -26,7 +27,7 @@ interface PendingSteer { text: string; admission: Promise<SteerAdmission>; resol
 type SteerAdmission = 'admitted' | 'refused' | 'unknown';
 interface NativeModel { providerID: string; id: string; variant?: string }
 interface NativeChild { outputSessionId: string; toolCallId: string; turnId: string; interactionTurnId: string; background: boolean; text: Map<string, string>; progress: { startedAt: number; toolUses: number; totalTokens: number; lastToolName?: string } }
-interface NativeTool { name: string; input: Record<string, unknown> }
+interface NativeTool { name: string; input: Record<string, unknown>; sessionId: string; output: string | null; shell?: OpencodeShellOutput }
 
 /** V2 uses native HTTP events and interactions; ACP is only the v1 wire protocol. */
 export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
@@ -43,6 +44,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private readonly text = new Map<string, string>();
   private readonly children = new Map<string, NativeChild>();
   private readonly tools = new Map<string, NativeTool>();
+  private readonly previewStops = new Map<string, 'cancelled' | 'ended'>();
   private readonly globalForms = new Map<string, { settled: boolean }>();
   private readonly interactions = new Map<string, AbortController>();
   private pending: PendingPrompt | null = null;
@@ -125,6 +127,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const completion = new Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }>((yes, no) => { resolve = yes; reject = no; });
     const pending: PendingPrompt = { resolve, reject, ...(command ? {} : { inputId: nativeMessageId() }), announced: false, started: false, steerable: false, idle: false };
     this.pending = pending;
+    this.previewStops.delete(request.sessionId);
     // A native error may arrive before the admission request resolves.
     void completion.catch(() => undefined);
     try {
@@ -178,6 +181,13 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   }
 
   cancel(sessionId: string): void {
+    this.previewStops.set(sessionId, 'cancelled');
+    for (const tool of this.tools.values()) {
+      if (tool.sessionId === sessionId) {
+        tool.shell?.stop();
+        tool.output = null;
+      }
+    }
     this.cancellation ??= this.requireClient().request(`/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' })
       .catch(() => undefined).finally(() => { this.cancellation = null; });
   }
@@ -191,6 +201,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     // Interrupts leave undelivered steers queued in the persistent native inbox.
     const recalls = this.client?.isReusable() ? this.recallSteers() : undefined;
     this.disposed = true;
+    this.stopTools();
+    this.previewStops.clear();
     this.controller.abort();
     for (const [id, controller] of this.interactions) {
       controller.abort();
@@ -228,6 +240,13 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       return;
     }
     if (nativeSessionId !== this.sessionId && !child) return;
+    if (event.type === 'session.execution.started' && this.previewStops.get(nativeSessionId) === 'ended') {
+      this.previewStops.delete(nativeSessionId);
+    }
+    if (event.type.startsWith('session.execution.') && event.type !== 'session.execution.started') {
+      this.previewStops.set(nativeSessionId, 'ended');
+      this.stopTools(nativeSessionId);
+    }
     if (child) {
       if (event.type === 'session.text.ended') child.text.set(`${data.assistantMessageID}:${data.ordinal}`, String(data.text));
       if (event.type === 'session.step.ended') {
@@ -242,6 +261,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
           providerSessionId: this.sessionId ?? undefined,
         });
         this.children.delete(nativeSessionId);
+        this.previewStops.delete(nativeSessionId);
       }
       if (!event.type.startsWith('session.tool.') && event.type !== 'permission.asked' && event.type !== 'form.created') return;
     }
@@ -289,7 +309,10 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         if (text) this.emit({ type: kind, text });
         break;
       }
-      case 'session.tool.input.started': this.tools.set(key, { name: String(data.name), input: {} }); break;
+      case 'session.tool.input.started':
+        this.tools.get(key)?.shell?.stop();
+        this.tools.set(key, { name: String(data.name), input: {}, sessionId: nativeSessionId, output: '' });
+        break;
       case 'session.tool.called': {
         const tool = this.tools.get(key);
         if (!tool) break;
@@ -312,11 +335,27 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
           const interactionTurnId = (background ? this.options.onNativeTaskStarted?.(metadata.sessionID, turnId) : undefined) ?? child?.interactionTurnId ?? turnId;
           this.children.set(metadata.sessionID, { outputSessionId: background ? metadata.sessionID : child?.outputSessionId ?? metadata.sessionID, toolCallId: identity.toolCallId, turnId, interactionTurnId, background, text: new Map(), progress: { startedAt: Date.now(), toolUses: 0, totalTokens: 0 } });
         }
-        if (typeof metadata.output === 'string') this.emit({ type: 'tool_output', ...identity, content: metadata.output }, child?.outputSessionId);
+        if (tool && !this.previewStops.has(nativeSessionId) && tool.output !== null && typeof metadata.shellID === 'string') {
+          tool.shell ??= new OpencodeShellOutput(this.requireClient(), metadata.shellID, content => {
+            if (!this.disposed && this.tools.get(key) === tool) {
+              this.emit({ type: 'tool_output', ...identity, content }, child?.outputSessionId);
+            }
+          });
+        } else if (tool && !this.previewStops.has(nativeSessionId) && !tool.shell && typeof metadata.output === 'string' && tool.output !== null) {
+          if (metadata.output.startsWith(tool.output)) {
+            const content = metadata.output.slice(tool.output.length);
+            tool.output = metadata.output;
+            if (content) this.emit({ type: 'tool_output', ...identity, content }, child?.outputSessionId);
+          } else {
+            // Rolling/replaced snapshots cannot be represented as append-only deltas.
+            tool.output = null;
+          }
+        }
         break;
       }
       case 'session.tool.success': case 'session.tool.failed': {
         const tool = this.tools.get(key);
+        tool?.shell?.stop();
         const content = Array.isArray(data.content) ? data.content.filter(isRecord).flatMap(item => typeof item.text === 'string' ? [item.text] : []).join('\n') : '';
         this.emit({ type: 'tool_completed', ...identity, content: content || (data.error ? errorText(data.error) : ''), isError: event.type.endsWith('.failed'), providerPayload: { rawName: tool?.name, rawInput: tool?.input, rawOutput: { ...data, metadata: data.metadata } }, toolUseResult: tool ? normalizeOpencodeToolUseResult(tool.name, tool.input, { metadata: data.metadata }) : undefined }, child?.outputSessionId);
         this.tools.delete(key);
@@ -468,9 +507,18 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       this.settleSteer(id, new Error('OpenCode steer delivery could not be confirmed.', { cause: error }));
     }
   }
+  private stopTools(sessionId?: string): void {
+    for (const [key, tool] of this.tools) {
+      if (sessionId !== undefined && tool.sessionId !== sessionId) continue;
+      tool.shell?.stop();
+      this.tools.delete(key);
+    }
+  }
+
   private finish(stopReason: 'end_turn' | 'cancelled' = 'end_turn'): void {
     const pending = this.pending;
     this.pending = null;
+    this.stopTools(this.sessionId ?? undefined);
     void this.recallSteers();
     pending?.resolve({ stopReason, userMessageId: pending.userMessageId });
     this.options.onNativeTurn?.('completed', undefined, !!pending);
@@ -480,6 +528,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     if (this.disposed) return;
     const pending = this.pending;
     this.pending = null;
+    this.stopTools(this.sessionId ?? undefined);
     void this.recallSteers();
     pending?.reject(error);
     this.options.onNativeTurn?.('completed', error.message, !!pending);

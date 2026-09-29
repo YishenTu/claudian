@@ -387,7 +387,9 @@ describe('ConversationController', () => {
         linkedContentPath: 'notes/my-note.md',
       });
 
+      deps.state.writeEditStates.set('old-tool', {} as any);
       await controller.loadActive();
+      expect(deps.state.writeEditStates.size).toBe(0);
 
       expect(linkedContentController.lock).toHaveBeenCalledWith('notes/my-note.md');
       expect(deps.renderer.renderMessages).toHaveBeenCalledWith(

@@ -65,10 +65,10 @@ const rollbackEligibleForkTargets = new WeakMap<
 >();
 
 export function parsePiSessionContent(
-  content: string,
+  content: string | ParsedPiSessionEntries,
   options: ParsePiSessionContentOptions = {},
 ): ChatMessage[] {
-  const parsed = parsePiSessionEntries(content);
+  const parsed = typeof content === 'string' ? parsePiSessionEntries(content) : content;
   if (options.leafEntryId === null) return [];
   const leafEntryId = options.leafEntryId?.trim();
   if (
@@ -173,11 +173,11 @@ export function resolvePiTreeCursor(entries: PiSessionEntry[], cursor: PiTreeCur
 }
 
 export function parsePiSessionModel(
-  content: string,
+  content: string | ParsedPiSessionEntries,
   leafEntryId?: string | null,
 ): string | null {
   if (leafEntryId === null) return null;
-  const parsed = parsePiSessionEntries(content);
+  const parsed = typeof content === 'string' ? parsePiSessionEntries(content) : content;
   const persistedLeafEntryId = leafEntryId?.trim();
   if (
     persistedLeafEntryId

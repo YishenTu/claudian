@@ -530,8 +530,7 @@ function renderWebSearchExpanded(
 }
 
 function renderFileSearchExpanded(container: HTMLElement, result: string): void {
-  const lines = result.split(/\r?\n/).filter(line => line.trim());
-  if (lines.length === 0) {
+  if (!result.trim()) {
     container.createDiv({ cls: 'claudian-tool-empty', text: 'No matches found' });
     return;
   }
@@ -544,9 +543,10 @@ function renderLinesExpanded(
   maxLines: number,
   hoverable = false
 ): void {
-  const lines = result.split(/\r?\n/);
-  const truncated = lines.length > maxLines;
-  const displayLines = truncated ? lines.slice(0, maxLines) : lines;
+  const displayLines = result.split(/\r?\n/, maxLines);
+  let lineCount = 1;
+  for (let offset = result.indexOf('\n'); offset !== -1; offset = result.indexOf('\n', offset + 1)) lineCount++;
+  const truncated = lineCount > maxLines;
 
   const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
   for (const line of displayLines) {
@@ -559,7 +559,7 @@ function renderLinesExpanded(
   if (truncated) {
     linesEl.createDiv({
       cls: 'claudian-tool-truncated',
-      text: `... ${lines.length - maxLines} more lines`,
+      text: `... ${lineCount - maxLines} more lines`,
     });
   }
 }

@@ -37,6 +37,14 @@ it('reads history with the require function supplied by the Obsidian plugin load
       createRequire(__filename), pluginModule, pluginModule.exports,
     );
 
+    const modelRows = await pluginModule.exports.loadOpencodeSessionRows(databasePath, 'ses-1', {
+      includeParts: false,
+      findNodeExecutables: () => [],
+      spawn: () => { throw new Error('No external SQLite reader installed.'); },
+    });
+    expect(modelRows.messageRows).toHaveLength(1);
+    expect(modelRows.partRows).toEqual([]);
+
     await expect(pluginModule.exports.loadOpencodeSessionRows(databasePath, 'ses-1', {
       findNodeExecutables: () => [],
       spawn: () => { throw new Error('No external SQLite reader installed.'); },

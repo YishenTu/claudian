@@ -1,5 +1,49 @@
 // Mock for Obsidian API
 
+// Match Obsidian's explicit load/unload lifecycle; DOM removal alone does not unload children.
+export class Component {
+  private loaded = false;
+  private children: Component[] = [];
+  private cleanups: (() => void)[] = [];
+
+  load(): void {
+    if (this.loaded) return;
+    this.loaded = true;
+    this.onload();
+    for (const child of this.children.slice()) child.load();
+  }
+
+  unload(): void {
+    if (!this.loaded) return;
+    this.loaded = false;
+    while (this.children.length) this.children.pop()!.unload();
+    while (this.cleanups.length) this.cleanups.pop()!();
+    this.onunload();
+  }
+
+  onload(): void {}
+  onunload(): void {}
+
+  addChild<T extends Component>(child: T): T {
+    this.children.push(child);
+    if (this.loaded) child.load();
+    return child;
+  }
+
+  removeChild<T extends Component>(child: T): T {
+    const index = this.children.indexOf(child);
+    if (index !== -1) {
+      this.children.splice(index, 1);
+      child.unload();
+    }
+    return child;
+  }
+
+  register(callback: () => void): void {
+    this.cleanups.push(callback);
+  }
+}
+
 export class Plugin {
   app: any;
   manifest: any;

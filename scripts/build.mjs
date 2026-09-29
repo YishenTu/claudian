@@ -12,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 
 // Run CSS build silently
-execFileSync(process.execPath, [join(ROOT, 'scripts/build-css.mjs')], {
+execFileSync(process.execPath, [join(ROOT, 'scripts/build-css.mjs'), ...process.argv.slice(2)], {
   cwd: ROOT,
   stdio: 'inherit',
 });

@@ -3,6 +3,7 @@ import '@/providers';
 
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { Component } from 'obsidian';
 
 import type { ChatMessage } from '@/core/types';
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
@@ -35,7 +36,7 @@ function createSurface() {
   const state = new ChatState();
   state.currentConversationId = 'conversation';
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
-  const renderer = new MessageRenderer(plugin, { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messages);
+  const renderer = new MessageRenderer(plugin, new Component(), messages);
   const stream = new StreamController({ plugin, state, renderer,
     subagentManager: new SubagentManager(() => undefined), getMessagesEl: () => messages,
     updateQueueIndicator: () => undefined, onQuestionToolChanged: tool => input.updateAsyncQuestion(tool),

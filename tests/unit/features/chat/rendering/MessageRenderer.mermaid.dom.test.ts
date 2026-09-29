@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { loadMermaid, MarkdownRenderer } from 'obsidian';
+import { Component, loadMermaid, MarkdownRenderer } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 
@@ -17,7 +17,7 @@ beforeEach(() => {
   document.body.replaceChildren();
   host = document.body.createDiv();
   renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '' } } as any,
-    { registerDomEvent: jest.fn(), register: jest.fn() } as any, host);
+    new Component(), host);
   render.mockReset().mockResolvedValue({ svg });
   jest.mocked(loadMermaid).mockResolvedValue({ render });
   jest.mocked(MarkdownRenderer.render).mockImplementation(async (_app, markdown, target) => {

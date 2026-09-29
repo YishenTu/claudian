@@ -45,3 +45,21 @@ describe('PiJsonl', () => {
     expect(chunks.join('')).toBe('{"type":"ping"}\n');
   });
 });
+
+it('scans fragmented records once instead of rescanning the accumulated prefix', () => {
+  const stream = new PassThrough();
+  const lines: string[] = [];
+  const stop = subscribePiJSONLLines(stream, line => lines.push(line));
+  const original = String.prototype.indexOf;
+  let scanned = 0;
+  const spy = jest.spyOn(String.prototype, 'indexOf').mockImplementation(function (this: string, search, position) {
+    if (search === '\n') scanned += this.length - (position ?? 0);
+    return original.call(this, search, position);
+  });
+  try {
+    for (let index = 0; index < 1024; index++) stream.write('x'.repeat(64));
+    stream.write('\r'); stream.write('\n');
+    expect(lines).toEqual(['x'.repeat(65536)]);
+    expect(scanned).toBeLessThan(2 * 65536);
+  } finally { spy.mockRestore(); stop(); stream.destroy(); }
+});

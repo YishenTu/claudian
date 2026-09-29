@@ -702,18 +702,32 @@ describe('ClaudeConversationHistoryService', () => {
             sessionPath: `/old-project/${sessionId}.jsonl`,
           }]),
         ));
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const started: string[] = [];
+      let notifyStarted!: () => void;
+      const firstStarted = new Promise<void>(resolve => { notifyStarted = resolve; });
       const loadSpy = jest.spyOn(historyStore, 'loadSDKSessionMessages')
-        .mockImplementation(async (_vaultPath, sessionId) => ({
-          messages: [{
+        .mockImplementation(async (_vaultPath, sessionId) => {
+          started.push(sessionId);
+          notifyStarted();
+          await gate;
+          return { messages: [{
             id: `message-${sessionId}`,
             role: 'user',
             content: sessionId,
             timestamp: sessionId === 'session-previous' ? 1 : 2,
           }],
-          skippedLines: 0,
-        }));
+          skippedLines: 0 };
+        });
 
-      Object.assign(conversation, await service.hydrateConversationHistory(conversation, '/vault'));
+      const pending = service.hydrateConversationHistory(conversation, '/vault');
+      await firstStarted;
+      await Promise.resolve();
+      const startedBeforeRelease = [...started];
+      release();
+      Object.assign(conversation, await pending);
+      expect(startedBeforeRelease).toEqual(['session-previous', 'session-current']);
 
       expect(conversation.messages.map(message => message.content)).toEqual([
         'session-previous',

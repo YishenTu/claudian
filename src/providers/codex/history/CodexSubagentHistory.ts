@@ -1,3 +1,4 @@
+import type { Dirent } from 'node:fs';
 import * as fs from 'node:fs/promises';
 
 import type { ChatMessage, SubagentInfo } from '../../../core/types';
@@ -7,18 +8,30 @@ import { findCodexSessionFileAsync, parseCodexSessionContent } from './CodexHist
 export async function hydrateCodexSubagentHistory(
   messages: ChatMessage[], roots: string[], deadline: number,
 ): Promise<void> {
+  // Share immutable observations only within this bounded hydration; later opens retry.
+  const directories = new Map<string, Promise<Dirent[]>>();
+  const contents = new Map<string, string>();
+  const readDirectory = (directory: string): Promise<Dirent[]> => {
+    let pending = directories.get(directory);
+    if (!pending) {
+      pending = fs.readdir(directory, { withFileTypes: true });
+      directories.set(directory, pending);
+    }
+    return pending;
+  };
   for (const tool of messages.flatMap(message => message.toolCalls ?? [])) {
     const info = tool.subagent;
     if (info?.lifecycleSource !== 'session' || !info.agentId || !info.completedAt) continue;
     for (const root of roots) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) return;
-      const file = await findCodexSessionFileAsync(info.agentId, root, remaining);
+      const file = await findCodexSessionFileAsync(info.agentId, root, remaining, { readDirectory });
       if (!file) continue;
       const controller = new AbortController();
       const timeout = window.setTimeout(() => controller.abort(), Math.max(1, deadline - Date.now()));
       try {
-        const content = await fs.readFile(file, { encoding: 'utf8', signal: controller.signal });
+        const content = contents.get(file) ?? await fs.readFile(file, { encoding: 'utf8', signal: controller.signal });
+        contents.set(file, content);
         tool.subagent = readCodexChildDetails(content, info);
         break;
       } catch {

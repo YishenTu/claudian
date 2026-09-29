@@ -39,6 +39,7 @@ import {
   prepareDisplayOnlyCodeFences,
   restoreDisplayOnlyCodeFences,
 } from './DisplayOnlyCodeFences';
+import { MarkdownRenderScope } from './MarkdownRenderScope';
 import { renderMermaidDiagrams } from './MermaidRenderer';
 import { getResponseSegments } from './NotificationBoundaries';
 import { createResponseTextBlock, getResponseElementKind, getResponseLayout, markResponseElement } from './ResponseLayout';
@@ -81,11 +82,14 @@ export class MessageRenderer {
   private rewindCallback?: (messageId: string, mode?: ChatRewindMode) => Promise<void>;
   private getCapabilities: () => ProviderCapabilities;
   private forkCallback?: (messageId: string) => Promise<void>;
+  private readonly messageEls = new Map<string, HTMLElement>();
+  private readonly collapsedResponses = new WeakSet<HTMLElement>();
   private liveMessageEls = new Map<string, HTMLElement>();
   private removeFileLinkHandler: () => void;
   private readonly imagePreviewModal = new ImagePreviewModal();
   private isDisposed = false;
-  private readonly contentRenders = new WeakMap<HTMLElement, object>();
+  private readonly contentRenders = new Map<HTMLElement, MarkdownRenderScope>();
+  private readonly contentRemovalObserver?: MutationObserver;
 
   updateQuestionTool(tool: ToolCallInfo): void {
     for (const element of this.messagesEl.querySelectorAll<HTMLElement>('[data-tool-id]')) {
@@ -127,15 +131,45 @@ export class MessageRenderer {
 
     // Register delegated click handler for file links
     this.removeFileLinkHandler = registerFileLinkHandler(this.app, this.messagesEl);
+
+    // Controllers also clear message DOM directly. Inspect only removed subtrees,
+    // rather than scanning every retained message on each streaming mutation.
+    const Observer = messagesEl.ownerDocument?.defaultView?.MutationObserver;
+    if (Observer) {
+      this.contentRemovalObserver = new Observer(records => {
+        const releaseRemoved = (el: HTMLElement) => {
+          const id = el.dataset.messageId;
+          if (id && this.messageEls.get(id) === el && !this.messagesEl.contains(el)) {
+            this.messageEls.delete(id);
+            this.liveMessageEls.delete(id);
+          }
+          if (this.contentRenders.has(el) && !this.messagesEl.contains(el)) {
+            this.releaseContentRender(el);
+          }
+        };
+        for (const record of records) {
+          for (const node of record.removedNodes) {
+            if (node.nodeType !== 1) continue;
+            const el = node as HTMLElement;
+            releaseRemoved(el);
+            el.querySelectorAll<HTMLElement>('*').forEach(releaseRemoved);
+          }
+        }
+      });
+      this.contentRemovalObserver.observe(messagesEl, { childList: true, subtree: true });
+    }
   }
 
   dispose(): void {
     if (this.isDisposed) return;
     this.isDisposed = true;
+    this.contentRemovalObserver?.disconnect();
+    this.releaseContentRenders();
     this.imagePreviewModal.close();
     this.removeFileLinkHandler();
     this.removeFileLinkHandler = () => {};
     this.liveMessageEls.clear();
+    this.messageEls.clear();
   }
 
   private getSubagentAdapter(toolName?: string) {
@@ -226,6 +260,7 @@ export class MessageRenderer {
       },
     });
 
+    this.messageEls.set(msg.id, msgEl);
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
 
     if (msg.role === 'user') {
@@ -248,14 +283,15 @@ export class MessageRenderer {
   }
 
   removeMessage(messageId: string): void {
-    const msgEl = this.liveMessageEls.get(messageId)
-      ?? this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
+    const msgEl = this.findMessageEl(messageId);
     if (!msgEl) {
       return;
     }
 
+    this.releaseContentRenders(msgEl);
     msgEl.remove();
     this.liveMessageEls.delete(messageId);
+    this.messageEls.delete(messageId);
   }
 
   // ============================================
@@ -272,8 +308,10 @@ export class MessageRenderer {
     messages: ChatMessage[],
     getGreeting: () => string
   ): HTMLElement {
+    this.releaseContentRenders();
     this.messagesEl.empty();
     this.liveMessageEls.clear();
+    this.messageEls.clear();
 
     // Recreate welcome element after clearing
     const newWelcomeEl = createWelcomeElement(this.messagesEl, getGreeting());
@@ -332,6 +370,7 @@ export class MessageRenderer {
       },
     });
 
+    this.messageEls.set(msg.id, msgEl);
     const contentEl = msgEl.createDiv({ cls: 'claudian-message-content', attr: { dir: 'auto' } });
 
     if (msg.role === 'user') {
@@ -364,23 +403,23 @@ export class MessageRenderer {
     const next = index === undefined ? undefined : allMessages?.[index + 1];
     if (msg.role === 'assistant' && (msg.durationSeconds !== undefined || next?.role !== 'assistant'
       || msg.contentBlocks?.some(block => block.type === 'task_notification'))) {
-      this.finalizeResponse(msg, allMessages ?? [msg], !next?.isInterrupt);
+      this.finalizeResponse(msg, allMessages ?? [msg], !next?.isInterrupt, index);
     }
   }
 
   /** Reparents completed output without replacing live tool or Markdown elements. */
-  finalizeResponse(msg: ChatMessage, messages: ChatMessage[], collapse = true): void {
-    const msgEl = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${msg.id}"]`);
+  finalizeResponse(msg: ChatMessage, messages: ChatMessage[], collapse = true, index?: number): void {
+    const msgEl = this.findMessageEl(msg.id);
     const contentEl = msgEl?.querySelector<HTMLElement>('.claudian-message-content');
     if (!msgEl || !contentEl
-      || this.messagesEl.querySelector(`.claudian-work[data-work-message-id="${msg.id}"]`)) return;
+      || this.collapsedResponses.has(msgEl)) return;
 
     const { blocks, finalText, canCollapse, notificationPredecessor,
-      automaticNotification, earlierMessages, hasContinuation, finalBlockCount } = getResponseLayout(msg, messages, collapse);
+      automaticNotification, earlierMessages, hasContinuation, finalBlockCount } = getResponseLayout(msg, messages, collapse, index);
     const precedingNotificationHistory = notificationPredecessor
-      ? this.messagesEl.querySelector<HTMLElement>(
-        `[data-message-id="${notificationPredecessor.id}"] .claudian-task-notification .claudian-work-history`,
-      ) : null;
+      ? this.findMessageEl(notificationPredecessor.id)?.querySelector<HTMLElement>(
+        '.claudian-task-notification .claudian-work-history',
+      ) ?? null : null;
     if (automaticNotification && canCollapse) {
       let history: HTMLElement | null = precedingNotificationHistory;
       for (const child of Array.from(contentEl.children) as HTMLElement[]) {
@@ -396,11 +435,9 @@ export class MessageRenderer {
       // Keep the disclosure at the start of its response and fold consumed
       // notifications with the work around them, preserving transcript order.
       const workContentEl = hasContinuation && earlierMessages.length
-        ? this.messagesEl.querySelector<HTMLElement>(
-          `[data-message-id="${earlierMessages[0].id}"] .claudian-message-content`,
-        ) ?? contentEl : contentEl;
+        ? this.findMessageEl(earlierMessages[0].id)?.querySelector<HTMLElement>('.claudian-message-content') ?? contentEl : contentEl;
       const earlierEls = earlierMessages.flatMap(message => {
-        const el = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${message.id}"]`);
+        const el = this.findMessageEl(message.id);
         if (!el) return [];
         const previousContent = el.querySelector<HTMLElement>('.claudian-message-content');
         return previousContent === workContentEl ? Array.from(previousContent.children) as HTMLElement[] : [el];
@@ -414,6 +451,7 @@ export class MessageRenderer {
       if (earlierEls.length || workEls.length || msg.durationSeconds !== undefined) {
         const seconds = Math.max(0, Math.floor(msg.durationSeconds ?? 0));
         const duration = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+        this.collapsedResponses.add(msgEl);
         const wrapper = workContentEl.createDiv({
           cls: 'claudian-work', attr: { 'data-work-message-id': msg.id },
         });
@@ -514,8 +552,13 @@ export class MessageRenderer {
     });
     const history = wrapper.createDiv({ cls: 'claudian-work-history', attr: { id: historyId } });
     history.hidden = true;
-    void this.renderContent(history.createDiv(), content);
+    const body = history.createDiv({ text: content });
+    let rendered = false;
     header.addEventListener('click', () => {
+      if (!rendered && !this.isDisposed) {
+        rendered = true;
+        void this.renderContent(body, content);
+      }
       history.hidden = !history.hidden;
       header.setAttribute('aria-expanded', String(!history.hidden));
     });
@@ -843,9 +886,17 @@ export class MessageRenderer {
     markdown: string,
     options?: RenderContentOptions
   ): Promise<void> {
-    const renderToken = {};
-    this.contentRenders.set(el, renderToken);
-    const isCurrent = () => !this.isDisposed && this.contentRenders.get(el) === renderToken;
+    if (this.isDisposed) return;
+    this.releaseContentRender(el);
+    const scope = new MarkdownRenderScope();
+    this.contentRenders.set(el, scope);
+    scope.register(() => {
+      if (this.contentRenders.get(el) === scope) this.contentRenders.delete(el);
+    });
+    this.component.addChild(scope);
+    scope.load();
+    const isCurrent = () => !this.isDisposed && !scope.isReleased
+      && this.contentRenders.get(el) === scope;
     el.empty();
 
     try {
@@ -868,8 +919,9 @@ export class MessageRenderer {
         processedMarkdown,
         el,
         '',
-        this.component
+        scope
       );
+      if (!isCurrent()) return;
       await restoreDisplayOnlyCodeFences(el, displayOnlyCodeFences.fences);
 
       if (!isCurrent()) return;
@@ -880,14 +932,38 @@ export class MessageRenderer {
       }
 
       // Process wikilinks only when the source can contain them; the DOM pass is expensive.
-      if (processedMarkdown.includes('[[')) {
+      if (isCurrent() && processedMarkdown.includes('[[')) {
         processFileLinks(this.app, el);
       }
     } catch {
+      if (!isCurrent()) return;
+      this.releaseContentRender(el);
       el.createDiv({
         cls: 'claudian-render-error',
         text: 'Failed to render message content.',
       });
+    }
+  }
+
+  private findMessageEl(id: string): HTMLElement | null {
+    const cached = this.messageEls.get(id);
+    if (cached && this.messagesEl.contains(cached)) return cached;
+    this.messageEls.delete(id);
+    return this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${id}"]`);
+  }
+
+  private releaseContentRender(el: HTMLElement): void {
+    const scope = this.contentRenders.get(el);
+    if (!scope) return;
+    this.contentRenders.delete(el);
+    this.component.removeChild(scope);
+  }
+
+  private releaseContentRenders(container?: HTMLElement): void {
+    for (const el of this.contentRenders.keys()) {
+      if (!container || container === el || container.contains(el)) {
+        this.releaseContentRender(el);
+      }
     }
   }
 

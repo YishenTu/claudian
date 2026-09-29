@@ -16,7 +16,7 @@
     "check:performance": "node scripts/check-startup-performance.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "npm run lint:ts && npm run lint:css",
-    "lint:ts": "eslint \"{src,tests}/**/*.ts\" --max-warnings=0",
+    "lint:ts": "eslint \"{src,tests}/**/*.ts\" --max-warnings=0 --concurrency=4",
     "lint:css": "stylelint \"src/style/**/*.css\"",
     "lint:fix": "npm run lint:ts -- --fix && npm run lint:css -- --fix",
     "test": "node scripts/run-tests.js",
@@ -73,7 +73,6 @@
     "@modelcontextprotocol/sdk": "~1.30.0",
     "cross-spawn": "7.0.6",
     "jsonc-parser": "3.3.1",
-    "smol-toml": "1.7.1",
     "tslib": "^2.8.1",
     "ws": "8.21.2"
   },

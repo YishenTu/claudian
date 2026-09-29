@@ -7,6 +7,7 @@ import { deserialize, serialize } from 'node:v8';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
+import { Component } from 'obsidian';
 
 import type { ChatMessage } from '@/core/types';
 import { providerOutputEventToStreamChunk, StreamController } from '@/features/chat/controllers/StreamController';
@@ -41,7 +42,7 @@ it.each([
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+    new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,

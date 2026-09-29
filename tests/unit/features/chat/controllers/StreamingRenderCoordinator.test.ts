@@ -192,3 +192,26 @@ describe('StreamingRenderCoordinator', () => {
     expect(render).toHaveBeenCalledWith('content');
   });
 });
+
+it('backs off after expensive renders while keeping final flush immediate', async () => {
+  jest.useFakeTimers();
+  let finish!: () => void;
+  const render = jest.fn().mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }))
+    .mockResolvedValue(undefined);
+  const options = { render, getOwnerWindow: () => window, minIntervalMs: 150, maxIntervalMs: 500 };
+  const coordinator = new StreamingRenderCoordinator<string>(options);
+  try {
+    coordinator.request('large');
+    await jest.advanceTimersByTimeAsync(16);
+    await jest.advanceTimersByTimeAsync(200);
+    finish();
+    await flushMicrotasks();
+    coordinator.request('growing');
+    await jest.advanceTimersByTimeAsync(170);
+    expect(render).toHaveBeenCalledTimes(1);
+    coordinator.request('final');
+    await coordinator.flush();
+    expect(render).toHaveBeenLastCalledWith('final');
+    expect(render).toHaveBeenCalledTimes(2);
+  } finally { coordinator.dispose(); jest.useRealTimers(); }
+});

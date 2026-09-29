@@ -9,6 +9,7 @@ export interface StreamingRenderCoordinatorOptions<TSnapshot> {
   render: (snapshot: TSnapshot) => Promise<void>;
   getOwnerWindow: () => Window | null;
   minIntervalMs: number;
+  maxIntervalMs?: number;
 }
 
 interface RenderWaiter {
@@ -20,6 +21,8 @@ export class StreamingRenderCoordinator<TSnapshot> {
   private readonly render: (snapshot: TSnapshot) => Promise<void>;
   private readonly getOwnerWindow: () => Window | null;
   private readonly minIntervalMs: number;
+  private readonly maxIntervalMs: number;
+  private nextIntervalMs: number;
 
   private latestSnapshot: TSnapshot | null = null;
   private requestedVersion = 0;
@@ -38,6 +41,8 @@ export class StreamingRenderCoordinator<TSnapshot> {
     this.render = options.render;
     this.getOwnerWindow = options.getOwnerWindow;
     this.minIntervalMs = options.minIntervalMs;
+    this.maxIntervalMs = Math.max(options.minIntervalMs, options.maxIntervalMs ?? options.minIntervalMs);
+    this.nextIntervalMs = options.minIntervalMs;
   }
 
   request(snapshot: TSnapshot): void {
@@ -85,6 +90,7 @@ export class StreamingRenderCoordinator<TSnapshot> {
     this.renderedVersion = 0;
     this.forceThroughVersion = 0;
     this.lastRenderCompletedAt = Number.NEGATIVE_INFINITY;
+    this.nextIntervalMs = this.minIntervalMs;
     this.bypassThrottle = false;
     this.#resolveAllWaiters();
   }
@@ -124,7 +130,7 @@ export class StreamingRenderCoordinator<TSnapshot> {
     const forcePending = this.forceThroughVersion > this.renderedVersion;
     if (!this.available && !forcePending) return;
 
-    const throttleWait = this.minIntervalMs - (Date.now() - this.lastRenderCompletedAt);
+    const throttleWait = this.nextIntervalMs - (Date.now() - this.lastRenderCompletedAt);
     if (!forcePending && !this.bypassThrottle && throttleWait > 0) {
       const ownerWindow = this.getOwnerWindow();
       if (!ownerWindow) {
@@ -145,6 +151,7 @@ export class StreamingRenderCoordinator<TSnapshot> {
     const version = this.requestedVersion;
     const renderGeneration = this.generation;
     this.renderRunning = true;
+    const startedAt = Date.now();
 
     try {
       await this.render(snapshot);
@@ -162,6 +169,8 @@ export class StreamingRenderCoordinator<TSnapshot> {
 
     this.renderedVersion = Math.max(this.renderedVersion, version);
     this.lastRenderCompletedAt = Date.now();
+    this.nextIntervalMs = Math.min(this.maxIntervalMs,
+      Math.max(this.minIntervalMs, (this.lastRenderCompletedAt - startedAt) * 2));
     if (this.forceThroughVersion <= this.renderedVersion) {
       this.forceThroughVersion = 0;
     }

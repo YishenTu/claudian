@@ -4,6 +4,7 @@ import '@/providers';
 import { testTime } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
+import { Component } from 'obsidian';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { StreamChunk, ToolCallInfo } from '@/core/types';
@@ -206,7 +207,7 @@ it('submits a selected option and a free-text answer once, then restores both an
   const transcript = document.body.createDiv();
   const renderer = new MessageRenderer(
     { app: {}, settings: {} } as any,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any,
+    new Component(),
     transcript, undefined, undefined,
     () => ({ providerId: 'codex', supportsConversationBranches: true }) as any,
     { navigate: async () => undefined, isBusy: () => false },

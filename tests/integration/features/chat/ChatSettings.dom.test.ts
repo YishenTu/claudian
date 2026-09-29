@@ -8,7 +8,7 @@ import { FakeSideSession } from '@test/helpers/features/chat/SideChatSessionHarn
 import { modelCatalogCases } from '@test/helpers/providerModelCatalogs';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { App, Notice } from 'obsidian';
+import { App, Component, Notice } from 'obsidian';
 
 import { ChatModelSelectionCoordinator } from '@/app/settings/ChatModelSelectionCoordinator';
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
@@ -114,7 +114,7 @@ function createChatHarness(settings: ClaudianSettings, id: ProviderId, selected:
     conversations.push(conversation);
     const tab = await createTabRuntime({
       plugin,
-      component: { addChild: () => undefined, register: () => undefined, registerDomEvent: () => undefined, registerEvent: () => undefined } as never,
+      component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
       containerEl: document.body.appendChild(document.createElement('div')),
       conversation, getProviderCatalogConfig: () => null, isRuntimeLive: () => true,
     });

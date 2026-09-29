@@ -11,6 +11,8 @@ import * as path from 'node:path';
 
 import type { App, DataAdapter } from 'obsidian';
 
+import { mapWithConcurrency } from '@/utils/concurrency';
+
 export type ManagedResourceType = 'file' | 'folder';
 
 /** State of a vault path that may be a folder link to an expected vault folder. */
@@ -158,20 +160,25 @@ export class VaultFileAdapter {
 
   /** Recursively list all files in a folder and subfolders. */
   async listFilesRecursive(folder: string): Promise<string[]> {
+    const listings = new Map<string, { files: string[]; folders: string[] }>();
+    let pending = [folder];
+    while (pending.length) {
+      const children = await mapWithConcurrency(pending, async current => {
+        if (!await this.exists(current)) return [];
+        const listing = await this.app.vault.adapter.list(current);
+        listings.set(current, listing);
+        return listing.folders;
+      }, 8);
+      pending = children.flat();
+    }
     const allFiles: string[] = [];
-
-    const processFolder = async (currentFolder: string) => {
-      if (!(await this.exists(currentFolder))) return;
-
-      const listing = await this.app.vault.adapter.list(currentFolder);
+    const collect = (current: string): void => {
+      const listing = listings.get(current);
+      if (!listing) return;
       allFiles.push(...listing.files);
-
-      for (const subfolder of listing.folders) {
-        await processFolder(subfolder);
-      }
+      for (const child of listing.folders) collect(child);
     };
-
-    await processFolder(folder);
+    collect(folder);
     return allFiles;
   }
 

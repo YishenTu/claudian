@@ -1106,3 +1106,16 @@ it('does not require a metadata write to keep an unavailable selection', async (
     },
   });
 });
+
+it('adopts already-published shells without repeated linear record lookup', async () => {
+  const repository = new ConversationRepository({ getSettings: () => ({}), getVaultPath: () => '/audit',
+    persistence: { saveMetadata: async () => {}, metadataReader: {} },
+  } as any);
+  const records = Array.from({ length: 512 }, (_, index) => ({ ...createConversation(`indexed-${index}`), providerId: 'audit-unregistered' }));
+  repository.replaceAll(records as any);
+  const find = jest.spyOn((repository as any).conversations, 'find');
+  await repository.adoptMetadataConversations(records.map(conversation => ({ conversation, needsMigration: false, source: 'device' })) as any);
+  expect(find).not.toHaveBeenCalled();
+  expect(repository.getSync('indexed-511')?.id).toBe('indexed-511');
+  expect(repository.list()).toHaveLength(512);
+});

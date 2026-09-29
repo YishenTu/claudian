@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import type * as zlibType from 'node:zlib';
 
 import { build, stop } from 'esbuild';
 
@@ -40,7 +41,17 @@ describe('Desktop dependency envelope', () => {
       .toEqual(['compressed-locale-catalog:all']);
     const output = result.outputFiles[0].text;
     const module = { exports: [] as unknown[] };
-    Function('module', 'exports', 'require', output)(module, module.exports, require);
+    const decompressed: unknown[] = [];
+    const zlib = jest.requireActual<typeof zlibType>('node:zlib');
+    Function('module', 'exports', 'require', output)(module, module.exports, (id: string) => id === 'node:zlib' ? {
+      ...zlib,
+      brotliDecompressSync: (input: Buffer) => {
+        const bytes = zlib.brotliDecompressSync(input);
+        decompressed.push(JSON.parse(bytes.toString('utf8')));
+        return bytes;
+      },
+    } : jest.requireActual(id));
+    expect(decompressed).toEqual(localeFiles.map(file => JSON.parse(readFileSync(path.join(localeDirectory, file), 'utf8'))));
     expect(module.exports).toEqual(localeFiles.map(file => JSON.parse(readFileSync(path.join(localeDirectory, file), 'utf8'))));
   });
 

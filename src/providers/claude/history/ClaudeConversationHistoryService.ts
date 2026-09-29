@@ -1,4 +1,5 @@
 import { copyProviderHistoryState } from '@/core/providers/providerHistory';
+import { mapWithConcurrency } from '@/utils/concurrency';
 
 import { encodeProviderModelSelectionId } from '../../../core/providers/modelSelection';
 import type {
@@ -774,7 +775,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
     const checkpointSessionId = resumableSessionId
       ?? (conversation.resumeAtMessageId ? allSessionIds[allSessionIds.length - 1] : null);
 
-    for (const sessionId of allSessionIds) {
+    const loaded = await mapWithConcurrency(allSessionIds, async sessionId => {
       const relocatedSessionPath = relocatedSessionPaths.get(sessionId);
       const location = relocatedSessionPath
         ? { availability: 'relocated' as const, sessionPath: relocatedSessionPath }
@@ -785,7 +786,7 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
         } else {
           unknownSessionCount++;
         }
-        continue;
+        return null;
       }
 
       const isCheckpointSession = sessionId === checkpointSessionId;
@@ -800,6 +801,11 @@ export class ClaudeConversationHistoryService implements ProviderConversationHis
         pathContext,
       );
 
+      return result;
+    }, 4);
+    // Concurrent reads retain source order and checkpoint/partial-failure semantics.
+    for (const result of loaded) {
+      if (!result) continue;
       if (result.error) {
         errorCount++;
         continue;

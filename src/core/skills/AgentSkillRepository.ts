@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
 
+import { mapWithConcurrency } from '@/utils/concurrency';
+
 import {
   ManagedResourceCollisionError,
   ManagedResourceRelocationError,
@@ -103,7 +105,7 @@ export class AgentSkillRepository {
     const skills: AgentSkillDocument[] = [];
     const diagnostics: AgentSkillListResult['diagnostics'] = [];
 
-    for (const directoryPath of directPackages) {
+    await mapWithConcurrency(directPackages, async directoryPath => {
       const name = path.posix.basename(directoryPath);
       try {
         const document = await this.#readDocument(name);
@@ -115,7 +117,7 @@ export class AgentSkillRepository {
           ...(await this.#isRepairable(name) ? { repairName: name } : {}),
         });
       }
-    }
+    }, 8);
 
     skills.sort((left, right) => left.name.localeCompare(right.name));
     diagnostics.sort((left, right) => (
@@ -343,10 +345,8 @@ export class AgentSkillRepository {
     raw: string;
   }> {
     this.#assertValidName(name);
-    const directoryPath = this.#packagePath(name);
     const filePath = this.#skillFilePath(name);
-    await this.files.verifyManagedPath(directoryPath, { expectedType: 'folder' });
-    await this.files.verifyManagedPath(filePath, { expectedType: 'file' });
+    // The safe reader validates the file and every ancestor immediately before reading.
     const raw = await this.files.readManagedFile(filePath);
     return { skill: this.#documentFromRaw(name, raw), raw };
   }

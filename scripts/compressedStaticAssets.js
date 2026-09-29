@@ -18,10 +18,6 @@ function compress(contents, mode) {
   }).toString('base64');
 }
 
-function decodeExpression(base64) {
-  return `brotliDecompressSync(Buffer.from(${JSON.stringify(base64)}, "base64"))`;
-}
-
 function createCompressedStaticAssetsPlugin({ root = process.cwd() } = {}) {
   const localeDirectory = path.join(root, 'src', 'i18n', 'locales');
 
@@ -40,23 +36,18 @@ function createCompressedStaticAssetsPlugin({ root = process.cwd() } = {}) {
             .sort()
             .map(fileName => [
               path.basename(fileName, '.json'),
-              JSON.parse(readFileSync(path.join(localeDirectory, fileName), 'utf8')),
+              compress(Buffer.from(JSON.stringify(JSON.parse(readFileSync(path.join(localeDirectory, fileName), 'utf8')))), zlibConstants.BROTLI_MODE_TEXT),
             ]),
-        );
-        const base64 = compress(
-          Buffer.from(JSON.stringify(catalog)),
-          zlibConstants.BROTLI_MODE_TEXT,
         );
         return {
           contents: [
             'import { brotliDecompressSync } from "node:zlib";',
-            `const compressedCatalog = ${JSON.stringify(base64)};`,
+            `const compressedCatalog = ${JSON.stringify(catalog)};`,
             'export function loadCompressedLocale(locale) {',
-            '  const bytes = brotliDecompressSync(Buffer.from(compressedCatalog, "base64"));',
-            '  const catalog = JSON.parse(bytes.toString("utf8"));',
-            '  const dictionary = catalog[locale];',
-            '  if (!dictionary) throw new Error(`Unsupported compressed locale: ${locale}`);',
-            '  return dictionary;',
+            '  const compressed = compressedCatalog[locale];',
+            '  if (!compressed) throw new Error(`Unsupported compressed locale: ${locale}`);',
+            '  const bytes = brotliDecompressSync(Buffer.from(compressed, "base64"));',
+            '  return JSON.parse(bytes.toString("utf8"));',
             '}',
           ].join('\n'),
           loader: 'js',

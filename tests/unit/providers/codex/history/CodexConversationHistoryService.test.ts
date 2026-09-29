@@ -195,6 +195,26 @@ describe('CodexConversationHistoryService', () => {
       .resolves.toBe('openai-codex/gpt-5.5');
   });
 
+  it('stops model recovery at a checkpoint without reading the remaining transcript', async () => {
+    const transcriptPath = path.join(tempHome, 'large-model.jsonl');
+    fs.writeFileSync(transcriptPath, JSON.stringify({ type: 'turn_context', payload: { model: 'gpt-5.5', turn_id: 'checkpoint' } })
+      + '\n' + (JSON.stringify({ type: 'irrelevant', payload: 'x'.repeat(1024) }) + '\n').repeat(2048));
+    const streams: fsType.ReadStream[] = [];
+    const create = fs.createReadStream;
+    const spy = jest.spyOn(fs, 'createReadStream').mockImplementation((...args) => {
+      const stream = create(...args); streams.push(stream); return stream;
+    });
+    try {
+      const result = await new CodexConversationHistoryService().recoverConversationModelSelection({
+        sessionId: 'thread', resumeAtMessageId: 'checkpoint', providerState: { sessionFilePath: transcriptPath, threadId: 'thread' }, messages: [],
+      }, null);
+      expect(result).toBe('openai-codex/gpt-5.5');
+      expect(streams).toHaveLength(1);
+      expect(streams[0].bytesRead).toBeLessThan(256 * 1024);
+      expect(streams[0].destroyed).toBe(true);
+    } finally { spy.mockRestore(); }
+  });
+
   it('does not recover a Codex model past a missing rewind checkpoint', async () => {
     const transcriptPath = path.join(tempHome, 'stale-checkpoint-model.jsonl');
     fs.writeFileSync(
@@ -1064,7 +1084,13 @@ describe('CodexConversationHistoryService', () => {
       };
 
       const service = new CodexConversationHistoryService();
-      Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
+      const parse = jest.spyOn(JSON, 'parse');
+      let sourceRecordReads: number;
+      try {
+        Object.assign(conversation, await service.hydrateConversationHistory(conversation, null));
+        sourceRecordReads = parse.mock.calls.filter(([line]) => typeof line === 'string' && line.includes('SrcQ3')).length;
+      } finally { parse.mockRestore(); }
+      expect(sourceRecordReads).toBe(1);
 
       // Expected: source prefix (turns 1+2) + fork-only turn
       // = SrcQ1, SrcA1, SrcQ2, SrcA2, ForkQ1, ForkA1

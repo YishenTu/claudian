@@ -25,8 +25,9 @@ import {
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
   parseCodexSessionFileAsync,
-  parseCodexSessionModel,
+  parseCodexSessionRecords,
   parseCodexSessionTurns,
+  readCodexSessionModel,
 } from './CodexHistoryStore';
 import { hydrateCodexSubagentHistory } from './CodexSubagentHistory';
 
@@ -51,10 +52,7 @@ async function readSessionModel(
 ): Promise<string | null> {
   if (!sessionFilePath) return null;
   try {
-    return parseCodexSessionModel(
-      await fs.readFile(sessionFilePath, 'utf8'),
-      resumeAtTurnId,
-    );
+    return await readCodexSessionModel(sessionFilePath, resumeAtTurnId);
   } catch {
     return null;
   }
@@ -201,7 +199,7 @@ export class CodexConversationHistoryService implements ProviderConversationHist
         : null);
 
       if (sourceSessionFile && forkSessionFile) {
-        const sourceContent = await readSessionContent(sourceSessionFile);
+        const sourceContent = parseCodexSessionRecords(await readSessionContent(sourceSessionFile));
         const sourceTurns = parseCodexSessionTurns(sourceContent);
         const forkTurns = parseCodexSessionTurns(await readSessionContent(forkSessionFile));
 

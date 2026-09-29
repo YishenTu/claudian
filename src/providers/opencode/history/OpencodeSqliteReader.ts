@@ -22,6 +22,7 @@ interface SqliteModule {
 type SpawnSqliteProcess = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
 
 export interface OpencodeSqliteReaderDependencies {
+  includeParts?: boolean;
   nativeVersion?: 1 | 2 | 'auto';
   environment?: NodeJS.ProcessEnv;
   findNodeExecutables?: () => string[];
@@ -65,7 +66,8 @@ export async function loadOpencodeSessionRows(
       (id) => `SELECT 1 WHERE ${id} IS NULL`);
     return { ...rows, nativeVersion: 2 };
   }
-  const rows = await querySessionRows(databasePath, sessionId, dependencies, buildOpencodeMessageRowsSQL, buildOpencodePartRowsSQL);
+  const rows = await querySessionRows(databasePath, sessionId, dependencies, buildOpencodeMessageRowsSQL,
+    dependencies.includeParts === false ? id => `SELECT 1 WHERE ${id} IS NULL` : buildOpencodePartRowsSQL);
   // Usage metadata is optional. Preserve the existing row shape where it is absent.
   for (const row of rows.messageRows) {
     for (const key of ['parent_id', 'output_tokens', 'reasoning_tokens', 'finish', 'error']) {

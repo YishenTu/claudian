@@ -2,7 +2,7 @@
 
 import { within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { MarkdownRenderer } from 'obsidian';
+import { Component, MarkdownRenderer } from 'obsidian';
 
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 
@@ -16,7 +16,7 @@ beforeEach(() => {
   host = document.body.createDiv();
   renderer = new MessageRenderer(
     { app: {}, settings: { mediaFolder: '' } } as any,
-    { registerDomEvent: jest.fn(), register: jest.fn() } as any,
+    new Component(),
     host,
   );
 });

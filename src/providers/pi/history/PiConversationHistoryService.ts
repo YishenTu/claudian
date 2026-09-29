@@ -76,8 +76,8 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     if (!sessionFile) return null;
 
     try {
-      const content = await fs.readFile(sessionFile, 'utf8');
-      const cursor = state.treeCursor ? resolvePiTreeCursor(parsePiSessionEntries(content).entries, state.treeCursor) : undefined;
+      const content = parsePiSessionEntries(await fs.readFile(sessionFile, 'utf8'));
+      const cursor = state.treeCursor ? resolvePiTreeCursor(content.entries, state.treeCursor) : undefined;
       return parsePiSessionModel(content, isPendingFork ? state.forkSource!.resumeAt : cursor ? cursor.leafId : state.leafEntryId);
     } catch {
       return null;
@@ -202,9 +202,9 @@ export class PiConversationHistoryService implements ProviderConversationHistory
     let readCurrent = false;
     for (const source of resolvedSources) {
       try {
-        const content = await fs.readFile(source.sessionFile, 'utf-8');
+        const content = parsePiSessionEntries(await fs.readFile(source.sessionFile, 'utf-8'));
         const cursor = source.kind === 'current' && state.treeCursor
-          ? resolvePiTreeCursor(parsePiSessionEntries(content).entries, state.treeCursor) : undefined;
+          ? resolvePiTreeCursor(content.entries, state.treeCursor) : undefined;
         const sourceMessages = parsePiSessionContent(content, {
           leafEntryId: cursor ? cursor.leafId : source.leafEntryId,
           includeBranches: source.kind === 'current',

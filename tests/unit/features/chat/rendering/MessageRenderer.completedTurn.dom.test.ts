@@ -3,9 +3,10 @@
 import '@/providers';
 
 import { createConversationPorts } from '@test/helpers/ConversationPorts';
+import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { MarkdownRenderer } from 'obsidian';
+import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ChatMessage } from '@/core/types';
@@ -27,7 +28,7 @@ function setup(providerId = 'claude') {
   const settings = { mediaFolder: '', showMessageTimestamps: true };
   const renderer = new MessageRenderer(
     { app: {}, settings } as any,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any,
+    new Component() as any,
     messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities(providerId),
   );
   return { renderer, messagesEl, fork, settings };
@@ -443,7 +444,7 @@ it('renders accessible Pi branch controls at the prompt and disables them while 
   let busy = false;
   const renderer = new MessageRenderer(
     { app: {}, settings: { mediaFolder: '' } } as any,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any,
+    new Component() as any,
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'),
     { navigate, isBusy: () => busy },
   );
@@ -495,7 +496,7 @@ it('shows the tree action from the second live prompt before native IDs arrive a
   let busy = true;
   const renderer = new MessageRenderer(
     { app: {}, settings: { mediaFolder: '' } } as any,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any,
+    new Component() as any,
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'),
     { navigate, isBusy: () => busy },
   );
@@ -539,7 +540,7 @@ it.each([true, false])('enables branches after switching and native history corr
       userMessageIds: { u1: 'native-u1', u2: 'native-u2' } }),
   };
   const renderer: MessageRenderer = new MessageRenderer(plugin as any,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any,
+    new Component() as any,
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'), {
       navigate: (id, target) => controller.navigateBranch(id, target),
       isBusy: () => state.isSwitchingConversation || state.isRewinding,
@@ -575,7 +576,7 @@ it('orders the Pi prompt toolbar as branches, tree, copy, time through live and 
   const settings = { mediaFolder: '', showMessageTimestamps: true };
   let busy = true;
   const renderer = new MessageRenderer({ app: {}, settings } as any,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any,
+    new Component() as any,
     messagesEl, undefined, fork, () => ProviderRegistry.getCapabilities('pi'),
     { navigate: jest.fn(), isBusy: () => busy });
   const first: ChatMessage = { ...messages[0], treeBranches: ['native-u1'] };
@@ -643,7 +644,7 @@ it('previews a branch without saving it and restores history when focus leaves t
   const coordinator = { navigateConversationBranch };
   const plugin = { app: {}, settings: {}, updateConversation: jest.fn() };
   const renderer: MessageRenderer = new MessageRenderer(plugin as any,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any,
+    new Component() as any,
     messagesEl, undefined, undefined, () => ProviderRegistry.getCapabilities('pi'),
     { navigate: (id, target) => controller.navigateBranch(id, target), isBusy: () => state.isRewinding });
   const controller = new ConversationController({ plugin, state, renderer,
@@ -678,5 +679,40 @@ it('previews a branch without saving it and restores history when focus leaves t
   expect(messagesEl.querySelector('[data-message-id="a2"]')).not.toBeNull();
   expect(navigateConversationBranch).not.toHaveBeenCalled();
   for (const dispose of cleanup) dispose();
+  renderer.dispose();
+});
+
+it('defers Markdown for collapsed thinking and notifications until their own disclosure opens', async () => {
+  const { renderer, messagesEl } = setup();
+  jest.mocked(MarkdownRenderer.render).mockClear();
+  renderer.renderStoredMessage({ id: 'lazy', role: 'assistant', timestamp: testDate().getTime(), content: 'Answer',
+    contentBlocks: [{ type: 'thinking', content: '**Reasoning**' },
+      { type: 'task_notification', content: '**Notification**' }, { type: 'text', content: 'Answer' }],
+  });
+  expect(jest.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1])).toEqual(['Answer']);
+  fireEvent.click(within(messagesEl).getByRole('button', { name: 'Worked' }));
+  const thinking = within(messagesEl).getByRole('button', { name: 'Thought' });
+  fireEvent.keyDown(thinking, { key: 'Enter' });
+  const notification = within(messagesEl).getByRole('button', { name: 'Task notification' });
+  fireEvent.click(notification);
+  fireEvent.click(notification);
+  fireEvent.click(notification);
+  await Promise.resolve();
+  expect(jest.mocked(MarkdownRenderer.render).mock.calls.map(call => call[1])).toEqual(['Answer', '**Reasoning**', '**Notification**']);
+  expect((await axe(messagesEl)).violations).toEqual([]);
+  renderer.dispose();
+});
+
+it('reuses created message elements instead of searching the growing history for each response', () => {
+  const { renderer, messagesEl } = setup();
+  const query = jest.spyOn(messagesEl, 'querySelector');
+  const history: ChatMessage[] = Array.from({ length: 100 }, (_, index) => ({
+    id: `indexed-${index}`, role: index % 2 ? 'assistant' : 'user', content: `Message ${index}`, timestamp: testDate().getTime(),
+  }));
+  const positionLookup = jest.spyOn(history, 'indexOf');
+  renderer.renderMessages(history, () => 'Hello');
+  expect(positionLookup).not.toHaveBeenCalled();
+  expect(query.mock.calls.filter(([selector]) => selector.includes('data-message-id') || selector.includes('data-work-message-id'))).toHaveLength(0);
+  expect(messagesEl.querySelectorAll('.claudian-message')).toHaveLength(100);
   renderer.dispose();
 });

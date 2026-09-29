@@ -1,6 +1,7 @@
 import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
 import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
+import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
@@ -14,6 +15,7 @@ import {
 } from '../../core/settings/warmExecutionLimits';
 import type {
   ChatViewPlacement,
+  ClaudianSettings,
   DualPaneSide,
 } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
@@ -120,10 +122,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private renderGeneration = 0;
   private readonly providerSettingsRenders = new Map<ProviderId, ProviderSettingsTabRenderHandle>();
   private skillsTab: SkillsSettingsTab | null = null;
+  private readonly textEdits: DebouncedSettingsWriter<ClaudianSettings>;
 
   constructor(app: App, plugin: FeatureHost & Plugin) {
     super(app, plugin);
     this.plugin = plugin;
+    this.textEdits = new DebouncedSettingsWriter(mutation => plugin.mutateSettings(mutation),
+      () => { new Notice('Failed to save settings'); });
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
@@ -135,6 +140,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   }
 
   private renderSettings(containerEl: HTMLElement): () => void {
+    void this.textEdits.flush();
     this.disposeProviderSettingsRenders();
     this.disposeSkillsTab();
     const renderGeneration = ++this.renderGeneration;
@@ -228,6 +234,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text: label,
       });
       button.addEventListener('click', () => {
+        void this.textEdits.flush();
+        this.skillsTab?.flush();
         this.activeTab = id;
         for (const tabId of tabIds) {
           tabButtons.get(tabId)?.toggleClass('claudian-settings-tab--active', tabId === id);
@@ -295,6 +303,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     return () => {
       if (renderGeneration !== this.renderGeneration) return;
+      void this.textEdits.flush();
       settingItems?.classList.remove('claudian-settings-items');
       this.renderGeneration += 1;
       this.disposeProviderSettingsRenders();
@@ -532,13 +541,13 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text
           .setPlaceholder(t('settings.userName.name'))
           .setValue(this.plugin.settings.userName)
-          .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+          .onChange((value) => {
+            this.textEdits.schedule('userName', (settings) => {
               settings.userName = value;
             });
           });
         text.inputEl.addEventListener('blur', () => {
-          void this.restartServiceForPromptChange();
+          void this.textEdits.flush().then(saved => { if (saved) return this.restartServiceForPromptChange(); });
         });
       });
 
@@ -550,15 +559,15 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text
           .setPlaceholder(t('settings.systemPrompt.name'))
           .setValue(this.plugin.settings.systemPrompt)
-          .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+          .onChange((value) => {
+            this.textEdits.schedule('systemPrompt', (settings) => {
               settings.systemPrompt = value;
             });
           });
         text.inputEl.rows = 6;
         text.inputEl.cols = 50;
         text.inputEl.addEventListener('blur', () => {
-          void this.restartServiceForPromptChange();
+          void this.textEdits.flush().then(saved => { if (saved) return this.restartServiceForPromptChange(); });
         });
       });
 
@@ -570,14 +579,15 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text
           .setPlaceholder('System\nprivate\ndraft')
           .setValue(this.plugin.settings.excludedTags.join('\n'))
-          .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+          .onChange((value) => {
+            this.textEdits.schedule('excludedTags', (settings) => {
               settings.excludedTags = value
                 .split(/\r?\n/)
                 .map((entry) => entry.trim().replace(/^#/, ''))
                 .filter((entry) => entry.length > 0);
             });
           });
+        text.inputEl.addEventListener('blur', () => { void this.textEdits.flush(); });
         text.inputEl.rows = 4;
         text.inputEl.cols = 30;
       });
@@ -589,14 +599,14 @@ export class ClaudianSettingTab extends PluginSettingTab {
         text
           .setPlaceholder('Attachments')
           .setValue(this.plugin.settings.mediaFolder)
-          .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+          .onChange((value) => {
+            this.textEdits.schedule('mediaFolder', (settings) => {
               settings.mediaFolder = value.trim();
             });
           });
         text.inputEl.addClass('claudian-settings-media-input');
         text.inputEl.addEventListener('blur', () => {
-          void this.restartServiceForPromptChange();
+          void this.textEdits.flush().then(saved => { if (saved) return this.restartServiceForPromptChange(); });
         });
       });
 

@@ -5,6 +5,7 @@ import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, screen, within } from '@testing-library/dom';
 import fs from 'fs';
 import { axe } from 'jest-axe';
+import { Component } from 'obsidian';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -41,7 +42,7 @@ function createCodexLifecycleView() {
   const tools: ToolCallInfo[] = [];
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, parent,
+    new Component(), parent,
     undefined, undefined, () => ProviderRegistry.getCapabilities('codex'));
   const state = new ChatState();
   const stream = new StreamController({ plugin, state, renderer, subagentManager: manager,
@@ -622,7 +623,7 @@ function createOpencodeView() {
   const manager = new SubagentManager(() => {}, ProviderRegistry.getTaskResultInterpreter('opencode'));
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, parent,
+    new Component(), parent,
     undefined, undefined, () => ProviderRegistry.getCapabilities('opencode'));
   const state = new ChatState();
   const stream = new StreamController({ plugin, state, renderer, subagentManager: manager,

@@ -6,6 +6,7 @@ import {
   getToolLabel,
   getToolName,
   getToolSummary,
+  renderExpandedContent,
   renderStoredToolCall,
   renderToolCall,
   setToolIcon,
@@ -891,4 +892,23 @@ describe('ToolCallRenderer', () => {
       expect(content?.querySelector('.claudian-tool-result-item')?.textContent ?? null).toBe(expectedFallback);
     });
   });
+});
+
+
+it('keeps a large tool preview bounded without splitting the undisplayed lines', () => {
+  const result = Array.from({ length: 10000 }, (_, index) => `line-${index}`).join('\r\n');
+  const split = String.prototype.split;
+  let splitWholeOutput = false;
+  const spy = jest.spyOn(String.prototype, 'split').mockImplementation(function (this: string, ...args: Parameters<typeof split>) {
+    if (String(this) === result && args[1] === undefined) splitWholeOutput = true;
+    return split.apply(this, args);
+  });
+  try {
+    const parent = createMockEl();
+    renderExpandedContent(parent, 'Bash', result, { command: 'echo' });
+    const element = parent;
+    expect(element.querySelectorAll('.claudian-tool-line').length).toBeLessThanOrEqual(20);
+    expect(element.querySelector('.claudian-tool-truncated')?.textContent).toContain('9980 more lines');
+    expect(splitWholeOutput).toBe(false);
+  } finally { spy.mockRestore(); }
 });

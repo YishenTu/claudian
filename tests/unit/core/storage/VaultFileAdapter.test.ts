@@ -270,16 +270,34 @@ describe('VaultFileAdapter', () => {
   });
 
   describe('listFilesRecursive', () => {
-    it('lists all files in nested structure', async () => {
-      const mockList = jest.fn();
-      mockList
-        .mockResolvedValueOnce({ files: ['root.md'], folders: ['folder1', 'folder2'] })
-        .mockResolvedValueOnce({ files: ['folder1/f1.md'], folders: ['folder1/sub'] })
-        .mockResolvedValueOnce({ files: ['folder1/sub/f2.md'], folders: [] })
-        .mockResolvedValueOnce({ files: ['folder2/f3.md'], folders: [] });
-
+    it('lists independent folders concurrently and preserves traversal order', async () => {
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const entered: string[] = [];
       mockAdapter.exists.mockResolvedValue(true);
-      mockAdapter.list.mockImplementation((path: string) => mockList(path));
+      mockAdapter.list.mockImplementation(async (folder: string) => {
+        if (folder === 'root') return { files: ['root/file'], folders: ['root/a', 'root/b'] };
+        entered.push(folder);
+        await gate;
+        return { files: [`${folder}/file`], folders: [] };
+      });
+      const listing = vaultAdapter.listFilesRecursive('root');
+      try {
+        await new Promise(resolve => setImmediate(resolve));
+        expect(entered).toEqual(['root/a', 'root/b']);
+      } finally { release(); }
+      expect(await listing).toEqual(['root/file', 'root/a/file', 'root/b/file']);
+    });
+
+    it('lists all files in nested structure', async () => {
+      const folders: Record<string, { files: string[]; folders: string[] }> = {
+        root: { files: ['root.md'], folders: ['folder1', 'folder2'] },
+        folder1: { files: ['folder1/f1.md'], folders: ['folder1/sub'] },
+        'folder1/sub': { files: ['folder1/sub/f2.md'], folders: [] },
+        folder2: { files: ['folder2/f3.md'], folders: [] },
+      };
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.list.mockImplementation(async (folder: string) => folders[folder]);
 
       const result = await vaultAdapter.listFilesRecursive('root');
 

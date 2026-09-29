@@ -107,14 +107,16 @@ export function renderStoredThinkingBlock(
   labelEl.setText(labelText);
 
   // Collapsible content
-  const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content' });
-  void renderContent(contentEl, content).catch(() => {
-    contentEl.setText(content);
-  });
-
-  // Setup collapsible behavior (handles click, keyboard, ARIA, CSS)
+  const contentEl = wrapperEl.createDiv({ cls: 'claudian-thinking-content', text: content });
+  let rendered = false;
   const state = { isExpanded: false };
-  setupCollapsible(wrapperEl, header, contentEl, state);
+  setupCollapsible(wrapperEl, header, contentEl, state, {
+    onToggle: expanded => {
+      if (!expanded || rendered) return;
+      rendered = true;
+      void renderContent(contentEl, content).catch(() => { contentEl.setText(content); });
+    },
+  });
 
   return wrapperEl;
 }

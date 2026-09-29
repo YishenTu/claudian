@@ -3,7 +3,7 @@ import '@/providers';
 
 import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
-import { App } from 'obsidian';
+import { App, Component } from 'obsidian';
 
 import type { Conversation } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
@@ -52,7 +52,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
   } as unknown as ChatFeatureHost;
   const tab = await createTabRuntime({
     plugin,
-    component: { addChild: () => undefined, register: () => undefined, registerDomEvent: () => undefined, registerEvent: () => undefined } as never,
+    component: Object.assign(new Component(), { registerDomEvent: () => undefined, registerEvent: () => undefined }) as never,
     containerEl: document.body.appendChild(document.createElement('div')),
     conversation,
     getProviderCatalogConfig: () => null,

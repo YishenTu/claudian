@@ -127,13 +127,6 @@ export async function updateTabReasoning(
   if (committed) tab.session.reasoningSelections.set(`${providerId}:${model}`, reasoning);
 }
 
-export function getTabConversation(
-  tab: TabProviderContext,
-  plugin: ChatFeatureHost,
-): Conversation | null {
-  return tab.conversationId ? plugin.getConversationSync(tab.conversationId) : null;
-}
-
 export function getTabSelectedModel(
   tab: TabProviderContext,
   plugin: ChatFeatureHost,

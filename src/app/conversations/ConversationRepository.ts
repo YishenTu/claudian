@@ -152,6 +152,7 @@ function applyModelRecoverySource(
 
 export class ConversationRepository {
   private conversations: Conversation[] = [];
+  private readonly recordsById = new Map<string, Conversation>();
   private hydratedConversationIds = new Set<string>();
   private hydrationPromises = new Map<string, Promise<Conversation | null>>();
   private conversationGenerations = new Map<string, number>();
@@ -191,6 +192,8 @@ export class ConversationRepository {
     this.conversations = conversations.filter(
       ({ id }) => !this.deletedConversationIds.has(id),
     );
+    this.recordsById.clear();
+    for (const record of this.conversations) this.recordsById.set(record.id, record);
     this.metadataTargets.clear();
     for (const conversation of this.conversations) {
       this.metadataTargets.set(conversation.id, 'device');
@@ -311,6 +314,7 @@ export class ConversationRepository {
     }
 
     this.conversations.push(...added);
+    for (const record of added) this.recordsById.set(record.id, record);
     this.conversations.sort(
       (left, right) =>
         right.lastActivityAt - left.lastActivityAt,
@@ -335,6 +339,7 @@ export class ConversationRepository {
       const index = this.conversations.indexOf(shell);
       if (index === -1) continue;
       this.conversations.splice(index, 1);
+      this.recordsById.delete(shell.id);
       this.hydratedConversationIds.delete(shell.id);
       this.hydrationPromises.delete(shell.id);
       this.executionBindings.delete(shell.id);
@@ -388,6 +393,7 @@ export class ConversationRepository {
 
     this.metadataTargets.set(conversation.id, 'device');
     this.conversations.unshift(conversation);
+    this.recordsById.set(conversation.id, conversation);
     this.#captureLinkedContentIdentity(conversation);
     if (!sessionId) {
       this.hydratedConversationIds.add(conversation.id);
@@ -445,6 +451,7 @@ export class ConversationRepository {
     this.deletingConversationIds.add(id);
     this.deletedConversationIds.add(id);
     this.conversations.splice(index, 1);
+    this.recordsById.delete(id);
     this.hydratedConversationIds.delete(id);
     this.hydrationPromises.delete(id);
     this.#invalidateConversation(id);
@@ -476,6 +483,7 @@ export class ConversationRepository {
           0,
           conversation,
         );
+        this.recordsById.set(id, conversation);
         if (conversation.messages.length > 0) {
           this.hydratedConversationIds.add(id);
         }
@@ -1103,9 +1111,7 @@ export class ConversationRepository {
   }
 
   #getRecord(id: string): Conversation | null {
-    const conversation = this.conversations.find(
-      (conversation) => conversation.id === id,
-    ) ?? null;
+    const conversation = this.recordsById.get(id) ?? null;
     if (conversation) {
       this.#restoreLinkedContentIdentity(conversation);
     }

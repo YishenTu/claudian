@@ -1,7 +1,7 @@
 import '@/providers';
 
 import { createMockEl } from '@test/helpers/MockElement';
-import { Menu } from 'obsidian';
+import { Component, Menu } from 'obsidian';
 
 import {
   TOOL_AGENT_OUTPUT,
@@ -44,13 +44,7 @@ jest.mock('@/utils/fileLink', () => ({
 }));
 
 function createMockComponent() {
-  return {
-    registerDomEvent: jest.fn(),
-    register: jest.fn(),
-    addChild: jest.fn(),
-    load: jest.fn(),
-    unload: jest.fn(),
-  };
+  return new Component();
 }
 
 function mockCapabilities(providerId: 'claude' | 'codex' | 'grok' = 'claude') {

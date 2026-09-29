@@ -4,7 +4,7 @@ import '@/providers';
 
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
-import { MarkdownRenderer } from 'obsidian';
+import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
@@ -49,7 +49,7 @@ async function createCodexChildTab() {
     }),
   } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl,
+    new Component(), messagesEl,
     undefined, undefined, () => ProviderRegistry.getCapabilities('codex'));
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);

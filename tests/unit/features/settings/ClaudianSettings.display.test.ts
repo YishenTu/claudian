@@ -162,6 +162,7 @@ const mockSkillsSettingsTab = jest.fn();
 jest.mock('@/features/settings/SkillsSettingsTab', () => ({
   SkillsSettingsTab: class MockSkillsSettingsTab {
     constructor(...args: unknown[]) { mockSkillsSettingsTab(...args); }
+    flush(): void {}
     dispose(): void {}
   },
 }));
@@ -478,4 +479,24 @@ describe('ClaudianSettingTab display settings', () => {
     expect(ensureInitialized.mock.calls.map(([, providerId]) => providerId))
       .toEqual(['claude', 'codex']);
   });
+});
+
+it('batches a burst of text edits into one settings mutation and flushes on teardown', async () => {
+  jest.useFakeTimers();
+  const { tab, plugin } = createTab(false);
+  const cleanup = (tab as any).renderSettings(createContainer());
+  try {
+    const change = mockTextChanges.get(t('settings.userName.name'))!;
+    for (let index = 0; index < 20; index++) await change(`Name ${index}`);
+    expect(plugin.mutateSettings).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(500);
+    expect(plugin.mutateSettings).toHaveBeenCalledTimes(1);
+    expect(plugin.settings.userName).toBe('Name 19');
+    await change('Last edit');
+    cleanup();
+    await Promise.resolve();
+    expect(plugin.settings.userName).toBe('Last edit');
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(plugin.mutateSettings).toHaveBeenCalledTimes(2);
+  } finally { cleanup(); jest.useRealTimers(); }
 });

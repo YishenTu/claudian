@@ -452,19 +452,16 @@ test('performance policy enforces the main bundle budget and reports health delt
 test('bundle-critical runtime dependencies require exact manifest and lock agreement', () => {
   assert.deepEqual(bundleCriticalRuntimeDependencies, [
     '@anthropic-ai/claude-agent-sdk',
-    'smol-toml',
   ]);
   const packageJson = {
     dependencies: {
       '@anthropic-ai/claude-agent-sdk': '0.3.226',
-      'smol-toml': '1.7.1',
     },
   };
   const packageLock = {
     packages: {
       '': { dependencies: { ...packageJson.dependencies } },
       'node_modules/@anthropic-ai/claude-agent-sdk': { version: '0.3.226' },
-      'node_modules/smol-toml': { version: '1.7.1' },
     },
   };
   const bunLock = {
@@ -473,7 +470,6 @@ test('bundle-critical runtime dependencies require exact manifest and lock agree
     },
     packages: {
       '@anthropic-ai/claude-agent-sdk': ['@anthropic-ai/claude-agent-sdk@0.3.226'],
-      'smol-toml': ['smol-toml@1.7.1'],
     },
   };
 
@@ -492,13 +488,13 @@ test('bundle-critical runtime dependencies require exact manifest and lock agree
   );
 
   const staleNpmLock = structuredClone(packageLock);
-  staleNpmLock.packages['node_modules/smol-toml'].version = '1.6.1';
+  staleNpmLock.packages['node_modules/@anthropic-ai/claude-agent-sdk'].version = '0.3.220';
   assert.deepEqual(
     inspectRuntimeDependencyParity({ bunLock, packageJson, packageLock: staleNpmLock }),
     [{
-      actual: '1.6.1',
-      dependency: 'smol-toml',
-      expected: '1.7.1',
+      actual: '0.3.220',
+      dependency: '@anthropic-ai/claude-agent-sdk',
+      expected: '0.3.226',
       source: 'package-lock.json resolution',
     }],
   );
@@ -538,7 +534,6 @@ test('production artifact entry rejects dependency drift before emitting main.js
     fs.writeFileSync(path.join(fixtureRoot, 'package.json'), JSON.stringify({
       dependencies: {
         '@anthropic-ai/claude-agent-sdk': '0.3.226',
-        'smol-toml': '1.7.1',
       },
     }));
     fs.writeFileSync(path.join(fixtureRoot, 'package-lock.json'), JSON.stringify({
@@ -546,21 +541,17 @@ test('production artifact entry rejects dependency drift before emitting main.js
         '': {
           dependencies: {
             '@anthropic-ai/claude-agent-sdk': '0.3.226',
-            'smol-toml': '1.7.1',
           },
         },
-        'node_modules/@anthropic-ai/claude-agent-sdk': { version: '0.3.226' },
-        'node_modules/smol-toml': { version: '1.6.1' },
+        'node_modules/@anthropic-ai/claude-agent-sdk': { version: '0.3.220' },
       },
     }));
     fs.writeFileSync(path.join(fixtureRoot, 'bun.lock'), `{
       "workspaces": { "": { "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.3.226",
-        "smol-toml": "1.7.1",
       }, }, },
       "packages": {
         "@anthropic-ai/claude-agent-sdk": ["@anthropic-ai/claude-agent-sdk@0.3.226"],
-        "smol-toml": ["smol-toml@1.7.1"],
       },
     }`);
 
@@ -576,7 +567,7 @@ test('production artifact entry rejects dependency drift before emitting main.js
 
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Bundle-critical runtime dependency parity failed/);
-    assert.match(result.stderr, /package-lock\.json resolution: smol-toml/);
+    assert.match(result.stderr, /package-lock\.json resolution: @anthropic-ai\/claude-agent-sdk/);
     assert.equal(fs.existsSync(path.join(fixtureRoot, 'main.js')), false);
   } finally {
     fs.rmSync(fixtureRoot, { force: true, recursive: true });

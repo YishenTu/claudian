@@ -2,6 +2,8 @@
 
 import '@/providers';
 
+import { Component } from 'obsidian';
+
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderId } from '@/core/providers/types';
 import type { ChatMessage } from '@/core/types';
@@ -18,7 +20,7 @@ const timestamp = 1786528800000;
 function createRenderer(providerId: ProviderId, enabled = true) {
   const messagesEl = document.createElement('div');
   const settings = { mediaFolder: '', showMessageTimestamps: enabled };
-  const component = { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() };
+  const component = new Component();
   const renderer = new MessageRenderer(
     { app: {}, settings } as any,
     component as any,

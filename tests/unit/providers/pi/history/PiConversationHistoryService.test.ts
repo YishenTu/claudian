@@ -852,3 +852,22 @@ describe('PiConversationHistoryService', () => {
     });
   });
 });
+
+
+it('parses cursor history records only once per hydration', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-cursor-cost-'));
+  const sessionFile = path.join(dir, 'session.jsonl');
+  const line = JSON.stringify({ id: 'u1', type: 'message', message: { role: 'user', content: 'hello' } });
+  await fs.writeFile(sessionFile, line);
+  const conversation = createConversation(sessionFile);
+  conversation.providerState!.treeCursor = { targetId: 'u1', leafId: 'u1', appendId: 'u1' };
+  const parse = jest.spyOn(JSON, 'parse');
+  try {
+    const result = await new PiConversationHistoryService().hydrateConversationHistory(conversation, null);
+    expect(result.messages?.[0].content).toBe('hello');
+    expect(parse.mock.calls.filter(([value]) => value === line)).toHaveLength(1);
+  } finally {
+    parse.mockRestore();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

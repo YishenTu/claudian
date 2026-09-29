@@ -145,6 +145,7 @@ export class StreamController {
     return new StreamingRenderCoordinator({
       getOwnerWindow,
       minIntervalMs: STREAMING_RENDER_MIN_INTERVAL_MS,
+      maxIntervalMs: 500,
       render: async ({ el, content, final }) => {
         // Derive options only when a render runs so hidden or throttled deltas skip the scans.
         const options = final ? undefined : this.#getStreamingRenderOptions(content);

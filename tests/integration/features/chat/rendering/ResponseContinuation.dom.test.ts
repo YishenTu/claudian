@@ -7,7 +7,7 @@ import { deserialize, serialize } from 'node:v8';
 import { testDate, testTime } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { MarkdownRenderer } from 'obsidian';
+import { Component, MarkdownRenderer } from 'obsidian';
 
 import type { ChatMessage } from '@/core/types';
 import { StreamController } from '@/features/chat/controllers/StreamController';
@@ -48,7 +48,7 @@ it.each(['early', 'late', 'none'])('matches live and JSONL notification order wi
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+    new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
@@ -130,7 +130,7 @@ it.each(['between', 'during-second', 'after-second'])('groups an older task noti
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+    new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
@@ -241,7 +241,7 @@ it.each(['child', 'result', 'snapshot'] as const)('keeps a pending Agent before 
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+    new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
@@ -279,7 +279,7 @@ it('does not recreate a response after its conversation is cleared during finali
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+    new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
@@ -306,7 +306,7 @@ it.each(['background', 'user'] as const)('groups only the requested response acr
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+    new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
@@ -357,7 +357,7 @@ it('keeps a notification consumed by an automatic response outside an admitted r
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+    new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,

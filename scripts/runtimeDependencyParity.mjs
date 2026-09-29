@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 
 export const bundleCriticalRuntimeDependencies = Object.freeze([
   '@anthropic-ai/claude-agent-sdk',
-  'smol-toml',
 ]);
 
 const exactVersionPattern = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;

@@ -1,4 +1,6 @@
+import { createReadStream } from 'node:fs';
 import * as fsp from 'node:fs/promises';
+import { createInterface } from 'node:readline';
 
 import type * as fs from 'fs';
 import * as os from 'os';
@@ -1453,43 +1455,63 @@ export function parseCodexSessionContent(content: string): ChatMessage[] {
   return turns.flatMap(t => t.messages);
 }
 
-export function parseCodexSessionModel(
-  content: string,
-  resumeAtTurnId?: string,
-): string | null {
-  let model: string | null = null;
-  for (const line of content.split(/\r?\n/)) {
-    if (!line.trim()) continue;
+/** Shared checkpoint rules for in-memory and streaming model recovery. */
+class SessionModelReader {
+  model: string | null = null;
+  reached = false;
+  constructor(private readonly checkpoint?: string) {}
+
+  accept(line: string): void {
     try {
-      const record = JSON.parse(line) as {
-        type?: unknown;
-        payload?: { model?: unknown; turn_id?: unknown };
-      };
-      if (record.type !== 'turn_context') continue;
-      const candidate = typeof record.payload?.model === 'string'
-        ? record.payload.model.trim()
-        : '';
-      if (candidate) model = candidate;
-      if (
-        resumeAtTurnId
-        && record.payload?.turn_id === resumeAtTurnId
-      ) {
-        return model;
-      }
-    } catch {
-      // Ignore malformed provider-native transcript records.
-    }
+      const record = JSON.parse(line) as { type?: unknown; payload?: { model?: unknown; turn_id?: unknown } } | null;
+      if (record?.type !== 'turn_context') return;
+      const candidate = typeof record.payload?.model === 'string' ? record.payload.model.trim() : '';
+      if (candidate) this.model = candidate;
+      if (this.checkpoint && record.payload?.turn_id === this.checkpoint) this.reached = true;
+    } catch { /* Ignore malformed provider-native transcript records. */ }
   }
-  return resumeAtTurnId ? null : model;
+
+  result(): string | null { return this.checkpoint && !this.reached ? null : this.model; }
 }
 
-export function parseCodexSessionTurns(content: string, throughTurnId?: string): CodexParsedTurn[] {
-  const records = content
+export function parseCodexSessionModel(content: string, resumeAtTurnId?: string): string | null {
+  const reader = new SessionModelReader(resumeAtTurnId);
+  for (const line of content.split(/\r?\n/)) {
+    reader.accept(line);
+    if (reader.reached) break;
+  }
+  return reader.result();
+}
+
+/** Stream model metadata; checkpoint recovery does not read the remainder of the file. */
+export async function readCodexSessionModel(file: string, resumeAtTurnId?: string): Promise<string | null> {
+  const input = createReadStream(file, { encoding: 'utf8' });
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  const timer = window.setTimeout(() => input.destroy(new Error('Codex model recovery timed out.')), 10_000);
+  const reader = new SessionModelReader(resumeAtTurnId);
+  try {
+    for await (const line of lines) {
+      reader.accept(line);
+      if (reader.reached) break;
+    }
+    return reader.result();
+  } finally {
+    window.clearTimeout(timer);
+    lines.close();
+    input.destroy();
+  }
+}
+
+export function parseCodexSessionRecords(content: string): ParsedSessionRecord[] {
+  return content
     .split('\n')
     .filter(line => line.trim())
     .map(parseSessionRecord)
     .filter((record): record is ParsedSessionRecord => record !== null);
+}
 
+export function parseCodexSessionTurns(content: string | ParsedSessionRecord[], throughTurnId?: string): CodexParsedTurn[] {
+  const records = typeof content === 'string' ? parseCodexSessionRecords(content) : content;
   if (throughTurnId) {
     let reached = false;
     const nextTurn = records.findIndex(record => {

@@ -77,7 +77,7 @@ export async function loadOpencodeSessionModel(
     return null;
   }
 
-  const rows = await loadOpencodeSessionRows(databasePath, sessionId, { environment, nativeVersion: providerState?.nativeVersion === 2 ? 2 : 'auto' }).catch(() => null);
+  const rows = await loadOpencodeSessionRows(databasePath, sessionId, { includeParts: false, environment, nativeVersion: providerState?.nativeVersion === 2 ? 2 : 'auto' }).catch(() => null);
   let rawModelId: string | null = null;
   for (const row of rows?.messageRows ?? []) {
     const data = parseJSONObject(row.data);

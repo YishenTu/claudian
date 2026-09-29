@@ -4,6 +4,7 @@ import { StringDecoder } from 'node:string_decoder';
 
 import { ManagedStdioProcess } from '@/core/process/ManagedStdioProcess';
 import { toAbortError } from '@/utils/abort';
+import { LineBuffer } from '@/utils/LineBuffer';
 
 export interface OpencodeHTTPEvent {
   readonly type: string;
@@ -68,26 +69,17 @@ export class OpencodeHTTPClient {
     let connected = false;
     const ready = new Promise<void>((resolve, reject) => {
       const decoder = new StringDecoder('utf8');
-      let buffer = '';
+      const frames = new OpencodeSSEDecoder(event => {
+        if (event.type === 'server.connected') { connected = true; window.clearTimeout(timer); resolve(); }
+        onEvent(event);
+      });
       const fail = (error: Error): void => {
         if (!connected) reject(error);
         if (!this.controller.signal.aborted) onError(error);
       };
       response.on('data', (chunk: Buffer) => {
         try {
-          buffer = (buffer + decoder.write(chunk)).replace(/\r\n/g, '\n');
-          if (buffer.length > 32 * 1024 * 1024) throw new Error('OpenCode event exceeded the size limit.');
-          let end: number;
-          while ((end = buffer.indexOf('\n\n')) >= 0) {
-            const frame = buffer.slice(0, end);
-            buffer = buffer.slice(end + 2);
-            const data = frame.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
-            if (!data) continue;
-            const event: unknown = JSON.parse(data);
-            if (!isRecord(event) || typeof event.type !== 'string' || !isRecord(event.data)) continue;
-            if (event.type === 'server.connected') { connected = true; window.clearTimeout(timer); resolve(); }
-            onEvent(event as unknown as OpencodeHTTPEvent);
-          }
+          frames.push(decoder.write(chunk));
         } catch (error) { response.destroy(error instanceof Error ? error : new Error(String(error))); }
       });
       response.on('error', fail);
@@ -207,5 +199,40 @@ export async function pollOpencodeUntil<T>(read: () => Promise<T>, done: (value:
       const timer = window.setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, 25);
       signal.addEventListener('abort', onAbort, { once: true });
     });
+  }
+}
+
+/** SSE framing scans each fragment once, including CRLF split across chunks. */
+export class OpencodeSSEDecoder {
+  private readonly lines = new LineBuffer(32 * 1024 * 1024);
+  private data: string[] = [];
+  private size = 0;
+
+  constructor(private readonly onEvent: (event: OpencodeHTTPEvent) => void) {}
+
+  push(text: string): void {
+    this.lines.push(text, line => {
+      if (line) {
+        this.size += line.length + 1;
+        this.checkSize();
+        if (line.startsWith('data:')) this.data.push(line.slice(5).trimStart());
+        return;
+      }
+      const data = this.data.join('\n');
+      this.data = [];
+      this.size = 0;
+      if (!data) return;
+      const event: unknown = JSON.parse(data);
+      if (isRecord(event) && typeof event.type === 'string' && isRecord(event.data)) {
+        this.onEvent(event as unknown as OpencodeHTTPEvent);
+      }
+    });
+    this.checkSize();
+  }
+
+  private checkSize(): void {
+    if (this.size + this.lines.bufferedLength > 32 * 1024 * 1024) {
+      throw new Error('OpenCode event exceeded the size limit.');
+    }
   }
 }

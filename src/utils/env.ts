@@ -193,9 +193,8 @@ function getExtraBinaryPaths(): string[] {
   return paths;
 }
 
-function* findNodeDirectories(additionalPaths?: string): Generator<string, undefined> {
+function* findNodeDirectories(additionalPaths?: string, searchPaths = getExtraBinaryPaths()): Generator<string, undefined> {
   const executables = new Set<string>();
-  const searchPaths = getExtraBinaryPaths();
 
   const currentPath = process.env.PATH || '';
   const pathDirs = parsePathEntries(currentPath);
@@ -291,8 +290,8 @@ export function getEnhancedPath(additionalPaths?: string, cliPath?: string): str
     }
   }
 
-  if (cliPath && cliPathRequiresNode(cliPath) && !cliDirHasNode) {
-    const nodeDir = findNodeDirectory();
+  if (cliPath && !cliDirHasNode && cliPathRequiresNode(cliPath)) {
+    const nodeDir = findNodeDirectories(undefined, extraPaths).next().value;
     if (nodeDir) {
       segments.push(nodeDir);
     }

@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'fs';
 import { join, dirname, resolve, relative } from 'path';
 import { fileURLToPath } from 'url';
+import { transformSync } from 'esbuild';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -112,7 +113,9 @@ function build() {
   }
 
   const output = parts.join('\n');
-  writeFileSync(OUTPUT, output);
+  writeFileSync(OUTPUT, process.argv.includes('production')
+    ? transformSync(output, { loader: 'css', minify: true }).code
+    : output);
 }
 
 build();

@@ -55,6 +55,14 @@ describe('AgentSkillRepository', () => {
     dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/${name}/SKILL.md`, content);
   }
 
+  it('validates each skill file once through the safe reader', async () => {
+    addSkill('one'); addSkill('two');
+    const verify = jest.spyOn(vaultFiles, 'verifyManagedPath');
+    const result = await repository.list();
+    expect(result.skills).toHaveLength(2);
+    expect(verify.mock.calls.filter(([file]) => file.endsWith('/SKILL.md'))).toHaveLength(2);
+  });
+
   it('lists only direct packages and returns sorted skills and diagnostics', async () => {
     addSkill('z-skill');
     addSkill('a-skill');
@@ -81,6 +89,7 @@ describe('AgentSkillRepository', () => {
     await expect(new AgentSkillRepository(rootUnsafeFiles).list()).rejects.toThrow('symlink');
 
     const childUnsafeFiles = {
+      readManagedFile: jest.fn().mockRejectedValue(new Error('Managed resource must not be a symlink')),
       verifyManagedPath: jest.fn(async (candidate: string) => {
         if (candidate.endsWith('/unsafe')) throw new Error('Managed resource must not be a symlink');
         return true;

@@ -6,7 +6,7 @@ import * as fs from 'node:fs/promises';
 import { FakeSideBackend } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
-import { MarkdownRenderer } from 'obsidian';
+import { Component, MarkdownRenderer } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ChatMessage } from '@/core/types';
@@ -45,7 +45,7 @@ it.each([false, true])('replay places the second notification before automatic o
   const replay = await loadSDKSessionMessages('/vault', 'session', undefined, '/session.jsonl');
   expect(replay.error).toBeUndefined();
   const messagesEl = document.body.createDiv();
-  const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any, { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+  const renderer = new MessageRenderer({ app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any, new Component(), messagesEl);
   try {
     replay.messages.forEach((message, index) => renderer.renderStoredMessage(message, replay.messages, index));
     await Promise.resolve();
@@ -63,7 +63,7 @@ it.each([false, true])('keeps main-chat automatic work and later output on eithe
   const messagesEl = document.body.createDiv();
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin,
-    { registerDomEvent: jest.fn(), register: jest.fn(), addChild: jest.fn() } as any, messagesEl);
+    new Component(), messagesEl);
   const state = new ChatState();
   const subagents = new SubagentManager(() => undefined);
   const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,

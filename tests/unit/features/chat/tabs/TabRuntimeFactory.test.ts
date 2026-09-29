@@ -2,6 +2,7 @@ import { createConversationPorts } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 import { within } from '@testing-library/dom';
 import { JSDOM } from 'jsdom';
+import { Component } from 'obsidian';
 
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { RuntimeCommandCatalog } from '@/core/providers/commands/RuntimeCommandCatalog';
@@ -215,14 +216,13 @@ function createTabManager(
   callbacks: Record<string, unknown> = {},
   viewOverrides: Record<string, unknown> = {},
 ) {
-  const view = {
-    addChild: jest.fn(),
+  const view = Object.assign(new Component(), {
     getTabManager: jest.fn(),
     leaf: {},
     registerDomEvent: jest.fn(),
     registerEvent: jest.fn(),
     ...viewOverrides,
-  } as any;
+  }) as any;
   return new TabManager(plugin, containerEl as any, view, callbacks);
 }
 
@@ -278,12 +278,11 @@ async function createTestTab(
     openConversation?: (conversationId: string) => Promise<void>;
   } = {},
 ): Promise<any> {
-  const component = {
-    addChild: jest.fn(),
+  const component = Object.assign(new Component(), {
     registerDomEvent: jest.fn(),
     registerEvent: jest.fn(),
     ...assembly.component,
-  } as any;
+  }) as any;
   const tab = await createTabRuntime({
     ...options,
     component,
@@ -2488,7 +2487,6 @@ describe('Tab provider execution ownership', () => {
       conversation,
     }, {
       component: {
-        addChild: jest.fn(),
         registerDomEvent: jest.fn(),
         registerEvent: jest.fn(),
       },

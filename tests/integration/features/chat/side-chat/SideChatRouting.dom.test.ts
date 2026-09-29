@@ -39,6 +39,7 @@ function createRouting(
     clearFlavorTimerInterval: () => undefined,
     currentContentEl: null,
     currentConversationId: 'conversation-1',
+    writeEditStates: new Map(),
     hasPendingConversationSave: false,
     isStreaming: false,
     isSwitchingConversation: false,

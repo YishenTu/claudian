@@ -1102,3 +1102,13 @@ describe('environment variable parsing edge cases', () => {
     });
   });
 });
+
+it('does not reopen a CLI whose directory already supplies Node', () => {
+  const exists = jest.spyOn(fs, 'existsSync').mockReturnValue(true);
+  const stat = jest.spyOn(fs, 'statSync').mockReturnValue({ isFile: () => true } as fsType.Stats);
+  const open = jest.spyOn(fs, 'openSync').mockImplementation(() => { throw new Error('unnecessary read'); });
+  try {
+    getEnhancedPath(undefined, '/cli/claude');
+    expect(open).not.toHaveBeenCalled();
+  } finally { exists.mockRestore(); stat.mockRestore(); open.mockRestore(); }
+});

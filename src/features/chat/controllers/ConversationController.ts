@@ -210,6 +210,7 @@ export class ConversationController {
 
       this.deps.getLinkedContentController().resetAutoDraft();
 
+      this.deps.state.writeEditStates.clear();
       const welcomeEl = renderer.renderMessages(
         [],
         () => this.getGreeting()
@@ -444,6 +445,7 @@ export class ConversationController {
         ?? userMsg.content;
       this.deps.drafts.restore('main', { content: restoredContent, images: userMsg.images }, { focus: true, notify: true });
 
+      this.deps.state.writeEditStates.clear();
       const welcomeEl = renderer.renderMessages(state.messages, () => this.getGreeting());
       this.deps.setWelcomeEl(welcomeEl);
       this.updateWelcomeVisibility();
@@ -494,10 +496,11 @@ export class ConversationController {
       await navigation.runConversationNavigation(signal => this.#changeBranch(undefined, undefined, signal));
       return;
     }
-    const message = state.messages.find(item => item.id === messageId);
+    const messages = state.messages;
+    const message = messages.find(item => item.id === messageId);
     const conversationId = state.currentConversationId;
     if (!conversationId || !message || message.role !== 'user' || message.isInterrupt || message.isRebuiltContext) return;
-    if (state.messages.find(item => item.role === 'user' && !item.isInterrupt && !item.isRebuiltContext) === message) return;
+    if (messages.find(item => item.role === 'user' && !item.isInterrupt && !item.isRebuiltContext) === message) return;
     if (!message.userMessageId) {
       new Notice('Branching is available after this prompt is saved.');
       return;
@@ -511,7 +514,8 @@ export class ConversationController {
       this.branchState = { kind: 'preview', draft: { conversationId, message, previousDraft,
         scrollTop: this.deps.getMessagesEl().scrollTop } };
       const content = message.displayContent ?? extractUserDisplayContent(message.content) ?? message.content;
-      this.deps.setWelcomeEl(renderer.renderMessages(state.messages.slice(0, state.messages.indexOf(message)), () => this.getGreeting()));
+      this.deps.state.writeEditStates.clear();
+      this.deps.setWelcomeEl(renderer.renderMessages(messages.slice(0, messages.indexOf(message)), () => this.getGreeting()));
       drafts.restore('main', { content, images: message.images }, { focus: true, notify: true });
       return;
     }
@@ -525,6 +529,7 @@ export class ConversationController {
     const { state, renderer } = this.deps;
     if (this.deps.isDisposed?.() || state.currentConversationId !== draft.conversationId) return;
     this.deps.drafts.restore('main', draft.previousDraft);
+    this.deps.state.writeEditStates.clear();
     this.deps.setWelcomeEl(renderer.renderMessages(state.messages, () => this.getGreeting()));
     this.updateWelcomeVisibility();
     this.deps.getMessagesEl().scrollTop = draft.scrollTop;
@@ -581,8 +586,10 @@ export class ConversationController {
           const restored = state.messages.find(item => item.userMessageId === draft!.message.userMessageId);
           draft = restored ? { ...draft, message: restored } : undefined;
         }
+        const messages = state.messages;
         const visible = result.status === 'cancelled' && draft
-          ? state.messages.slice(0, state.messages.indexOf(draft.message)) : state.messages;
+          ? messages.slice(0, messages.indexOf(draft.message)) : messages;
+        this.deps.state.writeEditStates.clear();
         this.deps.setWelcomeEl(renderer.renderMessages(visible, () => this.getGreeting()));
         this.updateWelcomeVisibility();
         try { await this.save(); }
@@ -709,6 +716,7 @@ export class ConversationController {
 
     this.deps.getLinkedContentController().lock(conversation.linkedContentPath);
 
+    this.deps.state.writeEditStates.clear();
     const welcomeEl = renderer.renderMessages(
       state.messages,
       () => this.getGreeting()

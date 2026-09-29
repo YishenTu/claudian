@@ -3251,6 +3251,18 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('Linked content path events', () => {
+    it('coalesces vault refreshes while delivering every path event immediately', async () => {
+      await plugin.onload();
+      const view = { handleLinkedContentCreated: jest.fn(), notifyConversationListChanged: jest.fn() };
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([view as any]);
+      const listener = mockApp.vault.on.mock.calls.find((call: unknown[]) => call[0] === 'create')![1];
+      for (let index = 0; index < 20; index++) listener(new (TFile as any)(`note-${index}.md`));
+      expect(view.handleLinkedContentCreated).toHaveBeenCalledTimes(20);
+      expect(view.notifyConversationListChanged).not.toHaveBeenCalled();
+      await new Promise(resolve => window.setTimeout(resolve, 75));
+      expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
+    });
+
     it('registers Vault create, rename, and delete listeners', async () => {
       await plugin.onload();
 
@@ -3328,6 +3340,7 @@ describe('ClaudianPlugin', () => {
         'Notes/Unpinned.md',
         false,
       );
+      await new Promise(resolve => window.setTimeout(resolve, 75));
       expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
 
       const createListener = mockApp.vault.on.mock.calls.find(
@@ -3337,7 +3350,22 @@ describe('ClaudianPlugin', () => {
       createListener(new (TFile as any)('Notes/Unpinned.md'));
 
       expect(view.handleLinkedContentCreated).toHaveBeenCalledWith('Notes/Unpinned.md');
+      await new Promise(resolve => window.setTimeout(resolve, 75));
       expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(2);
+    });
+
+    it('refreshes a committed rename even when pinned-settings cleanup fails', async () => {
+      await plugin.onload();
+      const conversation = await plugin.createConversation({ linkedContentPath: 'Notes/Old.md' });
+      const view = { handleLinkedContentRenamed: jest.fn(), notifyConversationListChanged: jest.fn() };
+      jest.spyOn(plugin, 'getAllViews').mockReturnValue([view as any]);
+      jest.spyOn((plugin as any).pinnedLinkedContentPaths, 'rewritePaths')
+        .mockRejectedValueOnce(new Error('settings unavailable'));
+      await expect((plugin as any).handleLinkedContentRename(new (TFile as any)('Notes/New.md'), 'Notes/Old.md'))
+        .rejects.toThrow('settings unavailable');
+      expect(plugin.getConversationSync(conversation.id)?.linkedContentPath).toBe('Notes/New.md');
+      await new Promise(resolve => window.setTimeout(resolve, 75));
+      expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
     });
 
     it('invalidates deleted targets even when pinned-settings cleanup fails', async () => {
@@ -3358,6 +3386,7 @@ describe('ClaudianPlugin', () => {
         'Notes/Unpinned.md',
         false,
       );
+      await new Promise(resolve => window.setTimeout(resolve, 75));
       expect(view.notifyConversationListChanged).toHaveBeenCalledTimes(1);
     });
   });

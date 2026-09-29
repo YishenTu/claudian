@@ -92,6 +92,7 @@ export default class ClaudianPlugin extends Plugin {
   private providerChatOptionsChangeTail: Promise<void> = Promise.resolve();
   private readonly inlineEditSessions = new InlineEditSessionOwner();
   private isUnloading = false;
+  private vaultRefreshTimer: number | undefined;
   private applicationShutdownPromise: Promise<void> | null = null;
   private tabWorkspaceMigrationCoordinator!: TabWorkspaceMigrationCoordinator;
 
@@ -136,7 +137,7 @@ export default class ClaudianPlugin extends Plugin {
         for (const view of this.getAllViews()) {
           view.handleLinkedContentCreated(file.path);
         }
-        this.notifyConversationViewsChanged();
+        this.scheduleVaultRefresh();
       }));
 
       this.addRibbonIcon('bot', 'Open Claudian', () => {
@@ -288,6 +289,8 @@ export default class ClaudianPlugin extends Plugin {
 
   onunload(): void {
     this.isUnloading = true;
+    window.clearTimeout(this.vaultRefreshTimer);
+    this.vaultRefreshTimer = undefined;
     this.startupMaintenanceAbort.abort();
     if (this.sessionInputCleanupTimer !== null) {
       window.clearTimeout(this.sessionInputCleanupTimer);
@@ -888,13 +891,16 @@ export default class ClaudianPlugin extends Plugin {
     for (const view of this.getAllViews()) {
       view.handleLinkedContentRenamed(oldPath, file.path, includeDescendants);
     }
-    await this.rewriteLinkedContentPaths(oldPath, file.path, includeDescendants);
-    await this.pinnedLinkedContentPaths.rewritePaths(
-      oldPath,
-      file.path,
-      includeDescendants,
-    );
-    this.notifyConversationViewsChanged();
+    await this.conversationRepository.rewriteLinkedContentPaths(oldPath, file.path, { includeDescendants });
+    try {
+      await this.pinnedLinkedContentPaths.rewritePaths(
+        oldPath,
+        file.path,
+        includeDescendants,
+      );
+    } finally {
+      this.scheduleVaultRefresh();
+    }
   }
 
   private async handlePinnedLinkedContentDeleted(file: TAbstractFile): Promise<void> {
@@ -908,7 +914,7 @@ export default class ClaudianPlugin extends Plugin {
         includeDescendants,
       );
     } finally {
-      this.notifyConversationViewsChanged();
+      this.scheduleVaultRefresh();
     }
   }
 
@@ -926,6 +932,14 @@ export default class ClaudianPlugin extends Plugin {
   async updateConversation(id: string, updates: ConversationMutablePatch): Promise<void> {
     await this.conversationRepository.update(id, updates);
     this.notifyConversationViewsChanged();
+  }
+
+  private scheduleVaultRefresh(): void {
+    if (this.isUnloading || this.vaultRefreshTimer !== undefined) return;
+    this.vaultRefreshTimer = window.setTimeout(() => {
+      this.vaultRefreshTimer = undefined;
+      if (!this.isUnloading) this.notifyConversationViewsChanged();
+    }, 50);
   }
 
   private notifyConversationViewsChanged(): void {
