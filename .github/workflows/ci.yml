@@ -57,6 +57,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
   diff-hygiene:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
