@@ -79,7 +79,7 @@ export function createPiSettingsTabRenderer(
       });
 
       renderCLIInstallationSetting({
-        cliName: 'Pi CLI',
+        cliName: 'Pi',
         icon: PI_PROVIDER_ICON,
         inspect: async () => {
           const settings = context.plugin.settings as unknown as Record<string, unknown>;

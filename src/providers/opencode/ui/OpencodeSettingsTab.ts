@@ -80,7 +80,7 @@ export function createOpencodeSettingsTabRenderer(
       });
 
       renderCLIInstallationSetting({
-        cliName: 'OpenCode CLI',
+        cliName: 'OpenCode',
         icon: OPENCODE_PROVIDER_ICON,
         inspect: async () => {
           const settings = context.plugin.settings as unknown as Record<string, unknown>;
