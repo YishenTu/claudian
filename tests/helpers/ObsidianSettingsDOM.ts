@@ -2,6 +2,10 @@ HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
 HTMLElement.prototype.removeClass = function (...classes) { this.classList.remove(...classes); };
 HTMLElement.prototype.setText = function (value) { this.replaceChildren(value); };
+HTMLElement.prototype.toggleClass = function (classes, value) {
+  for (const name of [classes].flat()) this.classList.toggle(name, value);
+};
+HTMLElement.prototype.appendText = function (value) { this.append(value); };
 
 /** DOM implementation of the Obsidian controls used by settings editors. */
 export class Modal {
@@ -18,11 +22,16 @@ export class Modal {
   onClose(): void {}
 }
 
-class TextComponent {
-  readonly inputEl: HTMLInputElement;
-  constructor(container: HTMLElement) { this.inputEl = container.appendChild(document.createElement('input')); }
+class TextComponent<T extends HTMLInputElement | HTMLTextAreaElement = HTMLInputElement> {
+  readonly inputEl: T;
+  constructor(container: HTMLElement, tag: 'input' | 'textarea' = 'input') {
+    this.inputEl = container.appendChild(document.createElement(tag)) as T;
+  }
   setValue(value: string): this { this.inputEl.value = value; return this; }
   setPlaceholder(value: string): this { this.inputEl.placeholder = value; return this; }
+  onChange(callback: (value: string) => void): this {
+    this.inputEl.addEventListener('input', () => callback(this.inputEl.value)); return this;
+  }
 }
 
 class DropdownComponent {
@@ -40,7 +49,11 @@ export class Setting {
   constructor(container: HTMLElement) { this.element = container.appendChild(document.createElement('div')); }
   setName(value: string): this { this.element.appendChild(document.createElement('div')).textContent = value; return this; }
   setDesc(value: string): this { this.element.appendChild(document.createElement('div')).textContent = value; return this; }
+  setClass(value: string): this { this.element.classList.add(value); return this; }
   addText(callback: (component: TextComponent) => void): this { callback(new TextComponent(this.element)); return this; }
+  addTextArea(callback: (component: TextComponent<HTMLTextAreaElement>) => void): this {
+    callback(new TextComponent<HTMLTextAreaElement>(this.element, 'textarea')); return this;
+  }
   addDropdown(callback: (component: DropdownComponent) => void): this { callback(new DropdownComponent(this.element)); return this; }
 }
 

@@ -92,6 +92,7 @@
     "tabs": {
       "general": "General",
       "providers": "Providers",
+      "skills": "Skills",
       "claude": "Claude",
       "codex": "Codex"
     },
@@ -156,15 +157,6 @@
     },
     "closeTabHotkey": {
       "name": "Close Tab"
-    },
-    "slashCommands": {
-      "name": "Commands and Skills",
-      "desc": "Manage vault-level commands and skills stored in .claude/commands/ and .claude/skills/. Triggered by /name."
-    },
-    "hiddenSlashCommands": {
-      "name": "Hidden Commands and Skills",
-      "desc": "Hide specific commands and skills from the dropdown. Useful for hiding Claude Code entries that are not relevant to Claudian. Enter names without the leading slash, one per line.",
-      "placeholder": "commit\nbuild\ntest"
     },
     "safety": "Safety",
     "loadUserSettings": {
@@ -345,21 +337,12 @@
         "name": "Enable ultra effort",
         "desc": "Allow Ultra in the effort selector for Codex models that advertise support. Ultra uses maximum reasoning with automatic task delegation."
       },
-      "skills": {
-        "name": "Codex skills",
-        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
-        "hiddenName": "Hidden Skills",
-        "hiddenDesc": "Hide specific Codex skills from the dropdown. Enter skill names without the leading $, one per line.",
-        "hiddenPlaceholder": "analyze\nexplain\nfix"
-      },
       "environment": {
         "name": "Codex environment",
         "desc": "Codex-owned runtime variables only. Use this for OPENAI_* and CODEX_* settings. If Codex auto-detection needs help, add its install directory to shared PATH instead of this provider section."
       }
     },
     "agentSkills": {
-      "sectionTitle": "Skills",
-      "fixedRoot": "Managed in .agents/skills",
       "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
       "noSkills": "No shared skills configured. Click + to create one.",
       "skillBadge": "skill",
@@ -374,9 +357,12 @@
       "created": "Shared skill \"{name}\" created.",
       "updated": "Shared skill \"{name}\" updated.",
       "deleted": "Shared skill \"{name}\" moved to trash.",
+      "fix": "Fix",
+      "fixed": "Skill \"{name}\" fixed.",
       "modal": {
         "titleEdit": "Edit Shared Skill",
         "titleAdd": "Add Shared Skill",
+        "titleFix": "Fix Skill",
         "name": "Skill name",
         "nameDesc": "Lowercase letters and numbers separated by single hyphens",
         "namePlaceholder": "code-reviewer",
@@ -391,6 +377,89 @@
         "title": "Delete Shared Skill",
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
+      }
+    },
+    "skills": {
+      "subTabs": {
+        "claude": "Claude",
+        "shared": "Other providers"
+      },
+      "claudeHelp": "Claude skills in .claude/skills/ and commands in .claude/commands/.",
+      "sharedHelp": "Shared skills in .agents/skills/ for Codex, OpenCode, Pi and Grok.",
+      "status": {
+        "error": "Could not read the skill folders: {message}"
+      },
+      "synced": "Synced",
+      "actions": {
+        "sync": "Sync",
+        "resync": "Resync"
+      },
+      "commands": {
+        "title": "Claude commands",
+        "hint": "Commands work only in Claude. Converting them to skills is recommended.",
+        "badge": "command",
+        "empty": "No commands in .claude/commands.",
+        "convert": "Convert to skill",
+        "editTitle": "Edit Command",
+        "convertTitle": "Convert Command to Skill",
+        "nameDesc": "Path under .claude/commands without .md; nested commands use /",
+        "descriptionDesc": "Optional description shown in the command menu",
+        "updated": "Command \"{name}\" updated.",
+        "converted": "Command converted to skill \"{name}\".",
+        "deleted": "Command \"{name}\" moved to trash.",
+        "deleteTitle": "Delete Command",
+        "deleteDescription": "The command file will be moved to trash.",
+        "collisionFailed": "A command named \"{name}\" already exists."
+      },
+      "droppedFrontmatterWarning": "Saving keeps only name and description. These keys will be removed and provider behavior may change: {keys}",
+      "hidden": {
+        "name": "Hidden commands and skills",
+        "desc": "Hide commands and skills from every provider's command menu. Enter exact names without the leading slash, one per line (Pi skills use skill:name).",
+        "placeholder": "commit\ncompact\nskill:review"
+      },
+      "sync": {
+        "title": "Sync Skills",
+        "repairTitle": "Repair Skills Link",
+        "loading": "Checking skill folders...",
+        "intro": "Sync merges Claude's skills and commands into .agents/skills and links .claude/skills to it.",
+        "pros": {
+          "oneList": "One list for every provider.",
+          "newSkills": "New skills appear everywhere."
+        },
+        "cons": {
+          "dropped": "Only name and description are kept; provider-specific settings are dropped and behavior may change.",
+          "claudeSyntax": "Claude-only syntax won't work in other providers: {names}"
+        },
+        "attentionTitle": "Needs attention",
+        "nothingNeedsAttention": "Nothing needs attention.",
+        "nameField": "Name",
+        "descriptionField": "Description",
+        "ready": "Ready",
+        "problems": {
+          "name": "Invalid name. Use lowercase letters, numbers and hyphens.",
+          "description": "Missing description.",
+          "instructions": "No instructions. Add them to the file and sync again.",
+          "unreadable": "Its frontmatter can't be read. Fix the file and sync again.",
+          "sharedConflict": "A shared skill named \"{name}\" already exists.",
+          "itemConflict": "Another item is also named \"{name}\"."
+        },
+        "options": {
+          "fix": "Fix",
+          "replace": "Replace shared skill",
+          "discard": "Discard (move to trash)",
+          "keep": "Keep as command"
+        },
+        "continue": "Continue",
+        "confirmTitle": "Replace .claude/skills with a link?",
+        "confirmBody": ".claude/skills will be replaced by a link to .agents/skills. This can't be undone.",
+        "repairBody": ".claude/skills will be replaced by a link to .agents/skills. The folder it points to now is not changed.",
+        "linkBody": "Creates .claude/skills as a link to .agents/skills so Claude uses the shared skills. No files move.",
+        "linkWithItemsBody": "Commands become skills, then .claude/skills is created as a link to .agents/skills. This can't be undone.",
+        "devicesWarning": "Syncing this vault across devices? The link may not sync; run Sync on each device.",
+        "confirm": "Sync and link",
+        "partial": "Sync stopped before linking. Fix the items below and run Sync again.",
+        "failed": "Sync failed: {message}",
+        "summary": "Moved {moved}, converted {converted}, trashed {trashed}, removed {unlinked} link(s)."
       }
     }
   }

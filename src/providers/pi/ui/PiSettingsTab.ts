@@ -129,16 +129,6 @@ export function createPiSettingsTabRenderer(
       new Setting(container).setName('Models').setHeading();
       const modelPicker = renderProviderModelsSection(container, 'pi', 'Pi', workspace.modelCatalog, () => modelWarning.refresh());
 
-      new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
-      context.renderAgentSkillSettings(container, 'pi');
-
-      new Setting(container).setName('Commands').setHeading();
-      context.renderHiddenProviderCommandSetting(container, 'pi', {
-        name: 'Hidden Pi commands and skills',
-        desc: 'Hide runtime commands and skills advertised by Pi from the command dropdown. Enter exact names without the leading slash, one per line.',
-        placeholder: 'skill:review\ncompact',
-      });
-
       renderEnvironmentSettingsSection({
         container,
         desc: 'Environment variables passed only to Pi.',

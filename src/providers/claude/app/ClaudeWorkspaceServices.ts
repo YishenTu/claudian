@@ -1,12 +1,10 @@
 import type { ProviderCommandCatalog } from '../../../core/providers/commands/ProviderCommandCatalog';
-import type { ProviderVaultEntryRepository } from '../../../core/providers/commands/ProviderVaultEntryRepository';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type {
   ProviderCLIResolver,
   ProviderWorkspaceRegistration,
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
-import type { VaultFileAdapter } from '../../../core/storage/VaultFileAdapter';
 import {
   ClaudeCommandCatalog,
   type CommandProbe,
@@ -15,14 +13,11 @@ import { probeRuntimeCommands } from '../commands/probeRuntimeCommands';
 import { ClaudeCLIResolver } from '../runtime/ClaudeCLIResolver';
 import { ClaudeModelCatalog } from '../runtime/ClaudeModelCatalog';
 import { createClaudeModels } from '../runtime/ClaudeModels';
-import { SkillStorage } from '../storage/SkillStorage';
-import { SlashCommandStorage } from '../storage/SlashCommandStorage';
 import { createClaudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
 
 export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   cliResolver: ProviderCLIResolver;
   commandCatalog: ProviderCommandCatalog;
-  vaultCommandRepository: ProviderVaultEntryRepository;
   dispose(): Promise<void>;
 }
 
@@ -33,7 +28,6 @@ export interface ClaudeWorkspaceServicesOptions {
 
 export async function createClaudeWorkspaceServices(
   plugin: ProviderHost,
-  adapter: VaultFileAdapter,
   options: ClaudeWorkspaceServicesOptions = {},
 ): Promise<ClaudeWorkspaceServices> {
   const cliResolver = new ClaudeCLIResolver();
@@ -41,8 +35,6 @@ export async function createClaudeWorkspaceServices(
   const modelCatalog = createClaudeModels(plugin, nativeCatalog);
 
   const commandCatalog = new ClaudeCommandCatalog(
-    new SlashCommandStorage(adapter),
-    new SkillStorage(adapter),
     options.commandProbe ?? (signal => probeRuntimeCommands(plugin, signal)),
   );
   const unregisterTransitionHook = plugin.executionLifecycleRegistry
@@ -59,8 +51,7 @@ export async function createClaudeWorkspaceServices(
   return {
     cliResolver,
     commandCatalog,
-    vaultCommandRepository: commandCatalog,
-    settingsTabRenderer: createClaudeSettingsTabRenderer({ cliResolver, vaultCommandRepository: commandCatalog, modelCatalog }),
+    settingsTabRenderer: createClaudeSettingsTabRenderer({ cliResolver, modelCatalog }),
     modelCatalog,
     dispose() {
       if (disposePromise) return disposePromise;
@@ -72,5 +63,5 @@ export async function createClaudeWorkspaceServices(
 }
 
 export const claudeWorkspaceRegistration: ProviderWorkspaceRegistration<ClaudeWorkspaceServices> = {
-  initialize: async ({ plugin, vaultAdapter }) => createClaudeWorkspaceServices(plugin, vaultAdapter),
+  initialize: async ({ plugin }) => createClaudeWorkspaceServices(plugin),
 };

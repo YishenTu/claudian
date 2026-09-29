@@ -92,6 +92,7 @@
     "tabs": {
       "general": "Général",
       "providers": "Fournisseurs",
+      "skills": "Skills",
       "claude": "Claude",
       "codex": "Codex"
     },
@@ -156,15 +157,6 @@
     },
     "closeTabHotkey": {
       "name": "Fermer l'onglet"
-    },
-    "slashCommands": {
-      "name": "Commandes et compétences",
-      "desc": "Gérez les commandes et compétences au niveau du vault stockées dans .claude/commands/ et .claude/skills/. Déclenchées par /nom."
-    },
-    "hiddenSlashCommands": {
-      "name": "Commandes et compétences masquées",
-      "desc": "Masquez des commandes et compétences spécifiques du menu déroulant. Utile pour masquer les entrées Claude Code qui ne sont pas pertinentes pour Claudian. Saisissez les noms sans le slash initial, un par ligne.",
-      "placeholder": "commit\nbuild\ntest"
     },
     "safety": "Sécurité",
     "loadUserSettings": {
@@ -345,21 +337,12 @@
         "name": "Activer l’effort ultra",
         "desc": "Affiche Ultra dans le sélecteur d’effort pour les modèles Codex compatibles. Ultra utilise le raisonnement maximal avec délégation automatique des tâches."
       },
-      "skills": {
-        "name": "Compétences Codex",
-        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
-        "hiddenName": "Compétences masquées",
-        "hiddenDesc": "Masquez certaines compétences Codex dans le menu déroulant. Entrez les noms sans le $ initial, un par ligne.",
-        "hiddenPlaceholder": "analyze\nexplain\nfix"
-      },
       "environment": {
         "name": "Environnement Codex",
         "desc": "Variables d’exécution appartenant uniquement à Codex. Utilisez ceci pour les réglages OPENAI_* et CODEX_*. Si l’auto-détection de Codex a besoin d’aide, ajoutez son répertoire d’installation au PATH partagé plutôt qu’à cette section fournisseur."
       }
     },
     "agentSkills": {
-      "sectionTitle": "Skills",
-      "fixedRoot": "Managed in .agents/skills",
       "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
       "noSkills": "No shared skills configured. Click + to create one.",
       "skillBadge": "skill",
@@ -374,9 +357,12 @@
       "created": "Shared skill \"{name}\" created.",
       "updated": "Shared skill \"{name}\" updated.",
       "deleted": "Shared skill \"{name}\" moved to trash.",
+      "fix": "Corriger",
+      "fixed": "Skill « {name} » corrigé.",
       "modal": {
         "titleEdit": "Edit Shared Skill",
         "titleAdd": "Add Shared Skill",
+        "titleFix": "Corriger le skill",
         "name": "Skill name",
         "nameDesc": "Lowercase letters and numbers separated by single hyphens",
         "namePlaceholder": "code-reviewer",
@@ -391,6 +377,89 @@
         "title": "Delete Shared Skill",
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
+      }
+    },
+    "skills": {
+      "subTabs": {
+        "claude": "Claude",
+        "shared": "Autres fournisseurs"
+      },
+      "claudeHelp": "Skills Claude dans .claude/skills/ et commandes dans .claude/commands/.",
+      "sharedHelp": "Skills partagés dans .agents/skills/ pour Codex, OpenCode, Pi et Grok.",
+      "status": {
+        "error": "Impossible de lire les dossiers de skills : {message}"
+      },
+      "synced": "Synchronisé",
+      "actions": {
+        "sync": "Synchroniser",
+        "resync": "Resynchroniser"
+      },
+      "commands": {
+        "title": "Commandes Claude",
+        "hint": "Les commandes ne fonctionnent que dans Claude. Il est recommandé de les convertir en skills.",
+        "badge": "commande",
+        "empty": "Aucune commande dans .claude/commands.",
+        "convert": "Convertir en skill",
+        "editTitle": "Modifier la commande",
+        "convertTitle": "Convertir la commande en skill",
+        "nameDesc": "Chemin dans .claude/commands sans .md ; les commandes imbriquées utilisent /",
+        "descriptionDesc": "Description facultative affichée dans le menu des commandes",
+        "updated": "Commande « {name} » mise à jour.",
+        "converted": "Commande convertie en skill « {name} ».",
+        "deleted": "Commande « {name} » placée dans la corbeille.",
+        "deleteTitle": "Supprimer la commande",
+        "deleteDescription": "Le fichier de la commande sera placé dans la corbeille.",
+        "collisionFailed": "Une commande nommée « {name} » existe déjà."
+      },
+      "droppedFrontmatterWarning": "L'enregistrement ne conserve que le nom et la description. Ces clés seront supprimées et le comportement des fournisseurs peut changer : {keys}",
+      "hidden": {
+        "name": "Commandes et skills masqués",
+        "desc": "Masque des commandes et des skills dans le menu de commandes de tous les fournisseurs. Saisissez les noms exacts sans barre oblique initiale, un par ligne (les skills Pi utilisent skill:nom).",
+        "placeholder": "commit\ncompact\nskill:review"
+      },
+      "sync": {
+        "title": "Synchroniser les skills",
+        "repairTitle": "Réparer le lien des skills",
+        "loading": "Vérification des dossiers de skills...",
+        "intro": "La synchronisation regroupe les skills et commandes Claude dans .agents/skills et y relie .claude/skills.",
+        "pros": {
+          "oneList": "Une seule liste pour tous les fournisseurs.",
+          "newSkills": "Les nouveaux skills apparaissent partout."
+        },
+        "cons": {
+          "dropped": "Seuls le nom et la description sont conservés ; les réglages propres à chaque fournisseur sont supprimés et le comportement peut changer.",
+          "claudeSyntax": "La syntaxe propre à Claude ne fonctionne pas chez les autres fournisseurs : {names}"
+        },
+        "attentionTitle": "À vérifier",
+        "nothingNeedsAttention": "Rien à vérifier.",
+        "nameField": "Nom",
+        "descriptionField": "Description",
+        "ready": "Prêt",
+        "problems": {
+          "name": "Nom invalide. Utilisez des minuscules, des chiffres et des tirets.",
+          "description": "Description manquante.",
+          "instructions": "Aucune instruction. Ajoutez-les au fichier et resynchronisez.",
+          "unreadable": "Son frontmatter est illisible. Corrigez le fichier et resynchronisez.",
+          "sharedConflict": "Un skill partagé nommé « {name} » existe déjà.",
+          "itemConflict": "Un autre élément s'appelle aussi « {name} »."
+        },
+        "options": {
+          "fix": "Corriger",
+          "replace": "Remplacer le skill partagé",
+          "discard": "Abandonner (mettre à la corbeille)",
+          "keep": "Garder comme commande"
+        },
+        "continue": "Continuer",
+        "confirmTitle": "Remplacer .claude/skills par un lien ?",
+        "confirmBody": ".claude/skills sera remplacé par un lien vers .agents/skills. Cette action est irréversible.",
+        "repairBody": ".claude/skills sera remplacé par un lien vers .agents/skills. Le dossier vers lequel il pointe actuellement n'est pas modifié.",
+        "linkBody": "Crée .claude/skills comme lien vers .agents/skills pour que Claude utilise les skills partagés. Aucun fichier n'est déplacé.",
+        "linkWithItemsBody": "Les commandes deviennent des skills, puis .claude/skills est créé comme lien vers .agents/skills. Cette action est irréversible.",
+        "devicesWarning": "Ce coffre est synchronisé entre appareils ? Le lien risque de ne pas l'être ; synchronisez sur chaque appareil.",
+        "confirm": "Synchroniser et lier",
+        "partial": "La synchronisation s'est arrêtée avant la création du lien. Corrigez les éléments ci-dessous et relancez-la.",
+        "failed": "Échec de la synchronisation : {message}",
+        "summary": "Déplacés {moved}, convertis {converted}, à la corbeille {trashed}, {unlinked} lien(s) supprimé(s)."
       }
     }
   }

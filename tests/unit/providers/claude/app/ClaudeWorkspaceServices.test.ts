@@ -2,7 +2,6 @@ import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
-import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { SlashCommand } from '@/core/types';
 import {
   createClaudeWorkspaceServices,
@@ -11,22 +10,6 @@ import { getClaudeProviderSettings } from '@/providers/claude/settings';
 import { createClaudeSettingsTabRenderer } from '@/providers/claude/ui/ClaudeSettingsTab';
 
 jest.mock('@/providers/claude/ui/ClaudeSettingsTab', () => ({ createClaudeSettingsTabRenderer: jest.fn(() => ({ render: jest.fn() })) }));
-
-function createAdapter(): VaultFileAdapter {
-  return {
-    delete: jest.fn(),
-    deleteFolder: jest.fn(),
-    ensureFolder: jest.fn(),
-    exists: jest.fn().mockResolvedValue(false),
-    listFiles: jest.fn().mockResolvedValue([]),
-    listFilesRecursive: jest.fn().mockResolvedValue([]),
-    listFolders: jest.fn().mockResolvedValue([]),
-    read: jest.fn(),
-    rename: jest.fn(),
-    stat: jest.fn(),
-    write: jest.fn(),
-  } as unknown as VaultFileAdapter;
-}
 
 function createPlugin(
   executionLifecycleRegistry: ProviderExecutionLifecycleRegistry,
@@ -54,7 +37,7 @@ describe('ClaudeWorkspaceServices', () => {
     plugin.mutateSettingsConditionally = jest.fn(async mutation => { await mutation(plugin.settings); });
     plugin.notifyProviderChatOptionsChanged = jest.fn();
     const modelProbe = jest.fn().mockResolvedValue([{ value: 'sdk-only', label: 'SDK model', description: '' }]);
-    const services = await createClaudeWorkspaceServices(plugin, createAdapter(), { modelProbe });
+    const services = await createClaudeWorkspaceServices(plugin, { modelProbe });
     const ready = plugin.app.workspace.onLayoutReady as jest.Mock;
     expect(modelProbe).not.toHaveBeenCalled();
     await registry.runTransition(['claude'], async () => {});
@@ -84,7 +67,7 @@ describe('ClaudeWorkspaceServices', () => {
         signal.addEventListener('abort', () => resolve([]), { once: true });
       });
     });
-    const services = await createClaudeWorkspaceServices(plugin, createAdapter(), { modelProbe });
+    const services = await createClaudeWorkspaceServices(plugin, { modelProbe });
     const catalog = jest.mocked(createClaudeSettingsTabRenderer).mock.calls.at(-1)![0].modelCatalog;
     let discovery: Promise<unknown> | undefined;
     const ready = () => { discovery = catalog.refresh(); };
@@ -121,7 +104,6 @@ describe('ClaudeWorkspaceServices', () => {
       ]);
     const services = await createClaudeWorkspaceServices(
       plugin,
-      createAdapter(),
       { commandProbe },
     );
     const load = services.commandCatalog.listDropdownEntries({ includeBuiltIns: false });
@@ -181,7 +163,6 @@ describe('ClaudeWorkspaceServices', () => {
     });
     const services = await createClaudeWorkspaceServices(
       plugin,
-      createAdapter(),
       { commandProbe },
     );
     const load = services.commandCatalog.listDropdownEntries({ includeBuiltIns: false });

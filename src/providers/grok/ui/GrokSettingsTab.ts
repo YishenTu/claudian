@@ -134,16 +134,6 @@ export const grokSettingsTabRenderer: ProviderSettingsTabRenderer = {
     new Setting(container).setName('Models').setHeading();
     const modelPicker = renderProviderModelsSection(container, 'grok', 'Grok', workspace.modelCatalog!, () => modelWarning.refresh());
 
-    new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
-    context.renderAgentSkillSettings(container, GROK_PROVIDER_ID);
-
-    new Setting(container).setName('Commands').setHeading();
-    context.renderHiddenProviderCommandSetting(container, GROK_PROVIDER_ID, {
-      name: 'Hidden Grok commands',
-      desc: 'Hide runtime commands advertised by Grok from the command dropdown. Enter names without the leading slash, one per line.',
-      placeholder: 'compact\nreview',
-    });
-
     renderEnvironmentSettingsSection({
       container,
       desc: 'Environment variables passed only to Grok. Custom-model secrets stay in this provider scope and are referenced from native config by env_key.',

@@ -86,30 +86,6 @@ describe('ProviderWorkspaceRegistry', () => {
     expect(ProviderWorkspaceRegistry.getCommandLoader('opencode')).toBe(commandLoader);
   });
 
-  it('keeps editable vault repositories separate from runtime command catalogs', () => {
-    const commandCatalog = {
-      listDropdownEntries: jest.fn(),
-      setCommandSnapshot: jest.fn(),
-      getDropdownConfig: jest.fn(),
-      refresh: jest.fn(),
-    };
-    const vaultCommandRepository = {
-      listVaultEntries: jest.fn(),
-      saveVaultEntry: jest.fn(),
-      deleteVaultEntry: jest.fn(),
-    };
-
-    ProviderWorkspaceRegistry.setServices('claude', {
-      commandCatalog,
-      vaultCommandRepository,
-    });
-
-    const services = ProviderWorkspaceRegistry.getServices('claude');
-    expect(services?.commandCatalog).toBe(commandCatalog);
-    expect(services?.vaultCommandRepository).toBe(vaultCommandRepository);
-    expect(commandCatalog).not.toHaveProperty('saveVaultEntry');
-  });
-
   it('deduplicates concurrent provider initialization', async () => {
     const initialize = jest.fn(async () => ({ commandCatalog: {} as any }));
     ProviderWorkspaceRegistry.register('codex', { initialize });

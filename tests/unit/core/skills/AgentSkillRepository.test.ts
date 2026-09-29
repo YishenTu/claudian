@@ -1,3 +1,4 @@
+import { DesktopVault } from '@test/helpers/core/DesktopVault';
 import { MemoryDataAdapter } from '@test/helpers/MemoryDataAdapter';
 import type { App } from 'obsidian';
 
@@ -6,7 +7,9 @@ import {
   AgentSkillCollisionError,
   AgentSkillRepository,
   AgentSkillRevisionConflictError,
+  CLAUDE_SKILLS_ROOT,
 } from '@/core/skills/AgentSkillRepository';
+import { AgentSkillValidationError } from '@/core/skills/validateAgentSkill';
 import {
   ManagedResourceCollisionError,
   VaultFileAdapter,
@@ -82,10 +85,9 @@ describe('AgentSkillRepository', () => {
         if (candidate.endsWith('/unsafe')) throw new Error('Managed resource must not be a symlink');
         return true;
       }),
-      listManagedFolder: jest.fn().mockResolvedValue({
-        files: [],
-        folders: [`${AGENT_SKILLS_ROOT}/unsafe`],
-      }),
+      listManagedFolderEntries: jest.fn().mockResolvedValue([
+        { path: `${AGENT_SKILLS_ROOT}/unsafe`, type: 'folder' },
+      ]),
     } as unknown as VaultFileAdapter;
     const result = await new AgentSkillRepository(childUnsafeFiles).list();
     expect(result.skills).toEqual([]);
@@ -194,7 +196,7 @@ describe('AgentSkillRepository', () => {
       name: 'new-name',
       description: 'Updated',
       instructions: 'Updated instructions',
-    })).rejects.toThrow('Could not rename skill');
+    })).rejects.toThrow('Could not write managed resource');
 
     expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/old-name/SKILL.md`)).toBe(markdown('old-name'));
     expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/old-name/reference.txt`)).toBe('reference');
@@ -248,5 +250,220 @@ describe('AgentSkillRepository', () => {
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
     const rejected = results.find(result => result.status === 'rejected') as PromiseRejectedResult;
     expect(rejected.reason).toBeInstanceOf(AgentSkillCollisionError);
+  });
+  describe('root and frontmatter policies', () => {
+    function claudeRepository(frontmatterPolicy: 'preserve' | 'portable' = 'preserve') {
+      return new AgentSkillRepository(vaultFiles, {
+        root: CLAUDE_SKILLS_ROOT,
+        frontmatterPolicy,
+        readPolicy: 'lenient',
+      });
+    }
+
+    it('returns an empty list when an ancestor of the root is missing', async () => {
+      await expect(claudeRepository().list()).resolves.toEqual({ skills: [], diagnostics: [] });
+    });
+
+    it('creates, updates and trashes packages under a configured root', async () => {
+      const repo = claudeRepository();
+      const created = await repo.create({
+        name: 'claude-skill',
+        description: 'Claude description',
+        instructions: 'Claude instructions',
+      });
+      expect(created.filePath).toBe(`${CLAUDE_SKILLS_ROOT}/claude-skill/SKILL.md`);
+      expect(dataAdapter.nodes.has(`${AGENT_SKILLS_ROOT}/claude-skill`)).toBe(false);
+
+      const updated = await repo.update('claude-skill', created.revision, {
+        name: 'claude-skill',
+        description: 'Updated',
+        instructions: 'Updated instructions',
+      });
+      expect((await repo.list()).skills.map(skill => skill.description)).toEqual(['Updated']);
+
+      await repo.trash('claude-skill', updated.revision);
+      expect(dataAdapter.trashed).toEqual([`${CLAUDE_SKILLS_ROOT}/claude-skill`]);
+    });
+
+    it('removes unknown frontmatter on update under the portable policy', async () => {
+      addSkill('portable-skill');
+      const portable = new AgentSkillRepository(vaultFiles, { frontmatterPolicy: 'portable' });
+      const loaded = (await portable.list()).skills[0];
+      expect(loaded.frontmatter).toMatchObject({ license: 'MIT' });
+
+      const updated = await portable.update('portable-skill', loaded.revision, {
+        name: 'portable-skill',
+        description: 'Updated description',
+        instructions: 'Updated instructions',
+      });
+
+      expect(updated.frontmatter).toEqual({
+        name: 'portable-skill',
+        description: 'Updated description',
+      });
+      expect(await dataAdapter.read(updated.filePath)).not.toContain('license');
+    });
+
+    it('lists lenient packages without a matching name or description, but not files without frontmatter', async () => {
+      dataAdapter.addFolder('.claude');
+      dataAdapter.addFolder(CLAUDE_SKILLS_ROOT);
+      dataAdapter.addFolder(`${CLAUDE_SKILLS_ROOT}/Legacy_Skill`);
+      dataAdapter.addFile(
+        `${CLAUDE_SKILLS_ROOT}/Legacy_Skill/SKILL.md`,
+        '---\nallowed-tools: [Read]\n---\nLegacy instructions\n',
+      );
+      dataAdapter.addFolder(`${CLAUDE_SKILLS_ROOT}/no-frontmatter`);
+      dataAdapter.addFile(`${CLAUDE_SKILLS_ROOT}/no-frontmatter/SKILL.md`, 'Plain instructions\n');
+
+      const repo = claudeRepository();
+      const result = await repo.list();
+
+      expect(result.diagnostics.map(item => [item.directoryPath, item.repairName])).toEqual([
+        [`${CLAUDE_SKILLS_ROOT}/no-frontmatter`, undefined],
+      ]);
+      expect(result.skills.map(skill => [skill.name, skill.description, skill.instructions])).toEqual([
+        ['Legacy_Skill', '', 'Legacy instructions'],
+      ]);
+
+      const legacy = result.skills[0];
+      await expect(repo.update('Legacy_Skill', legacy.revision, {
+        name: 'Legacy_Skill',
+        description: 'Now described',
+        instructions: 'Legacy instructions',
+      })).rejects.toBeInstanceOf(AgentSkillValidationError);
+      await expect(repo.update('Legacy_Skill', legacy.revision, {
+        name: 'legacy-skill',
+        description: '',
+        instructions: 'Legacy instructions',
+      })).rejects.toBeInstanceOf(AgentSkillValidationError);
+
+      useMemoryRelocation();
+      const renamed = await repo.update('Legacy_Skill', legacy.revision, {
+        name: 'legacy-skill',
+        description: 'Now described',
+        instructions: 'Legacy instructions',
+      });
+      expect(renamed.frontmatter).toMatchObject({ 'allowed-tools': ['Read'] });
+      expect(renamed.directoryPath).toBe(`${CLAUDE_SKILLS_ROOT}/legacy-skill`);
+    });
+
+    it('keeps strict reads for the default shared root', async () => {
+      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/no-frontmatter`);
+      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/no-frontmatter/SKILL.md`, 'Plain instructions\n');
+
+      const result = await repository.list();
+
+      expect(result.skills).toEqual([]);
+      expect(result.diagnostics.map(item => item.directoryPath)).toEqual([
+        `${AGENT_SKILLS_ROOT}/no-frontmatter`,
+      ]);
+    });
+  });
+  describe('repairing packages that need attention', () => {
+    it('offers repair only for SKILL.md files with frontmatter that fail validation', async () => {
+      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/no-description`);
+      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/no-description/SKILL.md`, '---\nname: no-description\nlicense: MIT\n---\nKeep this\n');
+      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/Bad_Name`);
+      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/Bad_Name/SKILL.md`, '---\nname: Bad_Name\ndescription: Desc\n---\nBody\n');
+      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/no-frontmatter`);
+      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/no-frontmatter/SKILL.md`, 'Plain instructions\n');
+      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/empty`);
+
+      const { diagnostics } = await repository.list();
+
+      expect(diagnostics.map(item => [item.directoryPath, item.repairName])).toEqual([
+        [`${AGENT_SKILLS_ROOT}/Bad_Name`, 'Bad_Name'],
+        [`${AGENT_SKILLS_ROOT}/empty`, undefined],
+        [`${AGENT_SKILLS_ROOT}/no-description`, 'no-description'],
+        [`${AGENT_SKILLS_ROOT}/no-frontmatter`, undefined],
+      ]);
+      await expect(repository.readForRepair('no-description')).resolves.toMatchObject({
+        input: { name: 'no-description', description: '', instructions: 'Keep this' },
+        frontmatter: { license: 'MIT' },
+      });
+      await expect(repository.readForRepair('no-frontmatter')).rejects.toThrow('cannot be repaired');
+      await expect(repository.readForRepair('empty')).rejects.toThrow('does not exist');
+    });
+
+    it('rewrites a flagged package as a valid skill, renaming its folder', async () => {
+      useMemoryRelocation();
+      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/Bad_Name`);
+      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/Bad_Name/SKILL.md`, '---\nname: Bad_Name\ndescription: Desc\n---\nBody\n');
+      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/Bad_Name/asset.txt`, 'asset');
+
+      const draft = await repository.readForRepair('Bad_Name');
+      await repository.repair('Bad_Name', draft.revision, {
+        name: 'fixed-skill', description: 'Now valid', instructions: 'Body',
+      });
+
+      const result = await repository.list();
+      expect(result.diagnostics).toEqual([]);
+      expect(result.skills.map(skill => [skill.name, skill.description])).toEqual([['fixed-skill', 'Now valid']]);
+      expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/fixed-skill/asset.txt`)).toBe('asset');
+    });
+
+    it('rejects a stale repair and invalid input', async () => {
+      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/broken`);
+      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\n---\nOriginal\n');
+      const draft = await repository.readForRepair('broken');
+      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\n---\nChanged elsewhere\n');
+
+      await expect(repository.repair('broken', draft.revision, {
+        name: 'broken', description: 'Desc', instructions: 'Body',
+      })).rejects.toBeInstanceOf(AgentSkillRevisionConflictError);
+      const current = await repository.readForRepair('broken');
+      await expect(repository.repair('broken', current.revision, {
+        name: 'broken', description: '', instructions: 'Body',
+      })).rejects.toBeInstanceOf(AgentSkillValidationError);
+      expect(await dataAdapter.read(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`)).toContain('Changed elsewhere');
+    });
+
+    it('moves a broken package folder to trash', async () => {
+      dataAdapter.addFolder(`${AGENT_SKILLS_ROOT}/broken`);
+      dataAdapter.addFile(`${AGENT_SKILLS_ROOT}/broken/SKILL.md`, '---\nname: broken\n---\nBody\n');
+
+      await repository.trashBroken('broken');
+
+      expect(dataAdapter.trashed).toEqual([`${AGENT_SKILLS_ROOT}/broken`]);
+    });
+  });
+  describe('on a filesystem-backed vault', () => {
+    let vault: DesktopVault;
+
+    beforeEach(async () => {
+      vault = await DesktopVault.create();
+    });
+
+    afterEach(async () => {
+      await vault.dispose();
+    });
+
+    it('renames a package folder while fixing it and leaves no empty folders behind', async () => {
+      await vault.write(`${AGENT_SKILLS_ROOT}/Weekly_Review/SKILL.md`, '---\nname: Weekly_Review\ndescription: Weekly\n---\nReview the week\n');
+      await vault.write(`${AGENT_SKILLS_ROOT}/Weekly_Review/notes.md`, 'extra');
+      const desktop = new AgentSkillRepository(vault.files);
+
+      const draft = await desktop.readForRepair('Weekly_Review');
+      await desktop.repair('Weekly_Review', draft.revision, {
+        name: 'weekly-review', description: 'Weekly', instructions: 'Review the week',
+      });
+
+      expect(await vault.exists(`${AGENT_SKILLS_ROOT}/Weekly_Review`)).toBe(false);
+      expect(await vault.read(`${AGENT_SKILLS_ROOT}/weekly-review/notes.md`)).toBe('extra');
+      expect((await desktop.list()).skills.map(skill => skill.name)).toEqual(['weekly-review']);
+    });
+
+    it('still lists the other skills when the root holds a dangling link', async () => {
+      await vault.write(`${AGENT_SKILLS_ROOT}/kept/SKILL.md`, '---\nname: kept\ndescription: Kept\n---\nBody\n');
+      await vault.symlink(`${AGENT_SKILLS_ROOT}/dangling`, vault.resolve('gone'));
+
+      const result = await new AgentSkillRepository(vault.files).list();
+
+      expect(result.skills.map(skill => skill.name)).toEqual(['kept']);
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({ directoryPath: `${AGENT_SKILLS_ROOT}/dangling` }),
+      ]);
+      expect(result.diagnostics[0].repairName).toBeUndefined();
+    });
   });
 });

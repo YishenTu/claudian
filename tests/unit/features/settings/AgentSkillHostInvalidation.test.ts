@@ -63,17 +63,15 @@ describe('agent skill host invalidation', () => {
     expect(onAgentSkillsChanged).toHaveBeenCalledTimes(1);
   });
 
-  it('constructs one settings-owned shared repository coordinator', () => {
-    const adapter = {};
-    const getAdapter = jest.fn().mockReturnValue(adapter);
+  it('does not touch skill storage until the Skills tab is opened', () => {
+    const getAdapter = jest.fn().mockReturnValue({});
     const plugin = {
       storage: { getAdapter },
       notifyAgentSkillsChanged: jest.fn(),
     };
 
-    const tab = new ClaudianSettingTab({} as any, plugin as any);
+    new ClaudianSettingTab({} as any, plugin as any);
 
-    expect(getAdapter).toHaveBeenCalledTimes(1);
-    expect((tab as any).agentSkillCoordinator).toBeDefined();
+    expect(getAdapter).not.toHaveBeenCalled();
   });
 });

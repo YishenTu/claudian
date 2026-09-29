@@ -1,4 +1,3 @@
-export type HiddenProviderCommands = Record<string, string[]>;
 
 export interface ApprovalSelectionDecision {
   type: 'select-option';
@@ -168,12 +167,17 @@ export interface ClaudianSettings {
   enableDualPane: boolean;
   dualPaneSide: DualPaneSide;
   restoreTabsOnStartup: boolean;
+  /**
+   * Vault-wide record that Sync unified Claude skills into `.agents/skills`. The
+   * `.claude/skills` link itself is per device and always read from disk.
+   */
+  skillsSynced: boolean;
   sessionManagerOrganization?: SessionManagerOrganization;
   sessionManagerSort?: SessionManagerSort;
   pinnedLinkedContentPaths?: string[];
 
   // Provider command visibility
-  hiddenProviderCommands: HiddenProviderCommands;
+  hiddenCommands: string[];
 
   // Allow provider-specific extension fields
   [key: string]: unknown;

@@ -158,6 +158,14 @@ jest.mock('obsidian', () => {
   };
 });
 
+const mockSkillsSettingsTab = jest.fn();
+jest.mock('@/features/settings/SkillsSettingsTab', () => ({
+  SkillsSettingsTab: class MockSkillsSettingsTab {
+    constructor(...args: unknown[]) { mockSkillsSettingsTab(...args); }
+    dispose(): void {}
+  },
+}));
+
 import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
@@ -279,6 +287,7 @@ function renderSettingsTab(
 describe('ClaudianSettingTab display settings', () => {
   beforeEach(() => {
     document.body.replaceChildren();
+    mockSkillsSettingsTab.mockClear();
     mockRenderedSettingNames.length = 0;
     mockSettingDescriptionEls.clear();
     mockGitStatusElements.length = 0;
@@ -339,6 +348,21 @@ describe('ClaudianSettingTab display settings', () => {
     expect(container.empty).toHaveBeenCalledTimes(1);
     expect(container.addClass).toHaveBeenCalledWith('claudian-settings');
     expect(findContainer(container, t('settings.tabs.general'))).not.toBeNull();
+    expect(findContainer(container, t('settings.tabs.providers'))).not.toBeNull();
+    expect(findContainer(container, t('settings.tabs.skills'))).not.toBeNull();
+  });
+
+  it('does not touch skill folders until the Skills tab is opened', () => {
+    const { tab, plugin } = createTab(true);
+    const container = renderSettingsTab(tab);
+
+    expect(plugin.storage.getAdapter).not.toHaveBeenCalled();
+    expect(mockSkillsSettingsTab).not.toHaveBeenCalled();
+    findContainer(container, t('settings.tabs.skills'))?.click();
+    findContainer(container, t('settings.tabs.skills'))?.click();
+
+    expect(plugin.storage.getAdapter).toHaveBeenCalledTimes(1);
+    expect(mockSkillsSettingsTab).toHaveBeenCalledTimes(1);
   });
 
   it('saves timestamp preferences through the application settings owner', async () => {

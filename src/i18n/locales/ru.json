@@ -92,6 +92,7 @@
     "tabs": {
       "general": "Общие",
       "providers": "Провайдеры",
+      "skills": "Навыки",
       "claude": "Claude",
       "codex": "Codex"
     },
@@ -156,15 +157,6 @@
     },
     "closeTabHotkey": {
       "name": "Закрыть вкладку"
-    },
-    "slashCommands": {
-      "name": "Команды и навыки",
-      "desc": "Управление командами и навыками на уровне хранилища, расположенными в .claude/commands/ и .claude/skills/. Запускаются через /имя."
-    },
-    "hiddenSlashCommands": {
-      "name": "Скрытые команды и навыки",
-      "desc": "Скрыть определённые команды и навыки из выпадающего списка. Полезно для скрытия записей Claude Code, которые не актуальны для Claudian. Вводите имена без начального слэша, по одному на строку.",
-      "placeholder": "commit\nbuild\ntest"
     },
     "safety": "Безопасность",
     "loadUserSettings": {
@@ -345,21 +337,12 @@
         "name": "Включить уровень Ultra",
         "desc": "Показывать Ultra в выборе усилия для моделей Codex, которые его поддерживают. Ultra использует максимальное рассуждение с автоматическим делегированием задач."
       },
-      "skills": {
-        "name": "Навыки Codex",
-        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
-        "hiddenName": "Скрытые навыки",
-        "hiddenDesc": "Скрыть отдельные навыки Codex из списка. Введите имена навыков без начального $, по одному на строку.",
-        "hiddenPlaceholder": "analyze\nexplain\nfix"
-      },
       "environment": {
         "name": "Окружение Codex",
         "desc": "Только переменные среды выполнения, принадлежащие Codex. Используйте для настроек OPENAI_* и CODEX_*. Если автоопределению Codex нужна помощь, добавьте каталог установки в общий PATH, а не в этот раздел провайдера."
       }
     },
     "agentSkills": {
-      "sectionTitle": "Skills",
-      "fixedRoot": "Managed in .agents/skills",
       "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
       "noSkills": "No shared skills configured. Click + to create one.",
       "skillBadge": "skill",
@@ -374,9 +357,12 @@
       "created": "Shared skill \"{name}\" created.",
       "updated": "Shared skill \"{name}\" updated.",
       "deleted": "Shared skill \"{name}\" moved to trash.",
+      "fix": "Исправить",
+      "fixed": "Навык «{name}» исправлен.",
       "modal": {
         "titleEdit": "Edit Shared Skill",
         "titleAdd": "Add Shared Skill",
+        "titleFix": "Исправить навык",
         "name": "Skill name",
         "nameDesc": "Lowercase letters and numbers separated by single hyphens",
         "namePlaceholder": "code-reviewer",
@@ -391,6 +377,89 @@
         "title": "Delete Shared Skill",
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
+      }
+    },
+    "skills": {
+      "subTabs": {
+        "claude": "Claude",
+        "shared": "Другие провайдеры"
+      },
+      "claudeHelp": "Навыки Claude в .claude/skills/ и команды в .claude/commands/.",
+      "sharedHelp": "Общие навыки в .agents/skills/ для Codex, OpenCode, Pi и Grok.",
+      "status": {
+        "error": "Не удалось прочитать папки навыков: {message}"
+      },
+      "synced": "Синхронизировано",
+      "actions": {
+        "sync": "Синхронизировать",
+        "resync": "Синхронизировать снова"
+      },
+      "commands": {
+        "title": "Команды Claude",
+        "hint": "Команды работают только в Claude. Рекомендуется преобразовать их в навыки.",
+        "badge": "команда",
+        "empty": "В .claude/commands нет команд.",
+        "convert": "Преобразовать в навык",
+        "editTitle": "Изменить команду",
+        "convertTitle": "Преобразовать команду в навык",
+        "nameDesc": "Путь внутри .claude/commands без .md; вложенные команды используют /",
+        "descriptionDesc": "Необязательное описание в меню команд",
+        "updated": "Команда «{name}» обновлена.",
+        "converted": "Команда преобразована в навык «{name}».",
+        "deleted": "Команда «{name}» перемещена в корзину.",
+        "deleteTitle": "Удалить команду",
+        "deleteDescription": "Файл команды будет перемещён в корзину.",
+        "collisionFailed": "Команда «{name}» уже существует."
+      },
+      "droppedFrontmatterWarning": "При сохранении остаются только имя и описание. Эти ключи будут удалены, и поведение провайдеров может измениться: {keys}",
+      "hidden": {
+        "name": "Скрытые команды и навыки",
+        "desc": "Скрывает команды и навыки в меню команд всех провайдеров. Вводите точные имена без начальной косой черты, по одному в строке (навыки Pi используют skill:имя).",
+        "placeholder": "commit\ncompact\nskill:review"
+      },
+      "sync": {
+        "title": "Синхронизация навыков",
+        "repairTitle": "Исправление ссылки навыков",
+        "loading": "Проверка папок навыков...",
+        "intro": "Синхронизация объединяет навыки и команды Claude в .agents/skills и делает .claude/skills ссылкой на эту папку.",
+        "pros": {
+          "oneList": "Один список для всех провайдеров.",
+          "newSkills": "Новые навыки появляются везде."
+        },
+        "cons": {
+          "dropped": "Сохраняются только имя и описание; настройки конкретных провайдеров удаляются, и поведение может измениться.",
+          "claudeSyntax": "Синтаксис только для Claude не работает у других провайдеров: {names}"
+        },
+        "attentionTitle": "Требует внимания",
+        "nothingNeedsAttention": "Ничего не требует внимания.",
+        "nameField": "Имя",
+        "descriptionField": "Описание",
+        "ready": "Готово",
+        "problems": {
+          "name": "Недопустимое имя. Используйте строчные буквы, цифры и дефисы.",
+          "description": "Нет описания.",
+          "instructions": "Нет инструкций. Добавьте их в файл и синхронизируйте снова.",
+          "unreadable": "Не удаётся прочитать frontmatter. Исправьте файл и синхронизируйте снова.",
+          "sharedConflict": "Общий навык «{name}» уже существует.",
+          "itemConflict": "Другой элемент тоже называется «{name}»."
+        },
+        "options": {
+          "fix": "Исправить",
+          "replace": "Заменить общий навык",
+          "discard": "Отбросить (в корзину)",
+          "keep": "Оставить командой"
+        },
+        "continue": "Продолжить",
+        "confirmTitle": "Заменить .claude/skills ссылкой?",
+        "confirmBody": ".claude/skills будет заменена ссылкой на .agents/skills. Это действие нельзя отменить.",
+        "repairBody": ".claude/skills будет заменена ссылкой на .agents/skills. Папка, на которую она сейчас указывает, не изменится.",
+        "linkBody": "Создаёт .claude/skills как ссылку на .agents/skills, чтобы Claude использовал общие навыки. Файлы не перемещаются.",
+        "linkWithItemsBody": "Команды станут навыками, затем .claude/skills будет создана как ссылка на .agents/skills. Это действие нельзя отменить.",
+        "devicesWarning": "Хранилище синхронизируется между устройствами? Ссылка может не синхронизироваться; выполните синхронизацию на каждом устройстве.",
+        "confirm": "Синхронизировать и связать",
+        "partial": "Синхронизация остановлена до создания ссылки. Исправьте элементы ниже и запустите синхронизацию снова.",
+        "failed": "Ошибка синхронизации: {message}",
+        "summary": "Перемещено {moved}, преобразовано {converted}, в корзине {trashed}, удалено ссылок: {unlinked}."
       }
     }
   }

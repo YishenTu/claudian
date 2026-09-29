@@ -1,5 +1,4 @@
-import type { ClaudianSettings, HiddenProviderCommands } from '../../types/settings';
-import type { ProviderId } from '../types';
+import type { ClaudianSettings } from '../../types/settings';
 
 function normalizeHiddenCommandName(value: string): string {
   return value.trim().replace(/^[/$]+/, '');
@@ -35,40 +34,27 @@ export function normalizeHiddenCommandList(value: unknown): string[] {
   return normalized;
 }
 
-export function getDefaultHiddenProviderCommands(): HiddenProviderCommands {
-  return {};
-}
-
-export function normalizeHiddenProviderCommands(
-  value: unknown,
-): HiddenProviderCommands {
-  if (!value || typeof value !== 'object') {
-    return getDefaultHiddenProviderCommands();
+/**
+ * Reads the global hidden-command list, folding the retired per-provider map
+ * into it when the global list has never been stored.
+ */
+export function migrateHiddenCommands(stored: Record<string, unknown>): string[] {
+  if (Object.prototype.hasOwnProperty.call(stored, 'hiddenCommands')) {
+    return normalizeHiddenCommandList(stored.hiddenCommands);
   }
-
-  const candidate = value as Partial<Record<string, unknown>>;
-  const normalized: HiddenProviderCommands = {};
-
-  for (const [providerId, commands] of Object.entries(candidate)) {
-    const next = normalizeHiddenCommandList(commands);
-    if (next.length > 0) {
-      normalized[providerId] = next;
-    }
+  const legacy = stored.hiddenProviderCommands;
+  if (!legacy || typeof legacy !== 'object' || Array.isArray(legacy)) {
+    return [];
   }
-
-  return normalized;
+  return normalizeHiddenCommandList(
+    Object.values(legacy as Record<string, unknown>).flatMap((commands): unknown[] => (
+      Array.isArray(commands) ? commands as unknown[] : []
+    )),
+  );
 }
 
-export function getHiddenProviderCommands(
-  settings: Pick<ClaudianSettings, 'hiddenProviderCommands'>,
-  providerId: ProviderId,
-): string[] {
-  return settings.hiddenProviderCommands?.[providerId] ?? [];
-}
-
-export function getHiddenProviderCommandSet(
-  settings: Pick<ClaudianSettings, 'hiddenProviderCommands'>,
-  providerId: ProviderId,
+export function getHiddenCommandSet(
+  settings: Pick<ClaudianSettings, 'hiddenCommands'>,
 ): Set<string> {
-  return new Set(getHiddenProviderCommands(settings, providerId).map((command) => command.toLowerCase()));
+  return new Set((settings.hiddenCommands ?? []).map(command => command.toLowerCase()));
 }

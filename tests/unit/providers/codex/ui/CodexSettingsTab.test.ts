@@ -357,8 +357,6 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
 function createContext(plugin: any) {
   return {
     plugin,
-    renderAgentSkillSettings: jest.fn(),
-    renderHiddenProviderCommandSetting: jest.fn(),
     notifyProviderModelOptionsChanged: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
@@ -475,7 +473,8 @@ describe('CodexSettingsTab', () => {
       expect.objectContaining({ refresh: mockRefreshModelCatalog }),
       expect.any(Function),
     );
-    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(container, 'codex');
+    expect(headings).not.toContain('Skills');
+    expect(createdSettings.filter(setting => /hidden/i.test(setting.name))).toEqual([]);
     expect(createdSettings.some(setting => setting.name === 'Custom models')).toBe(false);
   });
 

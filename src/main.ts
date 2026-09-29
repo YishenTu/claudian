@@ -582,13 +582,13 @@ export default class ClaudianPlugin extends Plugin {
     };
     const timestampsChanged = settings.showMessageTimestamps !== previous.showMessageTimestamps;
     const layoutChanged = settings.enableDualPane !== previous.enableDualPane || settings.dualPaneSide !== previous.dualPaneSide;
-    const commandsChanged = JSON.stringify(settings.hiddenProviderCommands) !== JSON.stringify(previous.hiddenProviderCommands);
+    const commandsChanged = JSON.stringify(settings.hiddenCommands) !== JSON.stringify(previous.hiddenCommands);
     const contextChanged = JSON.stringify(settings.customContextLimits) !== JSON.stringify(previous.customContextLimits);
     if (timestampsChanged || layoutChanged || commandsChanged || contextChanged) {
       for (const view of this.getAllViews()) {
         if (timestampsChanged) publish(() => view.refreshMessageTimestamps());
         if (layoutChanged) publish(() => view.refreshDualPaneLayout());
-        if (commandsChanged) publish(() => view.updateHiddenProviderCommands());
+        if (commandsChanged) publish(() => view.updateHiddenCommands());
         if (contextChanged) publish(() => view.refreshModelSelector());
       }
     }

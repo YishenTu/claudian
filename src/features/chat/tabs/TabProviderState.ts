@@ -1,5 +1,5 @@
 import { createCatalogCommandDiscoveryStore } from '../../../core/providers/commands/catalogCommandDiscovery';
-import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
+import { getHiddenCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import {
   findProviderModelOption,
   getProviderSettingsSnapshotWithModel,
@@ -155,15 +155,6 @@ export function getTabSelectedModel(
   return null;
 }
 
-export function getTabHiddenCommands(
-  tab: TabProviderContext,
-  plugin: ChatFeatureHost,
-  conversation?: Conversation | null,
-): Set<string> {
-  const providerId = getTabProviderId(tab, plugin, conversation);
-  return providerId ? getHiddenProviderCommandSet(plugin.settings, providerId) : new Set();
-}
-
 function getRegistryProviderCatalogInfo(providerId: ProviderId): ProviderCatalogInfo {
   const catalog = ProviderWorkspaceRegistry.getCommandCatalog(providerId);
   if (!catalog) {
@@ -199,7 +190,7 @@ export function syncComposerDropdownForProvider(
     dropdown.clearProviderCatalog?.();
   }
 
-  dropdown.setHiddenCommands(getTabHiddenCommands(tab, plugin, conversation));
+  dropdown.setHiddenCommands(getHiddenCommandSet(plugin.settings));
 }
 
 export function invalidateTabProviderCommands(

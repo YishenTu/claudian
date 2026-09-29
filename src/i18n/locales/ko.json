@@ -92,6 +92,7 @@
     "tabs": {
       "general": "일반",
       "providers": "제공자",
+      "skills": "스킬",
       "claude": "Claude",
       "codex": "Codex"
     },
@@ -156,15 +157,6 @@
     },
     "closeTabHotkey": {
       "name": "탭 닫기"
-    },
-    "slashCommands": {
-      "name": "명령어와 스킬",
-      "desc": ".claude/commands/ 및 .claude/skills/에 저장된 Vault 수준의 명령어와 스킬을 관리합니다. /이름으로 트리거됩니다."
-    },
-    "hiddenSlashCommands": {
-      "name": "숨겨진 명령어와 스킬",
-      "desc": "드롭다운에서 특정 명령어와 스킬을 숨깁니다. Claudian과 관련 없는 Claude Code 항목을 숨기는 데 유용합니다. 앞의 슬래시 없이 이름을 한 줄에 하나씩 입력하세요.",
-      "placeholder": "commit\nbuild\ntest"
     },
     "safety": "보안",
     "loadUserSettings": {
@@ -345,21 +337,12 @@
         "name": "Ultra 추론 강도 활성화",
         "desc": "Ultra를 지원하는 Codex 모델의 추론 강도 선택기에 표시합니다. Ultra는 최대 추론과 자동 작업 위임을 사용합니다."
       },
-      "skills": {
-        "name": "Codex 스킬",
-        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
-        "hiddenName": "숨긴 스킬",
-        "hiddenDesc": "드롭다운에서 특정 Codex 스킬을 숨깁니다. 앞의 $ 없이 스킬 이름을 한 줄에 하나씩 입력하세요.",
-        "hiddenPlaceholder": "analyze\nexplain\nfix"
-      },
       "environment": {
         "name": "Codex 환경",
         "desc": "Codex 전용 런타임 변수만 입력하세요. OPENAI_* 및 CODEX_* 설정에 사용합니다. Codex 자동 감지에 도움이 필요하면 이 공급자 섹션 대신 공유 PATH에 설치 디렉터리를 추가하세요."
       }
     },
     "agentSkills": {
-      "sectionTitle": "Skills",
-      "fixedRoot": "Managed in .agents/skills",
       "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
       "noSkills": "No shared skills configured. Click + to create one.",
       "skillBadge": "skill",
@@ -374,9 +357,12 @@
       "created": "Shared skill \"{name}\" created.",
       "updated": "Shared skill \"{name}\" updated.",
       "deleted": "Shared skill \"{name}\" moved to trash.",
+      "fix": "수정",
+      "fixed": "스킬 \"{name}\"을(를) 수정했습니다.",
       "modal": {
         "titleEdit": "Edit Shared Skill",
         "titleAdd": "Add Shared Skill",
+        "titleFix": "스킬 수정",
         "name": "Skill name",
         "nameDesc": "Lowercase letters and numbers separated by single hyphens",
         "namePlaceholder": "code-reviewer",
@@ -391,6 +377,89 @@
         "title": "Delete Shared Skill",
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
+      }
+    },
+    "skills": {
+      "subTabs": {
+        "claude": "Claude",
+        "shared": "기타 제공자"
+      },
+      "claudeHelp": ".claude/skills/의 Claude 스킬과 .claude/commands/의 명령.",
+      "sharedHelp": "Codex, OpenCode, Pi, Grok용 .agents/skills/의 공유 스킬.",
+      "status": {
+        "error": "스킬 폴더를 읽을 수 없습니다: {message}"
+      },
+      "synced": "동기화됨",
+      "actions": {
+        "sync": "동기화",
+        "resync": "다시 동기화"
+      },
+      "commands": {
+        "title": "Claude 명령",
+        "hint": "명령은 Claude에서만 작동합니다. 스킬로 변환하는 것을 권장합니다.",
+        "badge": "명령",
+        "empty": ".claude/commands에 명령이 없습니다.",
+        "convert": "스킬로 변환",
+        "editTitle": "명령 편집",
+        "convertTitle": "명령을 스킬로 변환",
+        "nameDesc": ".md를 뺀 .claude/commands 내 경로. 중첩된 명령은 /를 사용합니다",
+        "descriptionDesc": "명령 메뉴에 표시되는 선택 설명",
+        "updated": "명령 \"{name}\"을(를) 업데이트했습니다.",
+        "converted": "명령을 스킬 \"{name}\"(으)로 변환했습니다.",
+        "deleted": "명령 \"{name}\"을(를) 휴지통으로 옮겼습니다.",
+        "deleteTitle": "명령 삭제",
+        "deleteDescription": "명령 파일이 휴지통으로 이동합니다.",
+        "collisionFailed": "\"{name}\" 명령이 이미 있습니다."
+      },
+      "droppedFrontmatterWarning": "저장하면 이름과 설명만 남습니다. 다음 키가 제거되며 제공자 동작이 바뀔 수 있습니다: {keys}",
+      "hidden": {
+        "name": "숨긴 명령과 스킬",
+        "desc": "모든 제공자의 명령 메뉴에서 명령과 스킬을 숨깁니다. 앞의 슬래시 없이 정확한 이름을 한 줄에 하나씩 입력하세요(Pi 스킬은 skill:이름).",
+        "placeholder": "commit\ncompact\nskill:review"
+      },
+      "sync": {
+        "title": "스킬 동기화",
+        "repairTitle": "스킬 링크 복구",
+        "loading": "스킬 폴더를 확인하는 중...",
+        "intro": "동기화하면 Claude의 스킬과 명령을 .agents/skills로 모으고 .claude/skills를 그곳으로 연결합니다.",
+        "pros": {
+          "oneList": "모든 제공자가 하나의 목록을 사용합니다.",
+          "newSkills": "새 스킬이 어디서나 나타납니다."
+        },
+        "cons": {
+          "dropped": "이름과 설명만 유지됩니다. 제공자별 설정은 제거되며 동작이 바뀔 수 있습니다.",
+          "claudeSyntax": "Claude 전용 문법은 다른 제공자에서 작동하지 않습니다: {names}"
+        },
+        "attentionTitle": "확인 필요",
+        "nothingNeedsAttention": "확인할 항목이 없습니다.",
+        "nameField": "이름",
+        "descriptionField": "설명",
+        "ready": "준비됨",
+        "problems": {
+          "name": "잘못된 이름입니다. 소문자, 숫자, 하이픈만 사용하세요.",
+          "description": "설명이 없습니다.",
+          "instructions": "지침이 없습니다. 파일에 추가한 뒤 다시 동기화하세요.",
+          "unreadable": "프론트매터를 읽을 수 없습니다. 파일을 수정한 뒤 다시 동기화하세요.",
+          "sharedConflict": "\"{name}\" 공유 스킬이 이미 있습니다.",
+          "itemConflict": "다른 항목도 이름이 \"{name}\"입니다."
+        },
+        "options": {
+          "fix": "수정",
+          "replace": "공유 스킬 교체",
+          "discard": "버리기(휴지통으로 이동)",
+          "keep": "명령으로 유지"
+        },
+        "continue": "계속",
+        "confirmTitle": ".claude/skills를 링크로 바꿀까요?",
+        "confirmBody": ".claude/skills가 .agents/skills로의 링크로 바뀝니다. 되돌릴 수 없습니다.",
+        "repairBody": ".claude/skills는 .agents/skills로의 링크로 바뀝니다. 현재 가리키는 폴더는 변경되지 않습니다.",
+        "linkBody": ".claude/skills를 .agents/skills로의 링크로 만들어 Claude가 공유 스킬을 사용하게 합니다. 파일은 이동하지 않습니다.",
+        "linkWithItemsBody": "명령이 스킬이 된 다음 .claude/skills가 .agents/skills로의 링크로 만들어집니다. 되돌릴 수 없습니다.",
+        "devicesWarning": "이 보관함을 여러 기기에서 동기화하나요? 링크는 동기화되지 않을 수 있으니 각 기기에서 동기화하세요.",
+        "confirm": "동기화 후 연결",
+        "partial": "링크를 만들기 전에 동기화가 중단되었습니다. 아래 항목을 수정하고 다시 동기화하세요.",
+        "failed": "동기화 실패: {message}",
+        "summary": "이동 {moved}, 변환 {converted}, 휴지통 {trashed}, 링크 제거 {unlinked}."
       }
     }
   }

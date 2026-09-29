@@ -4,11 +4,8 @@ import type {
   ProviderCommandListContext,
 } from '../../../core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
-import type { ProviderVaultEntryRepository } from '../../../core/providers/commands/ProviderVaultEntryRepository';
 import type { SlashCommand } from '../../../core/types';
 import { isSkill } from '../../../utils/slashCommand';
-import type { SkillStorage } from '../storage/SkillStorage';
-import type { SlashCommandStorage } from '../storage/SlashCommandStorage';
 
 function slashCommandToEntry(cmd: SlashCommand): ProviderCommandEntry {
   const skill = isSkill(cmd);
@@ -36,25 +33,6 @@ function slashCommandToEntry(cmd: SlashCommand): ProviderCommandEntry {
   };
 }
 
-function entryToSlashCommand(entry: ProviderCommandEntry): SlashCommand {
-  return {
-    id: entry.id,
-    name: entry.name,
-    description: entry.description,
-    content: entry.content,
-    argumentHint: entry.argumentHint,
-    allowedTools: entry.allowedTools,
-    model: entry.model,
-    disableModelInvocation: entry.disableModelInvocation,
-    userInvocable: entry.userInvocable,
-    context: entry.context,
-    agent: entry.agent,
-    hooks: entry.hooks,
-    source: entry.source,
-    kind: entry.kind,
-  };
-}
-
 // SDK built-in skills that have no meaning inside Claudian
 const BUILTIN_HIDDEN_COMMANDS = new Set([
   'context', 'cost', 'debug', 'extra-usage', 'heapdump', 'init',
@@ -72,7 +50,7 @@ interface ActiveCommandProbe {
   resolveCompletion(): void;
 }
 
-export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVaultEntryRepository {
+export class ClaudeCommandCatalog implements ProviderCommandCatalog {
   private readonly activeProbes = new Set<ActiveCommandProbe>();
   private cacheGeneration = 0;
   private commandSnapshot: SlashCommand[] = [];
@@ -83,11 +61,7 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
   private probePromise: Promise<SlashCommand[]> | null = null;
   private transitionActive = false;
 
-  constructor(
-    private commandStorage: SlashCommandStorage,
-    private skillStorage: SkillStorage,
-    private probe?: CommandProbe,
-  ) {}
+  constructor(private probe?: CommandProbe) {}
 
   setCommandSnapshot(commands: SlashCommand[]): void {
     if (this.probesBlocked) return;
@@ -164,32 +138,6 @@ export class ClaudeCommandCatalog implements ProviderCommandCatalog, ProviderVau
       signal?.removeEventListener('abort', onAbort);
       this.activeProbes.delete(entry);
       entry.resolveCompletion();
-    }
-  }
-
-  async listVaultEntries(signal?: AbortSignal): Promise<ProviderCommandEntry[]> {
-    signal?.throwIfAborted();
-    const commands = await this.commandStorage.loadAll();
-    signal?.throwIfAborted();
-    const skills = await this.skillStorage.loadAll();
-    signal?.throwIfAborted();
-    return [...commands, ...skills].map(slashCommandToEntry);
-  }
-
-  async saveVaultEntry(entry: ProviderCommandEntry): Promise<void> {
-    const cmd = entryToSlashCommand(entry);
-    if (entry.kind === 'skill') {
-      await this.skillStorage.save(cmd);
-    } else {
-      await this.commandStorage.save(cmd);
-    }
-  }
-
-  async deleteVaultEntry(entry: ProviderCommandEntry): Promise<void> {
-    if (entry.kind === 'skill') {
-      await this.skillStorage.delete(entry.id);
-    } else {
-      await this.commandStorage.delete(entry.id);
     }
   }
 

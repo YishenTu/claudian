@@ -1,4 +1,3 @@
-import { getDefaultHiddenProviderCommands } from '../../core/providers/commands/hiddenCommands';
 import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
 import { DEFAULT_MAX_WARM_AGENT_PROCESSES } from '../../core/settings/warmExecutionLimits';
 import { type ClaudianSettings } from '../../core/types/settings';
@@ -54,9 +53,10 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   enableDualPane: true,
   dualPaneSide: 'right',
   restoreTabsOnStartup: true,
+  skillsSynced: false,
   sessionManagerOrganization: 'list',
   sessionManagerSort: 'last-updated',
   pinnedLinkedContentPaths: [],
 
-  hiddenProviderCommands: getDefaultHiddenProviderCommands(),
+  hiddenCommands: [],
 };

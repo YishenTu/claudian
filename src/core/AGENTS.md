@@ -25,3 +25,4 @@
 - Historical provider ownership does not imply enabled-model availability. Readers expose the stored model until the repository durably adopts `modelToPersist`.
 - Alias canonicalization cannot choose a fallback. Fallback uses explicit registry blank-tab display order, not registration order, alphabetic order, or current settings projection.
 - Title generation uses the global title-model selection independently from chat. Auxiliary continuation remains provider-owned even when core owns orchestration/parsing.
+- Vault skill management is filesystem-only and never changes how providers discover skills. The `.claude/skills` → `.agents/skills` link state is per device: read it from disk, never persist it. Settings only record the vault-wide fact that Sync ran (`skillsSynced`). Folder links are removed with unlink, never trashed or followed.

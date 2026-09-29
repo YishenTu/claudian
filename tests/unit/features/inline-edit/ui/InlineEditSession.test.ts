@@ -46,7 +46,7 @@ function createSession() {
   const resolve = jest.fn();
   const plugin: any = {
     providerHost: {},
-    settings: { hiddenProviderCommands: {} },
+    settings: { hiddenCommands: [] },
     getView: jest.fn(() => null),
   };
   const app: any = {

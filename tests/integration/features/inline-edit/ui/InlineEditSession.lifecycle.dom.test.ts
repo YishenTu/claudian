@@ -235,7 +235,7 @@ it('uses provider-scoped hidden commands and cancels widget-owned discovery on r
     refresh: async () => {},
   };
   ProviderWorkspaceRegistry.setServices('claude', { commandCatalog: catalog });
-  h.plugin.settings.hiddenProviderCommands = { claude: ['analyze'], codex: ['visible'] };
+  h.plugin.settings.hiddenCommands = ['analyze'];
   const session = h.createSession();
   session.show();
   typeInstruction('/');

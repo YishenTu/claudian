@@ -3,10 +3,6 @@ import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
 
 import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
 
-import {
-  getHiddenProviderCommands,
-  normalizeHiddenCommandList,
-} from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
@@ -16,7 +12,6 @@ import {
   MAX_WARM_AGENT_PROCESSES,
   MIN_WARM_AGENT_PROCESSES,
 } from '../../core/settings/warmExecutionLimits';
-import { AgentSkillRepository } from '../../core/skills/AgentSkillRepository';
 import type {
   ChatViewPlacement,
   DualPaneSide,
@@ -26,11 +21,10 @@ import type { Locale, TranslationKey } from '../../i18n/types';
 import { renderEnvironmentSettingsSection } from '../../shared/settings/EnvironmentSettingsSection';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import type { FeatureHost } from '../FeatureHost';
-import { AgentSkillManagementCoordinator } from './AgentSkillManagementCoordinator';
-import { AgentSkillSettings } from './AgentSkillSettings';
 import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
+import { SkillsSettingsTab } from './SkillsSettingsTab';
 
-type SettingsTabId = 'general' | 'providers';
+type SettingsTabId = 'general' | 'providers' | 'skills';
 type ObsidianHotkey = { modifiers: string[]; key: string };
 type ObsidianHotkeyManager = {
   customKeys?: Record<string, ObsidianHotkey[] | undefined>;
@@ -125,15 +119,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private refreshTitleModelOptions: (() => void) | null = null;
   private renderGeneration = 0;
   private readonly providerSettingsRenders = new Map<ProviderId, ProviderSettingsTabRenderHandle>();
-  private readonly agentSkillCoordinator: AgentSkillManagementCoordinator;
+  private skillsTab: SkillsSettingsTab | null = null;
 
   constructor(app: App, plugin: FeatureHost & Plugin) {
     super(app, plugin);
     this.plugin = plugin;
-    this.agentSkillCoordinator = new AgentSkillManagementCoordinator(
-      new AgentSkillRepository(plugin.storage.getAdapter()),
-      () => plugin.notifyAgentSkillsChanged(),
-    );
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
@@ -146,8 +136,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
   private renderSettings(containerEl: HTMLElement): () => void {
     this.disposeProviderSettingsRenders();
+    this.disposeSkillsTab();
     const renderGeneration = ++this.renderGeneration;
-    this.agentSkillCoordinator.resetSubscriptions();
     containerEl.empty();
     containerEl.addClass('claudian-settings');
     const settingItems = containerEl.parentElement;
@@ -159,7 +149,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     setLocale(this.plugin.settings.locale as Locale);
 
     const providerTabs = ProviderRegistry.getRegisteredProviderIds();
-    const tabIds: SettingsTabId[] = ['general', 'providers'];
+    const tabIds: SettingsTabId[] = ['general', 'providers', 'skills'];
     const preferredProvider = providerTabs.includes(this.plugin.settings.settingsProvider)
       ? this.plugin.settings.settingsProvider
       : providerTabs[0] ?? null;
@@ -210,14 +200,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
         }
         const handle = renderer.render(providerContent, {
           plugin: this.plugin.providerHost,
-          renderAgentSkillSettings: (target, _targetProviderId) => {
-            new AgentSkillSettings(target, this.agentSkillCoordinator, this.app);
-          },
-          renderHiddenProviderCommandSetting: (
-            target,
-            targetProviderId,
-            copy,
-          ) => this.renderHiddenProviderCommandSetting(target, targetProviderId, copy),
           notifyProviderModelOptionsChanged: (changedProviderId) => {
             this.notifyProviderModelOptionsChanged(changedProviderId);
           },
@@ -254,6 +236,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         if (id === 'providers' && this.activeProviderTab) {
           void renderProviderTab(this.activeProviderTab);
         }
+        if (id === 'skills') renderSkillsTab();
       });
       tabButtons.set(id, button);
     }
@@ -267,6 +250,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     this.renderGeneralTab(tabContents.get('general')!);
     frameSettingsGroups(tabContents.get('general')!);
+
+    // Rendered on first activation so opening settings never touches skill folders.
+    const renderSkillsTab = (): void => {
+      if (this.skillsTab) return;
+      this.skillsTab = new SkillsSettingsTab(
+        tabContents.get('skills')!,
+        this.app,
+        this.plugin.storage.getAdapter(),
+        this.plugin,
+      );
+    };
+    if (this.activeTab === 'skills') renderSkillsTab();
 
     for (const providerId of providerTabs) {
       const content = providerContentHost.createDiv({
@@ -303,7 +298,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       settingItems?.classList.remove('claudian-settings-items');
       this.renderGeneration += 1;
       this.disposeProviderSettingsRenders();
-      this.agentSkillCoordinator.resetSubscriptions();
+      this.disposeSkillsTab();
       this.refreshTitleModelOptions = null;
     };
   }
@@ -727,6 +722,11 @@ export class ClaudianSettingTab extends PluginSettingTab {
     this.providerSettingsRenders.clear();
   }
 
+  private disposeSkillsTab(): void {
+    this.skillsTab?.dispose();
+    this.skillsTab = null;
+  }
+
   refreshModelOptions(): void {
     for (const handle of this.providerSettingsRenders.values()) handle.refresh();
     this.refreshTitleModelOptions?.();
@@ -735,32 +735,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private notifyProviderModelOptionsChanged(providerId: ProviderId): void {
     this.plugin.notifyProviderChatOptionsChanged(providerId);
     this.refreshTitleModelOptions?.();
-  }
-
-  private renderHiddenProviderCommandSetting(
-    container: HTMLElement,
-    providerId: ProviderId,
-    copy: { name: string; desc: string; placeholder: string },
-  ): void {
-    new Setting(container)
-      .setName(copy.name)
-      .setDesc(copy.desc)
-      .setClass('claudian-settings-textarea')
-      .addTextArea((text) => {
-        text
-          .setPlaceholder(copy.placeholder)
-          .setValue(getHiddenProviderCommands(this.plugin.settings, providerId).join('\n'))
-          .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
-              settings.hiddenProviderCommands = {
-                ...settings.hiddenProviderCommands,
-                [providerId]: normalizeHiddenCommandList(value.split(/\r?\n/)),
-              };
-            });
-          });
-        text.inputEl.rows = 4;
-        text.inputEl.cols = 30;
-      });
   }
 
   private renderCustomContextLimits(container: HTMLElement, providerId: ProviderId): void {

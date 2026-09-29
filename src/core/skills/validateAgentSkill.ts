@@ -33,24 +33,31 @@ export function validateAgentSkillName(name: string): string | null {
   return null;
 }
 
-export function validateAgentSkillInput(input: AgentSkillInput): void {
+/** Every field error, in name, description, instructions order. */
+export function collectAgentSkillInputErrors(input: AgentSkillInput): AgentSkillValidationError[] {
+  const errors: AgentSkillValidationError[] = [];
   const nameError = validateAgentSkillName(input.name);
   if (nameError) {
-    throw new AgentSkillValidationError('name', nameError);
+    errors.push(new AgentSkillValidationError('name', nameError));
   }
 
   const description = input.description.trim();
   if (!description) {
-    throw new AgentSkillValidationError('description', 'Skill description is required');
-  }
-  if (description.length > MAX_DESCRIPTION_LENGTH) {
-    throw new AgentSkillValidationError(
+    errors.push(new AgentSkillValidationError('description', 'Skill description is required'));
+  } else if (description.length > MAX_DESCRIPTION_LENGTH) {
+    errors.push(new AgentSkillValidationError(
       'description',
       `Skill description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer`,
-    );
+    ));
   }
 
   if (!input.instructions.trim()) {
-    throw new AgentSkillValidationError('instructions', 'Skill instructions are required');
+    errors.push(new AgentSkillValidationError('instructions', 'Skill instructions are required'));
   }
+  return errors;
+}
+
+export function validateAgentSkillInput(input: AgentSkillInput): void {
+  const [first] = collectAgentSkillInputErrors(input);
+  if (first) throw first;
 }

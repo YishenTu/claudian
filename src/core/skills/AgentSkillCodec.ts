@@ -70,6 +70,32 @@ export function parseAgentSkillMarkdown(content: string, directoryName: string):
   return parsed;
 }
 
+/**
+ * Reads provider skills that do not meet the portable rules: the folder name is
+ * the identity and a missing description stays empty until the user saves a
+ * valid document. YAML frontmatter is still required.
+ */
+export function parseLenientAgentSkillMarkdown(content: string, directoryName: string): ParsedAgentSkill {
+  const match = content.match(FRONTMATTER_PATTERN);
+  if (!match) {
+    throw new AgentSkillCodecError('SKILL.md must start with YAML frontmatter');
+  }
+  const frontmatter = parseFrontmatter(match[1]);
+  const body = match[2];
+  return {
+    name: directoryName,
+    description: typeof frontmatter.description === 'string' ? frontmatter.description.trim() : '',
+    instructions: body.replace(/\r\n/g, '\n').trim(),
+    frontmatter,
+  };
+}
+
+const OWNED_FRONTMATTER_KEYS = new Set(['name', 'description']);
+
+export function extraFrontmatterKeys(frontmatter: Record<string, unknown>): string[] {
+  return Object.keys(frontmatter).filter(key => !OWNED_FRONTMATTER_KEYS.has(key));
+}
+
 function serializeYamlFallback(frontmatter: Record<string, unknown>): string {
   const lines: string[] = [];
   for (const [key, value] of Object.entries(frontmatter)) {
@@ -91,6 +117,16 @@ function serializeFrontmatter(frontmatter: Record<string, unknown>): string {
   return serializeYamlFallback(frontmatter);
 }
 
+/** Serializes a Markdown document, omitting the frontmatter block when it has no keys. */
+export function serializeMarkdownWithFrontmatter(
+  frontmatter: Record<string, unknown>,
+  body: string,
+): string {
+  const entries = Object.entries(frontmatter).filter(([, value]) => value !== undefined);
+  if (entries.length === 0) return `${body}\n`;
+  return `---\n${serializeFrontmatter(Object.fromEntries(entries))}\n---\n${body}\n`;
+}
+
 export function serializeAgentSkillMarkdown(
   currentFrontmatter: Record<string, unknown>,
   input: AgentSkillInput,
@@ -106,5 +142,5 @@ export function serializeAgentSkillMarkdown(
     name: normalized.name,
     description: normalized.description,
   };
-  return `---\n${serializeFrontmatter(frontmatter)}\n---\n${normalized.instructions}\n`;
+  return serializeMarkdownWithFrontmatter(frontmatter, normalized.instructions);
 }

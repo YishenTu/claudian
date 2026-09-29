@@ -3,7 +3,10 @@
 }
 
 .claudian-agent-skills-help {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  justify-content: center;
   min-width: 0;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
@@ -36,9 +39,8 @@
 .claudian-agent-skills-diagnostics {
   margin-top: 12px;
   padding: 12px;
-  border: 1px solid var(--background-modifier-error);
+  border: 1px solid var(--text-error);
   border-radius: 6px;
-  background: var(--background-modifier-error-hover);
 }
 
 .claudian-agent-skills-diagnostics-title {
@@ -49,11 +51,27 @@
 
 .claudian-agent-skills-diagnostic {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
   color: var(--text-muted);
   font-size: var(--font-ui-small);
+}
+
+.claudian-agent-skills-diagnostic + .claudian-agent-skills-diagnostic {
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.claudian-agent-skills-diagnostic-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.claudian-agent-skills-diagnostic .claudian-sp-item-actions {
+  flex-shrink: 0;
 }
 
 .claudian-agent-skills-error {
@@ -63,4 +81,161 @@
 
 .claudian-agent-skill-delete-description {
   color: var(--text-warning);
+}
+
+.claudian-skills-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: var(--size-4-4);
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.claudian-agent-skills-commands {
+  margin-top: 16px;
+}
+
+.claudian-agent-skills-commands-title {
+  font-weight: var(--font-semibold);
+}
+
+.claudian-agent-skills-commands .setting-item-description {
+  margin: 4px 0 8px;
+}
+
+.claudian-agent-skill-warning {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--background-modifier-hover);
+  color: var(--text-warning);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-skill-sync-modal h3 {
+  margin: 16px 0 8px;
+  font-size: var(--font-ui-medium);
+}
+
+.claudian-skill-sync-points {
+  margin: 0;
+  padding-left: 20px;
+  font-size: var(--font-ui-small);
+}
+
+.claudian-skill-sync-pro {
+  color: var(--text-muted);
+}
+
+.claudian-skill-sync-con {
+  color: var(--text-warning);
+}
+
+.claudian-skill-sync-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.claudian-skill-sync-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+}
+
+.claudian-skill-sync-card legend {
+  padding: 0 4px;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-skill-sync-status {
+  margin: 0;
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+}
+
+.claudian-skill-sync-status.claudian-skill-sync-status--ready {
+  color: var(--text-success);
+}
+
+.claudian-skill-sync-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-ui-small);
+}
+
+.claudian-skill-sync-field span {
+  flex: 0 0 80px;
+  color: var(--text-muted);
+}
+
+.claudian-skill-sync-field input {
+  flex: 1;
+  min-width: 0;
+}
+
+.claudian-skill-sync-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: var(--font-ui-small);
+}
+
+.claudian-skill-sync-failures {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+}
+
+/* Keeps the next setting's divider from landing on the last box's bottom border. */
+.claudian-skills-tab {
+  margin-bottom: var(--size-4-6);
+}
+
+.claudian-settings .claudian-skills-subtabs {
+  align-items: center;
+}
+
+.claudian-skills-synced-dot {
+  width: 8px;
+  height: 8px;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: var(--color-green);
+}
+
+.claudian-skills-subtabs-actions {
+  margin-left: auto;
+  padding-bottom: 4px;
+}
+
+.claudian-agent-skills-header .claudian-sp-header-actions {
+  align-items: center;
+}
+
+/* Spans the same width as the skill list above it, with a full-width divider. */
+.claudian-settings .setting-item.claudian-skills-hidden-setting {
+  padding-inline: 0;
+  padding-top: var(--size-4-4);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.claudian-settings .setting-item.claudian-skills-hidden-setting::before {
+  content: none;
+}
+
+/* Scoped to beat Obsidian's settings heading margins, which pushed the title off center. */
+.claudian-settings .claudian-agent-skills-header .claudian-agent-skills-title {
+  margin: 0;
+  line-height: var(--line-height-tight);
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
 }

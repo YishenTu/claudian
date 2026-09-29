@@ -9,7 +9,7 @@ import {
   type TabWorkspaceViewState,
 } from '../../core/bootstrap/tabManagerState';
 import { StartupProfiler } from '../../core/performance/StartupProfiler';
-import { getHiddenProviderCommandSet } from '../../core/providers/commands/hiddenCommands';
+import { getHiddenCommandSet } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { type AppTabManagerState, DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { type ConversationMeta, VIEW_TYPE_CLAUDIAN } from '../../core/types';
@@ -263,15 +263,11 @@ export class ClaudianView extends ItemView {
     this.tabManager?.invalidateProviderResources(providerIds, generation);
   }
 
-  /** Updates provider-scoped hidden commands on all tabs after settings changes. */
-  updateHiddenProviderCommands(): void {
+  /** Updates hidden commands on all tabs after settings changes. */
+  updateHiddenCommands(): void {
+    const hiddenCommands = getHiddenCommandSet(this.plugin.settings);
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      const providerId = getTabProviderId(tab, this.plugin);
-      tab.ui.composerDropdown.setHiddenCommands(
-        providerId
-          ? getHiddenProviderCommandSet(this.plugin.settings, providerId)
-          : new Set(),
-      );
+      tab.ui.composerDropdown.setHiddenCommands(hiddenCommands);
     }
   }
 

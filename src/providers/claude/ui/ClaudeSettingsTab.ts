@@ -2,7 +2,6 @@ import * as fs from 'fs';
 import { Setting } from 'obsidian';
 
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
-import type { ProviderVaultEntryRepository } from '@/core/providers/commands/ProviderVaultEntryRepository';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import type { ProviderCLIResolver } from '@/core/providers/types';
 import { CLAUDE_PROVIDER_ICON } from '@/shared/icons';
@@ -26,10 +25,9 @@ import {
   getClaudeProviderSettings,
   updateClaudeProviderSettings,
 } from '../settings';
-import { SlashCommandSettings } from './SlashCommandSettings';
 
 export function createClaudeSettingsTabRenderer(
-  claudeWorkspace: { cliResolver: Pick<ProviderCLIResolver, 'reset'>; vaultCommandRepository: ProviderVaultEntryRepository; modelCatalog: ProviderModelCatalog; },
+  claudeWorkspace: { cliResolver: Pick<ProviderCLIResolver, 'reset'>; modelCatalog: ProviderModelCatalog; },
 ): ProviderSettingsTabRenderer {
   return {
     render(container, context) {
@@ -200,31 +198,6 @@ export function createClaudeSettingsTabRenderer(
               });
             })
         );
-
-      // --- Slash Commands ---
-
-      new Setting(container).setName(t('settings.slashCommands.name')).setHeading();
-
-      const slashCommandsDesc = container.createDiv({ cls: 'claudian-sp-settings-desc' });
-      const descP = slashCommandsDesc.createEl('p', { cls: 'setting-item-description' });
-      descP.appendText(t('settings.slashCommands.desc') + ' ');
-      descP.createEl('a', {
-        text: 'Learn more',
-        href: 'https://code.claude.com/docs/en/skills',
-      });
-
-      const slashCommandsContainer = container.createDiv({ cls: 'claudian-slash-commands-container' });
-      new SlashCommandSettings(
-        slashCommandsContainer,
-        context.plugin.app,
-        claudeWorkspace.vaultCommandRepository,
-      );
-
-      context.renderHiddenProviderCommandSetting(container, 'claude', {
-        name: t('settings.hiddenSlashCommands.name'),
-        desc: t('settings.hiddenSlashCommands.desc'),
-        placeholder: t('settings.hiddenSlashCommands.placeholder'),
-      });
 
       // --- Environment ---
 

@@ -7,7 +7,7 @@ import { Notice } from 'obsidian';
 import { normalizeInsertionText } from '@/features/inline-edit/ui/normalizeInsertionText';
 
 import { createCatalogCommandDiscoveryStore } from '../../../core/providers/commands/catalogCommandDiscovery';
-import { getHiddenProviderCommandSet } from '../../../core/providers/commands/hiddenCommands';
+import { getHiddenCommandSet } from '../../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
 import { type InlineEditMode, type InlineEditService, type ProviderId } from '../../../core/providers/types';
@@ -579,7 +579,7 @@ export class InlineEditSession {
     const slashSource = new SlashCommandSource({
       includeBuiltIns: false,
       providerId: this.resolvedProviderId,
-      hiddenCommands: getHiddenProviderCommandSet(this.plugin.settings, this.resolvedProviderId),
+      hiddenCommands: getHiddenCommandSet(this.plugin.settings),
       ...(inlineCatalog && discovery ? {
         providerConfig: inlineCatalog.getDropdownConfig(),
         providerDiscovery: discovery,

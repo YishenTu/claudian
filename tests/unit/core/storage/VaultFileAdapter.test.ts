@@ -10,6 +10,11 @@ import {
   VaultFileAdapter,
 } from '@/core/storage/VaultFileAdapter';
 
+jest.mock('node:fs/promises', () => {
+  const actual = jest.requireActual<typeof fs>('node:fs/promises');
+  return { ...actual, symlink: jest.fn(actual.symlink), writeFile: jest.fn(actual.writeFile) };
+});
+
 function createDesktopFsAdapter(
   root: string,
   hooks: {
@@ -37,12 +42,17 @@ function createDesktopFsAdapter(
         folders: entries.filter(entry => entry.isDirectory()).map(entry => `${relativePath}/${entry.name}`),
       };
     },
-    mkdir: async (relativePath: string) => fs.mkdir(resolve(relativePath)),
+    // Mirrors Obsidian's desktop adapter: recursive mkdir, `fs.rm` rmdir.
+    mkdir: async (relativePath: string) => {
+      await fs.mkdir(resolve(relativePath), { recursive: true });
+    },
     rename: async (source: string, target: string) => {
       await hooks.beforeRename?.(source, target);
       await fs.rename(resolve(source), resolve(target));
     },
-    rmdir: async (relativePath: string) => fs.rmdir(resolve(relativePath)),
+    rmdir: async (relativePath: string, recursive = false) => (
+      fs.rm(resolve(relativePath), { maxRetries: 5, recursive })
+    ),
   };
 }
 
@@ -794,6 +804,136 @@ describe('VaultFileAdapter', () => {
 
       await expect(vaultAdapter.trash('.agents/skills/portable-skill'))
         .rejects.toThrow('Could not trash managed resource');
+    });
+  });
+  describe('managed writes on desktop', () => {
+    let vaultPath: string;
+    let files: VaultFileAdapter;
+
+    beforeEach(async () => {
+      vaultPath = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-')));
+      files = new VaultFileAdapter({
+        vault: { adapter: createDesktopFsAdapter(vaultPath) },
+      } as unknown as App);
+      await fs.mkdir(path.join(vaultPath, '.agents/skills/kept'), { recursive: true });
+      await fs.writeFile(path.join(vaultPath, '.agents/skills/kept/SKILL.md'), 'original');
+    });
+
+    afterEach(async () => {
+      await fs.rm(vaultPath, { recursive: true, force: true });
+    });
+
+    it('replaces the file content in one step', async () => {
+      await files.writeManagedFile('.agents/skills/kept/SKILL.md', 'updated');
+
+      expect(await fs.readFile(path.join(vaultPath, '.agents/skills/kept/SKILL.md'), 'utf8')).toBe('updated');
+      expect(await fs.readdir(path.join(vaultPath, '.agents/skills/kept'))).toEqual(['SKILL.md']);
+    });
+
+    it('keeps the previous content when a write fails partway', async () => {
+      const actual = jest.requireActual<typeof fs>('node:fs/promises');
+      jest.mocked(fs.writeFile).mockImplementationOnce(async file => {
+        await actual.writeFile(file, 'torn');
+        throw new Error('ENOSPC: no space left on device');
+      });
+
+      await expect(files.writeManagedFile('.agents/skills/kept/SKILL.md', 'updated'))
+        .rejects.toThrow('Could not write managed resource');
+
+      expect(await fs.readFile(path.join(vaultPath, '.agents/skills/kept/SKILL.md'), 'utf8')).toBe('original');
+      expect(await fs.readdir(path.join(vaultPath, '.agents/skills/kept'))).toEqual(['SKILL.md']);
+    });
+  });
+
+  describe('folder links', () => {
+    let vaultPath: string;
+    let files: VaultFileAdapter;
+
+    beforeEach(async () => {
+      vaultPath = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'claudian-vault-')));
+      files = new VaultFileAdapter({
+        vault: { adapter: createDesktopFsAdapter(vaultPath) },
+      } as unknown as App);
+    });
+
+    afterEach(async () => {
+      jest.restoreAllMocks();
+      await fs.rm(vaultPath, { recursive: true, force: true });
+    });
+
+    it('creates a relative folder link and reports it as linked to the target', async () => {
+      await fs.mkdir(path.join(vaultPath, '.agents/skills'), { recursive: true });
+
+      await files.createFolderLink('.claude/skills', '.agents/skills');
+
+      expect(await fs.readlink(path.join(vaultPath, '.claude/skills'))).toBe(
+        path.join('..', '.agents', 'skills'),
+      );
+      await expect(files.inspectFolderLink('.claude/skills', '.agents/skills')).resolves.toBe('linked');
+    });
+
+    it('reports missing, folder, file, foreign and broken states without following links', async () => {
+      await fs.mkdir(path.join(vaultPath, '.agents/skills'), { recursive: true });
+      await expect(files.inspectFolderLink('.claude/skills', '.agents/skills')).resolves.toBe('missing');
+
+      await fs.mkdir(path.join(vaultPath, '.claude/skills'), { recursive: true });
+      await expect(files.inspectFolderLink('.claude/skills', '.agents/skills')).resolves.toBe('folder');
+      await fs.rmdir(path.join(vaultPath, '.claude/skills'));
+
+      await fs.writeFile(path.join(vaultPath, '.claude/skills'), 'file');
+      await expect(files.inspectFolderLink('.claude/skills', '.agents/skills')).resolves.toBe('other');
+      await fs.rm(path.join(vaultPath, '.claude/skills'));
+
+      await fs.mkdir(path.join(vaultPath, 'elsewhere'));
+      await fs.symlink(path.join(vaultPath, 'elsewhere'), path.join(vaultPath, '.claude/skills'));
+      await expect(files.inspectFolderLink('.claude/skills', '.agents/skills')).resolves.toBe('foreign-link');
+      await fs.unlink(path.join(vaultPath, '.claude/skills'));
+
+      await fs.symlink(path.join(vaultPath, 'gone'), path.join(vaultPath, '.claude/skills'));
+      await expect(files.inspectFolderLink('.claude/skills', '.agents/skills')).resolves.toBe('broken-link');
+    });
+
+    it('refuses to replace an existing entry when creating a link', async () => {
+      await fs.mkdir(path.join(vaultPath, '.agents/skills'), { recursive: true });
+      await fs.mkdir(path.join(vaultPath, '.claude/skills'), { recursive: true });
+
+      await expect(files.createFolderLink('.claude/skills', '.agents/skills'))
+        .rejects.toBeInstanceOf(ManagedResourceCollisionError);
+    });
+
+    it('removes only the link and never its target', async () => {
+      await fs.mkdir(path.join(vaultPath, '.agents/skills/kept'), { recursive: true });
+      await files.createFolderLink('.claude/skills', '.agents/skills');
+
+      await files.removeFolderLink('.claude/skills');
+
+      await expect(fs.lstat(path.join(vaultPath, '.claude/skills'))).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(fs.stat(path.join(vaultPath, '.agents/skills/kept'))).resolves.toBeTruthy();
+    });
+
+    it('refuses to remove a real folder as a link', async () => {
+      await fs.mkdir(path.join(vaultPath, '.claude/skills/real'), { recursive: true });
+
+      await expect(files.removeFolderLink('.claude/skills')).rejects.toThrow('not a link');
+      await expect(fs.stat(path.join(vaultPath, '.claude/skills/real'))).resolves.toBeTruthy();
+    });
+
+    it('creates an absolute junction on Windows', async () => {
+      await fs.mkdir(path.join(vaultPath, '.agents/skills'), { recursive: true });
+      const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const symlink = jest.mocked(fs.symlink).mockResolvedValueOnce(undefined);
+      try {
+        await files.createFolderLink('.claude/skills', '.agents/skills');
+      } finally {
+        Object.defineProperty(process, 'platform', originalPlatform);
+      }
+
+      expect(symlink).toHaveBeenCalledWith(
+        path.join(vaultPath, '.agents', 'skills'),
+        path.join(vaultPath, '.claude', 'skills'),
+        'junction',
+      );
     });
   });
 });

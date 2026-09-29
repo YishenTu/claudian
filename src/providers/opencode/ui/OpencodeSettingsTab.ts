@@ -128,16 +128,6 @@ export function createOpencodeSettingsTabRenderer(
       new Setting(container).setName('Models').setHeading();
       const modelPicker = renderProviderModelsSection(container, 'opencode', 'OpenCode', opencodeWorkspace.modelCatalog, () => modelWarning.refresh());
 
-      new Setting(container).setName(t('settings.agentSkills.sectionTitle')).setHeading();
-      context.renderAgentSkillSettings(container, 'opencode');
-
-      new Setting(container).setName('Commands').setHeading();
-      context.renderHiddenProviderCommandSetting(container, 'opencode', {
-        name: 'Hidden Commands and Skills',
-        desc: 'Hide specific OpenCode commands and skills from the dropdown. Enter names without the leading slash, one per line.',
-        placeholder: 'compact\nreview\nfix',
-      });
-
       renderEnvironmentSettingsSection({
         container,
         plugin: context.plugin,

@@ -92,6 +92,7 @@
     "tabs": {
       "general": "一般",
       "providers": "提供者",
+      "skills": "技能",
       "claude": "Claude",
       "codex": "Codex"
     },
@@ -156,15 +157,6 @@
     },
     "closeTabHotkey": {
       "name": "關閉分頁"
-    },
-    "slashCommands": {
-      "name": "命令與技能",
-      "desc": "管理儲存在 .claude/commands/ 和 .claude/skills/ 中的 Vault 級命令與技能。由 /名稱 觸發。"
-    },
-    "hiddenSlashCommands": {
-      "name": "隱藏命令與技能",
-      "desc": "從下拉選單中隱藏特定的命令與技能。適用於隱藏與 Claudian 無關的 Claude Code 項目。每行輸入一個名稱，無需前導斜線。",
-      "placeholder": "commit\nbuild\ntest"
     },
     "safety": "安全",
     "loadUserSettings": {
@@ -345,21 +337,12 @@
         "name": "啟用 Ultra 推理強度",
         "desc": "在支援 Ultra 的 Codex 模型的推理強度選擇器中顯示此選項。Ultra 使用最高推理強度並自動委派工作。"
       },
-      "skills": {
-        "name": "Codex 技能",
-        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
-        "hiddenName": "隱藏技能",
-        "hiddenDesc": "從下拉選單中隱藏特定 Codex 技能。每行輸入一個技能名稱，不帶前導 $。",
-        "hiddenPlaceholder": "analyze\nexplain\nfix"
-      },
       "environment": {
         "name": "Codex 環境",
         "desc": "僅限 Codex 擁有的執行階段變數。用於 OPENAI_* 和 CODEX_* 設定。如果 Codex 自動偵測需要協助，請把安裝目錄新增到共享 PATH，而不是此提供者環境。"
       }
     },
     "agentSkills": {
-      "sectionTitle": "Skills",
-      "fixedRoot": "Managed in .agents/skills",
       "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
       "noSkills": "No shared skills configured. Click + to create one.",
       "skillBadge": "skill",
@@ -374,9 +357,12 @@
       "created": "Shared skill \"{name}\" created.",
       "updated": "Shared skill \"{name}\" updated.",
       "deleted": "Shared skill \"{name}\" moved to trash.",
+      "fix": "修復",
+      "fixed": "已修復技能「{name}」。",
       "modal": {
         "titleEdit": "Edit Shared Skill",
         "titleAdd": "Add Shared Skill",
+        "titleFix": "修復技能",
         "name": "Skill name",
         "nameDesc": "Lowercase letters and numbers separated by single hyphens",
         "namePlaceholder": "code-reviewer",
@@ -391,6 +377,89 @@
         "title": "Delete Shared Skill",
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
+      }
+    },
+    "skills": {
+      "subTabs": {
+        "claude": "Claude",
+        "shared": "其他供應商"
+      },
+      "claudeHelp": ".claude/skills/ 中的 Claude 技能與 .claude/commands/ 中的指令。",
+      "sharedHelp": ".agents/skills/ 中供 Codex、OpenCode、Pi 與 Grok 使用的共用技能。",
+      "status": {
+        "error": "無法讀取技能資料夾:{message}"
+      },
+      "synced": "已同步",
+      "actions": {
+        "sync": "同步",
+        "resync": "重新同步"
+      },
+      "commands": {
+        "title": "Claude 指令",
+        "hint": "指令僅在 Claude 中可用。建議將其轉換為技能。",
+        "badge": "指令",
+        "empty": ".claude/commands 中沒有指令。",
+        "convert": "轉換為技能",
+        "editTitle": "編輯指令",
+        "convertTitle": "將指令轉換為技能",
+        "nameDesc": ".claude/commands 下不含 .md 的路徑;巢狀指令使用 /",
+        "descriptionDesc": "顯示在指令選單中的選用描述",
+        "updated": "已更新指令「{name}」。",
+        "converted": "已將指令轉換為技能「{name}」。",
+        "deleted": "已將指令「{name}」移至垃圾桶。",
+        "deleteTitle": "刪除指令",
+        "deleteDescription": "指令檔案將移至垃圾桶。",
+        "collisionFailed": "名為「{name}」的指令已存在。"
+      },
+      "droppedFrontmatterWarning": "儲存後僅保留名稱與描述。以下鍵將被移除,供應商的行為可能改變:{keys}",
+      "hidden": {
+        "name": "隱藏的指令與技能",
+        "desc": "在所有供應商的指令選單中隱藏指令與技能。輸入不含前導斜線的確切名稱,每行一個(Pi 技能使用 skill:名稱)。",
+        "placeholder": "commit\ncompact\nskill:review"
+      },
+      "sync": {
+        "title": "同步技能",
+        "repairTitle": "修復技能連結",
+        "loading": "正在檢查技能資料夾...",
+        "intro": "同步會把 Claude 的技能與指令合併到 .agents/skills,並將 .claude/skills 連結到那裡。",
+        "pros": {
+          "oneList": "所有供應商共用一個列表。",
+          "newSkills": "新技能在所有地方可用。"
+        },
+        "cons": {
+          "dropped": "僅保留名稱與描述;供應商專屬的設定會被移除,行為可能改變。",
+          "claudeSyntax": "僅 Claude 支援的語法在其他供應商中無效:{names}"
+        },
+        "attentionTitle": "需要處理",
+        "nothingNeedsAttention": "沒有需要處理的項目。",
+        "nameField": "名稱",
+        "descriptionField": "描述",
+        "ready": "已就緒",
+        "problems": {
+          "name": "名稱無效。請使用小寫字母、數字與連字號。",
+          "description": "缺少描述。",
+          "instructions": "沒有指示。請在檔案中補上後重新同步。",
+          "unreadable": "無法讀取其 frontmatter。請修正檔案後重新同步。",
+          "sharedConflict": "名為「{name}」的共用技能已存在。",
+          "itemConflict": "另一個項目也叫「{name}」。"
+        },
+        "options": {
+          "fix": "修正",
+          "replace": "取代共用技能",
+          "discard": "捨棄(移至垃圾桶)",
+          "keep": "保留為指令"
+        },
+        "continue": "繼續",
+        "confirmTitle": "以連結取代 .claude/skills?",
+        "confirmBody": ".claude/skills 將被取代為指向 .agents/skills 的連結。此動作無法復原。",
+        "repairBody": ".claude/skills 將被取代為指向 .agents/skills 的連結。它目前指向的資料夾不會被修改。",
+        "linkBody": "將 .claude/skills 建立為指向 .agents/skills 的連結,讓 Claude 使用共用技能。不會移動任何檔案。",
+        "linkWithItemsBody": "指令將變成技能,接著 .claude/skills 被建立為指向 .agents/skills 的連結。此動作無法復原。",
+        "devicesWarning": "此儲存庫在多台裝置間同步?連結可能不會同步,請在每台裝置上執行同步。",
+        "confirm": "同步並連結",
+        "partial": "同步在建立連結前停止。請修正以下項目後重新同步。",
+        "failed": "同步失敗:{message}",
+        "summary": "已移動 {moved},已轉換 {converted},已移至垃圾桶 {trashed},已移除 {unlinked} 個連結。"
       }
     }
   }

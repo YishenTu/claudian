@@ -207,7 +207,7 @@ describe('ClaudianPlugin', () => {
     await plugin.onload();
     const views = [0, 1].map(() => ({
       refreshMessageTimestamps: jest.fn(), refreshDualPaneLayout: jest.fn(),
-      updateHiddenProviderCommands: jest.fn(), refreshModelSelector: jest.fn(),
+      updateHiddenCommands: jest.fn(), refreshModelSelector: jest.fn(),
     }));
     const viewsSpy = jest.spyOn(plugin, 'getAllViews').mockReturnValue(views as never);
     let finish!: () => void;
@@ -221,7 +221,7 @@ describe('ClaudianPlugin', () => {
       const change = plugin.mutateSettings(settings => {
         settings.showMessageTimestamps = !settings.showMessageTimestamps;
         settings.enableDualPane = !settings.enableDualPane;
-        settings.hiddenProviderCommands = { claude: ['test-command'] };
+        settings.hiddenCommands = ['test-command'];
         settings.customContextLimits = { test: 1000 };
       });
       await writing;
@@ -354,7 +354,7 @@ describe('ClaudianPlugin', () => {
 
       expect(plugin.settings).toBeDefined();
       expect(plugin.settings.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
-      expect(plugin.settings.hiddenProviderCommands).toEqual(DEFAULT_SETTINGS.hiddenProviderCommands);
+      expect(plugin.settings.hiddenCommands).toEqual(DEFAULT_SETTINGS.hiddenCommands);
     });
 
     // Note: With multi-tab, agentService is per-tab via TabManager, not on plugin
@@ -1513,7 +1513,7 @@ describe('ClaudianPlugin', () => {
       await plugin.loadSettings();
 
       expect(plugin.settings.userName).toBe('TestUser');
-      expect(plugin.settings.hiddenProviderCommands).toEqual(DEFAULT_SETTINGS.hiddenProviderCommands);
+      expect(plugin.settings.hiddenCommands).toEqual(DEFAULT_SETTINGS.hiddenCommands);
     });
 
     it('normalizes the concurrent running session limit to 5-10', async () => {

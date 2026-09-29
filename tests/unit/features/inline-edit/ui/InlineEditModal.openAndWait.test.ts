@@ -199,10 +199,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenProviderCommands: {
-            claude: [],
-            codex: [],
-          },
+          hiddenCommands: [],
         },
       } as any;
       plugin.providerHost = plugin;
@@ -321,10 +318,7 @@ describe('InlineEditModal - openAndWait', () => {
         .mockReturnValue(inlineEditService as any);
       const plugin = {
         settings: {
-          hiddenProviderCommands: {
-            claude: [],
-            opencode: [],
-          },
+          hiddenCommands: [],
           providerConfigs: {
             opencode: {
               enabled: true,
@@ -444,10 +438,7 @@ describe('InlineEditModal - openAndWait', () => {
       };
       const plugin = {
         settings: {
-          hiddenProviderCommands: {
-            claude: [],
-            opencode: [],
-          },
+          hiddenCommands: [],
           providerConfigs: {
             opencode: { enabled: true },
           },
@@ -554,10 +545,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenProviderCommands: {
-            claude: [],
-            codex: [],
-          },
+          hiddenCommands: [],
         },
       } as any;
       plugin.providerHost = plugin;
@@ -663,10 +651,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenProviderCommands: {
-            claude: [],
-            codex: [],
-          },
+          hiddenCommands: [],
         },
       } as any;
       plugin.providerHost = plugin;
@@ -769,10 +754,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenProviderCommands: {
-            claude: [],
-            codex: [],
-          },
+          hiddenCommands: [],
           mediaFolder: '',
         },
       } as any;
@@ -897,10 +879,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenProviderCommands: {
-            claude: [],
-            codex: [],
-          },
+          hiddenCommands: [],
           mediaFolder: '',
         },
       } as any;
@@ -1101,10 +1080,7 @@ describe('InlineEditModal - openAndWait', () => {
       } as any;
       const plugin = {
         settings: {
-          hiddenProviderCommands: {
-            claude: [],
-            codex: [],
-          },
+          hiddenCommands: [],
           mediaFolder: '',
         },
       } as any;

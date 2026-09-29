@@ -20,7 +20,7 @@ export interface ChatViewRefreshHost {
   refreshTabControls(): void;
   refreshDualPaneLayout(): void;
   refreshMessageTimestamps(): void;
-  updateHiddenProviderCommands(): void;
+  updateHiddenCommands(): void;
   invalidateProviderResources(providerIds: ProviderId[], generation: number): void;
 }
 

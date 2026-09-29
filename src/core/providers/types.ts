@@ -18,7 +18,6 @@ import type {
 import type { ProviderId } from '../types/provider';
 import type { ProviderCommandCatalog } from './commands/ProviderCommandCatalog';
 import type { ProviderCommandDiscoveryResult } from './commands/ProviderCommandDiscoveryResult';
-import type { ProviderVaultEntryRepository } from './commands/ProviderVaultEntryRepository';
 import type { ProviderModelCatalog } from './models/ProviderModelCatalog';
 import type { ProviderHost } from './ProviderHost';
 
@@ -363,7 +362,6 @@ export interface ProviderCommandLoader {
 export interface ProviderWorkspaceServices {
   onAgentSkillsChanged?(): Promise<void> | void;
   commandCatalog?: ProviderCommandCatalog | null;
-  vaultCommandRepository?: ProviderVaultEntryRepository | null;
   cliResolver?: ProviderCLIResolver | null;
   commandLoader?: ProviderCommandLoader | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
@@ -381,15 +379,6 @@ export interface ProviderModelCatalogRefreshResult {
 
 export interface ProviderSettingsTabRendererContext {
   plugin: ProviderHost;
-  renderAgentSkillSettings(
-    container: HTMLElement,
-    providerId: ProviderId,
-  ): void;
-  renderHiddenProviderCommandSetting(
-    container: HTMLElement,
-    providerId: ProviderId,
-    copy: { name: string; desc: string; placeholder: string },
-  ): void;
   /** Publish provider model-option changes to every settings and chat consumer. */
   notifyProviderModelOptionsChanged(providerId: ProviderId): void;
   renderCustomContextLimits(container: HTMLElement, providerId: ProviderId): void;

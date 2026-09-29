@@ -270,9 +270,7 @@ function createContext(plugin: any): any {
   return {
     plugin,
     notifyProviderModelOptionsChanged: jest.fn(),
-    renderAgentSkillSettings: jest.fn(),
     renderCustomContextLimits: jest.fn(),
-    renderHiddenProviderCommandSetting: jest.fn(),
   };
 }
 
@@ -511,21 +509,12 @@ describe('GrokSettingsTab', () => {
     );
   });
 
-  it('renders only native skills, hidden runtime commands, and the Grok environment scope', () => {
+  it('renders only the Grok environment scope without skill or command sections', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
     const container = createContainer();
     grokSettingsTabRenderer.render(container, context);
 
-    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
-      container,
-      'grok',
-    );
-    expect(context.renderHiddenProviderCommandSetting).toHaveBeenCalledWith(
-      container,
-      'grok',
-      expect.objectContaining({ name: 'Hidden Grok commands' }),
-    );
     expect(mockRenderEnvironmentSettingsSection).toHaveBeenCalledWith(expect.objectContaining({
       heading: 'Environment',
       plugin,
@@ -540,7 +529,7 @@ describe('GrokSettingsTab', () => {
       'Subagents',
     ];
     expect(createdSettings.map(setting => setting.name).filter(name => forbiddenSections.includes(name))).toEqual([]);
-    expect(createdSettings.filter(setting => setting.name === 'Skills')).toHaveLength(1);
+    expect(createdSettings.filter(setting => ['Skills', 'Commands', 'Hidden Grok commands'].includes(setting.name))).toEqual([]);
   });
 });
 

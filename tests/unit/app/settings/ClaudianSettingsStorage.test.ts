@@ -257,7 +257,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(getCodexProviderSettings(result).cliPath).toBe('');
       expect(getClaudeProviderSettings(result).environmentVariables).toBe('');
       expect(result.sharedEnvironmentVariables).toBe('');
-      expect(result.hiddenProviderCommands).toEqual({});
+      expect(result.hiddenCommands).toEqual([]);
     });
 
     it('normalizes invalid chatViewPlacement values', async () => {
@@ -687,24 +687,51 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.providerConfigs.claude).toMatchObject({ enableOpus1M: true, enableSonnet1M: true });
     });
 
-    it('should not override explicit provider hidden commands with legacy hiddenSlashCommands', async () => {
+    it('merges per-provider hidden commands into one global list and retires the old key', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
         hiddenProviderCommands: {
-          claude: ['existing'],
+          claude: ['commit', '/Review'],
+          codex: ['$commit'],
+          pi: ['skill:review', 'review'],
         },
-        hiddenSlashCommands: ['commit', '/review'],
+        hiddenSlashCommands: ['legacy'],
       }));
 
       const result = await storage.load();
       const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
 
-      expect(result.hiddenProviderCommands).toEqual({
-        claude: ['existing'],
-      });
-      expect(writtenContent.hiddenProviderCommands).toEqual({
-        claude: ['existing'],
-      });
+      expect(result.hiddenCommands).toEqual(['commit', 'Review', 'skill:review']);
+      expect(writtenContent.hiddenCommands).toEqual(['commit', 'Review', 'skill:review']);
+      expect(writtenContent).not.toHaveProperty('hiddenProviderCommands');
+      expect(result).not.toHaveProperty('hiddenProviderCommands');
+    });
+
+    it('loads the vault-wide skills sync flag as a boolean', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({}));
+      expect((await storage.load()).skillsSynced).toBe(false);
+
+      mockAdapter.read.mockResolvedValue(JSON.stringify({ skillsSynced: true }));
+      expect((await storage.load()).skillsSynced).toBe(true);
+
+      mockAdapter.read.mockResolvedValue(JSON.stringify({ skillsSynced: 'yes' }));
+      expect((await storage.load()).skillsSynced).toBe(false);
+    });
+
+    it('keeps an existing global hidden list over a stale per-provider map', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({
+        hiddenCommands: ['kept', ' /kept ', ''],
+        hiddenProviderCommands: { claude: ['stale'] },
+      }));
+
+      const result = await storage.load();
+      const writtenContent = JSON.parse(mockAdapter.write.mock.calls[0][1]);
+
+      expect(result.hiddenCommands).toEqual(['kept']);
+      expect(writtenContent.hiddenCommands).toEqual(['kept']);
+      expect(writtenContent).not.toHaveProperty('hiddenProviderCommands');
     });
 
     it('preserves explicit scope on stored mixed environment snippets', async () => {

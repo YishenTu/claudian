@@ -1,5 +1,6 @@
 import { Notice } from 'obsidian';
 
+import { getHiddenCommandSet } from '../../../../core/providers/commands/hiddenCommands';
 import {
   getProviderSettingsSnapshotWithModel,
   normalizeProviderModelSelection,
@@ -32,7 +33,6 @@ import {
   getBlankTabModelOptions,
   getTabCapabilities,
   getTabChatUIConfig,
-  getTabHiddenCommands,
   getTabSettingsSnapshot,
   refreshTabProviderUI,
   syncComposerDropdownForProvider,
@@ -423,7 +423,7 @@ export function buildTabRuntimeUI(
     getTabProviderId(shell, plugin),
     contextManagers.fileContextManager,
     options,
-    () => getTabHiddenCommands(shell, plugin),
+    () => getHiddenCommandSet(plugin.settings),
     catalogInfo,
   );
   const navigationSidebar = new NavigationSidebar(

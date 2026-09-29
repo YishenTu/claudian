@@ -316,8 +316,6 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
 function createContext(plugin: any) {
   return {
     plugin,
-    renderAgentSkillSettings: jest.fn(),
-    renderHiddenProviderCommandSetting: jest.fn(),
     notifyProviderModelOptionsChanged: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
@@ -551,25 +549,13 @@ describe('OpencodeSettingsTab', () => {
     );
   });
 
-  it('renders shared skills, hidden commands, and environment guidance', () => {
+  it('renders environment guidance without skill or command sections', () => {
     const plugin = createPlugin();
     const context = createContext(plugin);
 
     createSettingsRenderer().render(createContainer(), context);
 
-    expect(findSetting('Skills').heading).toBe(true);
-    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
-      expect.anything(),
-      'opencode',
-    );
-    expect(context.renderHiddenProviderCommandSetting).toHaveBeenCalledWith(
-      expect.anything(),
-      'opencode',
-      expect.objectContaining({
-        name: 'Hidden Commands and Skills',
-        desc: 'Hide specific OpenCode commands and skills from the dropdown. Enter names without the leading slash, one per line.',
-      }),
-    );
+    expect(createdSettings.filter(setting => ['Skills', 'Commands', 'Hidden Commands and Skills'].includes(setting.name))).toEqual([]);
     expect(mockRenderEnvironmentSettingsSection).toHaveBeenCalledWith(expect.objectContaining({
       desc: 'Extra environment variables passed to OpenCode.',
       placeholder: 'OPENCODE_DB=/path/to/opencode.db',

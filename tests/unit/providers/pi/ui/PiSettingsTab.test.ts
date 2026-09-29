@@ -270,9 +270,7 @@ function createContext(settings: Record<string, unknown>) {
       settings,
       mutateSettings,
     },
-    renderAgentSkillSettings: jest.fn(),
     notifyProviderModelOptionsChanged: jest.fn(),
-    renderHiddenProviderCommandSetting: jest.fn(),
   };
 }
 
@@ -420,19 +418,10 @@ describe('PiSettingsTab', () => {
     expect(mockDiscoverModels).not.toHaveBeenCalled();
   });
 
-  it('renders shared skills and keeps hidden provider commands separate', () => {
-    const settings: Record<string, unknown> = { providerConfigs: { pi: {} } };
-    const context = render(settings);
+  it('leaves skill and hidden-command management to the Skills tab', () => {
+    render({ providerConfigs: { pi: {} } });
 
-    expect(context.renderAgentSkillSettings).toHaveBeenCalledWith(
-      expect.anything(),
-      'pi',
-    );
-    expect(context.renderHiddenProviderCommandSetting).toHaveBeenCalledWith(
-      expect.anything(),
-      'pi',
-      expect.objectContaining({ name: 'Hidden Pi commands and skills' }),
-    );
+    expect(createdSettings.filter(setting => ['Skills', 'Commands', 'Hidden Pi commands and skills'].includes(setting.name))).toEqual([]);
   });
 
   it('does not render the chat input tool mode setting for Pi', () => {

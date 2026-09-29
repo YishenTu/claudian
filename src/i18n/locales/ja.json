@@ -92,6 +92,7 @@
     "tabs": {
       "general": "一般",
       "providers": "プロバイダー",
+      "skills": "スキル",
       "claude": "Claude",
       "codex": "Codex"
     },
@@ -156,15 +157,6 @@
     },
     "closeTabHotkey": {
       "name": "タブを閉じる"
-    },
-    "slashCommands": {
-      "name": "コマンドとスキル",
-      "desc": ".claude/commands/ と .claude/skills/ に保存された Vault レベルのコマンドとスキルを管理します。/名前 でトリガーされます。"
-    },
-    "hiddenSlashCommands": {
-      "name": "非表示のコマンドとスキル",
-      "desc": "ドロップダウンから特定のコマンドとスキルを非表示にします。Claudian に関係のない Claude Code の項目を隠すのに便利です。先頭のスラッシュなしで名前を1行に1つ入力してください。",
-      "placeholder": "commit\nbuild\ntest"
     },
     "safety": "セキュリティ",
     "loadUserSettings": {
@@ -345,21 +337,12 @@
         "name": "Ultra 推論レベルを有効化",
         "desc": "Ultra をサポートする Codex モデルの推論レベル選択に表示します。Ultra は最大限の推論とタスクの自動委任を使用します。"
       },
-      "skills": {
-        "name": "Codex スキル",
-        "desc": "Manage shared vault-level skills stored only in .agents/skills/.",
-        "hiddenName": "非表示のスキル",
-        "hiddenDesc": "特定の Codex スキルをドロップダウンから非表示にします。先頭の $ なしでスキル名を1行に1つ入力してください。",
-        "hiddenPlaceholder": "analyze\nexplain\nfix"
-      },
       "environment": {
         "name": "Codex 環境",
         "desc": "Codex が所有するランタイム変数のみ。OPENAI_* と CODEX_* 設定に使用します。Codex の自動検出に補助が必要な場合は、このプロバイダー環境ではなく共有 PATH にインストールディレクトリを追加してください。"
       }
     },
     "agentSkills": {
-      "sectionTitle": "Skills",
-      "fixedRoot": "Managed in .agents/skills",
       "sharedExpectation": "Manage shared skills in .agents/skills/ for compatible providers.",
       "noSkills": "No shared skills configured. Click + to create one.",
       "skillBadge": "skill",
@@ -374,9 +357,12 @@
       "created": "Shared skill \"{name}\" created.",
       "updated": "Shared skill \"{name}\" updated.",
       "deleted": "Shared skill \"{name}\" moved to trash.",
+      "fix": "修正",
+      "fixed": "スキル「{name}」を修正しました。",
       "modal": {
         "titleEdit": "Edit Shared Skill",
         "titleAdd": "Add Shared Skill",
+        "titleFix": "スキルを修正",
         "name": "Skill name",
         "nameDesc": "Lowercase letters and numbers separated by single hyphens",
         "namePlaceholder": "code-reviewer",
@@ -391,6 +377,89 @@
         "title": "Delete Shared Skill",
         "description": "The entire skill folder, including scripts, references, and assets, will be moved to trash.",
         "confirm": "Move to trash"
+      }
+    },
+    "skills": {
+      "subTabs": {
+        "claude": "Claude",
+        "shared": "その他のプロバイダー"
+      },
+      "claudeHelp": ".claude/skills/ の Claude スキルと .claude/commands/ のコマンド。",
+      "sharedHelp": "Codex、OpenCode、Pi、Grok 用の .agents/skills/ にある共有スキル。",
+      "status": {
+        "error": "スキルフォルダーを読み取れませんでした: {message}"
+      },
+      "synced": "同期済み",
+      "actions": {
+        "sync": "同期",
+        "resync": "再同期"
+      },
+      "commands": {
+        "title": "Claude コマンド",
+        "hint": "コマンドは Claude でのみ動作します。スキルへの変換をおすすめします。",
+        "badge": "コマンド",
+        "empty": ".claude/commands にコマンドはありません。",
+        "convert": "スキルに変換",
+        "editTitle": "コマンドを編集",
+        "convertTitle": "コマンドをスキルに変換",
+        "nameDesc": ".claude/commands 内のパス(.md なし)。入れ子のコマンドは / を使います",
+        "descriptionDesc": "コマンドメニューに表示される任意の説明",
+        "updated": "コマンド「{name}」を更新しました。",
+        "converted": "コマンドをスキル「{name}」に変換しました。",
+        "deleted": "コマンド「{name}」をゴミ箱に移動しました。",
+        "deleteTitle": "コマンドを削除",
+        "deleteDescription": "コマンドファイルはゴミ箱に移動されます。",
+        "collisionFailed": "「{name}」という名前のコマンドはすでに存在します。"
+      },
+      "droppedFrontmatterWarning": "保存すると名前と説明だけが残ります。次のキーは削除され、プロバイダーの動作が変わる可能性があります: {keys}",
+      "hidden": {
+        "name": "非表示のコマンドとスキル",
+        "desc": "すべてのプロバイダーのコマンドメニューからコマンドとスキルを非表示にします。先頭のスラッシュを付けずに正確な名前を 1 行に 1 つずつ入力してください(Pi のスキルは skill:名前)。",
+        "placeholder": "commit\ncompact\nskill:review"
+      },
+      "sync": {
+        "title": "スキルを同期",
+        "repairTitle": "スキルのリンクを修復",
+        "loading": "スキルフォルダーを確認しています...",
+        "intro": "同期すると、Claude のスキルとコマンドを .agents/skills にまとめ、.claude/skills をそこへのリンクにします。",
+        "pros": {
+          "oneList": "すべてのプロバイダーで 1 つのリスト。",
+          "newSkills": "新しいスキルはどこでも使えます。"
+        },
+        "cons": {
+          "dropped": "名前と説明だけが残ります。プロバイダー固有の設定は削除され、動作が変わる可能性があります。",
+          "claudeSyntax": "Claude 専用の構文は他のプロバイダーでは動作しません: {names}"
+        },
+        "attentionTitle": "確認が必要",
+        "nothingNeedsAttention": "確認が必要な項目はありません。",
+        "nameField": "名前",
+        "descriptionField": "説明",
+        "ready": "準備完了",
+        "problems": {
+          "name": "無効な名前です。小文字、数字、ハイフンを使ってください。",
+          "description": "説明がありません。",
+          "instructions": "指示がありません。ファイルに追加してから再度同期してください。",
+          "unreadable": "フロントマターを読み取れません。ファイルを修正してから再度同期してください。",
+          "sharedConflict": "「{name}」という共有スキルはすでに存在します。",
+          "itemConflict": "別の項目も「{name}」という名前です。"
+        },
+        "options": {
+          "fix": "修正",
+          "replace": "共有スキルを置き換える",
+          "discard": "破棄(ゴミ箱へ移動)",
+          "keep": "コマンドのまま残す"
+        },
+        "continue": "続行",
+        "confirmTitle": ".claude/skills をリンクに置き換えますか?",
+        "confirmBody": ".claude/skills は .agents/skills へのリンクに置き換えられます。この操作は元に戻せません。",
+        "repairBody": ".claude/skills は .agents/skills へのリンクに置き換えられます。現在のリンク先のフォルダーは変更されません。",
+        "linkBody": ".claude/skills を .agents/skills へのリンクとして作成し、Claude が共有スキルを使えるようにします。ファイルは移動しません。",
+        "linkWithItemsBody": "コマンドがスキルになり、その後 .claude/skills が .agents/skills へのリンクとして作成されます。この操作は元に戻せません。",
+        "devicesWarning": "この保管庫を複数のデバイスで同期していますか? リンクは同期されない可能性があるため、各デバイスで同期してください。",
+        "confirm": "同期してリンク",
+        "partial": "リンクの作成前に同期が停止しました。以下の項目を修正して、もう一度同期してください。",
+        "failed": "同期に失敗しました: {message}",
+        "summary": "移動 {moved}、変換 {converted}、ゴミ箱 {trashed}、リンク削除 {unlinked}。"
       }
     }
   }

@@ -14,10 +14,8 @@ Object.assign(globalThis, { setImmediate });
 
 const mockRenderEnvironmentSettingsSection = jest.fn();
 const mockSaveSettings = jest.fn().mockResolvedValue(undefined);
-const mockSlashCommandSettings = jest.fn();
 const mockCLIResolverReset = jest.fn();
 const mockModelCatalogRefresh = jest.fn().mockResolvedValue({ changed: true });
-const mockVaultCommandRepository = {};
 const mockModelCatalog = { refresh: mockModelCatalogRefresh, markStale: jest.fn() };
 const mockRenderModelPicker = jest.fn((..._args: unknown[]) => ({ refresh: jest.fn(), dispose: jest.fn() }));
 
@@ -105,21 +103,12 @@ function createSettingsRenderer() {
     cliResolver: {
       reset: mockCLIResolverReset,
     },
-    vaultCommandRepository: mockVaultCommandRepository,
     modelCatalog: mockModelCatalog,
   } as unknown as Parameters<typeof createClaudeSettingsTabRenderer>[0]);
 }
 
 jest.mock('@/shared/settings/ProviderModelsSection', () => ({
   renderProviderModelsSection: (...args: unknown[]) => mockRenderModelPicker(...args),
-}));
-
-jest.mock('@/providers/claude/ui/SlashCommandSettings', () => ({
-  SlashCommandSettings: class MockSlashCommandSettings {
-    constructor(...args: unknown[]) {
-      mockSlashCommandSettings(...args);
-    }
-  },
 }));
 
 jest.mock('@/i18n/i18n', () => ({
@@ -370,8 +359,6 @@ function createContext(plugin: any) {
   return {
     plugin,
     notifyProviderModelOptionsChanged: jest.fn(),
-    renderAgentSkillSettings: jest.fn(),
-    renderHiddenProviderCommandSetting: jest.fn(),
     renderCustomContextLimits: jest.fn(),
   };
 }
@@ -626,18 +613,14 @@ describe('ClaudeSettingsTab', () => {
     expect(await axe(warningRegion)).toHaveNoViolations();
   });
 
-  it('keeps Claude CRUD on its explicit vault repository without the shared manager', () => {
+  it('leaves skill, command and hidden-command management to the Skills tab', () => {
     const plugin = createPlugin();
-    const context = createContext(plugin);
 
-    createSettingsRenderer().render(createContainer(), context);
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
 
-    expect(context.renderAgentSkillSettings).not.toHaveBeenCalled();
-    expect(mockSlashCommandSettings).toHaveBeenCalledWith(
-      expect.anything(),
-      plugin.app,
-      mockVaultCommandRepository,
-    );
+    expect(createdSettings.map(setting => setting.name)).not.toEqual(expect.arrayContaining([
+      expect.stringMatching(/slashCommands|hiddenSlashCommands|agentSkills|skills\./),
+    ]));
   });
 
   it('scopes custom model overrides to the Claude environment section', () => {
