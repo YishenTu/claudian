@@ -210,13 +210,22 @@ export class ClaudeCommandRepository {
     }
   }
 
+  /**
+   * Runs after the command file is already moved or trashed, so it is
+   * best-effort: a folder that can't be removed must not report the committed
+   * change as failed.
+   */
   async #pruneEmptyFolders(folder: string): Promise<void> {
     let current = folder;
-    while (current !== CLAUDE_COMMANDS_ROOT && current.startsWith(`${CLAUDE_COMMANDS_ROOT}/`)) {
-      const listing = await this.files.listManagedFolder(current);
-      if (listing.files.length > 0 || listing.folders.length > 0) return;
-      await this.files.removeManagedFolderIfEmpty(current);
-      current = path.posix.dirname(current);
+    try {
+      while (current !== CLAUDE_COMMANDS_ROOT && current.startsWith(`${CLAUDE_COMMANDS_ROOT}/`)) {
+        const listing = await this.files.listManagedFolder(current);
+        if (listing.files.length > 0 || listing.folders.length > 0) return;
+        await this.files.removeManagedFolderIfEmpty(current);
+        current = path.posix.dirname(current);
+      }
+    } catch {
+      // An empty folder left behind is harmless; commands are only read from files.
     }
   }
 

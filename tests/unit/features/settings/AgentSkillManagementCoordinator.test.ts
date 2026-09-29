@@ -1,3 +1,5 @@
+import { chmod } from 'node:fs/promises';
+
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
 
 import type { AgentSkillDocument, AgentSkillInput } from '@/core/skills/AgentSkill';
@@ -141,6 +143,21 @@ describe('AgentSkillManagementCoordinator', () => {
       const [fresh] = (await commands.list()).commands;
       await expect(coordinator.convertCommand(fresh, input)).resolves.toBeTruthy();
       expect(await vault.exists(`${CLAUDE_COMMANDS_ROOT}/deploy.md`)).toBe(false);
+    });
+
+    it('keeps the new skill when the command is trashed but its emptied folder cannot be removed', async () => {
+      await vault.write(`${CLAUDE_COMMANDS_ROOT}/ops/ship.md`, '---\ndescription: Ship\n---\nShip it\n');
+      const command = (await commands.list()).commands.find(entry => entry.name === 'ops/ship')!;
+      // A read-only parent refuses removal of the emptied `ops` folder, not the trash of the file.
+      await chmod(vault.resolve(CLAUDE_COMMANDS_ROOT), 0o555);
+      try {
+        await expect(coordinator.convertCommand(command, { ...input, name: 'ops-ship' })).resolves.toBeTruthy();
+      } finally {
+        await chmod(vault.resolve(CLAUDE_COMMANDS_ROOT), 0o755);
+      }
+
+      expect(await vault.exists(`${CLAUDE_SKILLS_ROOT}/ops-ship/SKILL.md`)).toBe(true);
+      expect(await vault.exists(`${CLAUDE_COMMANDS_ROOT}/ops/ship.md`)).toBe(false);
     });
 
     it('removes the new skill when the command cannot be removed', async () => {
