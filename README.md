@@ -23,7 +23,7 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **Inline Edit** — Select text or start at the cursor position + hotkey to edit directly in notes with word-level diff preview.
 
-**Zen Mode** — Collapse the sidebar holding Claudian and the chat moves to a compact composer at the bottom of your notes, with a one-line activity preview and the conversation one click away.
+**Zen Mode** — Collapse the sidebar holding Claudian and the chat moves to a [compact composer](assets/zen-mode-collapsed.png) at the bottom of your notes, with a one-line activity preview and [the conversation one click away](assets/zen-mode-expanded.png).
 
 **Slash Commands & Skills** — Type `/` or `$` for reusable prompt templates or Skills from user- and vault-level scopes.
 
@@ -33,7 +33,7 @@ Open Claudian interface from the ribbon icon or command palette. Everything work
 
 **MCP Servers** — Connect external tools through each coding agent's native CLI-managed MCP configuration.
 
-**Tabs & Session Management** — Use multiple tabs in single-panel mode or a persistent session manager beside the chat in dual-pane mode.
+**Tabs & Session Management** — Use multiple tabs in [single-pane mode](assets/main-chat-single-pane.png) or a persistent session manager beside the chat in [dual-pane mode](assets/main-chat-dual-pane.png).
 
 **Collaboration** — Collab is now a standalone plugin. See [Claudian Collab](https://github.com/YishenTu/claudian-collab).
 
