@@ -181,7 +181,7 @@ describe('PiChatUIConfig', () => {
   });
 
   it('exposes no main chat permission mode for Pi', () => {
-    expect(piChatUIConfig.getPermissionModeToggle).toBeUndefined();
+    expect(piChatUIConfig.getPermissionModeOptions).toBeUndefined();
     expect(piChatUIConfig.resolvePermissionMode).toBeUndefined();
     expect(piChatUIConfig.applyPermissionMode).toBeUndefined();
   });

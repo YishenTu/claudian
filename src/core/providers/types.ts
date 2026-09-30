@@ -212,12 +212,19 @@ export interface ProviderReasoningOption extends ProviderUIOption {
   tokens?: number;
 }
 
-/** Compact permission-mode toggle descriptor for providers that expose the current toolbar control. */
-export interface ProviderPermissionModeToggleConfig {
-  inactiveValue: string;
-  inactiveLabel: string;
-  activeValue: string;
-  activeLabel: string;
+/** Permission-mode values a provider accepts in the shared `permissionMode` setting. */
+export interface ProviderPermissionModePolicy {
+  readonly values: readonly string[];
+  /** Fail-closed value for unknown stored values. */
+  readonly fallbackValue: string;
+  /** Maps a retired stored value to a current one; unmapped values use the fallback. */
+  migrateValue?(value: string, settings: Record<string, unknown>): string | undefined;
+}
+
+/** One toolbar permission-mode choice, in menu order. */
+export interface ProviderPermissionModeOption extends ProviderUIOption {
+  /** Skips approval prompts; the toolbar marks it as a warning while selected. */
+  bypassesApprovals?: boolean;
 }
 
 /** Provider-reported service-tier choices, labels and resolved selection. */
@@ -242,7 +249,7 @@ export interface ProviderModeSelectorConfig {
 
 /** Provider model and execution preferences, independent of chat rendering. */
 export interface ProviderModelPolicy {
-  readonly permissionModes?: { inactiveValue: string; activeValue: string };
+  readonly permissionModes?: ProviderPermissionModePolicy;
   /** Available models in durable selection order, independent of dropdown layout. */
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[];
 
@@ -314,7 +321,7 @@ export interface ProviderModelPolicy {
 
 /** UI composition may reuse policy, but application code consumes ProviderModelPolicy. */
 export interface ProviderChatUIConfig extends Omit<ProviderModelPolicy, 'permissionModes' | 'getServiceTierPolicy'> {
-  getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;
+  getPermissionModeOptions?(): readonly ProviderPermissionModeOption[] | null;
   getServiceTierToggle?(settings: Record<string, unknown>): ProviderServiceTierToggleConfig | null;
   getModeSelector?(settings: Record<string, unknown>): ProviderModeSelectorConfig | null;
   getProviderIcon?(): ProviderIconSvg | null;

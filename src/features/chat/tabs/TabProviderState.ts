@@ -255,7 +255,7 @@ export function applyProviderUIGating(
 ): void {
   const capabilities = getTabCapabilities(tab, plugin);
   const uiConfig = getTabChatUIConfig(tab, plugin);
-  const hasPermissionToggle = Boolean(uiConfig.getPermissionModeToggle?.());
+  const hasPermissionToggle = Boolean(uiConfig.getPermissionModeOptions?.()?.length);
 
   tab.ui.permissionToggle.setVisible(hasPermissionToggle);
 

@@ -9,14 +9,11 @@ import {
 import type { HostnameCLIPaths } from '../../core/types/settings';
 import { type ClaudeDiscoveredModel, decodeClaudeModels } from './modelCatalog';
 
-export const CLAUDE_SAFE_MODES = ['acceptEdits', 'auto', 'default'] as const;
-export type ClaudeSafeMode = typeof CLAUDE_SAFE_MODES[number];
 export type ClaudeResponseStyle = 'Default' | 'Concise';
 type ClaudeSettingSource = 'user' | 'project' | 'local';
 
 export interface ClaudeProviderSettings {
   enabled: boolean;
-  safeMode: ClaudeSafeMode;
   responseStyle: ClaudeResponseStyle;
   cliPath: string;
   cliPathsByHost: HostnameCLIPaths;
@@ -32,7 +29,6 @@ export interface ClaudeProviderSettings {
 
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
   enabled: true,
-  safeMode: 'acceptEdits',
   responseStyle: 'Default',
   cliPath: '',
   cliPathsByHost: {},
@@ -46,22 +42,6 @@ export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> 
   environmentVariables: '',
   environmentHash: '',
 });
-
-function normalizeClaudeSafeMode(value: unknown): ClaudeSafeMode | undefined {
-  return (CLAUDE_SAFE_MODES as readonly unknown[]).includes(value)
-    ? value as ClaudeSafeMode
-    : undefined;
-}
-
-function readStoredClaudeSafeMode(
-  value: unknown,
-  fallback: ClaudeSafeMode,
-): ClaudeSafeMode {
-  if (value === undefined) {
-    return fallback;
-  }
-  return normalizeClaudeSafeMode(value) ?? 'default';
-}
 
 export function getClaudeProviderSettings(
   settings: Record<string, unknown>,
@@ -77,10 +57,6 @@ export function getClaudeProviderSettings(
       DEFAULT_CLAUDE_PROVIDER_SETTINGS.enabled,
     ),
     responseStyle: config.responseStyle === 'Concise' ? 'Concise' : 'Default',
-    safeMode: readStoredClaudeSafeMode(
-      config.safeMode,
-      DEFAULT_CLAUDE_PROVIDER_SETTINGS.safeMode,
-    ),
     cliPath: readStoredString(
       config.cliPath,
       DEFAULT_CLAUDE_PROVIDER_SETTINGS.cliPath,
@@ -130,9 +106,6 @@ export function updateClaudeProviderSettings(
     ...current,
     ...updates,
     modelAliases: decodeModelAliases(updates.modelAliases ?? current.modelAliases),
-    safeMode: 'safeMode' in updates
-      ? normalizeClaudeSafeMode(updates.safeMode) ?? current.safeMode
-      : current.safeMode,
   };
   setProviderConfig(settings, 'claude', next);
   return next;

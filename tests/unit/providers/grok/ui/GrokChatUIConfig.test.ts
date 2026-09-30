@@ -352,12 +352,10 @@ describe('GrokChatUIConfig', () => {
   });
 
   it('uses Safe for obsolete selections and supports explicit YOLO', () => {
-    expect(grokChatUIConfig.getPermissionModeToggle?.()).toEqual({
-      activeLabel: 'YOLO',
-      activeValue: 'yolo',
-      inactiveLabel: 'SAFE',
-      inactiveValue: 'normal',
-    });
+    expect(grokChatUIConfig.getPermissionModeOptions?.()).toEqual([
+      { value: 'normal', label: 'SAFE' },
+      { value: 'yolo', label: 'YOLO', bypassesApprovals: true },
+    ]);
     expect(grokChatUIConfig.getModeSelector?.({})).toBeNull();
 
     const settings: Record<string, unknown> = {

@@ -46,6 +46,8 @@ export async function traceSideChild(
     readonly beforeStart?: () => Promise<void>;
     /** Overrides the inherited model when the source projection is not the enabled selection. */
     readonly model?: string;
+    /** A value from the provider's permission-mode policy; defaults to the shared Safe value. */
+    readonly permissionMode?: string;
   } = {},
 ): Promise<TracedSideChild | null> {
   const captured = await captureSideSource(env, chat, checkpointMessage);
@@ -86,7 +88,7 @@ export async function traceSideChild(
       const result = await session.execute({
         configuration: {
           model: options.model ?? captured.sourceSelectedModel,
-          permissionMode: 'normal',
+          permissionMode: options.permissionMode ?? 'normal',
           systemInstructions: { instructions: 'Answer the user.', kind: 'explicit' },
         },
         conversationHistory: history,

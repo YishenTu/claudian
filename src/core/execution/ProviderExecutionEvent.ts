@@ -1,6 +1,5 @@
 import type {
   CitationGroup,
-  PermissionMode,
   SDKToolUseResult,
   SubagentInfo,
   SubagentProgress,
@@ -196,7 +195,8 @@ export type ProviderPermissionModeChangedEvent = ProviderEventBase<
   ProviderExecutionEventScope
 > &
   ProviderOpaqueEventPayload & {
-    readonly permissionMode: PermissionMode;
+    /** A value from the provider's permission-mode policy. */
+    readonly permissionMode: string;
     readonly snapshot: ProviderSessionSnapshot;
   };
 

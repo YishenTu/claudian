@@ -6,7 +6,7 @@ import type {
   ProviderChatUIConfig,
   ProviderIconSvg,
   ProviderModeSelectorConfig,
-  ProviderPermissionModeToggleConfig,
+  ProviderPermissionModeOption,
   ProviderReasoningOption,
   ProviderServiceTierToggleConfig,
   ProviderUIOption,
@@ -788,7 +788,7 @@ export class ThinkingBudgetSelector {
   }
 }
 
-/** Choice between the provider's two permission modes. */
+/** Choice among the provider's permission modes. */
 export class PermissionToggle {
   private readonly menu: ToolbarMenu;
   private readonly iconEl: HTMLElement;
@@ -815,14 +815,13 @@ export class PermissionToggle {
     this.updateDisplay();
   }
 
-  #getToggleConfig(): ProviderPermissionModeToggleConfig | null {
-    const uiConfig = this.callbacks.getUIConfig();
-    return uiConfig.getPermissionModeToggle?.() ?? null;
+  #getOptions(): readonly ProviderPermissionModeOption[] {
+    return this.callbacks.getUIConfig().getPermissionModeOptions?.() ?? [];
   }
 
   updateDisplay() {
-    const toggleConfig = this.#getToggleConfig();
-    if (!this.visible || !toggleConfig) {
+    const options = this.#getOptions();
+    if (!this.visible || options.length === 0) {
       this.menu.close(false);
       this.menu.anchorEl.addClass('claudian-hidden');
       return;
@@ -830,24 +829,22 @@ export class PermissionToggle {
 
     this.menu.anchorEl.removeClass('claudian-hidden');
     const mode = this.callbacks.getSettings().permissionMode;
-    const isActive = mode === toggleConfig.activeValue;
-    const label = isActive ? toggleConfig.activeLabel : toggleConfig.inactiveLabel;
-    this.labelEl.setText(label);
+    // The projection normalizes the stored mode; the first option only covers a transient mismatch.
+    const current = options.find(option => option.value === mode) ?? options[0];
+    const bypasses = current.bypassesApprovals === true;
+    this.labelEl.setText(current.label);
     this.iconEl.empty();
-    setIcon(this.iconEl, isActive ? 'shield-alert' : 'shield');
-    this.menu.buttonEl.toggleClass('claudian-toolbar-chip--alert', isActive);
-    this.menu.buttonEl.setAttribute('aria-label', `Permission mode: ${label}`);
+    if (bypasses) setIcon(this.iconEl, 'shield-alert');
+    this.menu.buttonEl.toggleClass('claudian-toolbar-chip--alert', bypasses);
+    this.menu.buttonEl.setAttribute('aria-label', `Permission mode: ${current.label}`);
 
     this.menu.menuEl.empty();
-    const choices = [
-      { value: toggleConfig.inactiveValue, label: toggleConfig.inactiveLabel },
-      { value: toggleConfig.activeValue, label: toggleConfig.activeLabel },
-    ];
-    for (const choice of choices) {
+    for (const choice of options) {
       this.menu.createItem(this.menu.menuEl, {
         role: 'menuitemradio',
         checked: choice.value === mode,
         label: choice.label,
+        detail: choice.description,
         showCheck: true,
         onSelect: () => {
           if (choice.value === this.callbacks.getSettings().permissionMode) return;

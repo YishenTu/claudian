@@ -160,10 +160,6 @@
       "name": "Claude-Code-Benutzereinstellungen laden",
       "desc": "Lädt die Claude-Code-Konfiguration auf Benutzerebene aus ~/.claude: settings.json, Skills, Befehle, Agenten und Plugins. Wenn deaktiviert, ist nur die Konfiguration auf Vault-Ebene verfügbar. Wenn aktiviert, können Benutzer-Berechtigungsregeln den Sicherheitsmodus umgehen."
     },
-    "claudeSafeMode": {
-      "name": "Sicherheitsmodus",
-      "desc": "Berechtigungsmodus, der verwendet wird, wenn der Safe-Schalter aktiv ist."
-    },
     "codexSafeMode": {
       "name": "Sicherheitsmodus",
       "desc": "Sandbox-Modus, der verwendet wird, wenn der Safe-Schalter aktiv ist."

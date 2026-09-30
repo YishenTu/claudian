@@ -88,15 +88,16 @@ export async function probeClaudeRuntime(
     const agentQuery = await loadClaudeAgentQuery();
     throwIfAborted(controller.signal, PROBE_CANCELLED);
     const config = getClaudeProviderSettings(host.settings);
+    // Match chat launches, which always enable auto mode.
     const extraArgs = {
-      ...(config.safeMode === 'auto' ? { 'enable-auto-mode': null } : {}),
+      'enable-auto-mode': null,
       ...(config.enableChrome ? { chrome: null } : {}),
     };
     conversation = agentQuery({
       prompt: '',
       options: {
         ...buildClaudeLaunchOptions(host, cwd, cliPath, { envDefaults: { MCP_TIMEOUT: PROBE_MCP_TIMEOUT_MS } }),
-        ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
+        extraArgs,
         abortController: controller,
         persistSession: false,
       },

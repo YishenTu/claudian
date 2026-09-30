@@ -638,25 +638,4 @@ describe('ClaudeSettingsTab', () => {
     environmentOptions.renderCustomContextLimits(target);
     expect(context.renderCustomContextLimits).toHaveBeenCalledWith(target, 'claude');
   });
-
-  it('offers auto as a Claude safe mode and persists it', async () => {
-    const plugin = createPlugin();
-    const context = createContext(plugin);
-
-    createSettingsRenderer().render(createContainer(), context);
-
-    const safeModeSetting = findSetting('settings.claudeSafeMode.name');
-    const safeModeDropdown = safeModeSetting.dropdownComponents[0];
-
-    expect(safeModeDropdown.options).toEqual([
-      { value: 'acceptEdits', label: 'acceptEdits' },
-      { value: 'auto', label: 'auto' },
-      { value: 'default', label: 'default' },
-    ]);
-
-    await safeModeDropdown.onChangeCallback?.('auto');
-
-    expect(plugin.settings.providerConfigs.claude.safeMode).toBe('auto');
-    expect(mockSaveSettings).toHaveBeenCalledTimes(1);
-  });
 });
