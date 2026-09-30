@@ -23,6 +23,7 @@ describe('Toolbar popover styles', () => {
           <button type="button" class="claudian-toolbar-chip claudian-model-btn">
             <span class="claudian-toolbar-chip-primary claudian-model-label">Sonnet</span>
             <span class="claudian-toolbar-chip-secondary claudian-thinking-current">High</span>
+            <span class="claudian-toolbar-chip-chevron"></span>
           </button>
           <div class="claudian-toolbar-popover" data-popover="model">
             <button type="button" role="option" aria-selected="true" class="claudian-toolbar-popover-option claudian-model-option">
@@ -44,6 +45,7 @@ describe('Toolbar popover styles', () => {
           <button type="button" class="claudian-toolbar-chip claudian-toolbar-chip--alert">
             <span class="claudian-toolbar-chip-icon" data-part="permission-icon"></span>
             <span class="claudian-toolbar-chip-primary claudian-permission-label">YOLO</span>
+            <span class="claudian-toolbar-chip-chevron"></span>
           </button>
           <div class="claudian-toolbar-popover" data-popover="permission"></div>
         </div>
@@ -63,6 +65,18 @@ describe('Toolbar popover styles', () => {
     expect({ start: popover.getPropertyValue('inset-inline-start'), width: popover.width })
       .toEqual({ start: '0', width: 'max-content' });
     expect(popover.minWidth).toContain('100%');
+  });
+
+  it('flips each chip chevron to point up while its menu is open', () => {
+    const toolbar = renderToolbar();
+    for (const button of Array.from(toolbar.querySelectorAll<HTMLElement>('button.claudian-toolbar-chip'))) {
+      const chevron = button.querySelector('.claudian-toolbar-chip-chevron')!;
+      expect(['', 'none']).toContain(style(chevron).transform);
+      button.setAttribute('aria-expanded', 'true');
+      expect(style(chevron).transform).toBe('rotate(180deg)');
+      button.setAttribute('aria-expanded', 'false');
+      expect(['', 'none']).toContain(style(chevron).transform);
+    }
   });
 
   it('sizes the permission menu from its own button the same way, without the slider floor, opening from its end edge', () => {
