@@ -30,7 +30,7 @@ function mountToolbar(toolbarEl: HTMLElement): void {
       isAdaptiveReasoningModel: () => true,
       getReasoningOptions: () => [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }],
       getDefaultReasoningValue: () => 'low',
-      getPermissionModeToggle: () => ({ inactiveValue: 'normal', inactiveLabel: 'Safe', activeValue: 'yolo', activeLabel: 'YOLO' }),
+      getPermissionModeOptions: () => [{ value: 'normal', label: 'Safe' }, { value: 'yolo', label: 'YOLO', bypassesApprovals: true }],
       getServiceTierToggle: () => ({
         inactiveValue: 'default', inactiveLabel: 'Standard', activeValue: 'fast', activeLabel: 'Fast', isActive: true,
       }),

@@ -645,7 +645,7 @@ describe('ProviderSettingsCoordinator', () => {
             savedProviderPermissionMode: { [providerId]: 'plan' },
           };
           const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, providerId);
-          expect(snapshot.permissionMode).toBe('normal');
+          expect(snapshot.permissionMode).toBe(providerId === 'claude' ? 'manual' : 'normal');
         }
       },
     );
@@ -657,9 +657,36 @@ describe('ProviderSettingsCoordinator', () => {
           settingsProvider: providerId,
           permissionMode: 'plan',
         }, providerId);
-        expect(snapshot.permissionMode).toBe('normal');
+        expect(snapshot.permissionMode).toBe(providerId === 'claude' ? 'manual' : 'normal');
       },
     );
+
+    it.each(['auto', 'manual', 'acceptEdits', 'yolo'])('keeps the saved Claude permission mode %s', (mode) => {
+      const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
+        settingsProvider: 'codex',
+        permissionMode: 'normal',
+        savedProviderPermissionMode: { claude: mode },
+      }, 'claude');
+      expect(snapshot.permissionMode).toBe(mode);
+    });
+
+    it.each([
+      [undefined, 'acceptEdits'],
+      ['default', 'manual'],
+      ['acceptEdits', 'acceptEdits'],
+      ['auto', 'auto'],
+    ])('migrates a legacy Claude Safe selection with safe mode %p to %s', (safeMode, expected) => {
+      const providerConfigs = safeMode ? { claude: { safeMode } } : {};
+      for (const saved of [{ claude: 'normal' }, {}]) {
+        const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
+          settingsProvider: 'claude',
+          permissionMode: 'normal',
+          savedProviderPermissionMode: saved,
+          providerConfigs,
+        }, 'claude');
+        expect(snapshot.permissionMode).toBe(expected);
+      }
+    });
 
     it('projects saved model and effort for the settings provider', () => {
       const settings: Record<string, unknown> = {

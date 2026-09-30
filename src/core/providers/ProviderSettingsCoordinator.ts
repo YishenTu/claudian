@@ -7,7 +7,7 @@ import {
   type ProviderProjectionKey,
   type ProviderProjectionMap,
 } from './settings/ProviderProjectionMap';
-import type { ProviderId,ProviderModelPolicy } from './types';
+import type { ProviderId, ProviderModelPolicy, ProviderPermissionModePolicy } from './types';
 
 export interface SettingsReconciliationResult {
   changed: boolean;
@@ -41,6 +41,18 @@ function cloneProviderSettings(settings: Record<string, unknown>): Record<string
     savedProviderThinkingBudget: normalizeProviderProjectionMap(settings.savedProviderThinkingBudget),
     savedProviderPermissionMode: normalizeProviderProjectionMap(settings.savedProviderPermissionMode),
   };
+}
+
+/** Keeps a known value, migrates a retired one, and fails any other stored value closed. */
+function normalizeStoredPermissionMode(
+  policy: ProviderPermissionModePolicy,
+  value: unknown,
+  settings: Record<string, unknown>,
+): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && policy.values.includes(value)) return value;
+  const migrated = typeof value === 'string' ? policy.migrateValue?.(value, settings) : undefined;
+  return migrated !== undefined && policy.values.includes(migrated) ? migrated : policy.fallbackValue;
 }
 
 function normalizeToggleValue(
@@ -399,25 +411,21 @@ export class ProviderSettingsCoordinator {
       settings.thinkingBudget = normalizeReasoningValue(uiConfig, settings, model, settings.thinkingBudget);
     }
 
-    const permissionToggle = uiConfig.permissionModes ?? null;
-    if (!permissionToggle) {
+    const permissionPolicy = uiConfig.permissionModes ?? null;
+    if (!permissionPolicy) {
       return;
     }
 
-    const allowedPermissionModes = new Set([
-      permissionToggle.inactiveValue,
-      permissionToggle.activeValue,
-    ]);
-    const currentPermissionMode = normalizeToggleValue(settings.permissionMode, allowedPermissionModes)
-      ?? (settings.permissionMode !== undefined ? permissionToggle.inactiveValue : undefined);
+    const currentPermissionMode = normalizeStoredPermissionMode(permissionPolicy, settings.permissionMode, settings);
     const derivedPermissionMode = normalizeToggleValue(
       uiConfig.resolvePermissionMode?.(settings),
-      allowedPermissionModes,
+      new Set(permissionPolicy.values),
     );
-    const savedPermissionModeValue = normalizeToggleValue(
+    const savedPermissionModeValue = normalizeStoredPermissionMode(
+      permissionPolicy,
       savedPermissionMode?.[providerId],
-      allowedPermissionModes,
-    ) ?? (savedPermissionMode?.[providerId] !== undefined ? permissionToggle.inactiveValue : undefined);
+      settings,
+    );
 
     const projectedPermissionMode = savedPermissionModeValue
       ?? derivedPermissionMode

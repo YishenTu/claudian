@@ -580,15 +580,12 @@ describe('CodexChatUIConfig', () => {
     });
   });
 
-  describe('getPermissionModeToggle', () => {
-    it('should return yolo/safe toggle config', () => {
-      const toggle = codexChatUIConfig.getPermissionModeToggle!();
-      expect(toggle).toEqual({
-        inactiveValue: 'normal',
-        inactiveLabel: 'SAFE',
-        activeValue: 'yolo',
-        activeLabel: 'YOLO',
-      });
+  describe('getPermissionModeOptions', () => {
+    it('should return Safe and YOLO options', () => {
+      expect(codexChatUIConfig.getPermissionModeOptions?.()).toEqual([
+        { value: 'normal', label: 'SAFE' },
+        { value: 'yolo', label: 'YOLO', bypassesApprovals: true },
+      ]);
     });
   });
 

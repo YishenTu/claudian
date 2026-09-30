@@ -1,3 +1,4 @@
+import { SAFE_YOLO_PERMISSION_MODES } from '../../core/providers/permissionModes';
 import { formatReasoningValueLabel } from '../../core/providers/reasoning';
 import type {
   ProviderModelPolicy,
@@ -21,7 +22,7 @@ import {
 const DEFAULT_PI_REASONING_LEVELS = getPiSupportedThinkingLevels({ reasoning: true });
 
 export const piModelPolicy: ProviderModelPolicy = {
-  permissionModes: { inactiveValue: 'normal', activeValue: 'yolo' },
+  permissionModes: SAFE_YOLO_PERMISSION_MODES,
   getModelOptions(settings): ProviderUIOption[] {
     const piSettings = getPiProviderSettings(settings);
     const discoveredModels = new Map(piSettings.discoveredModels.map((model) => [

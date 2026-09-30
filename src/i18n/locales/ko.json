@@ -160,10 +160,6 @@
       "name": "사용자 Claude Code 설정 로드",
       "desc": "~/.claude에서 사용자 수준 Claude Code 구성(settings.json, 스킬, 명령, 에이전트, 플러그인)을 로드합니다. 비활성화하면 Vault 수준 구성만 사용할 수 있습니다. 활성화하면 사용자의 허용 규칙이 보안 모드를 우회할 수 있습니다."
     },
-    "claudeSafeMode": {
-      "name": "안전 모드",
-      "desc": "Safe 토글이 활성화되었을 때 사용하는 권한 모드입니다."
-    },
     "codexSafeMode": {
       "name": "안전 모드",
       "desc": "Safe 토글이 활성화되었을 때 사용하는 샌드박스 모드입니다."

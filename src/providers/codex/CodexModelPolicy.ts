@@ -1,3 +1,4 @@
+import { SAFE_YOLO_PERMISSION_MODES } from '../../core/providers/permissionModes';
 import {
   DEFAULT_REASONING_VALUE,
   formatReasoningValueLabel,
@@ -51,7 +52,7 @@ function getVisibleDiscoveredModels(settings: Record<string, unknown>) {
 }
 
 export const codexModelPolicy: ProviderModelPolicy = {
-  permissionModes: { inactiveValue: 'normal', activeValue: 'yolo' },
+  permissionModes: SAFE_YOLO_PERMISSION_MODES,
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
     return getCodexModelOptions(settings);
   },

@@ -42,7 +42,6 @@ describe('built-in ProviderModule catalog', () => {
       defaultModel: {},
       enableChrome: 'true',
       loadUserSettings: 'false',
-      safeMode: 'unknown',
     });
     Object.assign(getProviderConfig(malformedSettings, 'codex'), {
       catalogFingerprint: [],
@@ -89,7 +88,6 @@ describe('built-in ProviderModule catalog', () => {
       discoveredModels: [],
       enableChrome: false,
       loadUserSettings: true,
-      safeMode: 'default',
     });
     expect(getProviderConfig(normalizedSettings, 'codex')).not.toHaveProperty('customModels');
     expect(getProviderConfig(normalizedSettings, 'codex')).toMatchObject({

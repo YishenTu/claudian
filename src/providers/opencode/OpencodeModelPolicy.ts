@@ -1,5 +1,6 @@
 import { formatReasoningValueLabel } from '@/core/providers/reasoning';
 
+import { SAFE_YOLO_PERMISSION_MODES } from '../../core/providers/permissionModes';
 import type {
   ProviderModelPolicy,
   ProviderReasoningOption,
@@ -24,7 +25,7 @@ import { getOpencodeProviderSettings, updateOpencodeProviderSettings } from './s
 
 
 export const opencodeModelPolicy: ProviderModelPolicy = {
-  permissionModes: { inactiveValue: 'normal', activeValue: 'yolo' },
+  permissionModes: SAFE_YOLO_PERMISSION_MODES,
   getModelOptions(settings): ProviderUIOption[] {
     const opencodeSettings = getOpencodeProviderSettings(settings);
     const applyAlias = (rawId: string, option: ProviderUIOption): ProviderUIOption => {

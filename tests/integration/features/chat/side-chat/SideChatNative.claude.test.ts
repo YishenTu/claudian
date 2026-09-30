@@ -184,6 +184,7 @@ describe('Claude side-chat native child', () => {
     const tooling = createToolingClaude(async () => { await fs.writeFile(written, 'from side chat'); });
 
     const child = await traceSideChild(env, source, checkpoint, backend, {
+      permissionMode: 'acceptEdits',
       interactionPort: {
         askUserQuestion: async () => { throw new Error('Unexpected question'); },
         dismissInteraction: () => undefined,

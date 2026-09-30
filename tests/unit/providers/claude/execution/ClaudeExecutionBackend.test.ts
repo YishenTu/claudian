@@ -322,17 +322,9 @@ describe('ClaudeExecutionBackend', () => {
 
   it.each([
     ['bypassPermissions', 'yolo'],
-    ['default', 'normal'],
-    ['acceptEdits', 'normal'],
-    ['auto', 'normal'],
-    ['dontAsk', 'normal'],
-    ['delegate', 'normal'],
-    ['plan', 'normal'],
-    ['future-mode', 'normal'],
-    ['yolo', 'normal'],
-    ['', 'normal'],
-    [null, 'normal'],
-    [false, 'normal'],
+    ['default', 'manual'],
+    ['acceptEdits', 'acceptEdits'],
+    ['auto', 'auto'],
   ])('normalizes native permission %p to %s in execution events', async (nativeMode, permissionMode) => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1', permissionMode: nativeMode },
@@ -350,6 +342,22 @@ describe('ClaudeExecutionBackend', () => {
       snapshot: expect.objectContaining({ providerId: 'claude', providerSessionId: 'session-1' }),
     }));
   });
+
+  it.each(['dontAsk', 'delegate', 'plan', 'future-mode', 'yolo', '', null, false])(
+    'reports no permission mode for unsupported native permission %p',
+    async (nativeMode) => {
+      sdkMock.setMockMessages([
+        { type: 'system', subtype: 'init', session_id: 'session-1', permissionMode: nativeMode },
+        { type: 'result', subtype: 'success' },
+      ], { appendResult: false });
+      const session = new ClaudeExecutionBackend(createHost())
+        .createSession(createConfig());
+
+      const events = await collectEvents(session.execute(createRequest()).events);
+
+      expect(events).not.toContainEqual(expect.objectContaining({ type: 'permission_mode_changed' }));
+    },
+  );
 
   it.each(['persistent', 'ephemeral'] as const)(
     'keeps pushed commands over delayed initialization metadata in a %s session',
@@ -1245,23 +1253,31 @@ describe('ClaudeExecutionBackend', () => {
     await session.dispose();
   });
 
-  it('switches into auto safe mode on the same persistent query', async () => {
+  it('launches and switches each permission mode on the same persistent query', async () => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
     const host = createHost();
-    host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), safeMode: 'default' } };
+    host.settings.providerConfigs = { claude: claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']) };
     const session = new ClaudeExecutionBackend(host)
       .createSession(createConfig());
+    const request = createRequest();
+    const execute = (permissionMode: string) => collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, permissionMode },
+    }).events);
 
-    await collectEvents(session.execute(createRequest()).events);
+    await execute('manual');
+    expect(sdkMock.getLastOptions()?.permissionMode).toBe('default');
     const query = sdkMock.getLastResponse();
-    host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), safeMode: 'auto' } };
-    await collectEvents(session.execute(createRequest()).events);
+    for (const [mode, native] of [
+      ['auto', 'auto'], ['acceptEdits', 'acceptEdits'], ['yolo', 'bypassPermissions'], ['manual', 'default'],
+    ]) {
+      await execute(mode);
+      expect(query?.setPermissionMode).toHaveBeenLastCalledWith(native);
+    }
 
     expect(sdkMock.getQueryCallCount()).toBe(1);
-    expect(query?.setPermissionMode).toHaveBeenLastCalledWith('auto');
     await session.dispose();
   });
 

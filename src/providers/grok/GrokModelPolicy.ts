@@ -1,3 +1,4 @@
+import { SAFE_YOLO_PERMISSION_MODES } from '../../core/providers/permissionModes';
 import type {
   ProviderModelPolicy,
   ProviderReasoningOption,
@@ -20,7 +21,7 @@ import {
 
 
 export const grokModelPolicy: ProviderModelPolicy = {
-  permissionModes: { inactiveValue: 'normal', activeValue: 'yolo' },
+  permissionModes: SAFE_YOLO_PERMISSION_MODES,
   getModelOptions(settings): ProviderUIOption[] {
     const grokSettings = getGrokProviderSettings(settings);
     const catalogModels = grokSettings.currentCatalog?.models ?? [];

@@ -14,6 +14,7 @@ import {
 } from './modelOptions';
 import { isClaudeModelSelectionId, toClaudeRuntimeModelId } from './modelSelection';
 import { CLAUDE_MODEL_TIER_PATTERN, isClaudeModelTier } from './modelTiers';
+import { CLAUDE_PERMISSION_MODE_POLICY } from './permissionModes';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from './settings';
 import {
   isDefaultClaudeModel,
@@ -23,7 +24,7 @@ import {
 const VERSIONED_CLAUDE_MODEL = new RegExp(`^claude-(?:${CLAUDE_MODEL_TIER_PATTERN})-`);
 
 export const claudeModelPolicy: ProviderModelPolicy = {
-  permissionModes: { inactiveValue: 'normal', activeValue: 'yolo' },
+  permissionModes: CLAUDE_PERMISSION_MODE_POLICY,
   customModelAliases: {
     get: settings => getClaudeProviderSettings(settings).modelAliases,
     update: (settings, modelAliases) => { updateClaudeProviderSettings(settings, { modelAliases }); },

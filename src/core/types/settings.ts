@@ -84,7 +84,7 @@ export interface AuxiliaryContinuityReset {
   clarification?: never;
 }
 
-/** Permission mode for tool execution. */
+/** Safe/YOLO permission values shared by providers with a two-mode control. */
 export type PermissionMode = 'yolo' | 'normal';
 
 /** Scope for environment variable storage and snippets. */
@@ -113,8 +113,8 @@ export interface ClaudianSettings {
   // User preferences
   userName: string;
 
-  // Security
-  permissionMode: PermissionMode;
+  // Security (provider interprets values)
+  permissionMode: string;
 
   // Model & thinking (provider interprets values)
   model: string;

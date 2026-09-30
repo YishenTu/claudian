@@ -160,10 +160,6 @@
       "name": "加载用户 Claude Code 设置",
       "desc": "从 ~/.claude 加载用户级 Claude Code 配置：settings.json、技能、命令、智能体和插件。禁用时仅可使用仓库级配置。启用后，用户的权限规则可能绕过安全模式。"
     },
-    "claudeSafeMode": {
-      "name": "安全模式",
-      "desc": "启用 Safe 开关时使用的权限模式。"
-    },
     "codexSafeMode": {
       "name": "安全模式",
       "desc": "启用 Safe 开关时使用的沙盒模式。"
