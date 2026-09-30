@@ -1,4 +1,9 @@
 /* Reasoning: the level on the model chip, and a stepped slider in the model popover. */
+/* The level stays muted while the chip brightens on hover, focus or while open. */
+.claudian-thinking-current {
+  color: var(--text-muted);
+}
+
 .claudian-thinking-current::before {
   content: '\00B7';
   margin-inline-end: 5px;

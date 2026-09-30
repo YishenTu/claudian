@@ -23,6 +23,7 @@ describe('Toolbar popover styles', () => {
           <button type="button" class="claudian-toolbar-chip claudian-model-btn">
             <span class="claudian-toolbar-chip-primary claudian-model-label">Sonnet</span>
             <span class="claudian-toolbar-chip-secondary claudian-thinking-current">High</span>
+            <span class="claudian-toolbar-chip-secondary claudian-service-tier-indicator"></span>
             <span class="claudian-toolbar-chip-chevron"></span>
           </button>
           <div class="claudian-toolbar-popover" data-popover="model">
@@ -155,14 +156,24 @@ describe('Toolbar popover styles', () => {
     expect({
       buttonModel: color('.claudian-model-label'),
       buttonReasoning: color('.claudian-thinking-current'),
+      buttonFastMode: color('.claudian-service-tier-indicator'),
       level: color('.claudian-toolbar-slider-value'),
       permission: color('.claudian-permission-label'),
     }).toEqual({
       buttonModel: 'var(--text-normal)',
       buttonReasoning: 'var(--text-muted)',
+      // The zap only shows while fast mode is on, so it reads as an active state, not a muted detail.
+      buttonFastMode: 'var(--text-normal)',
       level: 'var(--text-normal)',
       permission: 'var(--text-normal)',
     });
+
+    // Hover, focus and an open menu brighten the chip itself, but the reasoning level stays a muted detail.
+    toolbar.querySelector('button.claudian-model-btn')!.setAttribute('aria-expanded', 'true');
+    expect({
+      buttonReasoning: color('.claudian-thinking-current'),
+      buttonFastMode: color('.claudian-service-tier-indicator'),
+    }).toEqual({ buttonReasoning: 'var(--text-muted)', buttonFastMode: 'var(--text-normal)' });
   });
 
   it.each(['claude', 'codex', 'opencode', 'pi', 'grok'])(

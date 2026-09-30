@@ -1,7 +1,9 @@
 /* Fast mode: an indicator on the model chip and a switch row in the model menu. */
+/* The indicator only shows while fast mode is on, so it reads at full strength rather than muted. */
 .claudian-service-tier-indicator {
   display: flex;
   align-items: center;
+  color: var(--text-normal);
 }
 
 .claudian-service-tier-indicator svg {
