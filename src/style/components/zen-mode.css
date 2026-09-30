@@ -201,7 +201,6 @@
 }
 
 /* Optional controls and the linked note keep their values; zen only hides them. */
-.claudian-zen-composer .claudian-input-toolbar,
 .claudian-zen-composer .claudian-input-container > .claudian-input-nav-row,
 .claudian-zen-composer .claudian-context-chip[data-context-slot="linked-content"],
 .claudian-zen-composer .claudian-context-row[data-context-slots="linked-content"] {
@@ -219,6 +218,83 @@
 .claudian-zen-composer .claudian-composer-editor,
 .claudian-zen-composer .claudian-composer-editor .cm-content {
   min-height: 36px;
+}
+
+/*
+ * The composer's own toolbar, narrowed to model, effort, fast mode and the context icon,
+ * shares the input row. ZenComposerLayout stacks it below once typed text would reach it.
+ */
+.claudian-zen-composer .claudian-input-wrapper {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Attachments share the controls row, left of the controls, below the input. */
+.claudian-zen-composer .claudian-input-wrapper > .claudian-context-row {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  order: 1;
+  min-width: 0;
+  padding: 4px 6px;
+}
+
+.claudian-zen-composer .claudian-input-wrapper > .claudian-composer-editor {
+  flex-grow: 1;
+  flex-shrink: 1;
+  flex-basis: 0;
+  width: auto;
+  min-width: 0;
+}
+
+.claudian-zen-composer.claudian-zen-composer--stacked .claudian-input-wrapper > .claudian-composer-editor,
+.claudian-zen-composer .claudian-input-wrapper > .claudian-context-row.has-content:not([data-context-slots="linked-content"]) ~ .claudian-composer-editor {
+  flex-basis: 100%;
+}
+
+.claudian-zen-composer .claudian-input-wrapper > .claudian-input-toolbar {
+  flex-grow: 0;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  order: 2;
+  box-sizing: border-box;
+  /* One 24px chip line plus the row padding, so the controls line up with the first chip line. */
+  min-height: 32px;
+  margin-left: auto;
+  padding: 4px 6px;
+}
+
+/* Expanded attachments grow downward; the controls stay level with their first line. */
+.claudian-zen-composer .claudian-input-wrapper > .claudian-context-row--expanded ~ .claudian-input-toolbar {
+  align-self: flex-start;
+}
+
+.claudian-zen-composer .claudian-input-toolbar > :not(.claudian-model-selector):not(.claudian-thinking-selector):not(.claudian-service-tier-toggle):not(.claudian-context-meter),
+.claudian-zen-composer .claudian-context-meter-percent,
+.claudian-zen-composer .claudian-thinking-label-text {
+  display: none;
+}
+
+/* The gauge hides its number in zen, so its usage tooltip stays on. */
+.claudian-zen .claudian-zen-composer .claudian-context-meter {
+  --no-tooltip: false;
+}
+
+/* Controls sit at the right edge, so their menus open leftward from it. */
+.claudian-zen-composer .claudian-model-dropdown,
+.claudian-zen-composer .claudian-thinking-options {
+  right: 0;
+  left: auto;
+}
+
+/* The placeholder truncates on the input row instead of wrapping into the controls. */
+.claudian-zen-composer .claudian-composer-editor .cm-placeholder,
+.claudian-zen-composer .claudian-composer-editor:empty::before {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .claudian-zen-composer .claudian-composer-editor .cm-scroller {

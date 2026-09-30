@@ -11,6 +11,7 @@ import type { ChatState } from '../state/ChatState';
 import type { AssembledTabRuntime } from '../tabs/types';
 import { formatActivityPreview, type ZenActivityTone } from './activityPreview';
 import type { ZenModeSlots } from './types';
+import { ZenComposerLayout } from './ZenComposerLayout';
 
 /** Reading intent captured before the transcript is relocated. */
 export interface ZenScrollSnapshot {
@@ -45,7 +46,7 @@ export function restoreZenScrollIntent(runtime: AssembledTabRuntime, snapshot: Z
 /**
  * Compact presentation for one attached runtime: a state-driven activity line,
  * the moved transcript behind a disclosure, and the moved composer, which keeps
- * its own send and cancel keys.
+ * its own send and cancel keys and shows its model, effort, fast mode and context controls inline.
  * It holds presentation state only; chat owners keep drafts, queues and turns.
  */
 export class ZenModePanel {
@@ -71,6 +72,7 @@ export class ZenModePanel {
   #hasHistory = false;
   #lastTone: ZenActivityTone | null = null;
   #resizeObserver: ResizeObserver | null = null;
+  readonly #composerLayout: ZenComposerLayout;
   #destroyed = false;
 
   constructor(
@@ -136,6 +138,7 @@ export class ZenModePanel {
     });
 
     this.slots = { historyEl: this.#historyEl, composerEl };
+    this.#composerLayout = new ZenComposerLayout(composerEl);
     this.#applyHistoryExpanded();
     this.#observeReservedHeight();
   }
@@ -205,6 +208,7 @@ export class ZenModePanel {
     this.#popKeyScope();
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = null;
+    this.#composerLayout.destroy();
     this.#rootEl.remove();
     this.hostEl.removeClass(HOST_CLASS);
     this.hostEl.style.removeProperty(RESERVED_HEIGHT_PROPERTY);

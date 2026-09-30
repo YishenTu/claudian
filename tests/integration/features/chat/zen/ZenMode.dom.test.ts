@@ -385,6 +385,51 @@ it('offers no history for a new conversation until it has messages', async () =>
   expect(disclosure.getAttribute('aria-expanded')).toBe('true');
 });
 
+it('moves the composer controls to their own row only once the typed text would reach them', async () => {
+  const { tab, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  const slot = zenPanel()!.querySelector<HTMLElement>('.claudian-zen-composer')!;
+  const toolbar = tab.dom.inputWrapper.querySelector<HTMLElement>(':scope > .claudian-input-toolbar')!;
+  expect(slot.contains(toolbar)).toBe(true);
+
+  // jsdom has no layout: a 400px input row, a 180px control group, and 8px per typed character.
+  Object.defineProperty(tab.dom.inputWrapper, 'clientWidth', { configurable: true, value: 400 });
+  let toolbarWidth = 180;
+  jest.spyOn(toolbar, 'getBoundingClientRect').mockImplementation(() => ({ width: toolbarWidth } as DOMRect));
+  Object.defineProperty(Range.prototype, 'getBoundingClientRect', {
+    configurable: true,
+    value(this: Range) {
+      return { width: this.toString().length * 8, height: 20 } as DOMRect;
+    },
+  });
+  cleanups.push(() => { delete (Range.prototype as Partial<Range>).getBoundingClientRect; });
+  const stacked = () => slot.classList.contains('claudian-zen-composer--stacked');
+
+  tab.dom.inputEl.value = 'Short question';
+  await waitFor(() => expect(tab.dom.inputEl.textContent).toBe('Short question'));
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  expect(stacked()).toBe(false);
+
+  // 400 - 180 - 16px clearance leaves 204px: 26 characters reach the controls.
+  tab.dom.inputEl.value = 'x'.repeat(26);
+  await waitFor(() => expect(stacked()).toBe(true));
+  tab.dom.inputEl.value = 'x'.repeat(25);
+  await waitFor(() => expect(stacked()).toBe(false));
+
+  tab.dom.inputEl.value = 'one\ntwo';
+  await waitFor(() => expect(stacked()).toBe(true));
+  tab.dom.inputEl.value = '';
+  await waitFor(() => expect(stacked()).toBe(false));
+
+  // Wider controls (a longer model label, fast mode appearing) also make room below.
+  tab.dom.inputEl.value = 'Short question';
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  expect(stacked()).toBe(false);
+  toolbarWidth = 390;
+  toolbar.querySelector<HTMLElement>('.claudian-model-btn')!.append(' (long alias)');
+  await waitFor(() => expect(stacked()).toBe(true));
+});
+
 it('follows chat state while transcript rendering is suspended', async () => {
   const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
   tab.state.messages = [
