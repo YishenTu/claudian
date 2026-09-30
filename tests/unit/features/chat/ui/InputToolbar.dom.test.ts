@@ -24,13 +24,13 @@ it('uses one native context tooltip and updates its warning with usage', async (
   const usage = { contextTokens: 170000, contextWindow: 200000, percentage: 85 } as UsageInfo;
   meter.update(usage);
   const gauge = within(host).getByRole('progressbar', {
-    name: 'Context usage: 170k / 200k (Approaching limit, run `/compact` to continue)',
+    name: 'Context usage: 85% · 170k / 200k (Approaching limit, run `/compact` to continue)',
   });
   expect(gauge.hasAttribute('data-tooltip')).toBe(false);
   expect(gauge.hasAttribute('title')).toBe(false);
   expect(gauge.getAttribute('aria-valuenow')).toBe('85');
   meter.update({ ...usage, contextTokens: 50000, percentage: 25 });
-  expect(within(host).getByRole('progressbar', { name: 'Context usage: 50k / 200k' })).toBe(gauge);
+  expect(within(host).getByRole('progressbar', { name: 'Context usage: 25% · 50k / 200k' })).toBe(gauge);
   expect(gauge.getAttribute('aria-valuenow')).toBe('25');
   expect((await axe(host)).violations).toEqual([]);
   host.remove();

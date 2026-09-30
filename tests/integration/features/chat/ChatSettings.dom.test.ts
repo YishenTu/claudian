@@ -264,9 +264,9 @@ it('keeps the displayed SDK report across model selection until the new model re
       await waitFor(() => expect(ui.getByText(label, { selector: '.claudian-model-label' })).toBeDefined());
     };
     await report('gpt-5.5', 100_000, 1_000_000);
-    const meter = ui.getByRole('progressbar', { name: 'Context usage: 100k / 1000k' });
+    const meter = ui.getByRole('progressbar', { name: 'Context usage: 10% · 100k / 1000k' });
     await selectModel('Alternate');
-    expect(ui.getByRole('progressbar', { name: 'Context usage: 100k / 1000k' })).toBe(meter);
+    expect(ui.getByRole('progressbar', { name: 'Context usage: 10% · 100k / 1000k' })).toBe(meter);
     expect(meter.classList.contains('claudian-hidden')).toBe(false);
     await report('gpt-alternate', 50_000, 0);
     expect(meter.getAttribute('aria-valuetext')).toBe('100k / 1000k');
