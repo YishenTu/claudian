@@ -77,8 +77,6 @@
     "zen": {
       "regionLabel": "Чат Claudian",
       "showHistory": "Показать разговор",
-      "hideHistory": "Скрыть разговор",
-      "openFullChat": "Открыть полный чат",
       "working": "Выполняется…",
       "thinking": "Размышляет…",
       "interrupted": "Прервано",

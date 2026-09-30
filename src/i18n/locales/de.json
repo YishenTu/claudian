@@ -77,8 +77,6 @@
     "zen": {
       "regionLabel": "Claudian-Chat",
       "showHistory": "Unterhaltung anzeigen",
-      "hideHistory": "Unterhaltung ausblenden",
-      "openFullChat": "Vollständigen Chat öffnen",
       "working": "Arbeitet…",
       "thinking": "Denkt nach…",
       "interrupted": "Unterbrochen",

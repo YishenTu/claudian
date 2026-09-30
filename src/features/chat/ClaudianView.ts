@@ -1292,8 +1292,10 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     const controller = this.tabManager?.getActiveTab()?.controllers?.sideChatController ?? null;
     if (this.sideChatChipController !== controller) this.sideChatChipController?.setCollapsedHost(null);
     this.sideChatChipController = controller;
-    // Zen keeps the collapsed side chip inside the moved composer.
-    controller?.setCollapsedHost(this.isWideSessionLayout || this.zenSlots ? null : this.sideChatChipHostEl);
+    // Zen provides its own chip slot; the wide layout keeps the chip inside the composer.
+    controller?.setCollapsedHost(
+      this.zenSlots?.sideChatChipEl ?? (this.isWideSessionLayout ? null : this.sideChatChipHostEl),
+    );
   }
 
   private requestSessionNew(): void {

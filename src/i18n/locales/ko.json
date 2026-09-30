@@ -77,8 +77,6 @@
     "zen": {
       "regionLabel": "Claudian 채팅",
       "showHistory": "대화 표시",
-      "hideHistory": "대화 숨기기",
-      "openFullChat": "전체 채팅 열기",
       "working": "작업 중…",
       "thinking": "생각 중…",
       "interrupted": "중단됨",

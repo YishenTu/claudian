@@ -77,8 +77,6 @@
     "zen": {
       "regionLabel": "Claudian 聊天",
       "showHistory": "顯示對話",
-      "hideHistory": "隱藏對話",
-      "openFullChat": "開啟完整聊天",
       "working": "處理中…",
       "thinking": "思考中…",
       "interrupted": "已中斷",

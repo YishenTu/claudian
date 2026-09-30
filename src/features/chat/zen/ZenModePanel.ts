@@ -1,4 +1,4 @@
-import { type Keymap, Scope, setIcon } from 'obsidian';
+import { type Keymap, Scope } from 'obsidian';
 
 import { t } from '../../../i18n/i18n';
 import {
@@ -7,7 +7,6 @@ import {
   type ScheduledAnimationFrame,
 } from '../../../utils/animationFrame';
 import { setToolIcon } from '../rendering/ToolCallRenderer';
-import type { ChatState } from '../state/ChatState';
 import type { AssembledTabRuntime } from '../tabs/types';
 import { formatActivityPreview, type ZenActivityTone } from './activityPreview';
 import type { ZenModeSlots } from './types';
@@ -23,7 +22,6 @@ export interface ZenModePanelOptions {
   readonly keymap: Pick<Keymap, 'pushScope' | 'popScope'> | null;
   readonly historyExpanded: boolean;
   onHistoryExpandedChange(expanded: boolean): void;
-  onOpenFullChat(): void;
 }
 
 const HOST_CLASS = 'claudian-zen-host';
@@ -60,7 +58,6 @@ export class ZenModePanel {
   readonly #previewEl: HTMLElement;
   readonly #previewIconEl: HTMLElement;
   #previewIconTool: string | null = null;
-  readonly #destinationEl: HTMLElement;
   readonly #statusEl: HTMLElement;
   // A parentless scope keeps the active note's hotkeys away from zen input while it has focus.
   readonly #keyScope = new Scope();
@@ -68,8 +65,6 @@ export class ZenModePanel {
   #scopePushed = false;
   #runtime: AssembledTabRuntime | null = null;
   #unsubscribeMain: (() => void) | null = null;
-  #sideState: ChatState | null = null;
-  #unsubscribeSide: (() => void) | null = null;
   #pendingFrame: ScheduledAnimationFrame | null = null;
   #historyExpanded: boolean;
   #hasHistory = false;
@@ -97,53 +92,44 @@ export class ZenModePanel {
 
     const previewId = `claudian-zen-preview-${panelSequence}`;
     const barEl = drawerEl.createDiv({ cls: 'claudian-zen-bar' });
-    // The whole preview line toggles the transcript; its label names the action, the preview describes it.
+    // The whole preview line opens the transcript; its label names the action, the preview describes it.
+    // Expanded, the line steps aside; a click or focus move outside zen collapses it again.
     this.#disclosureEl = barEl.createEl('button', {
       cls: 'claudian-zen-disclosure',
-      attr: { type: 'button', 'aria-controls': historyId, 'aria-describedby': previewId },
+      attr: {
+        type: 'button',
+        'aria-controls': historyId,
+        'aria-describedby': previewId,
+        'aria-label': t('chat.zen.showHistory'),
+      },
     });
     this.#disclosureEl.addEventListener('click', () => this.setHistoryExpanded(!this.#historyExpanded));
 
-    this.#destinationEl = this.#disclosureEl.createSpan({
-      cls: 'claudian-zen-destination claudian-hidden',
-      text: t('chat.sideChat.title'),
-    });
     this.#previewIconEl = this.#disclosureEl.createSpan({
       cls: 'claudian-zen-preview-icon claudian-hidden',
       attr: { 'aria-hidden': 'true' },
     });
     this.#previewEl = this.#disclosureEl.createSpan({ cls: 'claudian-zen-preview', attr: { id: previewId } });
-    // Expanded, the chevron stands in for the preview line.
-    const chevronEl = this.#disclosureEl.createSpan({
-      cls: 'claudian-zen-disclosure-icon',
-      attr: { 'aria-hidden': 'true' },
-    });
-    setIcon(chevronEl, 'chevron-down');
-
-    const openEl = barEl.createEl('button', {
-      cls: 'claudian-zen-open',
-      attr: { type: 'button', 'aria-label': t('chat.zen.openFullChat') },
-    });
-    setIcon(openEl, 'maximize-2');
-    openEl.addEventListener('click', () => this.options.onOpenFullChat());
 
     const composerEl = this.#rootEl.createDiv({ cls: 'claudian-zen-composer' });
+    // Shares the sidebar slot class so it collapses while empty.
+    const sideChatChipEl = this.#rootEl.createDiv({
+      cls: 'claudian-zen-side-chat-chip-slot claudian-side-chat-chip-slot',
+    });
 
     this.#statusEl = this.#rootEl.createDiv({ cls: 'claudian-zen-status', attr: { role: 'status' } });
 
-    // Destination can change from controls inside the moved composer.
-    for (const eventName of ['click', 'keyup', 'input'] as const) {
-      this.#rootEl.addEventListener(eventName, () => this.#scheduleRender());
-    }
     this.#rootEl.addEventListener('focusin', () => this.#pushKeyScope());
     this.#rootEl.addEventListener('focusout', (event) => {
       const next = event.relatedTarget as Node | null;
       if (!next || !this.#rootEl.contains(next)) this.#popKeyScope();
+      // Leaving the window reports no target and keeps the transcript open.
+      if (next) this.#collapseOnLeave(next);
     });
 
     hostEl.ownerDocument.addEventListener('pointerdown', this.#handleOutsidePointerDown, true);
 
-    this.slots = { historyEl: this.#historyEl, composerEl };
+    this.slots = { historyEl: this.#historyEl, composerEl, sideChatChipEl };
     this.#composerLayout = new ZenComposerLayout(composerEl);
     this.#applyHistoryExpanded();
     this.#observeReservedHeight();
@@ -162,7 +148,6 @@ export class ZenModePanel {
     }
     this.#unsubscribeMain?.();
     this.#unsubscribeMain = null;
-    this.#subscribeSide(null);
     this.#runtime = runtime;
     if (!runtime) return;
 
@@ -209,7 +194,6 @@ export class ZenModePanel {
     this.#pendingFrame = null;
     this.#unsubscribeMain?.();
     this.#unsubscribeMain = null;
-    this.#subscribeSide(null);
     this.#runtime = null;
     this.#popKeyScope();
     this.#resizeObserver?.disconnect();
@@ -228,20 +212,20 @@ export class ZenModePanel {
     this.#historyEl.toggleClass('claudian-hidden', !expanded || !this.#hasHistory);
     this.#rootEl.toggleClass('claudian-zen--expanded', expanded);
     this.#disclosureEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    this.#disclosureEl.setAttribute(
-      'aria-label',
-      expanded ? t('chat.zen.hideHistory') : t('chat.zen.showHistory'),
-    );
   }
 
   readonly #handleOutsidePointerDown = (event: PointerEvent): void => {
-    if (!this.#historyExpanded || !this.#hasHistory) return;
     const target = event.target as Node | null;
-    if (!target || this.#rootEl.contains(target)) return;
-    const element = target.nodeType === Node.ELEMENT_NODE ? target as Element : target.parentElement;
+    if (target) this.#collapseOnLeave(target);
+  };
+
+  /** Collapses visible history when interaction moves outside zen and the overlays its controls open. */
+  #collapseOnLeave(node: Node): void {
+    if (!this.#historyExpanded || !this.#hasHistory || this.#rootEl.contains(node)) return;
+    const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
     if (element?.closest(OWNED_OVERLAY_SELECTOR)) return;
     this.setHistoryExpanded(false);
-  };
+  }
 
   #scheduleRender(): void {
     if (this.#destroyed || this.#pendingFrame) return;
@@ -257,22 +241,12 @@ export class ZenModePanel {
     const runtime = this.#runtime;
     if (this.#destroyed || !runtime) return;
 
-    const sideChat = runtime.controllers.sideChatController;
-    const sideRuntime = sideChat.runtime;
-    this.#subscribeSide(sideRuntime?.state ?? null);
-    const isSide = sideChat.destination === 'side' && sideRuntime !== null;
-    const selectedState = isSide ? sideRuntime.state : runtime.state;
-    const otherState = isSide ? runtime.state : sideRuntime?.state ?? null;
-    // An unresolved interaction on the other destination must not hide behind an idle line.
-    const preview = formatActivityPreview(
-      !selectedState.requiresAction && otherState?.requiresAction ? otherState : selectedState,
-    );
+    // The drawer always follows the main chat; a side chat reports in its own panel.
+    const preview = formatActivityPreview(runtime.state);
 
     this.#previewEl.setText(preview.text);
     this.#renderPreviewIcon(preview.toolName ?? null);
     this.#rootEl.dataset.tone = preview.tone;
-    this.#rootEl.dataset.destination = isSide ? 'side' : 'main';
-    this.#destinationEl.toggleClass('claudian-hidden', !isSide);
 
     const hasHistory = runtime.state.messages.length > 0;
     if (hasHistory !== this.#hasHistory) {
@@ -299,13 +273,6 @@ export class ZenModePanel {
     this.#previewIconTool = toolName;
     this.#previewIconEl.empty();
     setToolIcon(this.#previewIconEl, toolName);
-  }
-
-  #subscribeSide(state: ChatState | null): void {
-    if (state === this.#sideState) return;
-    this.#unsubscribeSide?.();
-    this.#sideState = state;
-    this.#unsubscribeSide = state?.subscribeActivity(() => this.#scheduleRender()) ?? null;
   }
 
   #pushKeyScope(): void {

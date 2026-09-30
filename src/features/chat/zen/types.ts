@@ -6,6 +6,8 @@ import type { AssembledTabRuntime } from '../tabs/types';
 export interface ZenModeSlots {
   readonly historyEl: HTMLElement;
   readonly composerEl: HTMLElement;
+  /** Receives the collapsed side-chat chip below the composer. */
+  readonly sideChatChipEl: HTMLElement;
 }
 
 /**
@@ -20,5 +22,4 @@ export interface ZenModeSource {
   onZenPresentationChanged(listener: () => void): () => void;
   /** Moves the active runtime's transcript and composer; the release restores them and is idempotent. */
   attachZenPresentation(slots: ZenModeSlots): () => void;
-  focusActiveInput(): void;
 }

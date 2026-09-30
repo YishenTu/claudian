@@ -199,7 +199,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
     view.updateInputLocation();
     view.startZenModeSource();
     cleanups.push(() => view.stopZenModeSource());
-    return { view, tab, leaf, activeInputSlotEl };
+    return { view, tab, leaf, activeInputSlotEl, sideChatChipHostEl };
   };
 
   zen.start();
@@ -405,25 +405,21 @@ it('offers no history for a new conversation until it has messages', async () =>
   const panel = zenPanel()!;
   const disclosure = panel.querySelector<HTMLButtonElement>('.claudian-zen-disclosure')!;
   const history = panel.querySelector<HTMLElement>('.claudian-zen-history')!;
-  // The whole drawer, including the open action, waits for the first message.
+  // The whole drawer waits for the first message.
   const drawer = panel.querySelector<HTMLElement>('.claudian-zen-drawer')!;
-  expect(drawer.contains(panel.querySelector('.claudian-zen-open'))).toBe(true);
   expect(drawer.classList.contains('claudian-hidden')).toBe(true);
   expect(history.classList.contains('claudian-hidden')).toBe(true);
 
   const session = await sendFromZen(tab, sessions, 'First question');
   await waitFor(() => expect(drawer.classList.contains('claudian-hidden')).toBe(false));
   expect(disclosure.classList.contains('claudian-hidden')).toBe(false);
-  // The whole preview line is the disclosure control; expanded, a decorative chevron stands in for it.
+  // The whole preview line is the disclosure control, and the drawer holds nothing else.
   expect(disclosure.contains(panel.querySelector('.claudian-zen-preview'))).toBe(true);
+  expect(panel.querySelector('.claudian-zen-bar')!.children).toHaveLength(1);
   fireEvent.click(panel.querySelector('.claudian-zen-preview')!);
   expect(disclosure.getAttribute('aria-expanded')).toBe('true');
   expect(history.classList.contains('claudian-hidden')).toBe(false);
-  const chevron = disclosure.querySelector<HTMLElement>('.claudian-zen-disclosure-icon')!;
-  expect(chevron.getAttribute('aria-hidden')).toBe('true');
-  fireEvent.click(chevron);
-  expect(disclosure.getAttribute('aria-expanded')).toBe('false');
-  fireEvent.click(disclosure);
+  expect(panel.classList.contains('claudian-zen--expanded')).toBe(true);
   session.complete();
   await waitFor(() => expect(tab.state.isStreaming).toBe(false));
 
@@ -552,26 +548,27 @@ it('discloses the existing transcript accessibly and remembers the choice for th
   expect(history.contains(tab.dom.messagesWrapperEl)).toBe(true);
   expect(screen.getByRole('region', { name: 'Claudian chat' })).toBe(panel);
 
-  fireEvent.click(show);
-  expect(show.getAttribute('aria-expanded')).toBe('true');
-  expect(show.getAttribute('aria-label')).toBe('Hide conversation');
-  expect(history.classList.contains('claudian-hidden')).toBe(false);
-  expect(tab.controllers.sideChatController.destination).toBe('main');
   // Moved chat nodes keep their own coverage; this checks the zen chrome.
   expect(await axe(panel.querySelector<HTMLElement>('.claudian-zen-bar')!)).toHaveNoViolations();
 
+  fireEvent.click(show);
+  expect(show.getAttribute('aria-expanded')).toBe('true');
+  expect(history.classList.contains('claudian-hidden')).toBe(false);
+  expect(tab.controllers.sideChatController.destination).toBe('main');
+
   setCollapsed(rightSplit, false);
   setCollapsed(rightSplit, true);
-  expect(within(zenPanel()!).getByRole('button', { name: 'Hide conversation' }).getAttribute('aria-expanded')).toBe('true');
+  const reopened = zenPanel()!.querySelector('.claudian-zen-disclosure')!;
+  expect(reopened.getAttribute('aria-expanded')).toBe('true');
 });
 
-it('collapses the expanded transcript on a click elsewhere in Obsidian', async () => {
+it('collapses the expanded transcript on a click or focus move elsewhere in Obsidian', async () => {
   const { tab, rightSplit, setCollapsed, noteEditor } = await createZenFixture();
   seedHistory(tab);
   setCollapsed(rightSplit, true);
   const panel = zenPanel()!;
-  fireEvent.click(within(panel).getByRole('button', { name: 'Show conversation' }));
-  const hide = within(panel).getByRole('button', { name: 'Hide conversation' });
+  const hide = within(panel).getByRole('button', { name: 'Show conversation' });
+  fireEvent.click(hide);
   const history = document.getElementById(hide.getAttribute('aria-controls')!)!;
 
   // Clicks inside zen, or in menus and modals it opened, keep it open.
@@ -591,27 +588,46 @@ it('collapses the expanded transcript on a click elsewhere in Obsidian', async (
   // A collapsed transcript ignores outside clicks entirely.
   fireEvent.pointerDown(noteEditor);
   expect(hide.getAttribute('aria-expanded')).toBe('false');
+
+  // Keyboard users leave the same way: focus moving from zen into the note collapses it.
+  fireEvent.click(hide);
+  const inputEl = tab.dom.inputEl as unknown as HTMLElement;
+  fireEvent.focusOut(inputEl, { relatedTarget: panel.querySelector('.claudian-zen-disclosure') });
+  expect(hide.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.focusOut(inputEl, { relatedTarget: null });
+  expect(hide.getAttribute('aria-expanded')).toBe('true');
+  fireEvent.focusOut(inputEl, { relatedTarget: noteEditor });
+  expect(hide.getAttribute('aria-expanded')).toBe('false');
 });
 
-it('labels a selected side destination and keeps it through disclosure and cancel', async () => {
-  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
+it('keeps the preview line on the main chat while a side chat is selected', async () => {
+  const { tab, sessions, rightSplit, setCollapsed, sideChatChipHostEl } = await createZenFixture();
   tab.state.messages = [
     { id: 'u1', role: 'user', content: 'Remember A', timestamp: 1 },
     { id: 'a1', role: 'assistant', content: 'Noted A', assistantMessageId: 'checkpoint-1', timestamp: 2 },
   ];
+  setCollapsed(rightSplit, true);
+  const panel = zenPanel()!;
+  await waitFor(() => expect(preview()).not.toBe(''));
+  const mainPreview = preview();
+
   const sideChat = tab.controllers.sideChatController;
   const started = sideChat.handleCommandSubmission('Explore B', []);
   await waitFor(() => expect(sessions.some(session => session.requests.length > 0)).toBe(true));
   const sideSession = sessions.find(session => session.requests.length > 0)!;
   expect(sideChat.destination).toBe('side');
-
-  setCollapsed(rightSplit, true);
-  const panel = zenPanel()!;
+  // Releasing the submit key is what lets zen notice the new destination.
+  fireEvent.keyUp(tab.dom.inputEl as unknown as HTMLElement, { key: 'Enter' });
   const sidePanel = panel.querySelector('.claudian-side-chat-panel')!;
   expect(sidePanel.classList.contains('claudian-hidden')).toBe(false);
   expect(within(sidePanel as HTMLElement).getByRole('heading')).toBeDefined();
-  await waitFor(() => expect(panel.dataset.destination).toBe('side'));
-  expect(panel.querySelector('.claudian-zen-destination')!.classList.contains('claudian-hidden')).toBe(false);
+
+  // Side activity stays in the side panel; the drawer never switches to it.
+  sideSession.emitText('Side progress');
+  await waitFor(() => expect(sideChat.runtime!.state.currentTextContent).toContain('Side progress'));
+  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+  expect(preview()).toBe(mainPreview);
+  expect(panel.querySelector('.claudian-zen-destination')).toBeNull();
 
   const disclosure = within(panel).getByRole('button', { name: 'Show conversation' });
   fireEvent.click(disclosure);
@@ -623,6 +639,16 @@ it('labels a selected side destination and keeps it through disclosure and cance
   expect(tab.state.isStreaming).toBe(false);
   await started;
   expect(sideChat.destination).toBe('side');
+  expect(preview()).toBe(mainPreview);
+
+  // Collapsed, the side chip sits below the composer rather than between it and the drawer.
+  sideChat.collapse();
+  const chip = panel.querySelector('.claudian-side-chat')!;
+  expect(chip.parentElement!.classList.contains('claudian-zen-side-chat-chip-slot')).toBe(true);
+  expect(panel.querySelector('.claudian-zen-composer')!.nextElementSibling).toBe(chip.parentElement);
+
+  setCollapsed(rightSplit, false);
+  expect(chip.parentElement).toBe(sideChatChipHostEl);
 });
 
 it('keeps the reader scroll intent through geometry-only scrolls after relocation', async () => {
@@ -686,20 +712,6 @@ it('presents one source across multiple views and hands over when it reopens', a
   expect(zenPanel()!.contains(fixture.tab.dom.inputComposerEl)).toBe(true);
 });
 
-it('opens the exact source leaf from the zen action', async () => {
-  const fixture = await createZenFixture();
-  const left = await fixture.addView('left');
-  fixture.setCollapsed(fixture.leftSplit, true);
-  fixture.setCollapsed(fixture.rightSplit, true);
-  expect(zenPanel()!.contains(left.tab.dom.inputComposerEl)).toBe(true);
-
-  fireEvent.click(within(zenPanel()!).getByRole('button', { name: 'Open full chat' }));
-
-  await waitFor(() => expect(fixture.workspace.revealLeaf).toHaveBeenCalledWith(left.leaf));
-  expect(left.tab.dom.inputComposerEl.parentElement).toBe(left.activeInputSlotEl);
-  expect(zenPanel()!.contains(fixture.tab.dom.inputComposerEl)).toBe(true);
-});
-
 it('releases every moved node and subscription on close and disposal', async () => {
   const fixture = await createZenFixture();
   const { tab, rootEl, rightSplit, setCollapsed, view, zen, workspace } = fixture;
@@ -717,5 +729,5 @@ it('releases every moved node and subscription on close and disposal', async () 
   zen.dispose();
   expect(zenPanel()).toBeNull();
   expect(workspace.listenerCount()).toBe(0);
-  expect(screen.queryByRole('button', { name: 'Open full chat' })).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Claudian chat' })).toBeNull();
 });

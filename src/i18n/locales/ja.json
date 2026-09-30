@@ -77,8 +77,6 @@
     "zen": {
       "regionLabel": "Claudian チャット",
       "showHistory": "会話を表示",
-      "hideHistory": "会話を隠す",
-      "openFullChat": "フルチャットを開く",
       "working": "処理中…",
       "thinking": "思考中…",
       "interrupted": "中断されました",

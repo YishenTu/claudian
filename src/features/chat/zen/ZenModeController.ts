@@ -48,7 +48,6 @@ export class ZenModeController {
   #focusOrder: ZenModeSource[] = [];
   #eventRefs: EventRef[] = [];
   #attachment: ZenAttachment | null = null;
-  #revealing: ZenModeSource | null = null;
   #listening = false;
   #reconciling = false;
   #reconcileAgain = false;
@@ -167,7 +166,7 @@ export class ZenModeController {
   }
 
   #isEligible(source: ZenModeSource): boolean {
-    if (source === this.#revealing || !source.getZenRuntime()) return false;
+    if (!source.getZenRuntime()) return false;
     return this.#isInCollapsedSidebar(source.leaf);
   }
 
@@ -186,9 +185,7 @@ export class ZenModeController {
    */
   #loadDeferredSource(): void {
     if (!this.#canPresent()) return;
-    const pending = [...this.#sources.keys()].some(
-      source => source !== this.#revealing && this.#isInCollapsedSidebar(source.leaf),
-    );
+    const pending = [...this.#sources.keys()].some(source => this.#isInCollapsedSidebar(source.leaf));
     if (pending) return;
     const leaf = this.deps.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN).find(candidate => (
       candidate.isDeferred && !this.#loadRequested.has(candidate) && this.#isInCollapsedSidebar(candidate)
@@ -209,9 +206,6 @@ export class ZenModeController {
       keymap: this.deps.app.keymap ?? null,
       historyExpanded: this.#historyExpanded.get(source) ?? false,
       onHistoryExpandedChange: expanded => this.#historyExpanded.set(source, expanded),
-      onOpenFullChat: () => {
-        void this.#openFullChat(source).catch(() => undefined);
-      },
     });
     this.#attachment = { source, panel, release: source.attachZenPresentation(panel.slots) };
     panel.bind(runtime, scroll);
@@ -241,16 +235,4 @@ export class ZenModeController {
     }, runtime.dom.messagesEl.ownerDocument.defaultView);
   }
 
-  async #openFullChat(source: ZenModeSource): Promise<void> {
-    this.#revealing = source;
-    this.#detach();
-    try {
-      await this.deps.app.workspace.revealLeaf(source.leaf);
-    } finally {
-      this.#revealing = null;
-    }
-    if (this.#disposed || !this.#sources.has(source)) return;
-    source.focusActiveInput();
-    this.reconcile();
-  }
 }

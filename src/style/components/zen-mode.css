@@ -60,8 +60,9 @@
   min-height: 0;
   max-height: var(--claudian-zen-history-max-height);
   overflow: hidden;
-  /* Outside the scroller, so scrolled messages stop short of the drawer border. */
+  /* Outside the scroller, so scrolled messages stop short of the drawer border and the composer. */
   padding-top: 16px;
+  padding-bottom: 16px;
 }
 
 .claudian-zen-history > .claudian-messages-wrapper {
@@ -107,23 +108,10 @@
   color: var(--text-error);
 }
 
-.claudian-zen-destination {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border: 1px solid var(--claudian-side-chat);
-  border-radius: var(--radius-s);
-  color: var(--claudian-side-chat);
-  font-size: var(--font-ui-smaller);
-}
-
 .claudian-zen button.claudian-zen-disclosure,
 .claudian-zen button.claudian-zen-disclosure:hover,
 .claudian-zen button.claudian-zen-disclosure:focus,
-.claudian-zen button.claudian-zen-disclosure:active,
-.claudian-zen button.claudian-zen-open,
-.claudian-zen button.claudian-zen-open:hover,
-.claudian-zen button.claudian-zen-open:focus,
-.claudian-zen button.claudian-zen-open:active {
+.claudian-zen button.claudian-zen-disclosure:active {
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -152,22 +140,9 @@
   text-align: start;
 }
 
-.claudian-zen button.claudian-zen-open:hover {
-  color: var(--text-normal);
-}
-
-.claudian-zen button.claudian-zen-disclosure:focus-visible,
-.claudian-zen button.claudian-zen-open:focus-visible {
+.claudian-zen button.claudian-zen-disclosure:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: 1px;
-}
-
-.claudian-zen-disclosure-icon {
-  display: none;
-}
-
-.claudian-zen--expanded .claudian-zen-disclosure-icon {
-  display: flex;
 }
 
 .claudian-zen-preview-icon {
@@ -177,18 +152,12 @@
   color: var(--text-accent);
 }
 
-.claudian-zen--expanded .claudian-zen-preview,
-.claudian-zen--expanded .claudian-zen-preview-icon {
+/* Expanded, the transcript meets the composer directly; an outside click or focus move collapses it. */
+.claudian-zen--expanded .claudian-zen-bar {
   display: none;
 }
 
-.claudian-zen.claudian-zen--expanded button.claudian-zen-disclosure {
-  justify-content: center;
-}
-
-.claudian-zen-disclosure-icon svg,
-.claudian-zen-preview-icon svg,
-.claudian-zen button.claudian-zen-open svg {
+.claudian-zen-preview-icon svg {
   width: 16px;
   height: 16px;
 }
@@ -302,6 +271,14 @@
 
 .claudian-zen-composer .claudian-composer-editor .cm-scroller {
   max-height: 160px;
+}
+
+.claudian-zen-side-chat-chip-slot {
+  padding: 4px 6px 0;
+}
+
+.claudian-zen-side-chat-chip-slot .claudian-side-chat-status {
+  margin: 0;
 }
 
 .claudian-zen-composer .claudian-side-chat-panel {

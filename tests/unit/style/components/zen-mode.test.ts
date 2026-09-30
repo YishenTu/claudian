@@ -13,6 +13,7 @@ describe('Zen mode styles', () => {
     'src/style/components/context-footer.css',
     'src/style/toolbar/model-selector.css',
     'src/style/toolbar/thinking-selector.css',
+    'src/style/components/side-chat.css',
     'src/style/components/zen-mode.css',
   ]
     .map(file => readFileSync(path.resolve(file), 'utf8'))
@@ -44,9 +45,7 @@ describe('Zen mode styles', () => {
               <button type="button" class="claudian-zen-disclosure">
                 <span class="claudian-zen-preview-icon" aria-hidden="true"></span>
                 <span class="claudian-zen-preview"></span>
-                <span class="claudian-zen-disclosure-icon" aria-hidden="true"></span>
               </button>
-              <button type="button" class="claudian-zen-open"></button>
             </div>
           </div>
           <div class="claudian-zen-composer">
@@ -78,6 +77,9 @@ describe('Zen mode styles', () => {
                 <div class="claudian-mode-selector"></div>
               </div>
             </div>
+          </div>
+          <div class="claudian-zen-side-chat-chip-slot claudian-side-chat-chip-slot">
+            <div class="claudian-side-chat"><div class="claudian-side-chat-status"></div></div>
           </div>
         </div>
       </div>
@@ -136,21 +138,14 @@ describe('Zen mode styles', () => {
     expect(window.getComputedStyle(linked).display).toBe('none');
   });
 
-  it('replaces the preview line with a downward chevron while expanded', () => {
+  it('drops the header line while expanded so the transcript meets the composer', () => {
     const panel = renderPanel();
-    const preview = panel.querySelector('.claudian-zen-preview')!;
-    const chevron = panel.querySelector('.claudian-zen-disclosure-icon')!;
-    expect(window.getComputedStyle(chevron).display).toBe('none');
-    expect(window.getComputedStyle(preview).display).not.toBe('none');
-
-    const toolIcon = panel.querySelector('.claudian-zen-preview-icon')!;
-    expect(window.getComputedStyle(toolIcon).display).toBe('flex');
+    const bar = panel.querySelector('.claudian-zen-bar')!;
+    expect(window.getComputedStyle(bar).display).toBe('flex');
+    expect(window.getComputedStyle(panel.querySelector('.claudian-zen-preview-icon')!).display).toBe('flex');
 
     panel.classList.add('claudian-zen--expanded');
-    expect(window.getComputedStyle(chevron).display).toBe('flex');
-    expect(window.getComputedStyle(preview).display).toBe('none');
-    expect(window.getComputedStyle(toolIcon).display).toBe('none');
-    expect(window.getComputedStyle(panel.querySelector('.claudian-zen-disclosure')!).justifyContent).toBe('center');
+    expect(window.getComputedStyle(bar).display).toBe('none');
   });
 
   it('suppresses Obsidian hover tooltips across the panel except the context gauge', () => {
@@ -180,9 +175,9 @@ describe('Zen mode styles', () => {
     expect(messages.getPropertyValue('padding-inline-end')).toBe('14px');
   });
 
-  it('keeps the transcript clear of the drawer top border, outside its scroller', () => {
+  it('keeps the transcript clear of the drawer border and the composer, outside its scroller', () => {
     const history = window.getComputedStyle(renderPanel().querySelector('.claudian-zen-history')!);
-    expect(history.paddingTop).toBe('16px');
+    expect({ top: history.paddingTop, bottom: history.paddingBottom }).toEqual({ top: '16px', bottom: '16px' });
   });
 
   it('pads the expandable header clear of the drawer border', () => {
@@ -191,12 +186,12 @@ describe('Zen mode styles', () => {
       .toEqual({ top: '2px', right: '4px', bottom: '2px', left: '4px' });
   });
 
-  it('gives the expandable header and open action no hover highlight', () => {
+  it('gives the expandable header no hover highlight', () => {
     renderPanel();
     const sheet = document.head.querySelector<HTMLStyleElement>('[data-testid="zen-styles"]')!.sheet!;
     const highlighted = Array.from(sheet.cssRules)
       .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
-      .filter(rule => rule.selectorText.split(',').some(selector => /claudian-zen-(disclosure|open):hover/.test(selector)))
+      .filter(rule => rule.selectorText.split(',').some(selector => /claudian-zen-disclosure:hover/.test(selector)))
       .filter(rule => /--background-modifier-hover/.test(rule.style.cssText));
     expect(highlighted.map(rule => rule.selectorText)).toEqual([]);
   });
@@ -286,6 +281,17 @@ describe('Zen mode styles', () => {
     const placeholder = window.getComputedStyle(composer.querySelector('.cm-placeholder')!);
     expect({ whiteSpace: placeholder.whiteSpace, textOverflow: placeholder.textOverflow })
       .toEqual({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' });
+  });
+
+  it('sets the collapsed side chip just below the composer, aligned with its padding', () => {
+    const slot = renderPanel().querySelector<HTMLElement>('.claudian-zen-side-chat-chip-slot')!;
+    const slotStyle = window.getComputedStyle(slot);
+    const chip = window.getComputedStyle(slot.querySelector('.claudian-side-chat-status')!);
+    expect({ top: slotStyle.paddingTop, left: slotStyle.paddingLeft, chipMargin: chip.marginBottom })
+      .toEqual({ top: '4px', left: '6px', chipMargin: '0px' });
+
+    slot.replaceChildren();
+    expect(window.getComputedStyle(slot).display).toBe('none');
   });
 
   it('draws no surface around the composer', () => {

@@ -77,8 +77,6 @@
     "zen": {
       "regionLabel": "Claudian chat",
       "showHistory": "Show conversation",
-      "hideHistory": "Hide conversation",
-      "openFullChat": "Open full chat",
       "working": "Working…",
       "thinking": "Thinking…",
       "interrupted": "Interrupted",
