@@ -697,7 +697,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       ...parseEnvironmentVariables(envText),
     };
     this.#validateResumeSeed(env);
-    const toolProfile = resolveToolProfile(request.toolPolicy, settings);
+    const toolProfile = resolveToolProfile(request.toolPolicy);
     const launchSpec = buildPiLaunchSpec({
       enableTreeBridge: !this.#shouldDisableNativePersistence(),
       command: await this.host.getResolvedProviderCliPath('pi') ?? 'pi',
@@ -708,10 +708,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       noTools: toolProfile.noTools,
       tools: toolProfile.tools,
       providerState: getPiState(this.providerState),
-      settings: {
-        ...settings,
-        toolMode: toolProfile.toolMode,
-      },
+      readOnlyTools: toolProfile.readOnlyTools,
+      settings,
       systemPrompt: resolveSystemPrompt(
         request,
         this.host.settings,
@@ -1685,31 +1683,21 @@ function resolveThinkingLevel(
   return resolved;
 }
 
-function resolveToolProfile(
-  policy: ProviderToolPolicy,
-  settings: PiProviderSettings,
-): {
+function resolveToolProfile(policy: ProviderToolPolicy): {
   noTools: boolean;
-  toolMode: PiProviderSettings['toolMode'];
+  readOnlyTools?: boolean;
   tools?: readonly string[];
 } {
   if (policy.kind === 'passive') {
-    return { noTools: true, toolMode: settings.toolMode };
+    return { noTools: true };
   }
   if (policy.kind === 'read-only') {
-    return { noTools: false, toolMode: 'readonly' };
+    return { noTools: false, readOnlyTools: true };
   }
   if (policy.kind === 'allow-list') {
-    return {
-      noTools: policy.names.length === 0,
-      toolMode: settings.toolMode,
-      tools: policy.names,
-    };
+    return { noTools: policy.names.length === 0, tools: policy.names };
   }
-  return {
-    noTools: false,
-    toolMode: policy.kind === 'unrestricted' ? 'all' : settings.toolMode,
-  };
+  return { noTools: false };
 }
 
 function resolveSystemPrompt(

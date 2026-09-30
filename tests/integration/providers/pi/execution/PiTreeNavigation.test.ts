@@ -20,7 +20,7 @@ it.each([false, true])('edits, switches and resumes native branches without losi
   const host = {
     getResolvedProviderCliPath: async () => process.execPath,
     settings: { model: configuration.model, effortLevel: 'off', systemPrompt: '', userName: '',
-      providerConfigs: { pi: { enabled: true, toolMode: 'all', visibleModels: [configuration.model],
+      providerConfigs: { pi: { enabled: true, visibleModels: [configuration.model],
         discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text', 'image'], reasoning: true, thinkingLevels: ['off', 'high'] }] } } },
   };
   let kernel!: PiRPCSessionKernel;

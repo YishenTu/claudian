@@ -10,7 +10,6 @@ const baseSettings: PiProviderSettings = {
   environmentVariables: '',
   modelAliases: {},
   preferredThinkingByModel: {},
-  toolMode: 'all',
   visibleModels: [],
 };
 
@@ -45,10 +44,8 @@ describe('PiLaunchSpec', () => {
       command: 'pi',
       cwd: '/vault',
       noSession: true,
-      settings: {
-        ...baseSettings,
-        toolMode: 'readonly',
-      },
+      readOnlyTools: true,
+      settings: baseSettings,
     }).args).toEqual([
       '--mode',
       'rpc',
