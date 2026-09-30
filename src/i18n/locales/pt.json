@@ -259,7 +259,7 @@
     },
     "enableZenMode": {
       "name": "Ativar modo zen",
-      "desc": "Mostra um chat compacto na área de trabalho principal quando a barra lateral que contém o Claudian está oculta."
+      "desc": "Mantém uma interface de chat mínima visível quando a barra lateral está oculta."
     },
     "cliInstallation": {
       "disclosure": "Instalação de {name}",

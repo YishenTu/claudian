@@ -259,7 +259,7 @@
     },
     "enableZenMode": {
       "name": "Zen モードを有効化",
-      "desc": "Claudian を含むサイドバーが非表示のとき、メインワークスペースにコンパクトなチャットを表示します。"
+      "desc": "サイドバーが非表示のときも、最小限のチャット UI を表示します。"
     },
     "cliInstallation": {
       "disclosure": "{name} のインストール",

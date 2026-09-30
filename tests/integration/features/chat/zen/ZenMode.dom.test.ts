@@ -552,7 +552,7 @@ it('sends with the existing keyboard rules and leaves note input alone', async (
 });
 
 it('discloses the existing transcript accessibly and remembers the choice for the view lifetime', async () => {
-  const { tab, rightSplit, setCollapsed } = await createZenFixture();
+  const { tab, rightSplit, setCollapsed, scopes, noteEditor } = await createZenFixture();
   seedHistory(tab);
   setCollapsed(rightSplit, true);
   const panel = zenPanel()!;
@@ -566,15 +566,22 @@ it('discloses the existing transcript accessibly and remembers the choice for th
   // Moved chat nodes keep their own coverage; this checks the zen chrome.
   expect(await axe(panel.querySelector<HTMLElement>('.claudian-zen-bar')!)).toHaveNoViolations();
 
+  show.focus();
+  expect(scopes).toHaveLength(1);
   fireEvent.click(show);
   expect(show.getAttribute('aria-expanded')).toBe('true');
   expect(history.classList.contains('claudian-hidden')).toBe(false);
+  expect(document.activeElement).toBe(history);
+  expect(scopes).toHaveLength(1);
   expect(tab.controllers.sideChatController.destination).toBe('main');
 
   setCollapsed(rightSplit, false);
+  noteEditor.focus();
   setCollapsed(rightSplit, true);
   const reopened = zenPanel()!.querySelector('.claudian-zen-disclosure')!;
   expect(reopened.getAttribute('aria-expanded')).toBe('true');
+  expect(document.activeElement).toBe(noteEditor);
+  expect(scopes).toHaveLength(0);
 });
 
 it('collapses the expanded transcript on a click or focus move elsewhere in Obsidian', async () => {

@@ -259,7 +259,7 @@
     },
     "enableZenMode": {
       "name": "젠 모드 활성화",
-      "desc": "Claudian이 있는 사이드바가 숨겨져 있을 때 메인 작업 공간에 간결한 채팅을 표시합니다."
+      "desc": "사이드바가 숨겨져 있을 때도 최소한의 채팅 인터페이스를 표시합니다."
     },
     "cliInstallation": {
       "disclosure": "{name} 설치",

@@ -259,7 +259,7 @@
     },
     "enableZenMode": {
       "name": "Zen-Modus aktivieren",
-      "desc": "Zeigt einen kompakten Chat im Hauptarbeitsbereich an, wenn die Seitenleiste mit Claudian ausgeblendet ist."
+      "desc": "Hält eine reduzierte Chat-Oberfläche sichtbar, wenn die Seitenleiste ausgeblendet ist."
     },
     "cliInstallation": {
       "disclosure": "{name}-Installation",

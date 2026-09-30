@@ -259,7 +259,7 @@
     },
     "enableZenMode": {
       "name": "Enable zen mode",
-      "desc": "Show a compact chat in the main workspace when the sidebar containing Claudian is hidden."
+      "desc": "Keep a minimal chat interface visible when the sidebar is hidden."
     },
     "cliInstallation": {
       "disclosure": "{name} installation",

@@ -92,7 +92,9 @@ export class ZenModePanel {
     // The drawer groups the transcript and its preview line so expansion can open into the composer.
     const drawerEl = this.#rootEl.createDiv({ cls: 'claudian-zen-drawer' });
     this.#drawerEl = drawerEl;
-    this.#historyEl = drawerEl.createDiv({ cls: 'claudian-zen-history', attr: { id: historyId } });
+    this.#historyEl = drawerEl.createDiv({
+      cls: 'claudian-zen-history', attr: { id: historyId, tabindex: '-1' },
+    });
 
     const previewId = `claudian-zen-preview-${panelSequence}`;
     const barEl = drawerEl.createDiv({ cls: 'claudian-zen-bar' });
@@ -192,6 +194,10 @@ export class ZenModePanel {
     // A new conversation shows only the composer; the remembered choice waits for messages.
     this.#drawerEl.toggleClass('claudian-hidden', !this.#hasHistory);
     this.#historyEl.toggleClass('claudian-hidden', !expanded || !this.#hasHistory);
+    // Transfer focus before CSS hides the disclosure, keeping the zen keyboard scope active.
+    if (expanded && this.#hasHistory && this.hostEl.ownerDocument.activeElement === this.#disclosureEl) {
+      this.#historyEl.focus({ preventScroll: true });
+    }
     this.#rootEl.toggleClass('claudian-zen--expanded', expanded);
     this.#disclosureEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
   }

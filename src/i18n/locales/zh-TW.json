@@ -259,7 +259,7 @@
     },
     "enableZenMode": {
       "name": "啟用禪模式",
-      "desc": "當包含 Claudian 的側邊欄隱藏時，在主工作區顯示精簡聊天。"
+      "desc": "側邊欄隱藏時，保持顯示精簡的聊天介面。"
     },
     "cliInstallation": {
       "disclosure": "{name} 安裝",
