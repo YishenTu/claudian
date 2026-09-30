@@ -1,0 +1,242 @@
+/* Zen mode: the live chat presentation hosted at the bottom of the central workspace. */
+
+/* Host exception: the reservation is scoped to Obsidian's central split and removed on release. */
+.workspace-split.mod-root.claudian-zen-host {
+  --claudian-zen-inset: 12px;
+  --claudian-zen-max-width: 720px;
+  /* Expanded transcript cap; it excludes the composer. */
+  --claudian-zen-history-max-height: calc(100vh / 3);
+  --claudian-zen-composer-radius: 18px;
+  position: relative;
+  padding-bottom: calc(var(--claudian-zen-reserved-height, 0px) + var(--claudian-zen-inset));
+}
+
+.claudian-container.claudian-zen {
+  /* Inherited by every control inside; Obsidian then skips its aria-label hover tooltips. */
+  --no-tooltip: true;
+  position: absolute;
+  left: 50%;
+  bottom: var(--claudian-zen-inset);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: min(var(--claudian-zen-max-width), calc(100% - 2 * var(--claudian-zen-inset)));
+  height: auto;
+  max-height: calc(100% - 2 * var(--claudian-zen-inset));
+  padding: 8px;
+  /* The history and composer bound themselves; the root must not clip composer menus opening upward. */
+  overflow: visible;
+  transform: translateX(-50%);
+}
+
+/* The collapsible preview line and transcript sit narrower than the composer. */
+.claudian-zen-drawer {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  align-self: center;
+  width: 90%;
+  min-height: 0;
+}
+
+/* The drawer's open bottom meets the composer's top border as one outline. */
+.claudian-zen > .claudian-zen-drawer {
+  border-top: 1px solid var(--background-modifier-border);
+  border-right: 1px solid var(--background-modifier-border);
+  border-left: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-l) var(--radius-l) 0 0;
+}
+
+/* History gives up space before the composer or required prompt actions clip. */
+.claudian-zen-history {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  max-height: var(--claudian-zen-history-max-height);
+  overflow: hidden;
+}
+
+.claudian-zen-history > .claudian-messages-wrapper {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+.claudian-zen-history .claudian-messages {
+  flex: 0 1 auto;
+  min-height: 0;
+  /* Matches the assistant message inset so user bubbles clear the drawer border. */
+  padding-inline-end: 14px;
+}
+
+.claudian-zen-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 4px;
+}
+
+.claudian-zen-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-zen[data-tone="working"] .claudian-zen-preview {
+  color: var(--text-normal);
+}
+
+.claudian-zen[data-tone="action-required"] .claudian-zen-preview {
+  color: var(--text-warning);
+}
+
+.claudian-zen[data-tone="error"] .claudian-zen-preview {
+  color: var(--text-error);
+}
+
+.claudian-zen-destination {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--claudian-side-chat);
+  border-radius: var(--radius-s);
+  color: var(--claudian-side-chat);
+  font-size: var(--font-ui-smaller);
+}
+
+.claudian-zen button.claudian-zen-disclosure,
+.claudian-zen button.claudian-zen-disclosure:hover,
+.claudian-zen button.claudian-zen-disclosure:focus,
+.claudian-zen button.claudian-zen-disclosure:active,
+.claudian-zen button.claudian-zen-open,
+.claudian-zen button.claudian-zen-open:hover,
+.claudian-zen button.claudian-zen-open:focus,
+.claudian-zen button.claudian-zen-open:active {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.claudian-zen button.claudian-zen-disclosure.claudian-hidden {
+  display: none;
+}
+
+/* The disclosure is the preview line itself. */
+.claudian-zen button.claudian-zen-disclosure,
+.claudian-zen button.claudian-zen-disclosure:hover,
+.claudian-zen button.claudian-zen-disclosure:focus,
+.claudian-zen button.claudian-zen-disclosure:active {
+  flex: 1 1 auto;
+  gap: 6px;
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 4px 8px;
+  text-align: start;
+}
+
+.claudian-zen button.claudian-zen-open:hover {
+  color: var(--text-normal);
+}
+
+.claudian-zen button.claudian-zen-disclosure:focus-visible,
+.claudian-zen button.claudian-zen-open:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.claudian-zen-disclosure-icon {
+  display: none;
+}
+
+.claudian-zen--expanded .claudian-zen-disclosure-icon {
+  display: flex;
+}
+
+.claudian-zen-preview-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  color: var(--text-accent);
+}
+
+.claudian-zen--expanded .claudian-zen-preview,
+.claudian-zen--expanded .claudian-zen-preview-icon {
+  display: none;
+}
+
+.claudian-zen.claudian-zen--expanded button.claudian-zen-disclosure {
+  justify-content: center;
+}
+
+.claudian-zen-disclosure-icon svg,
+.claudian-zen-preview-icon svg,
+.claudian-zen button.claudian-zen-open svg {
+  width: 16px;
+  height: 16px;
+}
+
+.claudian-zen-composer {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.claudian-zen-composer > .claudian-input-composer > .claudian-input-container {
+  padding-top: 0;
+}
+
+/* Optional controls and the linked note keep their values; zen only hides them. */
+.claudian-zen-composer .claudian-input-toolbar,
+.claudian-zen-composer .claudian-input-container > .claudian-input-nav-row,
+.claudian-zen-composer .claudian-context-chip[data-context-slot="linked-content"],
+.claudian-zen-composer .claudian-context-row[data-context-slots="linked-content"] {
+  display: none;
+}
+
+.claudian-zen-composer .claudian-input-wrapper {
+  min-height: 0;
+  /* Keeps text and chips clear of the rounder corners. */
+  padding-inline: 6px;
+  border-radius: var(--claudian-zen-composer-radius);
+  background: var(--background-primary);
+}
+
+.claudian-zen-composer .claudian-composer-editor,
+.claudian-zen-composer .claudian-composer-editor .cm-content {
+  min-height: 36px;
+}
+
+.claudian-zen-composer .claudian-composer-editor .cm-scroller {
+  max-height: 160px;
+}
+
+.claudian-zen-composer .claudian-side-chat-panel {
+  max-height: var(--claudian-zen-history-max-height);
+}
+
+.claudian-zen-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -73,6 +73,23 @@
       "startFailed": "側邊對話啟動失敗：{error}",
       "queued": "已加入側聊佇列。",
       "busySide": "側邊對話仍在回覆，請稍候。"
+    },
+    "zen": {
+      "regionLabel": "Claudian 聊天",
+      "showHistory": "顯示對話",
+      "hideHistory": "隱藏對話",
+      "openFullChat": "開啟完整聊天",
+      "working": "處理中…",
+      "thinking": "思考中…",
+      "interrupted": "已中斷",
+      "workedFor": "工作了 {duration}",
+      "workedForResult": "工作了 {duration} · {result}",
+      "actionRequired": "需要你的輸入",
+      "error": "錯誤：{message}",
+      "toolRunning": "{tool} · 執行中",
+      "toolCompleted": "{tool} · 已完成",
+      "toolFailed": "{tool} · 失敗",
+      "toolBlocked": "{tool} · 已封鎖"
     }
   },
   "settings": {
@@ -241,6 +258,10 @@
       "rightSidebar": "右側邊欄",
       "leftSidebar": "左側邊欄",
       "mainTab": "主編輯器分頁"
+    },
+    "enableZenMode": {
+      "name": "啟用禪模式",
+      "desc": "當包含 Claudian 的側邊欄隱藏時，在主工作區顯示精簡聊天。"
     },
     "cliInstallation": {
       "disclosure": "{name} 安裝",

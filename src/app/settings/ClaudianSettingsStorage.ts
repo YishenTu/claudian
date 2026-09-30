@@ -66,6 +66,12 @@ function normalizeEnableDualPane(value: unknown): boolean {
     : DEFAULT_CLAUDIAN_SETTINGS.enableDualPane;
 }
 
+function normalizeEnableZenMode(value: unknown): boolean {
+  return typeof value === 'boolean'
+    ? value
+    : DEFAULT_CLAUDIAN_SETTINGS.enableZenMode;
+}
+
 function normalizeDualPaneSide(value: unknown): DualPaneSide {
   return typeof value === 'string'
     && (DUAL_PANE_SIDES as readonly string[]).includes(value)
@@ -104,11 +110,15 @@ function normalizePinnedLinkedContentPaths(value: unknown): string[] {
 
 function shouldPersistChatViewNormalization(
   stored: Record<string, unknown>,
+  enableZenMode: boolean,
   enableDualPane: boolean,
   dualPaneSide: DualPaneSide,
   restoreTabsOnStartup: boolean,
 ): boolean {
   return 'enableFilePane' in stored || (
+    'enableZenMode' in stored
+    && stored.enableZenMode !== enableZenMode
+  ) || (
     'enableDualPane' in stored
     && stored.enableDualPane !== enableDualPane
   ) || (
@@ -442,6 +452,7 @@ export class ClaudianSettingsStorage {
     const chatViewPlacement = isChatViewPlacement(stored.chatViewPlacement)
       ? stored.chatViewPlacement
       : DEFAULT_CLAUDIAN_SETTINGS.chatViewPlacement;
+    const enableZenMode = normalizeEnableZenMode(stored.enableZenMode);
     const enableDualPane = normalizeEnableDualPane(stored.enableDualPane);
     const dualPaneSide = normalizeDualPaneSide(stored.dualPaneSide);
     const skillsSynced = stored.skillsSynced === true;
@@ -476,6 +487,7 @@ export class ClaudianSettingsStorage {
       hiddenCommands,
       providerConfigs,
       chatViewPlacement,
+      enableZenMode,
       enableDualPane,
       dualPaneSide,
       restoreTabsOnStartup,
@@ -511,6 +523,7 @@ export class ClaudianSettingsStorage {
       || ('chatViewPlacement' in stored && stored.chatViewPlacement !== chatViewPlacement)
       || shouldPersistChatViewNormalization(
         stored,
+        enableZenMode,
         enableDualPane,
         dualPaneSide,
         restoreTabsOnStartup,

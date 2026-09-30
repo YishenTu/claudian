@@ -21,3 +21,4 @@
 
 - Dynamic Main Agent sections are best-effort system configuration; failures must not block Chat.
 - One composer serves every destination, and its target is derived from presentation state rather than a separately mutable selection. User-originated sends and cancels resolve the target when they run; internally queued main work keeps the owner it was admitted with and must never read the current target at dispatch.
+- Zen mode relocates the active runtime's existing transcript and composer through the view's placement owner; it never builds a second view, composer, renderer, or cloned transcript. Release restores every moved node before its host is removed, and showing, hiding, or disclosure cannot create conversations, switch tabs, send, cancel, or change the destination.

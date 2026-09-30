@@ -46,6 +46,7 @@ describe('ComposerContextTray', () => {
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
 
     expect(containerEl.hasClass('has-content')).toBe(false);
+    expect(containerEl.dataset.contextSlots).toBeUndefined();
 
     tray.setItems('images', [{
       id: 'image-1',
@@ -69,6 +70,8 @@ describe('ComposerContextTray', () => {
     }]);
 
     expect(containerEl.hasClass('has-content')).toBe(true);
+    // Presentations can match on which slots are filled without inspecting chips.
+    expect(containerEl.dataset.contextSlots).toBe('linked-content editor-selection images');
     expect(containerEl.querySelectorAll('.claudian-context-chip').map((item: any) => item.dataset.contextSlot)).toEqual([
       'linked-content',
       'editor-selection',
@@ -185,6 +188,7 @@ describe('ComposerContextTray', () => {
     tray.clearItems('canvas-selection');
 
     expect(containerEl.hasClass('has-content')).toBe(false);
+    expect(containerEl.dataset.contextSlots).toBeUndefined();
     expect(containerEl.children).toHaveLength(0);
   });
 });

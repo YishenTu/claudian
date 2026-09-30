@@ -4,6 +4,7 @@ import type { FeatureHost } from '../FeatureHost';
 import type { ChatExecutionPersistence } from './execution/ChatExecutionCoordinator';
 import type { WarmExecutionPool } from './execution/WarmExecutionPool';
 import type { AssembledTabRuntime, TabId, TabManagerViewHost,TabProviderCatalogContext } from './tabs/types';
+import type { ZenModeSource } from './zen/types';
 
 export interface ChatModelSelectionPort {
   beginIntent(): number;
@@ -89,6 +90,9 @@ export interface ChatFeatureHost extends FeatureHost {
   ): TabWorkspaceStateDeliveryRegistration;
   claimLegacyTabManagerState(): Promise<AppTabManagerState | null>;
   completeLegacyTabManagerStateMigration(): Promise<void>;
+
+  /** Offers a view's presentation to the single zen workspace owner; returns its unregistration. */
+  registerZenModeSource(source: ZenModeSource): () => void;
 
   getView(): ChatViewHost | null;
   getAllViews(): ChatViewHost[];

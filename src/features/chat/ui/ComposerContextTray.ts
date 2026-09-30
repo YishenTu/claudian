@@ -148,6 +148,7 @@ export class ComposerContextTray {
     this.itemsBySlot.clear();
     this.containerEl.empty();
     this.containerEl.removeClass('has-content');
+    delete this.containerEl.dataset.contextSlots;
     this.containerEl.removeClass('claudian-context-row');
     this.containerEl.removeClass('claudian-context-row--expanded');
   }
@@ -160,6 +161,9 @@ export class ComposerContextTray {
       (this.itemsBySlot.get(slot) ?? []).map(item => ({ item, slot }))
     );
     this.containerEl.toggleClass('has-content', entries.length > 0);
+    const filledSlots = SLOT_ORDER.filter(slot => this.itemsBySlot.has(slot));
+    if (filledSlots.length > 0) this.containerEl.dataset.contextSlots = filledSlots.join(' ');
+    else delete this.containerEl.dataset.contextSlots;
 
     for (const { item, slot } of entries) {
       this.#renderItem(slot, item);

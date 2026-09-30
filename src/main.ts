@@ -62,6 +62,8 @@ import { ClaudianView } from './features/chat/ClaudianView';
 import type { ChatExecutionPersistence } from './features/chat/execution/ChatExecutionCoordinator';
 import { WarmExecutionPool } from './features/chat/execution/WarmExecutionPool';
 import { registerFileMenu } from './features/chat/fileMenu';
+import type { ZenModeSource } from './features/chat/zen/types';
+import { ZenModeController } from './features/chat/zen/ZenModeController';
 import { InlineEditSessionOwner } from './features/inline-edit/InlineEditSessionOwner';
 import { type InlineEditContext, InlineEditModal } from './features/inline-edit/ui/InlineEditModal';
 import { ClaudianSettingTab } from './features/settings/ClaudianSettings';
@@ -91,6 +93,10 @@ export default class ClaudianPlugin extends Plugin {
   private sessionMetadata!: SessionMetadataLoader;
   private providerChatOptionsChangeTail: Promise<void> = Promise.resolve();
   private readonly inlineEditSessions = new InlineEditSessionOwner();
+  private readonly zenMode = new ZenModeController({
+    app: this.app,
+    isEnabled: () => this.getCommittedSettings().enableZenMode,
+  });
   private isUnloading = false;
   private vaultRefreshTimer: number | undefined;
   private applicationShutdownPromise: Promise<void> | null = null;
@@ -116,6 +122,7 @@ export default class ClaudianPlugin extends Plugin {
         'settings-load',
         () => this.loadSettings({ deferNonRestoredSessionMetadata: true }),
       );
+      this.zenMode.start();
       // Provider workspace services are initialized lazily on first use.
 
       this.registerView(
@@ -289,6 +296,8 @@ export default class ClaudianPlugin extends Plugin {
 
   onunload(): void {
     this.isUnloading = true;
+    // Return any zen presentation to its view before asynchronous shutdown.
+    this.zenMode.dispose();
     window.clearTimeout(this.vaultRefreshTimer);
     this.vaultRefreshTimer = undefined;
     this.startupMaintenanceAbort.abort();
@@ -595,6 +604,7 @@ export default class ClaudianPlugin extends Plugin {
         if (contextChanged) publish(() => view.refreshModelSelector());
       }
     }
+    if (settings.enableZenMode !== previous.enableZenMode) publish(() => this.zenMode.refresh());
     if (settings.maxWarmAgentProcesses !== previous.maxWarmAgentProcesses) {
       try {
         if (!await this.warmExecutionPool.reconcileLimit()) {
@@ -1026,6 +1036,10 @@ export default class ClaudianPlugin extends Plugin {
 
   async completeLegacyTabManagerStateMigration(): Promise<void> {
     await this.tabWorkspaceMigrationCoordinator.completeMigration();
+  }
+
+  registerZenModeSource(source: ZenModeSource): () => void {
+    return this.zenMode.register(source);
   }
 
   getView(): ClaudianView | null {

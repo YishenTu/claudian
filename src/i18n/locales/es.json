@@ -73,6 +73,23 @@
       "startFailed": "No se pudo iniciar el chat lateral: {error}",
       "queued": "Añadido a la cola del chat lateral.",
       "busySide": "El chat lateral aún está respondiendo. Espera a que termine."
+    },
+    "zen": {
+      "regionLabel": "Chat de Claudian",
+      "showHistory": "Mostrar conversación",
+      "hideHistory": "Ocultar conversación",
+      "openFullChat": "Abrir chat completo",
+      "working": "Trabajando…",
+      "thinking": "Pensando…",
+      "interrupted": "Interrumpido",
+      "workedFor": "Trabajó durante {duration}",
+      "workedForResult": "Trabajó durante {duration} · {result}",
+      "actionRequired": "Se necesita tu respuesta",
+      "error": "Error: {message}",
+      "toolRunning": "{tool} · en curso",
+      "toolCompleted": "{tool} · completado",
+      "toolFailed": "{tool} · falló",
+      "toolBlocked": "{tool} · bloqueado"
     }
   },
   "settings": {
@@ -241,6 +258,10 @@
       "rightSidebar": "Barra lateral derecha",
       "leftSidebar": "Barra lateral izquierda",
       "mainTab": "Pestaña del editor principal"
+    },
+    "enableZenMode": {
+      "name": "Activar modo zen",
+      "desc": "Muestra un chat compacto en el área de trabajo principal cuando la barra lateral que contiene Claudian está oculta."
     },
     "cliInstallation": {
       "disclosure": "Instalación de {name}",

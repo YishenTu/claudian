@@ -194,6 +194,7 @@ export class StreamController {
           await this.finalizeCurrentTextBlock(msg);
         }
         await this.appendThinking(chunk.content);
+        state.recordActivity({ kind: 'thinking' });
         break;
 
       case 'text':
@@ -204,6 +205,7 @@ export class StreamController {
         }
         msg.content += chunk.content;
         await this.appendText(chunk.content);
+        state.recordActivity({ kind: 'text', text: state.currentTextEl ? state.currentTextContent : msg.content });
         break;
 
       case 'citations': {
@@ -278,6 +280,7 @@ export class StreamController {
         // Flush pending tools before rendering error message
         this.#flushPendingTools();
         await this.appendText(`\n\n❌ **Error:** ${chunk.content}`);
+        state.recordActivity({ kind: 'error', message: chunk.content });
         break;
 
       case 'done':
@@ -333,6 +336,11 @@ export class StreamController {
 
       default:
         break;
+    }
+
+    if (chunk.type === 'tool_use' || chunk.type === 'tool_result') {
+      const tool = msg.toolCalls?.find(candidate => candidate.id === chunk.id);
+      if (tool) state.recordActivity({ kind: 'tool', tool });
     }
 
     this.scrollToBottom();

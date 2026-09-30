@@ -1,5 +1,6 @@
 import type { UsageInfo } from '../../../core/types';
 import type {
+  ChatActivity,
   ChatMessage,
   ChatStateCallbacks,
   ChatStateData,
@@ -50,6 +51,9 @@ export class ChatState {
     outcome: TabReviewOutcome;
     since: number;
   } | null = null;
+  /** Null derives activity from the latest message after transcript changes. */
+  #activity: ChatActivity | null = null;
+  readonly #activityListeners = new Set<() => void>();
   private thinkingIndicatorTimeoutWindow: Window | null = null;
   private flavorTimerIntervalWindow: Window | null = null;
 
@@ -68,14 +72,23 @@ export class ChatState {
 
   set messages(value: ChatMessage[]) {
     this.state.messages = value;
+    this.#resetActivity();
+  }
+
+  get lastMessage(): ChatMessage | null {
+    return this.state.messages.at(-1) ?? null;
   }
 
   addMessage(msg: ChatMessage): void {
     this.state.messages.push(msg);
+    // A new response shell keeps the submitted prompt visible until output arrives.
+    if (msg.role === 'user') this.recordActivity({ kind: 'user', text: msg.displayContent ?? msg.content });
+    else if (this.#activity?.kind !== 'user') this.#resetActivity();
   }
 
   clearMessages(): void {
     this.state.messages = [];
+    this.#resetActivity();
   }
 
   truncateAt(messageId: string): number {
@@ -83,7 +96,29 @@ export class ChatState {
     if (idx === -1) return 0;
     const removed = this.state.messages.length - idx;
     this.state.messages = this.state.messages.slice(0, idx);
+    this.#resetActivity();
     return removed;
+  }
+
+  // ============================================
+  // Runtime-only Activity
+  // ============================================
+
+  get activity(): ChatActivity | null {
+    return this.#activity;
+  }
+
+  recordActivity(activity: ChatActivity): void {
+    this.#activity = activity;
+    this.#notifyActivity();
+  }
+
+  /** Listeners must stay cheap; they run for every recorded chunk. */
+  subscribeActivity(listener: () => void): () => void {
+    this.#activityListeners.add(listener);
+    return () => {
+      this.#activityListeners.delete(listener);
+    };
   }
 
   // ============================================
@@ -97,6 +132,7 @@ export class ChatState {
   set isStreaming(value: boolean) {
     this.state.isStreaming = value;
     this._callbacks.onStreamingStateChanged?.(value);
+    this.#notifyActivity();
   }
 
   get cancelRequested(): boolean {
@@ -398,6 +434,15 @@ export class ChatState {
     }
   }
 
+  #resetActivity(): void {
+    this.#activity = null;
+    this.#notifyActivity();
+  }
+
+  #notifyActivity(): void {
+    for (const listener of this.#activityListeners) listener();
+  }
+
   #getDefaultTimerWindow(): Window | null {
     return typeof window === 'undefined' ? null : window;
   }
@@ -419,5 +464,6 @@ export class ChatState {
 
     this.state.attention = attention;
     this._callbacks.onAttentionChanged?.(attention);
+    this.#notifyActivity();
   }
 }

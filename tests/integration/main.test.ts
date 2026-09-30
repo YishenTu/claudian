@@ -13,6 +13,7 @@ import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceReg
 import { isVersionedRuntimeInputFingerprint } from '@/core/providers/settings/RuntimeInputFingerprint';
 import { TOOL_SUBAGENT } from '@/core/tools/toolNames';
 import { type Conversation, type SessionMetadata, VIEW_TYPE_CLAUDIAN } from '@/core/types';
+import { ZenModeController } from '@/features/chat/zen/ZenModeController';
 import * as sdkSession from '@/providers/claude/history/ClaudeHistoryStore';
 import { CodexModelCatalogCoordinator } from '@/providers/codex/runtime/CodexModelCatalogCoordinator';
 import {
@@ -210,6 +211,7 @@ describe('ClaudianPlugin', () => {
       updateHiddenCommands: jest.fn(), refreshModelSelector: jest.fn(),
     }));
     const viewsSpy = jest.spyOn(plugin, 'getAllViews').mockReturnValue(views as never);
+    const zenRefresh = jest.spyOn(ZenModeController.prototype, 'refresh');
     let finish!: () => void;
     let started!: () => void;
     const writing = new Promise<void>(resolve => { started = resolve; });
@@ -223,16 +225,19 @@ describe('ClaudianPlugin', () => {
         settings.enableDualPane = !settings.enableDualPane;
         settings.hiddenCommands = ['test-command'];
         settings.customContextLimits = { test: 1000 };
+        settings.enableZenMode = !settings.enableZenMode;
       });
       await writing;
       for (const view of views) {
         for (const refresh of Object.values(view)) expect(refresh).not.toHaveBeenCalled();
       }
+      expect(zenRefresh).not.toHaveBeenCalled();
       finish();
       await change;
       for (const view of views) {
         for (const refresh of Object.values(view)) expect(refresh).toHaveBeenCalledTimes(1);
       }
+      expect(zenRefresh).toHaveBeenCalledTimes(1);
       persist.mockRejectedValueOnce(new Error('disk unavailable'));
       await expect(plugin.mutateSettings(settings => {
         settings.showMessageTimestamps = !settings.showMessageTimestamps;
@@ -248,6 +253,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.getCommittedSettings().customContextLimits).toEqual({ test: 2000 });
     } finally {
       viewsSpy.mockRestore();
+      zenRefresh.mockRestore();
       persist.mockRestore();
     }
   });

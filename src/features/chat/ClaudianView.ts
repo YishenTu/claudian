@@ -39,6 +39,7 @@ import { TabManager } from './tabs/TabManager';
 import { refreshTabContextUsage } from './tabs/TabProviderState';
 import type { TabProviderCatalogContext } from './tabs/types';
 import type { AssembledTabRuntime, TabId } from './tabs/types';
+import type { ZenModeSlots, ZenModeSource } from './zen/types';
 
 type LoadableView = {
   containerEl?: HTMLElement;
@@ -56,7 +57,7 @@ const MIN_SESSION_SIDEBAR_WIDTH = 180;
 const SESSION_RESIZER_WIDTH = 5;
 const SESSION_RESIZE_KEYBOARD_STEP = 16;
 
-export class ClaudianView extends ItemView {
+export class ClaudianView extends ItemView implements ZenModeSource {
   private plugin: ChatFeatureHost;
 
   // Tab management
@@ -73,6 +74,12 @@ export class ClaudianView extends ItemView {
   private inputNavRowHostEl: HTMLElement | null = null;
   private activeInputSlotEl: HTMLElement | null = null;
   private activeInputTabId: TabId | null = null;
+
+  // Zen mode presentation; this view remains the placement authority.
+  private zenSlots: ZenModeSlots | null = null;
+  private zenTranscript: { tab: AssembledTabRuntime; anchorEl: Comment } | null = null;
+  private zenPresentationListeners = new Set<() => void>();
+  private zenSourceRegistration: (() => void) | null = null;
 
   // DOM Elements
   private viewContainerEl: HTMLElement | null = null;
@@ -355,6 +362,7 @@ export class ClaudianView extends ItemView {
       this.notifyConversationNavigationChanged();
       this.updateInputLocation();
       this.syncProviderBrandColor();
+      this.notifyZenPresentationChanged();
     };
     const tabManager = new TabManager(
       this.plugin,
@@ -378,6 +386,7 @@ export class ClaudianView extends ItemView {
             this.updateTabBar();
             this.notifyConversationNavigationChanged();
             this.updateInputLocation();
+            this.notifyZenPresentationChanged();
           }
           this.persistTabWorkspaceState(tabManager, tabStatePersistence);
         },
@@ -436,6 +445,7 @@ export class ClaudianView extends ItemView {
     );
 
     this.wireEventHandlers();
+    this.startZenModeSource();
     const reopeningState = previousLifecycleWasClosing
       ? this.finalizedTabWorkspaceState
       : null;
@@ -457,6 +467,8 @@ export class ClaudianView extends ItemView {
 
   async onClose() {
     this.viewShutdownStarted = true;
+    // Zen presentation returns synchronously before asynchronous shutdown proceeds.
+    this.stopZenModeSource();
     this.sessionBrowser.dispose();
     const lifecycleRevision = (this.viewLifecycleRevision ?? 0) + 1;
     this.viewLifecycleRevision = lifecycleRevision;
@@ -736,13 +748,18 @@ export class ClaudianView extends ItemView {
     this.tabBar?.restoreScrollPosition();
   }
 
+  /** Places the active composer in the sidebar slot, or the zen slot while zen owns presentation. */
   private updateInputLocation(): void {
     const activeTab = this.tabManager?.getActiveTab();
     if (!this.activeInputSlotEl) return;
     this.updateSideChatChipLocation();
+    this.updateZenTranscriptLocation(activeTab ?? null);
+    const zenComposerSlotEl = this.zenSlots?.composerEl ?? null;
+    const inputSlotEl = zenComposerSlotEl ?? this.activeInputSlotEl;
 
     if (!activeTab) {
       this.activeInputSlotEl.empty();
+      zenComposerSlotEl?.empty();
       this.activeInputTabId = null;
       return;
     }
@@ -755,15 +772,44 @@ export class ClaudianView extends ItemView {
     }
 
     if (this.activeInputTabId === activeTab.id) {
-      if (activeTab.dom.inputComposerEl.parentElement !== this.activeInputSlotEl) {
-        this.activeInputSlotEl.appendChild(activeTab.dom.inputComposerEl);
+      if (activeTab.dom.inputComposerEl.parentElement !== inputSlotEl) {
+        this.moveComposerRetainingFocus(activeTab, inputSlotEl);
       }
       return;
     }
 
-    this.activeInputSlotEl.empty();
-    this.activeInputSlotEl.appendChild(activeTab.dom.inputComposerEl);
+    inputSlotEl.empty();
+    this.moveComposerRetainingFocus(activeTab, inputSlotEl);
     this.activeInputTabId = activeTab.id;
+  }
+
+  private moveComposerRetainingFocus(tab: AssembledTabRuntime, slotEl: HTMLElement): void {
+    const composerEl = tab.dom.inputComposerEl;
+    const ownerDocument = composerEl.ownerDocument;
+    const hadFocus = ownerDocument ? composerEl.contains(ownerDocument.activeElement) : false;
+    slotEl.appendChild(composerEl);
+    // Reparenting drops focus; restore it only when the composer already owned it.
+    if (hadFocus && !composerEl.contains(ownerDocument.activeElement)) tab.dom.inputEl.focus();
+  }
+
+  /** Moves the active transcript into zen history, restoring any other placement first. */
+  private updateZenTranscriptLocation(activeTab: AssembledTabRuntime | null): void {
+    const historyEl = this.zenSlots?.historyEl ?? null;
+    const placed = this.zenTranscript ?? null;
+    if (placed && (
+      placed.tab !== activeTab
+      || placed.tab.dom.messagesWrapperEl.parentElement !== historyEl
+    )) {
+      placed.anchorEl.replaceWith(placed.tab.dom.messagesWrapperEl);
+      this.zenTranscript = null;
+    }
+    if (!historyEl || !activeTab || this.zenTranscript) return;
+
+    const wrapperEl = activeTab.dom.messagesWrapperEl;
+    const anchorEl = wrapperEl.ownerDocument.createComment('claudian-zen-transcript');
+    wrapperEl.replaceWith(anchorEl);
+    historyEl.appendChild(wrapperEl);
+    this.zenTranscript = { tab: activeTab, anchorEl };
   }
 
   private restoreActiveInputToTabContent(): void {
@@ -1246,7 +1292,8 @@ export class ClaudianView extends ItemView {
     const controller = this.tabManager?.getActiveTab()?.controllers?.sideChatController ?? null;
     if (this.sideChatChipController !== controller) this.sideChatChipController?.setCollapsedHost(null);
     this.sideChatChipController = controller;
-    controller?.setCollapsedHost(this.isWideSessionLayout ? null : this.sideChatChipHostEl);
+    // Zen keeps the collapsed side chip inside the moved composer.
+    controller?.setCollapsedHost(this.isWideSessionLayout || this.zenSlots ? null : this.sideChatChipHostEl);
   }
 
   private requestSessionNew(): void {
@@ -2218,6 +2265,7 @@ export class ClaudianView extends ItemView {
       this.updateTabBar();
       this.notifyConversationNavigationChanged();
       this.startSessionSidebarLayoutObserver();
+      this.notifyZenPresentationChanged();
     })();
     this.tabWorkspaceInitialization = { lifecycleRevision, promise };
 
@@ -2394,6 +2442,51 @@ export class ClaudianView extends ItemView {
         view.notifyConversationListChanged();
       }
     }
+  }
+
+  // ============================================
+  // Zen mode source
+  // ============================================
+
+  getZenRuntime(): AssembledTabRuntime | null {
+    if (
+      this.viewShutdownStarted === true
+      || this.initializedTabWorkspaceLifecycleRevision !== (this.viewLifecycleRevision ?? 0)
+    ) return null;
+    return this.tabManager?.getActiveTab() ?? null;
+  }
+
+  onZenPresentationChanged(listener: () => void): () => void {
+    this.zenPresentationListeners ??= new Set();
+    this.zenPresentationListeners.add(listener);
+    return () => {
+      this.zenPresentationListeners?.delete(listener);
+    };
+  }
+
+  attachZenPresentation(slots: ZenModeSlots): () => void {
+    this.zenSlots = slots;
+    this.updateInputLocation();
+    return () => {
+      if (this.zenSlots !== slots) return;
+      this.zenSlots = null;
+      this.updateInputLocation();
+    };
+  }
+
+  private notifyZenPresentationChanged(): void {
+    for (const listener of [...(this.zenPresentationListeners ?? [])]) listener();
+  }
+
+  private startZenModeSource(): void {
+    if (this.zenSourceRegistration) return;
+    this.zenSourceRegistration = this.plugin.registerZenModeSource(this);
+  }
+
+  private stopZenModeSource(): void {
+    const unregister = this.zenSourceRegistration ?? null;
+    this.zenSourceRegistration = null;
+    unregister?.();
   }
 
   /** Gets the tab manager. */

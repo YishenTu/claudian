@@ -414,15 +414,19 @@ describe('ClaudianSettingTab display settings', () => {
     expect(update).toHaveBeenCalledTimes(1);
   });
 
-  it('renders and updates the startup tab restore toggle', async () => {
+  it.each([
+    ['restoreTabsOnStartup', 'settings.restoreTabsOnStartup.name'],
+    ['enableZenMode', 'settings.enableZenMode.name'],
+  ] as const)('renders and updates the %s toggle', async (key, name) => {
     const { tab, plugin } = createTab(true);
     (tab as any).renderGeneralTab(createContainer());
 
-    expect(mockRenderedSettingNames).toContain(t('settings.restoreTabsOnStartup.name'));
+    expect(mockRenderedSettingNames).toContain(t(name));
+    expect(plugin.settings[key]).toBe(true);
 
-    await mockToggleChanges.get(t('settings.restoreTabsOnStartup.name'))?.(false);
+    await mockToggleChanges.get(t(name))!(false);
 
-    expect(plugin.settings.restoreTabsOnStartup).toBe(false);
+    expect(plugin.settings[key]).toBe(false);
   });
 
   it('keeps Provider initialization lazy and does not mutate chat selection on navigation', async () => {

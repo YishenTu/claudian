@@ -73,6 +73,23 @@
       "startFailed": "Side chat could not start: {error}",
       "queued": "Queued for the side chat.",
       "busySide": "The side chat is still responding. Wait for it to finish."
+    },
+    "zen": {
+      "regionLabel": "Claudian chat",
+      "showHistory": "Show conversation",
+      "hideHistory": "Hide conversation",
+      "openFullChat": "Open full chat",
+      "working": "Working…",
+      "thinking": "Thinking…",
+      "interrupted": "Interrupted",
+      "workedFor": "Worked for {duration}",
+      "workedForResult": "Worked for {duration} · {result}",
+      "actionRequired": "Needs your input",
+      "error": "Error: {message}",
+      "toolRunning": "{tool} · running",
+      "toolCompleted": "{tool} · done",
+      "toolFailed": "{tool} · failed",
+      "toolBlocked": "{tool} · blocked"
     }
   },
   "settings": {
@@ -241,6 +258,10 @@
       "rightSidebar": "Right sidebar",
       "leftSidebar": "Left sidebar",
       "mainTab": "Main editor tab"
+    },
+    "enableZenMode": {
+      "name": "Enable zen mode",
+      "desc": "Show a compact chat in the main workspace when the sidebar containing Claudian is hidden."
     },
     "cliInstallation": {
       "disclosure": "{name} installation",

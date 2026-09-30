@@ -2239,6 +2239,7 @@ describe('ClaudianView runtime tab initialization', () => {
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
         registerTabWorkspaceStateDelivery: jest.fn()
           .mockReturnValue(readyTabWorkspaceStateDelivery()),
+        registerZenModeSource: jest.fn(() => jest.fn()),
         settings: { restoreTabsOnStartup: true },
       },
       sessionSidebarWidth: null,
@@ -2343,6 +2344,7 @@ describe('ClaudianView runtime tab initialization', () => {
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
         registerTabWorkspaceStateDelivery: jest.fn()
           .mockReturnValue(readyTabWorkspaceStateDelivery()),
+        registerZenModeSource: jest.fn(() => jest.fn()),
         settings: { restoreTabsOnStartup: true },
       },
       restoreActiveInputToTabContent: jest.fn(),
@@ -2361,9 +2363,15 @@ describe('ClaudianView runtime tab initialization', () => {
     });
 
     await view.onOpenImpl();
+    expect(view.plugin.registerZenModeSource).toHaveBeenCalledWith(view);
+    expect(view.getZenRuntime()).toBeNull();
+    const unregisterZen = view.plugin.registerZenModeSource.mock.results[0].value as jest.Mock;
     const restoring = view.setState({}, { history: false });
     await Promise.resolve();
     const closing = view.onClose();
+    // Zen presentation returns synchronously, before asynchronous shutdown begins.
+    expect(unregisterZen).toHaveBeenCalledTimes(1);
+    expect(unregisterZen.mock.invocationCallOrder[0]).toBeLessThan(beginShutdown.mock.invocationCallOrder[0]);
     persistedState.resolve({ activeTabId: null, openTabs: [] });
     await expect(Promise.all([restoring, closing])).resolves.toEqual([undefined, undefined]);
 
@@ -2416,6 +2424,7 @@ describe('ClaudianView runtime tab initialization', () => {
         claimLegacyTabManagerState,
         completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
+        registerZenModeSource: jest.fn(() => jest.fn()),
         settings: { restoreTabsOnStartup: true },
       },
       notifyConversationNavigationChanged: jest.fn(),
@@ -2499,6 +2508,7 @@ describe('ClaudianView runtime tab initialization', () => {
         claimLegacyTabManagerState,
         completeLegacyTabManagerStateMigration: jest.fn().mockResolvedValue(undefined),
         ensureConversationMetadataLoaded: jest.fn().mockResolvedValue(undefined),
+        registerZenModeSource: jest.fn(() => jest.fn()),
         settings: { restoreTabsOnStartup: false },
       },
       notifyConversationNavigationChanged: jest.fn(),

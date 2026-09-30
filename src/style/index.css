@@ -23,6 +23,7 @@
 @import "./components/context-footer.css";
 @import "./components/composer-dropdown.css";
 @import "./components/side-chat.css";
+@import "./components/zen-mode.css";
 
 /* Toolbar */
 @import "./toolbar/model-selector.css";

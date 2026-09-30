@@ -357,6 +357,19 @@ export class ClaudianSettingTab extends PluginSettingTab {
       });
 
     new Setting(container)
+      .setName(t('settings.enableZenMode.name'))
+      .setDesc(t('settings.enableZenMode.desc'))
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.enableZenMode)
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.enableZenMode = value;
+            });
+          })
+      );
+
+    new Setting(container)
       .setName(t('settings.enableDualPane.name'))
       .setDesc(t('settings.enableDualPane.desc'))
       .addToggle((toggle) =>

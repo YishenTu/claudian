@@ -88,6 +88,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.enableDualPane).toBe(true);
       expect(result.dualPaneSide).toBe('right');
       expect(result.restoreTabsOnStartup).toBe(true);
+      expect(result.enableZenMode).toBe(true);
       expect(mockAdapter.read).not.toHaveBeenCalled();
     });
 
@@ -316,6 +317,33 @@ describe('ClaudianSettingsStorage', () => {
 
       expect(result.restoreTabsOnStartup).toBe(false);
       expect(writtenContent.restoreTabsOnStartup).toBe(false);
+    });
+
+    it.each([
+      ['missing', {}, true],
+      ['invalid', { enableZenMode: 'yes' }, true],
+      ['disabled', { enableZenMode: false }, false],
+      ['enabled', { enableZenMode: true }, true],
+    ])('loads a %s zen mode preference', async (_label, stored, expected) => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify(stored));
+
+      const result = await storage.load();
+
+      expect(result.enableZenMode).toBe(expected);
+      const writtenValues = mockAdapter.write.mock.calls
+        .map(([, content]) => (JSON.parse(content) as Record<string, unknown>).enableZenMode)
+        .filter(value => value !== undefined);
+      expect(writtenValues.every(value => value === expected)).toBe(true);
+    });
+
+    it('persists a normalized invalid zen mode preference', async () => {
+      mockAdapter.exists.mockResolvedValue(true);
+      mockAdapter.read.mockResolvedValue(JSON.stringify({ enableZenMode: 'yes' }));
+
+      await storage.load();
+
+      expect(JSON.parse(mockAdapter.write.mock.calls.at(-1)![1]).enableZenMode).toBe(true);
     });
 
     it('normalizes claude provider CLI paths from loaded data', async () => {

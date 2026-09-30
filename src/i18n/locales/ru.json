@@ -73,6 +73,23 @@
       "startFailed": "Не удалось запустить побочный чат: {error}",
       "queued": "Добавлено в очередь бокового чата.",
       "busySide": "Побочный чат ещё отвечает. Дождитесь завершения."
+    },
+    "zen": {
+      "regionLabel": "Чат Claudian",
+      "showHistory": "Показать разговор",
+      "hideHistory": "Скрыть разговор",
+      "openFullChat": "Открыть полный чат",
+      "working": "Выполняется…",
+      "thinking": "Размышляет…",
+      "interrupted": "Прервано",
+      "workedFor": "Работал {duration}",
+      "workedForResult": "Работал {duration} · {result}",
+      "actionRequired": "Требуется ваш ответ",
+      "error": "Ошибка: {message}",
+      "toolRunning": "{tool} · выполняется",
+      "toolCompleted": "{tool} · готово",
+      "toolFailed": "{tool} · ошибка",
+      "toolBlocked": "{tool} · заблокировано"
     }
   },
   "settings": {
@@ -241,6 +258,10 @@
       "rightSidebar": "Правая боковая панель",
       "leftSidebar": "Левая боковая панель",
       "mainTab": "Основная вкладка редактора"
+    },
+    "enableZenMode": {
+      "name": "Включить режим дзен",
+      "desc": "Показывать компактный чат в основной рабочей области, когда боковая панель с Claudian скрыта."
     },
     "cliInstallation": {
       "disclosure": "Установка {name}",

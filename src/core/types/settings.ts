@@ -164,6 +164,7 @@ export interface ClaudianSettings {
   deferMathRenderingDuringStreaming: boolean;
   expandFileEditsByDefault: boolean;
   chatViewPlacement: ChatViewPlacement;
+  enableZenMode: boolean;
   enableDualPane: boolean;
   dualPaneSide: DualPaneSide;
   restoreTabsOnStartup: boolean;

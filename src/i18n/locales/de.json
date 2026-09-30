@@ -73,6 +73,23 @@
       "startFailed": "Nebenchat konnte nicht gestartet werden: {error}",
       "queued": "Für den Nebenchat eingereiht.",
       "busySide": "Der Nebenchat antwortet noch. Warte, bis er fertig ist."
+    },
+    "zen": {
+      "regionLabel": "Claudian-Chat",
+      "showHistory": "Unterhaltung anzeigen",
+      "hideHistory": "Unterhaltung ausblenden",
+      "openFullChat": "Vollständigen Chat öffnen",
+      "working": "Arbeitet…",
+      "thinking": "Denkt nach…",
+      "interrupted": "Unterbrochen",
+      "workedFor": "Gearbeitet für {duration}",
+      "workedForResult": "Gearbeitet für {duration} · {result}",
+      "actionRequired": "Deine Eingabe wird benötigt",
+      "error": "Fehler: {message}",
+      "toolRunning": "{tool} · läuft",
+      "toolCompleted": "{tool} · fertig",
+      "toolFailed": "{tool} · fehlgeschlagen",
+      "toolBlocked": "{tool} · blockiert"
     }
   },
   "settings": {
@@ -241,6 +258,10 @@
       "rightSidebar": "Rechte Seitenleiste",
       "leftSidebar": "Linke Seitenleiste",
       "mainTab": "Haupteditor-Tab"
+    },
+    "enableZenMode": {
+      "name": "Zen-Modus aktivieren",
+      "desc": "Zeigt einen kompakten Chat im Hauptarbeitsbereich an, wenn die Seitenleiste mit Claudian ausgeblendet ist."
     },
     "cliInstallation": {
       "disclosure": "{name}-Installation",

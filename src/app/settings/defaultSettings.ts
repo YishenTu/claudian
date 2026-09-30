@@ -50,6 +50,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   deferMathRenderingDuringStreaming: true,
   expandFileEditsByDefault: false,
   chatViewPlacement: 'right-sidebar',
+  enableZenMode: true,
   enableDualPane: true,
   dualPaneSide: 'right',
   restoreTabsOnStartup: true,

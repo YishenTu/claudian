@@ -73,6 +73,23 @@
       "startFailed": "Impossible de démarrer la conversation annexe : {error}",
       "queued": "Ajouté à la file de la discussion secondaire.",
       "busySide": "La conversation annexe répond encore. Attends la fin."
+    },
+    "zen": {
+      "regionLabel": "Chat Claudian",
+      "showHistory": "Afficher la conversation",
+      "hideHistory": "Masquer la conversation",
+      "openFullChat": "Ouvrir le chat complet",
+      "working": "En cours…",
+      "thinking": "Réflexion…",
+      "interrupted": "Interrompu",
+      "workedFor": "A travaillé pendant {duration}",
+      "workedForResult": "A travaillé pendant {duration} · {result}",
+      "actionRequired": "Votre réponse est requise",
+      "error": "Erreur : {message}",
+      "toolRunning": "{tool} · en cours",
+      "toolCompleted": "{tool} · terminé",
+      "toolFailed": "{tool} · échec",
+      "toolBlocked": "{tool} · bloqué"
     }
   },
   "settings": {
@@ -241,6 +258,10 @@
       "rightSidebar": "Barre latérale droite",
       "leftSidebar": "Barre latérale gauche",
       "mainTab": "Onglet principal de l'éditeur"
+    },
+    "enableZenMode": {
+      "name": "Activer le mode zen",
+      "desc": "Affiche un chat compact dans l’espace de travail principal lorsque la barre latérale contenant Claudian est masquée."
     },
     "cliInstallation": {
       "disclosure": "Installation de {name}",

@@ -73,6 +73,23 @@
       "startFailed": "サイドチャットを開始できませんでした：{error}",
       "queued": "サイドチャットのキューに追加しました。",
       "busySide": "サイドチャットが応答中です。完了までお待ちください。"
+    },
+    "zen": {
+      "regionLabel": "Claudian チャット",
+      "showHistory": "会話を表示",
+      "hideHistory": "会話を隠す",
+      "openFullChat": "フルチャットを開く",
+      "working": "処理中…",
+      "thinking": "思考中…",
+      "interrupted": "中断されました",
+      "workedFor": "{duration} 作業しました",
+      "workedForResult": "{duration} 作業しました · {result}",
+      "actionRequired": "入力が必要です",
+      "error": "エラー: {message}",
+      "toolRunning": "{tool} · 実行中",
+      "toolCompleted": "{tool} · 完了",
+      "toolFailed": "{tool} · 失敗",
+      "toolBlocked": "{tool} · ブロック"
     }
   },
   "settings": {
@@ -241,6 +258,10 @@
       "rightSidebar": "右サイドバー",
       "leftSidebar": "左サイドバー",
       "mainTab": "メインエディタタブ"
+    },
+    "enableZenMode": {
+      "name": "Zen モードを有効化",
+      "desc": "Claudian を含むサイドバーが非表示のとき、メインワークスペースにコンパクトなチャットを表示します。"
     },
     "cliInstallation": {
       "disclosure": "{name} のインストール",

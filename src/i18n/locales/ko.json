@@ -73,6 +73,23 @@
       "startFailed": "사이드 채팅을 시작하지 못했습니다: {error}",
       "queued": "사이드 채팅 대기열에 추가했습니다.",
       "busySide": "사이드 채팅이 아직 응답 중입니다. 완료될 때까지 기다려 주세요."
+    },
+    "zen": {
+      "regionLabel": "Claudian 채팅",
+      "showHistory": "대화 표시",
+      "hideHistory": "대화 숨기기",
+      "openFullChat": "전체 채팅 열기",
+      "working": "작업 중…",
+      "thinking": "생각 중…",
+      "interrupted": "중단됨",
+      "workedFor": "{duration} 동안 작업함",
+      "workedForResult": "{duration} 동안 작업함 · {result}",
+      "actionRequired": "입력이 필요합니다",
+      "error": "오류: {message}",
+      "toolRunning": "{tool} · 실행 중",
+      "toolCompleted": "{tool} · 완료",
+      "toolFailed": "{tool} · 실패",
+      "toolBlocked": "{tool} · 차단됨"
     }
   },
   "settings": {
@@ -241,6 +258,10 @@
       "rightSidebar": "오른쪽 사이드바",
       "leftSidebar": "왼쪽 사이드바",
       "mainTab": "메인 편집기 탭"
+    },
+    "enableZenMode": {
+      "name": "젠 모드 활성화",
+      "desc": "Claudian이 있는 사이드바가 숨겨져 있을 때 메인 작업 공간에 간결한 채팅을 표시합니다."
     },
     "cliInstallation": {
       "disclosure": "{name} 설치",
