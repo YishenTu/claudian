@@ -57,9 +57,9 @@ describe('Composer input styles', () => {
     const wrapper = style(composer.querySelector('.claudian-input-wrapper')!);
     expect(['', '0', '0px', 'auto']).toContain(wrapper.minHeight);
     expect(wrapper.flexDirection).toBe('column');
-    // One line of text before the toolbar: no two-line floor between the hint and the controls.
-    expect(['', '0', '0px', 'auto']).toContain(style(composer.querySelector('.claudian-composer-editor')!).minHeight);
-    expect(['', '0', '0px', 'auto']).toContain(style(composer.querySelector('.cm-content')!).minHeight);
+    // About two lines of text before the toolbar.
+    expect(style(composer.querySelector('.claudian-composer-editor')!).minHeight).toBe('48px');
+    expect(style(composer.querySelector('.cm-content')!).minHeight).toBe('48px');
   });
 
   it('insets the hint and text like the toolbar content, with room above the first line', () => {
