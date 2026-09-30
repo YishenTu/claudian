@@ -161,9 +161,9 @@ export function createClaudeSettingsTabRenderer(
             });
         });
 
-      // --- Safety ---
+      // --- Configuration ---
 
-      new Setting(container).setName(t('settings.safety')).setHeading();
+      new Setting(container).setName(t('settings.claude.configuration')).setHeading();
 
       new Setting(container)
         .setName(t('settings.loadUserSettings.name'))

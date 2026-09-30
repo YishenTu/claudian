@@ -320,6 +320,7 @@
       "stale": "{provider} model catalog is stale. Click Discover to refresh it."
     },
     "claude": {
+      "configuration": "Configuration",
       "responseStyle": {
         "name": "Response style",
         "desc": "Default uses Claude Code’s normal style. Concise leads with results and skips preamble. Requires Claude Code 2.1.237 or later.",

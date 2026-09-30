@@ -320,6 +320,7 @@
       "stale": "{provider} 模型目录已过期。点击“发现”以刷新。"
     },
     "claude": {
+      "configuration": "配置",
       "responseStyle": {
         "name": "回复风格",
         "desc": "默认使用 Claude Code 的常规风格。简洁模式先给出结果，省略开场白。需要 Claude Code 2.1.237 或更高版本。",

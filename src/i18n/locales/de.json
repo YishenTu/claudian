@@ -320,6 +320,7 @@
       "stale": "Der {provider}-Modellkatalog ist veraltet. Klicken Sie auf Erkennen, um ihn zu aktualisieren."
     },
     "claude": {
+      "configuration": "Konfiguration",
       "responseStyle": {
         "name": "Antwortstil",
         "desc": "Standard verwendet den üblichen Stil von Claude Code. Knapp beginnt mit Ergebnissen und verzichtet auf Einleitungen. Erfordert Claude Code 2.1.237 oder neuer.",

@@ -571,8 +571,8 @@ describe('ClaudeSettingsTab', () => {
     expect(names).not.toContain('Default model');
     expect(names).not.toContain('settings.customModels.name');
     const headings = createdSettings.filter(setting => setting.heading).map(setting => setting.name);
-    expect(headings).toEqual(expect.arrayContaining(['settings.models', 'settings.safety']));
-    expect(headings.indexOf('settings.models')).toBeLessThan(headings.indexOf('settings.safety'));
+    expect(headings).toEqual(expect.arrayContaining(['settings.models', 'settings.claude.configuration']));
+    expect(headings.indexOf('settings.models')).toBeLessThan(headings.indexOf('settings.claude.configuration'));
     expect(mockRenderModelPicker).toHaveBeenCalledWith(
       container, 'claude', 'Claude Code', mockModelCatalog, expect.any(Function),
     );

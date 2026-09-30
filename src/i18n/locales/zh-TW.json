@@ -320,6 +320,7 @@
       "stale": "{provider} 模型目錄已過時。點擊「探索」以重新整理。"
     },
     "claude": {
+      "configuration": "組態",
       "responseStyle": {
         "name": "回覆風格",
         "desc": "預設使用 Claude Code 的一般風格。簡潔模式先提供結果，省略開場白。需要 Claude Code 2.1.237 或更新版本。",

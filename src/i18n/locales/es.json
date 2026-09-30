@@ -320,6 +320,7 @@
       "stale": "El catálogo de modelos de {provider} está desactualizado. Haz clic en Descubrir para actualizarlo."
     },
     "claude": {
+      "configuration": "Configuración",
       "responseStyle": {
         "name": "Estilo de respuesta",
         "desc": "Predeterminado usa el estilo habitual de Claude Code. Conciso empieza con los resultados y omite preámbulos. Requiere Claude Code 2.1.237 o posterior.",

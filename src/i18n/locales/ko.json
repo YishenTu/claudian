@@ -320,6 +320,7 @@
       "stale": "{provider} 모델 카탈로그가 오래되었습니다. 검색을 클릭하여 새로 고치세요."
     },
     "claude": {
+      "configuration": "구성",
       "responseStyle": {
         "name": "응답 스타일",
         "desc": "기본은 Claude Code의 일반 스타일입니다. 간결 모드는 결과부터 제시하고 서두를 생략합니다. Claude Code 2.1.237 이상이 필요합니다.",

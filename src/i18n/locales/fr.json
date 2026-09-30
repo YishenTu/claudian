@@ -320,6 +320,7 @@
       "stale": "Le catalogue de modèles {provider} est obsolète. Cliquez sur Découvrir pour l'actualiser."
     },
     "claude": {
+      "configuration": "Configuration",
       "responseStyle": {
         "name": "Style de réponse",
         "desc": "Par défaut utilise le style habituel de Claude Code. Concis commence par les résultats et évite les préambules. Nécessite Claude Code 2.1.237 ou ultérieur.",
