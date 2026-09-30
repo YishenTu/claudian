@@ -38,11 +38,13 @@ function findCentralWorkspaceHost(app: App): HTMLElement | null {
 /**
  * Single workspace owner for zen mode: selects at most one eligible chat view
  * whose containing sidebar is collapsed and hosts its live presentation in the
- * central workspace. It never creates, loads, or reveals views to supply itself.
+ * central workspace. It never creates or reveals views to supply itself; it only
+ * loads a chat that Obsidian deferred inside a collapsed sidebar.
  */
 export class ZenModeController {
   readonly #sources = new Map<ZenModeSource, () => void>();
   readonly #historyExpanded = new WeakMap<ZenModeSource, boolean>();
+  readonly #loadRequested = new WeakSet<WorkspaceLeaf>();
   #focusOrder: ZenModeSource[] = [];
   #eventRefs: EventRef[] = [];
   #attachment: ZenAttachment | null = null;
@@ -110,6 +112,7 @@ export class ZenModeController {
     }
     this.#detach();
     if (target) this.#attach(target);
+    else this.#loadDeferredSource();
   }
 
   dispose(): void {
@@ -141,8 +144,12 @@ export class ZenModeController {
     this.reconcile();
   }
 
+  #canPresent(): boolean {
+    return this.#listening && !Platform.isMobile && this.deps.isEnabled();
+  }
+
   #selectSource(): ZenModeSource | null {
-    if (!this.#listening || Platform.isMobile || !this.deps.isEnabled()) return null;
+    if (!this.#canPresent()) return null;
     const eligible = [...this.#sources.keys()].filter(source => this.#isEligible(source));
     if (eligible.length === 0) return null;
 
@@ -161,11 +168,35 @@ export class ZenModeController {
 
   #isEligible(source: ZenModeSource): boolean {
     if (source === this.#revealing || !source.getZenRuntime()) return false;
+    return this.#isInCollapsedSidebar(source.leaf);
+  }
+
+  #isInCollapsedSidebar(leaf: WorkspaceLeaf): boolean {
     const { leftSplit, rightSplit } = this.deps.app.workspace;
-    const root = source.leaf.getRoot();
+    const root = leaf.getRoot();
     // Actual placement decides; the preferred placement setting is irrelevant here.
     if (root !== leftSplit && root !== rightSplit) return false;
     return (root as CollapsibleSplit).collapsed === true;
+  }
+
+  /**
+   * Obsidian defers leaves inside a collapsed sidebar at startup, so their views
+   * never open to register here. Loading one lets it restore normally and present
+   * once ready; a registered view in a collapsed sidebar is already on its way.
+   */
+  #loadDeferredSource(): void {
+    if (!this.#canPresent()) return;
+    const pending = [...this.#sources.keys()].some(
+      source => source !== this.#revealing && this.#isInCollapsedSidebar(source.leaf),
+    );
+    if (pending) return;
+    const leaf = this.deps.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN).find(candidate => (
+      candidate.isDeferred && !this.#loadRequested.has(candidate) && this.#isInCollapsedSidebar(candidate)
+    ));
+    if (!leaf) return;
+    // One attempt per leaf, so a failed load cannot repeat on every layout event.
+    this.#loadRequested.add(leaf);
+    void leaf.loadIfDeferred().catch(() => undefined);
   }
 
   #attach(source: ZenModeSource): void {

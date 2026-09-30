@@ -43,7 +43,7 @@ afterEach(async () => {
 });
 
 type Split = { collapsed: boolean; containerEl: HTMLElement };
-type Leaf = { view: unknown; getRoot: () => unknown };
+type Leaf = { view: unknown; getRoot: () => unknown; isDeferred?: boolean; loadIfDeferred?: () => Promise<void> };
 
 /** Narrow stand-in for Obsidian's desktop workspace layout, events and keymap. */
 function createWorkspace() {
@@ -285,6 +285,51 @@ it('waits for ordinary restoration before presenting an already collapsed sideba
   expect(fixture.sessions).toHaveLength(0);
 });
 
+it('loads a chat that Obsidian deferred in an already collapsed sidebar', async () => {
+  const fixture = await createZenFixture();
+  let loaded: Awaited<ReturnType<typeof fixture.addView>> | null = null;
+  const deferred: Leaf = {
+    view: {},
+    getRoot: () => fixture.leftSplit,
+    isDeferred: true,
+    loadIfDeferred: jest.fn(async () => {
+      fixture.leaves.splice(fixture.leaves.indexOf(deferred), 1);
+      loaded = await fixture.addView('left');
+    }),
+  };
+  fixture.leaves.push(deferred);
+
+  // Nothing collapsed, or the setting off, leaves the deferred chat alone.
+  fixture.workspace.trigger('layout-change');
+  await fixture.settingsCoordinator.mutate(settings => { settings.enableZenMode = false; });
+  fixture.setCollapsed(fixture.leftSplit, true);
+  expect(deferred.loadIfDeferred).not.toHaveBeenCalled();
+
+  await fixture.settingsCoordinator.mutate(settings => { settings.enableZenMode = true; });
+  fixture.workspace.trigger('resize');
+  expect(deferred.loadIfDeferred).toHaveBeenCalledTimes(1);
+
+  await waitFor(() => expect(loaded).not.toBeNull());
+  expect(zenPanel()!.contains(loaded!.tab.dom.inputComposerEl)).toBe(true);
+  expect(deferred.loadIfDeferred).toHaveBeenCalledTimes(1);
+});
+
+it('prefers a loaded chat over loading a deferred one', async () => {
+  const fixture = await createZenFixture();
+  const deferred: Leaf = {
+    view: {},
+    getRoot: () => fixture.leftSplit,
+    isDeferred: true,
+    loadIfDeferred: jest.fn(async () => undefined),
+  };
+  fixture.leaves.push(deferred);
+  fixture.setCollapsed(fixture.rightSplit, true);
+  fixture.setCollapsed(fixture.leftSplit, true);
+
+  expect(zenPanel()!.contains(fixture.tab.dom.inputComposerEl)).toBe(true);
+  expect(deferred.loadIfDeferred).not.toHaveBeenCalled();
+});
+
 it('applies committed setting changes without reopening the sidebar or touching execution', async () => {
   const fixture = await createZenFixture();
   const { tab, sessions, settingsCoordinator } = fixture;
@@ -514,6 +559,34 @@ it('discloses the existing transcript accessibly and remembers the choice for th
   setCollapsed(rightSplit, false);
   setCollapsed(rightSplit, true);
   expect(within(zenPanel()!).getByRole('button', { name: 'Hide conversation' }).getAttribute('aria-expanded')).toBe('true');
+});
+
+it('collapses the expanded transcript on a click elsewhere in Obsidian', async () => {
+  const { tab, rightSplit, setCollapsed, noteEditor } = await createZenFixture();
+  seedHistory(tab);
+  setCollapsed(rightSplit, true);
+  const panel = zenPanel()!;
+  fireEvent.click(within(panel).getByRole('button', { name: 'Show conversation' }));
+  const hide = within(panel).getByRole('button', { name: 'Hide conversation' });
+  const history = document.getElementById(hide.getAttribute('aria-controls')!)!;
+
+  // Clicks inside zen, or in menus and modals it opened, keep it open.
+  fireEvent.pointerDown(tab.dom.messagesEl);
+  fireEvent.pointerDown(tab.dom.inputEl as unknown as HTMLElement);
+  for (const cls of ['menu', 'modal-container', 'suggestion-container']) {
+    const overlay = document.body.createDiv({ cls });
+    fireEvent.pointerDown(overlay.createDiv());
+    overlay.remove();
+  }
+  expect(hide.getAttribute('aria-expanded')).toBe('true');
+
+  fireEvent.pointerDown(noteEditor);
+  expect(hide.getAttribute('aria-expanded')).toBe('false');
+  expect(history.classList.contains('claudian-hidden')).toBe(true);
+
+  // A collapsed transcript ignores outside clicks entirely.
+  fireEvent.pointerDown(noteEditor);
+  expect(hide.getAttribute('aria-expanded')).toBe('false');
 });
 
 it('labels a selected side destination and keeps it through disclosure and cancel', async () => {

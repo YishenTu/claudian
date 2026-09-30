@@ -27,6 +27,8 @@ export interface ZenModePanelOptions {
 }
 
 const HOST_CLASS = 'claudian-zen-host';
+// Body-level surfaces that zen controls open; interacting with them is not leaving zen.
+const OWNED_OVERLAY_SELECTOR = '.menu, .modal-container, .suggestion-container';
 const RESERVED_HEIGHT_PROPERTY = '--claudian-zen-reserved-height';
 
 let panelSequence = 0;
@@ -137,6 +139,8 @@ export class ZenModePanel {
       if (!next || !this.#rootEl.contains(next)) this.#popKeyScope();
     });
 
+    hostEl.ownerDocument.addEventListener('pointerdown', this.#handleOutsidePointerDown, true);
+
     this.slots = { historyEl: this.#historyEl, composerEl };
     this.#composerLayout = new ZenComposerLayout(composerEl);
     this.#applyHistoryExpanded();
@@ -209,6 +213,7 @@ export class ZenModePanel {
     this.#resizeObserver?.disconnect();
     this.#resizeObserver = null;
     this.#composerLayout.destroy();
+    this.hostEl.ownerDocument.removeEventListener('pointerdown', this.#handleOutsidePointerDown, true);
     this.#rootEl.remove();
     this.hostEl.removeClass(HOST_CLASS);
     this.hostEl.style.removeProperty(RESERVED_HEIGHT_PROPERTY);
@@ -226,6 +231,15 @@ export class ZenModePanel {
       expanded ? t('chat.zen.hideHistory') : t('chat.zen.showHistory'),
     );
   }
+
+  readonly #handleOutsidePointerDown = (event: PointerEvent): void => {
+    if (!this.#historyExpanded || !this.#hasHistory) return;
+    const target = event.target as Node | null;
+    if (!target || this.#rootEl.contains(target)) return;
+    const element = target.nodeType === Node.ELEMENT_NODE ? target as Element : target.parentElement;
+    if (element?.closest(OWNED_OVERLAY_SELECTOR)) return;
+    this.setHistoryExpanded(false);
+  };
 
   #scheduleRender(): void {
     if (this.#destroyed || this.#pendingFrame) return;
