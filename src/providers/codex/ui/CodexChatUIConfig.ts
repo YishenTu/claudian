@@ -5,7 +5,7 @@ import { codexModelPolicy } from '../CodexModelPolicy';
 export const codexChatUIConfig: ProviderChatUIConfig = {
   ...codexModelPolicy,
   getPermissionModeToggle() {
-    return { ...codexModelPolicy.permissionModes!, inactiveLabel: 'Safe', activeLabel: 'YOLO' };
+    return { ...codexModelPolicy.permissionModes!, inactiveLabel: 'SAFE', activeLabel: 'YOLO' };
   },
   getServiceTierToggle: settings => codexModelPolicy.getServiceTierPolicy?.(settings) ?? null,
   getProviderIcon() {

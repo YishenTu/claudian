@@ -175,6 +175,8 @@ export interface ProviderUIOption {
   group?: string;
   /** Per-option icon override (e.g. when mixing providers in a single dropdown). */
   providerIcon?: ProviderIconSvg;
+  /** Owning provider when several providers share one dropdown, so the option can carry its brand. */
+  providerId?: ProviderId;
 }
 
 export interface ProviderPathIconSvg {

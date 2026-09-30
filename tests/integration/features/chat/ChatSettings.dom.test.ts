@@ -126,13 +126,41 @@ function createChatHarness(settings: ClaudianSettings, id: ProviderId, selected:
   return { createTab, tabs, sessions, persist, plugin };
 }
 
+function reasoningSlider(tab: AssembledTabRuntime): HTMLInputElement {
+  // The slider lives in the model popover, which stays closed in these tests.
+  return within(tab.dom.inputComposerEl).getByRole('slider', { hidden: true }) as HTMLInputElement;
+}
+
+/** The labels the slider announces at each stop, read the way assistive technology hears them. */
+function reasoningStops(tab: AssembledTabRuntime): string[] {
+  const slider = reasoningSlider(tab);
+  const original = slider.value;
+  const labels: string[] = [];
+  for (let index = Number(slider.min); index <= Number(slider.max); index++) {
+    fireEvent.input(slider, { target: { value: String(index) } });
+    labels.push(slider.getAttribute('aria-valuetext') ?? '');
+  }
+  fireEvent.input(slider, { target: { value: original } });
+  return labels;
+}
+
+/** Moves the slider to the stop announcing `label` and releases it, which commits that level. */
+function chooseReasoning(tab: AssembledTabRuntime, label: string): void {
+  const index = reasoningStops(tab).indexOf(label);
+  expect(index).toBeGreaterThanOrEqual(0);
+  const slider = reasoningSlider(tab);
+  fireEvent.input(slider, { target: { value: String(index) } });
+  fireEvent.change(slider);
+}
+
 async function selectReasoning(tab: AssembledTabRuntime, reasoning: string) {
   const ui = within(tab.dom.inputComposerEl);
   const label = formatReasoningValueLabel(reasoning);
-  const gear = ui.getByText(label, { selector: '.claudian-thinking-gear' });
-  fireEvent.click(gear);
-  await waitFor(() => expect(gear.isConnected).toBe(false));
-  expect(ui.getByText(label, { selector: '.claudian-thinking-current' })).toBeDefined();
+  chooseReasoning(tab, label);
+  await waitFor(() => expect(ui.getByText(label, { selector: '.claudian-thinking-current' })).toBeDefined());
+  // Let the commit settle even when the level was already selected.
+  await new Promise<void>(resolve => setTimeout(resolve, 0));
+  expect(reasoningSlider(tab).getAttribute('aria-valuetext')).toBe(label);
 }
 
 async function expectSubmission(
@@ -290,7 +318,7 @@ it('keeps the previous tab effort and future-tab seed when saving a selection fa
     const tab = await createTab();
     await selectReasoning(tab, 'medium');
     persist.mockRejectedValueOnce(new Error('disk full'));
-    fireEvent.click(within(tab.dom.inputComposerEl).getByText('High', { selector: '.claudian-thinking-gear' }));
+    chooseReasoning(tab, 'High');
     await waitFor(() => expect(Notice).toHaveBeenCalledWith('Failed to change effort level'));
     refreshTabProviderUI(tab);
     await expectSubmission(tab, sessions, 'openai-codex/gpt-5.5', 'medium');
@@ -319,7 +347,7 @@ it('refreshes a cached effort when provider settings remove it from the availabl
     await selectReasoning(peer, 'medium');
     updateCodexProviderSettings(settings, { enableUltraEffort: false });
     refreshTabProviderUI(tab);
-    expect(within(tab.dom.inputComposerEl).queryByText('Ultra', { selector: '.claudian-thinking-gear' })).toBeNull();
+    expect(reasoningStops(tab)).not.toContain('Ultra');
     // Losing a supported choice uses the model default, not another tab's saved effort.
     await expectSubmission(tab, sessions, 'openai-codex/gpt-5.5', 'high');
     await expectSubmission(peer, sessions, 'openai-codex/gpt-5.5', 'medium');
@@ -343,7 +371,7 @@ it.each([true, false])('seeds tabs from committed reasoning while a save is pend
   try {
     const source = await createTab();
     persist.mockImplementationOnce(() => save);
-    fireEvent.click(within(source.dom.inputComposerEl).getByText('Medium', { selector: '.claudian-thinking-gear' }));
+    chooseReasoning(source, 'Medium');
     await waitFor(() => expect(persist).toHaveBeenCalled());
 
     const duringSave = await createTab();

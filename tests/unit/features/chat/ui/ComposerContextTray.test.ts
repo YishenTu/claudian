@@ -7,16 +7,17 @@ jest.mock('obsidian', () => ({
 }));
 
 describe('ComposerContextTray', () => {
-  it('updates the removable styling state when linked content becomes locked', () => {
+  it('drops the remove control when an item loses its remove action', () => {
     const containerEl = createMockEl();
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
-    const item = { id: 'linked-content', kind: 'content' as const, label: 'Draft.md' };
+    const item = { id: 'editor-selection', kind: 'selection' as const, label: '3 lines · Draft.md' };
 
-    tray.setItems('linked-content', [{ ...item, onRemove: jest.fn() }]);
-    expect(containerEl.querySelector('.claudian-context-chip')?.hasClass('claudian-context-chip--removable')).toBe(true);
+    tray.setItems('editor-selection', [{ ...item, onRemove: jest.fn() }]);
+    expect(containerEl.querySelector('.claudian-context-chip-remove')).not.toBeNull();
 
-    tray.setItems('linked-content', [item]);
-    expect(containerEl.querySelector('.claudian-context-chip')?.hasClass('claudian-context-chip--removable')).toBe(false);
+    tray.setItems('editor-selection', [item]);
+    expect(containerEl.querySelector('.claudian-context-chip')).not.toBeNull();
+    expect(containerEl.querySelector('.claudian-context-chip-remove')).toBeNull();
     tray.destroy();
   });
 
@@ -61,20 +62,20 @@ describe('ComposerContextTray', () => {
       icon: 'text-select',
       onRemove: jest.fn(),
     }]);
-    tray.setItems('linked-content', [{
-      id: 'linked-content',
-      kind: 'content',
-      label: 'Draft.md',
-      icon: 'file-text',
+    tray.setItems('browser-selection', [{
+      id: 'browser-selection',
+      kind: 'selection',
+      label: 'Selection · example.com',
+      icon: 'globe',
       onRemove: jest.fn(),
     }]);
 
     expect(containerEl.hasClass('has-content')).toBe(true);
     // Presentations can match on which slots are filled without inspecting chips.
-    expect(containerEl.dataset.contextSlots).toBe('linked-content editor-selection images');
+    expect(containerEl.dataset.contextSlots).toBe('editor-selection browser-selection images');
     expect(containerEl.querySelectorAll('.claudian-context-chip').map((item: any) => item.dataset.contextSlot)).toEqual([
-      'linked-content',
       'editor-selection',
+      'browser-selection',
       'images',
     ]);
   });
@@ -143,10 +144,10 @@ describe('ComposerContextTray', () => {
     const containerEl = createMockEl();
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
 
-    tray.setItems('linked-content', [{
-      id: 'note',
-      kind: 'content',
-      label: 'Note.md',
+    tray.setItems('browser-selection', [{
+      id: 'browser',
+      kind: 'selection',
+      label: 'Selection · example.com',
       onRemove: jest.fn(),
     }]);
     tray.setItems('editor-selection', [{
@@ -178,7 +179,7 @@ describe('ComposerContextTray', () => {
   it('measures rows from rendered chips only, ignoring chips a presentation hides', () => {
     const containerEl = createMockEl();
     const tray = new ComposerContextTray(containerEl as unknown as HTMLElement);
-    tray.setItems('linked-content', [{ id: 'note', kind: 'content', label: 'Note.md', onRemove: jest.fn() }]);
+    tray.setItems('editor-selection', [{ id: 'selection', kind: 'selection', label: '1 line selected', onRemove: jest.fn() }]);
     tray.setItems('images', Array.from({ length: 3 }, (_, index) => ({
       id: `image-${index}`,
       kind: 'image' as const,

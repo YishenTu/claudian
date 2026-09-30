@@ -3,18 +3,60 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { fireEvent, within } from '@testing-library/dom';
+
+import { createInputToolbar, type ToolbarCallbacks } from '@/features/chat/ui/InputToolbar';
+
+beforeAll(() => {
+  Object.assign(HTMLElement.prototype, {
+    empty(this: HTMLElement) { this.replaceChildren(); },
+    addClass(this: HTMLElement, ...names: string[]) { this.classList.add(...names); },
+    removeClass(this: HTMLElement, ...names: string[]) { this.classList.remove(...names); },
+    hasClass(this: HTMLElement, name: string) { return this.classList.contains(name); },
+    toggleClass(this: HTMLElement, name: string, force: boolean) { this.classList.toggle(name, force); },
+  });
+});
+
+/** Mounts the real toolbar, so zen rules are checked against the DOM the composer renders. */
+function mountToolbar(toolbarEl: HTMLElement): void {
+  const settings = { model: 'sonnet', reasoning: 'high', serviceTier: 'fast', permissionMode: 'normal' };
+  createInputToolbar(toolbarEl, {
+    onModelChange: async () => {}, onModeChange: async () => {}, onThinkingBudgetChange: async () => {},
+    onEffortLevelChange: async () => {}, onServiceTierChange: async () => {}, onPermissionModeChange: async () => {},
+    getSettings: () => settings,
+    getUIConfig: () => ({
+      getProviderIcon: () => null,
+      getModelOptions: () => [{ value: 'sonnet', label: 'Sonnet' }, { value: 'opus', label: 'Opus' }],
+      isAdaptiveReasoningModel: () => true,
+      getReasoningOptions: () => [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }],
+      getDefaultReasoningValue: () => 'low',
+      getPermissionModeToggle: () => ({ inactiveValue: 'normal', inactiveLabel: 'Safe', activeValue: 'yolo', activeLabel: 'YOLO' }),
+      getServiceTierToggle: () => ({
+        inactiveValue: 'default', inactiveLabel: 'Standard', activeValue: 'fast', activeLabel: 'Fast', isActive: true,
+      }),
+      getModeSelector: () => ({
+        label: 'Mode', value: 'build',
+        options: [{ value: 'build', label: 'Build' }, { value: 'plan', label: 'Plan' }],
+      }),
+    }),
+    getCapabilities: () => ({ reasoningControl: 'effort' }),
+  } as unknown as ToolbarCallbacks, { contextMeterParentEl: document.createElement('div') });
+}
+
 describe('Zen mode styles', () => {
+  // jsdom applies rules in sheet order regardless of specificity; the utilities load last, as in index.css.
   const css = [
-    'src/style/base/visibility.css',
     'src/style/base/container.css',
     'src/style/components/input.css',
     'src/style/components/composer-editor.css',
     'src/style/components/context-tray.css',
     'src/style/components/context-footer.css',
+    'src/style/components/composer-info-row.css',
     'src/style/toolbar/model-selector.css',
     'src/style/toolbar/thinking-selector.css',
     'src/style/components/side-chat.css',
     'src/style/components/zen-mode.css',
+    'src/style/base/visibility.css',
   ]
     .map(file => readFileSync(path.resolve(file), 'utf8'))
     .join('\n');
@@ -49,32 +91,26 @@ describe('Zen mode styles', () => {
             </div>
           </div>
           <div class="claudian-zen-composer">
-            <div class="claudian-input-wrapper">
-              <div class="claudian-context-row has-content" data-context-slots="linked-content">
-                <div class="claudian-context-chip" data-context-slot="linked-content"></div>
-              </div>
-              <div class="claudian-composer-editor">
-                <div class="cm-content"><div class="cm-line"><span class="cm-placeholder">Ask</span></div></div>
-              </div>
-              <div class="claudian-input-toolbar">
-                <div class="claudian-model-selector"><div class="claudian-model-dropdown"></div></div>
-                <div class="claudian-thinking-selector">
-                  <div class="claudian-thinking-effort">
-                    <span class="claudian-thinking-label-text">Effort:</span>
-                    <div class="claudian-thinking-gears"><div class="claudian-thinking-current">High</div></div>
+            <div class="claudian-input-composer">
+              <div class="claudian-input-container">
+                <div class="claudian-input-nav-row"></div>
+                <div class="claudian-input-wrapper">
+                  <div class="claudian-input-queue-strip claudian-hidden"></div>
+                  <div class="claudian-context-row"></div>
+                  <div class="claudian-composer-editor">
+                    <div class="cm-content"><div class="cm-line"><span class="cm-placeholder">Ask</span></div></div>
                   </div>
-                  <div class="claudian-thinking-budget">
-                    <span class="claudian-thinking-label-text">Thinking:</span>
+                  <div class="claudian-input-toolbar"></div>
+                </div>
+                <div class="claudian-input-info-row" data-info-items="linked-content">
+                  <div class="claudian-input-info-linked" data-info-item="linked-content"></div>
+                  <div class="claudian-input-info-usage" data-info-item="context-usage">
+                    <div class="claudian-context-meter claudian-hidden">
+                      <div class="claudian-context-meter-gauge"></div>
+                      <span class="claudian-context-meter-percent">42%</span>
+                    </div>
                   </div>
-                  <div class="claudian-thinking-options"></div>
                 </div>
-                <div class="claudian-service-tier-toggle"></div>
-                <div class="claudian-context-meter">
-                  <div class="claudian-context-meter-gauge"></div>
-                  <span class="claudian-context-meter-percent">42%</span>
-                </div>
-                <div class="claudian-permission-toggle"></div>
-                <div class="claudian-mode-selector"></div>
               </div>
             </div>
           </div>
@@ -84,6 +120,7 @@ describe('Zen mode styles', () => {
         </div>
       </div>
     `;
+    mountToolbar(document.querySelector<HTMLElement>('.claudian-input-toolbar')!);
     return document.querySelector('.claudian-zen') as HTMLElement;
   }
 
@@ -123,19 +160,61 @@ describe('Zen mode styles', () => {
     expect(window.getComputedStyle(panel.querySelector('.claudian-zen-history')!).borderStyle).toBe('');
   });
 
-  it('hides the linked note badge, and its row when nothing else is attached', () => {
+  it('hides the linked note, and the info row until context usage is reported', () => {
     const panel = renderPanel();
-    const row = panel.querySelector<HTMLElement>('.claudian-context-row')!;
-    const linked = row.querySelector<HTMLElement>('[data-context-slot="linked-content"]')!;
+    const row = panel.querySelector<HTMLElement>('.claudian-input-info-row')!;
+    const linked = row.querySelector<HTMLElement>('.claudian-input-info-linked')!;
+    const meter = row.querySelector<HTMLElement>('.claudian-context-meter')!;
     expect(window.getComputedStyle(linked).display).toBe('none');
     expect(window.getComputedStyle(row).display).toBe('none');
 
-    const image = row.createDiv({ cls: 'claudian-context-chip' });
-    image.dataset.contextSlot = 'images';
-    row.dataset.contextSlots = 'linked-content images';
+    meter.classList.remove('claudian-hidden');
+    row.dataset.infoItems = 'linked-content context-usage';
     expect(window.getComputedStyle(row).display).toBe('flex');
-    expect(window.getComputedStyle(image).display).toBe('inline-flex');
     expect(window.getComputedStyle(linked).display).toBe('none');
+    // The gauge stays, without its number.
+    expect(window.getComputedStyle(meter).display).toBe('flex');
+    expect(window.getComputedStyle(meter.querySelector('.claudian-context-meter-gauge')!).display).toBe('flex');
+    expect(window.getComputedStyle(meter.querySelector('.claudian-context-meter-percent')!).display).toBe('none');
+  });
+
+  it('sets the context gauge at the end of the controls row, inside the pill', () => {
+    const panel = renderPanel();
+    const composer = panel.querySelector<HTMLElement>('.claudian-zen-composer')!;
+    const container = panel.querySelector<HTMLElement>('.claudian-input-container')!;
+    const row = panel.querySelector<HTMLElement>('.claudian-input-info-row')!;
+    const toolbar = panel.querySelector<HTMLElement>('.claudian-input-toolbar')!;
+    const style = (el: Element) => window.getComputedStyle(el);
+    // No usage yet: the controls keep the pill's end to themselves.
+    expect(style(toolbar).paddingInlineEnd || style(toolbar).paddingRight).toBe('6px');
+
+    panel.querySelector('.claudian-context-meter')!.classList.remove('claudian-hidden');
+    row.dataset.infoItems = 'linked-content context-usage';
+    container.dataset.infoItems = 'linked-content context-usage';
+    // The row leaves the flow and sits over the pill's end, inside its border and inline padding.
+    expect({
+      position: style(row).position,
+      end: style(row).getPropertyValue('inset-inline-end'),
+      bottom: style(row).bottom,
+      height: style(row).height,
+    }).toEqual({ position: 'absolute', end: '7px', bottom: '1px', height: '38px' });
+    // The controls make room for the 24px gauge beside them.
+    expect(style(toolbar).paddingInlineEnd).toBe('26px');
+
+    // Stacked, the controls have a 32px row of their own at the pill's foot.
+    composer.classList.add('claudian-zen-composer--stacked');
+    expect(style(row).height).toBe('32px');
+  });
+
+  it('caps the pill with the queued-message strip on its own row', () => {
+    const composer = renderPanel().querySelector<HTMLElement>('.claudian-zen-composer')!;
+    const strip = composer.querySelector<HTMLElement>('.claudian-input-queue-strip')!;
+    strip.classList.replace('claudian-hidden', 'claudian-visible-flex');
+    const style = window.getComputedStyle(strip);
+    expect(style.display).toBe('flex');
+    // The strip spans the pill edge to edge, over the wrapper's inline padding.
+    expect({ basis: style.flexBasis, margin: style.getPropertyValue('margin-inline') })
+      .toEqual({ basis: 'calc(100% + 12px)', margin: '-6px' });
   });
 
   it('drops the header line while expanded so the transcript meets the composer', () => {
@@ -196,27 +275,28 @@ describe('Zen mode styles', () => {
     expect(highlighted.map(rule => rule.selectorText)).toEqual([]);
   });
 
-  it('shows only model, effort, fast mode and the context icon beside the input', () => {
+  it('shows only the model control, with its effort and fast mode, beside the input', () => {
     const composer = renderPanel().querySelector<HTMLElement>('.claudian-zen-composer')!;
     const wrapper = window.getComputedStyle(composer.querySelector('.claudian-input-wrapper')!);
     expect({ direction: wrapper.flexDirection, wrap: wrapper.flexWrap }).toEqual({ direction: 'row', wrap: 'wrap' });
-    const display = (selector: string) => window.getComputedStyle(composer.querySelector(selector)!).display;
+    const toolbarEl = composer.querySelector<HTMLElement>('.claudian-input-toolbar')!;
+    const toolbar = within(toolbarEl);
+    const isShown = (el: Element): boolean => {
+      for (let node: Element | null = el; node && node !== composer; node = node.parentElement) {
+        if (window.getComputedStyle(node).display === 'none') return false;
+      }
+      return true;
+    };
 
-    expect(display('.claudian-input-toolbar')).toBe('flex');
-    for (const shown of [
-      '.claudian-model-selector', '.claudian-thinking-selector', '.claudian-service-tier-toggle',
-      '.claudian-context-meter', '.claudian-context-meter-gauge', '.claudian-thinking-current',
-    ]) {
-      expect([shown, display(shown)]).not.toEqual([shown, 'none']);
+    const model = toolbar.getByRole('button', { name: /^Model: Sonnet/, hidden: true });
+    expect(isShown(model)).toBe(true);
+    expect(isShown(model.querySelector('.claudian-thinking-current')!)).toBe(true);
+    expect(isShown(model.querySelector('.claudian-service-tier-indicator')!)).toBe(true);
+    // Permission and provider mode chips keep their values; zen only hides them.
+    for (const name of [/^Permission mode: Safe/, /^Mode: Build/]) {
+      expect([String(name), isShown(toolbar.getByRole('button', { name, hidden: true }))]).toEqual([String(name), false]);
     }
-    for (const hidden of ['.claudian-permission-toggle', '.claudian-mode-selector', '.claudian-context-meter-percent']) {
-      expect([hidden, display(hidden)]).toEqual([hidden, 'none']);
-    }
-    // Effort and budget show their value without the leading label.
-    for (const label of composer.querySelectorAll('.claudian-thinking-label-text')) {
-      expect(window.getComputedStyle(label).display).toBe('none');
-    }
-    expect(window.getComputedStyle(composer.querySelector('.claudian-input-toolbar')!).flexWrap).toBe('nowrap');
+    expect(window.getComputedStyle(toolbarEl).flexWrap).toBe('nowrap');
   });
 
   it('gives the input the whole row when the controls stack below it', () => {
@@ -234,11 +314,12 @@ describe('Zen mode styles', () => {
     const row = composer.querySelector<HTMLElement>('.claudian-context-row')!;
     const editor = composer.querySelector('.claudian-composer-editor')!;
     const style = (el: Element) => window.getComputedStyle(el);
-    // Only the hidden linked note: the input keeps the controls beside it.
+    // Nothing attached: the input keeps the controls beside it.
     expect(style(editor).flexBasis).not.toBe('100%');
 
     row.createDiv({ cls: 'claudian-context-chip' }).dataset.contextSlot = 'images';
-    row.dataset.contextSlots = 'linked-content images';
+    row.classList.add('has-content');
+    row.dataset.contextSlots = 'images';
     expect(style(editor).flexBasis).toBe('100%');
     const toolbar = composer.querySelector('.claudian-input-toolbar')!;
     // Input first, then attachments on the left and controls on the right of the next row.
@@ -258,6 +339,8 @@ describe('Zen mode styles', () => {
     const composer = renderPanel().querySelector<HTMLElement>('.claudian-zen-composer')!;
     const row = composer.querySelector<HTMLElement>('.claudian-context-row')!;
     const toolbar = composer.querySelector<HTMLElement>('.claudian-input-toolbar')!;
+    row.createDiv({ cls: 'claudian-context-chip' }).dataset.contextSlot = 'images';
+    row.classList.add('has-content');
     row.dataset.contextSlots = 'images';
     const style = (el: Element) => window.getComputedStyle(el);
     expect(style(toolbar).alignSelf).not.toBe('flex-start');
@@ -271,13 +354,14 @@ describe('Zen mode styles', () => {
       .toEqual({ sizing: 'border-box', minHeight: '32px', chip: '24px' });
   });
 
-  it('centers control menus above their labels and keeps the placeholder on one line', () => {
+  it('opens control menus end-aligned inside the pill and keeps the placeholder on one line', () => {
     const composer = renderPanel().querySelector<HTMLElement>('.claudian-zen-composer')!;
-    for (const selector of ['.claudian-model-dropdown', '.claudian-thinking-options']) {
-      const menu = window.getComputedStyle(composer.querySelector(selector)!);
-      expect([selector, menu.left, menu.right, menu.transform])
-        .toEqual([selector, '50%', 'auto', 'translateX(-50%)']);
-    }
+    // The controls sit at the pill's end; a start-anchored menu would run past the pill's edge.
+    // The model popover is placed against its own button, so its end is the button's end.
+    fireEvent.click(within(composer).getByRole('button', { name: /^Model:/ }));
+    const menu = window.getComputedStyle(within(composer).getByRole('dialog', { name: 'Model options' }));
+    expect({ start: menu.getPropertyValue('inset-inline-start'), end: menu.getPropertyValue('inset-inline-end') })
+      .toEqual({ start: 'auto', end: '0' });
     const placeholder = window.getComputedStyle(composer.querySelector('.cm-placeholder')!);
     expect({ whiteSpace: placeholder.whiteSpace, textOverflow: placeholder.textOverflow })
       .toEqual({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' });

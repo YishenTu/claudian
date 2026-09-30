@@ -2316,6 +2316,14 @@ describe('ClaudianView runtime tab initialization', () => {
 
     expect(view.updateTabBar).toHaveBeenCalledTimes(2);
     expect(view.notifyConversationNavigationChanged).toHaveBeenCalledTimes(2);
+
+    // A provider switch on the same tab recolours both presentations: the view and zen.
+    const zenListener = jest.fn();
+    view.onZenPresentationChanged(zenListener);
+    view.syncProviderBrandColor.mockClear();
+    tabManagerCallbacks.onTabProviderChanged('restored-1', 'codex');
+    expect(view.syncProviderBrandColor).toHaveBeenCalledTimes(1);
+    expect(zenListener).toHaveBeenCalledTimes(1);
   });
 
   it('abandons deferred restoration when view shutdown begins', async () => {
@@ -3437,14 +3445,22 @@ describe('ClaudianView Escape handling', () => {
 
   function createEscapeHarness(options: {
     isStreaming: boolean;
+    toolbarMenuOpen?: boolean;
   }): {
     cancelInlineRename: jest.Mock;
     cancelStreaming: jest.Mock;
+    closeOpenMenu: jest.Mock;
     eventRefs: unknown[];
     view: any;
   } {
     const cancelInlineRename = jest.fn().mockReturnValue(false);
     const cancelStreaming = jest.fn();
+    let toolbarMenuOpen = options.toolbarMenuOpen ?? false;
+    const closeOpenMenu = jest.fn(() => {
+      const wasOpen = toolbarMenuOpen;
+      toolbarMenuOpen = false;
+      return wasOpen;
+    });
     const eventRefs: unknown[] = [];
     const parentScope = new Scope();
     const view = Object.create(ClaudianView.prototype) as any;
@@ -3499,12 +3515,13 @@ describe('ClaudianView Escape handling', () => {
           linkedContentController: {
             handleActiveFileMetadataChanged: jest.fn(),
           },
+          toolbarMenus: { closeOpenMenu },
         },
       }),
     };
 
     view.sessionBrowser.cancelInlineRename = cancelInlineRename;
-    return { cancelInlineRename, cancelStreaming, eventRefs, view };
+    return { cancelInlineRename, cancelStreaming, closeOpenMenu, eventRefs, view };
   }
 
   function createScopedSendHarness(options: {
@@ -3605,6 +3622,25 @@ describe('ClaudianView Escape handling', () => {
 
     expect(cancelStreaming).toHaveBeenCalledTimes(1);
     expect(result).toBe(false);
+  });
+
+  it('closes an open toolbar menu instead of cancelling the turn when the scope sees Escape first', () => {
+    const { cancelStreaming, closeOpenMenu, view } = createEscapeHarness({
+      isStreaming: true,
+      toolbarMenuOpen: true,
+    });
+
+    view.wireEventHandlers();
+    const escapeHandler = view.scope.handlers.find((handler: any) => handler.key === 'Escape');
+    const result = escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
+
+    expect(closeOpenMenu).toHaveBeenCalledTimes(1);
+    expect(cancelStreaming).not.toHaveBeenCalled();
+    expect(result).toBe(false);
+
+    // With the menu closed, the next Escape cancels as before.
+    escapeHandler.func({ key: 'Escape', isComposing: false } as KeyboardEvent);
+    expect(cancelStreaming).toHaveBeenCalledTimes(1);
   });
 
   it('consumes scoped Escape without cancelling when not streaming', () => {

@@ -1,11 +1,11 @@
-/* Context usage meter (inline in toolbar) */
+/* Context usage meter, at the end of the composer info row */
 
 .claudian-context-meter {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-inline-start: 8px;
+  margin-inline-start: 0;
   cursor: default;
 }
 
@@ -33,7 +33,7 @@
 
 .claudian-context-meter-percent {
   font-size: 11px;
-  color: var(--claudian-brand);
+  color: var(--text-muted);
   min-width: 24px;
   text-align: end;
   transition: color 0.3s ease;

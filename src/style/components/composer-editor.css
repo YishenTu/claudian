@@ -4,7 +4,8 @@
 
   width: 100%;
   min-width: 0;
-  min-height: 60px;
+  /* About two lines when idle; the editor grows with its content. */
+  min-height: 48px;
   flex: 1 1 auto;
   border: 0;
   background: transparent;
@@ -43,7 +44,7 @@
 
 .claudian-composer-editor .cm-content {
   padding: 8px 0 10px;
-  min-height: 60px;
+  min-height: 48px;
   caret-color: var(--text-normal);
 }
 

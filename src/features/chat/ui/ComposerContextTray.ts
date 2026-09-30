@@ -6,14 +6,14 @@ import {
   type ScheduledAnimationFrame,
 } from '../../../utils/animationFrame';
 
+/** Per-turn context only; Linked content lives in the composer info row. */
 export type ComposerContextSlot =
-  | 'linked-content'
   | 'editor-selection'
   | 'browser-selection'
   | 'canvas-selection'
   | 'images';
 
-export type ComposerContextItemKind = 'content' | 'selection' | 'image';
+export type ComposerContextItemKind = 'selection' | 'image';
 
 export interface ComposerContextItem {
   id: string;
@@ -21,7 +21,6 @@ export interface ComposerContextItem {
   label: string;
   icon?: string;
   ariaLabel?: string;
-  status?: 'missing';
   onActivate?: () => void;
   onRemove?: () => void;
 }
@@ -31,7 +30,6 @@ export interface ComposerContextTrayOptions {
 }
 
 const SLOT_ORDER: readonly ComposerContextSlot[] = [
-  'linked-content',
   'editor-selection',
   'browser-selection',
   'canvas-selection',
@@ -99,7 +97,7 @@ export class ComposerContextTray {
       chip.removeClass('claudian-context-chip--overflow-hidden');
     }
     moreButton.addClass('claudian-hidden');
-    // A presentation may hide some chips (zen hides the linked note); they occupy no row.
+    // Chips that are not rendered (hidden by a presentation, or the whole tray undisplayed) occupy no row.
     const chips = allChips.filter(chip => chip.offsetParent !== null);
     if (chips.length === 0) return;
 
@@ -195,7 +193,6 @@ export class ComposerContextTray {
     const chipEl = this.containerEl.createDiv({
       cls: `claudian-context-chip claudian-context-chip--${item.kind}`,
     });
-    if (item.status === 'missing') chipEl.addClass('claudian-context-chip--missing');
     chipEl.dataset.contextSlot = slot;
     chipEl.dataset.contextId = item.id;
 
@@ -219,7 +216,6 @@ export class ComposerContextTray {
     contentEl.createSpan({ cls: 'claudian-context-chip-label', text: item.label });
 
     if (item.onRemove) {
-      chipEl.addClass('claudian-context-chip--removable');
       const removeButton = chipEl.createEl('button', {
         cls: 'claudian-context-chip-remove',
         text: '\u00D7',

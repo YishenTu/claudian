@@ -781,8 +781,12 @@ export class InputController {
     if (visibleQueuedMessage) {
       const isPendingSteerOnly = !state.queuedMessage && !!visiblePendingSteer;
       indicatorEl.createSpan({
+        cls: 'claudian-input-queue-strip-tag',
+        text: isPendingSteerOnly ? 'Steering' : 'Queued',
+      });
+      indicatorEl.createSpan({
         cls: 'claudian-queue-indicator-text',
-        text: `${isPendingSteerOnly ? '⌙ Steering: ' : '⌙ Queued: '}${this.#getQueuedMessageDisplay(visibleQueuedMessage)}`,
+        text: this.#getQueuedMessageDisplay(visibleQueuedMessage),
       });
 
       if (state.queuedMessage) {

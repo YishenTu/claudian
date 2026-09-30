@@ -31,6 +31,7 @@ import type {
   PermissionToggle,
   ServiceTierToggle,
   ThinkingBudgetSelector,
+  ToolbarMenus,
 } from '../ui/InputToolbar';
 import type { NavigationSidebar } from '../ui/NavigationSidebar';
 import type { TabSession } from './TabSession';
@@ -124,6 +125,8 @@ export interface TabUIComponents {
   readonly serviceTierToggle: ServiceTierToggle;
   readonly composerDropdown: MainChatComposerDropdown;
   readonly contextUsageMeter: ContextUsageMeter;
+  /** Toolbar menus; Escape closes an open one before it can cancel a turn. */
+  readonly toolbarMenus: ToolbarMenus;
   readonly navigationSidebar: NavigationSidebar;
 }
 
@@ -139,6 +142,7 @@ export interface TabDOMElements {
   /** Per-tab composer root. Inline prompts render here as siblings of the input container. */
   readonly inputComposerEl: HTMLElement;
   readonly inputContainerEl: HTMLElement;
+  /** Queued-message strip at the top of the input wrapper. */
   readonly queueIndicatorEl: HTMLElement;
   readonly inputWrapper: HTMLElement;
   readonly inputEl: ComposerInputElement;
@@ -146,8 +150,11 @@ export interface TabDOMElements {
   /** Nav row for tab badges and header icons (above input wrapper). */
   readonly navRowEl: HTMLElement;
 
-  /** Composer-owned context tray container inside the input wrapper. */
+  /** Composer-owned context tray container inside the input wrapper, for per-turn context. */
   readonly contextRowEl: HTMLElement;
+
+  /** Read-only conversation facts (Linked content, context usage) directly under the input wrapper. */
+  readonly infoRowEl: HTMLElement;
 }
 
 /**

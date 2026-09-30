@@ -585,7 +585,7 @@ describe('CodexChatUIConfig', () => {
       const toggle = codexChatUIConfig.getPermissionModeToggle!();
       expect(toggle).toEqual({
         inactiveValue: 'normal',
-        inactiveLabel: 'Safe',
+        inactiveLabel: 'SAFE',
         activeValue: 'yolo',
         activeLabel: 'YOLO',
       });

@@ -1,19 +1,6 @@
-.claudian-mode-selector {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  padding-left: 12px;
-  padding-right: 8px;
-}
-
-.claudian-mode-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  min-width: 32px;
-}
-
-.claudian-mode-label.active {
+/* Provider mode chip: the provider's active option keeps the brand accent. */
+.claudian-input-toolbar button.claudian-toolbar-chip.claudian-toolbar-chip--accent,
+.claudian-input-toolbar button.claudian-toolbar-chip.claudian-toolbar-chip--accent:is(:hover, :focus, :focus-visible, :active, [aria-expanded='true']),
+.claudian-toolbar-chip--accent .claudian-toolbar-chip-primary {
   color: var(--claudian-brand);
-  font-weight: 600;
 }

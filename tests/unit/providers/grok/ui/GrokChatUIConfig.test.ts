@@ -355,7 +355,7 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.getPermissionModeToggle?.()).toEqual({
       activeLabel: 'YOLO',
       activeValue: 'yolo',
-      inactiveLabel: 'Safe',
+      inactiveLabel: 'SAFE',
       inactiveValue: 'normal',
     });
     expect(grokChatUIConfig.getModeSelector?.({})).toBeNull();

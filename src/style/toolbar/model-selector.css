@@ -1,92 +1,247 @@
-/* Model selector */
-.claudian-model-selector {
-  position: relative;
-}
-
-.claudian-model-btn {
+/*
+ * Input toolbar: one row of native chip buttons whose menus open on click.
+ * Shared chip and menu styles live here; each control's file adds its own modifiers.
+ */
+.claudian-input-toolbar {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--claudian-brand);
-  font-size: 12px;
-}
-
-.claudian-model-label {
-  font-weight: 500;
-}
-
-.claudian-model-dropdown {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  margin-bottom: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  background: var(--background-secondary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 4px;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.15);
-  z-index: 1000;
-  width: max-content;
-  padding: 4px;
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.15s ease, visibility 0.15s ease;
-}
-
-.claudian-model-selector:hover .claudian-model-dropdown {
-  opacity: 1;
-  visibility: visible;
-}
-
-.claudian-model-group {
-  padding: 3px 8px;
-  font-size: 8px;
-  font-weight: 600;
-  color: var(--text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  pointer-events: none;
-}
-
-.claudian-model-group:not(:first-child) {
-  margin-top: 4px;
-  border-top: 1px solid var(--background-modifier-border);
-  padding-top: 6px;
-}
-
-.claudian-model-provider-icon {
   flex-shrink: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 6px 6px;
 }
 
-.claudian-model-option .claudian-model-provider-icon {
-  opacity: 0.7;
+/* Narrow composers keep the model name and drop reasoning and fast-mode details (input box container). */
+@container (max-width: 300px) {
+  .claudian-toolbar-chip .claudian-toolbar-chip-secondary {
+    display: none;
+  }
 }
 
-.claudian-model-option {
+/* Each menu is placed and sized against its own button. */
+.claudian-toolbar-chip-anchor {
+  position: relative;
   display: flex;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+/* Only the model chip gives up width; its name truncates first. */
+.claudian-toolbar-chip-anchor--model {
+  flex: 0 1 auto;
+}
+
+.claudian-input-toolbar button.claudian-toolbar-chip,
+.claudian-input-toolbar button.claudian-toolbar-chip:is(:hover, :focus, :focus-visible, :active) {
+  /* The button already shows its value, so Obsidian's aria-label hover tooltip would only repeat it. */
+  --no-tooltip: true;
+  appearance: none;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 8px;
-  cursor: pointer;
-  font-size: 12px;
+  min-width: 0;
+  height: 24px;
+  overflow: hidden;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
   color: var(--text-muted);
-  border-radius: 3px;
-  transition: background 0.1s ease, color 0.1s ease;
+  font-size: 12px;
+  font-weight: normal;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-.claudian-model-option:hover {
+.claudian-input-toolbar button.claudian-toolbar-chip:is(:hover, :focus-visible, [aria-expanded='true']) {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
-.claudian-model-option.selected {
-  background: rgba(var(--claudian-brand-rgb), 0.15);
-  color: var(--claudian-brand);
+.claudian-input-toolbar button.claudian-toolbar-chip:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.claudian-toolbar-chip-primary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-normal);
   font-weight: 500;
+  text-overflow: ellipsis;
+}
+
+.claudian-toolbar-chip-secondary {
+  flex: 0 0 auto;
+}
+
+.claudian-toolbar-chip-icon,
+.claudian-toolbar-chip-chevron {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.claudian-toolbar-chip-icon:empty {
+  display: none;
+}
+
+.claudian-toolbar-chip-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.claudian-toolbar-chip .claudian-model-provider-icon {
+  color: var(--claudian-brand);
+}
+
+.claudian-toolbar-chip-chevron svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0.6;
+}
+
+/*
+ * Menu surface, opening above its button from the button's start edge. It fits its longest
+ * row: never narrower than the button, never wider than the input box.
+ */
+.claudian-toolbar-popover {
+  /* The surface's own aria-label would otherwise pop up as a tooltip over every control inside it. */
+  --no-tooltip: true;
+  position: absolute;
+  /* Clears the toolbar's top padding, then a 4px gap. */
+  bottom: calc(100% + 8px);
+  inset-inline-start: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(280px, calc(100cqi - 12px));
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--background-modifier-border-hover);
+  border-radius: 8px;
+  /* Secondary stays opaque when translucent themes clear the primary background. */
+  background-color: var(--background-secondary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* The model popover also keeps enough width for the reasoning slider to be usable. */
+.claudian-toolbar-chip-anchor--model > .claudian-toolbar-popover {
+  min-width: max(100%, 160px);
+}
+
+.claudian-toolbar-popover[hidden] {
+  display: none;
+}
+
+.claudian-toolbar-popover-section + .claudian-toolbar-popover-section,
+.claudian-toolbar-popover-group + .claudian-toolbar-popover-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.claudian-toolbar-popover-heading {
+  padding: 6px 8px 3px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.claudian-toolbar-popover-empty {
+  padding: 6px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.claudian-toolbar-popover button.claudian-toolbar-popover-option,
+.claudian-toolbar-popover button.claudian-toolbar-popover-option:is(:hover, :focus, :focus-visible, :active) {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: auto;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  font-size: 12px;
+  font-weight: normal;
+  text-align: start;
+  cursor: pointer;
+}
+
+.claudian-toolbar-popover button.claudian-toolbar-popover-option:is(:hover, :focus-visible) {
+  background: var(--background-modifier-hover);
+}
+
+/* The current choice is marked neutrally; brand colour identifies providers, not selection. */
+.claudian-toolbar-popover button.claudian-toolbar-popover-option:is([aria-checked='true'], [aria-selected='true']) {
+  background: var(--background-modifier-hover);
+}
+
+/* Every model's provider icon carries that provider's brand colour; names stay normal text. */
+.claudian-model-option .claudian-model-provider-icon {
+  color: var(--claudian-brand);
+}
+
+/* Checked rows already carry a fill, so keyboard focus also needs an outline. */
+.claudian-toolbar-popover button.claudian-toolbar-popover-option:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
+
+.claudian-toolbar-popover-option-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claudian-toolbar-popover-option-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.claudian-toolbar-popover-option-detail {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.claudian-toolbar-popover-option-icon,
+.claudian-toolbar-popover-option-check {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.claudian-toolbar-popover-option-icon svg,
+.claudian-toolbar-popover-option-check svg {
+  width: 13px;
+  height: 13px;
+}
+
+.claudian-toolbar-popover-option-check {
+  color: var(--text-muted);
+}
+
+.claudian-model-provider-icon {
+  flex-shrink: 0;
 }

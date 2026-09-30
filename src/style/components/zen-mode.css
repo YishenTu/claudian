@@ -172,9 +172,32 @@
 
 /* Optional controls and the linked note keep their values; zen only hides them. */
 .claudian-zen-composer .claudian-input-container > .claudian-input-nav-row,
-.claudian-zen-composer .claudian-context-chip[data-context-slot="linked-content"],
-.claudian-zen-composer .claudian-context-row[data-context-slots="linked-content"] {
+.claudian-zen-composer .claudian-input-info-linked,
+.claudian-zen-composer .claudian-input-info-row[data-info-items="linked-content"] {
   display: none;
+}
+
+/*
+ * What remains of the info row is the context gauge. It leaves the flow and sits at the end of
+ * the controls' row inside the pill, clear of the pill's border and inline padding.
+ */
+.claudian-zen-composer .claudian-input-info-row {
+  position: absolute;
+  inset-inline-end: 7px;
+  bottom: 1px;
+  /* One line of input, which the controls share and centre on. */
+  height: 38px;
+  padding: 0;
+}
+
+/* Stacked, the controls have their own 32px row at the pill's foot. */
+.claudian-zen-composer.claudian-zen-composer--stacked .claudian-input-info-row {
+  height: 32px;
+}
+
+/* The controls make room for the 24px gauge beside them while there is usage to show. */
+.claudian-zen-composer .claudian-input-container[data-info-items~="context-usage"] > .claudian-input-wrapper > .claudian-input-toolbar {
+  padding-inline-end: 26px;
 }
 
 .claudian-zen-composer .claudian-input-wrapper {
@@ -191,7 +214,7 @@
 }
 
 /*
- * The composer's own toolbar, narrowed to model, effort, fast mode and the context icon,
+ * The composer's own toolbar, narrowed to the model control (model, effort, fast mode),
  * shares the input row. ZenComposerLayout stacks it below once typed text would reach it.
  */
 .claudian-zen-composer .claudian-input-wrapper {
@@ -219,14 +242,24 @@
 }
 
 .claudian-zen-composer.claudian-zen-composer--stacked .claudian-input-wrapper > .claudian-composer-editor,
-.claudian-zen-composer .claudian-input-wrapper > .claudian-context-row.has-content:not([data-context-slots="linked-content"]) ~ .claudian-composer-editor {
+.claudian-zen-composer .claudian-input-wrapper > .claudian-context-row.has-content ~ .claudian-composer-editor {
   flex-basis: 100%;
+}
+
+/* A queued follow-up caps the pill on its own row, edge to edge over the wrapper's inline padding. */
+.claudian-zen-composer .claudian-input-wrapper > .claudian-input-queue-strip {
+  flex-basis: calc(100% + 12px);
+  flex-grow: 0;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  margin-inline: -6px;
+  padding-inline: 16px 12px;
+  border-radius: calc(var(--claudian-zen-composer-radius) - 1px) calc(var(--claudian-zen-composer-radius) - 1px) 0 0;
 }
 
 .claudian-zen-composer .claudian-input-wrapper > .claudian-input-toolbar {
   flex-grow: 0;
   flex-shrink: 0;
-  flex-wrap: nowrap;
   order: 2;
   box-sizing: border-box;
   /* One 24px chip line plus the row padding, so the controls line up with the first chip line. */
@@ -240,9 +273,9 @@
   align-self: flex-start;
 }
 
-.claudian-zen-composer .claudian-input-toolbar > :not(.claudian-model-selector):not(.claudian-thinking-selector):not(.claudian-service-tier-toggle):not(.claudian-context-meter),
-.claudian-zen-composer .claudian-context-meter-percent,
-.claudian-zen-composer .claudian-thinking-label-text {
+/* Permission and mode chips keep their values; the gauge keeps its tooltip but not its number. */
+.claudian-zen-composer .claudian-input-toolbar > :not(.claudian-model-selector),
+.claudian-zen-composer .claudian-context-meter-percent {
   display: none;
 }
 
@@ -251,12 +284,10 @@
   --no-tooltip: false;
 }
 
-/* Control menus open centered above their labels. */
-.claudian-zen-composer .claudian-model-dropdown,
-.claudian-zen-composer .claudian-thinking-options {
-  right: auto;
-  left: 50%;
-  transform: translateX(-50%);
+/* The controls sit at the pill's end, so their menus open from their button's end edge, inside the pill. */
+.claudian-zen-composer .claudian-toolbar-popover {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
 }
 
 /* The placeholder truncates on the input row instead of wrapping into the controls. */

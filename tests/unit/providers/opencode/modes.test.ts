@@ -91,7 +91,7 @@ describe('opencodeChatUIConfig permission mode wiring', () => {
     expect(opencodeChatUIConfig.getPermissionModeToggle?.()).toEqual({
       activeLabel: 'YOLO',
       activeValue: 'yolo',
-      inactiveLabel: 'Safe',
+      inactiveLabel: 'SAFE',
       inactiveValue: 'normal',
     });
   });

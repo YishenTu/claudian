@@ -1,4 +1,4 @@
-/* Composer context tray */
+/* Composer context tray: per-turn context (selections, images) inside the input box */
 .claudian-context-row {
   display: none;
   align-items: center;
@@ -35,22 +35,6 @@
 
 .claudian-context-chip:hover {
   background: var(--background-modifier-hover);
-}
-
-.claudian-context-chip--content {
-  border-color: var(--background-modifier-border-hover);
-}
-
-.claudian-context-chip--content:not(.claudian-context-chip--removable) {
-  padding-right: 10px;
-}
-
-.claudian-context-chip--missing {
-  border-color: var(--text-error);
-}
-
-.claudian-context-chip--missing .claudian-context-chip-icon {
-  color: var(--text-error);
 }
 
 .claudian-context-chip-main {

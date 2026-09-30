@@ -21,6 +21,7 @@
 @import "./components/composer-editor.css";
 @import "./components/context-tray.css";
 @import "./components/context-footer.css";
+@import "./components/composer-info-row.css";
 @import "./components/composer-dropdown.css";
 @import "./components/side-chat.css";
 @import "./components/zen-mode.css";

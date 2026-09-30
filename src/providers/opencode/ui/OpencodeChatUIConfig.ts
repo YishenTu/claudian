@@ -5,7 +5,7 @@ import { opencodeModelPolicy } from '../OpencodeModelPolicy';
 export const opencodeChatUIConfig: ProviderChatUIConfig = {
   ...opencodeModelPolicy,
   getPermissionModeToggle() {
-    return { ...opencodeModelPolicy.permissionModes!, inactiveLabel: 'Safe', activeLabel: 'YOLO' };
+    return { ...opencodeModelPolicy.permissionModes!, inactiveLabel: 'SAFE', activeLabel: 'YOLO' };
   },
   getModeSelector(): null {
     return null;

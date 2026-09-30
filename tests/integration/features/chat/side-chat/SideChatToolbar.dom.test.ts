@@ -71,19 +71,19 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     side.updateSideSettings({ permissionMode: 'yolo', reasoning: 'low' });
     side.collapse();
     fireEvent.click(ui.getByRole('button', { name: 'Side chat' }));
-    expect(ui.queryByText('YOLO')).not.toBeNull();
+    expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).not.toBeNull();
     expect(ui.getByText('Low', { selector: '.claudian-thinking-current' })).toBeDefined();
-    expect(ui.queryByText('Safe')).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Permission mode: SAFE' })).toBeNull();
 
     fireEvent.click(ui.getByRole('button', { name: 'Collapse' }));
-    expect(ui.queryByText('Safe')).not.toBeNull();
+    expect(ui.queryByRole('button', { name: 'Permission mode: SAFE' })).not.toBeNull();
     expect(ui.getByText('High', { selector: '.claudian-thinking-current' })).toBeDefined();
-    expect(ui.queryByText('YOLO')).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).toBeNull();
 
     fireEvent.click(ui.getByRole('button', { name: 'Side chat' }));
-    expect(ui.queryByText('YOLO')).not.toBeNull();
+    expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).not.toBeNull();
     expect(ui.getByText('Low', { selector: '.claudian-thinking-current' })).toBeDefined();
-    expect(ui.queryByText('Safe')).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Permission mode: SAFE' })).toBeNull();
 
     let finishDisposal!: () => void;
     const disposalGate = new Promise<void>(resolve => { finishDisposal = resolve; });
@@ -96,9 +96,9 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     const discarded = side.discard();
     try {
       expect(side.destination).toBe('main');
-      expect(ui.queryByText('Safe')).not.toBeNull();
+      expect(ui.queryByRole('button', { name: 'Permission mode: SAFE' })).not.toBeNull();
     expect(ui.getByText('High', { selector: '.claudian-thinking-current' })).toBeDefined();
-      expect(ui.queryByText('YOLO')).toBeNull();
+      expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).toBeNull();
     } finally {
       finishDisposal();
       await discarded;

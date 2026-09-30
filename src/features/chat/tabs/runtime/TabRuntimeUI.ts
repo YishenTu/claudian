@@ -19,6 +19,7 @@ import { MainChatComposerDropdown } from '../../composer/MainChatComposerDropdow
 import { LinkedContentController } from '../../linked-content';
 import type { SideChatController } from '../../side-chat/SideChatController';
 import { ComposerContextTray } from '../../ui/ComposerContextTray';
+import { ComposerInfoRow } from '../../ui/ComposerInfoRow';
 import { FileContextManager } from '../../ui/FileContext';
 import { ImageContextManager } from '../../ui/ImageContext';
 import { createInputToolbar } from '../../ui/InputToolbar';
@@ -57,6 +58,7 @@ function buildContextManagers(
   options: TabRuntimeConstructionContext,
   shell: TabRuntimeShellBundle,
   contextTray: ComposerContextTray,
+  infoRow: ComposerInfoRow,
   onUserModified: () => void,
 ): Pick<
   TabUIComponents,
@@ -81,7 +83,7 @@ function buildContextManagers(
   } else {
     linkedContentController.resetAutoDraft();
   }
-  linkedContentController.mountContextTray(contextTray);
+  linkedContentController.mountInfoRow(infoRow);
   if (dom.welcomeEl) linkedContentController.mountWelcome(dom.welcomeEl);
   const imageContextManager = new ImageContextManager(
     dom.inputContainerEl,
@@ -123,6 +125,7 @@ function buildInputToolbar(
   services: TabServices,
   options: TabRuntimeConstructionContext,
   runtimeRef: PublishedTabRuntimeRef,
+  infoRow: ComposerInfoRow,
   onUserModified: () => void,
 ): ReturnType<typeof createInputToolbar> {
   const { dom } = shell;
@@ -370,10 +373,10 @@ function buildInputToolbar(
       await updateTabPermissionMode(tab, plugin, mode);
       onUserModified();
     },
-  });
+  }, { contextMeterParentEl: infoRow.usageSlotEl });
   options.registerCleanup(
-    'tab input toolbar layout',
-    () => toolbarComponents.layoutController.destroy(),
+    'tab input toolbar menus',
+    () => toolbarComponents.menus.destroy(),
   );
   return toolbarComponents;
 }
@@ -399,12 +402,15 @@ export function buildTabRuntimeUI(
     },
   });
   options.registerCleanup('tab composer context tray', () => contextTray.destroy());
+  const infoRow = new ComposerInfoRow(dom.infoRowEl, { composerEl: dom.inputContainerEl });
+  options.registerCleanup('tab composer info row', () => infoRow.destroy());
 
-  const toolbar = buildInputToolbar(shell, services, options, runtimeRef, onUserModified);
+  const toolbar = buildInputToolbar(shell, services, options, runtimeRef, infoRow, onUserModified);
   const contextManagers = buildContextManagers(
     options,
     shell,
     contextTray,
+    infoRow,
     onUserModified,
   );
   const catalogInfo = shell.providerCatalogResolver();
@@ -432,6 +438,7 @@ export function buildTabRuntimeUI(
     serviceTierToggle: toolbar.serviceTierToggle,
     composerDropdown,
     contextUsageMeter: toolbar.contextUsageMeter,
+    toolbarMenus: toolbar.menus,
     navigationSidebar,
   };
 

@@ -1,43 +1,51 @@
-/* Codex fast-mode / service-tier toggle */
-.claudian-service-tier-toggle {
+/* Fast mode: an indicator on the model chip and a switch row in the model menu. */
+.claudian-service-tier-indicator {
   display: flex;
   align-items: center;
-  padding-left: 2px;
 }
 
-.claudian-service-tier-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  color: var(--text-muted);
+.claudian-service-tier-indicator svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* The switch shows the state, so the checked row keeps a plain surface. */
+.claudian-toolbar-popover button.claudian-toolbar-popover-switch-row[aria-checked='true'] {
   background: transparent;
-  cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
-  flex-shrink: 0;
 }
 
-.claudian-service-tier-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.claudian-service-tier-icon svg {
-  width: 14px;
-  height: 14px;
-}
-
-.claudian-service-tier-button:hover {
+.claudian-toolbar-popover button.claudian-toolbar-popover-switch-row:is(:hover, :focus-visible) {
   background: var(--background-modifier-hover);
 }
 
-.claudian-service-tier-button.active {
-  color: var(--claudian-brand);
+.claudian-toggle-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--background-modifier-border);
+  transition: background 0.2s ease;
 }
 
-.claudian-service-tier-button.active .claudian-service-tier-icon svg {
-  stroke-width: 2.5;
+.claudian-toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+/* On is neutral, like the reasoning slider's fill and thumb; brand colour only identifies providers. */
+.claudian-toggle-switch.active {
+  background: color-mix(in srgb, var(--text-normal) 32%, var(--background-modifier-border));
+}
+
+.claudian-toggle-switch.active::after {
+  transform: translateX(14px);
+  background: var(--text-normal);
 }

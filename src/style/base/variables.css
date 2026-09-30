@@ -31,28 +31,33 @@ body.theme-light .claudian-container {
   --claudian-brand-grok-rgb: 0, 0, 0;
 }
 
-/* Active-provider alias for single-provider surfaces. */
-.claudian-container[data-provider="claude"] {
+/* Active-provider alias for single-provider surfaces; a model row that names its provider takes that provider's. */
+.claudian-container[data-provider="claude"],
+.claudian-container .claudian-model-option[data-provider="claude"] {
   --claudian-brand: var(--claudian-brand-claude);
   --claudian-brand-rgb: var(--claudian-brand-claude-rgb);
 }
 
-.claudian-container[data-provider="codex"] {
+.claudian-container[data-provider="codex"],
+.claudian-container .claudian-model-option[data-provider="codex"] {
   --claudian-brand: var(--claudian-brand-codex);
   --claudian-brand-rgb: var(--claudian-brand-codex-rgb);
 }
 
-.claudian-container[data-provider="opencode"] {
+.claudian-container[data-provider="opencode"],
+.claudian-container .claudian-model-option[data-provider="opencode"] {
   --claudian-brand: var(--claudian-brand-opencode);
   --claudian-brand-rgb: var(--claudian-brand-opencode-rgb);
 }
 
-.claudian-container[data-provider="pi"] {
+.claudian-container[data-provider="pi"],
+.claudian-container .claudian-model-option[data-provider="pi"] {
   --claudian-brand: var(--claudian-brand-pi);
   --claudian-brand-rgb: var(--claudian-brand-pi-rgb);
 }
 
-.claudian-container[data-provider="grok"] {
+.claudian-container[data-provider="grok"],
+.claudian-container .claudian-model-option[data-provider="grok"] {
   --claudian-brand: var(--claudian-brand-grok);
   --claudian-brand-rgb: var(--claudian-brand-grok-rgb);
 }

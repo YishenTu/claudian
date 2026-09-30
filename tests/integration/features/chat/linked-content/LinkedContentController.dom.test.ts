@@ -3,7 +3,7 @@ import { FileView, Notice, TFile, TFolder } from 'obsidian';
 
 import { LinkedContentController } from '@/features/chat/linked-content/LinkedContentController';
 import { createWelcomeElement, renderWelcomeContent } from '@/features/chat/rendering/WelcomeRenderer';
-import { ComposerContextTray } from '@/features/chat/ui/ComposerContextTray';
+import { ComposerInfoRow } from '@/features/chat/ui/ComposerInfoRow';
 
 jest.mock('obsidian', () => {
   const actual = jest.requireActual('obsidian');
@@ -278,39 +278,39 @@ describe('LinkedContentController DOM', () => {
     expect(welcome.querySelector('.claudian-linked-content-selector')).toBeNull();
   });
 
-  it('renders a linked-content chip and dispatches file, folder, and missing actions', async () => {
+  it('renders Linked content in the info row and dispatches file, folder, and missing actions', async () => {
     const note = createFile('Notes/Plan.md');
     const folder = createFolder('Projects');
     const harness = createHarness({ entries: [note, folder] });
-    const trayEl = createMockEl();
-    const tray = new ComposerContextTray(trayEl as unknown as HTMLElement);
-    harness.controller.mountContextTray(tray);
+    const rowEl = createMockEl();
+    harness.controller.mountInfoRow(new ComposerInfoRow(rowEl as unknown as HTMLElement));
 
     harness.controller.selectExplicit(note.path);
-    let chip = trayEl.querySelector('.claudian-context-chip--content')!;
-    expect(chip.dataset.contextSlot).toBe('linked-content');
-    expect(chip.querySelector('.claudian-context-chip-remove')).not.toBeNull();
-    const noteChipMain = chip.querySelector('.claudian-context-chip-main');
-    expect(noteChipMain?.getAttribute('aria-label')).toBe('Linked content: Notes/Plan.md');
-    expect(noteChipMain?.getAttribute('title')).toBeNull();
-    noteChipMain?.click();
+    let item = rowEl.querySelector('.claudian-input-info-linked')!;
+    expect(item.querySelector('.claudian-input-info-linked-remove')).not.toBeNull();
+    const noteButton = item.querySelector('.claudian-input-info-linked-main');
+    expect(noteButton?.getAttribute('aria-label')).toBe('Linked content: Notes/Plan.md');
+    expect(noteButton?.getAttribute('title')).toBeNull();
+    noteButton?.click();
     await flushPromises();
     expect(harness.app.workspace.getLeaf).toHaveBeenCalledWith('tab');
     expect(harness.openFile).toHaveBeenCalledWith(note);
 
     harness.controller.selectExplicit(folder.path);
-    chip = trayEl.querySelector('.claudian-context-chip--content')!;
-    chip.querySelector('.claudian-context-chip-main')?.click();
+    item = rowEl.querySelector('.claudian-input-info-linked')!;
+    item.querySelector('.claudian-input-info-linked-main')?.click();
     await flushPromises();
     expect(harness.app.workspace.revealLeaf).toHaveBeenCalledWith(harness.explorerLeaf);
     expect(harness.revealInFolder).toHaveBeenCalledWith(folder);
 
     harness.controller.selectExplicit('Missing/Plan.md');
-    chip = trayEl.querySelector('.claudian-context-chip--content')!;
-    expect(chip.hasClass('claudian-context-chip--missing')).toBe(true);
-    expect(chip.querySelector('.claudian-context-chip-label')?.textContent)
+    item = rowEl.querySelector('.claudian-input-info-linked')!;
+    expect(item.hasClass('claudian-input-info-linked--missing')).toBe(true);
+    expect(item.querySelector('.claudian-input-info-linked-label')?.textContent)
       .toContain('Missing content');
-    chip.querySelector('.claudian-context-chip-main')?.click();
+    expect(item.querySelector('.claudian-input-info-linked-main')?.getAttribute('aria-label'))
+      .toBe('Linked content: Missing/Plan.md. Missing content');
+    item.querySelector('.claudian-input-info-linked-main')?.click();
     expect(Notice).toHaveBeenCalledWith('Linked content is missing: Missing/Plan.md');
   });
 
@@ -347,47 +347,50 @@ describe('LinkedContentController DOM', () => {
     expect(harness.openFile).not.toHaveBeenCalled();
   });
 
-  it('removes editable Linked content from the chip but keeps locked content immutable', () => {
+  it('removes editable Linked content from the info row but keeps locked content immutable', () => {
     const note = createFile('Notes/Plan.md');
     const harness = createHarness({ entries: [note] });
-    const trayEl = createMockEl();
-    const tray = new ComposerContextTray(trayEl as unknown as HTMLElement);
-    harness.controller.mountContextTray(tray);
+    const rowEl = createMockEl();
+    harness.controller.mountInfoRow(new ComposerInfoRow(rowEl as unknown as HTMLElement));
 
     harness.controller.selectExplicit(note.path);
-    trayEl.querySelector('.claudian-context-chip-remove')?.click();
+    rowEl.querySelector('.claudian-input-info-linked-remove')?.click();
 
     expect(harness.controller.getSnapshot()).toEqual({
       mode: 'explicit-draft',
       path: null,
     });
-    expect(trayEl.querySelector('.claudian-context-chip')).toBeNull();
+    expect(rowEl.querySelector('.claudian-input-info-linked-main')).toBeNull();
 
     harness.controller.selectExplicit(note.path);
-    harness.controller.lock(note.path);
+    const submission = harness.controller.beginSubmission();
+    expect(rowEl.querySelector('.claudian-input-info-linked-main')).not.toBeNull();
+    expect(rowEl.querySelector('.claudian-input-info-linked-remove')).toBeNull();
+    harness.controller.commitSubmission(submission);
 
-    expect(trayEl.querySelector('.claudian-context-chip-remove')).toBeNull();
+    expect(rowEl.querySelector('.claudian-input-info-linked-main')).not.toBeNull();
+    expect(rowEl.querySelector('.claudian-input-info-linked-remove')).toBeNull();
   });
 
-  it('reconciles locked chip presentation when content disappears and returns', () => {
+  it('reconciles locked Linked content presentation when content disappears and returns', () => {
     const note = createFile('Notes/Plan.md');
     const harness = createHarness({ entries: [note] });
-    const trayEl = createMockEl();
-    const tray = new ComposerContextTray(trayEl as unknown as HTMLElement);
-    harness.controller.mountContextTray(tray);
+    const rowEl = createMockEl();
+    harness.controller.mountInfoRow(new ComposerInfoRow(rowEl as unknown as HTMLElement));
     harness.controller.lock(note.path);
 
-    expect(trayEl.querySelector('.claudian-context-chip--missing')).toBeNull();
+    expect(rowEl.querySelector('.claudian-input-info-linked--missing')).toBeNull();
 
     harness.entries.delete(note.path);
     harness.controller.handleDeleted(note.path);
-    expect(trayEl.querySelector('.claudian-context-chip--missing')).not.toBeNull();
-    expect(trayEl.querySelector('.claudian-context-chip-label')?.textContent)
+    expect(rowEl.querySelector('.claudian-input-info-linked--missing')).not.toBeNull();
+    expect(rowEl.querySelector('.claudian-input-info-linked-label')?.textContent)
       .toContain('Missing content');
 
     harness.entries.set(note.path, note);
     harness.controller.handleCreated(note.path);
-    expect(trayEl.querySelector('.claudian-context-chip--missing')).toBeNull();
+    expect(rowEl.querySelector('.claudian-input-info-linked--missing')).toBeNull();
+    expect(rowEl.querySelector('.claudian-input-info-linked-label')?.textContent).toBe('Plan');
   });
 
   it('opens the Files view before revealing a folder when no explorer leaf exists', async () => {

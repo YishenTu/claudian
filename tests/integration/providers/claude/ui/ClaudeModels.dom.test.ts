@@ -26,6 +26,7 @@ jest.mock('obsidian', () => ({
     setName(value: string) { this.settingEl.createDiv({ text: value }); return this; }
     setDesc(value: string) { this.settingEl.createDiv({ text: value }); return this; }
   },
+  setIcon: jest.fn(),
 }));
 
 HTMLElement.prototype.createEl = function <K extends keyof HTMLElementTagNameMap>(
@@ -152,6 +153,7 @@ describe('Claude model picker', () => {
       getUIConfig: () => claudeChatUIConfig,
     } as unknown as ToolbarCallbacks);
     expect(within(toolbar).getByText('Model unavailable').parentElement?.title).toMatch(/refresh/i);
+    fireEvent.click(within(toolbar).getByRole('button', { name: 'Model unavailable' }));
     expect(within(toolbar).getByRole('status').textContent).toMatch(/refresh/i);
     settings.providerConfigs.claude.discoveredModels = [{ value: 'sonnet', label: 'Sonnet' }];
     selector.updateDisplay();

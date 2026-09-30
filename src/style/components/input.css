@@ -14,17 +14,29 @@
   padding-top: 0;
 }
 
-/* Input wrapper (border container) - flex column so textarea expands when no chips */
+/*
+ * Input wrapper (the bordered box): queued strip, per-turn context, editor, toolbar.
+ * Its height follows the editor.
+ */
 .claudian-input-wrapper {
   --claudian-input-wrapper-border-color: var(--background-modifier-border);
   --claudian-input-wrapper-box-shadow: none;
+  --claudian-input-wrapper-radius: 10px;
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 140px;
   border: 1px solid var(--claudian-input-wrapper-border-color);
-  border-radius: 6px;
+  border-radius: var(--claudian-input-wrapper-radius);
   box-shadow: var(--claudian-input-wrapper-box-shadow);
+  /*
+   * Size container for the toolbar's narrow-width labels. The box, not the toolbar, is the
+   * container: zen shrink-wraps the toolbar, and inline-size containment would collapse it.
+   */
+  container-type: inline-size;
+}
+
+.claudian-input-wrapper:focus-within {
+  --claudian-input-wrapper-border-color: var(--background-modifier-border-hover);
 }
 
 /* Nav row (tab badges start, action icons end) - above input wrapper */
@@ -167,32 +179,29 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
   color: var(--text-muted);
 }
 
-/* Input toolbar */
-.claudian-input-toolbar {
-  display: flex;
+/* Queued follow-up strip, attached to the top of the input box while a message waits. */
+.claudian-input-queue-strip {
+  display: none;
   align-items: center;
-  justify-content: flex-start;
-  flex-wrap: wrap;
   flex-shrink: 0;
-  row-gap: 12px;
-  padding: 4px 6px 6px 6px;
-}
-
-/* Hide secondary text when the full toolbar would wrap. */
-.claudian-input-toolbar--compact .claudian-thinking-effort > .claudian-thinking-label-text,
-.claudian-input-toolbar--compact .claudian-context-meter-percent {
-  display: none;
-}
-
-/* Composer queue status row (queued follow-up preview + steer action) */
-.claudian-input-queue-row {
-  display: none;
-  font-size: 12px;
-  color: var(--text-muted);
-  font-style: normal;
-  align-items: center;
   gap: 8px;
-  padding: 0 2px 8px 2px;
+  min-width: 0;
+  padding: 5px 6px 5px 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  border-radius: calc(var(--claudian-input-wrapper-radius) - 1px) calc(var(--claudian-input-wrapper-radius) - 1px) 0 0;
+  background-color: rgba(var(--claudian-brand-rgb), 0.06);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.claudian-input-queue-strip-tag {
+  flex: 0 0 auto;
+  color: var(--claudian-brand);
+  font-weight: 500;
+}
+
+.claudian-input-queue-strip .claudian-queue-indicator-text {
+  color: var(--text-normal);
 }
 
 .claudian-queue-indicator-text {
@@ -207,15 +216,17 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 2px;
 }
 
 .claudian-queue-indicator-actions button.claudian-queue-indicator-action,
 .claudian-queue-indicator-actions button.claudian-queue-indicator-icon-action {
   flex: 0 0 auto;
-  height: auto;
-  padding: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
   border: 0;
+  border-radius: 5px;
   background: transparent;
   box-shadow: none;
   color: var(--text-muted);
@@ -226,9 +237,15 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
 .claudian-queue-indicator-actions button.claudian-queue-indicator-action:is(:hover, :focus-visible, :active),
 .claudian-queue-indicator-actions button.claudian-queue-indicator-icon-action:is(:hover, :focus-visible, :active) {
   border: 0;
-  background: transparent;
+  background: var(--background-modifier-hover);
   box-shadow: none;
   color: var(--text-normal);
+}
+
+.claudian-queue-indicator-actions button.claudian-queue-indicator-action:focus-visible,
+.claudian-queue-indicator-actions button.claudian-queue-indicator-icon-action:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
 }
 
 .claudian-queue-indicator-actions button.claudian-queue-indicator-action[disabled],
@@ -252,7 +269,7 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
   color: currentColor;
 }
 
-/* Side-chat colour preview while the command is only typed. */
+/* Side-chat colour preview while the command is only typed; it outranks the focus border. */
 .claudian-input-wrapper.claudian-input-side-chat-preview {
   --claudian-input-wrapper-border-color: var(--claudian-side-chat);
   --claudian-input-wrapper-box-shadow: 0 0 0 1px var(--claudian-side-chat);

@@ -51,7 +51,8 @@ export function restoreZenScrollIntent(
 /**
  * Compact presentation for one attached runtime: a state-driven activity line,
  * the moved transcript behind a disclosure, and the moved composer, which keeps
- * its own send and cancel keys and shows its model, effort, fast mode and context controls inline.
+ * its own send and cancel keys, shows its model, effort and fast mode controls inline,
+ * and keeps the context gauge in its info row below.
  * It holds presentation state only; chat owners keep drafts, queues and turns.
  */
 export class ZenModePanel {
@@ -148,6 +149,8 @@ export class ZenModePanel {
   bind(runtime: AssembledTabRuntime | null): void {
     if (this.#destroyed) return;
     if (runtime === this.#runtime) {
+      // The same runtime can switch provider, for example by choosing another provider's model.
+      if (runtime) this.#syncProvider(runtime);
       this.#scheduleRender();
       return;
     }
@@ -157,10 +160,15 @@ export class ZenModePanel {
     if (!runtime) return;
 
     this.#unsubscribeMain = runtime.state.subscribeActivity(() => this.#scheduleRender());
-    if (runtime.providerId) this.#rootEl.dataset.provider = runtime.providerId;
-    else delete this.#rootEl.dataset.provider;
+    this.#syncProvider(runtime);
     if (this.#historyExpanded) restoreZenScrollIntent(runtime);
     this.#render();
+  }
+
+  /** Brand colour inside the panel follows the runtime's provider. */
+  #syncProvider(runtime: AssembledTabRuntime): void {
+    if (runtime.providerId) this.#rootEl.dataset.provider = runtime.providerId;
+    else delete this.#rootEl.dataset.provider;
   }
 
   setHistoryExpanded(expanded: boolean): void {

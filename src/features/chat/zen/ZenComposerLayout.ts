@@ -82,6 +82,8 @@ export class ZenComposerLayout {
     const editorEl = wrapperEl?.querySelector<HTMLElement>(':scope > .claudian-composer-editor');
     const toolbarEl = wrapperEl?.querySelector<HTMLElement>(':scope > .claudian-input-toolbar');
     if (!wrapperEl || !editorEl || !toolbarEl) return false;
+    // Attachments share the controls' row, which then sits below the input.
+    if (wrapperEl.querySelector(':scope > .claudian-context-row.has-content')) return true;
 
     const style = this.slotEl.ownerDocument.defaultView?.getComputedStyle(wrapperEl);
     const innerWidth = wrapperEl.clientWidth - pixels(style?.paddingLeft) - pixels(style?.paddingRight);

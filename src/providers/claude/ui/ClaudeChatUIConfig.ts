@@ -5,7 +5,7 @@ import { claudeModelPolicy } from '../ClaudeModelPolicy';
 export const claudeChatUIConfig: ProviderChatUIConfig = {
   ...claudeModelPolicy,
   getPermissionModeToggle() {
-    return { ...claudeModelPolicy.permissionModes!, inactiveLabel: 'Safe', activeLabel: 'YOLO' };
+    return { ...claudeModelPolicy.permissionModes!, inactiveLabel: 'SAFE', activeLabel: 'YOLO' };
   },
   getProviderIcon() {
     return CLAUDE_PROVIDER_ICON;

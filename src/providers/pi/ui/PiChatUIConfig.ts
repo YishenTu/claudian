@@ -5,7 +5,7 @@ import { piModelPolicy } from '../PiModelPolicy';
 export const piChatUIConfig: ProviderChatUIConfig = {
   ...piModelPolicy,
   getPermissionModeToggle() {
-    return { ...piModelPolicy.permissionModes!, inactiveLabel: 'Safe', activeLabel: 'YOLO' };
+    return { ...piModelPolicy.permissionModes!, inactiveLabel: 'SAFE', activeLabel: 'YOLO' };
   },
   getModeSelector(): null {
     return null;

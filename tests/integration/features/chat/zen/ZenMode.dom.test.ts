@@ -285,6 +285,18 @@ it('waits for ordinary restoration before presenting an already collapsed sideba
   expect(fixture.sessions).toHaveLength(0);
 });
 
+it('follows a provider switch on the attached tab, so provider icons keep their own brand colour', async () => {
+  const fixture = await createZenFixture();
+  fixture.setCollapsed(fixture.rightSplit, true);
+  expect(zenPanel()!.dataset.provider).toBe('claude');
+
+  // Choosing another provider's model keeps the same runtime; only its provider changes.
+  jest.spyOn(fixture.tab, 'providerId', 'get').mockReturnValue('codex');
+  fixture.view.notifyZenPresentationChanged();
+
+  expect(zenPanel()!.dataset.provider).toBe('codex');
+});
+
 it('loads a chat that Obsidian deferred in an already collapsed sidebar', async () => {
   const fixture = await createZenFixture();
   let loaded: Awaited<ReturnType<typeof fixture.addView>> | null = null;
@@ -481,12 +493,20 @@ it('moves the composer controls to their own row only once the typed text would 
   tab.dom.inputEl.value = '';
   await waitFor(() => expect(stacked()).toBe(false));
 
+  // Attachments take the controls' row with them, below the input.
+  tab.ui.contextTray.setItems('editor-selection', [{ id: 'selection', kind: 'selection', label: '3 lines selected' }]);
+  await waitFor(() => expect(stacked()).toBe(true));
+  tab.ui.contextTray.clearItems('editor-selection');
+  await waitFor(() => expect(stacked()).toBe(false));
+
   // Wider controls (a longer model label, fast mode appearing) also make room below.
   tab.dom.inputEl.value = 'Short question';
   await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   expect(stacked()).toBe(false);
   toolbarWidth = 390;
-  toolbar.querySelector<HTMLElement>('.claudian-model-btn')!.append(' (long alias)');
+  // The chip's label is replaced the way ModelSelector.updateDisplay sets it.
+  const modelLabel = within(toolbar).getByRole('button', { name: /^Model:/ }).querySelector<HTMLElement>('.claudian-model-label')!;
+  modelLabel.setText(`${modelLabel.textContent} (long alias)`);
   await waitFor(() => expect(stacked()).toBe(true));
 });
 

@@ -51,7 +51,7 @@ export function getBlankTabModelOptions(
     const group = ProviderRegistry.getProviderDisplayName(providerId);
 
     return uiConfig.getModelOptions(settings)
-      .map(model => ({ ...model, group, providerIcon }));
+      .map(model => ({ ...model, group, providerIcon, providerId }));
   });
 }
 
