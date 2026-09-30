@@ -553,6 +553,13 @@ describe('permission button', () => {
     }
   });
 
+  it('is the last control in the toolbar, after the provider mode button', () => {
+    const { host, ui } = renderToolbar();
+    const anchor = ui.getByRole('button', { name: 'Permission mode: Safe' }).closest('.claudian-permission-toggle');
+    expect(anchor?.parentElement?.lastElementChild).toBe(anchor);
+    expect(host.querySelector('.claudian-mode-selector')?.nextElementSibling).toBe(anchor);
+  });
+
   it('is absent when the provider has no permission toggle', () => {
     const { ui } = renderToolbar({ permissionToggle: false });
     expect(ui.queryByRole('button', { name: /^Permission mode/ })).toBeNull();
@@ -566,17 +573,17 @@ describe('provider mode button', () => {
     const { callbacks, ui } = renderToolbar({ modeSelector: true });
     const buttons = ui.getAllByRole('button');
     expect(buttons.map(button => button.getAttribute('aria-label')))
-      .toEqual(['Model: Sonnet, effort High', 'Permission mode: Safe', 'Mode: Build']);
+      .toEqual(['Model: Sonnet, effort High', 'Mode: Build', 'Permission mode: Safe']);
     // The provider's active option keeps its accent.
-    expect(buttons[2].classList.contains('claudian-toolbar-chip--accent')).toBe(true);
-    fireEvent.click(buttons[2]);
+    expect(buttons[1].classList.contains('claudian-toolbar-chip--accent')).toBe(true);
+    fireEvent.click(buttons[1]);
     const plan = within(ui.getByRole('menu', { name: 'Mode' })).getByRole('menuitemradio', { name: /^Plan/ });
     expect(plan.textContent).toBe('PlanPlanning-first agent');
     fireEvent.click(plan);
     await flush();
     expect(callbacks.onModeChange).toHaveBeenCalledWith('plan');
-    expect(ui.getByRole('button', { name: 'Mode: Plan' })).toBe(buttons[2]);
-    expect(buttons[2].classList.contains('claudian-toolbar-chip--accent')).toBe(false);
+    expect(ui.getByRole('button', { name: 'Mode: Plan' })).toBe(buttons[1]);
+    expect(buttons[1].classList.contains('claudian-toolbar-chip--accent')).toBe(false);
   });
 });
 
@@ -665,17 +672,16 @@ it('preserves provider group display order while keeping saved order inside each
   ]);
 });
 
-it('mounts the context meter in the caller-supplied parent instead of the toolbar', () => {
+it('mounts the context meter in the toolbar right after the model picker', () => {
   const toolbarEl = document.body.createDiv();
-  const infoRowEl = document.body.createDiv();
   const callbacks = {
     getSettings: () => ({ model: 'haiku', permissionMode: 'normal' }),
     getUIConfig: () => ({ ...claudeChatUIConfig, getModelOptions: () => [] }),
     getCapabilities: () => ({ reasoningControl: 'none' }),
   } as unknown as ToolbarCallbacks;
-  const toolbar = createInputToolbar(toolbarEl, callbacks, { contextMeterParentEl: infoRowEl });
+  const toolbar = createInputToolbar(toolbarEl, callbacks);
   toolbar.contextUsageMeter.update({ contextTokens: 50000, contextWindow: 200000, percentage: 25 } as UsageInfo);
-  expect(within(infoRowEl).getByRole('progressbar', { name: /^Context usage/ })).toBeDefined();
-  expect(within(toolbarEl).queryByRole('progressbar')).toBeNull();
+  const meter = within(toolbarEl).getByRole('progressbar', { name: /^Context usage/ });
+  expect(meter.previousElementSibling?.classList.contains('claudian-toolbar-chip-anchor--model')).toBe(true);
   toolbar.menus.destroy();
 });

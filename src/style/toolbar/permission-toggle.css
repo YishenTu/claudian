@@ -2,3 +2,13 @@
 .claudian-toolbar-chip--alert .claudian-toolbar-chip-icon {
   color: var(--claudian-brand-claude);
 }
+
+/* The permission control sits at the toolbar's far end, so its menu opens from its button's end edge. */
+.claudian-toolbar-chip-anchor.claudian-permission-toggle {
+  margin-inline-start: auto;
+}
+
+.claudian-permission-toggle > .claudian-toolbar-popover {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+}

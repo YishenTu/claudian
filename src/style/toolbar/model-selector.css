@@ -103,6 +103,11 @@
   opacity: 0.6;
 }
 
+/* The chevron points up while its menu is open above the button. */
+.claudian-toolbar-chip[aria-expanded='true'] .claudian-toolbar-chip-chevron {
+  transform: rotate(180deg);
+}
+
 /*
  * Menu surface, opening above its button from the button's start edge. It fits its longest
  * row: never narrower than the button, never wider than the input box.

@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 
 import { ComposerInfoRow } from '@/features/chat/ui/ComposerInfoRow';
@@ -75,56 +75,15 @@ it('keeps missing linked content visible and marked', async () => {
   row.destroy();
 });
 
-it('collapses when neither the linked note nor a visible usage item remains', async () => {
+it('collapses while there is no linked note', () => {
   const { row, rowEl } = mount();
   expect(rowEl.classList.contains('claudian-hidden')).toBe(true);
-  expect(rowEl.dataset.infoItems).toBeUndefined();
-
-  // The usage item hides itself with the shared utility class; the row follows it.
-  const usage = row.usageSlotEl.createDiv({ cls: 'claudian-hidden' });
-  await Promise.resolve();
-  expect(rowEl.classList.contains('claudian-hidden')).toBe(true);
-
-  usage.classList.remove('claudian-hidden');
-  await waitFor(() => expect(rowEl.classList.contains('claudian-hidden')).toBe(false));
-  expect(rowEl.dataset.infoItems).toBe('context-usage');
 
   row.setLinkedContent({ label: 'Plan', ariaLabel: 'Linked content: Notes/Plan.md', onActivate: jest.fn() });
-  expect(rowEl.dataset.infoItems).toBe('linked-content context-usage');
-
-  usage.classList.add('claudian-hidden');
-  await waitFor(() => expect(rowEl.dataset.infoItems).toBe('linked-content'));
   expect(rowEl.classList.contains('claudian-hidden')).toBe(false);
 
   row.setLinkedContent(null);
   expect(rowEl.classList.contains('claudian-hidden')).toBe(true);
-  expect(rowEl.dataset.infoItems).toBeUndefined();
   expect(within(rowEl).queryByRole('button')).toBeNull();
   row.destroy();
-});
-
-it('reports its visible items on the composer too, so a presentation can lay out around the row', async () => {
-  const composerEl = document.body.createDiv();
-  const row = new ComposerInfoRow(composerEl.createDiv(), { composerEl });
-  expect(composerEl.dataset.infoItems).toBeUndefined();
-
-  const usage = row.usageSlotEl.createDiv();
-  await waitFor(() => expect(composerEl.dataset.infoItems).toBe('context-usage'));
-  row.setLinkedContent({ label: 'Plan', onActivate: jest.fn() });
-  expect(composerEl.dataset.infoItems).toBe('linked-content context-usage');
-
-  usage.classList.add('claudian-hidden');
-  await waitFor(() => expect(composerEl.dataset.infoItems).toBe('linked-content'));
-  row.destroy();
-  expect(composerEl.dataset.infoItems).toBeUndefined();
-});
-
-it('stops following usage visibility after destruction', async () => {
-  const { row, rowEl } = mount();
-  const usage = row.usageSlotEl.createDiv({ cls: 'claudian-hidden' });
-  row.destroy();
-  usage.classList.remove('claudian-hidden');
-  await Promise.resolve();
-  await Promise.resolve();
-  expect(rowEl.dataset.infoItems).toBeUndefined();
 });

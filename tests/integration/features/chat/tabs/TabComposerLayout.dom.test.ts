@@ -2,7 +2,7 @@
 import '@/providers';
 
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
-import { fireEvent, waitFor, within } from '@testing-library/dom';
+import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { App, Component, TFile } from 'obsidian';
 
@@ -116,7 +116,7 @@ it('attaches a queued follow-up to the top of the input box, under the tab bar',
   }
 });
 
-it('shows the linked note and context usage in an info row under the input box', async () => {
+it('shows the linked note in an info row under the input box', async () => {
   const tab = await createTab(note.path);
   try {
     const row = infoRowOf(tab);
@@ -127,12 +127,9 @@ it('shows the linked note and context usage in an info row under the input box',
     expect(info.queryByRole('button', { name: /^Remove/ })).toBeNull();
     // The in-box tray is left to per-turn context.
     expect(within(tab.dom.inputWrapper).queryByRole('button', { name: /Linked content/ })).toBeNull();
-    expect(within(tab.dom.inputWrapper).queryByRole('progressbar')).toBeNull();
 
     tab.state.usage = usage(42);
-    const meter = info.getByRole('progressbar', { name: 'Context usage: 42% · 84k / 200k' });
-    expect(row.contains(meter)).toBe(true);
-    expect(linked.compareDocumentPosition(meter) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(info.queryByRole('progressbar')).toBeNull();
     expect(row.classList.contains('claudian-hidden')).toBe(false);
     expect(await axe(row)).toHaveNoViolations();
   } finally {
@@ -140,19 +137,18 @@ it('shows the linked note and context usage in an info row under the input box',
   }
 });
 
-it('collapses the info row until there is usage to show', async () => {
+it('shows context usage in the toolbar next to the model picker', async () => {
   const tab = await createTab();
   try {
     const row = infoRowOf(tab);
     expect(row.classList.contains('claudian-hidden')).toBe(true);
-    expect(within(row).queryByRole('button')).toBeNull();
 
     tab.state.usage = usage(42);
-    await waitFor(() => expect(row.classList.contains('claudian-hidden')).toBe(false));
-    expect(within(row).getByRole('progressbar', { name: /^Context usage: 42%/ })).toBeDefined();
-
-    tab.state.usage = null;
-    await waitFor(() => expect(row.classList.contains('claudian-hidden')).toBe(true));
+    const toolbar = tab.dom.inputWrapper.querySelector<HTMLElement>(':scope > .claudian-input-toolbar')!;
+    const meter = within(toolbar).getByRole('progressbar', { name: 'Context usage: 42% · 84k / 200k' });
+    const modelAnchor = toolbar.querySelector('.claudian-toolbar-chip-anchor--model');
+    expect(modelAnchor?.nextElementSibling).toBe(meter);
+    expect(row.classList.contains('claudian-hidden')).toBe(true);
   } finally {
     await destroyTab(tab);
   }

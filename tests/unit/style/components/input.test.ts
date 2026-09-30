@@ -9,6 +9,8 @@ describe('Composer input styles', () => {
     'src/style/components/composer-editor.css',
     'src/style/components/composer-info-row.css',
     'src/style/components/context-footer.css',
+    'src/style/toolbar/model-selector.css',
+    'src/style/toolbar/permission-toggle.css',
     'src/style/base/visibility.css',
   ]
     .map(file => readFileSync(path.resolve(file), 'utf8'))
@@ -31,13 +33,16 @@ describe('Composer input styles', () => {
             <div class="claudian-input-queue-strip claudian-hidden"></div>
             <div class="claudian-context-row"></div>
             <div class="claudian-composer-editor"><div class="cm-content"></div></div>
-            <div class="claudian-input-toolbar"></div>
+            <div class="claudian-input-toolbar">
+              <div class="claudian-toolbar-chip-anchor claudian-toolbar-chip-anchor--model"></div>
+              <div class="claudian-context-meter"><span class="claudian-context-meter-percent">42%</span></div>
+              <div class="claudian-toolbar-chip-anchor claudian-permission-toggle">
+                <div class="claudian-toolbar-popover"></div>
+              </div>
+            </div>
           </div>
           <div class="claudian-input-info-row">
             <div class="claudian-input-info-linked"></div>
-            <div class="claudian-input-info-usage">
-              <div class="claudian-context-meter"><span class="claudian-context-meter-percent">42%</span></div>
-            </div>
           </div>
         </div>
       </div>
@@ -102,14 +107,28 @@ describe('Composer input styles', () => {
     }
   });
 
-  it('lays the info row out borderless under the box, linked note first and usage at the end', () => {
+  it('pushes the permission control to the far end of the toolbar, its menu opening end-aligned', () => {
+    const composer = renderComposer();
+    const anchor = composer.querySelector('.claudian-permission-toggle')!;
+    expect(style(anchor).getPropertyValue('margin-inline-start')).toBe('auto');
+    const popover = style(anchor.querySelector('.claudian-toolbar-popover')!);
+    expect([popover.getPropertyValue('inset-inline-start'), popover.getPropertyValue('inset-inline-end')]).toEqual(['auto', '0']);
+  });
+
+  it('keeps the usage number close to its gauge icon', () => {
+    const meter = renderComposer().querySelector('.claudian-context-meter')!;
+    // The 16px icon sits centred in a 24px gauge; its 4px inset plus this gap leaves 6px before the number.
+    expect(style(meter).gap).toBe('2px');
+    // Width reserved for longer numbers goes after the number, not between it and the icon.
+    expect(style(meter.querySelector('.claudian-context-meter-percent')!).textAlign).toBe('start');
+  });
+
+  it('lays the info row out borderless under the box', () => {
     const composer = renderComposer();
     const row = composer.querySelector<HTMLElement>('.claudian-input-info-row')!;
     expect(row.parentElement).toBe(composer.querySelector('.claudian-input-container'));
     expect(style(row).display).toBe('flex');
     expect(style(row).borderStyle).toBe('');
-    expect(style(composer.querySelector('.claudian-input-info-usage')!).getPropertyValue('margin-inline-start')).toBe('auto');
-    expect(style(composer.querySelector('.claudian-context-meter')!).getPropertyValue('margin-inline-start')).toBe('0');
 
     // Collapsing takes no height.
     row.classList.add('claudian-hidden');
