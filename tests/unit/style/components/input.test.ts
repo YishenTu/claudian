@@ -57,9 +57,30 @@ describe('Composer input styles', () => {
     const wrapper = style(composer.querySelector('.claudian-input-wrapper')!);
     expect(['', '0', '0px', 'auto']).toContain(wrapper.minHeight);
     expect(wrapper.flexDirection).toBe('column');
-    // About two lines of text before the toolbar.
-    expect(style(composer.querySelector('.claudian-composer-editor')!).minHeight).toBe('48px');
-    expect(style(composer.querySelector('.cm-content')!).minHeight).toBe('48px');
+    // One line of text before the toolbar: no two-line floor between the hint and the controls.
+    expect(['', '0', '0px', 'auto']).toContain(style(composer.querySelector('.claudian-composer-editor')!).minHeight);
+    expect(['', '0', '0px', 'auto']).toContain(style(composer.querySelector('.cm-content')!).minHeight);
+  });
+
+  it('insets the hint and text like the toolbar content, with room above the first line', () => {
+    const composer = renderComposer();
+    const content = style(composer.querySelector('.cm-content')!);
+    // More room above than below: the toolbar under the text already adds space.
+    expect([content.paddingTop, content.paddingBottom]).toEqual(['12px', '2px']);
+    const line = document.createElement('div');
+    line.className = 'cm-line';
+    composer.querySelector('.cm-content')!.appendChild(line);
+    // 13px lines text up with the model chip's icon (6px toolbar padding + 7px chip padding).
+    expect([style(line).paddingLeft, style(line).paddingRight]).toEqual(['13px', '13px']);
+  });
+
+  it('lays a wrapped hint out inline, so the caret beside it stays one line tall', () => {
+    const composer = renderComposer();
+    const hint = document.createElement('span');
+    hint.className = 'cm-placeholder';
+    composer.querySelector('.cm-content')!.appendChild(hint);
+    // CodeMirror's default inline-block makes the native caret as tall as the whole wrapped hint.
+    expect(style(hint).display).toBe('inline');
   });
 
   it('keeps the input box unfilled, as before the redesign, and sizes toolbar labels from it', () => {

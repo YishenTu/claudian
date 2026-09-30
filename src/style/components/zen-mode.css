@@ -189,6 +189,19 @@
   min-height: 36px;
 }
 
+/* The pill's single line stays centred between its borders, beside the controls. */
+.claudian-zen-composer .claudian-composer-editor .cm-content {
+  padding: 8px 0 10px;
+}
+
+.claudian-zen-composer .claudian-composer-editor .cm-line {
+  padding: 0 10px;
+}
+
+.claudian-zen-composer .claudian-composer-editor:empty::before {
+  padding: 8px 10px 10px;
+}
+
 /*
  * The composer's own toolbar, narrowed to the model control (model, effort, fast mode),
  * shares the input row. ZenComposerLayout stacks it below once typed text would reach it.
@@ -266,7 +279,14 @@
   inset-inline-end: 0;
 }
 
-/* The placeholder truncates on the input row instead of wrapping into the controls. */
+/*
+ * The placeholder truncates on the input row instead of wrapping into the controls. Truncation
+ * needs a block box; a single line cannot stretch the caret.
+ */
+.claudian-zen-composer .claudian-composer-editor .cm-placeholder {
+  display: inline-block;
+}
+
 .claudian-zen-composer .claudian-composer-editor .cm-placeholder,
 .claudian-zen-composer .claudian-composer-editor:empty::before {
   max-width: 100%;

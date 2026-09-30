@@ -169,6 +169,16 @@ describe('Zen mode styles', () => {
     expect(window.getComputedStyle(meter.querySelector('.claudian-context-meter-percent')!).display).toBe('none');
   });
 
+  it('keeps the pill line centred instead of the main composer\'s taller top inset', () => {
+    const panel = renderPanel();
+    const content = window.getComputedStyle(panel.querySelector('.claudian-zen-composer .cm-content')!);
+    expect([content.paddingTop, content.paddingBottom]).toEqual(['8px', '10px']);
+    const line = window.getComputedStyle(panel.querySelector('.claudian-zen-composer .cm-line')!);
+    expect(line.paddingLeft).toBe('10px');
+    // The one-line hint truncates, which needs a block box; it cannot wrap, so the caret stays one line.
+    expect(window.getComputedStyle(panel.querySelector('.claudian-zen-composer .cm-placeholder')!).display).toBe('inline-block');
+  });
+
   it('caps the pill with the queued-message strip on its own row', () => {
     const composer = renderPanel().querySelector<HTMLElement>('.claudian-zen-composer')!;
     const strip = composer.querySelector<HTMLElement>('.claudian-input-queue-strip')!;
