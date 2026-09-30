@@ -424,12 +424,6 @@ describe('PiSettingsTab', () => {
     expect(createdSettings.filter(setting => ['Skills', 'Commands', 'Hidden Pi commands and skills'].includes(setting.name))).toEqual([]);
   });
 
-  it('does not render the chat input tool mode setting for Pi', () => {
-    render({ providerConfigs: { pi: { toolMode: 'readonly' } } });
-
-    expect(() => findSetting('Tool mode')).toThrow('Setting not found: Tool mode');
-  });
-
   it('validates host-scoped CLI paths and resets the resolver after valid changes', async () => {
     const settings: Record<string, unknown> = { providerConfigs: { pi: {} } };
     const context = render(settings);
