@@ -216,6 +216,7 @@ it.each(modelCatalogCases.flatMap(entry => [true, false].map(advertisesHigh => (
 it('defaults Codex to automatic review and persists and submits each permission selection', async () => {
   const entry = modelCatalogCases.find(({ id }) => id === 'codex')!;
   const settings = createSettings(entry);
+  const initialPermissionMode = settings.permissionMode;
   const { createTab, sessions, tabs } = createChatHarness(settings, entry.id, entry.selected);
   try {
     const tab = await createTab();
@@ -232,7 +233,7 @@ it('defaults Codex to automatic review and persists and submits each permission 
     }
     const reopened = await createTab();
     expect(within(reopened.dom.inputComposerEl).getByRole('button', { name: 'Permission mode: Approve for me' })).toBeDefined();
-    expect(settings.permissionMode).toBe('yolo');
+    expect(settings.permissionMode).toBe(initialPermissionMode);
   } finally {
     for (const tab of tabs) await destroyTab(tab);
   }

@@ -92,9 +92,8 @@ describe('Claude runtime probe', () => {
   });
 
   it.each([
-    [{ loadUserSettings: false }, ['project', 'local'], undefined],
-    [{ loadUserSettings: true, enableChrome: true }, ['user', 'project', 'local'], { chrome: null }],
-    [{ safeMode: 'auto' }, ['user', 'project', 'local'], { 'enable-auto-mode': null }],
+    [{ loadUserSettings: false }, ['project', 'local'], { 'enable-auto-mode': null }],
+    [{ loadUserSettings: true, enableChrome: true }, ['user', 'project', 'local'], { 'enable-auto-mode': null, chrome: null }],
   ])('launches with the runtime settings sources and flags for %o', async (config, settingSources, extraArgs) => {
     nativeQuery();
     await probeClaudeRuntime(host(config));

@@ -26,10 +26,11 @@ import {
 } from '../../../core/execution';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import type { PermissionMode, SlashCommand, TurnStats } from '../../../core/types';
+import type { SlashCommand, TurnStats } from '../../../core/types';
 import { mapSDKCommands } from '../commands/probeRuntimeCommands';
 import { loadClaudeTurnStats } from '../history/ClaudeTurnStats';
 import type { ClaudeDiscoveredModel } from '../modelCatalog';
+import { type ClaudePermissionMode, fromClaudeSDKPermissionMode } from '../permissionModes';
 import { assertClaudeModelAvailable } from '../runtime/ClaudeModelAvailability';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
 import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
@@ -579,10 +580,9 @@ ClaudeExecutionStrategySink {
         this.#bumpRevision();
         this.resume.capture(event.sessionId, this.activeRun?.nativeFork);
         this.#emitStateForCurrentTurn();
-        if (event.permissionMode !== undefined) {
-          this.#emitPermissionModeForCurrentTurn(
-            event.permissionMode === 'bypassPermissions' ? 'yolo' : 'normal',
-          );
+        const permissionMode = fromClaudeSDKPermissionMode(event.permissionMode);
+        if (permissionMode) {
+          this.#emitPermissionModeForCurrentTurn(permissionMode);
         }
         continue;
       }
@@ -1033,7 +1033,7 @@ ClaudeExecutionStrategySink {
     }
   }
 
-  #emitPermissionModeForCurrentTurn(permissionMode: PermissionMode): void {
+  #emitPermissionModeForCurrentTurn(permissionMode: ClaudePermissionMode): void {
     this.#bumpRevision();
     const event = {
       type: 'permission_mode_changed' as const,

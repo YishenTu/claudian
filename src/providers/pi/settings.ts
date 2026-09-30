@@ -19,8 +19,6 @@ import {
   type PiThinkingLevel
 } from './models';
 
-export type PiToolMode = 'all' | 'readonly';
-
 export interface PersistedPiProviderSettings {
   cliPath: string;
   cliPathsByHost: HostnameCLIPaths;
@@ -30,7 +28,6 @@ export interface PersistedPiProviderSettings {
   environmentVariables: string;
   modelAliases: Record<string, string>;
   preferredThinkingByModel: Record<string, PiThinkingLevel>;
-  toolMode: PiToolMode;
   visibleModels: string[];
 }
 
@@ -45,7 +42,6 @@ export const DEFAULT_PI_PROVIDER_SETTINGS: Readonly<PersistedPiProviderSettings>
   environmentVariables: '',
   modelAliases: {},
   preferredThinkingByModel: {},
-  toolMode: 'all',
   visibleModels: [],
 });
 
@@ -110,7 +106,6 @@ export function getPiProviderSettings(settings: Record<string, unknown>): PiProv
       discoveredModels,
       persistableIds,
     ),
-    toolMode: normalizePiToolMode(config.toolMode),
     visibleModels,
   };
 }
@@ -174,7 +169,6 @@ export function updatePiProviderSettings(
     discoveredModels: nextDiscoveredModels,
     modelAliases: nextModelAliases,
     preferredThinkingByModel: nextPreferredThinkingByModel,
-    toolMode: normalizePiToolMode(updates.toolMode ?? current.toolMode),
     visibleModels: nextVisibleModels,
   };
 
@@ -196,7 +190,6 @@ export function updatePiProviderSettings(
     environmentVariables: next.environmentVariables,
     modelAliases: next.modelAliases,
     preferredThinkingByModel: next.preferredThinkingByModel,
-    toolMode: next.toolMode,
     visibleModels: next.visibleModels,
   });
 
@@ -274,13 +267,6 @@ function normalizePiPreferredThinkingEntries(
   }
 
   return normalized;
-}
-
-function normalizePiToolMode(value: unknown): PiToolMode {
-  if (value === undefined) {
-    return 'all';
-  }
-  return value === 'all' || value === 'readonly' ? value : 'readonly';
 }
 
 function normalizePiPersistableEncodedId(

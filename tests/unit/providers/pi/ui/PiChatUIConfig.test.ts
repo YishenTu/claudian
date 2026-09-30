@@ -180,17 +180,9 @@ describe('PiChatUIConfig', () => {
     });
   });
 
-  it('maps toolbar permission mode to Pi tool mode', () => {
-    const mutableSettings: Record<string, unknown> = {
-      providerConfigs: {
-        pi: {
-          toolMode: 'readonly',
-        },
-      },
-    };
-
-    expect(piChatUIConfig.resolvePermissionMode?.(mutableSettings)).toBe('normal');
-    piChatUIConfig.applyPermissionMode?.('yolo', mutableSettings);
-    expect(piChatUIConfig.resolvePermissionMode?.(mutableSettings)).toBe('yolo');
+  it('exposes no main chat permission mode for Pi', () => {
+    expect(piChatUIConfig.getPermissionModeOptions).toBeUndefined();
+    expect(piChatUIConfig.resolvePermissionMode).toBeUndefined();
+    expect(piChatUIConfig.applyPermissionMode).toBeUndefined();
   });
 });

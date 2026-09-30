@@ -580,16 +580,10 @@ describe('CodexChatUIConfig', () => {
     });
   });
 
-  describe('getPermissionModeToggle', () => {
+  describe('getPermissionModeOptions', () => {
     it('provides the three permission presets while retaining persisted mode values', () => {
-      const toggle = codexChatUIConfig.getPermissionModeToggle!();
-      expect(toggle).toMatchObject({
-        inactiveValue: 'normal',
-        inactiveLabel: 'Ask for approval',
-        activeValue: 'yolo',
-        activeLabel: 'Full access',
-      });
-      expect(toggle?.options?.map(({ value, label }) => [value, label])).toEqual([
+      const options = codexChatUIConfig.getPermissionModeOptions!()!;
+      expect(options.map(({ value, label }) => [value, label])).toEqual([
         ['auto-review', 'Approve for me'], ['normal', 'Ask for approval'], ['yolo', 'Full access'],
       ]);
     });

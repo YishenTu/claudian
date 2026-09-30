@@ -7,6 +7,7 @@ import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { setIcon } from 'obsidian';
 
+import type { ProviderPermissionModeOption } from '@/core/providers/types';
 import type { UsageInfo } from '@/core/types';
 import { getBlankTabModelOptions } from '@/features/chat/tabs/TabProviderState';
 import { ContextUsageMeter, createInputToolbar, ModelSelector, type ToolbarCallbacks } from '@/features/chat/ui/InputToolbar';
@@ -47,6 +48,7 @@ interface FixtureOptions {
   reasoningOptions?: Array<Record<string, unknown>>;
   reasoningControl?: string;
   permissionToggle?: boolean;
+  permissionModes?: readonly ProviderPermissionModeOption[];
   serviceTier?: boolean;
   modeSelector?: boolean;
   providerIcon?: Record<string, unknown>;
@@ -71,9 +73,10 @@ function renderToolbar(fixture: FixtureOptions = {}) {
     isAdaptiveReasoningModel: () => fixture.adaptive ?? true,
     getReasoningOptions: () => fixture.reasoningOptions ?? EFFORT_OPTIONS,
     getDefaultReasoningValue: () => 'high',
-    getPermissionModeToggle: () => (fixture.permissionToggle === false ? null : {
-      inactiveValue: 'normal', inactiveLabel: 'Safe', activeValue: 'yolo', activeLabel: 'YOLO',
-    }),
+    getPermissionModeOptions: () => (fixture.permissionToggle === false ? null : fixture.permissionModes ?? [
+      { value: 'normal', label: 'Safe' },
+      { value: 'yolo', label: 'YOLO', bypassesApprovals: true },
+    ]),
     getServiceTierToggle: (current: Record<string, unknown>) => (fixture.serviceTier ? {
       inactiveValue: 'default',
       inactiveLabel: 'Standard',
@@ -478,7 +481,7 @@ describe('permission button', () => {
     const { callbacks, host, settings, toolbar, ui, uiConfig } = renderToolbar({
       settings: { permissionMode: 'auto-review' },
     });
-    uiConfig.getPermissionModeToggle = () => codexChatUIConfig.getPermissionModeToggle!();
+    uiConfig.getPermissionModeOptions = () => codexChatUIConfig.getPermissionModeOptions!()!;
     toolbar.permissionToggle.updateDisplay();
     const button = ui.getByRole('button', { name: 'Permission mode: Approve for me' });
     const icon = button.querySelector<HTMLElement>('.claudian-toolbar-chip-icon')!;
@@ -516,6 +519,7 @@ describe('permission button', () => {
     const button = ui.getByRole('button', { name: 'Permission mode: Safe' });
     const chipIcons = () => jest.mocked(setIcon).mock.calls
       .filter(([el]) => button.contains(el as Node)).map(([, icon]) => icon).filter(icon => icon !== 'chevron-down');
+    // Only a mode that skips approvals carries an icon.
     expect(chipIcons()).toEqual([]);
     expect(button.getAttribute('aria-haspopup')).toBe('menu');
     fireEvent.keyDown(button, { key: 'ArrowDown' });
@@ -540,13 +544,17 @@ describe('permission button', () => {
     expect(document.activeElement).toBe(button);
     expect(ui.getByRole('button', { name: 'Permission mode: YOLO' })).toBe(button);
     expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(true);
-    // Only the unrestricted mode shows a warning shield.
-    expect(chipIcons().at(-1)).toBe('shield-alert');
+    expect(chipIcons()).toEqual(['shield-alert']);
     fireEvent.click(button);
+    jest.mocked(setIcon).mockClear();
+    const iconSlot = button.querySelector('.claudian-toolbar-chip-icon')!;
+    iconSlot.appendChild(document.createElement('svg'));
     fireEvent.click(ui.getByRole('menuitemradio', { name: 'Safe' }));
     await flush();
     expect(callbacks.onPermissionModeChange).toHaveBeenLastCalledWith('normal');
     expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(false);
+    expect(chipIcons()).toEqual([]);
+    expect(iconSlot.childElementCount).toBe(0);
     fireEvent.click(button);
     fireEvent.click(ui.getByRole('menuitemradio', { name: 'YOLO' }));
     await flush();
@@ -555,6 +563,35 @@ describe('permission button', () => {
     expect(ui.queryByRole('button', { name: /^Permission mode/ })).toBeNull();
     toolbar.permissionToggle.setVisible(true);
     expect(ui.getByRole('button', { name: 'Permission mode: YOLO' })).toBe(button);
+  });
+
+  it('lists every Claude permission mode with its description and alerts only on YOLO', async () => {
+    const { callbacks, ui } = renderToolbar({
+      settings: { permissionMode: 'auto' },
+      permissionModes: claudeChatUIConfig.getPermissionModeOptions?.() ?? undefined,
+    });
+    const button = ui.getByRole('button', { name: 'Permission mode: Auto' });
+    expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(false);
+    fireEvent.click(button);
+    const items = within(ui.getByRole('menu', { name: 'Permission mode' })).getAllByRole('menuitemradio');
+    expect(items.map(item => [item.textContent, item.getAttribute('aria-checked')])).toEqual([
+      ['AutoClaude handles permission decisions', 'true'],
+      ['ManualAlways ask before making changes', 'false'],
+      ['Accept editsAutomatically accept all file edits', 'false'],
+      ['YOLOAccept all permissions without asking', 'false'],
+    ]);
+    fireEvent.click(button);
+
+    for (const [name, value, alert] of [
+      ['Manual', 'manual', false], ['Accept edits', 'acceptEdits', false], ['YOLO', 'yolo', true],
+    ] as const) {
+      fireEvent.click(button);
+      fireEvent.click(ui.getByRole('menuitemradio', { name: new RegExp(`^${name}`) }));
+      await flush();
+      expect(callbacks.onPermissionModeChange).toHaveBeenLastCalledWith(value);
+      expect(ui.getByRole('button', { name: `Permission mode: ${name}` })).toBe(button);
+      expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(alert);
+    }
   });
 
   it('is the last control in the toolbar, after the provider mode button', () => {

@@ -37,7 +37,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     app,
     getCommittedSettings: () => plugin.settings,
     settings: {
-      model: 'claude-opus-4-6', effortLevel: 'medium', permissionMode: 'normal',
+      model: 'claude-opus-4-6', effortLevel: 'medium', permissionMode: 'manual',
       savedProviderModel: { claude: 'claude-opus-4-6' }, savedProviderEffort: { claude: 'medium' },
       providerConfigs: { claude: { enabled: true, visibleModels: ['claude-sonnet-4-5', 'claude-opus-4-6'],
         discoveredModels: [
@@ -73,17 +73,17 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     fireEvent.click(ui.getByRole('button', { name: 'Side chat' }));
     expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).not.toBeNull();
     expect(ui.getByText('Low', { selector: '.claudian-thinking-current' })).toBeDefined();
-    expect(ui.queryByRole('button', { name: 'Permission mode: SAFE' })).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Permission mode: Manual' })).toBeNull();
 
     fireEvent.click(ui.getByRole('button', { name: 'Collapse' }));
-    expect(ui.queryByRole('button', { name: 'Permission mode: SAFE' })).not.toBeNull();
+    expect(ui.queryByRole('button', { name: 'Permission mode: Manual' })).not.toBeNull();
     expect(ui.getByText('High', { selector: '.claudian-thinking-current' })).toBeDefined();
     expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).toBeNull();
 
     fireEvent.click(ui.getByRole('button', { name: 'Side chat' }));
     expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).not.toBeNull();
     expect(ui.getByText('Low', { selector: '.claudian-thinking-current' })).toBeDefined();
-    expect(ui.queryByRole('button', { name: 'Permission mode: SAFE' })).toBeNull();
+    expect(ui.queryByRole('button', { name: 'Permission mode: Manual' })).toBeNull();
 
     let finishDisposal!: () => void;
     const disposalGate = new Promise<void>(resolve => { finishDisposal = resolve; });
@@ -96,7 +96,7 @@ it('refreshes destination settings when the side panel collapses, expands, and i
     const discarded = side.discard();
     try {
       expect(side.destination).toBe('main');
-      expect(ui.queryByRole('button', { name: 'Permission mode: SAFE' })).not.toBeNull();
+      expect(ui.queryByRole('button', { name: 'Permission mode: Manual' })).not.toBeNull();
     expect(ui.getByText('High', { selector: '.claudian-thinking-current' })).toBeDefined();
       expect(ui.queryByRole('button', { name: 'Permission mode: YOLO' })).toBeNull();
     } finally {

@@ -104,7 +104,7 @@ describe('ClaudianView model refresh routing', () => {
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
       getReasoningOptions: () => [],
       isAdaptiveReasoningModel: () => false,
-      getPermissionModeToggle: jest.fn().mockReturnValue(null),
+      getPermissionModeOptions: jest.fn().mockReturnValue(null),
     } as any);
     jest.spyOn(ProviderRegistry, 'getCapabilities').mockImplementation(providerId => ({
       providerId,

@@ -88,12 +88,10 @@ describe('opencodeChatUIConfig permission mode wiring', () => {
       },
     }) ?? null).toBeNull();
 
-    expect(opencodeChatUIConfig.getPermissionModeToggle?.()).toEqual({
-      activeLabel: 'YOLO',
-      activeValue: 'yolo',
-      inactiveLabel: 'SAFE',
-      inactiveValue: 'normal',
-    });
+    expect(opencodeChatUIConfig.getPermissionModeOptions?.()).toEqual([
+      { value: 'normal', label: 'SAFE' },
+      { value: 'yolo', label: 'YOLO', bypassesApprovals: true },
+    ]);
   });
 
   it('derives shared permission mode from the saved managed OpenCode mode', () => {

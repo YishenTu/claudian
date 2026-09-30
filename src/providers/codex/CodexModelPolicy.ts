@@ -52,8 +52,7 @@ function getVisibleDiscoveredModels(settings: Record<string, unknown>) {
 
 export const codexModelPolicy: ProviderModelPolicy = {
   permissionModes: {
-    inactiveValue: 'normal', activeValue: 'yolo',
-    values: ['normal', 'auto-review', 'yolo'], defaultValue: 'auto-review',
+    values: ['normal', 'auto-review', 'yolo'], fallbackValue: 'normal', defaultValue: 'auto-review',
   },
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[] {
     return getCodexModelOptions(settings);

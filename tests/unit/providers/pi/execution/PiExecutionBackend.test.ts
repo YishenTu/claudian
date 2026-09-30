@@ -101,7 +101,6 @@ function createHost(): any {
             thinkingLevels: ['off', 'high'],
           }],
           enabled: true,
-          toolMode: 'all',
           visibleModels: ['pi:anthropic/claude-sonnet-4'],
         },
       },
@@ -1676,6 +1675,20 @@ describe('PiExecutionBackend', () => {
     await eventsPromise;
 
     expect(harness.kernels[0].launchSpec.args).toContain(expected);
+  });
+
+  it('ignores a legacy read-only tool mode for provider-default launches', async () => {
+    const harness = createHarness();
+    const piConfig = (harness.host.settings.providerConfigs as Record<string, Record<string, unknown>>).pi;
+    piConfig.toolMode = 'readonly';
+    const run = harness.session.execute(createRequest());
+    const eventsPromise = collect(run.events);
+    await waitFor(() => harness.kernels.length === 1);
+    harness.kernels[0].emit({ type: 'agent_start' });
+    harness.kernels[0].emit({ type: 'agent_end' });
+    await eventsPromise;
+
+    expect(harness.kernels[0].launchSpec.args).not.toContain('--tools');
   });
 
   it('includes provider-default dynamic sections in the complete system prompt', async () => {
