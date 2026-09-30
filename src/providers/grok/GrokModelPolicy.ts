@@ -1,4 +1,3 @@
-import { SAFE_YOLO_PERMISSION_MODES } from '../../core/providers/permissionModes';
 import type {
   ProviderModelPolicy,
   ProviderReasoningOption,
@@ -13,6 +12,7 @@ import {
   isGrokModelSelectionId,
   resolveGrokDefaultReasoningEffort,
 } from './models';
+import { GROK_PERMISSION_MODE_POLICY } from './permissionModes';
 import {
   getGrokProviderSettings,
   getOrderedGrokVisibleModelIds,
@@ -21,7 +21,7 @@ import {
 
 
 export const grokModelPolicy: ProviderModelPolicy = {
-  permissionModes: SAFE_YOLO_PERMISSION_MODES,
+  permissionModes: GROK_PERMISSION_MODE_POLICY,
   getModelOptions(settings): ProviderUIOption[] {
     const grokSettings = getGrokProviderSettings(settings);
     const catalogModels = grokSettings.currentCatalog?.models ?? [];
@@ -140,16 +140,6 @@ export const grokModelPolicy: ProviderModelPolicy = {
   getCustomModelIds(): Set<string> {
     return new Set();
   },
-
-  resolvePermissionMode(settings): string {
-    return settings.permissionMode === 'yolo' ? 'yolo' : 'normal';
-  },
-
-  applyPermissionMode(value, settings): void {
-    if (isRecord(settings)) {
-      settings.permissionMode = value === 'yolo' ? 'yolo' : 'normal';
-    }
-  }
 };
 
 function pushModelOption(

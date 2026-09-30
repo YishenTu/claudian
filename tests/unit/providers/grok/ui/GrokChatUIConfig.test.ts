@@ -1,3 +1,4 @@
+import { grokModelPolicy } from '@/providers/grok/GrokModelPolicy';
 import { getGrokProviderSettings } from '@/providers/grok/settings';
 import { grokChatUIConfig } from '@/providers/grok/ui/GrokChatUIConfig';
 import { GROK_PROVIDER_ICON } from '@/shared/icons';
@@ -351,22 +352,18 @@ describe('GrokChatUIConfig', () => {
     expect(grokChatUIConfig.normalizeModelVariant('claude', settings)).toBe('claude');
   });
 
-  it('uses Safe for obsolete selections and supports explicit YOLO', () => {
-    expect(grokChatUIConfig.getPermissionModeOptions?.()).toEqual([
-      { value: 'normal', label: 'SAFE' },
-      { value: 'yolo', label: 'YOLO', bypassesApprovals: true },
+  it('offers every native permission mode except plan and fails closed to Ask', () => {
+    const options = grokChatUIConfig.getPermissionModeOptions?.({}) ?? [];
+
+    expect(options.map(option => option.value)).toEqual([
+      'auto', 'normal', 'acceptEdits', 'yolo',
     ]);
+    expect(options.filter(option => option.bypassesApprovals).map(option => option.value))
+      .toEqual(['yolo']);
+    expect(grokModelPolicy.permissionModes).toEqual(expect.objectContaining({
+      fallbackValue: 'normal',
+      values: options.map(option => option.value),
+    }));
     expect(grokChatUIConfig.getModeSelector?.({})).toBeNull();
-
-    const settings: Record<string, unknown> = {
-      permissionMode: 'yolo',
-      providerConfigs: { grok: { enabled: true } },
-    };
-    grokChatUIConfig.applyPermissionMode?.('plan', settings);
-    expect(settings.permissionMode).toBe('normal');
-    expect(grokChatUIConfig.resolvePermissionMode?.(settings)).toBe('normal');
-
-    grokChatUIConfig.applyPermissionMode?.('yolo', settings);
-    expect(settings.permissionMode).toBe('yolo');
   });
 });

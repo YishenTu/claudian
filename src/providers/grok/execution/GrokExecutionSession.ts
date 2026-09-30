@@ -19,7 +19,7 @@ import {
 } from '../../../core/execution';
 import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import type { ChatMessage, PermissionMode } from '../../../core/types';
+import type { ChatMessage } from '../../../core/types';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import { appendLinkedContent } from '../../../utils/context';
@@ -40,6 +40,7 @@ import {
   type ACPUsage,
   type ACPUsageUpdate,
   buildACPUsageInfo,
+  mapACPApprovalDecision,
 } from '../../acp';
 import type { GrokCommandCatalog } from '../commands/GrokCommandCatalog';
 import { computeGrokEnvironmentHash } from '../env/GrokSettingsReconciler';
@@ -62,6 +63,7 @@ import {
   resolveGrokRawToolName,
 } from '../normalization/grokToolNormalization';
 import { parseGrokPromptUsage, parseGrokUsage } from '../normalization/grokUsage';
+import { shouldAutoApproveGrokPermission } from '../permissionModes';
 import {
   buildGrokSystemPrompt,
   type GrokSystemPromptSettings,
@@ -155,6 +157,11 @@ interface ActiveExecution {
   requiredTurnCompletions: number;
 }
 
+interface GrokNativeSession {
+  readonly native: GrokExecutionNativeConnection;
+  readonly sessionId: string;
+}
+
 interface GrokNativeOwner {
   readonly generation: number;
   initialized: boolean;
@@ -196,7 +203,9 @@ RewindableExecutionSession {
   private providerSessionId: string | undefined;
   private providerState: Readonly<Record<string, unknown>>;
   private forkApplied = false;
+  private nativeAlwaysApproveOverride = false;
   private revision = 0;
+  private selectedPermissionMode = 'normal';
   private snapshot: ProviderSessionSnapshot;
 
   constructor(
@@ -386,9 +395,11 @@ RewindableExecutionSession {
       assertGrokModelAvailable(this.plugin.settings, active.request.configuration.model);
       if (this.cancellationFlight) await this.cancellationFlight;
       if (this.#isCancellationRequested(active)) return;
-      const native = await this.#ensureNative(active);
-      if (this.#isCancellationRequested(active)) return;
-      const sessionId = await this.#ensureSession(native, active.request, active);
+      const { native, sessionId } = await this.#ensureSession(
+        await this.#ensureNative(active),
+        active.request,
+        active,
+      );
       if (this.#isCancellationRequested(active)) return;
       await this.#applyConfiguration(native, sessionId, active.request, active);
       if (this.#isCancellationRequested(active)) return;
@@ -489,6 +500,17 @@ RewindableExecutionSession {
         if (policy === 'passive' || policy === 'read-only') {
           return Promise.resolve({ outcome: { outcome: 'cancelled' } });
         }
+        const active = this.active;
+        if (active && shouldAutoApproveGrokPermission(
+          active.request.configuration.permissionMode,
+          request.toolCall.kind,
+        )) {
+          return Promise.resolve(
+            signal?.aborted || this.#isCancellationRequested(active)
+              ? { outcome: { outcome: 'cancelled' } }
+              : mapACPApprovalDecision('allow', request.options),
+          );
+        }
         return this.interactionController.requestPermission(
           request,
           signal ?? this.active?.abortController.signal,
@@ -525,8 +547,10 @@ RewindableExecutionSession {
       }) ?? (() => {});
       owner.modeUnsubscribe = native.onModeChanged?.(mode => {
         if (!this.#isCurrentNativeOwner(owner)) return;
+        const permissionMode = this.#resolveNativeAlwaysApproveChange(mode === 'yolo');
+        if (!permissionMode) return;
         this.#updateSnapshot(this.active ? 'executing' : 'idle');
-        this.#emitPermissionMode(mode);
+        this.#emitPermissionMode(permissionMode);
       }) ?? (() => {});
       owner.modelsUnsubscribe = native.onModelsChanged?.(models => {
         if (!this.#isCurrentNativeOwner(owner)) return;
@@ -558,7 +582,7 @@ RewindableExecutionSession {
     native: GrokExecutionNativeConnection,
     request: ProviderExecutionRequest | undefined,
     active?: ActiveExecution,
-  ): Promise<string> {
+  ): Promise<GrokNativeSession> {
     const owner = this.#getNativeOwner(native);
     const sessionConfigurationKey = request
       ? this.#buildSessionConfigurationKey(request)
@@ -574,16 +598,19 @@ RewindableExecutionSession {
           const replacement = await this.#ensureNative(active);
           return this.#ensureSession(replacement, request, active);
         }
-        return this.providerSessionId;
+        return { native, sessionId: this.providerSessionId };
       }
       const targetSessionId = this.providerSessionId;
-      return this.#loadProviderSession(
+      return {
         native,
-        targetSessionId,
-        request,
-        active,
-        sessionConfigurationKey,
-      );
+        sessionId: await this.#loadProviderSession(
+          native,
+          targetSessionId,
+          request,
+          active,
+          sessionConfigurationKey,
+        ),
+      };
     }
     const state = parseGrokProviderState(this.providerState);
     if (state.forkSource && !this.forkApplied) {
@@ -615,13 +642,16 @@ RewindableExecutionSession {
       );
       this.#throwIfCancellationRequested(active);
       if (this.disposed) throw new GrokExecutionCancellationError();
-      return this.#loadProviderSession(
+      return {
         native,
-        sessionId,
-        request,
-        active,
-        sessionConfigurationKey,
-      );
+        sessionId: await this.#loadProviderSession(
+          native,
+          sessionId,
+          request,
+          active,
+          sessionConfigurationKey,
+        ),
+      };
     }
     const response = await native.newSession({
       _meta: this.#buildSessionMeta(request),
@@ -637,7 +667,7 @@ RewindableExecutionSession {
     this.#emitCurrentSnapshot();
     await this.#publishSessionModels(response, owner.modelContextKey);
     this.#throwIfCancellationRequested(active);
-    return response.sessionId;
+    return { native, sessionId: response.sessionId };
   }
 
   async #loadProviderSession(
@@ -687,6 +717,7 @@ RewindableExecutionSession {
   #buildSessionConfigurationKey(request: ProviderExecutionRequest): string {
     const meta = this.#buildSessionMeta(request);
     return JSON.stringify({
+      autoMode: meta.autoMode === true,
       systemPromptOverride: meta.systemPromptOverride ?? null,
       yoloMode: meta.yoloMode === true,
     });
@@ -736,7 +767,9 @@ RewindableExecutionSession {
       }
     }
     const permissionMode = request.configuration.permissionMode;
-    if (permissionMode === 'normal' || permissionMode === 'yolo' || permissionMode === 'plan') {
+    if (permissionMode !== undefined) {
+      this.selectedPermissionMode = permissionMode;
+      this.nativeAlwaysApproveOverride = false;
       await native.setMode({
         modeId: 'default',
         sessionId,
@@ -1079,8 +1112,7 @@ RewindableExecutionSession {
     if (promptIndex === null) {
       return { canRewind: false, error: 'The Grok Build prompt could not be located.' };
     }
-    const native = await this.#ensureNative();
-    await this.#ensureSession(native, undefined);
+    const { native } = await this.#ensureSession(await this.#ensureNative(), undefined);
     if (!native.rewind) return { canRewind: false, error: 'Grok Build rewind is unavailable.' };
     const response = await native.rewind({
       force,
@@ -1264,7 +1296,24 @@ RewindableExecutionSession {
     }
   }
 
-  #emitPermissionMode(permissionMode: PermissionMode): void {
+  /**
+   * Grok reports only always-approve toggles. Turning it off restores the mode
+   * selected before Grok turned it on, or Ask when always-approve was selected.
+   */
+  #resolveNativeAlwaysApproveChange(alwaysApprove: boolean): string | null {
+    const selected = this.selectedPermissionMode;
+    if (alwaysApprove) {
+      this.nativeAlwaysApproveOverride = selected !== 'yolo';
+      return 'yolo';
+    }
+    if (this.nativeAlwaysApproveOverride) {
+      this.nativeAlwaysApproveOverride = false;
+      return selected;
+    }
+    return selected === 'yolo' ? 'normal' : null;
+  }
+
+  #emitPermissionMode(permissionMode: string): void {
     const event: ProviderSessionEvent = {
       permissionMode,
       scope: {
@@ -1369,8 +1418,18 @@ function buildSessionMeta(
   return {
     ...(rawModel ? { modelId: rawModel } : {}),
     ...(systemPromptOverride ? { systemPromptOverride } : {}),
-    yoloMode: request.configuration.permissionMode === 'yolo'
-      || request.toolPolicy.kind === 'unrestricted',
+    ...resolveGrokPermissionMeta(request),
+  };
+}
+
+function resolveGrokPermissionMeta(
+  request: ProviderExecutionRequest,
+): { autoMode: boolean; yoloMode: boolean } {
+  const yoloMode = request.configuration.permissionMode === 'yolo'
+    || request.toolPolicy.kind === 'unrestricted';
+  return {
+    autoMode: !yoloMode && request.configuration.permissionMode === 'auto',
+    yoloMode,
   };
 }
 

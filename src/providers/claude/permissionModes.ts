@@ -26,6 +26,7 @@ const LEGACY_SAFE_MODES: Readonly<Record<string, ClaudePermissionMode>> = {
 export const CLAUDE_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Object.freeze({
   values: CLAUDE_PERMISSION_MODES,
   fallbackValue: 'manual',
+  defaultValue: 'auto',
   migrateValue(value: string, settings: Record<string, unknown>): string | undefined {
     if (value !== 'normal') return undefined;
     // The retired Safe toggle ran the configured safe mode, which defaulted to acceptEdits.

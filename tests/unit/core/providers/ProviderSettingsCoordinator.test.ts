@@ -642,6 +642,21 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.permissionMode).toBe(permissionMode);
     });
 
+    it.each(['auto', 'manual', 'acceptEdits', 'yolo'])('defaults a new Grok selection to Auto without inheriting Claude %s', permissionMode => {
+      const settings = { settingsProvider: 'claude', permissionMode };
+      expect(ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, 'grok').permissionMode)
+        .toBe('auto');
+      expect(settings.permissionMode).toBe(permissionMode);
+    });
+
+    it.each(['normal', 'acceptEdits', 'yolo'])('preserves the saved Grok permission %s', permissionMode => {
+      const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
+        settingsProvider: 'claude', permissionMode: 'auto',
+        savedProviderPermissionMode: { grok: permissionMode },
+      }, 'grok');
+      expect(snapshot.permissionMode).toBe(permissionMode);
+    });
+
     it.each(['normal', 'auto-review', 'yolo'])('preserves the saved Codex permission %s', permissionMode => {
       const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
         settingsProvider: 'claude', permissionMode: 'normal',
@@ -675,6 +690,20 @@ describe('ProviderSettingsCoordinator', () => {
         expect(snapshot.permissionMode).toBe(providerId === 'claude' ? 'manual' : 'normal');
       },
     );
+
+    it.each([
+      ['codex', 'normal'], ['codex', 'auto-review'], ['codex', 'yolo'],
+      ['grok', 'normal'], ['grok', 'acceptEdits'], ['grok', 'yolo'],
+    ])('defaults a new Claude selection to Auto without inheriting %s %s', (settingsProvider, permissionMode) => {
+      const settings = {
+        settingsProvider,
+        permissionMode,
+        providerConfigs: { [settingsProvider]: { enabled: true } },
+      };
+      expect(ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, 'claude').permissionMode)
+        .toBe('auto');
+      expect(settings.permissionMode).toBe(permissionMode);
+    });
 
     it.each(['auto', 'manual', 'acceptEdits', 'yolo'])('keeps the saved Claude permission mode %s', (mode) => {
       const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
