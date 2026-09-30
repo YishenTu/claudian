@@ -55,8 +55,8 @@
   cursor: pointer;
 }
 
+/* Chips brighten their text on hover, focus and while open; they take no fill. */
 .claudian-input-toolbar button.claudian-toolbar-chip:is(:hover, :focus-visible, [aria-expanded='true']) {
-  background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
@@ -133,7 +133,8 @@
   border-radius: 8px;
   /* Secondary stays opaque when translucent themes clear the primary background. */
   background-color: var(--background-secondary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  /* The border alone separates the menu; a shadow would tint the area around it. */
+  box-shadow: none;
 }
 
 /* The model popover also keeps enough width for the reasoning slider to be usable. */

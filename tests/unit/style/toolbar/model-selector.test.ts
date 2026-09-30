@@ -67,6 +67,27 @@ describe('Toolbar popover styles', () => {
     expect(popover.minWidth).toContain('100%');
   });
 
+  it('gives the model and permission chips no fill on hover, focus or while open', () => {
+    const toolbar = renderToolbar();
+    const rules = Array.from(document.head.querySelector('style')!.sheet!.cssRules)
+      .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
+      .filter(rule => rule.selectorText.includes('button.claudian-toolbar-chip')
+        && /:hover|aria-expanded/.test(rule.selectorText)
+        && !rule.selectorText.includes('--accent'));
+    expect(rules.map(rule => rule.style.getPropertyValue('background')).filter(value => value && value !== 'transparent'))
+      .toEqual([]);
+    const button = toolbar.querySelector<HTMLElement>('button.claudian-model-btn')!;
+    button.setAttribute('aria-expanded', 'true');
+    expect(style(button).background).not.toContain('modifier-hover');
+  });
+
+  it('draws the menus with a border only, no shadow spilling past it', () => {
+    const toolbar = renderToolbar();
+    for (const popover of Array.from(toolbar.querySelectorAll('.claudian-toolbar-popover'))) {
+      expect(['', 'none']).toContain(style(popover).boxShadow);
+    }
+  });
+
   it('flips each chip chevron to point up while its menu is open', () => {
     const toolbar = renderToolbar();
     for (const button of Array.from(toolbar.querySelectorAll<HTMLElement>('button.claudian-toolbar-chip'))) {
