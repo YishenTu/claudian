@@ -125,7 +125,6 @@ function buildInputToolbar(
   services: TabServices,
   options: TabRuntimeConstructionContext,
   runtimeRef: PublishedTabRuntimeRef,
-  infoRow: ComposerInfoRow,
   onUserModified: () => void,
 ): ReturnType<typeof createInputToolbar> {
   const { dom } = shell;
@@ -373,7 +372,7 @@ function buildInputToolbar(
       await updateTabPermissionMode(tab, plugin, mode);
       onUserModified();
     },
-  }, { contextMeterParentEl: infoRow.usageSlotEl });
+  });
   options.registerCleanup(
     'tab input toolbar menus',
     () => toolbarComponents.menus.destroy(),
@@ -402,10 +401,10 @@ export function buildTabRuntimeUI(
     },
   });
   options.registerCleanup('tab composer context tray', () => contextTray.destroy());
-  const infoRow = new ComposerInfoRow(dom.infoRowEl, { composerEl: dom.inputContainerEl });
+  const infoRow = new ComposerInfoRow(dom.infoRowEl);
   options.registerCleanup('tab composer info row', () => infoRow.destroy());
 
-  const toolbar = buildInputToolbar(shell, services, options, runtimeRef, infoRow, onUserModified);
+  const toolbar = buildInputToolbar(shell, services, options, runtimeRef, onUserModified);
   const contextManagers = buildContextManagers(
     options,
     shell,

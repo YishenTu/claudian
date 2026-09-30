@@ -106,11 +106,3 @@
   outline-offset: 2px;
   border-radius: 4px;
 }
-
-/* Context usage sits at the end of the row. */
-.claudian-input-info-usage {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  margin-inline-start: auto;
-}

@@ -40,7 +40,7 @@ function mountToolbar(toolbarEl: HTMLElement): void {
       }),
     }),
     getCapabilities: () => ({ reasoningControl: 'effort' }),
-  } as unknown as ToolbarCallbacks, { contextMeterParentEl: document.createElement('div') });
+  } as unknown as ToolbarCallbacks);
 }
 
 describe('Zen mode styles', () => {
@@ -102,14 +102,8 @@ describe('Zen mode styles', () => {
                   </div>
                   <div class="claudian-input-toolbar"></div>
                 </div>
-                <div class="claudian-input-info-row" data-info-items="linked-content">
-                  <div class="claudian-input-info-linked" data-info-item="linked-content"></div>
-                  <div class="claudian-input-info-usage" data-info-item="context-usage">
-                    <div class="claudian-context-meter claudian-hidden">
-                      <div class="claudian-context-meter-gauge"></div>
-                      <span class="claudian-context-meter-percent">42%</span>
-                    </div>
-                  </div>
+                <div class="claudian-input-info-row">
+                  <div class="claudian-input-info-linked"></div>
                 </div>
               </div>
             </div>
@@ -160,50 +154,19 @@ describe('Zen mode styles', () => {
     expect(window.getComputedStyle(panel.querySelector('.claudian-zen-history')!).borderStyle).toBe('');
   });
 
-  it('hides the linked note, and the info row until context usage is reported', () => {
+  it('hides the info row, and keeps the context gauge beside the model control without its number', () => {
     const panel = renderPanel();
-    const row = panel.querySelector<HTMLElement>('.claudian-input-info-row')!;
-    const linked = row.querySelector<HTMLElement>('.claudian-input-info-linked')!;
-    const meter = row.querySelector<HTMLElement>('.claudian-context-meter')!;
-    expect(window.getComputedStyle(linked).display).toBe('none');
-    expect(window.getComputedStyle(row).display).toBe('none');
+    expect(window.getComputedStyle(panel.querySelector('.claudian-input-info-row')!).display).toBe('none');
+
+    const toolbar = panel.querySelector<HTMLElement>('.claudian-input-toolbar')!;
+    const meter = toolbar.querySelector<HTMLElement>('.claudian-context-meter')!;
+    expect(meter.previousElementSibling?.classList.contains('claudian-model-selector')).toBe(true);
+    expect(window.getComputedStyle(meter).display).toBe('none');
 
     meter.classList.remove('claudian-hidden');
-    row.dataset.infoItems = 'linked-content context-usage';
-    expect(window.getComputedStyle(row).display).toBe('flex');
-    expect(window.getComputedStyle(linked).display).toBe('none');
-    // The gauge stays, without its number.
     expect(window.getComputedStyle(meter).display).toBe('flex');
     expect(window.getComputedStyle(meter.querySelector('.claudian-context-meter-gauge')!).display).toBe('flex');
     expect(window.getComputedStyle(meter.querySelector('.claudian-context-meter-percent')!).display).toBe('none');
-  });
-
-  it('sets the context gauge at the end of the controls row, inside the pill', () => {
-    const panel = renderPanel();
-    const composer = panel.querySelector<HTMLElement>('.claudian-zen-composer')!;
-    const container = panel.querySelector<HTMLElement>('.claudian-input-container')!;
-    const row = panel.querySelector<HTMLElement>('.claudian-input-info-row')!;
-    const toolbar = panel.querySelector<HTMLElement>('.claudian-input-toolbar')!;
-    const style = (el: Element) => window.getComputedStyle(el);
-    // No usage yet: the controls keep the pill's end to themselves.
-    expect(style(toolbar).paddingInlineEnd || style(toolbar).paddingRight).toBe('6px');
-
-    panel.querySelector('.claudian-context-meter')!.classList.remove('claudian-hidden');
-    row.dataset.infoItems = 'linked-content context-usage';
-    container.dataset.infoItems = 'linked-content context-usage';
-    // The row leaves the flow and sits over the pill's end, inside its border and inline padding.
-    expect({
-      position: style(row).position,
-      end: style(row).getPropertyValue('inset-inline-end'),
-      bottom: style(row).bottom,
-      height: style(row).height,
-    }).toEqual({ position: 'absolute', end: '7px', bottom: '1px', height: '38px' });
-    // The controls make room for the 24px gauge beside them.
-    expect(style(toolbar).paddingInlineEnd).toBe('26px');
-
-    // Stacked, the controls have a 32px row of their own at the pill's foot.
-    composer.classList.add('claudian-zen-composer--stacked');
-    expect(style(row).height).toBe('32px');
   });
 
   it('caps the pill with the queued-message strip on its own row', () => {

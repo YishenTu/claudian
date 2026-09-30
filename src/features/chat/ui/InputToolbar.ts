@@ -1034,15 +1034,9 @@ export class ContextUsageMeter {
   }
 }
 
-export interface InputToolbarOptions {
-  /** Mounts the read-only context meter outside the toolbar; defaults to the toolbar itself. */
-  contextMeterParentEl?: HTMLElement;
-}
-
 export function createInputToolbar(
   parentEl: HTMLElement,
   callbacks: ToolbarCallbacks,
-  options: InputToolbarOptions = {},
 ): {
   modelSelector: ModelSelector;
   modeSelector: ModeSelector;
@@ -1054,11 +1048,13 @@ export function createInputToolbar(
 } {
   const menuGroup = new ToolbarMenuGroup();
   const modelSelector = new ModelSelector(parentEl, callbacks, menuGroup);
+  // The read-only context gauge sits right after the model picker.
+  const contextUsageMeter = new ContextUsageMeter(parentEl);
   const thinkingBudgetSelector = new ThinkingBudgetSelector(modelSelector, callbacks);
   const serviceTierToggle = new ServiceTierToggle(modelSelector, callbacks);
-  const contextUsageMeter = new ContextUsageMeter(options.contextMeterParentEl ?? parentEl);
-  const permissionToggle = new PermissionToggle(parentEl, callbacks, menuGroup);
   const modeSelector = new ModeSelector(parentEl, callbacks, menuGroup);
+  // Permission is the last control; CSS pushes it to the toolbar's far end.
+  const permissionToggle = new PermissionToggle(parentEl, callbacks, menuGroup);
 
   return {
     modelSelector,

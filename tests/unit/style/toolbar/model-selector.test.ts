@@ -65,15 +65,16 @@ describe('Toolbar popover styles', () => {
     expect(popover.minWidth).toContain('100%');
   });
 
-  it('sizes the permission menu from its own button the same way, without the slider floor', () => {
+  it('sizes the permission menu from its own button the same way, without the slider floor, opening from its end edge', () => {
     const toolbar = renderToolbar();
     const popover = style(toolbar.querySelector('[data-popover="permission"]')!);
     expect(style(toolbar.querySelector('.claudian-permission-toggle')!).position).toBe('relative');
     expect({
       start: popover.getPropertyValue('inset-inline-start'),
+      end: popover.getPropertyValue('inset-inline-end'),
       width: popover.width,
       minWidth: popover.minWidth,
-    }).toEqual({ start: '0', width: 'max-content', minWidth: '100%' });
+    }).toEqual({ start: 'auto', end: '0', width: 'max-content', minWidth: '100%' });
   });
 
   it.each([

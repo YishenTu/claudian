@@ -172,32 +172,8 @@
 
 /* Optional controls and the linked note keep their values; zen only hides them. */
 .claudian-zen-composer .claudian-input-container > .claudian-input-nav-row,
-.claudian-zen-composer .claudian-input-info-linked,
-.claudian-zen-composer .claudian-input-info-row[data-info-items="linked-content"] {
-  display: none;
-}
-
-/*
- * What remains of the info row is the context gauge. It leaves the flow and sits at the end of
- * the controls' row inside the pill, clear of the pill's border and inline padding.
- */
 .claudian-zen-composer .claudian-input-info-row {
-  position: absolute;
-  inset-inline-end: 7px;
-  bottom: 1px;
-  /* One line of input, which the controls share and centre on. */
-  height: 38px;
-  padding: 0;
-}
-
-/* Stacked, the controls have their own 32px row at the pill's foot. */
-.claudian-zen-composer.claudian-zen-composer--stacked .claudian-input-info-row {
-  height: 32px;
-}
-
-/* The controls make room for the 24px gauge beside them while there is usage to show. */
-.claudian-zen-composer .claudian-input-container[data-info-items~="context-usage"] > .claudian-input-wrapper > .claudian-input-toolbar {
-  padding-inline-end: 26px;
+  display: none;
 }
 
 .claudian-zen-composer .claudian-input-wrapper {
@@ -274,7 +250,7 @@
 }
 
 /* Permission and mode chips keep their values; the gauge keeps its tooltip but not its number. */
-.claudian-zen-composer .claudian-input-toolbar > :not(.claudian-model-selector),
+.claudian-zen-composer .claudian-input-toolbar > :not(.claudian-model-selector, .claudian-context-meter),
 .claudian-zen-composer .claudian-context-meter-percent {
   display: none;
 }
