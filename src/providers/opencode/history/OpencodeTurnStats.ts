@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+
 import { createTurnStats, isTokenCount, type TurnStats } from '@/core/types';
 
 import { resolveExistingOpencodeDatabasePath } from '../runtime/OpencodePaths';
@@ -46,7 +48,8 @@ export async function loadOpencodeTurnStats(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<TurnStats | undefined> {
   const databasePath = resolveExistingOpencodeDatabasePath(state.databasePath, environment);
-  if (!databasePath || databasePath === ':memory:') return undefined;
+  // Missing optional metadata cannot be recovered by trying other SQLite runtimes.
+  if (!databasePath || databasePath === ':memory:' || !existsSync(databasePath)) return undefined;
   const rows = await loadOpencodeTurnRows(databasePath, sessionId, selector, {
     environment, nativeVersion: state.nativeVersion === 2 ? 2 : 'auto',
   });

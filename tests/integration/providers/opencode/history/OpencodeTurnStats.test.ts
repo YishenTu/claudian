@@ -3,7 +3,25 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { testDate } from '@test/helpers/testClock';
+
+import * as sqliteReader from '@/providers/opencode/history/OpencodeSqliteReader';
 import { loadOpencodeTurnStats } from '@/providers/opencode/history/OpencodeTurnStats';
+
+it('skips optional statistics when the database does not exist', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'opencode-turn-missing-'));
+  const databasePath = path.join(root, 'opencode.db');
+  const loadRows = jest.spyOn(sqliteReader, 'loadOpencodeTurnRows');
+  try {
+    await expect(loadOpencodeTurnStats(
+      'session', { databasePath }, { startedAt: testDate().getTime() }, { OPENCODE_DB: databasePath },
+    )).resolves.toBeUndefined();
+    expect(loadRows).not.toHaveBeenCalled();
+  } finally {
+    loadRows.mockRestore();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 it.each([[1, undefined], [2, { outputTokens: 125, durationMs: 2500 }]] as const)('loads only the requested v%s native turn, including reasoning', async (version, statsWithoutParent) => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'opencode-turn-'));
