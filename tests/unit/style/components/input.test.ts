@@ -115,6 +115,14 @@ describe('Composer input styles', () => {
     expect([popover.getPropertyValue('inset-inline-start'), popover.getPropertyValue('inset-inline-end')]).toEqual(['auto', '0']);
   });
 
+  it('keeps the usage number close to its gauge icon', () => {
+    const meter = renderComposer().querySelector('.claudian-context-meter')!;
+    // The 16px icon sits centred in a 24px gauge; its 4px inset plus this gap leaves 6px before the number.
+    expect(style(meter).gap).toBe('2px');
+    // Width reserved for longer numbers goes after the number, not between it and the icon.
+    expect(style(meter.querySelector('.claudian-context-meter-percent')!).textAlign).toBe('start');
+  });
+
   it('lays the info row out borderless under the box', () => {
     const composer = renderComposer();
     const row = composer.querySelector<HTMLElement>('.claudian-input-info-row')!;
