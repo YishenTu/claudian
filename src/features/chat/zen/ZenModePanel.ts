@@ -54,6 +54,7 @@ export function restoreZenScrollIntent(runtime: AssembledTabRuntime, snapshot: Z
 export class ZenModePanel {
   readonly slots: ZenModeSlots;
   readonly #rootEl: HTMLElement;
+  readonly #drawerEl: HTMLElement;
   readonly #historyEl: HTMLElement;
   readonly #disclosureEl: HTMLButtonElement;
   readonly #previewEl: HTMLElement;
@@ -91,6 +92,7 @@ export class ZenModePanel {
     });
     // The drawer groups the transcript and its preview line so expansion can open into the composer.
     const drawerEl = this.#rootEl.createDiv({ cls: 'claudian-zen-drawer' });
+    this.#drawerEl = drawerEl;
     this.#historyEl = drawerEl.createDiv({ cls: 'claudian-zen-history', attr: { id: historyId } });
 
     const previewId = `claudian-zen-preview-${panelSequence}`;
@@ -221,8 +223,8 @@ export class ZenModePanel {
 
   #applyHistoryExpanded(): void {
     const expanded = this.#historyExpanded;
-    // An empty conversation has no history to disclose; the remembered choice waits for messages.
-    this.#disclosureEl.toggleClass('claudian-hidden', !this.#hasHistory);
+    // A new conversation shows only the composer; the remembered choice waits for messages.
+    this.#drawerEl.toggleClass('claudian-hidden', !this.#hasHistory);
     this.#historyEl.toggleClass('claudian-hidden', !expanded || !this.#hasHistory);
     this.#rootEl.toggleClass('claudian-zen--expanded', expanded);
     this.#disclosureEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');

@@ -405,11 +405,15 @@ it('offers no history for a new conversation until it has messages', async () =>
   const panel = zenPanel()!;
   const disclosure = panel.querySelector<HTMLButtonElement>('.claudian-zen-disclosure')!;
   const history = panel.querySelector<HTMLElement>('.claudian-zen-history')!;
-  expect(disclosure.classList.contains('claudian-hidden')).toBe(true);
+  // The whole drawer, including the open action, waits for the first message.
+  const drawer = panel.querySelector<HTMLElement>('.claudian-zen-drawer')!;
+  expect(drawer.contains(panel.querySelector('.claudian-zen-open'))).toBe(true);
+  expect(drawer.classList.contains('claudian-hidden')).toBe(true);
   expect(history.classList.contains('claudian-hidden')).toBe(true);
 
   const session = await sendFromZen(tab, sessions, 'First question');
-  await waitFor(() => expect(disclosure.classList.contains('claudian-hidden')).toBe(false));
+  await waitFor(() => expect(drawer.classList.contains('claudian-hidden')).toBe(false));
+  expect(disclosure.classList.contains('claudian-hidden')).toBe(false);
   // The whole preview line is the disclosure control; expanded, a decorative chevron stands in for it.
   expect(disclosure.contains(panel.querySelector('.claudian-zen-preview'))).toBe(true);
   fireEvent.click(panel.querySelector('.claudian-zen-preview')!);
@@ -425,7 +429,7 @@ it('offers no history for a new conversation until it has messages', async () =>
 
   // A new chat hides the remembered expansion until its first message.
   tab.state.clearMessages();
-  await waitFor(() => expect(disclosure.classList.contains('claudian-hidden')).toBe(true));
+  await waitFor(() => expect(drawer.classList.contains('claudian-hidden')).toBe(true));
   expect(history.classList.contains('claudian-hidden')).toBe(true);
   expect(disclosure.getAttribute('aria-expanded')).toBe('true');
 });

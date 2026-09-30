@@ -41,7 +41,7 @@ describe('Zen mode styles', () => {
               <div class="claudian-messages-wrapper"><div class="claudian-messages"></div></div>
             </div>
             <div class="claudian-zen-bar">
-              <button type="button" class="claudian-zen-disclosure claudian-hidden">
+              <button type="button" class="claudian-zen-disclosure">
                 <span class="claudian-zen-preview-icon" aria-hidden="true"></span>
                 <span class="claudian-zen-preview"></span>
                 <span class="claudian-zen-disclosure-icon" aria-hidden="true"></span>
@@ -85,13 +85,12 @@ describe('Zen mode styles', () => {
     return document.querySelector('.claudian-zen') as HTMLElement;
   }
 
-  it('lets the hidden state win over the disclosure control reset', () => {
-    const panel = renderPanel();
-    const disclosure = panel.querySelector('.claudian-zen-disclosure') as HTMLElement;
-    expect(window.getComputedStyle(disclosure).display).toBe('none');
+  it('hides the whole drawer, open action included, while it is hidden', () => {
+    const drawer = renderPanel().querySelector<HTMLElement>('.claudian-zen-drawer')!;
+    expect(window.getComputedStyle(drawer).display).toBe('flex');
 
-    disclosure.classList.remove('claudian-hidden');
-    expect(window.getComputedStyle(disclosure).display).toBe('flex');
+    drawer.classList.add('claudian-hidden');
+    expect(window.getComputedStyle(drawer).display).toBe('none');
   });
 
   it('narrows the collapsible history and preview line relative to the composer', () => {
@@ -179,6 +178,11 @@ describe('Zen mode styles', () => {
   it('keeps user bubbles clear of the transcript border', () => {
     const messages = window.getComputedStyle(renderPanel().querySelector('.claudian-messages')!);
     expect(messages.getPropertyValue('padding-inline-end')).toBe('14px');
+  });
+
+  it('keeps the transcript clear of the drawer top border, outside its scroller', () => {
+    const history = window.getComputedStyle(renderPanel().querySelector('.claudian-zen-history')!);
+    expect(history.paddingTop).toBe('16px');
   });
 
   it('pads the expandable header clear of the drawer border', () => {
@@ -272,11 +276,12 @@ describe('Zen mode styles', () => {
       .toEqual({ sizing: 'border-box', minHeight: '32px', chip: '24px' });
   });
 
-  it('opens control menus from the right edge and keeps the placeholder on one line', () => {
+  it('centers control menus above their labels and keeps the placeholder on one line', () => {
     const composer = renderPanel().querySelector<HTMLElement>('.claudian-zen-composer')!;
     for (const selector of ['.claudian-model-dropdown', '.claudian-thinking-options']) {
       const menu = window.getComputedStyle(composer.querySelector(selector)!);
-      expect([selector, menu.left, menu.right]).toEqual([selector, 'auto', '0px']);
+      expect([selector, menu.left, menu.right, menu.transform])
+        .toEqual([selector, '50%', 'auto', 'translateX(-50%)']);
     }
     const placeholder = window.getComputedStyle(composer.querySelector('.cm-placeholder')!);
     expect({ whiteSpace: placeholder.whiteSpace, textOverflow: placeholder.textOverflow })

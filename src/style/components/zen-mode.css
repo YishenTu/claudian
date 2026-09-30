@@ -40,6 +40,10 @@
   min-height: 0;
 }
 
+.claudian-zen > .claudian-zen-drawer.claudian-hidden {
+  display: none;
+}
+
 /* The drawer's open bottom meets the composer's top border as one outline. */
 .claudian-zen > .claudian-zen-drawer {
   border-top: 1px solid var(--background-modifier-border);
@@ -56,6 +60,8 @@
   min-height: 0;
   max-height: var(--claudian-zen-history-max-height);
   overflow: hidden;
+  /* Outside the scroller, so scrolled messages stop short of the drawer border. */
+  padding-top: 16px;
 }
 
 .claudian-zen-history > .claudian-messages-wrapper {
@@ -131,10 +137,6 @@
   box-shadow: none;
   color: var(--text-muted);
   cursor: pointer;
-}
-
-.claudian-zen button.claudian-zen-disclosure.claudian-hidden {
-  display: none;
 }
 
 /* The disclosure is the preview line itself. */
@@ -281,11 +283,12 @@
   --no-tooltip: false;
 }
 
-/* Controls sit at the right edge, so their menus open leftward from it. */
+/* Control menus open centered above their labels. */
 .claudian-zen-composer .claudian-model-dropdown,
 .claudian-zen-composer .claudian-thinking-options {
-  right: 0;
-  left: auto;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 /* The placeholder truncates on the input row instead of wrapping into the controls. */
