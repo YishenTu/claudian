@@ -396,6 +396,112 @@ async function createActiveSteerSession() {
 }
 
 describe('CodexExecutionBackend', () => {
+  it.each([
+    ['normal', 'workspace-write', 'on-request', 'user', 'workspaceWrite', 'workspace-write'],
+    ['auto-review', 'workspace-write', 'on-request', 'auto_review', 'workspaceWrite', 'workspace-write'],
+    ['yolo', 'danger-full-access', 'never', 'user', 'dangerFullAccess', 'workspace-write'],
+    ['auto-review', 'read-only', 'on-request', 'auto_review', 'readOnly', 'read-only'],
+    ['invalid', 'read-only', 'on-request', 'user', 'readOnly', 'corrupt'],
+  ])('sends the %s preset on thread start, resume, and every turn', async (
+    permissionMode, sandbox, approvalPolicy, approvalsReviewer, sandboxType, safeMode,
+  ) => {
+    let turn = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') return {
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+      };
+      if (method === 'thread/start' || method === 'thread/resume') return {
+        ...createThreadResult('thread-permissions'), approvalsReviewer,
+      };
+      if (method === 'turn/start') {
+        const turnId = `turn-permissions-${++turn}`;
+        queueMicrotask(() => completeTurn('thread-permissions', turnId));
+        return createTurnResult(turnId);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const plugin = createPlugin();
+    plugin.settings.providerConfigs.codex!.safeMode = safeMode;
+    const session = new CodexExecutionBackend(plugin).createSession(createSessionConfig());
+    for (const instructions of ['First instructions.', 'Updated instructions.']) {
+      const request = createRequest();
+      await collectEvents(session.execute({
+        ...request,
+        configuration: {
+          ...request.configuration, permissionMode,
+          systemInstructions: { kind: 'explicit', instructions },
+        },
+      }).events);
+    }
+    for (const method of ['thread/start', 'thread/resume']) {
+      expect(mockTransportRequest).toHaveBeenCalledWith(method, expect.objectContaining({
+        sandbox, approvalPolicy, approvalsReviewer,
+      }));
+    }
+    const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
+    expect(turns).toHaveLength(2);
+    for (const [, params] of turns) expect(params).toEqual(expect.objectContaining({
+      approvalPolicy, approvalsReviewer, sandboxPolicy: expect.objectContaining({ type: sandboxType }),
+    }));
+    await session.dispose();
+  });
+
+  it.each([undefined, 'user'])('does not run auto-review when the server returns reviewer %s', async reviewer => {
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') return {
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+      };
+      if (method === 'thread/start') return { ...createThreadResult('thread-no-review'), approvalsReviewer: reviewer };
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn('thread-no-review', 'turn-no-review'));
+        return createTurnResult('turn-no-review');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin()).createSession(createSessionConfig());
+    const request = createRequest();
+    const events = await collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, permissionMode: 'auto-review' },
+    }).events);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(mockTransportRequest.mock.calls.some(([method]) => method === 'turn/start')).toBe(false);
+    await session.dispose();
+  });
+
+  it.each([false, true])('switches a warm thread to auto-review and surfaces native rejection (reject: %s)', async reject => {
+    let turn = 0;
+    mockTransportRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+      if (method === 'initialize') return {
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+      };
+      if (method === 'thread/start') return createThreadResult('thread-review-switch');
+      if (method === 'turn/start') {
+        if (reject && params.approvalsReviewer === 'auto_review') {
+          throw new CodexRPCResponseError({ code: -32602, message: 'Unsupported approvalsReviewer: auto_review' });
+        }
+        const turnId = `turn-review-switch-${++turn}`;
+        queueMicrotask(() => completeTurn('thread-review-switch', turnId));
+        return createTurnResult(turnId);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin()).createSession(createSessionConfig());
+    const request = createRequest();
+    await collectEvents(session.execute(request).events);
+    const events = await collectEvents(session.execute({
+      ...request, configuration: { ...request.configuration, permissionMode: 'auto-review' },
+    }).events);
+    expect(mockTransportRequest.mock.calls.filter(([method]) => method === 'thread/start')).toHaveLength(1);
+    const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
+    expect(turns.map(([, params]) => params.approvalsReviewer)).toEqual(['user', 'auto_review']);
+    expect(turns[1][1]).toMatchObject({
+      approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite', networkAccess: false },
+    });
+    expect(events.some(event => event.type === 'execution_error')).toBe(reject);
+    expect(events.some(event => event.type === 'turn_started' && event.accepted)).toBe(!reject);
+    await session.dispose();
+  });
+
   it('rejects an unavailable selected model before native startup with a configuration error', async () => {
     const host = createPlugin();
     host.settings.providerConfigs!.codex!.visibleModels = [];

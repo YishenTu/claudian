@@ -788,7 +788,7 @@ export class ThinkingBudgetSelector {
   }
 }
 
-/** Choice between the provider's two permission modes. */
+/** Dropdown for the provider's permission modes. */
 export class PermissionToggle {
   private readonly menu: ToolbarMenu;
   private readonly iconEl: HTMLElement;
@@ -817,7 +817,7 @@ export class PermissionToggle {
 
   #getToggleConfig(): ProviderPermissionModeToggleConfig | null {
     const uiConfig = this.callbacks.getUIConfig();
-    return uiConfig.getPermissionModeToggle?.() ?? null;
+    return uiConfig.getPermissionModeToggle?.(this.callbacks.getSettings()) ?? null;
   }
 
   updateDisplay() {
@@ -830,24 +830,26 @@ export class PermissionToggle {
 
     this.menu.anchorEl.removeClass('claudian-hidden');
     const mode = this.callbacks.getSettings().permissionMode;
+    const choices = toggleConfig.options ?? [
+      { value: toggleConfig.inactiveValue, label: toggleConfig.inactiveLabel },
+      { value: toggleConfig.activeValue, label: toggleConfig.activeLabel },
+    ];
     const isActive = mode === toggleConfig.activeValue;
-    const label = isActive ? toggleConfig.activeLabel : toggleConfig.inactiveLabel;
+    const label = choices.find(choice => choice.value === mode)?.label ?? toggleConfig.inactiveLabel;
     this.labelEl.setText(label);
     this.iconEl.empty();
-    setIcon(this.iconEl, isActive ? 'shield-alert' : 'shield');
+    this.iconEl.toggleClass('claudian-hidden', !isActive);
+    if (isActive) setIcon(this.iconEl, 'shield-alert');
     this.menu.buttonEl.toggleClass('claudian-toolbar-chip--alert', isActive);
     this.menu.buttonEl.setAttribute('aria-label', `Permission mode: ${label}`);
 
     this.menu.menuEl.empty();
-    const choices = [
-      { value: toggleConfig.inactiveValue, label: toggleConfig.inactiveLabel },
-      { value: toggleConfig.activeValue, label: toggleConfig.activeLabel },
-    ];
     for (const choice of choices) {
       this.menu.createItem(this.menu.menuEl, {
         role: 'menuitemradio',
         checked: choice.value === mode,
         label: choice.label,
+        detail: choice.description,
         showCheck: true,
         onSelect: () => {
           if (choice.value === this.callbacks.getSettings().permissionMode) return;

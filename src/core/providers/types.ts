@@ -212,12 +212,13 @@ export interface ProviderReasoningOption extends ProviderUIOption {
   tokens?: number;
 }
 
-/** Compact permission-mode toggle descriptor for providers that expose the current toolbar control. */
+/** Permission choices; providers may extend the legacy two-mode control. */
 export interface ProviderPermissionModeToggleConfig {
   inactiveValue: string;
   inactiveLabel: string;
   activeValue: string;
   activeLabel: string;
+  options?: ProviderUIOption[];
 }
 
 /** Provider-reported service-tier choices, labels and resolved selection. */
@@ -242,7 +243,12 @@ export interface ProviderModeSelectorConfig {
 
 /** Provider model and execution preferences, independent of chat rendering. */
 export interface ProviderModelPolicy {
-  readonly permissionModes?: { inactiveValue: string; activeValue: string };
+  readonly permissionModes?: {
+    inactiveValue: string;
+    activeValue: string;
+    values?: readonly string[];
+    defaultValue?: string;
+  };
   /** Available models in durable selection order, independent of dropdown layout. */
   getModelOptions(settings: Record<string, unknown>): ProviderUIOption[];
 
@@ -314,7 +320,7 @@ export interface ProviderModelPolicy {
 
 /** UI composition may reuse policy, but application code consumes ProviderModelPolicy. */
 export interface ProviderChatUIConfig extends Omit<ProviderModelPolicy, 'permissionModes' | 'getServiceTierPolicy'> {
-  getPermissionModeToggle?(): ProviderPermissionModeToggleConfig | null;
+  getPermissionModeToggle?(settings?: Record<string, unknown>): ProviderPermissionModeToggleConfig | null;
   getServiceTierToggle?(settings: Record<string, unknown>): ProviderServiceTierToggleConfig | null;
   getModeSelector?(settings: Record<string, unknown>): ProviderModeSelectorConfig | null;
   getProviderIcon?(): ProviderIconSvg | null;

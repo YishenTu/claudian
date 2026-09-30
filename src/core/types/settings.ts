@@ -85,7 +85,7 @@ export interface AuxiliaryContinuityReset {
 }
 
 /** Permission mode for tool execution. */
-export type PermissionMode = 'yolo' | 'normal';
+export type PermissionMode = 'yolo' | 'normal' | 'auto-review';
 
 /** Scope for environment variable storage and snippets. */
 export type EnvironmentScope = 'shared' | `provider:${string}`;

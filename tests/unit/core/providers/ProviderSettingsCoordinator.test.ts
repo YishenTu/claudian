@@ -635,6 +635,21 @@ describe('ProviderSettingsCoordinator', () => {
   });
 
   describe('projectActiveProviderState', () => {
+    it('defaults a new Codex selection to automatic review without inheriting another provider permission', () => {
+      const settings = { settingsProvider: 'claude', permissionMode: 'yolo' };
+      expect(ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, 'codex').permissionMode)
+        .toBe('auto-review');
+      expect(settings.permissionMode).toBe('yolo');
+    });
+
+    it.each(['normal', 'auto-review', 'yolo'])('preserves the saved Codex permission %s', permissionMode => {
+      const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot({
+        settingsProvider: 'claude', permissionMode: 'normal',
+        savedProviderPermissionMode: { codex: permissionMode },
+      }, 'codex');
+      expect(snapshot.permissionMode).toBe(permissionMode);
+    });
+
     it.each(['claude', 'codex', 'grok', 'opencode'] as const)(
       'projects legacy plan permissions as Safe for %s',
       (providerId) => {

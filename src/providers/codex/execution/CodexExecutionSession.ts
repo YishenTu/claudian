@@ -127,6 +127,7 @@ const JSON_RPC_PRE_HANDOFF_REJECTION_CODES = new Set([
 
 interface CodexPolicy {
   readonly approvalPolicy: string;
+  readonly approvalsReviewer: string;
   readonly sandbox: string;
   readonly sandboxPolicy: SandboxPolicy;
 }
@@ -276,6 +277,7 @@ export class CodexExecutionSession
   private threadId: string | null;
   private loadedThreadId: string | null = null;
   private loadedThreadBaseInstructions: string | null = null;
+  private supportsApprovalReviewer = false;
   private sessionFilePath: string | null;
   private sessionFileLookupThreadId: string | null = null;
   private workspaceDependencyToolVersion: number | null;
@@ -518,6 +520,10 @@ export class CodexExecutionSession
         this.#emitSnapshot(run);
       }
 
+      if (policy.approvalsReviewer === 'auto_review' && !this.supportsApprovalReviewer) {
+        throw new Error('Codex CLI did not enable automatic approval review. Update Codex or choose Ask for approval.');
+      }
+
       this.notificationRouter = new CodexNotificationRouter(
         chunk => this.handleStreamChunk(run, chunk),
         this.#resolveTargetWorkingDirectory(),
@@ -568,6 +574,7 @@ export class CodexExecutionSession
         threadId: thread.threadId,
         input: bundle.input,
         approvalPolicy: policy.approvalPolicy,
+        approvalsReviewer: policy.approvalsReviewer,
         model,
         serviceTier,
         effort,
@@ -1123,6 +1130,7 @@ export class CodexExecutionSession
           threadId: this.threadId,
           model,
           approvalPolicy: policy.approvalPolicy,
+          approvalsReviewer: policy.approvalsReviewer,
           sandbox: policy.sandbox,
           serviceTier: resolveCodexServiceTier(
             request.configuration.serviceTier ?? settings.serviceTier,
@@ -1138,6 +1146,7 @@ export class CodexExecutionSession
             : {}),
         },
       );
+      this.#recordApprovalReviewer(result, policy.approvalsReviewer);
       this.subagents.seed(result.thread);
       this.loadedThreadId = result.thread.id;
       this.loadedThreadBaseInstructions = baseInstructions;
@@ -1165,6 +1174,7 @@ export class CodexExecutionSession
         model,
         cwd: this.#resolveTargetWorkingDirectory(),
         approvalPolicy: policy.approvalPolicy,
+        approvalsReviewer: policy.approvalsReviewer,
         sandbox: policy.sandbox,
         serviceTier: resolveCodexServiceTier(
           request.configuration.serviceTier ?? settings.serviceTier,
@@ -1182,6 +1192,7 @@ export class CodexExecutionSession
         ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
       },
     );
+    this.#recordApprovalReviewer(result, policy.approvalsReviewer);
     this.loadedThreadId = result.thread.id;
     this.loadedThreadBaseInstructions = baseInstructions;
     this.workspaceDependencyToolVersion = dynamicTools.some(spec =>
@@ -1257,6 +1268,7 @@ export class CodexExecutionSession
         lastTurnId: fork.resumeAt,
         model,
         approvalPolicy: policy.approvalPolicy,
+        approvalsReviewer: policy.approvalsReviewer,
         sandbox: policy.sandbox,
         serviceTier: resolveCodexServiceTier(request.configuration.serviceTier ?? settings.serviceTier, model, settings),
         baseInstructions: `${baseInstructions}\n\n${LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS}`,
@@ -1285,6 +1297,7 @@ export class CodexExecutionSession
         threadId: target.threadId,
         model,
         approvalPolicy: policy.approvalPolicy,
+        approvalsReviewer: policy.approvalsReviewer,
         sandbox: policy.sandbox,
         serviceTier: resolveCodexServiceTier(
           request.configuration.serviceTier ?? settings.serviceTier,
@@ -1305,6 +1318,7 @@ export class CodexExecutionSession
       throw new Error('Codex CLI resumed a different thread than the owned fork target.');
     }
 
+    this.#recordApprovalReviewer(resumeResult, policy.approvalsReviewer);
     this.loadedThreadId = target.threadId;
     this.loadedThreadBaseInstructions = baseInstructions;
     const checkpointIndex = resumeResult.thread.turns.findIndex(
@@ -1353,6 +1367,7 @@ export class CodexExecutionSession
       'thread/fork',
       { threadId: fork.sessionId, ...overrides },
     ).then((forkResult) => {
+      this.#recordApprovalReviewer(forkResult, overrides.approvalsReviewer);
       const threadId = normalizeString(forkResult.thread.id);
       if (!threadId) {
         throw new Error('Codex CLI fork did not return a child thread ID.');
@@ -1622,6 +1637,7 @@ export class CodexExecutionSession
     this.subagents.clear();
     this.loadedThreadId = null;
     this.loadedThreadBaseInstructions = null;
+    this.supportsApprovalReviewer = false;
     this.dynamicToolRegistry = new CodexDynamicToolRegistry();
     this.serverRequestRouter.setDynamicToolRegistry(null);
 
@@ -1857,6 +1873,12 @@ export class CodexExecutionSession
     };
   }
 
+  #recordApprovalReviewer(result: ThreadStartResult, requested: unknown): void {
+    // Older servers may ignore unknown request fields. Never claim automatic review in that case.
+    this.supportsApprovalReviewer = typeof result.approvalsReviewer === 'string'
+      && (requested !== 'auto_review' || result.approvalsReviewer === 'auto_review');
+  }
+
   #resolveNativePersistence(): boolean | undefined {
     if (this.config.nativePersistence === 'enabled') return true;
     if (this.config.nativePersistence === 'disabled-if-supported') return false;
@@ -1871,6 +1893,7 @@ export class CodexExecutionSession
     if (toolPolicy.kind === 'passive' || toolPolicy.kind === 'read-only') {
       return {
         approvalPolicy: 'never',
+        approvalsReviewer: 'user',
         sandbox: 'read-only',
         sandboxPolicy: strictReadOnlySandbox(),
       };
@@ -1878,6 +1901,7 @@ export class CodexExecutionSession
     if (toolPolicy.kind === 'allow-list') {
       return {
         approvalPolicy: 'never',
+        approvalsReviewer: 'user',
         sandbox: 'read-only',
         sandboxPolicy: strictReadOnlySandbox(),
       };
@@ -1885,6 +1909,7 @@ export class CodexExecutionSession
     if (toolPolicy.kind === 'unrestricted') {
       return {
         approvalPolicy: 'never',
+        approvalsReviewer: 'user',
         sandbox: 'danger-full-access',
         sandboxPolicy: { type: 'dangerFullAccess' },
       };
@@ -1893,7 +1918,7 @@ export class CodexExecutionSession
     const permissionMode =
       normalizeString(request.configuration.permissionMode)
       ?? normalizeString(settings.permissionMode)
-      ?? 'normal';
+      ?? 'auto-review';
     const safeMode = getCodexProviderSettings(settings).safeMode;
     const sandboxConfig = resolveCodexSandboxConfig(permissionMode, safeMode);
     return {
@@ -2175,11 +2200,15 @@ function readProviderProjection(
 function resolveCodexSandboxConfig(
   permissionMode: string,
   safeMode: CodexSafeMode,
-): { approvalPolicy: string; sandbox: string } {
+): Pick<CodexPolicy, 'approvalPolicy' | 'approvalsReviewer' | 'sandbox'> {
   if (permissionMode === 'yolo') {
-    return { approvalPolicy: 'never', sandbox: 'danger-full-access' };
+    return { approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access' };
   }
-  return { approvalPolicy: 'on-request', sandbox: safeMode };
+  return {
+    approvalPolicy: 'on-request',
+    approvalsReviewer: permissionMode === 'auto-review' ? 'auto_review' : 'user',
+    sandbox: safeMode,
+  };
 }
 
 function strictReadOnlySandbox(): SandboxPolicy {
