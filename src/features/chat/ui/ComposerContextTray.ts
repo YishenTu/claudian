@@ -89,16 +89,19 @@ export class ComposerContextTray {
   }
 
   refreshLayout(): void {
-    const chips = Array.from(
+    const allChips = Array.from(
       this.containerEl.querySelectorAll<HTMLElement>('.claudian-context-chip')
     );
     const moreButton = this.containerEl.querySelector<HTMLElement>('.claudian-context-more');
-    if (!moreButton || chips.length === 0) return;
+    if (!moreButton || allChips.length === 0) return;
 
-    for (const chip of chips) {
+    for (const chip of allChips) {
       chip.removeClass('claudian-context-chip--overflow-hidden');
     }
     moreButton.addClass('claudian-hidden');
+    // A presentation may hide some chips (zen hides the linked note); they occupy no row.
+    const chips = allChips.filter(chip => chip.offsetParent !== null);
+    if (chips.length === 0) return;
 
     const rows = this.#getRows(chips);
     const hasOverflow = rows.length > MAX_COLLAPSED_ROWS;
