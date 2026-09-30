@@ -481,7 +481,8 @@ describe('permission button', () => {
     const button = ui.getByRole('button', { name: 'Permission mode: Safe' });
     const chipIcons = () => jest.mocked(setIcon).mock.calls
       .filter(([el]) => button.contains(el as Node)).map(([, icon]) => icon).filter(icon => icon !== 'chevron-down');
-    expect(chipIcons()).toEqual(['shield']);
+    // Only a mode that skips approvals carries an icon.
+    expect(chipIcons()).toEqual([]);
     expect(button.getAttribute('aria-haspopup')).toBe('menu');
     fireEvent.keyDown(button, { key: 'ArrowDown' });
     const menu = ui.getByRole('menu', { name: 'Permission mode' });
@@ -505,13 +506,17 @@ describe('permission button', () => {
     expect(document.activeElement).toBe(button);
     expect(ui.getByRole('button', { name: 'Permission mode: YOLO' })).toBe(button);
     expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(true);
-    // The active mode swaps the plain shield for a warning shield.
-    expect(chipIcons().at(-1)).toBe('shield-alert');
+    expect(chipIcons()).toEqual(['shield-alert']);
     fireEvent.click(button);
+    jest.mocked(setIcon).mockClear();
+    const iconSlot = button.querySelector('.claudian-toolbar-chip-icon')!;
+    iconSlot.appendChild(document.createElement('svg'));
     fireEvent.click(ui.getByRole('menuitemradio', { name: 'Safe' }));
     await flush();
     expect(callbacks.onPermissionModeChange).toHaveBeenLastCalledWith('normal');
     expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(false);
+    expect(chipIcons()).toEqual([]);
+    expect(iconSlot.childElementCount).toBe(0);
     fireEvent.click(button);
     fireEvent.click(ui.getByRole('menuitemradio', { name: 'YOLO' }));
     await flush();
