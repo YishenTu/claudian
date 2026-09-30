@@ -390,6 +390,7 @@ export interface ThreadStartParams {
   model?: string;
   cwd?: string;
   approvalPolicy?: string;
+  approvalsReviewer?: string;
   sandbox?: string;
   serviceTier?: string | null;
   baseInstructions?: string;
@@ -482,6 +483,7 @@ export interface ThreadResumeParams {
   threadId: string;
   model?: string;
   approvalPolicy?: string;
+  approvalsReviewer?: string;
   sandbox?: string;
   serviceTier?: string | null;
   baseInstructions?: string;

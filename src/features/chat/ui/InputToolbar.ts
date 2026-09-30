@@ -816,7 +816,7 @@ export class PermissionToggle {
   }
 
   #getOptions(): readonly ProviderPermissionModeOption[] {
-    return this.callbacks.getUIConfig().getPermissionModeOptions?.() ?? [];
+    return this.callbacks.getUIConfig().getPermissionModeOptions?.(this.callbacks.getSettings()) ?? [];
   }
 
   updateDisplay() {
@@ -834,6 +834,7 @@ export class PermissionToggle {
     const bypasses = current.bypassesApprovals === true;
     this.labelEl.setText(current.label);
     this.iconEl.empty();
+    this.iconEl.toggleClass('claudian-hidden', !bypasses);
     if (bypasses) setIcon(this.iconEl, 'shield-alert');
     this.menu.buttonEl.toggleClass('claudian-toolbar-chip--alert', bypasses);
     this.menu.buttonEl.setAttribute('aria-label', `Permission mode: ${current.label}`);

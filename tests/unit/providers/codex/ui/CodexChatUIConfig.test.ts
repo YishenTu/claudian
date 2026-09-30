@@ -581,10 +581,10 @@ describe('CodexChatUIConfig', () => {
   });
 
   describe('getPermissionModeOptions', () => {
-    it('should return Safe and YOLO options', () => {
-      expect(codexChatUIConfig.getPermissionModeOptions?.()).toEqual([
-        { value: 'normal', label: 'SAFE' },
-        { value: 'yolo', label: 'YOLO', bypassesApprovals: true },
+    it('provides the three permission presets while retaining persisted mode values', () => {
+      const options = codexChatUIConfig.getPermissionModeOptions!()!;
+      expect(options.map(({ value, label }) => [value, label])).toEqual([
+        ['auto-review', 'Approve for me'], ['normal', 'Ask for approval'], ['yolo', 'Full access'],
       ]);
     });
   });

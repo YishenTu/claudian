@@ -7,10 +7,12 @@ import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { setIcon } from 'obsidian';
 
+import type { ProviderPermissionModeOption } from '@/core/providers/types';
 import type { UsageInfo } from '@/core/types';
 import { getBlankTabModelOptions } from '@/features/chat/tabs/TabProviderState';
 import { ContextUsageMeter, createInputToolbar, ModelSelector, type ToolbarCallbacks } from '@/features/chat/ui/InputToolbar';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
+import { codexChatUIConfig } from '@/providers/codex/ui/CodexChatUIConfig';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
 HTMLElement.prototype.addClass = function (...classes) { this.classList.add(...classes); };
@@ -46,7 +48,7 @@ interface FixtureOptions {
   reasoningOptions?: Array<Record<string, unknown>>;
   reasoningControl?: string;
   permissionToggle?: boolean;
-  permissionModes?: Array<Record<string, unknown>>;
+  permissionModes?: readonly ProviderPermissionModeOption[];
   serviceTier?: boolean;
   modeSelector?: boolean;
   providerIcon?: Record<string, unknown>;
@@ -475,6 +477,42 @@ describe('model button', () => {
 });
 
 describe('permission button', () => {
+  it('shows all Codex permissions and allows keyboard selection with accessible descriptions', async () => {
+    const { callbacks, host, settings, toolbar, ui, uiConfig } = renderToolbar({
+      settings: { permissionMode: 'auto-review' },
+    });
+    uiConfig.getPermissionModeOptions = () => codexChatUIConfig.getPermissionModeOptions!()!;
+    toolbar.permissionToggle.updateDisplay();
+    const button = ui.getByRole('button', { name: 'Permission mode: Approve for me' });
+    const icon = button.querySelector<HTMLElement>('.claudian-toolbar-chip-icon')!;
+    expect(getComputedStyle(icon).display).toBe('none');
+    fireEvent.keyDown(button, { key: 'ArrowDown' });
+    const items = ui.getAllByRole('menuitemradio');
+    expect(items).toHaveLength(3);
+    expect(items[0]).toBe(ui.getByRole('menuitemradio', { name: /^Approve for me/ }));
+    expect(items[1]).toBe(ui.getByRole('menuitemradio', { name: /^Ask for approval/ }));
+    expect(ui.getByRole('menuitemradio', { name: /^Approve for me/, checked: true })).toBe(document.activeElement);
+    expect(ui.getByText('Auto-review extra access.')).toBeTruthy();
+    expect((await axe(host)).violations).toEqual([]);
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(items[1]);
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    const fullAccess = ui.getByRole('menuitemradio', { name: /^Full access/ });
+    expect(document.activeElement).toBe(fullAccess);
+    fireEvent.click(fullAccess);
+    await flush();
+    expect(callbacks.onPermissionModeChange).toHaveBeenLastCalledWith('yolo');
+    expect(settings.permissionMode).toBe('yolo');
+    expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(true);
+    expect(getComputedStyle(icon).display).not.toBe('none');
+    fireEvent.click(button);
+    fireEvent.click(ui.getByRole('menuitemradio', { name: /^Ask for approval/ }));
+    await flush();
+    expect(callbacks.onPermissionModeChange).toHaveBeenLastCalledWith('normal');
+    expect(ui.getByRole('button', { name: 'Permission mode: Ask for approval' })).toBe(button);
+    expect(getComputedStyle(icon).display).toBe('none');
+  });
+
   it('offers both provider modes, marks the active one, and closes after a choice', async () => {
     jest.mocked(setIcon).mockClear();
     const { callbacks, host, toolbar, ui } = renderToolbar();
@@ -530,9 +568,7 @@ describe('permission button', () => {
   it('lists every Claude permission mode with its description and alerts only on YOLO', async () => {
     const { callbacks, ui } = renderToolbar({
       settings: { permissionMode: 'auto' },
-      permissionModes: (claudeChatUIConfig as unknown as {
-        getPermissionModeOptions?: () => Array<Record<string, unknown>>;
-      }).getPermissionModeOptions?.(),
+      permissionModes: claudeChatUIConfig.getPermissionModeOptions?.() ?? undefined,
     });
     const button = ui.getByRole('button', { name: 'Permission mode: Auto' });
     expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(false);

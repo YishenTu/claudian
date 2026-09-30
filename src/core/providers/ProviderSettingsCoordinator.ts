@@ -429,7 +429,8 @@ export class ProviderSettingsCoordinator {
 
     const projectedPermissionMode = savedPermissionModeValue
       ?? derivedPermissionMode
-      ?? (shouldPreferCurrentProjection ? currentPermissionMode : undefined)
+      ?? (shouldPreferCurrentProjection || settings.settingsProvider === providerId ? currentPermissionMode : undefined)
+      ?? normalizeToggleValue(permissionPolicy.defaultValue, new Set(permissionPolicy.values))
       ?? currentPermissionMode;
 
     if (projectedPermissionMode !== undefined) {

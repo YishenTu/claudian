@@ -217,6 +217,8 @@ export interface ProviderPermissionModePolicy {
   readonly values: readonly string[];
   /** Fail-closed value for unknown stored values. */
   readonly fallbackValue: string;
+  /** Initial choice when no permission has been selected for this provider. */
+  readonly defaultValue?: string;
   /** Maps a retired stored value to a current one; unmapped values use the fallback. */
   migrateValue?(value: string, settings: Record<string, unknown>): string | undefined;
 }
@@ -321,7 +323,7 @@ export interface ProviderModelPolicy {
 
 /** UI composition may reuse policy, but application code consumes ProviderModelPolicy. */
 export interface ProviderChatUIConfig extends Omit<ProviderModelPolicy, 'permissionModes' | 'getServiceTierPolicy'> {
-  getPermissionModeOptions?(): readonly ProviderPermissionModeOption[] | null;
+  getPermissionModeOptions?(settings?: Record<string, unknown>): readonly ProviderPermissionModeOption[] | null;
   getServiceTierToggle?(settings: Record<string, unknown>): ProviderServiceTierToggleConfig | null;
   getModeSelector?(settings: Record<string, unknown>): ProviderModeSelectorConfig | null;
   getProviderIcon?(): ProviderIconSvg | null;
