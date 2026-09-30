@@ -12,7 +12,8 @@
   color: var(--text-normal);
   font-family: inherit;
   font-size: 14px;
-  line-height: 1.6;
+  /* One source for the pre-mount placeholder and the mounted editor, so first focus does not shift layout. */
+  line-height: 1.4;
   cursor: text;
   white-space: pre-wrap;
 }
@@ -37,6 +38,7 @@
   max-height: var(--claudian-textarea-max-height, none);
   overflow: auto;
   font-family: inherit;
+  line-height: inherit;
 }
 
 .claudian-composer-editor .cm-content {
