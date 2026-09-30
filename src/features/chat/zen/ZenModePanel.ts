@@ -31,14 +31,19 @@ const RESERVED_HEIGHT_PROPERTY = '--claudian-zen-reserved-height';
 
 let panelSequence = 0;
 
-export function captureZenScrollIntent(runtime: AssembledTabRuntime, top = runtime.dom.messagesEl.scrollTop): ZenScrollSnapshot {
-  return { top, follow: runtime.state.autoScrollEnabled };
+/** Reads the last visible position; a hidden transcript's own offset reads zero. */
+export function captureZenScrollIntent(runtime: AssembledTabRuntime): ZenScrollSnapshot {
+  return { top: runtime.state.readingScrollTop, follow: runtime.state.autoScrollEnabled };
 }
 
 /** Follows new output when the reader was following, otherwise keeps their position. */
-export function restoreZenScrollIntent(runtime: AssembledTabRuntime, snapshot: ZenScrollSnapshot): void {
+export function restoreZenScrollIntent(
+  runtime: AssembledTabRuntime,
+  snapshot: ZenScrollSnapshot = captureZenScrollIntent(runtime),
+): void {
   const messagesEl = runtime.dom.messagesEl;
   messagesEl.scrollTop = snapshot.follow ? messagesEl.scrollHeight : snapshot.top;
+  runtime.state.readingScrollTop = snapshot.top;
   // Relocation can emit geometry-only scroll events; they must not replace the captured intent.
   if (runtime.state.autoScrollEnabled !== snapshot.follow) runtime.state.autoScrollEnabled = snapshot.follow;
 }
@@ -61,7 +66,6 @@ export class ZenModePanel {
   readonly #statusEl: HTMLElement;
   // A parentless scope keeps the active note's hotkeys away from zen input while it has focus.
   readonly #keyScope = new Scope();
-  readonly #scrollTops = new WeakMap<AssembledTabRuntime, number>();
   #scopePushed = false;
   #runtime: AssembledTabRuntime | null = null;
   #unsubscribeMain: (() => void) | null = null;
@@ -139,8 +143,7 @@ export class ZenModePanel {
     return this.#runtime;
   }
 
-  /** Binds the displayed runtime; the snapshot is its position before relocation. */
-  bind(runtime: AssembledTabRuntime | null, scroll: ZenScrollSnapshot | null = null): void {
+  bind(runtime: AssembledTabRuntime | null): void {
     if (this.#destroyed) return;
     if (runtime === this.#runtime) {
       this.#scheduleRender();
@@ -151,40 +154,19 @@ export class ZenModePanel {
     this.#runtime = runtime;
     if (!runtime) return;
 
-    if (scroll) this.#scrollTops.set(runtime, scroll.top);
     this.#unsubscribeMain = runtime.state.subscribeActivity(() => this.#scheduleRender());
     if (runtime.providerId) this.#rootEl.dataset.provider = runtime.providerId;
     else delete this.#rootEl.dataset.provider;
-    if (this.#historyExpanded) {
-      restoreZenScrollIntent(runtime, scroll ?? captureZenScrollIntent(runtime, this.#scrollTops.get(runtime)));
-    }
+    if (this.#historyExpanded) restoreZenScrollIntent(runtime);
     this.#render();
   }
 
   setHistoryExpanded(expanded: boolean): void {
     if (this.#destroyed || expanded === this.#historyExpanded) return;
-    const runtime = this.#runtime;
-    if (!expanded && runtime) this.#scrollTops.set(runtime, runtime.dom.messagesEl.scrollTop);
     this.#historyExpanded = expanded;
     this.#applyHistoryExpanded();
-    // Hidden history receives no scroll events, so the live auto-scroll intent is current.
-    if (expanded && runtime) {
-      restoreZenScrollIntent(runtime, captureZenScrollIntent(runtime, this.#scrollTops.get(runtime)));
-    }
+    if (expanded && this.#runtime) restoreZenScrollIntent(this.#runtime);
     this.options.onHistoryExpandedChange(expanded);
-  }
-
-  /** Captures the reader's position before the transcript leaves this surface. */
-  captureScroll(): ZenScrollSnapshot | null {
-    const runtime = this.#runtime;
-    if (!runtime) return null;
-    return this.#historyExpanded
-      ? captureZenScrollIntent(runtime)
-      : captureZenScrollIntent(runtime, this.#scrollTops.get(runtime));
-  }
-
-  containsFocus(): boolean {
-    return this.#rootEl.contains(this.#rootEl.ownerDocument.activeElement);
   }
 
   destroy(): void {
@@ -252,9 +234,7 @@ export class ZenModePanel {
     if (hasHistory !== this.#hasHistory) {
       this.#hasHistory = hasHistory;
       this.#applyHistoryExpanded();
-      if (hasHistory && this.#historyExpanded) {
-        restoreZenScrollIntent(runtime, captureZenScrollIntent(runtime, this.#scrollTops.get(runtime)));
-      }
+      if (hasHistory && this.#historyExpanded) restoreZenScrollIntent(runtime);
     }
 
     if (preview.tone !== this.#lastTone) {

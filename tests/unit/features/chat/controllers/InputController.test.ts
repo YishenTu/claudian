@@ -454,7 +454,7 @@ describe('InputController coordinator execution', () => {
     expect(fixture.state.messages).toEqual([]);
     expect(fixture.deps.renderer.removeMessage).toHaveBeenCalledTimes(2);
     expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
-    expect(fixture.deps.streamController.appendText).not.toHaveBeenCalled();
+    expect(fixture.deps.streamController.appendError).not.toHaveBeenCalled();
   });
 
   it('keeps unsent input in the closing transcript when preparation fails before handoff', async () => {
@@ -507,7 +507,7 @@ describe('InputController coordinator execution', () => {
     expect(fixture.state.messages).toEqual([]);
     expect(fixture.deps.renderer.removeMessage).toHaveBeenCalledTimes(2);
     expect(fixture.deps.conversationController.save).not.toHaveBeenCalled();
-    expect(fixture.deps.streamController.appendText).not.toHaveBeenCalled();
+    expect(fixture.deps.streamController.appendError).not.toHaveBeenCalled();
   });
 
   it('does not restore input after an ambiguous post-handoff rejection', async () => {
@@ -520,9 +520,7 @@ describe('InputController coordinator execution', () => {
     expect(fixture.input.value).toBe('');
     expect(fixture.state.messages).toHaveLength(2);
     expect(fixture.deps.conversationController.save).toHaveBeenCalledTimes(1);
-    expect(fixture.deps.streamController.appendText).toHaveBeenCalledWith(
-      '\n\n**Error:** stream failed',
-    );
+    expect(fixture.deps.streamController.appendError).toHaveBeenCalledWith('stream failed');
   });
 
   it('puts the completed turn checkpoint and statistics on the final assistant projection after message boundaries', async () => {
@@ -625,9 +623,7 @@ describe('InputController coordinator execution', () => {
 
       await fixture.controller.sendMessage({ content: 'test request' });
 
-      expect(fixture.deps.streamController.appendText).toHaveBeenCalledWith(
-        '\n\n**Error:** Model overloaded',
-      );
+      expect(fixture.deps.streamController.appendError).toHaveBeenCalledWith('Model overloaded');
       const assistantMessage = fixture.state.messages[1];
       expect(assistantMessage.durationSeconds).toBeUndefined();
       expect(assistantMessage.durationFlavorWord).toBeUndefined();
@@ -648,9 +644,7 @@ describe('InputController coordinator execution', () => {
 
       await fixture.controller.sendMessage({ content: 'test request' });
 
-      expect(fixture.deps.streamController.appendText).toHaveBeenCalledWith(
-        '\n\n**Error:** stream failed',
-      );
+      expect(fixture.deps.streamController.appendError).toHaveBeenCalledWith('stream failed');
       const assistantMessage = fixture.state.messages[1];
       expect(assistantMessage.durationSeconds).toBeUndefined();
       expect(assistantMessage.durationFlavorWord).toBeUndefined();

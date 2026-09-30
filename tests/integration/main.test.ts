@@ -211,7 +211,7 @@ describe('ClaudianPlugin', () => {
       updateHiddenCommands: jest.fn(), refreshModelSelector: jest.fn(),
     }));
     const viewsSpy = jest.spyOn(plugin, 'getAllViews').mockReturnValue(views as never);
-    const zenRefresh = jest.spyOn(ZenModeController.prototype, 'refresh');
+    const zenReconcile = jest.spyOn(ZenModeController.prototype, 'reconcile');
     let finish!: () => void;
     let started!: () => void;
     const writing = new Promise<void>(resolve => { started = resolve; });
@@ -231,13 +231,13 @@ describe('ClaudianPlugin', () => {
       for (const view of views) {
         for (const refresh of Object.values(view)) expect(refresh).not.toHaveBeenCalled();
       }
-      expect(zenRefresh).not.toHaveBeenCalled();
+      expect(zenReconcile).not.toHaveBeenCalled();
       finish();
       await change;
       for (const view of views) {
         for (const refresh of Object.values(view)) expect(refresh).toHaveBeenCalledTimes(1);
       }
-      expect(zenRefresh).toHaveBeenCalledTimes(1);
+      expect(zenReconcile).toHaveBeenCalledTimes(1);
       persist.mockRejectedValueOnce(new Error('disk unavailable'));
       await expect(plugin.mutateSettings(settings => {
         settings.showMessageTimestamps = !settings.showMessageTimestamps;
@@ -253,7 +253,7 @@ describe('ClaudianPlugin', () => {
       expect(plugin.getCommittedSettings().customContextLimits).toEqual({ test: 2000 });
     } finally {
       viewsSpy.mockRestore();
-      zenRefresh.mockRestore();
+      zenReconcile.mockRestore();
       persist.mockRestore();
     }
   });

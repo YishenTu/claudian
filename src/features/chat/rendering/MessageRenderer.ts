@@ -42,7 +42,13 @@ import {
 import { MarkdownRenderScope } from './MarkdownRenderScope';
 import { renderMermaidDiagrams } from './MermaidRenderer';
 import { getResponseSegments } from './NotificationBoundaries';
-import { createResponseTextBlock, getResponseElementKind, getResponseLayout, markResponseElement } from './ResponseLayout';
+import {
+  createResponseTextBlock,
+  formatWorkDuration,
+  getResponseElementKind,
+  getResponseLayout,
+  markResponseElement,
+} from './ResponseLayout';
 import { resolveSubagentAdapter } from './subagentAdapterResolution';
 import { renderSubagentHistory } from './SubagentHistoryRenderer';
 import {
@@ -449,15 +455,13 @@ export class MessageRenderer {
       // Fallback tool calls can follow the answer in the DOM without belonging to the answer.
       const workEls = children.filter(child => !answerEls.has(child));
       if (earlierEls.length || workEls.length || msg.durationSeconds !== undefined) {
-        const seconds = Math.max(0, Math.floor(msg.durationSeconds ?? 0));
-        const duration = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
         this.collapsedResponses.add(msgEl);
         const wrapper = workContentEl.createDiv({
           cls: 'claudian-work', attr: { 'data-work-message-id': msg.id },
         });
         workContentEl.insertBefore(wrapper, workContentEl.firstChild);
         const historyId = `claudian-work-history-${MessageRenderer.nextHistoryId++}`;
-        const label = msg.durationSeconds === undefined ? 'Worked' : `Worked for ${duration}`;
+        const label = msg.durationSeconds === undefined ? 'Worked' : `Worked for ${formatWorkDuration(msg.durationSeconds)}`;
         const header = wrapper.createEl('button', {
           cls: 'claudian-work-header',
           text: label,

@@ -795,7 +795,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   /** Moves the active transcript into zen history, restoring any other placement first. */
   private updateZenTranscriptLocation(activeTab: AssembledTabRuntime | null): void {
     const historyEl = this.zenSlots?.historyEl ?? null;
-    const placed = this.zenTranscript ?? null;
+    const placed = this.zenTranscript;
     if (placed && (
       placed.tab !== activeTab
       || placed.tab.dom.messagesWrapperEl.parentElement !== historyEl
@@ -2487,7 +2487,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   private stopZenModeSource(): void {
-    const unregister = this.zenSourceRegistration ?? null;
+    const unregister = this.zenSourceRegistration;
     this.zenSourceRegistration = null;
     unregister?.();
   }

@@ -1,5 +1,6 @@
 import type { ChatMessage, ToolCallInfo } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
+import { formatWorkDuration, getFinalResponseText } from '../rendering/ResponseLayout';
 import type { ChatState } from '../state/ChatState';
 import type { ChatActivity } from '../state/types';
 
@@ -52,23 +53,14 @@ export function formatActivityPreview(source: ActivitySource): ZenActivityPrevie
 
 /** Mirrors the transcript's "Worked for" label, then the first line of the final answer. */
 function describeFinishedTurn(message: ChatMessage, durationSeconds: number, activity: ChatActivity | null): string {
-  const seconds = Math.max(0, Math.floor(durationSeconds));
-  const duration = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  const duration = formatWorkDuration(durationSeconds);
   // The final text block joins the message only after finalization; until then it is the latest activity.
   const result = activity
     ? (activity.kind === 'text' ? firstNonEmptyLine(activity.text) : '')
-    : firstNonEmptyLine(finalText(message));
+    : firstNonEmptyLine(getFinalResponseText(message));
   return result
     ? t('chat.zen.workedForResult', { duration, result })
     : t('chat.zen.workedFor', { duration });
-}
-
-function finalText(message: ChatMessage): string {
-  const blocks = message.contentBlocks;
-  if (!blocks?.length) return message.content;
-  let start = blocks.length;
-  while (start > 0 && (blocks[start - 1].type === 'text' || blocks[start - 1].type === 'citations')) start -= 1;
-  return blocks.slice(start).flatMap(block => block.type === 'text' ? [block.content] : []).join('\n');
 }
 
 function describeActivity(activity: Exclude<ChatActivity, { kind: 'error' }>): PreviewLine {

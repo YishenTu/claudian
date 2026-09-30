@@ -343,12 +343,12 @@ export class SideChatRuntime {
         failed = true;
         this.#lastError = result.error?.message
           ?? 'The side chat provider session is no longer available.';
-        await this.#stream.appendText(`\n\n**Error:** ${this.#lastError}`);
+        await this.#stream.appendError(this.#lastError);
       }
     } catch (error) {
       failed = true;
       this.#lastError = error instanceof Error ? error.message : String(error);
-      await this.#stream.appendText(`\n\n**Error:** ${this.#lastError}`);
+      await this.#stream.appendError(this.#lastError);
     } finally {
       this.#activeDelivery = undefined;
       const finalAssistant = this.#activeAssistant ?? assistantMessage;

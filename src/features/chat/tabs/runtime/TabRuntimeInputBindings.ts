@@ -186,6 +186,7 @@ export function buildTabRuntimeInputBindings(
   });
 
   const scrollHandler = () => {
+    if (dom.messagesEl.clientHeight > 0) state.readingScrollTop = dom.messagesEl.scrollTop;
     if (!isAutoScrollAllowed()) {
       navigationScrollIntent = null;
       state.autoScrollEnabled = false;

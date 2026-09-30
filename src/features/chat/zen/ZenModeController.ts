@@ -78,11 +78,6 @@ export class ZenModeController {
     return () => this.#unregister(source);
   }
 
-  /** Applies committed setting changes. */
-  refresh(): void {
-    this.reconcile();
-  }
-
   reconcile(): void {
     if (this.#disposed) return;
     // Moving nodes can publish presentation changes; finish one pass before the next.
@@ -201,14 +196,13 @@ export class ZenModeController {
     const hostEl = findCentralWorkspaceHost(this.deps.app);
     if (!runtime || !hostEl) return;
 
-    const scroll = captureZenScrollIntent(runtime);
     const panel = new ZenModePanel(hostEl, {
       keymap: this.deps.app.keymap ?? null,
       historyExpanded: this.#historyExpanded.get(source) ?? false,
       onHistoryExpandedChange: expanded => this.#historyExpanded.set(source, expanded),
     });
     this.#attachment = { source, panel, release: source.attachZenPresentation(panel.slots) };
-    panel.bind(runtime, scroll);
+    panel.bind(runtime);
   }
 
   /** Restores every moved node to the source before the zen host is removed. */
@@ -217,7 +211,7 @@ export class ZenModeController {
     if (!attachment) return;
     this.#attachment = null;
     const runtime = attachment.panel.runtime;
-    const scroll = attachment.panel.captureScroll();
+    const scroll = runtime ? captureZenScrollIntent(runtime) : null;
     try {
       attachment.release();
     } finally {

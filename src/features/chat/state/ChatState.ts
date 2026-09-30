@@ -54,6 +54,8 @@ export class ChatState {
   /** Null derives activity from the latest message after transcript changes. */
   #activity: ChatActivity | null = null;
   readonly #activityListeners = new Set<() => void>();
+  /** Last transcript scroll offset seen while laid out; a hidden scroller reports zero. */
+  readingScrollTop = 0;
   private thinkingIndicatorTimeoutWindow: Window | null = null;
   private flavorTimerIntervalWindow: Window | null = null;
 

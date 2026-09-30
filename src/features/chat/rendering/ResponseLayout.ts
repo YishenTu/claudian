@@ -34,14 +34,30 @@ export function getAutomaticNotificationPredecessor(message: ChatMessage, messag
   return isStandaloneTaskNotification(previous) ? previous : undefined;
 }
 
-/** Shared live/replay policy. Renderers only map these decisions to existing elements. */
-export function getResponseLayout(message: ChatMessage, messages: ChatMessage[], collapse: boolean, index?: number) {
+function getResponseBlocks(message: ChatMessage) {
   const blocks = message.contentBlocks?.length
     ? message.contentBlocks : [{ type: 'text' as const, content: message.content }];
   let finalStart = blocks.length;
   while (finalStart > 0 && ['text', 'citations'].includes(blocks[finalStart - 1].type)) finalStart--;
   const finalBlocks = blocks.slice(finalStart);
   const finalText = finalBlocks.flatMap(block => block.type === 'text' ? [block.content] : []).join('\n\n');
+  return { blocks, finalBlocks, finalText };
+}
+
+/** The final answer: the response's trailing text, after its work. */
+export function getFinalResponseText(message: ChatMessage): string {
+  return getResponseBlocks(message).finalText;
+}
+
+/** The mm:ss duration of a finished response's work. */
+export function formatWorkDuration(durationSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(durationSeconds));
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/** Shared live/replay policy. Renderers only map these decisions to existing elements. */
+export function getResponseLayout(message: ChatMessage, messages: ChatMessage[], collapse: boolean, index?: number) {
+  const { blocks, finalBlocks, finalText } = getResponseBlocks(message);
   const canCollapse = collapse && !message.isInterrupt && finalText.trim().length > 0
     && !blocks.some(block => block.type === 'context_compacted');
   const hasNotification = blocks.some(block => block.type === 'task_notification');

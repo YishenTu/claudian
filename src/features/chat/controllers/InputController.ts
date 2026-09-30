@@ -665,7 +665,7 @@ export class InputController {
         wasInvalidated = true;
       } else if (result.status === 'error' && result.error) {
         hadExecutionError = true;
-        await streamController.appendText(`\n\n**Error:** ${result.error.message}`);
+        await streamController.appendError(result.error.message);
       }
     } catch (error) {
       if (error instanceof ChatExecutionPreHandoffError) {
@@ -682,7 +682,7 @@ export class InputController {
         hadExecutionError = true;
         shouldReportReviewableSettlement = true;
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-        await streamController.appendText(`\n\n**Error:** ${errorMsg}`);
+        await streamController.appendError(errorMsg);
         currentReviewableSettlementReporter =
           this.deps.captureReviewableSettlement?.('error') ?? null;
       }

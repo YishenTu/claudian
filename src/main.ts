@@ -604,7 +604,7 @@ export default class ClaudianPlugin extends Plugin {
         if (contextChanged) publish(() => view.refreshModelSelector());
       }
     }
-    if (settings.enableZenMode !== previous.enableZenMode) publish(() => this.zenMode.refresh());
+    if (settings.enableZenMode !== previous.enableZenMode) publish(() => this.zenMode.reconcile());
     if (settings.maxWarmAgentProcesses !== previous.maxWarmAgentProcesses) {
       try {
         if (!await this.warmExecutionPool.reconcileLimit()) {

@@ -123,6 +123,7 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     streamController: {
       resetSubagentStreamingState: jest.fn(),
       appendText: jest.fn(),
+      appendError: jest.fn(),
       finalizeCurrentTextBlock: jest.fn(),
       finalizeCurrentThinkingBlock: jest.fn(),
       handleStreamChunk: jest.fn(),

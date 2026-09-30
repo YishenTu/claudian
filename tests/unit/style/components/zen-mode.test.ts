@@ -175,9 +175,9 @@ describe('Zen mode styles', () => {
     expect(messages.getPropertyValue('padding-inline-end')).toBe('14px');
   });
 
-  it('keeps the transcript clear of the drawer border and the composer, outside its scroller', () => {
+  it('keeps the transcript clear of the drawer border, outside its scroller', () => {
     const history = window.getComputedStyle(renderPanel().querySelector('.claudian-zen-history')!);
-    expect({ top: history.paddingTop, bottom: history.paddingBottom }).toEqual({ top: '16px', bottom: '16px' });
+    expect({ top: history.paddingTop, bottom: history.paddingBottom }).toEqual({ top: '16px', bottom: '' });
   });
 
   it('pads the expandable header clear of the drawer border', () => {

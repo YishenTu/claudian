@@ -129,7 +129,7 @@ async function createZenFixture(options: { enabled?: boolean; ready?: boolean } 
   const settingsCoordinator: SettingsCoordinator<ClaudianSettings> = new SettingsCoordinator(
     settings,
     async () => undefined,
-    () => zen.refresh(),
+    () => zen.reconcile(),
   );
   const find = (id: string) => conversations.find(entry => entry.id === id) ?? null;
   const plugin = {
@@ -383,6 +383,21 @@ it('keeps one live turn, draft and node identity across repeated presentation ch
   await waitFor(() => expect(tab.state.isStreaming).toBe(false));
   // The finished turn leads with its duration, then the first line of the result.
   await waitFor(() => expect(preview()).toMatch(/^Worked for \d{2}:\d{2} · First line$/));
+});
+
+it('reports a provider failure after streamed output as an error', async () => {
+  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+
+  const session = await sendFromZen(tab, sessions, 'Long task');
+  session.emitText('Starting work');
+  await waitFor(() => expect(preview()).toBe('Starting work'));
+  session.fail('Provider overloaded');
+  await waitFor(() => expect(tab.state.isStreaming).toBe(false));
+
+  await waitFor(() => expect(preview()).toBe('Error: Provider overloaded'));
+  expect(zenPanel()!.dataset.tone).toBe('error');
+  expect(screen.getByRole('status').textContent).toBe('Error: Provider overloaded');
 });
 
 it('leaves sending and stopping to the moved composer', async () => {
@@ -665,6 +680,33 @@ it('keeps the reader scroll intent through geometry-only scrolls after relocatio
   await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
 
   expect(tab.state.autoScrollEnabled).toBe(false);
+});
+
+it('keeps the last visible reading position when collapsing the sidebar hides the transcript', async () => {
+  const { tab, rightSplit, setCollapsed } = await createZenFixture();
+  seedHistory(tab);
+  const messagesEl = tab.dom.messagesEl;
+  let laidOut = true;
+  Object.defineProperty(messagesEl, 'clientHeight', { configurable: true, get: () => (laidOut ? 200 : 0) });
+  Object.defineProperty(messagesEl, 'scrollHeight', { configurable: true, get: () => (laidOut ? 1000 : 0) });
+  // Collapsing hides the sidebar before zen reads it, and a hidden scroller reports no offset.
+  const collapse = () => {
+    laidOut = false;
+    messagesEl.scrollTop = 0;
+    setCollapsed(rightSplit, true);
+    laidOut = true;
+  };
+  messagesEl.scrollTop = 300;
+  fireEvent.scroll(messagesEl);
+  expect(tab.state.autoScrollEnabled).toBe(false);
+
+  collapse();
+  setCollapsed(rightSplit, false);
+  expect(messagesEl.scrollTop).toBe(300);
+
+  collapse();
+  fireEvent.click(within(zenPanel()!).getByRole('button', { name: 'Show conversation' }));
+  expect(messagesEl.scrollTop).toBe(300);
 });
 
 it('keeps a pending approval actionable while history is collapsed', async () => {
