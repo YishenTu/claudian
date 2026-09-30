@@ -9,14 +9,6 @@
   height: 11px;
 }
 
-/* The switch shows the state, so the checked row keeps a plain surface. */
-.claudian-toolbar-popover button.claudian-toolbar-popover-switch-row[aria-checked='true'] {
-  background: transparent;
-}
-
-.claudian-toolbar-popover button.claudian-toolbar-popover-switch-row:is(:hover, :focus-visible) {
-  background: var(--background-modifier-hover);
-}
 
 .claudian-toggle-switch {
   position: relative;

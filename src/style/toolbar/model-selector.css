@@ -192,17 +192,12 @@
   background: var(--background-modifier-hover);
 }
 
-/* The current choice is marked neutrally; brand colour identifies providers, not selection. */
-.claudian-toolbar-popover button.claudian-toolbar-popover-option:is([aria-checked='true'], [aria-selected='true']) {
-  background: var(--background-modifier-hover);
-}
-
 /* Every model's provider icon carries that provider's brand colour; names stay normal text. */
 .claudian-model-option .claudian-model-provider-icon {
   color: var(--claudian-brand);
 }
 
-/* Checked rows already carry a fill, so keyboard focus also needs an outline. */
+/* Hover and focus share a fill, so keyboard focus also needs an outline. */
 .claudian-toolbar-popover button.claudian-toolbar-popover-option:focus-visible {
   outline: 2px solid var(--interactive-accent);
   outline-offset: -2px;
@@ -243,8 +238,9 @@
   height: 13px;
 }
 
+/* Only the tick marks the current choice; the row keeps a plain surface. */
 .claudian-toolbar-popover-option-check {
-  color: var(--text-muted);
+  color: var(--claudian-selection-check);
 }
 
 .claudian-model-provider-icon {

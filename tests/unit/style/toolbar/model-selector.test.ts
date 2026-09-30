@@ -108,7 +108,7 @@ describe('Toolbar popover styles', () => {
     expect(declared).toEqual(['true']);
   });
 
-  it('shows every provider icon in the list in its brand colour and marks the selection neutrally', () => {
+  it('shows every provider icon in the list in its brand colour and marks the selection with a light green tick only', () => {
     const toolbar = renderToolbar();
     const color = (selector: string) => style(toolbar.querySelector(selector)!).color;
     const brand = 'var(--claudian-brand)';
@@ -120,12 +120,16 @@ describe('Toolbar popover styles', () => {
       otherLabel: color('[aria-selected="false"] .claudian-toolbar-popover-option-label'),
     }).toEqual({ selectedIcon: brand, selectedLabel: 'var(--text-normal)', otherIcon: brand, otherLabel: 'var(--text-normal)' });
 
-    // Brand colour identifies the provider; it is not the selection highlight.
+    // The selected row gets no fill; only its tick marks the choice.
     const selected = style(toolbar.querySelector('[aria-selected="true"]')!);
-    const highlight = `${selected.background} ${selected.backgroundColor}`;
-    expect(highlight).toContain('var(--background-modifier-hover)');
-    expect(highlight).not.toContain('claudian-brand');
-    expect(color('.claudian-toolbar-popover-option-check')).toBe('var(--text-muted)');
+    expect(`${selected.background} ${selected.backgroundColor}`).not.toMatch(/modifier-hover|claudian-brand/);
+    expect(color('.claudian-toolbar-popover-option-check')).toBe('var(--claudian-selection-check)');
+    const rootTokens = Array.from(document.head.querySelector('style')!.sheet!.cssRules)
+      .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
+      .map(rule => rule.style.getPropertyValue('--claudian-selection-check').trim())
+      .filter(Boolean);
+    // Light green on dark themes, a deeper green on light themes for contrast.
+    expect(rootTokens).toEqual(['#86efac', '#16a34a']);
 
     expect({
       buttonModel: color('.claudian-model-label'),

@@ -18,6 +18,8 @@
   --claudian-compact: #5bc0de;
   /* Shared side-chat accent. */
   --claudian-side-chat: #60a5fa;
+  /* Tick on the current choice in toolbar menus. */
+  --claudian-selection-check: #86efac;
 }
 
 body.theme-light .claudian-container {
@@ -29,6 +31,7 @@ body.theme-light .claudian-container {
   --claudian-brand-pi-rgb: 0, 0, 0;
   --claudian-brand-grok: #000000;
   --claudian-brand-grok-rgb: 0, 0, 0;
+  --claudian-selection-check: #16a34a;
 }
 
 /* Active-provider alias for single-provider surfaces; a model row that names its provider takes that provider's. */
