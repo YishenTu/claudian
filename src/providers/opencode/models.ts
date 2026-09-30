@@ -45,7 +45,8 @@ export function resolveOpencodeDefaultThinkingLevel(
   preferredValue?: string,
 ): string {
   const values = options.map(option => option.value);
-  if (preferredValue && (values.length === 0 || values.includes(preferredValue))) {
+  if (preferredValue && preferredValue !== OPENCODE_DEFAULT_THINKING_LEVEL
+    && (values.length === 0 || values.includes(preferredValue))) {
     return preferredValue;
   }
 

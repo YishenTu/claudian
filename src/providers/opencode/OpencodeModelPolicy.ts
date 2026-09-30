@@ -65,8 +65,8 @@ export const opencodeModelPolicy: ProviderModelPolicy = {
   },
 
   getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
-    const options = getOpencodeThinkingOptions(model, settings);
-    if (options.every(option => option.value === OPENCODE_DEFAULT_THINKING_LEVEL)) return [];
+    const options = getOpencodeThinkingOptions(model, settings)
+      .filter(option => option.value !== OPENCODE_DEFAULT_THINKING_LEVEL);
     return options.map((variant) => ({
         description: variant.description,
         label: formatReasoningValueLabel(variant.label),

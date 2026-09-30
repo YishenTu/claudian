@@ -253,6 +253,20 @@ it('moves the existing composer and transcript into the central workspace while 
   expect(tab.dom.contentEl.firstElementChild).toBe(transcript);
 });
 
+it('follows the view brand provider after it changes while zen is open', async () => {
+  const { view, tab, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  view.syncProviderBrandColor();
+  expect(zenPanel()!.dataset.provider).toBe('claude');
+
+  // The tab switches to another provider's model from the zen composer.
+  view.plugin.getConversationSummary(tab.conversationId).providerId = 'codex';
+  view.syncProviderBrandColor();
+
+  expect(view.viewContainerEl.dataset.provider).toBe('codex');
+  expect(zenPanel()!.dataset.provider).toBe('codex');
+});
+
 it.each([
   ['the setting is off', { enabled: false }, 'right'],
   ['only the other sidebar collapses', {}, 'left'],
@@ -283,18 +297,6 @@ it('waits for ordinary restoration before presenting an already collapsed sideba
 
   expect(zenPanel()!.contains(fixture.tab.dom.inputComposerEl)).toBe(true);
   expect(fixture.sessions).toHaveLength(0);
-});
-
-it('follows a provider switch on the attached tab, so provider icons keep their own brand colour', async () => {
-  const fixture = await createZenFixture();
-  fixture.setCollapsed(fixture.rightSplit, true);
-  expect(zenPanel()!.dataset.provider).toBe('claude');
-
-  // Choosing another provider's model keeps the same runtime; only its provider changes.
-  jest.spyOn(fixture.tab, 'providerId', 'get').mockReturnValue('codex');
-  fixture.view.notifyZenPresentationChanged();
-
-  expect(zenPanel()!.dataset.provider).toBe('codex');
 });
 
 it('loads a chat that Obsidian deferred in an already collapsed sidebar', async () => {

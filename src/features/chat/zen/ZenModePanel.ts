@@ -1,5 +1,6 @@
 import { type Keymap, Scope } from 'obsidian';
 
+import type { ProviderId } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import {
   cancelScheduledAnimationFrame,
@@ -146,11 +147,11 @@ export class ZenModePanel {
     return this.#runtime;
   }
 
-  bind(runtime: AssembledTabRuntime | null): void {
+  bind(runtime: AssembledTabRuntime | null, providerId: ProviderId | null): void {
     if (this.#destroyed) return;
+    if (providerId) this.#rootEl.dataset.provider = providerId;
+    else delete this.#rootEl.dataset.provider;
     if (runtime === this.#runtime) {
-      // The same runtime can switch provider, for example by choosing another provider's model.
-      if (runtime) this.#syncProvider(runtime);
       this.#scheduleRender();
       return;
     }
@@ -160,15 +161,8 @@ export class ZenModePanel {
     if (!runtime) return;
 
     this.#unsubscribeMain = runtime.state.subscribeActivity(() => this.#scheduleRender());
-    this.#syncProvider(runtime);
     if (this.#historyExpanded) restoreZenScrollIntent(runtime);
     this.#render();
-  }
-
-  /** Brand colour inside the panel follows the runtime's provider. */
-  #syncProvider(runtime: AssembledTabRuntime): void {
-    if (runtime.providerId) this.#rootEl.dataset.provider = runtime.providerId;
-    else delete this.#rootEl.dataset.provider;
   }
 
   setHistoryExpanded(expanded: boolean): void {

@@ -2317,13 +2317,10 @@ describe('ClaudianView runtime tab initialization', () => {
     expect(view.updateTabBar).toHaveBeenCalledTimes(2);
     expect(view.notifyConversationNavigationChanged).toHaveBeenCalledTimes(2);
 
-    // A provider switch on the same tab recolours both presentations: the view and zen.
-    const zenListener = jest.fn();
-    view.onZenPresentationChanged(zenListener);
+    // A provider switch on the same tab recolours the view, which also notifies zen.
     view.syncProviderBrandColor.mockClear();
     tabManagerCallbacks.onTabProviderChanged('restored-1', 'codex');
     expect(view.syncProviderBrandColor).toHaveBeenCalledTimes(1);
-    expect(zenListener).toHaveBeenCalledTimes(1);
   });
 
   it('abandons deferred restoration when view shutdown begins', async () => {
