@@ -362,7 +362,6 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       this.notifyConversationNavigationChanged();
       this.updateInputLocation();
       this.syncProviderBrandColor();
-      this.notifyZenPresentationChanged();
     };
     const tabManager = new TabManager(
       this.plugin,
@@ -919,10 +918,15 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   /** Sets `data-provider` on the root container so CSS brand color follows the active provider. */
   private syncProviderBrandColor(): void {
     if (!this.viewContainerEl) return;
-    const activeTab = this.tabManager?.getActiveTab();
-    const providerId = activeTab ? getTabProviderId(activeTab, this.plugin) : DEFAULT_CHAT_PROVIDER_ID;
+    const providerId = this.resolveBrandProviderId();
     if (providerId) this.viewContainerEl.dataset.provider = providerId;
     else delete this.viewContainerEl.dataset.provider;
+    this.notifyZenPresentationChanged();
+  }
+
+  private resolveBrandProviderId(): ProviderId | null {
+    const activeTab = this.tabManager?.getActiveTab();
+    return activeTab ? getTabProviderId(activeTab, this.plugin) : DEFAULT_CHAT_PROVIDER_ID;
   }
 
   // ============================================
@@ -2457,6 +2461,10 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       || this.initializedTabWorkspaceLifecycleRevision !== (this.viewLifecycleRevision ?? 0)
     ) return null;
     return this.tabManager?.getActiveTab() ?? null;
+  }
+
+  getZenProviderId(): ProviderId | null {
+    return this.resolveBrandProviderId();
   }
 
   onZenPresentationChanged(listener: () => void): () => void {

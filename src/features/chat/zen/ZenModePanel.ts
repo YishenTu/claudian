@@ -1,5 +1,6 @@
 import { type Keymap, Scope } from 'obsidian';
 
+import type { ProviderId } from '../../../core/providers/types';
 import { t } from '../../../i18n/i18n';
 import {
   cancelScheduledAnimationFrame,
@@ -145,8 +146,10 @@ export class ZenModePanel {
     return this.#runtime;
   }
 
-  bind(runtime: AssembledTabRuntime | null): void {
+  bind(runtime: AssembledTabRuntime | null, providerId: ProviderId | null): void {
     if (this.#destroyed) return;
+    if (providerId) this.#rootEl.dataset.provider = providerId;
+    else delete this.#rootEl.dataset.provider;
     if (runtime === this.#runtime) {
       this.#scheduleRender();
       return;
@@ -157,8 +160,6 @@ export class ZenModePanel {
     if (!runtime) return;
 
     this.#unsubscribeMain = runtime.state.subscribeActivity(() => this.#scheduleRender());
-    if (runtime.providerId) this.#rootEl.dataset.provider = runtime.providerId;
-    else delete this.#rootEl.dataset.provider;
     if (this.#historyExpanded) restoreZenScrollIntent(runtime);
     this.#render();
   }

@@ -1,5 +1,6 @@
 import type { WorkspaceLeaf } from 'obsidian';
 
+import type { ProviderId } from '../../../core/providers/types';
 import type { AssembledTabRuntime } from '../tabs/types';
 
 /** Containers owned by the zen surface that receive a source's live nodes. */
@@ -18,7 +19,9 @@ export interface ZenModeSource {
   readonly leaf: WorkspaceLeaf;
   /** The committed active runtime, or null while the view is not ready. */
   getZenRuntime(): AssembledTabRuntime | null;
-  /** Notifies readiness and active-runtime changes. */
+  /** The provider whose brand color the view currently shows. */
+  getZenProviderId(): ProviderId | null;
+  /** Notifies readiness, active-runtime, and brand-provider changes. */
   onZenPresentationChanged(listener: () => void): () => void;
   /** Moves the active runtime's transcript and composer; the release restores them and is idempotent. */
   attachZenPresentation(slots: ZenModeSlots): () => void;

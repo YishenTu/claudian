@@ -101,7 +101,7 @@ export class ZenModeController {
     const attachment = this.#attachment;
     if (attachment && attachment.source === target) {
       // The source already placed a replaced runtime; only the bound state changes.
-      attachment.panel.bind(target.getZenRuntime());
+      attachment.panel.bind(target.getZenRuntime(), target.getZenProviderId());
       return;
     }
     this.#detach();
@@ -202,7 +202,7 @@ export class ZenModeController {
       onHistoryExpandedChange: expanded => this.#historyExpanded.set(source, expanded),
     });
     this.#attachment = { source, panel, release: source.attachZenPresentation(panel.slots) };
-    panel.bind(runtime);
+    panel.bind(runtime, source.getZenProviderId());
   }
 
   /** Restores every moved node to the source before the zen host is removed. */

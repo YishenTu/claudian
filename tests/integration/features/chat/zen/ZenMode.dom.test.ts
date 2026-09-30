@@ -253,6 +253,20 @@ it('moves the existing composer and transcript into the central workspace while 
   expect(tab.dom.contentEl.firstElementChild).toBe(transcript);
 });
 
+it('follows the view brand provider after it changes while zen is open', async () => {
+  const { view, tab, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  view.syncProviderBrandColor();
+  expect(zenPanel()!.dataset.provider).toBe('claude');
+
+  // The tab switches to another provider's model from the zen composer.
+  view.plugin.getConversationSummary(tab.conversationId).providerId = 'codex';
+  view.syncProviderBrandColor();
+
+  expect(view.viewContainerEl.dataset.provider).toBe('codex');
+  expect(zenPanel()!.dataset.provider).toBe('codex');
+});
+
 it.each([
   ['the setting is off', { enabled: false }, 'right'],
   ['only the other sidebar collapses', {}, 'left'],
