@@ -21,6 +21,13 @@ describe('OpenCode model identity', () => {
 });
 
 describe('OpenCode thinking defaults', () => {
+  it.each([
+    { options: [] },
+    { options: [{ label: 'Default', value: 'default' }, { label: 'High', value: 'high' }] },
+  ])('resolves a saved Default preference to High with options $options', ({ options }) => {
+    expect(resolveOpencodeDefaultThinkingLevel(options, 'default')).toBe('high');
+  });
+
   it('defaults to High instead of inheriting the native Medium default', () => {
     expect(resolveOpencodeDefaultThinkingLevel(
       [
@@ -94,7 +101,7 @@ describe('OpenCode base model derivation', () => {
 });
 
 describe('opencodeChatUIConfig', () => {
-  it('capitalizes cached native effort labels while preserving selection values', () => {
+  it('omits Default from cached native efforts while preserving explicit selection values', () => {
     const options = opencodeChatUIConfig.getReasoningOptions('opencode:openai/gpt-5', {
       providerConfigs: {
         opencode: {
@@ -116,7 +123,6 @@ describe('opencodeChatUIConfig', () => {
       { label: 'Low', value: 'low' },
       { label: 'High', value: 'high' },
       { label: 'Max', value: 'max' },
-      { label: 'Default', value: 'default' },
     ]);
   });
 
