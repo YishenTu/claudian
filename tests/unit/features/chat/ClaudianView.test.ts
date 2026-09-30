@@ -1323,6 +1323,29 @@ describe('ClaudianView tab controls', () => {
     expect(view.isWideSessionLayout).toBe(false);
   });
 
+  it('keeps dual mode and its previews while the view has no width, as in a collapsed sidebar', () => {
+    const viewContainerEl = createMockEl();
+    viewContainerEl.addClass('claudian-wide-session-layout');
+    const view = Object.create(ClaudianView.prototype) as any;
+    attachSessionBrowser(view);
+    const discardProvisionalTabs = jest.fn().mockResolvedValue(undefined);
+    Object.assign(view, {
+      cancelSessionSidebarRendering: jest.fn(),
+      isWideSessionLayout: true,
+      requestedWideSessionLayout: true,
+      sessionLayoutRequestRevision: 0,
+      tabManager: { discardProvisionalTabs, getAllTabs: jest.fn().mockReturnValue([]) },
+      viewContainerEl,
+    });
+
+    view.updateSessionSidebarLayout(0);
+
+    expect(discardProvisionalTabs).not.toHaveBeenCalled();
+    expect(view.pendingSessionLayoutTransition ?? null).toBeNull();
+    expect(view.isWideSessionLayout).toBe(true);
+    expect(viewContainerEl.hasClass('claudian-wide-session-layout')).toBe(true);
+  });
+
   it('cancels a pending compact transition when the view becomes wide again', async () => {
     const viewContainerEl = createMockEl();
     viewContainerEl.addClass('claudian-wide-session-layout');

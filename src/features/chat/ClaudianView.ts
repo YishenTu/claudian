@@ -1947,7 +1947,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     width: number,
     options: { renderSidebar?: boolean } = {},
   ): void {
-    if (!this.viewContainerEl) return;
+    // A collapsed sidebar or hidden tab reports no width; that is not a narrower layout.
+    if (!this.viewContainerEl || width <= 0) return;
     const renderSidebar = options.renderSidebar ?? true;
 
     const isLeft = this.plugin?.settings?.dualPaneSide === 'left';
