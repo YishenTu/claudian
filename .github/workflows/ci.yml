@@ -58,7 +58,7 @@ jobs:
         run: npm run lint
 
       - name: Audit dependencies
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=moderate
 
   diff-hygiene:
     if: github.event_name == 'pull_request'
@@ -85,7 +85,7 @@ jobs:
       - name: Review dependency changes
         uses: actions/dependency-review-action@v4
         with:
-          fail-on-severity: high
+          fail-on-severity: moderate
 
   selected-tests:
     needs: test-scope
