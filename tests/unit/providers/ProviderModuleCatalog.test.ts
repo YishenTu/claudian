@@ -99,9 +99,7 @@ describe('built-in ProviderModule catalog', () => {
     expect(getProviderConfig(normalizedSettings, 'opencode')).toMatchObject({
       selectedMode: 'claudian-safe',
     });
-    expect(getProviderConfig(normalizedSettings, 'pi')).toMatchObject({
-      toolMode: 'readonly',
-    });
+    expect(getProviderConfig(normalizedSettings, 'pi')).not.toHaveProperty('toolMode');
   });
 
   it('normalizes obsolete OpenCode modes through provider storage', () => {
