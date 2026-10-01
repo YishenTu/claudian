@@ -3,7 +3,6 @@ import { formatReasoningValueLabel } from '@/core/providers/reasoning';
 import { SAFE_YOLO_PERMISSION_MODES } from '../../core/providers/permissionModes';
 import type {
   ProviderModelPolicy,
-  ProviderReasoningOption,
   ProviderUIOption,
 } from '../../core/providers/types';
 import { maybeGetOpencodeWorkspaceServices } from './app/OpencodeWorkspaceServices';
@@ -61,11 +60,11 @@ export const opencodeModelPolicy: ProviderModelPolicy = {
     return isOpencodeModelSelectionId(model);
   },
 
-  isAdaptiveReasoningModel(model: string, settings: Record<string, unknown>): boolean {
+  supportsReasoningEffort(model: string, settings: Record<string, unknown>): boolean {
     return getOpencodeThinkingOptions(model, settings).length > 0;
   },
 
-  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
+  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderUIOption[] {
     const options = getOpencodeThinkingOptions(model, settings)
       .filter(option => option.value !== OPENCODE_DEFAULT_THINKING_LEVEL);
     return options.map((variant) => ({
@@ -223,7 +222,7 @@ function getDefaultThinkingLevelForModel(
 function getOpencodeThinkingOptions(
   model: string,
   settings: Record<string, unknown>,
-): ProviderReasoningOption[] {
+): ProviderUIOption[] {
   const rawModelId = decodeOpencodeModelId(model);
   if (!rawModelId) {
     return [];

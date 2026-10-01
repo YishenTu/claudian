@@ -105,7 +105,7 @@ export interface StoredChatModelSelection {
 /**
  * Application settings stored in .claudian/claudian-settings.json.
  *
- * Provider-specific fields (model, thinkingBudget, effortLevel, serviceTier, etc.) use
+ * Provider-specific fields (model, effortLevel, serviceTier, etc.) use
  * `string` here.  The active provider casts internally when it needs
  * narrower types.
  */
@@ -118,7 +118,6 @@ export interface ClaudianSettings {
 
   // Model & thinking (provider interprets values)
   model: string;
-  thinkingBudget: string;
   effortLevel: string;
   serviceTier: string;
   enableAutoTitleGeneration: boolean;
@@ -146,12 +145,11 @@ export interface ClaudianSettings {
   providerConfigs: ProviderConfigMap;
 
   // Provider selection
-  settingsProvider: string;  // ProviderId — which provider's model/effort/budget is projected to top-level fields
+  settingsProvider: string;  // ProviderId — which provider's model/effort is projected to top-level fields
   lastSelectedChatModel: StoredChatModelSelection | null;
   savedProviderModel: Partial<Record<string, string>>;
   savedProviderEffort: Partial<Record<string, string>>;
   savedProviderServiceTier: Partial<Record<string, string>>;
-  savedProviderThinkingBudget: Partial<Record<string, string>>;
   savedProviderPermissionMode: Partial<Record<string, string>>;
 
   // Internal lifecycle state. Entries remain until all affected session metadata is durable.

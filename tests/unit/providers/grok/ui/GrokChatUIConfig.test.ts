@@ -175,8 +175,8 @@ describe('GrokChatUIConfig', () => {
   it('projects reasoning options, defaults, and preferences from model metadata', () => {
     const settings = makeSettings();
 
-    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/grok-4', settings)).toBe(true);
-    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/kimi-coding', settings)).toBe(false);
+    expect(grokChatUIConfig.supportsReasoningEffort('grok/grok-4', settings)).toBe(true);
+    expect(grokChatUIConfig.supportsReasoningEffort('grok/kimi-coding', settings)).toBe(false);
     expect(grokChatUIConfig.getReasoningOptions('grok/grok-4', settings)).toEqual([
       { description: 'Fastest', label: 'Minimal Effort', value: 'minimal' },
       { label: 'High Effort', value: 'high' },
@@ -296,7 +296,7 @@ describe('GrokChatUIConfig', () => {
       savedProviderModel: { grok: 'grok/grok-4.5' },
     });
 
-    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/grok-4.5', settings)).toBe(true);
+    expect(grokChatUIConfig.supportsReasoningEffort('grok/grok-4.5', settings)).toBe(true);
     expect(grokChatUIConfig.getReasoningOptions('grok/grok-4.5', settings)).toEqual([
       { label: 'Low', value: 'low' },
       { label: 'Medium', value: 'medium' },
@@ -321,7 +321,7 @@ describe('GrokChatUIConfig', () => {
       },
     });
 
-    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/kimi-coding', settings)).toBe(false);
+    expect(grokChatUIConfig.supportsReasoningEffort('grok/kimi-coding', settings)).toBe(false);
     expect(grokChatUIConfig.getReasoningOptions('grok/kimi-coding', settings)).toEqual([]);
     expect(grokChatUIConfig.getDefaultReasoningValue('grok/kimi-coding', settings)).toBe('');
   });

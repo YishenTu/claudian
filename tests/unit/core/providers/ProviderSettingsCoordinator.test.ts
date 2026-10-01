@@ -321,12 +321,10 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'sonnet',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         titleGenerationModel: 'sonnet',
         savedProviderModel: { codex: TEST_CODEX_MODEL },
         savedProviderEffort: { codex: 'medium' },
         savedProviderServiceTier: { codex: 'default' },
-        savedProviderThinkingBudget: { codex: 'off' },
         providerConfigs: {
           claude: { ...DEFAULT_CLAUDE_PROVIDER_SETTINGS, enabled: true },
           codex: {
@@ -571,7 +569,6 @@ describe('ProviderSettingsCoordinator', () => {
         model: TEST_CODEX_MODEL,
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         savedProviderModel: {
           claude: 'claude-code/fable-v1',
           codex: TEST_CODEX_MODEL,
@@ -742,11 +739,9 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'haiku',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         savedProviderModel: { codex: TEST_CODEX_MODEL, claude: 'haiku' },
         savedProviderEffort: { codex: 'medium', claude: 'high' },
         savedProviderServiceTier: { codex: 'fast', claude: 'default' },
-        savedProviderThinkingBudget: { codex: '1024', claude: 'off' },
         savedProviderPermissionMode: { codex: 'normal', claude: 'yolo' },
       };
 
@@ -755,7 +750,6 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.model).toBe(`openai-codex/${TEST_CODEX_MODEL}`);
       expect(settings.effortLevel).toBe('medium');
       expect(settings.serviceTier).toBe('fast');
-      expect(settings.thinkingBudget).toBe('off');
       expect(settings.permissionMode).toBe('normal');
     });
 
@@ -765,14 +759,12 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'haiku',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         providerConfigs: {
           codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG },
         },
         savedProviderModel: { claude: 'haiku', codex: 'gpt-5.4' },
         savedProviderEffort: { claude: 'high', codex: 'medium' },
         savedProviderServiceTier: { claude: 'default', codex: 'fast' },
-        savedProviderThinkingBudget: { claude: 'off', codex: 'off' },
       };
 
       const snapshot = ProviderSettingsCoordinator.getProviderSettingsSnapshot(settings, 'codex');
@@ -788,14 +780,12 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'haiku',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         providerConfigs: {
           codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG },
         },
         savedProviderModel: arrayProjection,
         savedProviderEffort: arrayProjection,
         savedProviderServiceTier: arrayProjection,
-        savedProviderThinkingBudget: arrayProjection,
         savedProviderPermissionMode: arrayProjection,
       };
 
@@ -804,7 +794,6 @@ describe('ProviderSettingsCoordinator', () => {
       expect(snapshot.savedProviderModel).toEqual({});
       expect(snapshot.savedProviderEffort).toEqual({});
       expect(snapshot.savedProviderServiceTier).toEqual({});
-      expect(snapshot.savedProviderThinkingBudget).toEqual({});
       expect(snapshot.savedProviderPermissionMode).toEqual({});
     });
 
@@ -813,11 +802,9 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'old-model',
         effortLevel: 'low',
         serviceTier: 'default',
-        thinkingBudget: '500',
         savedProviderModel: { claude: 'sonnet' },
         savedProviderEffort: { claude: 'high' },
         savedProviderServiceTier: { claude: 'default' },
-        savedProviderThinkingBudget: { claude: 'off' },
       };
 
       ProviderSettingsCoordinator.projectActiveProviderState(settings);
@@ -825,7 +812,6 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.model).toBe('sonnet');
       expect(settings.effortLevel).toBe('high');
       expect(settings.serviceTier).toBe('default');
-      expect(settings.thinkingBudget).toBe('500');
     });
 
     it('does not overwrite when no saved values exist', () => {
@@ -834,18 +820,15 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'haiku',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         savedProviderModel: {},
         savedProviderEffort: {},
         savedProviderServiceTier: {},
-        savedProviderThinkingBudget: {},
       };
 
       ProviderSettingsCoordinator.projectActiveProviderState(settings);
 
       expect(settings.model).toBe('haiku');
       expect(settings.effortLevel).toBe('high');
-      expect(settings.thinkingBudget).toBe('off');
     });
 
     it('handles missing saved maps gracefully', () => {
@@ -854,7 +837,6 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'haiku',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
       };
 
       // Should not throw
@@ -870,11 +852,9 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'claude-sonnet-4-5',
         effortLevel: 'xhigh',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         savedProviderModel: { claude: 'claude-sonnet-4-5' },
         savedProviderEffort: { claude: 'xhigh' },
         savedProviderServiceTier: { claude: 'default' },
-        savedProviderThinkingBudget: { claude: 'off' },
       };
 
       ProviderSettingsCoordinator.projectActiveProviderState(settings);
@@ -895,11 +875,9 @@ describe('ProviderSettingsCoordinator', () => {
         model: TEST_CODEX_MODEL,
         effortLevel: 'low',
         serviceTier: 'fast',
-        thinkingBudget: 'off',
         savedProviderModel: { claude: 'haiku' },
         savedProviderEffort: { claude: 'high' },
         savedProviderServiceTier: { claude: 'default' },
-        savedProviderThinkingBudget: { claude: 'off' },
         savedProviderPermissionMode: { claude: 'yolo' },
       };
 
@@ -938,11 +916,9 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'haiku',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         savedProviderModel: {},
         savedProviderEffort: {},
         savedProviderServiceTier: {},
-        savedProviderThinkingBudget: {},
       };
 
       ProviderSettingsCoordinator.projectProviderState(settings, 'codex');
@@ -964,11 +940,9 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'gpt-5.4-mini',
         effortLevel: 'medium',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         savedProviderModel: { codex: 'gpt-5.4-mini' },
         savedProviderEffort: { codex: 'medium' },
         savedProviderServiceTier: { codex: 'fast' },
-        savedProviderThinkingBudget: { codex: 'off' },
       };
 
       ProviderSettingsCoordinator.projectProviderState(settings, 'codex');
@@ -990,11 +964,9 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'haiku',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         savedProviderModel: {},
         savedProviderEffort: {},
         savedProviderServiceTier: {},
-        savedProviderThinkingBudget: {},
         savedProviderPermissionMode: {},
       };
 
@@ -1016,11 +988,9 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'haiku',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         savedProviderModel: {},
         savedProviderEffort: {},
         savedProviderServiceTier: {},
-        savedProviderThinkingBudget: {},
         savedProviderPermissionMode: {},
       };
 
@@ -1050,11 +1020,9 @@ describe('ProviderSettingsCoordinator', () => {
         model: 'haiku',
         effortLevel: 'high',
         serviceTier: 'default',
-        thinkingBudget: 'off',
         savedProviderModel: { claude: 'haiku', codex: TEST_CODEX_MODEL },
         savedProviderEffort: { claude: 'high', codex: 'medium' },
         savedProviderServiceTier: { claude: 'default', codex: 'fast' },
-        savedProviderThinkingBudget: { claude: 'off', codex: 'off' },
       };
 
       const result = ProviderSettingsCoordinator.reconcileProviders(

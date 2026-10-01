@@ -246,7 +246,7 @@ function pruneDeselectedProviderProjections(settings: Record<string, unknown>): 
     const model = savedModels?.[providerId];
     if (typeof model !== 'string') continue;
     if (selected.some(id => typeof id === 'string' && normalize(id) === normalize(model))) continue;
-    for (const key of ['savedProviderModel', 'savedProviderEffort', 'savedProviderThinkingBudget', 'savedProviderServiceTier']) {
+    for (const key of ['savedProviderModel', 'savedProviderEffort', 'savedProviderServiceTier']) {
       const values = cleaned[key];
       if (!values || typeof values !== 'object' || Array.isArray(values)) continue;
       const remaining = { ...values } as Record<string, unknown>;

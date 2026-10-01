@@ -1,6 +1,5 @@
 import type {
   ProviderModelPolicy,
-  ProviderReasoningOption,
   ProviderUIOption,
 } from '../../core/providers/types';
 import {
@@ -47,13 +46,13 @@ export const grokModelPolicy: ProviderModelPolicy = {
     return isGrokModelSelectionId(model);
   },
 
-  isAdaptiveReasoningModel(model, settings): boolean {
+  supportsReasoningEffort(model, settings): boolean {
     return getGrokAvailableReasoningEfforts(
       getExplicitlySelectedGrokModel(model, settings),
     ).length > 0;
   },
 
-  getReasoningOptions(model, settings): ProviderReasoningOption[] {
+  getReasoningOptions(model, settings): ProviderUIOption[] {
     return getGrokAvailableReasoningEfforts(
       getExplicitlySelectedGrokModel(model, settings),
     ).map(option => ({

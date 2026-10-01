@@ -188,7 +188,7 @@ function buildInputToolbar(
     const tab = runtimeRef.requirePublished();
     tab.ui.modelSelector.updateDisplay();
     tab.ui.modeSelector.updateDisplay();
-    tab.ui.thinkingBudgetSelector.updateDisplay();
+    tab.ui.effortSelector.updateDisplay();
     tab.ui.permissionToggle.updateDisplay();
     tab.ui.serviceTierToggle.updateDisplay();
     return true;
@@ -268,7 +268,7 @@ function buildInputToolbar(
           { plugin: plugin.providerHost },
         );
         if (!isSelectionTargetCurrent()) return;
-        tab.ui.thinkingBudgetSelector.updateDisplay();
+        tab.ui.effortSelector.updateDisplay();
         tab.ui.serviceTierToggle.updateDisplay();
         tab.ui.modelSelector.updateDisplay();
         tab.ui.modeSelector.updateDisplay();
@@ -328,7 +328,7 @@ function buildInputToolbar(
         { plugin: plugin.providerHost },
       );
       if (!isSelectionTargetCurrent()) return;
-      tab.ui.thinkingBudgetSelector.updateDisplay();
+      tab.ui.effortSelector.updateDisplay();
       tab.ui.serviceTierToggle.updateDisplay();
       tab.ui.modelSelector.updateDisplay();
       tab.ui.modelSelector.renderOptions();
@@ -346,12 +346,6 @@ function buildInputToolbar(
       });
       tab.ui.modeSelector.updateDisplay();
       tab.ui.modeSelector.renderOptions();
-      onUserModified();
-    },
-    onThinkingBudgetChange: async (budget: string) => {
-      if (applySideSetting({ reasoning: budget })) return;
-      const tab = runtimeRef.requirePublished();
-      await updateTabReasoning(tab, plugin, budget);
       onUserModified();
     },
     onEffortLevelChange: async (effort: string) => {
@@ -432,7 +426,7 @@ export function buildTabRuntimeUI(
     ...contextManagers,
     modelSelector: toolbar.modelSelector,
     modeSelector: toolbar.modeSelector,
-    thinkingBudgetSelector: toolbar.thinkingBudgetSelector,
+    effortSelector: toolbar.effortSelector,
     permissionToggle: toolbar.permissionToggle,
     serviceTierToggle: toolbar.serviceTierToggle,
     composerDropdown,

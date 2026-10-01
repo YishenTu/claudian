@@ -294,10 +294,10 @@ describe('CodexChatUIConfig', () => {
     });
   });
 
-  describe('isAdaptiveReasoningModel', () => {
+  describe('supportsReasoningEffort', () => {
     it('should return true for all models', () => {
-      expect(codexChatUIConfig.isAdaptiveReasoningModel(TEST_CODEX_MODEL, {})).toBe(true);
-      expect(codexChatUIConfig.isAdaptiveReasoningModel('unknown-model', {})).toBe(true);
+      expect(codexChatUIConfig.supportsReasoningEffort(TEST_CODEX_MODEL, {})).toBe(true);
+      expect(codexChatUIConfig.supportsReasoningEffort('unknown-model', {})).toBe(true);
     });
   });
 

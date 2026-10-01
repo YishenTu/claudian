@@ -63,7 +63,7 @@ function createModelRefreshTab(providerId: 'codex' | 'grok') {
       permissionToggle: { updateDisplay: jest.fn() },
       serviceTierToggle: { updateDisplay: jest.fn() },
       contextUsageMeter: { update: jest.fn() },
-      thinkingBudgetSelector: { updateDisplay: jest.fn() },
+      effortSelector: { updateDisplay: jest.fn() },
     },
   };
 }
@@ -103,7 +103,7 @@ describe('ClaudianView model refresh routing', () => {
       }));
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
       getReasoningOptions: () => [],
-      isAdaptiveReasoningModel: () => false,
+      supportsReasoningEffort: () => false,
       getPermissionModeOptions: jest.fn().mockReturnValue(null),
     } as any);
     jest.spyOn(ProviderRegistry, 'getCapabilities').mockImplementation(providerId => ({
@@ -1938,7 +1938,7 @@ describe('ClaudianView tab controls', () => {
   it('formats persisted model metadata for the session hover card', () => {
     jest.spyOn(ProviderRegistry, 'getChatUIConfig').mockReturnValue({
       getReasoningOptions: () => [],
-      isAdaptiveReasoningModel: () => false,
+      supportsReasoningEffort: () => false,
       getModelOptions: jest.fn().mockReturnValue([
         { value: 'gpt-5.1-codex', label: 'GPT-5.1 Codex' },
       ]),

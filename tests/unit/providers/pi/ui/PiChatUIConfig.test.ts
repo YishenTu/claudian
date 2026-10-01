@@ -104,7 +104,7 @@ describe('PiChatUIConfig', () => {
   });
 
   it('maps reasoning options and defaults from cached model metadata', () => {
-    expect(piChatUIConfig.isAdaptiveReasoningModel('pi:anthropic/claude-sonnet-4', settings)).toBe(true);
+    expect(piChatUIConfig.supportsReasoningEffort('pi:anthropic/claude-sonnet-4', settings)).toBe(true);
     expect(piChatUIConfig.getReasoningOptions('pi:anthropic/claude-sonnet-4', settings)).toEqual([
       { label: 'Off', value: 'off' },
       { label: 'Medium', value: 'medium' },
@@ -164,7 +164,7 @@ describe('PiChatUIConfig', () => {
     };
 
     expect(piChatUIConfig.getModelOptions(staleSettings)).toEqual([]);
-    expect(piChatUIConfig.isAdaptiveReasoningModel('pi:custom/model', staleSettings)).toBe(true);
+    expect(piChatUIConfig.supportsReasoningEffort('pi:custom/model', staleSettings)).toBe(true);
     expect(piChatUIConfig.getReasoningOptions('pi:custom/model', staleSettings)).toEqual([
       { label: 'Off', value: 'off' },
       { label: 'Minimal', value: 'minimal' },

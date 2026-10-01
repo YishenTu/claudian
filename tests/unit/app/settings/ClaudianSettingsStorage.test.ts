@@ -74,13 +74,13 @@ describe('ClaudianSettingsStorage', () => {
       expect(written).not.toHaveProperty('persistentExternalContextPaths');
     });
 
+
     it('should return defaults when file does not exist', async () => {
       mockAdapter.exists.mockResolvedValue(false);
 
       const result = await storage.load();
 
       expect(result.model).toBe(DEFAULT_SETTINGS.model);
-      expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
       expect(result.permissionMode).toBe(DEFAULT_SETTINGS.permissionMode);
       expect(result.requireCommandOrControlEnterToSend).toBe(false);
       expect(result.titleGenerationLocale).toBe('');
@@ -113,7 +113,7 @@ describe('ClaudianSettingsStorage', () => {
       expect(result.model).toBe('claude-opus-4-5');
       expect(result.userName).toBe('TestUser');
       // Defaults should still be present for unspecified fields
-      expect(result.thinkingBudget).toBe(DEFAULT_SETTINGS.thinkingBudget);
+      expect(result.effortLevel).toBe(DEFAULT_SETTINGS.effortLevel);
     });
 
     it('preserves an explicitly stored provider-qualified chat model selection', async () => {

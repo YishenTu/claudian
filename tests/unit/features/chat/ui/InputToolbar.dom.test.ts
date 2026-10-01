@@ -33,18 +33,9 @@ const EFFORT_OPTIONS = [
   { value: 'max', label: 'Max' },
 ];
 
-const BUDGET_OPTIONS = [
-  { value: 'off', label: 'Off', tokens: 0 },
-  { value: 'low', label: 'Low', tokens: 4000 },
-  { value: 'medium', label: 'Med', tokens: 8000 },
-  { value: 'high', label: 'High', tokens: 16000 },
-  { value: 'xhigh', label: 'Ultra', tokens: 32000 },
-];
-
 interface FixtureOptions {
   settings?: Record<string, unknown>;
   models?: Array<Record<string, unknown>>;
-  adaptive?: boolean;
   reasoningOptions?: Array<Record<string, unknown>>;
   reasoningControl?: string;
   permissionToggle?: boolean;
@@ -70,7 +61,6 @@ function renderToolbar(fixture: FixtureOptions = {}) {
       { value: 'sonnet', label: 'Sonnet' },
       { value: 'opus', label: 'Opus' },
     ]),
-    isAdaptiveReasoningModel: () => fixture.adaptive ?? true,
     getReasoningOptions: () => fixture.reasoningOptions ?? EFFORT_OPTIONS,
     getDefaultReasoningValue: () => 'high',
     getPermissionModeOptions: () => (fixture.permissionToggle === false ? null : fixture.permissionModes ?? [
@@ -98,7 +88,6 @@ function renderToolbar(fixture: FixtureOptions = {}) {
   const callbacks = {
     onModelChange: jest.fn(async (model: string) => { settings.model = model; }),
     onModeChange: jest.fn(async (mode: string) => { settings.selectedMode = mode; }),
-    onThinkingBudgetChange: jest.fn(async (budget: string) => { settings.reasoning = budget; }),
     onEffortLevelChange: jest.fn(async (effort: string) => { settings.reasoning = effort; }),
     onServiceTierChange: jest.fn(async (tier: string) => { settings.serviceTier = tier; }),
     onPermissionModeChange: jest.fn(async (mode: string) => { settings.permissionMode = mode; }),
@@ -306,7 +295,7 @@ describe('model button', () => {
     expect(sliderLevel(slider)).toEqual({ value: '0', valueText: 'Low', shown: 'Low', detail: null });
     expect(callbacks.onEffortLevelChange).not.toHaveBeenCalled();
     // A refresh mid-drag neither replaces the slider nor snaps it back to the saved level.
-    toolbar.thinkingBudgetSelector.updateDisplay();
+    toolbar.effortSelector.updateDisplay();
     expect(ui.getByRole('slider', { name: 'Effort' })).toBe(slider);
     expect(sliderLevel(slider).value).toBe('0');
     // Releasing outside the popover does not close it.
@@ -338,7 +327,7 @@ describe('model button', () => {
       pending.push(() => {
         settings.reasoning = effort;
         // The runtime refreshes the toolbar as each save lands, as side chat's settings path does.
-        toolbar.thinkingBudgetSelector.updateDisplay();
+        toolbar.effortSelector.updateDisplay();
         resolve();
       });
     }));
@@ -360,28 +349,6 @@ describe('model button', () => {
     expect(ui.getByRole('button', { name: 'Model: Sonnet, effort Low' })).toBeDefined();
   });
 
-  it('uses the same slider for a legacy thinking budget, with token counts as its announced detail', async () => {
-    const { callbacks, host, ui } = renderToolbar({
-      adaptive: false, reasoningOptions: BUDGET_OPTIONS, settings: { reasoning: 'low' },
-    });
-    fireEvent.click(ui.getByRole('button', { name: 'Model: Sonnet, thinking Low' }));
-    const thinking = ui.getByRole('group', { name: 'Thinking' });
-    const slider = within(thinking).getByRole('slider', { name: 'Thinking' });
-    expect((slider as HTMLInputElement).max).toBe('4');
-    expect(thinking.textContent).toBe('ThinkingLow');
-    expect(sliderLevel(slider)).toEqual({ value: '1', valueText: 'Low', shown: 'Low', detail: '4,000 tokens' });
-    fireEvent.input(slider, { target: { value: '0' } });
-    expect(sliderLevel(slider)).toEqual({ value: '0', valueText: 'Off', shown: 'Off', detail: 'Disabled' });
-    fireEvent.input(slider, { target: { value: '3' } });
-    fireEvent.change(slider);
-    await flush();
-    expect(callbacks.onThinkingBudgetChange).toHaveBeenCalledWith('high');
-    expect(callbacks.onEffortLevelChange).not.toHaveBeenCalled();
-    expect(ui.getByRole('button', { name: 'Model: Sonnet, thinking High' })).toBeDefined();
-    expect(sliderLevel(slider)).toMatchObject({ value: '3', detail: '16,000 tokens' });
-    expect((await axe(host)).violations).toEqual([]);
-  });
-
   it.each([
     ['provider without reasoning control', { reasoningControl: 'none' }],
     ['no reasoning options', { reasoningOptions: [] }],
@@ -391,7 +358,7 @@ describe('model button', () => {
     fireEvent.click(ui.getByRole('button', { name: 'Model: Sonnet' }));
     expect(ui.getByRole('dialog', { name: 'Model options' })).toBeDefined();
     expect(ui.queryByRole('slider')).toBeNull();
-    expect(ui.queryByRole('group', { name: /Effort|Thinking/ })).toBeNull();
+    expect(ui.queryByRole('group', { name: 'Effort' })).toBeNull();
   });
 
   it('shows fast mode on the button and switches it from the model menu', async () => {

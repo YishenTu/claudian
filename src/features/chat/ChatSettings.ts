@@ -19,9 +19,7 @@ export function getChatSettingsSnapshot<T extends Record<string, unknown>>(
   const selectedModel = typeof snapshot.model === 'string' ? snapshot.model : '';
   const ui = ProviderRegistry.getChatUIConfig(providerId);
   const options = ui.getReasoningOptions(selectedModel, snapshot);
-  const selectedReasoning = ui.isAdaptiveReasoningModel(selectedModel, snapshot)
-    ? snapshot.effortLevel
-    : snapshot.thinkingBudget;
+  const selectedReasoning = snapshot.effortLevel;
   // Native adapters validate explicit choices; never turn an unsupported choice into a native default.
   const reasoning = options.length > 0 && typeof selectedReasoning === 'string'
     ? selectedReasoning : null;

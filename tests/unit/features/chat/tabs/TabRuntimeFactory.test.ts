@@ -113,7 +113,7 @@ jest.mock('@/core/providers/ProviderRegistry', () => ({
         { label: 'Claude Alternate', value: 'claude-alternate' },
       ]),
       getReasoningOptions: jest.fn().mockReturnValue([]),
-      isAdaptiveReasoningModel: jest.fn().mockReturnValue(false),
+      supportsReasoningEffort: jest.fn().mockReturnValue(false),
       isDefaultModel: jest.fn().mockReturnValue(true),
       normalizeModelVariant: jest.fn((model: string) => model),
       ownsModel: jest.fn().mockReturnValue(true),
@@ -146,7 +146,6 @@ jest.mock('@/core/providers/ProviderSettingsCoordinator', () => ({
       model: 'claude-default',
       permissionMode: 'normal',
       serviceTier: 'standard',
-      thinkingBudget: '',
       ...settings,
     }),
     projectModelSelection: (
@@ -857,7 +856,7 @@ describe('Tab provider execution ownership', () => {
       expect(tab?.ui.imageContextManager).not.toBeNull();
       expect(tab?.ui.modelSelector).not.toBeNull();
       expect(tab?.ui.modeSelector).not.toBeNull();
-      expect(tab?.ui.thinkingBudgetSelector).not.toBeNull();
+      expect(tab?.ui.effortSelector).not.toBeNull();
       expect(tab?.ui.permissionToggle).not.toBeNull();
       expect(tab?.ui.serviceTierToggle).not.toBeNull();
       expect(tab?.ui.composerDropdown).not.toBeNull();

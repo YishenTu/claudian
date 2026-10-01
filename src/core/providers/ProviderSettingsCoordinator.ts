@@ -24,7 +24,6 @@ const PROJECTION_KEYS = new Set([
   'model',
   'effortLevel',
   'serviceTier',
-  'thinkingBudget',
   'permissionMode',
 ]);
 
@@ -38,7 +37,6 @@ function cloneProviderSettings(settings: Record<string, unknown>): Record<string
     savedProviderModel: normalizeProviderProjectionMap(settings.savedProviderModel),
     savedProviderEffort: normalizeProviderProjectionMap(settings.savedProviderEffort),
     savedProviderServiceTier: normalizeProviderProjectionMap(settings.savedProviderServiceTier),
-    savedProviderThinkingBudget: normalizeProviderProjectionMap(settings.savedProviderThinkingBudget),
     savedProviderPermissionMode: normalizeProviderProjectionMap(settings.savedProviderPermissionMode),
   };
 }
@@ -117,19 +115,12 @@ function normalizeModelDependentSettings(
   settings: Record<string, unknown>,
   model: string,
 ): void {
-  if (uiConfig.isAdaptiveReasoningModel(model, settings)) {
+  if (uiConfig.supportsReasoningEffort(model, settings)) {
     settings.effortLevel = normalizeReasoningValue(
       uiConfig,
       settings,
       model,
       settings.effortLevel,
-    );
-  } else {
-    settings.thinkingBudget = normalizeReasoningValue(
-      uiConfig,
-      settings,
-      model,
-      settings.thinkingBudget,
     );
   }
 
@@ -247,8 +238,7 @@ export class ProviderSettingsCoordinator {
   ): void {
     const fields = {
       model: 'savedProviderModel', effortLevel: 'savedProviderEffort',
-      serviceTier: 'savedProviderServiceTier', thinkingBudget: 'savedProviderThinkingBudget',
-      permissionMode: 'savedProviderPermissionMode',
+      serviceTier: 'savedProviderServiceTier', permissionMode: 'savedProviderPermissionMode',
     } as const;
     for (const [field, savedKey] of Object.entries(fields)) {
       if (before[field] === after[field]) continue;
@@ -275,7 +265,6 @@ export class ProviderSettingsCoordinator {
     const savedModel = ensureProviderProjectionMap(settings, 'savedProviderModel');
     const savedEffort = ensureProviderProjectionMap(settings, 'savedProviderEffort');
     const savedServiceTier = ensureProviderProjectionMap(settings, 'savedProviderServiceTier');
-    const savedBudget = ensureProviderProjectionMap(settings, 'savedProviderThinkingBudget');
     const savedPermissionMode = ensureProviderProjectionMap(settings, 'savedProviderPermissionMode');
     const uiConfig = ProviderRegistry.getModelPolicy(providerId);
     const normalizedModel = normalizeProviderModel(
@@ -299,13 +288,6 @@ export class ProviderSettingsCoordinator {
     if (serviceTierToggle && typeof settings.serviceTier === 'string') {
       savedServiceTier[providerId] = settings.serviceTier;
     }
-    const usesBudget = normalizedModel !== undefined
-      && !uiConfig.isAdaptiveReasoningModel(normalizedModel, projectedSettings);
-    if (usesBudget && typeof settings.thinkingBudget === 'string') {
-      savedBudget[providerId] = settings.thinkingBudget;
-    } else {
-      delete savedBudget[providerId];
-    }
     if (typeof settings.permissionMode === 'string' && uiConfig.permissionModes) {
       savedPermissionMode[providerId] = settings.permissionMode;
     }
@@ -322,7 +304,6 @@ export class ProviderSettingsCoordinator {
     const savedModel = projection('savedProviderModel');
     const savedEffort = projection('savedProviderEffort');
     const savedServiceTier = projection('savedProviderServiceTier');
-    const savedBudget = projection('savedProviderThinkingBudget');
     const savedPermissionMode = projection('savedProviderPermissionMode');
 
     const shouldPreferCurrentProjection = providerId === getSettingsProviderId(settings);
@@ -332,7 +313,6 @@ export class ProviderSettingsCoordinator {
       : currentModelRaw;
     const currentEffort = typeof settings.effortLevel === 'string' ? settings.effortLevel : undefined;
     const currentServiceTier = typeof settings.serviceTier === 'string' ? settings.serviceTier : undefined;
-    const currentBudget = typeof settings.thinkingBudget === 'string' ? settings.thinkingBudget : undefined;
     const modelOptions = uiConfig.getModelOptions(settings);
     const isDefaultModelOfAnotherProvider = currentModel.length > 0
       && ProviderRegistry.getRegisteredProviderIds()
@@ -370,8 +350,8 @@ export class ProviderSettingsCoordinator {
       ...(model ? { model } : {}),
     }) ?? null;
 
-    const isAdaptive = Boolean(model) && uiConfig.isAdaptiveReasoningModel(model, settings);
-    const acceptsEffortProjection = isAdaptive
+    const supportsEffort = Boolean(model) && uiConfig.supportsReasoningEffort(model, settings);
+    const acceptsEffortProjection = supportsEffort
       || Object.prototype.hasOwnProperty.call(settings, 'effortLevel');
 
     if (acceptsEffortProjection) {
@@ -379,11 +359,11 @@ export class ProviderSettingsCoordinator {
         settings.effortLevel = savedEffort[providerId];
       } else if (canReuseCurrentProjection && currentEffort !== undefined) {
         settings.effortLevel = currentEffort;
-      } else if (isAdaptive) {
+      } else if (supportsEffort) {
         settings.effortLevel = uiConfig.getDefaultReasoningValue(model, settings);
       }
 
-      if (isAdaptive) {
+      if (supportsEffort) {
         settings.effortLevel = normalizeReasoningValue(uiConfig, settings, model, settings.effortLevel);
       }
     } else {
@@ -396,19 +376,6 @@ export class ProviderSettingsCoordinator {
       settings.serviceTier = currentServiceTier;
     } else {
       settings.serviceTier = serviceTierToggle?.inactiveValue ?? 'default';
-    }
-
-    const usesBudget = Boolean(model) && !isAdaptive;
-
-    if (usesBudget) {
-      if (savedBudget?.[providerId] !== undefined) {
-        settings.thinkingBudget = savedBudget[providerId];
-      } else if (canReuseCurrentProjection && currentBudget !== undefined) {
-        settings.thinkingBudget = currentBudget;
-      } else {
-        settings.thinkingBudget = uiConfig.getDefaultReasoningValue(model, settings);
-      }
-      settings.thinkingBudget = normalizeReasoningValue(uiConfig, settings, model, settings.thinkingBudget);
     }
 
     const permissionPolicy = uiConfig.permissionModes ?? null;
@@ -544,7 +511,7 @@ export class ProviderSettingsCoordinator {
 
   /**
    * Project the settings provider's saved values into the top-level
-   * model/effortLevel/thinkingBudget fields.
+   * model/effortLevel fields.
    */
   static projectActiveProviderState(settings: Record<string, unknown>): void {
     this.projectProviderState(settings, getSettingsProviderId(settings));
