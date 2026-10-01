@@ -541,6 +541,7 @@ export class SessionBrowser {
       section.kind === 'content'
       && section.contentPath
       && options.onStartLinkedContentConversation
+      && options.sessionActionMode !== 'archived'
     ) {
       const contentPath = section.contentPath;
       const startLinkedContentConversation = options.onStartLinkedContentConversation;
@@ -655,16 +656,7 @@ export class SessionBrowser {
           );
         }
         if (canDeleteLinkedContentSessions) {
-          const ids = linkedContentConversations.map(conversation => conversation.id);
-          menu.addItem(menuItem => menuItem
-            .setTitle('Delete all sessions')
-            .setDisabled(ids.length === 0)
-            .onClick(() => {
-              runConversationAction(
-                () => this.#deleteHistoryConversations(ids, options),
-                'Failed to delete Linked content sessions',
-              );
-            }));
+          this.#addRestoreAndDeleteAllMenuItems(menu, linkedContentConversations, options);
         }
         menu.showAtMouseEvent(event);
       });
@@ -1428,20 +1420,52 @@ export class SessionBrowser {
   ): void {
     const divider = list.createDiv({ cls: 'claudian-session-recency-divider', text: section.label });
     const onSetConversationsArchived = options.onSetConversationsArchived;
-    if (options.sessionActionMode !== 'active' || !onSetConversationsArchived) return;
+    const isArchivedView = options.sessionActionMode === 'archived';
+    if (!isArchivedView && (options.sessionActionMode !== 'active' || !onSetConversationsArchived)) return;
     divider.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       event.stopPropagation();
       const menu = new Menu().setUseNativeMenu(false);
-      this.#addArchiveAllMenuItem(
-        menu,
-        section.conversations,
-        options,
-        onSetConversationsArchived,
-        'Failed to archive sessions',
-      );
+      if (isArchivedView) {
+        this.#addRestoreAndDeleteAllMenuItems(menu, section.conversations, options);
+      } else if (onSetConversationsArchived) {
+        this.#addArchiveAllMenuItem(
+          menu,
+          section.conversations,
+          options,
+          onSetConversationsArchived,
+          'Failed to archive sessions',
+        );
+      }
       menu.showAtMouseEvent(event);
     });
+  }
+
+  /** Archive-pane group actions: restore or permanently delete every session in the group. */
+  #addRestoreAndDeleteAllMenuItems(
+    menu: Menu,
+    conversations: readonly ConversationMeta[],
+    options: HistoryRenderOptions,
+  ): void {
+    const ids = conversations.map(conversation => conversation.id);
+    const onRestoreConversations = options.onRestoreConversations;
+    if (onRestoreConversations) {
+      menu.addItem(menuItem => menuItem
+        .setTitle('Restore all sessions')
+        .setDisabled(ids.length === 0)
+        .onClick(() => {
+          runConversationAction(() => onRestoreConversations(ids), 'Failed to restore sessions');
+        }));
+    }
+    menu.addItem(menuItem => menuItem
+      .setTitle('Delete all sessions')
+      .setDisabled(ids.length === 0)
+      .onClick(() => {
+        runConversationAction(
+          () => this.#deleteHistoryConversations(ids, options),
+          'Failed to delete sessions',
+        );
+      }));
   }
 
   #addArchiveAllMenuItem(

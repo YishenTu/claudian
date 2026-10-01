@@ -427,7 +427,7 @@ describe('SessionBrowser archived multi-select', () => {
     expect(onRerender.mock.calls.length > 0).toBe(confirmed);
   });
 
-  it('offers deleting every archived session of a Linked content group instead of pinning it', async () => {
+  it('offers restoring or deleting every archived session of a Linked content group', async () => {
     const archived = [
       session('plan-a', 'Plan draft', { isArchived: true, linkedContentPath: 'Projects/Plan.md' }),
       session('plan-b', 'Plan review', { isArchived: true, linkedContentPath: 'Projects/Plan.md' }),
@@ -445,10 +445,12 @@ describe('SessionBrowser archived multi-select', () => {
     } as unknown as SessionBrowserDeps);
     const container = document.createElement('div');
     document.body.append(container);
+    const onRestoreConversations = jest.fn().mockResolvedValue(undefined);
     controller.renderHistoryDropdown(container, {
       onSelectConversation: jest.fn().mockResolvedValue(undefined),
       onSetLinkedContentPinned: jest.fn().mockResolvedValue(undefined),
-      onRestoreConversations: jest.fn().mockResolvedValue(undefined),
+      onStartLinkedContentConversation: jest.fn().mockResolvedValue(undefined),
+      onRestoreConversations,
       onRerender: jest.fn(),
       organization: 'linked-content',
       contentExists: () => true,
@@ -460,13 +462,57 @@ describe('SessionBrowser archived multi-select', () => {
       searchQuery: 'draft',
     });
 
+    expect(within(container).queryByRole('button', { name: /^New chat for/ })).toBeNull();
     fireEvent.contextMenu(within(container).getByText('Plan'));
     const menu = lastMenu();
-    expect(menu.items.map(item => item.title)).toEqual(['Delete all sessions']);
+    expect(menu.items.map(item => item.title)).toEqual(['Restore all sessions', 'Delete all sessions']);
     menu.items[0].clickHandler?.();
+    expect(onRestoreConversations).toHaveBeenCalledWith(['plan-a', 'plan-b']);
+    menu.items[1].clickHandler?.();
     await new Promise(resolve => setTimeout(resolve, 0));
 
     expect(confirmDelete).toHaveBeenCalledWith(expect.anything(), 'Permanently delete 2 sessions?');
     expect(deleteConversation.mock.calls).toEqual([['plan-a'], ['plan-b']]);
+  });
+
+  it('offers restoring or deleting every archived session under a date divider', async () => {
+    const archived = [
+      { ...session('fresh', 'Fresh archived', { isArchived: true }), lastActivityAt: testDate({ days: -2 }).getTime() },
+      { ...session('stale', 'Stale archived', { isArchived: true }), lastActivityAt: testDate({ days: -60 }).getTime() },
+      { ...session('ancient', 'Ancient archived', { isArchived: true }), lastActivityAt: testDate({ days: -400 }).getTime() },
+    ];
+    const deleteConversation = jest.fn().mockResolvedValue(undefined);
+    jest.mocked(confirmDelete).mockResolvedValue(true);
+    const controller = new SessionBrowser({
+      plugin: { app: {}, getConversationList: () => archived, settings: {}, deleteConversation },
+      getCurrentConversationId: () => null,
+      isStreaming: () => false,
+      reloadActiveConversation: async () => undefined,
+      getTitleGenerationService: () => null,
+      onListChanged: () => undefined,
+    } as unknown as SessionBrowserDeps);
+    const container = document.createElement('div');
+    document.body.append(container);
+    const onRestoreConversations = jest.fn().mockResolvedValue(undefined);
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: jest.fn().mockResolvedValue(undefined),
+      onRestoreConversations,
+      onRerender: jest.fn(),
+      groupByRecency: true,
+      showArchivedSection: true,
+      sessionScope: 'archived',
+      sessionActionMode: 'archived',
+      allowConversationSelection: false,
+    });
+
+    fireEvent.contextMenu(within(container).getByText('Older'));
+    const menu = lastMenu();
+    expect(menu.items.map(item => item.title)).toEqual(['Restore all sessions', 'Delete all sessions']);
+    menu.items[0].clickHandler?.();
+    expect(onRestoreConversations).toHaveBeenCalledWith(['stale', 'ancient']);
+    menu.items[1].clickHandler?.();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(deleteConversation.mock.calls).toEqual([['stale'], ['ancient']]);
   });
 });
