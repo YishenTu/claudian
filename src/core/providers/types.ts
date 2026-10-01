@@ -41,6 +41,8 @@ export interface ProviderCapabilities {
   supportsFastMode?: boolean;
   /** Can report authoritative main-agent output tokens and elapsed turn time. */
   supportsResponseThroughput?: boolean;
+  /** Mirrors application archive state onto the native session via workspace `sessionArchive`. */
+  supportsNativeSessionArchive?: boolean;
   reasoningControl: 'effort' | 'none';
 }
 
@@ -372,7 +374,14 @@ export interface ProviderWorkspaceServices {
   commandLoader?: ProviderCommandLoader | null;
   settingsTabRenderer?: ProviderSettingsTabRenderer | null;
   modelCatalog?: ProviderModelCatalog;
+  sessionArchive?: ProviderSessionArchive | null;
   dispose?(): Promise<void> | void;
+}
+
+/** Explicit native archive operation; application archive state stays authoritative. */
+export interface ProviderSessionArchive {
+  /** Resolves without effect when the native session is missing or already in the requested state. */
+  setSessionArchived(conversation: ProviderHistoryInput, isArchived: boolean): Promise<void>;
 }
 
 export interface ProviderModelCatalogRefreshResult {

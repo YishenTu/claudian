@@ -3267,6 +3267,49 @@ describe('ClaudianPlugin', () => {
     });
   });
 
+  describe('setConversationArchived', () => {
+    it('mirrors archive and restore onto the native Codex thread', async () => {
+      await plugin.onload();
+      const setSessionArchived = jest.fn().mockResolvedValue(undefined);
+      ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionArchived } });
+      const conversation = await plugin.createConversation({ providerId: 'codex', sessionId: 'thread-1' });
+
+      await plugin.setConversationArchived(conversation.id, true);
+      await plugin.setConversationArchived(conversation.id, true);
+      await plugin.setConversationArchived(conversation.id, false);
+
+      expect(setSessionArchived.mock.calls).toEqual([
+        [expect.objectContaining({ sessionId: 'thread-1' }), true],
+        [expect.objectContaining({ sessionId: 'thread-1' }), false],
+      ]);
+    });
+
+    it('keeps the local archive when the native archive fails', async () => {
+      await plugin.onload();
+      ProviderWorkspaceRegistry.setServices('codex', {
+        sessionArchive: { setSessionArchived: jest.fn().mockRejectedValue(new Error('codex unavailable')) },
+      });
+      const conversation = await plugin.createConversation({ providerId: 'codex', sessionId: 'thread-1' });
+
+      await plugin.setConversationArchived(conversation.id, true);
+
+      expect(plugin.getConversationSync(conversation.id)?.isArchived).toBe(true);
+      expect(Notice).toHaveBeenCalledWith('Session archived, but Codex CLI could not archive it: codex unavailable');
+    });
+
+    it('does not initialize providers without native session archive', async () => {
+      await plugin.onload();
+      const ensureInitialized = jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized');
+      const conversation = await plugin.createConversation({ providerId: 'claude', sessionId: 'session-1' });
+      ensureInitialized.mockClear();
+
+      await plugin.setConversationArchived(conversation.id, true);
+
+      expect(plugin.getConversationSync(conversation.id)?.isArchived).toBe(true);
+      expect(ensureInitialized).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Linked content path events', () => {
     it('coalesces vault refreshes while delivering every path event immediately', async () => {
       await plugin.onload();

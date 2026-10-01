@@ -7,6 +7,7 @@ import type {
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
+import { CodexThreadArchiveService } from '../history/CodexThreadArchiveService';
 import { CodexCLIResolver } from '../runtime/CodexCLIResolver';
 import { CodexModelCatalogCoordinator } from '../runtime/CodexModelCatalogCoordinator';
 import { CodexModelDiscoveryService } from '../runtime/CodexModelDiscoveryService';
@@ -39,21 +40,25 @@ export async function createCodexWorkspaceServices(
     );
   const commandCatalog = new CodexSkillCatalog(skillListProvider);
   const modelCatalog = createCodexModels(plugin, modelCatalogCoordinator);
+  const sessionArchive = new CodexThreadArchiveService(plugin);
   const unregisterTransitionHook = plugin.executionLifecycleRegistry
     .registerTransitionHook('codex', {
       beforeTransition: async () => {
         modelCatalog.beginTransition();
         modelCatalogCoordinator.beginEnvironmentTransition();
         skillListProvider.beginEnvironmentTransition();
+        sessionArchive.beginEnvironmentTransition();
         await Promise.all([
           modelCatalogCoordinator.quiesceForEnvironmentChange(),
           skillListProvider.quiesceForEnvironmentChange(),
+          sessionArchive.quiesceForEnvironmentChange(),
         ]);
       },
       afterTransition: () => {
         modelCatalog.endTransition();
         modelCatalogCoordinator.endEnvironmentTransition();
         skillListProvider.endEnvironmentTransition();
+        sessionArchive.endEnvironmentTransition();
       },
     });
   let disposePromise: Promise<void> | null = null;
@@ -66,6 +71,7 @@ export async function createCodexWorkspaceServices(
     modelCatalogCoordinator,
     settingsTabRenderer: createCodexSettingsTabRenderer({ cliResolver, modelCatalog }),
     modelCatalog,
+    sessionArchive,
     dispose() {
       if (disposePromise) return disposePromise;
       unregisterTransitionHook();
@@ -73,6 +79,7 @@ export async function createCodexWorkspaceServices(
         modelCatalog.dispose(),
         modelCatalogCoordinator.dispose(),
         skillListProvider.dispose(),
+        sessionArchive.dispose(),
       ]).then(() => undefined);
       return disposePromise;
     },

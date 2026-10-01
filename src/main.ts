@@ -902,8 +902,27 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   async setConversationArchived(id: string, isArchived: boolean): Promise<void> {
-    await this.conversationRepository.setArchived(id, isArchived);
+    const changed = await this.conversationRepository.setArchived(id, isArchived);
     this.notifyConversationViewsChanged();
+    if (changed) await this.syncNativeSessionArchive(changed, isArchived);
+  }
+
+  /** Best-effort: the committed application archive state stays authoritative. */
+  private async syncNativeSessionArchive(conversation: Conversation, isArchived: boolean): Promise<void> {
+    const { providerId } = conversation;
+    if (!ProviderRegistry.getCapabilities(providerId, conversation.providerState).supportsNativeSessionArchive) return;
+    try {
+      await ProviderWorkspaceRegistry.ensureInitialized(this.providerHost, providerId, 'session-archive');
+      await ProviderWorkspaceRegistry.getIfInitialized(providerId)?.sessionArchive
+        ?.setSessionArchived(conversation, isArchived);
+    } catch (error) {
+      const action = isArchived ? 'archived' : 'restored';
+      const nativeAction = isArchived ? 'archive' : 'restore';
+      const reason = error instanceof Error ? error.message : String(error);
+      new Notice(
+        `Session ${action}, but ${ProviderRegistry.getProviderDisplayName(providerId)} could not ${nativeAction} it: ${reason}`,
+      );
+    }
   }
 
   async setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void> {
