@@ -3275,54 +3275,91 @@ describe('ClaudianPlugin', () => {
   });
 
   describe('setConversationArchived', () => {
+    const archivedFlags = (mock: jest.Mock) => mock.mock.calls.map(
+      ([changes]) => changes.map((change: { isArchived: boolean }) => change.isArchived),
+    );
+
     it('mirrors archive and restore onto the native Codex thread', async () => {
       await plugin.onload();
-      const setSessionArchived = jest.fn().mockResolvedValue(undefined);
-      ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionArchived } });
+      const setSessionsArchived = jest.fn().mockResolvedValue(undefined);
+      ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionsArchived } });
       const conversation = await plugin.createConversation({ providerId: 'codex', sessionId: 'thread-1' });
 
       await plugin.setConversationArchived(conversation.id, true);
       await plugin.setConversationArchived(conversation.id, true);
       await plugin.setConversationArchived(conversation.id, false);
 
-      expect(setSessionArchived.mock.calls).toEqual([
-        [expect.objectContaining({ sessionId: 'thread-1' }), true],
-        [expect.objectContaining({ sessionId: 'thread-1' }), false],
+      expect(setSessionsArchived.mock.calls).toEqual([
+        [[{ conversation: expect.objectContaining({ sessionId: 'thread-1' }), isArchived: true }]],
+        [[{ conversation: expect.objectContaining({ sessionId: 'thread-1' }), isArchived: false }]],
       ]);
+    });
+
+    it('mirrors bulk archive and restore in one native batch', async () => {
+      await plugin.onload();
+      const setSessionsArchived = jest.fn().mockResolvedValue(undefined);
+      ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionsArchived } });
+      const first = await plugin.createConversation({ providerId: 'codex', sessionId: 'thread-1' });
+      const second = await plugin.createConversation({ providerId: 'codex', sessionId: 'thread-2' });
+
+      await expect(plugin.archiveConversationsIf([first.id, second.id], () => true)).resolves.toBe(2);
+      await plugin.restoreConversations([first.id, second.id]);
+
+      expect(archivedFlags(setSessionsArchived)).toEqual([[true, true], [false, false]]);
     });
 
     it('applies native archive operations in local commit order', async () => {
       await plugin.onload();
       let releaseArchive!: () => void;
-      const setSessionArchived = jest.fn()
+      const setSessionsArchived = jest.fn()
         .mockImplementationOnce(() => new Promise<void>((resolve) => { releaseArchive = resolve; }))
         .mockResolvedValue(undefined);
-      ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionArchived } });
+      ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionsArchived } });
       const conversation = await plugin.createConversation({ providerId: 'codex', sessionId: 'thread-1' });
 
       const archive = plugin.setConversationArchived(conversation.id, true);
-      await waitForCondition(() => setSessionArchived.mock.calls.length === 1);
+      await waitForCondition(() => setSessionsArchived.mock.calls.length === 1);
       const restore = plugin.setConversationArchived(conversation.id, false);
       await waitForCondition(() => plugin.getConversationSync(conversation.id)?.isArchived === false);
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      expect(setSessionArchived).toHaveBeenCalledTimes(1);
+      expect(setSessionsArchived).toHaveBeenCalledTimes(1);
       releaseArchive();
       await Promise.all([archive, restore]);
-      expect(setSessionArchived.mock.calls.map(([, isArchived]) => isArchived)).toEqual([true, false]);
+      expect(archivedFlags(setSessionsArchived)).toEqual([[true], [false]]);
+    });
+
+    it('finishes admitted native archive work before disposing provider services', async () => {
+      await plugin.onload();
+      let releaseArchive!: () => void;
+      const setSessionsArchived = jest.fn(() => new Promise<void>((resolve) => { releaseArchive = resolve; }));
+      ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionsArchived } });
+      const disposeWorkspaces = jest.spyOn(ProviderWorkspaceRegistry, 'disposeInitialized');
+      const conversation = await plugin.createConversation({ providerId: 'codex', sessionId: 'thread-1' });
+      const archive = plugin.setConversationArchived(conversation.id, true);
+      await waitForCondition(() => setSessionsArchived.mock.calls.length === 1);
+
+      plugin.onunload();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(disposeWorkspaces).not.toHaveBeenCalled();
+
+      releaseArchive();
+      await Promise.all([archive, (plugin as any).applicationShutdownPromise]);
+      expect(disposeWorkspaces).toHaveBeenCalledTimes(1);
+      expect(Notice).not.toHaveBeenCalledWith(expect.stringContaining('could not archive or restore'));
     });
 
     it('keeps the local archive when the native archive fails', async () => {
       await plugin.onload();
       ProviderWorkspaceRegistry.setServices('codex', {
-        sessionArchive: { setSessionArchived: jest.fn().mockRejectedValue(new Error('codex unavailable')) },
+        sessionArchive: { setSessionsArchived: jest.fn().mockRejectedValue(new Error('codex unavailable')) },
       });
       const conversation = await plugin.createConversation({ providerId: 'codex', sessionId: 'thread-1' });
 
       await plugin.setConversationArchived(conversation.id, true);
 
       expect(plugin.getConversationSync(conversation.id)?.isArchived).toBe(true);
-      expect(Notice).toHaveBeenCalledWith('Session archived, but Codex CLI could not archive it: codex unavailable');
+      expect(Notice).toHaveBeenCalledWith('Codex CLI could not archive or restore its sessions: codex unavailable');
     });
 
     it('does not initialize providers without native session archive', async () => {

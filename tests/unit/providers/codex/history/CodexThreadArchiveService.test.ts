@@ -32,6 +32,10 @@ const conversation = (sessionId: string | null, providerState?: Record<string, u
   providerState,
   messages: [],
 });
+const change = (
+  input: ReturnType<typeof conversation>,
+  isArchived: boolean,
+) => [{ conversation: input, isArchived }];
 
 describe('CodexThreadArchiveService', () => {
   beforeEach(() => {
@@ -40,29 +44,31 @@ describe('CodexThreadArchiveService', () => {
     mockResolveLaunchSpec.mockResolvedValue({});
   });
 
-  it('archives and unarchives the conversation thread', async () => {
+  it('applies a batch in order through one app-server process', async () => {
     const service = new CodexThreadArchiveService({} as any);
 
-    await service.setSessionArchived(conversation('session-1', { threadId: 'thread-1' }), true);
-    await service.setSessionArchived(conversation('thread-2'), false);
+    await service.setSessionsArchived([
+      { conversation: conversation('session-1', { threadId: 'thread-1' }), isArchived: true },
+      { conversation: conversation('thread-2'), isArchived: false },
+    ]);
 
     expect(mockTransportRequest.mock.calls).toEqual([
       ['thread/archive', { threadId: 'thread-1' }],
       ['thread/unarchive', { threadId: 'thread-2' }],
     ]);
-    expect(mockTransportDispose).toHaveBeenCalledTimes(2);
-    expect(mockProcessShutdown).toHaveBeenCalledTimes(2);
+    expect(mockResolveLaunchSpec).toHaveBeenCalledTimes(1);
+    expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
   });
 
   it('does not target the source thread of a pending fork', async () => {
     const service = new CodexThreadArchiveService({} as any);
 
-    await service.setSessionArchived(
+    await service.setSessionsArchived(change(
       conversation(null, { forkSource: { sessionId: 'source-thread', resumeAt: 'turn-1' } }),
       true,
-    );
+    ));
 
-    expect(mockTransportRequest).not.toHaveBeenCalled();
+    expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -76,14 +82,22 @@ describe('CodexThreadArchiveService', () => {
         : Promise.reject(new CodexRPCResponseError({ code: -32600, message }))
     ));
 
-    await expect(service.setSessionArchived(conversation('thread-1'), isArchived)).resolves.toBeUndefined();
+    await expect(service.setSessionsArchived(change(conversation('thread-1'), isArchived))).resolves.toBeUndefined();
   });
 
-  it('surfaces other app-server failures after shutting the process down', async () => {
+  it('attempts the rest of a batch before surfacing a failure', async () => {
     const service = new CodexThreadArchiveService({} as any);
-    mockTransportRequest.mockRejectedValue(new CodexRPCResponseError({ code: -32603, message: 'disk full' }));
+    mockTransportRequest.mockImplementation((method: string, params?: { threadId: string }) => (
+      method === 'thread/archive' && params?.threadId === 'thread-1'
+        ? Promise.reject(new CodexRPCResponseError({ code: -32603, message: 'disk full' }))
+        : Promise.resolve({})
+    ));
 
-    await expect(service.setSessionArchived(conversation('thread-1'), true)).rejects.toThrow('disk full');
+    await expect(service.setSessionsArchived([
+      { conversation: conversation('thread-1'), isArchived: true },
+      { conversation: conversation('thread-2'), isArchived: true },
+    ])).rejects.toThrow('disk full');
+    expect(mockTransportRequest).toHaveBeenCalledWith('thread/archive', { threadId: 'thread-2' });
     expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
   });
 
@@ -97,7 +111,7 @@ describe('CodexThreadArchiveService', () => {
     const service = new CodexThreadArchiveService({} as any);
     mockResolveLaunchSpec.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve({}), 0)));
 
-    const operation = service.setSessionArchived(conversation('thread-1'), true);
+    const operation = service.setSessionsArchived(change(conversation('thread-1'), true));
     await drain(service);
 
     expect(mockProcessShutdown).toHaveBeenCalledTimes(mockResolveLaunchSpec.mock.calls.length);
@@ -108,7 +122,7 @@ describe('CodexThreadArchiveService', () => {
     const service = new CodexThreadArchiveService({} as any);
     service.beginEnvironmentTransition();
 
-    const operation = service.setSessionArchived(conversation('thread-1'), true);
+    const operation = service.setSessionsArchived(change(conversation('thread-1'), true));
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
 

@@ -44,6 +44,10 @@ export class ProviderInitializationBoundary {
     this.registrations[providerId] = registration;
   }
 
+  providesSessionArchive(providerId: ProviderId): boolean {
+    return this.registrations[providerId]?.providesSessionArchive === true;
+  }
+
   getAgentSkillProviderIds(): ProviderId[] {
     return Object.entries(this.registrations)
       .filter(([, registration]) => registration?.consumesAgentSkills)

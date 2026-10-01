@@ -33,6 +33,10 @@ export class ProviderWorkspaceRegistry {
     this.boundary.register(providerId, registration);
   }
 
+  static providesSessionArchive(providerId: ProviderId): boolean {
+    return this.boundary.providesSessionArchive(providerId);
+  }
+
   static getAgentSkillProviderIds(): ProviderId[] {
     return this.boundary.getAgentSkillProviderIds();
   }

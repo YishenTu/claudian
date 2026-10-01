@@ -88,6 +88,7 @@ export async function createCodexWorkspaceServices(
 
 export const codexWorkspaceRegistration: ProviderWorkspaceRegistration<CodexWorkspaceServices> = {
   consumesAgentSkills: true,
+  providesSessionArchive: true,
   initialize: async ({ plugin }) => createCodexWorkspaceServices(plugin),
 };
 

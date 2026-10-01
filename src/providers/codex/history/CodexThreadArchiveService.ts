@@ -1,5 +1,5 @@
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import type { ProviderHistoryInput, ProviderSessionArchive } from '../../../core/providers/types';
+import type { ProviderSessionArchive, ProviderSessionArchiveChange } from '../../../core/providers/types';
 import { CodexMetadataTransitionGate } from '../metadata/CodexMetadataTransitionGate';
 import { CodexAppServerProcess } from '../runtime/CodexAppServerProcess';
 import {
@@ -19,16 +19,19 @@ export class CodexThreadArchiveService implements ProviderSessionArchive {
 
   constructor(private readonly plugin: ProviderHost) {}
 
-  async setSessionArchived(conversation: ProviderHistoryInput, isArchived: boolean): Promise<void> {
-    // A pending fork has no thread of its own; never target its source thread.
-    const threadId = getCodexState(conversation.providerState).threadId ?? conversation.sessionId;
-    if (!threadId) return;
+  async setSessionsArchived(changes: readonly ProviderSessionArchiveChange[]): Promise<void> {
+    const requests = changes.flatMap(({ conversation, isArchived }) => {
+      // A pending fork has no thread of its own; never target its source thread.
+      const threadId = getCodexState(conversation.providerState).threadId ?? conversation.sessionId;
+      return threadId ? [{ threadId, isArchived }] : [];
+    });
+    if (requests.length === 0) return;
     // Register in the same tick as the availability check so drains cannot miss admitted work.
     while (this.transitionGate.isUnavailable()) {
       if (!await this.transitionGate.waitUntilAvailable()) return;
     }
 
-    const operation = this.#request(isArchived ? 'thread/archive' : 'thread/unarchive', threadId);
+    const operation = this.#apply(requests);
     this.active.add(operation);
     try {
       await operation;
@@ -55,7 +58,7 @@ export class CodexThreadArchiveService implements ProviderSessionArchive {
     await this.quiesceForEnvironmentChange();
   }
 
-  async #request(method: 'thread/archive' | 'thread/unarchive', threadId: string): Promise<void> {
+  async #apply(requests: ReadonlyArray<{ threadId: string; isArchived: boolean }>): Promise<void> {
     const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
     const process = new CodexAppServerProcess(launchSpec);
     process.start();
@@ -63,11 +66,16 @@ export class CodexThreadArchiveService implements ProviderSessionArchive {
     transport.start();
     try {
       await initializeCodexAppServerTransport(transport);
-      await transport.request(method, { threadId });
-    } catch (error) {
-      if (!(error instanceof CodexRPCResponseError && ALREADY_IN_STATE_MESSAGE.test(error.message))) {
-        throw error;
+      let firstFailure: Error | undefined;
+      for (const { threadId, isArchived } of requests) {
+        try {
+          await transport.request(isArchived ? 'thread/archive' : 'thread/unarchive', { threadId });
+        } catch (error) {
+          if (error instanceof CodexRPCResponseError && ALREADY_IN_STATE_MESSAGE.test(error.message)) continue;
+          firstFailure ??= error instanceof Error ? error : new Error(String(error));
+        }
       }
+      if (firstFailure) throw firstFailure;
     } finally {
       transport.dispose();
       await process.shutdown();
