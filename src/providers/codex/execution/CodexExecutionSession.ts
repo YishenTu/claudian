@@ -280,6 +280,7 @@ export class CodexExecutionSession
   private loadedThreadId: string | null = null;
   /** Sandbox mode in effect on the loaded thread; turn/start overrides persist across turns. */
   private loadedThreadSandbox: string | null = null;
+  private loadedThreadSandboxRevision = 0;
   private loadedThreadBaseInstructions: string | null = null;
   private supportsApprovalReviewer = false;
   private sessionFilePath: string | null;
@@ -576,6 +577,10 @@ export class CodexExecutionSession
 
       const sandboxPolicy = await this.#resolveTurnSandboxPolicy(policy);
       if (!this.#isRunCurrent(run, generation)) return;
+      // The override may take effect before, or without, its acknowledgement.
+      const sandboxRevision = sandboxPolicy
+        ? this.#setLoadedThreadSandbox(null)
+        : null;
 
       const result = await this.transport!.request<TurnStartResult>('turn/start', {
         threadId: thread.threadId,
@@ -590,7 +595,9 @@ export class CodexExecutionSession
         ...(sandboxPolicy ? { sandboxPolicy } : {}),
         collaborationMode,
       });
-      this.loadedThreadSandbox = policy.sandbox;
+      if (sandboxRevision === this.loadedThreadSandboxRevision) {
+        this.#setLoadedThreadSandbox(policy.sandbox);
+      }
       this.#markNativeConversationContextEstablished(run);
       if (!this.#isRunCurrent(run, generation)) return;
       this.#observeNativeTurn(thread.threadId, result.turn.id);
@@ -1157,7 +1164,7 @@ export class CodexExecutionSession
       this.#recordApprovalReviewer(result, policy.approvalsReviewer);
       this.subagents.seed(result.thread);
       this.loadedThreadId = result.thread.id;
-      this.loadedThreadSandbox = sandboxModeOf(result.sandbox);
+      this.#setLoadedThreadSandbox(sandboxModeOf(result.sandbox));
       this.loadedThreadBaseInstructions = baseInstructions;
       return {
         threadId: result.thread.id,
@@ -1203,7 +1210,7 @@ export class CodexExecutionSession
     );
     this.#recordApprovalReviewer(result, policy.approvalsReviewer);
     this.loadedThreadId = result.thread.id;
-    this.loadedThreadSandbox = sandboxModeOf(result.sandbox);
+    this.#setLoadedThreadSandbox(sandboxModeOf(result.sandbox));
     this.loadedThreadBaseInstructions = baseInstructions;
     this.workspaceDependencyToolVersion = dynamicTools.some(spec =>
       spec.namespace === CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE
@@ -1330,7 +1337,7 @@ export class CodexExecutionSession
 
     this.#recordApprovalReviewer(resumeResult, policy.approvalsReviewer);
     this.loadedThreadId = target.threadId;
-    this.loadedThreadSandbox = sandboxModeOf(resumeResult.sandbox);
+    this.#setLoadedThreadSandbox(sandboxModeOf(resumeResult.sandbox));
     this.loadedThreadBaseInstructions = baseInstructions;
     const checkpointIndex = resumeResult.thread.turns.findIndex(
       turn => turn.id === fork.resumeAt,
@@ -1379,7 +1386,7 @@ export class CodexExecutionSession
       { threadId: fork.sessionId, ...overrides },
     ).then((forkResult) => {
       this.#recordApprovalReviewer(forkResult, overrides.approvalsReviewer);
-      this.loadedThreadSandbox = sandboxModeOf(forkResult.sandbox);
+      this.#setLoadedThreadSandbox(sandboxModeOf(forkResult.sandbox));
       const threadId = normalizeString(forkResult.thread.id);
       if (!threadId) {
         throw new Error('Codex CLI fork did not return a child thread ID.');
@@ -1648,7 +1655,7 @@ export class CodexExecutionSession
     this.runtimeContext = null;
     this.subagents.clear();
     this.loadedThreadId = null;
-    this.loadedThreadSandbox = null;
+    this.#setLoadedThreadSandbox(null);
     this.loadedThreadBaseInstructions = null;
     this.supportsApprovalReviewer = false;
     this.dynamicToolRegistry = new CodexDynamicToolRegistry();
@@ -1937,6 +1944,11 @@ export class CodexExecutionSession
     return sandboxConfig.sandbox === 'danger-full-access'
       ? { ...sandboxConfig, sandboxPolicy: { type: 'dangerFullAccess' } }
       : sandboxConfig;
+  }
+
+  #setLoadedThreadSandbox(mode: string | null): number {
+    this.loadedThreadSandbox = mode;
+    return ++this.loadedThreadSandboxRevision;
   }
 
   async #resolveTurnSandboxPolicy(policy: CodexPolicy): Promise<SandboxPolicy | undefined> {

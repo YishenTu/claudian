@@ -578,6 +578,60 @@ describe('CodexExecutionBackend', () => {
     await session.dispose();
   });
 
+  it.each(['late', 'lost'])('does not trust the prior sandbox after an override response is %s', async outcome => {
+    const yoloResponse = createDeferred<unknown>();
+    let turn = 0;
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') return {
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+      };
+      if (method === 'thread/start') return createThreadResult('thread-late-override');
+      if (method === 'config/read') return {
+        config: { sandbox_workspace_write: { writable_roots: ['/configured/root'], network_access: true } },
+      };
+      if (method === 'turn/start') {
+        const turnId = `turn-late-override-${++turn}`;
+        if (turn === 2) {
+          // Native handoff and completion precede the acknowledgement of the YOLO override.
+          emitNotification('turn/started', { threadId: 'thread-late-override', turn: createTurnResult(turnId).turn });
+          queueMicrotask(() => completeTurn('thread-late-override', turnId));
+          return yoloResponse.promise;
+        }
+        queueMicrotask(() => completeTurn('thread-late-override', turnId));
+        return createTurnResult(turnId);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin()).createSession(createSessionConfig());
+    const runWith = (permissionMode: string) => {
+      const request = createRequest();
+      return collectEvents(session.execute({
+        ...request, configuration: { ...request.configuration, permissionMode },
+      }).events);
+    };
+    await runWith('normal');
+    if (outcome === 'late') {
+      await runWith('yolo');
+    } else {
+      const yoloRun = runWith('yolo');
+      yoloResponse.reject(new Error('turn/start acknowledgement lost'));
+      await yoloRun;
+    }
+    await runWith('normal');
+    yoloResponse.resolve(createTurnResult('turn-late-override-2'));
+    await flushMicrotasks();
+    await runWith('normal');
+
+    const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
+    expect(turns.map(([, params]) => params.sandboxPolicy)).toEqual([
+      undefined,
+      { type: 'dangerFullAccess' },
+      CONFIGURED_WORKSPACE_WRITE_SANDBOX,
+      undefined,
+    ]);
+    await session.dispose();
+  });
+
   it('sends the configured workspace-write sandbox when a fork child ignores the resume mode', async () => {
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') return {
