@@ -1954,11 +1954,11 @@ describe('ClaudianView tab controls', () => {
       getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue(tabs),
     };
-    const archiveConversations = jest.fn().mockResolvedValue(undefined);
+    const archiveConversationsIf = jest.fn(async (ids: readonly string[]) => ids.length);
     const view = Object.create(ClaudianView.prototype) as any;
     attachSessionBrowser(view);
     Object.assign(view, {
-      plugin: { getAllViews: jest.fn().mockReturnValue([view]), archiveConversations },
+      plugin: { getAllViews: jest.fn().mockReturnValue([view]), archiveConversationsIf },
       tabManager: manager,
     });
     view.getTabManager = jest.fn().mockReturnValue(manager);
@@ -1967,11 +1967,55 @@ describe('ClaudianView tab controls', () => {
 
     expect(manager.closeTab).toHaveBeenCalledTimes(1);
     expect(manager.closeTab).toHaveBeenCalledWith('open-tab');
-    expect(archiveConversations).toHaveBeenCalledTimes(1);
-    expect(archiveConversations).toHaveBeenCalledWith(['conversation-1', 'conversation-2']);
+    expect(archiveConversationsIf).toHaveBeenCalledTimes(1);
+    expect(archiveConversationsIf).toHaveBeenCalledWith(['conversation-1', 'conversation-2'], expect.any(Function));
     expect(manager.closeTab.mock.invocationCallOrder[0])
-      .toBeLessThan(archiveConversations.mock.invocationCallOrder[0]);
-    expect(Notice).toHaveBeenCalledWith('Skipped 1 running session');
+      .toBeLessThan(archiveConversationsIf.mock.invocationCallOrder[0]);
+    expect(Notice).toHaveBeenCalledWith('Skipped 1 session that is open or running');
+  });
+
+  it('does not archive a session reopened while a later session in the batch is still closing', async () => {
+    let tabs: Array<{ id: string; conversationId: string; state: { isStreaming: boolean } }> = [
+      { id: 'tab-1', conversationId: 'conversation-1', state: { isStreaming: false } },
+      { id: 'tab-2', conversationId: 'conversation-2', state: { isStreaming: false } },
+    ];
+    let releaseSecondClose!: () => void;
+    const manager = {
+      closeTab: jest.fn(async (tabId: string) => {
+        if (tabId === 'tab-2') {
+          await new Promise<void>((resolve) => { releaseSecondClose = resolve; });
+        }
+        tabs = tabs.filter(tab => tab.id !== tabId);
+        return true;
+      }),
+      getTabIdentities: () => tabs,
+      getTab: (id: string) => tabs.find(tab => tab.id === id) ?? null,
+      getAllTabs: () => tabs,
+    };
+    const archived: string[] = [];
+    const archiveConversationsIf = jest.fn(async (
+      ids: readonly string[],
+      shouldArchive: (conversation: { id: string }) => boolean,
+    ) => {
+      for (const id of ids) if (shouldArchive({ id })) archived.push(id);
+      return archived.length;
+    });
+    const view = Object.create(ClaudianView.prototype) as any;
+    attachSessionBrowser(view);
+    Object.assign(view, {
+      plugin: { getAllViews: jest.fn().mockReturnValue([view]), archiveConversationsIf },
+      tabManager: manager,
+    });
+    view.getTabManager = jest.fn().mockReturnValue(manager);
+
+    const archiving = view.archiveConversations(['conversation-1', 'conversation-2']);
+    await new Promise(resolve => setImmediate(resolve));
+    tabs.push({ id: 'reopened', conversationId: 'conversation-1', state: { isStreaming: true } });
+    releaseSecondClose();
+    await archiving;
+
+    expect(archived).toEqual(['conversation-2']);
+    expect(Notice).toHaveBeenCalledWith('Skipped 1 session that is open or running');
   });
 
   it('formats persisted model metadata for the session hover card', () => {

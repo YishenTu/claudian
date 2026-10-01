@@ -3227,11 +3227,18 @@ describe('ClaudianPlugin', () => {
       ]);
 
       const conversation = await plugin.createConversation();
+      const other = await plugin.createConversation();
       await plugin.renameConversation(conversation.id, 'Renamed');
+      // Batch mutations refresh once regardless of how many sessions they change.
+      const batch = [conversation.id, other.id];
+      await plugin.setConversationsPinned(batch, true);
+      await expect(plugin.archiveConversationsIf(batch, () => true)).resolves.toBe(2);
+      await plugin.restoreConversations(batch);
       await plugin.deleteConversation(conversation.id);
 
-      expect(firstView.notifyConversationListChanged).toHaveBeenCalledTimes(3);
-      expect(secondView.notifyConversationListChanged).toHaveBeenCalledTimes(3);
+      expect(plugin.getConversationList().find(({ id }) => id === other.id)).toMatchObject({ isArchived: false });
+      expect(firstView.notifyConversationListChanged).toHaveBeenCalledTimes(7);
+      expect(secondView.notifyConversationListChanged).toHaveBeenCalledTimes(7);
     });
 
     it('keeps a committed Conversation when an open view projection fails', async () => {
@@ -3530,6 +3537,7 @@ describe('ClaudianPlugin', () => {
       { id: 'stale-session', providerId: 'claude' as const, title: 'Stale', createdAt: inactiveFor(21), lastActivityAt: inactiveFor(20) },
       { id: 'recent-session', providerId: 'claude' as const, title: 'Recent', createdAt: inactiveFor(3), lastActivityAt: inactiveFor(2) },
       { id: 'pinned-stale-session', providerId: 'claude' as const, title: 'Pinned', createdAt: inactiveFor(21), lastActivityAt: inactiveFor(20), isPinned: true },
+      { id: 'second-stale-session', providerId: 'claude' as const, title: 'Second stale', createdAt: inactiveFor(31), lastActivityAt: inactiveFor(30) },
     ];
 
     async function loadAllSessions(settings: Record<string, unknown>): Promise<Map<string, string>> {
@@ -3552,12 +3560,12 @@ describe('ClaudianPlugin', () => {
     it('archives unpinned sessions past the threshold once all metadata has loaded', async () => {
       const files = await loadAllSessions({ sessionAutoArchiveAfter: '14d' });
 
-      expect(archivedIds()).toEqual(['stale-session']);
+      expect(archivedIds()).toEqual(['stale-session', 'second-stale-session']);
       const persisted = JSON.parse(
         files.get(`${getDeviceSessionsPath(getHostnameKey())}/stale-session.meta.json`) ?? '{}',
       );
       expect(persisted.isArchived).toBe(true);
-      expect(Notice).toHaveBeenCalledWith('Auto-archived 1 inactive session');
+      expect(Notice).toHaveBeenCalledWith('Auto-archived 2 inactive sessions');
     });
 
     it('skips sessions held by a deferred chat pane that has not mounted its view', async () => {
@@ -3581,7 +3589,8 @@ describe('ClaudianPlugin', () => {
 
       await loadAllSessions({ sessionAutoArchiveAfter: '14d' });
 
-      expect(archivedIds()).toEqual([]);
+      // The unheld stale session proves the scan ran.
+      expect(archivedIds()).toEqual(['second-stale-session']);
     });
 
     it('does not archive a session whose pin was still being saved when the scan ran', async () => {
@@ -3609,6 +3618,8 @@ describe('ClaudianPlugin', () => {
       const stale = plugin.getConversationList().find(({ id }) => id === 'stale-session');
       expect(stale).toMatchObject({ isPinned: true });
       expect(stale?.isArchived).not.toBe(true);
+      // The unheld stale session proves the scan ran.
+      expect(archivedIds()).toEqual(['second-stale-session']);
       expect(JSON.parse(files.get(stalePath) ?? '{}')).toMatchObject({ isPinned: true });
     });
 
@@ -3619,7 +3630,7 @@ describe('ClaudianPlugin', () => {
       await plugin.mutateSettings((settings) => { settings.sessionAutoArchiveAfter = '7d'; });
       await new Promise(resolve => setImmediate(resolve));
 
-      expect(archivedIds()).toEqual(['stale-session']);
+      expect(archivedIds()).toEqual(['stale-session', 'second-stale-session']);
     });
   });
 

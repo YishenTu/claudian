@@ -74,8 +74,6 @@ export interface ChatFeatureHost extends FeatureHost {
     includeDescendants: boolean,
   ): Promise<void>;
   setConversationArchived(id: string, isArchived: boolean): Promise<void>;
-  /** Archives sessions as one batch with a single list refresh. */
-  archiveConversations(ids: readonly string[]): Promise<void>;
   /** Restores archived sessions as one batch with a single list refresh. */
   restoreConversations(ids: readonly string[]): Promise<void>;
   /**

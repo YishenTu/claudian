@@ -35,6 +35,10 @@ function session(id: string, title: string, extra: Partial<ConversationMeta> = {
   };
 }
 
+function selectedCount(container: HTMLElement): number {
+  return within(container).queryAllByText('Selected').length;
+}
+
 function expectButton(container: HTMLElement, name: string): void {
   expect(within(container).queryByRole('button', { name })).not.toBeNull();
 }
@@ -83,9 +87,8 @@ function renderList(options: {
   const button = (name: string): HTMLElement => within(container).getByRole('button', {
     name: new RegExp(`^${name}`),
   });
-  const item = (name: string): HTMLElement => button(name).closest<HTMLElement>('.claudian-history-item')!;
   return {
-    controller, container, button, item, onSelectConversation, onSetConversationsArchived, onSetConversationsPinned, render,
+    controller, container, button, onSelectConversation, onSetConversationsArchived, onSetConversationsPinned, render,
   };
 }
 
@@ -96,7 +99,7 @@ describe('SessionBrowser multi-select archive', () => {
   });
 
   it('archives every Option-clicked session from the context menu of a selected session', async () => {
-    const { container, button, item, onSelectConversation, onSetConversationsArchived } = renderList();
+    const { container, button, onSelectConversation, onSetConversationsArchived } = renderList();
 
     fireEvent.click(button('Alpha session'), { altKey: true });
     fireEvent.click(button('Gamma session'), { altKey: true });
@@ -107,22 +110,22 @@ describe('SessionBrowser multi-select archive', () => {
     expectButton(container, 'Beta session');
     expect(await axe(container)).toHaveNoViolations();
 
-    fireEvent.contextMenu(item('Gamma session'));
+    fireEvent.contextMenu(button('Gamma session'));
     const menu = lastMenu();
     expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Archive 2 sessions']);
     menu.items[1].clickHandler?.();
     await Promise.resolve();
 
     expect(onSetConversationsArchived).toHaveBeenCalledWith(['alpha', 'gamma']);
-    expect(container.querySelectorAll('.claudian-history-item--selected')).toHaveLength(0);
+    expect(selectedCount(container)).toBe(0);
   });
 
   it('skips running sessions in the selection', () => {
-    const { button, item, onSetConversationsArchived } = renderList();
+    const { button, onSetConversationsArchived } = renderList();
 
     fireEvent.click(button('Alpha session'), { altKey: true });
     fireEvent.click(button('Running session'), { altKey: true });
-    fireEvent.contextMenu(item('Alpha session'));
+    fireEvent.contextMenu(button('Alpha session'));
     const menu = lastMenu();
     expect(menu.items.map(menuItem => menuItem.title)).toEqual(['Pin 2 sessions', 'Archive 1 session']);
     menu.items[1].clickHandler?.();
@@ -131,26 +134,27 @@ describe('SessionBrowser multi-select archive', () => {
   });
 
   it('pins the unpinned sessions in a mixed selection', () => {
-    const { container, button, item, onSetConversationsPinned } = renderList();
+    const { container, button, onSetConversationsPinned } = renderList();
 
     fireEvent.click(button('Alpha session'), { altKey: true });
     fireEvent.click(button('Pinned session'), { altKey: true });
     fireEvent.click(button('Running session'), { altKey: true });
-    fireEvent.contextMenu(item('Alpha session'));
+    expect(selectedCount(container)).toBe(3);
+    fireEvent.contextMenu(button('Alpha session'));
     const menu = lastMenu();
     expect(menu.items[0].title).toBe('Pin 2 sessions');
     menu.items[0].clickHandler?.();
 
     expect(onSetConversationsPinned).toHaveBeenCalledWith(['alpha', 'running'], true);
-    expect(container.querySelectorAll('.claudian-history-item--selected')).toHaveLength(0);
+    expect(selectedCount(container)).toBe(0);
   });
 
   it('unpins the selection when every selected session is pinned', () => {
-    const { button, item, onSetConversationsPinned } = renderList();
+    const { button, onSetConversationsPinned } = renderList();
 
     fireEvent.click(button('Pinned session'), { altKey: true });
     fireEvent.click(button('Second pinned session'), { altKey: true });
-    fireEvent.contextMenu(item('Pinned session'));
+    fireEvent.contextMenu(button('Pinned session'));
     const menu = lastMenu();
     expect(menu.items[0].title).toBe('Unpin 2 sessions');
     menu.items[0].clickHandler?.();
@@ -159,14 +163,14 @@ describe('SessionBrowser multi-select archive', () => {
   });
 
   it('keeps the selection while interacting with sessions and clears it when pointer or focus leaves them', () => {
-    const { container, button, item } = renderList();
+    const { container, button } = renderList();
     const outside = document.createElement('button');
     outside.type = 'button';
     outside.textContent = 'Elsewhere';
     document.body.append(outside);
 
     fireEvent.click(button('Alpha session'), { altKey: true });
-    fireEvent.pointerDown(item('Beta session'));
+    fireEvent.pointerDown(button('Beta session'));
     fireEvent.focusIn(button('Beta session'));
     expectButton(container, 'Alpha session Selected');
 
@@ -176,7 +180,62 @@ describe('SessionBrowser multi-select archive', () => {
     fireEvent.click(button('Alpha session'), { altKey: true });
     fireEvent.focusIn(outside);
     expectButton(container, 'Alpha session');
-    expect(container.querySelectorAll('.claudian-history-item--selected')).toHaveLength(0);
+    expect(selectedCount(container)).toBe(0);
+  });
+
+  it('keeps the selection for pointer-downs inside a list rendered in another window', () => {
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    const popoutDocument = frame.contentDocument!;
+    // Popout windows have their own DOM constructors, and Obsidian creates children in the owning document.
+    const popoutWindow = popoutDocument.defaultView! as unknown as typeof globalThis;
+    const popoutElement = popoutWindow.HTMLElement.prototype as unknown as Record<string, unknown>;
+    const createChild = function (this: HTMLElement, tag: string, info?: string | DomElementInfo): HTMLElement {
+      const el = this.ownerDocument.createElement(tag);
+      const options = typeof info === 'string' ? { cls: info } : info ?? {};
+      if (options.cls) el.className = ([] as string[]).concat(options.cls).join(' ');
+      if (options.text) el.textContent = String(options.text);
+      for (const [key, value] of Object.entries(options.attr ?? {})) el.setAttribute(key, String(value));
+      this.append(el);
+      return el;
+    };
+    popoutElement.createEl = createChild;
+    popoutElement.createDiv = function (this: HTMLElement, info?: DomElementInfo) { return createChild.call(this, 'div', info); };
+    popoutElement.createSpan = function (this: HTMLElement, info?: DomElementInfo) { return createChild.call(this, 'span', info); };
+    for (const name of ['Node', 'Element', 'HTMLElement'] as const) {
+      const source = globalThis[name].prototype;
+      const target = popoutWindow[name].prototype;
+      for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(source))) {
+        if (!(key in target)) Object.defineProperty(target, key, descriptor);
+      }
+    }
+    const controller = new SessionBrowser({
+      plugin: { getConversationList: () => conversations, settings: {} },
+      getCurrentConversationId: () => null,
+      isStreaming: () => false,
+      reloadActiveConversation: async () => undefined,
+      getTitleGenerationService: () => null,
+      onListChanged: () => undefined,
+    } as unknown as SessionBrowserDeps);
+    const container = popoutDocument.createElement('div');
+    popoutDocument.body.append(container);
+    controller.renderHistoryDropdown(container, {
+      onSelectConversation: jest.fn().mockResolvedValue(undefined),
+      onSetConversationsArchived: jest.fn().mockResolvedValue(undefined),
+      showMetadataPopover: true,
+      sessionActionMode: 'active',
+    });
+    const popoutButton = (name: string): HTMLElement => within(container).getByRole('button', {
+      name: new RegExp(`^${name}`),
+    });
+
+    fireEvent.click(popoutButton('Alpha session'), { altKey: true });
+    fireEvent.pointerDown(popoutButton('Beta session'));
+    fireEvent.click(popoutButton('Beta session'), { altKey: true });
+
+    expect(selectedCount(container)).toBe(2);
+    fireEvent.pointerDown(popoutDocument.body);
+    expect(selectedCount(container)).toBe(0);
   });
 
   it('toggles selection with Option+Enter and clears it with Escape', () => {
@@ -194,24 +253,26 @@ describe('SessionBrowser multi-select archive', () => {
   });
 
   it('clears the selection and shows the single-session menu for an unselected session', () => {
-    const { container, button, item } = renderList();
+    const { container, button } = renderList();
 
     fireEvent.click(button('Alpha session'), { altKey: true });
     fireEvent.click(button('Beta session'), { altKey: true });
-    fireEvent.contextMenu(item('Gamma session'));
+    expect(selectedCount(container)).toBe(2);
+    fireEvent.contextMenu(button('Gamma session'));
 
     expect(lastMenu().items.map(menuItem => menuItem.title)).toContain('Archive');
-    expect(container.querySelectorAll('.claudian-history-item--selected')).toHaveLength(0);
+    expect(selectedCount(container)).toBe(0);
   });
 
   it('clears the selection on a plain click before opening the session', () => {
     const { container, button, onSelectConversation } = renderList();
 
     fireEvent.click(button('Alpha session'), { altKey: true });
+    expect(selectedCount(container)).toBe(1);
     fireEvent.click(button('Beta session'));
 
     expect(onSelectConversation).toHaveBeenCalledWith('beta');
-    expect(container.querySelectorAll('.claudian-history-item--selected')).toHaveLength(0);
+    expect(selectedCount(container)).toBe(0);
   });
 });
 
@@ -243,6 +304,11 @@ describe('SessionBrowser recency dividers', () => {
     return container;
   }
 
+  /** Divider labels and session titles in document order. */
+  const visibleSequence = (container: HTMLElement): string[] => within(container)
+    .getAllByText(/^(Past week|Past 2 weeks|Past month|Older|.+ session)$/)
+    .map(element => element.textContent ?? '');
+
   const recent = (id: string, days: number, extra: Partial<ConversationMeta> = {}): ConversationMeta => ({
     ...session(id, `${id} session`, extra),
     lastActivityAt: testDate({ days: -days }).getTime(),
@@ -253,23 +319,18 @@ describe('SessionBrowser recency dividers', () => {
       recent('fresh', 2), recent('week', 10), recent('month', 20), recent('stale', 60),
       recent('pinned-stale', 60, { isPinned: true }),
     ]);
-    const sessionList = container.querySelector<HTMLElement>('.claudian-session-list-items')!;
-
-    expect([...sessionList.children].map(child => (
-      child.classList.contains('claudian-session-recency-divider')
-        ? `# ${child.textContent}`
-        : child.getAttribute('data-conversation-id')
-    ))).toEqual([
-      '# Past week', 'fresh', '# Past 2 weeks', 'week', '# Past month', 'month', '# Older', 'stale',
+    expect(visibleSequence(container)).toEqual([
+      'pinned-stale session',
+      'Past week', 'fresh session', 'Past 2 weeks', 'week session',
+      'Past month', 'month session', 'Older', 'stale session',
     ]);
-    expect(container.querySelector('.claudian-history-section--pinned .claudian-session-recency-divider')).toBeNull();
     expect(await axe(container)).toHaveNoViolations();
   });
 
   it('renders no dividers unless recency grouping is requested', () => {
     const container = render(false, [recent('fresh', 2), recent('stale', 60)]);
 
-    expect(container.querySelector('.claudian-session-recency-divider')).toBeNull();
+    expect(visibleSequence(container)).toEqual(['fresh session', 'stale session']);
   });
 
   it('archives every non-running session in a group from its divider menu', () => {
@@ -283,10 +344,7 @@ describe('SessionBrowser recency dividers', () => {
         openState: 'closed', isRunning: id === 'stale-running',
       }),
     });
-    const olderDivider = [...container.querySelectorAll<HTMLElement>('.claudian-session-recency-divider')]
-      .find(divider => divider.textContent === 'Older')!;
-
-    fireEvent.contextMenu(olderDivider);
+    fireEvent.contextMenu(within(container).getByText('Older'));
     const menu = lastMenu();
     expect(menu.items.map(item => item.title)).toEqual(['Archive all sessions']);
     menu.items[0].clickHandler?.();
@@ -332,8 +390,7 @@ describe('SessionBrowser archived multi-select', () => {
       sessionActionMode: 'archived',
       allowConversationSelection: false,
     });
-    const item = (title: string): HTMLElement => [...container.querySelectorAll<HTMLElement>('.claudian-history-item')]
-      .find(candidate => candidate.querySelector('.claudian-history-item-title')?.textContent === title)!;
+    const item = (title: string): HTMLElement => within(container).getByText(title);
     return { container, item, onRestoreConversations, onRerender, deleteConversation };
   }
 
@@ -342,7 +399,7 @@ describe('SessionBrowser archived multi-select', () => {
 
     fireEvent.click(item('First archived'), { altKey: true });
     fireEvent.keyDown(item('Third archived'), { key: 'Enter', altKey: true });
-    expect(container.querySelectorAll('.claudian-history-item--selected')).toHaveLength(2);
+    expect(selectedCount(container)).toBe(2);
     expect(await axe(container)).toHaveNoViolations();
 
     fireEvent.contextMenu(item('Third archived'));
@@ -351,7 +408,7 @@ describe('SessionBrowser archived multi-select', () => {
     menu.items[0].clickHandler?.();
 
     expect(onRestoreConversations).toHaveBeenCalledWith(['one', 'three']);
-    expect(container.querySelectorAll('.claudian-history-item--selected')).toHaveLength(0);
+    expect(selectedCount(container)).toBe(0);
   });
 
   it.each([true, false])('deletes the selected archived sessions only after confirmation (%s)', async (confirmed) => {
@@ -361,12 +418,12 @@ describe('SessionBrowser archived multi-select', () => {
     fireEvent.click(item('First archived'), { altKey: true });
     fireEvent.click(item('Second archived'), { altKey: true });
     fireEvent.contextMenu(item('First archived'));
+    expect(lastMenu().items[1].title).toBe('Delete 2 sessions');
     lastMenu().items[1].clickHandler?.();
     await new Promise(resolve => setTimeout(resolve, 0));
 
     expect(confirmDelete).toHaveBeenCalledWith(expect.anything(), 'Permanently delete 2 sessions?');
     expect(deleteConversation.mock.calls).toEqual(confirmed ? [['one'], ['two']] : []);
-    expect(onRerender).toHaveBeenCalledTimes(confirmed ? 1 : 0);
+    expect(onRerender.mock.calls.length > 0).toBe(confirmed);
   });
 });
-

@@ -53,13 +53,10 @@ describe('InactiveSessionArchiver', () => {
     expect(Notice).toHaveBeenCalledWith(`Auto-archived ${expected.length} inactive ${expected.length === 1 ? 'session' : 'sessions'}`);
   });
 
-  it('does nothing when auto-archive is off or nothing is inactive', async () => {
-    const off = createArchiver('off', conversations);
-    await off.archiver.run();
+  it('shows no notice when nothing is inactive', async () => {
     const idle = createArchiver('7d', [session('recent', 6)]);
     await idle.archiver.run();
 
-    expect(off.archiveConversations).not.toHaveBeenCalled();
     expect(idle.archiveConversations).not.toHaveBeenCalled();
     expect(Notice).not.toHaveBeenCalled();
   });

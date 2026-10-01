@@ -910,10 +910,6 @@ export default class ClaudianPlugin extends Plugin {
     await this.mutateConversations(ids, id => this.conversationRepository.setPinned(id, isPinned));
   }
 
-  async archiveConversations(ids: readonly string[]): Promise<void> {
-    await this.mutateConversations(ids, id => this.conversationRepository.setArchived(id, true));
-  }
-
   async restoreConversations(ids: readonly string[]): Promise<void> {
     await this.mutateConversations(ids, id => this.conversationRepository.setArchived(id, false));
   }

@@ -1499,8 +1499,10 @@ export class SessionBrowser {
   #watchSelectionDismissal(): void {
     const container = this.#selectionContainer;
     if (this.#selectionDismissCleanup || !container) return;
+    // Popout windows have their own Element constructor.
+    const ElementConstructor = container.ownerDocument.defaultView?.Element ?? Element;
     const isInsideSession = (target: EventTarget | null): boolean => (
-      target instanceof Element
+      target instanceof ElementConstructor
       && container.contains(target)
       && target.closest('.claudian-history-item') !== null
     );

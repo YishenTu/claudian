@@ -1644,20 +1644,20 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   private async archiveConversations(conversationIds: readonly string[]): Promise<void> {
-    const archivableIds: string[] = [];
-    let runningCount = 0;
+    const closedIds: string[] = [];
     for (const conversationId of conversationIds) {
-      if (await this.closeTabsBeforeArchive(conversationId)) {
-        archivableIds.push(conversationId);
-      } else {
-        runningCount += 1;
-      }
+      if (await this.closeTabsBeforeArchive(conversationId)) closedIds.push(conversationId);
     }
-    if (runningCount > 0) {
-      new Notice(`Skipped ${runningCount} running ${runningCount === 1 ? 'session' : 'sessions'}`);
-    }
-    if (archivableIds.length > 0) {
-      await this.plugin.archiveConversations(archivableIds);
+    // A session can be reopened while later tabs close; recheck at each archive write.
+    const archivedCount = closedIds.length === 0
+      ? 0
+      : await this.plugin.archiveConversationsIf(
+          closedIds,
+          conversation => this.getOpenConversationTabs(conversation.id).length === 0,
+        );
+    const skippedCount = conversationIds.length - archivedCount;
+    if (skippedCount > 0) {
+      new Notice(`Skipped ${skippedCount} ${skippedCount === 1 ? 'session that is' : 'sessions that are'} open or running`);
     }
   }
 
