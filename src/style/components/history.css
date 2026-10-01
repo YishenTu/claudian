@@ -424,9 +424,56 @@
 }
 
 .claudian-session-sidebar .claudian-session-recency-divider {
-  padding: 8px 12px 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 8px 8px 2px 12px;
   color: var(--text-faint);
   font-size: var(--font-ui-smaller);
+}
+
+/* Stays focusable while visually quiet; Obsidian restores native chrome on interaction states. */
+.claudian-session-recency-divider-action,
+.claudian-session-recency-divider-action:hover,
+.claudian-session-recency-divider-action:active,
+.claudian-session-recency-divider-action:focus,
+.claudian-session-recency-divider-action:focus-visible {
+  display: flex;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+.claudian-session-recency-divider-action {
+  opacity: 0;
+}
+
+.claudian-session-recency-divider:hover .claudian-session-recency-divider-action,
+.claudian-session-recency-divider-action:focus-visible {
+  opacity: 1;
+}
+
+.claudian-session-recency-divider-action:hover,
+.claudian-session-recency-divider-action:focus-visible {
+  color: var(--text-normal);
+}
+
+.claudian-session-recency-divider-action:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 1px;
+}
+
+.claudian-session-recency-divider-action svg {
+  width: 14px;
+  height: 14px;
 }
 
 .claudian-session-sidebar .claudian-session-group-body .claudian-history-item {

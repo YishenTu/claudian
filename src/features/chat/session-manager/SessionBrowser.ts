@@ -1418,13 +1418,13 @@ export class SessionBrowser {
     section: SessionListSection,
     options: HistoryRenderOptions,
   ): void {
-    const divider = list.createDiv({ cls: 'claudian-session-recency-divider', text: section.label });
+    const divider = list.createDiv({ cls: 'claudian-session-recency-divider' });
+    divider.createSpan({ cls: 'claudian-session-recency-divider-label', text: section.label });
     const onSetConversationsArchived = options.onSetConversationsArchived;
     const isArchivedView = options.sessionActionMode === 'archived';
     if (!isArchivedView && (options.sessionActionMode !== 'active' || !onSetConversationsArchived)) return;
-    divider.addEventListener('contextmenu', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+
+    const buildMenu = (): Menu => {
       const menu = new Menu().setUseNativeMenu(false);
       if (isArchivedView) {
         this.#addRestoreAndDeleteAllMenuItems(menu, section.conversations, options);
@@ -1437,7 +1437,23 @@ export class SessionBrowser {
           'Failed to archive sessions',
         );
       }
-      menu.showAtMouseEvent(event);
+      return menu;
+    };
+    // A native button keeps the group actions reachable by keyboard; right-click stays a shortcut.
+    const actionsButton = divider.createEl('button', {
+      cls: 'claudian-session-recency-divider-action',
+      attr: { type: 'button', 'aria-label': `Actions for ${section.label}`, 'aria-haspopup': 'menu' },
+    });
+    setIcon(actionsButton, 'more-horizontal');
+    actionsButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const rect = actionsButton.getBoundingClientRect();
+      buildMenu().showAtPosition({ x: rect.left, y: rect.bottom });
+    });
+    divider.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      buildMenu().showAtMouseEvent(event);
     });
   }
 

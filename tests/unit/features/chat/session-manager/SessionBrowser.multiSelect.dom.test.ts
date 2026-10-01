@@ -333,6 +333,28 @@ describe('SessionBrowser recency dividers', () => {
     expect(visibleSequence(container)).toEqual(['fresh session', 'stale session']);
   });
 
+  it('opens a divider group menu from a focusable native button', async () => {
+    const onSetConversationsArchived = jest.fn().mockResolvedValue(undefined);
+    const container = render(true, [recent('fresh', 2), recent('stale', 60)], {
+      sessionActionMode: 'active',
+      onSetConversationsArchived,
+    });
+    const actions = within(container).getByRole('button', { name: 'Actions for Older' });
+
+    expect(actions.tagName).toBe('BUTTON');
+    expect(actions.getAttribute('type')).toBe('button');
+    actions.focus();
+    expect(actions.ownerDocument.activeElement).toBe(actions);
+    expect(await axe(container)).toHaveNoViolations();
+
+    fireEvent.click(actions);
+    const menu = lastMenu() as MockMenu & { showAtPosition: jest.Mock };
+    expect(menu.showAtPosition).toHaveBeenCalled();
+    expect(menu.items.map(item => item.title)).toEqual(['Archive all sessions']);
+    menu.items[0].clickHandler?.();
+    expect(onSetConversationsArchived).toHaveBeenCalledWith(['stale']);
+  });
+
   it('archives every non-running session in a group from its divider menu', () => {
     const onSetConversationsArchived = jest.fn().mockResolvedValue(undefined);
     const container = render(true, [
