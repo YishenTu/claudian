@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
+import { extractWebSearchResults } from '../../../core/tools/toolResultContent';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import { extractUserQuery } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
@@ -13,6 +14,7 @@ import { encodeOpencodeModelId } from '../models';
 import {
   normalizeOpencodeToolInput,
   normalizeOpencodeToolName,
+  normalizeOpencodeToolResult,
   normalizeOpencodeToolUseResult,
 } from '../normalization/opencodeToolNormalization';
 import { resolveExistingOpencodeDatabasePath } from '../runtime/OpencodePaths';
@@ -404,21 +406,27 @@ function buildAssistantToolCalls(parts: StoredRow[], nativeVersion: 1 | 2): Tool
     const id = getString(part.callID) ?? getString(part.id);
     const rawName = getString(part.tool) ?? getString(part.name);
     const state = getObject(part.state);
-    const status = mapToolStatus(getString(state?.status));
-    if (!id || !rawName || !status) {
+    const nativeStatus = mapToolStatus(getString(state?.status));
+    if (!id || !rawName || !nativeStatus) {
       return [];
     }
 
     const input = normalizeOpencodeToolInput(rawName, getObject(state?.input) ?? {});
     const name = normalizeOpencodeToolName(rawName);
     const nativeContent = Array.isArray(state?.content) ? state.content.filter(isPlainObject) : [];
-    const result = getString(state?.output) ?? getString(state?.error)
+    const nativeResult = getString(state?.output) ?? getString(state?.error)
       ?? getString(getObject(state?.error)?.message)
       ?? (nativeContent.length ? nativeContent.filter((item) => item.type === 'text').map((item) => getString(item.text) ?? '').join('\n') : undefined);
-    const toolUseResult = normalizeOpencodeToolUseResult(rawName, input, {
-      ...(result ? { output: result } : {}),
+    const rawOutput = {
+      ...(nativeResult ? { output: nativeResult } : {}),
       ...(getObject(state?.metadata) ? { metadata: getObject(state?.metadata) } : {}),
-    });
+    };
+    const toolUseResult = normalizeOpencodeToolUseResult(rawName, input, rawOutput);
+    const normalizedResult = nativeResult === undefined || nativeStatus === 'running'
+      ? undefined
+      : normalizeOpencodeToolResult(rawName, nativeResult, rawOutput);
+    const result = normalizedResult?.content ?? nativeResult;
+    const status = nativeStatus === 'completed' && normalizedResult?.isError ? 'error' : nativeStatus;
 
     const toolCall: ToolCallInfo = {
       id,
@@ -432,6 +440,11 @@ function buildAssistantToolCalls(parts: StoredRow[], nativeVersion: 1 | 2): Tool
         rawOutput: state,
       } } : {}),
     };
+
+    const webSearchResults = extractWebSearchResults(toolUseResult);
+    if (webSearchResults) {
+      toolCall.webSearchResults = webSearchResults;
+    }
 
     if (name === TOOL_ASK_USER_QUESTION) {
       toolCall.resolvedAnswers = toolUseResult?.answers as ToolCallInfo['resolvedAnswers']

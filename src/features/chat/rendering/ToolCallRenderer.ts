@@ -24,7 +24,7 @@ import {
   TOOL_WRITE,
   TOOL_WRITE_STDIN,
 } from '../../../core/tools/toolNames';
-import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo } from '../../../core/types';
+import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo, WebSearchResultItem } from '../../../core/types';
 import type { DiffStats } from '../../../core/types/diff';
 import { appendMCPIcon } from '../../../shared/icons';
 import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '../../../utils/diff';
@@ -479,13 +479,28 @@ function renderWebSearchActionExpanded(container: HTMLElement, input: Record<str
   }
 }
 
+function renderWebSearchResultItems(container: HTMLElement, items: WebSearchResultItem[]): void {
+  const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
+  for (const item of items) {
+    appendToolLink(linesEl, item.title, item.url);
+    const details = [item.publishedAt, item.snippet && truncateText(item.snippet.replace(/\s+/g, ' '), 240)]
+      .filter(Boolean).join(' · ');
+    if (details) linesEl.createDiv({ cls: 'claudian-tool-line claudian-tool-line-wrap', text: details });
+  }
+}
+
 function renderWebSearchExpanded(
   container: HTMLElement,
   input: Record<string, unknown>,
   result: string | undefined,
+  structuredResults?: WebSearchResultItem[],
 ): void {
   const hasActions = Array.isArray(input.actions);
   if (hasActions) renderWebSearchActionExpanded(container, input);
+  if (structuredResults?.length) {
+    renderWebSearchResultItems(container, structuredResults);
+    return;
+  }
   const parsed = result ? parseWebSearchResult(result) : null;
   if (parsed && parsed.links.length > 0) {
     const linksEl = container.createDiv({ cls: 'claudian-tool-lines' });
@@ -764,12 +779,11 @@ function formatToolDisplayValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-export function renderExpandedContent(
-  container: HTMLElement,
-  toolName: string,
-  result: string | undefined,
-  input: Record<string, unknown> = {},
-): void {
+/** Neutral tool fields the expanded view can present. */
+export type ExpandedToolContent = Pick<ToolCallInfo, 'name' | 'result' | 'input' | 'webSearchResults'>;
+
+export function renderExpandedContent(container: HTMLElement, toolCall: ExpandedToolContent): void {
+  const { name: toolName, result, input } = toolCall;
   if (isAgentLifecycleTool(toolName)) {
     renderAgentLifecycleExpanded(container, result ?? '', input);
     return;
@@ -802,7 +816,7 @@ export function renderExpandedContent(
       renderFileSearchExpanded(container, resolvedResult);
       break;
     case TOOL_WEB_SEARCH:
-      renderWebSearchExpanded(container, input, result);
+      renderWebSearchExpanded(container, input, result, toolCall.webSearchResults);
       break;
     case TOOL_WEB_FETCH:
       renderWebFetchExpanded(container, resolvedResult);
@@ -1160,7 +1174,7 @@ function renderToolContent(
   } else if (initialText) {
     contentFallback(content, initialText);
   } else {
-    renderExpandedContent(content, toolCall.name, toolCall.result, toolCall.input);
+    renderExpandedContent(content, toolCall);
   }
 }
 
@@ -1188,7 +1202,7 @@ export function renderToolCall(
     if (!dirty) return;
     content.empty();
     if (initial) renderToolContent(content, currentTool, 'Running...');
-    else renderExpandedContent(content, currentTool.name, currentTool.result, currentTool.input);
+    else renderExpandedContent(content, currentTool);
     dirty = false;
   };
   const eager = toolCall.name === TOOL_TODO_WRITE || toolCall.name === TOOL_ASK_USER_QUESTION;
@@ -1266,7 +1280,7 @@ export function updateToolCallResult(
   const content = toolEl.querySelector('.claudian-tool-content') as HTMLElement;
   if (content) {
     content.empty();
-    renderExpandedContent(content, toolCall.name, toolCall.result, toolCall.input);
+    renderExpandedContent(content, toolCall);
   }
 }
 

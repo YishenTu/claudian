@@ -1,7 +1,9 @@
 import {
+  TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
   TOOL_EDIT,
+  TOOL_EXEC,
   TOOL_GLOB,
   TOOL_GREP,
   TOOL_READ,
@@ -12,7 +14,7 @@ import {
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
-import type { AskUserAnswers, AskUserQuestionItem } from '../../../core/types';
+import type { AskUserAnswers, AskUserQuestionItem, WebSearchResultItem } from '../../../core/types';
 import type { SDKToolUseResult } from '../../../core/types/diff';
 import {
   type ACPResolvedToolRawName,
@@ -20,11 +22,15 @@ import {
 } from '../../acp';
 
 const TOOL_NAME_MAP: Record<string, string> = {
+  apply_patch: TOOL_APPLY_PATCH,
   bash: TOOL_BASH,
   shell: TOOL_BASH,
   edit: TOOL_EDIT,
+  // V2 code mode runs JavaScript against namespaced tools.
+  execute: TOOL_EXEC,
   glob: TOOL_GLOB,
   grep: TOOL_GREP,
+  patch: TOOL_APPLY_PATCH,
   question: TOOL_ASK_USER_QUESTION,
   read: TOOL_READ,
   skill: TOOL_SKILL,
@@ -338,6 +344,9 @@ export function normalizeOpencodeToolInput(
   switch (knownName) {
     case 'question':
       return { questions: normalizeQuestionItems(input.questions) };
+    case 'apply_patch':
+    case 'patch':
+      return firstString(input.patch, input.patchText) ? { patch: firstString(input.patch, input.patchText) } : {};
     case 'read':
       return {
         ...(firstString(input.file_path, input.filePath, input.path) ? { file_path: firstString(input.file_path, input.filePath, input.path) } : {}),
@@ -387,6 +396,25 @@ export function normalizeOpencodeToolInput(
   }
 }
 
+/** Parses `## [title](url)` hits, each with an optional `Published:` line and snippet. */
+function parseWebSearchResults(text: string): WebSearchResultItem[] {
+  return text.split(/^(?=## \[)/m).flatMap((block) => {
+    const match = block.match(/^## \[(.+)\]\((https?:\/\/\S+)\)[ \t]*(?:\r?\n([\s\S]*))?$/);
+    if (!match) {
+      return [];
+    }
+    const [, title, url, body = ''] = match;
+    const published = body.match(/^Published: ([^\r\n]+)\r?\n?/);
+    const snippet = (published ? body.slice(published[0].length) : body).trim();
+    return [{
+      title,
+      url,
+      ...(snippet ? { snippet } : {}),
+      ...(published ? { publishedAt: published[1].trim() } : {}),
+    }];
+  });
+}
+
 export function normalizeOpencodeToolUseResult(
   rawName: string | undefined,
   input: Record<string, unknown>,
@@ -403,6 +431,22 @@ export function normalizeOpencodeToolUseResult(
     normalized.filePath = firstString(input.file_path, input.filePath, input.path, metadata?.filepath, metadata?.filePath);
   }
 
+  if (knownName === 'edit') {
+    const files = Array.isArray(metadata?.files) ? metadata.files.filter(isPlainObject) : [];
+    const diff = firstTrimmedString(files[0]?.patch);
+    if (diff) {
+      normalized.diff = diff;
+    }
+  }
+
+  if (knownName === 'websearch') {
+    const output = isPlainObject(rawOutput) ? firstString(rawOutput.output) : undefined;
+    const results = output ? parseWebSearchResults(output) : [];
+    if (results.length > 0) {
+      normalized.webSearchResults = results;
+    }
+  }
+
   if (knownName === 'question') {
     const questions = Array.isArray(input.questions)
       ? input.questions as AskUserQuestionItem[]
@@ -414,6 +458,45 @@ export function normalizeOpencodeToolUseResult(
   }
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+/** Native outcomes that OpenCode reports as successful tool completions. */
+function isOpencodeToolOutcomeFailure(
+  knownName: OpencodeKnownToolName | null,
+  metadata: Record<string, unknown> | null,
+): boolean {
+  switch (knownName) {
+    case 'execute':
+      return metadata?.error === true;
+    case 'shell':
+      return (typeof metadata?.exit === 'number' && metadata.exit !== 0)
+        || Boolean(firstTrimmedString(metadata?.signal))
+        || metadata?.timeout === true;
+    default:
+      return false;
+  }
+}
+
+/** Removes the `Read file X, lines a-b` header and `N: ` line gutters. */
+function unwrapReadOutput(text: string): string {
+  const header = text.match(/^Read file [^\n]*, lines \d+-\d+\r?\n/);
+  return header ? text.slice(header[0].length).replace(/^\d+: ?/gm, '') : text;
+}
+
+/** Converts native result text to the shared tool presentation and detects in-band failures. */
+export function normalizeOpencodeToolResult(
+  rawName: string | undefined,
+  content: string,
+  rawOutput: unknown,
+): { content: string; isError: boolean } {
+  const knownName = toKnownToolName(rawName);
+  const isError = isOpencodeToolOutcomeFailure(knownName, extractToolMetadata(rawOutput));
+  switch (knownName) {
+    case 'read':
+      return { content: unwrapReadOutput(content), isError };
+    default:
+      return { content, isError };
+  }
 }
 
 export function createOpencodeToolStreamAdapter(): ACPToolStreamAdapter {

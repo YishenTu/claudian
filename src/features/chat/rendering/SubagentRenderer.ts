@@ -99,7 +99,7 @@ function renderSubagentToolContent(contentEl: HTMLElement, toolCall: ToolCallInf
     return;
   }
 
-  renderExpandedContent(contentEl, toolCall.name, toolCall.result, toolCall.input);
+  renderExpandedContent(contentEl, toolCall);
 }
 
 function setSubagentToolStatus(view: SubagentToolView, status: ToolCallInfo['status']): void {

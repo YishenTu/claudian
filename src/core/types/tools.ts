@@ -28,6 +28,14 @@ export interface AskUserQuestionItem {
 /** User-provided answers keyed by question text or stable question id. */
 export type AskUserAnswers = Record<string, string | string[]>;
 
+/** One web search hit, as far as the provider reports it. */
+export interface WebSearchResultItem {
+  title: string;
+  url: string;
+  snippet?: string;
+  publishedAt?: string;
+}
+
 /** Provider-owned fields for lossless per-tool replay and persistence. */
 export interface ToolProviderPayload {
   rawInput?: unknown;
@@ -46,6 +54,8 @@ export interface ToolCallInfo {
   isExpanded?: boolean;
   diffData?: ToolDiffData;
   resolvedAnswers?: AskUserAnswers;
+  /** Structured web search hits; renderers fall back to result text when absent. */
+  webSearchResults?: WebSearchResultItem[];
   /** Live async question presentation; replay alone never opens a prompt. */
   questionStatus?: 'pending' | 'expired';
   subagent?: SubagentInfo;

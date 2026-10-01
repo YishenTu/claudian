@@ -1,3 +1,5 @@
+import type { WebSearchResultItem } from '../types/tools';
+
 export interface ToolResultContentOptions {
   fallbackIndent?: number;
 }
@@ -44,4 +46,23 @@ function isBase64ImageBlock(
   if (record.type !== 'image' || !record.source || typeof record.source !== 'object') return false;
   const source = record.source as Record<string, unknown>;
   return source.type === 'base64' && typeof source.data === 'string' && source.data.length > 0;
+}
+
+/** Reads provider-normalized `webSearchResults` from a tool's structured result. */
+export function extractWebSearchResults(toolUseResult: unknown): WebSearchResultItem[] | undefined {
+  if (!toolUseResult || typeof toolUseResult !== 'object') return undefined;
+  const items = (toolUseResult as Record<string, unknown>).webSearchResults;
+  if (!Array.isArray(items)) return undefined;
+  const results = items.flatMap((item): WebSearchResultItem[] => {
+    if (!item || typeof item !== 'object') return [];
+    const { title, url, snippet, publishedAt } = item as Record<string, unknown>;
+    if (typeof title !== 'string' || typeof url !== 'string' || !url) return [];
+    return [{
+      title: title || url,
+      url,
+      ...(typeof snippet === 'string' && snippet ? { snippet } : {}),
+      ...(typeof publishedAt === 'string' && publishedAt ? { publishedAt } : {}),
+    }];
+  });
+  return results.length > 0 ? results : undefined;
 }

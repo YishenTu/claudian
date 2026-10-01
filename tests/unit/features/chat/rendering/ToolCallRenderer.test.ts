@@ -905,7 +905,7 @@ it('keeps a large tool preview bounded without splitting the undisplayed lines',
   });
   try {
     const parent = createMockEl();
-    renderExpandedContent(parent, 'Bash', result, { command: 'echo' });
+    renderExpandedContent(parent, { name: 'Bash', result, input: { command: 'echo' } });
     const element = parent;
     expect(element.querySelectorAll('.claudian-tool-line').length).toBeLessThanOrEqual(20);
     expect(element.querySelector('.claudian-tool-truncated')?.textContent).toContain('9980 more lines');
