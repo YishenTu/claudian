@@ -1,6 +1,7 @@
 import { createMockEl } from '@test/helpers/MockElement';
 import { setIcon } from 'obsidian';
 
+import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ToolCallInfo } from '@/core/types';
 import {
   getToolLabel,
@@ -15,6 +16,7 @@ import {
 
 // Mock obsidian
 jest.mock('obsidian', () => ({
+  Platform: { resourcePathPrefix: 'app://local/' },
   setIcon: jest.fn(),
 }));
 
@@ -593,6 +595,92 @@ describe('ToolCallRenderer', () => {
       expect(links).toHaveLength(1);
       expect(links[0].getAttribute('href')).toBe('https://example.com/docs');
       expect(links[0].querySelector('.claudian-tool-link-title')?.textContent).toBe('https://example.com/docs');
+    });
+
+    it.each([
+      ['with', 'Synthesized answer', ['Synthesized answer']],
+      ['without', undefined, []],
+    ])('renders structured hits %s a provider summary instead of the result text', (_case, webSearchSummary, summaries) => {
+      const parentEl = createMockEl();
+      const toolCall = createToolCall({
+        name: 'WebSearch',
+        status: 'completed',
+        input: { query: 'obsidian plugin API' },
+        result: 'Provider result text',
+        webSearchResults: [{ title: 'Docs', url: 'https://docs.example.com/' }],
+        webSearchSummary,
+      });
+
+      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
+
+      expect(Array.from(toolEl.querySelectorAll('.claudian-tool-link')).map(link => link.getAttribute('href')))
+        .toEqual(['https://docs.example.com/']);
+      expect(Array.from(toolEl.querySelectorAll('.claudian-tool-web-summary')).map(summary => summary.textContent))
+        .toEqual(summaries);
+      expect(toolEl.textContent).not.toContain('Provider result text');
+    });
+  });
+
+  describe('result presentation contracts', () => {
+    const expandedLines = (toolCall: ToolCallInfo) => {
+      const toolEl = renderStoredToolCall(createMockEl(), toolCall);
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
+      return Array.from(toolEl.querySelectorAll('.claudian-tool-line')).map(line => line.textContent);
+    };
+
+    it.each([
+      ['Read', '     1→alpha\n     2→beta', ['alpha', 'beta']],
+      ['Read', 'alpha\n2→ literal arrow', ['alpha', '2→ literal arrow']],
+      ['Read', '1→alpha\n7→ literal', ['1→alpha', '7→ literal']],
+      ['Grep', '1→match', ['1→match']],
+    ])('strips %s line-number gutters only when numbering is consecutive', (name, result, lines) => {
+      expect(expandedLines(createToolCall({ name, input: { file_path: 'a.md', pattern: 'x' }, status: 'completed', result }))).toEqual(lines);
+    });
+
+    it('hands web search summaries to the host markdown renderer when available', () => {
+      const renderMarkdown = jest.fn();
+      const toolCall = createToolCall({
+        name: 'WebSearch', status: 'completed', input: { query: 'q' }, result: 'text',
+        webSearchResults: [{ title: 'Docs', url: 'https://docs.example.com/' }], webSearchSummary: '**Answer**',
+      });
+
+      const toolEl = renderStoredToolCall(createMockEl(), toolCall, { renderMarkdown });
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
+
+      const summaryEl = toolEl.querySelector('.claudian-tool-web-summary');
+      expect(renderMarkdown).toHaveBeenCalledWith(summaryEl, '**Answer**');
+      expect(summaryEl?.textContent).toBe('');
+    });
+
+    it.each([
+      [{ kind: 'file' as const, path: '/Users/me/out dir/a#1.png' }, 'app://local/Users/me/out%20dir/a%231.png', 'a#1.png'],
+      [{ kind: 'file' as const, path: 'C:\\out\\b.png', alt: 'B' }, 'app://local/C:/out/b.png', 'B'],
+      [{ kind: 'data' as const, mediaType: 'image/png', data: 'AAAA' }, 'data:image/png;base64,AAAA', 'image/png'],
+    ])('renders result images from %j', (image, src, alt) => {
+      const toolEl = renderStoredToolCall(createMockEl(), createToolCall({
+        name: 'GenerateImage', status: 'completed', input: { prompt: 'p' }, result: 'done', resultImages: [image],
+      }));
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
+
+      const img = toolEl.querySelector('.claudian-tool-result-image');
+      expect(img?.getAttribute('src')).toBe(src);
+      expect(img?.getAttribute('alt')).toBe(alt);
+    });
+  });
+
+  describe('script tool rendering', () => {
+    it.each([
+      ['exec', { code: 'return 1;' }, 'Script: return 1;', 'code', 'JavaScript'],
+      ['Workflow', { code: 'agent("ping")', language: 'Rhai', title: 'pong' }, 'Workflow: pong', 'workflow', 'Rhai'],
+    ])('presents %s with its source language', (name, input, label, icon, language) => {
+      expect(getToolLabel(name, input)).toBe(label);
+      expect(getToolIcon(name)).toBe(icon);
+
+      const toolEl = renderStoredToolCall(createMockEl(), createToolCall({ name, input, status: 'completed', result: 'ok' }));
+      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
+      expect(Array.from(toolEl.querySelectorAll('.claudian-tool-script-label')).map(el => el.textContent))
+        .toEqual([language, 'Output']);
     });
   });
 

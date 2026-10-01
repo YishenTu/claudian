@@ -36,6 +36,11 @@ export interface WebSearchResultItem {
   publishedAt?: string;
 }
 
+/** Image produced by a tool: a local file or inline base64 data. */
+export type ToolResultImage =
+  | { kind: 'file'; path: string; alt?: string }
+  | { kind: 'data'; mediaType: string; data: string; alt?: string };
+
 /** Provider-owned fields for lossless per-tool replay and persistence. */
 export interface ToolProviderPayload {
   rawInput?: unknown;
@@ -56,6 +61,10 @@ export interface ToolCallInfo {
   resolvedAnswers?: AskUserAnswers;
   /** Structured web search hits; renderers fall back to result text when absent. */
   webSearchResults?: WebSearchResultItem[];
+  /** Provider-synthesized answer accompanying structured hits. */
+  webSearchSummary?: string;
+  /** Images the tool produced, shown after its expanded result. */
+  resultImages?: ToolResultImage[];
   /** Live async question presentation; replay alone never opens a prompt. */
   questionStatus?: 'pending' | 'expired';
   subagent?: SubagentInfo;

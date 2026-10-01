@@ -1,4 +1,4 @@
-import { setIcon } from 'obsidian';
+import { Platform, setIcon } from 'obsidian';
 
 import type { TodoItem } from '../../../core/tools/todo';
 import { getToolIcon, MCP_ICON_MARKER } from '../../../core/tools/toolIcons';
@@ -9,9 +9,13 @@ import {
   TOOL_APPLY_PATCH,
   TOOL_ASK_USER_QUESTION,
   TOOL_BASH,
+  TOOL_BASH_OUTPUT,
   TOOL_EDIT,
+  TOOL_EDIT_IMAGE,
   TOOL_ENTER_PLAN_MODE,
   TOOL_EXIT_PLAN_MODE,
+  TOOL_GENERATE_IMAGE,
+  TOOL_GENERATE_VIDEO,
   TOOL_GLOB,
   TOOL_GREP,
   TOOL_LS,
@@ -21,10 +25,17 @@ import {
   TOOL_TOOL_SEARCH,
   TOOL_WEB_FETCH,
   TOOL_WEB_SEARCH,
+  TOOL_WORKFLOW,
   TOOL_WRITE,
   TOOL_WRITE_STDIN,
 } from '../../../core/tools/toolNames';
-import type { AskUserQuestionItem, AskUserQuestionOption, ToolCallInfo, WebSearchResultItem } from '../../../core/types';
+import type {
+  AskUserQuestionItem,
+  AskUserQuestionOption,
+  ToolCallInfo,
+  ToolResultImage,
+  WebSearchResultItem,
+} from '../../../core/types';
 import type { DiffStats } from '../../../core/types/diff';
 import { appendMCPIcon } from '../../../shared/icons';
 import { parseApplyPatchDiffs, parseFileUpdateChangeDiffs } from '../../../utils/diff';
@@ -58,7 +69,7 @@ function getInputText(input: Record<string, unknown>, key: string, fallback = ''
 }
 
 export function getToolName(name: string, input: Record<string, unknown>): string {
-  if (isScriptTool(name)) return 'Script';
+  if (isScriptTool(name)) return name === TOOL_WORKFLOW ? 'Workflow' : 'Script';
   switch (name) {
     case TOOL_TODO_WRITE: {
       const todos = input.todos as Array<{ status: string }> | undefined;
@@ -94,10 +105,15 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
       const filePath = getInputText(input, 'file_path');
       return fileNameOnly(filePath);
     }
-    case TOOL_BASH: {
+    case TOOL_BASH:
+    case TOOL_BASH_OUTPUT: {
       const cmd = getInputText(input, 'command');
       return truncateText(cmd, 60);
     }
+    case TOOL_GENERATE_IMAGE:
+    case TOOL_EDIT_IMAGE:
+    case TOOL_GENERATE_VIDEO:
+      return truncateText(getInputText(input, 'prompt'), 60);
     case TOOL_GLOB:
     case TOOL_GREP:
       return getInputText(input, 'pattern');
@@ -127,7 +143,7 @@ export function getToolSummary(name: string, input: Record<string, unknown>): st
 
 /** Combined name+summary for ARIA labels (collapsible regions need a single descriptive phrase). */
 export function getToolLabel(name: string, input: Record<string, unknown>): string {
-  if (isScriptTool(name)) return `Script: ${getScriptSummary(input) || 'JavaScript'}`;
+  if (isScriptTool(name)) return `${getToolName(name, input)}: ${getScriptSummary(input) || getScriptLanguage(input)}`;
   switch (name) {
     case TOOL_READ:
       return `Read: ${shortenPath(getInputText(input, 'file_path')) || 'file'}`;
@@ -172,6 +188,13 @@ export function getToolLabel(name: string, input: Record<string, unknown>): stri
       return 'Entering plan mode';
     case TOOL_EXIT_PLAN_MODE:
       return 'Plan complete';
+    case TOOL_BASH_OUTPUT:
+    case TOOL_GENERATE_IMAGE:
+    case TOOL_EDIT_IMAGE:
+    case TOOL_GENERATE_VIDEO: {
+      const summary = getToolSummary(name, input);
+      return summary ? `${name}: ${summary}` : name;
+    }
     case TOOL_APPLY_PATCH: {
       const summary = getApplyPatchSummary(input);
       return summary ? `apply_patch: ${summary}` : 'apply_patch';
@@ -199,6 +222,10 @@ function getScriptSource(input: Record<string, unknown>): string {
   return [input.code, input.raw, input.value].find((value): value is string => (
     typeof value === 'string' && value.trim().length > 0
   )) ?? '';
+}
+
+function getScriptLanguage(input: Record<string, unknown>): string {
+  return getInputText(input, 'language').trim() || 'JavaScript';
 }
 
 function getScriptSummary(input: Record<string, unknown>): string {
@@ -489,16 +516,29 @@ function renderWebSearchResultItems(container: HTMLElement, items: WebSearchResu
   }
 }
 
+function renderWebSearchSummary(container: HTMLElement, summary: string, renderMarkdown?: MarkdownRenderHook): void {
+  const summaryEl = container.createDiv({ cls: 'claudian-tool-web-summary' });
+  if (renderMarkdown) {
+    summaryEl.addClass('claudian-tool-web-summary-markdown');
+    void renderMarkdown(summaryEl, summary);
+    return;
+  }
+  summaryEl.setText(summary.length > 800 ? summary.slice(0, 800) + '...' : summary);
+}
+
 function renderWebSearchExpanded(
   container: HTMLElement,
   input: Record<string, unknown>,
   result: string | undefined,
   structuredResults?: WebSearchResultItem[],
+  structuredSummary?: string,
+  renderMarkdown?: MarkdownRenderHook,
 ): void {
   const hasActions = Array.isArray(input.actions);
   if (hasActions) renderWebSearchActionExpanded(container, input);
   if (structuredResults?.length) {
     renderWebSearchResultItems(container, structuredResults);
+    if (structuredSummary) renderWebSearchSummary(container, structuredSummary, renderMarkdown);
     return;
   }
   const parsed = result ? parseWebSearchResult(result) : null;
@@ -508,10 +548,7 @@ function renderWebSearchExpanded(
       appendToolLink(linksEl, link.title, link.url);
     }
 
-    if (parsed.summary) {
-      const summaryEl = container.createDiv({ cls: 'claudian-tool-web-summary' });
-      summaryEl.setText(parsed.summary.length > 800 ? parsed.summary.slice(0, 800) + '...' : parsed.summary);
-    }
+    if (parsed.summary) renderWebSearchSummary(container, parsed.summary, renderMarkdown);
     return;
   }
 
@@ -552,6 +589,19 @@ function renderFileSearchExpanded(container: HTMLElement, result: string): void 
   renderLinesExpanded(container, result, 15, true);
 }
 
+/** Strips `N→` line-number gutters only when every leading line carries the next consecutive number. */
+function stripLineNumberGutters(result: string): string {
+  const lines = result.split(/\r?\n/);
+  const first = lines[0]?.match(/^\s*(\d+)→/);
+  const second = lines[1]?.match(/^\s*(\d+)→/);
+  if (!first || (lines.length > 1 && lines[1] !== '' && Number(second?.[1]) !== Number(first[1]) + 1)) return result;
+  const start = Number(first[1]);
+  return lines.map((line, index) => {
+    const gutter = line.match(/^\s*(\d+)→/);
+    return gutter && Number(gutter[1]) === start + index ? line.slice(gutter[0].length) : line;
+  }).join('\n');
+}
+
 function renderLinesExpanded(
   container: HTMLElement,
   result: string,
@@ -565,10 +615,9 @@ function renderLinesExpanded(
 
   const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
   for (const line of displayLines) {
-    const stripped = line.replace(/^\s*\d+→/, '');
     const lineEl = linesEl.createDiv({ cls: 'claudian-tool-line' });
     if (hoverable) lineEl.addClass('hoverable');
-    lineEl.setText(stripped || ' ');
+    lineEl.setText(line || ' ');
   }
 
   if (truncated) {
@@ -780,9 +829,45 @@ function formatToolDisplayValue(value: unknown): string {
 }
 
 /** Neutral tool fields the expanded view can present. */
-export type ExpandedToolContent = Pick<ToolCallInfo, 'name' | 'result' | 'input' | 'webSearchResults'>;
+export type ExpandedToolContent = Pick<
+  ToolCallInfo,
+  'name' | 'result' | 'input' | 'webSearchResults' | 'webSearchSummary' | 'resultImages'
+>;
 
-export function renderExpandedContent(container: HTMLElement, toolCall: ExpandedToolContent): void {
+/** Host markdown rendering for prose inside tool results; plain text is used without it. */
+export type MarkdownRenderHook = (el: HTMLElement, markdown: string) => Promise<void> | void;
+
+export function renderExpandedContent(
+  container: HTMLElement,
+  toolCall: ExpandedToolContent,
+  options: Pick<ToolCallRenderOptions, 'renderMarkdown'> = {},
+): void {
+  renderExpandedResult(container, toolCall, options.renderMarkdown);
+  if (toolCall.resultImages?.length) renderResultImages(container, toolCall.resultImages);
+}
+
+/** Resolves a provider image to a URL the host webview can load. */
+function getResultImageSource(image: ToolResultImage): string {
+  if (image.kind === 'data') return `data:${image.mediaType};base64,${image.data}`;
+  const segments = image.path.replace(/\\/g, '/').replace(/^\/+/, '').split('/');
+  return Platform.resourcePathPrefix + segments
+    .map((segment, index) => (index === 0 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+    .join('/');
+}
+
+function renderResultImages(container: HTMLElement, images: ToolResultImage[]): void {
+  const imagesEl = container.createDiv({ cls: 'claudian-tool-result-images' });
+  for (const image of images) {
+    const alt = image.alt ?? (image.kind === 'file' ? fileNameOnly(image.path) : image.mediaType);
+    imagesEl.createEl('img', { cls: 'claudian-tool-result-image', attr: { alt, loading: 'lazy', src: getResultImageSource(image) } });
+  }
+}
+
+function renderExpandedResult(
+  container: HTMLElement,
+  toolCall: ExpandedToolContent,
+  renderMarkdown: MarkdownRenderHook | undefined,
+): void {
   const { name: toolName, result, input } = toolCall;
   if (isAgentLifecycleTool(toolName)) {
     renderAgentLifecycleExpanded(container, result ?? '', input);
@@ -804,11 +889,15 @@ export function renderExpandedContent(container: HTMLElement, toolCall: Expanded
     case TOOL_BASH:
       renderBashContent(container, input, resolvedResult);
       break;
+    case TOOL_BASH_OUTPUT:
+      if (getInputText(input, 'command')) renderBashContent(container, input, resolvedResult);
+      else renderLinesExpanded(container, resolvedResult, 20);
+      break;
     case TOOL_WRITE_STDIN:
       renderLinesExpanded(container, resolvedResult, 20);
       break;
     case TOOL_READ:
-      renderLinesExpanded(container, resolvedResult, 15);
+      renderLinesExpanded(container, stripLineNumberGutters(resolvedResult), 15);
       break;
     case TOOL_GLOB:
     case TOOL_GREP:
@@ -816,7 +905,7 @@ export function renderExpandedContent(container: HTMLElement, toolCall: Expanded
       renderFileSearchExpanded(container, resolvedResult);
       break;
     case TOOL_WEB_SEARCH:
-      renderWebSearchExpanded(container, input, result, toolCall.webSearchResults);
+      renderWebSearchExpanded(container, input, result, toolCall.webSearchResults, toolCall.webSearchSummary, renderMarkdown);
       break;
     case TOOL_WEB_FETCH:
       renderWebFetchExpanded(container, resolvedResult);
@@ -931,6 +1020,7 @@ interface ToolElementStructure {
 
 export interface ToolCallRenderOptions {
   initiallyExpanded?: boolean;
+  renderMarkdown?: MarkdownRenderHook;
 }
 
 function createToolElementStructure(
@@ -1094,7 +1184,7 @@ function renderScriptContent(
 ): void {
   const source = getScriptSource(input);
   if (source) {
-    container.createDiv({ cls: 'claudian-tool-script-label', text: 'JavaScript' });
+    container.createDiv({ cls: 'claudian-tool-script-label', text: getScriptLanguage(input) });
     const sourceEl = container.createEl('pre', { cls: 'claudian-tool-script-code' });
     sourceEl.createEl('code', { text: source });
   }
@@ -1157,7 +1247,8 @@ function createTodoToggleHandler(
 function renderToolContent(
   content: HTMLElement,
   toolCall: ToolCallInfo,
-  initialText?: string
+  initialText?: string,
+  options: ToolCallRenderOptions = {},
 ): void {
   if (toolCall.name === TOOL_TODO_WRITE) {
     content.addClass('claudian-tool-content-todo');
@@ -1174,7 +1265,7 @@ function renderToolContent(
   } else if (initialText) {
     contentFallback(content, initialText);
   } else {
-    renderExpandedContent(content, toolCall);
+    renderExpandedContent(content, toolCall, options);
   }
 }
 
@@ -1201,8 +1292,8 @@ export function renderToolCall(
   const renderCurrentContent = () => {
     if (!dirty) return;
     content.empty();
-    if (initial) renderToolContent(content, currentTool, 'Running...');
-    else renderExpandedContent(content, currentTool);
+    if (initial) renderToolContent(content, currentTool, 'Running...', options);
+    else renderExpandedContent(content, currentTool, options);
     dirty = false;
   };
   const eager = toolCall.name === TOOL_TODO_WRITE || toolCall.name === TOOL_ASK_USER_QUESTION;
@@ -1302,7 +1393,7 @@ export function renderStoredToolCall(
   let contentRendered = false;
   const renderContentOnce = () => {
     if (contentRendered) return;
-    renderToolContent(content, toolCall);
+    renderToolContent(content, toolCall, undefined, options);
     contentRendered = true;
   };
   const deferContent = toolCall.status !== 'running'

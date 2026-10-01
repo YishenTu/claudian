@@ -27,6 +27,11 @@ export const TOOL_EXIT_PLAN_MODE = 'ExitPlanMode' as const;
 
 // Runtime-managed tools exposed through provider adapters.
 export const TOOL_EXEC = 'exec' as const;
+export const TOOL_GENERATE_IMAGE = 'GenerateImage' as const;
+export const TOOL_EDIT_IMAGE = 'EditImage' as const;
+export const TOOL_GENERATE_VIDEO = 'GenerateVideo' as const;
+/** Script that orchestrates agents; presented with its source like other script tools. */
+export const TOOL_WORKFLOW = 'Workflow' as const;
 export const TOOL_APPLY_PATCH = 'apply_patch' as const;
 export const TOOL_WRITE_STDIN = 'write_stdin' as const;
 export const TOOL_SPAWN_AGENT = 'spawn_agent' as const;
@@ -40,7 +45,7 @@ export const TOOL_WAIT_AGENT = 'wait_agent' as const;
 export const TOOL_RESUME_AGENT = 'resume_agent' as const;
 export const TOOL_CLOSE_AGENT = 'close_agent' as const;
 
-const SCRIPT_TOOLS: readonly string[] = [TOOL_EXEC, 'js', 'mcp__cua_repl__js'];
+const SCRIPT_TOOLS: readonly string[] = [TOOL_EXEC, 'js', 'mcp__cua_repl__js', TOOL_WORKFLOW];
 
 export function isScriptTool(name: string): boolean {
   return SCRIPT_TOOLS.includes(name);

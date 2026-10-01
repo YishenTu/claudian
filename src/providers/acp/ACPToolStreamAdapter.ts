@@ -19,8 +19,10 @@ export interface ACPResolvedToolRawName {
 }
 
 export interface ACPToolStreamPresentationAdapter {
-  normalizeToolInput(rawName: string | undefined, input: Record<string, unknown>): Record<string, unknown>;
-  normalizeToolName(rawName: string | undefined): string;
+  /** Raw output lets providers enrich input once the native result identifies the target. */
+  normalizeToolInput(rawName: string | undefined, input: Record<string, unknown>, rawOutput?: unknown): Record<string, unknown>;
+  /** Raw input/output let dispatcher tools present the tool they dispatch to. */
+  normalizeToolName(rawName: string | undefined, rawInput?: unknown, rawOutput?: unknown): string;
   normalizeToolUseResult(
     rawName: string | undefined,
     input: Record<string, unknown>,
@@ -79,7 +81,7 @@ export class ACPToolStreamAdapter {
       result.push({
         id: toolCallUpdate.toolCallId,
         input: state.input,
-        name: this.adapter.normalizeToolName(state.rawName),
+        name: this.adapter.normalizeToolName(state.rawName, state.rawInput, state.rawOutput),
         ...providerPayloadFields,
         type: 'tool_use',
       });
@@ -138,7 +140,7 @@ export class ACPToolStreamAdapter {
     rawOutput?: unknown,
   ): ACPToolStreamState {
     return {
-      input: this.adapter.normalizeToolInput(rawName.rawName, input),
+      input: this.adapter.normalizeToolInput(rawName.rawName, input, rawOutput),
       rawInput,
       rawName: rawName.rawName,
       rawNameProvenance: rawName.provenance,
@@ -155,7 +157,7 @@ export class ACPToolStreamAdapter {
         return {
           ...chunk,
           input: state.input,
-          name: this.adapter.normalizeToolName(state.rawName),
+          name: this.adapter.normalizeToolName(state.rawName, state.rawInput, state.rawOutput),
           ...this.#buildProviderPayloadFields(state),
         };
       case 'tool_result': {

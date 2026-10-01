@@ -7,9 +7,12 @@ import {
   TOOL_BASH_OUTPUT,
   TOOL_CLOSE_AGENT,
   TOOL_EDIT,
+  TOOL_EDIT_IMAGE,
   TOOL_ENTER_PLAN_MODE,
   TOOL_EXIT_PLAN_MODE,
   TOOL_FOLLOWUP_TASK,
+  TOOL_GENERATE_IMAGE,
+  TOOL_GENERATE_VIDEO,
   TOOL_GLOB,
   TOOL_GREP,
   TOOL_INTERRUPT_AGENT,
@@ -33,6 +36,7 @@ import {
   TOOL_WAIT_AGENT,
   TOOL_WEB_FETCH,
   TOOL_WEB_SEARCH,
+  TOOL_WORKFLOW,
   TOOL_WRITE,
   TOOL_WRITE_STDIN,
 } from './toolNames';
@@ -74,13 +78,17 @@ const TOOL_ICONS: Record<string, string> = {
   [TOOL_WAIT_AGENT]: 'clock',
   [TOOL_RESUME_AGENT]: 'bot',
   [TOOL_CLOSE_AGENT]: 'bot',
+  [TOOL_WORKFLOW]: 'workflow',
+  [TOOL_GENERATE_IMAGE]: 'image',
+  [TOOL_EDIT_IMAGE]: 'image-plus',
+  [TOOL_GENERATE_VIDEO]: 'clapperboard',
 };
 
 /** Special marker for MCP tools - signals to use custom SVG. */
 export const MCP_ICON_MARKER = '__mcp_icon__';
 
 export function getToolIcon(toolName: string): string {
-  if (isScriptTool(toolName)) return 'code';
+  if (isScriptTool(toolName)) return TOOL_ICONS[toolName] ?? 'code';
   if (toolName.startsWith('mcp__')) {
     return MCP_ICON_MARKER;
   }

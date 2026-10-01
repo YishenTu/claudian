@@ -1,4 +1,4 @@
-import type { WebSearchResultItem } from '../types/tools';
+import type { ToolResultImage, WebSearchResultItem } from '../types/tools';
 
 export interface ToolResultContentOptions {
   fallbackIndent?: number;
@@ -65,4 +65,34 @@ export function extractWebSearchResults(toolUseResult: unknown): WebSearchResult
     }];
   });
   return results.length > 0 ? results : undefined;
+}
+
+/** Reads provider-normalized `resultImages` from a tool's structured result. */
+export function extractResultImages(toolUseResult: unknown): ToolResultImage[] | undefined {
+  if (!toolUseResult || typeof toolUseResult !== 'object') return undefined;
+  const items = (toolUseResult as Record<string, unknown>).resultImages;
+  if (!Array.isArray(items)) return undefined;
+  const images = items.flatMap((item): ToolResultImage[] => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    const alt = typeof record.alt === 'string' && record.alt ? { alt: record.alt } : {};
+    if (record.kind === 'file' && typeof record.path === 'string' && record.path) {
+      return [{ kind: 'file', path: record.path, ...alt }];
+    }
+    if (
+      record.kind === 'data' && typeof record.data === 'string' && record.data
+      && typeof record.mediaType === 'string' && record.mediaType.startsWith('image/')
+    ) {
+      return [{ kind: 'data', mediaType: record.mediaType, data: record.data, ...alt }];
+    }
+    return [];
+  });
+  return images.length > 0 ? images : undefined;
+}
+
+/** Reads a provider-normalized `webSearchSummary` from a tool's structured result. */
+export function extractWebSearchSummary(toolUseResult: unknown): string | undefined {
+  if (!toolUseResult || typeof toolUseResult !== 'object') return undefined;
+  const summary = (toolUseResult as Record<string, unknown>).webSearchSummary;
+  return typeof summary === 'string' && summary.trim() ? summary : undefined;
 }

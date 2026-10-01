@@ -59,6 +59,7 @@ import {
 import {
   normalizeGrokToolCall,
   normalizeGrokToolName,
+  normalizeGrokToolUpdate,
   normalizeGrokToolUseResult,
   resolveGrokRawToolName,
 } from '../normalization/grokToolNormalization';
@@ -819,6 +820,8 @@ RewindableExecutionSession {
       const role = update.sessionUpdate === 'agent_message_chunk' ? 'assistant' : 'user';
       const messageId = resolveGrokLiveMessageId(update, role, notification._meta);
       if (messageId) update = { ...update, messageId };
+    } else if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
+      update = normalizeGrokToolUpdate(update);
     }
     const result = active.normalizer.normalize(update);
     if (result.metadata?.type === 'commands') {
@@ -1343,11 +1346,11 @@ class GrokExecutionCancellationError extends Error {
 
 function createGrokToolStreamAdapter(): ACPToolStreamAdapter {
   return new ACPToolStreamAdapter({
-    normalizeToolInput(rawName, input) {
-      return normalizeGrokToolCall({ rawInput: input, title: rawName }).input;
+    normalizeToolInput(rawName, input, rawOutput) {
+      return normalizeGrokToolCall({ rawInput: input, rawOutput, title: rawName }).input;
     },
-    normalizeToolName(rawName) {
-      return normalizeGrokToolName(rawName ?? 'tool');
+    normalizeToolName(rawName, rawInput, rawOutput) {
+      return normalizeGrokToolName(rawName ?? 'tool', rawInput, rawOutput);
     },
     normalizeToolUseResult(rawName, _input, rawOutput, rawInput) {
       return normalizeGrokToolUseResult(

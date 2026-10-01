@@ -22,7 +22,12 @@ import {
   extractToolProviderPayload,
   normalizeToolProviderPayload,
 } from '../../../core/tools/toolProviderPayload';
-import { extractToolResultContent, extractWebSearchResults } from '../../../core/tools/toolResultContent';
+import {
+  extractResultImages,
+  extractToolResultContent,
+  extractWebSearchResults,
+  extractWebSearchSummary,
+} from '../../../core/tools/toolResultContent';
 import type {
   ChatMessage,
   StreamChunk,
@@ -476,6 +481,7 @@ export class StreamController {
       state.writeEditStates.delete(toolCall.id);
       replacementEl = renderToolCall(parentEl, toolCall, state.toolCallElements, {
         initiallyExpanded,
+        renderMarkdown: this.#renderToolMarkdown,
       });
       state.toolCallElements.set(toolCall.id, replacementEl);
       if (toolCall.result !== undefined || toolCall.status !== 'running') {
@@ -552,10 +558,15 @@ export class StreamController {
     } else {
       renderToolCall(parentEl, toolCall, state.toolCallElements, {
         initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH ? this.#shouldExpandFileEditsByDefault() : false,
+        renderMarkdown: this.#renderToolMarkdown,
       });
     }
     state.pendingTools.delete(toolId);
   }
+
+  readonly #renderToolMarkdown = (el: HTMLElement, markdown: string): Promise<void> => (
+    this.deps.renderer.renderContent(el, markdown)
+  );
 
   #handleToolOutput(
     chunk: { type: 'tool_output'; id: string; content: string },
@@ -793,6 +804,8 @@ export class StreamController {
       }
       existingToolCall.result = normalizedContent;
       existingToolCall.webSearchResults = extractWebSearchResults(chunk.toolUseResult) ?? existingToolCall.webSearchResults;
+      existingToolCall.webSearchSummary = extractWebSearchSummary(chunk.toolUseResult) ?? existingToolCall.webSearchSummary;
+      existingToolCall.resultImages = extractResultImages(chunk.toolUseResult) ?? existingToolCall.resultImages;
 
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION) {
         const answers =
@@ -1138,6 +1151,8 @@ export class StreamController {
           mergeToolProviderPayload(toolCall, chunk.providerPayload);
           toolCall.diffData = extractDiffData(chunk.toolUseResult, toolCall) ?? toolCall.diffData;
           toolCall.webSearchResults = extractWebSearchResults(chunk.toolUseResult) ?? toolCall.webSearchResults;
+          toolCall.webSearchSummary = extractWebSearchSummary(chunk.toolUseResult) ?? toolCall.webSearchSummary;
+          toolCall.resultImages = extractResultImages(chunk.toolUseResult) ?? toolCall.resultImages;
           subagentManager.updateSyncToolResult(parentToolUseId, chunk.id, toolCall);
         }
         break;

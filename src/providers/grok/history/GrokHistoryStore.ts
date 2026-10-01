@@ -2,6 +2,11 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
+import {
+  extractResultImages,
+  extractWebSearchResults,
+  extractWebSearchSummary,
+} from '../../../core/tools/toolResultContent';
 import type {
   ChatMessage,
   ContentBlock,
@@ -15,6 +20,7 @@ import { extractACPDiffToolUseResult } from '../../acp/ACPToolResultNormalizatio
 import {
   type GrokRawToolNameResolution,
   normalizeGrokToolCall,
+  normalizeGrokToolUpdate,
   normalizeGrokToolUseResult,
   resolveGrokRawToolName,
 } from '../normalization/grokToolNormalization';
@@ -236,7 +242,7 @@ export function parseGrokHistoryContent(
     }
 
     if (updateType === 'tool_call' || updateType === 'tool_call_update') {
-      reconcileToolUpdate(pending, update);
+      reconcileToolUpdate(pending, normalizeGrokToolUpdate(update));
       continue;
     }
 
@@ -389,6 +395,13 @@ function reconcileToolUpdate(turn: PendingTurn, update: Record<string, unknown>)
     return;
   }
   const current = turn.tools.get(id);
+  // A backgrounded command completes its call, then reports task output on the same id.
+  if (
+    (current?.status === 'completed' || current?.status === 'error')
+    && normalizeToolStatus(readString(update.status), undefined) === 'running'
+  ) {
+    return;
+  }
   const rawNameResolution = resolveGrokRawToolName(current ? {
     provenance: current.rawNameProvenance,
     rawName: current.rawName,
@@ -481,6 +494,14 @@ function finalizeTurn(
       ...(tool.output ? { result: tool.output } : {}),
       status: tool.status,
     };
+    const webSearchResults = extractWebSearchResults(toolUseResult);
+    if (webSearchResults) {
+      toolCall.webSearchResults = webSearchResults;
+      const webSearchSummary = extractWebSearchSummary(toolUseResult);
+      if (webSearchSummary) toolCall.webSearchSummary = webSearchSummary;
+    }
+    const resultImages = extractResultImages(toolUseResult);
+    if (resultImages) toolCall.resultImages = resultImages;
     if (toolCall.name === TOOL_ASK_USER_QUESTION && providerToolUseResult.answers) {
       toolCall.resolvedAnswers = providerToolUseResult.answers;
     }

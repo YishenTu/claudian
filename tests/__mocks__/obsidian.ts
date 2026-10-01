@@ -154,6 +154,7 @@ export class Scope {
 
 export const Platform = {
   isMacOS: true,
+  resourcePathPrefix: 'app://local/',
 };
 
 export class App {

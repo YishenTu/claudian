@@ -229,6 +229,38 @@
   overflow-y: auto;
 }
 
+/* Markdown-rendered summaries use prose typography instead of the monospace fallback. */
+.claudian-tool-web-summary-markdown {
+  font-family: var(--font-text);
+  font-size: var(--font-ui-small);
+  white-space: normal;
+}
+
+.claudian-tool-web-summary-markdown > :first-child {
+  margin-top: 0;
+}
+
+.claudian-tool-web-summary-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* Images produced by a tool */
+.claudian-tool-result-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 6px;
+}
+
+.claudian-tool-result-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  object-fit: contain;
+}
+
 /* Empty state for file search */
 .claudian-tool-empty {
   color: var(--text-faint);
