@@ -139,7 +139,7 @@ export function normalizeGrokToolCall(value: {
 }, currentRawName?: GrokRawToolNameResolution): GrokNormalizedToolCall {
   const rawName = resolveGrokRawToolName(currentRawName, value).rawName;
   return {
-    input: normalizeToolInput(rawName, value.rawInput, value.rawOutput),
+    input: normalizeGrokToolInput(rawName, value.rawInput, value.rawOutput),
     name: normalizeGrokToolName(rawName, value.rawInput, value.rawOutput),
     output: formatToolOutput(value.rawOutput),
     rawInput: value.rawInput,
@@ -185,6 +185,7 @@ export function normalizeGrokToolUseResult(
   const resultImages = output ? readResultImages(output) : undefined;
   return {
     ...(answers ? { answers } : {}),
+    ...(output?.type === 'ReadFile' && isRecord(output.FileContent) ? { resultFormat: 'plain' } : {}),
     ...(structuredPatch && typeof edits?.absolute_path === 'string'
       ? { filePath: edits.absolute_path, structuredPatch }
       : {}),
@@ -241,7 +242,7 @@ export function normalizeGrokToolUpdate<T extends GrokToolUpdateFields>(update: 
       return normalizeMCPUpdate(update, output);
     case 'ReadFile':
       return isRecord(output.FileContent)
-        ? mapContentText(update, toConsecutiveLineGutters)
+        ? mapContentText(update, stripGrokReadGutters)
         : withFallbackText(update, output);
     case 'ImageGen':
     case 'ImageEdit':
@@ -355,20 +356,17 @@ function formatShellTaskResult(result: GrokShellTaskResult): string {
 
 /**
  * Grok anchors line 1 and every tenth line as `N→`; other lines are verbatim file text.
- * Rewriting them as one consecutive gutter per line lets the shared Read view strip
- * numbering exactly once, so file text that itself starts with `N→` survives.
+ * Remove only native anchors; the remaining text is presented verbatim.
  */
-function toConsecutiveLineGutters(text: string): string {
+function stripGrokReadGutters(text: string): string {
   const lines = text.split('\n');
   const first = lines[0].match(/^(\d+)→/);
   if (!first) return text;
   const start = Number(first[1]);
-  const trailingNewline = lines.length > 1 && lines[lines.length - 1] === '';
   return lines.map((line, index) => {
-    if (trailingNewline && index === lines.length - 1) return line;
     const anchor = `${start + index}→`;
     const isNativeAnchor = (index === 0 || (start + index) % 10 === 0) && line.startsWith(anchor);
-    return anchor + (isNativeAnchor ? line.slice(anchor.length) : line);
+    return isNativeAnchor ? line.slice(anchor.length) : line;
   }).join('\n');
 }
 
@@ -566,7 +564,7 @@ function normalizeGrokQuestionAnswers(
   return answers;
 }
 
-function normalizeToolInput(rawName: string, value: unknown, rawOutput?: unknown): Record<string, unknown> {
+export function normalizeGrokToolInput(rawName: string, value: unknown, rawOutput?: unknown): Record<string, unknown> {
   const input = isRecord(value)
     ? value
     : value === undefined ? {} : { value };

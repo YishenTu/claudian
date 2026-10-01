@@ -186,6 +186,18 @@ function editUpdates(id: string, title: string, rawInput: Record<string, unknown
   ];
 }
 
+function mcpLookupUpdates(): NativeToolUpdates {
+  return [
+    { sessionUpdate: 'tool_call', toolCallId: 'mcp', title: 'use_tool',
+      rawInput: { tool_name: 'probe__lookup_note', tool_input: { title: 'Roadmap' } } },
+    { sessionUpdate: 'tool_call_update', toolCallId: 'mcp', kind: 'other', title: 'probe__lookup_note',
+      rawInput: { variant: 'UseTool', tool_name: 'probe__lookup_note', tool_input: { title: 'Roadmap' } } },
+    { sessionUpdate: 'tool_call_update', toolCallId: 'mcp', status: 'completed',
+      rawOutput: { type: 'MCP', tool_name: 'lookup_note', server_name: 'probe',
+        output: { OkayOutput: 'Note "Roadmap": summary line one\nsummary line two' } } },
+  ];
+}
+
 describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode => {
   it('shows terminal output without the pre-execution description or ANSI escapes', async () => {
     const plain = 'total 16\ndrwxr-xr-x@ 4 user wheel 128 .\n-rw-r--r--@ 1 user wheel 32 notes.txt\n  0%100% done\n';
@@ -346,15 +358,7 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
   });
 
   it('renders MCP calls made through use_tool under the MCP tool name', async () => {
-    const tool = await restore(mode, [
-      { sessionUpdate: 'tool_call', toolCallId: 'mcp', title: 'use_tool',
-        rawInput: { tool_name: 'probe__lookup_note', tool_input: { title: 'Roadmap' } } },
-      { sessionUpdate: 'tool_call_update', toolCallId: 'mcp', kind: 'other', title: 'probe__lookup_note',
-        rawInput: { variant: 'UseTool', tool_name: 'probe__lookup_note', tool_input: { title: 'Roadmap' } } },
-      { sessionUpdate: 'tool_call_update', toolCallId: 'mcp', status: 'completed',
-        rawOutput: { type: 'MCP', tool_name: 'lookup_note', server_name: 'probe',
-          output: { OkayOutput: 'Note "Roadmap": summary line one\nsummary line two' } } },
-    ]);
+    const tool = await restore(mode, mcpLookupUpdates());
 
     expect(tool).toMatchObject({ name: 'mcp__probe__lookup_note', input: { title: 'Roadmap' }, status: 'completed' });
     expect(tool.providerPayload).toMatchObject({ rawName: 'use_tool' });
@@ -449,6 +453,7 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
       rawOutput: { type: 'ReadFile', FileContent: { content: text, absolute_path: '/workspace/notes.txt', offset: null, total_lines: 10 } },
     }));
 
+    expect(tool.result).toBe(['alpha', '2→ literal arrow', ...Array.from({ length: 7 }, (_, index) => `line ${index + 3}`), 'tenth'].join('\n'));
     const block = renderStoredToolCall(document.body.createDiv(), tool);
     expand(block, /^Read: notes\.txt/);
     expect(lines(block)).toEqual(['alpha', '2→ literal arrow', ...Array.from({ length: 7 }, (_, index) => `line ${index + 3}`), 'tenth']);
@@ -531,7 +536,14 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
   });
 });
 
-describe('live Grok terminal streaming', () => {
+describe('live Grok event contracts', () => {
+  it('retains MCP arguments on every tool-start update', async () => {
+    await restoreLive(mcpLookupUpdates());
+    const starts = liveEvents.filter(event => event.type === 'tool_started' && event.toolCallId === 'mcp');
+    expect(starts.length).toBeGreaterThan(1);
+    expect(starts).toEqual(starts.map(() => expect.objectContaining({ input: { title: 'Roadmap' } })));
+  });
+
   it('streams completed terminal lines while progress rewrites the current line', async () => {
     const tool = await restoreLive(bashUpdates('progress', 'curl -I https://example.com', [
       { text: 'header\r  0%', rawOutput: {} },

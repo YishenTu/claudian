@@ -638,6 +638,13 @@ describe('ToolCallRenderer', () => {
       expect(expandedLines(createToolCall({ name, input: { file_path: 'a.md', pattern: 'x' }, status: 'completed', result }))).toEqual(lines);
     });
 
+    it('displays normalized Read text verbatim even when it resembles consecutive gutters', () => {
+      expect(expandedLines(createToolCall({
+        name: 'Read', input: { file_path: 'a.md' }, status: 'completed',
+        result: '1→literal\n2→also literal', resultFormat: 'plain',
+      }))).toEqual(['1→literal', '2→also literal']);
+    });
+
     it('hands web search summaries to the host markdown renderer when available', () => {
       const renderMarkdown = jest.fn();
       const toolCall = createToolCall({

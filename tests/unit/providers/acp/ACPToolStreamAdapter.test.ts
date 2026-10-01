@@ -1,9 +1,11 @@
 import type { SDKToolUseResult } from '@/core/types/diff';
-import { ACPToolStreamAdapter } from '@/providers/acp/ACPToolStreamAdapter';
+import { ACPToolStreamAdapter, type ACPToolStreamPresentationAdapter } from '@/providers/acp/ACPToolStreamAdapter';
 
-function createAdapter(): ACPToolStreamAdapter {
+function createAdapter(
+  normalizeToolInput: ACPToolStreamPresentationAdapter['normalizeToolInput'] = (_rawName, input) => input,
+): ACPToolStreamAdapter {
   return new ACPToolStreamAdapter({
-    normalizeToolInput: (_rawName, input) => input,
+    normalizeToolInput,
     normalizeToolName: rawName => rawName === 'read_file'
       ? 'Read'
       : rawName === 'tool' ? 'Tool' : rawName ?? 'Tool',
@@ -26,6 +28,22 @@ function createAdapter(): ACPToolStreamAdapter {
 }
 
 describe('ACPToolStreamAdapter', () => {
+  it('projects raw snapshots again without re-normalizing presentation input', () => {
+    const adapter = createAdapter((_name, input) => input.arguments as Record<string, unknown>);
+    const rawInput = { arguments: { query: 'old', limit: 3 } };
+    adapter.normalizeToolCall({ title: 'lookup', toolCallId: 'lookup-1', rawInput }, []);
+    expect(adapter.normalizeToolCallUpdate({ toolCallId: 'lookup-1', rawOutput: 'found' }, []))
+      .toEqual([expect.objectContaining({ input: { query: 'old', limit: 3 }, providerPayload: {
+        rawName: 'lookup', rawInput, rawOutput: 'found',
+      } })]);
+
+    const nextRawInput = { arguments: { query: 'new' } };
+    expect(adapter.normalizeToolCallUpdate({ toolCallId: 'lookup-1', rawInput: nextRawInput }, []))
+      .toEqual([expect.objectContaining({ input: { query: 'new' }, providerPayload: {
+        rawName: 'lookup', rawInput: nextRawInput, rawOutput: 'found',
+      } })]);
+  });
+
   it('carries validated provider payload on tool start and raw-state updates', () => {
     const adapter = createAdapter();
     const rawInput = { path: 'private.md', unknown: ['future'] };

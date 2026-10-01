@@ -19,7 +19,7 @@ export interface ACPResolvedToolRawName {
 }
 
 export interface ACPToolStreamPresentationAdapter {
-  /** Raw output lets providers enrich input once the native result identifies the target. */
+  /** Input is the latest raw snapshot, never an earlier presentation; raw output can identify the target. */
   normalizeToolInput(rawName: string | undefined, input: Record<string, unknown>, rawOutput?: unknown): Record<string, unknown>;
   /** Raw input/output let dispatcher tools present the tool they dispatch to. */
   normalizeToolName(rawName: string | undefined, rawInput?: unknown, rawOutput?: unknown): string;
@@ -107,43 +107,19 @@ export class ACPToolStreamAdapter {
       provenance: current.rawNameProvenance,
       rawName: current.rawName,
     } : undefined, update);
-    const nextInput = current?.input ?? {};
     const rawInput = update.rawInput !== undefined ? update.rawInput : current?.rawInput;
     const rawOutput = update.rawOutput !== undefined ? update.rawOutput : current?.rawOutput;
-
-    if (update.rawInput !== undefined) {
-      const normalizedRawInput = normalizeRawToolInput(update.rawInput);
-      return this.#buildToolState(
-        nextRawName,
-        { ...nextInput, ...normalizedRawInput },
-        rawInput,
-        rawOutput,
-      );
-    }
-
     if (
-      nextRawName.rawName !== current?.rawName
-      || nextRawName.provenance !== current?.rawNameProvenance
-    ) {
-      return this.#buildToolState(nextRawName, nextInput, rawInput, rawOutput);
-    }
+      current && rawInput === current.rawInput && rawOutput === current.rawOutput
+      && nextRawName.rawName === current.rawName
+      && nextRawName.provenance === current.rawNameProvenance
+    ) return current;
 
-    return current && rawOutput === current.rawOutput
-      ? current
-      : this.#buildToolState(nextRawName, nextInput, rawInput, rawOutput);
-  }
-
-  #buildToolState(
-    rawName: ACPResolvedToolRawName,
-    input: Record<string, unknown>,
-    rawInput?: unknown,
-    rawOutput?: unknown,
-  ): ACPToolStreamState {
     return {
-      input: this.adapter.normalizeToolInput(rawName.rawName, input, rawOutput),
+      input: this.adapter.normalizeToolInput(nextRawName.rawName, normalizeRawToolInput(rawInput), rawOutput),
       rawInput,
-      rawName: rawName.rawName,
-      rawNameProvenance: rawName.provenance,
+      rawName: nextRawName.rawName,
+      rawNameProvenance: nextRawName.provenance,
       rawOutput,
     };
   }

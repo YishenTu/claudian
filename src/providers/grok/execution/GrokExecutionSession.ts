@@ -57,7 +57,7 @@ import {
   normalizeGrokDiscoveredModels,
 } from '../models';
 import {
-  normalizeGrokToolCall,
+  normalizeGrokToolInput,
   normalizeGrokToolName,
   normalizeGrokToolUpdate,
   normalizeGrokToolUseResult,
@@ -1347,7 +1347,7 @@ class GrokExecutionCancellationError extends Error {
 function createGrokToolStreamAdapter(): ACPToolStreamAdapter {
   return new ACPToolStreamAdapter({
     normalizeToolInput(rawName, input, rawOutput) {
-      return normalizeGrokToolCall({ rawInput: input, rawOutput, title: rawName }).input;
+      return normalizeGrokToolInput(rawName ?? 'tool', input, rawOutput);
     },
     normalizeToolName(rawName, rawInput, rawOutput) {
       return normalizeGrokToolName(rawName ?? 'tool', rawInput, rawOutput);

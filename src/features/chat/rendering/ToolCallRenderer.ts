@@ -590,7 +590,7 @@ function renderFileSearchExpanded(container: HTMLElement, result: string): void 
 }
 
 /** Strips `N→` line-number gutters only when every leading line carries the next consecutive number. */
-function stripLineNumberGutters(result: string): string {
+function stripLegacyLineNumberGutters(result: string): string {
   const lines = result.split(/\r?\n/);
   const first = lines[0]?.match(/^\s*(\d+)→/);
   const second = lines[1]?.match(/^\s*(\d+)→/);
@@ -831,7 +831,7 @@ function formatToolDisplayValue(value: unknown): string {
 /** Neutral tool fields the expanded view can present. */
 export type ExpandedToolContent = Pick<
   ToolCallInfo,
-  'name' | 'result' | 'input' | 'webSearchResults' | 'webSearchSummary' | 'resultImages'
+  'name' | 'result' | 'resultFormat' | 'input' | 'webSearchResults' | 'webSearchSummary' | 'resultImages'
 >;
 
 /** Host markdown rendering for prose inside tool results; plain text is used without it. */
@@ -899,7 +899,7 @@ function renderExpandedResult(
       renderLinesExpanded(container, resolvedResult, 20);
       break;
     case TOOL_READ:
-      renderLinesExpanded(container, stripLineNumberGutters(resolvedResult), 15);
+      renderLinesExpanded(container, toolCall.resultFormat === 'plain' ? resolvedResult : stripLegacyLineNumberGutters(resolvedResult), 15);
       break;
     case TOOL_GLOB:
     case TOOL_GREP:

@@ -55,6 +55,8 @@ export interface ToolCallInfo {
   input: Record<string, unknown>;
   status: 'running' | 'completed' | 'error' | 'blocked';
   result?: string;
+  /** Plain results are displayed verbatim; unmarked Read results retain legacy gutter decoding. */
+  resultFormat?: 'plain';
   providerPayload?: ToolProviderPayload;
   isExpanded?: boolean;
   diffData?: ToolDiffData;

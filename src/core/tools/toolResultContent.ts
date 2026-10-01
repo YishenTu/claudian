@@ -96,3 +96,9 @@ export function extractWebSearchSummary(toolUseResult: unknown): string | undefi
   const summary = (toolUseResult as Record<string, unknown>).webSearchSummary;
   return typeof summary === 'string' && summary.trim() ? summary : undefined;
 }
+
+/** Marks normalized text that must bypass legacy Read gutter decoding. */
+export function extractToolResultFormat(toolUseResult: unknown): 'plain' | undefined {
+  return toolUseResult && typeof toolUseResult === 'object'
+    && (toolUseResult as Record<string, unknown>).resultFormat === 'plain' ? 'plain' : undefined;
+}

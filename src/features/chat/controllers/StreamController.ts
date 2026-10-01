@@ -25,6 +25,7 @@ import {
 import {
   extractResultImages,
   extractToolResultContent,
+  extractToolResultFormat,
   extractWebSearchResults,
   extractWebSearchSummary,
 } from '../../../core/tools/toolResultContent';
@@ -803,6 +804,7 @@ export class StreamController {
         existingToolCall.status = 'completed';
       }
       existingToolCall.result = normalizedContent;
+      existingToolCall.resultFormat = extractToolResultFormat(chunk.toolUseResult) ?? existingToolCall.resultFormat;
       existingToolCall.webSearchResults = extractWebSearchResults(chunk.toolUseResult) ?? existingToolCall.webSearchResults;
       existingToolCall.webSearchSummary = extractWebSearchSummary(chunk.toolUseResult) ?? existingToolCall.webSearchSummary;
       existingToolCall.resultImages = extractResultImages(chunk.toolUseResult) ?? existingToolCall.resultImages;
@@ -1147,6 +1149,7 @@ export class StreamController {
             ? 'blocked'
             : (chunk.isError ? 'error' : 'completed');
           toolCall.result = normalizedContent;
+          toolCall.resultFormat = extractToolResultFormat(chunk.toolUseResult) ?? toolCall.resultFormat;
           mergeToolProviderPayload(toolCall, chunk.toolUseResult?.providerPayload);
           mergeToolProviderPayload(toolCall, chunk.providerPayload);
           toolCall.diffData = extractDiffData(chunk.toolUseResult, toolCall) ?? toolCall.diffData;

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
 import {
   extractResultImages,
+  extractToolResultFormat,
   extractWebSearchResults,
   extractWebSearchSummary,
 } from '../../../core/tools/toolResultContent';
@@ -494,6 +495,7 @@ function finalizeTurn(
       providerPayload: providerToolUseResult.providerPayload,
       ...(tool.output ? { result: tool.output } : {}),
       status: tool.status,
+      resultFormat: extractToolResultFormat(toolUseResult),
     };
     const webSearchResults = extractWebSearchResults(toolUseResult);
     if (webSearchResults) {
