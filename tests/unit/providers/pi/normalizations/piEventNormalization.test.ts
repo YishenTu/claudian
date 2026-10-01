@@ -51,7 +51,6 @@ describe('Pi event normalization', () => {
       id: 'tool-1',
       content: 'done',
       isError: false,
-      toolUseResult: { content: [{ text: 'done', type: 'text' }] },
       type: 'tool_result',
     }]);
   });
@@ -186,7 +185,7 @@ describe('Pi event normalization', () => {
     }]);
   });
 
-  it('preserves Pi write/edit result payloads for diff extraction', () => {
+  it('maps Pi write paths for input-derived diffs without forwarding native details', () => {
     const state = createPiEventNormalizationState();
 
     expect(normalizePiRPCEvent({
@@ -204,20 +203,16 @@ describe('Pi event normalization', () => {
     expect(normalizePiRPCEvent({
       isError: false,
       result: {
-        content: [{ text: 'Edited notes/a.md', type: 'text' }],
-        details: { diff: '--- a/notes/a.md\n+++ b/notes/a.md\n@@ -1 +1 @@\n-old\n+new' },
+        content: [{ text: 'Successfully wrote to notes/a.md', type: 'text' }],
+        details: { unrelated: 'native detail' },
       },
       toolCallId: 'write-1',
       toolName: 'write',
       type: 'tool_execution_end',
     }, state)).toEqual([{
       id: 'write-1',
-      content: 'Edited notes/a.md',
+      content: 'Successfully wrote to notes/a.md',
       isError: false,
-      toolUseResult: {
-        content: [{ text: 'Edited notes/a.md', type: 'text' }],
-        details: { diff: '--- a/notes/a.md\n+++ b/notes/a.md\n@@ -1 +1 @@\n-old\n+new' },
-      },
       type: 'tool_result',
     }]);
   });

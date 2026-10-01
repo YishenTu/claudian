@@ -22,7 +22,7 @@ import {
   extractToolProviderPayload,
   normalizeToolProviderPayload,
 } from '../../../core/tools/toolProviderPayload';
-import { extractToolResultContent, extractWebSearchResults } from '../../../core/tools/toolResultContent';
+import { extractScriptToolCalls, extractToolResultContent, extractWebSearchResults } from '../../../core/tools/toolResultContent';
 import type {
   ChatMessage,
   StreamChunk,
@@ -793,6 +793,7 @@ export class StreamController {
       }
       existingToolCall.result = normalizedContent;
       existingToolCall.webSearchResults = extractWebSearchResults(chunk.toolUseResult) ?? existingToolCall.webSearchResults;
+      existingToolCall.scriptToolCalls = extractScriptToolCalls(chunk.toolUseResult) ?? existingToolCall.scriptToolCalls;
 
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION) {
         const answers =
@@ -1138,6 +1139,7 @@ export class StreamController {
           mergeToolProviderPayload(toolCall, chunk.providerPayload);
           toolCall.diffData = extractDiffData(chunk.toolUseResult, toolCall) ?? toolCall.diffData;
           toolCall.webSearchResults = extractWebSearchResults(chunk.toolUseResult) ?? toolCall.webSearchResults;
+          toolCall.scriptToolCalls = extractScriptToolCalls(chunk.toolUseResult) ?? toolCall.scriptToolCalls;
           subagentManager.updateSyncToolResult(parentToolUseId, chunk.id, toolCall);
         }
         break;

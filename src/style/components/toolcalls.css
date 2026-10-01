@@ -294,3 +294,38 @@
   background: none;
   padding: 0;
 }
+
+.claudian-tool-content .claudian-tool-script-calls {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Hanging indent: wrapped arguments align with the call name, not the status icon. */
+.claudian-tool-script-call {
+  padding-left: 20px;
+  text-indent: -20px;
+  overflow-wrap: anywhere;
+}
+
+.claudian-tool-script-call .claudian-tool-status {
+  display: inline-flex;
+  vertical-align: middle;
+  width: 14px;
+  margin-right: 6px;
+  text-indent: 0;
+}
+
+.claudian-tool-status.status-cancelled,
+.claudian-tool-script-call-detail {
+  color: var(--text-muted);
+}
+
+.claudian-tool-script-call-error {
+  color: var(--color-red);
+  text-indent: 0;
+  white-space: pre-wrap;
+}

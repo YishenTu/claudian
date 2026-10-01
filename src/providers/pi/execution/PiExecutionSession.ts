@@ -1421,7 +1421,11 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       active.onRequestAbort,
     );
     active.events.close();
-    if (this.activeRun === active) this.activeRun = null;
+    if (this.activeRun === active) {
+      this.activeRun = null;
+      // No further events reach normalization; release run-scoped tool state such as nested call arguments.
+      this.normalizationState = createPiEventNormalizationState();
+    }
   }
 
   #emitRequested(

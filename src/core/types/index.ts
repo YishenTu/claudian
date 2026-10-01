@@ -60,6 +60,7 @@ export {
   type AskUserQuestionItem,
   type AskUserQuestionOption,
   type AsyncSubagentStatus,
+  type ScriptToolCallItem,
   type SubagentInfo,
   type SubagentMode,
   type SubagentProgress,

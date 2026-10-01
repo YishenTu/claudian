@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { isWriteEditTool } from '../../../core/tools/toolNames';
+import { extractScriptToolCalls, extractWebSearchResults } from '../../../core/tools/toolResultContent';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStats } from '../../../core/types';
 import { createTurnStats, isTokenCount } from '../../../core/types';
 import { extractUserQuery } from '../../../utils/context';
@@ -12,9 +13,10 @@ import { extractDiffData } from '../../../utils/diff';
 import { buildImageAttachmentFromBase64 } from '../../../utils/imageAttachment';
 import { encodePiModelId } from '../models';
 import {
-  extractPiToolTextContent,
+  extractPiToolResultText,
   normalizePiToolInput,
   normalizePiToolName,
+  normalizePiToolUseResult,
 } from '../normalizations/piToolNormalization';
 import type { PiTreeCursor } from '../types';
 import { decodePiRecoveryPrompt } from './PiRecoveryPromptCodec';
@@ -907,15 +909,40 @@ function applyToolResult(messages: ChatMessage[], entry: PiSessionEntry): void {
 
     const resultMessage = entry.message ?? entry.raw;
     toolCall.status = resultMessage.error === true || resultMessage.isError === true ? 'error' : 'completed';
-    toolCall.result = extractPiToolTextContent(resultMessage.result ?? resultMessage.content ?? resultMessage.output);
+    toolCall.result = extractPiToolResultText(toolCall.name, resultMessage.result ?? resultMessage.content ?? resultMessage.output);
+    const toolUseResult = normalizePiToolUseResult(toolCall.name, resultMessage, getNestedCallArguments(resultMessage));
+    const webSearchResults = extractWebSearchResults(toolUseResult);
+    if (webSearchResults) {
+      toolCall.webSearchResults = webSearchResults;
+    }
+    const scriptToolCalls = extractScriptToolCalls(toolUseResult);
+    if (scriptToolCalls) {
+      toolCall.scriptToolCalls = scriptToolCalls;
+    }
     if (toolCall.status === 'completed' && isWriteEditTool(toolCall.name)) {
-      const diffData = extractDiffData(resultMessage, toolCall);
+      const diffData = extractDiffData(toolUseResult, toolCall);
       if (diffData) {
         toolCall.diffData = diffData;
       }
     }
     return;
   }
+}
+
+/** Complete arguments Pi recorded for calls the tool made (`nestedCalls`), by call ID. */
+function getNestedCallArguments(resultMessage: Record<string, unknown>): Map<string, unknown> {
+  const nestedCalls = resultMessage.nestedCalls;
+  const calls = nestedCalls && typeof nestedCalls === 'object' && Array.isArray((nestedCalls as Record<string, unknown>).calls)
+    ? (nestedCalls as { calls: unknown[] }).calls
+    : [];
+  const argumentsById = new Map<string, unknown>();
+  for (const call of calls) {
+    if (call && typeof call === 'object') {
+      const { id, arguments: args } = call as Record<string, unknown>;
+      if (typeof id === 'string' && args !== undefined) argumentsById.set(id, args);
+    }
+  }
+  return argumentsById;
 }
 
 function inferMessageRecord(record: Record<string, unknown>): Record<string, unknown> | undefined {
