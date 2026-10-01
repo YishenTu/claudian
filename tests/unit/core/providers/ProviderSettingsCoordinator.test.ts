@@ -977,14 +977,13 @@ describe('ProviderSettingsCoordinator', () => {
       expect(settings.serviceTier).toBe('fast');
     });
 
-    it('derives OpenCode permission mode from the managed selected mode when no provider snapshot exists yet', () => {
+    it('starts OpenCode on Ask instead of inheriting another provider YOLO projection', () => {
       const settings: Record<string, unknown> = {
         settingsProvider: 'claude',
         permissionMode: 'yolo',
         providerConfigs: {
           opencode: {
             enabled: true,
-            selectedMode: 'claudian-safe',
           },
         },
         model: 'haiku',
@@ -1001,32 +1000,6 @@ describe('ProviderSettingsCoordinator', () => {
       ProviderSettingsCoordinator.projectProviderState(settings, 'opencode');
 
       expect(settings.permissionMode).toBe('normal');
-    });
-
-    it('prefers the active OpenCode selected mode over a stale top-level permission projection', () => {
-      const settings: Record<string, unknown> = {
-        settingsProvider: 'opencode',
-        permissionMode: 'normal',
-        providerConfigs: {
-          opencode: {
-            enabled: true,
-            selectedMode: 'claudian-yolo',
-          },
-        },
-        model: 'haiku',
-        effortLevel: 'high',
-        serviceTier: 'default',
-        thinkingBudget: 'off',
-        savedProviderModel: {},
-        savedProviderEffort: {},
-        savedProviderServiceTier: {},
-        savedProviderThinkingBudget: {},
-        savedProviderPermissionMode: {},
-      };
-
-      ProviderSettingsCoordinator.projectProviderState(settings, 'opencode');
-
-      expect(settings.permissionMode).toBe('yolo');
     });
   });
 

@@ -9,12 +9,7 @@ import { CLAUDIAN_STORAGE_PATH } from '../../../core/bootstrap/storagePaths';
 import type { SystemPromptSettings } from '../../../core/prompt/mainAgent';
 import { expandHomePath } from '../../../utils/path';
 import type { OpencodeExecutionProfile } from '../execution/OpencodeSessionContract';
-import {
-  OPENCODE_BUILD_MODE_ID,
-  OPENCODE_SAFE_MODE_ID,
-  OPENCODE_YOLO_MODE_ID,
-} from '../modes';
-import { AUX_AGENT_IDS, buildAgentConfig, buildOpencodeSystemPrompt } from './OpencodeExecutionAgents';
+import { AUX_AGENT_IDS, buildAgentConfig, buildOpencodeSystemPrompt, OPENCODE_BUILD_AGENT_ID } from './OpencodeExecutionAgents';
 import { resolveOpencodeDatabasePath } from './OpencodePaths';
 
 export interface OpencodeLaunchArtifacts {
@@ -33,30 +28,7 @@ export interface OpencodeManagedAgentConfig {
 }
 
 const DEFAULT_OPENCODE_MANAGED_AGENT_CONFIGS: readonly OpencodeManagedAgentConfig[] = [
-  { id: OPENCODE_BUILD_MODE_ID },
-  {
-    definition: {
-      mode: 'primary',
-      permission: {
-        '*': 'allow',
-        plan_enter: 'deny',
-        question: 'allow',
-      },
-    },
-    id: OPENCODE_YOLO_MODE_ID,
-  },
-  {
-    definition: {
-      mode: 'primary',
-      permission: {
-        plan_enter: 'deny',
-        question: 'allow',
-        bash: 'ask',
-        edit: 'ask',
-      },
-    },
-    id: OPENCODE_SAFE_MODE_ID,
-  },
+  { id: OPENCODE_BUILD_AGENT_ID },
 ];
 
 export interface PrepareOpencodeLaunchArtifactsParams {
@@ -105,7 +77,7 @@ export async function prepareOpencodeLaunchArtifacts(
   const serializeManagedConfig = (
     config: Record<string, unknown>,
     paths = promptPaths,
-    defaultAgentId = OPENCODE_SAFE_MODE_ID,
+    defaultAgentId = OPENCODE_BUILD_AGENT_ID,
   ): string => `${JSON.stringify(buildOpencodeManagedConfig(
     config,
     paths.managed,
@@ -123,7 +95,7 @@ export async function prepareOpencodeLaunchArtifacts(
   const promptMarkers = { managed: randomUUID(), readonly: randomUUID(), passive: randomUUID() };
   let configContent = serializeManagedConfig(inlineConfig
     ? await parseOpencodeConfig(inlineConfig, 'OPENCODE_CONFIG_CONTENT', params.runtimeEnv, params.workspaceRoot)
-    : {}, promptMarkers, profile === 'managed' ? OPENCODE_SAFE_MODE_ID : AUX_AGENT_IDS[profile])
+    : {}, promptMarkers, profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile])
     .replace(/\{(env|file):/g, '\\u007b$1:');
   for (const key of Object.keys(promptPaths) as OpencodeExecutionProfile[]) {
     configContent = configContent.replaceAll(

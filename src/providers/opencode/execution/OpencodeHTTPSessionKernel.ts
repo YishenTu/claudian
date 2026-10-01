@@ -8,9 +8,8 @@ import { isRecord, OpencodeHTTPError, type OpencodeHTTPEvent, pollOpencodeUntil 
 import { projectOpencodeFormQuestions } from '../http/OpencodeHTTPForms';
 import type { OpencodeServerLease, OpencodeServerService } from '../http/OpencodeServerService';
 import { OpencodeShellOutput } from '../http/OpencodeShellOutput';
-import { OPENCODE_SAFE_MODE_ID, OPENCODE_YOLO_MODE_ID } from '../modes';
 import { normalizeOpencodeToolInput, normalizeOpencodeToolName, normalizeOpencodeToolUseResult } from '../normalization/opencodeToolNormalization';
-import { AUX_AGENT_IDS, buildOpencodeSystemPrompt, getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
+import { AUX_AGENT_IDS, buildOpencodeSystemPrompt, getSystemPromptSettings, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
 import {
   type OpencodeKernelConnectOptions,
   type OpencodeNativeOutput,
@@ -62,7 +61,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.databasePath = this.client.databasePath;
     await this.client.subscribe(event => this.handleEvent(event), error => this.fail(error), () => !this.disposed && !!this.sessionId && !!this.options.openNativeInteraction);
     this.agents = await this.client.registerAgents(
-      options.profile === 'managed' ? [OPENCODE_SAFE_MODE_ID, OPENCODE_YOLO_MODE_ID] : [AUX_AGENT_IDS[options.profile]],
+      [options.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[options.profile]],
       this.resolveSystemPrompt(options),
     );
     const client = this.client;
@@ -83,7 +82,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         const fork = !resumeSessionId ? this.options.forkSource : undefined;
         if (fork) return forkOpencodeHTTPSession(client, fork.sessionId, fork.resumeAt);
         const { data } = await client.request<{ data: Record<string, unknown> }>(resumeSessionId ? `/api/session/${encodeURIComponent(resumeSessionId)}` : '/api/session',
-          resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.vaultWorkingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_SAFE_MODE_ID : AUX_AGENT_IDS[this.profile]] } });
+          resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.vaultWorkingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[this.profile]] } });
         if (typeof data.id !== 'string' || (resumeSessionId && data.id !== resumeSessionId)) throw new Error('Invalid OpenCode session response.');
         return data.id;
       }, () => this.serverService.acquire(this.cliPath, this.options.config.vaultWorkingDirectory, this.environment));
@@ -101,7 +100,6 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const value = String(request.value);
     if (request.configId === 'mode') {
       await this.requireClient().request(`${route}/agent`, { method: 'POST', body: { agent: this.agents[value] ?? value } });
-      this.autoApprove = this.profile === 'managed' && value === OPENCODE_YOLO_MODE_ID;
     } else if (request.configId === 'model') {
       const slash = value.indexOf('/');
       if (slash < 1) throw new Error('Invalid OpenCode model selection.');
@@ -114,6 +112,10 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const selected = this.models.find(model => model.id === this.model?.id && model.providerID === this.model?.providerID);
     const variants = Array.isArray(selected?.variants) ? selected.variants.filter(isRecord).flatMap(variant => typeof variant.id === 'string' ? [variant.id] : []) : [];
     return { configOptions: [{ id: 'effort', category: 'thought_level', name: 'Effort', type: 'select', currentValue: this.model?.variant ?? 'default', options: [...new Set([...variants, 'default'])].map(value => ({ value, name: value })) }] };
+  }
+
+  setAutoApprove(enabled: boolean): void {
+    this.autoApprove = this.profile === 'managed' && enabled;
   }
 
   async prompt(request: ACPPromptRequest): Promise<{ stopReason: 'end_turn' | 'cancelled'; userMessageId?: string }> {
@@ -426,7 +428,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { answer } });
       } else {
         if (this.autoApprove) {
-          await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { decision: data.action === 'plan_enter' ? 'reject' : 'once' } });
+          await this.requireClient().request(`${route}/reply`, { method: 'POST', body: { decision: 'once' } });
           return;
         }
         const response = await this.options.config.interactionPort.requestApproval({

@@ -6,6 +6,9 @@ import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { OpencodeExecutionProfile } from '../execution/OpencodeSessionContract';
 import type { OpencodeManagedAgentConfig } from './OpencodeLaunchArtifacts';
 
+/** OpenCode's native default agent; the main chat runs on it in every permission mode. */
+export const OPENCODE_BUILD_AGENT_ID = 'build';
+
 export const AUX_AGENT_IDS: Record<Exclude<OpencodeExecutionProfile, 'managed'>, string> = {
   passive: 'claudian-title',
   readonly: 'claudian-inline-edit',

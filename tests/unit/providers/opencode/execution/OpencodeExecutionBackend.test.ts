@@ -89,6 +89,7 @@ class FakeKernel implements OpencodeACPSessionKernel {
   readonly connectCalls: unknown[] = [];
   readonly openedResumeIds: Array<string | undefined> = [];
   readonly configCalls: Array<Record<string, unknown>> = [];
+  readonly autoApproveCalls: boolean[] = [];
   readonly prompts: unknown[] = [];
   cancelCalls = 0;
   disposeCalls = 0;
@@ -124,13 +125,6 @@ class FakeKernel implements OpencodeACPSessionKernel {
         type: 'select',
       },
     ],
-    modes: {
-      availableModes: [
-        { id: 'claudian-yolo', name: 'YOLO' },
-        { id: 'claudian-safe', name: 'Safe' },
-      ],
-      currentModeId: 'claudian-yolo',
-    },
     models: {
       availableModels: [{ id: 'anthropic/claude', name: 'Claude' }],
       currentModelId: 'anthropic/claude',
@@ -158,6 +152,10 @@ class FakeKernel implements OpencodeACPSessionKernel {
     this.onSetConfigOption?.();
     if (this.configError) throw this.configError;
     return { configOptions: this.sessionInfo.configOptions };
+  }
+
+  setAutoApprove(enabled: boolean): void {
+    this.autoApproveCalls.push(enabled);
   }
 
   async prompt(request: unknown): Promise<typeof this.promptResult> {
@@ -221,10 +219,6 @@ function createPlugin(): any {
       providerConfigs: {
         opencode: {
           enabled: true,
-          availableModes: [
-            { id: 'claudian-yolo', name: 'YOLO' },
-            { id: 'claudian-safe', name: 'Safe' },
-          ],
           discoveredModels: [
             { label: 'Claude', rawId: 'anthropic/claude' },
           ],
@@ -1007,9 +1001,10 @@ describe('OpencodeExecutionBackend', () => {
     });
   });
 
-  it('applies model, thought level, and managed mode through ACP configuration', async () => {
+  it.each([['normal', false], ['yolo', true]] as const)('applies model, thought level, and the native build agent with %s approvals', async (permissionMode, autoApprove) => {
     const harness = createHarness();
-    const run = harness.session.execute(createRequest());
+    const request = createRequest();
+    const run = harness.session.execute({ ...request, configuration: { ...request.configuration, permissionMode } });
     await waitForPrompt(harness.kernels[0]);
     harness.kernels[0].notify({
       content: { type: 'text', text: 'ok' },
@@ -1021,8 +1016,9 @@ describe('OpencodeExecutionBackend', () => {
     expect(harness.kernels[0].configCalls).toEqual(expect.arrayContaining([
       expect.objectContaining({ configId: 'model', value: 'anthropic/claude' }),
       expect.objectContaining({ configId: 'effort', value: 'high' }),
-      expect.objectContaining({ configId: 'mode', value: 'claudian-safe' }),
+      expect.objectContaining({ configId: 'mode', value: 'build' }),
     ]));
+    expect(harness.kernels[0].autoApproveCalls).toEqual([autoApprove]);
   });
 
   it('publishes immutable command snapshots outside the execution-session API', async () => {
@@ -1099,32 +1095,6 @@ describe('OpencodeExecutionBackend', () => {
         type: 'tool_completed',
       }),
     ]));
-  });
-
-  it('publishes normalized permission changes through the session event channel', async () => {
-    const harness = createHarness();
-    const modes: unknown[] = [];
-    harness.session.onEvent((event) => modes.push(event));
-    const run = harness.session.execute(createRequest());
-    await waitForPrompt(harness.kernels[0]);
-    harness.kernels[0].notify({
-      currentModeId: 'claudian-safe',
-      sessionUpdate: 'current_mode_update',
-    });
-    harness.kernels[0].notify({
-      content: { text: 'ok', type: 'text' },
-      sessionUpdate: 'agent_message_chunk',
-    });
-    harness.kernels[0].completePrompt();
-    await collect(run.events);
-
-    expect(modes).toEqual([
-      expect.objectContaining({
-        permissionMode: 'normal',
-        scope: expect.objectContaining({ kind: 'session', sequence: 1 }),
-        type: 'permission_mode_changed',
-      }),
-    ]);
   });
 
   it('declines to steer a running turn whose native kernel cannot steer', async () => {

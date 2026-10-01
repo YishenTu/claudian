@@ -278,7 +278,6 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
     settings: {
       providerConfigs: {
         opencode: {
-          availableModes: [],
           cliPath: '',
           cliPathsByHost: {},
           discoveredModels: [],
@@ -286,7 +285,6 @@ function createPlugin(overrides: Record<string, unknown> = {}): any {
           environmentVariables: '',
           modelAliases: {},
           preferredThinkingByModel: {},
-          selectedMode: '',
           visibleModels: [],
         },
       },

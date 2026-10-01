@@ -73,14 +73,14 @@ const turn = (text: string): ProviderExecutionRequest => ({
   toolPolicy: { kind: 'provider-default' }, signal: new AbortController().signal,
 });
 
-async function createFixture(disableBuild = false) {
+async function createFixture() {
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-shared-v2-')));
   const cli = path.join(root, 'opencode.cjs'), log = path.join(root, 'processes');
   writeFileSync(cli, fixture, { mode: 0o700 });
   writeFileSync(path.join(root, 'native.db'), '');
   const plugin: any = {
     app: { vault: { adapter: { basePath: root } } },
-    settings: { providerConfigs: { opencode: { enabled: true, cliPath: cli, visibleModels: ['local/chat'], environmentVariables: `OPENCODE_DB=${path.join(root, 'native.db')}\nPROCESS_LOG=${log}\nOPENCODE_CONFIG_CONTENT=${JSON.stringify(disableBuild ? { agents: { build: { disabled: true } } } : {})}` } } },
+    settings: { providerConfigs: { opencode: { enabled: true, cliPath: cli, visibleModels: ['local/chat'], environmentVariables: `OPENCODE_DB=${path.join(root, 'native.db')}\nPROCESS_LOG=${log}\nOPENCODE_CONFIG_CONTENT={}` } } },
     executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
     getResolvedProviderCliPath: async () => cli,
     mutateSettings: async (fn: (settings: any) => void) => fn(plugin.settings),
@@ -355,22 +355,6 @@ it('rejects an acquisition when disposal overtakes its availability check', asyn
   }
 });
 
-
-it('runs safe and yolo chat when the unused native build agent is disabled', async () => {
-  const f = await createFixture(true);
-  const session = f.createSession();
-  try {
-    await expect(f.workspace.modelCatalog!.refresh()).resolves.toEqual({ changed: true });
-    for (const permissionMode of ['normal', 'yolo'] as const) {
-      const request = turn(permissionMode);
-      const events: ProviderExecutionEvent[] = [];
-      for await (const event of session.execute({ ...request, configuration: { ...request.configuration, permissionMode } }).events) events.push(event);
-      expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
-      expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'text_delta', text: permissionMode })]));
-    }
-    expect(f.processes()).toHaveLength(1);
-  } finally { await session.dispose(); await f.dispose(); }
-}, 15000);
 
 async function createSideFixture() {
   const f = await createFixture();

@@ -16,7 +16,7 @@ import {
   type SteerableExecutionSession,
 } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import type { ChatMessage, PermissionMode } from '@/core/types';
+import type { ChatMessage } from '@/core/types';
 import {
   ACPExecutionEventNormalizer,
   type ACPSessionNotification,
@@ -31,14 +31,10 @@ import { loadOpencodeTurnStats } from '../history/OpencodeTurnStats';
 import type { OpencodeServerService } from '../http/OpencodeServerService';
 import { projectOpencodeMetadata } from '../metadata/OpencodeMetadataProjection';
 import { decodeOpencodeModelId } from '../models';
-import {
-  resolveOpencodeModeForPermissionMode,
-  resolvePermissionModeForManagedOpencodeMode,
-} from '../modes';
 import { createOpencodeToolStreamAdapter } from '../normalization/opencodeToolNormalization';
 import { buildOpencodePromptBlocks } from '../runtime/buildOpencodePrompt';
+import { AUX_AGENT_IDS, OPENCODE_BUILD_AGENT_ID } from '../runtime/OpencodeExecutionAgents';
 import { assertOpencodeModelAvailable } from '../runtime/OpencodeModelAvailability';
-import { getOpencodeProviderSettings } from '../settings';
 import { getOpencodeState } from '../types';
 import {
   type OpencodeExecutionProfile,
@@ -517,30 +513,16 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       }));
       this.options.commandCatalog?.setCommandSnapshot(commands);
     }
-    if (
-      result.metadata?.type === 'config_options'
-      || result.metadata?.type === 'current_mode'
-    ) {
-      if (
-        result.metadata.type === 'config_options'
-        && this.nativeInfo
-      ) {
+    if (result.metadata?.type === 'config_options') {
+      if (this.nativeInfo) {
         this.nativeInfo = {
           ...this.nativeInfo,
           configOptions: result.metadata.configOptions,
         };
       }
       await projectOpencodeMetadata(this.plugin, {
-        ...(result.metadata.type === 'config_options'
-          ? { configOptions: result.metadata.configOptions }
-          : {}),
+        configOptions: result.metadata.configOptions,
       });
-    }
-    if (result.metadata?.type === 'current_mode') {
-      const mode = resolvePermissionModeForManagedOpencodeMode(
-        result.metadata.currentModeId,
-      );
-      if (mode) this.#emitPermissionMode(mode);
     }
     if (
       acceptingLiveOutput
@@ -632,22 +614,14 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     }
 
     const profile = resolveProfile(request);
-    const mode = profile === 'passive'
-      ? 'claudian-title'
-      : profile === 'readonly'
-        ? 'claudian-inline-edit'
-        : resolveOpencodeModeForPermissionMode(
-            request.configuration.permissionMode,
-            getOpencodeProviderSettings(this.plugin.settings).availableModes,
-          );
-    if (mode) {
-      await kernel.setConfigOption({
-        configId: 'mode',
-        sessionId: native.sessionId,
-        type: 'select',
-        value: mode,
-      });
-    }
+    // Resumed sessions may still name an agent clone from an earlier lease.
+    await kernel.setConfigOption({
+      configId: 'mode',
+      sessionId: native.sessionId,
+      type: 'select',
+      value: profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[profile],
+    });
+    kernel.setAutoApprove(request.configuration.permissionMode === 'yolo');
   }
 
   #resolveSelectedRawModelId(explicit?: string): string | null {
@@ -813,20 +787,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       }
     });
     await pending;
-  }
-
-  #emitPermissionMode(permissionMode: PermissionMode): void {
-    const event: ProviderSessionEvent = {
-      permissionMode,
-      scope: {
-        kind: 'session',
-        sequence: ++this.sessionEventSequence,
-        sessionInstanceId: this.sessionInstanceId,
-      },
-      snapshot: this.snapshot,
-      type: 'permission_mode_changed',
-    };
-    this.#emitSessionEvent(event);
   }
 
   #emitRunSnapshot(run: OpencodeExecutionRun): void {

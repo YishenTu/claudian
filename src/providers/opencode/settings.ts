@@ -19,10 +19,6 @@ import {
   type OpencodeThinkingOptionsByModel,
   resolveOpencodeBaseModelRawId
 } from './models';
-import {
-  normalizeManagedOpencodeSelectedMode,
-  type OpencodeMode,
-} from './modes';
 
 export interface PersistedOpencodeProviderSettings {
   cliPath: string;
@@ -32,13 +28,11 @@ export interface PersistedOpencodeProviderSettings {
   environmentVariables: string;
   modelAliases: Record<string, string>;
   preferredThinkingByModel: Record<string, string>;
-  selectedMode: string;
   thinkingOptionsByModel: OpencodeThinkingOptionsByModel;
   visibleModels: string[];
 }
 
 export interface OpencodeProviderSettings extends PersistedOpencodeProviderSettings {
-  availableModes: OpencodeMode[];
   discoveredModels: OpencodeDiscoveredModel[];
 }
 
@@ -50,7 +44,6 @@ export const DEFAULT_OPENCODE_PROVIDER_SETTINGS: Readonly<PersistedOpencodeProvi
   environmentVariables: '',
   modelAliases: {},
   preferredThinkingByModel: {},
-  selectedMode: '',
   thinkingOptionsByModel: {},
   visibleModels: [],
 });
@@ -137,7 +130,6 @@ export function getOpencodeProviderSettings(
   const config = getProviderConfig(settings, 'opencode');
   const cliPathsByHost = normalizeHostnameStringMap(config.cliPathsByHost);
   const discoveryState = getOpencodeDiscoveryState(settings);
-  const availableModes = discoveryState.availableModes;
   const discoveredModels = discoveryState.discoveredModels;
   const persistedThinkingOptionsByModel = normalizeOpencodeThinkingOptionsByModel(
     config.thinkingOptionsByModel,
@@ -149,7 +141,6 @@ export function getOpencodeProviderSettings(
   }, discoveredModels);
 
   return {
-    availableModes,
     cliPath: readStoredString(config.cliPath, DEFAULT_OPENCODE_PROVIDER_SETTINGS.cliPath),
     cliPathsByHost,
     discoveredModels,
@@ -167,7 +158,6 @@ export function getOpencodeProviderSettings(
     preferredThinkingByModel: normalizeOpencodePreferredThinkingByModel(
       config.preferredThinkingByModel
     ),
-    selectedMode: normalizeManagedOpencodeSelectedMode(config.selectedMode, availableModes),
     thinkingOptionsByModel,
     visibleModels: normalizeOpencodeVisibleModels(config.visibleModels),
   };
@@ -179,9 +169,8 @@ export function updateOpencodeProviderSettings(
 ): OpencodeProviderSettings {
   const current = getOpencodeProviderSettings(settings);
   const hostnameKey = getInstallationKey();
-  if ('availableModes' in updates || 'discoveredModels' in updates || 'thinkingOptionsByModel' in updates) {
+  if ('discoveredModels' in updates || 'thinkingOptionsByModel' in updates) {
     updateOpencodeDiscoveryState(settings, {
-      ...(updates.availableModes !== undefined ? { availableModes: updates.availableModes } : {}),
       ...(updates.discoveredModels !== undefined ? { discoveredModels: updates.discoveredModels } : {}),
       ...(updates.thinkingOptionsByModel !== undefined
         ? { thinkingOptionsByModel: updates.thinkingOptionsByModel }
@@ -189,7 +178,6 @@ export function updateOpencodeProviderSettings(
     });
   }
   const discoveryState = getOpencodeDiscoveryState(settings);
-  const nextAvailableModes = discoveryState.availableModes;
   const nextDiscoveredModels = discoveryState.discoveredModels;
   const nextThinkingOptionsByModel = updates.thinkingOptionsByModel !== undefined
     ? discoveryState.thinkingOptionsByModel
@@ -197,10 +185,6 @@ export function updateOpencodeProviderSettings(
       current.thinkingOptionsByModel,
       nextDiscoveredModels,
     );
-  const nextSelectedMode = normalizeManagedOpencodeSelectedMode(
-    updates.selectedMode ?? current.selectedMode,
-    nextAvailableModes,
-  );
   const nextVisibleModels = normalizeOpencodeVisibleModels(
     updates.visibleModels ?? current.visibleModels
   );
@@ -234,7 +218,6 @@ export function updateOpencodeProviderSettings(
   const next: OpencodeProviderSettings = {
     ...current,
     ...updates,
-    availableModes: nextAvailableModes,
     cliPath: nextCliPath,
     cliPathsByHost: nextCliPathsByHost,
     discoveredModels: nextDiscoveredModels,
@@ -242,14 +225,12 @@ export function updateOpencodeProviderSettings(
     preferredThinkingByModel: normalizeOpencodePreferredThinkingByModel(
       updates.preferredThinkingByModel ?? current.preferredThinkingByModel
     ),
-    selectedMode: nextSelectedMode,
     thinkingOptionsByModel: nextThinkingOptionsByModel,
     visibleModels: nextVisibleModels,
   };
 
   setProviderConfig(settings, 'opencode', {
     ...getProviderConfig(settings, 'opencode'),
-    availableModes: nextAvailableModes,
     discoveredModels: nextDiscoveredModels,
     cliPath: next.cliPath,
     cliPathsByHost: next.cliPathsByHost,
@@ -258,7 +239,6 @@ export function updateOpencodeProviderSettings(
     environmentVariables: next.environmentVariables,
     modelAliases: next.modelAliases,
     preferredThinkingByModel: next.preferredThinkingByModel,
-    selectedMode: next.selectedMode,
     thinkingOptionsByModel: nextThinkingOptionsByModel,
     visibleModels: next.visibleModels,
   });
@@ -310,6 +290,6 @@ export function projectOpencodeModelSettings(settings: Record<string, unknown>):
     thinkingOptionsByModel: pruneThinkingOptionsToPersistedSelections(current),
     selectedModels: current.discoveredModels.filter(model => selected.has(resolveOpencodeBaseModelRawId(model.rawId, current.discoveredModels))),
   };
-  for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes']) delete (config as Record<string, unknown>)[key];
+  for (const key of ['discoveredModels', 'catalogTimestamp', 'catalogFingerprint', 'availableModes', 'selectedMode']) delete (config as Record<string, unknown>)[key];
   return config;
 }

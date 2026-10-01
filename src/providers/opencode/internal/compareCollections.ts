@@ -1,5 +1,4 @@
 import type { OpencodeDiscoveredModel, OpencodeThinkingOptionsByModel } from '../models';
-import type { OpencodeMode } from '../modes';
 
 export function sameStringList(left: string[], right: string[]): boolean {
   if (left.length !== right.length) {
@@ -19,18 +18,6 @@ export function sameStringMap(
   }
 
   return leftEntries.every(([key, value]) => right[key] === value);
-}
-
-export function sameModes(left: OpencodeMode[], right: OpencodeMode[]): boolean {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  return left.every((mode, index) => (
-    mode.id === right[index]?.id
-    && mode.name === right[index]?.name
-    && (mode.description ?? '') === (right[index]?.description ?? '')
-  ));
 }
 
 export function sameDiscoveredModels(

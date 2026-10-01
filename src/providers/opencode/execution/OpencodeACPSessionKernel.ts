@@ -26,7 +26,6 @@ import {
 } from '@/providers/acp';
 import { getEnhancedPath } from '@/utils/env';
 
-import { OPENCODE_YOLO_MODE_ID } from '../modes';
 import { getSystemPromptSettings } from '../runtime/OpencodeExecutionAgents';
 import {
   prepareOpencodeLaunchArtifacts,
@@ -253,7 +252,6 @@ export class DefaultOpencodeACPSessionKernel
         databasePath: this.databasePath,
         nativeVersion: this.nativeVersion,
         models: response.models,
-        modes: response.modes,
         sessionId: resolveACPLoadSessionId(response, resumeSessionId),
       };
     }
@@ -264,7 +262,6 @@ export class DefaultOpencodeACPSessionKernel
       databasePath: this.databasePath,
       nativeVersion: this.nativeVersion,
       models: response.models,
-      modes: response.modes,
       sessionId: response.sessionId,
     };
   }
@@ -275,10 +272,11 @@ export class DefaultOpencodeACPSessionKernel
     const response = await this.#requireConnection().setConfigOption(
       request as Parameters<ACPClientConnection['setConfigOption']>[0],
     );
-    if (request.configId === 'mode') {
-      this.autoApprove = this.profile === 'managed' && request.value === OPENCODE_YOLO_MODE_ID;
-    }
     return response;
+  }
+
+  setAutoApprove(enabled: boolean): void {
+    this.autoApprove = this.profile === 'managed' && enabled;
   }
 
   prompt(request: ACPPromptRequest): Promise<ACPPromptResponse> {

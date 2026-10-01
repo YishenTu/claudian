@@ -1,7 +1,7 @@
 import type { ProviderAsyncSubagentCompletedEvent, ProviderBackgroundOutputEvent, ProviderSessionConfig, ProviderSystemInstructions } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ForkSource, SubagentProgress } from '@/core/types';
-import type { ACPPromptRequest, ACPPromptResponse, ACPSessionConfigOption, ACPSessionModelState, ACPSessionModeState, ACPSessionNotification } from '@/providers/acp';
+import type { ACPPromptRequest, ACPPromptResponse, ACPSessionConfigOption, ACPSessionModelState, ACPSessionNotification } from '@/providers/acp';
 
 type WithoutScope<T> = T extends unknown ? Omit<T, 'scope'> : never;
 export type OpencodeNativeOutput = WithoutScope<ProviderBackgroundOutputEvent>;
@@ -19,7 +19,6 @@ export interface OpencodeNativeSessionInfo {
   readonly databasePath: string | null;
   readonly configOptions?: ACPSessionConfigOption[] | null;
   readonly models?: ACPSessionModelState | null;
-  readonly modes?: ACPSessionModeState | null;
 }
 
 export interface OpencodeSessionKernelOptions {
@@ -46,6 +45,8 @@ export interface OpencodeSessionKernel {
   setConfigOption(request: Record<string, unknown>): Promise<{
     configOptions?: ACPSessionConfigOption[] | null;
   }>;
+  /** Replies `once` to managed permission requests, like OpenCode's `--auto`; `deny` rules never ask. */
+  setAutoApprove(enabled: boolean): void;
   prompt(request: ACPPromptRequest): Promise<Pick<
     ACPPromptResponse,
     'usage' | 'userMessageId'

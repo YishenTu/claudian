@@ -49,19 +49,14 @@ it('clears catalogs supplied as empty ACP selectors while preserving omitted cat
   const host = createHost();
   await projectOpencodeMetadata(host, {
     models: { currentModelId: 'provider/alpha', availableModels: [{ modelId: 'provider/alpha', name: 'Alpha' }] },
-    modes: { currentModeId: 'build', availableModes: [{ id: 'build', name: 'Build' }] },
   });
   await projectOpencodeMetadata(host, {
     configOptions: [{ id: 'model', category: 'model', name: 'Model', type: 'select', currentValue: '', options: [] }],
   });
   expect(getOpencodeProviderSettings(host.settings)).toMatchObject({
-    discoveredModels: [], availableModes: [{ id: 'build', name: 'Build' }],
+    discoveredModels: [],
     visibleModels: ['provider/alpha', 'provider/beta'],
   });
-  await projectOpencodeMetadata(host, {
-    configOptions: [{ id: 'mode', category: 'mode', name: 'Mode', type: 'select', currentValue: '', options: [] }],
-  });
-  expect(getOpencodeProviderSettings(host.settings).availableModes).toEqual([]);
 });
 
 it('clears explicitly empty reasoning options while retaining metadata absent from the update', async () => {

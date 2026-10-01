@@ -17,7 +17,7 @@ const fixture = `#!/usr/bin/env node
 const http = require('node:http');
 if (process.argv.includes('--version')) { console.log('opencode v2.0.12'); return; }
 if (!process.argv.includes('serve')) process.exit(3);
-let onSteer, inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0;
+let onSteer, selectedAgents = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0;
 let activated = !process.env.ACTIVATION_DELAY_MS, activation;
 const emit = (type, data) => feed.write('data: ' + JSON.stringify({ type, data: { sessionID: 'ses_test', ...data } }) + '\\n\\n');
 const server = http.createServer(async (req, res) => {
@@ -52,7 +52,7 @@ const server = http.createServer(async (req, res) => {
   if (route === '/api/session/global/form/frm_mcp' && req.method === 'DELETE') { mcpAnswer = 'cancelled'; emit('form.cancelled', { sessionID: 'global', id: 'frm_mcp' }); if (cancelRace) await new Promise(resolve => setTimeout(resolve, 30)); res.writeHead(204).end(); return; }
   if (route === '/api/mcp') { res.end(JSON.stringify({ data: [] })); return; }
   if (route === '/api/session' && process.env.EXPECT_RESUME === '1') { res.writeHead(409).end(); return; }
-  if (route === '/api/session' || (route === '/api/session/ses_test' && req.method === 'GET')) { res.end(JSON.stringify({ data: { id: 'ses_test' } })); return; }
+  if (route === '/api/session' || (route === '/api/session/ses_test' && req.method === 'GET')) { if (body.agent) selectedAgents.push(body.agent); res.end(JSON.stringify({ data: { id: 'ses_test' } })); return; }
   if (route.endsWith('/prompt') && body.delivery === 'steer') {
     if (process.env.STEER_ADMISSION === 'reject') { res.writeHead(400).end(); onSteer?.(null); return; }
     inbox.push(body.id);
@@ -67,7 +67,7 @@ const server = http.createServer(async (req, res) => {
     emit('session.inbox.cancelled', { inboxID: id }); res.writeHead(204).end(); return;
   }
   if (route.endsWith('/interrupt')) { emit('session.execution.interrupted', { reason: 'user' }); res.end(JSON.stringify({ interrupted: true })); return; }
-  if (route.endsWith('/model') || route.endsWith('/agent')) { if (process.env.LATE_CHILD_STAGE === 'configuration') lateChild?.(); res.writeHead(204).end(); return; }
+  if (route.endsWith('/model') || route.endsWith('/agent')) { if (body.agent) selectedAgents.push(body.agent); if (process.env.LATE_CHILD_STAGE === 'configuration') lateChild?.(); res.writeHead(204).end(); return; }
   if (route === '/api/session/ses_grand/permission/per_grand/reply') { grandApproval = body.decision; res.writeHead(204).end(); return; }
   if (route.endsWith('/permission/per_test/reply')) { permission = body.decision; res.writeHead(204).end(); return; }
   if (route.endsWith('/form/frm_test/reply')) { form = body.answer; res.writeHead(204).end(); return; }
@@ -99,6 +99,11 @@ const server = http.createServer(async (req, res) => {
           if (body.text === 'steer-late') { emit('session.execution.succeeded', {}); setTimeout(() => { emit('session.execution.started', {}); deliver(steer); }, 30); }
         };
         emit('session.text.delta', { assistantMessageID, ordinal: 0, delta: 'Working' });
+        return;
+      }
+      if (process.env.ECHO_AGENTS === '1') {
+        emit('session.text.ended', { assistantMessageID, ordinal: 0, text: JSON.stringify(selectedAgents) });
+        emit('session.execution.succeeded', {}); idle = true; waiter?.writeHead(204).end();
         return;
       }
       if (process.env.ECHO_PROMPT === '1') {
@@ -277,16 +282,37 @@ it.each([
   } finally { await f.dispose(); }
 });
 
-it('runs YOLO with automatic native approvals while still answering questions', async () => {
-  const f = createFixture(false, async () => { throw new Error('Manual approvals are unavailable'); });
+it('runs YOLO with automatic native approvals while still answering questions, then asks again', async () => {
+  const f = createFixture();
   try {
-    const turn = request();
-    const events: ProviderExecutionEvent[] = [];
-    for await (const event of f.session.execute({
-      ...turn, configuration: { ...turn.configuration, permissionMode: 'yolo' },
-    }).events) events.push(event);
-    expect(events.at(-1)?.type).toBe('turn_completed');
-    expect(f.questions).toEqual([expect.objectContaining({ kind: 'question' })]);
+    for (const permissionMode of ['yolo', 'normal']) {
+      const turn = request();
+      const events: ProviderExecutionEvent[] = [];
+      for await (const event of f.session.execute({
+        ...turn, configuration: { ...turn.configuration, permissionMode },
+      }).events) events.push(event);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+      expect(f.approvals).toHaveLength(permissionMode === 'yolo' ? 0 : 1);
+    }
+    expect(f.questions).toEqual([expect.objectContaining({ kind: 'question' }), expect.objectContaining({ kind: 'question' })]);
+  } finally { await f.dispose(); }
+}, 15000);
+
+it('runs Ask and YOLO on a native build agent, changing only the approval policy', async () => {
+  const f = createFixture(false, undefined, 'ECHO_AGENTS=1');
+  try {
+    const selected: string[][] = [];
+    for (const permissionMode of ['normal', 'yolo', 'normal']) {
+      const turn = request('agents');
+      const events: ProviderExecutionEvent[] = [];
+      for await (const event of f.session.execute({ ...turn, configuration: { ...turn.configuration, permissionMode } }).events) events.push(event);
+      expect(events.at(-1)?.type).toBe('turn_completed');
+      selected.push(JSON.parse(events.flatMap(event => event.type === 'text_delta' ? [event.text] : []).join('')));
+    }
+    const agents = selected.at(-1)!;
+    expect(agents.length).toBeGreaterThan(0);
+    expect(agents.every(agent => /^build-/.test(agent))).toBe(true);
+    expect(new Set(agents).size).toBe(1);
   } finally { await f.dispose(); }
 }, 15000);
 

@@ -228,31 +228,26 @@ describe('OpenCode settings normalization', () => {
             { id: 'build', name: 'Build' },
           ],
           discoveredModels,
+          selectedMode: 'claudian-safe',
           visibleModels: ['anthropic/claude-sonnet-4'],
         },
       },
     };
 
     const next = updateOpencodeProviderSettings(settings, {
-      availableModes: [
-        { id: 'build', name: 'Build' },
-        { id: 'plan', name: 'Plan' },
-      ],
       discoveredModels: [
         ...discoveredModels,
         { label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' },
       ],
     });
 
-    expect(next.availableModes).toEqual([
-      { id: 'build', name: 'Build' },
-      { id: 'plan', name: 'Plan' },
-    ]);
     expect(next.discoveredModels).toEqual([
       ...discoveredModels,
       { label: 'OpenAI/GPT-5', rawId: 'openai/gpt-5' },
     ]);
+    // Retired mode-as-agent state is dropped from the persisted projection.
     expect(projectOpencodeModelSettings(settings).availableModes).toBeUndefined();
+    expect(projectOpencodeModelSettings(settings).selectedMode).toBeUndefined();
     expect(projectOpencodeModelSettings(settings).discoveredModels).toBeUndefined();
   });
 
@@ -350,21 +345,6 @@ describe('OpenCode settings normalization', () => {
         { label: 'Max', value: 'max' },
       ],
     });
-  });
-
-  it('normalizes saved custom OpenCode modes back to the managed safe mode', () => {
-    expect(getOpencodeProviderSettings({
-      providerConfigs: {
-        opencode: {
-          availableModes: [],
-          selectedMode: 'compaction',
-        },
-      },
-    }).selectedMode).toBe('claudian-safe');
-  });
-
-  it('does not grant YOLO permissions to the retired build alias', () => {
-    expect(getOpencodeProviderSettings({ providerConfigs: { opencode: { availableModes: [], selectedMode: 'build' } } }).selectedMode).toBe('claudian-safe');
   });
 
   it('preserves legacy cliPath when no host-scoped path exists', () => {

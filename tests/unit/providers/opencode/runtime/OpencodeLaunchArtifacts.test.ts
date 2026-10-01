@@ -3,62 +3,34 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
-  OPENCODE_SAFE_MODE_ID,
-  OPENCODE_YOLO_MODE_ID,
-} from '@/providers/opencode/modes';
-import {
   buildOpencodeManagedConfig,
   prepareOpencodeLaunchArtifacts,
 } from '@/providers/opencode/runtime/OpencodeLaunchArtifacts';
 
 describe('buildOpencodeManagedConfig', () => {
-  it.each([1, 2] as const)('overrides user approval rules for YOLO under native v%s configuration', (nativeVersion) => {
+  it.each([1, 2] as const)('keeps user build approval rules under native v%s configuration', (nativeVersion) => {
     const config = buildOpencodeManagedConfig({
-      agent: { 'claudian-yolo': { permission: { bash: 'ask', read: { '*.env': 'ask' } }, model: 'test/model' } },
-      ...(nativeVersion === 2 ? { agents: { 'claudian-yolo': {
+      agent: { build: { permission: { bash: 'ask', read: { '*.env': 'ask' } }, model: 'test/model' } },
+      ...(nativeVersion === 2 ? { agents: { build: {
         model: 'test/model', permissions: [{ action: 'shell', resource: '*', effect: 'ask' }],
       } } } : {}),
     }, '/vault/main.md', undefined, undefined, nativeVersion);
     expect(config).toMatchObject({
-      agent: { 'claudian-yolo': {
-        model: 'test/model', permission: { '*': 'allow', plan_enter: 'deny' },
+      agent: { build: {
+        model: 'test/model', permission: { bash: 'ask', read: { '*.env': 'ask' } }, prompt: '{file:/vault/main.md}',
       } },
-      ...(nativeVersion === 2 ? { agents: { 'claudian-yolo': {
-        model: 'test/model', permissions: [
-          { action: 'shell', resource: '*', effect: 'ask' },
-          { action: '*', resource: '*', effect: 'allow' },
-          { action: 'plan_enter', resource: '*', effect: 'deny' },
-          { action: 'question', resource: '*', effect: 'allow' },
-        ],
+      ...(nativeVersion === 2 ? { agents: { build: {
+        model: 'test/model', permissions: [{ action: 'shell', resource: '*', effect: 'ask' }], system: '{file:/vault/main.md}',
       } } } : {}),
     });
   });
 
-  it('pins OpenCode build, YOLO, and safe prompts to the managed prompt file', () => {
+  it('pins the OpenCode build prompt to the managed prompt file', () => {
     expect(buildOpencodeManagedConfig({}, '/vault/.claudian/opencode/system.md')).toEqual({
       $schema: 'https://opencode.ai/config.json',
       agent: {
         plan: { disable: true },
         build: {
-          prompt: '{file:/vault/.claudian/opencode/system.md}',
-        },
-        [OPENCODE_YOLO_MODE_ID]: {
-          mode: 'primary',
-          permission: {
-            '*': 'allow',
-            plan_enter: 'deny',
-            question: 'allow',
-          },
-          prompt: '{file:/vault/.claudian/opencode/system.md}',
-        },
-        [OPENCODE_SAFE_MODE_ID]: {
-          mode: 'primary',
-          permission: {
-            bash: 'ask',
-            edit: 'ask',
-            plan_enter: 'deny',
-            question: 'allow',
-          },
           prompt: '{file:/vault/.claudian/opencode/system.md}',
         },
       },
@@ -153,25 +125,6 @@ describe('buildOpencodeManagedConfig', () => {
           },
           prompt: '{file:/vault/.claudian/opencode/system.md}',
         },
-        [OPENCODE_YOLO_MODE_ID]: {
-          mode: 'primary',
-          permission: {
-            '*': 'allow',
-            plan_enter: 'deny',
-            question: 'allow',
-          },
-          prompt: '{file:/vault/.claudian/opencode/system.md}',
-        },
-        [OPENCODE_SAFE_MODE_ID]: {
-          mode: 'primary',
-          permission: {
-            bash: 'ask',
-            edit: 'ask',
-            plan_enter: 'deny',
-            question: 'allow',
-          },
-          prompt: '{file:/vault/.claudian/opencode/system.md}',
-        },
       },
       default_agent: 'build',
       providers: {
@@ -226,11 +179,9 @@ describe('prepareOpencodeLaunchArtifacts', () => {
       expect(await fs.readFile(path.join(prompts, 'inline-edit.md'), 'utf8')).toBe('Inline edit instructions\n');
       expect(await fs.readFile(path.join(prompts, 'title.md'), 'utf8')).toBe('Title instructions\n');
       expect(JSON.parse(config)).toMatchObject({
-        default_agent: 'claudian-safe',
+        default_agent: 'build',
         agent: {
           build: { prompt: `{file:${path.join(prompts, 'main.md')}}` },
-          'claudian-safe': { prompt: `{file:${path.join(prompts, 'main.md')}}` },
-          'claudian-yolo': { prompt: `{file:${path.join(prompts, 'main.md')}}` },
           'claudian-inline-edit': { prompt: `{file:${path.join(prompts, 'inline-edit.md')}}` },
           'claudian-title': { prompt: `{file:${path.join(prompts, 'title.md')}}` },
         },
@@ -291,25 +242,6 @@ describe('prepareOpencodeLaunchArtifacts', () => {
     });
     expect(generatedConfig.agent).toMatchObject({
       build: {
-        prompt: `{file:${result.systemPromptPath}}`,
-      },
-      [OPENCODE_YOLO_MODE_ID]: {
-        mode: 'primary',
-        permission: {
-          '*': 'allow',
-          plan_enter: 'deny',
-          question: 'allow',
-        },
-        prompt: `{file:${result.systemPromptPath}}`,
-      },
-      [OPENCODE_SAFE_MODE_ID]: {
-        mode: 'primary',
-        permission: {
-          bash: 'ask',
-          edit: 'ask',
-          plan_enter: 'deny',
-          question: 'allow',
-        },
         prompt: `{file:${result.systemPromptPath}}`,
       },
     });
@@ -398,16 +330,16 @@ describe('prepareOpencodeLaunchArtifacts', () => {
 
 it('layers v2 native agent policies after user rules and pins the native system prompt', () => {
   const config = buildOpencodeManagedConfig({ agents: {
-    'claudian-safe': { system: 'old', model: 'test/model', permissions: [{ action: '*', resource: '*', effect: 'allow' }] },
+    'claudian-inline-edit': { system: 'old', model: 'test/model', permissions: [{ action: '*', resource: '*', effect: 'allow' }] },
     plan: { disabled: false },
     reviewer: { description: 'Keep this' },
-  } }, '/vault/system.md', [{ id: 'claudian-safe', definition: {
+  } }, '/vault/system.md', [{ id: 'claudian-inline-edit', definition: {
     mode: 'primary', permission: { '*': 'deny', read: { '*': 'allow', '*.env': 'deny' }, bash: 'ask' },
-  } }], 'claudian-safe', 2);
+  } }], 'claudian-inline-edit', 2);
   expect(config).toMatchObject({
-    default_agent: 'claudian-safe',
+    default_agent: 'claudian-inline-edit',
     agents: {
-      'claudian-safe': {
+      'claudian-inline-edit': {
         system: '{file:/vault/system.md}', model: 'test/model', mode: 'primary',
         permissions: [
           { action: '*', resource: '*', effect: 'allow' },

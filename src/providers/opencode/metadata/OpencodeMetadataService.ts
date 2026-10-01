@@ -262,7 +262,6 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
       commands: this.commands,
       configOptions: native.configOptions,
       models: native.models,
-      modes: native.modes,
     };
   }
 
@@ -283,7 +282,6 @@ class DefaultOpencodeMetadataProbe implements OpencodeMetadataProbe {
       return {
         configOptions: response.configOptions,
         models: native.models,
-        modes: native.modes,
         rawModelId,
       };
     } catch (error) {
