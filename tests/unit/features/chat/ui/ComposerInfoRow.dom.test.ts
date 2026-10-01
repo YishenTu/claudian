@@ -75,15 +75,15 @@ it('keeps missing linked content visible and marked', async () => {
   row.destroy();
 });
 
-it('collapses while there is no linked note', () => {
+it('keeps reserving its row while there is no linked note', () => {
   const { row, rowEl } = mount();
-  expect(rowEl.classList.contains('claudian-hidden')).toBe(true);
-
-  row.setLinkedContent({ label: 'Plan', ariaLabel: 'Linked content: Notes/Plan.md', onActivate: jest.fn() });
   expect(rowEl.classList.contains('claudian-hidden')).toBe(false);
 
+  row.setLinkedContent({ label: 'Plan', ariaLabel: 'Linked content: Notes/Plan.md', onActivate: jest.fn() });
+  expect(within(rowEl).getByRole('button', { name: 'Linked content: Notes/Plan.md' })).toBeDefined();
+
   row.setLinkedContent(null);
-  expect(rowEl.classList.contains('claudian-hidden')).toBe(true);
+  expect(rowEl.classList.contains('claudian-hidden')).toBe(false);
   expect(within(rowEl).queryByRole('button')).toBeNull();
   row.destroy();
 });

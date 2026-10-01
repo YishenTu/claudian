@@ -130,7 +130,6 @@ it('shows the linked note in an info row under the input box', async () => {
 
     tab.state.usage = usage(42);
     expect(info.queryByRole('progressbar')).toBeNull();
-    expect(row.classList.contains('claudian-hidden')).toBe(false);
     expect(await axe(row)).toHaveNoViolations();
   } finally {
     await destroyTab(tab);
@@ -140,15 +139,16 @@ it('shows the linked note in an info row under the input box', async () => {
 it('shows context usage in the toolbar next to the model picker', async () => {
   const tab = await createTab();
   try {
+    // Without a linked note the row still holds its place, so the composer does not shift.
     const row = infoRowOf(tab);
-    expect(row.classList.contains('claudian-hidden')).toBe(true);
+    expect(row.classList.contains('claudian-hidden')).toBe(false);
 
     tab.state.usage = usage(42);
     const toolbar = tab.dom.inputWrapper.querySelector<HTMLElement>(':scope > .claudian-input-toolbar')!;
     const meter = within(toolbar).getByRole('progressbar', { name: 'Context usage: 42% · 84k / 200k' });
     const modelAnchor = toolbar.querySelector('.claudian-toolbar-chip-anchor--model');
     expect(modelAnchor?.nextElementSibling).toBe(meter);
-    expect(row.classList.contains('claudian-hidden')).toBe(true);
+    expect(within(row).queryByRole('progressbar')).toBeNull();
   } finally {
     await destroyTab(tab);
   }

@@ -12,7 +12,8 @@ export interface ComposerInfoItem {
 
 /**
  * Owns the borderless row under the input box. The toolbar holds what the user can
- * change; this row shows conversation facts. It collapses when nothing is visible.
+ * change; this row shows conversation facts. It keeps its height while empty so the
+ * composer does not shift as linked content comes and goes.
  */
 export class ComposerInfoRow {
   private readonly linkedSlotEl: HTMLElement;
@@ -20,19 +21,16 @@ export class ComposerInfoRow {
   constructor(private readonly containerEl: HTMLElement) {
     this.containerEl.addClass('claudian-input-info-row');
     this.linkedSlotEl = this.containerEl.createDiv({ cls: 'claudian-input-info-linked' });
-    this.#sync(false);
   }
 
   setLinkedContent(item: ComposerInfoItem | null): void {
     this.linkedSlotEl.empty();
     this.linkedSlotEl.removeClass('claudian-input-info-linked--missing');
     if (item) this.#renderLinkedContent(item);
-    this.#sync(item !== null);
   }
 
   destroy(): void {
     this.linkedSlotEl.empty();
-    this.#sync(false);
   }
 
   #renderLinkedContent(item: ComposerInfoItem): void {
@@ -58,9 +56,5 @@ export class ComposerInfoRow {
       });
       removeEl.addEventListener('click', item.onRemove);
     }
-  }
-
-  #sync(hasLinkedContent: boolean): void {
-    this.containerEl.toggleClass('claudian-hidden', !hasLinkedContent);
   }
 }

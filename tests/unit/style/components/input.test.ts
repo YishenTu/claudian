@@ -118,14 +118,10 @@ describe('Composer input styles', () => {
     expect([popover.getPropertyValue('inset-inline-start'), popover.getPropertyValue('inset-inline-end')]).toEqual(['auto', '0']);
   });
 
-  it('keeps the info row borderless and collapses it when hidden', () => {
+  it('keeps the info row borderless', () => {
     const composer = renderComposer();
     const row = composer.querySelector<HTMLElement>('.claudian-input-info-row')!;
     expect(style(row).display).toBe('flex');
     expect(style(row).borderStyle).toBe('');
-
-    // Collapsing takes no height.
-    row.classList.add('claudian-hidden');
-    expect(style(row).display).toBe('none');
   });
 });
