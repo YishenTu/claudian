@@ -30,6 +30,10 @@ import { TabWorkspaceMigrationCoordinator } from './app/storage/TabWorkspaceMigr
 import { ClaudianProviderHost } from './composition/ClaudianProviderHost';
 import { isClaudianView } from './composition/claudianViews';
 import {
+  decodeTabWorkspaceViewState,
+  TAB_WORKSPACE_VIEW_STATE_KEY,
+} from './core/bootstrap/tabManagerState';
+import {
   ProviderExecutionLifecycleRegistry,
   type ProviderExecutionTransitionScope,
 } from './core/execution';
@@ -62,6 +66,7 @@ import { ClaudianView } from './features/chat/ClaudianView';
 import type { ChatExecutionPersistence } from './features/chat/execution/ChatExecutionCoordinator';
 import { WarmExecutionPool } from './features/chat/execution/WarmExecutionPool';
 import { registerFileMenu } from './features/chat/fileMenu';
+import { InactiveSessionArchiver } from './features/chat/session-manager/InactiveSessionArchiver';
 import type { ZenModeSource } from './features/chat/zen/types';
 import { ZenModeController } from './features/chat/zen/ZenModeController';
 import { InlineEditSessionOwner } from './features/inline-edit/InlineEditSessionOwner';
@@ -93,6 +98,7 @@ export default class ClaudianPlugin extends Plugin {
   private sessionMetadata!: SessionMetadataLoader;
   private providerChatOptionsChangeTail: Promise<void> = Promise.resolve();
   private readonly inlineEditSessions = new InlineEditSessionOwner();
+  private readonly inactiveSessionArchiver = new InactiveSessionArchiver(this);
   private readonly zenMode = new ZenModeController({
     app: this.app,
     isEnabled: () => this.getCommittedSettings().enableZenMode,
@@ -481,6 +487,7 @@ export default class ClaudianPlugin extends Plugin {
         }
       },
       onConversationListChanged: () => this.notifyConversationViewsChanged(),
+      onAllMetadataLoaded: () => this.archiveInactiveSessions(),
     });
     const didNormalizePendingSessionInvalidations = this.runtimeSettings.syncPendingSessionInvalidations();
 
@@ -605,6 +612,12 @@ export default class ClaudianPlugin extends Plugin {
       }
     }
     if (settings.enableZenMode !== previous.enableZenMode) publish(() => this.zenMode.reconcile());
+    if (
+      settings.sessionAutoArchiveAfter !== previous.sessionAutoArchiveAfter
+      && this.sessionMetadata.hasLoadedAll
+    ) {
+      this.archiveInactiveSessions();
+    }
     if (settings.maxWarmAgentProcesses !== previous.maxWarmAgentProcesses) {
       try {
         if (!await this.warmExecutionPool.reconcileLimit()) {
@@ -893,6 +906,49 @@ export default class ClaudianPlugin extends Plugin {
     this.notifyConversationViewsChanged();
   }
 
+  async setConversationsPinned(ids: readonly string[], isPinned: boolean): Promise<void> {
+    await this.mutateConversations(ids, id => this.conversationRepository.setPinned(id, isPinned));
+  }
+
+  async archiveConversations(ids: readonly string[]): Promise<void> {
+    await this.mutateConversations(ids, id => this.conversationRepository.setArchived(id, true));
+  }
+
+  async restoreConversations(ids: readonly string[]): Promise<void> {
+    await this.mutateConversations(ids, id => this.conversationRepository.setArchived(id, false));
+  }
+
+  async archiveConversationsIf(
+    ids: readonly string[],
+    shouldArchive: (conversation: Readonly<Conversation>) => boolean,
+  ): Promise<number> {
+    let archivedCount = 0;
+    await this.mutateConversations(ids, async (id) => {
+      if (await this.conversationRepository.archiveIf(id, shouldArchive)) archivedCount += 1;
+    });
+    return archivedCount;
+  }
+
+  /** Applies independent per-session writes, then refreshes views once. */
+  private async mutateConversations(
+    ids: readonly string[],
+    mutate: (id: string) => Promise<void>,
+  ): Promise<void> {
+    const results = await Promise.allSettled(ids.map(mutate));
+    this.notifyConversationViewsChanged();
+    const failure = results.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (failure) throw failure.reason;
+  }
+
+  private archiveInactiveSessions(): void {
+    if (this.isUnloading) return;
+    void this.inactiveSessionArchiver.run().catch(() => {
+      new Notice('Failed to auto-archive inactive sessions');
+    });
+  }
+
   private async handleLinkedContentRename(
     file: TAbstractFile,
     oldPath: string,
@@ -1049,6 +1105,21 @@ export default class ClaudianPlugin extends Plugin {
       return activeView;
     }
     return leaves.map(leaf => leaf.view).find(isClaudianView) ?? null;
+  }
+
+  getWorkspaceConversationIds(): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_CLAUDIAN)) {
+      const liveTabs = isClaudianView(leaf.view) ? leaf.view.getTabManager()?.getTabIdentities() ?? [] : [];
+      // Deferred leaves keep their saved state; mounted views report pending restoration through getState().
+      const savedTabs = decodeTabWorkspaceViewState(
+        leaf.getViewState().state?.[TAB_WORKSPACE_VIEW_STATE_KEY],
+      )?.openTabs ?? [];
+      for (const { conversationId } of [...liveTabs, ...savedTabs]) {
+        if (conversationId) ids.add(conversationId);
+      }
+    }
+    return ids;
   }
 
   getAllViews(): ClaudianView[] {

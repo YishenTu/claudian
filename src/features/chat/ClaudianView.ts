@@ -1069,6 +1069,13 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       onSetConversationArchived: (id: string, isArchived: boolean) => (
         this.setConversationArchived(id, isArchived)
       ),
+      onSetConversationsArchived: (ids: readonly string[]) => (
+        this.archiveConversations(ids)
+      ),
+      onSetConversationsPinned: (ids: readonly string[], isPinned: boolean) => (
+        this.setConversationsPinned(ids, isPinned)
+      ),
+      onRestoreConversations: (ids: readonly string[]) => this.plugin.restoreConversations(ids),
       onAssignConversationToDevice: async (id: string) => {
         await this.plugin.assignConversationToCurrentDevice(id);
       },
@@ -1082,6 +1089,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       ...(navigationMode === 'sessions'
         ? {
             organization: this.getSessionManagerOrganization(),
+            groupByRecency: this.getSessionManagerOrganization() === 'list',
             sort: this.getSessionManagerSort(),
             language: getObsidianLanguage(this.plugin.settings.locale),
             contentExists: (contentPath: string) => this.contentExists(contentPath),
@@ -1110,9 +1118,6 @@ export class ClaudianView extends ItemView implements ZenModeSource {
             },
             onSetLinkedContentPinned: (contentPath: string, isPinned: boolean) => (
               this.setLinkedContentPinned(contentPath, isPinned)
-            ),
-            onSetConversationsArchived: (ids: readonly string[]) => (
-              this.archiveConversations(ids)
             ),
             onStartLinkedContentConversation: (contentPath: string) => (
               this.startLinkedContentConversation(contentPath)
@@ -1578,10 +1583,21 @@ export class ClaudianView extends ItemView implements ZenModeSource {
     isPinned: boolean,
   ): Promise<void> {
     await this.plugin.setConversationPinned(conversationId, isPinned);
-    if (!isPinned) return;
+    if (isPinned) this.retainProvisionalTabs([conversationId]);
+  }
 
+  private async setConversationsPinned(
+    conversationIds: readonly string[],
+    isPinned: boolean,
+  ): Promise<void> {
+    await this.plugin.setConversationsPinned(conversationIds, isPinned);
+    if (isPinned) this.retainProvisionalTabs(conversationIds);
+  }
+
+  private retainProvisionalTabs(conversationIds: readonly string[]): void {
+    const ids = new Set(conversationIds);
     for (const tab of this.tabManager?.getAllTabs() ?? []) {
-      if (tab.conversationId === conversationId) {
+      if (tab.conversationId && ids.has(tab.conversationId)) {
         commitProvisionalTab(tab);
       }
     }
@@ -1620,10 +1636,36 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       return;
     }
 
-    const openTabs = this.getOpenConversationTabs(conversationId);
-    if (openTabs.some(({ manager, tab }) => manager.getTab(tab.id)?.state.isStreaming)) {
+    if (!await this.closeTabsBeforeArchive(conversationId)) {
       new Notice('Running sessions cannot be archived');
       return;
+    }
+    await this.plugin.setConversationArchived(conversationId, true);
+  }
+
+  private async archiveConversations(conversationIds: readonly string[]): Promise<void> {
+    const archivableIds: string[] = [];
+    let runningCount = 0;
+    for (const conversationId of conversationIds) {
+      if (await this.closeTabsBeforeArchive(conversationId)) {
+        archivableIds.push(conversationId);
+      } else {
+        runningCount += 1;
+      }
+    }
+    if (runningCount > 0) {
+      new Notice(`Skipped ${runningCount} running ${runningCount === 1 ? 'session' : 'sessions'}`);
+    }
+    if (archivableIds.length > 0) {
+      await this.plugin.archiveConversations(archivableIds);
+    }
+  }
+
+  /** Closes every tab showing the session; returns false without closing anything when it is running. */
+  private async closeTabsBeforeArchive(conversationId: string): Promise<boolean> {
+    const openTabs = this.getOpenConversationTabs(conversationId);
+    if (openTabs.some(({ manager, tab }) => manager.getTab(tab.id)?.state.isStreaming)) {
+      return false;
     }
 
     for (const { manager, tab } of openTabs) {
@@ -1632,13 +1674,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
         throw new Error('Failed to close the session before archiving');
       }
     }
-    await this.plugin.setConversationArchived(conversationId, true);
-  }
-
-  private async archiveConversations(conversationIds: readonly string[]): Promise<void> {
-    for (const conversationId of conversationIds) {
-      await this.setConversationArchived(conversationId, true);
-    }
+    return true;
   }
 
   private getOpenConversationTabs(conversationId: string): Array<{

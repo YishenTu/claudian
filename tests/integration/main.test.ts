@@ -1,3 +1,4 @@
+import { testClock } from '@test/helpers/testClock';
 import { Notice, TFile, TFolder } from 'obsidian';
 
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@/app/settings/defaultSettings';
@@ -3519,6 +3520,106 @@ describe('ClaudianPlugin', () => {
       const meta = list.find(c => c.id === conv.id);
 
       expect(meta?.preview).toContain('Hello Claude');
+    });
+  });
+
+  describe('auto-archive inactive sessions', () => {
+    const clock = testClock();
+    const inactiveFor = (days: number): number => clock().getTime() - days * 86_400_000;
+    const sessions = [
+      { id: 'stale-session', providerId: 'claude' as const, title: 'Stale', createdAt: inactiveFor(21), lastActivityAt: inactiveFor(20) },
+      { id: 'recent-session', providerId: 'claude' as const, title: 'Recent', createdAt: inactiveFor(3), lastActivityAt: inactiveFor(2) },
+      { id: 'pinned-stale-session', providerId: 'claude' as const, title: 'Pinned', createdAt: inactiveFor(21), lastActivityAt: inactiveFor(20), isPinned: true },
+    ];
+
+    async function loadAllSessions(settings: Record<string, unknown>): Promise<Map<string, string>> {
+      const files = installVaultFiles({ '.claudian/claudian-settings.json': JSON.stringify(settings) });
+      jest.spyOn(SessionStorage.prototype, 'scan').mockImplementation(async (options) => {
+        options?.onBatch?.(deviceMetadataRecords(...sessions));
+        return { records: deviceMetadataRecords(...sessions), complete: true, invalidMetadataCount: 0 };
+      });
+      mockMetadataSources(...sessions);
+      await plugin.onload();
+      await (plugin as any).sessionMetadata.loadRemaining();
+      await new Promise(resolve => setImmediate(resolve));
+      return files;
+    }
+
+    const archivedIds = (): string[] => plugin.getConversationList()
+      .filter(conversation => conversation.isArchived)
+      .map(conversation => conversation.id);
+
+    it('archives unpinned sessions past the threshold once all metadata has loaded', async () => {
+      const files = await loadAllSessions({ sessionAutoArchiveAfter: '14d' });
+
+      expect(archivedIds()).toEqual(['stale-session']);
+      const persisted = JSON.parse(
+        files.get(`${getDeviceSessionsPath(getHostnameKey())}/stale-session.meta.json`) ?? '{}',
+      );
+      expect(persisted.isArchived).toBe(true);
+      expect(Notice).toHaveBeenCalledWith('Auto-archived 1 inactive session');
+    });
+
+    it('skips sessions held by a deferred chat pane that has not mounted its view', async () => {
+      mockApp.workspace.getLeavesOfType.mockImplementation((type: string) => (
+        type === VIEW_TYPE_CLAUDIAN
+          ? [{
+              view: {},
+              getViewState: () => ({
+                type: VIEW_TYPE_CLAUDIAN,
+                state: {
+                  tabWorkspace: {
+                    version: 1,
+                    openTabs: [{ tabId: 'deferred-tab', conversationId: 'stale-session' }],
+                    activeTabId: 'deferred-tab',
+                  },
+                },
+              }),
+            }]
+          : []
+      ));
+
+      await loadAllSessions({ sessionAutoArchiveAfter: '14d' });
+
+      expect(archivedIds()).toEqual([]);
+    });
+
+    it('does not archive a session whose pin was still being saved when the scan ran', async () => {
+      const files = await loadAllSessions({});
+      const stalePath = `${getDeviceSessionsPath(getHostnameKey())}/stale-session.meta.json`;
+      let releasePinWrite!: () => void;
+      const pinWriteGate = new Promise<void>((resolve) => { releasePinWrite = resolve; });
+      const write = mockApp.vault.adapter.write.getMockImplementation();
+      let isFirstStaleWrite = true;
+      mockApp.vault.adapter.write.mockImplementation(async (path: string, content: string) => {
+        if (path === stalePath && isFirstStaleWrite) {
+          isFirstStaleWrite = false;
+          await pinWriteGate;
+        }
+        return write(path, content);
+      });
+
+      const pin = plugin.setConversationPinned('stale-session', true);
+      await plugin.mutateSettings((settings) => { settings.sessionAutoArchiveAfter = '7d'; });
+      await new Promise(resolve => setImmediate(resolve));
+      releasePinWrite();
+      await pin;
+      await new Promise(resolve => setImmediate(resolve));
+
+      const stale = plugin.getConversationList().find(({ id }) => id === 'stale-session');
+      expect(stale).toMatchObject({ isPinned: true });
+      expect(stale?.isArchived).not.toBe(true);
+      expect(JSON.parse(files.get(stalePath) ?? '{}')).toMatchObject({ isPinned: true });
+    });
+
+    it('leaves sessions alone while off and archives when the setting is enabled', async () => {
+      await loadAllSessions({});
+      expect(archivedIds()).toEqual([]);
+
+      await plugin.mutateSettings((settings) => { settings.sessionAutoArchiveAfter = '7d'; });
+      await new Promise(resolve => setImmediate(resolve));
+
+      expect(archivedIds()).toEqual(['stale-session']);
     });
   });
 

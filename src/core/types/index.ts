@@ -39,6 +39,7 @@ export {
   type KeyboardNavigationSettings,
   type LegacyLinkedContentSettingsInput,
   type PermissionMode,
+  type SessionAutoArchiveAfter,
   type SessionManagerOrganization,
   type SessionManagerSort,
   type SlashCommand,

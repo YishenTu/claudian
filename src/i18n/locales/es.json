@@ -224,6 +224,15 @@
       "name": "Restaurar pestañas al iniciar",
       "desc": "Volver a abrir todas las pestañas en el modo de panel único o solo la última pestaña activa en el modo de panel doble."
     },
+    "sessionAutoArchiveAfter": {
+      "name": "Archivar automáticamente sesiones inactivas",
+      "desc": "Archiva las sesiones no fijadas sin actividad durante el período elegido. Se omiten las sesiones abiertas y en ejecución.",
+      "multiSelectHint": "Haz clic con Opción (Alt en Windows y Linux) en las sesiones para seleccionar varias y luego haz clic derecho para fijarlas o archivarlas.",
+      "off": "Desactivado",
+      "days7": "Después de 7 días",
+      "days14": "Después de 14 días",
+      "days30": "Después de 30 días"
+    },
     "dualPaneSide": {
       "name": "Lado del panel doble",
       "desc": "Elegir en qué lado del chat aparece el gestor de sesiones.",

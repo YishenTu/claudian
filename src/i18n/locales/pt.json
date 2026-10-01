@@ -224,6 +224,15 @@
       "name": "Restaurar abas ao iniciar",
       "desc": "Reabrir todas as abas no modo de painel único ou apenas a última aba ativa no modo de painel duplo."
     },
+    "sessionAutoArchiveAfter": {
+      "name": "Arquivar automaticamente sessões inativas",
+      "desc": "Arquiva sessões não fixadas sem atividade durante o período escolhido. Sessões abertas e em execução são ignoradas.",
+      "multiSelectHint": "Clique com Option (Alt no Windows e Linux) nas sessões para selecionar várias e depois clique com o botão direito para fixá-las ou arquivá-las.",
+      "off": "Desativado",
+      "days7": "Após 7 dias",
+      "days14": "Após 14 dias",
+      "days30": "Após 30 dias"
+    },
     "dualPaneSide": {
       "name": "Lado do painel duplo",
       "desc": "Escolher em qual lado do chat o gerenciador de sessões aparece.",

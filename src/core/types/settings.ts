@@ -68,6 +68,7 @@ export type DualPaneSide = typeof DUAL_PANE_SIDES[number];
 
 export type SessionManagerOrganization = 'list' | 'linked-content';
 export type SessionManagerSort = 'last-updated' | 'created';
+export type SessionAutoArchiveAfter = 'off' | '7d' | '14d' | '30d';
 
 export interface LegacyLinkedContentSettingsInput {
   sessionManagerOrganization?: SessionManagerOrganization | 'linked-note';
@@ -174,6 +175,7 @@ export interface ClaudianSettings {
   sessionManagerOrganization?: SessionManagerOrganization;
   sessionManagerSort?: SessionManagerSort;
   pinnedLinkedContentPaths?: string[];
+  sessionAutoArchiveAfter?: SessionAutoArchiveAfter;
 
   // Provider command visibility
   hiddenCommands: string[];

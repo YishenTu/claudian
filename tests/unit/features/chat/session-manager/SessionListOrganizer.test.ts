@@ -1,3 +1,5 @@
+import { testClock } from '@test/helpers/testClock';
+
 import type { ConversationMeta } from '@/core/types';
 import {
   isProvisionalNotePath,
@@ -172,4 +174,39 @@ describe('SessionListOrganizer', () => {
       'older',
     ]);
   });
+
+  it.each(['last-updated', 'created'] as const)(
+    'splits the flat list into recency groups by the %s timestamp',
+    (sort) => {
+      const now = testClock();
+      const ago = (days: number): number => now().getTime() - days * 86_400_000;
+      const at = (days: number): Partial<ConversationMeta> => (
+        sort === 'created'
+          ? { createdAt: ago(days), lastActivityAt: ago(0) }
+          : { createdAt: ago(100), lastActivityAt: ago(days) }
+      );
+      const sections = organizeSessionList([
+        createConversation('today', at(0)),
+        createConversation('six-days', at(6.9)),
+        createConversation('seven-days', at(7)),
+        createConversation('thirteen-days', at(13.9)),
+        createConversation('fourteen-days', at(14)),
+        createConversation('twenty-nine-days', at(29.9)),
+        createConversation('thirty-days', at(30)),
+        createConversation('ancient', at(400)),
+      ], {
+        organization: 'list',
+        sort,
+        language: 'en',
+        groupByRecency: { now: now().getTime() },
+      });
+
+      expect(sections.map(section => [section.label, section.conversations.map(({ id }) => id)])).toEqual([
+        ['Past week', ['today', 'six-days']],
+        ['Past 2 weeks', ['seven-days', 'thirteen-days']],
+        ['Past month', ['fourteen-days', 'twenty-nine-days']],
+        ['Older', ['thirty-days', 'ancient']],
+      ]);
+    },
+  );
 });

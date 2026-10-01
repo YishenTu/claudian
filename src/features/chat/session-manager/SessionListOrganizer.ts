@@ -7,7 +7,7 @@ import { isProvisionalNotePath } from './ProvisionalNoteNames';
 
 export { isProvisionalNotePath } from './ProvisionalNoteNames';
 
-export type SessionListSectionKind = 'list' | 'content' | 'ungrouped' | 'missing';
+export type SessionListSectionKind = 'list' | 'recency' | 'content' | 'ungrouped' | 'missing';
 
 export interface SessionListSection {
   key: string;
@@ -24,7 +24,17 @@ interface OrganizeSessionListOptions {
   includeContentPaths?: readonly string[];
   contentExists?: (contentPath: string) => boolean;
   contentIsNote?: (contentPath: string) => boolean;
+  /** Splits the flat list into recency groups relative to `now`. */
+  groupByRecency?: { now: number };
 }
+
+const DAY_MS = 86_400_000;
+const RECENCY_GROUPS: ReadonlyArray<{ key: string; label: string; maxAgeDays: number }> = [
+  { key: 'recency:7d', label: 'Past week', maxAgeDays: 7 },
+  { key: 'recency:14d', label: 'Past 2 weeks', maxAgeDays: 14 },
+  { key: 'recency:30d', label: 'Past month', maxAgeDays: 30 },
+  { key: 'recency:older', label: 'Older', maxAgeDays: Infinity },
+];
 
 export function isLegacyProvisionalLinkedContent(
   contentPath: string,
@@ -37,6 +47,29 @@ export function isLegacyProvisionalLinkedContent(
 
 function getLastActivityTimestamp(conversation: ConversationMeta): number {
   return conversation.lastActivityAt;
+}
+
+function getSortTimestamp(conversation: ConversationMeta, sort: SessionManagerSort): number {
+  return sort === 'created' ? conversation.createdAt : getLastActivityTimestamp(conversation);
+}
+
+function groupByRecency(
+  sortedConversations: readonly ConversationMeta[],
+  sort: SessionManagerSort,
+  now: number,
+): SessionListSection[] {
+  const sections = RECENCY_GROUPS.map(({ key, label }): SessionListSection => ({
+    key,
+    kind: 'recency',
+    label,
+    conversations: [],
+  }));
+  for (const conversation of sortedConversations) {
+    const ageDays = (now - getSortTimestamp(conversation, sort)) / DAY_MS;
+    const index = RECENCY_GROUPS.findIndex(({ maxAgeDays }) => ageDays < maxAgeDays);
+    sections[index].conversations.push(conversation);
+  }
+  return sections.filter(section => section.conversations.length > 0);
 }
 
 function compareConversations(
@@ -91,6 +124,9 @@ export function organizeSessionList(
     compareConversations(left, right, options.sort)
   ));
   if (options.organization === 'list') {
+    if (options.groupByRecency) {
+      return groupByRecency(sortedConversations, options.sort, options.groupByRecency.now);
+    }
     return [{
       key: 'list',
       kind: 'list',

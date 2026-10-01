@@ -224,6 +224,15 @@
       "name": "Restore tabs on startup",
       "desc": "Reopen all tabs in single-pane mode or the last active tab in dual-pane mode."
     },
+    "sessionAutoArchiveAfter": {
+      "name": "Auto-archive inactive sessions",
+      "desc": "Archive unpinned sessions with no activity for the chosen period. Open and running sessions are skipped.",
+      "multiSelectHint": "Option-click (Alt-click on Windows and Linux) sessions to select several, then right-click to pin or archive them.",
+      "off": "Off",
+      "days7": "After 7 days",
+      "days14": "After 14 days",
+      "days30": "After 30 days"
+    },
     "dualPaneSide": {
       "name": "Dual-pane side",
       "desc": "Choose which side of the chat the session manager appears on.",

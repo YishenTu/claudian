@@ -17,6 +17,7 @@ import type {
   ChatViewPlacement,
   ClaudianSettings,
   DualPaneSide,
+  SessionAutoArchiveAfter,
 } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
 import type { Locale, TranslationKey } from '../../i18n/types';
@@ -542,6 +543,29 @@ export class ClaudianSettingTab extends PluginSettingTab {
           });
         });
     }
+
+    new Setting(container)
+      .setName(t('settings.sessionAutoArchiveAfter.name'))
+      .setDesc(createFragment((fragment) => {
+        fragment.append(
+          t('settings.sessionAutoArchiveAfter.desc'),
+          createEl('br'),
+          t('settings.sessionAutoArchiveAfter.multiSelectHint'),
+        );
+      }))
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('off', t('settings.sessionAutoArchiveAfter.off'))
+          .addOption('7d', t('settings.sessionAutoArchiveAfter.days7'))
+          .addOption('14d', t('settings.sessionAutoArchiveAfter.days14'))
+          .addOption('30d', t('settings.sessionAutoArchiveAfter.days30'))
+          .setValue(this.plugin.settings.sessionAutoArchiveAfter ?? 'off')
+          .onChange(async (value) => {
+            await this.plugin.mutateSettings((settings) => {
+              settings.sessionAutoArchiveAfter = value as SessionAutoArchiveAfter;
+            });
+          });
+      });
 
     // --- Content ---
 

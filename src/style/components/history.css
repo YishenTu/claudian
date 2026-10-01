@@ -423,6 +423,12 @@
   border-inline-start: none;
 }
 
+.claudian-session-sidebar .claudian-session-recency-divider {
+  padding: 8px 12px 2px;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+}
+
 .claudian-session-sidebar .claudian-session-group-body .claudian-history-item {
   padding-inline-start: 32px;
 }
@@ -671,6 +677,24 @@ body.theme-dark .claudian-session-metadata-popover {
 
 .claudian-history-item:hover {
   background: var(--background-modifier-hover);
+}
+
+.claudian-history-item.claudian-history-item--selected,
+.claudian-session-sidebar .claudian-history-item.claudian-history-item--selected {
+  background: var(--background-modifier-active-hover, var(--background-modifier-hover));
+  box-shadow: inset 0 0 0 1px var(--interactive-accent);
+}
+
+.claudian-history-item-selected-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .claudian-history-item.active {

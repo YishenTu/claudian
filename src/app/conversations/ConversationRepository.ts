@@ -610,6 +610,20 @@ export class ConversationRepository {
     ));
   }
 
+  /** Archives only when `shouldArchive` still holds at the serialized write; returns whether it archived. */
+  async archiveIf(
+    id: string,
+    shouldArchive: (conversation: Readonly<Conversation>) => boolean,
+  ): Promise<boolean> {
+    let didArchive = false;
+    await this.#mutateMetadata(id, (conversation) => {
+      if (conversation.isArchived || !shouldArchive(conversation)) return null;
+      didArchive = true;
+      return { isArchived: true, isPinned: false };
+    });
+    return didArchive;
+  }
+
   /**
    * Serializes a metadata decision through persistence and committed publication.
    * `createPatch` must return a repository-owned patch; it is committed without another copy.

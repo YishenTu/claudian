@@ -224,6 +224,15 @@
       "name": "Restaurer les onglets au démarrage",
       "desc": "Rouvrir tous les onglets en mode volet unique, ou uniquement le dernier onglet actif en mode double volet."
     },
+    "sessionAutoArchiveAfter": {
+      "name": "Archiver automatiquement les sessions inactives",
+      "desc": "Archive les sessions non épinglées sans activité pendant la période choisie. Les sessions ouvertes et en cours sont ignorées.",
+      "multiSelectHint": "Cliquez sur des sessions en maintenant Option (Alt sous Windows et Linux) pour en sélectionner plusieurs, puis faites un clic droit pour les épingler ou les archiver.",
+      "off": "Désactivé",
+      "days7": "Après 7 jours",
+      "days14": "Après 14 jours",
+      "days30": "Après 30 jours"
+    },
     "dualPaneSide": {
       "name": "Côté du double volet",
       "desc": "Choisir de quel côté du chat le gestionnaire de sessions apparaît.",

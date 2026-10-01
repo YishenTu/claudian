@@ -22,6 +22,7 @@ export interface SessionMetadataLoaderOptions {
   isUnloading(): boolean;
   whenLayoutReady(callback: () => void): void;
   onConversationListChanged(): void;
+  onAllMetadataLoaded?(): void;
 }
 
 /**
@@ -246,6 +247,7 @@ export class SessionMetadataLoader {
           runtimeSettings.getCompletablePendingSessionInvalidations(),
         );
       }
+      if (!this.isStopped()) this.options.onAllMetadataLoaded?.();
     }
   }
 

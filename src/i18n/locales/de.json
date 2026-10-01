@@ -224,6 +224,15 @@
       "name": "Tabs beim Start wiederherstellen",
       "desc": "Im Einzelbereichsmodus alle Tabs, im Zwei-Spalten-Modus nur den zuletzt aktiven Tab erneut öffnen."
     },
+    "sessionAutoArchiveAfter": {
+      "name": "Inaktive Sitzungen automatisch archivieren",
+      "desc": "Nicht angeheftete Sitzungen ohne Aktivität im gewählten Zeitraum archivieren. Geöffnete und laufende Sitzungen werden übersprungen.",
+      "multiSelectHint": "Klicken Sie mit gedrückter Wahltaste (Alt unter Windows und Linux) auf Sitzungen, um mehrere auszuwählen, und klicken Sie dann mit der rechten Maustaste, um sie anzuheften oder zu archivieren.",
+      "off": "Aus",
+      "days7": "Nach 7 Tagen",
+      "days14": "Nach 14 Tagen",
+      "days30": "Nach 30 Tagen"
+    },
     "dualPaneSide": {
       "name": "Seite der zweiten Spalte",
       "desc": "Auswählen, auf welcher Seite des Chats der Sitzungsmanager angezeigt wird.",
