@@ -9,7 +9,6 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   permissionMode: 'auto',
 
   model: 'haiku',
-  thinkingBudget: 'off',
   effortLevel: DEFAULT_REASONING_VALUE,
   serviceTier: 'default',
   enableAutoTitleGeneration: true,
@@ -40,7 +39,6 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   savedProviderModel: {},
   savedProviderEffort: {},
   savedProviderServiceTier: {},
-  savedProviderThinkingBudget: {},
   savedProviderPermissionMode: {},
   pendingProviderSessionInvalidations: {},
 

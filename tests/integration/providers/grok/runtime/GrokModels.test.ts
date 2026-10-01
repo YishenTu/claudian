@@ -44,7 +44,7 @@ it('retains discovered effort choices through selection, persistence, and reload
   expect(grokChatUIConfig.getReasoningOptions('grok/grok-4.6', reloaded).map(option => option.value))
     .toEqual(['xhigh', 'high', 'medium', 'low']);
   expect(grokChatUIConfig.getDefaultReasoningValue('grok/grok-4.6', reloaded)).toBe('high');
-  expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/grok-4.6', reloaded)).toBe(true);
+  expect(grokChatUIConfig.supportsReasoningEffort('grok/grok-4.6', reloaded)).toBe(true);
   await catalog.dispose();
   await coordinator.dispose();
 });
@@ -77,7 +77,7 @@ it.each([{ reasoningEfforts: [] }, { supportsReasoningEffort: false }])(
       normalizeGrokSetModelMetadata('grok-4.6', { model: metadata })!,
     ]);
     expect(grokChatUIConfig.getReasoningOptions('grok/grok-4.6', settings)).toEqual([]);
-    expect(grokChatUIConfig.isAdaptiveReasoningModel('grok/grok-4.6', settings)).toBe(false);
+    expect(grokChatUIConfig.supportsReasoningEffort('grok/grok-4.6', settings)).toBe(false);
     await catalog.dispose();
     await coordinator.dispose();
   },

@@ -1,7 +1,6 @@
 import { formatReasoningValueLabel } from '../../core/providers/reasoning';
 import type {
   ProviderModelPolicy,
-  ProviderReasoningOption,
   ProviderUIOption,
 } from '../../core/providers/types';
 import {
@@ -46,7 +45,7 @@ export const piModelPolicy: ProviderModelPolicy = {
     return isPiModelSelectionId(model);
   },
 
-  isAdaptiveReasoningModel(model: string, settings: Record<string, unknown>): boolean {
+  supportsReasoningEffort(model: string, settings: Record<string, unknown>): boolean {
     const piModel = getCachedModel(model, settings);
     if (piModel) {
       return piModel.thinkingLevels.some(level => level !== 'off');
@@ -55,7 +54,7 @@ export const piModelPolicy: ProviderModelPolicy = {
     return !!decodePiModelId(model);
   },
 
-  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
+  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderUIOption[] {
     const piModel = getCachedModel(model, settings);
     if (piModel && !piModel.reasoning) return [];
     const levels = piModel?.thinkingLevels

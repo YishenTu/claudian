@@ -19,7 +19,7 @@ function createUIConfig(config: TestProviderConfig): ProviderChatUIConfig {
     getCustomModelIds: () => new Set(),
     getDefaultModel: () => config.defaultModel ?? null,
     ownsModel: model => config.options.includes(model),
-    isAdaptiveReasoningModel: () => false,
+    supportsReasoningEffort: () => false,
     getReasoningOptions: () => [],
     getDefaultReasoningValue: () => 'off',
     isDefaultModel: () => false,

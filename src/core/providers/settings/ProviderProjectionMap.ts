@@ -2,7 +2,6 @@ export const PROVIDER_PROJECTION_KEYS = [
   'savedProviderModel',
   'savedProviderEffort',
   'savedProviderServiceTier',
-  'savedProviderThinkingBudget',
   'savedProviderPermissionMode',
 ] as const;
 

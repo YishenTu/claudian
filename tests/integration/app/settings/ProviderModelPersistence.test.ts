@@ -128,7 +128,6 @@ it.each(cases)('$id removes deselected aliases, preferences and saved effort pro
   const removedSelection = ui.normalizeAvailableModelSelection?.(removedId, settings) ?? removedId;
   settings.savedProviderModel = { [id]: removedSelection };
   settings.savedProviderEffort = { [id]: 'medium' };
-  settings.savedProviderThinkingBudget = { [id]: 'low' };
   settings.savedProviderServiceTier = { [id]: 'fast' };
   settings.savedProviderPermissionMode = { [id]: 'normal' };
   let content = '';
@@ -142,7 +141,7 @@ it.each(cases)('$id removes deselected aliases, preferences and saved effort pro
   const saved = JSON.parse(content);
   expect(saved.providerConfigs[id].modelAliases).toEqual({ [selectedId]: 'Keep alias' });
   expect(content).not.toContain('unselected-catalog-entry');
-  for (const field of ['savedProviderModel', 'savedProviderEffort', 'savedProviderThinkingBudget', 'savedProviderServiceTier']) {
+  for (const field of ['savedProviderModel', 'savedProviderEffort', 'savedProviderServiceTier']) {
     expect(saved[field]?.[id]).toBeUndefined();
   }
   expect(saved.savedProviderPermissionMode[id]).toBe('normal');

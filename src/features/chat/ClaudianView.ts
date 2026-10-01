@@ -256,7 +256,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
       tab.ui.modelSelector.renderOptions();
       tab.ui.modeSelector.updateDisplay();
       tab.ui.modeSelector.renderOptions();
-      tab.ui.thinkingBudgetSelector.updateDisplay();
+      tab.ui.effortSelector.updateDisplay();
       tab.ui.permissionToggle.updateDisplay();
       tab.ui.serviceTierToggle.updateDisplay();
     }

@@ -26,11 +26,11 @@ import type { FileContextManager } from '../ui/FileContext';
 import type { ImageContextManager } from '../ui/ImageContext';
 import type {
   ContextUsageMeter,
+  EffortSelector,
   ModelSelector,
   ModeSelector,
   PermissionToggle,
   ServiceTierToggle,
-  ThinkingBudgetSelector,
   ToolbarMenus,
 } from '../ui/InputToolbar';
 import type { NavigationSidebar } from '../ui/NavigationSidebar';
@@ -120,7 +120,7 @@ export interface TabUIComponents {
   readonly imageContextManager: ImageContextManager;
   readonly modelSelector: ModelSelector;
   readonly modeSelector: ModeSelector;
-  readonly thinkingBudgetSelector: ThinkingBudgetSelector;
+  readonly effortSelector: EffortSelector;
   readonly permissionToggle: PermissionToggle;
   readonly serviceTierToggle: ServiceTierToggle;
   readonly composerDropdown: MainChatComposerDropdown;

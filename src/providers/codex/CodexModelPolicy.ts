@@ -4,7 +4,6 @@ import {
 } from '../../core/providers/reasoning';
 import type {
   ProviderModelPolicy,
-  ProviderReasoningOption,
   ProviderServiceTierPolicy,
   ProviderUIOption,
 } from '../../core/providers/types';
@@ -30,7 +29,7 @@ import {
   getVisibleCodexModelIds,
 } from './settings';
 
-const EFFORT_LEVELS: ProviderReasoningOption[] = [
+const EFFORT_LEVELS: ProviderUIOption[] = [
   ...CODEX_FALLBACK_REASONING_EFFORT_VALUES,
 ].map(value => ({ value, label: formatReasoningValueLabel(value) }));
 
@@ -77,11 +76,11 @@ export const codexModelPolicy: ProviderModelPolicy = {
       || looksLikeCodexModel(runtimeModel);
   },
 
-  isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
+  supportsReasoningEffort(_model: string, _settings: Record<string, unknown>): boolean {
     return true;
   },
 
-  getReasoningOptions(modelId: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
+  getReasoningOptions(modelId: string, settings: Record<string, unknown>): ProviderUIOption[] {
     const codexSettings = getCodexProviderSettings(settings);
     const model = findCodexModel(
       codexSettings.discoveredModels,

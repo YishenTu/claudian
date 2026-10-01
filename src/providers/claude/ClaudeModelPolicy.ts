@@ -1,7 +1,7 @@
 import { formatReasoningValueLabel } from '../../core/providers/reasoning';
 import type {
   ProviderModelPolicy,
-  ProviderReasoningOption,
+  ProviderUIOption,
 } from '../../core/providers/types';
 import { getCustomModelIds } from './env/claudeModelEnv';
 import {
@@ -44,13 +44,13 @@ export const claudeModelPolicy: ProviderModelPolicy = {
       || Boolean(findClaudeModelOption(getClaudeModelCatalog(settings), model));
   },
 
-  // Claude reasoning is effort-only: every model reads `effortLevel`, never a thinking budget.
+  // Claude reasoning is effort-only: every model reads `effortLevel`.
   // ModelInfo.supportsAdaptiveThinking describes the native thinking mode, not this setting choice.
-  isAdaptiveReasoningModel(_model: string, _settings: Record<string, unknown>): boolean {
+  supportsReasoningEffort(_model: string, _settings: Record<string, unknown>): boolean {
     return true;
   },
 
-  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[] {
+  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderUIOption[] {
     return getClaudeSupportedEffortLevels(settings, model)
       .map(value => ({ value, label: formatReasoningValueLabel(value) }));
   },

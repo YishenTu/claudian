@@ -35,7 +35,6 @@ import { UNRESOLVED_TAB_CAPABILITIES, UNRESOLVED_TAB_UI } from './UnresolvedTabU
 
 export type TabProviderSettings = Record<string, unknown> & {
   model: string;
-  thinkingBudget: string;
   effortLevel: string;
   serviceTier: string;
   permissionMode: string;
@@ -99,11 +98,7 @@ export function getTabSettingsSnapshot(
       : uiConfig.getDefaultReasoningValue(snapshot.model, snapshot);
     tab.session.reasoningSelections.set(key, reasoning);
     snapshot.reasoning = reasoning;
-    if (uiConfig.isAdaptiveReasoningModel(snapshot.model, snapshot)) {
-      snapshot.effortLevel = reasoning;
-    } else {
-      snapshot.thinkingBudget = reasoning;
-    }
+    snapshot.effortLevel = reasoning;
   }
   return snapshot;
 }
@@ -117,11 +112,7 @@ export async function updateTabReasoning(
   const model = getTabSettingsSnapshot(tab, plugin).model;
   const uiConfig = ProviderRegistry.getChatUIConfig(providerId);
   const committed = await updateTabProviderSettings(tab, plugin, snapshot => {
-    if (uiConfig.isAdaptiveReasoningModel(model, snapshot)) {
-      snapshot.effortLevel = reasoning;
-    } else {
-      snapshot.thinkingBudget = reasoning;
-    }
+    snapshot.effortLevel = reasoning;
     uiConfig.applyReasoningSelection?.(model, reasoning, snapshot);
   });
   if (committed) tab.session.reasoningSelections.set(`${providerId}:${model}`, reasoning);
@@ -244,7 +235,7 @@ export function refreshTabProviderUI(tab: AssembledTabRuntime): void {
   tab.ui.modelSelector.renderOptions();
   tab.ui.modeSelector.updateDisplay();
   tab.ui.modeSelector.renderOptions();
-  tab.ui.thinkingBudgetSelector.updateDisplay();
+  tab.ui.effortSelector.updateDisplay();
   tab.ui.permissionToggle.updateDisplay();
   tab.ui.serviceTierToggle.updateDisplay();
 }

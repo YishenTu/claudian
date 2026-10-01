@@ -41,7 +41,7 @@ export interface ProviderCapabilities {
   supportsFastMode?: boolean;
   /** Can report authoritative main-agent output tokens and elapsed turn time. */
   supportsResponseThroughput?: boolean;
-  reasoningControl: 'effort' | 'token-budget' | 'none';
+  reasoningControl: 'effort' | 'none';
 }
 
 export const DEFAULT_CHAT_PROVIDER_ID = 'claude' as const satisfies ProviderId;
@@ -207,11 +207,6 @@ export interface ProviderCompositeIconSvg {
 /** SVG icon descriptor for provider branding in selectors and headers. */
 export type ProviderIconSvg = ProviderPathIconSvg | ProviderCompositeIconSvg;
 
-/** Extended option with token count for budget-based reasoning controls. */
-export interface ProviderReasoningOption extends ProviderUIOption {
-  tokens?: number;
-}
-
 /** Permission-mode values a provider accepts in the shared `permissionMode` setting. */
 export interface ProviderPermissionModePolicy {
   readonly values: readonly string[];
@@ -261,11 +256,11 @@ export interface ProviderModelPolicy {
   /** Whether this provider owns the given model id. */
   ownsModel(model: string, settings: Record<string, unknown>): boolean;
 
-  /** Whether the model uses adaptive reasoning (effort levels vs token budgets). */
-  isAdaptiveReasoningModel(model: string, settings: Record<string, unknown>): boolean;
+  /** Whether the model takes an effort level; otherwise the saved effort is kept unvalidated. */
+  supportsReasoningEffort(model: string, settings: Record<string, unknown>): boolean;
 
-  /** Reasoning options for the current model (effort levels if adaptive, budgets otherwise). */
-  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderReasoningOption[];
+  /** Effort levels for the current model. */
+  getReasoningOptions(model: string, settings: Record<string, unknown>): ProviderUIOption[];
 
   /** Default reasoning value for the model. */
   getDefaultReasoningValue(model: string, settings: Record<string, unknown>): string;

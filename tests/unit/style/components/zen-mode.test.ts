@@ -21,13 +21,12 @@ beforeAll(() => {
 function mountToolbar(toolbarEl: HTMLElement): void {
   const settings = { model: 'sonnet', reasoning: 'high', serviceTier: 'fast', permissionMode: 'normal' };
   createInputToolbar(toolbarEl, {
-    onModelChange: async () => {}, onModeChange: async () => {}, onThinkingBudgetChange: async () => {},
+    onModelChange: async () => {}, onModeChange: async () => {},
     onEffortLevelChange: async () => {}, onServiceTierChange: async () => {}, onPermissionModeChange: async () => {},
     getSettings: () => settings,
     getUIConfig: () => ({
       getProviderIcon: () => null,
       getModelOptions: () => [{ value: 'sonnet', label: 'Sonnet' }, { value: 'opus', label: 'Opus' }],
-      isAdaptiveReasoningModel: () => true,
       getReasoningOptions: () => [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }],
       getDefaultReasoningValue: () => 'low',
       getPermissionModeOptions: () => [{ value: 'normal', label: 'Safe' }, { value: 'yolo', label: 'YOLO', bypassesApprovals: true }],

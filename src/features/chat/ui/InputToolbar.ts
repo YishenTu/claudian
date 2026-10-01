@@ -7,7 +7,6 @@ import type {
   ProviderIconSvg,
   ProviderModeSelectorConfig,
   ProviderPermissionModeOption,
-  ProviderReasoningOption,
   ProviderServiceTierToggleConfig,
   ProviderUIOption,
 } from '../../../core/providers/types';
@@ -27,7 +26,6 @@ export type ToolbarSettings = ChatSettings & Record<string, unknown>;
 export interface ToolbarCallbacks {
   onModelChange: (model: string) => Promise<void>;
   onModeChange: (mode: string) => Promise<void>;
-  onThinkingBudgetChange: (budget: string) => Promise<void>;
   onEffortLevelChange: (effort: string) => Promise<void>;
   onServiceTierChange: (serviceTier: string) => Promise<void>;
   onPermissionModeChange: (mode: string) => Promise<void>;
@@ -586,9 +584,7 @@ export class ModeSelector {
 
 /** Levels the provider reports for the current model, in its order. */
 interface ReasoningScale {
-  /** Adaptive models choose an effort; legacy models choose a thinking token budget. */
-  adaptive: boolean;
-  options: ProviderReasoningOption[];
+  options: ProviderUIOption[];
   defaultValue: string;
 }
 
@@ -599,8 +595,8 @@ interface ReasoningSlider {
   tickEls: HTMLElement[];
 }
 
-/** Effort (adaptive models) or legacy thinking budget: a level on the model button, a slider in its popover. */
-export class ThinkingBudgetSelector {
+/** Effort: a level on the model button, a slider in its popover. */
+export class EffortSelector {
   private readonly part: ModelMenuPart;
   private callbacks: ToolbarCallbacks;
   #scale: ReasoningScale | null = null;
@@ -641,7 +637,7 @@ export class ThinkingBudgetSelector {
     const settings = this.callbacks.getSettings();
     const model = settings.model;
     const uiConfig = this.callbacks.getUIConfig();
-    const options: ProviderReasoningOption[] = uiConfig.getReasoningOptions(model, settings);
+    const options: ProviderUIOption[] = uiConfig.getReasoningOptions(model, settings);
     const defaultValue = uiConfig.getDefaultReasoningValue(model, settings);
     const shouldHide = options.length === 0
       || (options.length === 1 && options[0]?.value === defaultValue);
@@ -650,7 +646,6 @@ export class ThinkingBudgetSelector {
       return;
     }
 
-    const adaptive = uiConfig.isAdaptiveReasoningModel(model, settings);
     const current = settings.reasoning;
     const currentIndex = options.findIndex(option => option.value === current);
     const currentLabel = options[currentIndex]?.label
@@ -658,13 +653,13 @@ export class ThinkingBudgetSelector {
 
     this.part.chipEl.removeClass('claudian-hidden');
     this.part.chipEl.setText(currentLabel);
-    this.part.describe(`${adaptive ? 'effort' : 'thinking'} ${currentLabel}`);
+    this.part.describe(`effort ${currentLabel}`);
     this.part.sectionEl.removeClass('claudian-hidden');
 
     // Rebuild only when the levels change, so a refresh never replaces the slider under the user.
-    const scale = { adaptive, options, defaultValue };
+    const scale = { options, defaultValue };
     const scaleKey = JSON.stringify([
-      adaptive, defaultValue, options.map(option => [option.value, option.label, option.description, option.tokens]),
+      defaultValue, options.map(option => [option.value, option.label, option.description]),
     ]);
     if (scaleKey !== this.#scaleKey || !this.#slider) {
       this.#scaleKey = scaleKey;
@@ -684,22 +679,19 @@ export class ThinkingBudgetSelector {
   #buildSlider(scale: ReasoningScale): ReasoningSlider {
     const sectionEl = this.part.sectionEl;
     sectionEl.empty();
-    const name = scale.adaptive ? 'Effort' : 'Thinking';
+    const name = 'Effort';
     const nameId = nextToolbarId('slider-name');
     const groupEl = sectionEl.createDiv({
-      cls: `claudian-toolbar-slider-group ${scale.adaptive ? 'claudian-thinking-effort' : 'claudian-thinking-budget'}`,
+      cls: 'claudian-toolbar-slider-group claudian-thinking-effort',
       attr: { role: 'group', 'aria-labelledby': nameId },
     });
     const headerEl = groupEl.createDiv({ cls: 'claudian-toolbar-slider-header' });
     headerEl.createSpan({ cls: 'claudian-toolbar-slider-name', text: name, attr: { id: nameId } });
     const valueEl = headerEl.createSpan({ cls: 'claudian-toolbar-slider-value' });
 
-    // Effort trades speed for depth; token budgets carry no such promise, so they get no end labels.
-    if (scale.adaptive) {
-      const endsEl = groupEl.createDiv({ cls: 'claudian-toolbar-slider-ends', attr: { 'aria-hidden': 'true' } });
-      endsEl.createSpan({ text: 'Faster' });
-      endsEl.createSpan({ text: 'Smarter' });
-    }
+    const endsEl = groupEl.createDiv({ cls: 'claudian-toolbar-slider-ends', attr: { 'aria-hidden': 'true' } });
+    endsEl.createSpan({ text: 'Faster' });
+    endsEl.createSpan({ text: 'Smarter' });
 
     // The fill and stops are drawn under a transparent native range input that takes all pointer input.
     const controlEl = groupEl.createDiv({ cls: 'claudian-toolbar-slider' });
@@ -750,10 +742,7 @@ export class ThinkingBudgetSelector {
     if (!scale || !slider || !option) return;
 
     const label = labelOverride ?? option.label;
-    const tokens = option.tokens ?? 0;
-    const detail = labelOverride
-      ? ''
-      : (scale.adaptive ? option.description ?? '' : (tokens > 0 ? `${tokens.toLocaleString()} tokens` : 'Disabled'));
+    const detail = labelOverride ? '' : option.description ?? '';
 
     slider.inputEl.setAttribute('aria-valuetext', label);
     slider.valueEl.setText(label);
@@ -774,17 +763,13 @@ export class ThinkingBudgetSelector {
     runToolbarAction(async () => {
       this.#pendingCommits++;
       try {
-        if (scale.adaptive) {
-          await this.callbacks.onEffortLevelChange(option.value);
-        } else {
-          await this.callbacks.onThinkingBudgetChange(option.value);
-        }
+        await this.callbacks.onEffortLevelChange(option.value);
       } finally {
         this.#pendingCommits--;
         // Once every commit has landed, show what was saved, including a rollback after a failure.
         if (this.#pendingCommits === 0) this.updateDisplay();
       }
-    }, scale.adaptive ? 'Failed to change effort level' : 'Failed to change thinking budget');
+    }, 'Failed to change effort level');
   }
 }
 
@@ -1038,7 +1023,7 @@ export function createInputToolbar(
 ): {
   modelSelector: ModelSelector;
   modeSelector: ModeSelector;
-  thinkingBudgetSelector: ThinkingBudgetSelector;
+  effortSelector: EffortSelector;
   contextUsageMeter: ContextUsageMeter;
   menus: ToolbarMenus;
   permissionToggle: PermissionToggle;
@@ -1048,7 +1033,7 @@ export function createInputToolbar(
   const modelSelector = new ModelSelector(parentEl, callbacks, menuGroup);
   // The read-only context gauge sits right after the model picker.
   const contextUsageMeter = new ContextUsageMeter(parentEl);
-  const thinkingBudgetSelector = new ThinkingBudgetSelector(modelSelector, callbacks);
+  const effortSelector = new EffortSelector(modelSelector, callbacks);
   const serviceTierToggle = new ServiceTierToggle(modelSelector, callbacks);
   const modeSelector = new ModeSelector(parentEl, callbacks, menuGroup);
   // Permission is the last control; CSS pushes it to the toolbar's far end.
@@ -1057,7 +1042,7 @@ export function createInputToolbar(
   return {
     modelSelector,
     modeSelector,
-    thinkingBudgetSelector,
+    effortSelector,
     serviceTierToggle,
     contextUsageMeter,
     menus: menuGroup,
