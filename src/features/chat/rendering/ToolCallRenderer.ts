@@ -842,8 +842,10 @@ export function renderExpandedContent(
   toolCall: ExpandedToolContent,
   options: Pick<ToolCallRenderOptions, 'renderMarkdown'> = {},
 ): void {
-  renderExpandedResult(container, toolCall, options.renderMarkdown);
-  if (toolCall.resultImages?.length) renderResultImages(container, toolCall.resultImages);
+  const images = toolCall.resultImages ?? [];
+  // An image-only result needs no empty-state placeholder above its preview.
+  if (toolCall.result || images.length === 0) renderExpandedResult(container, toolCall, options.renderMarkdown);
+  if (images.length > 0) renderResultImages(container, images);
 }
 
 /** Resolves a provider image to a URL the host webview can load. */

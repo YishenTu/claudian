@@ -424,7 +424,8 @@ function reconcileToolUpdate(turn: PendingTurn, update: Record<string, unknown>)
   const status = normalizeToolStatus(readString(update.status), current?.status);
   const nativeToolUseResult = extractACPDiffToolUseResult(update.content)
     ?? current?.toolUseResult;
-  const output = renderedContent || (update.rawOutput === undefined
+  // Explicit text content is the presentation, even when empty (e.g. an image-only MCP result).
+  const output = hasTextContent(update.content) ? renderedContent : renderedContent || (update.rawOutput === undefined
     ? current?.output || normalized.output
     : normalized.output || current?.output) || '';
 
@@ -599,6 +600,10 @@ function readImageMediaType(value: unknown): ImageMediaType | null {
     default:
       return null;
   }
+}
+
+function hasTextContent(value: unknown): boolean {
+  return Array.isArray(value) && value.some(entry => readRecord(entry)?.type === 'content');
 }
 
 function renderToolContent(value: unknown): string {

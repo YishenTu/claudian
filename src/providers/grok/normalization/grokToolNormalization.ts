@@ -241,7 +241,7 @@ export function normalizeGrokToolUpdate<T extends GrokToolUpdateFields>(update: 
       return normalizeMCPUpdate(update, output);
     case 'ReadFile':
       return isRecord(output.FileContent)
-        ? mapContentText(update, stripReadLineAnchors)
+        ? mapContentText(update, toConsecutiveLineGutters)
         : withFallbackText(update, output);
     case 'ImageGen':
     case 'ImageEdit':
@@ -353,15 +353,22 @@ function formatShellTaskResult(result: GrokShellTaskResult): string {
   return [exit, output].filter(Boolean).join('\n');
 }
 
-/** Grok anchors line 1 and every tenth line as `N→`; other lines are verbatim file text. */
-function stripReadLineAnchors(text: string): string {
+/**
+ * Grok anchors line 1 and every tenth line as `N→`; other lines are verbatim file text.
+ * Rewriting them as one consecutive gutter per line lets the shared Read view strip
+ * numbering exactly once, so file text that itself starts with `N→` survives.
+ */
+function toConsecutiveLineGutters(text: string): string {
   const lines = text.split('\n');
   const first = lines[0].match(/^(\d+)→/);
   if (!first) return text;
   const start = Number(first[1]);
+  const trailingNewline = lines.length > 1 && lines[lines.length - 1] === '';
   return lines.map((line, index) => {
+    if (trailingNewline && index === lines.length - 1) return line;
     const anchor = `${start + index}→`;
-    return (index === 0 || (start + index) % 10 === 0) && line.startsWith(anchor) ? line.slice(anchor.length) : line;
+    const isNativeAnchor = (index === 0 || (start + index) % 10 === 0) && line.startsWith(anchor);
+    return anchor + (isNativeAnchor ? line.slice(anchor.length) : line);
   }).join('\n');
 }
 

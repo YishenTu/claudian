@@ -451,8 +451,20 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
 
     const block = renderStoredToolCall(document.body.createDiv(), tool);
     expand(block, /^Read: notes\.txt/);
-    expect(lines(block)?.slice(0, 2)).toEqual(['alpha', '2→ literal arrow']);
-    expect(tool.result?.split('\n').at(-1)).toBe('tenth');
+    expect(lines(block)).toEqual(['alpha', '2→ literal arrow', ...Array.from({ length: 7 }, (_, index) => `line ${index + 3}`), 'tenth']);
+  });
+
+  it('keeps a literal leading anchor in file text', async () => {
+    const text = '1→1→literal\n';
+    const tool = await restore(mode, readUpdates('literal.txt', {
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text } }],
+      rawOutput: { type: 'ReadFile', FileContent: { content: text, absolute_path: '/workspace/literal.txt', offset: null, total_lines: 2 } },
+    }));
+
+    const block = renderStoredToolCall(document.body.createDiv(), tool);
+    expand(block, /^Read: literal\.txt/);
+    expect(lines(block)?.[0]).toBe('1→literal');
   });
 
   it('previews generated images from their native file path', async () => {
@@ -486,6 +498,21 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
     const block = renderStoredToolCall(document.body.createDiv(), tool);
     expand(block, /^mcp__probe__rich_result/);
     expect(within(block).getByRole('img', { name: 'image/png' }).getAttribute('src')).toBe(`data:image/png;base64,${data}`);
+  });
+
+  it('shows image-only MCP results without the encoded payload', async () => {
+    const data = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==';
+    const tool = await restore(mode, [
+      { sessionUpdate: 'tool_call', toolCallId: 'image-only', title: 'use_tool', rawInput: { tool_name: 'probe__snapshot', tool_input: {} } },
+      { sessionUpdate: 'tool_call_update', toolCallId: 'image-only', status: 'completed', rawOutput: { type: 'MCP', tool_name: 'snapshot', server_name: 'probe',
+        output: { OkayOutput: `data:image/png;base64,${data}` } } },
+    ]);
+
+    const block = renderStoredToolCall(document.body.createDiv(), tool);
+    expand(block, /^mcp__probe__snapshot/);
+    expect(within(block).getByRole('img', { name: 'image/png' }).getAttribute('src')).toBe(`data:image/png;base64,${data}`);
+    expect(block.textContent).not.toContain(data);
+    expect(within(block).queryByText('No result')).toBeNull();
   });
 
   it('keeps a backgrounded command completed when its task reports later output', async () => {
