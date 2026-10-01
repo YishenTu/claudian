@@ -41,6 +41,19 @@ export type ToolResultImage =
   | { kind: 'file'; path: string; alt?: string }
   | { kind: 'data'; mediaType: string; data: string; alt?: string };
 
+/** A call a script tool made to another tool; it never reached the model as its own tool call. */
+export interface ScriptToolCallItem {
+  /** Shared tool name when the provider maps one. */
+  name: string;
+  /** Input in the shared renderer shape, when the provider reports complete arguments. */
+  input?: Record<string, unknown>;
+  /** Provider-formatted arguments, shown only when `input` is absent. */
+  args?: string;
+  status: 'running' | 'completed' | 'error' | 'cancelled';
+  durationMs?: number;
+  error?: string;
+}
+
 /** Provider-owned fields for lossless per-tool replay and persistence. */
 export interface ToolProviderPayload {
   rawInput?: unknown;
@@ -67,6 +80,8 @@ export interface ToolCallInfo {
   webSearchSummary?: string;
   /** Images the tool produced, shown after its expanded result. */
   resultImages?: ToolResultImage[];
+  /** Calls a script tool made to other tools, in call order. Live snapshots only append calls or advance their status. */
+  scriptToolCalls?: ScriptToolCallItem[];
   /** Live async question presentation; replay alone never opens a prompt. */
   questionStatus?: 'pending' | 'expired';
   subagent?: SubagentInfo;

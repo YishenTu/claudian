@@ -1,4 +1,4 @@
-import type { ToolResultImage, WebSearchResultItem } from '../types/tools';
+import type { ScriptToolCallItem, ToolResultImage, WebSearchResultItem } from '../types/tools';
 
 export interface ToolResultContentOptions {
   fallbackIndent?: number;
@@ -101,4 +101,29 @@ export function extractWebSearchSummary(toolUseResult: unknown): string | undefi
 export function extractToolResultFormat(toolUseResult: unknown): 'plain' | undefined {
   return toolUseResult && typeof toolUseResult === 'object'
     && (toolUseResult as Record<string, unknown>).resultFormat === 'plain' ? 'plain' : undefined;
+}
+
+const SCRIPT_TOOL_CALL_STATUSES: ReadonlySet<string> = new Set<ScriptToolCallItem['status']>([
+  'running', 'completed', 'error', 'cancelled',
+]);
+
+/** Reads provider-normalized `scriptToolCalls` from a tool's structured result. */
+export function extractScriptToolCalls(toolUseResult: unknown): ScriptToolCallItem[] | undefined {
+  if (!toolUseResult || typeof toolUseResult !== 'object') return undefined;
+  const items = (toolUseResult as Record<string, unknown>).scriptToolCalls;
+  if (!Array.isArray(items)) return undefined;
+  const calls = items.flatMap((item): ScriptToolCallItem[] => {
+    if (!item || typeof item !== 'object') return [];
+    const { name, input, args, status, durationMs, error } = item as Record<string, unknown>;
+    if (typeof name !== 'string' || !name || typeof status !== 'string' || !SCRIPT_TOOL_CALL_STATUSES.has(status)) return [];
+    return [{
+      name,
+      status: status as ScriptToolCallItem['status'],
+      ...(input && typeof input === 'object' && !Array.isArray(input) ? { input: input as Record<string, unknown> } : {}),
+      ...(typeof args === 'string' && args ? { args } : {}),
+      ...(typeof durationMs === 'number' && Number.isFinite(durationMs) ? { durationMs } : {}),
+      ...(typeof error === 'string' && error ? { error } : {}),
+    }];
+  });
+  return calls.length > 0 ? calls : undefined;
 }

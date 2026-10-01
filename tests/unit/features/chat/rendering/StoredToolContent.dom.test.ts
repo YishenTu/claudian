@@ -274,3 +274,25 @@ it('shows live Script source before output, then preserves it through completion
     expect(within(block).getByText(updated.result)).toBeDefined();
   }
 });
+
+it('lists the tool calls a live Script made once its result arrives', async () => {
+  const tool: ToolCallInfo = { id: 'script-calls', name: 'exec', input: { code: 'await tools.fetch({})' }, status: 'running' };
+  const elements = new Map<string, HTMLElement>();
+  const block = renderToolCall(document.body.createDiv(), tool, elements, { initiallyExpanded: true });
+  expect(within(block).queryByRole('list', { name: 'Tool calls' })).toBeNull();
+
+  updateToolCallResult(tool.id, { ...tool, status: 'completed', result: 'ok', scriptToolCalls: [
+    { name: 'Bash', input: { command: 'ls -la' }, status: 'completed', durationMs: 12 },
+    { name: 'web_context', input: { query: 'release notes', max_urls: 5 }, status: 'completed' },
+    { name: 'fetch', status: 'running' },
+    { name: 'search', args: '{"q":"x"}', status: 'cancelled', durationMs: 999.6 },
+  ] }, elements);
+  const calls = within(within(block).getByRole('list', { name: 'Tool calls' })).getAllByRole('listitem');
+  // Known tools read like their own headers; other tools list their arguments.
+  expect(calls.map(call => call.textContent)).toEqual([
+    'Bash ls -la 12ms', 'web_context query: release notes, max_urls: 5', 'fetch', 'search {"q":"x"} 1000ms',
+  ]);
+  expect(within(calls[2]).getByRole('img', { name: 'Status: running' })).toBeDefined();
+  expect(within(calls[3]).getByRole('img', { name: 'Status: cancelled' })).toBeDefined();
+  expect((await axe(block)).violations).toEqual([]);
+});

@@ -106,6 +106,13 @@ for await (const line of lines) {
         respond(request, {});
         break;
       }
+      if (request.message?.startsWith('replay:')) {
+        // Writes captured native events and leaves the run open, as while a tool is still executing.
+        respond(request, {});
+        write({ type: 'agent_start' });
+        process.stdout.write(fs.readFileSync(new URL(request.message.slice('replay:'.length), import.meta.url), 'utf8'));
+        break;
+      }
       const commandName = request.message?.split(' ')[0]?.slice(1);
       if (request.message?.startsWith('/') && commands.has(commandName)) {
         await commands.get(commandName).handler(request.message.slice(commandName.length + 2), extensionContext);

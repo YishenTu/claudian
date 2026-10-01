@@ -24,6 +24,7 @@ import {
 } from '../../../core/tools/toolProviderPayload';
 import {
   extractResultImages,
+  extractScriptToolCalls,
   extractToolResultContent,
   extractToolResultFormat,
   extractWebSearchResults,
@@ -31,6 +32,7 @@ import {
 } from '../../../core/tools/toolResultContent';
 import type {
   ChatMessage,
+  ScriptToolCallItem,
   StreamChunk,
   SubagentInfo,
   SubagentProgress,
@@ -570,7 +572,7 @@ export class StreamController {
   );
 
   #handleToolOutput(
-    chunk: { type: 'tool_output'; id: string; content: string },
+    chunk: Extract<StreamChunk, { type: 'tool_output' }>,
     msg: ChatMessage,
   ): void {
     const { state } = this.deps;
@@ -584,7 +586,12 @@ export class StreamController {
       return;
     }
 
-    existingToolCall.result = (existingToolCall.result ?? '') + chunk.content;
+    if (chunk.content) existingToolCall.result = (existingToolCall.result ?? '') + chunk.content;
+    const scriptToolCalls = extractScriptToolCalls(chunk.toolUseResult);
+    if (scriptToolCalls) {
+      this.#notifyScriptFileChanges(existingToolCall.scriptToolCalls, scriptToolCalls);
+      existingToolCall.scriptToolCalls = scriptToolCalls;
+    }
     this.#scheduleToolOutputRender(chunk.id, existingToolCall);
     this.showThinkingIndicator();
   }
@@ -808,6 +815,8 @@ export class StreamController {
       existingToolCall.webSearchResults = extractWebSearchResults(chunk.toolUseResult) ?? existingToolCall.webSearchResults;
       existingToolCall.webSearchSummary = extractWebSearchSummary(chunk.toolUseResult) ?? existingToolCall.webSearchSummary;
       existingToolCall.resultImages = extractResultImages(chunk.toolUseResult) ?? existingToolCall.resultImages;
+      const previousScriptToolCalls = existingToolCall.scriptToolCalls;
+      existingToolCall.scriptToolCalls = extractScriptToolCalls(chunk.toolUseResult) ?? previousScriptToolCalls;
 
       if (existingToolCall.name === TOOL_ASK_USER_QUESTION) {
         const answers =
@@ -841,6 +850,8 @@ export class StreamController {
       if (!chunk.isError && !isBlocked && existingToolCall.name === TOOL_APPLY_PATCH) {
         this.#notifyApplyPatchFileChanges(existingToolCall.input);
       }
+
+      this.#notifyScriptFileChanges(previousScriptToolCalls, existingToolCall.scriptToolCalls);
     }
 
     this.showThinkingIndicator();
@@ -1156,6 +1167,7 @@ export class StreamController {
           toolCall.webSearchResults = extractWebSearchResults(chunk.toolUseResult) ?? toolCall.webSearchResults;
           toolCall.webSearchSummary = extractWebSearchSummary(chunk.toolUseResult) ?? toolCall.webSearchSummary;
           toolCall.resultImages = extractResultImages(chunk.toolUseResult) ?? toolCall.resultImages;
+          toolCall.scriptToolCalls = extractScriptToolCalls(chunk.toolUseResult) ?? toolCall.scriptToolCalls;
           subagentManager.updateSyncToolResult(parentToolUseId, chunk.id, toolCall);
         }
         break;
@@ -1701,6 +1713,21 @@ export class StreamController {
     }, 200);
   }
 
+  /**
+   * Refreshes files nested script calls finished changing since the previous snapshot.
+   * A later script failure or cancellation does not undo them.
+   */
+  #notifyScriptFileChanges(
+    previous: readonly ScriptToolCallItem[] | undefined,
+    next: readonly ScriptToolCallItem[] | undefined,
+  ): void {
+    next?.forEach((call, index) => {
+      if (call.status !== 'completed' || !call.input || previous?.[index]?.status === 'completed') return;
+      if (isEditTool(call.name)) this.#notifyVaultFileChange(call.input);
+      else if (call.name === TOOL_APPLY_PATCH) this.#notifyApplyPatchFileChanges(call.input);
+    });
+  }
+
   /** Refreshes vault for each file path in an apply_patch changes array or patch text. */
   #notifyApplyPatchFileChanges(input: Record<string, unknown>): void {
     const notified = new Set<string>();
@@ -1860,7 +1887,12 @@ export function providerOutputEventToStreamChunk(
     case 'tool_output':
       return event.toolScope.kind === 'subagent'
         ? { content: event.content, id: event.toolCallId, type: 'subagent_tool_output', subagentId: event.toolScope.subagentId }
-        : { content: event.content, id: event.toolCallId, type: 'tool_output' };
+        : {
+          content: event.content,
+          id: event.toolCallId,
+          type: 'tool_output',
+          ...(event.toolUseResult ? { toolUseResult: event.toolUseResult } : {}),
+        };
     case 'tool_completed':
       return event.toolScope.kind === 'subagent'
         ? {

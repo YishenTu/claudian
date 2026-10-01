@@ -32,6 +32,7 @@ import {
 import type {
   AskUserQuestionItem,
   AskUserQuestionOption,
+  ScriptToolCallItem,
   ToolCallInfo,
   ToolResultImage,
   WebSearchResultItem,
@@ -831,8 +832,8 @@ function formatToolDisplayValue(value: unknown): string {
 /** Neutral tool fields the expanded view can present. */
 export type ExpandedToolContent = Pick<
   ToolCallInfo,
-  'name' | 'result' | 'resultFormat' | 'input' | 'webSearchResults' | 'webSearchSummary' | 'resultImages'
->;
+  'name' | 'result' | 'resultFormat' | 'input' | 'webSearchResults' | 'webSearchSummary' | 'resultImages' | 'scriptToolCalls'
+> & Partial<Pick<ToolCallInfo, 'status'>>;
 
 /** Host markdown rendering for prose inside tool results; plain text is used without it. */
 export type MarkdownRenderHook = (el: HTMLElement, markdown: string) => Promise<void> | void;
@@ -877,7 +878,7 @@ function renderExpandedResult(
   }
 
   if (isScriptTool(toolName)) {
-    renderScriptContent(container, input, result ?? '');
+    renderScriptContent(container, toolCall);
     return;
   }
   if (!result && toolName !== TOOL_WEB_SEARCH && toolName !== TOOL_BASH && toolName !== TOOL_APPLY_PATCH) {
@@ -1178,23 +1179,76 @@ function contentFallback(container: HTMLElement, text: string): void {
   resultText.setText(text);
 }
 
+const SCRIPT_CALL_STATUS_ICONS: Partial<Record<ScriptToolCallItem['status'], string>> = {
+  completed: 'check',
+  error: 'x',
+  cancelled: 'ban',
+};
+
+function formatScriptCallDuration(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** `key: value` pairs for tools without a dedicated summary. */
+function summarizeToolInput(input: Record<string, unknown>): string {
+  return Object.entries(input)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+    .join(', ');
+}
+
+function getScriptToolCallSummary(call: ScriptToolCallItem): string {
+  if (!call.input) return call.args ?? '';
+  return getToolSummary(call.name, call.input) || summarizeToolInput(call.input);
+}
+
+function renderScriptToolCalls(container: HTMLElement, calls: ScriptToolCallItem[]): void {
+  container.createDiv({ cls: 'claudian-tool-script-label', text: 'Tool calls' });
+  const listEl = container.createEl('ul', { cls: 'claudian-tool-script-calls', attr: { 'aria-label': 'Tool calls' } });
+  for (const call of calls) {
+    const itemEl = listEl.createEl('li', { cls: 'claudian-tool-script-call' });
+    const statusEl = itemEl.createSpan({
+      cls: `claudian-tool-status status-${call.status}`,
+      attr: { role: 'img', 'aria-label': `Status: ${call.status}` },
+    });
+    const icon = SCRIPT_CALL_STATUS_ICONS[call.status];
+    if (icon) setIcon(statusEl, icon);
+    const summary = truncateText(getScriptToolCallSummary(call), 80);
+    itemEl.createSpan({ cls: 'claudian-tool-script-call-name', text: call.input ? getToolName(call.name, call.input) : call.name });
+    if (summary) {
+      itemEl.append(' ');
+      itemEl.createSpan({ cls: 'claudian-tool-script-call-detail', text: summary });
+    }
+    if (call.durationMs !== undefined) {
+      itemEl.append(' ');
+      itemEl.createSpan({ cls: 'claudian-tool-script-call-detail', text: formatScriptCallDuration(call.durationMs) });
+    }
+    if (call.error) {
+      itemEl.createDiv({ cls: 'claudian-tool-script-call-error', text: call.error });
+    }
+  }
+}
+
 function renderScriptContent(
   container: HTMLElement,
-  input: Record<string, unknown>,
-  result: string,
+  toolCall: ExpandedToolContent,
   initialText?: string,
 ): void {
-  const source = getScriptSource(input);
+  const source = getScriptSource(toolCall.input);
   if (source) {
-    container.createDiv({ cls: 'claudian-tool-script-label', text: getScriptLanguage(input) });
+    container.createDiv({ cls: 'claudian-tool-script-label', text: getScriptLanguage(toolCall.input) });
     const sourceEl = container.createEl('pre', { cls: 'claudian-tool-script-code' });
     sourceEl.createEl('code', { text: source });
   }
+  if (toolCall.scriptToolCalls?.length) {
+    renderScriptToolCalls(container, toolCall.scriptToolCalls);
+  }
+  const result = toolCall.result ?? '';
   container.createDiv({ cls: 'claudian-tool-script-label', text: 'Output' });
   if (result) {
     container.createEl('pre', { cls: 'claudian-tool-script-output', text: result });
   } else {
-    contentFallback(container, initialText ?? 'No result');
+    contentFallback(container, initialText ?? (toolCall.status === 'running' ? 'Running...' : 'No result'));
   }
 }
 
@@ -1261,7 +1315,7 @@ function renderToolContent(
   } else if (isAgentLifecycleTool(toolCall.name)) {
     renderAgentLifecycleExpanded(content, toolCall.result ?? '', toolCall.input, initialText);
   } else if (isScriptTool(toolCall.name)) {
-    renderScriptContent(content, toolCall.input, toolCall.result ?? '', initialText);
+    renderScriptContent(content, toolCall, initialText);
   } else if (toolCall.name === TOOL_BASH) {
     renderBashContent(content, toolCall.input, toolCall.result ?? '', initialText);
   } else if (initialText) {
