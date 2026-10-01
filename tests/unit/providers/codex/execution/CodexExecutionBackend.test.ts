@@ -126,6 +126,21 @@ function emitNotification(method: string, params: unknown): void {
   notificationHandlers.get(method)?.(params);
 }
 
+// Policies the app server derives from a config.toml with sandbox_workspace_write overrides.
+const CONFIGURED_WORKSPACE_WRITE_SANDBOX = {
+  type: 'workspaceWrite',
+  writableRoots: ['/configured/root'],
+  networkAccess: true,
+  excludeTmpdirEnvVar: false,
+  excludeSlashTmp: false,
+} as const;
+
+function configuredSandboxFor(mode: unknown) {
+  if (mode === 'danger-full-access') return { type: 'dangerFullAccess' };
+  if (mode === 'read-only') return { type: 'readOnly', networkAccess: false };
+  return CONFIGURED_WORKSPACE_WRITE_SANDBOX;
+}
+
 function createThreadResult(
   threadId: string,
   turns: Array<{
@@ -165,7 +180,7 @@ function createThreadResult(
     cwd: '/vault',
     approvalPolicy: 'never',
     approvalsReviewer: 'user',
-    sandbox: { type: 'readOnly', access: { type: 'fullAccess' }, networkAccess: false },
+    sandbox: CONFIGURED_WORKSPACE_WRITE_SANDBOX as Record<string, unknown>,
     reasoningEffort: 'medium',
   };
 }
@@ -397,21 +412,24 @@ async function createActiveSteerSession() {
 
 describe('CodexExecutionBackend', () => {
   it.each([
-    ['normal', 'workspace-write', 'on-request', 'user', 'workspaceWrite', 'workspace-write'],
-    ['auto-review', 'workspace-write', 'on-request', 'auto_review', 'workspaceWrite', 'workspace-write'],
-    ['yolo', 'danger-full-access', 'never', 'user', 'dangerFullAccess', 'workspace-write'],
-    ['auto-review', 'read-only', 'on-request', 'auto_review', 'readOnly', 'read-only'],
-    ['invalid', 'read-only', 'on-request', 'user', 'readOnly', 'corrupt'],
+    ['normal', 'workspace-write', 'on-request', 'user', undefined, 'workspace-write'],
+    ['auto-review', 'workspace-write', 'on-request', 'auto_review', undefined, 'workspace-write'],
+    ['yolo', 'danger-full-access', 'never', 'user', { type: 'dangerFullAccess' }, 'workspace-write'],
+    ['auto-review', 'read-only', 'on-request', 'auto_review', undefined, 'read-only'],
+    ['invalid', 'read-only', 'on-request', 'user', undefined, 'corrupt'],
   ])('sends the %s preset on thread start, resume, and every turn', async (
-    permissionMode, sandbox, approvalPolicy, approvalsReviewer, sandboxType, safeMode,
+    permissionMode, sandbox, approvalPolicy, approvalsReviewer, sandboxPolicy, safeMode,
   ) => {
     let turn = 0;
-    mockTransportRequest.mockImplementation(async (method: string) => {
+    let nativeSandbox: unknown;
+    mockTransportRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
       if (method === 'initialize') return {
         userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
       };
+      // A loaded thread keeps its policy on resume; only thread/start derives one from the mode.
+      if (method === 'thread/start') nativeSandbox = configuredSandboxFor(params.sandbox);
       if (method === 'thread/start' || method === 'thread/resume') return {
-        ...createThreadResult('thread-permissions'), approvalsReviewer,
+        ...createThreadResult('thread-permissions'), approvalsReviewer, sandbox: nativeSandbox,
       };
       if (method === 'turn/start') {
         const turnId = `turn-permissions-${++turn}`;
@@ -440,9 +458,11 @@ describe('CodexExecutionBackend', () => {
     }
     const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
     expect(turns).toHaveLength(2);
-    for (const [, params] of turns) expect(params).toEqual(expect.objectContaining({
-      approvalPolicy, approvalsReviewer, sandboxPolicy: expect.objectContaining({ type: sandboxType }),
-    }));
+    for (const [, params] of turns) {
+      expect(params).toEqual(expect.objectContaining({ approvalPolicy, approvalsReviewer }));
+      expect(params.sandboxPolicy).toEqual(sandboxPolicy);
+    }
+    expect(mockTransportRequest).not.toHaveBeenCalledWith('config/read', expect.anything());
     await session.dispose();
   });
 
@@ -494,11 +514,100 @@ describe('CodexExecutionBackend', () => {
     expect(mockTransportRequest.mock.calls.filter(([method]) => method === 'thread/start')).toHaveLength(1);
     const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
     expect(turns.map(([, params]) => params.approvalsReviewer)).toEqual(['user', 'auto_review']);
-    expect(turns[1][1]).toMatchObject({
-      approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite', networkAccess: false },
-    });
+    expect(turns[1][1]).toMatchObject({ approvalPolicy: 'on-request' });
+    expect(turns[1][1]).not.toHaveProperty('sandboxPolicy');
     expect(events.some(event => event.type === 'execution_error')).toBe(reject);
     expect(events.some(event => event.type === 'turn_started' && event.accepted)).toBe(!reject);
+    await session.dispose();
+  });
+
+  it.each([
+    ['yolo', 'workspace-write', 'normal', 'workspace-write', CONFIGURED_WORKSPACE_WRITE_SANDBOX, [{ cwd: '/vault' }]],
+    ['normal', 'workspace-write', 'normal', 'read-only', {
+      type: 'readOnly', access: { type: 'fullAccess' }, networkAccess: false,
+    }, []],
+    ['normal', 'read-only', 'normal', 'workspace-write', CONFIGURED_WORKSPACE_WRITE_SANDBOX, [{ cwd: '/vault' }]],
+  ])('restores the configured sandbox when a warm thread switches from %s/%s to %s/%s', async (
+    firstMode, firstSafeMode, nextMode, nextSafeMode, restoredPolicy, configReads,
+  ) => {
+    let turn = 0;
+    mockTransportRequest.mockImplementation(async (method: string, params: Record<string, unknown>) => {
+      if (method === 'initialize') return {
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+      };
+      if (method === 'thread/start') return {
+        ...createThreadResult('thread-sandbox-switch'), sandbox: configuredSandboxFor(params.sandbox),
+      };
+      if (method === 'config/read') return {
+        config: {
+          sandbox_mode: 'danger-full-access',
+          sandbox_workspace_write: {
+            writable_roots: ['/configured/root'],
+            network_access: true,
+            exclude_tmpdir_env_var: false,
+            exclude_slash_tmp: false,
+          },
+        },
+      };
+      if (method === 'turn/start') {
+        const turnId = `turn-sandbox-switch-${++turn}`;
+        queueMicrotask(() => completeTurn('thread-sandbox-switch', turnId));
+        return createTurnResult(turnId);
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const plugin = createPlugin();
+    const session = new CodexExecutionBackend(plugin).createSession(createSessionConfig());
+    const runWith = async (permissionMode: string, safeMode: string) => {
+      plugin.settings.providerConfigs.codex!.safeMode = safeMode;
+      const request = createRequest();
+      await collectEvents(session.execute({
+        ...request, configuration: { ...request.configuration, permissionMode },
+      }).events);
+    };
+    await runWith(firstMode, firstSafeMode);
+    await runWith(nextMode, nextSafeMode);
+    await runWith(nextMode, nextSafeMode);
+
+    const turns = mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start');
+    expect(turns).toHaveLength(3);
+    expect(turns[1][1].sandboxPolicy).toEqual(restoredPolicy);
+    expect(turns[2][1]).not.toHaveProperty('sandboxPolicy');
+    expect(mockTransportRequest.mock.calls.filter(([method]) => method === 'config/read')
+      .map(([, params]) => params)).toEqual(configReads);
+    await session.dispose();
+  });
+
+  it('sends the configured workspace-write sandbox when a fork child ignores the resume mode', async () => {
+    mockTransportRequest.mockImplementation(async (method: string) => {
+      if (method === 'initialize') return {
+        userAgent: 'test', codexHome: '/tmp/.codex', platformFamily: 'unix', platformOs: 'macos',
+      };
+      // thread/fork applies the config sandbox_mode, and resuming the loaded child keeps it.
+      if (method === 'thread/fork' || method === 'thread/resume') return {
+        ...createThreadResult('thread-fork-sandbox', [{ id: 'checkpoint' }]),
+        sandbox: { type: 'dangerFullAccess' },
+      };
+      if (method === 'config/read') return {
+        config: {
+          sandbox_workspace_write: { writable_roots: ['/configured/root'], network_access: true },
+        },
+      };
+      if (method === 'turn/start') {
+        queueMicrotask(() => completeTurn('thread-fork-sandbox', 'turn-fork-sandbox'));
+        return createTurnResult('turn-fork-sandbox');
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const session = new CodexExecutionBackend(createPlugin()).createSession(createForkSessionConfig());
+    await collectEvents(session.execute(createRequest()).events);
+
+    expect(mockTransportRequest).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
+      threadId: 'thread-fork-sandbox', sandbox: 'workspace-write',
+    }));
+    expect(mockTransportRequest).toHaveBeenCalledWith('turn/start', expect.objectContaining({
+      sandboxPolicy: CONFIGURED_WORKSPACE_WRITE_SANDBOX,
+    }));
     await session.dispose();
   });
 

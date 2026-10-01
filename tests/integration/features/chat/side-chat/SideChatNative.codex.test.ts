@@ -18,6 +18,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
   let ordinal = 0;
   const result = (id: string) => ({
     thread: { id, path: id === 'codex-child' ? null : sourceFile, ephemeral: id === 'codex-child', turns: (threads.get(id) ?? []).map(turnId => ({ id: turnId, items: [], status: 'completed' })) },
+    sandbox: { type: 'workspaceWrite' },
   });
   jest.mocked(spawn).mockImplementation(() => createNativeRPCProcess(async (method, params, notify) => {
     operations.push({ method, params });

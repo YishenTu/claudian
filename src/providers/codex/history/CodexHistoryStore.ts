@@ -1326,17 +1326,6 @@ export function deriveCodexSessionsRootFromSessionPath(
   return null;
 }
 
-export function deriveCodexMemoriesDirFromSessionsRoot(
-  sessionsDir: string | null | undefined,
-): string | null {
-  if (!sessionsDir) {
-    return null;
-  }
-
-  const pathModule = getPathModuleForSessionPath(sessionsDir);
-  return pathModule.join(pathModule.dirname(sessionsDir), 'memories');
-}
-
 export async function findCodexSessionFileAsync(
   threadId: string,
   root: string = path.join(os.homedir(), '.codex', 'sessions'),

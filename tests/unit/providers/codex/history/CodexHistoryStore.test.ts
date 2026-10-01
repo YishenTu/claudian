@@ -2,7 +2,6 @@ import { testDate, testTime } from '@test/helpers/testClock';
 import * as path from 'path';
 
 import {
-  deriveCodexMemoriesDirFromSessionsRoot,
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
   parseCodexSessionContent,
@@ -79,23 +78,17 @@ describe('CodexHistoryStore', () => {
   });
 
   describe('path helpers', () => {
-    it('derives transcript and memories roots from POSIX session paths', () => {
+    it('derives transcript roots from POSIX session paths', () => {
       const sessionFilePath = '/home/user/.codex/sessions/2026/04/14/rollout-thread.jsonl';
 
       expect(deriveCodexSessionsRootFromSessionPath(sessionFilePath)).toBe('/home/user/.codex/sessions');
-      expect(deriveCodexMemoriesDirFromSessionsRoot('/home/user/.codex/sessions')).toBe(
-        '/home/user/.codex/memories',
-      );
     });
 
-    it('derives transcript and memories roots from WSL UNC session paths', () => {
+    it('derives transcript roots from WSL UNC session paths', () => {
       const sessionFilePath = '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions\\2026\\04\\14\\rollout-thread.jsonl';
 
       expect(deriveCodexSessionsRootFromSessionPath(sessionFilePath)).toBe(
         '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions',
-      );
-      expect(deriveCodexMemoriesDirFromSessionsRoot('\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions')).toBe(
-        '\\\\wsl$\\Ubuntu\\home\\user\\.codex\\memories',
       );
     });
   });

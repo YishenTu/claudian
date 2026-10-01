@@ -79,7 +79,6 @@ function createHostRuntimeContext(
     codexHomeHost: path.join(home, '.codex'),
     sessionsDirTarget: path.join(home, '.codex', 'sessions'),
     sessionsDirHost: path.join(home, '.codex', 'sessions'),
-    memoriesDirTarget: path.join(home, '.codex', 'memories'),
   };
 }
 

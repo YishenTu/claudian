@@ -39,7 +39,6 @@ import {
   buildPromptWithHistoryContext,
 } from '../../../utils/session';
 import {
-  deriveCodexMemoriesDirFromSessionsRoot,
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
 } from '../history/CodexHistoryStore';
@@ -57,6 +56,8 @@ import {
   resolveCodexAppServerLaunchSpec,
 } from '../runtime/codexAppServerSupport';
 import type {
+  ConfigReadParams,
+  ConfigReadResult,
   ItemCompletedNotification,
   SandboxPolicy,
   ServerRequestResolvedNotification,
@@ -129,7 +130,8 @@ interface CodexPolicy {
   readonly approvalPolicy: string;
   readonly approvalsReviewer: string;
   readonly sandbox: string;
-  readonly sandboxPolicy: SandboxPolicy;
+  /** Config-independent policy; config-derived modes leave the policy to Codex. */
+  readonly sandboxPolicy?: SandboxPolicy;
 }
 
 interface CodexInputBundle {
@@ -276,6 +278,8 @@ export class CodexExecutionSession
 
   private threadId: string | null;
   private loadedThreadId: string | null = null;
+  /** Sandbox mode in effect on the loaded thread; turn/start overrides persist across turns. */
+  private loadedThreadSandbox: string | null = null;
   private loadedThreadBaseInstructions: string | null = null;
   private supportsApprovalReviewer = false;
   private sessionFilePath: string | null;
@@ -570,6 +574,9 @@ export class CodexExecutionSession
         },
       };
 
+      const sandboxPolicy = await this.#resolveTurnSandboxPolicy(policy);
+      if (!this.#isRunCurrent(run, generation)) return;
+
       const result = await this.transport!.request<TurnStartResult>('turn/start', {
         threadId: thread.threadId,
         input: bundle.input,
@@ -580,9 +587,10 @@ export class CodexExecutionSession
         effort,
         summary: getEffectiveCodexReasoningSummary(settings, model),
         personality: getCodexProviderSettings(settings).responseStyle,
-        sandboxPolicy: policy.sandboxPolicy,
+        ...(sandboxPolicy ? { sandboxPolicy } : {}),
         collaborationMode,
       });
+      this.loadedThreadSandbox = policy.sandbox;
       this.#markNativeConversationContextEstablished(run);
       if (!this.#isRunCurrent(run, generation)) return;
       this.#observeNativeTurn(thread.threadId, result.turn.id);
@@ -1149,6 +1157,7 @@ export class CodexExecutionSession
       this.#recordApprovalReviewer(result, policy.approvalsReviewer);
       this.subagents.seed(result.thread);
       this.loadedThreadId = result.thread.id;
+      this.loadedThreadSandbox = sandboxModeOf(result.sandbox);
       this.loadedThreadBaseInstructions = baseInstructions;
       return {
         threadId: result.thread.id,
@@ -1194,6 +1203,7 @@ export class CodexExecutionSession
     );
     this.#recordApprovalReviewer(result, policy.approvalsReviewer);
     this.loadedThreadId = result.thread.id;
+    this.loadedThreadSandbox = sandboxModeOf(result.sandbox);
     this.loadedThreadBaseInstructions = baseInstructions;
     this.workspaceDependencyToolVersion = dynamicTools.some(spec =>
       spec.namespace === CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE
@@ -1320,6 +1330,7 @@ export class CodexExecutionSession
 
     this.#recordApprovalReviewer(resumeResult, policy.approvalsReviewer);
     this.loadedThreadId = target.threadId;
+    this.loadedThreadSandbox = sandboxModeOf(resumeResult.sandbox);
     this.loadedThreadBaseInstructions = baseInstructions;
     const checkpointIndex = resumeResult.thread.turns.findIndex(
       turn => turn.id === fork.resumeAt,
@@ -1368,6 +1379,7 @@ export class CodexExecutionSession
       { threadId: fork.sessionId, ...overrides },
     ).then((forkResult) => {
       this.#recordApprovalReviewer(forkResult, overrides.approvalsReviewer);
+      this.loadedThreadSandbox = sandboxModeOf(forkResult.sandbox);
       const threadId = normalizeString(forkResult.thread.id);
       if (!threadId) {
         throw new Error('Codex CLI fork did not return a child thread ID.');
@@ -1636,6 +1648,7 @@ export class CodexExecutionSession
     this.runtimeContext = null;
     this.subagents.clear();
     this.loadedThreadId = null;
+    this.loadedThreadSandbox = null;
     this.loadedThreadBaseInstructions = null;
     this.supportsApprovalReviewer = false;
     this.dynamicToolRegistry = new CodexDynamicToolRegistry();
@@ -1921,34 +1934,27 @@ export class CodexExecutionSession
       ?? 'auto-review';
     const safeMode = getCodexProviderSettings(settings).safeMode;
     const sandboxConfig = resolveCodexSandboxConfig(permissionMode, safeMode);
-    return {
-      ...sandboxConfig,
-      sandboxPolicy: sandboxConfig.sandbox === 'danger-full-access'
-        ? { type: 'dangerFullAccess' }
-        : sandboxConfig.sandbox === 'read-only'
-          ? strictReadOnlySandbox()
-          : this.#buildWorkspaceWriteSandboxPolicy(),
-    };
+    return sandboxConfig.sandbox === 'danger-full-access'
+      ? { ...sandboxConfig, sandboxPolicy: { type: 'dangerFullAccess' } }
+      : sandboxConfig;
   }
 
-  #buildWorkspaceWriteSandboxPolicy(): SandboxPolicy {
-    const transcriptRoot = this.#resolveTranscriptRootTarget();
-    const memoriesDir = deriveCodexMemoriesDirFromSessionsRoot(transcriptRoot)
-      ?? this.runtimeContext?.memoriesDirTarget
-      ?? null;
-    const roots = [
-      this.#resolveTargetWorkingDirectory(),
-      memoriesDir,
-      this.#mapHostPathToTarget(os.tmpdir()),
-      this.launchSpec?.target.platformFamily === 'unix' ? '/tmp' : null,
-    ].filter((value): value is string => Boolean(value?.trim()));
+  async #resolveTurnSandboxPolicy(policy: CodexPolicy): Promise<SandboxPolicy | undefined> {
+    if (policy.sandboxPolicy) return policy.sandboxPolicy;
+    if (this.loadedThreadSandbox === policy.sandbox) return undefined;
+    // turn/start cannot select a mode, and resuming a loaded thread ignores one, so a mode
+    // switch must restore the policy Codex derives from the user's config for that mode.
+    if (policy.sandbox !== 'workspace-write') return strictReadOnlySandbox();
+    const { config } = await this.transport!.request<ConfigReadResult>('config/read', {
+      cwd: this.#resolveTargetWorkingDirectory(),
+    } satisfies ConfigReadParams);
+    const configured = config.sandbox_workspace_write;
     return {
       type: 'workspaceWrite',
-      writableRoots: [...new Set(roots)],
-      readOnlyAccess: { type: 'fullAccess' },
-      networkAccess: false,
-      excludeTmpdirEnvVar: false,
-      excludeSlashTmp: false,
+      writableRoots: configured?.writable_roots ?? [],
+      networkAccess: configured?.network_access ?? false,
+      excludeTmpdirEnvVar: configured?.exclude_tmpdir_env_var ?? false,
+      excludeSlashTmp: configured?.exclude_slash_tmp ?? false,
     };
   }
 
@@ -2103,15 +2109,6 @@ export class CodexExecutionSession
       ?? deriveCodexSessionsRootFromSessionPath(this.sessionFilePath);
   }
 
-  #resolveTranscriptRootTarget(): string | null {
-    if (this.runtimeContext?.sessionsDirTarget) {
-      return this.runtimeContext.sessionsDirTarget;
-    }
-    if (!this.sessionFilePath) return null;
-    const targetPath = this.#mapHostPathToTarget(this.sessionFilePath);
-    return deriveCodexSessionsRootFromSessionPath(targetPath);
-  }
-
   #discoverSessionFile(): void {
     const threadId = this.threadId;
     if (
@@ -2209,6 +2206,15 @@ function resolveCodexSandboxConfig(
     approvalsReviewer: permissionMode === 'auto-review' ? 'auto_review' : 'user',
     sandbox: safeMode,
   };
+}
+
+function sandboxModeOf(policy: SandboxPolicy | undefined): string | null {
+  switch (policy?.type) {
+    case 'dangerFullAccess': return 'danger-full-access';
+    case 'workspaceWrite': return 'workspace-write';
+    case 'readOnly': return 'read-only';
+    default: return null;
+  }
 }
 
 function strictReadOnlySandbox(): SandboxPolicy {

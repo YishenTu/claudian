@@ -56,7 +56,6 @@ describe('createCodexRuntimeContext', () => {
     expect(context.codexHomeHost).toBe('\\\\wsl$\\Ubuntu\\home\\user\\.codex');
     expect(context.sessionsDirTarget).toBe('/home/user/.codex/sessions');
     expect(context.sessionsDirHost).toBe('\\\\wsl$\\Ubuntu\\home\\user\\.codex\\sessions');
-    expect(context.memoriesDirTarget).toBe('/home/user/.codex/memories');
   });
 
   it('fails fast when initialize platform metadata does not match the selected target', () => {
@@ -85,7 +84,6 @@ describe('createCodexRuntimeContext', () => {
     expect(context.codexHomeHost).toBe('/Users/test/.codex');
     expect(context.sessionsDirTarget).toBe('/Users/test/.codex/sessions');
     expect(context.sessionsDirHost).toBe('/Users/test/.codex/sessions');
-    expect(context.memoriesDirTarget).toBe('/Users/test/.codex/memories');
   });
 
   it('keeps transcript roots nullable when initialize omits codexHome for WSL targets', () => {
@@ -102,6 +100,5 @@ describe('createCodexRuntimeContext', () => {
     expect(context.codexHomeHost).toBeNull();
     expect(context.sessionsDirTarget).toBeNull();
     expect(context.sessionsDirHost).toBeNull();
-    expect(context.memoriesDirTarget).toBeNull();
   });
 });
