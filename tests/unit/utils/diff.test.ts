@@ -204,6 +204,31 @@ describe('extractDiffData', () => {
     expect(result!.stats).toEqual({ added: 1, removed: 1 });
   });
 
+  it('keeps hunk lines whose content starts like a file header', () => {
+    const toolCall = makeToolCall('Edit', { file_path: 'query.sql' });
+    const diff = [
+      'Index: query.sql',
+      '===================================================================',
+      '--- query.sql',
+      '+++ query.sql',
+      '@@ -1,2 +1,2 @@',
+      '--- old comment',
+      '+++ new comment',
+      ' SELECT 1;',
+      '\\ No newline at end of file',
+      '',
+    ].join('\n');
+
+    const result = extractDiffData({ diff }, toolCall);
+
+    expect(result!.diffLines).toEqual([
+      { type: 'delete', text: '-- old comment', oldLineNum: 1 },
+      { type: 'insert', text: '++ new comment', newLineNum: 1 },
+      { type: 'equal', text: 'SELECT 1;', oldLineNum: 2, newLineNum: 2 },
+    ]);
+    expect(result!.stats).toEqual({ added: 1, removed: 1 });
+  });
+
   it('returns replacement diff data from ACP old and new text', () => {
     const toolCall = makeToolCall('Write', {
       content: 'new first\nnew second',
