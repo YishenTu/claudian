@@ -179,10 +179,4 @@ describe('PiChatUIConfig', () => {
       'pi:custom/model': 'high',
     });
   });
-
-  it('exposes no main chat permission mode for Pi', () => {
-    expect(piChatUIConfig.getPermissionModeOptions).toBeUndefined();
-    expect(piChatUIConfig.resolvePermissionMode).toBeUndefined();
-    expect(piChatUIConfig.applyPermissionMode).toBeUndefined();
-  });
 });

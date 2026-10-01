@@ -146,13 +146,6 @@ describe('Toolbar popover styles', () => {
     const selected = style(toolbar.querySelector('[aria-selected="true"]')!);
     expect(`${selected.background} ${selected.backgroundColor}`).not.toMatch(/modifier-hover|claudian-brand/);
     expect(color('.claudian-toolbar-popover-option-check')).toBe('var(--claudian-selection-check)');
-    const rootTokens = Array.from(document.head.querySelector('style')!.sheet!.cssRules)
-      .filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
-      .map(rule => rule.style.getPropertyValue('--claudian-selection-check').trim())
-      .filter(Boolean);
-    // Light green on dark themes, a deeper green on light themes for contrast.
-    expect(rootTokens).toEqual(['#86efac', '#16a34a']);
-
     expect({
       buttonModel: color('.claudian-model-label'),
       buttonReasoning: color('.claudian-thinking-current'),

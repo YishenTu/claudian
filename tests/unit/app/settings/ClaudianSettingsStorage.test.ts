@@ -321,7 +321,6 @@ describe('ClaudianSettingsStorage', () => {
 
     it.each([
       ['missing', {}, true],
-      ['invalid', { enableZenMode: 'yes' }, true],
       ['disabled', { enableZenMode: false }, false],
       ['enabled', { enableZenMode: true }, true],
     ])('loads a %s zen mode preference', async (_label, stored, expected) => {
@@ -341,8 +340,9 @@ describe('ClaudianSettingsStorage', () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({ enableZenMode: 'yes' }));
 
-      await storage.load();
+      const result = await storage.load();
 
+      expect(result.enableZenMode).toBe(true);
       expect(JSON.parse(mockAdapter.write.mock.calls.at(-1)![1]).enableZenMode).toBe(true);
     });
 

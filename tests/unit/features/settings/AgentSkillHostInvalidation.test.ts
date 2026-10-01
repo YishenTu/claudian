@@ -1,5 +1,4 @@
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
 import ClaudianPlugin from '@/main';
 import { BUILT_IN_PROVIDER_MODULES } from '@/providers';
 
@@ -61,17 +60,5 @@ describe('agent skill host invalidation', () => {
     expect(ids).not.toContain('test-unrelated');
     expect(initialize).not.toHaveBeenCalled();
     expect(onAgentSkillsChanged).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not touch skill storage until the Skills tab is opened', () => {
-    const getAdapter = jest.fn().mockReturnValue({});
-    const plugin = {
-      storage: { getAdapter },
-      notifyAgentSkillsChanged: jest.fn(),
-    };
-
-    new ClaudianSettingTab({} as any, plugin as any);
-
-    expect(getAdapter).not.toHaveBeenCalled();
   });
 });

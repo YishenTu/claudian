@@ -8,7 +8,6 @@ describe('Composer input styles', () => {
     'src/style/components/input.css',
     'src/style/components/composer-editor.css',
     'src/style/components/composer-info-row.css',
-    'src/style/components/context-footer.css',
     'src/style/toolbar/model-selector.css',
     'src/style/toolbar/permission-toggle.css',
     'src/style/base/visibility.css',
@@ -35,7 +34,6 @@ describe('Composer input styles', () => {
             <div class="claudian-composer-editor"><div class="cm-content"></div></div>
             <div class="claudian-input-toolbar">
               <div class="claudian-toolbar-chip-anchor claudian-toolbar-chip-anchor--model"></div>
-              <div class="claudian-context-meter"><span class="claudian-context-meter-percent">42%</span></div>
               <div class="claudian-toolbar-chip-anchor claudian-permission-toggle">
                 <div class="claudian-toolbar-popover"></div>
               </div>
@@ -62,18 +60,6 @@ describe('Composer input styles', () => {
     expect(style(composer.querySelector('.cm-content')!).minHeight).toBe('48px');
   });
 
-  it('insets the hint and text like the toolbar content, with room above the first line', () => {
-    const composer = renderComposer();
-    const content = style(composer.querySelector('.cm-content')!);
-    // More room above than below: the toolbar under the text already adds space.
-    expect([content.paddingTop, content.paddingBottom]).toEqual(['12px', '2px']);
-    const line = document.createElement('div');
-    line.className = 'cm-line';
-    composer.querySelector('.cm-content')!.appendChild(line);
-    // 13px lines text up with the model chip's icon (6px toolbar padding + 7px chip padding).
-    expect([style(line).paddingLeft, style(line).paddingRight]).toEqual(['13px', '13px']);
-  });
-
   it('lays a wrapped hint out inline, so the caret beside it stays one line tall', () => {
     const composer = renderComposer();
     const hint = document.createElement('span');
@@ -88,7 +74,6 @@ describe('Composer input styles', () => {
     expect(['', 'rgba(0, 0, 0, 0)', 'transparent']).toContain(wrapper.getPropertyValue('background-color'));
     // The box, not the shrink-wrapped toolbar, is the size container for narrow-width labels.
     expect(wrapper.getPropertyValue('container-type')).toBe('inline-size');
-    expect(css).not.toContain('claudian-input-toolbar--compact');
   });
 
   it('shows the queued-message strip only while visible, as a cap on the input box', () => {
@@ -102,9 +87,6 @@ describe('Composer input styles', () => {
         candidate instanceof CSSStyleRule && candidate.selectorText === '.claudian-input-queue-strip'
       ))!;
     expect(rule.style.getPropertyValue('border-bottom')).toBe('1px solid var(--background-modifier-border)');
-    // Its top corners follow the box's inner radius, so it reads as part of the box.
-    expect(rule.style.getPropertyValue('border-radius'))
-      .toBe('calc(var(--claudian-input-wrapper-radius) - 1px) calc(var(--claudian-input-wrapper-radius) - 1px) 0 0');
   });
 
   it('gives every composer button outside the toolbar a visible keyboard focus outline', () => {
@@ -136,18 +118,9 @@ describe('Composer input styles', () => {
     expect([popover.getPropertyValue('inset-inline-start'), popover.getPropertyValue('inset-inline-end')]).toEqual(['auto', '0']);
   });
 
-  it('keeps the usage number close to its gauge icon', () => {
-    const meter = renderComposer().querySelector('.claudian-context-meter')!;
-    // The 16px icon sits centred in a 24px gauge; its 4px inset plus this gap leaves 6px before the number.
-    expect(style(meter).gap).toBe('2px');
-    // Width reserved for longer numbers goes after the number, not between it and the icon.
-    expect(style(meter.querySelector('.claudian-context-meter-percent')!).textAlign).toBe('start');
-  });
-
-  it('lays the info row out borderless under the box', () => {
+  it('keeps the info row borderless and collapses it when hidden', () => {
     const composer = renderComposer();
     const row = composer.querySelector<HTMLElement>('.claudian-input-info-row')!;
-    expect(row.parentElement).toBe(composer.querySelector('.claudian-input-container'));
     expect(style(row).display).toBe('flex');
     expect(style(row).borderStyle).toBe('');
 

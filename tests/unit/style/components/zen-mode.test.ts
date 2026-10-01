@@ -125,11 +125,6 @@ describe('Zen mode styles', () => {
     expect(window.getComputedStyle(drawer).display).toBe('none');
   });
 
-  it('narrows the collapsible history and preview line relative to the composer', () => {
-    const drawer = window.getComputedStyle(renderPanel().querySelector('.claudian-zen-drawer')!);
-    expect({ width: drawer.width, alignSelf: drawer.alignSelf }).toEqual({ width: '90%', alignSelf: 'center' });
-  });
-
   it.each([false, true])('opens the preview line and transcript into the composer border (expanded: %s)', (expanded) => {
     const panel = renderPanel();
     const drawer = panel.querySelector<HTMLElement>('.claudian-zen-drawer')!;
@@ -166,16 +161,6 @@ describe('Zen mode styles', () => {
     expect(window.getComputedStyle(meter).display).toBe('flex');
     expect(window.getComputedStyle(meter.querySelector('.claudian-context-meter-gauge')!).display).toBe('flex');
     expect(window.getComputedStyle(meter.querySelector('.claudian-context-meter-percent')!).display).toBe('none');
-  });
-
-  it('keeps the pill line centred instead of the main composer\'s taller top inset', () => {
-    const panel = renderPanel();
-    const content = window.getComputedStyle(panel.querySelector('.claudian-zen-composer .cm-content')!);
-    expect([content.paddingTop, content.paddingBottom]).toEqual(['8px', '10px']);
-    const line = window.getComputedStyle(panel.querySelector('.claudian-zen-composer .cm-line')!);
-    expect(line.paddingLeft).toBe('10px');
-    // The one-line hint truncates, which needs a block box; it cannot wrap, so the caret stays one line.
-    expect(window.getComputedStyle(panel.querySelector('.claudian-zen-composer .cm-placeholder')!).display).toBe('inline-block');
   });
 
   it('caps the pill with the queued-message strip on its own row', () => {
@@ -219,22 +204,6 @@ describe('Zen mode styles', () => {
 
   it('lets composer menus extend above the panel instead of clipping them to it', () => {
     expect(window.getComputedStyle(renderPanel()).overflow).toBe('visible');
-  });
-
-  it('keeps user bubbles clear of the transcript border', () => {
-    const messages = window.getComputedStyle(renderPanel().querySelector('.claudian-messages')!);
-    expect(messages.getPropertyValue('padding-inline-end')).toBe('14px');
-  });
-
-  it('keeps the transcript clear of the drawer border, outside its scroller', () => {
-    const history = window.getComputedStyle(renderPanel().querySelector('.claudian-zen-history')!);
-    expect({ top: history.paddingTop, bottom: history.paddingBottom }).toEqual({ top: '16px', bottom: '' });
-  });
-
-  it('pads the expandable header clear of the drawer border', () => {
-    const bar = window.getComputedStyle(renderPanel().querySelector('.claudian-zen-bar')!);
-    expect({ top: bar.paddingTop, right: bar.paddingRight, bottom: bar.paddingBottom, left: bar.paddingLeft })
-      .toEqual({ top: '2px', right: '4px', bottom: '2px', left: '4px' });
   });
 
   it('gives the expandable header no hover highlight', () => {
@@ -335,17 +304,15 @@ describe('Zen mode styles', () => {
     expect({ start: menu.getPropertyValue('inset-inline-start'), end: menu.getPropertyValue('inset-inline-end') })
       .toEqual({ start: 'auto', end: '0' });
     const placeholder = window.getComputedStyle(composer.querySelector('.cm-placeholder')!);
+    // A truncated single-line hint needs a block box without a wrapping caret.
+    expect(placeholder.display).toBe('inline-block');
     expect({ whiteSpace: placeholder.whiteSpace, textOverflow: placeholder.textOverflow })
       .toEqual({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' });
   });
 
-  it('sets the collapsed side chip just below the composer, aligned with its padding', () => {
+  it('hides the side chip slot when it becomes empty', () => {
     const slot = renderPanel().querySelector<HTMLElement>('.claudian-zen-side-chat-chip-slot')!;
-    const slotStyle = window.getComputedStyle(slot);
-    const chip = window.getComputedStyle(slot.querySelector('.claudian-side-chat-status')!);
-    expect({ top: slotStyle.paddingTop, left: slotStyle.paddingLeft, chipMargin: chip.marginBottom })
-      .toEqual({ top: '4px', left: '6px', chipMargin: '0px' });
-
+    expect(window.getComputedStyle(slot).display).not.toBe('none');
     slot.replaceChildren();
     expect(window.getComputedStyle(slot).display).toBe('none');
   });

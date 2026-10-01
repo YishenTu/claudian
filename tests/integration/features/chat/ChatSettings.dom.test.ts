@@ -201,7 +201,8 @@ it.each(modelCatalogCases.flatMap(entry => [true, false].map(advertisesHigh => (
       const tab = await createTab();
       expect(getChatSettingsSnapshot(settings, id, selected).reasoning).toBe('high');
       expect(settings).not.toHaveProperty('reasoning');
-      expect(within(tab.dom.inputComposerEl).queryByText('Default', { selector: '.claudian-thinking-gear' })).toBeNull();
+      const permissionButton = within(tab.dom.inputComposerEl).queryByRole('button', { name: /^Permission mode:/ });
+      expect(permissionButton !== null).toBe(id !== 'pi');
       for (const reasoning of ['high', 'low']) {
         if (reasoning !== 'high') await selectReasoning(tab, reasoning);
         await expectSubmission(tab, sessions, getChatSettingsSnapshot(settings, id, selected).model, reasoning);
@@ -247,7 +248,7 @@ it('displays and submits High for a saved OpenCode Default preference', async ()
   const { createTab, sessions, tabs } = createChatHarness(settings, entry.id, entry.selected);
   try {
     const tab = await createTab();
-    expect(within(tab.dom.inputComposerEl).queryByText('Default', { selector: '.claudian-thinking-gear' })).toBeNull();
+    expect(reasoningStops(tab)).not.toContain('Default');
     await expectSubmission(tab, sessions, entry.selected, 'high');
   } finally {
     for (const tab of tabs) await destroyTab(tab);

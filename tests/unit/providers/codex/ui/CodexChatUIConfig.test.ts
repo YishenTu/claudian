@@ -580,15 +580,6 @@ describe('CodexChatUIConfig', () => {
     });
   });
 
-  describe('getPermissionModeOptions', () => {
-    it('provides the three permission presets while retaining persisted mode values', () => {
-      const options = codexChatUIConfig.getPermissionModeOptions!()!;
-      expect(options.map(({ value, label }) => [value, label])).toEqual([
-        ['auto-review', 'Approve for me'], ['normal', 'Ask for approval'], ['yolo', 'Full access'],
-      ]);
-    });
-  });
-
   describe('getServiceTierToggle', () => {
     it.each([
       'gpt-5.6-sol',

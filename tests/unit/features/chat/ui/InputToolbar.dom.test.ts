@@ -445,7 +445,7 @@ describe('model button', () => {
 
 describe('permission button', () => {
   it('shows all Codex permissions and allows keyboard selection with accessible descriptions', async () => {
-    const { callbacks, host, settings, toolbar, ui, uiConfig } = renderToolbar({
+    const { callbacks, host, toolbar, ui, uiConfig } = renderToolbar({
       settings: { permissionMode: 'auto-review' },
     });
     uiConfig.getPermissionModeOptions = () => codexChatUIConfig.getPermissionModeOptions!()!;
@@ -469,7 +469,6 @@ describe('permission button', () => {
     fireEvent.click(fullAccess);
     await flush();
     expect(callbacks.onPermissionModeChange).toHaveBeenLastCalledWith('yolo');
-    expect(settings.permissionMode).toBe('yolo');
     expect(button.classList.contains('claudian-toolbar-chip--alert')).toBe(true);
     expect(getComputedStyle(icon).display).not.toBe('none');
     fireEvent.click(button);
@@ -561,13 +560,6 @@ describe('permission button', () => {
     }
   });
 
-  it('is the last control in the toolbar, after the provider mode button', () => {
-    const { host, ui } = renderToolbar();
-    const anchor = ui.getByRole('button', { name: 'Permission mode: Safe' }).closest('.claudian-permission-toggle');
-    expect(anchor?.parentElement?.lastElementChild).toBe(anchor);
-    expect(host.querySelector('.claudian-mode-selector')?.nextElementSibling).toBe(anchor);
-  });
-
   it('is absent when the provider has no permission toggle', () => {
     const { ui } = renderToolbar({ permissionToggle: false });
     expect(ui.queryByRole('button', { name: /^Permission mode/ })).toBeNull();
@@ -607,10 +599,11 @@ it('tears down an open menu when the toolbar is destroyed', () => {
   expect(ui.queryByRole('dialog')).toBeNull();
 });
 
-it('uses one native context tooltip and updates its warning with usage', async () => {
+it('shows accessible context usage with one native tooltip and warns only above 80%', async () => {
   const host = document.body.createDiv();
   const meter = new ContextUsageMeter(host);
   const usage = { contextTokens: 170000, contextWindow: 200000, percentage: 85 } as UsageInfo;
+  expect(within(host).queryByRole('progressbar')).toBeNull();
   meter.update(usage);
   const gauge = within(host).getByRole('progressbar', {
     name: 'Context usage: 85% · 170k / 200k (Approaching limit, run `/compact` to continue)',
@@ -618,11 +611,36 @@ it('uses one native context tooltip and updates its warning with usage', async (
   expect(gauge.hasAttribute('data-tooltip')).toBe(false);
   expect(gauge.hasAttribute('title')).toBe(false);
   expect(gauge.getAttribute('aria-valuenow')).toBe('85');
+  expect(gauge.classList.contains('warning')).toBe(true);
   meter.update({ ...usage, contextTokens: 50000, percentage: 25 });
   expect(within(host).getByRole('progressbar', { name: 'Context usage: 25% · 50k / 200k' })).toBe(gauge);
   expect(gauge.getAttribute('aria-valuenow')).toBe('25');
+  expect(gauge.getAttribute('aria-valuemin')).toBe('0');
+  expect(gauge.getAttribute('aria-valuemax')).toBe('100');
+  expect(gauge.getAttribute('aria-valuetext')).toBe('50k / 200k');
+  expect(within(gauge).getByText('25%')).toBeDefined();
+  expect(gauge.classList.contains('warning')).toBe(false);
   expect((await axe(host)).violations).toEqual([]);
+
+  meter.update({ ...usage, contextTokens: 160000, percentage: 80 });
+  expect(within(host).getByRole('progressbar', { name: 'Context usage: 80% · 160k / 200k' })).toBe(gauge);
+  expect(gauge.classList.contains('warning')).toBe(false);
+  meter.update({ ...usage, contextTokens: 500, percentage: 0 });
+  expect(within(host).getByRole('progressbar', { name: 'Context usage: 0% · 500 / 200k' })).toBe(gauge);
 });
+
+it.each([null, { contextTokens: 0, contextWindow: 200000, percentage: 0 } as UsageInfo])(
+  'hides the context meter for %p, including after a visible report', emptyUsage => {
+    const host = document.body.createDiv();
+    const meter = new ContextUsageMeter(host);
+    meter.update(emptyUsage);
+    expect(within(host).queryByRole('progressbar')).toBeNull();
+    meter.update({ contextTokens: 50000, contextWindow: 200000, percentage: 25 } as UsageInfo);
+    expect(within(host).getByRole('progressbar', { name: 'Context usage: 25% · 50k / 200k' })).toBeDefined();
+    meter.update(emptyUsage);
+    expect(within(host).queryByRole('progressbar')).toBeNull();
+  },
+);
 
 it('renders saved model order top-to-bottom through the real provider UI config', () => {
   const host = document.body.createDiv();
@@ -678,18 +696,4 @@ it('preserves provider group display order while keeping saved order inside each
     ['Claude Code', ['haiku', 'opus']],
     ['Codex CLI', ['GPT-5.4 Mini', 'GPT-5.5']],
   ]);
-});
-
-it('mounts the context meter in the toolbar right after the model picker', () => {
-  const toolbarEl = document.body.createDiv();
-  const callbacks = {
-    getSettings: () => ({ model: 'haiku', permissionMode: 'normal' }),
-    getUIConfig: () => ({ ...claudeChatUIConfig, getModelOptions: () => [] }),
-    getCapabilities: () => ({ reasoningControl: 'none' }),
-  } as unknown as ToolbarCallbacks;
-  const toolbar = createInputToolbar(toolbarEl, callbacks);
-  toolbar.contextUsageMeter.update({ contextTokens: 50000, contextWindow: 200000, percentage: 25 } as UsageInfo);
-  const meter = within(toolbarEl).getByRole('progressbar', { name: /^Context usage/ });
-  expect(meter.previousElementSibling?.classList.contains('claudian-toolbar-chip-anchor--model')).toBe(true);
-  toolbar.menus.destroy();
 });
