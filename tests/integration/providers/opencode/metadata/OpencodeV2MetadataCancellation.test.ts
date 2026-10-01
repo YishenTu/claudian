@@ -99,8 +99,9 @@ it('cancels one polling reader without stopping another or publishing its stale 
     const other = service.loadCatalog();
     await waitUntil(() => existsSync(fixture.environment.ENDPOINT_FILE! + '.read'));
     controller.abort();
-    await expect(cancelled).resolves.toBe(false);
+    // The survivor's poll is bounded in real time, so the update must not wait on cancellation cleanup.
     fixture.writeCatalog('Updated Chat');
+    await expect(cancelled).resolves.toBe(false);
     await expect(other).resolves.toBe(true);
     expect(getOpencodeProviderSettings(plugin.settings).discoveredModels).toEqual([
       { rawId: 'deepseek/chat', label: 'deepseek/Updated Chat' },
