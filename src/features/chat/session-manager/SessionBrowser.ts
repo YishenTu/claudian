@@ -611,9 +611,11 @@ export class SessionBrowser {
     const isPinnedLinkedContent = contentPath
       ? options.pinnedLinkedContentPaths?.has(contentPath) ?? false
       : false;
+    const isArchivedView = options.sessionActionMode === 'archived';
     const canToggleLinkedContentPin = !!(
       contentPath
       && onSetLinkedContentPinned
+      && !isArchivedView
       && (section.kind === 'content' || section.kind === 'missing' || isPinnedLinkedContent)
     );
     const canArchiveLinkedContentSessions = !!(
@@ -621,9 +623,10 @@ export class SessionBrowser {
       && onSetConversationsArchived
       && options.sessionActionMode === 'active'
     );
+    const canDeleteLinkedContentSessions = !!contentPath && isArchivedView;
     if (
       contentPath
-      && (canToggleLinkedContentPin || canArchiveLinkedContentSessions)
+      && (canToggleLinkedContentPin || canArchiveLinkedContentSessions || canDeleteLinkedContentSessions)
     ) {
       groupHeader.addEventListener('contextmenu', (event) => {
         event.preventDefault();
@@ -650,6 +653,18 @@ export class SessionBrowser {
             onSetConversationsArchived,
             'Failed to archive Linked content sessions',
           );
+        }
+        if (canDeleteLinkedContentSessions) {
+          const ids = linkedContentConversations.map(conversation => conversation.id);
+          menu.addItem(menuItem => menuItem
+            .setTitle('Delete all sessions')
+            .setDisabled(ids.length === 0)
+            .onClick(() => {
+              runConversationAction(
+                () => this.#deleteHistoryConversations(ids, options),
+                'Failed to delete Linked content sessions',
+              );
+            }));
         }
         menu.showAtMouseEvent(event);
       });
