@@ -1,0 +1,11 @@
+{
+  "worktree": {
+    "setup": "f=\"$PASEO_SOURCE_CHECKOUT_PATH/.context/paseo-setup.sh\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\"",
+    "teardown": "f=\"$PASEO_SOURCE_CHECKOUT_PATH/.context/paseo-teardown.sh\"; [ -f \"$f\" ] || exit 0; exec bash \"$f\""
+  },
+  "scripts": {
+    "build": {
+      "command": "npm run build"
+    }
+  }
+}
