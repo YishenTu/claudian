@@ -436,6 +436,24 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
     expect(lines(block)).toEqual(['exit: 3', 'finished']);
   });
 
+  it('labels every batched shell result with its command and task identity', async () => {
+    const results = [
+      { task_id: 'task-first', command: 'echo first', status: 'completed', exit_code: 0, output: 'first\n' },
+      { task_id: 'task-second', command: 'echo second', status: 'completed', exit_code: 3, output: 'second\n' },
+    ];
+    const tool = await restore(mode, editUpdates('wait-batch', 'get_command_or_subagent_output', {
+      task_ids: ['task-first', 'task-second'], timeout_ms: 10000,
+    }, { status: 'completed', rawOutput: { type: 'TaskOutput', Result: results } }));
+
+    expect(tool).toMatchObject({ name: 'BashOutput', status: 'completed' });
+    expect(tool.providerPayload?.rawOutput).toEqual({ type: 'TaskOutput', Result: results });
+    const block = renderStoredToolCall(document.body.createDiv(), tool);
+    expand(block, /^BashOutput/);
+    expect(lines(block)).toEqual([
+      '$ echo first (task-first)', 'first', ' ', '$ echo second (task-second)', 'exit: 3', 'second',
+    ]);
+  });
+
   it('shows the native outcome when a background task is killed', async () => {
     const tool = await restore(mode, editUpdates('kill', 'kill_command_or_subagent', { task_id: 'task-1' }, {
       status: 'completed',

@@ -249,7 +249,7 @@ export function normalizeGrokToolUpdate<T extends GrokToolUpdateFields>(update: 
       return typeof output.path === 'string' ? withText(update, output.path) : update;
     case 'TaskOutput': {
       const shells = readShellTaskResults(output);
-      return shells ? withText(update, shells.map(formatShellTaskResult).join('\n\n')) : update;
+      return shells ? withText(update, shells.map(result => formatShellTaskResult(result, shells.length > 1)).join('\n\n')) : update;
     }
     case 'KillTask':
       return isRecord(output.Result) && typeof output.Result.message === 'string' && !hasTextContent(update)
@@ -334,6 +334,7 @@ function readResultImages(output: Record<string, unknown>): ToolResultImage[] | 
 
 interface GrokShellTaskResult {
   command: string;
+  task_id?: unknown;
   exit_code?: unknown;
   output?: unknown;
 }
@@ -348,10 +349,12 @@ function readShellTaskResults(rawOutput: unknown): GrokShellTaskResult[] | null 
   return shells.length > 0 && shells.length === results.length ? shells : null;
 }
 
-function formatShellTaskResult(result: GrokShellTaskResult): string {
+function formatShellTaskResult(result: GrokShellTaskResult, includeLabel: boolean): string {
   const output = typeof result.output === 'string' ? result.output.replace(/\n+$/, '') : '';
   const exit = typeof result.exit_code === 'number' && result.exit_code !== 0 ? `exit: ${result.exit_code}` : '';
-  return [exit, output].filter(Boolean).join('\n');
+  const taskId = typeof result.task_id === 'string' && result.task_id ? ` (${result.task_id})` : '';
+  const label = includeLabel ? `$ ${result.command}${taskId}` : '';
+  return [label, exit, output].filter(Boolean).join('\n');
 }
 
 /**
