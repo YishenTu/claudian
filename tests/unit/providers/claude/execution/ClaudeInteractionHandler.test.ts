@@ -64,33 +64,71 @@ describe('ClaudeInteractionHandler', () => {
     });
   });
 
-  it('applies provider suggestions only for an always-allow decision', async () => {
+  it('returns provider suggestions unchanged for an always-allow decision', async () => {
     const port = createPort();
     const handler = createHandler(port);
     const input = { command: 'git status' };
-    const suggestions = [{
-      type: 'addRules' as const,
-      behavior: 'allow' as const,
-      rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
-      destination: 'session' as const,
-    }];
+    const suggestions = [
+      {
+        type: 'addRules' as const,
+        behavior: 'allow' as const,
+        rules: [{ toolName: 'Bash', ruleContent: 'git status:*' }],
+        destination: 'localSettings' as const,
+      },
+      {
+        type: 'addDirectories' as const,
+        directories: ['/external/path'],
+        destination: 'session' as const,
+      },
+    ];
 
     const result = await handler('Bash', input, {
       ...nativeOptions,
       suggestions,
     });
 
+    expect(port.requestApproval).toHaveBeenCalledWith(
+      expect.objectContaining({
+        decisionOptions: expect.arrayContaining([
+          expect.objectContaining({ decision: 'allow-always' }),
+        ]),
+      }),
+      nativeOptions.signal,
+    );
     expect(result).toEqual({
       behavior: 'allow',
       updatedInput: input,
-      updatedPermissions: [{
-        type: 'addRules',
-        behavior: 'allow',
-        rules: [{ toolName: 'Bash', ruleContent: 'git *' }],
-        destination: 'projectSettings',
-      }],
+      updatedPermissions: [
+        {
+          type: 'addRules',
+          behavior: 'allow',
+          rules: [{ toolName: 'Bash', ruleContent: 'git status:*' }],
+          destination: 'localSettings',
+        },
+        {
+          type: 'addDirectories',
+          directories: ['/external/path'],
+          destination: 'session',
+        },
+      ],
       decisionClassification: 'user_permanent',
     });
+  });
+
+  it.each([
+    ['absent', undefined],
+    ['empty', []],
+  ])('offers no always-allow decision when provider suggestions are %s', async (_label, suggestions) => {
+    const port = createPort();
+    const handler = createHandler(port);
+
+    await handler('Bash', { command: 'git status' }, {
+      ...nativeOptions,
+      suggestions,
+    });
+
+    const request = port.requestApproval.mock.calls[0][0];
+    expect(request.decisionOptions?.map(option => option.decision)).toEqual(['deny', 'allow']);
   });
 
   it('routes approvals with stable native/local identity and dismisses the exact interaction', async () => {
