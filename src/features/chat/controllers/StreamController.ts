@@ -827,6 +827,13 @@ export class StreamController {
       if (!chunk.isError && !isBlocked && existingToolCall.name === TOOL_APPLY_PATCH) {
         this.#notifyApplyPatchFileChanges(existingToolCall.input);
       }
+
+      // Script tools change files through nested calls; a later script failure does not undo them.
+      for (const call of existingToolCall.scriptToolCalls ?? []) {
+        if (call.status !== 'completed' || !call.input) continue;
+        if (isEditTool(call.name)) this.#notifyVaultFileChange(call.input);
+        else if (call.name === TOOL_APPLY_PATCH) this.#notifyApplyPatchFileChanges(call.input);
+      }
     }
 
     this.showThinkingIndicator();

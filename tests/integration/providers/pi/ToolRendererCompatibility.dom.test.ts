@@ -25,7 +25,13 @@ HTMLElement.prototype.toggleClass = function (names, enabled) {
 HTMLElement.prototype.scrollIntoView = function () {};
 HTMLElement.prototype.setText = function (text) { this.textContent = String(text); };
 
-beforeEach(() => document.body.replaceChildren());
+// Vault refresh after file edits is an Obsidian boundary; the listing spy observes it.
+const listVaultFolder = jest.fn(async (_dir: string) => ({ files: [], folders: [] }));
+
+beforeEach(() => {
+  document.body.replaceChildren();
+  listVaultFolder.mockClear();
+});
 
 /** One native Pi tool call: the model's arguments and the tool's `{ content, details }` result. */
 interface NativeToolCall {
@@ -53,8 +59,7 @@ async function restoreLive(call: NativeToolCall): Promise<ToolCallInfo> {
 
   const messages = document.body.createDiv();
   const state = new ChatState();
-  // Vault refresh after file edits is an Obsidian boundary; this stub keeps it inert.
-  const vault = { adapter: { basePath: '/workspace', list: async () => ({ files: [], folders: [] }) }, getAbstractFileByPath: () => null };
+  const vault = { adapter: { basePath: '/workspace', list: listVaultFolder }, getAbstractFileByPath: () => null };
   const plugin = { app: { vault }, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin, new Component(), messages);
   const stream = new StreamController({ plugin, state, renderer,
@@ -246,4 +251,20 @@ describe.each(['live', 'history'] as const)('%s Pi tool presentation', mode => {
       expect(within(call).getByText(failure)).toBeDefined();
     });
   });
+});
+
+it('refreshes the vault for a live codemode write even when the script later fails', async () => {
+  await restoreLive({
+    name: 'codemode', args: { code: "await tools.write({ path: 'script-output/new.md', content: 'hi' });\nthrow new Error('later');" }, isError: true,
+    text: ['Script failed\nWall time 0.0 seconds\nOutput:\n', 'Script error:\nError: later'],
+    details: { calls: [{ id: 'tool/1', name: 'write', args: '{"path":"script-output/new.md","content":"hi"}', status: 'ok', durationMs: 1 }] },
+    nested: [
+      { type: 'tool_execution_start', toolCallId: 'tool/1', toolName: 'write', args: { path: 'script-output/new.md', content: 'hi' } },
+      { type: 'tool_execution_end', toolCallId: 'tool/1', toolName: 'write', isError: false, result: { content: [{ type: 'text', text: 'Successfully wrote to script-output/new.md' }] } },
+    ],
+  });
+  // The controller defers the refresh so the native write settles first. A folder no other case
+  // edits keeps earlier cases' deferred refreshes from satisfying this assertion.
+  await new Promise(resolve => setTimeout(resolve, 250));
+  expect(listVaultFolder).toHaveBeenCalledWith('script-output');
 });
