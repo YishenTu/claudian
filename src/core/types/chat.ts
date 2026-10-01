@@ -278,7 +278,14 @@ export type StreamChunk =
       toolUseResult?: SDKToolUseResult;
       providerPayload?: ToolProviderPayload;
     }
-  | { type: 'tool_output'; id: string; content: string }
+  | {
+      type: 'tool_output';
+      id: string;
+      /** Text to append to the tool's result. */
+      content: string;
+      /** Latest structured snapshot of a running tool, replacing earlier ones. */
+      toolUseResult?: SDKToolUseResult;
+    }
   | {
       type: 'error';
       content: string;

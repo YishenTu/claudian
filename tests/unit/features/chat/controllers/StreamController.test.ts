@@ -936,6 +936,31 @@ describe('StreamController - Text Content', () => {
       expect((vault.adapter.list as jest.Mock).mock.calls.map(([dir]) => dir).sort()).toEqual(['drafts', 'notes']);
     });
 
+    it('refreshes each nested file change once as script progress and completion arrive', async () => {
+      const vault = deps.plugin.app.vault;
+      vault.getAbstractFileByPath = jest.fn().mockReturnValue(null);
+      vault.adapter.list = jest.fn().mockResolvedValue({ files: [], folders: [] });
+      const msg = createTestMessage();
+      deps.state.currentContentEl = createMockEl();
+      const write = { name: 'Write', input: { file_path: 'notes/new.md', content: 'hi' } };
+      const edit = { name: 'Edit', input: { file_path: 'drafts/plan.md' } };
+      const refreshedDirs = () => (vault.adapter.list as jest.Mock).mock.calls.map(([dir]) => dir);
+
+      await controller.handleStreamChunk({ type: 'tool_use', id: 'script-progress', name: 'exec', input: { code: '' } }, msg);
+      await controller.handleStreamChunk({ type: 'tool_output', id: 'script-progress', content: '',
+        toolUseResult: { scriptToolCalls: [{ ...write, status: 'running' }] } }, msg);
+      await controller.handleStreamChunk({ type: 'tool_output', id: 'script-progress', content: '',
+        toolUseResult: { scriptToolCalls: [{ ...write, status: 'completed' }, { ...edit, status: 'running' }] } }, msg);
+      await jest.advanceTimersByTimeAsync(200);
+      expect(refreshedDirs()).toEqual(['notes']);
+      expect(msg.toolCalls?.[0].scriptToolCalls?.map(call => call.status)).toEqual(['completed', 'running']);
+
+      await controller.handleStreamChunk({ type: 'tool_result', id: 'script-progress', content: 'done',
+        toolUseResult: { scriptToolCalls: [{ ...write, status: 'completed' }, { ...edit, status: 'completed' }] } }, msg);
+      await jest.advanceTimersByTimeAsync(200);
+      expect(refreshedDirs()).toEqual(['notes', 'drafts']);
+    });
+
     it('should pass expanded default to apply_patch tool blocks when enabled', async () => {
       const { renderToolCall } = jest.requireMock('@/features/chat/rendering/ToolCallRenderer');
       (deps.plugin.settings as any).expandFileEditsByDefault = true;

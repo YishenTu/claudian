@@ -1046,6 +1046,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
           content: chunk.content,
           toolCallId: chunk.id,
           toolScope: { kind: 'main' },
+          ...(chunk.toolUseResult ? { toolUseResult: chunk.toolUseResult } : {}),
           type: 'tool_output',
         });
         break;

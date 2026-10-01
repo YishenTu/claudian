@@ -69,7 +69,7 @@ export interface ToolCallInfo {
   resolvedAnswers?: AskUserAnswers;
   /** Structured web search hits; renderers fall back to result text when absent. */
   webSearchResults?: WebSearchResultItem[];
-  /** Calls a script tool made to other tools, in call order. */
+  /** Calls a script tool made to other tools, in call order. Live snapshots only append calls or advance their status. */
   scriptToolCalls?: ScriptToolCallItem[];
   /** Live async question presentation; replay alone never opens a prompt. */
   questionStatus?: 'pending' | 'expired';

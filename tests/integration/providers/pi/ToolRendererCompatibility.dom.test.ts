@@ -1,6 +1,10 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -8,11 +12,13 @@ import { Component } from 'obsidian';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
-import { StreamController } from '@/features/chat/controllers/StreamController';
+import { providerOutputEventToStreamChunk, StreamController } from '@/features/chat/controllers/StreamController';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { renderStoredToolCall } from '@/features/chat/rendering/ToolCallRenderer';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
+import { PiExecutionBackend } from '@/providers/pi/execution/PiExecutionBackend';
+import { PiRPCSessionKernel } from '@/providers/pi/execution/PiExecutionKernel';
 import { parsePiSessionContent } from '@/providers/pi/history/PiHistoryStore';
 import { createPiEventNormalizationState, normalizePiRPCEvent } from '@/providers/pi/normalizations/piEventNormalization';
 
@@ -47,16 +53,8 @@ interface NativeToolCall {
 
 const textParts = (call: NativeToolCall) => [call.text].flat().map(text => ({ type: 'text', text }));
 
-/** Replays native RPC execution events through Pi normalization and the chat stream. */
-async function restoreLive(call: NativeToolCall): Promise<ToolCallInfo> {
-  const normalization = createPiEventNormalizationState();
-  const result = { content: textParts(call), details: call.details ?? {} };
-  const chunks = [
-    { type: 'tool_execution_start', toolCallId: 'tool', toolName: call.name, args: call.args },
-    ...(call.nested ?? []).map(event => ({ ...event, parentToolCallId: 'tool' })),
-    { type: 'tool_execution_end', toolCallId: 'tool', toolName: call.name, result, isError: call.isError ?? false },
-  ].flatMap(event => normalizePiRPCEvent(event, normalization));
-
+/** A chat stream over a fresh assistant message, rendering into a detached message list. */
+function createChatStream() {
   const messages = document.body.createDiv();
   const state = new ChatState();
   const vault = { adapter: { basePath: '/workspace', list: listVaultFolder }, getAbstractFileByPath: () => null };
@@ -68,8 +66,22 @@ async function restoreLive(call: NativeToolCall): Promise<ToolCallInfo> {
   const response: ChatMessage = { id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
   state.addMessage(response);
   state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
+  return { stream, response, close: () => messages.remove() };
+}
+
+/** Replays native RPC execution events through Pi normalization and the chat stream. */
+async function restoreLive(call: NativeToolCall): Promise<ToolCallInfo> {
+  const normalization = createPiEventNormalizationState();
+  const result = { content: textParts(call), details: call.details ?? {} };
+  const chunks = [
+    { type: 'tool_execution_start', toolCallId: 'tool', toolName: call.name, args: call.args },
+    ...(call.nested ?? []).map(event => ({ ...event, parentToolCallId: 'tool' })),
+    { type: 'tool_execution_end', toolCallId: 'tool', toolName: call.name, result, isError: call.isError ?? false },
+  ].flatMap(event => normalizePiRPCEvent(event, normalization));
+
+  const { stream, response, close } = createChatStream();
   for (const chunk of chunks) await stream.handleStreamChunk(chunk, response);
-  messages.remove();
+  close();
   expect(response.toolCalls).toHaveLength(1);
   return response.toolCalls![0];
 }
@@ -253,18 +265,51 @@ describe.each(['live', 'history'] as const)('%s Pi tool presentation', mode => {
   });
 });
 
-it('refreshes the vault for a live codemode write even when the script later fails', async () => {
-  await restoreLive({
-    name: 'codemode', args: { code: "await tools.write({ path: 'script-output/new.md', content: 'hi' });\nthrow new Error('later');" }, isError: true,
-    text: ['Script failed\nWall time 0.0 seconds\nOutput:\n', 'Script error:\nError: later'],
-    details: { calls: [{ id: 'tool/1', name: 'write', args: '{"path":"script-output/new.md","content":"hi"}', status: 'ok', durationMs: 1 }] },
-    nested: [
-      { type: 'tool_execution_start', toolCallId: 'tool/1', toolName: 'write', args: { path: 'script-output/new.md', content: 'hi' } },
-      { type: 'tool_execution_end', toolCallId: 'tool/1', toolName: 'write', isError: false, result: { content: [{ type: 'text', text: 'Successfully wrote to script-output/new.md' }] } },
-    ],
+it('streams a running script\'s nested calls through the Pi session and refreshes files written before cancellation', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'pi-script-progress-'));
+  const configuration = { model: 'pi:anthropic/claude-sonnet-4', reasoning: null, systemInstructions: { kind: 'provider-default' as const } };
+  const host = {
+    getResolvedProviderCliPath: async () => process.execPath,
+    settings: { model: configuration.model, effortLevel: 'off', systemPrompt: '', userName: '',
+      providerConfigs: { pi: { enabled: true, visibleModels: [configuration.model],
+        discoveredModels: [{ encodedId: configuration.model, id: 'claude-sonnet-4', provider: 'anthropic', label: 'Sonnet', input: ['text'], reasoning: false, thinkingLevels: ['off'] }] } } },
+  };
+  const backend = new PiExecutionBackend(host as any, { commandCatalog: { setCommandSnapshot: jest.fn() } } as any, {
+    createKernel: (spec, callbacks) => new PiRPCSessionKernel({ ...spec, command: process.execPath,
+      args: [path.resolve('tests/fixtures/providers/pi/PiSessionProcess.mjs'), ...spec.args],
+      env: { ...spec.env, CLAUDIAN_TEST_PI_ROOT: root },
+    }, callbacks, null),
   });
-  // The controller defers the refresh so the native write settles first. A folder no other case
-  // edits keeps earlier cases' deferred refreshes from satisfying this assertion.
-  await new Promise(resolve => setTimeout(resolve, 250));
-  expect(listVaultFolder).toHaveBeenCalledWith('script-output');
+  const session = backend.createSession({
+    lifecycle: 'ephemeral', nativePersistence: 'disabled-if-supported', vaultWorkingDirectory: root,
+    interactionPort: { askUserQuestion: jest.fn(), requestApproval: jest.fn(), dismissInteraction: jest.fn() },
+  });
+  const { stream, response, close } = createChatStream();
+  try {
+    // Captured from Pi 0.99.2: the script wrote out/new.md and is still running `sleep 2` through bash.
+    const run = session.execute({ configuration, toolPolicy: { kind: 'provider-default' },
+      input: [{ type: 'text', text: 'replay:codemode-write-running.jsonl' }], signal: new AbortController().signal });
+    // Without live progress the script never shows its bash call; the timer still ends the run.
+    const fallback = setTimeout(() => run.cancel(), 3000);
+    for await (const event of run.events) {
+      const chunk = providerOutputEventToStreamChunk(event);
+      if (chunk) await stream.handleStreamChunk(chunk, response);
+      if (response.toolCalls?.[0]?.scriptToolCalls?.length === 2) run.cancel();
+    }
+    clearTimeout(fallback);
+    await new Promise(resolve => setTimeout(resolve, 250));
+
+    expect(listVaultFolder).toHaveBeenCalledWith('out');
+    expect(response.toolCalls).toHaveLength(1);
+    const block = renderStoredToolCall(document.body.createDiv(), { ...response.toolCalls![0], status: 'running' });
+    const calls = within(within(block).getByRole('list', { name: 'Tool calls' })).getAllByRole('listitem');
+    expect(calls.map(call => call.textContent?.replace(/ \d+ms$/, ''))).toEqual(['Write new.md', 'Bash sleep 2']);
+    expect(within(calls[0]).getByRole('img', { name: 'Status: completed' })).toBeDefined();
+    expect(within(calls[1]).getByRole('img', { name: 'Status: running' })).toBeDefined();
+    expect(within(block).getByText('Running...')).toBeDefined();
+  } finally {
+    close();
+    await session.dispose();
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });

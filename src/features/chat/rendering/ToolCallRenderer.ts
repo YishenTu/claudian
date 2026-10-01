@@ -786,7 +786,8 @@ function formatToolDisplayValue(value: unknown): string {
 }
 
 /** Neutral tool fields the expanded view can present. */
-export type ExpandedToolContent = Pick<ToolCallInfo, 'name' | 'result' | 'input' | 'webSearchResults' | 'scriptToolCalls'>;
+export type ExpandedToolContent = Pick<ToolCallInfo, 'name' | 'result' | 'input' | 'webSearchResults' | 'scriptToolCalls'>
+  & Partial<Pick<ToolCallInfo, 'status'>>;
 
 export function renderExpandedContent(container: HTMLElement, toolCall: ExpandedToolContent): void {
   const { name: toolName, result, input } = toolCall;
@@ -1161,7 +1162,7 @@ function renderScriptContent(
   if (result) {
     container.createEl('pre', { cls: 'claudian-tool-script-output', text: result });
   } else {
-    contentFallback(container, initialText ?? 'No result');
+    contentFallback(container, initialText ?? (toolCall.status === 'running' ? 'Running...' : 'No result'));
   }
 }
 

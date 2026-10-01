@@ -173,9 +173,18 @@ function normalizeToolOutput(
     return [];
   }
 
-  const content = extractPiToolTextContent(event.partialResult ?? event.output ?? event.result ?? event.content);
+  const content = getToolOutputDelta(id, event.partialResult ?? event.output ?? event.result ?? event.content, state);
+  // Script tools report the calls they make as they run.
+  const toolUseResult = normalizePiToolUseResult(getPiToolName(event), event.partialResult, state.nestedToolArguments.get(id));
+  return content || toolUseResult
+    ? [{ type: 'tool_output', id, content, ...(toolUseResult ? { toolUseResult } : {}) }]
+    : [];
+}
+
+function getToolOutputDelta(id: string, snapshot: unknown, state: PiEventNormalizationState): string {
+  const content = extractPiToolTextContent(snapshot);
   if (!content) {
-    return [];
+    return '';
   }
 
   // Pi's partialResult is the tool's latest snapshot (native bash sends its
@@ -186,15 +195,13 @@ function normalizeToolOutput(
   const previous = state.toolOutputs.get(id) ?? '';
   state.toolOutputs.set(id, content);
   if (state.divergedToolOutputIds.has(id)) {
-    return [];
+    return '';
   }
   if (!content.startsWith(previous)) {
     state.divergedToolOutputIds.add(id);
-    return [];
+    return '';
   }
-
-  const delta = content.slice(previous.length);
-  return delta ? [{ type: 'tool_output', id, content: delta }] : [];
+  return content.slice(previous.length);
 }
 
 function normalizeToolResult(
