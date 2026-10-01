@@ -474,6 +474,33 @@ describe('parseApplyPatchDiffs', () => {
     ]);
   });
 
+  it('keeps content lines that start like unified diff headers', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: query.sql',
+      '@@',
+      '--- old comment',
+      '+++ new comment',
+      ' SELECT 1;',
+      '*** Add File: seed.sql',
+      '+++ seeded',
+      '*** End Patch',
+    ].join('\n');
+
+    const result = parseApplyPatchDiffs(patch);
+
+    expect(result.map(diff => [diff.filePath, diff.stats])).toEqual([
+      ['query.sql', { added: 1, removed: 1 }],
+      ['seed.sql', { added: 1, removed: 0 }],
+    ]);
+    expect(result[0].diffLines.map(line => [line.type, line.text])).toEqual([
+      ['delete', '-- old comment'],
+      ['insert', '++ new comment'],
+      ['equal', 'SELECT 1;'],
+    ]);
+    expect(result[1].diffLines.map(line => line.text)).toEqual(['++ seeded']);
+  });
+
   it('parses add and delete file operations', () => {
     const patch = [
       '*** Begin Patch',

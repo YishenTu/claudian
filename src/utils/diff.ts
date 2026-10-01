@@ -105,7 +105,8 @@ export function parseApplyPatchDiffs(patchText: string): ApplyPatchFileDiff[] {
       continue;
     }
 
-    if (line === '*** End of File' || line.startsWith('@@') || line.startsWith('--- ') || line.startsWith('+++ ')) {
+    // The patch envelope marks files with `***` lines, so `--- `/`+++ ` lines are content.
+    if (line === '*** End of File' || line.startsWith('@@')) {
       continue;
     }
 
