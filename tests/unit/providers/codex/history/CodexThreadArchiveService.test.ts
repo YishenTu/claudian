@@ -4,6 +4,7 @@ import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTranspo
 const mockTransportRequest = jest.fn();
 const mockTransportDispose = jest.fn();
 const mockProcessShutdown = jest.fn().mockResolvedValue(undefined);
+const mockResolveLaunchSpec = jest.fn();
 
 jest.mock('@/providers/codex/runtime/CodexRPCTransport', () => ({
   ...jest.requireActual('@/providers/codex/runtime/CodexRPCTransport'),
@@ -23,7 +24,7 @@ jest.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
 
 jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => ({
   initializeCodexAppServerTransport: jest.fn().mockResolvedValue({}),
-  resolveCodexAppServerLaunchSpec: jest.fn().mockResolvedValue({}),
+  resolveCodexAppServerLaunchSpec: (...args: unknown[]) => mockResolveLaunchSpec(...args),
 }));
 
 const conversation = (sessionId: string | null, providerState?: Record<string, unknown>) => ({
@@ -36,6 +37,7 @@ describe('CodexThreadArchiveService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockTransportRequest.mockResolvedValue({});
+    mockResolveLaunchSpec.mockResolvedValue({});
   });
 
   it('archives and unarchives the conversation thread', async () => {
@@ -83,5 +85,35 @@ describe('CodexThreadArchiveService', () => {
 
     await expect(service.setSessionArchived(conversation('thread-1'), true)).rejects.toThrow('disk full');
     expect(mockProcessShutdown).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['disposal', (service: CodexThreadArchiveService) => service.dispose()],
+    ['a transition', (service: CodexThreadArchiveService) => {
+      service.beginEnvironmentTransition();
+      return service.quiesceForEnvironmentChange();
+    }],
+  ])('finishes admitted work before %s drains', async (_label, drain) => {
+    const service = new CodexThreadArchiveService({} as any);
+    mockResolveLaunchSpec.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve({}), 0)));
+
+    const operation = service.setSessionArchived(conversation('thread-1'), true);
+    await drain(service);
+
+    expect(mockProcessShutdown).toHaveBeenCalledTimes(mockResolveLaunchSpec.mock.calls.length);
+    await operation;
+  });
+
+  it('defers work requested during a transition until it ends', async () => {
+    const service = new CodexThreadArchiveService({} as any);
+    service.beginEnvironmentTransition();
+
+    const operation = service.setSessionArchived(conversation('thread-1'), true);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(mockResolveLaunchSpec).not.toHaveBeenCalled();
+
+    service.endEnvironmentTransition();
+    await operation;
+    expect(mockTransportRequest).toHaveBeenCalledWith('thread/archive', { threadId: 'thread-1' });
   });
 });

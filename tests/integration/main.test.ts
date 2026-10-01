@@ -63,6 +63,13 @@ describe('ClaudianPlugin', () => {
     }
   }
 
+  async function waitForCondition(condition: () => boolean): Promise<void> {
+    for (let attempt = 0; attempt < 50 && !condition(); attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    expect(condition()).toBe(true);
+  }
+
   function getRegisteredCommand(commandId: string) {
     const call = (plugin.addCommand as jest.Mock).mock.calls.find(
       ([config]) => config.id === commandId,
@@ -3282,6 +3289,27 @@ describe('ClaudianPlugin', () => {
         [expect.objectContaining({ sessionId: 'thread-1' }), true],
         [expect.objectContaining({ sessionId: 'thread-1' }), false],
       ]);
+    });
+
+    it('applies native archive operations in local commit order', async () => {
+      await plugin.onload();
+      let releaseArchive!: () => void;
+      const setSessionArchived = jest.fn()
+        .mockImplementationOnce(() => new Promise<void>((resolve) => { releaseArchive = resolve; }))
+        .mockResolvedValue(undefined);
+      ProviderWorkspaceRegistry.setServices('codex', { sessionArchive: { setSessionArchived } });
+      const conversation = await plugin.createConversation({ providerId: 'codex', sessionId: 'thread-1' });
+
+      const archive = plugin.setConversationArchived(conversation.id, true);
+      await waitForCondition(() => setSessionArchived.mock.calls.length === 1);
+      const restore = plugin.setConversationArchived(conversation.id, false);
+      await waitForCondition(() => plugin.getConversationSync(conversation.id)?.isArchived === false);
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(setSessionArchived).toHaveBeenCalledTimes(1);
+      releaseArchive();
+      await Promise.all([archive, restore]);
+      expect(setSessionArchived.mock.calls.map(([, isArchived]) => isArchived)).toEqual([true, false]);
     });
 
     it('keeps the local archive when the native archive fails', async () => {

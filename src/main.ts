@@ -117,6 +117,7 @@ export default class ClaudianPlugin extends Plugin {
   }
 
   private readonly startupMaintenanceAbort = new AbortController();
+  private readonly nativeSessionArchiveSyncs = new Map<string, Promise<void>>();
   private modelMetadataMigration: Promise<void> | null = null;
   private sessionInputCleanup: Promise<void> | null = null;
   private sessionInputCleanupTimer: number | null = null;
@@ -904,12 +905,26 @@ export default class ClaudianPlugin extends Plugin {
   async setConversationArchived(id: string, isArchived: boolean): Promise<void> {
     const changed = await this.conversationRepository.setArchived(id, isArchived);
     this.notifyConversationViewsChanged();
-    if (changed) await this.syncNativeSessionArchive(changed, isArchived);
+    if (changed) await this.queueNativeSessionArchiveSync(id);
+  }
+
+  /** Serializes per conversation; each run mirrors the latest committed state, so native order cannot invert. */
+  private queueNativeSessionArchiveSync(id: string): Promise<void> {
+    const previous = this.nativeSessionArchiveSyncs.get(id) ?? Promise.resolve();
+    const next = previous.then(() => this.syncNativeSessionArchive(id));
+    this.nativeSessionArchiveSyncs.set(id, next);
+    void next.finally(() => {
+      if (this.nativeSessionArchiveSyncs.get(id) === next) this.nativeSessionArchiveSyncs.delete(id);
+    });
+    return next;
   }
 
   /** Best-effort: the committed application archive state stays authoritative. */
-  private async syncNativeSessionArchive(conversation: Conversation, isArchived: boolean): Promise<void> {
+  private async syncNativeSessionArchive(id: string): Promise<void> {
+    const conversation = this.conversationRepository.getSync(id);
+    if (!conversation) return;
     const { providerId } = conversation;
+    const isArchived = conversation.isArchived === true;
     if (!ProviderRegistry.getCapabilities(providerId, conversation.providerState).supportsNativeSessionArchive) return;
     try {
       await ProviderWorkspaceRegistry.ensureInitialized(this.providerHost, providerId, 'session-archive');

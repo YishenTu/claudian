@@ -23,7 +23,10 @@ export class CodexThreadArchiveService implements ProviderSessionArchive {
     // A pending fork has no thread of its own; never target its source thread.
     const threadId = getCodexState(conversation.providerState).threadId ?? conversation.sessionId;
     if (!threadId) return;
-    if (!await this.transitionGate.waitUntilAvailable()) return;
+    // Register in the same tick as the availability check so drains cannot miss admitted work.
+    while (this.transitionGate.isUnavailable()) {
+      if (!await this.transitionGate.waitUntilAvailable()) return;
+    }
 
     const operation = this.#request(isArchived ? 'thread/archive' : 'thread/unarchive', threadId);
     this.active.add(operation);

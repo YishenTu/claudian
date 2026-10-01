@@ -602,8 +602,8 @@ export class ConversationRepository {
     ));
   }
 
-  /** Returns a detached snapshot when the archive state changed. */
-  async setArchived(id: string, isArchived: boolean): Promise<Conversation | null> {
+  /** Resolves true when the archive state changed. */
+  async setArchived(id: string, isArchived: boolean): Promise<boolean> {
     let archiveChanged = false;
     await this.#mutateMetadata(id, (conversation) => {
       if (conversation.isArchived === isArchived && (!isArchived || conversation.isPinned === false)) {
@@ -612,7 +612,7 @@ export class ConversationRepository {
       archiveChanged = !!conversation.isArchived !== isArchived;
       return { isArchived, ...(isArchived ? { isPinned: false } : {}) };
     });
-    return archiveChanged ? this.getSync(id) : null;
+    return archiveChanged;
   }
 
   /** Archives only when `shouldArchive` still holds at the serialized write; returns whether it archived. */
