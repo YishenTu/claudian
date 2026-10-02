@@ -18,7 +18,7 @@ interface PreviewLine {
   readonly toolName?: string;
 }
 
-type ActivitySource = Pick<ChatState, 'activity' | 'isStreaming' | 'lastMessage' | 'requiresAction'>;
+type ActivitySource = Pick<ChatState, 'activity' | 'isStreaming' | 'lastMessage' | 'requiresAction' | 'waitingStatus'>;
 
 const MAX_PREVIEW_LENGTH = 240;
 // Only the head of a streamed block is scanned, so long responses stay O(1) per frame.
@@ -41,6 +41,12 @@ export function formatActivityPreview(source: ActivitySource): ZenActivityPrevie
   }
   if (!source.isStreaming && lastMessage?.role === 'assistant' && lastMessage.durationSeconds !== undefined) {
     return { text: describeFinishedTurn(lastMessage, lastMessage.durationSeconds, activity), tone: 'idle' };
+  }
+
+  // Mirror the main chat's waiting indicator; a running tool line stands in for its tool card.
+  if (source.isStreaming && source.waitingStatus
+    && !(activity?.kind === 'tool' && activity.tool.status === 'running')) {
+    return { text: source.waitingStatus, tone: 'working' };
   }
 
   const line = activity

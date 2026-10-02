@@ -120,6 +120,7 @@ export class SideChatRuntime {
     this.#prompts = new InlineInteractionPrompts({
       getPromptParentEl: () => deps.getPromptParentEl(),
       onBeforeShow: () => this.#stream.hideThinkingIndicator(),
+      onAfterSettle: () => this.#stream.resumeThinkingIndicator(),
     });
     this.#asyncQuestions = new AsyncQuestionPrompts({
       prompts: this.#prompts,

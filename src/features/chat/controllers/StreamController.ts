@@ -126,6 +126,10 @@ export class StreamController {
   private pendingToolOutputFrames = new Map<string, ScheduledAnimationFrame>();
   private pendingScrollFrame: ScheduledAnimationFrame | null = null;
   private readonly managedSubagentIds = new Set<string>();
+  /** When the pending thinking indicator is due, so an earlier request can replace a later one. */
+  #thinkingIndicatorDueAt = 0;
+  /** An explicit status (such as compaction) stays with its response across hide and resume. */
+  #explicitIndicator: { contentEl: HTMLElement; text: string; cls?: string } | null = null;
 
   // Provider lifecycle agent tracking (spawn → wait/close lifecycle)
 
@@ -884,6 +888,8 @@ export class StreamController {
       el: state.currentTextEl,
       content: state.currentTextContent,
     });
+    // Each chunk restarts the pause; the indicator returns only once text stops arriving.
+    if (state.isStreaming) this.#scheduleThinkingIndicator(StreamController.TEXT_PAUSE_INDICATOR_DELAY);
   }
 
   async finalizeCurrentTextBlock(msg?: ChatMessage): Promise<void> {
@@ -1578,6 +1584,8 @@ export class StreamController {
 
   /** Debounce delay before showing thinking indicator (ms). */
   private static readonly THINKING_INDICATOR_DELAY = 400;
+  /** Longer delay after streamed text, so token gaps do not flicker the indicator. */
+  private static readonly TEXT_PAUSE_INDICATOR_DELAY = 1500;
 
   /**
    * Schedules showing the thinking indicator after a delay.
@@ -1586,13 +1594,31 @@ export class StreamController {
    * Note: Flavor text is hidden when model thinking block is active (thinking takes priority).
    */
   showThinkingIndicator(overrideText?: string, overrideCls?: string): void {
+    this.#scheduleThinkingIndicator(StreamController.THINKING_INDICATOR_DELAY, overrideText, overrideCls);
+  }
+
+  /** Brings the indicator back while the turn continues without visible output. */
+  resumeThinkingIndicator(): void {
+    if (this.deps.state.isStreaming) this.showThinkingIndicator();
+  }
+
+  #scheduleThinkingIndicator(delay: number, overrideText?: string, overrideCls?: string): void {
     const { state } = this.deps;
 
     // Early return if no content element
     if (!state.currentContentEl) return;
 
-    // Clear any existing timeout
+    const isExplicitRequest = !!overrideText;
+    if (overrideText) {
+      this.#explicitIndicator = { contentEl: state.currentContentEl, text: overrideText, cls: overrideCls };
+    } else if (this.#explicitIndicator?.contentEl === state.currentContentEl) {
+      ({ text: overrideText, cls: overrideCls } = this.#explicitIndicator);
+    }
+
+    // A pending show keeps its deadline; repeated requests must not postpone it.
+    const dueAt = performance.now() + delay;
     if (state.thinkingIndicatorTimeout) {
+      if (!isExplicitRequest && this.#thinkingIndicatorDueAt <= dueAt) return;
       const timerWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
       state.clearThinkingIndicatorTimeout(timerWindow);
     }
@@ -1612,10 +1638,12 @@ export class StreamController {
 
     // Schedule showing the indicator after a delay
     const timerWindow = state.currentContentEl.ownerDocument.defaultView ?? window;
+    this.#thinkingIndicatorDueAt = dueAt;
     state.setThinkingIndicatorTimeout(timerWindow.setTimeout(() => {
       state.setThinkingIndicatorTimeout(null, null);
-      // Double-check we still have a content element, no indicator exists, and no thinking block
-      if (!state.currentContentEl || state.thinkingEl || state.currentThinkingState) return;
+      // Double-check we still have a content element, no indicator exists, and no thinking block.
+      // A pending user interaction takes the place of the indicator until it settles.
+      if (!state.currentContentEl || state.thinkingEl || state.currentThinkingState || state.requiresAction) return;
 
       const cls = overrideCls
         ? `claudian-thinking ${overrideCls}`
@@ -1623,6 +1651,7 @@ export class StreamController {
       state.thinkingEl = state.currentContentEl.createDiv({ cls });
       const text = overrideText || FLAVOR_TEXTS[Math.floor(Math.random() * FLAVOR_TEXTS.length)];
       state.thinkingEl.createSpan({ text });
+      state.waitingStatus = text;
 
       // Create timer span with initial value
       const timerSpan = state.thinkingEl.createSpan({ cls: 'claudian-thinking-hint' });
@@ -1647,7 +1676,7 @@ export class StreamController {
       const thinkingWindow = state.currentContentEl.ownerDocument.defaultView ?? timerWindow;
       state.setFlavorTimerInterval(thinkingWindow.setInterval(updateTimer, 1000), thinkingWindow);
       this.scrollToBottom();
-    }, StreamController.THINKING_INDICATOR_DELAY), timerWindow);
+    }, delay), timerWindow);
   }
 
   /** Hides the thinking indicator and cancels any pending show timeout. */
@@ -1667,6 +1696,7 @@ export class StreamController {
       state.thinkingEl.remove();
       state.thinkingEl = null;
     }
+    state.waitingStatus = null;
   }
 
   // ============================================
@@ -1849,6 +1879,7 @@ export class StreamController {
   }
 
   dispose(): void {
+    this.hideThinkingIndicator();
     this.resetSubagentStreamingState();
     this.textRenderCoordinator.dispose();
     this.thinkingRenderCoordinator.dispose();
@@ -1861,10 +1892,11 @@ export function providerOutputEventToStreamChunk(
   event: ProviderExecutionEvent | ProviderBackgroundOutputEvent,
 ): StreamChunk | null {
   switch (event.type) {
+    // Empty deltas carry no output; dropping them here keeps them from ending the waiting state.
     case 'text_delta':
-      return { content: event.text, type: 'text' };
+      return event.text ? { content: event.text, type: 'text' } : null;
     case 'thinking_delta':
-      return { content: event.text, type: 'thinking' };
+      return event.text ? { content: event.text, type: 'thinking' } : null;
     case 'citations':
       return { citations: event.citations, type: 'citations' };
     case 'tool_started':

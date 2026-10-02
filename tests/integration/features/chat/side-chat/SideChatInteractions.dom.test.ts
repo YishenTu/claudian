@@ -120,7 +120,7 @@ it('keeps a pending main question out of the side destination and restores its a
   const state = new ChatState();
   const main = new InputController({
     state, getInputContainerEl: () => harness.inputContainerEl,
-    streamController: { hideThinkingIndicator: jest.fn() },
+    streamController: { hideThinkingIndicator: jest.fn(), resumeThinkingIndicator: jest.fn() },
     renderer: { updateQuestionTool: jest.fn() },
   } as unknown as InputControllerDeps);
   try {

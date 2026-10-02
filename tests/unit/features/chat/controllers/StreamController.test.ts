@@ -1516,6 +1516,34 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.thinkingEl).toBeNull();
     });
 
+    it('cancels a pending or visible indicator on dispose', () => {
+      controller.showThinkingIndicator();
+      controller.dispose();
+      jest.advanceTimersByTime(500);
+      expect(deps.state.thinkingEl).toBeNull();
+      expect(deps.state.waitingStatus).toBeNull();
+
+      const visible = new StreamController(deps);
+      visible.showThinkingIndicator();
+      jest.advanceTimersByTime(500);
+      expect(deps.state.waitingStatus).not.toBeNull();
+      visible.dispose();
+      expect(deps.state.thinkingEl).toBeNull();
+      expect(deps.state.waitingStatus).toBeNull();
+      expect(deps.state.flavorTimerInterval).toBeNull();
+    });
+
+    it('keeps the pending delay when asked to show again before it elapses', () => {
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(300);
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(300);
+      controller.showThinkingIndicator();
+      jest.advanceTimersByTime(100);
+
+      expect(deps.state.thinkingEl).not.toBeNull();
+    });
+
     it('should re-append existing indicator to bottom when called again', () => {
       deps.state.responseStartTime = performance.now();
 

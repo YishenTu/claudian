@@ -167,6 +167,7 @@ export class InputController {
       getPromptParentEl: () => this.deps.getInputContainerEl().parentElement,
       getSuppressedEl: () => this.deps.getInputContainerEl(),
       onBeforeShow: () => this.deps.streamController.hideThinkingIndicator(),
+      onAfterSettle: () => this.deps.streamController.resumeThinkingIndicator(),
     });
     this.asyncQuestions = new AsyncQuestionPrompts({
       prompts: this.inlinePrompts,
@@ -690,8 +691,10 @@ export class InputController {
       this.activeDelivery = undefined;
       const finalAssistantMsg = this.activeStreamingAssistantMessage ?? assistantMsg;
 
-      // ALWAYS clear the timer interval, even on stream invalidation (prevents memory leaks)
-      state.clearFlavorTimerInterval();
+      // ALWAYS clear the timer interval, even on stream invalidation (prevents memory leaks).
+      // An invalidated turn that still owns the stream also withdraws its pending indicator.
+      if (state.streamGeneration === streamGeneration) streamController.hideThinkingIndicator();
+      else state.clearFlavorTimerInterval();
 
       try {
         // Skip remaining cleanup if stream was invalidated (tab closed or conversation switched)

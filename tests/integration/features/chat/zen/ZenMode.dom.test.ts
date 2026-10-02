@@ -16,13 +16,16 @@ import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { getToolIcon } from '@/core/tools/toolIcons';
-import type { ClaudianSettings, Conversation } from '@/core/types';
+import type { ClaudianSettings, Conversation, StreamChunk } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ClaudianView } from '@/features/chat/ClaudianView';
+import { FLAVOR_TEXTS } from '@/features/chat/constants';
 import { destroyTab } from '@/features/chat/tabs/TabLifecycle';
 import { createTabRuntime } from '@/features/chat/tabs/TabRuntimeFactory';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 import { ZenModeController } from '@/features/chat/zen/ZenModeController';
+import { adaptCodexStreamChunk } from '@/providers/codex/execution/CodexExecutionEventAdapter';
+import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
 
 const originalResizeObserver = globalThis.ResizeObserver;
 const originalStructuredClone = globalThis.structuredClone;
@@ -399,6 +402,164 @@ it('keeps one live turn, draft and node identity across repeated presentation ch
   await waitFor(() => expect(preview()).toMatch(/^Worked for \d{2}:\d{2} · First line$/));
 });
 
+/** Text of the transcript's visible waiting indicator, or null when none is shown. */
+function waitingIndicatorText(tab: AssembledTabRuntime): string | null {
+  const indicator = tab.dom.messagesEl.querySelector('.claudian-thinking');
+  return indicator?.firstElementChild?.textContent ?? null;
+}
+
+async function waitForFlavor(tab: AssembledTabRuntime, timeout?: number): Promise<string> {
+  await waitFor(() => expect(FLAVOR_TEXTS).toContain(waitingIndicatorText(tab)), { timeout });
+  return waitingIndicatorText(tab)!;
+}
+
+function expectZenPreview(text: string): void {
+  expect(within(zenPanel()!).getByRole('button', { name: 'Show conversation', description: text })).toBeDefined();
+}
+
+it.each([
+  'item/agentMessage/delta',
+  'item/reasoning/summaryTextDelta',
+  'item/reasoning/textDelta',
+])('retains waiting flavor in the transcript and Zen across empty Codex %s after a notification', async method => {
+  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  const session = await sendFromZen(tab, sessions, 'Explain this note');
+  const flavor = await waitForFlavor(tab);
+  session.emitSessionEvent({ type: 'task_notification', content: 'A background task finished' });
+  await waitFor(() => expect(tab.state.messages.some(message => (
+    message.contentBlocks?.some(block => block.type === 'task_notification')
+  ))).toBe(true));
+
+  const chunks: StreamChunk[] = [];
+  const router = new CodexNotificationRouter(chunk => chunks.push(chunk));
+  router.handleNotification(method, { threadId: 'thread', turnId: 'turn', itemId: 'item', delta: '' });
+  const events = chunks.flatMap(chunk => {
+    const adapted = adaptCodexStreamChunk(chunk, {} as never);
+    if (!adapted) return [];
+    const { scope, ...event } = adapted;
+    return [event];
+  });
+  expect(events).not.toHaveLength(0);
+  for (const event of events) session.emitOutput(event as never);
+  await new Promise(resolve => setTimeout(resolve, 600));
+
+  // Empty provider output must not replace the visible waiting surface or create empty reasoning.
+  expect(waitingIndicatorText(tab)).toBe(flavor);
+  expect(tab.dom.messagesEl.querySelector('.claudian-thinking-block')).toBeNull();
+  await waitFor(() => expectZenPreview(flavor));
+  session.complete();
+  await waitFor(() => expect(tab.state.isStreaming).toBe(false));
+});
+
+it('shares one status across waiting, thinking, tools, text and silent pauses, then clears it', async () => {
+  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  const transcript = within(tab.dom.messagesEl);
+  const session = await sendFromZen(tab, sessions, 'Explain this note');
+
+  const waiting = await waitForFlavor(tab);
+  await waitFor(() => expectZenPreview(waiting));
+
+  session.emitOutput({ type: 'thinking_delta', text: 'Reviewing the note.' });
+  await waitFor(() => expect(preview()).toBe('Thinking…'));
+  expect(transcript.getByRole('button', { name: /^Thinking \d+s\.\.\.$/, hidden: true })).toBeDefined();
+  expect(waitingIndicatorText(tab)).toBeNull();
+
+  session.emitOutput({
+    type: 'tool_started', toolCallId: 'tool-1', name: 'Read', input: { file_path: 'note.md' },
+    toolScope: { kind: 'main' },
+  } as never);
+  // The transcript keeps its waiting surface while the tool runs; zen names the tool instead.
+  await waitForFlavor(tab);
+  expect(preview()).toBe('Read · running');
+
+  session.emitText('Here is the answer.');
+  await waitFor(() => expect(preview()).toBe('Here is the answer.'));
+  expect(waitingIndicatorText(tab)).toBeNull();
+  expect(tab.dom.messagesEl.querySelector('.claudian-tool-call')).not.toBeNull();
+
+  // Execution continues silently after intermediate text.
+  const paused = await waitForFlavor(tab, 3_000);
+  await waitFor(() => expectZenPreview(paused));
+
+  session.complete();
+  await waitFor(() => expect(tab.state.isStreaming).toBe(false));
+  await waitFor(() => expect(preview()).toMatch(/^Worked for \d{2}:\d{2} · Here is the answer\.$/));
+  expect(waitingIndicatorText(tab)).toBeNull();
+  // The drawer holds the moved transcript, its navigation and the preview line.
+  expect(await axe(zenPanel()!.querySelector<HTMLElement>('.claudian-zen-drawer')!)).toHaveNoViolations();
+});
+
+it('gives a pending approval priority over the waiting status and resumes it afterwards', async () => {
+  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  const session = await sendFromZen(tab, sessions, 'Write a note');
+  await waitForFlavor(tab);
+
+  const approval = session.config.interactionPort.requestApproval({
+    description: 'Write a note', input: {}, interactionId: 'approval-1',
+    kind: 'approval', sessionInstanceId: session.sessionInstanceId,
+    toolName: 'Write', turnId: session.activeTurnId,
+  }, new AbortController().signal);
+  await waitFor(() => expect(preview()).toBe('Needs your input'));
+  expect(waitingIndicatorText(tab)).toBeNull();
+  // Output arriving while the prompt is open must not bring the indicator back over it.
+  session.emitOutput({
+    type: 'tool_started', toolCallId: 'tool-1', name: 'Write', input: { file_path: 'note.md' },
+    toolScope: { kind: 'main' },
+  } as never);
+  await new Promise(resolve => setTimeout(resolve, 600));
+  expect(waitingIndicatorText(tab)).toBeNull();
+  expect(preview()).toBe('Needs your input');
+
+  fireEvent.click(await within(zenPanel()!).findByText('Allow once'));
+  await expect(approval).resolves.toMatchObject({ decision: 'allow' });
+  await waitForFlavor(tab);
+  await waitFor(() => expect(preview()).toBe('Write · running'));
+
+  session.complete();
+  await waitFor(() => expect(tab.state.isStreaming).toBe(false));
+  expect(waitingIndicatorText(tab)).toBeNull();
+});
+
+it('keeps explicit compaction status across a prompt', async () => {
+  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  const session = await sendFromZen(tab, sessions, '/compact');
+  await waitFor(() => expect(waitingIndicatorText(tab)).toBe('Compacting...'));
+  await waitFor(() => expectZenPreview('Compacting...'));
+
+  const approval = session.config.interactionPort.requestApproval({
+    description: 'Approve action', input: {}, interactionId: 'approval-compact',
+    kind: 'approval', sessionInstanceId: session.sessionInstanceId,
+    toolName: 'Write', turnId: session.activeTurnId,
+  }, new AbortController().signal);
+  await waitFor(() => expect(preview()).toBe('Needs your input'));
+  fireEvent.click(await within(zenPanel()!).findByText('Allow once'));
+  await approval;
+  await waitFor(() => expect(waitingIndicatorText(tab)).toBe('Compacting...'));
+  await waitFor(() => expectZenPreview('Compacting...'));
+  session.complete();
+  await waitFor(() => expect(tab.state.isStreaming).toBe(false));
+});
+
+it('clears a pending waiting status when provider invalidation ends the turn', async () => {
+  const { tab, view, sessions, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  const session = await sendFromZen(tab, sessions, 'Invalidate during text');
+  session.emitText('Partial response');
+  await waitFor(() => expect(preview()).toBe('Partial response'));
+  await view.plugin.providerHost.executionLifecycleRegistry.runTransition(['claude'], async () => undefined);
+  await tab.session.turns.drain();
+  expect(session.cancelCalls).toBeGreaterThan(0);
+
+  // Past the text-pause delay, the ended turn must not bring its indicator back.
+  await new Promise(resolve => setTimeout(resolve, 1_700));
+  expect(waitingIndicatorText(tab)).toBeNull();
+  expect(tab.state.waitingStatus).toBeNull();
+});
+
 it('reports a provider failure after streamed output as an error', async () => {
   const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
   setCollapsed(rightSplit, true);
@@ -422,10 +583,16 @@ it('leaves sending and stopping to the moved composer', async () => {
   expect(within(panel).queryByRole('button', { name: 'Stop' })).toBeNull();
 
   const session = await sendFromZen(tab, sessions, 'Long task');
+  session.emitText('Partial answer');
+  await waitFor(() => expect(preview()).toBe('Partial answer'));
   fireEvent.keyDown(tab.dom.inputEl as unknown as HTMLElement, { key: 'Escape' });
 
   expect(session.cancelCalls).toBe(1);
   await waitFor(() => expect(preview()).toBe('Interrupted'));
+  // A cancelled turn leaves no waiting indicator behind, even after a text pause would have elapsed.
+  await new Promise(resolve => setTimeout(resolve, 1_500));
+  expect(waitingIndicatorText(tab)).toBeNull();
+  expect(preview()).toBe('Interrupted');
 });
 
 it('offers no history for a new conversation until it has messages', async () => {

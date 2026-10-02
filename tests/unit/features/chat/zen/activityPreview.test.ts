@@ -106,6 +106,29 @@ describe('formatActivityPreview', () => {
     expect(formatActivityPreview(state).text).toBe('Bash · done');
   });
 
+  it('mirrors the main waiting status while streaming, except over a running tool', () => {
+    const state = new ChatState();
+    state.addMessage({ id: 'u1', role: 'user', content: 'Review the note', timestamp: 1 });
+    state.isStreaming = true;
+    state.waitingStatus = 'Compacting...';
+    expect(formatActivityPreview(state)).toEqual({ text: 'Compacting...', tone: 'working' });
+
+    state.recordActivity({ kind: 'text', text: 'Paused answer' });
+    expect(formatActivityPreview(state).text).toBe('Compacting...');
+
+    state.recordActivity({ kind: 'tool', tool: tool('running') });
+    expect(formatActivityPreview(state)).toMatchObject({ text: 'Bash · running', toolName: 'Bash' });
+    state.recordActivity({ kind: 'tool', tool: tool('completed') });
+    expect(formatActivityPreview(state).text).toBe('Compacting...');
+
+    state.beginActionRequired('approval-1');
+    expect(formatActivityPreview(state).text).toBe('Needs your input');
+    state.endActionRequired('approval-1');
+
+    state.waitingStatus = null;
+    expect(formatActivityPreview(state).text).toBe('Bash · done');
+  });
+
   it('prioritizes pending interaction, then errors, then interruption', () => {
     const state = new ChatState();
     state.addMessage(assistant({ content: 'Partial', isInterrupt: true }));

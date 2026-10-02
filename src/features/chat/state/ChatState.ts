@@ -53,6 +53,7 @@ export class ChatState {
   } | null = null;
   /** Null derives activity from the latest message after transcript changes. */
   #activity: ChatActivity | null = null;
+  #waitingStatus: string | null = null;
   readonly #activityListeners = new Set<() => void>();
   /** Last transcript scroll offset seen while laid out; a hidden scroller reports zero. */
   readingScrollTop = 0;
@@ -112,6 +113,17 @@ export class ChatState {
 
   recordActivity(activity: ChatActivity): void {
     this.#activity = activity;
+    this.#notifyActivity();
+  }
+
+  /** Label of the visible waiting indicator, so other presentations can mirror it. */
+  get waitingStatus(): string | null {
+    return this.#waitingStatus;
+  }
+
+  set waitingStatus(value: string | null) {
+    if (value === this.#waitingStatus) return;
+    this.#waitingStatus = value;
     this.#notifyActivity();
   }
 

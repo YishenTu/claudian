@@ -38,6 +38,8 @@ export interface InlineInteractionPromptsDeps {
   /** Optional element hidden for the lifetime of a visible prompt. */
   getSuppressedEl?(): HTMLElement | null;
   onBeforeShow?(): void;
+  /** Runs once no prompt remains pending, so the caller can restore what onBeforeShow hid. */
+  onAfterSettle?(): void;
 }
 
 /**
@@ -188,6 +190,7 @@ export class InlineInteractionPrompts {
           if (this.pending.get(interactionId) !== inline) return;
           this.pending.delete(interactionId);
           this.#restore();
+          if (this.pending.size === 0) this.deps.onAfterSettle?.();
           resolve(result);
         },
         signal,
