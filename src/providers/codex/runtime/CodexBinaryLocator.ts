@@ -54,6 +54,8 @@ function getPreferredCodexBinaryDirs(platform: NodeJS.Platform): string[] {
       path.join(home, '.local', 'bin'),
       path.join(home, 'Applications', 'ChatGPT.app', 'Contents', 'Resources'),
       '/Applications/ChatGPT.app/Contents/Resources',
+      path.join(home, 'Applications', 'ChatGPT.app', 'Contents', 'Resources', 'codex-cli', 'CodexCLI.app', 'Contents', 'MacOS'),
+      '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS',
     ];
   }
 
