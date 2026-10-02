@@ -1,3 +1,5 @@
+import { stringifyUnknown } from '@/utils/stringify';
+
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import {
   TOOL_APPLY_PATCH,
@@ -634,11 +636,7 @@ function formatToolOutput(value: unknown): string {
   if (typeof value === 'string') {
     return value;
   }
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
+  return stringifyUnknown(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

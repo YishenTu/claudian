@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+import { stringifyUnknown } from '@/utils/stringify';
+
 import {
   ExecutionEventQueue,
   type ProviderExecutionErrorCategory,
@@ -1677,7 +1679,7 @@ export class CodexExecutionSession
       }
       if (cleanupError instanceof Error) throw cleanupError;
       if (cleanupError !== undefined) {
-        throw new Error(String(cleanupError));
+        throw new Error(stringifyUnknown(cleanupError), { cause: cleanupError });
       }
     })();
     this.processDisposalPromise = pending;

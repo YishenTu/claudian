@@ -9,7 +9,17 @@ import {
   normalizeCodexToolName,
   normalizeCodexToolResult,
   parseCodexArguments,
+  stringifyCodexToolOutput,
 } from '@/providers/codex/normalization/codexToolNormalization';
+
+it('renders non-JSON tool outputs without losing primitive values or throwing on circular records', () => {
+  const circular: Record<string, unknown> = {};
+  circular.self = circular;
+  expect(stringifyCodexToolOutput(circular)).toBe('[Unserializable value]');
+  expect(stringifyCodexToolOutput(BigInt(42))).toBe('42');
+  expect(stringifyCodexToolOutput({ ok: true })).toBe('{"ok":true}');
+  expect(stringifyCodexToolOutput([{ text: 'first' }, { text: 'second' }])).toBe('firstsecond');
+});
 
 describe('normalizeCodexToolName', () => {
   it.each([

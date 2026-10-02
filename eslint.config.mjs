@@ -1,6 +1,6 @@
 import js from '@eslint/js';
-import eslintComments from '@eslint-community/eslint-plugin-eslint-comments';
 import tseslint from '@typescript-eslint/eslint-plugin';
+import tsparser from '@typescript-eslint/parser';
 import jestPlugin from 'eslint-plugin-jest';
 import obsidianmd from 'eslint-plugin-obsidianmd';
 import { DEFAULT_ACRONYMS } from 'eslint-plugin-obsidianmd/dist/lib/rules/ui/acronyms.js';
@@ -94,7 +94,8 @@ const hardCodedTestTimeSelectors = [
   `AssignmentExpression[left.property.name=${TIME_KEY}] NewExpression[callee.name='Date'] > Literal[value=${ISO_TIMESTAMP}]`,
 ];
 
-const stagedObsidianRules = {
+// Keep the existing source policy stricter than the preset's advisory severities.
+const strictObsidianRules = {
   'obsidianmd/commands/no-command-in-command-id': obsidianRuleSeverity,
   'obsidianmd/commands/no-command-in-command-name': obsidianRuleSeverity,
   'obsidianmd/commands/no-default-hotkeys': obsidianRuleSeverity,
@@ -173,6 +174,20 @@ export default defineConfig([
   },
   ...tseslint.configs['flat/recommended'],
   {
+    files: ['src/**/*.ts', 'package.json'],
+    extends: obsidianmd.configs.recommended,
+  },
+  {
+    files: ['manifest.json'],
+    languageOptions: { parser: tsparser, parserOptions: { project: false } },
+    plugins: { obsidianmd },
+    rules: {
+      'obsidianmd/validate-manifest': 'error',
+      // JSON is parsed as an object expression for the official manifest rule.
+      '@typescript-eslint/no-unused-expressions': 'off',
+    },
+  },
+  {
     files: ['src/**/*.ts', 'tests/**/*.ts'],
     plugins: {
       'simple-import-sort': simpleImportSort,
@@ -188,7 +203,6 @@ export default defineConfig([
         'error',
         { args: 'none', ignoreRestSiblings: true },
       ],
-      '@typescript-eslint/no-explicit-any': 'off',
       'prefer-promise-reject-errors': 'error',
       'simple-import-sort/imports': 'error',
       'simple-import-sort/exports': 'error',
@@ -202,22 +216,20 @@ export default defineConfig([
         tsconfigRootDir,
       },
     },
-    plugins: {
-      'eslint-comments': eslintComments,
-      obsidianmd,
-    },
-    linterOptions: {
-      reportUnusedDisableDirectives: 'error',
-      reportUnusedInlineConfigs: 'error',
-    },
     rules: {
-      ...stagedObsidianRules,
+      ...strictObsidianRules,
       ...strictTypeAwareRules,
-      'eslint-comments/no-restricted-disable': [
-        'error',
-        'obsidianmd/*',
-      ],
-      'eslint-comments/require-description': 'error',
+      // Preserve project constraints that the official preset relaxes.
+      '@typescript-eslint/no-unused-expressions': ['error', { allowShortCircuit: false, allowTernary: false }],
+      'prefer-const': 'error',
+      '@typescript-eslint/ban-ts-comment': 'error',
+      '@typescript-eslint/no-explicit-any': 'error',
+      'no-console': 'error',
+      // Desktop-only plugin; legacy display() and license checks do not apply here.
+      'obsidianmd/no-nodejs-modules': 'off',
+      'obsidianmd/settings-tab/require-display': 'off',
+      'obsidianmd/validate-license': 'off',
+      'obsidianmd/validate-manifest': 'off',
       'obsidianmd/prefer-create-el': 'error',
       '@typescript-eslint/naming-convention': [
         'error',
