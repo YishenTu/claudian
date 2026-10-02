@@ -22,13 +22,15 @@ describe('session snapshot storage', () => {
     await expect(store.write('../escape', 'text')).rejects.toThrow();
   });
 
-  it('sweeps only stale Markdown files and respects abort', async () => {
-    const store = new SessionSnapshotStore(directory, () => clock().getTime());
-    const old = new Date(clock().getTime() - 8 * 86_400_000);
+  it.each([0, 1100])('sweeps only stale Markdown files and respects abort (clock offset: %s days)', async days => {
+    const sweepClock = testClock({ days });
+    const store = new SessionSnapshotStore(directory, () => sweepClock().getTime());
+    const old = new Date(sweepClock().getTime() - 8 * 86_400_000);
     for (const name of ['old.md', 'keep.txt', 'new.md']) {
       const file = path.join(directory, name);
       await fs.writeFile(file, name);
-      if (name !== 'new.md') await fs.utimes(file, old, old);
+      const modifiedAt = name === 'new.md' ? sweepClock() : old;
+      await fs.utimes(file, modifiedAt, modifiedAt);
     }
     await fs.mkdir(path.join(directory, 'folder.md'));
     await store.sweep(AbortSignal.abort());
