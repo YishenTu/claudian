@@ -580,12 +580,12 @@ function processPersistedToolCall(
   const execEnvelopeCalls = payload.name === 'exec'
     ? decodeCodexExecEnvelopeCalls(parsedArgs)
     : null;
+  // Script output is not attributed per call, so internal values cannot be separated from it.
+  if (execEnvelopeCalls?.some(call => isCodexInternalToolCall(call.rawName))) ctx.withheldExecOutputCallIds.add(callId);
   if (execEnvelopeCalls?.every(call => isCodexInternalToolCall(call.rawName))) {
     ctx.suppressedToolOutputIds.add(callId);
     return;
   }
-  // Script output is not attributed per call, so internal values cannot be separated from it.
-  if (execEnvelopeCalls?.some(call => isCodexInternalToolCall(call.rawName))) ctx.withheldExecOutputCallIds.add(callId);
   // A failed script can stop before later calls or emit partial results. Its
   // source and output do not establish which nested tools actually executed.
   if (payload.name === 'exec' && ctx.failedExecCallIds.has(callId)) {

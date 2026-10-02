@@ -155,6 +155,16 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
     expect(block.textContent).not.toContain('opaque-internal-payload');
   });
 
+  it('hides a yielded internal-only script and its wait continuation', () => {
+    const tools = restoreSession(mode, [
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'internal', input: 'text(await tools.get_context_remaining({}));' } },
+      { raw: { type: 'custom_tool_call_output', call_id: 'internal', output: 'Script running with cell ID 7\nWall time 0.1 seconds\nOutput:\n' } },
+      { raw: { type: 'function_call', name: 'wait', call_id: 'wait', arguments: '{"cell_id":"7"}' } },
+      { raw: { type: 'function_call_output', call_id: 'wait', output: scriptOutput('opaque-internal-payload') } },
+    ]);
+    expect(tools).toEqual([]);
+  });
+
   it.each(mode === 'live' ? [false, true] : [false])('shows one populated card per native web search with linked titles only (child stream: %s)', streamRawExecCalls => {
     const searches = [
       { input: { search_query: [{ q: 'inference bandwidth' }, { q: 'HBM supply' }] },
