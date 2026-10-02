@@ -130,6 +130,8 @@ export class StreamController {
   #thinkingIndicatorDueAt = 0;
   /** An explicit status (such as compaction) stays with its response across hide and resume. */
   #explicitIndicator: { contentEl: HTMLElement; text: string; cls?: string } | null = null;
+  /** Stream generation that owns the current indicator; a superseded turn's indicator is discarded. */
+  #thinkingIndicatorGeneration: number | null = null;
 
   // Provider lifecycle agent tracking (spawn → wait/close lifecycle)
 
@@ -1608,6 +1610,12 @@ export class StreamController {
     // Early return if no content element
     if (!state.currentContentEl) return;
 
+    const generation = state.streamGeneration;
+    if (this.#thinkingIndicatorGeneration !== generation) {
+      if (state.thinkingEl || state.thinkingIndicatorTimeout) this.hideThinkingIndicator();
+      this.#thinkingIndicatorGeneration = generation;
+    }
+
     const isExplicitRequest = !!overrideText;
     if (overrideText) {
       this.#explicitIndicator = { contentEl: state.currentContentEl, text: overrideText, cls: overrideCls };
@@ -1642,8 +1650,12 @@ export class StreamController {
     state.setThinkingIndicatorTimeout(timerWindow.setTimeout(() => {
       state.setThinkingIndicatorTimeout(null, null);
       // Double-check we still have a content element, no indicator exists, and no thinking block.
-      // A pending user interaction takes the place of the indicator until it settles.
-      if (!state.currentContentEl || state.thinkingEl || state.currentThinkingState || state.requiresAction) return;
+      // A pending user interaction takes the place of the indicator until it settles,
+      // and a superseded stream (new chat, teardown) no longer owns the indicator.
+      if (
+        !state.currentContentEl || state.thinkingEl || state.currentThinkingState || state.requiresAction
+        || state.streamGeneration !== generation
+      ) return;
 
       const cls = overrideCls
         ? `claudian-thinking ${overrideCls}`
@@ -1707,6 +1719,8 @@ export class StreamController {
     const { state } = this.deps;
     if (!state.currentContentEl) return;
     this.hideThinkingIndicator();
+    // Compaction is over; later waiting in this response shows ordinary flavor.
+    this.#explicitIndicator = null;
     const el = state.currentContentEl.createDiv({ cls: 'claudian-compact-boundary' });
     el.createSpan({ cls: 'claudian-compact-boundary-label', text: 'Conversation compacted' });
   }

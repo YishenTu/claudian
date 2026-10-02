@@ -17,19 +17,16 @@
 }
 
 .claudian-nav-sidebar.visible {
-    opacity: 0.15;
+    opacity: 1;
     pointer-events: auto;
     visibility: visible;
 }
 
-.claudian-nav-sidebar.visible:hover,
-.claudian-nav-sidebar.visible:focus-within {
-    opacity: 1;
-}
-
+/* Buttons dim individually, so keyboard focus can reveal one without lingering after a mouse click. */
 .claudian-nav-sidebar button.claudian-nav-btn,
 .claudian-nav-sidebar button.claudian-nav-btn:focus,
 .claudian-nav-sidebar button.claudian-nav-btn:active {
+    opacity: 0.15;
     width: 32px;
     height: 32px;
     padding: 0;
@@ -52,7 +49,12 @@
     transform: scale(1.05);
 }
 
+.claudian-nav-sidebar:hover button.claudian-nav-btn {
+    opacity: 1;
+}
+
 .claudian-nav-sidebar button.claudian-nav-btn:focus-visible {
+    opacity: 1;
     outline: 2px solid var(--interactive-accent);
     outline-offset: 1px;
 }

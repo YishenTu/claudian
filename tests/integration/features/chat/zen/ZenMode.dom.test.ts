@@ -80,6 +80,7 @@ function createWorkspace() {
     },
     listenerCount: () => [...listeners.values()].reduce((total, set) => total + set.size, 0),
     getLeavesOfType: () => leaves,
+    getActiveFile: () => null,
     revealLeaf: jest.fn(async (leaf: Leaf) => {
       const root = leaf.getRoot() as Split;
       root.collapsed = false;
@@ -557,6 +558,33 @@ it('clears a pending waiting status when provider invalidation ends the turn', a
   // Past the text-pause delay, the ended turn must not bring its indicator back.
   await new Promise(resolve => setTimeout(resolve, 1_700));
   expect(waitingIndicatorText(tab)).toBeNull();
+  expect(tab.state.waitingStatus).toBeNull();
+});
+
+it('leaves no waiting indicator behind when a forced new chat dismisses a pending approval', async () => {
+  const { tab, sessions, rightSplit, setCollapsed } = await createZenFixture();
+  setCollapsed(rightSplit, true);
+  const session = await sendFromZen(tab, sessions, 'Write a note');
+  await waitForFlavor(tab);
+  const approval = session.config.interactionPort.requestApproval({
+    description: 'Write a note', input: {}, interactionId: 'approval-1',
+    kind: 'approval', sessionInstanceId: session.sessionInstanceId,
+    toolName: 'Write', turnId: session.activeTurnId,
+  }, new AbortController().signal).catch(() => undefined);
+  await waitFor(() => expect(preview()).toBe('Needs your input'));
+
+  // Persistence that outlasts the indicator delay leaves time for a stale resume to fire.
+  const { conversationController } = tab.controllers;
+  const save = conversationController.save.bind(conversationController);
+  jest.spyOn(conversationController, 'save').mockImplementation(async (...args) => {
+    await new Promise(resolve => setTimeout(resolve, 600));
+    return save(...args);
+  });
+  await conversationController.createNew({ force: true });
+  await approval;
+
+  expect(tab.state.isStreaming).toBe(false);
+  expect(tab.state.thinkingEl).toBeNull();
   expect(tab.state.waitingStatus).toBeNull();
 });
 
