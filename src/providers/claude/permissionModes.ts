@@ -31,7 +31,7 @@ export const CLAUDE_PERMISSION_MODE_POLICY: ProviderPermissionModePolicy = Objec
     if (value !== 'normal') return undefined;
     // The retired Safe toggle ran the configured safe mode, which defaulted to acceptEdits.
     const safeMode = getProviderConfig(settings, 'claude').safeMode;
-    return safeMode === undefined ? 'acceptEdits' : LEGACY_SAFE_MODES[String(safeMode)];
+    return safeMode === undefined ? 'acceptEdits' : typeof safeMode === 'string' ? LEGACY_SAFE_MODES[safeMode] : undefined;
   },
 });
 

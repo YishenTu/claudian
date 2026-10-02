@@ -38,6 +38,18 @@ it('shows complete question wording with distinct native headers', () => {
   } finally { f.dispose(); }
 });
 
+it('uses a readable tab header when a native title is not text', () => {
+  const f = render([
+    { key: 'q0', type: 'string', title: {}, description: 'Continue?', custom: true, options: [] },
+    { key: 'q1', type: 'string', title: 'Details', description: 'Any details?', custom: true, options: [] },
+  ]);
+  try {
+    expect(within(f.container).getByRole('textbox', { name: 'Continue?' })).toBeTruthy();
+    expect(within(f.container).getByRole('button', { name: 'Question' })).toBeTruthy();
+    expect(within(f.container).queryByText('[object Object]')).toBeNull();
+  } finally { f.dispose(); }
+});
+
 it('keeps an optionless native question open and submits typed text', async () => {
   const f = render([{ key: 'q0', type: 'string', title: 'Name', description: 'What name should the report use?', custom: true, options: [] }]);
   try {

@@ -16,8 +16,8 @@
     "check:performance": "node scripts/check-startup-performance.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "npm run lint:ts && npm run lint:css",
-    "lint:ts": "eslint \"{src,tests}/**/*.ts\" --max-warnings=0 --concurrency=4",
-    "lint:css": "stylelint \"src/style/**/*.css\"",
+    "lint:ts": "eslint \"{src,tests}/**/*.ts\" manifest.json package.json --max-warnings=0 --concurrency=4",
+    "lint:css": "stylelint \"src/style/**/*.css\" --max-warnings=0",
     "lint:fix": "npm run lint:ts -- --fix && npm run lint:css -- --fix",
     "test": "node scripts/run-tests.js",
     "test:affected": "node scripts/run-affected-tests.mjs",
@@ -60,6 +60,7 @@
     "jsdom": "^26.1.0",
     "obsidian": "1.13.0",
     "stylelint": "^17.14.1",
+    "stylelint-config-obsidianmd": "^0.1.0",
     "ts-jest": "^29.4.9",
     "tsx": "^4.23.1",
     "typescript": "^6.0.2"

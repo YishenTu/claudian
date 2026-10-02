@@ -67,7 +67,7 @@
 .claudian-side-chat-status-icon svg {
   width: 14px;
   height: 14px;
-  color: currentColor;
+  color: currentcolor;
 }
 
 .claudian-side-chat-status-text {
@@ -172,7 +172,7 @@
 .claudian-side-chat-actions button.claudian-side-chat-icon-button svg {
   width: 14px;
   height: 14px;
-  color: currentColor;
+  color: currentcolor;
 }
 
 .claudian-side-chat-messages {

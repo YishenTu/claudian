@@ -1,62 +1,63 @@
 /* CSS module order. scripts/build-css.mjs reads these @import lines. */
+
 /* Add new modules here to include them in the build. */
 
 /* Base */
-@import "./base/variables.css";
-@import "./base/container.css";
-@import "./base/animations.css";
+@import url("./base/variables.css");
+@import url("./base/container.css");
+@import url("./base/animations.css");
 
 /* Components */
-@import "./components/tabs.css";
-@import "./components/history.css";
-@import "./components/messages.css";
-@import "./components/nav-sidebar.css";
-@import "./components/code.css";
-@import "./components/thinking.css";
-@import "./components/citations.css";
-@import "./components/toolcalls.css";
-@import "./components/todo-list.css";
-@import "./components/subagent.css";
-@import "./components/input.css";
-@import "./components/composer-editor.css";
-@import "./components/context-tray.css";
-@import "./components/context-footer.css";
-@import "./components/composer-info-row.css";
-@import "./components/composer-dropdown.css";
-@import "./components/side-chat.css";
-@import "./components/zen-mode.css";
+@import url("./components/tabs.css");
+@import url("./components/history.css");
+@import url("./components/messages.css");
+@import url("./components/nav-sidebar.css");
+@import url("./components/code.css");
+@import url("./components/thinking.css");
+@import url("./components/citations.css");
+@import url("./components/toolcalls.css");
+@import url("./components/todo-list.css");
+@import url("./components/subagent.css");
+@import url("./components/input.css");
+@import url("./components/composer-editor.css");
+@import url("./components/context-tray.css");
+@import url("./components/context-footer.css");
+@import url("./components/composer-info-row.css");
+@import url("./components/composer-dropdown.css");
+@import url("./components/side-chat.css");
+@import url("./components/zen-mode.css");
 
 /* Toolbar */
-@import "./toolbar/model-selector.css";
-@import "./toolbar/mode-selector.css";
-@import "./toolbar/thinking-selector.css";
-@import "./toolbar/permission-toggle.css";
-@import "./toolbar/service-tier-toggle.css";
+@import url("./toolbar/model-selector.css");
+@import url("./toolbar/mode-selector.css");
+@import url("./toolbar/thinking-selector.css");
+@import url("./toolbar/permission-toggle.css");
+@import url("./toolbar/service-tier-toggle.css");
 
 /* Features */
-@import "./features/file-link.css";
-@import "./features/image-context.css";
-@import "./features/image-embed.css";
-@import "./features/image-modal.css";
-@import "./features/inline-edit.css";
-@import "./features/diff.css";
-@import "./features/resume-session.css";
-@import "./features/ask-user-question.css";
+@import url("./features/file-link.css");
+@import url("./features/image-context.css");
+@import url("./features/image-embed.css");
+@import url("./features/image-modal.css");
+@import url("./features/inline-edit.css");
+@import url("./features/diff.css");
+@import url("./features/resume-session.css");
+@import url("./features/ask-user-question.css");
 
 /* Modals */
-@import "./modals/fork-target.css";
+@import url("./modals/fork-target.css");
 
 /* Settings */
-@import "./settings/base.css";
-@import "./settings/cli-installation.css";
-@import "./settings/env-snippets.css";
-@import "./settings/slash-settings.css";
-@import "./settings/agent-skills.css";
-@import "./settings/provider-model-picker.css";
-@import "./settings/groups.css";
+@import url("./settings/base.css");
+@import url("./settings/cli-installation.css");
+@import url("./settings/env-snippets.css");
+@import url("./settings/slash-settings.css");
+@import url("./settings/agent-skills.css");
+@import url("./settings/provider-model-picker.css");
+@import url("./settings/groups.css");
 
 /* Accessibility */
-@import "./accessibility.css";
+@import url("./accessibility.css");
 
 /* Utilities imported last to preserve cascade priority without importance flags */
-@import "./base/visibility.css";
+@import url("./base/visibility.css");

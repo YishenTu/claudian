@@ -30,7 +30,7 @@ beforeEach(async () => {
     request: async (route: string, options?: unknown) => {
       requests.push(route);
       if (route.startsWith('/api/shell/')) return read(route, options);
-      if (route === '/api/model') return { data: [{ id: 'model', providerID: 'test', enabled: true }] };
+      if (route === '/api/model') return { data: [{ id: 'model', providerID: 'test', enabled: true }, { id: {}, providerID: 'test', enabled: true }] };
       if (route === '/api/command') return { data: [] };
       return { data: { id: 'ses_main' } };
     },
@@ -152,4 +152,25 @@ it('blocks queued preview admission after cancellation without stopping a peer c
   start('ses_main', 'new');
   await jest.advanceTimersByTimeAsync(1);
   expect(previews()).toEqual(['child', 'new run']);
+});
+
+it('publishes usable model IDs and falls back to the ID when the label is missing', async () => {
+  const session = await kernel.openSession();
+  expect(session.models?.availableModels).toEqual([{ modelId: 'test/model', name: 'test/model' }]);
+});
+
+it('ignores malformed native stream identities without losing valid text or tool output', () => {
+  event('session.text.delta', { assistantMessageID: {}, ordinal: 0, delta: 'Invalid message' });
+  event('session.text.delta', { ordinal: {}, delta: 'Invalid ordinal' });
+  event('session.tool.input.started', { id: {}, name: 'custom' });
+  event('session.tool.called', { id: {}, input: {} });
+  event('session.text.delta', { ordinal: 0, delta: 'Valid ' });
+  event('session.text.ended', { ordinal: 0, text: 'Valid text' });
+  event('session.tool.input.started', { name: 'custom' });
+  event('session.tool.called', { input: {} });
+  expect(output.map(({ event }) => event)).toEqual([
+    { type: 'text_delta', text: 'Valid ' },
+    { type: 'text_delta', text: 'text' },
+    expect.objectContaining({ type: 'tool_started', toolCallId: 'tool_shell' }),
+  ]);
 });

@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { stringifyUnknown } from '@/utils/stringify';
+
 import { type PiRPCRecord, PiRPCResponseError, type PiRPCTransport } from './PiRPCTransport';
 
 export const PI_TREE_COMMAND = 'claudian-tree';
@@ -125,8 +127,8 @@ export async function requestPiTree(
         const result: unknown = JSON.parse(String(event.statusText));
         if (!result || typeof result !== 'object') throw new Error('Invalid Pi tree response');
         if ('error' in result && result.error) {
-          if ('uncertain' in result && result.uncertain) throw new Error(String(result.error));
-          throw new PiRPCResponseError('claudian_tree', String(result.error));
+          if ('uncertain' in result && result.uncertain) throw new Error(stringifyUnknown(result.error), { cause: result.error });
+          throw new PiRPCResponseError('claudian_tree', stringifyUnknown(result.error));
         }
         cleanup();
         resolve(result);

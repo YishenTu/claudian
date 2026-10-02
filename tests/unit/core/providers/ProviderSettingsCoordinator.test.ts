@@ -716,6 +716,7 @@ describe('ProviderSettingsCoordinator', () => {
       ['default', 'manual'],
       ['acceptEdits', 'acceptEdits'],
       ['auto', 'auto'],
+      [['auto'], 'manual'],
     ])('migrates a legacy Claude Safe selection with safe mode %p to %s', (safeMode, expected) => {
       const providerConfigs = safeMode ? { claude: { safeMode } } : {};
       for (const saved of [{ claude: 'normal' }, {}]) {

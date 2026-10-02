@@ -358,17 +358,20 @@ export function normalizeOpencodeToolInput(
         ...(typeof input.content === 'string' ? { content: input.content } : {}),
         ...(firstString(input.file_path, input.filePath, input.path) ? { file_path: firstString(input.file_path, input.filePath, input.path) } : {}),
       };
-    case 'edit':
+    case 'edit': {
+      const oldString = firstString(input.old_string, input.oldString);
+      const newString = firstString(input.new_string, input.newString);
       return {
         ...(firstString(input.file_path, input.filePath, input.path) ? { file_path: firstString(input.file_path, input.filePath, input.path) } : {}),
-        ...(firstString(input.old_string, input.oldString) ? { old_string: firstString(input.old_string, input.oldString) } : {}),
-        ...(firstString(input.new_string, input.newString) ? { new_string: firstString(input.new_string, input.newString) } : {}),
+        ...(oldString !== undefined ? { old_string: oldString } : {}),
+        ...(newString !== undefined ? { new_string: newString } : {}),
         ...(typeof input.replace_all === 'boolean'
           ? { replace_all: input.replace_all }
           : typeof input.replaceAll === 'boolean'
           ? { replace_all: input.replaceAll }
           : {}),
       };
+    }
     case 'subagent':
     case 'task':
       return {
@@ -423,6 +426,10 @@ export function normalizeOpencodeToolUseResult(
   const knownName = toKnownToolName(rawName);
   const metadata = extractToolMetadata(rawOutput);
   const normalized: SDKToolUseResult = {};
+
+  if (knownName === 'read') {
+    normalized.resultFormat = 'plain';
+  }
 
   if (
     (knownName === 'write' || knownName === 'edit')

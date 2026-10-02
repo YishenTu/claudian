@@ -4,6 +4,39 @@ import test from 'node:test';
 import { ESLint } from 'eslint';
 
 import { fileNamingRule } from '../eslint.config.mjs';
+import packageJson from '../package.json' with { type: 'json' };
+
+for (const [name, code, rule] of [
+  ['unused short-circuit expression', 'export function run(enabled: boolean, action: () => void): void { enabled && action(); }', '@typescript-eslint/no-unused-expressions'],
+  ['eval', 'export function run(code: string) { return eval(code); }', 'no-eval'],
+  ['unsafe HTML', 'export function render(text: string) { document.body.innerHTML = text; }', 'no-unsanitized/property'],
+  ['unknown string conversion', 'export function label(value: object) { return String(value); }', '@typescript-eslint/no-base-to-string'],
+  ['unknown interpolation', 'export function label(value: unknown) { return `${value}`; }', '@typescript-eslint/restrict-template-expressions'],
+]) {
+  test(`official source lint rejects ${name}`, async () => {
+    // Each snippet replaces the same on-disk file. CI's single-run optimization
+    // reads that file first, then uses isolated programs without full type information.
+    const eslint = new ESLint({
+      overrideConfig: {
+        languageOptions: { parserOptions: { disallowAutomaticSingleRunInference: true } },
+      },
+    });
+    const [result] = await eslint.lintText(code, { filePath: 'src/utils/error.ts' });
+    assert.ok(result.messages.some(message => message.ruleId === rule), JSON.stringify(result.messages));
+  });
+}
+
+test('metadata lint checks manifest structure and disallowed dependencies', async () => {
+  const eslint = new ESLint();
+  for (const [filePath, code, rule] of [
+    ['manifest.json', '{ "name": "Claudian" }', 'obsidianmd/validate-manifest'],
+    ['package.json', '{ "dependencies": { "left-pad": "1.3.0" } }', 'depend/ban-dependencies'],
+  ]) {
+    assert.ok(packageJson.scripts['lint:ts'].includes(filePath));
+    const [result] = await eslint.lintText(code, { filePath });
+    assert.ok(result.messages.some(message => message.ruleId === rule), JSON.stringify(result.messages));
+  }
+});
 
 test('Obsidian DOM creation helpers are enforced for source files', async () => {
   const eslint = new ESLint();
@@ -42,10 +75,11 @@ test('source lint matches strict Obsidian and type-aware review policy', async (
   ]) {
     assert.equal(config.rules[rule]?.[0], 2, `${rule} must be an error`);
   }
-  assert.deepEqual(config.rules['eslint-comments/no-restricted-disable'], [
-    2,
-    'obsidianmd/*',
-  ]);
+  const restrictedDisables = config.rules['eslint-comments/no-restricted-disable'];
+  assert.equal(restrictedDisables[0], 2);
+  for (const rule of ['obsidianmd/*', 'no-eval', 'no-console']) {
+    assert.ok(restrictedDisables.includes(rule), `${rule} must not be suppressed`);
+  }
 });
 
 // ESLint hands the rule an absolute path using the host platform's separator, so the

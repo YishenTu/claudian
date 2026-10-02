@@ -205,6 +205,7 @@ describe('createOpencodeToolStreamAdapter', () => {
         content: 'read ok',
         id: 'tool-1',
         isError: false,
+        toolUseResult: { resultFormat: 'plain' },
         type: 'tool_result',
       },
     ]);

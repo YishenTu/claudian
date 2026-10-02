@@ -5,7 +5,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgb(0 0 0 / 85%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -25,7 +25,7 @@
   max-height: 90vh;
   object-fit: contain;
   border-radius: 8px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 50%);
 }
 
 button.claudian-image-modal-close,
@@ -49,7 +49,7 @@ button.claudian-image-modal-close:active {
   cursor: pointer;
   font-size: 20px;
   color: var(--text-muted);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
   transition: background 0.15s ease, color 0.15s ease;
 }
 
@@ -58,5 +58,5 @@ button.claudian-image-modal-close:hover {
   background: var(--background-modifier-error);
   background-image: none;
   color: var(--text-on-accent);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
 }

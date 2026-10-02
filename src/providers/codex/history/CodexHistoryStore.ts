@@ -29,7 +29,7 @@ import {
   normalizeCodexMemoryCitation,
   stripCodexMemoryCitationMarkup,
 } from '../normalization/CodexMemoryCitation';
-import { parseCodexQuestionReply } from '../normalization/codexQuestionNormalization';
+import { getCodexQuestionAnswerKey, parseCodexQuestionReply } from '../normalization/codexQuestionNormalization';
 import { applyCodexSubagentActivity, normalizeCodexSubagentActivity } from '../normalization/codexSubagentActivity';
 import { buildCodexSubagentInfo } from '../normalization/codexSubagentNormalization';
 import {
@@ -960,7 +960,7 @@ function applyQuestionReplies(text: string, ctx: PersistedParseContext): boolean
     const tool = findPersistedToolCallById(ctx, reply.callId);
     const question: unknown = Array.isArray(tool?.input.questions) ? tool.input.questions[reply.index] : undefined;
     if (tool?.input.replyMode === 'user-message' && question && typeof question === 'object' && 'question' in question && question.question === reply.question) {
-      tool.resolvedAnswers = { ...tool.resolvedAnswers, [String(('id' in question ? question.id : undefined) ?? reply.index)]: reply.answer };
+      tool.resolvedAnswers = { ...tool.resolvedAnswers, [getCodexQuestionAnswerKey('id' in question ? question.id : undefined, reply.index)]: reply.answer };
     }
   }
   return replies.length > 0;

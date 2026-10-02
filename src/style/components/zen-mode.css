@@ -4,9 +4,11 @@
 .workspace-split.mod-root.claudian-zen-host {
   --claudian-zen-inset: 12px;
   --claudian-zen-max-width: 720px;
+
   /* Expanded transcript cap; it excludes the composer. */
   --claudian-zen-history-max-height: calc(100vh / 3);
   --claudian-zen-composer-radius: 18px;
+
   position: relative;
   padding-bottom: calc(var(--claudian-zen-reserved-height, 0px) + var(--claudian-zen-inset));
 }
@@ -14,6 +16,7 @@
 .claudian-container.claudian-zen {
   /* Inherited by every control inside; Obsidian then skips its aria-label hover tooltips. */
   --no-tooltip: true;
+
   position: absolute;
   left: 50%;
   bottom: var(--claudian-zen-inset);
@@ -25,6 +28,7 @@
   height: auto;
   max-height: calc(100% - 2 * var(--claudian-zen-inset));
   padding: 8px;
+
   /* The history and composer bound themselves; the root must not clip composer menus opening upward. */
   overflow: visible;
   transform: translateX(-50%);
@@ -60,6 +64,7 @@
   min-height: 0;
   max-height: var(--claudian-zen-history-max-height);
   overflow: hidden;
+
   /* Outside the scroller, so scrolled messages stop short of the drawer border. */
   padding-top: 16px;
 }
@@ -72,6 +77,7 @@
 .claudian-zen-history .claudian-messages {
   flex: 0 1 auto;
   min-height: 0;
+
   /* Matches the assistant message inset so user bubbles clear the drawer border. */
   padding-inline-end: 14px;
 }
@@ -178,6 +184,7 @@
 
 .claudian-zen-composer .claudian-input-wrapper {
   min-height: 0;
+
   /* Keeps text and chips clear of the rounder corners. */
   padding-inline: 6px;
   border-radius: var(--claudian-zen-composer-radius);
@@ -251,6 +258,7 @@
   flex-shrink: 0;
   order: 2;
   box-sizing: border-box;
+
   /* One 24px chip line plus the row padding, so the controls line up with the first chip line. */
   min-height: 32px;
   margin-left: auto;

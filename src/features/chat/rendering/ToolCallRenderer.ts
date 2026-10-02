@@ -1,5 +1,7 @@
 import { Platform, setIcon } from 'obsidian';
 
+import { stringifyUnknown } from '@/utils/stringify';
+
 import type { TodoItem } from '../../../core/tools/todo';
 import { getToolIcon, MCP_ICON_MARKER } from '../../../core/tools/toolIcons';
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
@@ -1193,7 +1195,7 @@ function formatScriptCallDuration(ms: number): string {
 function summarizeToolInput(input: Record<string, unknown>): string {
   return Object.entries(input)
     .filter(([, value]) => value !== undefined && value !== null && value !== '')
-    .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+    .map(([key, value]) => `${key}: ${stringifyUnknown(value)}`)
     .join(', ');
 }
 

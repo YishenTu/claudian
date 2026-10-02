@@ -12,11 +12,12 @@ import type { ChatMessage, StreamChunk, ToolCallInfo } from '@/core/types';
 import { providerOutputEventToStreamChunk, StreamController } from '@/features/chat/controllers/StreamController';
 import { MessageRenderer } from '@/features/chat/rendering/MessageRenderer';
 import { renderStoredToolCall } from '@/features/chat/rendering/ToolCallRenderer';
+import { renderStoredWriteEdit } from '@/features/chat/rendering/WriteEditRenderer';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { OpencodeHTTPSessionKernel } from '@/providers/opencode/execution/OpencodeHTTPSessionKernel';
 import { OpencodeSessionPersistence } from '@/providers/opencode/execution/OpencodeSessionPersistence';
-import { mapOpencodeV2NativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
+import { mapOpencodeMessages, mapOpencodeV2NativeMessages } from '@/providers/opencode/history/OpencodeHistoryStore';
 import type { OpencodeHTTPEvent } from '@/providers/opencode/http/OpencodeHTTPClient';
 
 HTMLElement.prototype.empty = function () { this.replaceChildren(); };
@@ -184,14 +185,18 @@ describe.each(['live', 'history'] as const)('%s OpenCode V2 tool presentation', 
       .toEqual(expect.arrayContaining(['Final', 'Created']));
   });
 
-  it('shows read output without the native header or line-number gutter', async () => {
+  it.each([
+    ['Alpha', '12: literal colon', ' '],
+    ['1→Alpha', '2→literal arrow', ' '],
+  ])('shows read output without altering file text: %j', async (...fileLines) => {
     const tool = await restore(mode, {
       name: 'read', input: { path: 'DEMO.md', offset: 70 },
-      content: ['Read file DEMO.md, lines 70-72\n70: Alpha\n71: 12: literal colon\n72: '], metadata: { truncated: false },
+      content: [`Read file DEMO.md, lines 70-72\n${fileLines.map((line, index) => `${70 + index}: ${line}`).join('\n')}`],
+      metadata: { truncated: false },
     });
     const block = renderStoredToolCall(document.body.createDiv(), tool);
     expand(block, /^Read: DEMO\.md/);
-    expect(lines(block)).toEqual(['Alpha', '12: literal colon', ' ']);
+    expect(lines(block)).toEqual(fileLines);
   });
 
   it('renders web search hits as links with their date and snippet', async () => {
@@ -209,4 +214,21 @@ describe.each(['live', 'history'] as const)('%s OpenCode V2 tool presentation', 
     expect(within(block).getByText('Second snippet')).toBeDefined();
     expect((await axe(block)).violations).toEqual([]);
   });
+});
+
+it.each([
+  { oldString: 'obsolete', newString: '', removed: ['obsolete'], added: [] },
+  { oldString: '', newString: 'created', removed: [], added: ['created'] },
+])('restores V1 edit diffs with an empty side: %j', ({ oldString, newString, removed, added }) => {
+  const [message] = mapOpencodeMessages([{
+    info: { id: 'assistant', role: 'assistant', time: { created: testDate().getTime() } },
+    parts: [{ type: 'tool', callID: 'edit', tool: 'edit', state: {
+      status: 'completed', input: { filePath: 'notes.md', oldString, newString },
+      output: 'Edit applied successfully.',
+    } }],
+  }]);
+  const block = renderStoredWriteEdit(document.body.createDiv(), message.toolCalls![0], { initiallyExpanded: true });
+  expect(within(block).getByRole('button', { name: /Edit: notes.md/ })).toBeDefined();
+  expect([...block.querySelectorAll('.claudian-diff-delete .claudian-diff-text')].map(line => line.textContent)).toEqual(removed);
+  expect([...block.querySelectorAll('.claudian-diff-insert .claudian-diff-text')].map(line => line.textContent)).toEqual(added);
 });

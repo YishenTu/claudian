@@ -4,6 +4,7 @@
   position: relative;
   display: flex;
   align-items: center;
+
   /* With the icon's 4px inset in its 24px gauge, 6px separates it from the number. */
   gap: 2px;
   margin-inline-start: 0;
@@ -36,6 +37,7 @@
   font-size: 11px;
   color: var(--text-muted);
   min-width: 24px;
+
   /* Room for longer numbers stays after the number, away from the icon. */
   text-align: start;
   transition: color 0.3s ease;

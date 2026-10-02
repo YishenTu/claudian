@@ -24,10 +24,10 @@ describe('tab attention styles', () => {
       /\.claudian-tab-badge-streaming \{[\s\S]*?border-color: var\(--text-normal\);[\s\S]*?\}/,
     );
     expect(tabsCss).toMatch(
-      /body\.theme-light \.claudian-tab-badge-streaming \{[\s\S]*?border-color: #000000;[\s\S]*?\}/,
+      /body\.theme-light \.claudian-tab-badge-streaming \{[\s\S]*?border-color: #000(?:000)?;[\s\S]*?\}/,
     );
     expect(tabsCss).toMatch(
-      /body\.theme-dark \.claudian-tab-badge-streaming \{[\s\S]*?border-color: #ffffff;[\s\S]*?\}/,
+      /body\.theme-dark \.claudian-tab-badge-streaming \{[\s\S]*?border-color: #fff(?:fff)?;[\s\S]*?\}/,
     );
     expect(tabsCss).not.toMatch(
       /\.claudian-tab-badge-streaming\[data-provider=/,

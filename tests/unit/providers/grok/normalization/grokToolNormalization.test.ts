@@ -6,6 +6,11 @@ import {
 } from '@/providers/grok/normalization/grokToolNormalization';
 
 describe('grokToolNormalization', () => {
+  it('keeps unknown tool results printable when they contain a circular record', () => {
+    const output: Record<string, unknown> = {};
+    output.self = output;
+    expect(normalizeGrokToolCall({ title: 'unknown_tool', rawInput: {}, rawOutput: output }).output).toBe('[Unserializable value]');
+  });
   it.each([
     ['run_terminal_command', 'Bash'],
     ['get_terminal_command_output', 'BashOutput'],

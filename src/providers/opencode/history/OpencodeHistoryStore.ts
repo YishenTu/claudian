@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 
 import { extractResolvedAnswersFromResultText } from '../../../core/tools/toolInput';
 import { isWriteEditTool, TOOL_ASK_USER_QUESTION } from '../../../core/tools/toolNames';
-import { extractWebSearchResults } from '../../../core/tools/toolResultContent';
+import { extractToolResultFormat, extractWebSearchResults } from '../../../core/tools/toolResultContent';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import { extractUserQuery } from '../../../utils/context';
 import { extractDiffData } from '../../../utils/diff';
@@ -433,6 +433,7 @@ function buildAssistantToolCalls(parts: StoredRow[], nativeVersion: 1 | 2): Tool
       input,
       name,
       result,
+      resultFormat: extractToolResultFormat(toolUseResult),
       status,
       ...(nativeVersion === 2 ? { providerPayload: {
         rawInput: state?.input,

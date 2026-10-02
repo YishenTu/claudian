@@ -4,6 +4,7 @@
 
   width: 100%;
   min-width: 0;
+
   /* About two lines when idle; the editor grows with its content. */
   min-height: 48px;
   flex: 1 1 auto;
@@ -13,6 +14,7 @@
   color: var(--text-normal);
   font-family: inherit;
   font-size: 14px;
+
   /* One source for the pre-mount placeholder and the mounted editor, so first focus does not shift layout. */
   line-height: 1.4;
   cursor: text;

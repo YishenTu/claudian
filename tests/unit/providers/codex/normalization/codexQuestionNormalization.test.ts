@@ -25,6 +25,17 @@ it('does not build replies for blocking questions or incomplete answers', () => 
   expect(parseCodexQuestionReply('<send_user_message_question_reply>\n[]\n</send_user_message_question_reply>')).toEqual([]);
 });
 
+it('uses the question index when a native question ID is not a scalar', () => {
+  const reply = formatCodexQuestionReply({
+    id: 'call', name: 'AskUserQuestion', status: 'completed',
+    input: { replyMode: 'user-message', questions: [{ id: {}, question: 'Continue?' }] },
+  }, { '0': 'Yes' });
+  expect(reply).not.toBeNull();
+  expect(parseCodexQuestionReply(reply!.content)).toEqual([
+    { callId: 'call', index: 0, question: 'Continue?', answer: 'Yes' },
+  ]);
+});
+
 
 it('recognizes replies inside merged input and preserves ordinary content and delimiter-like answers', () => {
   const tool = { id: 'call', name: 'AskUserQuestion', status: 'completed' as const,

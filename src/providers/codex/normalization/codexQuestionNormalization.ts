@@ -8,11 +8,15 @@ interface CodexQuestionReply {
   answer: string;
 }
 
+export function getCodexQuestionAnswerKey(id: unknown, index: number): string {
+  return typeof id === 'string' || typeof id === 'number' ? String(id) : String(index);
+}
+
 export function formatCodexQuestionReply(tool: ToolCallInfo, answers: AskUserAnswers): ProviderQuestionReply | null {
   if (tool.name !== 'AskUserQuestion' || tool.input.replyMode !== 'user-message' || !Array.isArray(tool.input.questions)) return null;
   const replies = tool.input.questions.map((question: Record<string, unknown>, index) => {
     const text = typeof question.question === 'string' ? question.question : '';
-    const value = answers[String(question.id ?? index)] ?? answers[text];
+    const value = answers[getCodexQuestionAnswerKey(question.id, index)] ?? answers[text];
     const answer = Array.isArray(value) ? value.join(', ') : value;
     return { questionItemId: JSON.stringify(['request_user_input_async', tool.id, index]), question: text, answer };
   });

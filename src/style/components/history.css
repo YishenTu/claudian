@@ -511,7 +511,7 @@
   padding: 8px;
   border: 1px solid var(--background-modifier-border);
   border-radius: 10px;
-  background-color: #ffffff;
+  background-color: #fff;
   background-image: linear-gradient(var(--background-primary), var(--background-primary));
   box-shadow: var(--shadow-s);
 }
@@ -656,7 +656,7 @@ body.theme-dark .claudian-session-metadata-popover {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 -4px 16px rgb(0 0 0 / 25%);
   z-index: 1000;
   max-height: 400px;
   overflow: hidden;

@@ -37,7 +37,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private sessionId: string | null = null;
   private databasePath: string | null = null;
   private model: NativeModel | null = null;
-  private models: Array<Record<string, unknown>> = [];
+  private models: Array<Record<string, unknown> & { providerID: string; id: string; name: string }> = [];
   private commands = new Set<string>();
   private profile: OpencodeKernelConnectOptions['profile'] = 'managed';
   private readonly text = new Map<string, string>();
@@ -67,7 +67,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     const client = this.client;
     await client.waitForActivation(this.controller.signal);
     this.models = await pollOpencodeUntil(
-      async () => (await client.request<{ data: Array<Record<string, unknown>> }>('/api/model')).data.filter(model => model.enabled === true),
+      async () => (await client.request<{ data: Array<Record<string, unknown>> }>('/api/model')).data.flatMap(model => model.enabled === true && typeof model.providerID === 'string' && typeof model.id === 'string'
+        ? [{ ...model, providerID: model.providerID, id: model.id, name: typeof model.name === 'string' ? model.name : model.id }]
+        : []),
       models => models.length > 0, 5000, this.controller.signal,
     );
     const catalog = await this.client.request<{ data: Array<{ name: string }> }>('/api/command');
@@ -249,8 +251,14 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       this.previewStops.set(nativeSessionId, 'ended');
       this.stopTools(nativeSessionId);
     }
+    const assistantMessageId = typeof data.assistantMessageID === 'string' ? data.assistantMessageID : undefined;
+    const itemId = typeof data.id === 'string' ? data.id : undefined;
+    const ordinal = typeof data.ordinal === 'number' ? data.ordinal : undefined;
+    if ((event.type.startsWith('session.text.') || event.type.startsWith('session.reasoning.'))
+      && (assistantMessageId === undefined || ordinal === undefined)) return;
+    if (event.type.startsWith('session.tool.') && (assistantMessageId === undefined || itemId === undefined)) return;
     if (child) {
-      if (event.type === 'session.text.ended') child.text.set(`${data.assistantMessageID}:${data.ordinal}`, String(data.text));
+      if (event.type === 'session.text.ended') child.text.set(`${assistantMessageId}:${ordinal}`, String(data.text));
       if (event.type === 'session.step.ended') {
         child.progress.totalTokens += countTokens(data.tokens);
         this.emitChildProgress(child);
@@ -267,9 +275,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       }
       if (!event.type.startsWith('session.tool.') && event.type !== 'permission.asked' && event.type !== 'form.created') return;
     }
-    const key = `${nativeSessionId}:${data.assistantMessageID}:${data.id}`;
+    const key = `${nativeSessionId}:${assistantMessageId}:${itemId}`;
     const identity = child
-      ? { toolCallId: `${nativeSessionId}:${data.id}`, toolScope: { kind: 'subagent' as const, subagentId: child.toolCallId }, parentToolCallId: child.toolCallId }
+      ? { toolCallId: `${nativeSessionId}:${itemId}`, toolScope: { kind: 'subagent' as const, subagentId: child.toolCallId }, parentToolCallId: child.toolCallId }
       : { toolCallId: String(data.id), toolScope: { kind: 'main' as const } };
     switch (event.type) {
       case 'session.execution.started':
@@ -303,7 +311,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       case 'session.text.delta': case 'session.reasoning.delta':
       case 'session.text.ended': case 'session.reasoning.ended': {
         const kind = event.type.includes('.reasoning.') ? 'thinking_delta' : 'text_delta';
-        const key = `${data.assistantMessageID}:${data.ordinal}:${kind}`;
+        const key = `${assistantMessageId}:${ordinal}:${kind}`;
         const previous = this.text.get(key) ?? '';
         const text = typeof data.delta === 'string' ? data.delta : typeof data.text === 'string' ? data.text.slice(previous.length) : '';
         if (event.type.endsWith('.ended')) this.text.delete(key);
@@ -433,7 +441,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
           return;
         }
         const response = await this.options.config.interactionPort.requestApproval({
-          ...identity, kind: 'approval', toolName: data.action === 'shell' ? 'bash' : String(data.action), input: { resources: data.resources, ...(isRecord(data.metadata) ? data.metadata : {}) }, description: typeof data.message === 'string' ? data.message : `${data.action}: ${Array.isArray(data.resources) ? data.resources.join(', ') : ''}`,
+          ...identity, kind: 'approval', toolName: data.action === 'shell' ? 'bash' : String(data.action), input: { resources: data.resources, ...(isRecord(data.metadata) ? data.metadata : {}) }, description: typeof data.message === 'string' ? data.message : `${typeof data.action === 'string' ? data.action : 'Unknown action'}: ${Array.isArray(data.resources) ? data.resources.join(', ') : ''}`,
         }, signal);
         if (signal.aborted) return;
         const reply = response.interactionId === id && response.decision === 'allow' ? 'once' : response.interactionId === id && response.decision === 'allow-always' ? 'always' : 'reject';

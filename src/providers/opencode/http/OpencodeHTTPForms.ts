@@ -19,17 +19,20 @@ export function projectOpencodeFormQuestions(form: Record<string, unknown>): Ask
       || (field.type === 'multiselect' && field.minItems !== 1);
   });
   if (!fields.length || unsupported) throw new Error('Unsupported OpenCode form: this form requires field semantics unavailable in Claudian.');
-  return fields.map(field => ({
-    id: String(field.key),
-    header: String(questionTool ? field.title ?? 'Question' : form.title ?? 'Question'),
-    question: questionTool ? String(field.description ?? field.title ?? field.key) : [...new Set([
-      isRecord(form.metadata) ? form.metadata.message : undefined,
-      field.title, field.description,
-    ].filter((value): value is string => typeof value === 'string' && value.length > 0))].join('\n\n') || String(field.key),
-    multiSelect: field.type === 'multiselect',
-    isOther: field.custom === true || ['number', 'integer'].includes(String(field.type)) || (field.type === 'string' && !Array.isArray(field.options)),
-    options: field.type === 'boolean' ? [{ label: 'True', value: 'true', description: '' }, { label: 'False', value: 'false', description: '' }] : Array.isArray(field.options) ? field.options.filter(isRecord).map(option => ({
-      label: String(option.label), value: typeof option.value === 'string' ? option.value : String(option.label), description: typeof option.description === 'string' ? option.description : '',
-    })) : [],
-  }));
+  return fields.map(field => {
+    const title = questionTool ? field.title : form.title;
+    return {
+      id: String(field.key),
+      header: typeof title === 'string' ? title : 'Question',
+      question: questionTool ? String(field.description ?? field.title ?? field.key) : [...new Set([
+        isRecord(form.metadata) ? form.metadata.message : undefined,
+        field.title, field.description,
+      ].filter((value): value is string => typeof value === 'string' && value.length > 0))].join('\n\n') || String(field.key),
+      multiSelect: field.type === 'multiselect',
+      isOther: field.custom === true || ['number', 'integer'].includes(String(field.type)) || (field.type === 'string' && !Array.isArray(field.options)),
+      options: field.type === 'boolean' ? [{ label: 'True', value: 'true', description: '' }, { label: 'False', value: 'false', description: '' }] : Array.isArray(field.options) ? field.options.filter(isRecord).map(option => ({
+        label: String(option.label), value: typeof option.value === 'string' ? option.value : String(option.label), description: typeof option.description === 'string' ? option.description : '',
+      })) : [],
+    };
+  });
 }

@@ -19,6 +19,7 @@
   flex: 0 1 auto;
   gap: 2px;
   min-width: 0;
+
   /* Inherited by the chip's buttons; Obsidian then skips their aria-label hover tooltips. */
   --no-tooltip: true;
 }
