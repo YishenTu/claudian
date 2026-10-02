@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
+
 import {
   isSteerableExecutionSession,
   type ProviderExecutionEvent,
@@ -587,7 +589,7 @@ describe('OpencodeExecutionBackend', () => {
   it('encodes path-only Linked content without changing the Vault-root kernel CWD', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({
-      context: { sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: '/tmp/claudian-sessions/ref.md' }], linkedContent: { path: 'Projects/Research' } },
+      context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: '/tmp/claudian-sessions/ref.md' }], linkedContent: { path: 'Projects/Research' } },
       input: [{ text: 'Inspect linked content', type: 'text' }],
     }));
     await waitForPrompt(harness.kernels[0]);
@@ -597,7 +599,7 @@ describe('OpencodeExecutionBackend', () => {
     expect(harness.kernels[0].options.config.vaultWorkingDirectory).toBe('/vault');
     expect(harness.kernels[0].prompts[0]).toEqual({
       prompt: [{
-        text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>',
+        text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt + '\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>',
         type: 'text',
       }],
       sessionId: 'native-session',

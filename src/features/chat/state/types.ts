@@ -1,6 +1,6 @@
 import type { EditorView } from '@codemirror/view';
 
-import type { ProviderSessionReference } from '@/core/execution/ProviderExecutionRequest';
+import type { ProviderSelectionSnapshot, ProviderSessionReference } from '@/core/execution/ProviderExecutionRequest';
 
 import type {
   ChatMessage,
@@ -16,6 +16,7 @@ import type { ThinkingBlockState } from '../rendering/ThinkingBlockRenderer';
 import type { WriteEditState } from '../rendering/WriteEditRenderer';
 
 export interface ChatTurnRequest {
+  selections?: readonly ProviderSelectionSnapshot[];
   /** Original composer text for recovery before provider acceptance. */
   draftContent?: string;
   sessionReferences?: readonly ProviderSessionReference[];

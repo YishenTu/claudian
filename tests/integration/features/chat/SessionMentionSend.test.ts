@@ -142,13 +142,15 @@ it('preserves submission order when a busy-main mention hydrates more slowly tha
     fixture.input.value = token;
     const first = fixture.controller.sendMessage();
     await waitForCall(fixture.plugin.getConversationById);
-    fixture.deps.selectionController.getContext = () => ({ mode: 'selection', notePath: 'captured.md', selectedText: 'captured text' });
+    const capturedSelection = { mode: 'selection' as const, notePath: 'captured.md', selectedText: 'captured text' };
+    fixture.deps.selectionController.getContext = () => capturedSelection;
     fixture.input.value = 'later plain follow-up';
     const second = fixture.controller.sendMessage();
+    capturedSelection.selectedText = 'changed after capture';
     fixture.deps.selectionController.getContext = () => ({ mode: 'selection', notePath: 'later.md', selectedText: 'later text' });
     gate.resolve(source);
     await Promise.all([first, second]);
-    expect(fixture.state.queuedMessage?.turnRequest?.editorSelection).toEqual({ mode: 'selection', notePath: 'captured.md', selectedText: 'captured text' });
+    expect(fixture.state.queuedMessage?.turnRequest?.selections).toEqual([{ kind: 'editor', selection: { mode: 'selection', notePath: 'captured.md', selectedText: 'captured text' } }]);
     expect(fixture.state.queuedMessage?.content).toBe('@"Current title"\n\nlater plain follow-up');
   } finally { await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose(); }
 });
@@ -356,7 +358,7 @@ it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refre
   } finally { await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose(); }
 });
 
-it('retains queued priority when a later snapshot finishes before the queued dispatch timer', async () => {
+it.each([false, true])('retains queued priority and captured selections through the timer gap (new selection: %s)', async different => {
   holdNativeTurns();
   jest.useFakeTimers();
   const fixture = setup();
@@ -367,11 +369,36 @@ it('retains queued priority when a later snapshot finishes before the queued dis
   const active = fixture.controller.sendMessage();
   await jest.advanceTimersByTimeAsync(0);
   const session = fixture.native.backends.get('claude')!.sessions[0];
+  const older = {
+    editor: { mode: 'selection' as const, notePath: 'same.md', selectedText: 'older editor' },
+    browser: { source: 'browser', selectedText: 'older browser' },
+    canvas: { canvasPath: 'same.canvas', nodeIds: ['older-node'] },
+  };
+  const newer = {
+    editor: { mode: 'selection' as const, notePath: 'same.md', selectedText: 'newer editor' },
+    browser: { source: 'browser', selectedText: 'newer browser' },
+    canvas: { canvasPath: 'same.canvas', nodeIds: ['newer-node'] },
+  };
+  const expected = [older, ...(different ? [newer] : [])].flatMap(value => [
+    { kind: 'editor', selection: { ...value.editor } },
+    { kind: 'browser', selection: { ...value.browser } },
+    { kind: 'canvas', selection: { ...value.canvas, nodeIds: [...value.canvas.nodeIds] } },
+  ]);
+  fixture.deps.selectionController.getContext = () => older.editor;
+  fixture.deps.browserSelectionController!.getContext = () => older.browser;
+  fixture.deps.canvasSelectionController.getContext = () => older.canvas;
   fixture.input.value = 'older plain follow-up';
   await fixture.controller.sendMessage();
+  fixture.deps.selectionController.getContext = () => different ? newer.editor : null;
+  fixture.deps.browserSelectionController!.getContext = () => different ? newer.browser : null;
+  fixture.deps.canvasSelectionController.getContext = () => different ? newer.canvas : null;
   fixture.input.value = token;
   const mention = fixture.controller.sendMessage();
   await waitForCall(fixture.write);
+  older.editor.selectedText = newer.editor.selectedText = 'live editor changed';
+  older.browser.selectedText = newer.browser.selectedText = 'live browser changed';
+  older.canvas.nodeIds.push('live-node');
+  newer.canvas.nodeIds.push('live-node');
   try {
     finishNativeTurn(session, 0);
     await active;
@@ -384,6 +411,9 @@ it('retains queued priority when a later snapshot finishes before the queued dis
     await jest.advanceTimersByTimeAsync(0);
     expect(session.requests[1].input).toEqual([{ type: 'text', text: 'older plain follow-up\n\n@"Current title"' }]);
     expect(session.requests[1].context?.sessionReferences?.[0].id).toBe(id);
+    expect(session.requests[1].context?.selections).toEqual(expected);
+    expect(fixture.state.messages.filter(message => message.role === 'user').at(-1)
+      ?.executionInput?.context).toEqual(session.requests[1].context);
     finishNativeTurn(session, 1);
     await jest.advanceTimersByTimeAsync(0);
   } finally {

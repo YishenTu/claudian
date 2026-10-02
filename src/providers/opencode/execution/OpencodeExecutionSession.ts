@@ -933,6 +933,7 @@ function buildPromptBlocks(
     ))
     .map(({ image }) => image);
   return buildOpencodePromptBlocks({
+    selections: request.context?.selections,
     browserSelection: request.context?.browserSelection,
     canvasSelection: request.context?.canvasSelection,
     editorSelection: request.context?.editorSelection,

@@ -1,3 +1,4 @@
+import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { testDate } from '@test/helpers/testClock';
 
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
@@ -723,8 +724,10 @@ it('replays a captured session reference through the shared context renderer', (
   const messages: ChatMessage[] = [{
     id: 'user', role: 'user', timestamp: testDate().getTime(), content: '@"Review"',
     executionInput: { schemaVersion: 1, canonicalText: '@"Review"', context: {
+      ...capturedSelections,
       sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: '/tmp/claudian-sessions/ref.md' }],
     } },
   }];
+  expect(buildContextFromHistory(messages, { preserveCapturedContext: true })).toContain(capturedSelectionPrompt);
   expect(buildContextFromHistory(messages, { preserveCapturedContext: true })).toContain('<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />');
 });

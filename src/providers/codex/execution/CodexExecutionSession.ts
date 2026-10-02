@@ -27,14 +27,12 @@ import { ProviderModelUnavailableError } from '../../../core/providers/models/Pr
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ChatMessage, ImageAttachment, StreamChunk } from '../../../core/types';
 import { createTurnStats, isTokenCount } from '../../../core/types';
-import { appendBrowserContext } from '../../../utils/browser';
-import { appendCanvasContext } from '../../../utils/canvas';
 import {
   appendLinkedContent,
   appendLinkedContentBody,
+  appendSelectionContexts,
   appendSessionReferences,
 } from '../../../utils/context';
-import { appendEditorContext } from '../../../utils/editor';
 import {
   buildContextFromHistory,
   buildPromptWithHistoryContext,
@@ -1991,15 +1989,7 @@ export class CodexExecutionSession
           context.linkedContent.content,
         );
     }
-    if (context?.editorSelection) {
-      prompt = appendEditorContext(prompt, context.editorSelection);
-    }
-    if (context?.browserSelection) {
-      prompt = appendBrowserContext(prompt, context.browserSelection);
-    }
-    if (context?.canvasSelection) {
-      prompt = appendCanvasContext(prompt, context.canvasSelection);
-    }
+    prompt = appendSelectionContexts(prompt, context);
 
     const history = request.conversationHistory;
     if (!history?.length) return prompt;
@@ -2065,14 +2055,14 @@ export class CodexExecutionSession
         });
       }
 
-      const prompt = promptOverride ?? appendSessionReferences(
+      const prompt = promptOverride ?? appendSelectionContexts(appendSessionReferences(
         request.input
           .filter(block => block.type === 'text')
           .map(block => block.text)
           .join('\n\n'),
         request.context?.sessionReferences,
         path => this.#mapRequiredHostPath(path),
-      );
+      ), request.context);
       if (prompt) {
         input.push({ type: 'text', text: prompt, text_elements: [] });
       }

@@ -30,7 +30,7 @@ import { t } from '../../../i18n/i18n';
 import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
-import { extractUserDisplayContent } from '../../../utils/context';
+import { captureSelectionSnapshots, extractUserDisplayContent } from '../../../utils/context';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import { toError } from '../../../utils/error';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
@@ -395,11 +395,12 @@ export class InputController {
       const previous = this.mainPreparationBarrier;
       const conversationId = state.currentConversationId;
       const original = shouldUseInput ? this.deps.drafts.consume('main') : { content, images: imageOverride ?? composerDraft.images };
+      const { turnRequest: captured } = this.#buildTurnSubmission({ content, ...options });
       const capturedOptions: SendMessageOptions = {
         ...options, destination: 'main', content, images: [...(imageOverride ?? composerDraft.images)],
-        editorContextOverride: options?.editorContextOverride ?? selectionController.getContext(),
-        browserContextOverride: options?.browserContextOverride ?? browserSelectionController?.getContext() ?? null,
-        canvasContextOverride: options?.canvasContextOverride ?? canvasSelectionController.getContext(),
+        editorContextOverride: captured.editorSelection ?? null,
+        browserContextOverride: captured.browserSelection ?? null,
+        canvasContextOverride: captured.canvasSelection ?? null,
         draftConsumed: shouldUseInput,
       };
       const controller = new AbortController();
@@ -1184,14 +1185,14 @@ export class InputController {
       : undefined;
     return {
       displayContent: options.content,
-      turnRequest: {
+      turnRequest: cloneChatTurnRequest({
         text: options.content,
         images: options.images,
         linkedContentPath,
         editorSelection: editorContext,
         browserSelection: browserContext,
         canvasSelection: canvasContext,
-      },
+      }),
     };
   }
 
@@ -1243,6 +1244,7 @@ export class InputController {
           : { kind: 'provider-default' },
       },
       context: {
+        ...(request.selections !== undefined ? { selections: captureSelectionSnapshots(request) } : {}),
         ...(request.sessionReferences?.length ? { sessionReferences: request.sessionReferences } : {}),
         ...(request.browserSelection
           ? { browserSelection: request.browserSelection }
@@ -2108,6 +2110,12 @@ export class InputController {
 function cloneChatTurnRequest(request: ChatTurnRequest): ChatTurnRequest {
   return {
     ...request,
+    ...(request.selections !== undefined ? { selections: captureSelectionSnapshots(request) } : {}),
+    ...(request.editorSelection ? { editorSelection: { ...request.editorSelection,
+      ...(request.editorSelection.cursorContext ? { cursorContext: { ...request.editorSelection.cursorContext } } : {}),
+    } } : {}),
+    ...(request.browserSelection ? { browserSelection: { ...request.browserSelection } } : {}),
+    ...(request.canvasSelection ? { canvasSelection: { ...request.canvasSelection, nodeIds: [...request.canvasSelection.nodeIds] } } : {}),
     images: request.images ? [...request.images] : undefined,
     ...(request.sessionReferences ? { sessionReferences: request.sessionReferences.map(reference => ({ ...reference })) } : {}),
   };
@@ -2128,6 +2136,10 @@ function mergeQueuedChatTurns(
     displayContent: mergeText(existing.displayContent, incoming.displayContent),
     request: {
       ...cloneChatTurnRequest(incoming.request),
+      selections: [...captureSelectionSnapshots(existing.request), ...captureSelectionSnapshots(incoming.request)],
+      editorSelection: undefined,
+      browserSelection: undefined,
+      canvasSelection: undefined,
       sessionReferences: [...(existing.request.sessionReferences ?? []), ...(incoming.request.sessionReferences ?? [])],
       ...(existing.request.draftContent !== undefined || incoming.request.draftContent !== undefined ? {
         draftContent: mergeText(existing.request.draftContent ?? existing.displayContent,

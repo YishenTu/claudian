@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import pair from '@test/fixtures/providers/codex/turn-stats-pair.json';
+import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
 
 import type {
@@ -829,12 +830,12 @@ describe('CodexExecutionBackend', () => {
     try {
       await expect(session.steer(createRequest(new AbortController().signal, {
         input: [{ type: 'text', text: 'Use @"Review"' }],
-        context: { sessionReferences: [{ id: 'conv-1-ref', title: 'Review & fix', providerId: 'codex', updatedAt: 'updated',
+        context: { ...capturedSelections, sessionReferences: [{ id: 'conv-1-ref', title: 'Review & fix', providerId: 'codex', updatedAt: 'updated',
           snapshotPath: wsl ? 'C:\\Temp\\claudian-sessions\\ref.md' : '/tmp/claudian-sessions/ref.md' }] },
       }))).resolves.toBe(true);
       const input = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input;
       expect(input).toEqual([{ type: 'text', text_elements: [], text: 'Use @"Review"\n\n<context_sessions>\n<context_session title="Review &amp; fix" id="conv-1-ref" provider="codex" updated="updated" path="'
-        + (wsl ? '/mnt/c/Temp/claudian-sessions/ref.md' : '/tmp/claudian-sessions/ref.md') + '" />\n</context_sessions>' }]);
+        + (wsl ? '/mnt/c/Temp/claudian-sessions/ref.md' : '/tmp/claudian-sessions/ref.md') + '" />\n</context_sessions>' + '\n\n' + capturedSelectionPrompt }]);
     } finally { run.cancel(); await collectEvents(run.events); await session.dispose(); }
   });
 
@@ -1623,7 +1624,7 @@ describe('CodexExecutionBackend', () => {
     await collectEvents(session.execute(createRequest(
       new AbortController().signal,
       {
-        context: { linkedContent: { path: 'Projects/Research' } },
+        context: { ...capturedSelections, linkedContent: { path: 'Projects/Research' } },
         input: [{ type: 'text', text: 'Inspect linked content' }],
       },
     )).events);
@@ -1636,7 +1637,7 @@ describe('CodexExecutionBackend', () => {
       };
     expect(threadStartParams.cwd).toBe('/vault');
     expect(turnStartParams.input.find(block => block.type === 'text')?.text).toBe(
-      'Inspect linked content\n\n<linked_content path="Projects/Research" />',
+      'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n' + capturedSelectionPrompt,
     );
 
     await session.dispose();

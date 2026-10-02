@@ -26,7 +26,14 @@ export interface ProviderSessionReference {
   readonly snapshotPath: string;
 }
 
+export type ProviderSelectionSnapshot =
+  | { readonly kind: 'editor'; readonly selection: EditorSelectionContext }
+  | { readonly kind: 'browser'; readonly selection: BrowserSelectionContext }
+  | { readonly kind: 'canvas'; readonly selection: CanvasSelectionContext };
+
 export interface ProviderExecutionContext {
+  /** Ordered captures; when present, supersedes the legacy singular selection fields. */
+  readonly selections?: readonly ProviderSelectionSnapshot[];
   readonly sessionReferences?: readonly ProviderSessionReference[];
   readonly linkedContent?: ProviderLinkedContentContext;
   readonly editorSelection?: EditorSelectionContext | null;

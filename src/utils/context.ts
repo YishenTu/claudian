@@ -4,7 +4,10 @@
  * Note and context file formatting for prompts.
  */
 
-import type { ProviderSessionReference } from '../core/execution/ProviderExecutionRequest';
+import type { ProviderExecutionContext, ProviderSelectionSnapshot, ProviderSessionReference } from '../core/execution/ProviderExecutionRequest';
+import { appendBrowserContext } from './browser';
+import { appendCanvasContext } from './canvas';
+import { appendEditorContext } from './editor';
 import { escapePromptXMLAttribute, formatPromptXMLCdata } from './promptXML';
 
 const LINKED_CONTENT_TAG = 'linked_content';
@@ -129,4 +132,47 @@ export function appendSessionReferences(
       .map(([name, value]) => `${name}="${escapePromptXMLAttribute(value)}"`).join(' ')} />`;
   });
   return `${prompt}\n\n<context_sessions>\n${entries.join('\n')}\n</context_sessions>`;
+}
+
+/** Normalize legacy single selections only when an ordered capture is absent. */
+function getSelectionSnapshots(context?: ProviderExecutionContext): readonly ProviderSelectionSnapshot[] {
+  if (context?.selections !== undefined) return context.selections;
+  const selections: ProviderSelectionSnapshot[] = [];
+  if (context?.editorSelection) selections.push({ kind: 'editor', selection: context.editorSelection });
+  if (context?.browserSelection) selections.push({ kind: 'browser', selection: context.browserSelection });
+  if (context?.canvasSelection) selections.push({ kind: 'canvas', selection: context.canvasSelection });
+  return selections;
+}
+
+export function captureSelectionSnapshots(context?: ProviderExecutionContext): ProviderSelectionSnapshot[] {
+  return getSelectionSnapshots(context).map(snapshot => {
+    switch (snapshot.kind) {
+      case 'editor':
+        return { kind: 'editor', selection: {
+          ...snapshot.selection,
+          ...(snapshot.selection.cursorContext ? { cursorContext: { ...snapshot.selection.cursorContext } } : {}),
+        } };
+      case 'browser':
+        return { kind: 'browser', selection: { ...snapshot.selection } };
+      case 'canvas':
+        return { kind: 'canvas', selection: { ...snapshot.selection, nodeIds: [...snapshot.selection.nodeIds] } };
+    }
+  });
+}
+
+export function appendSelectionContexts(prompt: string, context?: ProviderExecutionContext): string {
+  for (const snapshot of getSelectionSnapshots(context)) {
+    switch (snapshot.kind) {
+      case 'editor':
+        prompt = appendEditorContext(prompt, snapshot.selection);
+        break;
+      case 'browser':
+        prompt = appendBrowserContext(prompt, snapshot.selection);
+        break;
+      case 'canvas':
+        prompt = appendCanvasContext(prompt, snapshot.selection);
+        break;
+    }
+  }
+  return prompt;
 }

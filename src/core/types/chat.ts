@@ -1,4 +1,4 @@
-import type { ProviderSessionReference } from '../execution/ProviderExecutionRequest';
+import type { ProviderSelectionSnapshot, ProviderSessionReference } from '../execution/ProviderExecutionRequest';
 import type { ProviderCapabilities } from '../providers/types';
 import type { SDKToolUseResult } from './diff';
 import type { ProviderId } from './provider';
@@ -64,6 +64,7 @@ export interface ExecutionInputCanvasSnapshot {
 }
 
 export interface ExecutionInputContextSnapshot {
+  selections?: readonly ProviderSelectionSnapshot[];
   sessionReferences?: readonly ProviderSessionReference[];
   linkedContent?: ExecutionInputLinkedContentSnapshot;
   editorSelection?: ExecutionInputEditorSnapshot | null;

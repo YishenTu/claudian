@@ -35,13 +35,11 @@ import type {
   StreamChunk,
   TurnStats,
 } from '../../../core/types';
-import { appendBrowserContext } from '../../../utils/browser';
-import { appendCanvasContext } from '../../../utils/canvas';
 import {
   appendLinkedContent,
+  appendSelectionContexts,
   appendSessionReferences,
 } from '../../../utils/context';
-import { appendEditorContext } from '../../../utils/editor';
 import { parseEnvironmentVariables } from '../../../utils/env';
 import {
   buildContextFromHistory,
@@ -1739,15 +1737,7 @@ function encodePrompt(
   if (context?.linkedContent?.path) {
     text = appendLinkedContent(text, context.linkedContent.path);
   }
-  if (context?.editorSelection) {
-    text = appendEditorContext(text, context.editorSelection);
-  }
-  if (context?.browserSelection) {
-    text = appendBrowserContext(text, context.browserSelection);
-  }
-  if (context?.canvasSelection) {
-    text = appendCanvasContext(text, context.canvasSelection);
-  }
+  text = appendSelectionContexts(text, context);
   text = appendSessionReferences(text, context?.sessionReferences);
   if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];

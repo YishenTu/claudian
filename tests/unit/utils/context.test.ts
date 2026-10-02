@@ -1,8 +1,12 @@
+import { capturedSelectionPrompt, capturedSelections } from '@test/helpers/capturedSelections';
+
 import {
   appendContextFiles,
   appendLinkedContent,
   appendLinkedContentBody,
+  appendSelectionContexts,
   appendSessionReferences,
+  captureSelectionSnapshots,
   extractUserDisplayContent,
   extractUserQuery,
   formatLinkedContent,
@@ -258,5 +262,41 @@ describe('session reference context', () => {
   it('leaves inputs without references unchanged', () => {
     expect(appendSessionReferences('plain')).toBe('plain');
     expect(appendSessionReferences('plain', [])).toBe('plain');
+  });
+});
+
+
+describe('captured selections', () => {
+  it('renders ordered captures once, with precedence over legacy fields, and hides them in display', () => {
+    const prompt = appendSelectionContexts('Question', {
+      ...capturedSelections,
+      editorSelection: { mode: 'selection', notePath: 'legacy.md', selectedText: 'legacy duplicate' },
+    });
+    expect(prompt).toBe('Question\n\n' + capturedSelectionPrompt);
+    expect(extractUserDisplayContent(prompt)).toBe('Question');
+    expect(extractUserQuery(prompt)).toBe('Question');
+  });
+
+  it('normalizes legacy fields but respects an explicitly empty ordered capture', () => {
+    const legacy = { editorSelection: { mode: 'selection' as const, notePath: 'same.md', selectedText: 'first editor' } };
+    expect(appendSelectionContexts('Question', legacy)).toBe('Question\n\n' + capturedSelectionPrompt.split('\n\n')[0]);
+    expect(appendSelectionContexts('Question', { ...legacy, selections: [] })).toBe('Question');
+  });
+
+  it('owns nested cursor and canvas data after capture', () => {
+    const context = {
+      editorSelection: { mode: 'cursor' as const, notePath: 'same.md', cursorContext: {
+        beforeCursor: 'before', afterCursor: 'after', isInbetween: false, line: 0, column: 6,
+      } },
+      canvasSelection: { canvasPath: 'same.canvas', nodeIds: ['captured-node'] },
+    };
+    const selections = captureSelectionSnapshots(context);
+    context.editorSelection.cursorContext.beforeCursor = 'changed';
+    context.canvasSelection.nodeIds.push('later-node');
+    const prompt = appendSelectionContexts('Question', { selections });
+    expect(prompt).toContain('before|after');
+    expect(prompt).toContain('captured-node');
+    expect(prompt).not.toContain('changed');
+    expect(prompt).not.toContain('later-node');
   });
 });
