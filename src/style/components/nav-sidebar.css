@@ -10,21 +10,29 @@
     z-index: 100;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.2s ease;
+
+    /* Hidden controls leave the tab order and accessibility tree, not just the screen. */
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s;
 }
 
 .claudian-nav-sidebar.visible {
     opacity: 0.15;
     pointer-events: auto;
+    visibility: visible;
 }
 
-.claudian-nav-sidebar.visible:hover {
+.claudian-nav-sidebar.visible:hover,
+.claudian-nav-sidebar.visible:focus-within {
     opacity: 1;
 }
 
-.claudian-nav-btn {
+.claudian-nav-sidebar button.claudian-nav-btn,
+.claudian-nav-sidebar button.claudian-nav-btn:focus,
+.claudian-nav-sidebar button.claudian-nav-btn:active {
     width: 32px;
     height: 32px;
+    padding: 0;
     border-radius: 16px;
     background: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
@@ -37,10 +45,16 @@
     transition: all 0.2s ease;
 }
 
-.claudian-nav-btn:hover {
+.claudian-nav-sidebar button.claudian-nav-btn:hover {
     background: var(--background-secondary);
     color: var(--text-normal);
+    box-shadow: 0 2px 4px rgb(0 0 0 / 10%);
     transform: scale(1.05);
+}
+
+.claudian-nav-sidebar button.claudian-nav-btn:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 1px;
 }
 
 .claudian-nav-btn svg {
@@ -86,25 +100,41 @@ body.theme-dark .claudian-nav-toc-popover {
     min-height: 0;
 }
 
-.claudian-nav-toc-item {
+.claudian-nav-toc-popover button.claudian-nav-toc-item,
+.claudian-nav-toc-popover button.claudian-nav-toc-item:active {
+    display: block;
+    flex-shrink: 0;
     box-sizing: border-box;
+    width: 100%;
+    height: auto;
     min-height: calc(1.35em + 12px);
     max-width: 100%;
     padding: 6px 8px;
+    border: 0;
     border-radius: 6px;
+    background: transparent;
+    box-shadow: none;
     color: var(--text-normal);
     font-size: var(--font-ui-small);
+    font-weight: inherit;
     line-height: 1.35;
+    text-align: start;
     cursor: pointer;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.claudian-nav-toc-item:hover,
-.claudian-nav-toc-item:focus {
+.claudian-nav-toc-popover button.claudian-nav-toc-item:hover,
+.claudian-nav-toc-popover button.claudian-nav-toc-item:focus {
     background: var(--background-secondary);
+    box-shadow: none;
     outline: none;
+}
+
+.claudian-nav-toc-popover button.claudian-nav-toc-item:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: -2px;
 }
 
 .claudian-nav-toc-empty {

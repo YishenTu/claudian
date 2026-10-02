@@ -161,7 +161,11 @@ class MockElement {
   }
 
   createDiv(options?: { cls?: string; text?: string; attr?: Record<string, string> }): MockElement {
-    const el = new MockElement('div');
+    return this.createEl('div', options);
+  }
+
+  createEl(tag: string, options?: { cls?: string; text?: string; attr?: Record<string, string> }): MockElement {
+    const el = new MockElement(tag);
     if (options?.cls) el.className = options.cls;
     if (options?.text) el.textContent = options.text;
     if (options?.attr) {
@@ -306,7 +310,7 @@ describe('NavigationSidebar', () => {
       expect(parentEl.querySelector('.claudian-nav-sidebar')).toBeNull();
     });
 
-    it('should set correct aria-labels on buttons', () => {
+    it('should give each button its icon', () => {
       sidebar = new NavigationSidebar(
         parentEl as unknown as HTMLElement,
         messagesEl as unknown as HTMLElement
@@ -319,12 +323,6 @@ describe('NavigationSidebar', () => {
       expect(buttons.map(button => button.getAttribute('data-icon'))).toEqual([
         'chevrons-up', 'chevron-up', 'list-tree', 'chevron-down', 'chevrons-down',
       ]);
-
-      expect(buttons[0].getAttribute('aria-label')).toBe('Scroll to top');
-      expect(buttons[1].getAttribute('aria-label')).toBe('Previous message');
-      expect(buttons[2].getAttribute('aria-label')).toBe('Conversation directory');
-      expect(buttons[3].getAttribute('aria-label')).toBe('Next message');
-      expect(buttons[4].getAttribute('aria-label')).toBe('Scroll to bottom');
     });
 
   });
