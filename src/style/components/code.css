@@ -7,7 +7,7 @@
 /* Code blocks in chat messages */
 .claudian-code-wrapper pre,
 .claudian-message-content pre {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgb(0 0 0 / 20%);
   padding: 8px 12px;
   border-radius: 6px;
   overflow-x: auto;
@@ -17,13 +17,13 @@
 /* Light mode: use a lighter background so hljs comment colors stay readable */
 body.theme-light .claudian-code-wrapper pre,
 body.theme-light .claudian-message-content pre {
-  background: rgba(0, 0, 0, 0.08);
+  background: rgb(0 0 0 / 8%);
 }
 
 /* Code blocks without language - wrap content */
 .claudian-code-wrapper:not(.has-language) pre {
   white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: break-word;
   overflow-x: hidden;
 }
 
@@ -159,7 +159,7 @@ body.theme-light .claudian-message-content pre {
 .claudian-container .claudian-mermaid-toggle svg {
   width: 16px;
   height: 16px;
-  stroke: currentColor;
+  stroke: currentcolor;
 }
 
 .claudian-mermaid-staging {

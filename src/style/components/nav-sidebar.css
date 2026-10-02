@@ -33,7 +33,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 4px rgb(0 0 0 / 10%);
     transition: all 0.2s ease;
 }
 
@@ -62,9 +62,9 @@
     border: 1px solid var(--background-modifier-border);
     border-radius: 8px;
     overflow: hidden;
-    background-color: #ffffff;
+    background-color: #fff;
     background-image: linear-gradient(var(--background-primary), var(--background-primary));
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
 }
 
 body.theme-dark .claudian-nav-toc-popover {

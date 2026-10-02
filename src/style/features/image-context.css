@@ -5,7 +5,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(var(--claudian-brand-rgb), 0.08);
+  background: rgb(var(--claudian-brand-rgb), 0.08);
   border: 2px dashed var(--claudian-brand);
   border-radius: 6px;
   display: none;
@@ -74,7 +74,7 @@ button.claudian-message-image:focus-visible {
   background-image: none;
   color: var(--text-normal);
   transform: scale(1.03);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
 }
 
 button.claudian-message-image:focus-visible {

@@ -71,11 +71,11 @@
 }
 
 body.theme-light .claudian-tab-badge-streaming {
-  border-color: #000000;
+  border-color: #000;
 }
 
 body.theme-dark .claudian-tab-badge-streaming {
-  border-color: #ffffff;
+  border-color: #fff;
 }
 
 .claudian-tab-badge-review {

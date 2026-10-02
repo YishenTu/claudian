@@ -36,6 +36,7 @@
 .claudian-input-toolbar button.claudian-toolbar-chip:is(:hover, :focus, :focus-visible, :active) {
   /* The button already shows its value, so Obsidian's aria-label hover tooltip would only repeat it. */
   --no-tooltip: true;
+
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -115,7 +116,9 @@
 .claudian-toolbar-popover {
   /* The surface's own aria-label would otherwise pop up as a tooltip over every control inside it. */
   --no-tooltip: true;
+
   position: absolute;
+
   /* Clears the toolbar's top padding, then a 4px gap. */
   bottom: calc(100% + 8px);
   inset-inline-start: 0;
@@ -131,8 +134,10 @@
   padding: 4px;
   border: 1px solid var(--background-modifier-border-hover);
   border-radius: 8px;
+
   /* Secondary stays opaque when translucent themes clear the primary background. */
   background-color: var(--background-secondary);
+
   /* The border alone separates the menu; a shadow would tint the area around it. */
   box-shadow: none;
 }

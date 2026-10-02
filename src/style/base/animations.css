@@ -29,11 +29,11 @@
 @keyframes mcp-glow {
   0%,
   100% {
-    filter: drop-shadow(0 0 2px rgba(124, 58, 237, 0.4));
+    filter: drop-shadow(0 0 2px rgb(124 58 237 / 40%));
   }
 
   50% {
-    filter: drop-shadow(0 0 8px rgba(124, 58, 237, 0.9));
+    filter: drop-shadow(0 0 8px rgb(124 58 237 / 90%));
   }
 }
 

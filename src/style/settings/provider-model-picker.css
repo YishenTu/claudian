@@ -262,7 +262,7 @@
   color: var(--text-normal);
 }
 
-@media (max-width: 720px) {
+@media (width <= 720px) {
   .claudian-provider-model-picker-selected-row {
     align-items: flex-start;
     flex-wrap: wrap;

@@ -22,12 +22,14 @@
   --claudian-input-wrapper-border-color: var(--background-modifier-border);
   --claudian-input-wrapper-box-shadow: none;
   --claudian-input-wrapper-radius: 10px;
+
   position: relative;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--claudian-input-wrapper-border-color);
   border-radius: var(--claudian-input-wrapper-radius);
   box-shadow: var(--claudian-input-wrapper-box-shadow);
+
   /*
    * Size container for the toolbar's narrow-width labels. The box, not the toolbar, is the
    * container: zen shrink-wraps the toolbar, and inline-size containment would collapse it.
@@ -189,7 +191,7 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
   padding: 5px 6px 5px 10px;
   border-bottom: 1px solid var(--background-modifier-border);
   border-radius: calc(var(--claudian-input-wrapper-radius) - 1px) calc(var(--claudian-input-wrapper-radius) - 1px) 0 0;
-  background-color: rgba(var(--claudian-brand-rgb), 0.06);
+  background-color: rgb(var(--claudian-brand-rgb), 0.06);
   color: var(--text-muted);
   font-size: 12px;
 }
@@ -266,7 +268,7 @@ button.claudian-input-nav-btn[aria-disabled='true'] {
 .claudian-queue-indicator-actions button.claudian-queue-indicator-icon-action svg {
   width: 14px;
   height: 14px;
-  color: currentColor;
+  color: currentcolor;
 }
 
 /* Side-chat colour preview while the command is only typed; it outranks the focus border. */

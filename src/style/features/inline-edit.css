@@ -95,7 +95,7 @@
   line-height: 1.4;
   color: var(--text-muted);
   overflow-x: auto;
-  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .claudian-inline-agent-reply > :first-child,
@@ -123,6 +123,7 @@
   font-size: var(--font-text-size);
   line-height: var(--line-height-normal);
   overflow-x: auto;
+
   --p-spacing: 0.4rem;
   --heading-spacing: 0.5rem;
 }
@@ -197,7 +198,7 @@
 
 .claudian-inline-markdown-fallback {
   white-space: pre-wrap;
-  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .claudian-diff-block {
@@ -218,22 +219,22 @@
 }
 
 .claudian-diff-del:not(.claudian-diff-block) {
-  background: rgba(255, 80, 80, 0.2);
+  background: rgb(255 80 80 / 20%);
   text-decoration: line-through;
   color: var(--text-muted);
 }
 
 .claudian-diff-ins:not(.claudian-diff-block) {
-  background: rgba(80, 200, 80, 0.2);
+  background: rgb(80 200 80 / 20%);
 }
 
 .claudian-diff-block.claudian-diff-del {
-  background: rgba(255, 80, 80, 0.14);
+  background: rgb(255 80 80 / 14%);
   color: var(--text-muted);
 }
 
 .claudian-diff-block.claudian-diff-ins {
-  background: rgba(80, 200, 80, 0.14);
+  background: rgb(80 200 80 / 14%);
 }
 
 .claudian-inline-preview-actions {

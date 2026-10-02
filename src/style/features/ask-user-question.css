@@ -2,6 +2,7 @@
 
 .claudian-ask-question-inline {
   --claudian-ask-accent: var(--interactive-accent);
+
   display: flex;
   flex-direction: column;
   font-family: var(--font-interface);
