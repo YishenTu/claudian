@@ -759,3 +759,17 @@ it('executes a selected title model through the real resolver and native backend
     await f.dispose();
   }
 });
+
+
+it('sends hidden session reference paths through the HTTP v2 prompt boundary', async () => {
+  const f = createFixture(false, undefined, 'ECHO_PROMPT=1');
+  try {
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute({
+      ...request('ref @"Review"'),
+      context: { sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: '/tmp/claudian-sessions/ref.md' }] },
+    }).events) events.push(event);
+    const received = JSON.parse(events.flatMap(event => event.type === 'text_delta' ? [event.text] : []).join(''));
+    expect(received.body.text).toBe('ref @"Review"\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>');
+  } finally { await f.dispose(); }
+});

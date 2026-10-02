@@ -938,6 +938,7 @@ function buildPromptBlocks(
     editorSelection: request.context?.editorSelection,
     images,
     linkedContent: request.context?.linkedContent,
+    sessionReferences: request.context?.sessionReferences,
     text,
   }, bootstrapHistory
     ? [...(request.conversationHistory ?? [])] as ChatMessage[]

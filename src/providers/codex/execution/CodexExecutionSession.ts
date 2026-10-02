@@ -32,6 +32,7 @@ import { appendCanvasContext } from '../../../utils/canvas';
 import {
   appendLinkedContent,
   appendLinkedContentBody,
+  appendSessionReferences,
 } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import {
@@ -1980,6 +1981,7 @@ export class CodexExecutionSession
       .map(block => block.text)
       .join('\n\n');
     const context = request.context;
+    prompt = appendSessionReferences(prompt, context?.sessionReferences, path => this.#mapRequiredHostPath(path));
     if (context?.linkedContent) {
       prompt = context.linkedContent.content === undefined
         ? appendLinkedContent(prompt, context.linkedContent.path)

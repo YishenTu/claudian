@@ -1,3 +1,4 @@
+import type { ProviderSessionReference } from '../execution/ProviderExecutionRequest';
 import type { ProviderCapabilities } from '../providers/types';
 import type { SDKToolUseResult } from './diff';
 import type { ProviderId } from './provider';
@@ -63,6 +64,7 @@ export interface ExecutionInputCanvasSnapshot {
 }
 
 export interface ExecutionInputContextSnapshot {
+  sessionReferences?: readonly ProviderSessionReference[];
   linkedContent?: ExecutionInputLinkedContentSnapshot;
   editorSelection?: ExecutionInputEditorSnapshot | null;
   browserSelection?: ExecutionInputBrowserSnapshot | null;
@@ -217,6 +219,8 @@ export interface ConversationMeta {
   isArchived?: boolean;
   /** Status of AI title generation. */
   titleGenerationStatus?: 'pending' | 'success' | 'failed';
+  /** Cheap availability hint; native history may still be missing at hydration. */
+  hasSessionReference?: boolean;
   /** Whether metadata still uses a writable legacy namespace. */
   isLegacySession?: boolean;
 }

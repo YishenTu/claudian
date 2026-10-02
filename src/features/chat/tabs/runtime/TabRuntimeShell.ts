@@ -140,7 +140,11 @@ function buildTabDOM(contentEl: HTMLElement, options: TabRuntimeConstructionCont
   // A queued follow-up is attached to the top of the box it will be sent from.
   const queueIndicatorEl = inputWrapper.createDiv({ cls: 'claudian-input-queue-strip claudian-hidden' });
   const contextRowEl = inputWrapper.createDiv({ cls: 'claudian-context-row' });
-  const composerEditor = new ComposerEditor(inputWrapper, options.plugin.app, options.component);
+  const composerEditor = new ComposerEditor(inputWrapper, options.plugin.app, options.component, id => {
+    const conversation = options.plugin.getConversationSummary(id);
+    if (!conversation) return undefined;
+    try { return ProviderRegistry.getChatUIConfig(conversation.providerId).getProviderIcon?.(); } catch { return undefined; }
+  });
   const infoRowEl = inputContainerEl.createDiv({ cls: 'claudian-input-info-row' });
   options.registerCleanup('tab composer editor', () => composerEditor.destroy());
   const vault = options.plugin.app.vault;

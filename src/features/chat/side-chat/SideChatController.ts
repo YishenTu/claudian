@@ -137,6 +137,7 @@ export class SideChatController {
     content: string,
     images: readonly ImageAttachment[],
     context?: ProviderExecutionContext,
+    displayContent?: string,
   ): Promise<boolean> {
     const runtime = this.#runtime;
     if (!runtime) return false;
@@ -144,7 +145,7 @@ export class SideChatController {
       new Notice(t('chat.sideChat.busySide'));
       return false;
     }
-    await runtime.submit({ content, ...(context ? { context } : {}), images });
+    await runtime.submit({ content, ...(displayContent !== undefined ? { displayContent } : {}), ...(context ? { context } : {}), images });
     return true;
   }
 

@@ -115,3 +115,22 @@ describe('MentionSource', () => {
     value.destroy();
   });
 });
+
+it('mixes opt-in sessions with files by prefix then recency, including the empty query', async () => {
+  const now = testDate().getTime();
+  const { source: value } = source({
+    getCachedVaultFolders: () => [],
+    getCachedVaultFiles: () => [file('Alpha.md', now)],
+  }, {
+    getSessionItems: () => [
+      { id: 'session:1', kind: 'value', label: 'Alpha review', replacement: 'token ', mtime: now - 1 },
+      { id: 'session:2', kind: 'value', label: 'Review Alpha', replacement: 'token2 ', mtime: now + 1 },
+    ],
+  });
+  const signal = new AbortController().signal;
+  expect((await value.load(value.match('@', 1)!, signal)).map(item => item.id))
+    .toEqual(['session:2', 'vault-file:Alpha.md', 'session:1']);
+  expect((await value.load(value.match('@Alpha', 6)!, signal)).map(item => item.id))
+    .toEqual(['vault-file:Alpha.md', 'session:1', 'session:2']);
+  expect(await value.load(value.match('@missing', 8)!, signal)).toEqual([]);
+});

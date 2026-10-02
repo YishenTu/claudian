@@ -774,9 +774,11 @@ describe('ClaudeExecutionBackend', () => {
         },
       ],
       context: {
+        sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: '/tmp/claudian-sessions/ref.md' }],
         linkedContent: { path: 'note.md' },
       },
       configuration: {
+        readableRoots: ['/tmp/claudian-sessions'],
         systemInstructions: { kind: 'provider-default' },
       },
       toolPolicy: { kind: 'allow-list', names: ['Read', 'Grep'] },
@@ -788,13 +790,14 @@ describe('ClaudeExecutionBackend', () => {
         type: 'image',
         source: { type: 'base64', media_type: 'image/png', data: 'aW1hZ2U=' },
       },
-      { type: 'text', text: '@mentioned Explain this\n\n<linked_content path="note.md" />' },
+      { type: 'text', text: '@mentioned Explain this\n\n<linked_content path="note.md" />\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>' },
     ]);
     expect(getEncodedPrompts()).toEqual([
-      '@mentioned Explain this\n\n<linked_content path="note.md" />',
+      '@mentioned Explain this\n\n<linked_content path="note.md" />\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>',
     ]);
     expect(sdkMock.getLastOptions()).toEqual(expect.objectContaining({
       cwd: '/vault',
+      additionalDirectories: ['/tmp/claudian-sessions'],
       tools: ['Read', 'Grep'],
     }));
     expect(sdkMock.getLastOptions()?.mcpServers).toBeUndefined();

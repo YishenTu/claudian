@@ -128,6 +128,11 @@ async function drainTabForShutdownSnapshotOnce(
   }
   await captureTeardownFailure(
     cleanupFailures,
+    'tab session mention preparation',
+    () => tab.controllers.inputController.drainSessionMentionPreparations(),
+  );
+  await captureTeardownFailure(
+    cleanupFailures,
     'tab background work',
     () => tab.session.awaitBackgroundWork(),
   );

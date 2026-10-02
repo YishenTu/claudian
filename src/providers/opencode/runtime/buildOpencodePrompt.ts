@@ -1,4 +1,5 @@
 import type { ProviderLinkedContentContext } from '../../../core/execution';
+import type { ProviderSessionReference } from '../../../core/execution/ProviderExecutionRequest';
 import type { ChatMessage, ImageAttachment } from '../../../core/types';
 import {
   appendBrowserContext,
@@ -11,6 +12,7 @@ import {
 import {
   appendLinkedContent,
   appendLinkedContentBody,
+  appendSessionReferences,
 } from '../../../utils/context';
 import {
   appendEditorContext,
@@ -20,6 +22,7 @@ import { buildContextFromHistory, buildPromptWithHistoryContext } from '../../..
 import type { ACPContentBlock } from '../../acp';
 
 export interface OpencodePromptRequest {
+  sessionReferences?: readonly ProviderSessionReference[];
   text: string;
   images?: ImageAttachment[];
   linkedContent?: ProviderLinkedContentContext;
@@ -55,6 +58,8 @@ export function buildOpencodePromptText(
   if (request.canvasSelection) {
     prompt = appendCanvasContext(prompt, request.canvasSelection);
   }
+
+  prompt = appendSessionReferences(prompt, request.sessionReferences);
 
   if (conversationHistory.length > 0) {
     const historyContext = buildContextFromHistory(conversationHistory);

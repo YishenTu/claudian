@@ -1153,6 +1153,7 @@ export class ConversationRepository {
       isArchived: conversation.isArchived,
       titleGenerationStatus: conversation.titleGenerationStatus,
       isLegacySession: this.#isLegacyMetadataTarget(conversation.id),
+      hasSessionReference: Boolean(conversation.sessionId),
     }));
   }
 

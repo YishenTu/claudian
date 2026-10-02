@@ -587,12 +587,12 @@ describe('GrokExecutionBackend', () => {
 
     await collect(session.execute({
       ...baseRequest,
-      context: { linkedContent: { path: 'Projects/Research' } },
+      context: { sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: '/tmp/claudian-sessions/ref.md' }], linkedContent: { path: 'Projects/Research' } },
     }).events);
 
     expect(native.loadRequests[0]?.cwd).toBe('/tmp/vault');
     expect(native.promptRequests[0]?.prompt).toEqual([{
-      text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />',
+      text: 'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>',
       type: 'text',
     }]);
     expect(JSON.stringify(native.promptRequests[0]?.prompt)).not.toMatch(

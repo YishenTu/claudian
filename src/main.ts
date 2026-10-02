@@ -1,3 +1,4 @@
+import { SessionSnapshotStore } from './app/conversations/SessionSnapshotStore';
 import { StartupProfiler } from './core/performance/StartupProfiler';
 // Must run before any SDK imports to patch Electron/Node.js realm incompatibility
 import { patchSetMaxListenersForElectron } from './utils/electronCompat';
@@ -131,6 +132,17 @@ export default class ClaudianPlugin extends Plugin {
     },
   });
   private modelMetadataMigration: Promise<void> | null = null;
+  private readonly sessionSnapshots = new SessionSnapshotStore();
+  private sessionSnapshotCleanup: Promise<void> | null = null;
+
+  writeSessionSnapshot(conversationId: string, markdown: string): Promise<string> {
+    return this.sessionSnapshots.write(conversationId, markdown);
+  }
+
+  getSessionSnapshotDirectory(): string {
+    return this.sessionSnapshots.directory;
+  }
+
   private sessionInputCleanup: Promise<void> | null = null;
   private sessionInputCleanupTimer: number | null = null;
 
@@ -299,6 +311,7 @@ export default class ClaudianPlugin extends Plugin {
         this.sessionInputCleanupTimer = window.setTimeout(() => {
           this.sessionInputCleanupTimer = null;
           if (this.isUnloading) return;
+          this.sessionSnapshotCleanup = this.sessionSnapshots.sweep(this.startupMaintenanceAbort.signal);
           this.sessionInputCleanup = this.storage.cleanupObsoleteSessionInputs(this.startupMaintenanceAbort.signal);
         }, 0);
       });
@@ -334,6 +347,7 @@ export default class ClaudianPlugin extends Plugin {
     await Promise.allSettled([
       this.sessionMetadata?.dispose(),
       this.sessionInputCleanup,
+      this.sessionSnapshotCleanup,
       ...this.getAllViews().map(view => view.prepareForPluginUnload()),
     ]);
     // Admitted native archive work needs provider services that are disposed below.

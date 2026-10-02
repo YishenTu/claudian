@@ -120,6 +120,7 @@ export function createHarness(options: {
   const app = { vault: { adapter: { basePath: '/vault' }, getFiles: () => [] } };
   const settings = options.settings ?? {};
   const plugin = {
+    getSessionSnapshotDirectory: () => '/tmp/claudian-sessions',
     app,
     getConversationSummary(id: string) { return (this as unknown as { getConversationSync: (id: string) => any }).getConversationSync(id); },
     getConversationSync: () => options.providerState ? { id: 'conversation-1', providerId: 'claude', providerState: options.providerState } : null,

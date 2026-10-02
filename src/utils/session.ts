@@ -7,7 +7,7 @@
 import type { ChatMessage, ImageAttachment, ToolCallInfo } from '../core/types';
 import { appendBrowserContext } from './browser';
 import { appendCanvasContext } from './canvas';
-import { appendLinkedContent, appendLinkedContentBody, extractUserQuery, formatLinkedContent } from './context';
+import { appendLinkedContent, appendLinkedContentBody, appendSessionReferences, extractUserQuery, formatLinkedContent } from './context';
 import { appendEditorContext } from './editor';
 
 export function getMissingSessionId(error: unknown): string | null {
@@ -156,7 +156,7 @@ function formatCapturedUserContent(message: ChatMessage): string {
   if (context?.editorSelection) content = appendEditorContext(content, context.editorSelection);
   if (context?.browserSelection) content = appendBrowserContext(content, context.browserSelection);
   if (context?.canvasSelection) content = appendCanvasContext(content, context.canvasSelection);
-  return content;
+  return appendSessionReferences(content, context?.sessionReferences);
 }
 
 export function buildContextFromHistory(

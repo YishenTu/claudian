@@ -16,6 +16,7 @@ import type {
 import { isSteerableExecutionSession } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { ClaudianSettings } from '@/core/types';
+import { createCodexPathMapper } from '@/providers/codex/runtime/CodexPathMapper';
 type MutableTestHost = ProviderHost & { settings: ClaudianSettings };
 
 const mockTransportRequest = jest.fn();
@@ -1504,7 +1505,11 @@ describe('CodexExecutionBackend', () => {
     }
   });
 
-  it('sends all attached context using canonical escaped XML', async () => {
+  it.each([false, true])('sends escaped context using target-visible snapshot paths (WSL: %s)', async wsl => {
+    if (wsl) {
+      const launch = await mockResolveLaunchSpec();
+      mockResolveLaunchSpec.mockResolvedValue({ ...launch, pathMapper: createCodexPathMapper({ method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' }) });
+    }
     mockTransportRequest.mockImplementation(async (method: string) => {
       if (method === 'initialize') {
         return {
@@ -1528,6 +1533,7 @@ describe('CodexExecutionBackend', () => {
       new AbortController().signal,
       {
         context: {
+          sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: wsl ? 'C:\\Temp\\claudian-sessions\\ref.md' : '/tmp/claudian-sessions/ref.md' }],
           linkedContent: {
             path: 'notes/"draft" & review.md',
             content: 'Before\n]]>\nAfter',
@@ -1567,6 +1573,7 @@ describe('CodexExecutionBackend', () => {
     expect(prompt).toContain(
       '<canvas_selection path="boards/&quot;draft&quot; &amp; review.canvas">',
     );
+    expect(prompt).toContain(`<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="${wsl ? "/mnt/c/Temp/claudian-sessions/ref.md" : "/tmp/claudian-sessions/ref.md"}" />\n</context_sessions>`);
     expect(prompt).not.toContain('[Editor selection from');
     expect(prompt).not.toContain('<linked_note');
     expect(prompt).not.toContain('<current_note');

@@ -1,6 +1,7 @@
 import { testClock } from '@test/helpers/testClock';
 import { Notice, TFile, TFolder } from 'obsidian';
 
+import { SessionSnapshotStore } from '@/app/conversations/SessionSnapshotStore';
 import { DEFAULT_CLAUDIAN_SETTINGS as DEFAULT_SETTINGS } from '@/app/settings/defaultSettings';
 import { SharedStorageService } from '@/app/storage/SharedStorageService';
 import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
@@ -306,6 +307,34 @@ describe('ClaudianPlugin', () => {
       await new Promise(resolve => setTimeout(resolve, 5));
       await (plugin as any).sessionInputCleanup;
       expect(files.has(inputPath)).toBe(mode !== 'run');
+    });
+
+    it('defers snapshot maintenance, aborts it on unload, and joins it before shutdown', async () => {
+      let entered!: () => void;
+      const started = new Promise<void>(resolve => { entered = resolve; });
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      let signal: AbortSignal | undefined;
+      const sweep = jest.spyOn(SessionSnapshotStore.prototype, 'sweep').mockImplementation(async received => {
+        signal = received;
+        entered();
+        await gate;
+      });
+      try {
+        await plugin.onload();
+        expect(sweep).not.toHaveBeenCalled();
+        for (const [ready] of mockApp.workspace.onLayoutReady.mock.calls) ready();
+        await started;
+        plugin.onunload();
+        expect(signal?.aborted).toBe(true);
+        let stopped = false;
+        const shutdown = (plugin as any).applicationShutdownPromise.then(() => { stopped = true; });
+        await Promise.resolve();
+        expect(stopped).toBe(false);
+        release();
+        await shutdown;
+        expect(stopped).toBe(true);
+      } finally { release(); sweep.mockRestore(); }
     });
 
     it('joins an admitted input deletion on unload and leaves remaining inputs for the next launch', async () => {

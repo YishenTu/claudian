@@ -75,6 +75,7 @@ export class SideChatRuntime {
   #status: SideChatStatus = 'preparing';
   #lastError: string | null = null;
   #disposed = false;
+  #preparation: { controller: AbortController; pending: Promise<unknown> } | null = null;
   #draining = false;
   #requestedSettlement: Promise<void> | null = null;
   #sessionEventWork: Promise<void> = Promise.resolve();
@@ -194,7 +195,7 @@ export class SideChatRuntime {
   }
 
   get isWorking(): boolean {
-    return this.#draining || Boolean(this.#session?.hasBackgroundWork);
+    return this.#preparation !== null || this.#draining || Boolean(this.#session?.hasBackgroundWork);
   }
 
   get queuedCount(): number {
@@ -215,6 +216,23 @@ export class SideChatRuntime {
 
   setTabActive(active: boolean): void {
     this.#stream.setTabActive(active);
+  }
+
+  /** Preparation belongs to this child, including cancellation and disposal. */
+  async prepareSubmission<T>(prepare: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    if (this.#disposed || this.isWorking) throw new Error('The side chat is busy.');
+    const controller = new AbortController();
+    const pending = prepare(controller.signal);
+    this.#preparation = { controller, pending };
+    this.#refreshStatus();
+    try {
+      const result = await pending;
+      controller.signal.throwIfAborted();
+      return result;
+    } finally {
+      this.#preparation = null;
+      if (!this.#disposed) this.#refreshStatus();
+    }
   }
 
   /** Accept a detached snapshot without changing the shared composer's destination. */
@@ -310,6 +328,7 @@ export class SideChatRuntime {
       const result = await this.#session.execute({
         ...(submission.context ? { context: submission.context } : {}),
         configuration: {
+          readableRoots: [this.deps.plugin.getSessionSnapshotDirectory()],
           ...(this.#settings.model ? { model: this.#settings.model } : {}),
           ...(this.#settings.permissionMode
             ? { permissionMode: this.#settings.permissionMode }
@@ -390,6 +409,7 @@ export class SideChatRuntime {
   }
 
   cancel(): void {
+    this.#preparation?.controller.abort();
     this.#discardQueuedSubmissions();
     this.#refreshStatus();
     if (this.state.isStreaming) this.state.cancelRequested = true;
@@ -399,6 +419,8 @@ export class SideChatRuntime {
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#preparation?.controller.abort();
+    await this.#preparation?.pending.catch(() => undefined);
     this.#discardBackgroundTurns();
     this.#discardQueuedSubmissions();
     this.#titleService?.cancel();

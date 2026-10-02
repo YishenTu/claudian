@@ -60,13 +60,17 @@ function buildContextManagers(
   contextTray: ComposerContextTray,
   infoRow: ComposerInfoRow,
   onUserModified: () => void,
+  runtimeRef: PublishedTabRuntimeRef,
 ): Pick<
   TabUIComponents,
   'fileContextManager' | 'imageContextManager' | 'linkedContentController'
 > {
   const { dom } = shell;
   const { plugin } = options;
-  const fileContextManager = new FileContextManager(plugin.app);
+  const fileContextManager = new FileContextManager(plugin.app, {
+    getConversationList: () => plugin.getConversationList(),
+    getCurrentConversationId: () => runtimeRef.current()?.conversationId,
+  });
   options.registerCleanup('tab file context manager', () => fileContextManager.destroy());
   const linkedContentController = new LinkedContentController({
     app: plugin.app,
@@ -405,6 +409,7 @@ export function buildTabRuntimeUI(
     contextTray,
     infoRow,
     onUserModified,
+    runtimeRef,
   );
   const catalogInfo = shell.providerCatalogResolver();
   const composerDropdown = buildComposerDropdown(

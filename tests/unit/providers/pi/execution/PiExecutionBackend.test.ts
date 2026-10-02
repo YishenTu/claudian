@@ -868,7 +868,7 @@ describe('PiExecutionBackend', () => {
   it('encodes path-only Linked content without changing the Vault-root process CWD', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest({
-      context: { linkedContent: { path: 'Projects/Research' } },
+      context: { sessionReferences: [{ id: 'conv-1-ref', title: 'Review', providerId: 'codex', updatedAt: 'updated', snapshotPath: '/tmp/claudian-sessions/ref.md' }], linkedContent: { path: 'Projects/Research' } },
       input: [{ text: 'Inspect linked content', type: 'text' }],
     }));
     const eventsPromise = collect(run.events);
@@ -878,7 +878,7 @@ describe('PiExecutionBackend', () => {
 
     expect(harness.kernels[0].launchSpec.cwd).toBe('/vault');
     expect(getPromptMessages(harness.kernels[0])).toEqual([
-      'Inspect linked content\n\n<linked_content path="Projects/Research" />',
+      'Inspect linked content\n\n<linked_content path="Projects/Research" />\n\n<context_sessions>\n<context_session title="Review" id="conv-1-ref" provider="codex" updated="updated" path="/tmp/claudian-sessions/ref.md" />\n</context_sessions>',
     ]);
     expect(getPromptMessages(harness.kernels[0])[0]).not.toMatch(
       /<(?:linked_note|current_note)\b/,

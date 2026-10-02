@@ -73,3 +73,14 @@
   display: inline;
   margin: 0;
 }
+
+.claudian-composer-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  padding: 0 0.3em;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-hover);
+  color: var(--text-accent);
+  vertical-align: baseline;
+}

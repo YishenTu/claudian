@@ -1,5 +1,6 @@
 import { setIcon } from 'obsidian';
 
+import { createProviderIconSvg } from '../icons';
 import type { ComposerDropdownItem, ComposerInputElement } from './types';
 
 export interface ComposerDropdownViewOptions {
@@ -60,7 +61,9 @@ export class ComposerDropdownView {
       itemEl.setAttribute('aria-selected', String(index === selectedIndex));
       if (!selectable) itemEl.setAttribute('aria-disabled', 'true');
 
-      if (item.kind !== 'status' && item.icon) {
+      if (item.kind === 'value' && item.providerIcon) {
+        createProviderIconSvg(item.providerIcon, { parent: itemEl.createSpan({ cls: 'claudian-composer-dropdown-icon' }), width: '1em', height: '1em' });
+      } else if (item.kind !== 'status' && item.icon) {
         const iconEl = itemEl.createSpan({ cls: 'claudian-composer-dropdown-icon' });
         setIcon(iconEl, item.icon);
       }

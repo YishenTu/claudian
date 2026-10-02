@@ -22,7 +22,7 @@ import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ChatMessage } from '../../../core/types';
 import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
-import { appendLinkedContent } from '../../../utils/context';
+import { appendLinkedContent, appendSessionReferences } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import {
   buildContextFromHistory,
@@ -1384,6 +1384,7 @@ function buildPromptBlocks(
   }
   if (context?.browserSelection) text = appendBrowserContext(text, context.browserSelection);
   if (context?.canvasSelection) text = appendCanvasContext(text, context.canvasSelection);
+  text = appendSessionReferences(text, context?.sessionReferences);
   if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];
     text = buildPromptWithHistoryContext(

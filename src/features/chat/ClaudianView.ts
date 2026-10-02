@@ -2477,6 +2477,7 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   }
 
   notifyConversationListChanged(): void {
+    for (const tab of this.tabManager?.getAllTabs() ?? []) tab.ui.fileContextManager.getMentionSource().invalidate();
     this.updateHistoryDropdown();
   }
 

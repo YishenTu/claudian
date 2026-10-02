@@ -39,6 +39,7 @@ import { appendBrowserContext } from '../../../utils/browser';
 import { appendCanvasContext } from '../../../utils/canvas';
 import {
   appendLinkedContent,
+  appendSessionReferences,
 } from '../../../utils/context';
 import { appendEditorContext } from '../../../utils/editor';
 import { parseEnvironmentVariables } from '../../../utils/env';
@@ -1747,6 +1748,7 @@ function encodePrompt(
   if (context?.canvasSelection) {
     text = appendCanvasContext(text, context.canvasSelection);
   }
+  text = appendSessionReferences(text, context?.sessionReferences);
   if (replayConversationHistory && request.conversationHistory?.length) {
     const history = [...request.conversationHistory] as ChatMessage[];
     const historyContext = buildContextFromHistory(history, { preserveCapturedContext });

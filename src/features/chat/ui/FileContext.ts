@@ -1,8 +1,12 @@
 import type { App, TFile } from 'obsidian';
 
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import type { ConversationMeta } from '@/core/types';
+
 import { MentionSource } from '../../../shared/composer-dropdown/MentionSource';
 import type { FolderMentionItem } from '../../../shared/mention/types';
 import { VaultMentionDataProvider } from '../../../shared/mention/VaultMentionDataProvider';
+import { formatComposerSessionMention } from '../composer/composerSessionMentions';
 import { formatComposerWikilink } from '../composer/composerWikilinks';
 
 /**
@@ -13,13 +17,28 @@ export class FileContextManager {
   private readonly mentionDataProvider: VaultMentionDataProvider;
   private readonly mentionSource: MentionSource;
 
-  constructor(private readonly app: App) {
+  constructor(private readonly app: App, sessions?: {
+    getConversationList(): readonly ConversationMeta[];
+    getCurrentConversationId(): string | null | undefined;
+  }) {
     this.mentionDataProvider = new VaultMentionDataProvider(this.app);
     this.mentionSource = new MentionSource({
       getCachedVaultFolders: () => this.mentionDataProvider.getCachedVaultFolders(),
       getCachedVaultFiles: () => this.mentionDataProvider.getCachedVaultFiles(),
     }, {
       formatVaultFileMention: formatComposerWikilink,
+      getSessionItems: sessions ? () => sessions.getConversationList()
+        .filter(row => !row.isArchived && !row.isLegacySession && row.hasSessionReference !== false
+          && row.id !== sessions.getCurrentConversationId())
+        .map(row => {
+          let providerIcon;
+          try { providerIcon = ProviderRegistry.getChatUIConfig(row.providerId).getProviderIcon?.(); } catch { /* Provider may be disabled. */ }
+          return {
+            id: `session:${row.id}`, kind: 'value' as const, label: row.title,
+            replacement: formatComposerSessionMention(row.title, row.id),
+            mtime: row.lastActivityAt, providerIcon,
+          };
+        }) : undefined,
     });
 
     this.mentionDataProvider.initializeInBackground();
