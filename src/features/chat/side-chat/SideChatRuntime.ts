@@ -454,6 +454,8 @@ export class SideChatRuntime {
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.state.cancelRequested = true;
+    this.#session.cancel();
     this.#activeCommand?.cancel();
     this.#preparation?.controller.abort();
     this.#discardQueuedSubmissions();
@@ -464,8 +466,6 @@ export class SideChatRuntime {
     this.#discardBackgroundTurns();
     this.#titleService?.cancel();
     this.#titleService = null;
-    this.state.cancelRequested = true;
-    this.#session.cancel();
     this.#asyncQuestions.expireAll();
     this.#prompts.dismissAll();
     await this.#session.dispose();

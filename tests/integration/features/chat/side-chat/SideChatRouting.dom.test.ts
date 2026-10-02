@@ -754,6 +754,7 @@ it.each(['failure', 'cancel', 'dispose'])('restores a queued command and attachm
   if (mode === 'cancel') harness.controller.cancelSide();
   await Promise.resolve();
   expect(disposed).toBe(false);
+  const cancellationsBeforeHydration = native.cancelCalls;
   hydration.resolve(null);
   await Promise.all([sending, disposal]);
   await waitFor(() => expect(harness.drafts.capture('main').content).toContain(command));
@@ -762,6 +763,8 @@ it.each(['failure', 'cancel', 'dispose'])('restores a queued command and attachm
   expect(native.requests).toHaveLength(1);
   if (mode === 'failure') native.complete();
   await started;
+  expect(cancellationsBeforeHydration).toBe(mode === 'failure' ? 0 : 1);
+  expect(harness.drafts.capture('main').content.split(command)).toHaveLength(2);
 });
 
 it('joins a starting command on disposal before fork capture or hydration settles', async () => {
