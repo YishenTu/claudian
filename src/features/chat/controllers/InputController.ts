@@ -114,8 +114,6 @@ export interface InputControllerDeps {
 
 export interface SendMessageOptions {
   onDelivery?: (accepted: boolean) => void;
-  /** Queue flushes retain their earlier admission ahead of newer preparation. */
-  alreadyQueued?: boolean;
   /** Retained main input must not follow later composer destination changes. */
   destination?: 'main';
   editorContextOverride?: EditorSelectionContext | null;
@@ -169,6 +167,7 @@ export class InputController {
     report: () => void;
   } | null = null;
   private readonly turnCoordinator: TurnCoordinator;
+  private queuedDispatch: { conversationId: string | null; timer: number } | null = null;
   private mainPreparationBarrier: Promise<void> | null = null;
   private readonly mentionPreparations = new Map<AbortController, { destination: 'main' | 'side'; pending: Promise<void> }>();
 
@@ -234,7 +233,7 @@ export class InputController {
         new Notice(t('chat.selectAvailableModel'));
         return;
       }
-      const result = await this.#dispatchMessage(options, options?.alreadyQueued === true);
+      const result = await this.#dispatchMessage(options);
       queued = result === 'queued';
     } finally {
       if (!queued) options?.onDelivery?.(false);
@@ -436,7 +435,8 @@ export class InputController {
       const sideContext = this.#buildSideContext();
       const original = shouldUseInput ? this.deps.drafts.consume(destination) : { content, images };
       const preparation = new AbortController();
-      const ownsMainTurn = destination === 'main' && !state.isStreaming && !this.turnCoordinator.isActive;
+      const ownsMainTurn = destination === 'main' && !state.isStreaming
+        && !this.turnCoordinator.isActive && !state.queuedMessage;
       const releaseAdmission = destination === 'main' && !ownsMainTurn && !skipPreparationBarrier
         ? this.#reserveMainPreparation() : onAdmitted;
       let queued = false;
@@ -519,7 +519,7 @@ export class InputController {
     }
 
     // If agent is working, queue the message instead of dropping it
-    if (state.isStreaming || this.turnCoordinator.isActive) {
+    if (state.isStreaming || this.turnCoordinator.isActive || state.queuedMessage) {
       const images = hasImages
         ? [...(imageOverride ?? composerDraft.images)]
         : undefined;
@@ -546,6 +546,7 @@ export class InputController {
       if (shouldUseInput) this.deps.drafts.consume(destination);
       this.updateQueueIndicator();
       onAdmitted?.();
+      if (!state.isStreaming && !this.turnCoordinator.isActive) this.processQueuedMessage();
       return 'queued';
     }
 
@@ -980,6 +981,7 @@ export class InputController {
 
   clearQueuedMessage(): void {
     const { state } = this.deps;
+    this.#cancelQueuedDispatch();
     state.queuedMessage?.onDelivery?.(false);
     state.queuedMessage = null;
     this.updateQueueIndicator();
@@ -987,6 +989,7 @@ export class InputController {
 
   withdrawQueuedMessageToComposer(): void {
     const { state } = this.deps;
+    this.#cancelQueuedDispatch();
     if (!state.queuedMessage) return;
 
     const queuedMessage = this.#cloneQueuedMessage(state.queuedMessage);
@@ -1015,6 +1018,7 @@ export class InputController {
 
   #restoreQueuedMessageToInput(): void {
     const { state } = this.deps;
+    this.#cancelQueuedDispatch();
     const queuedMessage = state.queuedMessage
       ? this.#cloneQueuedMessage(state.queuedMessage)
       : null;
@@ -1026,32 +1030,59 @@ export class InputController {
   private processQueuedMessage(): boolean {
     const { state } = this.deps;
     if (!state.queuedMessage) return false;
+    if (this.queuedDispatch) return true;
 
-    const queuedMessage = this.#cloneQueuedMessage(state.queuedMessage);
-    state.queuedMessage = null;
-    this.updateQueueIndicator();
-
-    window.setTimeout(
+    // The visible queue retains ownership until the scheduled callback enters a turn.
+    const reservation = { conversationId: state.currentConversationId, timer: 0 };
+    this.queuedDispatch = reservation;
+    reservation.timer = window.setTimeout(
       () => {
-        if (this.deps.canStartTurn?.() === false) {
-          if (!state.queuedMessage) {
-            state.queuedMessage = queuedMessage;
-            this.updateQueueIndicator();
-          }
+        if (this.queuedDispatch !== reservation) return;
+        if (state.currentConversationId !== reservation.conversationId
+          || state.isRewinding || state.isCreatingConversation || state.isSwitchingConversation) {
+          this.#restoreQueuedMessageToInput();
           return;
         }
-        void this.sendMessage({
-          alreadyQueued: true,
-          destination: 'main',
-          content: queuedMessage.content,
-          images: queuedMessage.images ?? [],
-          turnRequestOverride: this.#toQueuedChatTurn(queuedMessage).request,
-          onDelivery: queuedMessage.onDelivery,
-        }).catch(() => this.#reportDeferredReviewableSettlement());
+        if (this.deps.canStartTurn?.() === false || state.isStreaming || this.turnCoordinator.isActive) {
+          this.#cancelQueuedDispatch();
+          return;
+        }
+        if (this.deps.getTabProviderId?.() === null) {
+          this.#cancelQueuedDispatch();
+          new Notice(t('chat.selectAvailableModel'));
+          return;
+        }
+        const queuedMessage = state.queuedMessage;
+        if (!queuedMessage) {
+          this.#cancelQueuedDispatch();
+          return;
+        }
+        void this.turnCoordinator.run(signal => {
+          this.#cancelQueuedDispatch();
+          state.queuedMessage = null;
+          this.updateQueueIndicator();
+          this.deps.conversationController.cancelBranchDraft();
+          return this.#executeMainTurn(queuedMessage.content, signal, {
+            destination: 'main', content: queuedMessage.content,
+            images: queuedMessage.images ?? [],
+            turnRequestOverride: this.#toQueuedChatTurn(queuedMessage).request,
+            onDelivery: queuedMessage.onDelivery,
+          });
+        }).catch(() => {
+          if (this.queuedDispatch === reservation) this.#cancelQueuedDispatch();
+          this.#reportDeferredReviewableSettlement();
+        })
+          .finally(() => queuedMessage.onDelivery?.(false));
       },
       0
     );
     return true;
+  }
+
+  #cancelQueuedDispatch(): void {
+    if (!this.queuedDispatch) return;
+    window.clearTimeout(this.queuedDispatch.timer);
+    this.queuedDispatch = null;
   }
 
   #deferReviewableSettlement(report: (() => void) | null): void {
@@ -1852,6 +1883,7 @@ export class InputController {
 
   /** Tab teardown closes admission before cancelling and joining these preparations. */
   async drainSessionMentionPreparations(): Promise<void> {
+    this.#cancelQueuedDispatch();
     const pending = [...this.mentionPreparations.values()].map(value => value.pending);
     for (const controller of this.mentionPreparations.keys()) controller.abort();
     await Promise.allSettled(pending);
@@ -1872,7 +1904,10 @@ export class InputController {
 
   #cancelMainStreaming(): void {
     const { state, streamController } = this.deps;
-    if (!state.isStreaming) return;
+    if (!state.isStreaming) {
+      this.#restoreQueuedMessageToInput();
+      return;
+    }
     state.cancelRequested = true;
     this.turnCoordinator.cancel();
     this.#restoreQueuedMessageToInput();

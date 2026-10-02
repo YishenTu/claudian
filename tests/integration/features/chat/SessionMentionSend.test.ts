@@ -355,3 +355,84 @@ it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refre
     expect(request.context?.sessionReferences?.[0].id).toBe(id);
   } finally { await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose(); }
 });
+
+it('retains queued priority when a later snapshot finishes before the queued dispatch timer', async () => {
+  holdNativeTurns();
+  jest.useFakeTimers();
+  const fixture = setup();
+  const writing = deferred<string>();
+  fixture.write.mockReturnValue(writing.promise);
+  await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  fixture.input.value = 'active turn';
+  const active = fixture.controller.sendMessage();
+  await jest.advanceTimersByTimeAsync(0);
+  const session = fixture.native.backends.get('claude')!.sessions[0];
+  fixture.input.value = 'older plain follow-up';
+  await fixture.controller.sendMessage();
+  fixture.input.value = token;
+  const mention = fixture.controller.sendMessage();
+  await waitForCall(fixture.write);
+  try {
+    finishNativeTurn(session, 0);
+    await active;
+    writing.resolve('/tmp/claudian-sessions/snapshot.md');
+    // Drain promise continuations while deliberately withholding the queued timer.
+    for (let tick = 0; tick < 100; tick++) await Promise.resolve();
+    expect(session.requests).toHaveLength(1);
+    expect(fixture.state.queuedMessage?.content).toBe('older plain follow-up\n\n@"Current title"');
+    await mention;
+    await jest.advanceTimersByTimeAsync(0);
+    expect(session.requests[1].input).toEqual([{ type: 'text', text: 'older plain follow-up\n\n@"Current title"' }]);
+    expect(session.requests[1].context?.sessionReferences?.[0].id).toBe(id);
+    finishNativeTurn(session, 1);
+    await jest.advanceTimersByTimeAsync(0);
+  } finally {
+    fixture.controller.cancelStreaming();
+    fixture.controller.clearQueuedMessage();
+    writing.resolve('/tmp/claudian-sessions/snapshot.md');
+    session.runs.forEach(run => run.cancel());
+    await Promise.allSettled([active, mention]);
+    await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
+    jest.useRealTimers();
+  }
+});
+
+it.each(['cancel', 'withdraw', 'discard', 'pause', 'shutdown', 'replacement'] as const)(
+  'retains scheduled queued input through %s without a stray handoff', async action => {
+    jest.useFakeTimers();
+    const fixture = setup();
+    const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'warm' }, fixture.native.coordinator);
+    fixture.deps.canStartTurn = () => session.acceptsIntents;
+    await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+    try {
+      fixture.state.isStreaming = true;
+      fixture.input.value = token;
+      await fixture.controller.sendMessage();
+      fixture.state.isStreaming = false;
+      fixture.controller.resumeQueuedTurnAfterIntentAdmission();
+      switch (action) {
+        case 'cancel': fixture.controller.cancelStreaming(); break;
+        case 'withdraw': fixture.controller.withdrawQueuedMessageToComposer(); break;
+        case 'discard': fixture.controller.clearQueuedMessage(); break;
+        case 'pause': session.pauseIntentAdmission(); break;
+        case 'replacement': fixture.state.currentConversationId = 'replacement'; break;
+        case 'shutdown': await drainTabForShutdownSnapshot({ session, state: fixture.state,
+          controllers: { inputController: fixture.controller }, executionCoordinator: fixture.native.coordinator } as never); break;
+      }
+      await jest.advanceTimersByTimeAsync(0);
+      expect(fixture.native.backends.get('claude')!.sessions.flatMap(value => value.requests).length).toBe(0);
+      expect(fixture.input.value).toBe(['cancel', 'withdraw', 'replacement'].includes(action) ? token : '');
+      if (action === 'pause') {
+        session.resumeIntentAdmission();
+        fixture.controller.resumeQueuedTurnAfterIntentAdmission();
+        await jest.advanceTimersByTimeAsync(0);
+      }
+      expect(fixture.native.backends.get('claude')!.sessions.flatMap(value => value.requests)
+        .map(request => request.context?.sessionReferences?.[0].id)).toEqual(action === 'pause' ? [id] : []);
+    } finally {
+      fixture.controller.clearQueuedMessage();
+      await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
+      jest.useRealTimers();
+    }
+  },
+);

@@ -172,9 +172,10 @@ describe('InputController coordinator execution', () => {
 
     canStart = true;
     fixture.controller.resumeQueuedTurnAfterIntentAdmission();
-    expect(fixture.state.queuedMessage).toBeNull();
+    expect(fixture.state.queuedMessage).toMatchObject({ content: 'queued during close' });
     scheduled.shift()?.();
     await waitForCall(fixture.coordinator.execute);
+    expect(fixture.state.queuedMessage).toBeNull();
 
     expect(fixture.coordinator.execute).toHaveBeenCalledTimes(1);
     timeoutSpy.mockRestore();
@@ -1563,11 +1564,14 @@ describe('InputController coordinator execution', () => {
   it('reports deferred review when the continuation fails before handoff', async () => {
     const onReviewableSettlement = jest.fn();
     const fixture = createFixture({ onReviewableSettlement });
-    fixture.state.queuedMessage = {
-      canvasContext: null,
-      content: 'continue',
-      editorContext: null,
-    };
+    fixture.coordinator.execute.mockImplementationOnce(async () => {
+      fixture.state.queuedMessage = {
+        canvasContext: null,
+        content: 'continue',
+        editorContext: null,
+      };
+      return { accepted: true, status: 'completed' };
+    });
     jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
@@ -1585,11 +1589,14 @@ describe('InputController coordinator execution', () => {
   it('reports deferred review when continuation initialization fails', async () => {
     const onReviewableSettlement = jest.fn();
     const fixture = createFixture({ onReviewableSettlement });
-    fixture.state.queuedMessage = {
-      canvasContext: null,
-      content: 'continue',
-      editorContext: null,
-    };
+    fixture.coordinator.execute.mockImplementationOnce(async () => {
+      fixture.state.queuedMessage = {
+        canvasContext: null,
+        content: 'continue',
+        editorContext: null,
+      };
+      return { accepted: true, status: 'completed' };
+    });
     jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
@@ -1604,11 +1611,14 @@ describe('InputController coordinator execution', () => {
   it('reports deferred review when continuation exits during preflight', async () => {
     const onReviewableSettlement = jest.fn();
     const fixture = createFixture({ onReviewableSettlement });
-    fixture.state.queuedMessage = {
-      canvasContext: null,
-      content: 'continue',
-      editorContext: null,
-    };
+    fixture.coordinator.execute.mockImplementationOnce(async () => {
+      fixture.state.queuedMessage = {
+        canvasContext: null,
+        content: 'continue',
+        editorContext: null,
+      };
+      return { accepted: true, status: 'completed' };
+    });
     jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
@@ -1636,11 +1646,14 @@ describe('InputController coordinator execution', () => {
   it('reports deferred review before a non-replacing built-in command', async () => {
     const onReviewableSettlement = jest.fn();
     const fixture = createFixture({ onReviewableSettlement });
-    fixture.state.queuedMessage = {
-      canvasContext: null,
-      content: '/resume',
-      editorContext: null,
-    };
+    fixture.coordinator.execute.mockImplementationOnce(async () => {
+      fixture.state.queuedMessage = {
+        canvasContext: null,
+        content: '/resume',
+        editorContext: null,
+      };
+      return { accepted: true, status: 'completed' };
+    });
     jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
@@ -1653,11 +1666,14 @@ describe('InputController coordinator execution', () => {
   it('discards deferred review when clear replaces the conversation', async () => {
     const onReviewableSettlement = jest.fn();
     const fixture = createFixture({ onReviewableSettlement });
-    fixture.state.queuedMessage = {
-      canvasContext: null,
-      content: '/clear',
-      editorContext: null,
-    };
+    fixture.coordinator.execute.mockImplementationOnce(async () => {
+      fixture.state.queuedMessage = {
+        canvasContext: null,
+        content: '/clear',
+        editorContext: null,
+      };
+      return { accepted: true, status: 'completed' };
+    });
     jest.spyOn(fixture.controller as any, 'processQueuedMessage').mockReturnValue(true);
 
     await fixture.controller.sendMessage({ content: 'first turn' });
