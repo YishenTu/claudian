@@ -14,7 +14,14 @@ for (const [name, code, rule] of [
   ['unknown interpolation', 'export function label(value: unknown) { return `${value}`; }', '@typescript-eslint/restrict-template-expressions'],
 ]) {
   test(`official source lint rejects ${name}`, async () => {
-    const [result] = await new ESLint().lintText(code, { filePath: 'src/utils/error.ts' });
+    // Each snippet replaces the same on-disk file. CI's single-run optimization
+    // reads that file first, then uses isolated programs without full type information.
+    const eslint = new ESLint({
+      overrideConfig: {
+        languageOptions: { parserOptions: { disallowAutomaticSingleRunInference: true } },
+      },
+    });
+    const [result] = await eslint.lintText(code, { filePath: 'src/utils/error.ts' });
     assert.ok(result.messages.some(message => message.ruleId === rule), JSON.stringify(result.messages));
   });
 }
