@@ -1,5 +1,3 @@
-import type { ProviderIconSvg } from '../../core/providers/types';
-
 /** Text/caret contract shared by native inputs and the Main Chat rich editor. */
 export interface ComposerInputElement extends HTMLElement {
   value: string;
@@ -18,7 +16,6 @@ export interface ComposerTriggerMatch {
 }
 
 export interface ComposerDropdownValueItem {
-  readonly providerIcon?: ProviderIconSvg | null;
   readonly className?: string;
   readonly detail?: string;
   readonly disabled?: boolean;

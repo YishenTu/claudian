@@ -1,11 +1,9 @@
 import { defaultKeymap, history, historyKeymap, insertNewline } from '@codemirror/commands';
 import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction } from '@codemirror/state';
 import { Decoration, type DecorationSet, EditorView, keymap, placeholder, WidgetType } from '@codemirror/view';
-import { type App, type Component, MarkdownRenderer } from 'obsidian';
+import { type App, type Component, MarkdownRenderer, setIcon } from 'obsidian';
 
-import type { ProviderIconSvg } from '@/core/providers/types';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
-import { createProviderIconSvg } from '@/shared/icons';
 import { registerFileLinkHandler } from '@/utils/fileLink';
 
 import { findComposerSessionMentions } from './composerSessionMentions';
@@ -41,13 +39,10 @@ class WikilinkWidget extends WidgetType {
 }
 
 class SessionMentionWidget extends WidgetType {
-  constructor(
-    private readonly title: string,
-    private readonly icon: ProviderIconSvg | null | undefined,
-  ) { super(); }
+  constructor(private readonly title: string) { super(); }
 
   eq(other: SessionMentionWidget): boolean {
-    return this.title === other.title && this.icon === other.icon;
+    return this.title === other.title;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -57,7 +52,7 @@ class SessionMentionWidget extends WidgetType {
     el.contentEditable = 'false';
     el.setAttribute('role', 'img');
     el.setAttribute('aria-label', `Session: ${this.title}`);
-    if (this.icon) createProviderIconSvg(this.icon, { parent: el, width: '1em', height: '1em' });
+    setIcon(el.createSpan({ cls: 'claudian-composer-session-icon' }), 'message-circle-more');
     el.append(view.dom.ownerDocument.createTextNode(this.title));
     return el;
   }
@@ -77,9 +72,7 @@ export class ComposerEditor {
   private linkRevision = 0;
   private readonly removeFileLinkHandler: () => void;
 
-  constructor(parent: HTMLElement, private readonly app: App, private readonly component: Component,
-    private readonly getSessionIcon?: (id: string) => ProviderIconSvg | null | undefined,
-  ) {
+  constructor(parent: HTMLElement, private readonly app: App, private readonly component: Component) {
     const host = parent.createDiv({
       cls: 'claudian-input claudian-composer-editor',
       attr: { role: 'textbox', 'aria-label': 'Message', 'aria-multiline': 'true', tabindex: '0', dir: 'auto' },
@@ -223,7 +216,7 @@ export class ComposerEditor {
     });
     return Decoration.set(links.map(link => Decoration.replace({
       widget: 'conversationId' in link
-        ? new SessionMentionWidget(link.title, this.getSessionIcon?.(link.conversationId))
+        ? new SessionMentionWidget(link.title)
         : new WikilinkWidget(link.fullMatch, this.app, this.component, this.linkRevision),
     }).range(link.index, link.index + link.fullMatch.length)), true);
   }

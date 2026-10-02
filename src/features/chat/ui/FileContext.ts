@@ -1,6 +1,5 @@
 import type { App, TFile } from 'obsidian';
 
-import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ConversationMeta } from '@/core/types';
 
 import { MentionSource } from '../../../shared/composer-dropdown/MentionSource';
@@ -30,15 +29,11 @@ export class FileContextManager {
       getSessionItems: sessions ? () => sessions.getConversationList()
         .filter(row => !row.isArchived && !row.isLegacySession && row.hasSessionReference !== false
           && row.id !== sessions.getCurrentConversationId())
-        .map(row => {
-          let providerIcon;
-          try { providerIcon = ProviderRegistry.getChatUIConfig(row.providerId).getProviderIcon?.(); } catch { /* Provider may be disabled. */ }
-          return {
-            id: `session:${row.id}`, kind: 'value' as const, label: row.title,
-            replacement: formatComposerSessionMention(row.title, row.id),
-            mtime: row.lastActivityAt, providerIcon,
-          };
-        }) : undefined,
+        .map(row => ({
+          id: `session:${row.id}`, kind: 'value' as const, label: row.title, icon: 'message-circle-more',
+          replacement: formatComposerSessionMention(row.title, row.id),
+          mtime: row.lastActivityAt,
+        })) : undefined,
     });
 
     this.mentionDataProvider.initializeInBackground();
