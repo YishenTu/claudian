@@ -625,3 +625,30 @@ it('shows side preparation as working and cancels it through the selected destin
   expect(harness.backend.latest.requests).toHaveLength(1);
   expect(harness.inputEl.value).toBe(token);
 });
+
+it('runs a queued side command after mention preparation fails', async () => {
+  const harness = createHarness();
+  const routing = createRouting(harness);
+  const { started } = await startSideChat(harness);
+  harness.backend.latest.establishChild('child-session');
+  harness.backend.latest.complete();
+  await started;
+  const hydration = deferred<any>();
+  const entered = deferred<void>();
+  Object.assign(routing.deps.plugin, { getConversationById: () => { entered.resolve(); return hydration.promise; } });
+  const token = '@[Old](claudian-session:conv-1-source)';
+  harness.inputEl.value = token;
+  const sending = routing.controller.sendMessage();
+  await entered.promise;
+  harness.controller.collapse();
+  harness.inputEl.value = '/btw Later side question';
+  await routing.controller.sendMessage();
+  expect(harness.controller.runtime?.queuedCount).toBe(1);
+  hydration.resolve(null);
+  await sending;
+  await waitFor(() => expect(harness.backend.latest.requests).toHaveLength(2));
+  expect(harness.backend.latest.requests[1].input).toEqual([{ type: 'text', text: 'Later side question' }]);
+  expect(harness.controller.runtime?.queuedCount).toBe(0);
+  expect(harness.drafts.capture('side').content).toBe(token);
+  harness.backend.latest.complete();
+});

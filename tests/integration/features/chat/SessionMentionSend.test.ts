@@ -227,3 +227,131 @@ it.each([false, true])('restores prepared drafts when rewind begins during hydra
     await fixture.native.registry.dispose();
   }
 });
+
+function holdNativeTurns() {
+  jest.restoreAllMocks();
+  const execute = FakeSession.prototype.execute;
+  return jest.spyOn(FakeSession.prototype, 'execute').mockImplementation(function (this: FakeSession, request) {
+    const result = execute.call(this, request);
+    const run = this.runs.at(-1)!;
+    run.events.push({ type: 'turn_started', accepted: true, scope: requestedScope(this, run, 1) });
+    return result;
+  });
+}
+
+function finishNativeTurn(session: FakeSession, index: number) {
+  const run = session.runs[index];
+  run.events.push({ type: 'turn_completed', scope: requestedScope(session, run, 2), reason: 'completed' });
+  run.events.end();
+}
+
+async function until(check: () => boolean) {
+  for (let attempt = 0; attempt < 100 && !check(); attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  expect(check()).toBe(true);
+}
+
+it('dispatches an older queued message before a newer mention still hydrating', async () => {
+  const execute = holdNativeTurns();
+  const fixture = setup();
+  const source = await fixture.plugin.getConversationById(id);
+  const hydration = deferred<any>();
+  fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
+  await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  fixture.input.value = 'active turn';
+  const active = fixture.controller.sendMessage();
+  await until(() => execute.mock.calls.length > 0);
+  const session = fixture.native.backends.get('claude')!.sessions[0];
+  fixture.input.value = 'older plain follow-up';
+  await fixture.controller.sendMessage();
+  fixture.input.value = token;
+  const mention = fixture.controller.sendMessage();
+  await waitForCall(fixture.plugin.getConversationById);
+  try {
+    finishNativeTurn(session, 0);
+    await active;
+    await until(() => session.requests.length === 2);
+    expect(session.requests[1].input).toEqual([{ type: 'text', text: 'older plain follow-up' }]);
+    hydration.resolve(source);
+    await mention;
+    expect(fixture.state.queuedMessage?.content).toBe('@"Current title"');
+    finishNativeTurn(session, 1);
+    await until(() => session.requests.length === 3);
+    expect(session.requests[2].context?.sessionReferences?.[0].id).toBe(id);
+    finishNativeTurn(session, 2);
+    await until(() => !fixture.state.isStreaming);
+  } finally {
+    fixture.controller.cancelStreaming();
+    hydration.resolve(source);
+    session.runs.forEach(run => run.cancel());
+    await Promise.allSettled([active, mention]);
+    await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
+  }
+});
+
+it.each([false, true])('releases preparation ordering at admission while the next turn is still running (mention fails: %s)', async fails => {
+  const execute = holdNativeTurns();
+  const fixture = setup();
+  const source = await fixture.plugin.getConversationById(id);
+  const hydration = deferred<any>();
+  fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
+  await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  fixture.input.value = 'active turn';
+  const active = fixture.controller.sendMessage();
+  await until(() => execute.mock.calls.length > 0);
+  const session = fixture.native.backends.get('claude')!.sessions[0];
+  fixture.input.value = token;
+  const mention = fixture.controller.sendMessage();
+  await waitForCall(fixture.plugin.getConversationById);
+  fixture.input.value = 'later plain follow-up';
+  const later = fixture.controller.sendMessage();
+  fixture.input.value = 'last follow-up';
+  const last = fixture.controller.sendMessage();
+  try {
+    finishNativeTurn(session, 0);
+    await active;
+    hydration.resolve(fails ? null : source);
+    await until(() => session.requests.length === 2);
+    expect(session.requests[1].input).toEqual([{ type: 'text', text: fails ? 'later plain follow-up' : '@"Current title"' }]);
+    const queued = fails ? 'last follow-up' : 'later plain follow-up\n\nlast follow-up';
+    await until(() => fixture.state.queuedMessage?.content === queued);
+    fixture.controller.withdrawQueuedMessageToComposer();
+    expect(fixture.input.value).toContain(queued);
+    expect(fixture.input.value.includes(token)).toBe(fails);
+    finishNativeTurn(session, 1);
+    await Promise.all([mention, later, last]);
+  } finally {
+    fixture.controller.cancelStreaming();
+    hydration.resolve(source);
+    session.runs.forEach(run => run.cancel());
+    await Promise.allSettled([active, mention, later, last]);
+    await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
+  }
+});
+
+it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refreshes references after %s', async recovery => {
+  const fixture = setup();
+  await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  try {
+    fixture.state.isStreaming = recovery !== 'initialization';
+    if (recovery === 'initialization') fixture.deps.ensureExecutionInitialized = async () => false;
+    fixture.input.value = token;
+    await fixture.controller.sendMessage();
+    if (recovery !== 'initialization') {
+      fixture.input.value = 'plain follow-up';
+      await fixture.controller.sendMessage();
+      if (recovery === 'withdraw') fixture.controller.withdrawQueuedMessageToComposer();
+      else fixture.controller.cancelStreaming();
+    }
+    const suffix = recovery === 'initialization' ? '' : '\n\nplain follow-up';
+    expect(fixture.input.value).toBe(token + suffix);
+    fixture.state.isStreaming = false;
+    fixture.deps.ensureExecutionInitialized = async () => true;
+    await fixture.controller.sendMessage();
+    expect(fixture.write).toHaveBeenCalledTimes(2);
+    const request = fixture.native.backends.get('claude')!.sessions.flatMap(session => session.requests)[0];
+    expect(request.input).toEqual([{ type: 'text', text: '@"Current title"' + suffix }]);
+    expect(request.context?.sessionReferences?.[0].id).toBe(id);
+  } finally { await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose(); }
+});

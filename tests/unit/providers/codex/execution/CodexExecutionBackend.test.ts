@@ -819,6 +819,25 @@ describe('CodexExecutionBackend', () => {
     },
   );
 
+  it.each([false, true])('steers session references with target-visible paths (WSL: %s)', async wsl => {
+    if (wsl) {
+      const launch = await mockResolveLaunchSpec();
+      mockResolveLaunchSpec.mockResolvedValue({ ...launch, pathMapper: createCodexPathMapper({ method: 'wsl', platformFamily: 'unix', platformOs: 'linux', distroName: 'Ubuntu' }) });
+    }
+    configureSteerTransport('thread-reference', 'turn-reference', () => ({ turnId: 'turn-reference' }));
+    const { run, session } = await createActiveSteerSession();
+    try {
+      await expect(session.steer(createRequest(new AbortController().signal, {
+        input: [{ type: 'text', text: 'Use @"Review"' }],
+        context: { sessionReferences: [{ id: 'conv-1-ref', title: 'Review & fix', providerId: 'codex', updatedAt: 'updated',
+          snapshotPath: wsl ? 'C:\\Temp\\claudian-sessions\\ref.md' : '/tmp/claudian-sessions/ref.md' }] },
+      }))).resolves.toBe(true);
+      const input = mockTransportRequest.mock.calls.find(([method]) => method === 'turn/steer')![1].input;
+      expect(input).toEqual([{ type: 'text', text_elements: [], text: 'Use @"Review"\n\n<context_sessions>\n<context_session title="Review &amp; fix" id="conv-1-ref" provider="codex" updated="updated" path="'
+        + (wsl ? '/mnt/c/Temp/claudian-sessions/ref.md' : '/tmp/claudian-sessions/ref.md') + '" />\n</context_sessions>' }]);
+    } finally { run.cancel(); await collectEvents(run.events); await session.dispose(); }
+  });
+
   it.each([true, false])('retains steering image bytes until native acknowledgement (accepted: %s)', async accepted => {
     const steerResult = createDeferred<{ turnId: string }>();
     configureSteerTransport('thread-image', 'turn-image', () => steerResult.promise);

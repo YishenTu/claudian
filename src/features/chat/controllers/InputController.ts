@@ -114,6 +114,8 @@ export interface InputControllerDeps {
 
 export interface SendMessageOptions {
   onDelivery?: (accepted: boolean) => void;
+  /** Queue flushes retain their earlier admission ahead of newer preparation. */
+  alreadyQueued?: boolean;
   /** Retained main input must not follow later composer destination changes. */
   destination?: 'main';
   editorContextOverride?: EditorSelectionContext | null;
@@ -232,7 +234,8 @@ export class InputController {
         new Notice(t('chat.selectAvailableModel'));
         return;
       }
-      queued = await this.#dispatchMessage(options) === 'queued';
+      const result = await this.#dispatchMessage(options, options?.alreadyQueued === true);
+      queued = result === 'queued';
     } finally {
       if (!queued) options?.onDelivery?.(false);
     }
@@ -307,7 +310,19 @@ export class InputController {
     }
   }
 
-  async #dispatchMessage(options?: SendMessageOptions, skipPreparationBarrier = false): Promise<DispatchResult> {
+  #reserveMainPreparation(): () => void {
+    let release!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    this.mainPreparationBarrier = barrier;
+    return () => {
+      release();
+      if (this.mainPreparationBarrier === barrier) this.mainPreparationBarrier = null;
+    };
+  }
+
+  async #dispatchMessage(
+    options?: SendMessageOptions, skipPreparationBarrier = false, onAdmitted?: () => void,
+  ): Promise<DispatchResult> {
     const {
       state,
       selectionController,
@@ -389,6 +404,7 @@ export class InputController {
         draftConsumed: shouldUseInput,
       };
       const controller = new AbortController();
+      const releaseAdmission = this.#reserveMainPreparation();
       let queued = false;
       const pending = (async () => {
         await previous;
@@ -396,16 +412,14 @@ export class InputController {
           this.deps.drafts.restore('main', original, { merge: true });
           return;
         }
-        const result = await this.#dispatchMessage(capturedOptions, true);
+        const result = await this.#dispatchMessage(capturedOptions, true, releaseAdmission);
         if (result === 'rejected') this.deps.drafts.restore('main', original, { merge: true });
         queued = result === 'queued';
       })();
-      const barrier = pending.catch(() => undefined);
-      this.mainPreparationBarrier = barrier;
       this.mentionPreparations.set(controller, { destination, pending });
       try { await pending; } finally {
         this.mentionPreparations.delete(controller);
-        if (this.mainPreparationBarrier === barrier) this.mainPreparationBarrier = null;
+        releaseAdmission();
       }
       return queued ? 'queued' : 'handled';
     }
@@ -423,6 +437,8 @@ export class InputController {
       const original = shouldUseInput ? this.deps.drafts.consume(destination) : { content, images };
       const preparation = new AbortController();
       const ownsMainTurn = destination === 'main' && !state.isStreaming && !this.turnCoordinator.isActive;
+      const releaseAdmission = destination === 'main' && !ownsMainTurn && !skipPreparationBarrier
+        ? this.#reserveMainPreparation() : onAdmitted;
       let queued = false;
       const prepare = async (signal: AbortSignal): Promise<void> => {
         const cancelSidePreparation = () => { if (destination === 'side') capturedSideRuntime?.cancel(); };
@@ -439,7 +455,8 @@ export class InputController {
             || (destination === 'side' && sideChat?.runtime !== capturedSideRuntime)) {
             throw new Error('The destination changed while preparing session references.');
           }
-          const turnRequest = { ...captured.turnRequest, text: resolved.text, sessionReferences: resolved.references };
+          const turnRequest = { ...captured.turnRequest, text: resolved.text, draftContent: original.content,
+            sessionReferences: resolved.references };
           if (ownsMainTurn) state.isStreaming = false;
           if (destination === 'side') {
             const accepted = await sideChat?.submitToSide(resolved.text, images,
@@ -447,11 +464,12 @@ export class InputController {
             if (!accepted) throw new Error('The side chat could not accept this message.');
           } else if (ownsMainTurn) {
             handedOff = true;
+            releaseAdmission?.();
             await this.#executeMainTurn(resolved.text, signal, { ...options, images, turnRequestOverride: turnRequest,
               draftConsumed: shouldUseInput || options?.draftConsumed });
           } else {
             handedOff = true;
-            const result = await this.#dispatchMessage({ ...options, destination: 'main', content: resolved.text, images, turnRequestOverride: turnRequest }, true);
+            const result = await this.#dispatchMessage({ ...options, destination: 'main', content: resolved.text, images, turnRequestOverride: turnRequest }, true, releaseAdmission);
             if (result === 'rejected') this.deps.drafts.restore(destination, original, { merge: true });
             queued = result === 'queued';
           }
@@ -472,11 +490,9 @@ export class InputController {
       };
       const pending = ownsMainTurn ? this.turnCoordinator.run(prepare) : prepare(preparation.signal);
       this.mentionPreparations.set(preparation, { destination, pending });
-      const barrier = destination === 'main' && !ownsMainTurn && !skipPreparationBarrier ? pending.catch(() => undefined) : null;
-      if (barrier) this.mainPreparationBarrier = barrier;
       try { await pending; } finally {
         this.mentionPreparations.delete(preparation);
-        if (barrier && this.mainPreparationBarrier === barrier) this.mainPreparationBarrier = null;
+        releaseAdmission?.();
       }
       return queued ? 'queued' : 'handled';
     }
@@ -529,11 +545,15 @@ export class InputController {
 
       if (shouldUseInput) this.deps.drafts.consume(destination);
       this.updateQueueIndicator();
+      onAdmitted?.();
       return 'queued';
     }
 
     if (!shouldUseInput) this.deps.conversationController.cancelBranchDraft();
-    await this.turnCoordinator.run(signal => this.#executeMainTurn(content, signal, options));
+    await this.turnCoordinator.run(signal => {
+      onAdmitted?.();
+      return this.#executeMainTurn(content, signal, options);
+    });
     return 'handled';
   }
 
@@ -982,7 +1002,7 @@ export class InputController {
     if (!message) return;
     message.onDelivery?.(false);
 
-    this.deps.drafts.restore('main', message, {
+    this.deps.drafts.restore('main', { ...message, content: message.turnRequest?.draftContent ?? message.content }, {
       merge: options.mergeWithComposer, focus: true,
     });
   }
@@ -1021,6 +1041,7 @@ export class InputController {
           return;
         }
         void this.sendMessage({
+          alreadyQueued: true,
           destination: 'main',
           content: queuedMessage.content,
           images: queuedMessage.images ?? [],
@@ -2073,6 +2094,10 @@ function mergeQueuedChatTurns(
     request: {
       ...cloneChatTurnRequest(incoming.request),
       sessionReferences: [...(existing.request.sessionReferences ?? []), ...(incoming.request.sessionReferences ?? [])],
+      ...(existing.request.draftContent !== undefined || incoming.request.draftContent !== undefined ? {
+        draftContent: mergeText(existing.request.draftContent ?? existing.displayContent,
+          incoming.request.draftContent ?? incoming.displayContent),
+      } : {}),
       linkedContentPath:
         incoming.request.linkedContentPath ?? existing.request.linkedContentPath,
       images: images.length > 0 ? images : undefined,

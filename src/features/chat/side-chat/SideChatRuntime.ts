@@ -158,9 +158,7 @@ export class SideChatRuntime {
       onSessionEvent: (event, isCurrent) => this.#enqueueSessionEvent(event, isCurrent),
       onBackgroundWorkChanged: () => {
         this.#refreshStatus();
-        if (!this.#disposed && !this.isWorking && this.#queuedSubmissions.length > 0) {
-          void this.submit(this.#queuedSubmissions.shift()!).catch(error => deps.onError?.(error));
-        }
+        this.#resumeQueuedSubmissions();
       },
       providerId: deps.source.providerId,
       ephemeral,
@@ -225,13 +223,16 @@ export class SideChatRuntime {
     const pending = prepare(controller.signal);
     this.#preparation = { controller, pending };
     this.#refreshStatus();
+    let prepared = false;
     try {
       const result = await pending;
       controller.signal.throwIfAborted();
+      prepared = true;
       return result;
     } finally {
       this.#preparation = null;
       if (!this.#disposed) this.#refreshStatus();
+      if (!prepared) this.#resumeQueuedSubmissions();
     }
   }
 
@@ -406,6 +407,12 @@ export class SideChatRuntime {
 
   #discardQueuedSubmissions(): void {
     for (const submission of this.#queuedSubmissions.splice(0)) submission.onDelivery?.(false);
+  }
+
+  #resumeQueuedSubmissions(): void {
+    if (this.#disposed || this.isWorking) return;
+    const submission = this.#queuedSubmissions.shift();
+    if (submission) void this.submit(submission).catch(error => this.deps.onError?.(error));
   }
 
   cancel(): void {

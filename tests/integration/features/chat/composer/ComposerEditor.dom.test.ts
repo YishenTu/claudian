@@ -419,16 +419,18 @@ it('upgrades to the editor when a focusin reaches the composer host', () => {
   }
 });
 
-it('renders session tokens accessibly and deletes the complete escaped token', async () => {
+it.each([
+  ['Draft ] \\ review', '@[Draft \\] \\\\ review](claudian-session:conv-1-abc)'],
+  ['Fix `bug`', '@[Fix `bug`](claudian-session:conv-1-abc)'],
+])('renders session title %s accessibly and deletes its token', async (title, token) => {
   const parent = document.body.createDiv();
   const editor = createEditor(parent);
   try {
-    const token = '@[Draft \\] \\\\ review](claudian-session:conv-1-abc)';
-    expect(formatComposerSessionMention('Draft ] \\ review', 'conv-1-abc')).toBe(token + ' ');
+    expect(formatComposerSessionMention(title, 'conv-1-abc')).toBe(token + ' ');
     editor.element.value = token;
     editor.element.focus();
-    const chip = within(parent).getByRole('img', { name: 'Session: Draft ] \\ review' });
-    expect(chip.textContent).toBe('Draft ] \\ review');
+    const chip = within(parent).getByRole('img', { name: `Session: ${title}` });
+    expect(chip.textContent).toBe(title);
     expect(editor.element.value).toBe(token);
     expect((await axe(chip)).violations).toEqual([]);
     fireEvent.keyDown(within(parent).getByRole('textbox', { name: 'Message' }), { key: 'Backspace', code: 'Backspace' });

@@ -2065,11 +2065,14 @@ export class CodexExecutionSession
         });
       }
 
-      const prompt = promptOverride
-        ?? request.input
+      const prompt = promptOverride ?? appendSessionReferences(
+        request.input
           .filter(block => block.type === 'text')
           .map(block => block.text)
-          .join('\n\n');
+          .join('\n\n'),
+        request.context?.sessionReferences,
+        path => this.#mapRequiredHostPath(path),
+      );
       if (prompt) {
         input.push({ type: 'text', text: prompt, text_elements: [] });
       }

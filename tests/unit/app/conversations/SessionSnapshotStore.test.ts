@@ -37,4 +37,27 @@ describe('session snapshot storage', () => {
     expect((await fs.readdir(directory)).sort()).toEqual(['folder.md', 'keep.txt', 'new.md']);
     await expect(new SessionSnapshotStore(path.join(directory, 'keep.txt')).sweep(new AbortController().signal)).resolves.toBeUndefined();
   });
+  (process.platform === 'win32' ? describe.skip : describe)('POSIX directory trust', () => {
+    it.each(['writable', 'owner', 'symlink'])('rejects an unsafe existing directory (%s) for writes and cleanup', async kind => {
+      const target = path.join(directory, 'target');
+      await fs.mkdir(target, { mode: 0o700 });
+      const oldFile = path.join(target, 'old.md');
+      await fs.writeFile(oldFile, 'keep');
+      const old = new Date(clock().getTime() - 8 * 86_400_000);
+      await fs.utimes(oldFile, old, old);
+      let storeDirectory = target;
+      if (kind === 'writable') await fs.chmod(target, 0o777);
+      if (kind === 'owner') jest.spyOn(process, 'getuid').mockReturnValue(process.getuid!() + 1);
+      if (kind === 'symlink') {
+        storeDirectory = path.join(directory, 'link');
+        await fs.symlink(target, storeDirectory);
+      }
+      try {
+        const store = new SessionSnapshotStore(storeDirectory, () => clock().getTime());
+        await expect(store.write('conv-1-abc', 'private')).rejects.toThrow('Unsafe session snapshot directory');
+        await expect(store.sweep(new AbortController().signal)).resolves.toBeUndefined();
+        expect(await fs.readdir(target)).toEqual(['old.md']);
+      } finally { jest.restoreAllMocks(); }
+    });
+  });
 });

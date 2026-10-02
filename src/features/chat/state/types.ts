@@ -16,6 +16,8 @@ import type { ThinkingBlockState } from '../rendering/ThinkingBlockRenderer';
 import type { WriteEditState } from '../rendering/WriteEditRenderer';
 
 export interface ChatTurnRequest {
+  /** Original composer text for recovery before provider acceptance. */
+  draftContent?: string;
   sessionReferences?: readonly ProviderSessionReference[];
   text: string;
   images?: ImageAttachment[];

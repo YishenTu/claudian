@@ -12,7 +12,9 @@ export function findComposerWikilinks(text: string): ReturnType<typeof parseWiki
   return filterComposerTextTokens(text, parseWikilinks(text));
 }
 
-export function filterComposerTextTokens<T extends { index: number; fullMatch: string }>(text: string, tokens: T[]): T[] {
+export function filterComposerTextTokens<T extends { index: number; fullMatch: string }>(
+  text: string, tokens: T[], allowCodeInToken = false,
+): T[] {
   const codeRanges: Array<{ from: number; to: number }> = [];
   parser.parse(text).iterate({
     enter(node) {
@@ -25,6 +27,7 @@ export function filterComposerTextTokens<T extends { index: number; fullMatch: s
   return tokens.filter(link => {
     const precedingBackslashes = text.slice(0, link.index).match(/\\+$/)?.[0].length ?? 0;
     return precedingBackslashes % 2 === 0 && !/[\r\n]/.test(link.fullMatch)
-      && !codeRanges.some(range => link.index < range.to && link.index + link.fullMatch.length > range.from);
+      && !codeRanges.some(range => link.index < range.to
+        && (allowCodeInToken ? link.index >= range.from : link.index + link.fullMatch.length > range.from));
   });
 }

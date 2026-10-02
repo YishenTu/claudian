@@ -20,5 +20,5 @@ export function findComposerSessionMentions(text: string): ComposerSessionMentio
     fullMatch: match[0],
     title: match[1].replace(/\\([\\\]])/g, '$1'),
     conversationId: match[2],
-  })));
+  })), true);
 }
