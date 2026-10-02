@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { isWriteEditTool } from '../../../core/tools/toolNames';
-import { extractScriptToolCalls, extractWebSearchResults } from '../../../core/tools/toolResultContent';
+import { extractScriptToolCalls, extractToolResultFormat, extractWebSearchResults } from '../../../core/tools/toolResultContent';
 import type { ChatMessage, ContentBlock, ImageAttachment, ToolCallInfo, TurnStats } from '../../../core/types';
 import { createTurnStats, isTokenCount } from '../../../core/types';
 import { extractUserQuery } from '../../../utils/context';
@@ -911,6 +911,7 @@ function applyToolResult(messages: ChatMessage[], entry: PiSessionEntry): void {
     toolCall.status = resultMessage.error === true || resultMessage.isError === true ? 'error' : 'completed';
     toolCall.result = extractPiToolResultText(toolCall.name, resultMessage.result ?? resultMessage.content ?? resultMessage.output);
     const toolUseResult = normalizePiToolUseResult(toolCall.name, resultMessage, getNestedCallArguments(resultMessage));
+    toolCall.resultFormat = extractToolResultFormat(toolUseResult);
     const webSearchResults = extractWebSearchResults(toolUseResult);
     if (webSearchResults) {
       toolCall.webSearchResults = webSearchResults;

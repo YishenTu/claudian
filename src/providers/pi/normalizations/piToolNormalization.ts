@@ -109,6 +109,8 @@ export function normalizePiToolUseResult(
 ): Record<string, unknown> | undefined {
   const details = isPlainObject(result) && isPlainObject(result.details) ? result.details : null;
   switch (normalizePiToolName(toolName)) {
+    case TOOL_READ:
+      return { resultFormat: 'plain' };
     case TOOL_EDIT: {
       const patch = typeof details?.patch === 'string' && details.patch.trim() ? details.patch : undefined;
       return patch ? { diff: patch } : undefined;

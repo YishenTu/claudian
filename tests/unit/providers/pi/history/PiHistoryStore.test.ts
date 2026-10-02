@@ -278,6 +278,7 @@ describe('PiHistoryStore', () => {
       input: { file_path: 'a.md', path: 'a.md' },
       name: 'Read',
       result: 'file contents',
+      resultFormat: 'plain',
       status: 'completed',
     }]);
   });
@@ -315,6 +316,7 @@ describe('PiHistoryStore', () => {
       input: { file_path: 'a.md', path: 'a.md' },
       name: 'Read',
       result: 'file contents',
+      resultFormat: 'plain',
       status: 'completed',
     }]);
     expect(messages[0].contentBlocks).toEqual([{ toolId: 'tool-1', type: 'tool_use' }]);
@@ -623,6 +625,7 @@ describe('PiHistoryStore', () => {
       input: { file_path: 'left.md', path: 'left.md' },
       name: 'Read',
       result: 'left contents',
+      resultFormat: 'plain',
       status: 'completed',
     }]);
   });
@@ -764,6 +767,7 @@ describe('PiHistoryStore', () => {
       input: { file_path: 'a.md', path: 'a.md' },
       name: 'Read',
       result: 'file contents',
+      resultFormat: 'plain',
       status: 'completed',
     }]);
   });

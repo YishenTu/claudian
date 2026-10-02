@@ -116,6 +116,13 @@ const expand = (block: HTMLElement, name: RegExp) => {
 };
 
 describe.each(['live', 'history'] as const)('%s Pi tool presentation', mode => {
+  it.each(['1→literal arrow', '1→first transition\n2→second transition'])('preserves plain read text: %j', async text => {
+    const tool = await restore(mode, { name: 'read', args: { path: 'arrows.md' }, text });
+    const block = renderStoredToolCall(document.body.createDiv(), tool);
+    expand(block, /^Read: arrows\.md/);
+    expect([...block.querySelectorAll('.claudian-tool-line')].map(line => line.textContent)).toEqual(text.split('\n'));
+  });
+
   it('builds edit diffs from the native unified patch, not the numbered display diff', async () => {
     const tool = await restore(mode, {
       name: 'edit',

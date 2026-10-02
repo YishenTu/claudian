@@ -110,6 +110,7 @@ describe('mapOpencodeMessages', () => {
           input: { file_path: 'notes/today.md' },
           name: 'Read',
           result: 'read ok',
+          resultFormat: 'plain',
           status: 'completed',
         }],
       },
