@@ -228,6 +228,7 @@ function createPersistedParseContext(): PersistedParseContext {
     execCellToCommandId: new Map(),
     execEnvelopeToolCallIds: new Map(),
     openExecCalls: new Map(),
+    withheldExecCellIds: new Set(),
     observedNativeItemIds: new Set(),
     withheldExecOutputCallIds: new Set(),
     failedExecCallIds: new Set(),
@@ -542,8 +543,10 @@ interface PersistedParseContext {
   stdinCallToCommandId: Map<string, string>;
   execCellToCommandId: Map<string, string>;
   execEnvelopeToolCallIds: Map<string, string[]>;
-  /** Calls of exec scripts whose output has not arrived that native items may complete. */
+  /** Exec script calls of the current turn that native items may still complete. */
   openExecCalls: Map<string, PersistedExecCall[]>;
+  /** Yielded cells of scripts whose combined output is withheld. */
+  withheldExecCellIds: Set<string>;
   /** Native items already seen; a repeated item must not complete another call. */
   observedNativeItemIds: Set<string>;
   /** Default working directory of the current turn. */
@@ -625,6 +628,11 @@ function processPersistedNormalizedToolCall(
 ): void {
   if (normalized.name === 'wait') {
     const cellId = readCodexExecCellIdArgument(normalized.input);
+    if (cellId && ctx.withheldExecCellIds.delete(cellId)) {
+      ctx.withheldExecOutputCallIds.add(callId);
+      ctx.suppressedToolOutputIds.add(callId);
+      return;
+    }
     const commandCallId = cellId ? ctx.execCellToCommandId.get(cellId) : undefined;
     if (cellId && commandCallId) {
       ctx.waitCallToCommand.set(callId, { commandCallId, cellId });
@@ -687,10 +695,12 @@ function processPersistedToolOutput(
   const callId = payload.call_id;
   if (!callId) return;
 
-  ctx.openExecCalls.delete(callId);
   const withholdsOutput = ctx.withheldExecOutputCallIds.delete(callId);
   // output can be a string or an array (e.g. view_image returns image objects)
   const rawOutput = stringifyCodexToolOutput(payload.output);
+  // A yielded withheld script continues through `wait` calls that carry the same combined output.
+  const yieldedCellId = withholdsOutput ? extractCodexExecCellId(rawOutput) : undefined;
+  if (yieldedCellId) ctx.withheldExecCellIds.add(yieldedCellId);
 
   const execEnvelopeToolCallIds = ctx.execEnvelopeToolCallIds.get(callId);
   if (execEnvelopeToolCallIds) {
@@ -1202,6 +1212,8 @@ function processEventMsg(
     }
 
     case 'task_started': {
+      // Native items complete their calls within the same turn.
+      ctx.openExecCalls.clear();
       const serverTurnId = extractServerTurnId(payload);
       const id = nextTurnId(ctx);
       const turn = ensureTurn(ctx.turns, ctx.turnOrder, id, null, timestamp);

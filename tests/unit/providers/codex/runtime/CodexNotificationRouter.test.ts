@@ -3755,27 +3755,30 @@ describe('CodexNotificationRouter', () => {
     });
   });
 
-  it('keeps native command output when its script also calls hidden internal tools', () => {
-    router.beginTurn();
-    router.handleNotification('rawResponseItem/completed', { item: {
+  it.each([
+    [false, false], [false, true], [true, false], [true, true],
+  ])('keeps the native command outcome when its script also calls hidden internal tools (child stream: %s, native late: %s)', (streamRawExecCalls, nativeLate) => {
+    const scriptRouter = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace', streamRawExecCalls);
+    scriptRouter.beginTurn();
+    scriptRouter.handleNotification('rawResponseItem/completed', { item: {
       type: 'custom_tool_call', name: 'exec', call_id: 'mixed',
-      input: 'text(await tools.exec_command({cmd:"public"})); text(await tools.get_context_remaining({}));',
+      input: 'text(await tools.exec_command({cmd:"check"})); text(await tools.get_context_remaining({}));',
     } });
     const command = {
-      type: 'commandExecution', id: 'exec-public', command: 'public', cwd: '/workspace', status: 'completed',
-      commandActions: [{ type: 'unknown', command: 'public' }], aggregatedOutput: 'native stdout\n', exitCode: 0,
+      type: 'commandExecution', id: 'exec-check', command: 'check', cwd: '/workspace', status: 'failed',
+      commandActions: [{ type: 'unknown', command: 'check' }], aggregatedOutput: 'check failed\n', exitCode: 7,
     };
-    router.handleNotification('item/started', { item: { ...command, status: 'inProgress', aggregatedOutput: null, exitCode: null } });
-    router.handleNotification('item/completed', { item: command });
-    router.handleNotification('rawResponseItem/completed', { item: {
-      type: 'custom_tool_call_output', call_id: 'mixed', output: 'Script completed\nWall time 0.1 seconds\nOutput:\nnative stdout\n{"tokens_left":1}',
+    scriptRouter.handleNotification('item/started', { item: { ...command, status: 'inProgress', aggregatedOutput: null, exitCode: null } });
+    if (!nativeLate) scriptRouter.handleNotification('item/completed', { item: command });
+    scriptRouter.handleNotification('rawResponseItem/completed', { item: {
+      type: 'custom_tool_call_output', call_id: 'mixed', output: 'Script completed\nWall time 0.1 seconds\nOutput:\ncheck failed\n{"tokens_left":1}',
     } });
-    router.handleNotification('turn/completed', { turn: { id: 'turn1', items: [], status: 'completed', error: null } });
+    if (nativeLate) scriptRouter.handleNotification('item/completed', { item: command });
+    scriptRouter.handleNotification('turn/completed', { turn: { id: 'turn1', items: [], status: 'completed', error: null } });
 
-    expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual(['exec-public']);
-    expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([
-      { type: 'tool_result', id: 'exec-public', content: 'native stdout\n', isError: false },
-    ]);
+    expect(new Set(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).size).toBe(1);
+    expect(chunks.filter(chunk => chunk.type === 'tool_result').at(-1)).toMatchObject({ content: 'check failed\n', isError: true });
+    expect(JSON.stringify(chunks)).not.toContain('tokens_left');
   });
 
   describe('webSearch tool', () => {

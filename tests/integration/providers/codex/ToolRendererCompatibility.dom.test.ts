@@ -135,11 +135,19 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
     expect(transcript.textContent).not.toMatch(/gAAAA|tokens_left|new context|checkpoint/);
   });
 
-  it.each(mode === 'live' ? [false, true] : [false])('withholds unsplit script output that includes hidden internal values (child stream: %s)', streamRawExecCalls => {
+  it.each((mode === 'live' ? [false, true] : [false]).flatMap(stream => [[stream, false], [stream, true]]))('withholds unsplit script output that includes hidden internal values (child stream: %s, yielded: %s)', (streamRawExecCalls, yielded) => {
+    const yieldedOutput = [{ type: 'input_text', text: 'Script running with cell ID 42\nWall time 0.1 seconds\nOutput:\n' }];
     const tools = restoreSession(mode, [
       { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'mixed',
         input: 'text(await tools.exec_command({cmd:"public"})); text(await tools.get_context_remaining({}));' } },
-      { raw: { type: 'custom_tool_call_output', call_id: 'mixed', output: scriptOutput('public\nopaque-internal-payload') } },
+      ...(yielded
+        ? [
+            { raw: { type: 'custom_tool_call_output', call_id: 'mixed', output: yieldedOutput } },
+            // Continuations of a withheld script carry the same combined output.
+            { raw: { type: 'function_call', name: 'wait', call_id: 'wait', arguments: '{"cell_id":"42"}' } },
+            { raw: { type: 'function_call_output', call_id: 'wait', output: scriptOutput('public\nopaque-internal-payload') } },
+          ]
+        : [{ raw: { type: 'custom_tool_call_output', call_id: 'mixed', output: scriptOutput('public\nopaque-internal-payload') } }]),
     ], streamRawExecCalls);
     expect(tools.map(tool => tool.name)).toEqual(['Bash']);
     const block = renderStoredToolCall(document.body.createDiv(), tools[0], { initiallyExpanded: true });

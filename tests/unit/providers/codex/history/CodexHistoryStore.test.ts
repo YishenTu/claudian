@@ -1792,6 +1792,27 @@ describe('CodexHistoryStore', () => {
     });
   });
 
+  describe('parseCodexSessionContent - native exec item timing', () => {
+    it.each(['before script output', 'after script output', 'after the script yields'])('attaches native search sources arriving %s', timing => {
+      const raw = (payload: Record<string, unknown>) => ({ type: 'response_item', payload });
+      const call = raw({ type: 'custom_tool_call', name: 'exec', call_id: 'search', input: 'text(await tools.web__run({search_query:[{q:"HBM supply"}]}));' });
+      const completed = (callId: string) => raw({ type: 'custom_tool_call_output', call_id: callId, output: 'Script completed\nWall time 0.1 seconds\nOutput:\nSource (https://example.com/source)' });
+      const native = { type: 'event_msg', payload: { type: 'item_completed', item: {
+        type: 'Extension', kind: 'web.search', id: 'native-search', query: 'HBM supply',
+        results: [{ type: 'text_result', title: 'Source', url: 'https://example.com/source' }],
+      } } };
+      const records = timing === 'before script output' ? [call, native, completed('search')]
+        : timing === 'after script output' ? [call, completed('search'), native]
+          : [call, raw({ type: 'custom_tool_call_output', call_id: 'search', output: 'Script running with cell ID 42\nWall time 0.1 seconds\nOutput:\n' }),
+              native, raw({ type: 'function_call', name: 'wait', call_id: 'wait', arguments: '{"cell_id":"42"}' }),
+              { ...completed('wait'), payload: { ...completed('wait').payload, type: 'function_call_output' } }];
+      const tools = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n'))
+        .flatMap(message => message.toolCalls ?? []);
+
+      expect(tools.find(tool => tool.name === 'WebSearch')?.webSearchResults).toEqual([{ title: 'Source', url: 'https://example.com/source' }]);
+    });
+  });
+
   describe('parseCodexSessionContent - event_msg handling', () => {
     it('task_started + agent_message + task_complete produces proper turn', () => {
       const content = [

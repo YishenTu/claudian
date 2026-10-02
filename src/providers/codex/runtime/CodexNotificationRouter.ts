@@ -156,6 +156,9 @@ export class CodexNotificationRouter {
   #deferredOwnedCanonicalItemIds = new Set<string>();
   #ignoredLateRawOutputCallIds = new Set<string>();
   #suppressedRawCallIds = new Set<string>();
+  /** Yielded cells, and continuations, of scripts whose combined output is withheld. */
+  #withheldExecCellIds = new Set<string>();
+  #withheldWaitCallIds = new Set<string>();
   #fileChangeInputsById = new Map<string, Record<string, unknown>>();
 
   private readonly rawExecAliases = new Map<string, string>();
@@ -242,6 +245,8 @@ export class CodexNotificationRouter {
     this.#wrappedCommandCallIdsByCellId.clear();
     this.#wrappedCommandOutputByCallId.clear();
     this.#wrappedWaitCallsByCallId.clear();
+    this.#withheldExecCellIds.clear();
+    this.#withheldWaitCallIds.clear();
     this.#pendingWrappedWaitCallsByCallId.clear();
     this.#canonicalCommandOutputByItemId.clear();
     this.#pendingCanonicalToolOutputByItemId.clear();
@@ -281,6 +286,8 @@ export class CodexNotificationRouter {
     this.#wrappedCommandCallIdsByCellId.clear();
     this.#wrappedCommandOutputByCallId.clear();
     this.#wrappedWaitCallsByCallId.clear();
+    this.#withheldExecCellIds.clear();
+    this.#withheldWaitCallIds.clear();
     this.#pendingWrappedWaitCallsByCallId.clear();
     this.#canonicalCommandOutputByItemId.clear();
     this.#pendingCanonicalToolOutputByItemId.clear();
@@ -645,6 +652,10 @@ export class CodexNotificationRouter {
     const rawArguments = parseRawArguments(item);
     if (rawName === 'wait') {
       const cellId = readCodexExecCellIdArgument(rawArguments);
+      if (cellId && this.#withheldExecCellIds.delete(cellId)) {
+        this.#withheldWaitCallIds.add(callId);
+        return;
+      }
       const commandCallId = cellId
         ? this.#wrappedCommandCallIdsByCellId.get(cellId)
         : undefined;
@@ -834,6 +845,11 @@ export class CodexNotificationRouter {
     this.#handledRawOutputCallIds.add(callId);
     this.#inFlightRawFunctionCallIds.delete(callId);
 
+    if (this.#withheldWaitCallIds.delete(callId)) {
+      this.#withholdExecCell(item.output);
+      return;
+    }
+
     const wrappedWaitCall = this.#wrappedWaitCallsByCallId.get(callId);
     if (wrappedWaitCall) {
       this.#wrappedWaitCallsByCallId.delete(callId);
@@ -858,6 +874,7 @@ export class CodexNotificationRouter {
       if (deferredExec.expectedCalls.length > 0) {
         deferredExec.hasRawOutput = true;
         deferredExec.rawOutput = item.output;
+        if (deferredExec.withholdsRawOutput) this.#withholdExecCell(item.output);
         if (this.streamRawExecCalls) this.#emitDeferredRawExecFallback(deferredExec, item.output, true);
         if (deferredExec.expectedCalls.every(call => (
           call.claimed && call.canonicalCompleted
@@ -920,6 +937,12 @@ export class CodexNotificationRouter {
     }
 
     this.#rawToolOutputsByCallId.set(callId, result);
+  }
+
+  /** A yielded withheld script continues through `wait` calls that carry the same combined output. */
+  #withholdExecCell(rawOutput: unknown): void {
+    const cellId = extractCodexExecCellId(stringifyCodexToolOutput(rawOutput));
+    if (cellId) this.#withheldExecCellIds.add(cellId);
   }
 
   #replayPendingRawToolOutput(item: Record<string, unknown>): void {
@@ -1155,6 +1178,8 @@ export class CodexNotificationRouter {
     this.#wrappedCommandCallIdsByCellId.clear();
     this.#wrappedCommandOutputByCallId.clear();
     this.#wrappedWaitCallsByCallId.clear();
+    this.#withheldExecCellIds.clear();
+    this.#withheldWaitCallIds.clear();
     this.#pendingWrappedWaitCallsByCallId.clear();
     this.#inFlightRawFunctionCallIds.clear();
     this.#immediateRawOutputCallIds.clear();
@@ -1174,8 +1199,10 @@ export class CodexNotificationRouter {
     const rawOutputText = stringifyCodexToolOutput(rawOutput);
     deferredExec.expectedCalls.forEach((call, index) => {
       if (call.claimed) {
-        // A native search completion carries its sources; script output closes it only when the turn ends.
-        if (emitResult && !call.canonicalCompleted && call.canonicalItemId && (turnEnded || call.name !== 'WebSearch')) {
+        // Native completion carries search sources and withheld command output;
+        // script output closes those only when the turn ends.
+        if (emitResult && !call.canonicalCompleted && call.canonicalItemId
+          && (turnEnded || (call.name !== 'WebSearch' && !deferredExec.withholdsRawOutput))) {
           this.#completedCanonicalToolItemIds.add(call.canonicalItemId);
           this.emit({
             type: 'tool_result',
