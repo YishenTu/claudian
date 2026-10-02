@@ -4,8 +4,11 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { type App, type Component, MarkdownRenderer, Platform, TFile } from 'obsidian';
 
+import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
+import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { ComposerEditor } from '@/features/chat/composer/ComposerEditor';
 import { formatComposerSessionMention } from '@/features/chat/composer/composerSessionMentions';
+import { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
 import { CanvasSelectionController } from '@/features/chat/controllers/CanvasSelectionController';
 import { sendTabInputMessageFromExplicitEnterShortcut } from '@/features/chat/tabs/TabInputEvents';
 import { ComposerContextTray } from '@/features/chat/ui/ComposerContextTray';
@@ -453,4 +456,55 @@ it.each([
     expect(within(parent).queryByRole('img', { name: 'Session: Review' })).toBeNull();
     expect(within(parent).getByRole('textbox', { name: 'Message' }).textContent).toContain(source.replace(/\n/g, ''));
   } finally { editor.destroy(); parent.remove(); }
+});
+
+it('renders known commands and skills as chips while unknown tokens stay text', async () => {
+  const parent = document.body.createDiv();
+  const editor = createEditor(parent);
+  const entry = (kind: 'command' | 'skill', name: string, prefix: string): ProviderCommandEntry => ({
+    content: '', id: `codex:${kind}:${name}`, providerId: 'codex', kind, name, scope: 'runtime',
+    source: 'sdk', isEditable: false, isDeletable: false, displayPrefix: prefix, insertPrefix: prefix,
+  });
+  const listeners = new Set<() => void>();
+  let snapshot: ProviderCommandDiscoveryResult<ProviderCommandEntry> = {
+    status: 'ready', items: [entry('command', 'review', '/')],
+  };
+  const files = new FileContextManager(createApp());
+  const dropdown = new MainChatComposerDropdown(parent, editor.element, files, {
+    providerId: 'codex',
+    providerDiscovery: {
+      getSnapshot: () => snapshot,
+      load: async () => snapshot,
+      retry: async () => snapshot,
+      subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+    },
+  });
+  try {
+    editor.element.value = '/clear /review $plan /unknown /clear /review';
+    editor.element.focus();
+    const command = within(parent).getByRole('img', { name: 'Command: /review' });
+    expect(command.textContent).toBe('/review');
+    expect(within(parent).getAllByRole('img', { name: 'Command: /clear' })).toHaveLength(1);
+    expect(within(parent).queryByRole('img', { name: /plan|unknown/ })).toBeNull();
+    expect(within(parent).getAllByRole('img', { name: 'Command: /review' })).toHaveLength(1);
+    expect((await axe(command)).violations).toEqual([]);
+
+    snapshot = { status: 'ready', items: [entry('command', 'review', '/'), entry('skill', 'plan', '$')] };
+    for (const listener of listeners) listener();
+    const skill = within(parent).getByRole('img', { name: 'Skill: plan' });
+    expect(skill.textContent).toBe('plan');
+    expect(editor.element.value).toBe('/clear /review $plan /unknown /clear /review');
+
+    editor.element.selectionStart = editor.element.selectionEnd = '/clear /review'.length;
+    fireEvent.keyDown(within(parent).getByRole('textbox', { name: 'Message' }), { key: 'Backspace', code: 'Backspace' });
+    expect(editor.element.value).toBe('/clear  $plan /unknown /clear /review');
+
+    editor.element.value = 'Run /review ';
+    const textbox = within(parent).getByRole('textbox', { name: 'Message' });
+    fireEvent.keyDown(textbox, { key: 'Backspace', code: 'Backspace' });
+    expect(editor.element.value).toBe('Run /review');
+    expect(within(parent).getByRole('img', { name: 'Command: /review' })).toBeTruthy();
+    fireEvent.keyDown(textbox, { key: 'Backspace', code: 'Backspace' });
+    expect(editor.element.value).toBe('Run ');
+  } finally { dropdown.destroy(); editor.destroy(); parent.remove(); }
 });

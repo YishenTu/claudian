@@ -21,6 +21,7 @@ export class MainChatComposerDropdown {
   private readonly controller: ComposerDropdownController;
   private readonly slashSource: SlashCommandSource;
   private readonly mentionSource: ReturnType<FileContextManager['getMentionSource']>;
+  private readonly removeCommandPresentation: () => void;
 
   constructor(
     containerEl: HTMLElement,
@@ -40,6 +41,14 @@ export class MainChatComposerDropdown {
       inputEl,
       [this.slashSource, this.mentionSource],
     );
+    const resolveCommand = (token: string, atInputStart: boolean) =>
+      this.slashSource.resolveCommandKind(token, atInputStart);
+    inputEl.setCommandResolver?.(resolveCommand);
+    const unsubscribe = this.slashSource.subscribeInvalidation(() => inputEl.setCommandResolver?.(resolveCommand));
+    this.removeCommandPresentation = () => {
+      unsubscribe();
+      inputEl.setCommandResolver?.(null);
+    };
   }
 
   clearProviderCatalog(): void {
@@ -51,6 +60,7 @@ export class MainChatComposerDropdown {
   }
 
   destroy(): void {
+    this.removeCommandPresentation();
     this.controller.destroy();
     this.slashSource.destroy();
   }

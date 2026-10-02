@@ -1,3 +1,5 @@
+import type { ProviderCommandKind } from '@/core/providers/commands/ProviderCommandEntry';
+
 /** Text/caret contract shared by native inputs and the Main Chat rich editor. */
 export interface ComposerInputElement extends HTMLElement {
   value: string;
@@ -5,7 +7,11 @@ export interface ComposerInputElement extends HTMLElement {
   selectionEnd: number | null;
   placeholder: string;
   replaceText?: (from: number, to: number, text: string) => void;
+  /** Lets an input present completed command and skill tokens; setting it again re-resolves them. */
+  setCommandResolver?: (resolver: ComposerCommandResolver | null) => void;
 }
+
+export type ComposerCommandResolver = (token: string, atInputStart: boolean) => ProviderCommandKind | null;
 
 export interface ComposerTriggerMatch {
   readonly atInputStart: boolean;

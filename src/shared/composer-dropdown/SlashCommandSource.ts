@@ -1,7 +1,7 @@
 import { getBuiltInCommandsForDropdown } from '@/core/commands/builtInCommands';
 import type { ProviderCommandDropdownConfig } from '@/core/providers/commands/ProviderCommandCatalog';
 import type { ProviderCommandDiscoverySource } from '@/core/providers/commands/ProviderCommandDiscoveryStore';
-import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
+import type { ProviderCommandEntry, ProviderCommandKind } from '@/core/providers/commands/ProviderCommandEntry';
 import type { ProviderId } from '@/core/providers/types';
 import { normalizeArgumentHint } from '@/utils/slashCommand';
 
@@ -151,6 +151,23 @@ export class SlashCommandSource implements ComposerDropdownSource {
       kind: 'replace',
       text: item.replacement,
     };
+  }
+
+  /** Resolves an inserted token such as `/review` with the same precedence the dropdown offers it. */
+  resolveCommandKind(token: string, atInputStart: boolean): ProviderCommandKind | null {
+    const key = token.toLocaleLowerCase();
+    if (this.includeBuiltIns && atInputStart && key.startsWith('/')) {
+      const name = key.slice(1);
+      if (getBuiltInCommandsForDropdown(this.providerId ?? undefined).some(command =>
+        [command.name, ...(command.aliases ?? [])].some(alias => alias.toLocaleLowerCase() === name))) {
+        return 'command';
+      }
+    }
+    const snapshot = this.discovery?.getSnapshot();
+    if (snapshot?.status !== 'ready') return null;
+    const entry = snapshot.items.find(item => !this.hiddenCommands.has(item.name.toLocaleLowerCase())
+      && `${item.insertPrefix}${item.name}`.toLocaleLowerCase() === key);
+    return entry?.kind ?? null;
   }
 
   /** Destinations without Claudian built-in commands hide them entirely. */

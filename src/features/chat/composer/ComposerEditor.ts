@@ -3,11 +3,12 @@ import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, Sta
 import { Decoration, type DecorationSet, EditorView, keymap, placeholder, WidgetType } from '@codemirror/view';
 import { type App, type Component, MarkdownRenderer, setIcon } from 'obsidian';
 
-import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
+import type { ProviderCommandKind } from '@/core/providers/commands/ProviderCommandEntry';
+import type { ComposerCommandResolver, ComposerInputElement } from '@/shared/composer-dropdown/types';
 import { registerFileLinkHandler } from '@/utils/fileLink';
 
-import { findComposerSessionMentions } from './composerSessionMentions';
-import { findComposerWikilinks } from './composerWikilinks';
+import { type ComposerSessionMention, findComposerSessionMentions } from './composerSessionMentions';
+import { filterComposerTextTokens, findComposerWikilinks } from './composerWikilinks';
 
 const refreshLinks = StateEffect.define<null>();
 const programmatic = Annotation.define<boolean>();
@@ -38,6 +39,18 @@ class WikilinkWidget extends WidgetType {
   }
 }
 
+function createChip(view: EditorView, cls: string, label: string, icon: string | null, text: string): HTMLElement {
+  const ownerWindow = view.dom.ownerDocument.win as Window & { createSpan: typeof createSpan };
+  const el = ownerWindow.createSpan();
+  el.className = `claudian-composer-chip ${cls}`;
+  el.contentEditable = 'false';
+  el.setAttribute('role', 'img');
+  el.setAttribute('aria-label', label);
+  if (icon) setIcon(el.createSpan({ cls: 'claudian-composer-chip-icon' }), icon);
+  el.append(view.dom.ownerDocument.createTextNode(text));
+  return el;
+}
+
 class SessionMentionWidget extends WidgetType {
   constructor(private readonly title: string) { super(); }
 
@@ -46,16 +59,51 @@ class SessionMentionWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
-    const ownerWindow = view.dom.ownerDocument.win as Window & { createSpan: typeof createSpan };
-    const el = ownerWindow.createSpan();
-    el.className = 'claudian-composer-session';
-    el.contentEditable = 'false';
-    el.setAttribute('role', 'img');
-    el.setAttribute('aria-label', `Session: ${this.title}`);
-    setIcon(el.createSpan({ cls: 'claudian-composer-session-icon' }), 'message-circle-more');
-    el.append(view.dom.ownerDocument.createTextNode(this.title));
+    return createChip(view, 'claudian-composer-session', `Session: ${this.title}`, 'message-circle-more', this.title);
+  }
+}
+
+class CommandWidget extends WidgetType {
+  constructor(private readonly token: string, private readonly kind: ProviderCommandKind) { super(); }
+
+  eq(other: CommandWidget): boolean {
+    return this.token === other.token && this.kind === other.kind;
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    if (this.kind === 'skill') {
+      const name = this.token.slice(1);
+      return createChip(view, 'claudian-composer-skill', `Skill: ${name}`, 'zap', name);
+    }
+    const el = createChip(view, 'claudian-composer-command', `Command: ${this.token}`, null, this.token.slice(1));
+    el.prepend(el.createSpan({ cls: 'claudian-composer-command-prefix', text: this.token[0] }));
     return el;
   }
+}
+
+interface ComposerCommandToken {
+  index: number;
+  fullMatch: string;
+  kind: ProviderCommandKind;
+}
+
+type ComposerToken = ComposerSessionMention | ReturnType<typeof findComposerWikilinks>[number] | ComposerCommandToken;
+
+/**
+ * A token becomes a chip once whitespace completes it, so the one being typed stays editable text.
+ * An existing chip stays one when that whitespace is removed, until the token itself changes.
+ */
+function findComposerCommands(
+  text: string, resolve: ComposerCommandResolver | null, wasChip: (from: number, to: number) => boolean,
+): ComposerCommandToken[] {
+  if (!resolve) return [];
+  const tokens = [...text.matchAll(/(?<=^|\s)[^\s\w]\S*(?=\s|$)/g)].flatMap(match => {
+    const end = match.index + match[0].length;
+    if (end === text.length && !wasChip(match.index, end)) return [];
+    const kind = resolve(match[0], match.index === 0);
+    return kind ? [{ index: match.index, fullMatch: match[0], kind }] : [];
+  });
+  return tokens.length ? filterComposerTextTokens(text, tokens) : [];
 }
 
 /** Owns the editable Markdown document; wikilink presentation is derived from its text. */
@@ -70,6 +118,7 @@ export class ComposerEditor {
   private ariaObserver: MutationObserver | null = null;
   private inputPending = false;
   private linkRevision = 0;
+  private commandResolver: ComposerCommandResolver | null = null;
   private readonly removeFileLinkHandler: () => void;
 
   constructor(parent: HTMLElement, private readonly app: App, private readonly component: Component) {
@@ -80,8 +129,8 @@ export class ComposerEditor {
     this.element = host as unknown as ComposerInputElement;
     this.removeFileLinkHandler = registerFileLinkHandler(app, host);
     const decorations = StateField.define<DecorationSet>({
-      create: state => this.decorate(state),
-      update: (_value, transaction) => this.decorate(transaction.state),
+      create: state => this.decorate(state, Decoration.none),
+      update: (value, transaction) => this.decorate(transaction.state, value.map(transaction.changes)),
       provide: field => EditorView.decorations.from(field),
     });
     this.state = EditorState.create({
@@ -92,13 +141,14 @@ export class ComposerEditor {
           { key: 'Backspace', run: view => {
             const { main, ranges } = view.state.selection;
             if (!main.empty || ranges.length !== 1) return false;
-            const text = view.state.doc.toString();
-            const link = [...findComposerSessionMentions(text), ...findComposerWikilinks(text)]
-              .find(link => link.index + link.fullMatch.length === main.head);
-            if (!link) return false;
+            let chipStart: number | null = null;
+            view.state.field(decorations).between(main.head, main.head, (from, to) => {
+              if (to === main.head) chipStart = from;
+            });
+            if (chipStart === null) return false;
             view.dispatch({
-              changes: { from: link.index, to: main.head },
-              selection: { anchor: link.index },
+              changes: { from: chipStart, to: main.head },
+              selection: { anchor: chipStart },
               userEvent: 'delete.backward',
             });
             return true;
@@ -160,6 +210,10 @@ export class ComposerEditor {
         userEvent: 'input.complete',
       }));
     };
+    this.element.setCommandResolver = resolver => {
+      this.commandResolver = resolver;
+      this.refreshLinks();
+    };
     host.setAttribute('data-placeholder', this.placeholderText);
     host.addEventListener('focusin', this.onFocusIn);
   }
@@ -204,12 +258,28 @@ export class ComposerEditor {
     this.view.focus();
   };
 
-  private decorate(state: EditorState): DecorationSet {
-    const text = state.doc.toString();
-    const sessions = findComposerSessionMentions(text);
-    const links = [...sessions, ...findComposerWikilinks(text).filter(link => !sessions.some(session =>
-      link.index < session.index + session.fullMatch.length && link.index + link.fullMatch.length > session.index))]
-      .filter(link => {
+  private findTokens(text: string, previous: DecorationSet): ComposerToken[] {
+    const tokens: ComposerToken[] = [];
+    const wasChip = (from: number, to: number) => {
+      let found = false;
+      previous.between(from, to, (start, end) => { found ||= start === from && end === to; });
+      return found;
+    };
+    for (const token of [
+      ...findComposerSessionMentions(text),
+      ...findComposerWikilinks(text),
+      ...findComposerCommands(text, this.commandResolver, wasChip),
+    ]) {
+      const end = token.index + token.fullMatch.length;
+      if (!tokens.some(other => token.index < other.index + other.fullMatch.length && end > other.index)) {
+        tokens.push(token);
+      }
+    }
+    return tokens;
+  }
+
+  private decorate(state: EditorState, previous: DecorationSet): DecorationSet {
+    const links = this.findTokens(state.doc.toString(), previous).filter(link => {
       const end = link.index + link.fullMatch.length;
       return !state.selection.ranges.some(range =>
         (range.from > link.index && range.from < end) || (range.to > link.index && range.to < end));
@@ -217,7 +287,9 @@ export class ComposerEditor {
     return Decoration.set(links.map(link => Decoration.replace({
       widget: 'conversationId' in link
         ? new SessionMentionWidget(link.title)
-        : new WikilinkWidget(link.fullMatch, this.app, this.component, this.linkRevision),
+        : 'kind' in link
+          ? new CommandWidget(link.fullMatch, link.kind)
+          : new WikilinkWidget(link.fullMatch, this.app, this.component, this.linkRevision),
     }).range(link.index, link.index + link.fullMatch.length)), true);
   }
 

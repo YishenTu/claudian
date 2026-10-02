@@ -76,7 +76,7 @@
   margin: 0;
 }
 
-.claudian-composer-session {
+.claudian-composer-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.3em;
@@ -86,12 +86,25 @@
   vertical-align: baseline;
 }
 
-.claudian-composer-session-icon {
+.claudian-composer-chip-icon {
   display: inline-flex;
   color: var(--text-muted);
 }
 
-.claudian-composer-session-icon svg {
+.claudian-composer-chip-icon svg {
   width: 1em;
   height: 1em;
+}
+
+/* Commands read as code: a monospaced chip rather than prose, with the prefix joined to the name. */
+.claudian-composer-command {
+  gap: 0;
+  color: var(--text-normal);
+  font-family: var(--font-monospace);
+  font-size: 0.9em;
+  font-weight: var(--font-semibold);
+}
+
+.claudian-composer-command-prefix {
+  font-weight: var(--font-extrabold);
 }
