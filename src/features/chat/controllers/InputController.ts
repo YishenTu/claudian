@@ -70,6 +70,9 @@ import { TurnCoordinator } from './TurnCoordinator';
 
 type ApprovalCallbackOptions = InlineApprovalOptions;
 
+/** Rejected dispatch leaves draft recovery with its caller; handled work owns recovery. */
+type DispatchResult = 'rejected' | 'handled' | 'queued';
+
 export interface InputControllerDeps {
   plugin: ChatFeatureHost;
   state: ChatState;
@@ -229,7 +232,7 @@ export class InputController {
         new Notice(t('chat.selectAvailableModel'));
         return;
       }
-      queued = await this.#dispatchMessage(options) === true;
+      queued = await this.#dispatchMessage(options) === 'queued';
     } finally {
       if (!queued) options?.onDelivery?.(false);
     }
@@ -304,7 +307,7 @@ export class InputController {
     }
   }
 
-  async #dispatchMessage(options?: SendMessageOptions, skipPreparationBarrier = false): Promise<boolean | void> {
+  async #dispatchMessage(options?: SendMessageOptions, skipPreparationBarrier = false): Promise<DispatchResult> {
     const {
       state,
       selectionController,
@@ -316,7 +319,7 @@ export class InputController {
     // During conversation creation/switching, don't send - input is preserved so user can retry
     if (state.isCreatingConversation || state.isSwitchingConversation) {
       this.#reportDeferredReviewableSettlement();
-      return;
+      return 'rejected';
     }
 
     const destination = options?.destination ?? this.deps.drafts.destination;
@@ -331,13 +334,13 @@ export class InputController {
       : (composerDraft.images.length > 0);
     if (!content && !hasImages && !options?.turnRequestOverride?.text.trim()) {
       this.#reportDeferredReviewableSettlement();
-      return;
+      return 'rejected';
     }
 
     if (state.isRewinding) {
       new Notice(t('chat.rewind.inProgress'));
       this.#reportDeferredReviewableSettlement();
-      return;
+      return 'rejected';
     }
 
     const sideChat = this.deps.getSideChatController?.() ?? null;
@@ -348,14 +351,14 @@ export class InputController {
       this.#reportDeferredReviewableSettlement();
       if (!sideChat || !isSideChatCommandSupported(this.#getActiveCapabilities())) {
         new Notice(t('chat.sideChat.unsupportedProvider'));
-        return;
+        return 'rejected';
       }
       const images = hasImages
         ? [...(imageOverride ?? composerDraft.images)]
         : [];
       // The side controller owns composer clearing so a rejected command keeps the draft.
       await sideChat.handleCommandSubmission(sideCommand.argument, images, this.#buildSideContext());
-      return;
+      return 'handled';
     }
 
     // Check for built-in commands first (e.g., /clear, /new)
@@ -370,7 +373,7 @@ export class InputController {
         this.deps.drafts.restore(destination, { content: '', images: composerDraft.images });
       }
       await this.#executeBuiltInCommand(builtInCmd.command);
-      return;
+      return 'handled';
     }
 
     // Reserve busy-main admission order before any hydration can yield.
@@ -393,7 +396,9 @@ export class InputController {
           this.deps.drafts.restore('main', original, { merge: true });
           return;
         }
-        queued = await this.#dispatchMessage(capturedOptions, true) === true;
+        const result = await this.#dispatchMessage(capturedOptions, true);
+        if (result === 'rejected') this.deps.drafts.restore('main', original, { merge: true });
+        queued = result === 'queued';
       })();
       const barrier = pending.catch(() => undefined);
       this.mainPreparationBarrier = barrier;
@@ -402,13 +407,13 @@ export class InputController {
         this.mentionPreparations.delete(controller);
         if (this.mainPreparationBarrier === barrier) this.mainPreparationBarrier = null;
       }
-      return queued;
+      return queued ? 'queued' : 'handled';
     }
 
     if (!options?.turnRequestOverride && findComposerSessionMentions(content).length > 0) {
       if (destination === 'side' && detectMainOnlyBuiltInCommand(content)) {
         new Notice(t('chat.sideChat.mainOnlyCommand', { command: detectMainOnlyBuiltInCommand(content)!.name }));
-        return;
+        return 'rejected';
       }
       const conversationId = state.currentConversationId;
       const capturedSideRuntime = sideChat?.runtime;
@@ -446,7 +451,9 @@ export class InputController {
               draftConsumed: shouldUseInput || options?.draftConsumed });
           } else {
             handedOff = true;
-            queued = await this.#dispatchMessage({ ...options, destination: 'main', content: resolved.text, images, turnRequestOverride: turnRequest }, true) === true;
+            const result = await this.#dispatchMessage({ ...options, destination: 'main', content: resolved.text, images, turnRequestOverride: turnRequest }, true);
+            if (result === 'rejected') this.deps.drafts.restore(destination, original, { merge: true });
+            queued = result === 'queued';
           }
           handedOff = true;
         } catch (error) {
@@ -471,7 +478,7 @@ export class InputController {
         this.mentionPreparations.delete(preparation);
         if (barrier && this.mainPreparationBarrier === barrier) this.mainPreparationBarrier = null;
       }
-      return queued;
+      return queued ? 'queued' : 'handled';
     }
 
     if (destination === 'side' && sideChat) {
@@ -479,7 +486,7 @@ export class InputController {
       const mainOnly = detectMainOnlyBuiltInCommand(content);
       if (mainOnly) {
         new Notice(t('chat.sideChat.mainOnlyCommand', { command: mainOnly.name }));
-        return;
+        return 'rejected';
       }
       const images = hasImages
         ? [...(imageOverride ?? composerDraft.images)]
@@ -492,7 +499,7 @@ export class InputController {
         context,
       );
       if (!accepted && previousDraft) this.deps.drafts.restore('side', previousDraft, { merge: true });
-      return;
+      return 'handled';
     }
 
     // If agent is working, queue the message instead of dropping it
@@ -522,11 +529,12 @@ export class InputController {
 
       if (shouldUseInput) this.deps.drafts.consume(destination);
       this.updateQueueIndicator();
-      return true;
+      return 'queued';
     }
 
     if (!shouldUseInput) this.deps.conversationController.cancelBranchDraft();
     await this.turnCoordinator.run(signal => this.#executeMainTurn(content, signal, options));
+    return 'handled';
   }
 
   async #executeMainTurn(content: string, signal: AbortSignal, options?: SendMessageOptions): Promise<void> {

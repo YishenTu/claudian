@@ -5,6 +5,7 @@ import { createFixture, deferred, waitForCall } from '@test/helpers/ChatInputHar
 import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 
+import { ConversationController } from '@/features/chat/controllers/ConversationController';
 import { drainTabForShutdownSnapshot } from '@/features/chat/tabs/TabLifecycle';
 import { TabSession } from '@/features/chat/tabs/TabSession';
 
@@ -175,4 +176,54 @@ it('cancels and drains queued snapshot preparation before tab shutdown finishes'
   expect(fixture.state.queuedMessage).toBeNull();
   expect(fixture.input.value).toBe(token);
   await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
+});
+
+it.each([false, true])('restores prepared drafts when rewind begins during hydration (plain follow-up: %s)', async followUp => {
+  const fixture = setup();
+  const hydration = deferred<any>();
+  const initialization = deferred<boolean>();
+  const source = await fixture.plugin.getConversationById(id);
+  fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
+  const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'warm' }, fixture.native.coordinator);
+  const initialize = jest.fn().mockReturnValue(initialization.promise);
+  const conversation = new ConversationController({
+    ...fixture.deps,
+    navigation: session,
+    subagentManager: fixture.deps.getSubagentManager(),
+    setWelcomeEl: jest.fn(),
+    clearQueuedMessage: jest.fn(),
+    ensureExecutionInitialized: initialize,
+  });
+  fixture.state.messages = [
+    { id: 'previous-user', role: 'user', content: 'previous prompt', userMessageId: 'native-user', timestamp: time },
+    { id: 'previous-assistant', role: 'assistant', content: 'previous answer', assistantMessageId: 'native-assistant', timestamp: time },
+  ];
+  fixture.state.isStreaming = true;
+  fixture.input.value = token;
+  const sending = fixture.controller.sendMessage();
+  await waitForCall(fixture.plugin.getConversationById);
+  let following: Promise<void> | undefined;
+  if (followUp) {
+    fixture.input.value = 'later plain follow-up';
+    following = fixture.controller.sendMessage();
+  }
+  expect(fixture.input.value).toBe('');
+  fixture.state.isStreaming = false;
+  const rewinding = conversation.rewind('previous-user', 'conversation');
+  try {
+    await waitForCall(initialize);
+    expect(fixture.state.isRewinding).toBe(true);
+    hydration.resolve(source);
+    await Promise.all([sending, following]);
+    expect(fixture.native.backends.get('claude')!.sessions).toHaveLength(0);
+    expect(fixture.state.queuedMessage).toBeNull();
+    expect(fixture.input.value.split('\n\n').sort()).toEqual(
+      (followUp ? [token, 'later plain follow-up'] : [token]).sort(),
+    );
+  } finally {
+    initialization.resolve(false);
+    await rewinding;
+    await fixture.native.coordinator.dispose();
+    await fixture.native.registry.dispose();
+  }
 });
