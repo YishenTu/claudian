@@ -336,10 +336,9 @@
   line-height: 1.4;
 }
 
-/* Hanging indent: wrapped arguments align with the call name, not the status icon. */
+/* Keep the status icon in the padding so wrapped arguments align with the call name. */
 .claudian-tool-script-call {
   padding-left: 20px;
-  text-indent: -20px;
   overflow-wrap: anywhere;
 }
 
@@ -347,8 +346,8 @@
   display: inline-flex;
   vertical-align: middle;
   width: 14px;
+  margin-left: -20px;
   margin-right: 6px;
-  text-indent: 0;
 }
 
 .claudian-tool-status.status-cancelled,
@@ -358,6 +357,5 @@
 
 .claudian-tool-script-call-error {
   color: var(--color-red);
-  text-indent: 0;
   white-space: pre-wrap;
 }

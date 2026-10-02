@@ -14,6 +14,8 @@ test('CSS lint rejects important declarations across source styles', () => {
 for (const [name, code, rule] of [
   ['relational selectors', '.claudian-settings:has(textarea) { display: block; }', 'selector-pseudo-class-disallowed-list'],
   ['display contents', '.claudian-settings { display: contents; }', 'declaration-property-value-disallowed-list'],
+  ['hanging text indent', '.claudian-tool-script-call { text-indent: -20px; }', 'property-disallowed-list'],
+  ['text indent reset', '.claudian-tool-status { text-indent: 0; }', 'property-disallowed-list'],
 ]) {
   test(`CSS lint rejects ${name}`, async () => {
     const result = await stylelint.lint({ code, config: stylelintConfig });
