@@ -18,6 +18,7 @@ import {
   type ForkSourceUnavailableReason,
 } from '../tabs/TabForking';
 import type { AssembledTabRuntime } from '../tabs/types';
+import { SideChatCommandSubmission } from './SideChatCommandSubmission';
 import { SideChatPanel } from './SideChatPanel';
 import { SideChatRuntime } from './SideChatRuntime';
 import {
@@ -55,6 +56,8 @@ export class SideChatController {
   #mainPlaceholder: string | null = null;
   #startSequence = 0;
   #starting = false;
+  #startingCommand: SideChatCommandSubmission | null = null;
+  #pendingStart: Promise<boolean> | null = null;
   #previewActive = false;
   #disposed = false;
 
@@ -108,28 +111,43 @@ export class SideChatController {
       new Notice(t('chat.sideChat.needsPrompt'));
       return false;
     }
-    if (this.#runtime) {
-      // A collapsed existing child is resumed, never replaced.
-      if (this.#runtime.isWorking) {
-        if (!this.#runtime.enqueue({ content: argument, images, context })) return false;
-        if (detectSideChatCommand(this.deps.getInputEl().value)) this.#clearComposer();
-        this.handleComposerInput();
-        new Notice(t('chat.sideChat.queued'));
-        return true;
-      }
-      // Consume the main command before restoring the independent side draft.
-      if (detectSideChatCommand(this.deps.getInputEl().value)) this.#clearComposer();
-      this.#setExpanded(true);
-      await this.submitToSide(argument, images, context);
-      return true;
-    }
-
-    if (this.#starting) {
+    if (this.#disposed) return false;
+    if (this.#starting && !this.#runtime) {
       new Notice(t('chat.sideChat.alreadyExists'));
       return false;
     }
 
-    return this.#startSideChat(argument, images, context);
+    // Capture and consume before any await; recovery belongs to the original main draft.
+    const original = this.deps.drafts.capture('main');
+    const consumed = detectSideChatCommand(original.content) !== null;
+    if (consumed) this.#clearComposer();
+    const command = new SideChatCommandSubmission(this.deps.plugin, { content: argument, images, context }, error => {
+      if (consumed) this.deps.drafts.restore('main', original, { merge: true });
+      if (error) new Notice(error instanceof Error ? error.message : 'Could not prepare the side command.');
+    });
+    if (this.#runtime) {
+      // A collapsed existing child is resumed, never replaced.
+      const runtime = this.#runtime;
+      if (runtime.isWorking) {
+        if (!runtime.enqueue(command)) { command.cancel(); return false; }
+        this.handleComposerInput();
+        new Notice(t('chat.sideChat.queued'));
+        return true;
+      }
+      this.#setExpanded(true);
+      await runtime.submit(command);
+      return true;
+    }
+
+    this.#startingCommand = command;
+    const pending = this.#startSideChat(command);
+    this.#pendingStart = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.#pendingStart === pending) this.#pendingStart = null;
+      if (this.#startingCommand === command) this.#startingCommand = null;
+    }
   }
 
   /** Returns false when the child could not accept the turn, so the draft survives. */
@@ -150,6 +168,7 @@ export class SideChatController {
   }
 
   cancelSide(): void {
+    this.#startingCommand?.cancel();
     this.#runtime?.cancel();
   }
 
@@ -164,8 +183,10 @@ export class SideChatController {
   }
 
   async discard(): Promise<void> {
-    if (!this.#runtime && !this.#panel) return;
+    if (!this.#runtime && !this.#panel && !this.#starting) return;
     this.#startSequence += 1;
+    this.#startingCommand?.cancel();
+    const pendingStart = this.#pendingStart;
     const wasSideSelected = this.destination === 'side';
     const runtime = this.#runtime;
     const removePanel = () => {
@@ -180,7 +201,7 @@ export class SideChatController {
     try {
       this.deps.onDestinationChanged();
     } finally {
-      await runtime?.dispose();
+      await Promise.all([runtime?.dispose(), pendingStart]);
     }
   }
 
@@ -203,20 +224,21 @@ export class SideChatController {
     if (this.#disposed) return;
     this.#disposed = true;
     this.#startSequence += 1;
+    this.#startingCommand?.cancel();
     const runtime = this.#runtime;
     this.#runtime = null;
     this.#teardownPanel();
-    await runtime?.dispose();
+    await Promise.all([runtime?.dispose(), this.#pendingStart]);
   }
 
   async #startSideChat(
-    argument: string,
-    images: readonly ImageAttachment[],
-    context?: ProviderExecutionContext,
+    command: SideChatCommandSubmission,
   ): Promise<boolean> {
     const tab = this.deps.getTab();
     const sequence = ++this.#startSequence;
     this.#starting = true;
+    this.#boundConversationId = tab.conversationId;
+    let transferred = false;
     try {
       const capture = await captureLatestCompletedForkSource(
         tab,
@@ -243,12 +265,10 @@ export class SideChatController {
       };
 
       this.#boundConversationId = source.conversationId;
-      // The submitted command and its attachments are consumed by the side turn,
-      // so only residual composer content survives as the main draft.
-      if (detectSideChatCommand(this.deps.getInputEl().value)) this.#clearComposer();
       this.deps.drafts.changeDestination(() => this.#mountPanel(source));
       this.deps.onDestinationChanged();
-      await this.submitToSide(argument, images, context);
+      transferred = true;
+      await this.#runtime!.submit(command);
       return true;
     } catch (error) {
       new Notice(t('chat.sideChat.startFailed', {
@@ -256,6 +276,10 @@ export class SideChatController {
       }));
       return false;
     } finally {
+      if (!transferred) {
+        command.cancel();
+        await command.settled;
+      }
       this.#starting = false;
     }
   }

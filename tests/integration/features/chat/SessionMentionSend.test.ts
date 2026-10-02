@@ -6,6 +6,7 @@ import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 
 import { ConversationController } from '@/features/chat/controllers/ConversationController';
+import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import { drainTabForShutdownSnapshot } from '@/features/chat/tabs/TabLifecycle';
 import { TabSession } from '@/features/chat/tabs/TabSession';
 
@@ -466,3 +467,32 @@ it.each(['cancel', 'withdraw', 'discard', 'pause', 'shutdown', 'replacement'] as
     }
   },
 );
+
+it('cancels a still-hydrating queued mention after the active turn completes', async () => {
+  const execute = holdNativeTurns();
+  const fixture = setup();
+  const source = await fixture.plugin.getConversationById(id);
+  const hydration = deferred<any>();
+  fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
+  await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
+  fixture.input.value = 'active turn';
+  const active = fixture.controller.sendMessage();
+  await until(() => execute.mock.calls.length > 0);
+  const session = fixture.native.backends.get('claude')!.sessions[0];
+  fixture.input.value = token;
+  const mention = fixture.controller.sendMessage();
+  await waitForCall(fixture.plugin.getConversationById);
+  finishNativeTurn(session, 0);
+  await active;
+  const cancelled = cancelSelectedDestinationTurn({
+    state: fixture.state,
+    controllers: { inputController: fixture.controller, sideChatController: { destination: 'main' } },
+  } as never);
+  hydration.resolve(source);
+  for (let tick = 0; tick < 100; tick++) await new Promise(resolve => setTimeout(resolve, 1));
+  session.runs.forEach(run => run.cancel());
+  await mention;
+  await fixture.native.coordinator.dispose(); await fixture.native.registry.dispose();
+  expect({ cancelled, submittedTurns: session.requests.length, draft: fixture.input.value })
+    .toEqual({ cancelled: true, submittedTurns: 1, draft: token });
+});

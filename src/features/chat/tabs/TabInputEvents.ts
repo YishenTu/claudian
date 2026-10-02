@@ -45,7 +45,7 @@ export function cancelSelectedDestinationTurn(tab: AssembledTabRuntime): boolean
     sideChat.cancelSide();
     return true;
   }
-  if (!tab.state.isStreaming) return false;
+  if (!tab.state.isStreaming && !tab.controllers.inputController.isPreparingMainTurn) return false;
   tab.controllers.inputController.cancelStreaming();
   return true;
 }

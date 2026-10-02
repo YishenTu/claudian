@@ -24,6 +24,7 @@ import { MessageRenderer } from '../rendering/MessageRenderer';
 import { continueResponseAfterNotification } from '../rendering/ResponseContinuation';
 import { SubagentManager } from '../services/SubagentManager';
 import { ChatState } from '../state/ChatState';
+import { SideChatCommandSubmission } from './SideChatCommandSubmission';
 import { SideChatSession } from './SideChatSession';
 import type {
   SideChatSettingsProjection,
@@ -80,7 +81,9 @@ export class SideChatRuntime {
   #requestedSettlement: Promise<void> | null = null;
   #sessionEventWork: Promise<void> = Promise.resolve();
   readonly #backgroundTurns = new Map<string, { events: ProviderBackgroundOutputEvent[]; target?: BackgroundTurnRenderTarget }>();
-  readonly #queuedSubmissions: SideChatSubmission[] = [];
+  readonly #queuedSubmissions: Array<SideChatSubmission | SideChatCommandSubmission> = [];
+  readonly #pendingCommands = new Set<SideChatCommandSubmission>();
+  #activeCommand: SideChatCommandSubmission | null = null;
   #title: string | null = null;
   #titleService: TitleGenerationService | null = null;
 
@@ -237,22 +240,31 @@ export class SideChatRuntime {
   }
 
   /** Accept a detached snapshot without changing the shared composer's destination. */
-  enqueue(submission: SideChatSubmission): boolean {
-    if (this.#disposed || !this.isWorking || !submission.content.trim()) return false;
-    // Submission data contains only text, image metadata and plain selection context.
-    this.#queuedSubmissions.push({ ...JSON.parse(JSON.stringify(submission)) as SideChatSubmission, onDelivery: submission.onDelivery });
+  enqueue(submission: SideChatSubmission | SideChatCommandSubmission): boolean {
+    if (this.#disposed || !this.isWorking) return false;
+    if (submission instanceof SideChatCommandSubmission) {
+      this.#trackCommand(submission);
+      this.#queuedSubmissions.push(submission);
+    } else {
+      if (!submission.content.trim()) return false;
+      // Submission data contains only text, image metadata and plain selection context.
+      this.#queuedSubmissions.push({ ...JSON.parse(JSON.stringify(submission)) as SideChatSubmission, onDelivery: submission.onDelivery });
+    }
     this.#refreshStatus();
     return true;
   }
 
-  async submit(submission: SideChatSubmission): Promise<void> {
+  async submit(submission: SideChatSubmission | SideChatCommandSubmission): Promise<void> {
     if (this.#disposed || this.isWorking) {
-      submission.onDelivery?.(false);
+      if (submission instanceof SideChatCommandSubmission) submission.cancel();
+      else submission.onDelivery?.(false);
       return;
     }
+    if (submission instanceof SideChatCommandSubmission) this.#trackCommand(submission);
     this.#draining = true;
+    this.#refreshStatus();
     try {
-      let next: SideChatSubmission | undefined = submission;
+      let next: SideChatSubmission | SideChatCommandSubmission | undefined = submission;
       while (next && !this.#disposed) {
         await this.#submitTurn(next);
         next = this.#session.hasBackgroundWork ? undefined : this.#queuedSubmissions.shift();
@@ -263,14 +275,26 @@ export class SideChatRuntime {
     }
   }
 
-  async #submitTurn(submission: SideChatSubmission): Promise<void> {
+  #trackCommand(command: SideChatCommandSubmission): void {
+    this.#pendingCommands.add(command);
+    void command.settled.then(() => this.#pendingCommands.delete(command));
+  }
+
+  async #submitTurn(entry: SideChatSubmission | SideChatCommandSubmission): Promise<void> {
     let settle!: () => void;
+    let submission: SideChatSubmission | null = null;
     this.#requestedSettlement = new Promise(resolve => { settle = resolve; });
     try {
-      await this.#runRequestedTurn(submission);
+      if (entry instanceof SideChatCommandSubmission) {
+        this.#activeCommand = entry;
+        submission = await entry.settled;
+        if (!entry.accept()) submission = null;
+      } else submission = entry;
+      if (submission) await this.#runRequestedTurn(submission);
     } finally {
+      this.#activeCommand = null;
       this.#requestedSettlement = null;
-      submission.onDelivery?.(false);
+      submission?.onDelivery?.(false);
       settle();
     }
   }
@@ -406,7 +430,10 @@ export class SideChatRuntime {
   }
 
   #discardQueuedSubmissions(): void {
-    for (const submission of this.#queuedSubmissions.splice(0)) submission.onDelivery?.(false);
+    for (const submission of this.#queuedSubmissions.splice(0)) {
+      if (submission instanceof SideChatCommandSubmission) submission.cancel();
+      else submission.onDelivery?.(false);
+    }
   }
 
   #resumeQueuedSubmissions(): void {
@@ -416,6 +443,7 @@ export class SideChatRuntime {
   }
 
   cancel(): void {
+    this.#activeCommand?.cancel();
     this.#preparation?.controller.abort();
     this.#discardQueuedSubmissions();
     this.#refreshStatus();
@@ -426,10 +454,14 @@ export class SideChatRuntime {
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
+    this.#activeCommand?.cancel();
     this.#preparation?.controller.abort();
-    await this.#preparation?.pending.catch(() => undefined);
-    this.#discardBackgroundTurns();
     this.#discardQueuedSubmissions();
+    await Promise.allSettled([
+      this.#preparation?.pending,
+      ...[...this.#pendingCommands].map(command => command.settled),
+    ]);
+    this.#discardBackgroundTurns();
     this.#titleService?.cancel();
     this.#titleService = null;
     this.state.cancelRequested = true;

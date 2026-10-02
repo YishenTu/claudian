@@ -407,7 +407,7 @@ export function buildTabRuntimeControllers(
     getMessagesEl: () => dom.messagesEl,
     getInputEl: () => dom.inputEl,
     getSettings: () => plugin.settings.keyboardNavigation,
-    isStreaming: () => state.isStreaming,
+    isStreaming: () => state.isStreaming || inputController.isPreparingMainTurn,
     shouldSkipEscapeHandling: () => {
       if (inputController.isResumeDropdownVisible()) return true;
       if (ui.composerDropdown.isVisible()) return true;

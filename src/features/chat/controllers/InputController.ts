@@ -266,6 +266,11 @@ export class InputController {
     });
   }
 
+  get isPreparingMainTurn(): boolean {
+    return [...this.mentionPreparations].some(([controller, preparation]) =>
+      preparation.destination === 'main' && !controller.signal.aborted);
+  }
+
   resumeQueuedTurnAfterIntentAdmission(): void {
     if (this.deps.canStartTurn?.() === false) return;
     if (this.deps.state.isStreaming || !this.deps.state.queuedMessage) return;
