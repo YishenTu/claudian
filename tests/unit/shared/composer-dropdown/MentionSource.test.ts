@@ -54,6 +54,9 @@ describe('MentionSource', () => {
     expect(value.match('@Alpha note', 11)).toEqual(expect.objectContaining({
       query: 'Alpha note',
     }));
+    const completed = '@[A \\] B](claudian-session:conv-1-a) summarize this';
+    expect(value.match(completed, completed.length)).toBeNull();
+    expect(value.match(`${completed} @Al`, completed.length + 4)).toEqual(expect.objectContaining({ query: 'Al' }));
     value.destroy();
   });
 

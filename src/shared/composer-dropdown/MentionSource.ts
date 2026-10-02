@@ -65,6 +65,8 @@ export class MentionSource implements ComposerDropdownSource {
     const index = before.lastIndexOf('@');
     if (index < 0 || (index > 0 && !/\s/.test(before[index - 1]))) return null;
     const query = before.slice(index + 1);
+    // A completed `@[label](target)` mention token is not an open trigger.
+    if (/^\[(?:\\[\\\]]|[^\]\\\r\n])*\]\([^\s)]+\)/.test(query)) return null;
     return {
       atInputStart: index === 0,
       end: cursor,
