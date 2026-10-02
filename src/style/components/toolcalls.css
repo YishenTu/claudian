@@ -215,35 +215,6 @@
   white-space: nowrap;
 }
 
-/* Web search summary section */
-.claudian-tool-web-summary {
-  font-family: var(--font-monospace);
-  font-size: 12px;
-  color: var(--text-muted);
-  padding-top: 4px;
-  border-top: 1px solid var(--background-modifier-border);
-  margin-top: 4px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-/* Markdown-rendered summaries use prose typography instead of the monospace fallback. */
-.claudian-tool-web-summary-markdown {
-  font-family: var(--font-text);
-  font-size: var(--font-ui-small);
-  white-space: normal;
-}
-
-.claudian-tool-web-summary-markdown > :first-child {
-  margin-top: 0;
-}
-
-.claudian-tool-web-summary-markdown > :last-child {
-  margin-bottom: 0;
-}
-
 /* Images produced by a tool */
 .claudian-tool-result-images {
   display: flex;

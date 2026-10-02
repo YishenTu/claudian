@@ -1,3 +1,4 @@
+import { extractWebSearchResults } from '../../../core/tools/toolResultContent';
 import type { StreamChunk, SubagentInfo } from '../../../core/types';
 import { applyCodexSubagentActivity } from '../normalization/codexSubagentActivity';
 import type { SubAgentActivityItem, Thread, Turn } from '../runtime/codexAppServerTypes';
@@ -141,6 +142,7 @@ export class CodexSubagentTracker {
       if (index < 0) return;
       tools[index] = { ...tools[index], result: chunk.type === 'tool_output' ? (tools[index].result ?? '') + chunk.content : chunk.content,
         ...(chunk.type === 'tool_result' ? { status: chunk.isError ? 'error' as const : 'completed' as const,
+          webSearchResults: extractWebSearchResults(chunk.toolUseResult) ?? tools[index].webSearchResults,
           providerPayload: { ...tools[index].providerPayload, ...chunk.providerPayload } } : {}) };
     }
     agent.revision += 1;

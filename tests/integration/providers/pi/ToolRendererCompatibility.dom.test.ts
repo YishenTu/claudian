@@ -174,7 +174,7 @@ describe.each(['live', 'history'] as const)('%s Pi tool presentation', mode => {
     expect(within(block).getByText('Command exited with code 2')).toBeDefined();
   });
 
-  it('renders web search hits as links with their age and snippet', async () => {
+  it('renders web search hits as linked titles without their age or snippet', async () => {
     const tool = await restore(mode, {
       name: 'web_search', args: { query: 'pi rpc events', count: 2 },
       text: 'Brave web search results for: pi rpc events\n\n--- Result 1 ---\nTitle: RPC mode\nURL: https://pi.dev/docs/rpc',
@@ -188,8 +188,7 @@ describe.each(['live', 'history'] as const)('%s Pi tool presentation', mode => {
     expand(block, /^WebSearch: pi rpc events/);
     expect(within(block).getByRole('link', { name: 'RPC mode' }).getAttribute('href')).toBe('https://pi.dev/docs/rpc');
     expect(within(block).getByRole('link', { name: 'Extensions' }).getAttribute('href')).toBe('https://pi.dev/docs/extensions');
-    expect(within(block).getByText('2 days ago · Stream agent events as JSON lines.')).toBeDefined();
-    expect(within(block).getByText('Register custom tools.')).toBeDefined();
+    expect(block.textContent).not.toMatch(/2 days ago|Stream agent events|Register custom tools|Brave web search results/);
     expect((await axe(block)).violations).toEqual([]);
   });
 

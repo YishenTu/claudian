@@ -40,6 +40,15 @@ const NATIVE_TOOLS = new Set([
   'close_agent',
 ]);
 
+/** Codex context-management tools: model bookkeeping with opaque payloads, not user-visible work. */
+const INTERNAL_TOOL_NAMESPACES = new Set(['history', 'notes']);
+const INTERNAL_TOOL_NAMES = new Set(['new_context', 'get_context_remaining']);
+
+export function isCodexInternalToolCall(rawName: string | undefined, namespace?: unknown): boolean {
+  if (typeof namespace === 'string' && namespace) return INTERNAL_TOOL_NAMESPACES.has(namespace);
+  return INTERNAL_TOOL_NAMES.has(rawName ?? '');
+}
+
 export function normalizeCodexToolName(rawName: string | undefined): string {
   if (!rawName) return 'tool';
   if (NATIVE_TOOLS.has(rawName)) return rawName;
@@ -640,7 +649,9 @@ function normalizeWebSearchInput(input: Record<string, unknown>): Record<string,
   const query = firstNonEmptyString(action.query, input.query, queries[0]);
   const url = firstNonEmptyString(action.url, input.url);
   const pattern = firstNonEmptyString(action.pattern, input.pattern);
-  const explicitType = firstNonEmptyString(action.type, input.actionType, input.action_type);
+  const nativeType = firstNonEmptyString(action.type, input.actionType, input.action_type);
+  // App-server actions use camelCase names for the shared operation types.
+  const explicitType = nativeType === 'openPage' ? 'open_page' : nativeType === 'findInPage' ? 'find_in_page' : nativeType;
 
   const actionType = explicitType
     || (url && pattern ? 'find_in_page' : url ? 'open_page' : (query || queries.length > 0) ? 'search' : '');
@@ -770,6 +781,9 @@ function extractCodexMCPResultText(resultPayload?: unknown): string {
 // Tool result normalization
 // ---------------------------------------------------------------------------
 
+/** Code-mode exec transport header preceding values emitted by its script. */
+const CODE_MODE_SCRIPT_HEADER = /^Script (?:completed|failed|running with cell ID [^\r\n]+)\r?\nWall time [^\r\n]+\r?\nOutput:\r?\n/;
+
 /**
  * Tools whose results should get terminal-style unwrapping.
  * Uses normalized names only — callers always pass through normalizeCodexToolName first.
@@ -795,10 +809,7 @@ export function normalizeCodexToolResult(
   if (normalizedName === 'exec') {
     // Only remove the transport envelope; arbitrary script output may itself
     // contain JSON objects or "Output:" labels that must remain intact.
-    return rawResult.replace(
-      /^Script (?:completed|failed|running with cell ID [^\r\n]+)\r?\nWall time [^\r\n]+\r?\nOutput:\r?\n/,
-      '',
-    );
+    return rawResult.replace(CODE_MODE_SCRIPT_HEADER, '');
   }
   if (!TERMINAL_RESULT_TOOLS.has(normalizedName)) return rawResult;
   return unwrapTerminalResult(rawResult);
@@ -843,7 +854,29 @@ export function appendCodexCommandOutput(previous: string | undefined, next: str
   return `${previous}\n${next}`;
 }
 
+/** Literal stdout from a unified exec JSON result, optionally behind a code-mode truncation notice. */
+function readUnifiedExecOutput(text: string): string | undefined {
+  const transport = text
+    .replace(/^Warning: truncated output \(original token count: \d+\)\r?\nTotal output lines: \d+\r?\n\r?\n/, '')
+    .trim();
+  if (!transport.startsWith('{')) return undefined;
+  try {
+    const parsed = JSON.parse(transport) as Record<string, unknown>;
+    return typeof parsed.output === 'string' && ('chunk_id' in parsed || 'wall_time_seconds' in parsed)
+      ? parsed.output
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function unwrapTerminalResult(raw: string): string {
+  const body = raw.replace(CODE_MODE_SCRIPT_HEADER, '');
+  const unifiedExecOutput = readUnifiedExecOutput(body);
+  if (unifiedExecOutput !== undefined) return unifiedExecOutput;
+  // Other values a script emits are literal output.
+  if (body !== raw) return body;
+
   let result = raw;
 
   // Unwrap JSON { output: "..." } wrapper
@@ -865,6 +898,69 @@ function unwrapTerminalResult(raw: string): string {
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Request matching
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a native item performs the request of a decoded raw call. Native items
+ * carry no raw call ID, so callers attribute them only on a unique match.
+ */
+export function codexToolRequestsMatch(
+  name: string,
+  requested: Record<string, unknown>,
+  native: Record<string, unknown>,
+): boolean {
+  if (name !== 'WebSearch') return stableValueKey(requested) === stableValueKey(native);
+  if (Array.isArray(requested.actions) && requested.actions.length > 1) {
+    return requested.actions.some(action => (
+      action !== null && typeof action === 'object' && !Array.isArray(action)
+      && codexToolRequestsMatch(name, action as Record<string, unknown>, native)
+    ));
+  }
+  const requestedWeb = normalizeComparedWebInput(requested);
+  const nativeWeb = normalizeComparedWebInput(native);
+  // Native reference-based opens and clicks can expose only an `other` action.
+  if (nativeWeb.actionType === 'other' && (requestedWeb.actionType === 'open_page' || requestedWeb.actionType === 'click')) {
+    return true;
+  }
+  // Native find events can retain the pattern but omit the opaque page reference.
+  if (nativeWeb.actionType === 'find_in_page' && !nativeWeb.url) {
+    delete requestedWeb.url;
+  }
+  return stableValueKey(requestedWeb) === stableValueKey(nativeWeb);
+}
+
+function normalizeComparedWebInput(input: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = { ...input };
+  if (normalized.actionType === 'open_page' || normalized.actionType === 'find_in_page') {
+    delete normalized.query;
+    delete normalized.queries;
+  } else if (Array.isArray(normalized.queries) && normalized.queries.length > 0) {
+    // The query field can be a display summary (first query + " ...").
+    // Compare the actual query list when the native event supplies it.
+    normalized.query = normalized.queries[0];
+    if (normalized.queries.length === 1) {
+      delete normalized.queries;
+    }
+  }
+  return normalized;
+}
+
+export function stableValueKey(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableValueKey).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map(key => `${JSON.stringify(key)}:${stableValueKey(record[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? String(value);
 }
 
 // ---------------------------------------------------------------------------

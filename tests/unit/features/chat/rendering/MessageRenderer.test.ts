@@ -579,7 +579,7 @@ describe('MessageRenderer', () => {
     expect(renderStoredToolCall).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ id: 'todo', name: 'TodoWrite' }),
-      expect.objectContaining({ initiallyExpanded: false, renderMarkdown: expect.any(Function) }),
+      expect.objectContaining({ initiallyExpanded: false }),
     );
     expect(renderStoredWriteEdit).toHaveBeenCalled();
     expect(renderStoredToolCall).toHaveBeenCalled();

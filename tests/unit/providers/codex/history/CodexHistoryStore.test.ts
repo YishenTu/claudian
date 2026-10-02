@@ -593,6 +593,51 @@ describe('CodexHistoryStore', () => {
       ]));
     });
 
+    it('withholds script output that cannot be separated from hidden internal values, keeping native command output', () => {
+      const scriptOutput = (status: string, ...texts: string[]) => [
+        { type: 'input_text', text: `Script ${status}\nWall time 0.1 seconds\nOutput:\n` },
+        ...texts.map(text => ({ type: 'input_text', text })),
+      ];
+      const script = (id: string, input: string, output: unknown[]) => [
+        { type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: id, input } },
+        { type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: id, output } },
+      ];
+      const command = JSON.stringify({ chunk_id: 'c1', wall_time_seconds: 0.1, exit_code: 0, output: 'public output' });
+      const nativeCommand = (id: string, cmd: string, cwd: string, exitCode = 0) => ({ type: 'event_msg', payload: { type: 'item_completed', item: {
+        type: 'CommandExecution', id, command: ['/bin/zsh', '-lc', cmd], parsed_cmd: [{ type: 'unknown', cmd }], cwd,
+        aggregated_output: `native ${cmd} output\n`, exit_code: exitCode, status: exitCode === 0 ? 'completed' : 'failed',
+      } } });
+      const mixed = (id: string, request: string) => script(id, `const visible = await tools.exec_command(${request}); const internal = await tools.get_context_remaining({}); text(internal); text(visible);`,
+        scriptOutput('completed', 'opaque-internal-payload', command));
+      const reversed = mixed('reversed', '{cmd:"public"}');
+      const failing = mixed('failing', '{cmd:"check"}');
+      const elsewhere = mixed('elsewhere', '{cmd:"pwd",workdir:"sub"}');
+      const records = [
+        { type: 'turn_context', payload: { cwd: '/workspace' } },
+        // Part count matches the calls, but emission order differs from call order.
+        // The native command item still identifies the visible call's own output.
+        reversed[0], nativeCommand('exec-public', 'public', 'file:///workspace'), reversed[1],
+        // Script completion must not override the native command failure.
+        failing[0], nativeCommand('exec-check', 'check', '/workspace', 7), failing[1],
+        // The same command run in another directory is a different request.
+        elsewhere[0], nativeCommand('exec-pwd', 'pwd', '/workspace'), elsewhere[1],
+        ...script('failed-internal', 'text(await tools.get_context_remaining({})); throw new Error("later failure");',
+          scriptOutput('failed', 'opaque-internal-payload\nlater failure')),
+        ...script('failed-mixed', 'text(await tools.get_context_remaining({})); text(await tools.exec_command({cmd:"public"})); throw new Error("later failure");',
+          scriptOutput('failed', 'opaque-internal-payload\nlater failure')),
+      ];
+      const tools = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n'))
+        .flatMap(message => message.toolCalls ?? []);
+
+      expect(tools.map(tool => [tool.id, tool.name, tool.status, tool.result])).toEqual([
+        ['reversed:1', 'Bash', 'completed', 'native public output\n'],
+        ['failing:1', 'Bash', 'error', 'native check output\n'],
+        ['elsewhere:1', 'Bash', 'completed', undefined],
+        ['failed-mixed', 'exec', 'error', undefined],
+      ]);
+      expect(JSON.stringify(tools)).not.toContain('opaque-internal-payload');
+    });
+
     it.each(['custom_tool_call', 'function_call'])('preserves failed %s exec scripts without inventing nested executions', (callType) => {
       const script = 'text(await tools.apply_patch("invalid patch")); text(await tools.exec_command({cmd:"never runs"}));';
       const error = 'Script error:\napply_patch verification failed: missing expected lines';
@@ -1719,6 +1764,30 @@ describe('CodexHistoryStore', () => {
         id: 'tail-ws-2',
         input: { actionType: 'open_page', url: 'https://docs.obsidian.md' },
         result: 'Search complete',
+      });
+    });
+
+    it('attaches native exec search sources only to the open search with the same request', () => {
+      const call = (id: string, query = id) => ({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', call_id: id,
+        input: `text(await tools.web__run({search_query:[{q:"${query}"}]}));` } });
+      const output = (id: string) => ({ type: 'response_item', payload: { type: 'custom_tool_call_output', call_id: id, output: 'Search complete' } });
+      const native = (id: string) => ({ type: 'event_msg', payload: { type: 'item_completed', item: { type: 'Extension', kind: 'web.search',
+        id: `native-${id}`, query: id, results: [{ type: 'text_result', title: `${id} source`, url: `https://example.com/${id}` }] } } });
+      const records = [
+        // Concurrent scripts: the native request identifies its search.
+        call('a'), call('b'), native('b'), output('b'), output('a'),
+        // Sequential script, followed by a duplicate native event that must not claim the next search.
+        call('c'), native('c'), output('c'), call('d'), native('c'), output('d'),
+        // A repeated event after its own script closes.
+        call('e'), call('f'), native('f'), output('f'), native('f'), output('e'),
+        // A repeated event must not claim a later search for the same query.
+        call('g'), native('g'), output('g'), call('h', 'g'), native('g'), output('h'),
+      ];
+      const tools = parseCodexSessionContent(records.map((record, seconds) => JSON.stringify({ timestamp: testTime({ seconds }), ...record })).join('\n'))
+        .flatMap(message => message.toolCalls ?? []);
+
+      expect(Object.fromEntries(tools.map(tool => [tool.id, tool.webSearchResults?.map(result => result.title)]))).toEqual({
+        a: undefined, b: ['b source'], c: ['c source'], d: undefined, e: undefined, f: ['f source'], g: ['g source'], h: undefined,
       });
     });
   });

@@ -339,7 +339,7 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
     expect(tool).toMatchObject({ name: 'LS', status: 'error', result: message });
   });
 
-  it('renders web search citations as links alongside the synthesized answer', async () => {
+  it('renders web search citations as links without the synthesized answer', async () => {
     const answer = 'The Obsidian Plugin API lets you extend Obsidian.[[1]](https://github.com/obsidianmd/obsidian-api)';
     const tool = await restore(mode, editUpdates('search', 'web_search', { query: 'Obsidian plugin API' }, {
       status: 'completed',
@@ -353,7 +353,7 @@ describe.each(['live', 'history'] as const)('%s Grok tool presentation', mode =>
     expect(within(block).getByRole('link', { name: 'https://github.com/obsidianmd/obsidian-api' }).getAttribute('href'))
       .toBe('https://github.com/obsidianmd/obsidian-api');
     expect(within(block).getByRole('link', { name: 'https://docs.obsidian.md/' })).toBeDefined();
-    expect(block.querySelector('.claudian-tool-web-summary')?.textContent).toBe(answer);
+    expect(block.textContent).not.toContain('lets you extend Obsidian');
     expect((await axe(block)).violations).toEqual([]);
   });
 

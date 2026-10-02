@@ -670,7 +670,6 @@ export class MessageRenderer {
     } else {
       renderStoredToolCall(contentEl, toolCall, {
         initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH ? this.#shouldExpandFileEditsByDefault() : toolCall.input.replyMode === 'user-message' ? undefined : false,
-        renderMarkdown: (el, markdown) => this.renderContent(el, markdown),
       });
     }
   }

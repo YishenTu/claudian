@@ -199,7 +199,7 @@ describe.each(['live', 'history'] as const)('%s OpenCode V2 tool presentation', 
     expect(lines(block)).toEqual(fileLines);
   });
 
-  it('renders web search hits as links with their date and snippet', async () => {
+  it('renders web search hits as linked titles without their date or snippet', async () => {
     const published = testDate().toISOString();
     const tool = await restore(mode, {
       name: 'websearch', input: { query: 'AAPL price' },
@@ -210,8 +210,8 @@ describe.each(['live', 'history'] as const)('%s OpenCode V2 tool presentation', 
     expand(block, /AAPL price/);
     expect(within(block).getByRole('link', { name: 'Stock Price' }).getAttribute('href')).toBe('https://investor.apple.com/stock-price/');
     expect(within(block).getByRole('link', { name: 'AAPL Quote' }).getAttribute('href')).toBe('https://finance.example.com/AAPL');
-    expect(within(block).getByText(`${published} · Quote snippet`)).toBeDefined();
-    expect(within(block).getByText('Second snippet')).toBeDefined();
+    expect(block.textContent).not.toContain(published);
+    expect(block.textContent).not.toMatch(/Quote snippet|Second snippet/);
     expect((await axe(block)).violations).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { axe } from 'jest-axe';
 import { Component } from 'obsidian';
 
 import { getToolIcon } from '@/core/tools/toolIcons';
+import { extractWebSearchResults } from '@/core/tools/toolResultContent';
 import type { StreamChunk, ToolCallInfo } from '@/core/types';
 import { AsyncQuestionPrompts } from '@/features/chat/rendering/AsyncQuestionPrompts';
 import type { QuestionAnswerHandler } from '@/features/chat/rendering/InlineAskUserQuestion';
@@ -28,7 +29,7 @@ HTMLElement.prototype.setText = function (text) { this.textContent = String(text
 
 beforeEach(() => document.body.replaceChildren());
 
-function restoreTool(mode: 'live' | 'history', name: string, input: unknown, output = '', wrapped = false): ToolCallInfo {
+function restoreTool(mode: 'live' | 'history', name: string, input: unknown, output: string | unknown[] = '', wrapped = false): ToolCallInfo {
   const call = wrapped
     ? { type: 'custom_tool_call', call_id: 'tool', name: 'exec', input: `text(await tools.${name}(${JSON.stringify(input)}));` }
     : { type: 'function_call', call_id: 'tool', name, arguments: JSON.stringify(input) };
@@ -52,7 +53,126 @@ function restoreTool(mode: 'live' | 'history', name: string, input: unknown, out
   return { ...uses[0], status: results[0].isError ? 'error' : 'completed', result: results[0].content };
 }
 
+type SessionStep = { raw: Record<string, unknown> } | { webSearch: Record<string, unknown> };
+
+/** Restores visible tools from raw items plus native web events (v2 live items, persisted Extension items). */
+function restoreSession(mode: 'live' | 'history', steps: SessionStep[], streamRawExecCalls = false): ToolCallInfo[] {
+  if (mode === 'history') {
+    return parseCodexSessionContent(steps.map((step, index) => JSON.stringify({
+      timestamp: testTime({ seconds: index }),
+      ...('raw' in step
+        ? { type: 'response_item', payload: step.raw }
+        : { type: 'event_msg', payload: { type: 'item_completed', item: { ...step.webSearch, type: 'Extension', kind: 'web.search' } } }),
+    })).join('\n')).flatMap(message => message.toolCalls ?? []);
+  }
+  const chunks: StreamChunk[] = [];
+  const router = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace', streamRawExecCalls);
+  router.beginTurn();
+  for (const step of steps) {
+    if ('raw' in step) {
+      router.handleNotification('rawResponseItem/completed', { item: step.raw });
+      continue;
+    }
+    // Native web search starts before its request is known.
+    router.handleNotification('item/started', { item: { type: 'webSearch', id: step.webSearch.id, query: '' } });
+    router.handleNotification('item/completed', { item: { ...step.webSearch, type: 'webSearch' } });
+  }
+  router.handleNotification('turn/completed', { turn: { id: 'turn', items: [], status: 'completed', error: null } });
+  // Mirrors the stream controller: repeated tool_use chunks refine one card.
+  const tools = new Map<string, ToolCallInfo>();
+  for (const chunk of chunks) {
+    if (chunk.type === 'tool_use') {
+      const previous = tools.get(chunk.id);
+      tools.set(chunk.id, { ...previous, id: chunk.id, name: chunk.name, input: { ...previous?.input, ...chunk.input }, status: previous?.status ?? 'running' });
+    } else if (chunk.type === 'tool_result') {
+      const tool = tools.get(chunk.id);
+      expect(tool).toBeDefined();
+      Object.assign(tool!, {
+        result: chunk.content,
+        status: chunk.isError ? 'error' : 'completed',
+        webSearchResults: extractWebSearchResults(chunk.toolUseResult) ?? tool!.webSearchResults,
+      });
+    }
+  }
+  return [...tools.values()];
+}
+
+const scriptOutput = (...texts: string[]) => [
+  { type: 'input_text', text: 'Script completed\nWall time 0.1 seconds\nOutput:\n' },
+  ...texts.map(text => ({ type: 'input_text', text })),
+];
+
 describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode => {
+  it.each([false, true])('shows code-mode command stdout instead of its transport wrapper (truncated: %s)', truncated => {
+    // Literal stdout may itself contain transport-like labels and JSON.
+    const stdout = 'Output:\n{"output":"literal"}\nlast line\n';
+    const wrapper = JSON.stringify({ chunk_id: 'c1', wall_time_seconds: 0.1, exit_code: 0, original_token_count: 9, output: stdout });
+    const notice = truncated ? 'Warning: truncated output (original token count: 12)\nTotal output lines: 1\n\n' : '';
+    const tool = restoreTool(mode, 'exec_command', { cmd: 'cat notes.txt' }, scriptOutput(notice + wrapper), true);
+    expect(tool).toMatchObject({ name: 'Bash', status: 'completed', result: stdout });
+  });
+
+  it('hides internal history, notes and context calls but keeps similarly named tools', () => {
+    const opaque = [{ type: 'encrypted_content', encrypted_content: 'gAAAAopaque' }];
+    const tools = restoreSession(mode, [
+      { raw: { type: 'function_call', namespace: 'history', name: 'list_items', call_id: 'history', arguments: '{"limit":5}' } },
+      { raw: { type: 'function_call_output', call_id: 'history', output: opaque } },
+      { raw: { type: 'function_call', namespace: 'notes', name: 'write_file', call_id: 'notes', arguments: '{"path":"checkpoint","text":"gAAAAopaque"}' } },
+      { raw: { type: 'function_call_output', call_id: 'notes', output: opaque } },
+      { raw: { type: 'function_call', name: 'new_context', call_id: 'context', arguments: '{}' } },
+      { raw: { type: 'function_call_output', call_id: 'context', output: 'A new context window will start.' } },
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'script',
+        input: 'text(await tools.web__run({search_query:[{q:"public query"}]}));\ntext(await tools.get_context_remaining({}));' } },
+      { raw: { type: 'custom_tool_call_output', call_id: 'script', output: scriptOutput('Public source (https://example.com/public)', '{"tokens_left":100}') } },
+      { raw: { type: 'function_call', name: 'read_file', call_id: 'file', arguments: '{"path":"notes.md"}' } },
+      { raw: { type: 'function_call_output', call_id: 'file', output: 'file text' } },
+    ]);
+    expect(tools.map(tool => tool.name).sort()).toEqual(['WebSearch', 'read_file']);
+    const transcript = document.body.createDiv();
+    for (const tool of tools) renderStoredToolCall(transcript, tool, { initiallyExpanded: true });
+    expect(within(transcript).getByText('Query: public query')).toBeDefined();
+    expect(within(transcript).getByText('file text')).toBeDefined();
+    expect(transcript.textContent).not.toMatch(/gAAAA|tokens_left|new context|checkpoint/);
+  });
+
+  it.each(mode === 'live' ? [false, true] : [false])('withholds unsplit script output that includes hidden internal values (child stream: %s)', streamRawExecCalls => {
+    const tools = restoreSession(mode, [
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: 'mixed',
+        input: 'text(await tools.exec_command({cmd:"public"})); text(await tools.get_context_remaining({}));' } },
+      { raw: { type: 'custom_tool_call_output', call_id: 'mixed', output: scriptOutput('public\nopaque-internal-payload') } },
+    ], streamRawExecCalls);
+    expect(tools.map(tool => tool.name)).toEqual(['Bash']);
+    const block = renderStoredToolCall(document.body.createDiv(), tools[0], { initiallyExpanded: true });
+    expect(within(block).getByText('$ public')).toBeDefined();
+    expect(block.textContent).not.toContain('opaque-internal-payload');
+  });
+
+  it.each(mode === 'live' ? [false, true] : [false])('shows one populated card per native web search with linked titles only (child stream: %s)', streamRawExecCalls => {
+    const searches = [
+      { input: { search_query: [{ q: 'inference bandwidth' }, { q: 'HBM supply' }] },
+        action: { type: 'search', query: null, queries: ['inference bandwidth', 'HBM supply'] }, query: 'inference bandwidth ...' },
+      { input: { search_query: [{ q: 'HBM wafer ratio' }] }, action: { type: 'search', query: 'HBM wafer ratio' }, query: 'HBM wafer ratio' },
+      { input: { open: [{ ref_id: 'https://example.com/page' }] }, action: { type: 'openPage', url: 'https://example.com/page' }, query: 'https://example.com/page' },
+    ];
+    const tools = restoreSession(mode, searches.flatMap(({ input, action, query }, index): SessionStep[] => [
+      { raw: { type: 'custom_tool_call', name: 'exec', call_id: `call-${index}`, input: `text(await tools.web__run(${JSON.stringify(input)}));` } },
+      { webSearch: { id: `exec-${index}`, query, action, results: [
+        { type: 'text_result', ref_id: `turn0search${index}`, title: `Source ${index}`, url: `https://example.com/source-${index}`, snippet: `Snippet ${index}` },
+      ] } },
+      { raw: { type: 'custom_tool_call_output', call_id: `call-${index}`, output: scriptOutput(`Source ${index} (https://example.com/source-${index})\nPage body ${index}`) } },
+    ]), streamRawExecCalls);
+
+    expect(tools).toHaveLength(3);
+    const expected = [['Query: inference bandwidth', 'Alt query: HBM supply'], ['Query: HBM wafer ratio'], ['Open page']];
+    tools.forEach((tool, index) => {
+      expect(tool).toMatchObject({ name: 'WebSearch', status: 'completed' });
+      const block = renderStoredToolCall(document.body.createDiv(), tool, { initiallyExpanded: true });
+      for (const text of expected[index]) expect(within(block).getByText(text)).toBeDefined();
+      expect(within(block).getByRole('link', { name: `Source ${index}` }).getAttribute('href')).toBe(`https://example.com/source-${index}`);
+      expect(block.textContent).not.toMatch(/Snippet|Page body|Script completed/);
+    });
+  });
+
   it.each(['js', 'mcp__cua_repl__js'])('renders %s with its title, JavaScript source, and output', async name => {
     const source = "const app = await cua.getApp('Obsidian');\nnodeRepl.write(await app.getState());";
     const output = 'Wall time: 0.5 seconds\nOutput:\nWindow: Obsidian\n  button Send';

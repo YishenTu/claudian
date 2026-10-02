@@ -96,3 +96,21 @@ it('preserves a failed child outcome when the parent subsequently reports comple
   await Promise.resolve();
   expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'error', result: 'Child failed.' }));
 });
+
+it('keeps native web sources on the single child search card', () => {
+  const publish = jest.fn();
+  const tracker = new CodexSubagentTracker(publish, () => new Promise(() => undefined));
+  tracker.activity(started, 'parent-turn');
+  tracker.turnStarted('child', 'child-turn');
+  const notify = (method: string, item: Record<string, unknown>) => (
+    tracker.handleNotification('child', 'child-turn', method, { threadId: 'child', turnId: 'child-turn', item })
+  );
+  notify('rawResponseItem/completed', { type: 'custom_tool_call', call_id: 'search', name: 'exec', input: 'text(await tools.web__run({search_query:[{q:"HBM supply"}]}));' });
+  notify('item/started', { type: 'webSearch', id: 'native-search', query: '' });
+  notify('item/completed', { type: 'webSearch', id: 'native-search', query: 'HBM supply', action: { type: 'search', query: 'HBM supply' },
+    results: [{ type: 'text_result', title: 'Source', url: 'https://example.com/source', snippet: 'Snippet' }] });
+  expect(publish.mock.lastCall[0].toolCalls).toEqual([expect.objectContaining({
+    id: 'search', name: 'WebSearch', status: 'completed', input: expect.objectContaining({ query: 'HBM supply' }),
+    webSearchResults: [{ title: 'Source', url: 'https://example.com/source', snippet: 'Snippet' }],
+  })]);
+});

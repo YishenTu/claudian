@@ -218,6 +218,8 @@ export interface WebSearchItem {
     url?: string;
     pattern?: string;
   };
+  /** Opaque structured sources, e.g. `{ title, url, snippet }` text results. */
+  results?: unknown[] | null;
   status?: string;
 }
 

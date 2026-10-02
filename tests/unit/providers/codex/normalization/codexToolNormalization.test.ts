@@ -413,6 +413,12 @@ describe('normalizeCodexToolResult', () => {
     expect(result).toBe('result');
   });
 
+  it('keeps code-mode script values literal unless they are a unified exec result', () => {
+    for (const literal of ['{"output":"literal","exit_code":7}', 'Exit code: 0\nOutput:\nfile.txt']) {
+      expect(normalizeCodexToolResult('Bash', `Script completed\nWall time 0.1 seconds\nOutput:\n${literal}`)).toBe(literal);
+    }
+  });
+
   it('does not modify non-terminal tool results', () => {
     const result = normalizeCodexToolResult('apply_patch', '{"output":"something"}');
     expect(result).toBe('{"output":"something"}');

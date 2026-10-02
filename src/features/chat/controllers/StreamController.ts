@@ -488,10 +488,7 @@ export class StreamController {
       }
     } else {
       state.writeEditStates.delete(toolCall.id);
-      replacementEl = renderToolCall(parentEl, toolCall, state.toolCallElements, {
-        initiallyExpanded,
-        renderMarkdown: this.#renderToolMarkdown,
-      });
+      replacementEl = renderToolCall(parentEl, toolCall, state.toolCallElements, { initiallyExpanded });
       state.toolCallElements.set(toolCall.id, replacementEl);
       if (toolCall.result !== undefined || toolCall.status !== 'running') {
         updateToolCallResult(toolCall.id, toolCall, state.toolCallElements);
@@ -567,15 +564,10 @@ export class StreamController {
     } else {
       renderToolCall(parentEl, toolCall, state.toolCallElements, {
         initiallyExpanded: toolCall.name === TOOL_APPLY_PATCH ? this.#shouldExpandFileEditsByDefault() : false,
-        renderMarkdown: this.#renderToolMarkdown,
       });
     }
     state.pendingTools.delete(toolId);
   }
-
-  readonly #renderToolMarkdown = (el: HTMLElement, markdown: string): Promise<void> => (
-    this.deps.renderer.renderContent(el, markdown)
-  );
 
   #handleToolOutput(
     chunk: Extract<StreamChunk, { type: 'tool_output' }>,

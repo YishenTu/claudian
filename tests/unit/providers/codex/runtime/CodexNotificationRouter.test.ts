@@ -3755,7 +3755,58 @@ describe('CodexNotificationRouter', () => {
     });
   });
 
+  it('keeps native command output when its script also calls hidden internal tools', () => {
+    router.beginTurn();
+    router.handleNotification('rawResponseItem/completed', { item: {
+      type: 'custom_tool_call', name: 'exec', call_id: 'mixed',
+      input: 'text(await tools.exec_command({cmd:"public"})); text(await tools.get_context_remaining({}));',
+    } });
+    const command = {
+      type: 'commandExecution', id: 'exec-public', command: 'public', cwd: '/workspace', status: 'completed',
+      commandActions: [{ type: 'unknown', command: 'public' }], aggregatedOutput: 'native stdout\n', exitCode: 0,
+    };
+    router.handleNotification('item/started', { item: { ...command, status: 'inProgress', aggregatedOutput: null, exitCode: null } });
+    router.handleNotification('item/completed', { item: command });
+    router.handleNotification('rawResponseItem/completed', { item: {
+      type: 'custom_tool_call_output', call_id: 'mixed', output: 'Script completed\nWall time 0.1 seconds\nOutput:\nnative stdout\n{"tokens_left":1}',
+    } });
+    router.handleNotification('turn/completed', { turn: { id: 'turn1', items: [], status: 'completed', error: null } });
+
+    expect(chunks.filter(chunk => chunk.type === 'tool_use').map(chunk => chunk.id)).toEqual(['exec-public']);
+    expect(chunks.filter(chunk => chunk.type === 'tool_result')).toEqual([
+      { type: 'tool_result', id: 'exec-public', content: 'native stdout\n', isError: false },
+    ]);
+  });
+
   describe('webSearch tool', () => {
+    it.each([
+      [{ type: 'openPage', url: 'https://example.com/page' }, { actionType: 'open_page', url: 'https://example.com/page' }],
+      [{ type: 'findInPage', url: 'https://example.com/page', pattern: 'term' }, { actionType: 'find_in_page', url: 'https://example.com/page', pattern: 'term' }],
+    ])('labels native-only %j actions with their operation', (action, input) => {
+      router.handleNotification('item/completed', { item: { type: 'webSearch', id: 'native', query: '', action, status: 'completed' } });
+      expect(chunks[0]).toEqual({ type: 'tool_use', id: 'native', name: 'WebSearch', input });
+    });
+
+    it('keeps native child search sources when the script output arrives before the native completion', () => {
+      const childRouter = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace', true);
+      childRouter.beginTurn();
+      childRouter.handleNotification('rawResponseItem/completed', { item: {
+        type: 'custom_tool_call', name: 'exec', call_id: 'call-web', input: 'text(await tools.web__run({search_query:[{q:"HBM supply"}]}));',
+      } });
+      const native = { type: 'webSearch', id: 'exec-web', query: 'HBM supply', action: { type: 'search', query: 'HBM supply' } };
+      childRouter.handleNotification('item/started', { item: native });
+      childRouter.handleNotification('rawResponseItem/completed', { item: {
+        type: 'custom_tool_call_output', call_id: 'call-web', output: 'Script completed\nWall time 0.1 seconds\nOutput:\nSource (https://example.com/source)',
+      } });
+      childRouter.handleNotification('item/completed', { item: { ...native, status: 'completed',
+        results: [{ type: 'text_result', title: 'Source', url: 'https://example.com/source' }] } });
+      childRouter.handleNotification('turn/completed', { turn: { id: 'turn1', items: [], status: 'completed', error: null } });
+
+      const results = chunks.filter(chunk => chunk.type === 'tool_result');
+      expect(new Set(results.map(chunk => chunk.id))).toEqual(new Set(['call-web']));
+      expect(results.at(-1)).toMatchObject({ toolUseResult: { webSearchResults: [expect.objectContaining({ title: 'Source' })] } });
+    });
+
     it.each([false, true])('keeps all raw web actions when a same-id native event summarizes one (native first: %s)', nativeFirst => {
       router.beginTurn();
       const native = { type: 'webSearch', id: 'web-call', action: { type: 'open_page', url: 'https://example.com/one' }, status: 'completed' };

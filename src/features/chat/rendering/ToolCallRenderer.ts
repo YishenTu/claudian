@@ -408,25 +408,15 @@ function appendToolLink(parent: HTMLElement, title: string, url: string): void {
   linkEl.createSpan({ cls: 'claudian-tool-link-title', text: title });
 }
 
-function isPlaceholderWebSearchResult(result: string | undefined): boolean {
-  if (!result) return true;
-  const normalized = result.trim().toLowerCase();
-  return normalized === '' || normalized === 'search complete';
-}
-
-function parseWebSearchResult(result: string): { links: WebSearchLink[]; summary: string } | null {
+function parseWebSearchLinks(result: string): WebSearchLink[] {
   const linksMatch = result.match(/Links:\s*(\[[\s\S]*?\])(?:\n|$)/);
-  if (!linksMatch) return null;
+  if (!linksMatch) return [];
 
   try {
     const parsed = JSON.parse(linksMatch[1]) as WebSearchLink[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-
-    const linksEndIndex = result.indexOf(linksMatch[0]) + linksMatch[0].length;
-    const summary = result.slice(linksEndIndex).trim();
-    return { links: parsed.filter(l => l.title && l.url), summary };
+    return Array.isArray(parsed) ? parsed.filter(l => l.title && l.url) : [];
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -509,79 +499,21 @@ function renderWebSearchActionExpanded(container: HTMLElement, input: Record<str
   }
 }
 
-function renderWebSearchResultItems(container: HTMLElement, items: WebSearchResultItem[]): void {
-  const linesEl = container.createDiv({ cls: 'claudian-tool-lines' });
-  for (const item of items) {
-    appendToolLink(linesEl, item.title, item.url);
-    const details = [item.publishedAt, item.snippet && truncateText(item.snippet.replace(/\s+/g, ' '), 240)]
-      .filter(Boolean).join(' · ');
-    if (details) linesEl.createDiv({ cls: 'claudian-tool-line claudian-tool-line-wrap', text: details });
-  }
-}
-
-function renderWebSearchSummary(container: HTMLElement, summary: string, renderMarkdown?: MarkdownRenderHook): void {
-  const summaryEl = container.createDiv({ cls: 'claudian-tool-web-summary' });
-  if (renderMarkdown) {
-    summaryEl.addClass('claudian-tool-web-summary-markdown');
-    void renderMarkdown(summaryEl, summary);
-    return;
-  }
-  summaryEl.setText(summary.length > 800 ? summary.slice(0, 800) + '...' : summary);
-}
-
+/** Shows the request and linked source titles only; result bodies, snippets and summaries stay hidden. */
 function renderWebSearchExpanded(
   container: HTMLElement,
   input: Record<string, unknown>,
   result: string | undefined,
   structuredResults?: WebSearchResultItem[],
-  structuredSummary?: string,
-  renderMarkdown?: MarkdownRenderHook,
 ): void {
-  const hasActions = Array.isArray(input.actions);
-  if (hasActions) renderWebSearchActionExpanded(container, input);
-  if (structuredResults?.length) {
-    renderWebSearchResultItems(container, structuredResults);
-    if (structuredSummary) renderWebSearchSummary(container, structuredSummary, renderMarkdown);
-    return;
-  }
-  const parsed = result ? parseWebSearchResult(result) : null;
-  if (parsed && parsed.links.length > 0) {
+  const renderedRequest = renderWebSearchActionExpanded(container, input);
+  const links = structuredResults?.length ? structuredResults : parseWebSearchLinks(result ?? '');
+  if (links.length > 0) {
     const linksEl = container.createDiv({ cls: 'claudian-tool-lines' });
-    for (const link of parsed.links) {
-      appendToolLink(linksEl, link.title, link.url);
-    }
-
-    if (parsed.summary) renderWebSearchSummary(container, parsed.summary, renderMarkdown);
-    return;
+    for (const link of links) appendToolLink(linksEl, link.title, link.url);
+  } else if (!renderedRequest) {
+    container.createDiv({ cls: 'claudian-tool-empty', text: 'No result' });
   }
-
-  const data = normalizeWebSearchDisplayData(input);
-  const shouldRenderAction = !hasActions && Boolean(data.actionType || data.query || data.queries.length || data.url || data.pattern)
-    && (!result
-      || isPlaceholderWebSearchResult(result)
-      || data.actionType === 'open_page'
-      || data.actionType === 'find_in_page'
-      || data.actionType === 'click'
-      || Array.isArray(input.requests));
-
-  if (shouldRenderAction && renderWebSearchActionExpanded(container, input)) {
-    if (result && !isPlaceholderWebSearchResult(result)) {
-      renderLinesExpanded(container, result, 12);
-    }
-    return;
-  }
-
-  if (result && !isPlaceholderWebSearchResult(result)) {
-    renderLinesExpanded(container, result, 20);
-    return;
-  }
-  if (hasActions) return;
-
-  if (renderWebSearchActionExpanded(container, input)) {
-    return;
-  }
-
-  container.createDiv({ cls: 'claudian-tool-empty', text: 'No result' });
 }
 
 function renderFileSearchExpanded(container: HTMLElement, result: string): void {
@@ -834,20 +766,16 @@ function formatToolDisplayValue(value: unknown): string {
 /** Neutral tool fields the expanded view can present. */
 export type ExpandedToolContent = Pick<
   ToolCallInfo,
-  'name' | 'result' | 'resultFormat' | 'input' | 'webSearchResults' | 'webSearchSummary' | 'resultImages' | 'scriptToolCalls'
+  'name' | 'result' | 'resultFormat' | 'input' | 'webSearchResults' | 'resultImages' | 'scriptToolCalls'
 > & Partial<Pick<ToolCallInfo, 'status'>>;
-
-/** Host markdown rendering for prose inside tool results; plain text is used without it. */
-export type MarkdownRenderHook = (el: HTMLElement, markdown: string) => Promise<void> | void;
 
 export function renderExpandedContent(
   container: HTMLElement,
   toolCall: ExpandedToolContent,
-  options: Pick<ToolCallRenderOptions, 'renderMarkdown'> = {},
 ): void {
   const images = toolCall.resultImages ?? [];
   // An image-only result needs no empty-state placeholder above its preview.
-  if (toolCall.result || images.length === 0) renderExpandedResult(container, toolCall, options.renderMarkdown);
+  if (toolCall.result || images.length === 0) renderExpandedResult(container, toolCall);
   if (images.length > 0) renderResultImages(container, images);
 }
 
@@ -871,7 +799,6 @@ function renderResultImages(container: HTMLElement, images: ToolResultImage[]): 
 function renderExpandedResult(
   container: HTMLElement,
   toolCall: ExpandedToolContent,
-  renderMarkdown: MarkdownRenderHook | undefined,
 ): void {
   const { name: toolName, result, input } = toolCall;
   if (isAgentLifecycleTool(toolName)) {
@@ -910,7 +837,7 @@ function renderExpandedResult(
       renderFileSearchExpanded(container, resolvedResult);
       break;
     case TOOL_WEB_SEARCH:
-      renderWebSearchExpanded(container, input, result, toolCall.webSearchResults, toolCall.webSearchSummary, renderMarkdown);
+      renderWebSearchExpanded(container, input, result, toolCall.webSearchResults);
       break;
     case TOOL_WEB_FETCH:
       renderWebFetchExpanded(container, resolvedResult);
@@ -1025,7 +952,6 @@ interface ToolElementStructure {
 
 export interface ToolCallRenderOptions {
   initiallyExpanded?: boolean;
-  renderMarkdown?: MarkdownRenderHook;
 }
 
 function createToolElementStructure(
@@ -1306,7 +1232,6 @@ function renderToolContent(
   content: HTMLElement,
   toolCall: ToolCallInfo,
   initialText?: string,
-  options: ToolCallRenderOptions = {},
 ): void {
   if (toolCall.name === TOOL_TODO_WRITE) {
     content.addClass('claudian-tool-content-todo');
@@ -1323,7 +1248,7 @@ function renderToolContent(
   } else if (initialText) {
     contentFallback(content, initialText);
   } else {
-    renderExpandedContent(content, toolCall, options);
+    renderExpandedContent(content, toolCall);
   }
 }
 
@@ -1350,8 +1275,8 @@ export function renderToolCall(
   const renderCurrentContent = () => {
     if (!dirty) return;
     content.empty();
-    if (initial) renderToolContent(content, currentTool, 'Running...', options);
-    else renderExpandedContent(content, currentTool, options);
+    if (initial) renderToolContent(content, currentTool, 'Running...');
+    else renderExpandedContent(content, currentTool);
     dirty = false;
   };
   const eager = toolCall.name === TOOL_TODO_WRITE || toolCall.name === TOOL_ASK_USER_QUESTION;
@@ -1451,7 +1376,7 @@ export function renderStoredToolCall(
   let contentRendered = false;
   const renderContentOnce = () => {
     if (contentRendered) return;
-    renderToolContent(content, toolCall, undefined, options);
+    renderToolContent(content, toolCall);
     contentRendered = true;
   };
   const deferContent = toolCall.status !== 'running'

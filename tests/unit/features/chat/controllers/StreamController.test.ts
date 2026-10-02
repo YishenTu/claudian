@@ -886,7 +886,7 @@ describe('StreamController - Text Content', () => {
         expect.anything(),
         expect.objectContaining({ id: 'read-1', name: 'Read' }),
         expect.any(Map),
-        expect.objectContaining({ initiallyExpanded: false, renderMarkdown: expect.any(Function) }),
+        expect.objectContaining({ initiallyExpanded: false }),
       );
     });
 

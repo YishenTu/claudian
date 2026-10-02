@@ -598,27 +598,20 @@ describe('ToolCallRenderer', () => {
     });
 
     it.each([
-      ['with', 'Synthesized answer', ['Synthesized answer']],
-      ['without', undefined, []],
-    ])('renders structured hits %s a provider summary instead of the result text', (_case, webSearchSummary, summaries) => {
-      const parentEl = createMockEl();
-      const toolCall = createToolCall({
-        name: 'WebSearch',
-        status: 'completed',
-        input: { query: 'obsidian plugin API' },
-        result: 'Provider result text',
-        webSearchResults: [{ title: 'Docs', url: 'https://docs.example.com/' }],
-        webSearchSummary,
-      });
+      ['structured hits', { webSearchResults: [{ title: 'Docs', url: 'https://docs.example.com/', snippet: 'Hit snippet', publishedAt: '2026-01-01' }], webSearchSummary: 'Synthesized answer', result: 'Provider result text' }, ['https://docs.example.com/']],
+      ['result links', { result: 'Links: [{"title":"Docs","url":"https://docs.example.com/"}]\n\nSynthesized answer' }, ['https://docs.example.com/']],
+      ['an unlinked result body', { result: 'Provider result text' }, []],
+    ])('renders the request and linked titles only from %s', (_case, fields, links) => {
+      const toolCall = createToolCall({ name: 'WebSearch', status: 'completed', input: { query: 'obsidian plugin API' }, ...fields });
 
-      const toolEl = renderStoredToolCall(parentEl, toolCall);
+      const toolEl = renderStoredToolCall(createMockEl(), toolCall);
       (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
 
+      expect(Array.from(toolEl.querySelectorAll('.claudian-tool-line')).map(line => line.textContent))
+        .toContain('Query: obsidian plugin API');
       expect(Array.from(toolEl.querySelectorAll('.claudian-tool-link')).map(link => link.getAttribute('href')))
-        .toEqual(['https://docs.example.com/']);
-      expect(Array.from(toolEl.querySelectorAll('.claudian-tool-web-summary')).map(summary => summary.textContent))
-        .toEqual(summaries);
-      expect(toolEl.textContent).not.toContain('Provider result text');
+        .toEqual(links);
+      expect(toolEl.textContent).not.toMatch(/Synthesized answer|Provider result text|Hit snippet|2026-01-01/);
     });
   });
 
@@ -643,21 +636,6 @@ describe('ToolCallRenderer', () => {
         name: 'Read', input: { file_path: 'a.md' }, status: 'completed',
         result: '1→literal\n2→also literal', resultFormat: 'plain',
       }))).toEqual(['1→literal', '2→also literal']);
-    });
-
-    it('hands web search summaries to the host markdown renderer when available', () => {
-      const renderMarkdown = jest.fn();
-      const toolCall = createToolCall({
-        name: 'WebSearch', status: 'completed', input: { query: 'q' }, result: 'text',
-        webSearchResults: [{ title: 'Docs', url: 'https://docs.example.com/' }], webSearchSummary: '**Answer**',
-      });
-
-      const toolEl = renderStoredToolCall(createMockEl(), toolCall, { renderMarkdown });
-      (toolEl.querySelector('.claudian-tool-header') as HTMLElement).click();
-
-      const summaryEl = toolEl.querySelector('.claudian-tool-web-summary');
-      expect(renderMarkdown).toHaveBeenCalledWith(summaryEl, '**Answer**');
-      expect(summaryEl?.textContent).toBe('');
     });
 
     it.each([
