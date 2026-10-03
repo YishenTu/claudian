@@ -56,9 +56,14 @@ beforeEach(() => {
   });
 });
 
-it('collapses completed history above the answer and puts copy, fork, time below it', async () => {
+it.each([false, true])('collapses completed history above the answer and puts copy, fork, time below it (compaction: %s)', async compaction => {
   const { renderer, messagesEl, fork } = setup();
-  renderer.renderMessages(messages, () => 'Hello');
+  const historyMessages: ChatMessage[] = [...messages];
+  if (compaction) historyMessages.splice(2, 0, {
+    id: 'compact', role: 'assistant', content: '', timestamp: testDate().getTime(),
+    contentBlocks: [{ type: 'context_compacted' }],
+  });
+  renderer.renderMessages(historyMessages, () => 'Hello');
   await Promise.resolve();
   const header = within(messagesEl).getByRole('button', { name: 'Worked for 01:05' });
   expect(header.hasAttribute('aria-label')).toBe(false);
@@ -68,6 +73,7 @@ it('collapses completed history above the answer and puts copy, fork, time below
   expect(history.hidden).toBe(true);
   expect(history.textContent).toContain('Checking the code.');
   expect(history.textContent).toContain('Check the edge case.');
+  expect(history.contains(within(messagesEl).queryByText('Conversation compacted'))).toBe(compaction);
   expect(history.textContent).not.toContain('Fixed the bug.');
   fireEvent.click(header);
   expect(history.hidden).toBe(false);

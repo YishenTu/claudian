@@ -41,6 +41,66 @@ beforeEach(() => {
   });
 });
 
+it.each([false, true])('collapses work across compaction on completion and reload (notification split: %s)', async notification => {
+  const { renderSessionTaskNotification } = await import('@/features/chat/rendering/BackgroundTurnRenderer');
+  const messagesEl = document.body.createDiv();
+  const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
+  const renderer = new MessageRenderer(plugin, new Component(), messagesEl);
+  const state = new ChatState();
+  const subagents = new SubagentManager(() => undefined);
+  const stream = new StreamController({ plugin, state, renderer, subagentManager: subagents,
+    getMessagesEl: () => messagesEl, updateQueueIndicator: () => undefined });
+  let response: ChatMessage = { id: 'response', role: 'assistant', timestamp: testDate().getTime(), content: '', contentBlocks: [] };
+  const assertDisclosure = async () => {
+    const header = within(messagesEl).getByRole('button', { name: 'Worked for 05:07' });
+    const history = document.getElementById(header.getAttribute('aria-controls')!)!;
+    const before = within(messagesEl).getByRole('button', { name: /Read.*before\.md/, hidden: true });
+    const after = within(messagesEl).getByRole('button', { name: /Read.*after\.md/, hidden: true });
+    const compact = within(messagesEl).getByText('Conversation compacted');
+    const answer = within(messagesEl).getByText('Final answer.');
+    for (const element of [before, compact, after]) {
+      expect(history.contains(element)).toBe(true);
+      expect(element.closest('[hidden]')).toBe(history);
+      expect(header.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(before.compareDocumentPosition(compact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(compact.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(answer.closest('[hidden]')).toBeNull();
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(header);
+    expect(header.getAttribute('aria-expanded')).toBe('true');
+    expect(before.closest('[hidden]')).toBeNull();
+    expect(after.closest('[hidden]')).toBeNull();
+    expect((await axe(messagesEl)).violations).toEqual([]);
+    fireEvent.click(header);
+    expect(history.hidden).toBe(true);
+    expect(answer.closest('[hidden]')).toBeNull();
+  };
+  try {
+    state.addMessage(response);
+    state.currentContentEl = renderer.addMessage(response).querySelector('.claudian-message-content');
+    await stream.handleStreamChunk({ type: 'tool_use', id: 'before', name: 'Read', input: { file_path: 'before.md' } }, response);
+    await stream.handleStreamChunk({ type: 'tool_result', id: 'before', content: 'Before compaction' }, response);
+    await stream.handleStreamChunk({ type: 'context_compacted' }, response);
+    if (notification) renderSessionTaskNotification({ state, renderer, isConnected: () => true,
+      createMessageId: () => 'notification' }, 'Task finished.');
+    const tool = { type: 'tool_use' as const, id: 'after', name: 'Read', input: { file_path: 'after.md' } };
+    response = await continueResponseAfterNotification({ state, renderer, stream, createMessageId: () => 'continuation' }, response, tool);
+    await stream.handleStreamChunk(tool, response);
+    await stream.handleStreamChunk({ type: 'tool_result', id: 'after', content: 'After compaction' }, response);
+    await stream.handleStreamChunk({ type: 'text', content: 'Final answer.' }, response);
+    await stream.finalizeCurrentTextBlock(response);
+    response.durationSeconds = 307;
+    renderer.finalizeResponse(response, state.messages);
+    await assertDisclosure();
+    renderer.renderMessages(state.messages, () => 'Welcome');
+    await Promise.resolve();
+    await assertDisclosure();
+  } finally {
+    stream.dispose(); subagents.clear(); renderer.dispose();
+  }
+});
+
 it.each(['early', 'late', 'none'])('matches live and JSONL notification order with tool result=%s', async resultTiming => {
   const hasTool = resultTiming !== 'none';
   const lateResult = resultTiming === 'late';

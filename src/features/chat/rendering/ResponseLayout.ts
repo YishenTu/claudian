@@ -58,8 +58,7 @@ export function formatWorkDuration(durationSeconds: number): string {
 /** Shared live/replay policy. Renderers only map these decisions to existing elements. */
 export function getResponseLayout(message: ChatMessage, messages: ChatMessage[], collapse: boolean, index?: number) {
   const { blocks, finalBlocks, finalText } = getResponseBlocks(message);
-  const canCollapse = collapse && !message.isInterrupt && finalText.trim().length > 0
-    && !blocks.some(block => block.type === 'context_compacted');
+  const canCollapse = collapse && !message.isInterrupt && finalText.trim().length > 0;
   const hasNotification = blocks.some(block => block.type === 'task_notification');
   const end = index ?? messages.indexOf(message);
   const notificationPredecessor = getAutomaticNotificationPredecessor(message, messages);
@@ -70,8 +69,7 @@ export function getResponseLayout(message: ChatMessage, messages: ChatMessage[],
   while (start > 0 && messages[start - 1].role === 'assistant'
     && messages[start - 1].durationSeconds === undefined
     && !messages[start - 1].isInterrupt
-    && !messages[start - 1].contentBlocks?.some(block =>
-      block.type === 'task_notification' || block.type === 'context_compacted')) start--;
+    && !messages[start - 1].contentBlocks?.some(block => block.type === 'task_notification')) start--;
   const hasContinuation = segments.length > 1;
   let earlierMessages = messages.slice(start, end);
   if (hasContinuation) {

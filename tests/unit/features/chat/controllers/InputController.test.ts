@@ -575,12 +575,13 @@ describe('InputController coordinator execution', () => {
     }
   });
 
-  it('stores response duration without a completion flavor on ordinary success', async () => {
+  it.each([false, true])('stores response duration without a completion flavor on success (compaction: %s)', async compaction => {
     let currentTime = 1000;
     const nowSpy = jest.spyOn(performance, 'now').mockImplementation(() => currentTime);
     try {
       const fixture = createFixture();
       fixture.coordinator.execute.mockImplementationOnce(async () => {
+        fixture.state.messages[1].contentBlocks = compaction ? [{ type: 'context_compacted' }] : [];
         currentTime += 1500;
         return { accepted: true, status: 'completed' };
       });

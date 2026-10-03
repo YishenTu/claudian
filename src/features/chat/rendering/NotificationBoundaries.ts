@@ -20,8 +20,7 @@ export function getResponseSegments(message: ChatMessage, messages: ChatMessage[
     const start = messages.indexOf(previous);
     const end = messages.indexOf(current);
     if (start < 0 || start >= end || messages.slice(start, end).some(item =>
-      item.role === 'user' || item.isInterrupt
-      || item.contentBlocks?.some(block => block.type === 'context_compacted'))) break;
+      item.role === 'user' || item.isInterrupt)) break;
     segments.unshift(previous);
     current = previous;
   }

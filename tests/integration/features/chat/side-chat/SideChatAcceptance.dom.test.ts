@@ -6,6 +6,7 @@ import {
   releaseSideChatHarnesses,
   startSideChat,
 } from '@test/helpers/features/chat/SideChatDOMHarness';
+import { testDate } from '@test/helpers/testClock';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 
 import { ClaudianView } from '@/features/chat/ClaudianView';
@@ -141,16 +142,17 @@ it('is safe to discard repeatedly and cannot be resurrected by late events', asy
   expect(screen.queryByRole('heading', { name: 'Side chat' })).toBeNull();
 });
 
-it('shows completed side work duration and the completion timestamp using the main renderer', async () => {
+it.each([false, true])('shows completed side work duration and the completion timestamp (compaction: %s)', async compaction => {
   const harness = createHarness({ settings: { showMessageTimestamps: true } });
   const elapsed = jest.spyOn(performance, 'now').mockReturnValue(1000);
-  const clock = jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-09-20T10:00:00Z').getTime());
+  const clock = jest.spyOn(Date, 'now').mockReturnValue(testDate().getTime());
   try {
     const { started } = await startSideChat(harness);
     harness.backend.latest.establishChild('child-session');
+    if (compaction) harness.backend.latest.emitOutput({ type: 'context_compacted' });
     harness.backend.latest.emitText('A completed side answer.');
     elapsed.mockReturnValue(67000);
-    const completedAt = new Date('2026-09-20T10:01:06Z');
+    const completedAt = testDate({ seconds: 66 });
     clock.mockReturnValue(completedAt.getTime());
     harness.backend.latest.complete();
     await started;

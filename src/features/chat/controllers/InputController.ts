@@ -859,9 +859,8 @@ export class InputController {
           state.isStreaming = false;
           state.cancelRequested = false;
 
-          // Capture response duration before resetting state (skip for interrupted responses, errors, and compaction)
-          const hasCompactBoundary = finalAssistantMsg.contentBlocks?.some(b => b.type === 'context_compacted');
-          if (!didCancelThisTurn && !hadExecutionError && !hasCompactBoundary) {
+          // Compaction continues the turn, so its time belongs to the completed response.
+          if (!didCancelThisTurn && !hadExecutionError) {
             const durationSeconds = state.responseStartTime
               ? Math.floor((performance.now() - state.responseStartTime) / 1000)
               : 0;

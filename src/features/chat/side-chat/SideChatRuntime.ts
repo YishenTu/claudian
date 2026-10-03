@@ -407,8 +407,7 @@ export class SideChatRuntime {
           this.renderer.appendInterruptIndicator(this.state.currentContentEl);
         }
       }
-      const hasCompactBoundary = finalAssistant.contentBlocks?.some(block => block.type === 'context_compacted');
-      if (!wasCancelled && !failed && finalAssistant.completedAt !== undefined && !hasCompactBoundary) {
+      if (!wasCancelled && !failed && finalAssistant.completedAt !== undefined) {
         finalAssistant.durationSeconds = this.state.responseStartTime !== null
           ? Math.floor((performance.now() - this.state.responseStartTime) / 1000)
           : 0;
