@@ -9,7 +9,7 @@ import { recordNotificationPredecessors, recordResponseContinuation } from './No
 import { continueResponseAfterNotification } from './ResponseContinuation';
 import { getAutomaticNotificationPredecessor } from './ResponseLayout';
 
-interface BackgroundTurnRenderHost {
+export interface BackgroundTurnRenderHost {
   readonly state: ChatState;
   readonly renderer: MessageRenderer;
   readonly stream: StreamController;

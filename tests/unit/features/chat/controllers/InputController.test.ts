@@ -691,10 +691,10 @@ describe('InputController coordinator execution', () => {
     await fixture.controller.sendMessage();
     await (fixture.controller as any).steerQueuedMessage();
 
-    expect(fixture.coordinator.steer).toHaveBeenCalledWith(expect.objectContaining({
+    expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({
       canonicalText: 'follow up',
       rawDisplayText: 'follow up',
-    }));
+    });
     expect(fixture.state.queuedMessage).toBeNull();
   });
 
@@ -2014,21 +2014,31 @@ describe('async question answer submission', () => {
     expect(fixture.input.value).toBe('Keep my draft');
   });
 
-  it.each(['clearQueuedMessage', 'withdrawQueuedMessageToComposer'] as const)('keeps native reply content pending and rejects on %s', async action => {
+  it('keeps an unaccepted answer out of the draft when its native session is missing', async () => {
+    const fixture = createFixture();
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    fixture.input.value = 'Keep my draft';
+    fixture.coordinator.execute.mockResolvedValueOnce({ accepted: false, status: 'missing-session', missingSessionResolution: 'reset' });
+    await expect(fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1')).rejects.toThrow('not sent');
+    expect(fixture.input.value).toBe('Keep my draft');
+    expect(fixture.state.messages).toHaveLength(1);
+    expect(fixture.state.queuedMessage).toBeNull();
+  });
+
+  it.each(['clearQueuedMessage', 'withdrawQueuedMessageToComposer'] as const)('accepts a definitely rejected answer into the queue and permits %s', async action => {
     const fixture = createFixture();
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
     fixture.state.isStreaming = true;
-    let accepted = false;
-    const answering = fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1').then(() => { accepted = true; });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(accepted).toBe(false);
-    expect(fixture.state.queuedMessage).toMatchObject({ content: '', turnRequest: { text: 'native reply payload' } });
+    fixture.coordinator.steer.mockResolvedValueOnce(false);
+    await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    expect(fixture.state.queuedMessage).toMatchObject({ content: '', turnRequest: { text: 'native reply payload', draftContent: 'Answer' } });
     expect(fixture.coordinator.execute).not.toHaveBeenCalled();
     fixture.controller[action]();
-    await expect(answering).rejects.toThrow('not sent');
-    expect(accepted).toBe(false);
+    expect(fixture.state.queuedMessage).toBeNull();
+    expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
+    expect(fixture.input.value).toBe(action === 'withdrawQueuedMessageToComposer' ? 'Answer' : '');
   });
 
   it.each(['/clear', '/new', '/side', '/compact'])('treats question text starting with %s as display text, never as a command', async command => {
@@ -2041,16 +2051,70 @@ describe('async question answer submission', () => {
     expect(fixture.deps.conversationController.createNew).not.toHaveBeenCalled();
   });
 
-  it('delivers merged queued answers through the existing steer action', async () => {
+  it('delivers answers separately from ordinary queued messages', async () => {
     const fixture = createFixture();
     const tool = createQuestion();
     fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
     fixture.state.isStreaming = true;
-    const answering = fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
     await fixture.controller.sendMessage({ content: 'Also check rendering' });
-    await (fixture.controller as any).steerQueuedMessage();
-    await answering;
-    expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload\n\nAlso check rendering', rawDisplayText: 'Also check rendering' });
+    await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    expect(fixture.coordinator.steer.mock.calls[0][0]).toMatchObject({ canonicalText: 'native reply payload', rawDisplayText: '' });
+    expect(fixture.state.queuedMessage?.content).toBe('Also check rendering');
+  });
+
+  it('starts the answer in a new turn when the active turn ends before steering accepts it', async () => {
+    const fixture = createFixture();
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    fixture.state.isStreaming = true;
+    fixture.coordinator.steer.mockImplementationOnce(async () => {
+      fixture.state.isStreaming = false;
+      return false;
+    });
+    await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    expect(fixture.coordinator.execute).toHaveBeenCalledWith(expect.objectContaining({ canonicalText: 'native reply payload', rawDisplayText: '' }), expect.any(AbortSignal));
+    expect(fixture.state.queuedMessage).toBeNull();
+  });
+
+  it.each([false, new ChatExecutionPreHandoffError('Authority check failed')])('queues a definitely unsent answer without waiting for delivery (%s)', async failure => {
+    const fixture = createFixture();
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    fixture.state.isStreaming = true;
+    if (failure instanceof Error) fixture.coordinator.steer.mockRejectedValueOnce(failure);
+    else fixture.coordinator.steer.mockResolvedValueOnce(failure);
+    await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    expect(fixture.state.queuedMessage?.turnRequest?.text).toBe('native reply payload');
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+  });
+
+  it('settles ambiguous answer handoff without queuing or retrying it', async () => {
+    const fixture = createFixture();
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    fixture.state.isStreaming = true;
+    fixture.coordinator.steer.mockRejectedValueOnce(new Error('Acknowledgement lost'));
+    await fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    expect(fixture.coordinator.steer).toHaveBeenCalledTimes(1);
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.state.queuedMessage).toBeNull();
+    expect(Notice).toHaveBeenCalledWith(expect.stringContaining('could not be confirmed'));
+  });
+
+  it('does not send or queue an answer into a conversation selected during preparation', async () => {
+    const preparing = deferred<string[]>();
+    const fixture = createFixture();
+    Object.assign(fixture.plugin, { getMainAgentDynamicSystemPromptSections: () => preparing.promise });
+    const tool = createQuestion();
+    fixture.state.addMessage({ id: 'assistant', role: 'assistant', content: '', timestamp: Date.now(), toolCalls: [tool] });
+    fixture.state.isStreaming = true;
+    const answering = fixture.controller.answerQuestion(tool, { '0': 'Answer' }, 'conversation-1');
+    fixture.state.currentConversationId = 'conversation-2';
+    preparing.resolve([]);
+    await expect(answering).rejects.toThrow('different conversation');
+    expect(fixture.coordinator.steer).not.toHaveBeenCalled();
+    expect(fixture.coordinator.execute).not.toHaveBeenCalled();
+    expect(fixture.state.queuedMessage).toBeNull();
   });
 
   it('rejects answers from another conversation or when admission is blocked', async () => {

@@ -1,10 +1,10 @@
 import { Notice } from 'obsidian';
 
-import type { ProviderInteractionPort } from '../../../../core/execution';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { getVaultPath } from '../../../../utils/path';
 import { ComposerEditor } from '../../composer/ComposerEditor';
 import { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinator';
+import { createInteractionPromptPort } from '../../rendering/interactionPromptPort';
 import { cleanupThinkingBlock } from '../../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement } from '../../rendering/WelcomeRenderer';
 import { ChatState } from '../../state/ChatState';
@@ -178,53 +178,14 @@ function createTabExecutionCoordinator(
   runtimeRef: PublishedTabRuntimeRef,
 ): ChatExecutionCoordinator {
   const { plugin } = options;
-  const interactionPort: ProviderInteractionPort = {
-    requestApproval: async (request, signal) => {
-      const tab = runtimeRef.requirePublished();
-      state.beginActionRequired(request.interactionId);
-      try {
-        const decision = await tab.controllers.inputController.handleApprovalRequest(
-          request.interactionId,
-          request.toolName,
-          { ...request.input },
-          request.description,
-          {
-            ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
-            ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
-            ...(request.decisionOptions
-              ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) }
-              : {}),
-            ...(request.additionalPermissions !== undefined
-              ? { additionalPermissions: request.additionalPermissions }
-              : {}),
-          },
-          signal,
-        );
-        return { interactionId: request.interactionId, decision };
-      } finally {
-        state.endActionRequired(request.interactionId);
-      }
-    },
-    askUserQuestion: async (request, signal) => {
-      const tab = runtimeRef.requirePublished();
-      state.beginActionRequired(request.interactionId);
-      try {
-        const answers = await tab.controllers.inputController.handleAskUserQuestion(
-          request.interactionId,
-          { ...request.input },
-          signal,
-        );
-        return { interactionId: request.interactionId, answers };
-      } finally {
-        state.endActionRequired(request.interactionId);
-      }
-    },
-    dismissInteraction: (interactionId) => {
-      const tab = runtimeRef.requirePublished();
-      tab.controllers.inputController.dismissProviderInteraction(interactionId);
-      state.endActionRequired(interactionId);
-    },
-  };
+  const interactionPort = createInteractionPromptPort(state, () => {
+    const input = runtimeRef.requirePublished().controllers.inputController;
+    return {
+      requestApproval: (...args) => input.handleApprovalRequest(...args),
+      askUserQuestion: (id, request, signal) => input.handleAskUserQuestion(id, request, signal),
+      dismiss: id => input.dismissProviderInteraction(id),
+    };
+  });
   return new ChatExecutionCoordinator({
     lifecycleRegistry: plugin.providerHost.executionLifecycleRegistry,
     resolveBackend: providerId => ProviderRegistry.createExecutionBackend(

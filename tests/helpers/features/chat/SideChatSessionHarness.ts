@@ -67,6 +67,10 @@ export class FakeSideSession implements ProviderExecutionSession {
     for (const listener of this.listeners) listener(scoped);
   }
 
+  emitRawSessionEvent(event: ProviderSessionEvent): void {
+    for (const listener of this.listeners) listener(event);
+  }
+
   emitBackgroundEvent(event: WithoutScope<ProviderSessionEvent>, turnId = 'background-1'): void {
     const sequence = (this.backgrounds.get(turnId) ?? 0) + 1;
     this.backgrounds.set(turnId, sequence);

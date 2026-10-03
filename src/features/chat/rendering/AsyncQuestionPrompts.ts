@@ -4,14 +4,14 @@ import type { InlineInteractionPrompts } from './InlineInteractionPrompts';
 
 interface AsyncQuestionPromptsDeps {
   prompts: InlineInteractionPrompts;
-  answer(tool: ToolCallInfo, answers: AskUserAnswers): Promise<void>;
+  answer(tool: ToolCallInfo, answers: AskUserAnswers, signal: AbortSignal): Promise<void>;
   onChange(tool: ToolCallInfo): void;
   onPendingChange(id: string, pending: boolean): void;
 }
 
 /** Live question ownership is independent of collapsible transcript rendering. */
 export class AsyncQuestionPrompts {
-  private readonly pending = new Map<string, { tool: ToolCallInfo; abort: AbortController }>();
+  private readonly pending = new Map<string, { tool: ToolCallInfo; abort: AbortController; submitting: boolean }>();
 
   constructor(private readonly deps: AsyncQuestionPromptsDeps) {}
 
@@ -29,7 +29,7 @@ export class AsyncQuestionPrompts {
     }
     if (expired || tool.resolvedAnswers || !Array.isArray(tool.input.questions) || !tool.input.questions.length) return;
 
-    const entry = { tool, abort: new AbortController() };
+    const entry = { tool, abort: new AbortController(), submitting: false };
     this.pending.set(tool.id, entry);
     tool.questionStatus = 'pending';
     const interactionId = `async-question:${tool.id}`;
@@ -38,10 +38,24 @@ export class AsyncQuestionPrompts {
     void this.deps.prompts.askUserQuestion(interactionId, tool.input, entry.abort.signal, {
       onSubmit: async answers => {
         if (entry.abort.signal.aborted) throw new Error('This question has expired.');
-        await this.deps.answer(entry.tool, answers);
-        if (!entry.abort.signal.aborted) entry.tool.resolvedAnswers = answers;
+        entry.submitting = true;
+        try {
+          await this.deps.answer(entry.tool, answers, entry.abort.signal);
+          if (!entry.abort.signal.aborted) entry.tool.resolvedAnswers = answers;
+        } finally {
+          entry.submitting = false;
+        }
       },
     }).catch(() => null).finally(() => this.#finish(tool.id, entry));
+  }
+
+  /** Stop cancels submitted answers without expiring questions still awaiting user input. */
+  cancelSubmissions(): void {
+    for (const [id, entry] of this.pending) {
+      if (!entry.submitting) continue;
+      entry.abort.abort();
+      this.#finish(id, entry);
+    }
   }
 
   expireAll(): void {

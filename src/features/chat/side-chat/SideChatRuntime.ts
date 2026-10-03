@@ -1,11 +1,9 @@
 import type { Component } from 'obsidian';
 
 import type {
-  ProviderBackgroundOutputEvent,
   ProviderExecutionBackend,
   ProviderExecutionContext,
   ProviderExecutionLifecycleRegistry,
-  ProviderInteractionPort,
   ProviderSessionEvent,
 } from '../../../core/execution';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
@@ -13,15 +11,18 @@ import type { ProviderCapabilities, ProviderId, TitleGenerationService } from '.
 import type { AskUserAnswers, ChatMessage, ImageAttachment, ToolCallInfo } from '../../../core/types';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import {
-  providerOutputEventToStreamChunk,
   StreamController,
 } from '../controllers/StreamController';
+import { buildChatExecutionConfiguration, resolveChatDynamicSections } from '../execution/chatExecutionConfiguration';
 import type { WarmExecutionPool } from '../execution/WarmExecutionPool';
 import { AsyncQuestionPrompts } from '../rendering/AsyncQuestionPrompts';
-import { type BackgroundTurnRenderTarget, discardBackgroundTurn, renderAutoTriggeredTurn, renderSessionTaskNotification, reserveBackgroundTurn } from '../rendering/BackgroundTurnRenderer';
+import { BackgroundResponses } from '../rendering/BackgroundResponses';
+import { renderSessionTaskNotification } from '../rendering/BackgroundTurnRenderer';
 import { InlineInteractionPrompts } from '../rendering/InlineInteractionPrompts';
+import { createInteractionPromptPort } from '../rendering/interactionPromptPort';
 import { MessageRenderer } from '../rendering/MessageRenderer';
-import { continueResponseAfterNotification } from '../rendering/ResponseContinuation';
+import { ResponseStream } from '../rendering/ResponseStream';
+import { deliverAsyncQuestion } from '../services/asyncQuestionDelivery';
 import { SubagentManager } from '../services/SubagentManager';
 import { ChatState } from '../state/ChatState';
 import { SideChatCommandSubmission } from './SideChatCommandSubmission';
@@ -50,6 +51,8 @@ export interface SideChatRuntimeDeps {
 }
 
 export interface SideChatSubmission {
+  /** Queue admission detaches this transient interaction guard. */
+  readonly assertBeforeHandoff?: () => void;
   readonly onDelivery?: (accepted: boolean) => void;
   readonly content: string;
   readonly displayContent?: string;
@@ -72,7 +75,7 @@ export class SideChatRuntime {
   readonly #asyncQuestions: AsyncQuestionPrompts;
   readonly #settings: SideChatSettingsProjection;
   #activeDelivery: SideChatSubmission['onDelivery'];
-  #activeAssistant: ChatMessage | null = null;
+  readonly #responseStream: ResponseStream;
   #status: SideChatStatus = 'preparing';
   #lastError: string | null = null;
   #disposed = false;
@@ -80,7 +83,7 @@ export class SideChatRuntime {
   #draining = false;
   #requestedSettlement: Promise<void> | null = null;
   #sessionEventWork: Promise<void> = Promise.resolve();
-  readonly #backgroundTurns = new Map<string, { events: ProviderBackgroundOutputEvent[]; target?: BackgroundTurnRenderTarget }>();
+  readonly #backgroundResponses: BackgroundResponses;
   readonly #queuedSubmissions: Array<SideChatSubmission | SideChatCommandSubmission> = [];
   readonly #pendingCommands = new Set<SideChatCommandSubmission>();
   #activeCommand: SideChatCommandSubmission | null = null;
@@ -93,24 +96,6 @@ export class SideChatRuntime {
       onAttentionChanged: () => this.#refreshStatus(),
       onStreamingStateChanged: () => this.#refreshStatus(),
     });
-    const answerQuestion = async (tool: ToolCallInfo, answers: AskUserAnswers): Promise<void> => {
-      if (this.#disposed || !this.state.messages.some(message => message.toolCalls?.includes(tool))) {
-        throw new Error('This side chat is no longer available.');
-      }
-      const reply = ProviderRegistry.formatQuestionReply(this.providerId, tool, answers);
-      if (!reply) throw new Error('This question cannot accept that reply.');
-      await new Promise<void>((resolve, reject) => {
-        const submission: SideChatSubmission = {
-          ...reply,
-          onDelivery: accepted => accepted ? resolve() : reject(new Error('The answer was not sent. Please try again.')),
-        };
-        if (this.isWorking) {
-          if (!this.enqueue(submission)) submission.onDelivery?.(false);
-        } else {
-          void this.submit(submission).catch(reject);
-        }
-      });
-    };
     this.renderer = new MessageRenderer(
       deps.plugin,
       deps.component,
@@ -128,7 +113,7 @@ export class SideChatRuntime {
     });
     this.#asyncQuestions = new AsyncQuestionPrompts({
       prompts: this.#prompts,
-      answer: answerQuestion,
+      answer: (tool, answers, signal) => this.#answerQuestion(tool, answers, signal),
       onChange: tool => this.renderer.updateQuestionTool(tool),
       onPendingChange: (id, pending) => pending ? this.state.beginActionRequired(id) : this.state.endActionRequired(id),
     });
@@ -143,16 +128,23 @@ export class SideChatRuntime {
       subagentManager: this.#subagents,
       updateQueueIndicator: () => undefined,
     });
+    this.#responseStream = new ResponseStream({
+      state: this.state, renderer: this.renderer, stream: this.#stream, createMessageId: createSideMessageId,
+    });
+    this.#backgroundResponses = new BackgroundResponses({
+      state: this.state, renderer: this.renderer, stream: this.#stream,
+      isConnected: () => deps.messagesEl.isConnected, createMessageId: createSideMessageId,
+    });
     const ephemeral = this.capabilities.supportsEphemeralFork ?? this.capabilities.supportsEphemeralSessions;
     this.#session = new SideChatSession({
       buildChildResumeState: deps.buildChildResumeState,
-      interactionPort: this.#createInteractionPort(),
+      interactionPort: createInteractionPromptPort(this.state, () => this.#prompts),
       lifecycleRegistry: deps.lifecycleRegistry,
       onError: error => deps.onError?.(error),
       onInvalidated: () => {
         this.#asyncQuestions.expireAll();
         this.#discardQueuedSubmissions();
-        this.#discardBackgroundTurns();
+        this.#backgroundResponses.discard();
         this.#lastError = ephemeral
           ? 'This side chat has ended. Discard it and start a new side chat.'
           : 'The provider session was replaced. Send again to resume the side chat.';
@@ -170,6 +162,44 @@ export class SideChatRuntime {
       vaultWorkingDirectory: deps.vaultWorkingDirectory,
       ...(deps.warmExecution ? { warmExecution: deps.warmExecution } : {}),
     });
+  }
+
+  async #answerQuestion(tool: ToolCallInfo, answers: AskUserAnswers, signal: AbortSignal): Promise<void> {
+    await deliverAsyncQuestion(tool, answers, {
+      providerId: this.providerId,
+      assertCurrent: () => {
+        if (this.#disposed || !this.state.messages.some(message => message.toolCalls?.includes(tool))) {
+          throw new Error('This side chat is no longer available.');
+        }
+        if (this.state.cancelRequested) throw new Error('The answer was not sent. Please try again.');
+      },
+      prepare: reply => ({
+        steer: async () => {
+          if (!this.state.isStreaming) return 'not-sent';
+          let accepted: boolean;
+          try {
+            accepted = await this.#session.steer(reply.content);
+          } catch {
+            return 'uncertain';
+          }
+          if (!accepted) return 'not-sent';
+          if (!this.#disposed) {
+            const message: ChatMessage = {
+              content: reply.content, displayContent: reply.displayContent,
+              id: createSideMessageId(), role: 'user', timestamp: Date.now(),
+            };
+            this.state.addMessage(message);
+            this.renderer.addMessage(message);
+          }
+          return 'accepted';
+        },
+        submit: async (onDelivery, assertBeforeHandoff) => {
+          const submission = { content: reply.content, displayContent: reply.displayContent, onDelivery };
+          if (this.isWorking) onDelivery(this.enqueue(submission));
+          else await this.submit({ ...submission, assertBeforeHandoff });
+        },
+      }),
+    }, signal);
   }
 
   get source(): SideChatSource {
@@ -322,17 +352,7 @@ export class SideChatRuntime {
       void this.#generateTitle(userMessage);
     }
 
-    const assistantMessage: ChatMessage = {
-      content: '',
-      contentBlocks: [],
-      id: createSideMessageId(),
-      role: 'assistant',
-      timestamp: Date.now(),
-      toolCalls: [],
-    };
-    this.state.addMessage(assistantMessage);
-    this.#activeAssistant = assistantMessage;
-    this.#activateAssistantMessage(assistantMessage);
+    const assistantMessage = this.#responseStream.start();
     this.state.isStreaming = true;
     this.state.cancelRequested = false;
     this.state.autoScrollEnabled = true;
@@ -343,29 +363,15 @@ export class SideChatRuntime {
     let interrupted = false;
     let failed = false;
     try {
-      let dynamicSections: readonly string[] = [];
-      try {
-        dynamicSections = await this.deps.plugin.getMainAgentDynamicSystemPromptSections?.() ?? [];
-      } catch {
-        // Dynamic system context is best-effort, as it is for main chat.
-      }
+      const dynamicSections = await resolveChatDynamicSections(this.deps.plugin);
       if (this.#disposed || this.state.cancelRequested) return;
       this.#activeDelivery = submission.onDelivery;
       const result = await this.#session.execute({
+        assertBeforeHandoff: submission.assertBeforeHandoff,
         ...(submission.context ? { context: submission.context } : {}),
-        configuration: {
-          readableRoots: [this.deps.plugin.getSessionSnapshotDirectory()],
-          ...(this.#settings.model ? { model: this.#settings.model } : {}),
-          ...(this.#settings.permissionMode
-            ? { permissionMode: this.#settings.permissionMode }
-            : {}),
-          ...(this.#settings.reasoning !== undefined ? { reasoning: this.#settings.reasoning } : {}),
-          ...(this.#settings.serviceTier ? { serviceTier: this.#settings.serviceTier } : {}),
-          systemInstructions: {
-            kind: 'provider-default',
-            ...(dynamicSections.length ? { dynamicSections: [...dynamicSections] } : {}),
-          },
-        },
+        configuration: buildChatExecutionConfiguration(
+          this.#settings, this.deps.plugin.getSessionSnapshotDirectory(), dynamicSections,
+        ),
         conversationHistory: [
           ...this.deps.source.messages,
           ...this.state.messages.slice(0, -2),
@@ -378,7 +384,7 @@ export class SideChatRuntime {
 
       if (result.accepted) submission.onDelivery?.(true);
       if (result.status === 'completed') {
-        const finalAssistant = this.#activeAssistant ?? assistantMessage;
+        const finalAssistant = this.#responseStream.active ?? assistantMessage;
         finalAssistant.completedAt = Date.now();
         if (result.checkpointId) finalAssistant.assistantMessageId = result.checkpointId;
       }
@@ -396,35 +402,11 @@ export class SideChatRuntime {
       await this.#stream.appendError(this.#lastError);
     } finally {
       this.#activeDelivery = undefined;
-      const finalAssistant = this.#activeAssistant ?? assistantMessage;
-      this.state.clearFlavorTimerInterval();
-      this.#stream.hideThinkingIndicator();
+      const finalAssistant = this.#responseStream.active ?? assistantMessage;
       const wasCancelled = interrupted || this.state.cancelRequested;
-      if (wasCancelled) {
-        this.#discardQueuedSubmissions();
-        finalAssistant.isInterrupt = true;
-        if (this.state.currentContentEl) {
-          this.renderer.appendInterruptIndicator(this.state.currentContentEl);
-        }
-      }
-      if (!wasCancelled && !failed && finalAssistant.completedAt !== undefined) {
-        finalAssistant.durationSeconds = this.state.responseStartTime !== null
-          ? Math.floor((performance.now() - this.state.responseStartTime) / 1000)
-          : 0;
-      }
-      this.state.responseStartTime = null;
-      this.state.isStreaming = false;
-      this.state.cancelRequested = false;
-      this.state.currentContentEl = null;
-      await this.#stream.finalizeCurrentThinkingBlock(finalAssistant);
-      await this.#stream.finalizeCurrentTextBlock(finalAssistant);
-      this.renderer.finalizeResponse(
-        finalAssistant,
-        this.state.messages,
-        !wasCancelled && !failed,
-      );
-      this.#stream.resetSubagentStreamingState();
-      this.#activeAssistant = null;
+      if (wasCancelled) this.#discardQueuedSubmissions();
+      await this.#responseStream.finish(finalAssistant, { interrupted: wasCancelled, failed });
+      this.#responseStream.clear();
       this.#refreshStatus();
     }
   }
@@ -443,6 +425,7 @@ export class SideChatRuntime {
   }
 
   cancel(): void {
+    this.#asyncQuestions.cancelSubmissions();
     this.#activeCommand?.cancel();
     this.#preparation?.controller.abort();
     this.#discardQueuedSubmissions();
@@ -463,7 +446,7 @@ export class SideChatRuntime {
       this.#preparation?.pending,
       ...[...this.#pendingCommands].map(command => command.settled),
     ]);
-    this.#discardBackgroundTurns();
+    this.#backgroundResponses.discard();
     this.#titleService?.cancel();
     this.#titleService = null;
     this.#asyncQuestions.expireAll();
@@ -497,13 +480,6 @@ export class SideChatRuntime {
     }
   }
 
-  #discardBackgroundTurns(): void {
-    for (const buffer of this.#backgroundTurns.values()) {
-      if (buffer.target) discardBackgroundTurn(this.state, buffer.target);
-    }
-    this.#backgroundTurns.clear();
-  }
-
   #enqueueSessionEvent(event: ProviderSessionEvent, isCurrent: () => boolean): Promise<void> {
     if (this.#disposed || !isCurrent()) return Promise.resolve();
     // Display-only progress must reach running cards before the requested turn settles.
@@ -516,12 +492,7 @@ export class SideChatRuntime {
       return Promise.resolve();
     }
     if (event.type === 'background_turn_started') {
-      this.#backgroundTurns.set(event.scope.turnId, {
-        events: [],
-        target: this.deps.messagesEl.isConnected ? reserveBackgroundTurn({
-          state: this.state, renderer: this.renderer, createMessageId: createSideMessageId,
-        }) : undefined,
-      });
+      this.#backgroundResponses.reserve(event.scope.sessionInstanceId, event.scope.turnId);
     }
     const deliver = () => this.#handleSessionEvent(event, isCurrent);
     if (event.type === 'task_notification' && event.scope.kind === 'session') return deliver();
@@ -558,102 +529,18 @@ export class SideChatRuntime {
     if (event.type === 'session_error') {
       this.#discardQueuedSubmissions();
       this.#lastError = event.message;
-      this.#discardBackgroundTurns();
+      this.#backgroundResponses.discard();
       this.#refreshStatus();
       return;
     }
-    if (event.scope.kind !== 'background') return;
-    const turnId = event.scope.turnId;
-    if (event.type === 'background_turn_started') {
-      return;
-    } else if (event.type === 'background_turn_completed') {
-      const buffer = this.#backgroundTurns.get(turnId);
-      this.#backgroundTurns.delete(turnId);
-      if (!buffer) return;
-      await renderAutoTriggeredTurn({
-        state: this.state, renderer: this.renderer, stream: this.#stream,
-        isConnected: () => this.deps.messagesEl.isConnected, createMessageId: createSideMessageId,
-      }, {
-        target: buffer.target,
-        events: buffer.events,
-        metadata: { assistantMessageId: event.nativeAssistantId },
-      }, () => !this.#disposed && isCurrent());
-    } else {
-      this.#backgroundTurns.get(turnId)?.events.push(event as ProviderBackgroundOutputEvent);
-    }
+    await this.#backgroundResponses.handle(event.scope.sessionInstanceId, event, () => !this.#disposed && isCurrent());
   }
 
   async #handleExecutionEvent(event: Parameters<
     NonNullable<ConstructorParameters<typeof SideChatSession>[0]['onRequestedEvent']>
   >[0]): Promise<void> {
     if (event.type === 'turn_started' && event.accepted) this.#activeDelivery?.(true);
-    const assistant = this.#activeAssistant;
-    if (!assistant) return;
-    if (event.type === 'turn_completed') {
-      this.state.cancelRequested = false;
-      assistant.turnStats = event.turnStats;
-      return;
-    }
-    const chunk = providerOutputEventToStreamChunk(event);
-    if (!chunk) return;
-    this.#activeAssistant = await continueResponseAfterNotification({
-      state: this.state, renderer: this.renderer, stream: this.#stream, createMessageId: createSideMessageId,
-    }, assistant, chunk, event.scope);
-    await this.#stream.handleStreamChunk(chunk, this.#activeAssistant);
-  }
-
-  #activateAssistantMessage(message: ChatMessage): void {
-    const messageEl = this.renderer.addMessage(message);
-    const contentEl = messageEl.querySelector<HTMLElement>('.claudian-message-content');
-    if (!contentEl) return;
-    if (!this.state.currentContentEl) this.state.toolCallElements.clear();
-    this.state.currentContentEl = contentEl;
-    this.state.currentTextEl = null;
-    this.state.currentTextContent = '';
-    this.state.currentThinkingState = null;
-  }
-
-  #createInteractionPort(): ProviderInteractionPort {
-    return {
-      askUserQuestion: async (request, signal) => {
-        this.state.beginActionRequired(request.interactionId);
-        try {
-          const answers = await this.#prompts.askUserQuestion(request.interactionId, { ...request.input }, signal);
-          return { answers, interactionId: request.interactionId };
-        } finally {
-          this.state.endActionRequired(request.interactionId);
-        }
-      },
-      dismissInteraction: (interactionId) => {
-        this.#prompts.dismiss(interactionId);
-        this.state.endActionRequired(interactionId);
-      },
-      requestApproval: async (request, signal) => {
-        this.state.beginActionRequired(request.interactionId);
-        try {
-          const decision = await this.#prompts.requestApproval(
-            request.interactionId,
-            request.toolName,
-            { ...request.input },
-            request.description,
-            {
-              ...(request.decisionReason ? { decisionReason: request.decisionReason } : {}),
-              ...(request.blockedPath ? { blockedPath: request.blockedPath } : {}),
-              ...(request.decisionOptions
-                ? { decisionOptions: request.decisionOptions.map(option => ({ ...option })) }
-                : {}),
-              ...(request.additionalPermissions !== undefined
-                ? { additionalPermissions: request.additionalPermissions }
-                : {}),
-            },
-            signal,
-          );
-          return { decision, interactionId: request.interactionId };
-        } finally {
-          this.state.endActionRequired(request.interactionId);
-        }
-      },
-    };
+    await this.#responseStream.handleEvent(event);
   }
 
   #refreshStatus(): void {
