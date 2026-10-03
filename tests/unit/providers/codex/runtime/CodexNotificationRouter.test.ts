@@ -704,6 +704,33 @@ describe('CodexNotificationRouter', () => {
       expect(chunks[chunks.length - 1]).toEqual({ type: 'done' });
     });
 
+    it('hides script-wrapped empty write_stdin polls and their cell waits', () => {
+      router.beginTurn();
+      const notify = (item: Record<string, unknown>) => router.handleNotification('rawResponseItem/completed', {
+        threadId: 't1', turnId: 'turn1', item,
+      });
+      notify({ type: 'custom_tool_call', name: 'exec', call_id: 'poll1',
+        input: 'text(await tools.write_stdin({session_id:40281,chars:"",yield_time_ms:1000}));\n' });
+      notify({ type: 'custom_tool_call_output', call_id: 'poll1', output: [
+        { type: 'input_text', text: 'Script completed\nWall time 5.0 seconds\nOutput:\n' },
+        { type: 'input_text', text: '{"session_id":40281,"output":""}' },
+      ] });
+      notify({ type: 'custom_tool_call', name: 'exec', call_id: 'poll2',
+        input: 'text(await tools.write_stdin({session_id:40281,chars:"",yield_time_ms:60000}));\n' });
+      notify({ type: 'custom_tool_call_output', call_id: 'poll2',
+        output: 'Script running with cell ID 3\nWall time 31.0 seconds\nOutput:\n' });
+      notify({ type: 'function_call', name: 'wait', call_id: 'wait1', arguments: '{"cell_id":"3"}' });
+      notify({ type: 'function_call_output', call_id: 'wait1', output: [
+        { type: 'input_text', text: 'Script completed\nWall time 9.0 seconds\nOutput:\n' },
+        { type: 'input_text', text: '{"exit_code":0,"output":"done\\n"}' },
+      ] });
+      router.handleNotification('turn/completed', {
+        threadId: 't1', turn: { id: 'turn1', items: [], status: 'completed', error: null },
+      });
+
+      expect(chunks.filter(chunk => chunk.type.startsWith('tool'))).toEqual([]);
+    });
+
     it.each([false, true])('keeps an undecoded script running across cell waits (failure: %s)', (failed) => {
       router.beginTurn();
       const notify = (item: Record<string, unknown>) => router.handleNotification('rawResponseItem/completed', {

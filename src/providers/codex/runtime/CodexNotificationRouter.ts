@@ -719,9 +719,12 @@ export class CodexNotificationRouter {
       const decodedCalls = decodeCodexExecEnvelopeCalls(rawArguments);
       const isSingleCommand = decodedCalls?.length === 1
         && decodedCalls[0]?.name === 'Bash';
-      const expectedCalls = decodedCalls?.filter(call => !isCodexInternalToolCall(call.rawName));
+      const expectedCalls = decodedCalls?.filter(call => (
+        !isCodexInternalToolCall(call.rawName)
+        && !(call.rawName === 'write_stdin' && isSilentWriteStdinInput(call.rawInput))
+      ));
       if (expectedCalls?.length === 0) {
-        // Its output, and any yielded continuation, carries only internal values.
+        // Its output, and any yielded continuation, carries only internal values or silent polls.
         this.#withheldOutputCallIds.add(callId);
         return;
       }
