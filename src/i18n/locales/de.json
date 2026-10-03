@@ -145,16 +145,6 @@
       "name": "Command/Ctrl+Enter zum Senden erfordern",
       "desc": "Wenn aktiviert, fügt Enter einen Zeilenumbruch ein. Command+Enter sendet unter macOS; Ctrl+Enter sendet unter Windows und Linux."
     },
-    "hotkeys": "Tastenkürzel",
-    "inlineEditHotkey": {
-      "name": "Inline-Bearbeitung"
-    },
-    "openChatHotkey": {
-      "name": "Chat öffnen"
-    },
-    "newSessionHotkey": {
-      "name": "Aktuelle Unterhaltung ersetzen"
-    },
     "safety": "Sicherheit",
     "loadUserSettings": {
       "name": "Claude-Code-Benutzereinstellungen laden",
@@ -320,7 +310,6 @@
       "reorderLabel": "{model} neu anordnen; ziehen oder die Pfeiltasten nach oben und unten verwenden",
       "default": "Standard",
       "unavailable": "Nicht verfügbar",
-      "unavailableTitle": "Konfiguriertes Modell wird derzeit nicht von {provider} gemeldet",
       "aliasLabel": "Alias (optional)",
       "removeLabel": "{model} entfernen",
       "noMatch": "Keine Modelle entsprechen Ihrem Filter.",

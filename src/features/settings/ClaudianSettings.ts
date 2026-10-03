@@ -1,5 +1,5 @@
 import type { App, Plugin, SettingDefinitionItem } from 'obsidian';
-import { Notice, Platform, PluginSettingTab, Setting } from 'obsidian';
+import { Notice, PluginSettingTab, Setting } from 'obsidian';
 
 import { DebouncedSettingsWriter } from '@/shared/settings/DebouncedSettingsWriter';
 import { frameSettingsGroups } from '@/shared/settings/SettingsGroups';
@@ -20,7 +20,7 @@ import type {
   SessionAutoArchiveAfter,
 } from '../../core/types/settings';
 import { getAvailableLocales, getLocaleDisplayName, setLocale, t } from '../../i18n/i18n';
-import type { Locale, TranslationKey } from '../../i18n/types';
+import type { Locale } from '../../i18n/types';
 import { renderEnvironmentSettingsSection } from '../../shared/settings/EnvironmentSettingsSection';
 import { formatContextLimit, parseContextLimit, parseEnvironmentVariables } from '../../utils/env';
 import type { FeatureHost } from '../FeatureHost';
@@ -28,92 +28,6 @@ import { buildNavMappingText, parseNavMappings } from './keyboardNavigation';
 import { SkillsSettingsTab } from './SkillsSettingsTab';
 
 type SettingsTabId = 'general' | 'providers' | 'skills';
-type ObsidianHotkey = { modifiers: string[]; key: string };
-type ObsidianHotkeyManager = {
-  customKeys?: Record<string, ObsidianHotkey[] | undefined>;
-  defaultKeys?: Record<string, ObsidianHotkey[] | undefined>;
-};
-type ObsidianHotkeyTab = {
-  searchInputEl?: HTMLInputElement;
-  searchComponent?: { inputEl?: HTMLInputElement };
-  updateHotkeyVisibility?: () => void;
-};
-type ObsidianSettingsController = {
-  activeTab?: ObsidianHotkeyTab;
-  open: () => void;
-  openTabById: (id: string) => void;
-};
-type AppWithHotkeyInternals = App & {
-  hotkeyManager?: ObsidianHotkeyManager;
-  setting?: ObsidianSettingsController;
-};
-
-function formatHotkey(hotkey: ObsidianHotkey): string {
-  const isMac = Platform.isMacOS;
-  const modMap: Record<string, string> = isMac
-    ? { Mod: '⌘', Ctrl: '⌃', Alt: '⌥', Shift: '⇧', Meta: '⌘' }
-    : { Mod: 'Ctrl', Ctrl: 'Ctrl', Alt: 'Alt', Shift: 'Shift', Meta: 'Win' };
-
-  const mods = hotkey.modifiers.map((modifier) => modMap[modifier] || modifier);
-  const key = hotkey.key.length === 1 ? hotkey.key.toUpperCase() : hotkey.key;
-
-  return isMac ? [...mods, key].join('') : [...mods, key].join('+');
-}
-
-function openHotkeySettings(app: App): void {
-  const setting = (app as AppWithHotkeyInternals).setting;
-  if (!setting) {
-    return;
-  }
-
-  setting.open();
-  setting.openTabById('hotkeys');
-  window.setTimeout(() => {
-    const tab = setting.activeTab;
-    if (!tab) {
-      return;
-    }
-
-    const searchEl = tab.searchInputEl ?? tab.searchComponent?.inputEl;
-    if (!searchEl) {
-      return;
-    }
-
-    searchEl.value = 'Claudian';
-    tab.updateHotkeyVisibility?.();
-  }, 100);
-}
-
-function getHotkeyForCommand(app: App, commandId: string): string | null {
-  const hotkeyManager = (app as AppWithHotkeyInternals).hotkeyManager;
-  if (!hotkeyManager) return null;
-
-  const customHotkeys = hotkeyManager.customKeys?.[commandId];
-  const defaultHotkeys = hotkeyManager.defaultKeys?.[commandId];
-  const hotkeys = customHotkeys && customHotkeys.length > 0 ? customHotkeys : defaultHotkeys;
-
-  if (!hotkeys || hotkeys.length === 0) return null;
-
-  return hotkeys.map(formatHotkey).join(', ');
-}
-
-function addHotkeySettingRow(
-  containerEl: HTMLElement,
-  app: App,
-  commandId: string,
-  translationPrefix: string,
-): void {
-  const hotkey = getHotkeyForCommand(app, commandId);
-  const item = containerEl.createDiv({ cls: 'claudian-hotkey-item' });
-  item.createSpan({
-    cls: 'claudian-hotkey-name',
-    text: t(`${translationPrefix}.name` as TranslationKey),
-  });
-  if (hotkey) {
-    item.createSpan({ cls: 'claudian-hotkey-badge', text: hotkey });
-  }
-  item.addEventListener('click', () => openHotkeySettings(app));
-}
 
 export class ClaudianSettingTab extends PluginSettingTab {
   plugin: FeatureHost;
@@ -719,17 +633,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
           void commitValue(true);
         });
       });
-
-    // --- Hotkeys ---
-
-    new Setting(container).setName(t('settings.hotkeys')).setHeading();
-
-    const hotkeyGrid = container.createDiv({ cls: 'claudian-hotkey-grid' });
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:inline-edit', 'settings.inlineEditHotkey');
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:open-view', 'settings.openChatHotkey');
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:new-session', 'settings.newSessionHotkey');
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:new-tab', 'settings.newTabHotkey');
-    addHotkeySettingRow(hotkeyGrid, this.app, 'claudian:close-current-tab', 'settings.closeTabHotkey');
 
     // --- Environment ---
 

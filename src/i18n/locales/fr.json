@@ -145,16 +145,6 @@
       "name": "Exiger Command/Ctrl+Entrée pour envoyer",
       "desc": "Lorsque cette option est activée, Entrée insère une nouvelle ligne. Command+Entrée envoie sur macOS ; Ctrl+Entrée envoie sur Windows et Linux."
     },
-    "hotkeys": "Raccourcis clavier",
-    "inlineEditHotkey": {
-      "name": "Édition en ligne"
-    },
-    "openChatHotkey": {
-      "name": "Ouvrir le chat"
-    },
-    "newSessionHotkey": {
-      "name": "Remplacer la conversation actuelle"
-    },
     "safety": "Sécurité",
     "loadUserSettings": {
       "name": "Charger les paramètres utilisateur de Claude Code",
@@ -320,7 +310,6 @@
       "reorderLabel": "Réordonner {model} ; faites glisser ou utilisez les flèches Haut et Bas",
       "default": "Par défaut",
       "unavailable": "Indisponible",
-      "unavailableTitle": "Modèle configuré non signalé actuellement par {provider}",
       "aliasLabel": "Alias (facultatif)",
       "removeLabel": "Retirer {model}",
       "noMatch": "Aucun modèle ne correspond à votre filtre.",

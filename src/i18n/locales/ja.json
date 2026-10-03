@@ -145,16 +145,6 @@
       "name": "送信に Command/Ctrl+Enter を必須にする",
       "desc": "有効にすると、Enter は改行を挿入します。macOS では Command+Enter、Windows と Linux では Ctrl+Enter で送信します。"
     },
-    "hotkeys": "ホットキー",
-    "inlineEditHotkey": {
-      "name": "インライン編集"
-    },
-    "openChatHotkey": {
-      "name": "チャットを開く"
-    },
-    "newSessionHotkey": {
-      "name": "現在の会話を置き換える"
-    },
     "safety": "セキュリティ",
     "loadUserSettings": {
       "name": "ユーザーの Claude Code 設定を読み込む",
@@ -320,7 +310,6 @@
       "reorderLabel": "{model} を並べ替え。ドラッグするか上下の矢印キーを使用します",
       "default": "デフォルト",
       "unavailable": "利用不可",
-      "unavailableTitle": "設定済みのモデルは現在 {provider} から報告されていません",
       "aliasLabel": "エイリアス(任意)",
       "removeLabel": "{model} を削除",
       "noMatch": "フィルターに一致するモデルはありません。",

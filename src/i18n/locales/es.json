@@ -145,16 +145,6 @@
       "name": "Requerir Command/Ctrl+Enter para enviar",
       "desc": "Cuando está activado, Enter inserta un salto de línea. Command+Enter envía en macOS; Ctrl+Enter envía en Windows y Linux."
     },
-    "hotkeys": "Atajos de teclado",
-    "inlineEditHotkey": {
-      "name": "Edición en línea"
-    },
-    "openChatHotkey": {
-      "name": "Abrir chat"
-    },
-    "newSessionHotkey": {
-      "name": "Reemplazar conversación actual"
-    },
     "safety": "Seguridad",
     "loadUserSettings": {
       "name": "Cargar configuración de usuario de Claude Code",
@@ -320,7 +310,6 @@
       "reorderLabel": "Reordenar {model}; arrastra o usa las teclas de flecha arriba y abajo",
       "default": "Predeterminado",
       "unavailable": "No disponible",
-      "unavailableTitle": "{provider} no informa actualmente del modelo configurado",
       "aliasLabel": "Alias (opcional)",
       "removeLabel": "Quitar {model}",
       "noMatch": "Ningún modelo coincide con tu filtro.",

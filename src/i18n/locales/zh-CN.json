@@ -145,16 +145,6 @@
       "name": "需要 Command/Ctrl+Enter 发送",
       "desc": "启用后，Enter 会插入换行。macOS 使用 Command+Enter 发送；Windows 和 Linux 使用 Ctrl+Enter 发送。"
     },
-    "hotkeys": "快捷键",
-    "inlineEditHotkey": {
-      "name": "内联编辑"
-    },
-    "openChatHotkey": {
-      "name": "打开聊天"
-    },
-    "newSessionHotkey": {
-      "name": "替换当前会话"
-    },
     "safety": "安全",
     "loadUserSettings": {
       "name": "加载用户 Claude Code 设置",
@@ -320,7 +310,6 @@
       "reorderLabel": "调整 {model} 的顺序；拖动或使用上下方向键",
       "default": "默认",
       "unavailable": "不可用",
-      "unavailableTitle": "{provider} 当前未报告此已配置的模型",
       "aliasLabel": "别名（可选）",
       "removeLabel": "移除 {model}",
       "noMatch": "没有与筛选条件匹配的模型。",

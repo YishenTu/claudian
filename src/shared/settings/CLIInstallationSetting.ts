@@ -98,7 +98,6 @@ export function renderCLIInstallationSetting(
         ? (installation.version ? `v${installation.version.replace(/^v/, '')}` : t('settings.cliInstallation.versionUnavailable'))
         : '';
       path.textContent = installation.path ?? t('settings.cliInstallation.notFound');
-      path.title = installation.path ?? '';
       status.textContent = t(installation.path
         ? (installation.source === 'custom' ? 'settings.cliInstallation.custom' : 'settings.cliInstallation.auto')
         : 'settings.cliInstallation.notFound');

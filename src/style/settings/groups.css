@@ -129,8 +129,7 @@
 .claudian-settings :is(
   .claudian-sp-item,
   .claudian-snippet-item,
-  .claudian-context-limits-item,
-  .claudian-hotkey-item
+  .claudian-context-limits-item
 ):hover {
   background: transparent;
 }

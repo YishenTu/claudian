@@ -145,16 +145,6 @@
       "name": "Require Command/Ctrl+Enter to send",
       "desc": "When enabled, Enter inserts a newline. Command+Enter sends on macOS; Ctrl+Enter sends on Windows and Linux."
     },
-    "hotkeys": "Hotkeys",
-    "inlineEditHotkey": {
-      "name": "Inline Edit"
-    },
-    "openChatHotkey": {
-      "name": "Open Chat"
-    },
-    "newSessionHotkey": {
-      "name": "Replace Current Conversation"
-    },
     "safety": "Safety",
     "loadUserSettings": {
       "name": "Load user Claude Code settings",
@@ -320,7 +310,6 @@
       "reorderLabel": "Reorder {model}; drag or use the Up and Down Arrow keys",
       "default": "Default",
       "unavailable": "Unavailable",
-      "unavailableTitle": "Configured model not currently reported by {provider}",
       "aliasLabel": "Alias (optional)",
       "removeLabel": "Remove {model}",
       "noMatch": "No models match your filter.",

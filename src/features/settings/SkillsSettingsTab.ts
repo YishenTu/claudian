@@ -108,7 +108,7 @@ export class SkillsSettingsTab {
           if (linked) {
             actions.createSpan({
               cls: 'claudian-skills-synced-dot',
-              attr: { role: 'img', 'aria-label': t('settings.skills.synced'), title: t('settings.skills.synced') },
+              attr: { role: 'img', 'aria-label': t('settings.skills.synced') },
             });
           } else {
             this.#renderSyncButton(actions, 'settings.skills.actions.resync');

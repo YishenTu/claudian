@@ -145,16 +145,6 @@
       "name": "Требовать Command/Ctrl+Enter для отправки",
       "desc": "Если включено, Enter вставляет новую строку. Command+Enter отправляет на macOS; Ctrl+Enter отправляет на Windows и Linux."
     },
-    "hotkeys": "Горячие клавиши",
-    "inlineEditHotkey": {
-      "name": "Инлайн-редактирование"
-    },
-    "openChatHotkey": {
-      "name": "Открыть чат"
-    },
-    "newSessionHotkey": {
-      "name": "Заменить текущий диалог"
-    },
     "safety": "Безопасность",
     "loadUserSettings": {
       "name": "Загружать пользовательские настройки Claude Code",
@@ -320,7 +310,6 @@
       "reorderLabel": "Изменить порядок {model}; перетащите или используйте клавиши со стрелками вверх и вниз",
       "default": "По умолчанию",
       "unavailable": "Недоступна",
-      "unavailableTitle": "Настроенная модель сейчас не сообщается провайдером {provider}",
       "aliasLabel": "Псевдоним (необязательно)",
       "removeLabel": "Удалить {model}",
       "noMatch": "Нет моделей, соответствующих фильтру.",

@@ -145,16 +145,6 @@
       "name": "Command/Ctrl+Enter로 보내기 필수",
       "desc": "활성화하면 Enter는 줄바꿈을 삽입합니다. macOS에서는 Command+Enter, Windows와 Linux에서는 Ctrl+Enter로 보냅니다."
     },
-    "hotkeys": "단축키",
-    "inlineEditHotkey": {
-      "name": "인라인 편집"
-    },
-    "openChatHotkey": {
-      "name": "채팅 열기"
-    },
-    "newSessionHotkey": {
-      "name": "현재 대화 바꾸기"
-    },
     "safety": "보안",
     "loadUserSettings": {
       "name": "사용자 Claude Code 설정 로드",
@@ -320,7 +310,6 @@
       "reorderLabel": "{model} 순서 변경. 드래그하거나 위/아래 화살표 키를 사용하세요",
       "default": "기본값",
       "unavailable": "사용 불가",
-      "unavailableTitle": "구성된 모델이 현재 {provider}에서 보고되지 않습니다",
       "aliasLabel": "별칭 (선택)",
       "removeLabel": "{model} 제거",
       "noMatch": "필터와 일치하는 모델이 없습니다.",

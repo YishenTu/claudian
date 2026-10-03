@@ -377,7 +377,6 @@ export function renderProviderModelPicker(
       if (isSelected) {
         rowEl.classList.add('claudian-provider-model-picker-row--selected');
       }
-      rowEl.title = model.id;
 
       const checkboxEl = rowEl.createEl('input', { type: 'checkbox' });
       checkboxEl.checked = isSelected;
@@ -401,7 +400,6 @@ export function renderProviderModelPicker(
         });
         if (model.isAvailable === false) {
           badgeEl.classList.add('claudian-provider-model-picker-row-badge--unavailable');
-          badgeEl.title = model.unavailableMessage ?? t('settings.modelPicker.unavailableTitle', { provider: options.providerName });
         }
       }
       textEl.createDiv({
