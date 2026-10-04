@@ -632,7 +632,9 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         await this.#refreshState(active.abortController.signal);
         if (!this.isActive(active)) return;
       }
-      if (!promptHandled || active.runStarted) await this.#refreshNativeMessageIds(active, previousLeafId);
+      // Without a run, the turn has no checkpoint; the session cursor still follows the native leaf.
+      const hasCheckpoint = !promptHandled || active.runStarted;
+      if (hasCheckpoint) await this.#refreshNativeMessageIds(active, previousLeafId);
       const usage = await this.#fetchUsage(
         encoded.model,
         active.abortController.signal,
@@ -648,7 +650,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       this.#finishRequested(active, {
         nativeUserMessageId: active.nativeUserMessageId,
         nativeAssistantId: active.nativeAssistantId,
-        nativeCheckpointId: getPiState(this.providerState).leafEntryId,
+        ...(hasCheckpoint ? { nativeCheckpointId: getPiState(this.providerState).leafEntryId } : {}),
         ...(active.turnStats ? { turnStats: active.turnStats } : {}),
         reason: 'completed',
         type: 'turn_completed',

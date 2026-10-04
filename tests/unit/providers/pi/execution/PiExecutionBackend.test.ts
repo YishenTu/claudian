@@ -333,13 +333,19 @@ describe('PiExecutionBackend', () => {
       expect((await eventsPromise).at(-1)).toMatchObject({ type: 'turn_completed',
         turnStats: { outputTokens: 125, durationMs: 2500 } });
 
-      // A command consumed by an extension must not reuse the preceding answer's identity or stats.
+      const answerCursor = harness.session.getSnapshot().providerState?.leafEntryId;
+      expect(answerCursor).toBe('a');
+
+      // A command consumed by an extension must not reuse the preceding answer's identity, checkpoint, or stats.
       harness.responses.set('prompt', { disposition: 'handled' });
       const handledEvents = await collect(harness.session.execute(createRequest()).events);
       expect(handledEvents.at(-1)).toMatchObject({
         type: 'turn_completed', nativeUserMessageId: undefined, nativeAssistantId: undefined,
       });
       expect(handledEvents.at(-1)).not.toHaveProperty('turnStats');
+      expect(handledEvents.at(-1)).not.toHaveProperty('nativeCheckpointId');
+      // The session cursor still tracks the native leaf for the next turn.
+      expect(harness.session.getSnapshot().providerState?.leafEntryId).toBe(answerCursor);
     } finally {
       await harness.session.dispose();
       await fs.rm(tempDir, { recursive: true, force: true });
