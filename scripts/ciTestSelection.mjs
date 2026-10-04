@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, realpathSync } from 'node:fs';
+import { appendFileSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,13 +15,22 @@ const isDocumentation = file => file.endsWith('.md') || file.startsWith('docs/')
 const isJestTest = file => /^tests\/(?:unit|integration)\/.*\.test\.ts$/.test(file);
 const isGraphInput = file => /^(?:src|tests)\/.*\.(?:[cm]?[jt]sx?|json)$/.test(file);
 
+const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const styleTestRoot = 'tests/unit/style';
+// Every style suite reads CSS through fs; list them from disk so new suites are never skipped.
+const styleSuiteDirectory = path.join(repositoryRoot, styleTestRoot);
+const styleSuites = (existsSync(styleSuiteDirectory) ? readdirSync(styleSuiteDirectory, { recursive: true }) : [])
+  .map(file => `${styleTestRoot}/${String(file).split(path.sep).join('/')}`)
+  .filter(file => file.endsWith('.test.ts'))
+  .sort();
+
 // These consumers read files through fs rather than imports, so Jest cannot find their edges.
 const fileConsumers = [
   [/^src\/i18n\/locales\/.*\.json$/, ['tests/integration/build/dependency-envelope.test.ts']],
   [/^src\/style\//, [
-    'tests/unit/style/components/code.test.ts',
-    'tests/unit/style/components/messages.test.ts',
+    ...styleSuites,
     'tests/unit/features/chat/tabs/TabAttentionStyles.test.ts',
+    'tests/unit/features/chat/ui/NavigationSidebar.dom.test.ts',
   ]],
   [/^tests\/fixtures\/providers\/grok\/history\//, [
     'tests/unit/providers/grok/history/GrokConversationHistoryService.test.ts',
