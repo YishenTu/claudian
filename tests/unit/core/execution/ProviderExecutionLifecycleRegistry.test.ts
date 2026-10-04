@@ -101,6 +101,25 @@ it('preserves leases for a provider that owns environment transitions while reta
   expect(backend.sessions[0].disposeCalls).toBe(1);
 });
 
+it('evaluates transition preservation for each session independently', async () => {
+  const registry = new ProviderExecutionLifecycleRegistry();
+  const backend = new TestBackend('mixed-provider');
+  const shared = registry.acquire(backend, createSessionConfig(), 'chat');
+  const independent = registry.acquire(backend, createSessionConfig(), 'chat');
+  registry.registerTransitionHook('mixed-provider', {
+    preserveSessions: (session?: ProviderExecutionSession) => session === shared.session,
+    beforeTransition: () => undefined,
+  });
+  await registry.runTransition(['mixed-provider'], async () => {
+    expect(shared.isCurrent()).toBe(true);
+    expect(independent.isCurrent()).toBe(false);
+    expect(backend.sessions[1].disposeCalls).toBe(1);
+  });
+  expect(shared.isCurrent()).toBe(true);
+  await registry.dispose();
+  expect(backend.sessions[0].disposeCalls).toBe(1);
+});
+
 it('invalidates retained leases when the transition disables their provider', async () => {
   const registry = new ProviderExecutionLifecycleRegistry();
   const backend = new TestBackend('shared-provider');

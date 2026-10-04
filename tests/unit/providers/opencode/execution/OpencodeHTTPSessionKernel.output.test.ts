@@ -23,7 +23,7 @@ beforeEach(async () => {
   output = []; requests = [];
   read = jest.fn().mockResolvedValue({ data: { output: '', cursor: 0, size: 0, truncated: false } });
   const lease = {
-    databasePath: null, isReusable: () => true,
+    databasePath: null, isReusable: () => true, onRetired: () => {}, onSuperseded: () => {},
     subscribe: async (callback: typeof receive) => { receive = callback; },
     registerAgents: async () => ({}), waitForActivation: async () => {}, refreshGlobalForms: async () => {},
     dispose: async () => {},

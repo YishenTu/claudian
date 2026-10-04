@@ -531,6 +531,8 @@ export interface ProviderSubagentHistoryService {
 }
 
 export interface ProviderHistoryPathContext {
+  /** Initialize provider-owned resources lazily when native history needs them. */
+  ensureWorkspace?: () => Promise<void>;
   environment: NodeJS.ProcessEnv;
   hostPlatform?: NodeJS.Platform;
   settings?: Record<string, unknown>;

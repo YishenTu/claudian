@@ -9,7 +9,8 @@ import { type OpencodeServerLease, type OpencodeServerService, withOpencodeServe
 import { assertOpencodeSessionCompatibility, detectOpencodeNativeVersion, parseOpencodeNativeVersion } from '../runtime/OpencodeVersion';
 
 export interface OpencodeSessionForkOptions {
-  serverService?: OpencodeServerService | null;
+  /** Resolved only after detection confirms a v2 runtime, including for stored v1 sources. */
+  resolveServerService?: () => Promise<OpencodeServerService | null | undefined>;
   nativeVersion?: 1 | 2;
   onNativeVersion?: (version: 1 | 2 | undefined) => void;
   cliPath: string;
@@ -24,7 +25,7 @@ export async function forkOpencodeSession(options: OpencodeSessionForkOptions): 
   const version = await detectOpencodeNativeVersion(options.cliPath, options.environment);
   assertOpencodeSessionCompatibility(options.nativeVersion, version);
   if (version === 2) {
-    return withOpencodeServerLease(options.serverService, options.cliPath, options.cwd, options.environment, async client => {
+    return withOpencodeServerLease(await options.resolveServerService?.(), options.cliPath, options.cwd, options.environment, async client => {
       const child = await forkOpencodeHTTPSession(client, options.sourceSessionId, options.resumeAt);
       options.onNativeVersion?.(2);
       return child;

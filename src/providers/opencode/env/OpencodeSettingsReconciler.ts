@@ -43,6 +43,10 @@ function invalidateOpencodeConversationSessions(conversations: Conversation[]): 
     }
 
     const state = getOpencodeState(conversation.providerState);
+    // V2 resumes against its captured database, including while the old launch drains.
+    if (state.nativeVersion === 2 && state.databasePath && state.databasePath !== ':memory:') {
+      continue;
+    }
     if (!conversation.sessionId && !state.databasePath) {
       continue;
     }

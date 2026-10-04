@@ -2,6 +2,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
+import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import type { Conversation } from '@/core/types';
 import { OpencodeConversationHistoryService } from '@/providers/opencode/history/OpencodeConversationHistoryService';
@@ -69,9 +70,15 @@ process.stdin.resume(); process.stdin.on('end', () => server.close());
   const history = kind === 'standalone' ? new OpencodeConversationHistoryService() : opencodeProviderRegistration.historyService!;
   const conversation = { id: 'local', sessionId: 'ses_parent', messages: [], providerState: { nativeVersion: 2, databasePath } } as unknown as Conversation;
   const context = { settings: { providerConfigs: { opencode: { cliPath } } }, vaultPath: root, environment: { ...process.env, XDG_DATA_HOME: path.join(root, 'data'), OPENCODE_DB: path.join(root, 'untrusted.db') } };
+  const registry = new ProviderExecutionLifecycleRegistry();
+  const host: any = { settings: context.settings, app: { vault: { adapter: { basePath: root } } }, storage: { getAdapter: () => ({}) },
+    executionLifecycleRegistry: registry, runProviderExecutionTransition: (ids: string[], mutation: any) => registry.runTransition(ids, mutation),
+    getResolvedProviderCliPath: async () => cliPath };
+  ProviderWorkspaceRegistry.register('opencode', opencodeProviderRegistration.workspace!);
+  const historyContext = { ...context, ensureWorkspace: () => ProviderWorkspaceRegistry.ensureInitialized(host, 'opencode', 'history') };
   try {
-    await expect(history.recoverConversationModelSelection!(conversation, root, context)).resolves.toBe('opencode:deepseek/chat');
-    Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, context));
+    await expect(history.recoverConversationModelSelection!(conversation, root, historyContext)).resolves.toBe('opencode:deepseek/chat');
+    Object.assign(conversation, await history.hydrateConversationHistory(conversation, root, historyContext));
     expect(conversation.messages.map(message => message.content)).toEqual(['Native question', 'Native answer']);
     // The child session's own tools are restored into the parent's subagent card.
     expect(conversation.messages[1].toolCalls?.[0].subagent).toMatchObject({
@@ -91,7 +98,7 @@ process.stdin.resume(); process.stdin.on('end', () => server.close());
       id: 'call_background_again', agentId: 'ses_background', mode: 'async', result: 'Second background answer',
       toolCalls: [{ id: 'call_read_b', result: 'B body' }],
     });
-    await expect(history.buildForkProviderState('ses_parent', '', conversation.providerState, root, context))
+    await expect(history.buildForkProviderState('ses_parent', '', conversation.providerState, root, historyContext))
       .resolves.toMatchObject({ sessionId: 'ses_child', databasePath, nativeVersion: 2 });
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  } finally { await ProviderWorkspaceRegistry.disposeInitialized(); ProviderWorkspaceRegistry.clear(); rmSync(root, { recursive: true, force: true }); }
 }, 15000);

@@ -39,6 +39,7 @@ import { extractUserDisplayContent } from '../../utils/context';
 import { rewriteVaultPathAfterRename } from '../../utils/path';
 
 interface ConversationRepositoryBaseDeps {
+  ensureProviderWorkspace?: (providerId: ProviderId) => Promise<void>;
   getSettings: () => Record<string, unknown>;
   getVaultPath: () => string | null;
   onConversationDeleted: (conversationId: string) => Promise<void>;
@@ -1683,6 +1684,9 @@ export class ConversationRepository {
   ): ProviderHistoryPathContext {
     const settings = this.deps.getSettings();
     return {
+      ensureWorkspace: this.deps.ensureProviderWorkspace
+        ? () => this.deps.ensureProviderWorkspace!(providerId)
+        : undefined,
       environment: {
         ...process.env,
         ...getRuntimeEnvironmentVariables(settings, providerId),

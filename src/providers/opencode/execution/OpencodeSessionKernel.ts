@@ -25,12 +25,16 @@ export class DefaultOpencodeSessionKernel implements OpencodeSessionKernel {
     if (this.disposed) throw new Error('OpenCode session is disposed');
     assertOpencodeSessionCompatibility(this.options.nativeVersion, version);
     const nativeOptions = { ...this.options, databasePath: this.persistence.databasePath(version, this.options.databasePath) };
-    const nativeEnvironment = buildOpencodeRuntimeEnv(this.options.plugin.settings, cliPath, nativeOptions.databasePath);
+    const nativeEnvironment = { ...environment, ...(nativeOptions.databasePath ? { OPENCODE_DB: nativeOptions.databasePath } : {}) };
     this.kernel = version === 2
       ? new OpencodeHTTPSessionKernel(nativeOptions, cliPath, nativeEnvironment, this.serverService, this.persistence)
       : new DefaultOpencodeACPSessionKernel(nativeOptions, { cliPath, environment: nativeEnvironment, version });
     await this.kernel.connect(options);
   }
+
+  get usesSharedRuntime(): boolean | undefined { return this.kernel ? this.kernel instanceof OpencodeHTTPSessionKernel : undefined; }
+  get hasNativeWork(): boolean { return this.kernel?.hasNativeWork ?? false; }
+  whenIdle(): Promise<void> { return this.kernel?.whenIdle?.() ?? Promise.resolve(); }
 
   openSession(...args: Parameters<OpencodeSessionKernel['openSession']>) { return this.requireKernel().openSession(...args); }
   setConfigOption(...args: Parameters<OpencodeSessionKernel['setConfigOption']>) { return this.requireKernel().setConfigOption(...args); }

@@ -5,6 +5,7 @@ export const OPENCODE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Ob
   providerId: 'opencode',
   supportsResponseThroughput: true,
   supportsNativeHistory: true,
+  startsSharedRuntimeOnTabPresence: true,
   supportsEphemeralSessions: true,
   supportsRewind: false,
   supportsFork: true,

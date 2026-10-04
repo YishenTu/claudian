@@ -22,6 +22,10 @@ export interface OpencodeNativeSessionInfo {
 }
 
 export interface OpencodeSessionKernelOptions {
+  readonly onRetired?: () => void;
+  /** The kernel's launch is no longer the default, so its metadata cannot be published. */
+  readonly onSuperseded?: () => void;
+  readonly onNativeWorkChanged?: () => void;
   readonly openNativeInteraction?: () => { turnId: string; close(): void } | undefined;
   readonly onNativeTaskStarted?: (sessionId: string, originatingTurnId: string) => string | undefined;
   readonly onNativeTaskCompleted?: (event: Omit<ProviderAsyncSubagentCompletedEvent, 'scope'>) => void;
@@ -40,6 +44,9 @@ export interface OpencodeSessionKernelOptions {
 }
 
 export interface OpencodeSessionKernel {
+  readonly usesSharedRuntime?: boolean;
+  readonly hasNativeWork?: boolean;
+  whenIdle?(): Promise<void>;
   connect(options: OpencodeKernelConnectOptions): Promise<void>;
   openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo>;
   setConfigOption(request: Record<string, unknown>): Promise<{

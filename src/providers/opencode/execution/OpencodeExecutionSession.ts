@@ -132,6 +132,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
   private activeRun: OpencodeExecutionRun | null = null;
   private kernel: OpencodeSessionKernel | null = null;
   private kernelGeneration = 0;
+  private kernelRetired = false;
+  private kernelMetadataController = new AbortController();
+
+  get usesSharedRuntime(): boolean { return this.kernel?.usesSharedRuntime ?? this.nativeVersion === 2; }
   private kernelConfigurationKey: string | null = null;
   private kernelDisposalPromise: Promise<void> | null = null;
   private nativeInfo: OpencodeNativeSessionInfo | null = null;
@@ -268,6 +272,10 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     let phase: 'connect' | 'open' | 'run' = 'connect';
     let resumeAttempt: string | null = null;
     try {
+      if (this.usesSharedRuntime) {
+        await this.options.serverService.waitUntilAvailable(request.signal);
+        if (!this.#isRunCurrent(run, generation)) return;
+      }
       assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
       const pendingDisposal = this.kernelDisposalPromise;
       if (pendingDisposal) {
@@ -280,8 +288,13 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       if (
         kernel
         && native
-        && this.kernelConfigurationKey !== kernelConfigurationKey
+        && (this.kernelRetired || this.kernelConfigurationKey !== kernelConfigurationKey)
       ) {
+        // A new turn cannot reuse a retired generation or interrupt its descendants.
+        if (this.kernelRetired) {
+          await kernel.whenIdle?.();
+          if (!this.#isRunCurrent(run, generation)) return;
+        }
         await this.#disposeKernel();
         if (!this.#isRunCurrent(run, generation)) return;
         kernel = null;
@@ -289,7 +302,20 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       }
       if (!kernel || !native) {
         const kernelGeneration = ++this.kernelGeneration;
+        this.kernelMetadataController = new AbortController();
         kernel = this.createKernel({
+          onNativeWorkChanged: () => {
+            if (kernelGeneration === this.kernelGeneration && !this.disposed) this.#releaseRetiredKernel();
+          },
+          onSuperseded: () => {
+            if (kernelGeneration === this.kernelGeneration && !this.disposed) this.kernelMetadataController.abort();
+          },
+          onRetired: () => {
+            if (kernelGeneration !== this.kernelGeneration || this.disposed) return;
+            this.kernelRetired = true;
+            this.kernelMetadataController.abort();
+            this.#releaseRetiredKernel();
+          },
           config: this.config,
           databasePath: this.databasePath ?? undefined,
           forkSource: getOpencodeState(this.seedProviderState).forkSource,
@@ -331,6 +357,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
               this.backgroundTurn = null;
               this.snapshot = this.#createSnapshot(this.backgroundScopes.size ? 'executing' : 'idle');
               this.#emitSessionSnapshot();
+              this.#releaseRetiredKernel();
             }
           },
           onNativeOutput: (event, childSessionId) => {
@@ -382,7 +409,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         if (!this.#isRunCurrent(run, generation)) return;
         phase = 'run';
         this.nativeInfo = native;
-        await projectOpencodeMetadata(this.plugin, native);
+        await projectOpencodeMetadata(this.plugin, native, this.kernelMetadataController.signal);
       } else {
         this.snapshot = this.#createSnapshot('executing');
         phase = 'run';
@@ -430,6 +457,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         ? { reason: 'provider-cancelled', scope: run.scope(), type: 'cancelled' }
         : { reason: 'completed', scope: run.scope(), type: 'turn_completed', ...(turnStats ? { turnStats } : {}) });
       this.activeRun = null;
+      this.#releaseRetiredKernel();
     } catch (error) {
       if (!this.#isRunCurrent(run, generation)) return;
       const missing = phase === 'open'
@@ -474,6 +502,13 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     if (!this.activeRun && !this.backgroundTurn && this.backgroundScopes.size === 0) {
       this.snapshot = this.#createSnapshot('idle');
       this.#emitSessionSnapshot();
+      this.#releaseRetiredKernel();
+    }
+  }
+
+  #releaseRetiredKernel(): void {
+    if (this.kernelRetired && !this.activeRun && !this.backgroundTurn && this.backgroundScopes.size === 0 && !this.kernel?.hasNativeWork) {
+      void this.#disposeKernel();
     }
   }
 
@@ -507,7 +542,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     } catch {
       return;
     }
-    if (result.metadata?.type === 'commands') {
+    if (result.metadata?.type === 'commands' && !this.kernelMetadataController.signal.aborted) {
       const commands = result.metadata.commands.map((command) => ({
         ...command,
       }));
@@ -522,7 +557,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       }
       await projectOpencodeMetadata(this.plugin, {
         configOptions: result.metadata.configOptions,
-      });
+      }, this.kernelMetadataController.signal);
     }
     if (
       acceptingLiveOutput
@@ -597,7 +632,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       await projectOpencodeMetadata(this.plugin, {
         configOptions,
         selectedRawModelId: selectedModel,
-      });
+      }, this.kernelMetadataController.signal);
     }
 
     const thoughtState = extractACPSessionThoughtLevelState({ configOptions });
@@ -767,6 +802,9 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       this.backgroundTurn = null;
     }
     const kernel = this.kernel;
+    const releaseCleanup = this.kernelRetired && !this.disposed;
+    this.kernelMetadataController.abort();
+    this.kernelRetired = false;
     this.kernel = null;
     this.nativeInfo = null;
     this.kernelConfigurationKey = null;
@@ -778,6 +816,8 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         await kernel.dispose();
       } catch {
         // Kernel disposal already owns best-effort cleanup for every resource.
+      } finally {
+        if (releaseCleanup) await this.persistence.releaseClient();
       }
     })();
     this.kernelDisposalPromise = pending;

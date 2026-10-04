@@ -6,10 +6,13 @@ import type {
   ProviderWorkspaceServices,
 } from '../../../core/providers/types';
 import { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
+import { OpencodeExecutionSession } from '../execution/OpencodeExecutionSession';
 import { OpencodeServerService } from '../http/OpencodeServerService';
 import { OpencodeMetadataService } from '../metadata/OpencodeMetadataService';
 import { OpencodeCLIResolver } from '../runtime/OpencodeCLIResolver';
 import { createOpencodeModels } from '../runtime/OpencodeModels';
+import { OpencodeSharedRuntime } from '../runtime/OpencodeSharedRuntime';
+import { getOpencodeProviderSettings } from '../settings';
 import { createOpencodeSettingsTabRenderer } from '../ui/OpencodeSettingsTab';
 import { OpencodeCommandLoader } from './OpencodeCommandLoader';
 
@@ -24,9 +27,12 @@ export async function createOpencodeWorkspaceServices(
 ): Promise<OpencodeWorkspaceServices> {
   const commandCatalog = new OpencodeCommandCatalog();
   const serverService = new OpencodeServerService();
+  const runtime = new OpencodeSharedRuntime(plugin, serverService, version => commandCatalog.setNativeVersion(version));
   const unregister = plugin.executionLifecycleRegistry.registerTransitionHook('opencode', {
-    beforeTransition: () => serverService.beginTransition(),
-    afterTransition: () => serverService.endTransition(),
+    preserveSessions: session => getOpencodeProviderSettings(plugin.settings).enabled
+      && session instanceof OpencodeExecutionSession && session.usesSharedRuntime,
+    beforeTransition: () => runtime.beginTransition(),
+    afterTransition: () => runtime.endTransition(),
   });
   const metadataService = new OpencodeMetadataService(plugin, { commandCatalog, serverService });
 
@@ -39,9 +45,11 @@ export async function createOpencodeWorkspaceServices(
     cliResolver,
     metadataService,
     serverService,
+    startRuntime: () => runtime.start(),
     commandLoader: new OpencodeCommandLoader(metadataService),
     settingsTabRenderer: createOpencodeSettingsTabRenderer({ cliResolver, metadataService, modelCatalog }),
     dispose: async () => {
+      runtime.dispose();
       unregister();
       unregisterModels();
       await Promise.all([metadataService.dispose(), serverService.dispose(), modelCatalog.dispose()]);

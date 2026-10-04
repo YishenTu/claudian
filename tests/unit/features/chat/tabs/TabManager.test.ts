@@ -7,6 +7,7 @@ import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { TabManager } from '@/features/chat/tabs/TabManager';
 import { TabSession } from '@/features/chat/tabs/TabSession';
+import { OPENCODE_PROVIDER_CAPABILITIES } from '@/providers/opencode/capabilities';
 
 const mockDestroyTab = jest.fn().mockResolvedValue(undefined);
 const mockDrainTabForShutdownSnapshot = jest.fn().mockResolvedValue({
@@ -152,7 +153,7 @@ jest.mock('@/core/providers/ProviderWorkspaceRegistry', () => ({
 
 jest.mock('@/core/providers/ProviderRegistry', () => ({
   ProviderRegistry: {
-    getRegisteredProviderIds: jest.fn().mockReturnValue(['claude', 'codex']),
+    getRegisteredProviderIds: jest.fn().mockReturnValue(['claude', 'codex', 'opencode']),
     getEnabledProviderIds: jest.fn().mockReturnValue(['claude']),
     getBlankTabProviderIds: jest.fn().mockReturnValue(['claude']),
     isEnabled: jest.fn().mockReturnValue(true),
@@ -253,17 +254,17 @@ describe('TabManager provider execution orchestration', () => {
     });
   });
 
-  it.each([
-    { conversationId: 'codex-history' },
-    { conversationId: null, providerId: 'codex' as const, draftModel: 'codex:gpt-5' },
-  ])('starts a shared runtime for an inactive restored provider tab without preparing execution: %o', async restored => {
+  it.each(['codex', 'opencode'].flatMap(providerId => [
+    { provider: providerId, restored: { conversationId: `${providerId}-history` } },
+    { provider: providerId, restored: { conversationId: null, providerId, draftModel: `${providerId}:model` } },
+  ]))('starts a shared runtime for an inactive restored provider tab without preparing execution: %o', async ({ provider, restored }) => {
     const startRuntime = jest.fn().mockResolvedValue(undefined);
-    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => ({
-      providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === 'codex',
+    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => (providerId === 'opencode' ? OPENCODE_PROVIDER_CAPABILITIES : {
+      providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === provider,
     } as any));
-    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === 'codex' ? { startRuntime } : {});
+    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === provider ? { startRuntime } : {});
     const { manager } = createManager(createPlugin({
-      getCachedConversation: (id: string) => ({ id, providerId: id === 'codex-history' ? 'codex' : 'claude' }),
+      getCachedConversation: (id: string) => ({ id, providerId: id === `${provider}-history` ? provider : 'claude' }),
     }));
     await manager.restoreState({
       openTabs: [
@@ -279,16 +280,16 @@ describe('TabManager provider execution orchestration', () => {
     await manager.destroy();
   });
 
-  it('starts a shared runtime when a blank tab selects its provider without preparing execution', async () => {
+  it.each(['codex', 'opencode'])('starts a shared runtime when a blank tab selects %s without preparing execution', async provider => {
     const startRuntime = jest.fn().mockResolvedValue(undefined);
-    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => ({
-      providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === 'codex',
+    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => (providerId === 'opencode' ? OPENCODE_PROVIDER_CAPABILITIES : {
+      providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === provider,
     } as any));
-    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === 'codex' ? { startRuntime } : {});
+    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === provider ? { startRuntime } : {});
     const { manager } = createManager();
     const tab = await manager.createTab();
     expect(startRuntime).not.toHaveBeenCalled();
-    tab!.session.selectDraft('codex', 'codex:gpt-5');
+    tab!.session.selectDraft(provider, `${provider}:model`);
     mockCreateTabRuntime.mock.calls[0][0].onDraftModelChanged(tab, tab!.draftModel);
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(startRuntime).toHaveBeenCalledTimes(1);

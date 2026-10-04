@@ -481,6 +481,7 @@ export default class ClaudianPlugin extends Plugin {
       this.settingsCoordinator,
     );
     this.conversationRepository = new ConversationRepository({
+      ensureProviderWorkspace: providerId => ProviderWorkspaceRegistry.ensureInitialized(this.providerHost, providerId, 'history'),
       getSettings: () => this.settings,
       getVaultPath: () => getVaultPath(this.app),
       persistence: sharedStorage.conversationPersistence,

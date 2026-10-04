@@ -35,7 +35,10 @@ export const opencodeProviderRegistration: ProviderModule = {
   displayName: 'OpenCode',
   environmentKeyPatterns: [/^OPENCODE_/i],
   // History recovery can run before the workspace is initialized lazily.
-  historyService: new OpencodeConversationHistoryService(() => maybeGetOpencodeWorkspaceServices()?.serverService),
+  historyService: new OpencodeConversationHistoryService(async context => {
+    if (!maybeGetOpencodeWorkspaceServices()) await context?.ensureWorkspace?.();
+    return maybeGetOpencodeWorkspaceServices()?.serverService;
+  }),
   isEnabled: (settings) => getOpencodeProviderSettings(settings).enabled,
   setEnabled: (settings, enabled) => updateOpencodeProviderSettings(settings, { enabled }),
   settingsReconciler: opencodeSettingsReconciler,

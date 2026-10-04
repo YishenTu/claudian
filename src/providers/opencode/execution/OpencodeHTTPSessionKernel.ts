@@ -38,7 +38,6 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private databasePath: string | null = null;
   private model: NativeModel | null = null;
   private models: Array<Record<string, unknown> & { providerID: string; id: string; name: string }> = [];
-  private commands = new Set<string>();
   private profile: OpencodeKernelConnectOptions['profile'] = 'managed';
   private readonly text = new Map<string, string>();
   private readonly children = new Map<string, NativeChild>();
@@ -49,15 +48,36 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private pending: PendingPrompt | null = null;
   private readonly steers = new Map<string, PendingSteer>();
   private cancellation: Promise<unknown> | null = null;
+  private readonly idleWaiters = new Set<() => void>();
 
   private agents: Record<string, string> = {};
   constructor(private readonly options: OpencodeSessionKernelOptions, private readonly cliPath: string, private readonly environment: NodeJS.ProcessEnv, private readonly serverService: OpencodeServerService, private readonly persistence: OpencodeSessionPersistence) {}
+
+  get hasNativeWork(): boolean {
+    return !this.disposed && (!!this.pending || this.children.size > 0 || this.interactions.size > 0
+      || this.globalForms.size > 0 || this.steers.size > 0 || this.cancellation !== null);
+  }
+
+  whenIdle(): Promise<void> {
+    if (!this.hasNativeWork) return Promise.resolve();
+    return new Promise(resolve => this.idleWaiters.add(resolve));
+  }
+
+  private workChanged(): void {
+    if (!this.hasNativeWork) {
+      for (const resolve of this.idleWaiters) resolve();
+      this.idleWaiters.clear();
+    }
+    this.options.onNativeWorkChanged?.();
+  }
 
   async connect(options: OpencodeKernelConnectOptions): Promise<void> {
     this.profile = options.profile;
     this.client = await this.serverService.acquire(this.cliPath, this.options.config.vaultWorkingDirectory, this.environment, this.controller.signal);
     if (this.disposed) await this.client.dispose();
     this.controller.signal.throwIfAborted();
+    this.client.onRetired(() => this.options.onRetired?.());
+    this.client.onSuperseded(() => this.options.onSuperseded?.());
     this.databasePath = this.client.databasePath;
     await this.client.subscribe(event => this.handleEvent(event), error => this.fail(error), () => !this.disposed && !!this.sessionId && !!this.options.openNativeInteraction);
     this.agents = await this.client.registerAgents(
@@ -72,8 +92,6 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         : []),
       models => models.length > 0, 5000, this.controller.signal,
     );
-    const catalog = await this.client.request<{ data: Array<{ name: string }> }>('/api/command');
-    this.commands = new Set(catalog.data.map(command => command.name));
   }
 
   async openSession(resumeSessionId?: string): Promise<OpencodeNativeSessionInfo> {
@@ -87,7 +105,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
           resumeSessionId ? {} : { method: 'POST', body: { location: { directory: this.options.config.vaultWorkingDirectory }, agent: this.agents[this.profile === 'managed' ? OPENCODE_BUILD_AGENT_ID : AUX_AGENT_IDS[this.profile]] } });
         if (typeof data.id !== 'string' || (resumeSessionId && data.id !== resumeSessionId)) throw new Error('Invalid OpenCode session response.');
         return data.id;
-      }, () => this.serverService.acquire(this.cliPath, this.options.config.vaultWorkingDirectory, this.environment));
+      }, () => this.client?.isReusable()
+        ? Promise.resolve(this.client.retain())
+        : this.serverService.acquireCleanup(this.cliPath, this.options.config.vaultWorkingDirectory, this.environment));
     } catch (error) {
       if (resumeSessionId && error instanceof OpencodeHTTPError && error.status === 404) throw new OpencodeSessionMissingError(resumeSessionId, error);
       throw error;
@@ -124,7 +144,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     if (this.pending) throw new Error('OpenCode already has an active request.');
     const { text, files } = toNativeInput(request);
     const match = /^\/([^\s]+)(?:\s+([\s\S]*))?$/.exec(text);
-    const command = match && this.commands.has(match[1]) ? match : null;
+    // Commands can change while this kernel keeps its native session and server.
+    const catalog = match ? await this.requireClient().request<{ data: Array<{ name: string }> }>('/api/command') : null;
+    const command = match && catalog?.data.some(command => command.name === match[1]) ? match : null;
     const previousMessage = command ? await this.latestMessage(request.sessionId) : undefined;
     let resolve!: PendingPrompt['resolve'];
     let reject!: PendingPrompt['reject'];
@@ -193,7 +215,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       }
     }
     this.cancellation ??= this.requireClient().request(`/api/session/${encodeURIComponent(sessionId)}/interrupt?resume=false`, { method: 'POST' })
-      .catch(() => undefined).finally(() => { this.cancellation = null; });
+      .catch(() => undefined).finally(() => { this.cancellation = null; this.workChanged(); });
   }
 
   async dispose(): Promise<void> {
@@ -205,6 +227,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     // Interrupts leave undelivered steers queued in the persistent native inbox.
     const recalls = this.client?.isReusable() ? this.recallSteers() : undefined;
     this.disposed = true;
+    this.workChanged();
     this.stopTools();
     this.previewStops.clear();
     this.controller.abort();
@@ -272,6 +295,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
         });
         this.children.delete(nativeSessionId);
         this.previewStops.delete(nativeSessionId);
+        this.workChanged();
       }
       if (!event.type.startsWith('session.tool.') && event.type !== 'permission.asked' && event.type !== 'form.created') return;
     }
@@ -398,6 +422,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     } finally {
       scope?.close();
       this.globalForms.delete(form.id);
+      this.workChanged();
     }
   }
 
@@ -453,6 +478,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       if (projectionError || !signal.aborted) throw projectionError ?? error;
     } finally {
       if (this.interactions.delete(id)) this.options.config.interactionPort.dismissInteraction(id, 'resolved');
+      this.workChanged();
     }
   }
 
@@ -500,6 +526,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     else steer.resolve(outcome);
     // A steer admitted as the native execution ended runs as another native execution of this prompt.
     if (this.pending?.idle && this.steers.size === 0) this.finish();
+    this.workChanged();
   }
   private recallSteers(): Promise<unknown> {
     const client = this.disposed ? null : this.client;
@@ -533,6 +560,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     void this.recallSteers();
     pending?.resolve({ stopReason, userMessageId: pending.userMessageId });
     this.options.onNativeTurn?.('completed', undefined, !!pending);
+    this.workChanged();
   }
   private fail(cause: unknown): void {
     const error = cause instanceof Error ? cause : new Error(String(cause));
@@ -544,6 +572,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     pending?.reject(error);
     this.options.onNativeTurn?.('completed', error.message, !!pending);
     if (!pending) this.options.onClosed(error);
+    this.workChanged();
   }
   private requireClient(): OpencodeServerLease {
     if (!this.client || this.disposed) throw new Error('OpenCode HTTP session is not connected.');

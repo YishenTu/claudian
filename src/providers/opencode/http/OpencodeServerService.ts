@@ -20,39 +20,70 @@ interface Server {
 
 interface ServerEntry {
   readonly promise: Promise<Server>;
-  readonly ephemeral: boolean;
+  readonly compatibility: string;
+  readonly launchKey: string;
+  retainWhenIdle: boolean;
   consumers: number;
+  retired: boolean;
+  readonly retirementListeners: Set<() => void>;
+  readonly supersessionListeners: Set<() => void>;
 }
 
 /** Provider-owned native processes. Persistent consumers share by environment and database. */
 export class OpencodeServerService {
   private readonly servers = new Map<string, ServerEntry>();
+  private readonly draining = new Map<ServerEntry, string>();
   private readonly closing = new Set<Promise<void>>();
   private readonly fence = new ProviderTransitionFence();
   private generation = new AbortController();
   private disposal: Promise<void> | null = null;
+  /** The committed default launch; retained when idle and never evicted as an idle peer. */
+  private currentLaunch: { compatibility: string; key: string } | null = null;
 
-  async acquire(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<OpencodeServerLease> {
+  /** Retained execution kernels must fence new turns as well as new leases. */
+  async waitUntilAvailable(signal?: AbortSignal): Promise<void> {
     do {
+      if (!await this.fence.waitUntilAvailable(signal)) throw new Error('OpenCode server service is disposed.');
+    } while (this.fence.isUnavailable());
+  }
+
+  acquire(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<OpencodeServerLease> {
+    return this.borrow(cliPath, cwd, environment, signal, false);
+  }
+
+  /** Owned native deletion must finish before the transition can reopen normal admission. */
+  acquireCleanup(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv): Promise<OpencodeServerLease> {
+    return this.borrow(cliPath, cwd, environment, undefined, true);
+  }
+
+  private async borrow(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal | undefined, cleanup: boolean): Promise<OpencodeServerLease> {
+    if (this.disposal) throw new Error('OpenCode server service is disposed.');
+    if (!cleanup) do {
       if (!await this.fence.waitUntilAvailable(signal)) throw new Error('OpenCode server service is disposed.');
       // Disposal or a new transition can overtake an already-resolved wait.
     } while (this.fence.isUnavailable());
     const generation = this.generation.signal;
-    const databasePath = resolveOpencodeDatabasePath(environment);
-    const normalized = { ...environment, ...(databasePath ? { OPENCODE_DB: databasePath } : {}) };
-    const ephemeral = databasePath === ':memory:';
-    const key = JSON.stringify([cliPath, cwd, Object.entries(normalized).filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b)), ephemeral ? randomUUID() : '']);
+    const launch = normalizeLaunch(cliPath, cwd, environment);
+    const { compatibility, ephemeral, normalized } = launch;
+    const obsolete = this.currentLaunch !== null && this.currentLaunch.compatibility !== compatibility;
+    const key = ephemeral ? JSON.stringify([launch.key, randomUUID()]) : launch.key;
     for (;;) {
       generation.throwIfAborted();
       signal?.throwIfAborted();
-      let entry = this.servers.get(key);
+      let entry = this.servers.get(key) ?? ((cleanup || obsolete) ? [...this.draining].find(([, binding]) => binding === key)?.[0] : undefined);
       if (!entry) {
         entry = {
           promise: this.create(cliPath, cwd, normalized, generation),
-          ephemeral,
+          compatibility,
+          launchKey: launch.key,
+          retainWhenIdle: !ephemeral && !cleanup,
           consumers: 0,
+          retired: obsolete,
+          retirementListeners: new Set(),
+          supersessionListeners: new Set(),
         };
-        this.servers.set(key, entry);
+        if (obsolete) this.draining.set(entry, key);
+        else this.servers.set(key, entry);
         // Observe failure immediately, including while older idle servers retire.
         const pendingEntry = entry;
         void entry.promise.catch(() => {
@@ -61,10 +92,11 @@ export class OpencodeServerService {
       }
       // Pending acquisitions own a reservation too; cancellation cannot close a peer's server.
       entry.consumers += 1;
+      if (!ephemeral && !cleanup) entry.retainWhenIdle = true;
       let handedOff = false;
       try {
-        await Promise.all([...this.servers].flatMap(([idleKey, idle]) => (
-          idle.consumers === 0 ? [this.retire(idleKey, idle)] : []
+        if (!cleanup && !obsolete) await Promise.all([...this.servers].flatMap(([idleKey, idle]) => (
+          idle.consumers === 0 && idleKey !== this.currentLaunch?.key ? [this.retire(idleKey, idle)] : []
         )));
         const server = await entry.promise;
         generation.throwIfAborted();
@@ -73,12 +105,7 @@ export class OpencodeServerService {
           await this.retire(key, entry, new Error('OpenCode server is no longer available.'));
           continue;
         }
-        const ownedEntry = entry;
-        const lease = new OpencodeServerLease(
-          server,
-          () => this.release(key, ownedEntry),
-          error => this.retire(key, ownedEntry, error),
-        );
+        const lease = this.lease(key, entry, server);
         handedOff = true;
         return lease;
       } finally {
@@ -87,17 +114,68 @@ export class OpencodeServerService {
     }
   }
 
+  private lease(key: string, entry: ServerEntry, server: Server): OpencodeServerLease {
+    return new OpencodeServerLease(
+      server,
+      () => this.release(key, entry),
+      error => this.retire(key, entry, error),
+      (event, listener) => {
+        const listeners = event === 'retired' ? entry.retirementListeners : entry.supersessionListeners;
+        listeners.add(listener);
+        if (event === 'retired' ? entry.retired : this.isSuperseded(entry)) listener();
+        return () => listeners.delete(listener);
+      },
+      () => {
+        entry.consumers += 1;
+        return this.lease(key, entry, server);
+      },
+    );
+  }
+
+  /**
+   * Commit the default launch. Incompatible generations stop admitting consumers without
+   * interrupting native work; compatible database bindings keep their process.
+   */
+  reconcileLaunch(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv): void {
+    const launch = normalizeLaunch(cliPath, cwd, environment);
+    this.currentLaunch = { compatibility: launch.compatibility, key: launch.key };
+    for (const entry of [...this.servers.values(), ...this.draining.keys()]) {
+      if (this.isSuperseded(entry)) for (const listener of [...entry.supersessionListeners]) listener();
+    }
+    for (const [key, entry] of this.servers) {
+      if (entry.compatibility === launch.compatibility) {
+        if (entry.consumers === 0 && key !== launch.key) void this.retire(key, entry);
+        continue;
+      }
+      this.servers.delete(key);
+      entry.retired = true;
+      this.draining.set(entry, key);
+      for (const listener of [...entry.retirementListeners]) listener();
+      if (entry.consumers === 0) void this.retire(key, entry);
+    }
+  }
+
+  /** Only the committed default launch may publish provider-wide metadata. */
+  private isSuperseded(entry: ServerEntry): boolean {
+    return this.currentLaunch !== null && entry.launchKey !== this.currentLaunch.key;
+  }
+
   private async release(key: string, entry: ServerEntry): Promise<void> {
     entry.consumers -= 1;
     if (entry.consumers !== 0) return;
-    // Retain only a lone idle persistent server for repeated catalog/history calls.
-    if (entry.ephemeral || this.servers.size > 1 || this.servers.get(key) !== entry) {
+    // Retain one idle persistent server for repeated catalog/history calls: the committed
+    // default launch, or a lone server before any launch is committed.
+    const retained = this.currentLaunch ? key === this.currentLaunch.key : this.servers.size === 1;
+    if (!entry.retainWhenIdle || !retained || this.servers.get(key) !== entry) {
       await this.retire(key, entry);
     }
   }
 
   private retire(key: string, entry: ServerEntry, error?: Error): Promise<void> {
     if (this.servers.get(key) === entry) this.servers.delete(key);
+    this.draining.delete(entry);
+    entry.retirementListeners.clear();
+    entry.supersessionListeners.clear();
     const closing = entry.promise.then(server => this.close(server, error), () => undefined);
     this.closing.add(closing);
     void closing.then(
@@ -107,18 +185,16 @@ export class OpencodeServerService {
     return closing;
   }
 
-  beginTransition(): Promise<void> {
-    this.fence.beginTransition();
-    return this.invalidate();
-  }
+  beginTransition(): void { this.fence.beginTransition(); }
 
   endTransition(): void { this.fence.endTransition(); }
 
   async invalidate(): Promise<void> {
     this.fence.beginTransition();
-    const previous = [...this.servers];
+    const previous: Array<[string, ServerEntry]> = [...this.servers, ...[...this.draining].map(([entry, key]): [string, ServerEntry] => [key, entry])];
     this.generation.abort();
     this.generation = new AbortController();
+    this.currentLaunch = null;
     try {
       await Promise.all([
         ...previous.map(([key, entry]) => this.retire(key, entry, new Error('OpenCode server configuration changed.'))),
@@ -165,8 +241,32 @@ export class OpencodeServerLease {
   private subscriber?: Subscriber;
   private readonly agentIds: string[] = [];
   private disposal?: Promise<void>;
+  private readonly unsubscribers = new Set<() => void>();
 
-  constructor(private readonly server: Server, private readonly release: () => Promise<void>, private readonly failServer: (error: Error) => Promise<void>) {}
+  constructor(
+    private readonly server: Server,
+    private readonly release: () => Promise<void>,
+    private readonly failServer: (error: Error) => Promise<void>,
+    private readonly subscribeGeneration: (event: 'retired' | 'superseded', listener: () => void) => () => void,
+    private readonly retainLease: () => OpencodeServerLease,
+  ) {}
+
+  onRetired(listener: () => void): void {
+    this.controller.signal.throwIfAborted();
+    this.unsubscribers.add(this.subscribeGeneration('retired', listener));
+  }
+
+  /** Fires once another launch becomes the default; the process and its sessions stay usable. */
+  onSuperseded(listener: () => void): void {
+    this.controller.signal.throwIfAborted();
+    this.unsubscribers.add(this.subscribeGeneration('superseded', listener));
+  }
+
+  /** Cleanup must borrow the exact generation that admitted a native session. */
+  retain(): OpencodeServerLease {
+    this.controller.signal.throwIfAborted();
+    return this.retainLease();
+  }
 
   get databasePath(): string | null { return this.server.databasePath; }
   signal(signal?: AbortSignal): AbortSignal { return this.server.client.signal(AbortSignal.any([this.controller.signal, ...(signal ? [signal] : [])])); }
@@ -227,6 +327,8 @@ export class OpencodeServerLease {
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
     this.controller.abort();
+    for (const unsubscribe of this.unsubscribers) unsubscribe();
+    this.unsubscribers.clear();
     if (this.subscriber) this.server.subscribers.delete(this.subscriber);
     this.disposal = (async () => {
       for (const [id, owner] of this.server.forms) {
@@ -279,4 +381,17 @@ export async function withOpencodeServerLease<T>(
   } finally {
     if (!shared) await service.dispose();
   }
+}
+
+function normalizeLaunch(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv) {
+  const databasePath = resolveOpencodeDatabasePath(environment);
+  const normalized = { ...environment, ...(databasePath ? { OPENCODE_DB: databasePath } : {}) };
+  const entries = Object.entries(normalized).filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b));
+  return {
+    normalized,
+    ephemeral: databasePath === ':memory:',
+    key: JSON.stringify([cliPath, cwd, entries]),
+    // Database overrides remain legitimate historical bindings within the current launch environment.
+    compatibility: JSON.stringify([cliPath, cwd, entries.filter(([name]) => name !== 'OPENCODE_DB')]),
+  };
 }

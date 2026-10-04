@@ -35,7 +35,7 @@ const OPENCODE_PROVIDER_STATE_KEYS = [
 ] as const;
 
 export class OpencodeConversationHistoryService implements ProviderConversationHistoryService {
-  constructor(private readonly getServerService?: () => OpencodeServerService | null | undefined) {}
+  constructor(private readonly getServerService?: (context?: ProviderHistoryPathContext) => OpencodeServerService | null | undefined | Promise<OpencodeServerService | null | undefined>) {}
 
   hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {
     return !!this.resolveSessionIdForConversation(conversation);
@@ -49,7 +49,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const sessionId = this.resolveSessionIdForConversation(conversation);
     if (!sessionId) return null;
     const state = getOpencodeState(conversation.providerState);
-    const databasePath = resolveOpencodeDatabasePathHint(state.databasePath, pathContext);
+    const databasePath = resolveHistoryDatabase(state, pathContext);
     if (!databasePath) return null;
     if (state.nativeVersion === 2) {
       return this.withHttp(databasePath, vaultPath, pathContext, async client => {
@@ -69,7 +69,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
   ): Promise<ProviderHistoryUpdate> {
     const conversation = copyProviderHistoryState(input);
     const state = getOpencodeState(conversation.providerState);
-    const databasePath = resolveOpencodeDatabasePathHint(state.databasePath, pathContext);
+    const databasePath = resolveHistoryDatabase(state, pathContext);
     if (state.databasePath && state.databasePath !== databasePath) {
       const providerState = { ...conversation.providerState };
       if (databasePath) {
@@ -160,7 +160,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const cwd = vaultPath ?? pathContext?.vaultPath;
     if (!cwd) throw new Error('OpenCode fork requires a workspace directory.');
     const source = getOpencodeState(sourceProviderState);
-    const databasePath = resolveOpencodeDatabasePathHint(source.databasePath, pathContext);
+    const databasePath = resolveHistoryDatabase(source, pathContext);
     if (!databasePath || databasePath === ':memory:') {
       throw new Error('OpenCode fork requires a persistent native database.');
     }
@@ -179,7 +179,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       environment,
       sourceSessionId,
       resumeAt,
-      serverService: this.getServerService?.(),
+      resolveServerService: async () => this.getServerService?.(pathContext),
     });
     return { sessionId, databasePath, ...(nativeVersion ? { nativeVersion } : {}), nativeConversationContextEstablished: true };
   }
@@ -213,7 +213,7 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
     const settings = pathContext?.settings ?? {};
     const cliPath = new OpencodeCLIResolver().resolveFromSettings(settings) ?? 'opencode';
     const environment = buildOpencodeRuntimeEnv(settings, cliPath, databasePath, pathContext?.environment);
-    return withOpencodeServerLease(this.getServerService?.(), cliPath, cwd, environment, read);
+    return withOpencodeServerLease(await this.getServerService?.(pathContext), cliPath, cwd, environment, read);
   }
 
   #markNativeConversationContextEstablished(
@@ -226,4 +226,10 @@ export class OpencodeConversationHistoryService implements ProviderConversationH
       nativeConversationContextEstablished: true,
     };
   }
+}
+
+function resolveHistoryDatabase(state: OpencodeProviderState, context?: ProviderHistoryPathContext): string | null {
+  // A v2 database is part of the native binding, not a relocatable history hint.
+  if (state.nativeVersion === 2 && state.databasePath) return state.databasePath;
+  return resolveOpencodeDatabasePathHint(state.databasePath, context);
 }

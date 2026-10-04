@@ -6,6 +6,8 @@ import { ProviderTransitionFence } from '@/core/providers/metadata/ProviderTrans
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import type { SlashCommand } from '@/core/types';
 import { ACPSessionUpdateNormalizer } from '@/providers/acp';
+import { toAbortError } from '@/utils/abort';
+import { toError } from '@/utils/error';
 
 import type { OpencodeCommandCatalog } from '../commands/OpencodeCommandCatalog';
 import {
@@ -38,6 +40,7 @@ export interface OpencodeMetadataWarmResult
 export interface OpencodeMetadataProbe {
   dispose(): Promise<void>;
   loadCatalog(signal?: AbortSignal): Promise<OpencodeMetadataCatalogResult>;
+  loadCommands?(signal?: AbortSignal): Promise<SlashCommand[] | null>;
   warmModel(
     rawModelId: string,
     signal?: AbortSignal,
@@ -45,12 +48,16 @@ export interface OpencodeMetadataProbe {
 }
 
 export interface OpencodeMetadataServiceOptions {
-  readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setCommandSnapshot'>;
+  readonly commandCatalog?: Pick<OpencodeCommandCatalog, 'setCommandSnapshot'> & Partial<Pick<OpencodeCommandCatalog, 'setNativeVersion'>>;
   readonly serverService?: OpencodeServerService;
   readonly createProbe?: () => OpencodeMetadataProbe;
 }
 
+type CommandResult = { commands: SlashCommand[]; loaded: boolean };
+interface CommandFlight { promise: Promise<CommandResult>; controller: AbortController; consumers: number }
+
 export class OpencodeMetadataService {
+  private commandFlight: CommandFlight | null = null;
   private readonly createProbe: (signal: AbortSignal) => OpencodeMetadataProbe | Promise<OpencodeMetadataProbe>;
   private readonly probes: OwnedProbeRegistry<OpencodeMetadataProbe>;
   private readonly transitionFence = new ProviderTransitionFence({
@@ -72,6 +79,7 @@ export class OpencodeMetadataService {
         const environment = buildOpencodeRuntimeEnv(plugin.settings, cliPath);
         const version = await detectOpencodeNativeVersion(cliPath, environment);
         signal.throwIfAborted();
+        options.commandCatalog?.setNativeVersion?.(version);
         if (version !== 2) return new DefaultOpencodeMetadataProbe(plugin, {
           cliPath, version, environment: buildOpencodeRuntimeEnv(plugin.settings, cliPath, ':memory:'),
         });
@@ -129,21 +137,51 @@ export class OpencodeMetadataService {
   async discoverCommands(
     signal?: AbortSignal,
   ): Promise<{ commands: SlashCommand[]; loaded: boolean }> {
-    const result = await this.#runProbe(
-      async (probe, ownedSignal) => {
-        const catalog = await probe.loadCatalog(ownedSignal);
+    do {
+      if (!await this.transitionFence.waitUntilAvailable(signal)) return { commands: [], loaded: false };
+    } while (this.transitionFence.isUnavailable());
+    signal?.throwIfAborted();
+    let flight = this.commandFlight;
+    if (!flight) {
+      const controller = new AbortController();
+      const promise = this.#runProbe(async (probe, ownedSignal) => {
+        const snapshot = probe.loadCommands
+          ? await probe.loadCommands(ownedSignal)
+          : (await probe.loadCatalog(ownedSignal)).commands;
         ownedSignal.throwIfAborted();
-        if (catalog.commands === null) {
-          return { commands: [], loaded: false };
-        }
-        const commands = catalog.commands.map((command) => ({ ...command }));
+        if (snapshot === null) return { commands: [], loaded: false };
+        const commands = snapshot.map(command => ({ ...command }));
         this.options.commandCatalog?.setCommandSnapshot(commands);
         return { commands, loaded: true };
-      },
-      signal,
-    );
-    if (!result) return { commands: [], loaded: false };
-    return result;
+      }, controller.signal).then(result => result ?? { commands: [], loaded: false });
+      flight = { promise, controller, consumers: 0 };
+      this.commandFlight = flight;
+      const owned = flight;
+      void promise.finally(() => {
+        if (this.commandFlight === owned) this.commandFlight = null;
+      }).catch(() => undefined);
+    }
+    flight.consumers += 1;
+    try {
+      return await new Promise<CommandResult>((resolve, reject) => {
+        const onAbort = () => reject(toAbortError(signal!, 'OpenCode command discovery aborted.'));
+        signal?.addEventListener('abort', onAbort, { once: true });
+        flight.promise.then(result => {
+          signal?.removeEventListener('abort', onAbort);
+          if (signal?.aborted) onAbort();
+          else resolve({ ...result, commands: result.commands.map(command => ({ ...command })) });
+        }, error => {
+          signal?.removeEventListener('abort', onAbort);
+          reject(toError(error, 'OpenCode command discovery failed.'));
+        });
+        if (signal?.aborted) onAbort();
+      });
+    } finally {
+      if (--flight.consumers === 0) {
+        flight.controller.abort();
+        if (this.commandFlight === flight) this.commandFlight = null;
+      }
+    }
   }
 
   async warmModelMetadata(model: string, signal?: AbortSignal): Promise<boolean> {
@@ -183,6 +221,8 @@ export class OpencodeMetadataService {
   async invalidate(): Promise<void> {
     this.transitionFence.beginTransition();
     try {
+      this.commandFlight?.controller.abort();
+      this.commandFlight = null;
       this.options.commandCatalog?.setCommandSnapshot([]);
       await Promise.all([this.probes.quiesce(), this.options.serverService ? undefined : this.serverService.invalidate()]);
     } finally {

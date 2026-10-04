@@ -53,6 +53,14 @@ export class OpencodeSessionPersistence {
     await Promise.allSettled(this.pending);
   }
 
+  /** An idle session retains its database identity, not a drained process generation. */
+  async releaseClient(): Promise<void> {
+    await this.settle();
+    const client = this.client;
+    this.client = null;
+    await (await client?.catch(() => null))?.dispose();
+  }
+
   dispose(): Promise<void> {
     if (this.disposal) return this.disposal;
     this.disposed = true;

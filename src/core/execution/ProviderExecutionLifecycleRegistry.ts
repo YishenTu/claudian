@@ -58,7 +58,7 @@ type ProviderExecutionTransitionCallback = (
 
 export type ProviderExecutionTransitionHook = {
   /** Shared-runtime providers fence new work and drain their own native generations. */
-  preserveSessions?(): boolean;
+  preserveSessions?(session: ProviderExecutionSession): boolean;
 } & (
   {
       beforeTransition: ProviderExecutionTransitionCallback;
@@ -313,18 +313,18 @@ export class ProviderExecutionLifecycleRegistry {
 
       try {
         const leases = states.flatMap(({ providerId, state }) => {
-          if ([...state.hooks].some(hook => hook.preserveSessions?.())) {
-            for (const lease of state.leases) lease.preserveAcrossTransition();
-            return [];
-          }
           const reason: ProviderExecutionInvalidationReason = {
             kind: 'provider-transition',
             providerId,
             generation: state.generation,
           };
-          return [...state.leases].map((lease) => {
+          return [...state.leases].flatMap((lease) => {
+            if ([...state.hooks].some(hook => hook.preserveSessions?.(lease.session))) {
+              lease.preserveAcrossTransition();
+              return [];
+            }
             lease.invalidate(reason);
-            return lease;
+            return [lease];
           });
         });
         errors.push(...await settleFailures(leases.map((lease) => lease.release())));
@@ -352,8 +352,7 @@ export class ProviderExecutionLifecycleRegistry {
         // A mutation can disable a provider that preserved its running sessions
         // before the transition. Invalidate those leases before runtime teardown.
         for (const { providerId, state } of states) {
-          if ([...state.hooks].some(hook => hook.preserveSessions?.())) continue;
-          const leases = [...state.leases];
+          const leases = [...state.leases].filter(lease => ![...state.hooks].some(hook => hook.preserveSessions?.(lease.session)));
           for (const lease of leases) lease.invalidate({ kind: 'provider-transition', providerId, generation: state.generation });
           errors.push(...await settleFailures(leases.map(lease => lease.release())));
         }

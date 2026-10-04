@@ -1,4 +1,5 @@
 import { formatReasoningValueLabel } from '@/core/providers/reasoning';
+import type { SlashCommand } from '@/core/types';
 import { normalizeACPAvailableCommands } from '@/providers/acp';
 
 import { pollOpencodeUntil } from '../http/OpencodeHTTPClient';
@@ -25,14 +26,24 @@ export class OpencodeV2MetadataProbe implements OpencodeMetadataProbe {
   async loadCatalog(signal?: AbortSignal): Promise<OpencodeMetadataCatalogResult> {
     const ownedSignal = this.client.signal(signal);
     const models = this.models = await this.loadModels(ownedSignal);
-    const commands = await this.read('command', ownedSignal);
     return {
-      commands: normalizeACPAvailableCommands(commands.filter(isNamedRecord).map(command => ({
-        name: command.name,
-        ...(typeof command.description === 'string' ? { description: command.description } : {}),
-      }))),
+      commands: await this.readCommands(ownedSignal),
       models: modelState(models),
     };
+  }
+
+  async loadCommands(signal?: AbortSignal): Promise<SlashCommand[]> {
+    const ownedSignal = this.client.signal(signal);
+    await this.client.waitForActivation(ownedSignal);
+    return this.readCommands(ownedSignal);
+  }
+
+  private async readCommands(signal: AbortSignal): Promise<SlashCommand[]> {
+    const commands = await this.read('command', signal);
+    return normalizeACPAvailableCommands(commands.filter(isNamedRecord).map(command => ({
+      name: command.name,
+      ...(typeof command.description === 'string' ? { description: command.description } : {}),
+    })));
   }
 
   async warmModel(rawModelId: string, signal?: AbortSignal): Promise<OpencodeMetadataWarmResult> {
