@@ -150,7 +150,7 @@ function findSubagentStatus(
 
 function canAcceptTabBackgroundWork(tab: AssembledTabRuntime): boolean {
   return tab.lifecycleState !== 'closing'
-    && !tab.state.isCreatingConversation
+    && !tab.state.isResettingToNewChat
     && !tab.state.isSwitchingConversation;
 }
 

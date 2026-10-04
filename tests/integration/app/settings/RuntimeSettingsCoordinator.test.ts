@@ -1,8 +1,8 @@
 import '@/providers';
 
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { testDate } from '@test/helpers/testClock';
 
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { RuntimeSettingsCoordinator } from '@/app/settings/RuntimeSettingsCoordinator';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 

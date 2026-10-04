@@ -1,9 +1,12 @@
-import { createConversationPorts } from '@test/helpers/ConversationPorts';
+import { createConversationPorts, createTestTabSession, holdResponse } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 
 import type { ProviderExecutionEvent } from '@/core/execution';
+import { BuiltInCommandController, type BuiltInCommandControllerDeps } from '@/features/chat/controllers/BuiltInCommandController';
+import { ConversationController } from '@/features/chat/controllers/ConversationController';
 import { InputController, type InputControllerDeps } from '@/features/chat/controllers/InputController';
 import { ChatState } from '@/features/chat/state/ChatState';
+import type { TabSession } from '@/features/chat/tabs/TabSession';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 function createInput(): ComposerInputElement {
@@ -59,7 +62,13 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     onReviewableSettlement,
     ...dependencyOverrides
   } = overrides;
-  const state = new ChatState();
+  // The real turn owner, unless a test supplies the tab session it drains or closes.
+  const session: TabSession = (dependencyOverrides.session as TabSession | undefined) ?? createTestTabSession({
+    getState: () => state,
+    coordinator: { cancel: () => deps.getExecutionCoordinator()?.cancel() },
+    dismissInteractions: () => controller.dismissPendingApproval(),
+  });
+  const state: ChatState = new ChatState({}, undefined, session.turns);
   state.currentConversationId = 'conversation-1';
   const input = createInput();
   const queueIndicator = createMockEl();
@@ -141,15 +150,6 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
     canvasSelectionController: {
       getContext: jest.fn().mockReturnValue(null),
     },
-    conversationController: {
-      commitBranchDraft: jest.fn().mockResolvedValue(true),
-      cancelBranchDraft: jest.fn(),
-      clearTerminalSubagentsFromMessages: jest.fn(),
-      createNew: jest.fn().mockResolvedValue(undefined),
-      generateFallbackTitle: jest.fn().mockReturnValue('Fallback title'),
-      save: jest.fn().mockResolvedValue(undefined),
-      updateHistoryDropdown: jest.fn(),
-    },
     getInputEl: () => input,
     getInputContainerEl: () => createMockEl() as any,
     getWelcomeEl: () => null,
@@ -180,14 +180,48 @@ export function createFixture(overrides: Record<string, unknown> = {}) {
         }
       : {}),
   } as unknown as InputControllerDeps;
-  Object.assign(deps, createConversationPorts(deps as any));
+  const ports = createConversationPorts({ ...(deps as any), session });
+  // Conversation creation stays real; persistence and reset are observed at their boundary.
+  const conversationController = new ConversationController({
+    plugin: plugin as any, state, renderer: deps.renderer, drafts: ports.drafts, session,
+    subagentManager: { orphanAllActive: jest.fn(), clear: jest.fn() } as any,
+    getWelcomeEl: () => null, setWelcomeEl: () => undefined, getMessagesEl: deps.getMessagesEl,
+    getLinkedContentController: () => deps.getLinkedContentController(),
+    clearQueuedMessage: () => controller.clearQueuedMessage(),
+    getExecutionCoordinator: () => deps.getExecutionCoordinator(),
+  });
+  jest.spyOn(conversationController, 'save').mockResolvedValue(undefined);
+  jest.spyOn(conversationController, 'createNew').mockResolvedValue(undefined);
+  const commandOverrides = Object.fromEntries(
+    (['openConversation', 'handleNewConversationCommand', 'onForkAll', 'toggleFastMode'] as const)
+      .filter(key => key in dependencyOverrides)
+      .map(key => [key, dependencyOverrides[key]]),
+  ) as Partial<BuiltInCommandControllerDeps>;
+  const builtInCommands = new BuiltInCommandController({
+    plugin,
+    // Tests may replace the conversation owner after construction.
+    get conversationController() { return deps.conversationController; },
+    getLinkedContentController: () => deps.getLinkedContentController(),
+    getCurrentConversationId: () => state.currentConversationId,
+    getInputContainerEl: () => deps.getInputContainerEl(),
+    getInputEl: () => deps.getInputEl(),
+    getSideChatController: () => deps.getSideChatController?.() ?? null,
+    ...commandOverrides,
+  });
+  Object.assign(deps, { drafts: ports.drafts, session, builtInCommands });
+  if (!('conversationController' in dependencyOverrides)) Object.assign(deps, { conversationController });
+  const controller = new InputController(deps);
   return {
-    controller: new InputController(deps),
+    builtInCommands,
+    controller,
     coordinator,
     deps,
+    /** Holds a running provider turn open until the returned release settles it. */
+    holdResponse: () => holdResponse(session.turns),
     input,
     linkedContentController,
     plugin,
+    session,
     state,
   };
 }

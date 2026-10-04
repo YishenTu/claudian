@@ -1,8 +1,8 @@
+import { AgentSkillResources } from '@/composition/AgentSkillResources';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
-import ClaudianPlugin from '@/main';
 import { BUILT_IN_PROVIDER_MODULES } from '@/providers';
 
-describe('agent skill host invalidation', () => {
+describe('AgentSkillResources', () => {
   beforeEach(() => {
     for (const provider of BUILT_IN_PROVIDER_MODULES) {
       ProviderWorkspaceRegistry.register(provider.id, provider.workspace);
@@ -22,14 +22,11 @@ describe('agent skill host invalidation', () => {
       onAgentSkillsChanged: refresh,
     });
     const invalidateProviderResources = jest.fn();
-    const plugin = {
-      agentSkillResourceGeneration: 0,
-      getAllViews: jest.fn().mockReturnValue([{ invalidateProviderResources }]),
-    };
+    const resources = new AgentSkillResources(() => [{ invalidateProviderResources }]);
 
-    const pending = ClaudianPlugin.prototype.notifyAgentSkillsChanged.call(plugin as any);
+    const pending = resources.notifyChanged();
 
-    expect(plugin.agentSkillResourceGeneration).toBe(1);
+    expect(resources.getGeneration()).toBe(1);
     expect(invalidateProviderResources).toHaveBeenCalledWith(
       expect.arrayContaining(['codex', 'grok', 'pi', 'opencode']),
       1,
@@ -49,11 +46,7 @@ describe('agent skill host invalidation', () => {
     ProviderWorkspaceRegistry.register('test-unrelated', { initialize });
     ProviderWorkspaceRegistry.setServices('test-skills', { onAgentSkillsChanged });
     const invalidateProviderResources = jest.fn();
-    const plugin = {
-      agentSkillResourceGeneration: 0,
-      getAllViews: () => [{ invalidateProviderResources }],
-    };
-    await ClaudianPlugin.prototype.notifyAgentSkillsChanged.call(plugin as any);
+    await new AgentSkillResources(() => [{ invalidateProviderResources }]).notifyChanged();
     const [ids] = invalidateProviderResources.mock.calls[0];
     expect(ids).toContain('test-skills');
     expect(ids).toContain('test-lazy');

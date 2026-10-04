@@ -229,6 +229,36 @@ describe('ClaudeInteractionHandler', () => {
     expect(port.requestApproval).not.toHaveBeenCalled();
   });
 
+  it('dismisses a cancelled interaction once and ignores its late response', async () => {
+    const port = createPort();
+    let resolveApproval!: (
+      response: Awaited<ReturnType<ProviderInteractionPort['requestApproval']>>,
+    ) => void;
+    port.requestApproval.mockReturnValue(new Promise((resolve) => {
+      resolveApproval = resolve;
+    }));
+    const handler = new ClaudeInteractionHandler({
+      interactionPort: port,
+      sessionInstanceId: 'session-local',
+      getTurnId: () => 'turn-local',
+      isToolAllowed: () => true,
+      onToolBlocked: jest.fn(),
+    });
+
+    const pending = handler.canUseTool('Edit', {}, nativeOptions);
+    handler.dismissAll('cancelled');
+    resolveApproval({
+      interactionId: 'claude:session-local:native-tool-1',
+      decision: 'allow',
+    });
+
+    const result = await pending;
+    expect(port.dismissInteraction.mock.calls).toEqual([
+      ['claude:session-local:native-tool-1', 'cancelled'],
+    ]);
+    expect(result).toEqual(expect.objectContaining({ behavior: 'deny' }));
+  });
+
   it('rejects stale response identities and duplicate pending native interactions', async () => {
     const port = createPort();
     let resolveApproval!: (

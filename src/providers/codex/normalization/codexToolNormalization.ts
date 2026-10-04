@@ -640,6 +640,28 @@ function normalizeWebRunInput(input: Record<string, unknown>): Record<string, un
     : input;
 }
 
+/** Native web search fields shared by live app-server items and persisted rollout records. */
+export interface CodexWebSearchRequest {
+  query?: unknown;
+  queries?: unknown;
+  url?: unknown;
+  pattern?: unknown;
+  action?: unknown;
+}
+
+export function normalizeCodexWebSearchInput(request: CodexWebSearchRequest): Record<string, unknown> {
+  return normalizeWebSearchInput({
+    query: request.query,
+    queries: request.queries,
+    url: request.url,
+    pattern: request.pattern,
+    action: request.action,
+  });
+}
+
+/** Native search items carry sources separately; their visible result is only an acknowledgement. */
+export const CODEX_WEB_SEARCH_RESULT = 'Search complete';
+
 function normalizeWebSearchInput(input: Record<string, unknown>): Record<string, unknown> {
   const action = input.action && typeof input.action === 'object'
     ? input.action as Record<string, unknown>
@@ -698,6 +720,19 @@ function normalizeStringArray(value: unknown): string[] {
   return [...uniqueValues];
 }
 
+/** Polling `write_stdin` calls send no characters; their output belongs to the polled command. */
+export function isCodexSilentWriteStdinCall(name: string | undefined, input: Record<string, unknown>): boolean {
+  return name === 'write_stdin' && (typeof input.chars !== 'string' || input.chars.length === 0);
+}
+
+/** Visible acknowledgement of an async question; the answer arrives as a later user message. */
+export const CODEX_ASYNC_QUESTION_RESULT = 'Question sent. Awaiting your reply.';
+
+/** Terminal native item statuses that did not complete the requested work. */
+export function isCodexFailedToolStatus(status: unknown): boolean {
+  return status === 'failed' || status === 'error' || status === 'cancelled';
+}
+
 // ---------------------------------------------------------------------------
 // MCP tool normalization
 // ---------------------------------------------------------------------------
@@ -745,12 +780,9 @@ export function normalizeCodexMCPToolState(
   const status = typeof rawStatus === 'string' ? rawStatus : '';
   const error = typeof rawError === 'string' ? rawError : '';
   const resultText = extractCodexMCPResultText(resultPayload);
-  const isTerminalStatus = status === 'completed'
-    || status === 'failed'
-    || status === 'error'
-    || status === 'cancelled';
+  const isTerminalStatus = status === 'completed' || isCodexFailedToolStatus(status);
   const isTerminal = isTerminalStatus || Boolean(error) || Boolean(resultText);
-  const isError = Boolean(error) || status === 'failed' || status === 'error' || status === 'cancelled';
+  const isError = Boolean(error) || isCodexFailedToolStatus(status);
 
   let result = error || resultText;
   if (!result && isTerminalStatus) {
@@ -802,7 +834,7 @@ export function normalizeCodexToolResult(
     try {
       const result = JSON.parse(rawResult) as Record<string, unknown> | null;
       if (result?.accepted === true && Object.keys(result).length === 1) {
-        return 'Question sent. Awaiting your reply.';
+        return CODEX_ASYNC_QUESTION_RESULT;
       }
     } catch { /* Keep non-JSON question results intact. */ }
   }

@@ -18,6 +18,7 @@ const confirmationRequest = {
 function createRouter(
   askUserQuestion: ProviderInteractionPort['askUserQuestion'],
   toolPolicy: ProviderToolPolicy = { kind: 'provider-default' },
+  dismissInteraction: ProviderInteractionPort['dismissInteraction'] = () => undefined,
 ) {
   const router = new CodexExecutionServerRequestRouter(
     'session-confirmation',
@@ -26,7 +27,7 @@ function createRouter(
       requestApproval: async () => {
         throw new Error('MCP confirmation must use an explicit question');
       },
-      dismissInteraction: () => undefined,
+      dismissInteraction,
     },
     (threadId, turnId) => threadId === 'thread-confirmation' && turnId === 'turn-confirmation',
   );
@@ -169,6 +170,20 @@ describe('CodexExecutionServerRequestRouter', () => {
     }));
     await expect(router.handleServerRequest('answer', 'mcpServer/elicitation/request', confirmationRequest))
       .resolves.toEqual({ action, content: null });
+  });
+
+  it('never dismisses a confirmation the user already answered', async () => {
+    const dismissInteraction = jest.fn();
+    const router = createRouter(async request => ({
+      interactionId: request.interactionId,
+      answers: { 'mcp-elicitation-confirmation': 'accept' },
+    }), undefined, dismissInteraction);
+    await expect(router.handleServerRequest('answered', 'mcpServer/elicitation/request', confirmationRequest))
+      .resolves.toEqual({ action: 'accept', content: {} });
+
+    expect(router.resolveNativeRequest('answered', 'thread-confirmation')).toBe(false);
+    router.abortAll('resolved');
+    expect(dismissInteraction).not.toHaveBeenCalled();
   });
 
   it('cancels a response for another interaction', async () => {

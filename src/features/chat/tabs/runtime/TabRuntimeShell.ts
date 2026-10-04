@@ -3,6 +3,7 @@ import { Notice } from 'obsidian';
 import { ProviderRegistry } from '../../../../core/providers/ProviderRegistry';
 import { getVaultPath } from '../../../../utils/path';
 import { ComposerEditor } from '../../composer/ComposerEditor';
+import { TurnCoordinator } from '../../controllers/TurnCoordinator';
 import { ChatExecutionCoordinator } from '../../execution/ChatExecutionCoordinator';
 import { createInteractionPromptPort } from '../../rendering/interactionPromptPort';
 import { cleanupThinkingBlock } from '../../rendering/ThinkingBlockRenderer';
@@ -35,6 +36,8 @@ export function buildTabRuntimeShell(
   options.registerCleanup('tab DOM root', () => contentEl.remove());
 
   const dom = buildTabDOM(contentEl, options);
+  // Presentation state derives from the turn owner, so it exists before the session that owns it.
+  const turns: TurnCoordinator = new TurnCoordinator(() => session.admitsConversationOperations);
   const state: ChatState = new ChatState({
     onStreamingStateChanged: isStreaming => {
       runtimeRef.requirePublished().renderer.refreshBranchButtonState();
@@ -52,7 +55,7 @@ export function buildTabRuntimeShell(
     },
     onUsageChanged: () => refreshTabContextUsage(runtimeRef.requirePublished(), plugin),
     onAutoScrollChanged: () => runtimeRef.requirePublished().ui.navigationSidebar.updateVisibility(),
-  }, { get: () => session.conversationId, set: id => session.setConversationId(id) });
+  }, { get: () => session.conversationId, set: id => session.setConversationId(id) }, turns);
   state.queueIndicatorEl = dom.queueIndicatorEl;
 
   options.registerCleanup('tab thinking state', () => {
@@ -68,16 +71,22 @@ export function buildTabRuntimeShell(
     options,
     runtimeRef,
   );
-  const session = new TabSession(
-    sessionState,
-    executionCoordinator,
-    () => {
+  const session: TabSession = new TabSession(sessionState, executionCoordinator, {
+    turns,
+    onWorkChanged: () => {
       const tab = runtimeRef.requirePublished();
       tab.renderer.refreshBranchButtonState();
       options.onWorkChanged?.(tab);
     },
-    () => state.isStreaming || state.isRewinding || state.isCreatingConversation || state.isSwitchingConversation,
-  );
+    isConversationBusy: () => state.isRewinding || state.isResettingToNewChat || state.isSwitchingConversation,
+    hasDetachedWork: () => {
+      const tab = runtimeRef.current();
+      return !!tab && (tab.services.subagentManager.hasActiveAsyncSubagents()
+        // Collapsed side work stays discoverable from the tab bar.
+        || (tab.controllers.sideChatController.runtime?.isWorking ?? false));
+    },
+    dismissInteractions: () => runtimeRef.current()?.controllers.inputController.dismissPendingApproval(),
+  });
   options.registerCleanup(
     'tab execution coordinator',
     () => session.disposeExecutionCoordinator(),
@@ -220,11 +229,7 @@ function createTabExecutionCoordinator(
     idleReleaseMs: IDLE_SESSION_RELEASE_MS,
     isOwnerIdle: () => {
       const tab = runtimeRef.requirePublished();
-      return !state.isStreaming
-        && !state.isRewinding
-        && !state.requiresAction
-        && !tab.session.turns.isActive
-        && tab.lifecycleState !== 'closing';
+      return tab.session.isIdle && !state.requiresAction;
     },
     onIdleRelease: () => {
       const tab = runtimeRef.requirePublished();

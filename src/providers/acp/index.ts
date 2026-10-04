@@ -3,6 +3,7 @@ export * from './ACPExecutionEventNormalizer';
 export * from './ACPInteractionController';
 export * from './ACPJSONRPCTransport';
 export * from './ACPPermissionAdapter';
+export * from './ACPRequestedTurn';
 export * from './ACPSessionConfig';
 export * from './ACPSessionUpdateNormalizer';
 export * from './ACPSubprocess';

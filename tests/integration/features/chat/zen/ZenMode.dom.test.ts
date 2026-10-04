@@ -435,14 +435,9 @@ it.each([
   const chunks: StreamChunk[] = [];
   const router = new CodexNotificationRouter(chunk => chunks.push(chunk));
   router.handleNotification(method, { threadId: 'thread', turnId: 'turn', itemId: 'item', delta: '' });
-  const events = chunks.flatMap(chunk => {
-    const adapted = adaptCodexStreamChunk(chunk, {} as never);
-    if (!adapted) return [];
-    const { scope, ...event } = adapted;
-    return [event];
-  });
+  const events = chunks.flatMap(chunk => adaptCodexStreamChunk(chunk) ?? []);
   expect(events).not.toHaveLength(0);
-  for (const event of events) session.emitOutput(event as never);
+  for (const event of events) session.emitOutput(event);
   await new Promise(resolve => setTimeout(resolve, 600));
 
   // Empty provider output must not replace the visible waiting surface or create empty reasoning.

@@ -1,9 +1,9 @@
 import '@/providers';
 
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { modelCatalogCases as cases } from '@test/helpers/providerModelCatalogs';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { migrateSelectedModelMetadata } from '@/app/settings/SelectedModelMetadataMigration';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { findProviderModelOption, resolveConversationModel, resolveNewConversationModel } from '@/core/providers/conversationModel';
@@ -32,7 +32,7 @@ function makeHost() {
   const storage = new ClaudianSettingsStorage({
     exists: async () => Boolean(content), read: async () => content,
     write: async (_path: string, value: string) => { content = value; }, delete: async () => undefined,
-  } as unknown as VaultFileAdapter);
+  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
   const coordinator = new SettingsCoordinator(settings, value => storage.save(value));
   const host = {
     settings, mutateSettings: coordinator.mutate.bind(coordinator),

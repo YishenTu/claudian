@@ -445,12 +445,8 @@ describe('TabManager provider execution orchestration', () => {
   });
 
   it.each([
-    ['foreground streaming', (tab: any) => { tab.state.isStreaming = true; }],
-    ['turn orchestration', (tab: any) => { void tab.session.turns.run(() => Promise.resolve()); }],
+    ['a foreground turn', (tab: any) => { void tab.session.turns.run(() => Promise.resolve()); }],
     ['provider background work', (tab: any) => { tab.executionCoordinator.hasBackgroundWork = true; }],
-    ['async subagent work', (tab: any) => {
-      tab.services.subagentManager.hasActiveAsyncSubagents.mockReturnValue(true);
-    }],
   ])('projects %s as working in tab bar items', async (_source, makeWorking) => {
     const { manager } = createManager();
     const tab = await manager.createTab();

@@ -14,7 +14,7 @@ describe('ClaudianSettingTab model option updates', () => {
         getAdapter: jest.fn(() => ({})),
       },
     };
-    const tab = new ClaudianSettingTab({} as any, plugin as any);
+    const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
     const refreshTitleModelOptions = jest.fn();
     (tab as any).refreshTitleModelOptions = refreshTitleModelOptions;
 
@@ -37,7 +37,7 @@ describe('ClaudianSettingTab model option updates', () => {
         getAdapter: jest.fn(() => ({})),
       },
     };
-    const tab = new ClaudianSettingTab({} as any, plugin as any);
+    const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
 
     await (tab as any).restartServiceForPromptChange();
 

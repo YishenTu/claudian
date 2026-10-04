@@ -1,9 +1,9 @@
 import '@/providers';
 
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { modelCatalogCases as cases } from '@test/helpers/providerModelCatalogs';
 
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
@@ -23,7 +23,7 @@ it.each(cases)('$id persists selected metadata without saving the available cata
     write: jest.fn(async (_path: string, value: string) => { content = value; }),
     delete: jest.fn(async () => undefined),
   } as unknown as VaultFileAdapter;
-  const storage = new ClaudianSettingsStorage(adapter);
+  const storage = new ClaudianSettingsStorage(adapter, DEFAULT_CLAUDIAN_SETTINGS);
   const expectedMetadata = read(settings)[0];
   await storage.save(settings);
   expect(content).not.toContain('unselected-catalog-entry');
@@ -62,7 +62,7 @@ it.each(cases)('$id does not restore removed models from an older selected snaps
   const storage = new ClaudianSettingsStorage({
     exists: async () => Boolean(content), read: async () => content,
     write: async (_path: string, value: string) => { content = value; }, delete: async () => undefined,
-  } as unknown as VaultFileAdapter);
+  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
   await storage.save(settings);
   const restored = await storage.load();
   const config = restored.providerConfigs[id]!;
@@ -102,7 +102,7 @@ it('materializes legacy implicit selections before a new catalog arrives', async
 });
 
 it.each(['codex', 'grok'] as const)('does not implicitly enable %s discovery on a fresh profile', async id => {
-  const storage = new ClaudianSettingsStorage({ exists: async () => false } as unknown as VaultFileAdapter);
+  const storage = new ClaudianSettingsStorage({ exists: async () => false } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
   const settings = await storage.load();
   const selected = settings.providerConfigs[id]!.visibleModels;
   expect(selected).toEqual([]);
@@ -134,7 +134,7 @@ it.each(cases)('$id removes deselected aliases, preferences and saved effort pro
   const storage = new ClaudianSettingsStorage({
     exists: async () => false,
     write: async (_path: string, value: string) => { content = value; },
-  } as unknown as VaultFileAdapter);
+  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
 
   await storage.save(settings);
 
@@ -162,7 +162,7 @@ it('cleans stale projections for every provider together when loading saved sett
     delete: async () => undefined,
     read: async () => content,
     write: async (_path: string, value: string) => { content = value; },
-  } as unknown as VaultFileAdapter);
+  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
   const restored = await storage.load();
   for (const { id, read } of cases) {
     expect(restored.savedProviderModel[id]).toBeUndefined();
@@ -182,7 +182,7 @@ it('preserves the alias of a Claude model selected through its resolved identity
   await new ClaudianSettingsStorage({
     exists: async () => false,
     write: async (_path: string, value: string) => { content = value; },
-  } as unknown as VaultFileAdapter).save(settings);
+  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS).save(settings);
   expect(JSON.parse(content).providerConfigs.claude.modelAliases).toEqual({ sonnet: 'My Sonnet' });
 });
 
@@ -209,7 +209,7 @@ it.each(cases.flatMap(entry => [false, true].map(unavailable => ({ ...entry, una
     await new ClaudianSettingsStorage({
       exists: async () => false,
       write: async (_path: string, value: string) => { content = value; },
-    } as unknown as VaultFileAdapter).save(settings);
+    } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS).save(settings);
     expect(JSON.parse(content).savedProviderModel[id]).toBe(selected);
     expect(JSON.parse(content).savedProviderEffort[id]).toBe('low');
     expect(JSON.parse(content).customContextLimits).toEqual({ [selected]: 128_000 });
@@ -227,7 +227,7 @@ it('keeps xHigh for an explicitly selected Grok model while its capabilities are
     read: async () => content,
     write: async (_path: string, value: string) => { content = value; },
     delete: async () => undefined,
-  } as unknown as VaultFileAdapter);
+  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
   await storage.save(settings);
   expect(JSON.parse(content).providerConfigs.grok.preferredReasoningByModel)
     .toEqual({ 'temporarily-unavailable': 'xhigh' });
@@ -261,7 +261,7 @@ it('cleans context overrides by provider identity while preserving resolved alia
     read: async () => content,
     write: async (_path: string, value: string) => { content = value; },
     delete: async () => undefined,
-  } as unknown as VaultFileAdapter);
+  } as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
   await storage.save(settings);
   const expected = {
     'claude-sonnet-resolved': 128_000, 'claude-code/sonnet': 128_000,

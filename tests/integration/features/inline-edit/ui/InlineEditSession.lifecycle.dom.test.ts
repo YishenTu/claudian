@@ -73,9 +73,9 @@ function createHarness() {
   const context = { mode: 'selection' as const, selectedText: 'hello' };
   const settled = jest.fn();
   const createSession = () => new InlineEditSession(
-    app, plugin, editorView, editor, context, 'note.md', settled, { providerId: 'claude' },
+    app, plugin, plugin, editorView, editor, context, 'note.md', settled, { providerId: 'claude' },
   );
-  const createModal = () => new InlineEditModal(app, plugin, editor, { editor } as any, context, 'note.md', owner);
+  const createModal = () => new InlineEditModal(app, plugin, plugin, editor, { editor } as any, context, 'note.md', owner);
   cleanups.push(async () => {
     owner.dispose();
     editorView.destroy();

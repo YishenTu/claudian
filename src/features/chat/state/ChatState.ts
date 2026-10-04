@@ -1,4 +1,5 @@
 import type { UsageInfo } from '../../../core/types';
+import type { TurnActivity } from '../controllers/TurnCoordinator';
 import type {
   ChatActivity,
   ChatMessage,
@@ -12,13 +13,18 @@ import type {
   WriteEditState,
 } from './types';
 
+/** Presentation without a foreground turn owner, such as replayed background output. */
+const NO_TURN_ACTIVITY: TurnActivity = Object.freeze({
+  isInFlight: false,
+  cancelRequested: false,
+  streamGeneration: 0,
+  subscribe: () => () => undefined,
+});
+
 function createInitialState(): ChatStateData {
   return {
     messages: [],
-    isStreaming: false,
-    cancelRequested: false,
-    streamGeneration: 0,
-    isCreatingConversation: false,
+    isResettingToNewChat: false,
     isSwitchingConversation: false,
     isRewinding: false,
     hasPendingConversationSave: false,
@@ -60,9 +66,17 @@ export class ChatState {
   private thinkingIndicatorTimeoutWindow: Window | null = null;
   private flavorTimerIntervalWindow: Window | null = null;
 
-  constructor(callbacks: ChatStateCallbacks = {}, private readonly conversationIdentity?: { get(): string | null; set(id: string | null): void }) {
+  #wasStreaming = false;
+
+  constructor(
+    callbacks: ChatStateCallbacks = {},
+    private readonly conversationIdentity?: { get(): string | null; set(id: string | null): void },
+    /** The single owner of foreground turn state; presentation only derives from it. */
+    private readonly turnActivity: TurnActivity = NO_TURN_ACTIVITY,
+  ) {
     this.state = createInitialState();
     this._callbacks = callbacks;
+    turnActivity.subscribe(() => this.#onTurnActivityChanged());
   }
 
   // ============================================
@@ -139,39 +153,25 @@ export class ChatState {
   // Streaming Control
   // ============================================
 
+  /** Derived from the turn owner: a response is admitted and not yet settled. */
   get isStreaming(): boolean {
-    return this.state.isStreaming;
-  }
-
-  set isStreaming(value: boolean) {
-    this.state.isStreaming = value;
-    this._callbacks.onStreamingStateChanged?.(value);
-    this.#notifyActivity();
+    return this.turnActivity.isInFlight;
   }
 
   get cancelRequested(): boolean {
-    return this.state.cancelRequested;
-  }
-
-  set cancelRequested(value: boolean) {
-    this.state.cancelRequested = value;
+    return this.turnActivity.cancelRequested;
   }
 
   get streamGeneration(): number {
-    return this.state.streamGeneration;
+    return this.turnActivity.streamGeneration;
   }
 
-  bumpStreamGeneration(): number {
-    this.state.streamGeneration += 1;
-    return this.state.streamGeneration;
+  get isResettingToNewChat(): boolean {
+    return this.state.isResettingToNewChat;
   }
 
-  get isCreatingConversation(): boolean {
-    return this.state.isCreatingConversation;
-  }
-
-  set isCreatingConversation(value: boolean) {
-    this.state.isCreatingConversation = value;
+  set isResettingToNewChat(value: boolean) {
+    this.state.isResettingToNewChat = value;
   }
 
   get isSwitchingConversation(): boolean {
@@ -446,6 +446,14 @@ export class ChatState {
       this.state.flavorTimerInterval = null;
       this.flavorTimerIntervalWindow = null;
     }
+  }
+
+  #onTurnActivityChanged(): void {
+    const isStreaming = this.isStreaming;
+    if (isStreaming === this.#wasStreaming) return;
+    this.#wasStreaming = isStreaming;
+    this._callbacks.onStreamingStateChanged?.(isStreaming);
+    this.#notifyActivity();
   }
 
   #resetActivity(): void {

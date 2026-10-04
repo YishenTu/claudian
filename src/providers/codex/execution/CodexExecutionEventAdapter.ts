@@ -1,37 +1,28 @@
-import type {
-  ProviderExecutionEvent,
-  ProviderRequestedEventScope,
-} from '../../../core/execution';
+import type { RequestedRunEvent } from '../../../core/execution';
 import type { StreamChunk } from '../../../core/types';
 
-export function adaptCodexStreamChunk(
-  chunk: StreamChunk,
-  scope: ProviderRequestedEventScope,
-): ProviderExecutionEvent | null {
+export function adaptCodexStreamChunk(chunk: StreamChunk): RequestedRunEvent | null {
   switch (chunk.type) {
     case 'user_message_start':
       return {
         type: 'user_message_started',
-        scope,
         content: chunk.content,
         ...(chunk.itemId ? { nativeUserMessageId: chunk.itemId } : {}),
       };
     case 'assistant_message_start':
       return {
         type: 'assistant_message_started',
-        scope,
         ...(chunk.itemId ? { nativeAssistantId: chunk.itemId } : {}),
       };
     case 'text':
-      return { type: 'text_delta', scope, text: chunk.content };
+      return { type: 'text_delta', text: chunk.content };
     case 'thinking':
-      return { type: 'thinking_delta', scope, text: chunk.content };
+      return { type: 'thinking_delta', text: chunk.content };
     case 'citations':
-      return { type: 'citations', scope, citations: chunk.citations };
+      return { type: 'citations', citations: chunk.citations };
     case 'tool_use':
       return {
         type: 'tool_started',
-        scope,
         toolCallId: chunk.id,
         toolScope: { kind: 'main' },
         name: chunk.name,
@@ -42,7 +33,6 @@ export function adaptCodexStreamChunk(
     case 'tool_output':
       return {
         type: 'tool_output',
-        scope,
         toolCallId: chunk.id,
         toolScope: chunk.type === 'subagent_tool_output'
           ? { kind: 'subagent', subagentId: chunk.subagentId } : { kind: 'main' },
@@ -51,7 +41,6 @@ export function adaptCodexStreamChunk(
     case 'tool_result':
       return {
         type: 'tool_completed',
-        scope,
         toolCallId: chunk.id,
         toolScope: { kind: 'main' },
         content: chunk.content,
@@ -63,22 +52,19 @@ export function adaptCodexStreamChunk(
     case 'usage':
       return {
         type: 'usage_updated',
-        scope,
         usage: chunk.usage,
       };
     case 'context_compacted':
-      return { type: 'context_compacted', scope };
+      return { type: 'context_compacted' };
     case 'notice':
       return {
         type: 'notice',
-        scope,
         message: chunk.content,
         ...(chunk.level ? { level: chunk.level } : {}),
       };
     case 'subagent_tool_use':
       return {
         type: 'tool_started',
-        scope,
         toolCallId: chunk.id,
         toolScope: { kind: 'subagent', subagentId: chunk.subagentId },
         name: chunk.name,
@@ -88,7 +74,6 @@ export function adaptCodexStreamChunk(
     case 'subagent_tool_result':
       return {
         type: 'tool_completed',
-        scope,
         toolCallId: chunk.id,
         toolScope: { kind: 'subagent', subagentId: chunk.subagentId },
         content: chunk.content,

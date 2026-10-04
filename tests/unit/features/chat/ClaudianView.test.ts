@@ -1477,12 +1477,14 @@ describe('ClaudianView tab controls', () => {
       getTabIdentities() { return this.getAllTabs(); },
       getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([localTab]),
+      isTabWorking(id: string) { return this.getTab(id)?.state.isStreaming ?? false; },
     };
     const otherManager = {
       closeTab: jest.fn().mockResolvedValue(true),
       getTabIdentities() { return this.getAllTabs(); },
       getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([otherTab]),
+      isTabWorking(id: string) { return this.getTab(id)?.state.isStreaming ?? false; },
     };
     const otherView = { getTabManager: jest.fn().mockReturnValue(otherManager) };
     const setConversationArchived = jest.fn().mockResolvedValue(undefined);
@@ -1506,17 +1508,21 @@ describe('ClaudianView tab controls', () => {
       .toBeLessThan(setConversationArchived.mock.invocationCallOrder[0]);
   });
 
-  it('does not archive a running session', async () => {
+  it.each([
+    ['a foreground turn', true],
+    ['only background work', false],
+  ])('does not archive a session with %s', async (_label, isStreaming) => {
     const runningTab = {
       id: 'running-tab',
       conversationId: 'conversation-1',
-      state: { isStreaming: true },
+      state: { isStreaming },
     };
     const manager = {
       closeTab: jest.fn().mockResolvedValue(true),
       getTabIdentities() { return this.getAllTabs(); },
       getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue([runningTab]),
+      isTabWorking: jest.fn((id: string) => id === 'running-tab'),
     };
     const setConversationArchived = jest.fn().mockResolvedValue(undefined);
     const view = Object.create(ClaudianView.prototype) as any;
@@ -1953,6 +1959,7 @@ describe('ClaudianView tab controls', () => {
       getTabIdentities() { return this.getAllTabs(); },
       getTab(id: string) { return this.getAllTabs().find((tab: any) => tab.id === id) ?? null; },
       getAllTabs: jest.fn().mockReturnValue(tabs),
+      isTabWorking(id: string) { return this.getTab(id)?.state.isStreaming ?? false; },
     };
     const archiveConversationsIf = jest.fn(async (ids: readonly string[]) => ids.length);
     const view = Object.create(ClaudianView.prototype) as any;
@@ -1991,6 +1998,7 @@ describe('ClaudianView tab controls', () => {
       getTabIdentities: () => tabs,
       getTab: (id: string) => tabs.find(tab => tab.id === id) ?? null,
       getAllTabs: () => tabs,
+      isTabWorking: (id: string) => tabs.find(tab => tab.id === id)?.state.isStreaming ?? false,
     };
     const archived: string[] = [];
     const archiveConversationsIf = jest.fn(async (

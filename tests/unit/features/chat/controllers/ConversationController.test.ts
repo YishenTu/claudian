@@ -1,10 +1,11 @@
-import { createConversationPorts } from '@test/helpers/ConversationPorts';
+import { createConversationPorts, createTestTabSession, holdResponse } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 import { testDate } from '@test/helpers/testClock';
 import { Notice } from 'obsidian';
 
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { ChatState } from '@/features/chat/state/ChatState';
+import type { TabSession } from '@/features/chat/tabs/TabSession';
 import { confirm } from '@/shared/modals/ConfirmModal';
 
 jest.mock('@/shared/modals/ConfirmModal', () => ({
@@ -24,10 +25,14 @@ function deferred<T>(): {
   return { promise, resolve };
 }
 
-type FixtureDeps = ConversationControllerDeps & { getInputEl: () => HTMLTextAreaElement; getImageContextManager: () => any };
+type FixtureDeps = ConversationControllerDeps & { session: TabSession; getInputEl: () => HTMLTextAreaElement; getImageContextManager: () => any };
 
 function createMockDeps(overrides: Record<string, unknown> = {}): FixtureDeps {
-  const state = new ChatState();
+  const session = createTestTabSession({
+    getState: () => state,
+    coordinator: { cancel: () => (deps.getExecutionCoordinator() as { cancel?: () => void } | null)?.cancel?.() },
+  });
+  const state: ChatState = new ChatState({}, undefined, session.turns);
   const inputEl = { value: '', focus: jest.fn(), dispatchEvent: jest.fn() } as unknown as HTMLTextAreaElement;
   let welcomeEl: any = createMockEl();
   const messagesEl = createMockEl();
@@ -86,7 +91,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}): FixtureDeps {
     getExecutionCoordinator: () => null,
     ...overrides,
   } as unknown as FixtureDeps;
-  return Object.assign(deps, createConversationPorts(deps));
+  return Object.assign(deps, createConversationPorts({ ...deps, session }));
 }
 
 describe('ConversationController', () => {
@@ -108,7 +113,6 @@ describe('ConversationController', () => {
         controller = new ConversationController(deps, { onNewConversation });
         const linkedContentController = deps.getLinkedContentController();
         deps.state.queuedMessage = { content: 'test', images: undefined, editorContext: null, canvasContext: null };
-        deps.state.isStreaming = false;
 
         await controller.createNew();
 
@@ -125,7 +129,7 @@ describe('ConversationController', () => {
       });
 
       it('should not create new conversation while streaming', async () => {
-        deps.state.isStreaming = true;
+        holdResponse(deps.session.turns);
         const messages = [{ id: 'retained-message', role: 'user' as const, content: 'Keep me', timestamp: testDate().getTime() }];
         deps.state.currentConversationId = 'retained-conversation';
         deps.state.messages = messages;
@@ -225,7 +229,7 @@ describe('ConversationController', () => {
       });
 
       it('should not switch while streaming', async () => {
-        deps.state.isStreaming = true;
+        holdResponse(deps.session.turns);
         deps.state.currentConversationId = 'old-conv';
 
         await controller.switchTo('new-conv');
@@ -497,39 +501,6 @@ describe('ConversationController', () => {
   });
 });
 
-describe('ConversationController - Title Generation', () => {
-  let controller: ConversationController;
-  let deps: ReturnType<typeof createMockDeps>;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-    deps = createMockDeps();
-    controller = new ConversationController(deps);
-  });
-
-  describe('generateFallbackTitle', () => {
-    it('should generate title from first sentence', () => {
-      const title = controller.generateFallbackTitle('How do I set up React? I need help.');
-
-      expect(title).toBe('How do I set up React');
-    });
-
-    it('should truncate long titles to 50 chars', () => {
-      const longMessage = 'A'.repeat(100);
-      const title = controller.generateFallbackTitle(longMessage);
-
-      expect(title.length).toBeLessThanOrEqual(53); // 50 + '...'
-      expect(title).toContain('...');
-    });
-
-    it('should handle messages with no sentence breaks', () => {
-      const title = controller.generateFallbackTitle('Hello world');
-
-      expect(title).toBe('Hello world');
-    });
-  });
-});
-
 describe('ConversationController - provider switching', () => {
   it('should ensure the tab service matches the switched conversation provider', async () => {
     const ensureExecutionForConversation = jest.fn().mockResolvedValue(undefined);
@@ -569,8 +540,8 @@ describe('ConversationController - Race Condition Guards', () => {
   });
 
   describe('createNew guards', () => {
-    it('should not create when isCreatingConversation is already true', async () => {
-      deps.state.isCreatingConversation = true;
+    it('should not create while already resetting to a new chat', async () => {
+      deps.state.isResettingToNewChat = true;
       const messages = [{ id: 'retained-message', role: 'user' as const, content: 'Keep me', timestamp: testDate().getTime() }];
       deps.state.currentConversationId = 'retained-conversation';
       deps.state.messages = messages;
@@ -619,39 +590,44 @@ describe('ConversationController - Race Condition Guards', () => {
     });
 
     it('should reset even when streaming if force is true', async () => {
-      deps.state.isStreaming = true;
-      deps.state.cancelRequested = false;
+      const releaseTurn = holdResponse(deps.session.turns);
+      const cancel = jest.fn();
+      deps.getExecutionCoordinator = () => ({ cancel, bindConversation: jest.fn() }) as any;
       deps.state.currentConversationId = 'active-conversation';
       deps.state.messages = [
-        { id: 'message-1', role: 'user', content: 'Working', timestamp: 1 },
+        { id: 'message-1', role: 'user', content: 'Working', timestamp: testDate().getTime() },
       ];
       const initialGeneration = deps.state.streamGeneration;
+      let cancelRequestedAtCancel = false;
+      cancel.mockImplementation(() => { cancelRequestedAtCancel = deps.state.cancelRequested; });
 
       await controller.createNew({ force: true });
 
-      expect(deps.state.isStreaming).toBe(false);
-      expect(deps.state.cancelRequested).toBe(true);
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(cancelRequestedAtCancel).toBe(true);
       expect(deps.state.streamGeneration).toBe(initialGeneration + 1);
       expect(deps.state.currentConversationId).toBeNull();
       expect(deps.plugin.updateConversation).toHaveBeenCalledWith(
         'active-conversation',
         expect.objectContaining({ lastActivityAt: expect.any(Number) }),
       );
+      await releaseTurn();
+      expect(deps.state.isStreaming).toBe(false);
     });
 
-    it('should set and reset isCreatingConversation flag during entry point reset', async () => {
+    it('should set and reset the new-chat reset flag during entry point reset', async () => {
       // Entry point model: createNew() just resets state, doesn't create conversation
-      // But isCreatingConversation flag should still be set during the reset
+      // But the reset flag should still be set during the reset
       let flagDuringExecution = false;
 
       deps.state.clearMessages = jest.fn(() => {
-        flagDuringExecution = deps.state.isCreatingConversation;
+        flagDuringExecution = deps.state.isResettingToNewChat;
       });
 
       await controller.createNew();
 
       expect(flagDuringExecution).toBe(true);
-      expect(deps.state.isCreatingConversation).toBe(false);
+      expect(deps.state.isResettingToNewChat).toBe(false);
     });
   });
 
@@ -704,9 +680,9 @@ describe('ConversationController - Race Condition Guards', () => {
       expect(deps.plugin.switchConversation).not.toHaveBeenCalled();
     });
 
-    it('should not switch when isCreatingConversation is true', async () => {
+    it('should not switch while resetting to a new chat', async () => {
       deps.state.currentConversationId = 'old-conv';
-      deps.state.isCreatingConversation = true;
+      deps.state.isResettingToNewChat = true;
 
       await controller.switchTo('new-conv');
 
@@ -895,7 +871,7 @@ describe('ConversationController - Rewind', () => {
   });
 
   it('should show Notice when streaming', async () => {
-    deps.state.isStreaming = true;
+    holdResponse(deps.session.turns);
     deps.state.messages = [
       { id: 'm1', role: 'assistant', content: '', timestamp: 1, assistantMessageId: 'a1' },
       { id: 'm2', role: 'user', content: 'test', timestamp: 2, userMessageId: 'u1' },
@@ -1188,7 +1164,8 @@ describe('ConversationController - Rewind', () => {
       { id: 'm3', role: 'assistant', content: '', timestamp: 3, assistantMessageId: 'a2' },
     ];
     (confirm as jest.Mock).mockImplementationOnce(async () => {
-      deps.state.isStreaming = true;
+      // Rewind closes turn admission, so only an outside owner change can make the tab busy here.
+      jest.spyOn(deps.session, 'hasActiveTurn', 'get').mockReturnValue(true);
       return true;
     });
 

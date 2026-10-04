@@ -1,6 +1,8 @@
-import type {
-  ProviderInteractionDismissReason,
-  ProviderInteractionPort,
+import {
+  type PendingInteraction,
+  PendingInteractionLedger,
+  type ProviderInteractionDismissReason,
+  type ProviderInteractionPort,
 } from '../../../core/execution';
 
 interface GrokQuestionOption {
@@ -19,14 +21,16 @@ interface GrokQuestion {
 
 export class GrokExecutionInteractionRouter {
   private sequence = 0;
-  private readonly pending = new Map<string, AbortController>();
+  private readonly pending: PendingInteractionLedger;
 
   constructor(
     private readonly interactionPort: ProviderInteractionPort,
     private readonly sessionInstanceId: string,
     private readonly getTurnId: () => string | null,
     private readonly getSessionId: () => string | undefined,
-  ) {}
+  ) {
+    this.pending = new PendingInteractionLedger(interactionPort);
+  }
 
   async handle(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {
     const normalized = method.startsWith('_x.ai/') ? method.slice(1) : method;
@@ -40,19 +44,15 @@ export class GrokExecutionInteractionRouter {
   }
 
   dismissAll(reason: ProviderInteractionDismissReason): void {
-    for (const [interactionId, controller] of this.pending) {
-      this.interactionPort.dismissInteraction(interactionId, reason);
-      controller.abort();
-    }
-    this.pending.clear();
+    this.pending.dismissAll(reason);
   }
 
   async #handleQuestion(params: unknown, signal?: AbortSignal): Promise<unknown> {
     const turnId = this.getTurnId();
     const request = parseQuestionRequest(params, this.getSessionId());
     if (!turnId || !request || signal?.aborted) return { outcome: 'cancelled' };
-    const interactionId = this.#nextId('question');
-    const controller = this.begin(interactionId);
+    const pending = this.#begin(this.#nextId('question'));
+    const { interactionId } = pending;
     let dismissReason: ProviderInteractionDismissReason = 'cancelled';
     try {
       const response = await this.interactionPort.askUserQuestion({
@@ -74,8 +74,8 @@ export class GrokExecutionInteractionRouter {
         nativeContext: { sessionId: request.sessionId, toolCallId: request.toolCallId },
         sessionInstanceId: this.sessionInstanceId,
         turnId,
-      }, controller.signal);
-      if (response.interactionId !== interactionId || this.getTurnId() !== turnId) {
+      }, pending.signal);
+      if (this.pending.isStaleResponse(pending, response) || this.getTurnId() !== turnId) {
         dismissReason = 'native-rejected';
         return { outcome: 'cancelled' };
       }
@@ -86,7 +86,7 @@ export class GrokExecutionInteractionRouter {
     } catch {
       return { outcome: 'cancelled' };
     } finally {
-      this.finish(interactionId, dismissReason);
+      this.pending.settle(pending, dismissReason);
     }
   }
 
@@ -94,20 +94,10 @@ export class GrokExecutionInteractionRouter {
     return `${this.sessionInstanceId}:${kind}:${++this.sequence}`;
   }
 
-  private begin(interactionId: string): AbortController {
+  /** Grok asks one question at a time; a new question supersedes the previous one. */
+  #begin(interactionId: string): PendingInteraction {
     this.dismissAll('superseded');
-    const controller = new AbortController();
-    this.pending.set(interactionId, controller);
-    return controller;
-  }
-
-  private finish(
-    interactionId: string,
-    reason: ProviderInteractionDismissReason,
-  ): void {
-    if (!this.pending.has(interactionId)) return;
-    this.pending.delete(interactionId);
-    this.interactionPort.dismissInteraction(interactionId, reason);
+    return this.pending.begin(interactionId)!;
   }
 }
 

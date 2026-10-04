@@ -422,7 +422,10 @@ function migrateLegacyChatModelSelection(
 }
 
 export class ClaudianSettingsStorage {
-  constructor(private adapter: VaultFileAdapter) {}
+  constructor(
+    private readonly adapter: VaultFileAdapter,
+    private readonly defaults: Readonly<ClaudianSettings>,
+  ) {}
 
   async load(): Promise<StoredClaudianSettings> {
     if (!await this.adapter.exists(CLAUDIAN_SETTINGS_PATH)) {
@@ -579,7 +582,7 @@ export class ClaudianSettingsStorage {
   }
 
   #getDefaults(): StoredClaudianSettings {
-    return DEFAULT_CLAUDIAN_SETTINGS;
+    return structuredClone(this.defaults);
   }
 
 }

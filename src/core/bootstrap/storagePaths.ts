@@ -8,6 +8,22 @@ export const LEGACY_SESSIONS_PATH = '.claude/sessions';
 export const SESSIONS_PATH = `${CLAUDIAN_STORAGE_PATH}/sessions`;
 export const DEVICE_SESSIONS_PATH = `${SESSIONS_PATH}/devices`;
 
+const SAFE_METADATA_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** Session ids name metadata files, so they must stay a single safe path segment. */
+export function isValidSessionMetadataId(id: string): boolean {
+  return SAFE_METADATA_ID_PATTERN.test(id)
+    && id !== '.'
+    && id !== '..'
+    && !/%(?:2f|5c)/i.test(id);
+}
+
+export function assertValidSessionMetadataId(id: string): void {
+  if (!isValidSessionMetadataId(id)) {
+    throw new Error(`Invalid session metadata id: ${JSON.stringify(id)}`);
+  }
+}
+
 export function isDeviceSettingsKey(value: unknown): value is InstallationKey {
   return isInstallationKey(value);
 }

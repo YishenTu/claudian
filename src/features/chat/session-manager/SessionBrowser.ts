@@ -1,17 +1,15 @@
 import { Menu, Notice, setIcon } from 'obsidian';
 
-import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import type { ProviderIconSvg, TitleGenerationService } from '../../../core/providers/types';
 import type {
   ConversationMeta,
   SessionManagerOrganization,
   SessionManagerSort,
 } from '../../../core/types';
-import { t } from '../../../i18n/i18n';
 import { createProviderIconSvg } from '../../../shared/icons';
 import { confirmDelete } from '../../../shared/modals/ConfirmModal';
-import { extractUserDisplayContent } from '../../../utils/context';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
+import { ConversationTitleGeneration } from '../services/ConversationTitleGeneration';
 import type { TabAttention } from '../state/types';
 import {
   getLinkedContentTitle,
@@ -131,7 +129,15 @@ export class SessionBrowser {
     providerIconKey: string;
   } | null = null;
 
-  constructor(private readonly deps: SessionBrowserDeps) {}
+  private readonly titles: ConversationTitleGeneration;
+
+  constructor(private readonly deps: SessionBrowserDeps) {
+    this.titles = new ConversationTitleGeneration({
+      host: deps.plugin,
+      getService: () => deps.getTitleGenerationService(),
+      onChanged: () => deps.onListChanged(),
+    });
+  }
 
   dispose(): void {
     this.#clearHistorySelection();
@@ -1931,60 +1937,7 @@ export class SessionBrowser {
 
   /** Regenerates AI title for a conversation. */
   async regenerateTitle(conversationId: string): Promise<void> {
-    const { plugin } = this.deps;
-    if (!plugin.settings.enableAutoTitleGeneration) return;
-    if (!ProviderRegistry.resolveTitleGenerationSelection(plugin.settings)) {
-      new Notice(t('chat.selectAvailableTitleModel'));
-      return;
-    }
-
-    // Title generation uses the global explicit model selection.
-    const fullConv = await plugin.getConversationById(conversationId);
-    if (!fullConv || fullConv.messages.length < 1) return;
-
-    const titleService = this.deps.getTitleGenerationService();
-    if (!titleService) return;
-
-    // Find first user message by role (not by index)
-    const firstUserMsg = fullConv.messages.find(m => m.role === 'user');
-    if (!firstUserMsg) return;
-
-    const userContent = firstUserMsg.displayContent
-      ?? extractUserDisplayContent(firstUserMsg.content)
-      ?? firstUserMsg.content;
-
-    // Store current title to check if user renames during generation
-    const expectedTitle = fullConv.title;
-
-    // Set pending status before starting generation
-    await plugin.updateConversation(conversationId, { titleGenerationStatus: 'pending' });
-    this.deps.onListChanged();
-
-    // Fire async AI title generation
-    await titleService.generateTitle(
-      conversationId,
-      userContent,
-      async (convId, result) => {
-        // Check if conversation still exists and user hasn't manually renamed
-        const currentConv = await plugin.getConversationById(convId);
-        if (!currentConv) return;
-
-        // Only apply AI title if user hasn't manually renamed (title still matches expected)
-        const userManuallyRenamed = currentConv.title !== expectedTitle;
-
-        if (result.success && !userManuallyRenamed) {
-          await plugin.renameConversation(convId, result.title);
-          await plugin.updateConversation(convId, { titleGenerationStatus: 'success' });
-        } else if (!userManuallyRenamed) {
-          // Keep existing title, mark as failed (only if user hasn't renamed)
-          await plugin.updateConversation(convId, { titleGenerationStatus: 'failed' });
-        } else {
-          // User manually renamed, clear the status (user's choice takes precedence)
-          await plugin.updateConversation(convId, { titleGenerationStatus: undefined });
-        }
-        this.deps.onListChanged();
-      }
-    );
+    await this.titles.regenerate(conversationId);
   }
 
   /** Formats a timestamp for display. */

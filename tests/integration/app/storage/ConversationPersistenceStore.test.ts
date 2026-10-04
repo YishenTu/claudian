@@ -4,17 +4,19 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { testDate } from '@test/helpers/testClock';
 import { App, Notice, type Plugin } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { SessionMetadataLoader } from '@/app/conversations/SessionMetadataLoader';
+import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
+import { migrateSessionSidecars } from '@/app/storage/migrateSessionSidecars';
 import { SharedStorageService } from '@/app/storage/SharedStorageService';
-import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
-import { migrateSessionSidecars } from '@/core/bootstrap/migrateSessionSidecars';
 import { CLAUDIAN_SETTINGS_PATH, getDeviceSessionsPath, SESSIONS_PATH } from '@/core/bootstrap/storagePaths';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation, SessionMetadata, SubagentInfo } from '@/core/types';
 import { ClaudeExecutionBackend } from '@/providers/claude/execution/ClaudeExecutionBackend';
@@ -191,7 +193,8 @@ test('initial metadata loading reads unchanged payloads once through the storage
   }
   const read = jest.spyOn(adapter, 'read');
   const loader = new SessionMetadataLoader({
-    sessions: store.metadataReader, conversations: createRepository(), runtimeSettings: {} as never,
+    sessions: store.metadataReader, conversations: createRepository(),
+    providerSettings: ProviderSettingsCoordinator, runtimeSettings: {} as never,
     isUnloading: () => false, whenLayoutReady: callback => callback(), onConversationListChanged: () => undefined,
   });
   const result = await loader.readInitialMetadata();
@@ -225,6 +228,8 @@ test('assignment moves the metadata to its device and the shared folder contains
 
 function createRepository() {
   return new ConversationRepository({
+    providers: ProviderRegistry,
+    providerSettings: ProviderSettingsCoordinator,
     persistence: store, getSettings: () => ({}), getVaultPath: () => root,
     onConversationDeleted: async () => undefined,
   });
@@ -391,7 +396,7 @@ test('initialization loads settings while sidecar discovery is pending and waits
     return list(folder);
   });
   const exists = jest.spyOn(app.vault.adapter, 'exists');
-  const storage = new SharedStorageService({ app } as Plugin);
+  const storage = new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS);
   let finished = false;
   const initializing = storage.initialize().then(result => { finished = true; return result; });
   try {
@@ -418,7 +423,7 @@ test('initialization joins recovery before reporting a settings failure', async 
     if (file === CLAUDIAN_SETTINGS_PATH) return Promise.reject(failure);
     return read(file);
   });
-  const storage = new SharedStorageService({ app } as Plugin);
+  const storage = new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS);
   await expect(storage.initialize()).rejects.toBe(failure);
   expect(JSON.parse(await adapter.read(`${DEVICE_PATH}/${metadata.id}.meta.json`))).toEqual(metadata);
   expect(await adapter.exists(`${SESSIONS_PATH}/${metadata.id}.assigned.json`)).toBe(false);
@@ -432,7 +437,7 @@ test.each(['list', 'read', 'rename'] as const)(
       schemaVersion: 1, conversationId: metadata.id, deviceKey: DEVICE_KEY,
     }));
     await adapter.write(CLAUDIAN_SETTINGS_PATH, JSON.stringify({ userName: 'Example' }));
-    const storage = new SharedStorageService({ app } as Plugin);
+    const storage = new SharedStorageService({ app } as Plugin, DEFAULT_CLAUDIAN_SETTINGS);
     const original = app.vault.adapter[operation].bind(app.vault.adapter) as (...args: string[]) => ReturnType<App['vault']['adapter'][typeof operation]>;
     let failed = false;
     jest.spyOn(app.vault.adapter, operation).mockImplementation((...args: string[]): ReturnType<App['vault']['adapter'][typeof operation]> => {

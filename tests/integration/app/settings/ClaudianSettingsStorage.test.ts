@@ -1,7 +1,8 @@
 import '@/providers';
 
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+
 import { CLAUDIAN_SETTINGS_PATH, ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 
@@ -14,7 +15,7 @@ function fixture() {
     write: jest.fn(async (path: string, content: string) => { files.set(path, content); }),
     delete: jest.fn(async (path: string) => { files.delete(path); }),
   };
-  const storage = new ClaudianSettingsStorage(adapter as unknown as VaultFileAdapter);
+  const storage = new ClaudianSettingsStorage(adapter as unknown as VaultFileAdapter, DEFAULT_CLAUDIAN_SETTINGS);
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
   const coordinator = new SettingsCoordinator(settings, value => storage.save(value));
   return { files, adapter, storage, settings, coordinator, retiredPath };

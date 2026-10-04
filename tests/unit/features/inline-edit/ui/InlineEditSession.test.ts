@@ -56,6 +56,7 @@ function createSession() {
   const session = new InlineEditSession(
     app,
     plugin,
+    plugin,
     editorView,
     editor as any,
     { mode: 'selection', selectedText: 'hello' },

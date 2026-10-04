@@ -1,23 +1,11 @@
-import type { ConversationPersistence } from '../../core/bootstrap/ConversationPersistenceStore';
-import type {
-  SessionMetadataAuthority,
-  SessionMetadataReadResult,
-} from '../../core/bootstrap/SessionStorage';
 import type { ProviderSessionSnapshot } from '../../core/execution';
 import {
   assertLinkedContentPath,
   normalizeLinkedContentPath,
 } from '../../core/path/LinkedContentPath';
-import {
-  getConversationModelPersistenceTarget,
-  normalizeProviderModelSelection,
-  resolveConversationModel,
-} from '../../core/providers/conversationModel';
+import { normalizeProviderModelSelection } from '../../core/providers/conversationModel';
 import { getRuntimeEnvironmentVariables } from '../../core/providers/providerEnvironment';
-import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
-import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import type {
-  ProviderConversationHistoryService,
   ProviderHistoryInput,
   ProviderHistoryPathContext,
   ProviderHistoryResult,
@@ -29,33 +17,40 @@ import {
 import {
   type Conversation,
   type ConversationMeta,
-  type ConversationModelRecoverySource,
   type ConversationMutablePatch,
   type ConversationSummary,
   type SessionMetadata,
 } from '../../core/types';
-import { mapWithConcurrency } from '../../utils/concurrency';
 import { extractUserDisplayContent } from '../../utils/context';
 import { rewriteVaultPathAfterRename } from '../../utils/path';
+import type { ConversationPersistence } from '../storage/ConversationPersistenceStore';
+import type {
+  SessionMetadataAuthority,
+  SessionMetadataReadResult,
+} from '../storage/SessionStorage';
+import {
+  ConversationExecutionBindings,
+  type ExecutionBindingState,
+} from './ConversationExecutionBindings';
+import {
+  cloneModelRecoverySource,
+  ConversationModelRecovery,
+  getStoredModelSelection,
+} from './ConversationModelRecovery';
+import type {
+  ConversationProviderCatalog,
+  ConversationProviderSettings,
+  ConversationRecordFence,
+} from './ConversationRecordFence';
 
-interface ConversationRepositoryBaseDeps {
+export interface ConversationRepositoryDeps {
   ensureProviderWorkspace?: (providerId: ProviderId) => Promise<void>;
   getSettings: () => Record<string, unknown>;
   getVaultPath: () => string | null;
   onConversationDeleted: (conversationId: string) => Promise<void>;
-}
-
-export type ConversationRepositoryDeps = ConversationRepositoryBaseDeps & {
   persistence: ConversationPersistence;
-};
-
-interface ExecutionBindingState {
-  readonly bindingId: string;
-  readonly providerId: ProviderId;
-  readonly providerGeneration: number;
-  closed: boolean;
-  latestSnapshot: ProviderSessionSnapshot | null;
-  lastPersistedRevision: number;
+  providers: ConversationProviderCatalog;
+  providerSettings: ConversationProviderSettings;
 }
 
 interface ConversationDeletionState {
@@ -69,17 +64,6 @@ interface LinkedContentPathRename {
   newPath: string;
   includeDescendants: boolean;
 }
-
-type HistoricalModelRecoveryResult =
-  | 'recovered'
-  | 'superseded'
-  | 'unresolved';
-
-type HistoricalModelRecovery = NonNullable<
-  ProviderConversationHistoryService['recoverConversationModelSelection']
->;
-
-const HISTORICAL_MODEL_RECOVERY_CONCURRENCY = 2;
 
 const IMMUTABLE_CONVERSATION_PATCH_FIELDS = [
   'id',
@@ -95,62 +79,6 @@ type MutableLinkedContentConversation = Omit<
   linkedContentPath?: string;
 };
 
-function getStoredModelSelection(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function cloneModelRecoverySource(
-  source: ConversationModelRecoverySource,
-): ConversationModelRecoverySource {
-  return {
-    sessionId: source.sessionId,
-    ...(source.providerState
-      ? { providerState: { ...source.providerState } }
-      : {}),
-    ...(source.resumeAtMessageId
-      ? { resumeAtMessageId: source.resumeAtMessageId }
-      : {}),
-  };
-}
-
-function getModelRecoverySource(
-  conversation: Conversation,
-): ConversationModelRecoverySource | null {
-  if (conversation.modelRecoverySource) {
-    return cloneModelRecoverySource(conversation.modelRecoverySource);
-  }
-  if (
-    conversation.sessionId === null
-    && !conversation.providerState
-    && !conversation.resumeAtMessageId
-  ) {
-    return null;
-  }
-  return {
-    sessionId: conversation.sessionId,
-    ...(conversation.providerState
-      ? { providerState: { ...conversation.providerState } }
-      : {}),
-    ...(conversation.resumeAtMessageId
-      ? { resumeAtMessageId: conversation.resumeAtMessageId }
-      : {}),
-  };
-}
-
-function applyModelRecoverySource(
-  conversation: Conversation,
-  source: ConversationModelRecoverySource,
-): Conversation {
-  return {
-    ...conversation,
-    sessionId: source.sessionId,
-    providerState: source.providerState
-      ? { ...source.providerState }
-      : undefined,
-    resumeAtMessageId: source.resumeAtMessageId,
-  };
-}
-
 export class ConversationRepository {
   private conversations: Conversation[] = [];
   private readonly recordsById = new Map<string, Conversation>();
@@ -160,14 +88,7 @@ export class ConversationRepository {
   private deletedConversationIds = new Set<string>();
   private deletingConversationIds = new Set<string>();
   private readonly persistenceQueues = new Map<string, Promise<void>>();
-  private readonly executionBindings = new Map<string, ExecutionBindingState>();
   private readonly deletionStates = new Map<string, ConversationDeletionState>();
-  private readonly historicalModelRecoveryPromises = new Map<
-    string,
-    Promise<HistoricalModelRecoveryResult>
-  >();
-  private readonly historicalModelRecoverySources = new Map<string, Conversation>();
-  private readonly selectedModelMutationVersions = new WeakMap<Conversation, number>();
   private readonly linkedContentPathsByConversationId = new Map<
     string,
     string | undefined
@@ -177,9 +98,44 @@ export class ConversationRepository {
   private readonly metadataTargets = new Map<string, SessionMetadataAuthority>();
   private readonly persistence: ConversationPersistence;
   private readonly snapshots = new WeakMap<Conversation, { record: Conversation; generation: number }>();
+  private readonly modelRecovery: ConversationModelRecovery;
+  private readonly executionBindings: ConversationExecutionBindings;
 
   constructor(private readonly deps: ConversationRepositoryDeps) {
     this.persistence = deps.persistence;
+    const fence: ConversationRecordFence = {
+      getRecord: id => this.#getRecord(id),
+      getGeneration: id => this.#getConversationGeneration(id),
+      isCurrent: (conversation, generation) => this.#isConversationCurrent(conversation, generation),
+      isRetained: conversation => this.#isConversationRetained(conversation),
+      canWrite: conversation => this.#canWriteConversation(conversation),
+      canAdopt: id => (
+        !this.#getRecord(id)
+        && !this.deletedConversationIds.has(id)
+        && !this.deletingConversationIds.has(id)
+      ),
+      isHydrated: id => this.hydratedConversationIds.has(id),
+      invalidate: id => this.#invalidateConversation(id),
+      enqueuePersistence: (id, operation) => this.#enqueuePersistence(id, operation),
+      writeMetadata: (conversation, options) => this.#writeMetadata(conversation, options),
+      getSettings: () => this.deps.getSettings(),
+      getVaultPath: () => this.deps.getVaultPath(),
+      getHistoryPathContext: (providerId, vaultPath) => this.#getHistoryPathContext(providerId, vaultPath),
+    };
+    this.modelRecovery = new ConversationModelRecovery(fence, deps.providers);
+    this.executionBindings = new ConversationExecutionBindings({
+      fence,
+      isTransientDeletionBinding: (conversationId, binding) => (
+        this.deletingConversationIds.has(conversationId)
+        && this.deletionStates.get(conversationId)?.executionBinding === binding
+      ),
+      discardModelRecovery: (conversation) => {
+        if (conversation.modelRecoverySource || this.modelRecovery.hasPendingRecovery(conversation.id)) {
+          conversation.modelRecoverySource = undefined;
+          this.#invalidateConversation(conversation.id);
+        }
+      },
+    });
   }
 
   replaceAll(conversations: Conversation[]): void {
@@ -209,8 +165,7 @@ export class ConversationRepository {
         .map(({ id }) => id),
     );
     this.hydrationPromises.clear();
-    this.historicalModelRecoveryPromises.clear();
-    this.historicalModelRecoverySources.clear();
+    this.modelRecovery.clear();
     this.executionBindings.clear();
     this.deletionStates.clear();
   }
@@ -240,13 +195,13 @@ export class ConversationRepository {
         linkedContentPathCorrectedIds.add(conversation.id);
       }
     }
-    const registeredProviderIds = new Set(ProviderRegistry.getRegisteredProviderIds());
+    const registeredProviderIds = new Set(this.deps.providers.getRegisteredProviderIds());
     for (const { conversation } of entries) {
       if (
         !this.#getRecord(conversation.id)
         && registeredProviderIds.has(conversation.providerId)
       ) {
-        await this.#reconcileIncomingSelectedModel(conversation);
+        await this.modelRecovery.reconcileIncoming(conversation);
       }
     }
     const added = this.mergeMetadataConversations(
@@ -369,7 +324,7 @@ export class ConversationRepository {
       throw new Error(`Conversation was deleted in this session: ${id}`);
     }
     const providerSettings =
-      ProviderSettingsCoordinator.getProviderSettingsSnapshot(
+      this.deps.providerSettings.getProviderSettingsSnapshot(
         settings,
         providerId,
       );
@@ -446,7 +401,7 @@ export class ConversationRepository {
     const deletionState: ConversationDeletionState = {
       conversation,
       generation: this.#getConversationGeneration(id),
-      executionBinding: this.executionBindings.get(id) ?? null,
+      executionBinding: this.executionBindings.get(id),
     };
     this.deletionStates.set(id, deletionState);
     this.deletingConversationIds.add(id);
@@ -489,7 +444,11 @@ export class ConversationRepository {
           this.hydratedConversationIds.add(id);
         }
         this.#invalidateConversation(id);
-        await this.#replayDeletionSnapshot(id, deletionState);
+        await this.executionBindings.replayAfterDeletionRollback(
+          id,
+          deletionState.executionBinding,
+          deletionState.conversation,
+        );
       }
       throw error;
     }
@@ -515,7 +474,7 @@ export class ConversationRepository {
     if (!conversation) return 'not_found';
     const generation = this.#getConversationGeneration(id);
 
-    const historyService = ProviderRegistry.getConversationHistoryService(
+    const historyService = this.deps.providers.getConversationHistoryService(
       conversation.providerId,
     );
     if (!historyService.resolveMissingConversationSession) return 'preserved';
@@ -582,7 +541,7 @@ export class ConversationRepository {
       if (selectedModel) {
         safeUpdates.selectedModel = selectedModel;
         // Explicit intent supersedes pending automatic model recovery immediately.
-        this.#markSelectedModelMutation(conversation);
+        this.modelRecovery.markSelectedModelMutation(conversation);
       } else {
         delete safeUpdates.selectedModel;
       }
@@ -676,7 +635,7 @@ export class ConversationRepository {
     const drafts = this.conversations
       .filter(conversation => providers.has(conversation.providerId))
       .map(conversation => cloneJSON(conversation));
-    const invalidated = ProviderSettingsCoordinator.invalidateConversationSessions(drafts, providerIds);
+    const invalidated = this.deps.providerSettings.invalidateConversationSessions(drafts, providerIds);
     return invalidated.flatMap(draft => {
       const conversation = this.#getRecord(draft.id);
       if (!conversation) return [];
@@ -708,149 +667,12 @@ export class ConversationRepository {
   registerHistoricalModelRecoverySources(
     conversations: readonly Conversation[],
   ): void {
-    for (const source of conversations) {
-      const target = this.#getRecord(source.id);
-      if (
-        !target
-        || getStoredModelSelection(target.selectedModel)
-        || getStoredModelSelection(source.selectedModel)
-        || this.historicalModelRecoverySources.has(source.id)
-      ) {
-        continue;
-      }
-      const recoverySource = getModelRecoverySource(source)
-        ?? getModelRecoverySource(target);
-      if (!recoverySource) continue;
-
-      target.modelRecoverySource ??= cloneModelRecoverySource(recoverySource);
-      this.historicalModelRecoverySources.set(
-        source.id,
-        applyModelRecoverySource(source, recoverySource),
-      );
-    }
+    this.modelRecovery.registerSources(conversations);
   }
 
   async recoverMissingSelectedModels(): Promise<Conversation[]> {
-    const candidates = this.conversations.filter(conversation => (
-      !getStoredModelSelection(conversation.selectedModel)
-    ));
-    const recovered = await mapWithConcurrency(
-      candidates,
-      async (conversation): Promise<Conversation | null> => {
-        const recovery = this.#recoverHistoricalModelSelection(conversation);
-        if (!recovery) return null;
-        const result = await recovery;
-        return result === 'recovered' && this.#getRecord(conversation.id) === conversation
-          ? conversation
-          : null;
-      },
-      HISTORICAL_MODEL_RECOVERY_CONCURRENCY,
-    );
-    return recovered.filter(
-      (conversation): conversation is Conversation => conversation !== null,
-    ).map(record => this.#snapshot(record));
-  }
-
-  #recoverHistoricalModelSelection(
-    conversation: Conversation,
-  ): Promise<HistoricalModelRecoveryResult> | null {
-    if (getStoredModelSelection(conversation.selectedModel)) {
-      return null;
-    }
-
-    const existing = this.historicalModelRecoveryPromises.get(conversation.id);
-    if (existing) return existing;
-
-    const persistedRecoverySource = conversation.modelRecoverySource
-      ? cloneModelRecoverySource(conversation.modelRecoverySource)
-      : null;
-    const recoverySource = this.historicalModelRecoverySources.get(conversation.id)
-      ?? (persistedRecoverySource
-        ? applyModelRecoverySource(conversation, persistedRecoverySource)
-        : conversation);
-    let recoverModelSelection: HistoricalModelRecovery | undefined;
-    try {
-      const historyService = ProviderRegistry.getConversationHistoryService(
-        recoverySource.providerId,
-      );
-      if (historyService.hasConversationModelRecoverySource?.(recoverySource) === false) {
-        return null;
-      }
-      recoverModelSelection = historyService.recoverConversationModelSelection
-        ?.bind(historyService);
-    } catch {
-      return null;
-    }
-    if (!recoverModelSelection) return null;
-
-    const generation = this.#getConversationGeneration(conversation.id);
-    const recovery = this.#runHistoricalModelRecovery(
-      conversation,
-      generation,
-      recoverModelSelection,
-      recoverySource,
-    );
-    this.historicalModelRecoveryPromises.set(conversation.id, recovery);
-    return recovery;
-  }
-
-  async #runHistoricalModelRecovery(
-    conversation: Conversation,
-    generation: number,
-    recoverModelSelection: HistoricalModelRecovery,
-    recoverySource: Conversation,
-  ): Promise<HistoricalModelRecoveryResult> {
-    const mutationVersion = this.#getSelectedModelMutationVersion(conversation);
-    let selectedModel: string | null;
-    try {
-      const vaultPath = this.deps.getVaultPath();
-      selectedModel = (await recoverModelSelection(
-        structuredClone(recoverySource),
-        vaultPath,
-        this.#getHistoryPathContext(recoverySource.providerId, vaultPath),
-      ))?.trim() || null;
-    } catch {
-      return 'unresolved';
-    }
-    if (!selectedModel) return 'unresolved';
-    if (
-      !this.#isConversationCurrent(conversation, generation)
-      || this.#getSelectedModelMutationVersion(conversation) !== mutationVersion
-      || getStoredModelSelection(conversation.selectedModel)
-    ) {
-      return 'superseded';
-    }
-
-    const resolvedRecoveredModel = resolveConversationModel(
-      this.deps.getSettings(),
-      conversation.providerId,
-      { ...conversation, selectedModel },
-    );
-    const recoveredModelToPersist = getConversationModelPersistenceTarget(
-      resolvedRecoveredModel,
-    );
-    selectedModel = recoveredModelToPersist || selectedModel;
-
-    let didPersist: boolean;
-    try {
-      didPersist = await this.#persistSelectedModelBeforePublish(
-        conversation,
-        selectedModel,
-        true,
-      );
-    } catch {
-      return 'unresolved';
-    }
-    if (
-      didPersist
-      &&
-      this.#isConversationCurrent(conversation, generation)
-      && conversation.selectedModel === selectedModel
-    ) {
-      this.historicalModelRecoverySources.delete(conversation.id);
-      return 'recovered';
-    }
-    return 'superseded';
+    const recovered = await this.modelRecovery.recoverMissing(this.conversations);
+    return recovered.map(record => this.#snapshot(record));
   }
 
   async rewriteLinkedContentPaths(
@@ -885,21 +707,7 @@ export class ConversationRepository {
     bindingId: string,
     providerGeneration: number,
   ): void {
-    const conversation = this.#getRecord(conversationId);
-    if (!conversation) throw new Error(`Conversation is no longer available: ${conversationId}`);
-    const existing = this.executionBindings.get(conversationId);
-    if (existing && !existing.closed) {
-      if (existing.bindingId === bindingId && existing.providerGeneration === providerGeneration) return;
-      throw new Error('This conversation already has an active execution owner in another tab.');
-    }
-    this.executionBindings.set(conversationId, {
-      bindingId,
-      providerId: conversation.providerId,
-      providerGeneration,
-      closed: false,
-      latestSnapshot: null,
-      lastPersistedRevision: -1,
-    });
+    this.executionBindings.register(conversationId, bindingId, providerGeneration);
   }
 
   persistExecutionSnapshot(
@@ -908,92 +716,11 @@ export class ConversationRepository {
     providerGeneration: number,
     snapshot: ProviderSessionSnapshot,
   ): Promise<boolean> {
-    const binding = this.executionBindings.get(conversationId);
-    const conversation = this.#getRecord(conversationId);
-    const deletionState = this.deletionStates.get(conversationId);
-    const isTransientDeletionBinding = (
-      !conversation
-      && this.deletingConversationIds.has(conversationId)
-      && deletionState?.executionBinding === binding
-    );
-    if (
-      !binding
-      || (!conversation && !isTransientDeletionBinding)
-      || binding.bindingId !== bindingId
-      || binding.providerGeneration !== providerGeneration
-      || binding.closed
-      || snapshot.providerId !== binding.providerId
-      || snapshot.revision < (binding.latestSnapshot?.revision ?? -1)
-      || snapshot.revision <= binding.lastPersistedRevision
-    ) {
-      return Promise.resolve(false);
-    }
-    if (
-      !binding.latestSnapshot
-      || snapshot.revision > binding.latestSnapshot.revision
-    ) {
-      binding.latestSnapshot = structuredClone(snapshot);
-    }
-
-    if (!conversation) {
-      return Promise.resolve(false);
-    }
-
-    return this.#persistLatestExecutionSnapshot(conversationId, binding);
-  }
-
-  #persistLatestExecutionSnapshot(
-    conversationId: string,
-    binding: ExecutionBindingState,
-  ): Promise<boolean> {
-    return this.#enqueuePersistence(conversationId, async () => {
-      if (
-        this.executionBindings.get(conversationId) !== binding
-        || !binding.latestSnapshot
-        || binding.latestSnapshot.revision <= binding.lastPersistedRevision
-      ) {
-        return false;
-      }
-      const current = this.#getRecord(conversationId);
-      if (!current || !await this.#canWriteConversation(current)) {
-        return false;
-      }
-      if (
-        this.executionBindings.get(conversationId) !== binding
-        || !binding.latestSnapshot
-        || binding.latestSnapshot.revision <= binding.lastPersistedRevision
-      ) {
-        return false;
-      }
-
-      const latest = binding.latestSnapshot;
-      this.#applySnapshot(current, latest);
-      await this.#writeMetadata(current);
-      binding.lastPersistedRevision = latest.revision;
-      return true;
-    });
-  }
-
-  #replayDeletionSnapshot(
-    conversationId: string,
-    deletionState: ConversationDeletionState,
-  ): Promise<boolean> {
-    const binding = deletionState.executionBinding;
-    if (
-      !binding
-      || binding.closed
-      || this.executionBindings.get(conversationId) !== binding
-      || this.#getRecord(conversationId) !== deletionState.conversation
-      || !binding.latestSnapshot
-      || binding.latestSnapshot.revision <= binding.lastPersistedRevision
-    ) {
-      return Promise.resolve(false);
-    }
-    return this.persistExecutionSnapshot(
+    return this.executionBindings.persistSnapshot(
       conversationId,
-      binding.bindingId,
-      binding.providerGeneration,
-      binding.latestSnapshot,
+      bindingId,
+      providerGeneration,
+      snapshot,
     );
   }
 
@@ -1001,26 +728,15 @@ export class ConversationRepository {
     conversationId: string,
     bindingId: string,
   ): void {
-    const binding = this.executionBindings.get(conversationId);
-    if (binding?.bindingId === bindingId) {
-      binding.closed = true;
-    }
+    this.executionBindings.release(conversationId, bindingId);
   }
 
-  async assertConversationExecutionAuthority(
+  assertConversationExecutionAuthority(
     conversationId: string,
     bindingId: string,
     providerGeneration: number,
   ): Promise<void> {
-    const conversation = this.#getRecord(conversationId);
-    const binding = this.executionBindings.get(conversationId);
-    if (!conversation || !await this.#canWriteConversation(conversation)
-      || this.#getRecord(conversationId) !== conversation
-      || !binding || binding.closed
-      || binding.bindingId !== bindingId || binding.providerGeneration !== providerGeneration
-      || this.executionBindings.get(conversationId) !== binding) {
-      throw new Error(`Conversation is no longer available: ${conversationId}`);
-    }
+    return this.executionBindings.assertAuthority(conversationId, bindingId, providerGeneration);
   }
 
   async recordConversationActivity(conversationId: string, timestamp: number): Promise<void> {
@@ -1072,7 +788,7 @@ export class ConversationRepository {
     conversation: Conversation,
     generation: number,
   ): Promise<Conversation | null> {
-    await this.ensureSelectedModel(conversation);
+    await this.modelRecovery.ensureSelectedModel(conversation);
     if (!this.#isConversationCurrent(conversation, generation)) return null;
     return this.#isConversationCurrent(conversation, generation)
       ? conversation
@@ -1090,7 +806,7 @@ export class ConversationRepository {
 
     if (!await this.#reconcileProviderSession(conversation)) return null;
     if (!this.#isConversationCurrent(conversation, generation)) return null;
-    await this.ensureSelectedModel(conversation);
+    await this.modelRecovery.ensureSelectedModel(conversation);
     if (!this.#isConversationCurrent(conversation, generation)) return null;
     if (!await this.#hydrateProviderHistory(conversation)) return null;
     if (!this.#isConversationCurrent(conversation, generation)) return null;
@@ -1104,7 +820,7 @@ export class ConversationRepository {
     return record ? {
       id: record.id, providerId: record.providerId, title: record.title,
       selectedModel: record.selectedModel, isPinned: record.isPinned,
-      capabilities: { ...ProviderRegistry.getCapabilities(record.providerId, record.providerState) },
+      capabilities: { ...this.deps.providers.getCapabilities(record.providerId, record.providerState) },
       ...(record.usage ? { usage: { model: record.usage.model } } : {}),
     } : null;
   }
@@ -1159,43 +875,11 @@ export class ConversationRepository {
   }
 
   isSelectedModelPublicationSafe(conversation: Conversation): boolean {
-    const storedModel = getStoredModelSelection(conversation.selectedModel);
-    if (
-      !storedModel
-      || !ProviderRegistry.getRegisteredProviderIds().includes(conversation.providerId)
-    ) {
-      return true;
-    }
-
-    const resolved = resolveConversationModel(
-      this.deps.getSettings(),
-      conversation.providerId,
-      conversation,
-    );
-    const modelToPersist = getConversationModelPersistenceTarget(resolved);
-    return !(
-      resolved.shouldPersist
-      && modelToPersist
-      && modelToPersist !== storedModel
-    );
+    return this.modelRecovery.isPublicationSafe(conversation);
   }
 
   async reconcileSelectedModels(providerId: ProviderId): Promise<Conversation[]> {
-    const changed: Conversation[] = [];
-    for (const conversation of this.conversations) {
-      if (
-        conversation.providerId !== providerId
-        || !getStoredModelSelection(conversation.selectedModel)
-      ) {
-        continue;
-      }
-
-      const previousModel = conversation.selectedModel;
-      await this.ensureSelectedModel(conversation);
-      if (conversation.selectedModel !== previousModel) {
-        changed.push(conversation);
-      }
-    }
+    const changed = await this.modelRecovery.reconcileProvider(this.conversations, providerId);
     return changed.map(record => this.#snapshot(record));
   }
 
@@ -1293,7 +977,7 @@ export class ConversationRepository {
   async #reconcileProviderSession(
     conversation: Conversation,
   ): Promise<boolean> {
-    const historyService = ProviderRegistry.getConversationHistoryService(
+    const historyService = this.deps.providers.getConversationHistoryService(
       conversation.providerId,
     );
 
@@ -1335,129 +1019,13 @@ export class ConversationRepository {
     }
   }
 
-  private async ensureSelectedModel(
-    conversation: Conversation,
-  ): Promise<void> {
-    const mutationVersion = this.#getSelectedModelMutationVersion(conversation);
-    let recoveryResult: HistoricalModelRecoveryResult | 'unsupported' = 'unsupported';
-    if (!getStoredModelSelection(conversation.selectedModel)) {
-      const recovery = this.#recoverHistoricalModelSelection(conversation);
-      if (recovery) recoveryResult = await recovery;
-    }
-    const resolved = resolveConversationModel(
-      this.deps.getSettings(),
-      conversation.providerId,
-      conversation,
-    );
-    const modelToPersist = getConversationModelPersistenceTarget(resolved);
-    if (
-      recoveryResult === 'unresolved' && resolved.source === 'usage'
-    ) {
-      return;
-    }
-    if (
-      !resolved.shouldPersist
-      || !modelToPersist
-      || conversation.selectedModel === modelToPersist
-    ) {
-      return;
-    }
-
-    if (this.#getSelectedModelMutationVersion(conversation) !== mutationVersion) return;
-    await this.#persistSelectedModelBeforePublish(conversation, modelToPersist);
-  }
-
-  async #reconcileIncomingSelectedModel(conversation: Conversation): Promise<void> {
-    if (
-      !getStoredModelSelection(conversation.selectedModel)
-    ) {
-      return;
-    }
-
-    const resolved = resolveConversationModel(
-      this.deps.getSettings(),
-      conversation.providerId,
-      conversation,
-    );
-    const modelToPersist = getConversationModelPersistenceTarget(resolved);
-    if (
-      !resolved.shouldPersist
-      || !modelToPersist
-      || conversation.selectedModel === modelToPersist
-    ) {
-      return;
-    }
-
-    const snapshot = { ...conversation, selectedModel: modelToPersist };
-    const didPersist = await this.#enqueuePersistence(conversation.id, async () => {
-      if (
-        this.#getRecord(conversation.id)
-        || this.deletedConversationIds.has(conversation.id)
-        || this.deletingConversationIds.has(conversation.id)
-      ) {
-        return false;
-      }
-      await this.#writeMetadata(snapshot, {
-        preserveProviderState: true,
-      });
-      return true;
-    });
-    if (didPersist && !this.#getRecord(conversation.id)) {
-      conversation.selectedModel = modelToPersist;
-    }
-  }
-
-  async #persistSelectedModelBeforePublish(
-    conversation: Conversation,
-    selectedModel: string,
-    clearRecoverySource = false,
-  ): Promise<boolean> {
-    const previousSelectedModel = conversation.selectedModel;
-    const selectedModelMutationVersion = this.#markSelectedModelMutation(conversation);
-    return this.#enqueuePersistence(conversation.id, async () => {
-      if (
-        this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
-        || !await this.#canWriteConversation(conversation)
-        || this.#getSelectedModelMutationVersion(conversation) !== selectedModelMutationVersion
-        || conversation.selectedModel !== previousSelectedModel
-      ) {
-        return false;
-      }
-      const snapshot = {
-        ...conversation,
-        selectedModel,
-        ...(clearRecoverySource ? { modelRecoverySource: undefined } : {}),
-      };
-      await this.#writeMetadata(snapshot, {
-        preserveProviderState: !this.hydratedConversationIds.has(conversation.id),
-      });
-      if (!this.#isConversationRetained(conversation)) return false;
-      // Publish inside the same queue slot; a later explicit intent commits next.
-      conversation.selectedModel = selectedModel;
-      if (clearRecoverySource) {
-        conversation.modelRecoverySource = undefined;
-      }
-      return true;
-    });
-  }
-
-  #markSelectedModelMutation(conversation: Conversation): number {
-    const nextVersion = this.#getSelectedModelMutationVersion(conversation) + 1;
-    this.selectedModelMutationVersions.set(conversation, nextVersion);
-    return nextVersion;
-  }
-
-  #getSelectedModelMutationVersion(conversation: Conversation): number {
-    return this.selectedModelMutationVersions.get(conversation) ?? 0;
-  }
-
   async #hydrateProviderHistory(
     conversation: Conversation,
   ): Promise<boolean> {
     const vaultPath = this.deps.getVaultPath();
     const outcome = await this.#readProviderHistory(conversation, async input => ({
       outcome: undefined,
-      changes: await ProviderRegistry.getConversationHistoryService(conversation.providerId)
+      changes: await this.deps.providers.getConversationHistoryService(conversation.providerId)
         .hydrateConversationHistory(
           input,
           vaultPath,
@@ -1504,47 +1072,6 @@ export class ConversationRepository {
     }
     Object.assign(conversation, structuredClone(patch));
     return { current: true, value };
-  }
-
-  #applySnapshot(
-    conversation: Conversation,
-    snapshot: ProviderSessionSnapshot,
-  ): void {
-    const establishesFreshProviderSession = snapshot.status !== 'invalidated'
-      && typeof snapshot.providerSessionId === 'string'
-      && snapshot.providerSessionId.trim().length > 0;
-    if (
-      establishesFreshProviderSession
-      && (
-        conversation.modelRecoverySource
-        || this.historicalModelRecoverySources.has(conversation.id)
-        || this.historicalModelRecoveryPromises.has(conversation.id)
-      )
-    ) {
-      conversation.modelRecoverySource = undefined;
-      this.#invalidateConversation(conversation.id);
-    }
-    if (snapshot.providerSessionId !== undefined) {
-      conversation.sessionId = snapshot.providerSessionId;
-    } else if (snapshot.status === 'invalidated') {
-      conversation.sessionId = null;
-    }
-    if (
-      snapshot.providerState !== undefined
-      || snapshot.providerStateDeletes !== undefined
-    ) {
-      const retainedProviderState = { ...conversation.providerState };
-      for (const key of snapshot.providerStateDeletes ?? []) {
-        delete retainedProviderState[key];
-      }
-      const nextProviderState = {
-        ...retainedProviderState,
-        ...snapshot.providerState,
-      };
-      conversation.providerState = Object.keys(nextProviderState).length > 0
-        ? nextProviderState
-        : undefined;
-    }
   }
 
   private save(conversation: Conversation): Promise<void> {
@@ -1603,7 +1130,7 @@ export class ConversationRepository {
     options: { preserveProviderState?: boolean } = {},
   ): SessionMetadata {
     const linkedContentPath = this.#getAuthoritativeLinkedContentPath(conversation);
-    const historyService = ProviderRegistry.getConversationHistoryService(
+    const historyService = this.deps.providers.getConversationHistoryService(
       conversation.providerId,
     );
     const providerState = historyService.buildPersistedProviderState
@@ -1702,8 +1229,7 @@ export class ConversationRepository {
   }
 
   #invalidateConversation(id: string): void {
-    this.historicalModelRecoveryPromises.delete(id);
-    this.historicalModelRecoverySources.delete(id);
+    this.modelRecovery.forget(id);
     this.conversationGenerations.set(
       id,
       this.#getConversationGeneration(id) + 1,

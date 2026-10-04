@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { PendingInteractionLedger } from '@/core/execution';
 import { resolveTitleGenerationLocale } from '@/core/prompt/titleGeneration';
 import type { ACPPromptRequest, ACPSessionConfigOption } from '@/providers/acp';
 
@@ -44,14 +45,16 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private readonly tools = new Map<string, NativeTool>();
   private readonly previewStops = new Map<string, 'cancelled' | 'ended'>();
   private readonly globalForms = new Map<string, { settled: boolean }>();
-  private readonly interactions = new Map<string, AbortController>();
+  private readonly interactions: PendingInteractionLedger;
   private pending: PendingPrompt | null = null;
   private readonly steers = new Map<string, PendingSteer>();
   private cancellation: Promise<unknown> | null = null;
   private readonly idleWaiters = new Set<() => void>();
 
   private agents: Record<string, string> = {};
-  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly cliPath: string, private readonly environment: NodeJS.ProcessEnv, private readonly serverService: OpencodeServerService, private readonly persistence: OpencodeSessionPersistence) {}
+  constructor(private readonly options: OpencodeSessionKernelOptions, private readonly cliPath: string, private readonly environment: NodeJS.ProcessEnv, private readonly serverService: OpencodeServerService, private readonly persistence: OpencodeSessionPersistence) {
+    this.interactions = new PendingInteractionLedger(options.config.interactionPort);
+  }
 
   get hasNativeWork(): boolean {
     return !this.disposed && (!!this.pending || this.children.size > 0 || this.interactions.size > 0
@@ -231,11 +234,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
     this.stopTools();
     this.previewStops.clear();
     this.controller.abort();
-    for (const [id, controller] of this.interactions) {
-      controller.abort();
-      this.options.config.interactionPort.dismissInteraction(id, 'session-disposed');
-    }
-    this.interactions.clear();
+    this.interactions.dismissAll('session-disposed');
     this.pending?.reject(new Error('OpenCode session disposed.'));
     this.pending = null;
     await Promise.all([this.cancellation, ...interruptions, recalls]);
@@ -254,11 +253,8 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       const id = String(data.requestID ?? data.id);
       const globalForm = nativeSessionId === 'global' ? this.globalForms.get(id) : undefined;
       if (globalForm) globalForm.settled = true;
-      const controller = this.interactions.get(id);
-      if (controller && (nativeSessionId === this.sessionId || child || (nativeSessionId === 'global' && this.globalForms.has(id)))) {
-        controller.abort();
-        this.interactions.delete(id);
-        this.options.config.interactionPort.dismissInteraction(id, 'native-rejected');
+      if (this.interactions.has(id) && (nativeSessionId === this.sessionId || child || (nativeSessionId === 'global' && this.globalForms.has(id)))) {
+        this.interactions.abort(id, 'native-rejected');
       }
       return;
     }
@@ -429,10 +425,9 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
   private async interact(data: Record<string, unknown>, question: boolean, childTurnId?: string): Promise<void> {
     const id = String(data.id);
     const turnId = childTurnId ?? this.options.getActiveTurnId();
-    if (!turnId || this.interactions.has(id)) return;
-    const controller = new AbortController();
-    const signal = AbortSignal.any([this.controller.signal, controller.signal]);
-    this.interactions.set(id, controller);
+    const pending = turnId ? this.interactions.begin(id) : null;
+    if (!turnId || !pending) return;
+    const signal = AbortSignal.any([this.controller.signal, pending.signal]);
     const identity = { interactionId: id, sessionInstanceId: this.options.sessionInstanceId, turnId };
     const route = `/api/session/${encodeURIComponent(String(data.sessionID))}/${question ? 'form' : 'permission'}/${encodeURIComponent(id)}`;
     let projectionError: unknown;
@@ -477,7 +472,7 @@ export class OpencodeHTTPSessionKernel implements OpencodeSessionKernel {
       // not suppress the explanation for rejecting an unsupported form.
       if (projectionError || !signal.aborted) throw projectionError ?? error;
     } finally {
-      if (this.interactions.delete(id)) this.options.config.interactionPort.dismissInteraction(id, 'resolved');
+      this.interactions.settle(pending, 'resolved');
       this.workChanged();
     }
   }

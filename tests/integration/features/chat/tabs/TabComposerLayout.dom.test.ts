@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import '@/providers';
 
+import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createHarness, releaseSideChatHarnesses } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -88,7 +89,7 @@ it('attaches a queued follow-up to the top of the input box, under the tab bar',
     jest.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({
       ...ProviderRegistry.getCapabilities('claude'), supportsTurnSteer: true,
     });
-    tab.state.isStreaming = true;
+    const releaseTurn = holdResponse(tab.session.turns);
     tab.state.queuedMessage = {
       content: 'also add a created date', images: undefined, editorContext: null, canvasContext: null,
     };
@@ -110,7 +111,7 @@ it('attaches a queued follow-up to the top of the input box, under the tab bar',
     expect(strip.classList.contains('claudian-hidden')).toBe(true);
     expect(box.queryByRole('button', { name: 'Edit queued message' })).toBeNull();
     expect(tab.dom.inputEl.value).toBe('also add a created date');
-    tab.state.isStreaming = false;
+    await releaseTurn();
   } finally {
     await destroyTab(tab);
   }

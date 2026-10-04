@@ -1,6 +1,7 @@
 import '@/providers';
 
 import { TEST_CODEX_MODEL } from '@test/helpers/codexModels';
+import { holdResponse } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 
 import {
@@ -13,10 +14,15 @@ import {
 } from '@/core/tools/toolNames';
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
 import {
+  AsyncSubagentHistoryRecovery,
+  type AsyncSubagentHistoryRecoveryDeps,
+} from '@/features/chat/controllers/AsyncSubagentHistoryRecovery';
+import {
   providerOutputEventToStreamChunk,
   StreamController,
   type StreamControllerDeps,
 } from '@/features/chat/controllers/StreamController';
+import { TurnCoordinator } from '@/features/chat/controllers/TurnCoordinator';
 import * as displayOnlyCodeFences from '@/features/chat/rendering/DisplayOnlyCodeFences';
 import { SubagentManager } from '@/features/chat/services/SubagentManager';
 import { ChatState } from '@/features/chat/state/ChatState';
@@ -104,13 +110,39 @@ function restoreTestWindow(): void {
   });
 }
 
-type MockStreamControllerDeps = StreamControllerDeps;
+type MockStreamControllerDeps = StreamControllerDeps & {
+  /** The recovery shares the stream's provider, session, manager, and window ports. */
+  historyRecovery: AsyncSubagentHistoryRecoveryDeps;
+  /** The turn owner the presentation state derives its stream generation from. */
+  turns: TurnCoordinator;
+};
 
 function createMockDeps(): MockStreamControllerDeps {
-  const state = new ChatState();
+  const turns = new TurnCoordinator();
+  const state = new ChatState({}, undefined, turns);
   const messagesEl = createMockEl();
+  const subagentManager = Object.assign(new SubagentManager(() => undefined), {
+    isPendingAsyncTask: jest.fn().mockReturnValue(false),
+    isLinkedAgentOutputTool: jest.fn().mockReturnValue(false),
+    handleAgentOutputToolResult: jest.fn().mockReturnValue(undefined),
+    handleAgentOutputToolUse: jest.fn(),
+    handleAsyncSubagentCompletion: jest.fn().mockReturnValue(undefined),
+    handleTaskToolUse: jest.fn().mockReturnValue({ action: 'buffered' }),
+    handleTaskToolResult: jest.fn(),
+    getByTaskId: jest.fn().mockReturnValue(undefined),
+    refreshAsyncSubagent: jest.fn(),
+    hasPendingTask: jest.fn().mockReturnValue(false),
+    renderPendingTask: jest.fn().mockReturnValue(null),
+    renderPendingTaskFromTaskResult: jest.fn().mockReturnValue(null),
+    getSyncSubagent: jest.fn().mockReturnValue(undefined),
+    addSyncToolCall: jest.fn(),
+    updateSyncToolResult: jest.fn(),
+    finalizeSyncSubagent: jest.fn().mockReturnValue(null),
+    resetStreamingState: jest.fn(),
+    resetLifecycleState: jest.fn(),
+  }) as any;
 
-  return {
+  const deps: MockStreamControllerDeps = {
     plugin: {
       settings: {
         permissionMode: 'yolo',
@@ -129,33 +161,25 @@ function createMockDeps(): MockStreamControllerDeps {
       addTextCopyButton: jest.fn(),
       renderCitationGroup: jest.fn(),
     } as any,
-    subagentManager: Object.assign(new SubagentManager(() => undefined), {
-      isPendingAsyncTask: jest.fn().mockReturnValue(false),
-      isLinkedAgentOutputTool: jest.fn().mockReturnValue(false),
-      handleAgentOutputToolResult: jest.fn().mockReturnValue(undefined),
-      handleAgentOutputToolUse: jest.fn(),
-      handleAsyncSubagentCompletion: jest.fn().mockReturnValue(undefined),
-      handleTaskToolUse: jest.fn().mockReturnValue({ action: 'buffered' }),
-      handleTaskToolResult: jest.fn(),
-      getByTaskId: jest.fn().mockReturnValue(undefined),
-      refreshAsyncSubagent: jest.fn(),
-      hasPendingTask: jest.fn().mockReturnValue(false),
-      renderPendingTask: jest.fn().mockReturnValue(null),
-      renderPendingTaskFromTaskResult: jest.fn().mockReturnValue(null),
-      getSyncSubagent: jest.fn().mockReturnValue(undefined),
-      addSyncToolCall: jest.fn(),
-      updateSyncToolResult: jest.fn(),
-      finalizeSyncSubagent: jest.fn().mockReturnValue(null),
-      resetStreamingState: jest.fn(),
-      resetLifecycleState: jest.fn(),
-    }) as any,
+    subagentManager,
     getMessagesEl: () => messagesEl,
     updateQueueIndicator: jest.fn(),
     getProviderId: () => 'claude',
     getProviderSessionId: () => 'session-1',
-    loadSubagentFinalResult: jest.fn().mockResolvedValue(null),
-    loadSubagentToolCalls: jest.fn().mockResolvedValue([]),
+    turns,
+    historyRecovery: {
+      subagentManager,
+      getMessagesEl: () => messagesEl,
+      getProviderId: () => deps.getProviderId?.() ?? 'claude',
+      getProviderSessionId: () => deps.getProviderSessionId?.() ?? null,
+      loadSubagentFinalResult: jest.fn().mockResolvedValue(null),
+      loadSubagentToolCalls: jest.fn().mockResolvedValue([]),
+      enqueueBackgroundWork: work => work(),
+      persistConversation: jest.fn().mockResolvedValue(undefined),
+    },
   };
+  deps.asyncSubagentHistoryRecovery = new AsyncSubagentHistoryRecovery(deps.historyRecovery);
+  return deps;
 }
 
 function createTestMessage(): ChatMessage {
@@ -1530,9 +1554,11 @@ describe('StreamController - Text Content', () => {
       expect(deps.state.waitingStatus).not.toBe('Compacting...');
     });
 
-    it('ignores indicator work left over from a superseded stream', () => {
+    it('ignores indicator work left over from a superseded stream', async () => {
+      // A newer response takes over the stream presentation.
+      const supersede = () => holdResponse(deps.turns)();
       controller.showThinkingIndicator();
-      deps.state.bumpStreamGeneration();
+      await supersede();
       jest.advanceTimersByTime(500);
       expect(deps.state.thinkingEl).toBeNull();
       expect(deps.state.waitingStatus).toBeNull();
@@ -1541,7 +1567,7 @@ describe('StreamController - Text Content', () => {
       jest.advanceTimersByTime(500);
       const staleEl = deps.state.thinkingEl;
       expect(staleEl).not.toBeNull();
-      deps.state.bumpStreamGeneration();
+      await supersede();
 
       controller.showThinkingIndicator();
       jest.advanceTimersByTime(500);
@@ -2378,25 +2404,25 @@ describe('StreamController - Text Content', () => {
         .mockReturnValueOnce(completedSubagent);
       (deps.subagentManager.getByTaskId as jest.Mock)
         .mockReturnValue(completedSubagent);
-      (deps.loadSubagentToolCalls as jest.Mock).mockResolvedValueOnce([{
+      (deps.historyRecovery.loadSubagentToolCalls as jest.Mock).mockResolvedValueOnce([{
         id: 'nested-tool',
         input: { path: 'README.md' },
         isExpanded: false,
         name: 'Read',
         status: 'completed',
       }]);
-      (deps.loadSubagentFinalResult as jest.Mock)
+      (deps.historyRecovery.loadSubagentFinalResult as jest.Mock)
         .mockResolvedValueOnce('Recovered final result');
 
       await expect(controller.handleAsyncSubagentCompletion(completion)).resolves.toBe(true);
 
       expect(deps.subagentManager.handleAsyncSubagentCompletion).toHaveBeenCalledWith(completion);
-      expect(deps.loadSubagentToolCalls).toHaveBeenCalledWith({
+      expect(deps.historyRecovery.loadSubagentToolCalls).toHaveBeenCalledWith({
         providerId: 'claude',
         providerSessionId: 'session-1',
         subagentId: 'agent-1',
       });
-      expect(deps.loadSubagentFinalResult).toHaveBeenCalledWith({
+      expect(deps.historyRecovery.loadSubagentFinalResult).toHaveBeenCalledWith({
         providerId: 'claude',
         providerSessionId: 'session-1',
         subagentId: 'agent-1',
@@ -2431,7 +2457,7 @@ describe('StreamController - Text Content', () => {
         .mockReturnValueOnce(completedSubagent);
       (deps.subagentManager.getByTaskId as jest.Mock)
         .mockReturnValue(completedSubagent);
-      (deps.loadSubagentFinalResult as jest.Mock).mockResolvedValue(null);
+      (deps.historyRecovery.loadSubagentFinalResult as jest.Mock).mockResolvedValue(null);
 
       await controller.handleAsyncSubagentCompletion({
         providerSessionId: 'session-1',
@@ -2443,7 +2469,7 @@ describe('StreamController - Text Content', () => {
       providerSessionId = 'session-2';
       await jest.advanceTimersByTimeAsync(10_000);
 
-      expect(deps.loadSubagentFinalResult).toHaveBeenCalledTimes(1);
+      expect(deps.historyRecovery.loadSubagentFinalResult).toHaveBeenCalledTimes(1);
       expect(completedSubagent.result).toBe('Notification fallback');
       expect(deps.subagentManager.refreshAsyncSubagent).not.toHaveBeenCalled();
     });
@@ -2463,8 +2489,8 @@ describe('StreamController - Text Content', () => {
         .mockReturnValueOnce(completedSubagent);
       (deps.subagentManager.getByTaskId as jest.Mock)
         .mockReturnValue(completedSubagent);
-      (deps.loadSubagentToolCalls as jest.Mock).mockResolvedValue(undefined);
-      (deps.loadSubagentFinalResult as jest.Mock).mockResolvedValue(undefined);
+      (deps.historyRecovery.loadSubagentToolCalls as jest.Mock).mockResolvedValue(undefined);
+      (deps.historyRecovery.loadSubagentFinalResult as jest.Mock).mockResolvedValue(undefined);
 
       await controller.handleAsyncSubagentCompletion({
         providerSessionId: 'session-1',
@@ -2475,8 +2501,8 @@ describe('StreamController - Text Content', () => {
       });
       await jest.advanceTimersByTimeAsync(10_000);
 
-      expect(deps.loadSubagentToolCalls).toHaveBeenCalledTimes(1);
-      expect(deps.loadSubagentFinalResult).not.toHaveBeenCalled();
+      expect(deps.historyRecovery.loadSubagentToolCalls).toHaveBeenCalledTimes(1);
+      expect(deps.historyRecovery.loadSubagentFinalResult).not.toHaveBeenCalled();
       expect(completedSubagent.result).toBe('Notification result');
       expect(deps.subagentManager.refreshAsyncSubagent).not.toHaveBeenCalled();
     });

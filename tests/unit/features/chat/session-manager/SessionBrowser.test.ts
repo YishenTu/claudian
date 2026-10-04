@@ -1,7 +1,7 @@
 import '@/providers';
 
 import { claudeCatalogFixture } from '@test/helpers/claudeModels';
-import { createConversationPorts } from '@test/helpers/ConversationPorts';
+import { createConversationPorts, createTestTabSession, holdResponse } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 import { Menu, Notice, setIcon } from 'obsidian';
 
@@ -10,13 +10,15 @@ import type { ClaudianSettings } from '@/core/types';
 import { ConversationController, type ConversationControllerDeps } from '@/features/chat/controllers/ConversationController';
 import { SessionBrowser } from '@/features/chat/session-manager/SessionBrowser';
 import { ChatState } from '@/features/chat/state/ChatState';
+import type { TabSession } from '@/features/chat/tabs/TabSession';
 
 jest.mock('@/shared/modals/ConfirmModal', () => ({
   confirm: jest.fn().mockResolvedValue(true),
 }));
 
-function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps & { plugin: ConversationControllerDeps['plugin'] & { settings: ClaudianSettings }; getHistoryDropdown: () => HTMLElement; getTitleGenerationService: () => TitleGenerationService | null } {
-  const state = new ChatState();
+function createMockDeps(overrides: Record<string, unknown> = {}): ConversationControllerDeps & { session: TabSession; plugin: ConversationControllerDeps['plugin'] & { settings: ClaudianSettings }; getHistoryDropdown: () => HTMLElement; getTitleGenerationService: () => TitleGenerationService | null } {
+  const session = createTestTabSession({ getState: () => state });
+  const state: ChatState = new ChatState({}, undefined, session.turns);
   const inputEl = { value: '', focus: jest.fn() } as unknown as HTMLTextAreaElement;
   const historyDropdown = createMockEl();
   let welcomeEl: any = createMockEl();
@@ -86,7 +88,7 @@ function createMockDeps(overrides: Record<string, unknown> = {}): ConversationCo
     getExecutionCoordinator: () => null,
     ...overrides,
   } as unknown as ReturnType<typeof createMockDeps>;
-  return Object.assign(deps, createConversationPorts(deps as any));
+  return Object.assign(deps, createConversationPorts({ ...(deps as any), session }));
 }
 
 function createBrowser(deps: ReturnType<typeof createMockDeps>): SessionBrowser {
@@ -194,7 +196,7 @@ describe('SessionBrowser', () => {
       });
 
       it('should not delete while streaming', async () => {
-        deps.state.isStreaming = true;
+        holdResponse(deps.session.turns);
 
         (deps.plugin.getConversationList as jest.Mock).mockReturnValue([
           { id: 'conv-1', title: 'Test', createdAt: 1000, lastActivityAt: 1000 },

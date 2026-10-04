@@ -1,6 +1,8 @@
 import type { EventRef, ViewStateResult, WorkspaceLeaf } from 'obsidian';
 import { ItemView, Menu, Notice, Scope, setIcon, TFile } from 'obsidian';
 
+import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
+
 import {
   decodeTabWorkspaceViewState,
   resolveTabRestorePlan,
@@ -11,7 +13,7 @@ import {
 import { StartupProfiler } from '../../core/performance/StartupProfiler';
 import { getHiddenCommandSet } from '../../core/providers/commands/hiddenCommands';
 import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
-import { type AppTabManagerState, DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
+import { DEFAULT_CHAT_PROVIDER_ID, type ProviderId } from '../../core/providers/types';
 import { type ConversationMeta, VIEW_TYPE_CLAUDIAN } from '../../core/types';
 import {
   cancelScheduledAnimationFrame,
@@ -843,8 +845,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   private async handleTabClose(tabId: TabId): Promise<void> {
     try {
       const tab = this.tabManager?.getTab(tabId);
-      // If streaming, treat close like user interrupt (force close cancels the stream)
-      const force = tab?.state.isStreaming ?? false;
+      // Closing from the tab bar is an explicit interrupt of the foreground turn.
+      const force = tab?.session.hasActiveTurn ?? false;
       await this.tabManager?.closeTab(tabId, force);
       this.updateTabBarVisibility();
     } catch {
@@ -1664,7 +1666,8 @@ export class ClaudianView extends ItemView implements ZenModeSource {
   /** Closes every tab showing the session; returns false without closing anything when it is running. */
   private async closeTabsBeforeArchive(conversationId: string): Promise<boolean> {
     const openTabs = this.getOpenConversationTabs(conversationId);
-    if (openTabs.some(({ manager, tab }) => manager.getTab(tab.id)?.state.isStreaming)) {
+    // Closing would interrupt foreground turns, background work, async subagents, and side chats.
+    if (openTabs.some(({ manager, tab }) => manager.isTabWorking(tab.id))) {
       return false;
     }
 

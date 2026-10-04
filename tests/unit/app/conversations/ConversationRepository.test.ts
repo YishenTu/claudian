@@ -1,8 +1,9 @@
 import '@/providers';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
-import type { ConversationPersistence } from '@/core/bootstrap/ConversationPersistenceStore';
+import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { Conversation } from '@/core/types';
 
 function createConversation(id = 'conversation-1'): Conversation {
@@ -40,6 +41,8 @@ function createRepository(conversation = createConversation()) {
     assignMetadataToDevice: jest.fn().mockResolvedValue(undefined),
   };
   const repository = new ConversationRepository({
+    providers: ProviderRegistry,
+    providerSettings: ProviderSettingsCoordinator,
     getSettings: () => ({}),
     getVaultPath: () => '/vault',
     persistence,
@@ -897,7 +900,7 @@ describe('ConversationRepository hydration', () => {
     const conversation = createConversation();
     conversation.messages = [{ id: 'message-1', role: 'user', content: 'kept', timestamp: 1 }];
     const { repository, persistence } = createRepository(conversation);
-    jest.spyOn(repository as any, 'ensureSelectedModel').mockImplementation(async () => {
+    jest.spyOn((repository as any).modelRecovery, 'ensureSelectedModel').mockImplementation(async () => {
       markReconciliationStarted();
       await reconciliationRelease;
     });
@@ -1108,7 +1111,7 @@ it('does not require a metadata write to keep an unavailable selection', async (
 });
 
 it('adopts already-published shells without repeated linear record lookup', async () => {
-  const repository = new ConversationRepository({ getSettings: () => ({}), getVaultPath: () => '/audit',
+  const repository = new ConversationRepository({ providers: ProviderRegistry, providerSettings: ProviderSettingsCoordinator, getSettings: () => ({}), getVaultPath: () => '/audit',
     persistence: { saveMetadata: async () => {}, metadataReader: {} },
   } as any);
   const records = Array.from({ length: 512 }, (_, index) => ({ ...createConversation(`indexed-${index}`), providerId: 'audit-unregistered' }));

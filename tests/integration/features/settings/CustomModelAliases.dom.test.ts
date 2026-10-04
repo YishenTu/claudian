@@ -30,7 +30,7 @@ it('keeps the latest alias edit when it restores the committed value during a pe
     notifyProviderChatOptionsChanged: notify,
     storage: { getAdapter: () => ({}) },
   };
-  const tab = new ClaudianSettingTab({} as any, plugin as any);
+  const tab = new ClaudianSettingTab({} as any, {} as any, plugin as any);
   const container = document.body.appendChild(document.createElement('div'));
   tab['renderCustomContextLimits'](container, 'claude');
   const field = within(container).getByRole('textbox', { name: 'Alias for custom-model' }) as HTMLInputElement;

@@ -1,5 +1,6 @@
-import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
-import type { SessionMetadata } from '../types';
+import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import type { SessionMetadata } from '@/core/types';
+
 import {
   type SessionMetadataAuthority,
   type SessionMetadataReader,

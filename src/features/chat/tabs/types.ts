@@ -8,6 +8,7 @@ import type { ProviderCommandEntry } from '../../../core/providers/commands/Prov
 import type { ProviderId, TitleGenerationService } from '../../../core/providers/types';
 import type { MainChatComposerDropdown } from '../composer/MainChatComposerDropdown';
 import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
+import type { BuiltInCommandController } from '../controllers/BuiltInCommandController';
 import type { CanvasSelectionController } from '../controllers/CanvasSelectionController';
 import type { ConversationController } from '../controllers/ConversationController';
 import type { InputController } from '../controllers/InputController';
@@ -97,6 +98,7 @@ export interface TabControllers {
   readonly conversationController: ConversationController;
   readonly streamController: StreamController;
   readonly inputController: InputController;
+  readonly builtInCommandController: BuiltInCommandController;
   readonly navigationController: NavigationController;
   /** Owner of this tab's single temporary side chat and composer destination. */
   readonly sideChatController: SideChatController;

@@ -74,7 +74,7 @@ test('shutdown cancels a preparing turn and retains its unsent input for the fin
   const release = deferred<void>();
   const input = createFixture({
     getExecutionCoordinator: () => native.coordinator,
-    turnOwner: session.turns,
+    session,
     isClosing: () => session.lifecycleState === 'closing',
     canStartTurn: () => session.acceptsIntents,
   });

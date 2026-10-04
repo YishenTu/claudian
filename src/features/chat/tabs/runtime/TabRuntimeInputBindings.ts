@@ -28,7 +28,7 @@ export function buildTabRuntimeInputBindings(
       return;
     }
 
-    if (controllers.inputController.handleResumeKeydown(event)) {
+    if (controllers.builtInCommandController.handleResumeKeydown(event)) {
       return;
     }
 

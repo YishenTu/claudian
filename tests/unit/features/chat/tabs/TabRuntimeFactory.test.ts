@@ -1,4 +1,4 @@
-import { createConversationPorts } from '@test/helpers/ConversationPorts';
+import { createConversationPorts, holdResponse } from '@test/helpers/ConversationPorts';
 import { createMockEl } from '@test/helpers/MockElement';
 import { within } from '@testing-library/dom';
 import { JSDOM } from 'jsdom';
@@ -32,6 +32,7 @@ import {
   TabRuntimeConstructionError,
   type TabRuntimeFactoryOptions,
 } from '@/features/chat/tabs/TabRuntimeFactory';
+import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
 const coordinatorInstances: MockCoordinator[] = [];
 const coordinatorDeps: ChatExecutionCoordinatorDeps[] = [];
@@ -328,7 +329,10 @@ function installTransitionController(
   plugin: ReturnType<typeof createPlugin>,
 ): ConversationController {
   const controller = new ConversationController({
-    ...createConversationPorts({ state: tab.state, getInputEl: () => tab.dom.inputEl, getImageContextManager: () => tab.ui.imageContextManager }),
+    ...createConversationPorts({
+      state: tab.state, session: tab.session,
+      getInputEl: () => tab.dom.inputEl, getImageContextManager: () => tab.ui.imageContextManager,
+    }),
     plugin,
     state: tab.state,
     renderer: tab.renderer!,
@@ -451,6 +455,16 @@ describe('Tab provider execution ownership', () => {
     expect(onWorkChanged).toHaveBeenCalledWith(tab);
   });
 
+  it('counts detached async subagent work as tab work outside the foreground turn', async () => {
+    const tab = await createTestTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
+    expect(tab.session.isWorking).toBe(false);
+
+    jest.spyOn(tab.services.subagentManager, 'hasActiveAsyncSubagents').mockReturnValue(true);
+
+    expect(tab.session.hasActiveTurn).toBe(false);
+    expect(tab.session.isWorking).toBe(true);
+  });
+
   it('blocks branch admission until the main turn has finished its finalization', async () => {
     const tab = await createTestTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
     tab.state.currentConversationId = 'conversation';
@@ -461,6 +475,7 @@ describe('Tab provider execution ownership', () => {
     const render = jest.spyOn(tab.renderer, 'renderMessages').mockReturnValue(null);
     const refresh = jest.spyOn(tab.renderer, 'refreshBranchButtonState');
     await tab.session.turns.run(async () => {
+      tab.session.turns.settle();
       expect(tab.state.isStreaming).toBe(false);
       await tab.controllers.conversationController.navigateBranch('second');
       expect(tab.dom.inputEl.value).toBe('');
@@ -681,7 +696,7 @@ describe('Tab provider execution ownership', () => {
         plugin: createPlugin(),
         containerEl: createMockEl() as any,
       });
-      tab.state.isStreaming = true;
+      holdResponse(tab.session.turns);
       tab.dom.messagesEl.scrollHeight = 1_000;
       tab.dom.messagesEl.clientHeight = 500;
       tab.dom.messagesEl.scrollTop = 500;
@@ -717,7 +732,7 @@ describe('Tab provider execution ownership', () => {
         plugin: createPlugin(),
         containerEl: createMockEl() as any,
       });
-      tab.state.isStreaming = true;
+      holdResponse(tab.session.turns);
       tab.dom.messagesEl.scrollHeight = 1_000;
       tab.dom.messagesEl.clientHeight = 500;
       tab.dom.messagesEl.scrollTop = 250;
@@ -1858,6 +1873,30 @@ describe('Tab provider execution ownership', () => {
     expect(coordinatorDeps[0].isOwnerIdle?.()).toBe(true);
   });
 
+  it.each([
+    // An admitted turn that has not reached provider handoff; like a real turn, it unwinds on cancellation.
+    ['a foreground turn', (tab: AssembledTabRuntime) => {
+      void tab.session.turns.run(signal => new Promise(resolve => {
+        signal.addEventListener('abort', () => resolve(), { once: true });
+      }));
+    }],
+    // Chat tracks async subagents that the provider session does not report as background work.
+    ['async subagent work', (tab: AssembledTabRuntime) => {
+      jest.spyOn(tab.services.subagentManager, 'hasActiveAsyncSubagents').mockReturnValue(true);
+    }],
+    ['a rewind', (tab: AssembledTabRuntime) => { tab.state.isRewinding = true; }],
+    ['a conversation switch', (tab: AssembledTabRuntime) => { tab.state.isSwitchingConversation = true; }],
+    ['a reset to a new chat', (tab: AssembledTabRuntime) => { tab.state.isResettingToNewChat = true; }],
+    ['closing', (tab: AssembledTabRuntime) => { tab.session.beginClose(); }],
+  ])('keeps the tab session through %s', async (_label, hold) => {
+    const tab = await createTestTab({ plugin: createPlugin(), containerEl: createMockEl() as any });
+    expect(coordinatorDeps[0].isOwnerIdle?.()).toBe(true);
+
+    hold(tab);
+
+    expect(coordinatorDeps[0].isOwnerIdle?.()).toBe(false);
+  });
+
   it('captures background review activity before persistence completes', async () => {
     const plugin = createPlugin();
     const reportReviewableSettlement = jest.fn();
@@ -2454,6 +2493,7 @@ describe('Tab provider execution ownership', () => {
       resolveTurn = resolve;
     });
     void tab.session.turns.run(() => pendingTurn);
+    const dismissPrompts = jest.spyOn(tab.controllers.inputController, 'dismissPendingApproval');
 
     const drain = drainTabForShutdownSnapshot(tab);
     for (let attempt = 0; attempt < 10 && coordinator.cancel.mock.calls.length === 0; attempt += 1) {
@@ -2469,6 +2509,8 @@ describe('Tab provider execution ownership', () => {
       cancelledActiveTurn: true,
       cleanupFailures: [],
     });
+    // Shutdown's cancellation recipe also expires every pending prompt of the tab.
+    expect(dismissPrompts).toHaveBeenCalledTimes(1);
     expect(tab.lifecycleState).toBe('open');
   });
 

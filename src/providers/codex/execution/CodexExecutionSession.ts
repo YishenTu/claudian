@@ -1,109 +1,76 @@
 import { randomUUID } from 'crypto';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
 
 import {
-  ExecutionEventQueue,
   type ProviderExecutionErrorCategory,
-  type ProviderExecutionEvent,
   type ProviderExecutionRequest,
   type ProviderExecutionRun,
   type ProviderExecutionSession,
-  type ProviderRequestedEventScope,
   type ProviderSessionConfig,
   type ProviderSessionEvent,
   type ProviderSessionInvalidation,
   type ProviderSessionSnapshot,
   type ProviderSessionStatus,
-  type ProviderToolPolicy,
+  RequestedRunChannel,
+  SessionSnapshotState,
   type SteerableExecutionSession,
-} from '../../../core/execution';
-import {
-  buildSystemPrompt,
-  type SystemPromptSettings,
-} from '../../../core/prompt/mainAgent';
-import { ProviderModelUnavailableError } from '../../../core/providers/models/ProviderModelUnavailableError';
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
-import type { ChatMessage, ImageAttachment, StreamChunk } from '../../../core/types';
-import { createTurnStats, isTokenCount } from '../../../core/types';
-import {
-  appendLinkedContent,
-  appendLinkedContentBody,
-  appendSelectionContexts,
-  appendSessionReferences,
-} from '../../../utils/context';
-import {
-  buildContextFromHistory,
-  buildPromptWithHistoryContext,
-} from '../../../utils/session';
+} from '@/core/execution';
+import type { SystemPromptSettings } from '@/core/prompt/mainAgent';
+import { ProviderModelUnavailableError } from '@/core/providers/models/ProviderModelUnavailableError';
+import type { ProviderHost } from '@/core/providers/ProviderHost';
+import type { StreamChunk } from '@/core/types';
+import { createTurnStats, isTokenCount } from '@/core/types';
 import {
   deriveCodexSessionsRootFromSessionPath,
   findCodexSessionFileAsync,
-} from '../history/CodexHistoryStore';
-import { getCodexModelOptions } from '../modelOptions';
-import {
-  findCodexModel,
-  getCodexReasoningEffortOptions,
-  resolveCodexModelServiceTier,
-  resolveCodexReasoningEffort,
-} from '../models';
-import { toCodexRuntimeModelId } from '../modelSelection';
-import type { CodexAppServerConnection, CodexAppServerRuntime } from '../runtime/CodexAppServerRuntime';
+} from '@/providers/codex/history/CodexHistoryStore';
+import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 import type {
   ConfigReadParams,
   ConfigReadResult,
   ItemCompletedNotification,
-  SandboxPolicy,
   ServerRequestResolvedNotification,
   ThreadCompactStartResult,
-  ThreadForkResult,
   ThreadReadResult,
-  ThreadResumeResult,
-  ThreadRollbackResult,
-  ThreadStartResult,
-  ThreadStatusChangedNotification,
   TurnCompletedNotification,
   TurnStartedNotification,
   TurnStartResult,
   TurnSteerResult,
-  UserInput,
-} from '../runtime/codexAppServerTypes';
-import { CodexDynamicToolRegistry } from '../runtime/CodexDynamicToolRegistry';
-import type { CodexLaunchSpec } from '../runtime/codexLaunchTypes';
-import { assertCodexModelAvailable } from '../runtime/CodexModelAvailability';
-import { CodexNotificationRouter } from '../runtime/CodexNotificationRouter';
-import { CodexRPCResponseError, type CodexRPCTransport } from '../runtime/CodexRPCTransport';
-import type { CodexRuntimeContext } from '../runtime/CodexRuntimeContext';
-import type { CodexThreadScope } from '../runtime/CodexThreadScope';
+} from '@/providers/codex/runtime/codexAppServerTypes';
+import { assertCodexModelAvailable } from '@/providers/codex/runtime/CodexModelAvailability';
+import { CodexNotificationRouter } from '@/providers/codex/runtime/CodexNotificationRouter';
+import { CodexRPCResponseError } from '@/providers/codex/runtime/CodexRPCTransport';
 import {
-  CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME,
-  CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE,
-  CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION,
-  createCodexWorkspaceDependencyTool,
-} from '../runtime/CodexWorkspaceDependencyTool';
-import {
-  type CodexSafeMode,
   getCodexProviderSettings,
   getEffectiveCodexReasoningSummary,
-} from '../settings';
+} from '@/providers/codex/settings';
 import type {
   CodexPendingForkTarget,
   CodexProviderState,
-} from '../types';
+} from '@/providers/codex/types';
+
+import type { CodexActiveRun } from './CodexActiveRun';
+import { CodexCompletionRecovery } from './CodexCompletionRecovery';
 import { adaptCodexStreamChunk } from './CodexExecutionEventAdapter';
 import { CodexExecutionServerRequestRouter } from './CodexExecutionServerRequestRouter';
+import { CodexInputBundles } from './CodexInputBundles';
+import { CodexSessionConnection } from './CodexSessionConnection';
 import { CodexSubagentTracker } from './CodexSubagentTracker';
+import { CodexThreadBinder } from './CodexThreadBinder';
+import { CodexTurnBinding, extractNotificationScope } from './CodexTurnBinding';
+import {
+  buildCodexTurnPrompt,
+  isCompactRequest,
+  resolveCodexBaseInstructions,
+  resolveCodexServiceTier,
+  resolveCodexTurnModel,
+  resolveCodexTurnPolicy,
+  resolveCodexTurnReasoningEffort,
+  resolveCodexTurnSandboxPolicy,
+  resolveCodexTurnSettings,
+  startsWithCompactCommand,
+} from './codexTurnConfig';
 
-const PASSIVE_INSTRUCTIONS =
-  'Do not invoke tools. Complete the request only from the supplied input and context.';
-const LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS =
-  'This thread predates Claudian client-hosted workspace dependency tools. Do not emulate load_workspace_dependencies or install replacement dependencies.';
 const CODEX_SUPPORTS_EXACT_BUILT_IN_TOOL_ALLOW_LIST = false;
-const MISSED_TURN_COMPLETION_GRACE_MS = 1_000;
-const MISSED_TURN_COMPLETION_MAX_ATTEMPTS = 3;
-const MISSED_TURN_COMPLETION_RETRY_BASE_MS = 500;
-const THREAD_READ_RECOVERY_TIMEOUT_MS = 5_000;
 const CODEX_CONSUMED_FORK_STATE_KEYS = [
   'forkSource',
   'forkSourceSessionFilePath',
@@ -116,209 +83,131 @@ const JSON_RPC_PRE_HANDOFF_REJECTION_CODES = new Set([
   -32602,
 ]);
 
-interface CodexPolicy {
-  readonly approvalPolicy: string;
-  readonly approvalsReviewer: string;
-  readonly sandbox: string;
-  /** Config-independent policy; config-derived modes leave the policy to Codex. */
-  readonly sandboxPolicy?: SandboxPolicy;
-}
-
-interface CodexInputBundle {
-  readonly input: UserInput[];
-  cleanup(): void;
-}
-
-interface TurnCompletion {
-  readonly status: 'completed' | 'failed' | 'interrupted';
-  readonly nativeTurnId: string;
-  readonly errorMessage?: string;
-  readonly durationMs?: number | null;
-}
-
-interface CompletionRecovery {
-  readonly run: CodexExecutionRun;
-  readonly generation: number;
-  attempt: number;
-  inFlight: boolean;
-  timer: number | null;
-}
-
-interface CodexEnsuredThread {
-  threadId: string;
-  sessionFilePath: string | null;
-  forkCheckpoint?: string;
-}
-
-class CodexExecutionRun implements ProviderExecutionRun {
-  readonly executionId = randomUUID();
-  readonly turnId = randomUUID();
-  readonly events: AsyncIterable<ProviderExecutionEvent>;
-
-  private readonly queue = new ExecutionEventQueue<ProviderExecutionEvent>(
-    () => this.cancel(),
-  );
-  private sequence = 0;
-  private terminal = false;
-  private cancelRequested = false;
-  private readonly cancellation = new AbortController();
-  readonly signal = this.cancellation.signal;
-  private abortListener: (() => void) | null = null;
-
-  nativeThreadId: string | null = null;
-  nativeTurnId: string | null = null;
-  nativeStartSubmitted = false;
-  completion: TurnCompletion | null = null;
-  readonly responseTokens = new Map<string, number | undefined>();
-
-  constructor(
-    private readonly sessionInstanceId: string,
-    private readonly cancelRun: (run: CodexExecutionRun) => void,
-  ) {
-    this.events = this.queue;
-  }
-
-  get isTerminal(): boolean {
-    return this.terminal;
-  }
-
-  get isCancellationRequested(): boolean {
-    return this.cancelRequested;
-  }
-
-  createScope(): ProviderRequestedEventScope {
-    return Object.freeze({
-      kind: 'requested',
-      sessionInstanceId: this.sessionInstanceId,
-      executionId: this.executionId,
-      turnId: this.turnId,
-      sequence: ++this.sequence,
-    });
-  }
-
-  emit(event: ProviderExecutionEvent): void {
-    if (!this.terminal) {
-      this.queue.push(event);
-    }
-  }
-
-  finish(event: ProviderExecutionEvent): void {
-    if (this.terminal) return;
-    this.terminal = true;
-    this.#detachAbortSignal();
-    this.queue.push(event);
-    this.queue.close();
-  }
-
-  cancel(): void {
-    if (this.cancelRequested || this.terminal) return;
-    this.cancelRequested = true;
-    this.cancellation.abort();
-    this.cancelRun(this);
-  }
-
-  attachAbortSignal(signal: AbortSignal): void {
-    const listener = () => this.cancel();
-    this.abortListener = () => signal.removeEventListener('abort', listener);
-    signal.addEventListener('abort', listener, { once: true });
-    if (signal.aborted) this.cancel();
-  }
-
-  #detachAbortSignal(): void {
-    this.abortListener?.();
-    this.abortListener = null;
-  }
-}
-
 export class CodexExecutionSession
   implements ProviderExecutionSession, SteerableExecutionSession {
   readonly providerId = 'codex' as const;
   readonly sessionInstanceId = randomUUID();
 
-  private readonly seedState: Readonly<Record<string, unknown>>;
+  private readonly state: SessionSnapshotState;
   private readonly serverRequestRouter: CodexExecutionServerRequestRouter;
-  private readonly sessionEventListeners =
-    new Set<(event: ProviderSessionEvent) => void>();
-  private readonly activeInputBundles = new Set<CodexInputBundle>();
+  private readonly connection: CodexSessionConnection;
+  private readonly inputBundles = new CodexInputBundles(
+    hostPath => this.#mapRequiredHostPath(hostPath),
+  );
+  private readonly threads: CodexThreadBinder;
+  private readonly completionRecovery: CodexCompletionRecovery;
+  private readonly turn: CodexTurnBinding;
 
-  private connection: CodexAppServerConnection | null = null;
-  private threadScope: CodexThreadScope | null = null;
-  private detachConnectionListeners: (() => void) | null = null;
-  private transport: CodexRPCTransport | null = null;
-  private launchSpec: CodexLaunchSpec | null = null;
-  private runtimeContext: CodexRuntimeContext | null = null;
-  private dynamicToolRegistry = new CodexDynamicToolRegistry();
-  private notificationRouter: CodexNotificationRouter | null = null;
-  private activeRun: CodexExecutionRun | null = null;
-  private pendingTurnNotifications: Array<{ method: string; params: unknown }> = [];
-  private connectionReleasePromise: Promise<void> | null = null;
-  private forkIdentityPromise: Promise<CodexPendingForkTarget> | null = null;
-  private forkSetupPromise: Promise<CodexEnsuredThread> | null = null;
+  private activeRun: CodexActiveRun | null = null;
   private disposePromise: Promise<void> | null = null;
-  private completionRecovery: CompletionRecovery | null = null;
   private disposed = false;
   private lifecycleGeneration = 0;
 
-  private sessionSequence = 0;
   private readonly subagents = new CodexSubagentTracker(
     subagent => {
-      this.#emitSessionEvent({ type: 'subagent_updated', subagent });
+      this.state.emit({ type: 'subagent_updated', subagent });
       this.#releaseRetiredConnection();
     },
     async threadId => {
-      if (!this.transport) throw new Error('Codex CLI transport is unavailable');
-      return (await this.transport.request<ThreadReadResult>('thread/read', { threadId, includeTurns: true }, 5_000)).thread;
+      const transport = this.connection.transport;
+      if (!transport) throw new Error('Codex CLI transport is unavailable');
+      return (await transport.request<ThreadReadResult>('thread/read', { threadId, includeTurns: true }, 5_000)).thread;
     },
-    () => this.#resolveTargetWorkingDirectory(),
+    () => this.connection.targetWorkingDirectory(),
   );
 
-  hasBackgroundWork(): boolean { return this.threadScope?.hasBackgroundWork ?? false; }
+  hasBackgroundWork(): boolean { return this.connection.hasBackgroundWork; }
 
   private threadId: string | null;
-  private loadedThreadId: string | null = null;
-  /** Sandbox mode in effect on the loaded thread; turn/start overrides persist across turns. */
-  private loadedThreadSandbox: string | null = null;
-  private loadedThreadSandboxRevision = 0;
-  private loadedThreadBaseInstructions: string | null = null;
-  private supportsApprovalReviewer = false;
   private sessionFilePath: string | null;
   private sessionFileLookupThreadId: string | null = null;
   private workspaceDependencyToolVersion: number | null;
-  private pendingFork: CodexProviderState['forkSource'];
-  private pendingForkTarget: CodexPendingForkTarget | undefined;
   private nativeConversationContextEstablished: boolean;
-  private readonly providerStateDeletes = new Set<string>();
-  private snapshot: ProviderSessionSnapshot;
 
   constructor(
     private readonly plugin: ProviderHost,
     private readonly config: ProviderSessionConfig,
     private readonly runtime: CodexAppServerRuntime,
   ) {
-    this.seedState = Object.freeze({ ...(config.resumeSeed?.providerState ?? {}) });
-    const codexState = this.seedState as CodexProviderState;
-    this.pendingFork = codexState.forkSource;
-    this.pendingForkTarget = this.pendingFork
-      ? normalizePendingForkTarget(codexState.pendingForkTarget)
-      : undefined;
-    this.threadId = this.pendingForkTarget?.threadId
+    const codexState = (config.resumeSeed?.providerState ?? {}) as CodexProviderState;
+    this.state = new SessionSnapshotState({
+      providerId: this.providerId,
+      sessionInstanceId: this.sessionInstanceId,
+      providerState: config.resumeSeed?.providerState,
+      readProviderSessionId: () => this.threadId,
+      projectProviderState: state => this.#projectProviderState(state),
+    });
+    this.connection = new CodexSessionConnection({
+      vaultWorkingDirectory: config.vaultWorkingDirectory,
+      observer: {
+        notification: (method, params) => this.handleNotification(method, params),
+        serverRequest: (id, method, params) => this.serverRequestRouter.handleServerRequest(id, method, params),
+        stop: () => this.dispose(),
+        workChanged: () => this.#releaseRetiredConnection(),
+      },
+      onExit: () => this.#handleConnectionExit(),
+      onRetired: () => this.#releaseRetiredConnection(),
+      onRelease: () => {
+        this.subagents.clear();
+        this.threads.unload();
+        this.serverRequestRouter.setDynamicToolRegistry(null);
+      },
+    });
+    this.threads = new CodexThreadBinder(
+      {
+        threadResumed: thread => this.subagents.seed(thread),
+        threadStarted: (active, identity) => {
+          this.workspaceDependencyToolVersion = identity.workspaceDependencyToolVersion;
+          this.threadId = identity.threadId;
+          this.sessionFilePath = identity.sessionFilePath;
+          this.#publishNativeOwnershipSnapshot(active);
+        },
+        forkTargetAdopted: (active, target) => this.#adoptPendingForkTarget(active, target),
+        forkConsumed: (active) => {
+          for (const key of CODEX_CONSUMED_FORK_STATE_KEYS) {
+            this.state.deleteProviderStateValue(key);
+          }
+          this.state.setStatus('idle');
+          this.#emitSnapshot(active);
+        },
+      },
+      this.connection,
+      codexState.forkSource,
+      normalizePendingForkTarget(codexState.pendingForkTarget),
+    );
+    const pendingForkTarget = this.threads.pendingForkTarget;
+    this.threadId = pendingForkTarget?.threadId
       ?? codexState.threadId
       ?? config.resumeSeed?.providerSessionId
       ?? null;
     this.nativeConversationContextEstablished = typeof codexState
       .nativeConversationContextEstablished === 'boolean'
       ? codexState.nativeConversationContextEstablished
-      : this.threadId !== null || this.pendingFork !== undefined;
-    this.sessionFilePath = this.pendingForkTarget?.sessionFilePath
+      : this.threadId !== null || this.threads.pendingFork !== undefined;
+    this.sessionFilePath = pendingForkTarget?.sessionFilePath
       ?? codexState.sessionFilePath
       ?? null;
     this.workspaceDependencyToolVersion =
       codexState.workspaceDependencyToolVersion ?? null;
-    this.snapshot = this.#buildSnapshot('idle', 0);
     this.serverRequestRouter = new CodexExecutionServerRequestRouter(
       this.sessionInstanceId,
       config.interactionPort,
-      (threadId, turnId) => this.#observeNativeTurn(threadId, turnId),
+      (threadId, turnId) => this.turn.observe(threadId, turnId),
+    );
+    this.completionRecovery = new CodexCompletionRecovery({
+      lifecycleGeneration: () => this.lifecycleGeneration,
+      activeRun: () => this.activeRun,
+      transport: () => this.connection.transport,
+      replayNotification: (method, params) => this.handleNotification(method, params),
+      fail: (active, message) => this.#finishError(active, 'provider', message, true),
+    });
+    this.turn = new CodexTurnBinding(
+      {
+        activeRun: () => this.activeRun,
+        markNativeContextEstablished: active => this.#markNativeConversationContextEstablished(active),
+      },
+      this.serverRequestRouter,
+      this.completionRecovery,
     );
   }
 
@@ -330,69 +219,77 @@ export class CodexExecutionSession
       throw new Error('Codex CLI execution session already has an active requested run.');
     }
 
-    const run = new CodexExecutionRun(
-      this.sessionInstanceId,
-      current => this.#cancelRun(current),
-    );
-    this.activeRun = run;
-    run.attachAbortSignal(request.signal);
-    if (!run.isCancellationRequested) {
-      void this.#executeRun(run, request);
+    const active: CodexActiveRun = {
+      run: new RequestedRunChannel({
+        sessionInstanceId: this.sessionInstanceId,
+        onCancel: () => {
+          active.cancellation.abort();
+          this.#cancelRun(active);
+        },
+      }),
+      cancellation: new AbortController(),
+      nativeThreadId: null,
+      nativeTurnId: null,
+      nativeStartSubmitted: false,
+      completion: null,
+      responseTokens: new Map(),
+    };
+    this.activeRun = active;
+    active.run.attachAbortSignal(request.signal);
+    if (!active.run.isCancellationRequested) {
+      void this.#executeRun(active, request);
     }
-    return run;
+    return active.run;
   }
 
   cancel(): void {
     if (this.activeRun) {
-      this.activeRun.cancel();
+      this.activeRun.run.cancel();
       return;
     }
     this.serverRequestRouter.abortAll('cancelled');
-    void this.threadScope?.stop();
+    void this.connection.scope?.stop();
   }
 
   getSnapshot(): ProviderSessionSnapshot {
-    return this.snapshot;
+    return this.state.getSnapshot();
   }
 
   getStatus(): ProviderSessionStatus {
-    return this.snapshot.status;
+    return this.state.status;
   }
 
   onEvent(listener: (event: ProviderSessionEvent) => void): () => void {
-    this.sessionEventListeners.add(listener);
-    return () => {
-      this.sessionEventListeners.delete(listener);
-    };
+    return this.state.onEvent(listener);
   }
 
   async steer(request: ProviderExecutionRequest): Promise<boolean> {
     try { assertCodexModelAvailable(this.plugin.settings, request.configuration.model); }
     catch (error) { if (error instanceof ProviderModelUnavailableError) return false; throw error; }
-    const run = this.activeRun;
-    const transport = this.transport;
-    const nativeThreadId = run?.nativeThreadId;
-    const nativeTurnId = run?.nativeTurnId;
+    const active = this.activeRun;
+    const scope = this.connection.scope;
+    const nativeThreadId = active?.nativeThreadId;
+    const nativeTurnId = active?.nativeTurnId;
     if (
       this.disposed
-      || !run
-      || run.isTerminal
-      || run.isCancellationRequested
+      || !active
+      || active.run.isTerminal
+      || active.run.isCancellationRequested
       || !nativeThreadId
       || !nativeTurnId
-      || !transport
+      || !scope
       || request.signal.aborted
     ) {
       return false;
     }
 
-    const bundle = this.#buildInputBundle(request);
+    const bundle = this.inputBundles.create(request);
     try {
-      const result = await this.threadScope!.steer<TurnSteerResult>({
+      const result = await scope.steer<TurnSteerResult>({
         threadId: nativeThreadId,
         input: bundle.input,
         expectedTurnId: nativeTurnId,
-      }, () => bundle.cleanup());
+      }, this.inputBundles.handOff(bundle));
       if (
         !result
         || typeof result !== 'object'
@@ -423,52 +320,49 @@ export class CodexExecutionSession
   }
 
   async #disposeInternal(): Promise<void> {
-    this.#cleanupInputBundles();
-    this.notificationRouter?.endTurn();
-    this.notificationRouter = null;
-    this.pendingTurnNotifications = [];
+    this.inputBundles.releaseAll();
+    this.turn.release();
     try {
-      const processDisposal = this.#releaseConnectionAfterForkIdentity();
-      const [processResult] = await Promise.allSettled([
-        processDisposal,
-        this.#settleForkSetup(),
+      const [releaseResult] = await Promise.allSettled([
+        this.#releaseConnectionAfterForkIdentity(),
+        this.threads.settleForkSetup(),
       ]);
-      if (processResult.status === 'rejected') {
-        throw processResult.reason;
+      if (releaseResult.status === 'rejected') {
+        throw releaseResult.reason;
       }
     } finally {
-      this.#updateSnapshot('disposed');
+      this.state.setStatus('disposed');
       this.#emitSessionState();
-      this.sessionEventListeners.clear();
+      this.state.clearListeners();
     }
   }
 
   async #executeRun(
-    run: CodexExecutionRun,
+    active: CodexActiveRun,
     request: ProviderExecutionRequest,
   ): Promise<void> {
     const generation = this.lifecycleGeneration;
     try {
       assertCodexModelAvailable(this.plugin.settings, request.configuration.model);
-      let settings = this.#resolveProviderSettings();
-      let model = this.#resolveModel(request, settings);
+      let settings = resolveCodexTurnSettings(this.plugin.settings);
+      let model = resolveCodexTurnModel(request, settings);
       if (!model) {
         this.#finishError(
-          run,
+          active,
           'configuration',
           'No Codex CLI model is selected. Enable a model in Claudian settings.',
           true,
         );
         return;
       }
-      let effort = this.#resolveReasoningEffort(request, settings, model);
+      let effort = resolveCodexTurnReasoningEffort(request, settings, model);
 
       if (
         request.toolPolicy.kind === 'allow-list'
         && !CODEX_SUPPORTS_EXACT_BUILT_IN_TOOL_ALLOW_LIST
       ) {
         this.#finishError(
-          run,
+          active,
           'configuration',
           'Codex CLI app-server does not support exact allow-list enforcement for provider built-in tools.',
           false,
@@ -481,7 +375,7 @@ export class CodexExecutionSession
         && !this.nativeConversationContextEstablished
       ) {
         this.#finishError(
-          run,
+          active,
           'configuration',
           'Codex CLI cannot compact before its native context is restored. Send a normal prompt first.',
           true,
@@ -489,33 +383,40 @@ export class CodexExecutionSession
         return;
       }
 
-      if (!this.#isRunCurrent(run, generation)) return;
-      await this.#ensureConnection(generation, run.signal);
-      if (!this.#isRunCurrent(run, generation)) return;
-      settings = this.#resolveProviderSettings();
-      model = this.#resolveModel(request, settings)!;
-      effort = this.#resolveReasoningEffort(request, settings, model);
+      if (!this.#isRunCurrent(active, generation)) return;
+      await this.#ensureConnection(generation, active.cancellation.signal);
+      if (!this.#isRunCurrent(active, generation)) return;
+      // Connection acquisition can wait out a settings transition.
+      settings = resolveCodexTurnSettings(this.plugin.settings);
+      model = resolveCodexTurnModel(request, settings)!;
+      effort = resolveCodexTurnReasoningEffort(request, settings, model);
 
-      const policy = this.#resolvePolicy(request, settings);
-      const baseInstructions = this.#resolveBaseInstructions(request);
-      const nativePersistence = this.#resolveNativePersistence();
+      const policy = resolveCodexTurnPolicy(request, settings);
+      const serviceTier = resolveCodexServiceTier(request, model, settings);
       const replayConversationHistory = !this.nativeConversationContextEstablished;
-      const thread = await this.#ensureThread(
-        run,
-        request,
-        model,
-        settings,
-        policy,
-        baseInstructions,
-        nativePersistence,
-        generation,
+      this.turn.setToolPolicy(request.toolPolicy);
+      const thread = await this.threads.ensureThread(
+        active,
+        {
+          model,
+          policy,
+          serviceTier,
+          baseInstructions: resolveCodexBaseInstructions(request, this.#getSystemPromptSettings()),
+          persistExtendedHistory: this.#resolveNativePersistence(),
+          toolPolicy: request.toolPolicy,
+        },
+        {
+          threadId: this.threadId,
+          sessionFilePath: this.sessionFilePath,
+          workspaceDependencyToolVersion: this.workspaceDependencyToolVersion,
+        },
+        () => this.#isRunCurrent(active, generation),
       );
-      if (!this.#isRunCurrent(run, generation)) return;
+      if (!this.#isRunCurrent(active, generation)) return;
       if (thread.forkCheckpoint) {
         this.nativeConversationContextEstablished = true;
       }
-
-      run.nativeThreadId = thread.threadId;
+      active.nativeThreadId = thread.threadId;
       const threadIdentityChanged = this.threadId !== thread.threadId
         || (
           thread.sessionFilePath !== null
@@ -525,27 +426,25 @@ export class CodexExecutionSession
       if (thread.sessionFilePath) {
         this.sessionFilePath = thread.sessionFilePath;
       }
-      if (threadIdentityChanged || this.snapshot.status !== 'executing') {
-        this.#updateSnapshot('executing');
-        this.#emitSnapshot(run);
+      if (threadIdentityChanged || this.state.status !== 'executing') {
+        this.state.setStatus('executing');
+        this.#emitSnapshot(active);
       }
 
-      if (policy.approvalsReviewer === 'auto_review' && !this.supportsApprovalReviewer) {
+      if (policy.approvalsReviewer === 'auto_review' && !this.threads.supportsApprovalReviewer) {
         throw new Error('Codex CLI did not enable automatic approval review. Update Codex or choose Ask for approval.');
       }
 
-      this.notificationRouter = new CodexNotificationRouter(
-        chunk => this.handleStreamChunk(run, chunk),
-        this.#resolveTargetWorkingDirectory(),
-      );
-      this.notificationRouter.beginTurn();
-      this.pendingTurnNotifications = [];
+      this.turn.begin(new CodexNotificationRouter(
+        chunk => this.handleStreamChunk(active, chunk),
+        this.connection.targetWorkingDirectory(),
+      ));
 
       assertCodexModelAvailable(this.plugin.settings, request.configuration.model);
       if (isCompactRequest(request)) {
-        if (!await this.#allowRequestedTurn(run, generation)) return;
-        run.nativeStartSubmitted = true;
-        await this.threadScope!.startTurn<ThreadCompactStartResult>(
+        if (!await this.#allowRequestedTurn(active, generation)) return;
+        active.nativeStartSubmitted = true;
+        await this.connection.scope!.startTurn<ThreadCompactStartResult>(
           'thread/compact/start',
           { threadId: thread.threadId },
         );
@@ -553,7 +452,7 @@ export class CodexExecutionSession
       }
       if (startsWithCompactCommand(request)) {
         this.#finishError(
-          run,
+          active,
           'configuration',
           '/compact does not accept arguments',
           true,
@@ -561,18 +460,13 @@ export class CodexExecutionSession
         return;
       }
 
-      const turnInput = this.#buildTurnPrompt(
+      const turnInput = buildCodexTurnPrompt(
         request,
+        hostPath => this.#mapRequiredHostPath(hostPath),
         thread.forkCheckpoint,
         replayConversationHistory,
       );
-      const bundle = this.#buildInputBundle(request, turnInput);
-      this.activeInputBundles.add(bundle);
-      const serviceTier = resolveCodexServiceTier(
-        request.configuration.serviceTier ?? settings.serviceTier,
-        model,
-        settings,
-      );
+      const bundle = this.inputBundles.create(request, turnInput);
       const collaborationMode = {
         mode: 'default' as const,
         settings: {
@@ -582,17 +476,22 @@ export class CodexExecutionSession
         },
       };
 
-      const sandboxPolicy = await this.#resolveTurnSandboxPolicy(policy);
-      if (!this.#isRunCurrent(run, generation)) return;
+      const sandboxPolicy = await resolveCodexTurnSandboxPolicy(
+        policy,
+        this.threads.loadedThreadSandbox,
+        () => this.connection.transport!.request<ConfigReadResult>('config/read', {
+          cwd: this.connection.targetWorkingDirectory(),
+        } satisfies ConfigReadParams),
+      );
+      if (!this.#isRunCurrent(active, generation)) return;
       // The override may take effect before, or without, its acknowledgement.
       const sandboxRevision = sandboxPolicy
-        ? this.#setLoadedThreadSandbox(null)
+        ? this.threads.beginSandboxOverride()
         : null;
 
-      if (!await this.#allowRequestedTurn(run, generation)) return;
-      run.nativeStartSubmitted = true;
-      this.activeInputBundles.delete(bundle);
-      const result = await this.threadScope!.startTurn<TurnStartResult>('turn/start', {
+      if (!await this.#allowRequestedTurn(active, generation)) return;
+      active.nativeStartSubmitted = true;
+      const result = await this.connection.scope!.startTurn<TurnStartResult>('turn/start', {
         threadId: thread.threadId,
         input: bundle.input,
         approvalPolicy: policy.approvalPolicy,
@@ -604,81 +503,57 @@ export class CodexExecutionSession
         personality: getCodexProviderSettings(settings).responseStyle,
         ...(sandboxPolicy ? { sandboxPolicy } : {}),
         collaborationMode,
-      }, () => bundle.cleanup());
-      if (sandboxRevision === this.loadedThreadSandboxRevision) {
-        this.#setLoadedThreadSandbox(policy.sandbox);
+      }, this.inputBundles.handOff(bundle));
+      if (sandboxRevision !== null) {
+        this.threads.confirmSandboxOverride(sandboxRevision, policy.sandbox);
       }
-      this.#markNativeConversationContextEstablished(run);
-      if (run.isCancellationRequested) {
-        run.nativeTurnId = result.turn.id;
+      this.#markNativeConversationContextEstablished(active);
+      if (active.run.isCancellationRequested) {
+        active.nativeTurnId = result.turn.id;
       }
-      if (!this.#isRunCurrent(run, generation)) return;
-      this.#observeNativeTurn(thread.threadId, result.turn.id);
+      if (!this.#isRunCurrent(active, generation)) return;
+      this.turn.observe(thread.threadId, result.turn.id);
     } catch (error) {
-      if (!this.#isRunCurrent(run, generation) || run.isCancellationRequested) {
+      if (!this.#isRunCurrent(active, generation) || active.run.isCancellationRequested) {
         return;
       }
-      this.#handleExecutionFailure(run, error);
+      this.#handleExecutionFailure(active, error);
     }
   }
 
   async #ensureConnection(generation: number, signal: AbortSignal): Promise<void> {
-    await this.connectionReleasePromise;
-    await this.threadScope?.waitUntilReady();
-    if (this.disposed || generation !== this.lifecycleGeneration) {
+    await this.connection.settleRelease();
+    await this.connection.scope?.waitUntilReady();
+    if (!this.#isLifecycleCurrent(generation)) {
       throw new Error('Codex CLI execution session has been disposed.');
     }
     // Acquisition also waits out provider transitions and checks the launch fingerprint.
     const lease = await this.runtime.acquire({ signal });
-    if (this.disposed || generation !== this.lifecycleGeneration) {
+    try {
+      if (!this.#isLifecycleCurrent(generation) || this.connection.isAttachedTo(lease.connection)) {
+        return;
+      }
+      if (this.connection.isDraining()) {
+        throw new Error('Codex background work is still draining from the previous environment. Retry when it finishes.');
+      }
+      if (this.#resolveNativePersistence() === false && this.threadId) {
+        throw new Error('This non-persistent Codex CLI session cannot be restored after its process ends. Start a new side chat.');
+      }
+      await this.connection.release();
+      if (!this.#isLifecycleCurrent(generation)) return;
+      this.serverRequestRouter.setDynamicToolRegistry(await this.connection.attach(lease.connection));
+    } finally {
       await lease.release();
-      return;
     }
-    if (this.connection === lease.connection) {
-      await lease.release();
-      return;
-    }
-    if (this.connection?.isAlive() && this.threadScope?.hasWork) {
-      await lease.release();
-      throw new Error('Codex background work is still draining from the previous environment. Retry when it finishes.');
-    }
-    if (this.#resolveNativePersistence() === false && this.threadId) {
-      await lease.release();
-      throw new Error('This non-persistent Codex CLI session cannot be restored after its process ends. Start a new side chat.');
-    }
-    await this.#releaseConnection();
-    if (this.disposed || generation !== this.lifecycleGeneration) {
-      await lease.release();
-      return;
-    }
-    const connection = lease.connection;
-    this.connection = connection;
-    this.transport = connection.transport;
-    this.launchSpec = connection.launchSpec;
-    this.runtimeContext = await connection.initialized;
-    this.dynamicToolRegistry = new CodexDynamicToolRegistry();
-    this.dynamicToolRegistry.register(createCodexWorkspaceDependencyTool(this.runtimeContext));
-    this.serverRequestRouter.setDynamicToolRegistry(this.dynamicToolRegistry);
-    this.threadScope = connection.createThreadScope({
-      notification: (method, params) => this.handleNotification(method, params),
-      serverRequest: (id, method, params) => this.serverRequestRouter.handleServerRequest(id, method, params),
-      stop: () => this.dispose(),
-      workChanged: () => this.#releaseRetiredConnection(),
-    });
-    await lease.release();
-    const offExit = connection.onExit(() => this.#handleConnectionExit(connection));
-    const offRetire = connection.onRetired(() => this.#releaseRetiredConnection());
-    this.detachConnectionListeners = () => { offExit(); offRetire(); };
   }
 
   #releaseRetiredConnection(): void {
-    if (this.connection?.isRetired() && !this.activeRun && !this.threadScope?.hasWork) {
-      void this.#releaseConnection().catch(() => undefined);
+    if (!this.activeRun && this.connection.isReleasable()) {
+      void this.connection.release().catch(() => undefined);
     }
   }
 
   private handleNotification(method: string, params: unknown): void {
-    const scope = extractNotificationScope(method, params);
     if (method === 'item/completed') {
       const notification = params as ItemCompletedNotification;
       if (notification.item.type === 'subAgentActivity') {
@@ -692,10 +567,12 @@ export class CodexExecutionSession
         this.subagents.threadClosed(closed.threadId);
         return;
       }
-      const run = this.activeRun;
-      this.lifecycleGeneration++;
-      void this.#releaseConnection().catch(() => undefined);
-      if (run && !run.isTerminal) this.#finishError(run, 'provider', 'Codex thread was closed.', true);
+      const active = this.activeRun;
+      this.lifecycleGeneration += 1;
+      void this.connection.release().catch(() => undefined);
+      if (active && !active.run.isTerminal) {
+        this.#finishError(active, 'provider', 'Codex thread was closed.', true);
+      }
       return;
     }
     if (method === 'serverRequest/resolved') {
@@ -719,294 +596,22 @@ export class CodexExecutionSession
     const childScope = extractNotificationScope(method, params);
     if (childScope && this.subagents.handleNotification(childScope.threadId, childScope.turnId, method, params)) return;
 
-    const run = this.activeRun;
-    if (!run || run.isTerminal || run.isCancellationRequested) return;
-    if (method === 'turn/started') {
-      const started = params as TurnStartedNotification;
-      this.#observeNativeTurn(started.threadId, started.turn.id);
-      return;
-    }
-
-    if (method === 'thread/status/changed') {
-      const changed = params as ThreadStatusChangedNotification;
-      if (changed.threadId !== run.nativeThreadId) return;
-      if (changed.status.type === 'idle') {
-        this.#observeThreadIdle(run);
-      } else {
-        this.#cancelMissedTurnCompletionRecovery();
-      }
-      return;
-    }
-
-    if (scope) {
-      if (!run.nativeTurnId) {
-        this.pendingTurnNotifications.push({ method, params });
-        return;
-      }
-      if (!this.#observeNativeTurn(scope.threadId, scope.turnId)) return;
-      if (
-        scope.threadId !== run.nativeThreadId
-        || scope.turnId !== run.nativeTurnId
-      ) {
-        return;
-      }
-    } else if (!run.nativeTurnId) {
-      this.pendingTurnNotifications.push({ method, params });
-      return;
-    }
-
-    this.#captureResponseUsage(run, method, params);
-    if (method === 'turn/completed') {
-      this.#cancelMissedTurnCompletionRecovery();
-      const completed = params as TurnCompletedNotification;
-      run.completion = {
-        status: completed.turn.status === 'inProgress'
-          ? 'failed'
-          : completed.turn.status,
-        nativeTurnId: completed.turn.id,
-        durationMs: completed.turn.durationMs,
-        ...(completed.turn.error?.message
-          ? { errorMessage: completed.turn.error.message }
-          : {}),
-      };
-    }
-    this.notificationRouter?.handleNotification(method, params);
-  }
-
-  #observeThreadIdle(run: CodexExecutionRun): void {
-    let recovery = this.completionRecovery;
-    if (
-      !recovery
-      || recovery.run !== run
-      || recovery.generation !== this.lifecycleGeneration
-    ) {
-      this.#cancelMissedTurnCompletionRecovery();
-      recovery = {
-        run,
-        generation: this.lifecycleGeneration,
-        attempt: 0,
-        inFlight: false,
-        timer: null,
-      };
-      this.completionRecovery = recovery;
-    }
-    this.#scheduleMissedTurnCompletionRecovery(
-      recovery,
-      MISSED_TURN_COMPLETION_GRACE_MS,
-    );
-  }
-
-  #scheduleMissedTurnCompletionRecovery(
-    recovery: CompletionRecovery,
-    delayMs: number,
-  ): void {
-    if (
-      this.completionRecovery !== recovery
-      || recovery.timer !== null
-      || recovery.inFlight
-      || !this.#isCompletionRecoveryCurrent(recovery)
-      || !recovery.run.nativeTurnId
-    ) {
-      return;
-    }
-    recovery.timer = window.setTimeout(() => {
-      recovery.timer = null;
-      void this.#recoverMissedTurnCompletion(recovery);
-    }, delayMs);
-  }
-
-  #cancelMissedTurnCompletionRecovery(): void {
-    const recovery = this.completionRecovery;
-    if (recovery && recovery.timer !== null) {
-      window.clearTimeout(recovery.timer);
-    }
-    this.completionRecovery = null;
-  }
-
-  async #recoverMissedTurnCompletion(
-    recovery: CompletionRecovery,
-  ): Promise<void> {
-    const { run } = recovery;
-    const transport = this.transport;
-    const threadId = run.nativeThreadId;
-    const turnId = run.nativeTurnId;
-    if (
-      !transport
-      || !threadId
-      || !turnId
-      || !this.#isCompletionRecoveryCurrent(recovery)
-    ) {
-      return;
-    }
-    recovery.attempt += 1;
-    recovery.inFlight = true;
-
-    let result: ThreadReadResult;
-    try {
-      result = await transport.request<ThreadReadResult>(
-        'thread/read',
-        { threadId, includeTurns: true },
-        THREAD_READ_RECOVERY_TIMEOUT_MS,
-      );
-    } catch {
-      recovery.inFlight = false;
-      this.#retryOrFailMissedTurnCompletion(recovery);
-      return;
-    }
-    if (!this.#isCompletionRecoveryCurrent(recovery)) return;
-    recovery.inFlight = false;
-    const turn = result.thread.turns.find(candidate => candidate.id === turnId);
-    if (
-      result.thread.id !== threadId
-      || !turn
-      || turn.status === 'inProgress'
-    ) {
-      this.#retryOrFailMissedTurnCompletion(recovery);
-      return;
-    }
-    this.#replayRecoveredTurnItems(threadId, turn);
-    this.handleNotification('turn/completed', { threadId, turn });
-  }
-
-  #retryOrFailMissedTurnCompletion(
-    recovery: CompletionRecovery,
-  ): void {
-    if (!this.#isCompletionRecoveryCurrent(recovery)) return;
-    if (recovery.attempt < MISSED_TURN_COMPLETION_MAX_ATTEMPTS) {
-      const retryDelay = MISSED_TURN_COMPLETION_RETRY_BASE_MS
-        * (2 ** (recovery.attempt - 1));
-      this.#scheduleMissedTurnCompletionRecovery(recovery, retryDelay);
-      return;
-    }
-
-    this.#cancelMissedTurnCompletionRecovery();
-    this.#finishError(
-      recovery.run,
-      'provider',
-      'Codex CLI became idle, but its completed turn could not be recovered.',
-      true,
-    );
-  }
-
-  #isCompletionRecoveryCurrent(
-    recovery: CompletionRecovery,
-  ): boolean {
-    const { run, generation } = recovery;
-    return (
-      this.completionRecovery === recovery
-      && this.activeRun === run
-      && !run.isTerminal
-      && !run.isCancellationRequested
-      && generation === this.lifecycleGeneration
-    );
-  }
-
-  #replayRecoveredTurnItems(
-    threadId: string,
-    turn: ThreadReadResult['thread']['turns'][number],
-  ): void {
-    for (const item of turn.items) {
-      this.handleNotification('item/completed', {
-        threadId,
-        turnId: turn.id,
-        item,
-      });
-    }
-  }
-
-  #observeNativeTurn(threadId: string, nativeTurnId: string): boolean {
-    const run = this.activeRun;
-    if (
-      !run
-      || run.isTerminal
-      || run.isCancellationRequested
-      || run.nativeThreadId !== threadId
-    ) {
-      return false;
-    }
-    if (run.nativeTurnId && run.nativeTurnId !== nativeTurnId) {
-      return false;
-    }
-    this.#markNativeConversationContextEstablished(run);
-    if (!run.nativeTurnId) {
-      run.nativeTurnId = nativeTurnId;
-      this.serverRequestRouter.setActiveTurn({
-        localTurnId: run.turnId,
-        nativeThreadId: threadId,
-        nativeTurnId,
-        toolPolicy: this.currentRunToolPolicy ?? { kind: 'provider-default' },
-      });
-      run.emit({
-        type: 'turn_started',
-        scope: run.createScope(),
-        accepted: true,
-        nativeTurnId,
-      });
-      this.#flushPendingTurnNotifications(run);
-      const recovery = this.completionRecovery;
-      if (recovery?.run === run) {
-        this.#scheduleMissedTurnCompletionRecovery(
-          recovery,
-          MISSED_TURN_COMPLETION_GRACE_MS,
-        );
-      }
-    }
-    return true;
+    this.turn.handleNotification(method, params);
   }
 
   #markNativeConversationContextEstablished(
-    run: CodexExecutionRun,
+    active: CodexActiveRun,
   ): void {
     if (this.nativeConversationContextEstablished) return;
     this.nativeConversationContextEstablished = true;
-    this.#publishNativeOwnershipSnapshot(run);
+    this.#publishNativeOwnershipSnapshot(active);
   }
 
-  private currentRunToolPolicy: ProviderToolPolicy | null = null;
-
-  #flushPendingTurnNotifications(run: CodexExecutionRun): void {
-    const pending = this.pendingTurnNotifications;
-    this.pendingTurnNotifications = [];
-    for (const notification of pending) {
-      const scope = extractNotificationScope(
-        notification.method,
-        notification.params,
-      );
-      if (
-        scope
-        && (
-          scope.threadId !== run.nativeThreadId
-          || scope.turnId !== run.nativeTurnId
-        )
-      ) {
-        continue;
-      }
-      this.#captureResponseUsage(run, notification.method, notification.params);
-      if (notification.method === 'turn/completed') {
-        const completed = notification.params as TurnCompletedNotification;
-        run.completion = {
-          status: completed.turn.status === 'inProgress'
-            ? 'failed'
-            : completed.turn.status,
-          nativeTurnId: completed.turn.id,
-        durationMs: completed.turn.durationMs,
-          ...(completed.turn.error?.message
-            ? { errorMessage: completed.turn.error.message }
-            : {}),
-        };
-      }
-      this.notificationRouter?.handleNotification(
-        notification.method,
-        notification.params,
-      );
-    }
-  }
-
-  private handleStreamChunk(run: CodexExecutionRun, chunk: StreamChunk): void {
-    if (this.activeRun !== run || run.isTerminal) return;
+  private handleStreamChunk(active: CodexActiveRun, chunk: StreamChunk): void {
+    if (this.activeRun !== active || active.run.isTerminal) return;
     if (chunk.type === 'error') {
       this.#finishError(
-        run,
+        active,
         chunk.code === 'provider_session_missing'
           ? 'provider-session-missing'
           : 'provider',
@@ -1017,496 +622,135 @@ export class CodexExecutionSession
       return;
     }
     if (chunk.type === 'done') {
-      const completion = run.completion;
+      const completion = active.completion;
       if (completion?.status === 'failed') {
         this.#finishError(
-          run,
+          active,
           'provider',
           completion.errorMessage ?? 'Codex CLI turn failed.',
           true,
         );
       } else if (
         completion?.status === 'interrupted'
-        || run.isCancellationRequested
+        || active.run.isCancellationRequested
       ) {
-        this.#finishCancelled(run);
+        this.#finishCancelled(active);
       } else {
-        this.#finishCompleted(run, completion?.nativeTurnId);
+        this.#finishCompleted(active, completion?.nativeTurnId);
       }
       return;
     }
 
-    const event = adaptCodexStreamChunk(chunk, run.createScope());
-    if (event) run.emit(event);
-  }
-
-  async #ensureThread(
-    run: CodexExecutionRun,
-    request: ProviderExecutionRequest,
-    model: string,
-    settings: Record<string, unknown>,
-    policy: CodexPolicy,
-    baseInstructions: string,
-    persistExtendedHistory: boolean | undefined,
-    generation: number,
-  ): Promise<CodexEnsuredThread> {
-    this.currentRunToolPolicy = request.toolPolicy;
-    if (this.threadId) this.threadScope!.claim(this.threadId);
-    if (
-      this.pendingFork
-      && (this.pendingForkTarget !== undefined || !this.threadId)
-    ) {
-      return this.#ensureForkThread(
-        run,
-        request,
-        model,
-        settings,
-        policy,
-        baseInstructions,
-        persistExtendedHistory,
-        generation,
-      );
-    }
-
-    if (
-      this.threadId
-      && (
-        this.loadedThreadId !== this.threadId
-        || this.loadedThreadBaseInstructions !== baseInstructions
-      )
-    ) {
-      if (persistExtendedHistory === false) {
-        throw new Error('This non-persistent Codex CLI session cannot be restored after its configuration changes. Start a new side chat.');
-      }
-      const result = await this.threadScope!.open<ThreadResumeResult>(
-        'thread/resume',
-        {
-          threadId: this.threadId,
-          model,
-          approvalPolicy: policy.approvalPolicy,
-          approvalsReviewer: policy.approvalsReviewer,
-          sandbox: policy.sandbox,
-          serviceTier: resolveCodexServiceTier(
-            request.configuration.serviceTier ?? settings.serviceTier,
-            model,
-            settings,
-          ),
-          baseInstructions: this.workspaceDependencyToolVersion === null
-            ? `${baseInstructions}\n\n${LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS}`
-            : baseInstructions,
-          experimentalRawEvents: true,
-          ...(persistExtendedHistory !== undefined
-            ? { persistExtendedHistory }
-            : {}),
-        },
-      );
-      this.#recordApprovalReviewer(result, policy.approvalsReviewer);
-      this.subagents.seed(result.thread);
-      this.loadedThreadId = result.thread.id;
-      this.#setLoadedThreadSandbox(sandboxModeOf(result.sandbox));
-      this.loadedThreadBaseInstructions = baseInstructions;
-      return {
-        threadId: result.thread.id,
-        sessionFilePath: this.#toHostSessionPath(result.thread.path),
-      };
-    }
-
-    if (this.threadId) {
-      return {
-        threadId: this.threadId,
-        sessionFilePath: this.sessionFilePath,
-      };
-    }
-
-    const dynamicTools = shouldExposeDynamicTools(request.toolPolicy)
-      ? this.dynamicToolRegistry.getThreadStartSpecs().filter(spec =>
-        isThreadStartToolAllowed(request.toolPolicy, spec.namespace, spec.name)
-      )
-      : [];
-    const result = await this.threadScope!.open<ThreadStartResult>(
-      'thread/start',
-      {
-        model,
-        cwd: this.#resolveTargetWorkingDirectory(),
-        approvalPolicy: policy.approvalPolicy,
-        approvalsReviewer: policy.approvalsReviewer,
-        sandbox: policy.sandbox,
-        serviceTier: resolveCodexServiceTier(
-          request.configuration.serviceTier ?? settings.serviceTier,
-          model,
-          settings,
-        ),
-        baseInstructions,
-        experimentalRawEvents: true,
-        ...(persistExtendedHistory === false
-          ? { ephemeral: true }
-          : {}),
-        ...(persistExtendedHistory !== undefined
-          ? { persistExtendedHistory }
-          : {}),
-        ...(dynamicTools.length > 0 ? { dynamicTools } : {}),
-      },
-    );
-    this.#recordApprovalReviewer(result, policy.approvalsReviewer);
-    this.loadedThreadId = result.thread.id;
-    this.#setLoadedThreadSandbox(sandboxModeOf(result.sandbox));
-    this.loadedThreadBaseInstructions = baseInstructions;
-    this.workspaceDependencyToolVersion = dynamicTools.some(spec =>
-      spec.namespace === CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE
-      && spec.name === CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME
-    )
-      ? CODEX_WORKSPACE_DEPENDENCY_TOOL_VERSION
-      : null;
-    const sessionFilePath = this.#toHostSessionPath(result.thread.path);
-    this.threadId = result.thread.id;
-    this.sessionFilePath = sessionFilePath;
-    this.#publishNativeOwnershipSnapshot(run);
-    return {
-      threadId: result.thread.id,
-      sessionFilePath,
-    };
-  }
-
-  #ensureForkThread(
-    run: CodexExecutionRun,
-    request: ProviderExecutionRequest,
-    model: string,
-    settings: Record<string, unknown>,
-    policy: CodexPolicy,
-    baseInstructions: string,
-    persistExtendedHistory: boolean | undefined,
-    generation: number,
-  ): Promise<CodexEnsuredThread> {
-    if (this.forkSetupPromise) return this.forkSetupPromise;
-    const transport = this.transport;
-    if (!transport || !this.pendingFork) {
-      return Promise.reject(new Error('Codex CLI fork setup is not available.'));
-    }
-
-    const setup = this.#materializeForkThread(
-      run,
-      request,
-      model,
-      settings,
-      policy,
-      baseInstructions,
-      persistExtendedHistory,
-      generation,
-      transport,
-    );
-    this.forkSetupPromise = setup;
-    void setup.then(
-      () => this.#clearForkSetup(setup),
-      () => this.#clearForkSetup(setup),
-    );
-    return setup;
-  }
-
-  async #materializeForkThread(
-    run: CodexExecutionRun,
-    request: ProviderExecutionRequest,
-    model: string,
-    settings: Record<string, unknown>,
-    policy: CodexPolicy,
-    baseInstructions: string,
-    persistExtendedHistory: boolean | undefined,
-    generation: number,
-    transport: CodexRPCTransport,
-  ): Promise<CodexEnsuredThread> {
-    const fork = this.pendingFork;
-    if (!fork) throw new Error('Codex CLI fork source is not available.');
-
-    let target = this.pendingForkTarget;
-    if (!target) {
-      target = await this.#resolveForkIdentity(run, fork, persistExtendedHistory === false ? {
-        ephemeral: true,
-        excludeTurns: true,
-        lastTurnId: fork.resumeAt,
-        model,
-        approvalPolicy: policy.approvalPolicy,
-        approvalsReviewer: policy.approvalsReviewer,
-        sandbox: policy.sandbox,
-        serviceTier: resolveCodexServiceTier(request.configuration.serviceTier ?? settings.serviceTier, model, settings),
-        baseInstructions: `${baseInstructions}\n\n${LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS}`,
-        experimentalRawEvents: true,
-        persistExtendedHistory: false,
-      } : {});
-    }
-
-    if (!this.#isRunCurrent(run, generation)) {
-      throw new Error('Codex CLI fork setup was interrupted after child adoption.');
-    }
-
-    if (persistExtendedHistory === false) {
-      // thread/fork already loaded the ephemeral child at the captured checkpoint.
-      this.loadedThreadId = target.threadId;
-      this.loadedThreadBaseInstructions = baseInstructions;
-      this.#consumePendingForkState();
-      this.#updateSnapshot('idle');
-      this.#emitSnapshot(run);
-      return { threadId: target.threadId, sessionFilePath: null };
-    }
-
-    const resumeResult = await this.threadScope!.open<ThreadResumeResult>(
-      'thread/resume',
-      {
-        threadId: target.threadId,
-        model,
-        approvalPolicy: policy.approvalPolicy,
-        approvalsReviewer: policy.approvalsReviewer,
-        sandbox: policy.sandbox,
-        serviceTier: resolveCodexServiceTier(
-          request.configuration.serviceTier ?? settings.serviceTier,
-          model,
-          settings,
-        ),
-        baseInstructions: `${baseInstructions}\n\n${LEGACY_WORKSPACE_DEPENDENCY_INSTRUCTIONS}`,
-        experimentalRawEvents: true,
-        ...(persistExtendedHistory !== undefined
-          ? { persistExtendedHistory }
-          : {}),
-      },
-    );
-    if (!this.#isRunCurrent(run, generation)) {
-      throw new Error('Codex CLI fork setup was interrupted while resuming the child.');
-    }
-    if (resumeResult.thread.id !== target.threadId) {
-      throw new Error('Codex CLI resumed a different thread than the owned fork target.');
-    }
-
-    this.#recordApprovalReviewer(resumeResult, policy.approvalsReviewer);
-    this.loadedThreadId = target.threadId;
-    this.#setLoadedThreadSandbox(sandboxModeOf(resumeResult.sandbox));
-    this.loadedThreadBaseInstructions = baseInstructions;
-    const checkpointIndex = resumeResult.thread.turns.findIndex(
-      turn => turn.id === fork.resumeAt,
-    );
-    if (checkpointIndex < 0) {
-      throw new Error(`Fork checkpoint not found: ${fork.resumeAt}`);
-    }
-    const rollbackCount = resumeResult.thread.turns.length - checkpointIndex - 1;
-    if (rollbackCount > 0) {
-      const rollbackResult = await transport.request<ThreadRollbackResult>(
-        'thread/rollback',
-        {
-          threadId: target.threadId,
-          numTurns: rollbackCount,
-        },
-      );
-      if (!this.#isRunCurrent(run, generation)) {
-        throw new Error('Codex CLI fork setup was interrupted while rolling back the child.');
-      }
-      if (rollbackResult.thread.id !== target.threadId) {
-        throw new Error('Codex CLI rolled back a different thread than the owned fork target.');
-      }
-    }
-
-    this.#consumePendingForkState();
-    this.#updateSnapshot('idle');
-    this.#emitSnapshot(run);
-    return {
-      threadId: target.threadId,
-      sessionFilePath: target.sessionFilePath ?? null,
-      forkCheckpoint: fork.resumeAt,
-    };
-  }
-
-  #resolveForkIdentity(
-    run: CodexExecutionRun,
-    fork: NonNullable<CodexProviderState['forkSource']>,
-    overrides: Record<string, unknown> = {},
-  ): Promise<CodexPendingForkTarget> {
-    if (this.forkIdentityPromise) return this.forkIdentityPromise;
-
-    const pathMapper = this.launchSpec?.pathMapper;
-    const identity = this.threadScope!.open<ThreadForkResult>(
-      'thread/fork',
-      { threadId: fork.sessionId, ...overrides },
-    ).then((forkResult) => {
-      this.#recordApprovalReviewer(forkResult, overrides.approvalsReviewer);
-      this.#setLoadedThreadSandbox(sandboxModeOf(forkResult.sandbox));
-      const threadId = normalizeString(forkResult.thread.id);
-      if (!threadId) {
-        throw new Error('Codex CLI fork did not return a child thread ID.');
-      }
-      const sessionFilePath = forkResult.thread.path
-        ? pathMapper?.toHostPath(forkResult.thread.path) ?? forkResult.thread.path
-        : null;
-      const target: CodexPendingForkTarget = {
-        threadId,
-        ...(sessionFilePath
-          ? { sessionFilePath }
-          : {}),
-      };
-      this.#adoptPendingForkTarget(run, target);
-      return target;
-    });
-    this.forkIdentityPromise = identity;
-    void identity.then(
-      () => this.#clearForkIdentity(identity),
-      () => this.#clearForkIdentity(identity),
-    );
-    return identity;
+    const event = adaptCodexStreamChunk(chunk);
+    if (event) active.run.emit(event);
   }
 
   #adoptPendingForkTarget(
-    run: CodexExecutionRun,
+    active: CodexActiveRun,
     target: CodexPendingForkTarget,
   ): void {
-    this.pendingForkTarget = target;
     this.threadId = target.threadId;
     this.sessionFilePath = target.sessionFilePath ?? null;
-    this.#updateSnapshot('idle');
-    this.#emitSnapshot(run);
+    this.state.setStatus('idle');
+    this.#emitSnapshot(active);
   }
 
-  #clearForkSetup(setup: Promise<CodexEnsuredThread>): void {
-    if (this.forkSetupPromise === setup) {
-      this.forkSetupPromise = null;
-    }
-  }
-
-  #clearForkIdentity(
-    identity: Promise<CodexPendingForkTarget>,
-  ): void {
-    if (this.forkIdentityPromise === identity) {
-      this.forkIdentityPromise = null;
-    }
-  }
-
-  async #settleForkIdentity(): Promise<void> {
-    const identity = this.forkIdentityPromise;
-    if (!identity) return;
-    try {
-      await identity;
-    } catch {
-      // A rejected fork request exposes no child identity to retain.
-    }
-  }
-
-  async #settleForkSetup(): Promise<void> {
-    const setup = this.forkSetupPromise;
-    if (!setup) return;
-    try {
-      await setup;
-    } catch {
-      // The active run owns error or cancellation projection.
-    }
-  }
-
-  #cancelRun(run: CodexExecutionRun, finishCancelled = true): void {
-    if (this.activeRun !== run || run.isTerminal) return;
-    this.#cancelMissedTurnCompletionRecovery();
-    this.lifecycleGeneration++;
+  /** Stops this session's native work on the shared server; `finishCancelled` is false for failures. */
+  #cancelRun(active: CodexActiveRun, finishCancelled = true): void {
+    if (this.activeRun !== active || active.run.isTerminal) return;
+    this.completionRecovery.cancel();
+    this.lifecycleGeneration += 1;
     this.serverRequestRouter.abortAll('cancelled');
-    const stopping = this.threadScope?.stop() ?? Promise.resolve();
-    if (finishCancelled && this.forkSetupPromise) {
-      void Promise.allSettled([stopping, this.#settleForkSetup()]).then(() => this.#finishCancelled(run));
+    const stopping = this.connection.scope?.stop() ?? Promise.resolve();
+    if (finishCancelled && this.threads.hasForkSetup) {
+      void Promise.allSettled([stopping, this.threads.settleForkSetup()])
+        .then(() => this.#finishCancelled(active));
     } else if (finishCancelled) {
-      this.#finishCancelled(run);
+      this.#finishCancelled(active);
     }
   }
 
-  async #allowRequestedTurn(run: CodexExecutionRun, generation: number): Promise<boolean> {
-    await this.threadScope!.beforeTurn();
-    return this.#isRunCurrent(run, generation);
-  }
-
-  #captureResponseUsage(run: CodexExecutionRun, method: string, params: unknown): void {
-    if (method !== 'rawResponse/completed' || !params || typeof params !== 'object') return;
-    const response = params as { threadId?: string; turnId?: string; responseId?: string; usage?: { outputTokens?: unknown } };
-    if (response.threadId !== run.nativeThreadId || response.turnId !== run.nativeTurnId || !response.responseId) return;
-    run.responseTokens.set(response.responseId, isTokenCount(response.usage?.outputTokens) ? response.usage.outputTokens : undefined);
+  async #allowRequestedTurn(active: CodexActiveRun, generation: number): Promise<boolean> {
+    await this.connection.scope!.beforeTurn();
+    return this.#isRunCurrent(active, generation);
   }
 
   #finishCompleted(
-    run: CodexExecutionRun,
+    active: CodexActiveRun,
     nativeCheckpointId?: string,
   ): void {
-    if (this.activeRun !== run || run.isTerminal) return;
-    this.#finishRunState(run);
-    const counts = [...run.responseTokens.values()];
+    if (this.activeRun !== active || active.run.isTerminal) return;
+    this.#finishRunState(active);
+    const counts = [...active.responseTokens.values()];
     const turnStats = createTurnStats(
       counts.length > 0 && counts.every(isTokenCount) ? counts.reduce((sum, count) => sum + count, 0) : undefined,
-      run.completion?.durationMs,
+      active.completion?.durationMs,
     );
-    run.finish({
+    active.run.finish({
       type: 'turn_completed',
       ...(turnStats ? { turnStats } : {}),
-      scope: run.createScope(),
       reason: 'completed',
       // Codex forks resume at turn IDs, not streaming agent-message item IDs.
       ...(nativeCheckpointId ? { nativeAssistantId: nativeCheckpointId, nativeCheckpointId } : {}),
     });
-    this.#releaseRun(run);
+    this.#releaseRun(active);
   }
 
-  #finishCancelled(run: CodexExecutionRun): void {
-    if (this.activeRun !== run || run.isTerminal) return;
-    this.#finishRunState(run);
-    run.finish({
+  #finishCancelled(active: CodexActiveRun): void {
+    if (this.activeRun !== active || active.run.isTerminal) return;
+    this.#finishRunState(active);
+    active.run.finish({
       type: 'cancelled',
-      scope: run.createScope(),
       reason: 'cancelled',
     });
-    this.#releaseRun(run);
+    this.#releaseRun(active);
   }
 
   #finishError(
-    run: CodexExecutionRun,
+    active: CodexActiveRun,
     category: ProviderExecutionErrorCategory,
     message: string,
     recoverable: boolean,
     missingProviderSessionId?: string,
   ): void {
-    if (this.activeRun !== run || run.isTerminal) return;
-    const shouldInvalidate =
+    if (this.activeRun !== active || active.run.isTerminal) return;
+    const invalidationReason: ProviderSessionInvalidation['reason'] | null =
       category === 'provider-session-missing'
-      || category === 'process-exited'
-      || category === 'transport';
-    if (shouldInvalidate) {
-      const reason: ProviderSessionInvalidation['reason'] =
-        category === 'provider-session-missing'
-          ? 'provider-session-missing'
-          : category === 'process-exited'
-            ? 'process-exited'
-            : 'transport-closed';
-      this.#updateSnapshot('invalidated', {
-        reason,
-        recoverable,
-        message,
-      });
+        ? 'provider-session-missing'
+        : category === 'process-exited'
+          ? 'process-exited'
+          : category === 'transport'
+            ? 'transport-closed'
+            : null;
+    if (invalidationReason) {
+      this.state.invalidate({ reason: invalidationReason, recoverable, message });
     } else {
-      this.#updateSnapshot('idle');
+      this.state.setStatus('idle');
     }
-    this.#emitSnapshot(run);
-    run.finish({
+    this.#emitSnapshot(active);
+    active.run.finish({
       type: 'execution_error',
-      scope: run.createScope(),
       category,
       message,
       recoverable,
       ...(missingProviderSessionId ? { missingProviderSessionId } : {}),
     });
-    this.#releaseRun(run);
+    this.#releaseRun(active);
   }
 
-  #finishRunState(run: CodexExecutionRun): void {
-    this.#updateSnapshot('idle');
-    this.#emitSnapshot(run);
+  #finishRunState(active: CodexActiveRun): void {
+    this.state.setStatus('idle');
+    this.#emitSnapshot(active);
   }
 
-  #releaseRun(run: CodexExecutionRun): void {
-    this.#cancelMissedTurnCompletionRecovery();
-    this.notificationRouter?.endTurn();
-    this.notificationRouter = null;
-    this.pendingTurnNotifications = [];
+  #releaseRun(active: CodexActiveRun): void {
+    this.completionRecovery.cancel();
+    this.turn.release();
     this.serverRequestRouter.abortAll(
-      run.isCancellationRequested ? 'cancelled' : 'resolved',
+      active.run.isCancellationRequested ? 'cancelled' : 'resolved',
     );
-    this.#cleanupInputBundles();
-    this.currentRunToolPolicy = null;
-    if (this.activeRun === run) {
+    this.inputBundles.releaseAll();
+    if (this.activeRun === active) {
       this.activeRun = null;
     }
     this.#discoverSessionFile();
@@ -1514,7 +758,7 @@ export class CodexExecutionSession
   }
 
   #handleExecutionFailure(
-    run: CodexExecutionRun,
+    active: CodexActiveRun,
     error: unknown,
   ): void {
     const message = error instanceof Error
@@ -1522,7 +766,7 @@ export class CodexExecutionSession
       : 'Unknown Codex CLI error';
     if (isMissingThreadError(message)) {
       this.#finishError(
-        run,
+        active,
         'provider-session-missing',
         message,
         true,
@@ -1533,142 +777,90 @@ export class CodexExecutionSession
     const category = error instanceof ProviderModelUnavailableError ? 'configuration' : isTransportError(message) ? 'transport' : 'provider';
     // A missing start acknowledgement does not establish that native work stopped.
     // Keep the execution error visible while joining the same targeted cleanup as cancellation.
-    if (category === 'transport' && run.nativeStartSubmitted) this.#cancelRun(run, false);
-    this.#finishError(run, category, message, category === 'transport');
+    if (category === 'transport' && active.nativeStartSubmitted) this.#cancelRun(active, false);
+    this.#finishError(active, category, message, category === 'transport');
   }
 
-  #handleConnectionExit(connection: CodexAppServerConnection): void {
-    if (this.connection !== connection || this.disposed) return;
+  #handleConnectionExit(): void {
+    if (this.disposed) return;
     this.lifecycleGeneration += 1;
-    const run = this.activeRun;
+    const active = this.activeRun;
     // The dead transport cannot deliver an unresolved fork identity.
-    const processDisposal = this.#releaseConnection();
-    if (run && !run.isTerminal && !run.isCancellationRequested) {
-      const forkSetup = this.forkSetupPromise;
-      if (forkSetup) {
+    const release = this.connection.release();
+    const message = 'Codex CLI app-server process exited unexpectedly.';
+    if (active && !active.run.isTerminal && !active.run.isCancellationRequested) {
+      if (this.threads.hasForkSetup) {
         void Promise.allSettled([
-          processDisposal,
-          this.#settleForkSetup(),
+          release,
+          this.threads.settleForkSetup(),
         ]).then(() => {
-          this.#finishError(
-            run,
-            'process-exited',
-            'Codex CLI app-server process exited unexpectedly.',
-            true,
-          );
+          this.#finishError(active, 'process-exited', message, true);
         });
       } else {
-        this.#finishError(
-          run,
-          'process-exited',
-          'Codex CLI app-server process exited unexpectedly.',
-          true,
-        );
+        this.#finishError(active, 'process-exited', message, true);
       }
     } else {
-      this.#updateSnapshot('invalidated', {
-        reason: 'process-exited',
-        recoverable: true,
-        message: 'Codex CLI app-server process exited unexpectedly.',
-      });
+      this.state.invalidate({ reason: 'process-exited', recoverable: true, message });
       this.#emitSessionState();
     }
-    void processDisposal.catch(() => undefined);
+    void release.catch(() => undefined);
   }
 
   async #releaseConnectionAfterForkIdentity(): Promise<void> {
-    await this.#settleForkIdentity();
-    await this.#releaseConnection();
+    await this.threads.settleForkIdentity();
+    await this.connection.release();
   }
 
-  #releaseConnection(): Promise<void> {
-    if (this.connectionReleasePromise) return this.connectionReleasePromise;
-    const scope = this.threadScope;
-    this.threadScope = null;
-    this.connection = null;
-    this.transport = null;
-    this.detachConnectionListeners?.();
-    this.detachConnectionListeners = null;
-    this.launchSpec = null;
-    this.runtimeContext = null;
-    this.subagents.clear();
-    this.loadedThreadId = null;
-    this.#setLoadedThreadSandbox(null);
-    this.loadedThreadBaseInstructions = null;
-    this.supportsApprovalReviewer = false;
-    this.dynamicToolRegistry = new CodexDynamicToolRegistry();
-    this.serverRequestRouter.setDynamicToolRegistry(null);
-    const pending = scope?.detach() ?? Promise.resolve();
-    this.connectionReleasePromise = pending;
-    void pending.finally(() => {
-      if (this.connectionReleasePromise === pending) this.connectionReleasePromise = null;
-    }).catch(() => undefined);
-    return pending;
-  }
-
-  #emitSnapshot(run: CodexExecutionRun): void {
-    run.emit({
+  #emitSnapshot(active: CodexActiveRun): void {
+    active.run.emit({
       type: 'session_state_changed',
-      scope: run.createScope(),
-      snapshot: this.snapshot,
+      snapshot: this.state.getSnapshot(),
     });
   }
 
   #emitSessionState(): void {
-    this.#emitSessionEvent({ type: 'session_state_changed', snapshot: this.snapshot });
+    this.state.emit({ type: 'session_state_changed', snapshot: this.state.getSnapshot() });
   }
 
-  #emitSessionEvent(event: Omit<Extract<ProviderSessionEvent, { type: 'session_state_changed' }>, 'scope'>
-    | Omit<Extract<ProviderSessionEvent, { type: 'subagent_updated' }>, 'scope'>): void {
-    const scoped = { ...event, scope: {
-      kind: 'session' as const, sessionInstanceId: this.sessionInstanceId, sequence: ++this.sessionSequence,
-    } };
-    for (const listener of this.sessionEventListeners) {
-      try { listener(scoped); } catch { /* Listeners cannot interrupt native event handling. */ }
-    }
-  }
-
-  #publishNativeOwnershipSnapshot(run: CodexExecutionRun): void {
-    const currentSnapshot = this.snapshot;
-    const isCurrentExecution = (
-      this.activeRun === run
-      && !run.isTerminal
-      && !run.isCancellationRequested
-      && !this.disposed
-      && currentSnapshot.status !== 'invalidated'
-      && currentSnapshot.status !== 'disposed'
-      && currentSnapshot.status !== 'cancelling'
-    );
-    if (isCurrentExecution) {
-      this.#updateSnapshot('executing');
-    } else if (currentSnapshot.status === 'invalidated') {
-      this.#updateSnapshot('invalidated', currentSnapshot.invalidation);
-    } else {
-      this.#updateSnapshot(currentSnapshot.status);
-    }
-    if (this.activeRun === run && !run.isTerminal) {
-      this.#emitSnapshot(run);
+  /** Publishes on the active run's stream while it is open, otherwise on the session channel. */
+  #publishSnapshot(): void {
+    const active = this.activeRun;
+    if (active && !active.run.isTerminal) {
+      this.#emitSnapshot(active);
     } else {
       this.#emitSessionState();
     }
   }
 
-  #updateSnapshot(
-    status: ProviderSessionStatus,
-    invalidation?: ProviderSessionInvalidation,
-  ): void {
-    this.snapshot = status === 'invalidated'
-      ? this.#buildSnapshot(status, this.snapshot.revision + 1, invalidation)
-      : this.#buildSnapshot(status, this.snapshot.revision + 1);
+  #publishNativeOwnershipSnapshot(active: CodexActiveRun): void {
+    const status = this.state.status;
+    const isCurrentExecution = (
+      this.activeRun === active
+      && !active.run.isTerminal
+      && !active.run.isCancellationRequested
+      && !this.disposed
+      && status !== 'invalidated'
+      && status !== 'disposed'
+      && status !== 'cancelling'
+    );
+    if (isCurrentExecution) {
+      this.state.setStatus('executing');
+    } else {
+      this.state.bumpRevision();
+    }
+    if (this.activeRun === active && !active.run.isTerminal) {
+      this.#emitSnapshot(active);
+    } else {
+      this.#emitSessionState();
+    }
   }
 
-  #buildSnapshot(
-    status: ProviderSessionStatus,
-    revision: number,
-    invalidation?: ProviderSessionInvalidation,
-  ): ProviderSessionSnapshot {
-    const providerState = {
-      ...this.seedState,
+  /** Overlays the session's native identity onto the stored resume state. */
+  #projectProviderState(state: Record<string, unknown>): Record<string, unknown> {
+    const pendingForkTarget = this.threads.pendingForkTarget;
+    const transcriptRootPath = this.#resolveTranscriptRootHost();
+    return {
+      ...state,
       ...(this.threadId
         ? {
             threadId: this.threadId,
@@ -1679,121 +871,17 @@ export class CodexExecutionSession
       ...(this.sessionFilePath
         ? { sessionFilePath: this.sessionFilePath }
         : {}),
-      ...(this.#resolveTranscriptRootHost()
-        ? { transcriptRootPath: this.#resolveTranscriptRootHost()! }
-        : {}),
+      ...(transcriptRootPath ? { transcriptRootPath } : {}),
       ...(this.workspaceDependencyToolVersion !== null
         ? {
             workspaceDependencyToolVersion:
               this.workspaceDependencyToolVersion,
           }
         : {}),
-      ...(this.pendingForkTarget
-        ? { pendingForkTarget: { ...this.pendingForkTarget } }
+      ...(pendingForkTarget
+        ? { pendingForkTarget: { ...pendingForkTarget } }
         : {}),
-    } as CodexProviderState & Record<string, unknown>;
-    for (const key of this.providerStateDeletes) {
-      delete providerState[key];
-    }
-    const providerStateDeletes = [...this.providerStateDeletes];
-    const base = {
-      providerId: this.providerId,
-      revision,
-      ...(this.threadId ? { providerSessionId: this.threadId } : {}),
-      providerState: Object.freeze(providerState),
-      ...(providerStateDeletes.length > 0
-        ? { providerStateDeletes: Object.freeze(providerStateDeletes) }
-        : {}),
-    };
-    if (status === 'invalidated') {
-      const resolvedInvalidation: ProviderSessionInvalidation = invalidation ?? {
-        reason: 'provider-error',
-        recoverable: false,
-      };
-      return Object.freeze({
-          ...base,
-          status,
-          invalidation: Object.freeze(resolvedInvalidation),
-        });
-    }
-    return Object.freeze({ ...base, status });
-  }
-
-  #consumePendingForkState(): void {
-    this.pendingFork = undefined;
-    this.pendingForkTarget = undefined;
-    for (const key of CODEX_CONSUMED_FORK_STATE_KEYS) {
-      this.providerStateDeletes.add(key);
-    }
-  }
-
-  #resolveProviderSettings(): Record<string, unknown> {
-    const settings = this.plugin.settings as Record<string, unknown>;
-    return {
-      ...settings,
-      model: readProviderProjection(settings, 'savedProviderModel')
-        ?? settings.model,
-      effortLevel: readProviderProjection(settings, 'savedProviderEffort')
-        ?? settings.effortLevel,
-      serviceTier: readProviderProjection(settings, 'savedProviderServiceTier')
-        ?? settings.serviceTier,
-      permissionMode: readProviderProjection(
-        settings,
-        'savedProviderPermissionMode',
-      ) ?? settings.permissionMode,
-    };
-  }
-
-  #resolveModel(
-    request: ProviderExecutionRequest,
-    settings: Record<string, unknown>,
-  ): string | null {
-    const selected = normalizeString(request.configuration.model)
-      ?? normalizeString(settings.model);
-    if (!selected) return null;
-    const runtimeModel = toCodexRuntimeModelId(selected);
-    const enabled = getCodexModelOptions(settings).some(
-      option => toCodexRuntimeModelId(option.value) === runtimeModel,
-    );
-    return enabled ? runtimeModel : null;
-  }
-
-  #resolveReasoningEffort(
-    request: ProviderExecutionRequest,
-    settings: Record<string, unknown>,
-    model: string,
-  ): string | null {
-    if (request.configuration.reasoning === null) return null;
-    const codexSettings = getCodexProviderSettings(settings);
-    const modelMetadata = findCodexModel(codexSettings.discoveredModels, model);
-    const effort = resolveCodexReasoningEffort(
-      modelMetadata,
-      codexSettings.enableUltraEffort,
-      normalizeString(request.configuration.reasoning)
-        ?? normalizeString(settings.effortLevel),
-    );
-    if (request.configuration.reasoning !== undefined && (effort !== request.configuration.reasoning
-      || (modelMetadata && !getCodexReasoningEffortOptions(modelMetadata, codexSettings.enableUltraEffort)
-        .some(option => option.value === request.configuration.reasoning)))) {
-      throw new Error(`Codex CLI model "${model}" does not support reasoning effort "${request.configuration.reasoning}".`);
-    }
-    if (!effort) {
-      throw new Error(`Codex CLI model "${model}" has no enabled reasoning efforts.`);
-    }
-    return effort;
-  }
-
-  #resolveBaseInstructions(request: ProviderExecutionRequest): string {
-    const base = request.configuration.systemInstructions.kind === 'explicit'
-      ? request.configuration.systemInstructions.instructions
-      : buildSystemPrompt(this.#getSystemPromptSettings(), {
-          dynamicSections: request.configuration.systemInstructions.dynamicSections
-            ? [...request.configuration.systemInstructions.dynamicSections]
-            : undefined,
-        });
-    return request.toolPolicy.kind === 'passive'
-      ? `${base}\n\n${PASSIVE_INSTRUCTIONS}`
-      : base;
+    } satisfies CodexProviderState & Record<string, unknown>;
   }
 
   #getSystemPromptSettings(): SystemPromptSettings {
@@ -1805,202 +893,14 @@ export class CodexExecutionSession
     };
   }
 
-  #recordApprovalReviewer(result: ThreadStartResult, requested: unknown): void {
-    // Older servers may ignore unknown request fields. Never claim automatic review in that case.
-    this.supportsApprovalReviewer = typeof result.approvalsReviewer === 'string'
-      && (requested !== 'auto_review' || result.approvalsReviewer === 'auto_review');
-  }
-
   #resolveNativePersistence(): boolean | undefined {
     if (this.config.nativePersistence === 'enabled') return true;
     if (this.config.nativePersistence === 'disabled-if-supported') return false;
     return this.config.lifecycle === 'persistent';
   }
 
-  #resolvePolicy(
-    request: ProviderExecutionRequest,
-    settings: Record<string, unknown>,
-  ): CodexPolicy {
-    const toolPolicy = request.toolPolicy;
-    if (toolPolicy.kind === 'passive' || toolPolicy.kind === 'read-only') {
-      return {
-        approvalPolicy: 'never',
-        approvalsReviewer: 'user',
-        sandbox: 'read-only',
-        sandboxPolicy: strictReadOnlySandbox(),
-      };
-    }
-    if (toolPolicy.kind === 'allow-list') {
-      return {
-        approvalPolicy: 'never',
-        approvalsReviewer: 'user',
-        sandbox: 'read-only',
-        sandboxPolicy: strictReadOnlySandbox(),
-      };
-    }
-    if (toolPolicy.kind === 'unrestricted') {
-      return {
-        approvalPolicy: 'never',
-        approvalsReviewer: 'user',
-        sandbox: 'danger-full-access',
-        sandboxPolicy: { type: 'dangerFullAccess' },
-      };
-    }
-
-    const permissionMode =
-      normalizeString(request.configuration.permissionMode)
-      ?? normalizeString(settings.permissionMode)
-      ?? 'auto-review';
-    const safeMode = getCodexProviderSettings(settings).safeMode;
-    const sandboxConfig = resolveCodexSandboxConfig(permissionMode, safeMode);
-    return sandboxConfig.sandbox === 'danger-full-access'
-      ? { ...sandboxConfig, sandboxPolicy: { type: 'dangerFullAccess' } }
-      : sandboxConfig;
-  }
-
-  #setLoadedThreadSandbox(mode: string | null): number {
-    this.loadedThreadSandbox = mode;
-    return ++this.loadedThreadSandboxRevision;
-  }
-
-  async #resolveTurnSandboxPolicy(policy: CodexPolicy): Promise<SandboxPolicy | undefined> {
-    if (policy.sandboxPolicy) return policy.sandboxPolicy;
-    if (this.loadedThreadSandbox === policy.sandbox) return undefined;
-    // turn/start cannot select a mode, and resuming a loaded thread ignores one, so a mode
-    // switch must restore the policy Codex derives from the user's config for that mode.
-    if (policy.sandbox !== 'workspace-write') return strictReadOnlySandbox();
-    const { config } = await this.transport!.request<ConfigReadResult>('config/read', {
-      cwd: this.#resolveTargetWorkingDirectory(),
-    } satisfies ConfigReadParams);
-    const configured = config.sandbox_workspace_write;
-    return {
-      type: 'workspaceWrite',
-      writableRoots: configured?.writable_roots ?? [],
-      networkAccess: configured?.network_access ?? false,
-      excludeTmpdirEnvVar: configured?.exclude_tmpdir_env_var ?? false,
-      excludeSlashTmp: configured?.exclude_slash_tmp ?? false,
-    };
-  }
-
-  #buildTurnPrompt(
-    request: ProviderExecutionRequest,
-    forkCheckpoint?: string,
-    replayConversationHistory = false,
-  ): string {
-    let prompt = request.input
-      .filter(block => block.type === 'text')
-      .map(block => block.text)
-      .join('\n\n');
-    const context = request.context;
-    prompt = appendSessionReferences(prompt, context?.sessionReferences, path => this.#mapRequiredHostPath(path));
-    if (context?.linkedContent) {
-      prompt = context.linkedContent.content === undefined
-        ? appendLinkedContent(prompt, context.linkedContent.path)
-        : appendLinkedContentBody(
-          prompt,
-          context.linkedContent.path,
-          context.linkedContent.content,
-        );
-    }
-    prompt = appendSelectionContexts(prompt, context);
-
-    const history = request.conversationHistory;
-    if (!history?.length) return prompt;
-    if (forkCheckpoint) {
-      const checkpointIndex = history.findIndex(
-        message => message.assistantMessageId === forkCheckpoint,
-      );
-      if (checkpointIndex >= 0 && checkpointIndex < history.length - 1) {
-        const suffix = buildContextFromHistory(
-          history.slice(checkpointIndex + 1),
-        );
-        if (suffix.trim()) return `${suffix}\n\nUser: ${prompt}`;
-      }
-      return prompt;
-    }
-    if (replayConversationHistory) {
-      const historyContext = buildContextFromHistory(history as ChatMessage[]);
-      return buildPromptWithHistoryContext(
-        historyContext || null,
-        prompt,
-        prompt,
-        history as ChatMessage[],
-      );
-    }
-    return prompt;
-  }
-
-  #buildInputBundle(
-    request: ProviderExecutionRequest,
-    promptOverride?: string,
-  ): CodexInputBundle {
-    const input: UserInput[] = [];
-    let tempDirectory: string | null = null;
-    const cleanup = () => {
-      if (!tempDirectory) return;
-      try {
-        fs.rmSync(tempDirectory, { recursive: true, force: true });
-      } catch {
-        // Temporary image cleanup is best-effort.
-      }
-      tempDirectory = null;
-    };
-
-    try {
-      const images = request.input
-        .filter(block => block.type === 'image')
-        .map(block => block.image);
-      if (images.length > 0) {
-        tempDirectory = fs.mkdtempSync(
-          path.join(os.tmpdir(), 'claudian-codex-images-'),
-        );
-        images.forEach((image, index) => {
-          if (!image.mediaType.startsWith('image/')) return;
-          const filePath = path.join(
-            tempDirectory!,
-            `${index + 1}-${toAttachmentFilename(image, index)}`,
-          );
-          fs.writeFileSync(filePath, Buffer.from(image.data, 'base64'));
-          input.push({
-            type: 'localImage',
-            path: this.#mapRequiredHostPath(filePath),
-          });
-        });
-      }
-
-      const prompt = promptOverride ?? appendSelectionContexts(appendSessionReferences(
-        request.input
-          .filter(block => block.type === 'text')
-          .map(block => block.text)
-          .join('\n\n'),
-        request.context?.sessionReferences,
-        path => this.#mapRequiredHostPath(path),
-      ), request.context);
-      if (prompt) {
-        input.push({ type: 'text', text: prompt, text_elements: [] });
-      }
-      return { input, cleanup };
-    } catch (error) {
-      cleanup();
-      throw error;
-    }
-  }
-
-  #cleanupInputBundles(): void {
-    for (const bundle of this.activeInputBundles) bundle.cleanup();
-    this.activeInputBundles.clear();
-  }
-
-  #resolveTargetWorkingDirectory(): string {
-    if (!this.launchSpec) return this.config.vaultWorkingDirectory;
-    const mapped = this.launchSpec.pathMapper.toTargetPath(
-      this.config.vaultWorkingDirectory,
-    );
-    return mapped ?? this.launchSpec.targetCwd;
-  }
-
   #mapRequiredHostPath(hostPath: string): string {
-    const targetPath = this.#mapHostPathToTarget(hostPath);
+    const targetPath = this.connection.toTargetPath(hostPath);
     if (!targetPath) {
       throw new Error(
         `Codex CLI cannot access path from the selected target: ${hostPath}`,
@@ -2009,18 +909,8 @@ export class CodexExecutionSession
     return targetPath;
   }
 
-  #mapHostPathToTarget(hostPath: string | null): string | null {
-    if (!hostPath) return null;
-    return this.launchSpec?.pathMapper.toTargetPath(hostPath) ?? hostPath;
-  }
-
-  #toHostSessionPath(targetPath: string | null | undefined): string | null {
-    if (!targetPath) return null;
-    return this.launchSpec?.pathMapper.toHostPath(targetPath) ?? targetPath;
-  }
-
   #resolveTranscriptRootHost(): string | null {
-    return this.runtimeContext?.sessionsDirHost
+    return this.connection.sessionsDirHost
       ?? deriveCodexSessionsRootFromSessionPath(this.sessionFilePath);
   }
 
@@ -2051,30 +941,23 @@ export class CodexExecutionSession
       return;
     }
     this.sessionFilePath = found;
-    const currentSnapshot = this.snapshot;
-    if (currentSnapshot.status === 'invalidated') {
-      this.#updateSnapshot('invalidated', currentSnapshot.invalidation);
-    } else {
-      this.#updateSnapshot(currentSnapshot.status);
-    }
-    const run = this.activeRun;
-    if (run && !run.isTerminal) {
-      this.#emitSnapshot(run);
-    } else {
-      this.#emitSessionState();
-    }
+    this.state.bumpRevision();
+    this.#publishSnapshot();
+  }
+
+  #isLifecycleCurrent(generation: number): boolean {
+    return !this.disposed && generation === this.lifecycleGeneration;
   }
 
   #isRunCurrent(
-    run: CodexExecutionRun,
+    active: CodexActiveRun,
     generation: number,
   ): boolean {
     return (
-      !this.disposed
-      && generation === this.lifecycleGeneration
-      && this.activeRun === run
-      && !run.isTerminal
-      && !run.isCancellationRequested
+      this.#isLifecycleCurrent(generation)
+      && this.activeRun === active
+      && !active.run.isTerminal
+      && !active.run.isCancellationRequested
     );
   }
 }
@@ -2099,120 +982,6 @@ function normalizePendingForkTarget(
   };
 }
 
-function readProviderProjection(
-  settings: Record<string, unknown>,
-  key: string,
-): unknown {
-  const map = settings[key];
-  return map && typeof map === 'object' && !Array.isArray(map)
-    ? (map as Record<string, unknown>).codex
-    : undefined;
-}
-
-function resolveCodexSandboxConfig(
-  permissionMode: string,
-  safeMode: CodexSafeMode,
-): Pick<CodexPolicy, 'approvalPolicy' | 'approvalsReviewer' | 'sandbox'> {
-  if (permissionMode === 'yolo') {
-    return { approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access' };
-  }
-  return {
-    approvalPolicy: 'on-request',
-    approvalsReviewer: permissionMode === 'auto-review' ? 'auto_review' : 'user',
-    sandbox: safeMode,
-  };
-}
-
-function sandboxModeOf(policy: SandboxPolicy | undefined): string | null {
-  switch (policy?.type) {
-    case 'dangerFullAccess': return 'danger-full-access';
-    case 'workspaceWrite': return 'workspace-write';
-    case 'readOnly': return 'read-only';
-    default: return null;
-  }
-}
-
-function strictReadOnlySandbox(): SandboxPolicy {
-  return {
-    type: 'readOnly',
-    access: { type: 'fullAccess' },
-    networkAccess: false,
-  };
-}
-
-function resolveCodexServiceTier(
-  serviceTier: unknown,
-  modelId: string,
-  settings: Record<string, unknown>,
-): string | null {
-  const model = findCodexModel(
-    getCodexProviderSettings(settings).discoveredModels,
-    modelId,
-  );
-  return resolveCodexModelServiceTier(model, serviceTier);
-}
-
-function shouldExposeDynamicTools(policy: ProviderToolPolicy): boolean {
-  return (
-    policy.kind === 'provider-default'
-    || policy.kind === 'unrestricted'
-    || policy.kind === 'allow-list'
-  );
-}
-
-function isThreadStartToolAllowed(
-  policy: ProviderToolPolicy,
-  namespace: string | null | undefined,
-  name: string,
-): boolean {
-  if (policy.kind === 'provider-default' || policy.kind === 'unrestricted') {
-    return true;
-  }
-  if (policy.kind !== 'allow-list') return false;
-  const qualified = namespace ? `${namespace}.${name}` : name;
-  return policy.names.includes(name) || policy.names.includes(qualified);
-}
-
-function isCompactRequest(request: ProviderExecutionRequest): boolean {
-  const text = request.input
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
-    .join('')
-    .trim();
-  return text.toLowerCase() === '/compact';
-}
-
-function startsWithCompactCommand(request: ProviderExecutionRequest): boolean {
-  const text = request.input
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
-    .join('')
-    .trim();
-  return /^\/compact\s+/i.test(text);
-}
-
-function extractNotificationScope(
-  method: string,
-  params: unknown,
-): { threadId: string; turnId: string } | null {
-  if (!params || typeof params !== 'object' || Array.isArray(params)) {
-    return null;
-  }
-  const notification = params as Record<string, unknown>;
-  const threadId = normalizeString(notification.threadId);
-  if (!threadId) return null;
-  if (method === 'turn/completed' || method === 'turn/started') {
-    const turn = notification.turn;
-    const turnId = turn && typeof turn === 'object' && !Array.isArray(turn)
-      ? normalizeString((turn as Record<string, unknown>).id)
-      : null;
-    return turnId ? { threadId, turnId } : null;
-  }
-  const turnId = normalizeString(notification.turnId)
-    ?? normalizeString(notification.turn_id);
-  return turnId ? { threadId, turnId } : null;
-}
-
 function isMissingThreadError(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
@@ -2231,16 +1000,4 @@ function isTransportError(message: string): boolean {
     || normalized.includes('request timeout')
     || normalized.includes('process exited')
   );
-}
-
-function toAttachmentFilename(
-  attachment: ImageAttachment,
-  index: number,
-): string {
-  const sourceName = attachment.name.trim();
-  const base = sourceName.replace(/[^A-Za-z0-9._-]/g, '_')
-    || `image-${index + 1}`;
-  if (base.includes('.')) return base;
-  const subtype = attachment.mediaType.split('/')[1] ?? 'img';
-  return `${base}.${subtype === 'jpeg' ? 'jpg' : subtype}`;
 }

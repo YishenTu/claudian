@@ -9,7 +9,6 @@ import type { ToolCallInfo } from '@/core/types';
 import { ConversationController } from '@/features/chat/controllers/ConversationController';
 import { cancelSelectedDestinationTurn } from '@/features/chat/tabs/TabInputEvents';
 import { drainTabForShutdownSnapshot } from '@/features/chat/tabs/TabLifecycle';
-import { TabSession } from '@/features/chat/tabs/TabSession';
 
 const id = 'conv-1-source';
 const token = `@[Old title](claudian-session:${id})`;
@@ -51,11 +50,11 @@ it.each([false, true])('resolves current titles once and carries snapshots throu
   const fixture = setup();
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   try {
-    fixture.state.isStreaming = queued;
+    const releaseTurn = queued ? fixture.holdResponse() : async () => undefined;
     fixture.input.value = `Use ${token} and ${token}`;
     await fixture.controller.sendMessage();
     if (queued) {
-      fixture.state.isStreaming = false;
+      await releaseTurn();
       fixture.controller.resumeQueuedTurnAfterIntentAdmission();
       await new Promise(resolve => setTimeout(resolve, 20));
     }
@@ -139,7 +138,7 @@ it('preserves submission order when a busy-main mention hydrates more slowly tha
   const gate = deferred<any>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
-  fixture.state.isStreaming = true;
+  fixture.holdResponse();
   try {
     fixture.input.value = token;
     const first = fixture.controller.sendMessage();
@@ -209,11 +208,11 @@ it('withdraws an expired async answer waiting behind busy-main reference prepara
 
 it('cancels and drains queued snapshot preparation before tab shutdown finishes', async () => {
   const fixture = setup();
-  const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'open' }, fixture.native.coordinator);
+  const session = fixture.session;
   const gate = deferred<any>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
-  fixture.state.isStreaming = true;
+  fixture.holdResponse();
   fixture.input.value = token;
   const sending = fixture.controller.sendMessage();
   await waitForCall(fixture.plugin.getConversationById);
@@ -237,11 +236,11 @@ it.each([false, true])('restores prepared drafts when rewind begins during hydra
   const initialization = deferred<boolean>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
-  const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'open' }, fixture.native.coordinator);
+  const session = fixture.session;
   const initialize = jest.fn().mockReturnValue(initialization.promise);
   const conversation = new ConversationController({
     ...fixture.deps,
-    navigation: session,
+    session,
     subagentManager: fixture.deps.getSubagentManager(),
     setWelcomeEl: jest.fn(),
     clearQueuedMessage: jest.fn(),
@@ -251,7 +250,7 @@ it.each([false, true])('restores prepared drafts when rewind begins during hydra
     { id: 'previous-user', role: 'user', content: 'previous prompt', userMessageId: 'native-user', timestamp: time },
     { id: 'previous-assistant', role: 'assistant', content: 'previous answer', assistantMessageId: 'native-assistant', timestamp: time },
   ];
-  fixture.state.isStreaming = true;
+  const releaseTurn = fixture.holdResponse();
   fixture.input.value = token;
   const sending = fixture.controller.sendMessage();
   await waitForCall(fixture.plugin.getConversationById);
@@ -261,7 +260,7 @@ it.each([false, true])('restores prepared drafts when rewind begins during hydra
     following = fixture.controller.sendMessage();
   }
   expect(fixture.input.value).toBe('');
-  fixture.state.isStreaming = false;
+  await releaseTurn();
   const rewinding = conversation.rewind('previous-user', 'conversation');
   try {
     await waitForCall(initialize);
@@ -387,7 +386,7 @@ it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refre
   const fixture = setup();
   await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   try {
-    fixture.state.isStreaming = recovery !== 'initialization';
+    const releaseTurn = recovery !== 'initialization' ? fixture.holdResponse() : async () => undefined;
     if (recovery === 'initialization') fixture.deps.ensureExecutionInitialized = async () => false;
     fixture.input.value = token;
     await fixture.controller.sendMessage();
@@ -399,7 +398,7 @@ it.each(['withdraw', 'cancel', 'initialization'])('restores token text and refre
     }
     const suffix = recovery === 'initialization' ? '' : '\n\nplain follow-up';
     expect(fixture.input.value).toBe(token + suffix);
-    fixture.state.isStreaming = false;
+    await releaseTurn();
     fixture.deps.ensureExecutionInitialized = async () => true;
     await fixture.controller.sendMessage();
     expect(fixture.write).toHaveBeenCalledTimes(2);
@@ -482,14 +481,14 @@ it.each(['cancel', 'withdraw', 'discard', 'pause', 'shutdown', 'replacement'] as
   'retains scheduled queued input through %s without a stray handoff', async action => {
     jest.useFakeTimers();
     const fixture = setup();
-    const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'open' }, fixture.native.coordinator);
+    const session = fixture.session;
     fixture.deps.canStartTurn = () => session.acceptsIntents;
     await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
     try {
-      fixture.state.isStreaming = true;
+      const releaseTurn = fixture.holdResponse();
       fixture.input.value = token;
       await fixture.controller.sendMessage();
-      fixture.state.isStreaming = false;
+      await releaseTurn();
       fixture.controller.resumeQueuedTurnAfterIntentAdmission();
       switch (action) {
         case 'cancel': fixture.controller.cancelStreaming(); break;

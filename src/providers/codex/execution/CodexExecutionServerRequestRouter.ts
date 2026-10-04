@@ -1,11 +1,13 @@
-import type {
-  ProviderApprovalDecisionOption,
-  ProviderInteractionDismissReason,
-  ProviderInteractionPort,
-  ProviderToolPolicy,
-} from '../../../core/execution';
-import type { ApprovalDecision } from '../../../core/types';
-import { normalizeCodexToolName } from '../normalization/codexToolNormalization';
+import {
+  type PendingInteraction,
+  PendingInteractionLedger,
+  type ProviderApprovalDecisionOption,
+  type ProviderInteractionDismissReason,
+  type ProviderInteractionPort,
+  type ProviderToolPolicy,
+} from '@/core/execution';
+import type { ApprovalDecision } from '@/core/types';
+import { normalizeCodexToolName } from '@/providers/codex/normalization/codexToolNormalization';
 import type {
   CommandApprovalRequest,
   CommandExecutionApprovalDecision,
@@ -22,8 +24,8 @@ import type {
   RequestId,
   UserInputRequest,
   UserInputResponse,
-} from '../runtime/codexAppServerTypes';
-import type { CodexDynamicToolRegistry } from '../runtime/CodexDynamicToolRegistry';
+} from '@/providers/codex/runtime/codexAppServerTypes';
+import type { CodexDynamicToolRegistry } from '@/providers/codex/runtime/CodexDynamicToolRegistry';
 
 interface ActiveInteractionTurn {
   readonly localTurnId: string;
@@ -32,10 +34,9 @@ interface ActiveInteractionTurn {
   readonly toolPolicy: ProviderToolPolicy;
 }
 
-interface PendingInteraction {
-  readonly interactionId: string;
+interface PendingServerRequest {
+  readonly interaction: PendingInteraction;
   readonly nativeKey: string;
-  readonly controller: AbortController;
 }
 
 type NativeTurnObserver = (threadId: string, turnId: string) => boolean;
@@ -44,14 +45,17 @@ export class CodexExecutionServerRequestRouter {
   private activeTurn: ActiveInteractionTurn | null = null;
   private dynamicToolRegistry: CodexDynamicToolRegistry | null = null;
   private interactionCounter = 0;
-  private readonly pendingByNativeKey = new Map<string, PendingInteraction>();
-  private readonly pendingByLocalId = new Map<string, PendingInteraction>();
+  private readonly interactions: PendingInteractionLedger;
+  /** Native requests are unique per thread; the ledger keys interactions locally. */
+  private readonly pendingByNativeKey = new Map<string, PendingServerRequest>();
 
   constructor(
     private readonly sessionInstanceId: string,
     private readonly interactionPort: ProviderInteractionPort,
     private readonly observeNativeTurn: NativeTurnObserver,
-  ) {}
+  ) {
+    this.interactions = new PendingInteractionLedger(interactionPort);
+  }
 
   setActiveTurn(turn: ActiveInteractionTurn | null): void {
     this.activeTurn = turn;
@@ -103,18 +107,13 @@ export class CodexExecutionServerRequestRouter {
     const pending = this.pendingByNativeKey.get(nativeRequestKey(threadId, requestId));
     if (!pending) return false;
 
-    this.interactionPort.dismissInteraction(pending.interactionId, 'resolved');
-    pending.controller.abort();
-    this.#removePending(pending);
-    return true;
+    this.pendingByNativeKey.delete(pending.nativeKey);
+    return this.interactions.abort(pending.interaction.interactionId, 'resolved');
   }
 
   abortAll(reason: ProviderInteractionDismissReason): void {
-    for (const pending of [...this.pendingByLocalId.values()]) {
-      this.interactionPort.dismissInteraction(pending.interactionId, reason);
-      pending.controller.abort();
-      this.#removePending(pending);
-    }
+    this.pendingByNativeKey.clear();
+    this.interactions.dismissAll(reason);
     this.activeTurn = null;
   }
 
@@ -152,7 +151,7 @@ export class CodexExecutionServerRequestRouter {
     const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
-        interactionId: pending.interactionId,
+        interactionId: pending.interaction.interactionId,
         sessionInstanceId: this.sessionInstanceId,
         turnId: turn.localTurnId,
         kind: 'approval',
@@ -170,9 +169,9 @@ export class CodexExecutionServerRequestRouter {
           nativeTurnId: params.turnId,
           itemId: params.itemId,
         },
-      }, pending.controller.signal);
+      }, pending.interaction.signal);
       return {
-        decision: response.interactionId === pending.interactionId
+        decision: response.interactionId === pending.interaction.interactionId
           ? mapCommandApprovalDecision(response.decision)
           : 'decline',
       };
@@ -193,7 +192,7 @@ export class CodexExecutionServerRequestRouter {
     const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
-        interactionId: pending.interactionId,
+        interactionId: pending.interaction.interactionId,
         sessionInstanceId: this.sessionInstanceId,
         turnId: turn.localTurnId,
         kind: 'approval',
@@ -209,9 +208,9 @@ export class CodexExecutionServerRequestRouter {
           nativeTurnId: params.turnId,
           itemId: params.itemId,
         },
-      }, pending.controller.signal);
+      }, pending.interaction.signal);
       return {
-        decision: response.interactionId === pending.interactionId
+        decision: response.interactionId === pending.interaction.interactionId
           ? mapFileChangeApprovalDecision(response.decision)
           : 'decline',
       };
@@ -232,7 +231,7 @@ export class CodexExecutionServerRequestRouter {
     const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.requestApproval({
-        interactionId: pending.interactionId,
+        interactionId: pending.interaction.interactionId,
         sessionInstanceId: this.sessionInstanceId,
         turnId: turn.localTurnId,
         kind: 'approval',
@@ -248,8 +247,8 @@ export class CodexExecutionServerRequestRouter {
           nativeTurnId: params.turnId,
           itemId: params.itemId,
         },
-      }, pending.controller.signal);
-      if (response.interactionId !== pending.interactionId) {
+      }, pending.interaction.signal);
+      if (response.interactionId !== pending.interaction.interactionId) {
         return { permissions: {}, scope: 'turn' };
       }
       if (response.decision === 'allow') {
@@ -275,7 +274,7 @@ export class CodexExecutionServerRequestRouter {
     const pending = this.#createPending(requestId, params.threadId);
     try {
       const response = await this.interactionPort.askUserQuestion({
-        interactionId: pending.interactionId,
+        interactionId: pending.interaction.interactionId,
         sessionInstanceId: this.sessionInstanceId,
         turnId: turn.localTurnId,
         kind: 'question',
@@ -286,9 +285,9 @@ export class CodexExecutionServerRequestRouter {
           nativeTurnId: params.turnId,
           itemId: params.itemId,
         },
-      }, pending.controller.signal);
+      }, pending.interaction.signal);
       if (
-        response.interactionId !== pending.interactionId
+        response.interactionId !== pending.interaction.interactionId
         || response.answers === null
       ) {
         return { answers: {} };
@@ -322,7 +321,7 @@ export class CodexExecutionServerRequestRouter {
       return { action: 'decline', content: null };
     }
 
-    let pending: PendingInteraction | undefined;
+    let pending: PendingServerRequest | undefined;
     try {
       const turn = this.#requireActiveTurn(params.threadId, params.turnId);
       if (!shouldRouteApproval(turn.toolPolicy)) {
@@ -330,7 +329,7 @@ export class CodexExecutionServerRequestRouter {
       }
       pending = this.#createPending(requestId, params.threadId);
       const response = await this.interactionPort.askUserQuestion({
-        interactionId: pending.interactionId,
+        interactionId: pending.interaction.interactionId,
         sessionInstanceId: this.sessionInstanceId,
         turnId: turn.localTurnId,
         kind: 'question',
@@ -355,12 +354,11 @@ export class CodexExecutionServerRequestRouter {
           nativeTurnId: params.turnId,
           serverName: params.serverName,
         },
-      }, pending.controller.signal);
+      }, pending.interaction.signal);
       if (
-        pending.controller.signal.aborted
+        pending.interaction.signal.aborted
         || this.activeTurn !== turn
-        || this.pendingByLocalId.get(pending.interactionId) !== pending
-        || response.interactionId !== pending.interactionId
+        || this.interactions.isStaleResponse(pending.interaction, response)
         || !isPlainRecord(response.answers)
         || Object.keys(response.answers).length !== 1
       ) {
@@ -400,32 +398,26 @@ export class CodexExecutionServerRequestRouter {
   #createPending(
     requestId: RequestId,
     threadId: string,
-  ): PendingInteraction {
-    const interactionId =
-      `${this.sessionInstanceId}:interaction:${++this.interactionCounter}`;
+  ): PendingServerRequest {
     const nativeKey = nativeRequestKey(threadId, requestId);
-    const existing = this.pendingByNativeKey.get(nativeKey);
-    if (existing) {
+    if (this.pendingByNativeKey.has(nativeKey)) {
       throw new Error('Duplicate Codex CLI server request');
     }
 
-    const pending = {
-      interactionId,
-      nativeKey,
-      controller: new AbortController(),
-    };
+    const interactionId =
+      `${this.sessionInstanceId}:interaction:${++this.interactionCounter}`;
+    // Local interaction IDs are unique, so the ledger always admits them.
+    const pending = { interaction: this.interactions.begin(interactionId)!, nativeKey };
     this.pendingByNativeKey.set(nativeKey, pending);
-    this.pendingByLocalId.set(interactionId, pending);
     return pending;
   }
 
-  #removePending(pending: PendingInteraction): void {
+  /** Forgets a request whose interaction the port completed, without dismissing it. */
+  #removePending(pending: PendingServerRequest): void {
     if (this.pendingByNativeKey.get(pending.nativeKey) === pending) {
       this.pendingByNativeKey.delete(pending.nativeKey);
     }
-    if (this.pendingByLocalId.get(pending.interactionId) === pending) {
-      this.pendingByLocalId.delete(pending.interactionId);
-    }
+    this.interactions.release(pending.interaction);
   }
 }
 

@@ -1,7 +1,15 @@
 import { DEFAULT_REASONING_VALUE } from '../../core/providers/reasoning';
-import { type ClaudianSettings } from '../../core/types/settings';
-import { getBuiltInProviderDefaultConfigs } from '../../providers/defaultProviderConfigs';
+import type { ClaudianSettings, ProviderConfigMap } from '../../core/types/settings';
 
+/**
+ * Application defaults. Provider-owned defaults are assembled by the composition
+ * root and injected, so app settings never import concrete providers.
+ */
+export function createDefaultClaudianSettings(providerConfigs: ProviderConfigMap): ClaudianSettings {
+  return structuredClone({ ...DEFAULT_CLAUDIAN_SETTINGS, providerConfigs });
+}
+
+/** Provider-neutral defaults; `providerConfigs` stays empty until providers inject theirs. */
 export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
   userName: '',
 
@@ -31,7 +39,7 @@ export const DEFAULT_CLAUDIAN_SETTINGS: ClaudianSettings = {
 
   locale: 'en',
 
-  providerConfigs: getBuiltInProviderDefaultConfigs(),
+  providerConfigs: {},
 
   settingsProvider: 'claude',
   lastSelectedChatModel: null,

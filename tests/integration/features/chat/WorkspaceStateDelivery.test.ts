@@ -1,5 +1,5 @@
 import { TabWorkspaceMigrationCoordinator } from '@/app/storage/TabWorkspaceMigrationCoordinator';
-import type { AppTabManagerState } from '@/core/providers/types';
+import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 import { ClaudianView } from '@/features/chat/ClaudianView';
 
 test.each(['legacy read', 'metadata load'] as const)('a delivered view snapshot supersedes pending %s', async phase => {

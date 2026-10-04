@@ -3,11 +3,9 @@ import { Notice, setIcon } from 'obsidian';
 import type { ComposerInputElement } from '@/shared/composer-dropdown/types';
 
 import {
-  type BuiltInCommand,
   detectBuiltInCommand,
   detectMainOnlyBuiltInCommand,
   detectSideChatCommand,
-  isBuiltInCommandSupported,
   isSideChatCommandSupported,
 } from '../../../core/commands/builtInCommands';
 import type { ProviderExecutionEvent } from '../../../core/execution';
@@ -27,17 +25,16 @@ import {
   type ToolCallInfo,
 } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
-import { ResumeSessionDropdown } from '../../../shared/components/ResumeSessionDropdown';
 import type { BrowserSelectionContext } from '../../../utils/browser';
 import type { CanvasSelectionContext } from '../../../utils/canvas';
-import { captureSelectionSnapshots, extractUserDisplayContent } from '../../../utils/context';
+import { captureSelectionSnapshots } from '../../../utils/context';
 import type { EditorSelectionContext } from '../../../utils/editor';
 import { toError } from '../../../utils/error';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import type { ChatSettings } from '../ChatSettings';
 import type { ComposerDraftController } from '../composer/ComposerDraftController';
 import { findComposerSessionMentions } from '../composer/composerSessionMentions';
-import { buildChatExecutionConfiguration, buildChatSystemInstructions, resolveChatDynamicSections } from '../execution/chatExecutionConfiguration';
+import { buildChatExecutionConfiguration, resolveChatDynamicSections } from '../execution/chatExecutionConfiguration';
 import {
   type ChatExecutionCoordinator,
   ChatExecutionPreHandoffError,
@@ -55,19 +52,23 @@ import {
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { ResponseStream } from '../rendering/ResponseStream';
 import { deliverAsyncQuestion } from '../services/asyncQuestionDelivery';
+import { ConversationTitleGeneration } from '../services/ConversationTitleGeneration';
 import type { SubagentManager } from '../services/SubagentManager';
 import { resolveSessionMentions } from '../session-mentions/resolveSessionMentions';
 import type { SideChatController } from '../side-chat/SideChatController';
 import type { ChatState } from '../state/ChatState';
 import type { ChatTurnRequest, QueuedMessage, TabReviewOutcome } from '../state/types';
+import type { TabSession } from '../tabs/TabSession';
 import type { BrowserSelectionController } from './BrowserSelectionController';
+import type { BuiltInCommandController } from './BuiltInCommandController';
 import type { CanvasSelectionController } from './CanvasSelectionController';
 import type { ConversationController } from './ConversationController';
 import type { SelectionController } from './SelectionController';
 import {
   type StreamController,
 } from './StreamController';
-import { TurnCoordinator } from './TurnCoordinator';
+import type { TurnCoordinator } from './TurnCoordinator';
+import { type PendingProviderUserMessage, TurnSteering } from './TurnSteering';
 
 type ApprovalCallbackOptions = InlineApprovalOptions;
 
@@ -98,17 +99,13 @@ export interface InputControllerDeps {
   getTabProviderId?: () => ProviderId | null;
   /** Returns true if ready. */
   ensureExecutionInitialized?: () => Promise<boolean>;
-  openConversation?: (conversationId: string) => Promise<void>;
-  /** Lets the active layout replace in-place clear with its own New action. */
-  handleNewConversationCommand?: () => Promise<boolean>;
-  onForkAll?: () => Promise<void>;
-  /** Toggles the active provider's fast service tier when available. */
-  toggleFastMode?: () => Promise<boolean>;
+  builtInCommands: Pick<BuiltInCommandController, 'execute'>;
   /** Captures a review reporter when a terminal provider turn becomes visible. */
   captureReviewableSettlement?: (outcome: TabReviewOutcome) => () => void;
   canStartTurn?: () => boolean;
   isClosing?: () => boolean;
-  turnOwner?: TurnCoordinator;
+  /** The tab-owned turn activity and its single cancellation recipe. */
+  session: Pick<TabSession, 'turns' | 'cancelTurn'>;
   /** Destination seam for the shared composer; absent means main-only. */
   getSideChatController?: () => SideChatController | null;
 }
@@ -131,39 +128,12 @@ export interface SendMessageOptions {
   draftConsumed?: boolean;
 }
 
-interface PendingProviderUserMessage {
-  displayContent: string;
-  persistedContent?: string;
-  linkedContentPath?: string;
-  images?: ChatMessage['images'];
-}
-
-type PendingSteerProviderDisposition =
-  | 'preparing'
-  | 'awaiting-result'
-  | 'definitely-unsent'
-  | 'accepted-awaiting-correlation'
-  | 'ambiguous-awaiting-reconciliation';
-
-interface PendingSteerState {
-  readonly conversationId: string;
-  readonly coordinator: ChatExecutionCoordinator;
-  readonly submissionId: string;
-  readonly message: QueuedMessage;
-  readonly expectedProviderMessage: PendingProviderUserMessage;
-  providerDisposition: PendingSteerProviderDisposition;
-  uiState: 'visible' | 'cleared';
-  correlationState: 'pending' | 'settled' | 'delegated-to-history';
-  retryState: 'blocked' | 'parked' | 'restored';
-}
-
 export class InputController {
   private deps: InputControllerDeps;
   private activeDelivery: SendMessageOptions['onDelivery'];
-  private activeResumeDropdown: ResumeSessionDropdown | null = null;
   private readonly inlinePrompts: InlineInteractionPrompts;
   private readonly asyncQuestions: AsyncQuestionPrompts;
-  private readonly pendingSteersByConversation = new Map<string, PendingSteerState>();
+  private readonly steering: TurnSteering;
   private readonly responseStream: ResponseStream;
   private pendingProviderUserMessages: PendingProviderUserMessage[] = [];
   private sawInitialProviderUserMessage = false;
@@ -173,14 +143,31 @@ export class InputController {
     report: () => void;
   } | null = null;
   private readonly turnCoordinator: TurnCoordinator;
+  private readonly titles: ConversationTitleGeneration;
   private queuedDispatch: { conversationId: string | null; timer: number } | null = null;
   private mainPreparationBarrier: Promise<void> | null = null;
   private readonly mentionPreparations = new Map<AbortController, { destination: 'main' | 'side'; pending: Promise<void> }>();
 
   constructor(deps: InputControllerDeps) {
     this.deps = deps;
+    this.turnCoordinator = deps.session.turns;
+    this.steering = new TurnSteering({
+      plugin: deps.plugin,
+      state: deps.state,
+      turns: this.turnCoordinator,
+      getExecutionCoordinator: () => this.#getExecutionCoordinator(),
+      getCapabilities: () => this.#getActiveCapabilities(),
+      canStartTurn: () => this.deps.canStartTurn?.() !== false,
+      toQueuedChatTurn: message => this.#toQueuedChatTurn(message),
+      createSubmission: (displayContent, request) => this.#createExecutionSubmission(displayContent, request),
+      onVisibleSteerChanged: () => this.updateQueueIndicator(),
+      returnUnsent: message => this.#returnUnsentSteer(message),
+    });
+    this.titles = new ConversationTitleGeneration({
+      host: deps.plugin, getService: () => this.deps.getTitleGenerationService(),
+    });
     this.responseStream = new ResponseStream({
-      state: deps.state, renderer: deps.renderer, stream: deps.streamController,
+      state: deps.state, renderer: deps.renderer, stream: deps.streamController, turns: this.turnCoordinator,
       createMessageId: () => deps.generateId(),
     });
     this.inlinePrompts = new InlineInteractionPrompts({
@@ -197,7 +184,6 @@ export class InputController {
         ? this.deps.state.beginActionRequired(id)
         : this.deps.state.endActionRequired(id),
     });
-    this.turnCoordinator = deps.turnOwner ?? new TurnCoordinator();
   }
 
   #getExecutionCoordinator(): ChatExecutionCoordinator | null {
@@ -260,7 +246,7 @@ export class InputController {
           throw new Error('This question belongs to a different conversation.');
         }
         if (this.deps.canStartTurn?.() === false || state.cancelRequested || state.isSwitchingConversation
-          || state.isCreatingConversation || state.isRewinding) {
+          || state.isResettingToNewChat || state.isRewinding) {
           throw new Error('The answer was not sent. Please try again.');
         }
       },
@@ -271,12 +257,12 @@ export class InputController {
         turnRequest.draftContent = reply.draftContent;
         return {
           steer: async onDelivery => {
-            if (!this.#canSteerQueuedMessage()) return 'not-sent';
-            const pending = await this.#steerMessage(
+            if (!this.steering.canSteer) return 'not-sent';
+            const pending = await this.steering.steer(
               { ...this.#createQueuedMessage(reply.displayContent, turnRequest), onDelivery }, () => undefined, signal,
             );
             if (pending.providerDisposition === 'definitely-unsent') {
-              this.#releasePendingSteer(pending);
+              this.steering.release(pending);
               return 'not-sent';
             }
             return pending.providerDisposition === 'accepted-awaiting-correlation' ? 'accepted' : 'uncertain';
@@ -297,7 +283,7 @@ export class InputController {
 
   resumeQueuedTurnAfterIntentAdmission(): void {
     if (this.deps.canStartTurn?.() === false) return;
-    if (this.deps.state.isStreaming || !this.deps.state.queuedMessage) return;
+    if (this.turnCoordinator.isActive || !this.deps.state.queuedMessage) return;
     this.processQueuedMessage();
   }
 
@@ -344,8 +330,8 @@ export class InputController {
     } = this.deps;
     this.#discardDeferredReviewForDifferentConversation();
 
-    // During conversation creation/switching, don't send - input is preserved so user can retry
-    if (state.isCreatingConversation || state.isSwitchingConversation) {
+    // While resetting to a new chat or switching, don't send - input is preserved so user can retry
+    if (state.isResettingToNewChat || state.isSwitchingConversation) {
       this.#reportDeferredReviewableSettlement();
       return 'rejected';
     }
@@ -400,7 +386,7 @@ export class InputController {
       if (shouldUseInput) {
         this.deps.drafts.restore(destination, { content: '', images: composerDraft.images });
       }
-      await this.#executeBuiltInCommand(builtInCmd.command);
+      await this.deps.builtInCommands.execute(builtInCmd.command, this.#getActiveCapabilities());
       return 'handled';
     }
 
@@ -451,15 +437,13 @@ export class InputController {
       const sideContext = this.#buildSideContext();
       const original = shouldUseInput ? this.deps.drafts.consume(destination) : { content, images };
       const preparation = new AbortController();
-      const ownsMainTurn = destination === 'main' && !state.isStreaming
-        && !this.turnCoordinator.isActive && !state.queuedMessage;
+      const ownsMainTurn = destination === 'main' && !this.turnCoordinator.isActive && !state.queuedMessage;
       const releaseAdmission = destination === 'main' && !ownsMainTurn && !skipPreparationBarrier
         ? this.#reserveMainPreparation() : onAdmitted;
       let queued = false;
       const prepare = async (signal: AbortSignal): Promise<void> => {
         const cancelSidePreparation = () => { if (destination === 'side') capturedSideRuntime?.cancel(); };
         signal.addEventListener('abort', cancelSidePreparation, { once: true });
-        if (ownsMainTurn) state.isStreaming = true;
         this.deps.getInputEl().setAttribute?.('aria-busy', 'true');
         let handedOff = false;
         try {
@@ -473,7 +457,6 @@ export class InputController {
           }
           const turnRequest = { ...captured.turnRequest, text: resolved.text, draftContent: original.content,
             sessionReferences: resolved.references };
-          if (ownsMainTurn) state.isStreaming = false;
           if (destination === 'side') {
             const accepted = await sideChat?.submitToSide(resolved.text, images,
               { ...sideContext, sessionReferences: resolved.references }, resolved.text);
@@ -498,10 +481,7 @@ export class InputController {
         } finally {
           signal.removeEventListener('abort', cancelSidePreparation);
           this.deps.getInputEl().removeAttribute?.('aria-busy');
-          if (ownsMainTurn && !handedOff) {
-            state.isStreaming = false;
-            this.#restoreQueuedMessageToInput();
-          }
+          if (ownsMainTurn && !handedOff) this.#restoreQueuedMessageToInput();
         }
       };
       const pending = ownsMainTurn ? this.turnCoordinator.run(prepare) : prepare(preparation.signal);
@@ -537,7 +517,7 @@ export class InputController {
     // Interaction ownership ends at queue admission, or at direct provider handoff.
     options?.assertBeforeHandoff?.();
     // If agent is working, queue the message instead of dropping it
-    if (state.isStreaming || this.turnCoordinator.isActive || state.queuedMessage) {
+    if (this.turnCoordinator.isActive || state.queuedMessage) {
       const images = hasImages
         ? [...(imageOverride ?? composerDraft.images)]
         : undefined;
@@ -565,7 +545,7 @@ export class InputController {
       this.updateQueueIndicator();
       onAdmitted?.();
       options?.onQueued?.();
-      if (!state.isStreaming && !this.turnCoordinator.isActive) this.processQueuedMessage();
+      if (!this.turnCoordinator.isActive) this.processQueuedMessage();
       return 'queued';
     }
 
@@ -622,14 +602,12 @@ export class InputController {
     state.acknowledgeReview();
 
     let turnConversationId = state.currentConversationId;
-    this.#delegatePendingSteerCorrelationToHistory(turnConversationId);
+    this.steering.delegateCorrelationToHistory(turnConversationId);
 
-    state.isStreaming = true;
-    state.cancelRequested = false;
+    const streamGeneration = this.turnCoordinator.beginResponse();
     state.ignoreUsageUpdates = false; // Allow usage updates for new query
     this.deps.getSubagentManager().resetSpawnedCount();
     state.autoScrollEnabled = plugin.settings.enableAutoScroll ?? true; // Reset auto-scroll based on setting
-    const streamGeneration = state.bumpStreamGeneration();
 
     // Hide welcome message when sending first message
     const welcomeEl = this.deps.getWelcomeEl();
@@ -668,9 +646,9 @@ export class InputController {
     };
 
     try {
-      await this.#ensureConversationShell(linkedContentSubmission);
+      await this.#ensureConversation(linkedContentSubmission);
       if (this.#retainUnsentTurnOnClose(signal) || restoreCancelledInput()) return;
-      await this.#triggerTitleGeneration();
+      await this.#titleFirstTurn();
       if (this.#retainUnsentTurnOnClose(signal) || restoreCancelledInput()) return;
     } catch (error) {
       if (linkedContentSubmission && !state.currentConversationId) {
@@ -681,10 +659,9 @@ export class InputController {
       throw error;
     }
     turnConversationId = state.currentConversationId;
-    const admittedTurnRequest = this.#bindLinkedContentAtTurnAdmission(
-      turnRequest,
-      isCompact,
-    );
+    const admittedTurnRequest = this.#bindLinkedContentAtTurnAdmission(turnRequest, {
+      isCompact, creation: linkedContentSubmission, transcriptBeforeTurn: messagesBeforeTurn,
+    });
 
     const assistantMsg = this.responseStream.start();
     this.pendingProviderUserMessages = [{
@@ -708,6 +685,7 @@ export class InputController {
     let shouldReportReviewableSettlement = false;
     let currentReviewableSettlementReporter: (() => void) | null = null;
     let didCancelThisTurn = false;
+    let completed = false;
     let hadExecutionError = false;
     let scheduledContinuation = false;
 
@@ -755,6 +733,7 @@ export class InputController {
       if (options?.assertBeforeHandoff) submission.assertBeforeHandoff = options.assertBeforeHandoff;
       const result = await coordinator.execute(submission, signal);
       if (result.status === 'completed') {
+        completed = true;
         const checkpoint = result.nativeAssistantMessageId ?? result.nativeCheckpointId;
         const finalAssistant = this.responseStream.active ?? assistantMsg;
         finalAssistant.completedAt = Date.now();
@@ -848,7 +827,8 @@ export class InputController {
           && !didRollbackUnsentTurn
           && state.streamGeneration === streamGeneration
         ) {
-          didCancelThisTurn = wasInterrupted || state.cancelRequested;
+          // Native completion wins over a cancel that reached the provider too late.
+          didCancelThisTurn = wasInterrupted || (state.cancelRequested && !completed);
           await this.responseStream.finish(finalAssistantMsg, { interrupted: didCancelThisTurn, failed: hadExecutionError });
           this.#syncScrollToBottomAfterRenderUpdates();
 
@@ -860,7 +840,7 @@ export class InputController {
         }
 
         if (wasInvalidated) {
-          this.#clearCurrentPendingSteerUi();
+          this.steering.clearCurrentUi();
           this.updateQueueIndicator();
         }
       } finally {
@@ -879,7 +859,7 @@ export class InputController {
           this.#reportDeferredReviewableSettlement();
         }
 
-        this.#delegatePendingSteerCorrelationToHistory(turnConversationId);
+        this.steering.delegateCorrelationToHistory(turnConversationId);
         this.responseStream.clear();
         this.#resetProviderMessageBoundaryState();
       }
@@ -897,7 +877,7 @@ export class InputController {
 
     indicatorEl.empty();
 
-    const pendingSteer = this.#getCurrentPendingSteer();
+    const pendingSteer = this.steering.current;
     const visiblePendingSteer = pendingSteer?.uiState === 'visible'
       ? pendingSteer.message
       : null;
@@ -916,7 +896,7 @@ export class InputController {
       if (state.queuedMessage) {
         const actionsEl = indicatorEl.createDiv({ cls: 'claudian-queue-indicator-actions' });
 
-        if (this.#canSteerQueuedMessage()) {
+        if (this.steering.canSteer) {
           const steerButton = actionsEl.createEl('button', {
             cls: 'claudian-queue-indicator-action',
             text: pendingSteer?.providerDisposition === 'awaiting-result'
@@ -1024,11 +1004,11 @@ export class InputController {
       () => {
         if (this.queuedDispatch !== reservation) return;
         if (state.currentConversationId !== reservation.conversationId
-          || state.isRewinding || state.isCreatingConversation || state.isSwitchingConversation) {
+          || state.isRewinding || state.isResettingToNewChat || state.isSwitchingConversation) {
           this.#restoreQueuedMessageToInput();
           return;
         }
-        if (this.deps.canStartTurn?.() === false || state.isStreaming || this.turnCoordinator.isActive) {
+        if (this.deps.canStartTurn?.() === false || this.turnCoordinator.isActive) {
           this.#cancelQueuedDispatch();
           return;
         }
@@ -1161,18 +1141,12 @@ export class InputController {
       ? options.canvasContextOverride
       : canvasSelectionController.getContext();
 
-    const isCompact = /^\/compact(\s|$)/i.test(options.content);
-    const candidateUserTurnOrdinal = this.deps.state.messages
-      .filter(isCanonicalUserMessage).length + 1;
-    const linkedContentPath = !isCompact && candidateUserTurnOrdinal === 1
-      ? this.deps.getLinkedContentController().getSnapshot().path ?? undefined
-      : undefined;
+    // Linked content is bound only at admission, never from capture-time transcript state.
     return {
       displayContent: options.content,
       turnRequest: cloneChatTurnRequest({
         text: options.content,
         images: options.images,
-        linkedContentPath,
         editorSelection: editorContext,
         browserSelection: browserContext,
         canvasSelection: canvasContext,
@@ -1180,17 +1154,24 @@ export class InputController {
     };
   }
 
+  /**
+   * The first admitted canonical input of a Conversation carries its frozen Linked content: the
+   * path captured when this turn created the Conversation, or the path locked into the existing
+   * Conversation when an earlier first attempt failed after creation.
+   */
   #bindLinkedContentAtTurnAdmission(
     request: ChatTurnRequest,
-    isCompact: boolean,
+    admission: {
+      isCompact: boolean;
+      creation: LinkedContentSubmissionToken | null;
+      transcriptBeforeTurn: readonly ChatMessage[];
+    },
   ): ChatTurnRequest {
-    const userTurnOrdinal = this.deps.state.messages
-      .filter(isCanonicalUserMessage).length;
-    const linkedContentPath = !isCompact && userTurnOrdinal === 1
-      ? request.linkedContentPath
-        ?? this.deps.getLinkedContentController().getSnapshot().path
-        ?? undefined
-      : undefined;
+    const isFirstTurn = !admission.isCompact && !admission.transcriptBeforeTurn.some(isCanonicalUserMessage);
+    const frozenPath = admission.creation
+      ? admission.creation.path
+      : this.deps.getLinkedContentController().getSnapshot().path;
+    const linkedContentPath = isFirstTurn ? frozenPath ?? undefined : undefined;
     if (request.linkedContentPath === linkedContentPath) return request;
 
     const admittedRequest = cloneChatTurnRequest(request);
@@ -1279,14 +1260,6 @@ export class InputController {
     return button;
   }
 
-  #canSteerQueuedMessage(): boolean {
-    return this.deps.state.isStreaming
-      && this.deps.state.currentConversationId !== null
-      && this.#getCurrentPendingSteer() === null
-      && this.#getActiveCapabilities().supportsTurnSteer === true
-      && this.#getExecutionCoordinator() !== null;
-  }
-
   #cloneQueuedMessage(message: QueuedMessage): QueuedMessage {
     return {
       ...message,
@@ -1332,115 +1305,28 @@ export class InputController {
     };
   }
 
-  #getCurrentPendingSteer(): PendingSteerState | null {
-    const conversationId = this.deps.state.currentConversationId;
-    if (!conversationId) return null;
-    return this.pendingSteersByConversation.get(conversationId) ?? null;
-  }
-
-  #isPendingSteerRegistered(pending: PendingSteerState): boolean {
-    return this.pendingSteersByConversation.get(pending.conversationId) === pending;
-  }
-
-  #clearCurrentPendingSteerUi(): void {
-    const pending = this.#getCurrentPendingSteer();
-    if (!pending) return;
-    pending.uiState = 'cleared';
-    this.updateQueueIndicator();
-  }
-
-  #clearPendingSteerUi(pending: PendingSteerState): void {
-    pending.uiState = 'cleared';
-    if (pending.conversationId === this.deps.state.currentConversationId) {
-      this.updateQueueIndicator();
-    }
-  }
-
-  #releasePendingSteer(pending: PendingSteerState): void {
-    if (this.#isPendingSteerRegistered(pending)) {
-      this.pendingSteersByConversation.delete(pending.conversationId);
-      pending.coordinator.releaseSteerCorrelation(pending.submissionId);
-    }
-  }
-
-  #delegatePendingSteerCorrelationToHistory(
-    conversationId: string | null,
-  ): void {
-    if (!conversationId) return;
-    const pending = this.pendingSteersByConversation.get(conversationId);
-    if (!pending) return;
-
-    if (pending.correlationState === 'pending') {
-      pending.correlationState = 'delegated-to-history';
-    }
-    this.#clearPendingSteerUi(pending);
-    if (
-      pending.providerDisposition !== 'awaiting-result'
-      || pending.correlationState === 'settled'
-    ) {
-      this.#releasePendingSteer(pending);
-    }
-  }
-
-  #restoreDefinitelyUnsentSteer(pending: PendingSteerState): void {
-    if (
-      pending.retryState === 'restored'
-      || pending.providerDisposition === 'accepted-awaiting-correlation'
-    ) {
-      return;
-    }
-
-    pending.providerDisposition = 'definitely-unsent';
-    pending.correlationState = 'settled';
-    this.#clearPendingSteerUi(pending);
-    if (
-      pending.conversationId !== this.deps.state.currentConversationId
-      || this.deps.state.isSwitchingConversation
-      || this.deps.state.isCreatingConversation
-    ) {
-      pending.retryState = 'parked';
-      return;
-    }
-
-    this.#restoreDefinitelyUnsentSteerForActiveConversation(pending);
-  }
-
-  #restoreDefinitelyUnsentSteerForActiveConversation(
-    pending: PendingSteerState,
-  ): void {
-    if (pending.retryState === 'restored') return;
-
-    pending.retryState = 'restored';
-    this.#releasePendingSteer(pending);
-
-    const { state } = this.deps;
-    if (state.isStreaming && !state.cancelRequested) {
-      state.queuedMessage = state.queuedMessage
-        ? this.#mergeQueuedMessages(pending.message, state.queuedMessage)
-        : this.#cloneQueuedMessage(pending.message);
-    } else {
-      this.#restoreMessageToInput(pending.message, { mergeWithComposer: true });
-    }
-    this.updateQueueIndicator();
-  }
-
   onConversationActivated(): void {
     this.#discardDeferredReviewForDifferentConversation();
     if (
       this.deps.state.isSwitchingConversation
-      || this.deps.state.isCreatingConversation
+      || this.deps.state.isResettingToNewChat
     ) {
       return;
     }
-    const pending = this.#getCurrentPendingSteer();
-    if (
-      pending?.providerDisposition === 'definitely-unsent'
-      && pending.retryState === 'parked'
-    ) {
-      this.#restoreDefinitelyUnsentSteerForActiveConversation(pending);
-      return;
-    }
+    if (this.steering.resumeParked()) return;
     this.updateQueueIndicator();
+  }
+
+  /** Unsent steering rejoins the queue while its turn still runs, otherwise the composer. */
+  #returnUnsentSteer(message: QueuedMessage): void {
+    const { state } = this.deps;
+    if (this.turnCoordinator.isInFlight && !this.turnCoordinator.cancelRequested) {
+      state.queuedMessage = state.queuedMessage
+        ? this.#mergeQueuedMessages(message, state.queuedMessage)
+        : this.#cloneQueuedMessage(message);
+    } else {
+      this.#restoreMessageToInput(message, { mergeWithComposer: true });
+    }
   }
 
   #mergeQueuedMessages(
@@ -1467,96 +1353,15 @@ export class InputController {
   private async steerQueuedMessage(): Promise<void> {
     const { state } = this.deps;
     const coordinator = this.#getExecutionCoordinator();
-    if (!state.queuedMessage || !this.#canSteerQueuedMessage() || !coordinator) {
+    if (!state.queuedMessage || !this.steering.canSteer || !coordinator) {
       return;
     }
     if (!state.currentConversationId) return;
 
     const queuedMessage = this.#cloneQueuedMessage(state.queuedMessage);
     state.queuedMessage = null;
-    const pending = await this.#steerMessage(queuedMessage);
-    if (pending.providerDisposition === 'definitely-unsent') this.#restoreDefinitelyUnsentSteer(pending);
-  }
-
-  async #steerMessage(
-    queuedMessage: QueuedMessage,
-    reportFailure: (message: string) => void = message => { new Notice(message); },
-    signal?: AbortSignal,
-  ): Promise<PendingSteerState> {
-    const { state } = this.deps;
-    const coordinator = this.#getExecutionCoordinator()!;
-    const conversationId = state.currentConversationId!;
-    const { displayContent, request } = this.#toQueuedChatTurn(queuedMessage);
-    const submission = this.#createExecutionSubmission(displayContent, request);
-    const pending: PendingSteerState = {
-      conversationId,
-      coordinator,
-      correlationState: 'pending',
-      expectedProviderMessage: {
-        displayContent,
-        persistedContent: request.text,
-        linkedContentPath: /^\/compact(\s|$)/i.test(request.text)
-          ? undefined
-          : request.linkedContentPath,
-        images: request.images,
-      },
-      submissionId: submission.submissionId,
-      message: queuedMessage,
-      providerDisposition: 'preparing',
-      retryState: 'blocked',
-      uiState: 'visible',
-    };
-    this.pendingSteersByConversation.set(conversationId, pending);
-    this.updateQueueIndicator();
-
-    try {
-      const dynamicSections = await resolveChatDynamicSections(this.deps.plugin);
-      if (signal?.aborted || state.currentConversationId !== conversationId || this.#getExecutionCoordinator() !== coordinator
-        || !this.#isPendingSteerRegistered(pending) || this.deps.canStartTurn?.() === false
-        || state.cancelRequested || state.isSwitchingConversation || state.isCreatingConversation || state.isRewinding) {
-        pending.providerDisposition = 'definitely-unsent';
-        return pending;
-      }
-      pending.providerDisposition = 'awaiting-result';
-      const accepted = await coordinator.steer({
-        ...submission,
-        configuration: {
-          ...submission.configuration,
-          systemInstructions: buildChatSystemInstructions(dynamicSections),
-        },
-      }, signal);
-      if (!accepted) {
-        // A provider event can confirm acceptance while the RPC is awaiting its result.
-        if ((pending.providerDisposition as PendingSteerProviderDisposition) !== 'accepted-awaiting-correlation') {
-          pending.providerDisposition = 'definitely-unsent';
-        }
-        return pending;
-      }
-
-      pending.message.onDelivery?.(true);
-      pending.providerDisposition = 'accepted-awaiting-correlation';
-      this.#clearPendingSteerUi(pending);
-      if (pending.correlationState !== 'pending') {
-        this.#releasePendingSteer(pending);
-      }
-    } catch (error) {
-      if (pending.providerDisposition === 'accepted-awaiting-correlation') return pending;
-      if (error instanceof ChatExecutionPreHandoffError) {
-        pending.providerDisposition = 'definitely-unsent';
-        reportFailure('Failed to steer the queued message. It is still available.');
-        return pending;
-      }
-
-      pending.providerDisposition = 'ambiguous-awaiting-reconciliation';
-      this.#clearPendingSteerUi(pending);
-      if (pending.correlationState !== 'pending') {
-        this.#releasePendingSteer(pending);
-      }
-      reportFailure(
-        'Steer delivery could not be confirmed. The message was not requeued to avoid sending it twice.',
-      );
-    }
-    return pending;
+    const pending = await this.steering.steer(queuedMessage);
+    if (pending.providerDisposition === 'definitely-unsent') this.steering.restoreIfDefinitelyUnsent(pending);
   }
 
   #resetProviderMessageBoundaryState(): void {
@@ -1587,26 +1392,8 @@ export class InputController {
       return;
     }
 
-    const currentSteer = this.#getCurrentPendingSteer();
-    const pendingSteer = currentSteer?.providerDisposition === 'preparing' ? null : currentSteer;
-    const expected = pendingSteer?.correlationState === 'pending'
-      ? pendingSteer.expectedProviderMessage
-      : this.pendingProviderUserMessages.shift();
-    let acceptanceError: unknown;
-    if (pendingSteer?.correlationState === 'pending') {
-      pendingSteer.message.onDelivery?.(true);
-      pendingSteer.providerDisposition = 'accepted-awaiting-correlation';
-      pendingSteer.correlationState = 'settled';
-      this.#clearPendingSteerUi(pendingSteer);
-      try {
-        await pendingSteer.coordinator.acceptSteerFromProviderEvent(
-          pendingSteer.submissionId,
-          chunk.itemId,
-        );
-      } catch (error) {
-        acceptanceError = error;
-      }
-    }
+    const echo = await this.steering.claimProviderEcho(chunk.itemId);
+    const expected = echo.expected ?? this.pendingProviderUserMessages.shift();
 
     const previousAssistant = this.responseStream.active;
     const shouldDiscardPlaceholder = this.#shouldDiscardPendingAssistantPlaceholder(previousAssistant);
@@ -1636,15 +1423,13 @@ export class InputController {
       this.deps.state.addMessage(userMessage);
       this.deps.renderer.addMessage(userMessage);
     }
-    if (pendingSteer?.correlationState === 'settled') {
-      this.#releasePendingSteer(pendingSteer);
-    }
+    echo.settle();
 
     this.responseStream.start();
     this.deps.streamController.showThinkingIndicator();
     this.deps.state.responseStartTime = performance.now();
     this.awaitingProviderAssistantStart = true;
-    if (acceptanceError) throw toError(acceptanceError, 'Provider user message failed');
+    if (echo.acceptanceError) throw toError(echo.acceptanceError, 'Provider user message failed');
   }
 
   async #handleProviderAssistantMessageStart(): Promise<void> {
@@ -1720,8 +1505,7 @@ export class InputController {
   #resetTurnStreamingState(): void {
     const { state, streamController } = this.deps;
     streamController.hideThinkingIndicator();
-    state.isStreaming = false;
-    state.cancelRequested = false;
+    this.turnCoordinator.settle();
     state.currentContentEl = null;
     state.currentTextEl = null;
     state.currentTextContent = '';
@@ -1730,109 +1514,24 @@ export class InputController {
     streamController.resetSubagentStreamingState();
   }
 
-  // ============================================
-  // Title Generation
-  // ============================================
-
-  /**
-   * Triggers AI title generation after first user message.
-   * Handles setting fallback title, firing async generation, and updating UI.
-   */
-  async #triggerTitleGeneration(): Promise<void> {
-    const { plugin, state, conversationController } = this.deps;
-
-    if (state.messages.length !== 1) {
-      return;
-    }
-
-    if (!state.currentConversationId) return;
-
-    // Find first user message by role (not by index)
-    const firstUserMsg = state.messages.find(m => m.role === 'user');
-
-    if (!firstUserMsg) {
-      return;
-    }
-
-    const userContent = firstUserMsg.displayContent
-      ?? extractUserDisplayContent(firstUserMsg.content)
-      ?? firstUserMsg.content;
-
-    // Set immediate fallback title
-    const fallbackTitle = conversationController.generateFallbackTitle(userContent);
-    await plugin.renameConversation(state.currentConversationId, fallbackTitle);
-
-    if (!plugin.settings.enableAutoTitleGeneration
-      || !ProviderRegistry.resolveTitleGenerationSelection(plugin.settings)) {
-      return;
-    }
-
-    // Fire async AI title generation only if service available
-    const titleService = this.deps.getTitleGenerationService();
-    if (!titleService) {
-      // No titleService, just keep the fallback title with no status
-      return;
-    }
-
-    // Mark as pending only when we're actually starting generation
-    await plugin.updateConversation(state.currentConversationId, { titleGenerationStatus: 'pending' });
-
-    const convId = state.currentConversationId;
-    const expectedTitle = fallbackTitle; // Store to check if user renamed during generation
-
-    titleService.generateTitle(
-      convId,
-      userContent,
-      async (conversationId, result) => {
-        // Check if conversation still exists and user hasn't manually renamed
-        const currentConv = await plugin.getConversationById(conversationId);
-        if (!currentConv) return;
-
-        // Only apply AI title if user hasn't manually renamed (title still matches fallback)
-        const userManuallyRenamed = currentConv.title !== expectedTitle;
-
-        if (result.success && !userManuallyRenamed) {
-          await plugin.renameConversation(conversationId, result.title);
-          await plugin.updateConversation(conversationId, { titleGenerationStatus: 'success' });
-        } else if (!userManuallyRenamed) {
-          // Keep fallback title, mark as failed (only if user hasn't renamed)
-          await plugin.updateConversation(conversationId, { titleGenerationStatus: 'failed' });
-        } else {
-          // User manually renamed, clear the status (user's choice takes precedence)
-          await plugin.updateConversation(conversationId, { titleGenerationStatus: undefined });
-        }
-      }
-    ).catch(() => {
-      // Silently ignore title generation errors
-    });
+  /** Titles a Conversation after its first user message is admitted. */
+  async #titleFirstTurn(): Promise<void> {
+    const { state } = this.deps;
+    if (state.messages.length !== 1 || !state.currentConversationId) return;
+    const firstUserMessage = state.messages.find(message => message.role === 'user');
+    if (!firstUserMessage) return;
+    await this.titles.titleFirstTurn(state.currentConversationId, firstUserMessage);
   }
 
-  async #ensureConversationShell(
-    token: LinkedContentSubmissionToken | null,
-  ): Promise<void> {
-    const { plugin, state } = this.deps;
-    if (state.currentConversationId) return;
+  async #ensureConversation(token: LinkedContentSubmissionToken | null): Promise<void> {
+    if (this.deps.state.currentConversationId) return;
     if (!token) {
       throw new Error('Missing Linked content submission for new Conversation');
     }
-
-    const selectedModel = this.deps.getSettings().model || undefined;
-    const conversation = await plugin.createConversation({
+    await this.deps.conversationController.createConversation(token, {
       providerId: this.#getActiveProviderId(),
-      ...(selectedModel ? { selectedModel } : {}),
-      ...(token.path ? { linkedContentPath: token.path } : {}),
+      selectedModel: this.deps.getSettings().model || undefined,
     });
-    state.currentConversationId = conversation.id;
-
-    const settlement = this.deps.getLinkedContentController().commitSubmission(token);
-    for (const event of settlement.queuedEvents) {
-      if (event.kind !== 'rename') continue;
-      await plugin.rewriteLinkedContentPaths(
-        event.oldPath,
-        event.newPath,
-        event.includeDescendants,
-      );
-    }
   }
 
   // ============================================
@@ -1861,18 +1560,16 @@ export class InputController {
   }
 
   #cancelMainStreaming(): void {
-    const { state, streamController } = this.deps;
     this.asyncQuestions.cancelSubmissions();
-    if (!state.isStreaming) {
+    // Settlement already owns the response; only queued input can still be withdrawn.
+    if (!this.turnCoordinator.isInFlight) {
       this.#restoreQueuedMessageToInput();
       return;
     }
-    state.cancelRequested = true;
-    this.turnCoordinator.cancel();
+    this.deps.session.cancelTurn('user');
     this.#restoreQueuedMessageToInput();
-    this.#clearCurrentPendingSteerUi();
-    this.#getExecutionCoordinator()?.cancel();
-    streamController.hideThinkingIndicator();
+    this.steering.clearCurrentUi();
+    this.deps.streamController.hideThinkingIndicator();
   }
 
   /** Cancels the active turn and waits for its cleanup and conversation persistence. */
@@ -1934,134 +1631,6 @@ export class InputController {
     this.asyncQuestions.expireAll();
     this.inlinePrompts.dismissAll();
   }
-
-  // ============================================
-  // Built-in Commands
-  // ============================================
-
-  async #executeBuiltInCommand(command: BuiltInCommand): Promise<void> {
-    const { conversationController } = this.deps;
-    const capabilities = this.#getActiveCapabilities();
-
-    if (!isBuiltInCommandSupported(command, capabilities)) {
-      new Notice(`/${command.name} is not supported by this provider.`);
-      return;
-    }
-
-    switch (command.action) {
-      case 'clear': {
-        const handledByLayout = await this.deps.handleNewConversationCommand?.() ?? false;
-        if (handledByLayout) {
-          const linkedContent = this.deps.getLinkedContentController();
-          const linkedContentMode = linkedContent.getSnapshot().mode;
-          if (linkedContentMode === 'auto-draft' || linkedContentMode === 'explicit-draft') {
-            linkedContent.resetAutoDraft();
-          }
-        } else {
-          await conversationController.createNew();
-        }
-        break;
-      }
-      case 'resume':
-        this.#showResumeDropdown();
-        break;
-      case 'fork': {
-        if (!this.#getActiveCapabilities().supportsFork) {
-          new Notice('Fork is not supported by this provider.');
-          return;
-        }
-        if (!this.deps.onForkAll) {
-          new Notice('Fork not available.');
-          return;
-        }
-        await this.deps.onForkAll();
-        break;
-      }
-      case 'fast': {
-        try {
-          const toggled = await this.deps.toggleFastMode?.() ?? false;
-          if (!toggled) {
-            new Notice('Fast mode is not available for this model.');
-          }
-        } catch {
-          new Notice('Failed to toggle fast mode.');
-        }
-        break;
-      }
-      case 'side': {
-        const sideChat = this.deps.getSideChatController?.() ?? null;
-        if (!sideChat) {
-          new Notice(t('chat.sideChat.unsupportedProvider'));
-          return;
-        }
-        await sideChat.handleCommandSubmission('', []);
-        break;
-      }
-      default: {
-        // Unknown command - notify user
-        const unknownAction = typeof (command as { action?: unknown }).action === 'string'
-          ? (command as { action: string }).action
-          : 'unknown';
-        new Notice(`Unknown command: ${unknownAction}`);
-        break;
-      }
-    }
-  }
-
-  // ============================================
-  // Resume Session Dropdown
-  // ============================================
-
-  handleResumeKeydown(e: KeyboardEvent): boolean {
-    if (!this.activeResumeDropdown?.isVisible()) return false;
-    return this.activeResumeDropdown.handleKeydown(e);
-  }
-
-  isResumeDropdownVisible(): boolean {
-    return this.activeResumeDropdown?.isVisible() ?? false;
-  }
-
-  destroyResumeDropdown(): void {
-    if (this.activeResumeDropdown) {
-      this.activeResumeDropdown.destroy();
-      this.activeResumeDropdown = null;
-    }
-  }
-
-  #showResumeDropdown(): void {
-    const { plugin, state, conversationController } = this.deps;
-
-    // Clean up any existing dropdown
-    this.destroyResumeDropdown();
-
-    const conversations = plugin.getConversationList();
-    if (conversations.length === 0) {
-      new Notice('No conversations to resume');
-      return;
-    }
-
-    const openConversation = this.deps.openConversation
-      ?? ((id: string) => conversationController.switchTo(id));
-
-    this.activeResumeDropdown = new ResumeSessionDropdown(
-      this.deps.getInputContainerEl(),
-      this.deps.getInputEl(),
-      conversations,
-      state.currentConversationId,
-      {
-        onSelect: (id) => {
-          this.destroyResumeDropdown();
-          openConversation(id).catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            new Notice(`Failed to open conversation: ${msg}`);
-          });
-        },
-        onDismiss: () => {
-          this.destroyResumeDropdown();
-        },
-      }
-    );
-  }
 }
 
 function cloneChatTurnRequest(request: ChatTurnRequest): ChatTurnRequest {
@@ -2102,8 +1671,6 @@ function mergeQueuedChatTurns(
         draftContent: mergeText(existing.request.draftContent ?? existing.displayContent,
           incoming.request.draftContent ?? incoming.displayContent),
       } : {}),
-      linkedContentPath:
-        incoming.request.linkedContentPath ?? existing.request.linkedContentPath,
       images: images.length > 0 ? images : undefined,
       text: mergeText(existing.request.text, incoming.request.text),
     },

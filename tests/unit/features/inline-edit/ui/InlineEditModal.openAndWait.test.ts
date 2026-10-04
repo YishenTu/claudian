@@ -72,7 +72,7 @@ describe('InlineEditModal - openAndWait', () => {
       .mockReturnValueOnce(undefined)
       .mockReturnValueOnce(undefined);
 
-    const modal = new InlineEditModal(app, plugin, callbackEditor, view, editContext, 'note.md', owner);
+    const modal = new InlineEditModal(app, plugin, plugin, callbackEditor, view, editContext, 'note.md', owner);
     const result = await modal.openAndWait();
 
     expect(result).toEqual({ decision: 'reject' });
@@ -116,7 +116,7 @@ describe('InlineEditModal - openAndWait', () => {
     jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockRejectedValue(new Error('stop after provider resolution'));
 
-    const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
+    const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'note.md', owner);
 
     await expect(modal.openAndWait()).resolves.toEqual({ decision: 'reject' });
     expect(ProviderWorkspaceRegistry.ensureInitialized).toHaveBeenCalledWith(
@@ -167,7 +167,7 @@ describe('InlineEditModal - openAndWait', () => {
     jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized')
       .mockRejectedValue(new Error('stop after provider resolution'));
 
-    const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
+    const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'note.md', owner);
 
     await expect(modal.openAndWait()).resolves.toEqual({ decision: 'reject' });
     expect(ProviderWorkspaceRegistry.ensureInitialized).toHaveBeenCalledWith(
@@ -255,7 +255,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
+      const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -386,7 +386,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
+      const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -503,7 +503,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
+      const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -598,7 +598,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
+      const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -704,7 +704,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'note.md', owner);
+      const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -820,7 +820,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md', owner);
+      const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'math/note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -933,7 +933,7 @@ describe('InlineEditModal - openAndWait', () => {
         },
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md', owner);
+      const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'math/note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
 
@@ -1142,7 +1142,7 @@ describe('InlineEditModal - openAndWait', () => {
         selectedText: oldMarkdown,
       };
 
-      const modal = new InlineEditModal(app, plugin, editor, view, editContext, 'math/note.md', owner);
+      const modal = new InlineEditModal(app, plugin, plugin, editor, view, editContext, 'math/note.md', owner);
       const resultPromise = modal.openAndWait();
       await Promise.resolve();
       widgetRef.inlineEditService = {

@@ -1,6 +1,11 @@
-import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
-import { isValidSessionMetadataId } from './SessionStorage';
-import { getDeviceSessionsPath, isDeviceSettingsKey, LEGACY_SESSIONS_PATH, SESSIONS_PATH } from './storagePaths';
+import {
+  getDeviceSessionsPath,
+  isDeviceSettingsKey,
+  isValidSessionMetadataId,
+  LEGACY_SESSIONS_PATH,
+  SESSIONS_PATH,
+} from '@/core/bootstrap/storagePaths';
+import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 
 /** Finish assignment/deletion recovery and return obsolete inputs for deferred cleanup. Safe to retry. */
 export async function migrateSessionSidecars(adapter: VaultFileAdapter): Promise<string[]> {

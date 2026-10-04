@@ -3,6 +3,7 @@ import '@/providers';
 
 import { createHarness as createExecutionHarness, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture, deferred } from '@test/helpers/ChatInputHarness';
+import { createTestTabSession } from '@test/helpers/ConversationPorts';
 import { testDate } from '@test/helpers/testClock';
 import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -248,7 +249,7 @@ it.each([true, false])('settles an active-turn answer without consuming the draf
   const fixture = createFixture({ getTabProviderId: () => 'codex', getInputContainerEl: () => composer });
   Object.assign(fixture.deps.renderer, { updateQuestionTool: jest.fn() });
   fixture.state.queueIndicatorEl = composer.createDiv();
-  fixture.state.isStreaming = true;
+  fixture.holdResponse();
   fixture.coordinator.steer.mockResolvedValueOnce(accepted);
   fixture.input.value = 'Keep this draft';
   await fixture.controller.sendMessage({ content: 'Unrelated follow-up' });
@@ -288,7 +289,8 @@ function createSurface() {
   const composer = composerHost.createDiv();
   const draft = composer.createEl('textarea');
   draft.value = 'Unsent draft';
-  const state = new ChatState();
+  const session = createTestTabSession();
+  const state = new ChatState({}, undefined, session.turns);
   state.currentConversationId = 'conversation';
   const plugin = { app: {}, settings: { mediaFolder: '', showMessageTimestamps: false } } as any;
   const renderer = new MessageRenderer(plugin, new Component(), messages);
@@ -296,7 +298,7 @@ function createSurface() {
     subagentManager: new SubagentManager(() => undefined), getMessagesEl: () => messages,
     updateQueueIndicator: () => undefined, onQuestionToolChanged: tool => input.updateAsyncQuestion(tool),
   });
-  const input = new InputController({ state, renderer, streamController: stream,
+  const input = new InputController({ state, renderer, streamController: stream, session,
     getInputContainerEl: () => composer,
   } as unknown as InputControllerDeps);
   const delivery = jest.spyOn(input, 'answerQuestion').mockResolvedValue(undefined);

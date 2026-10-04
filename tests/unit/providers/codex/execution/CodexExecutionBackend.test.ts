@@ -2559,6 +2559,12 @@ describe('CodexExecutionBackend', () => {
       'thread/rollback',
       { threadId: 'thread-fork', numTurns: 1 },
     );
+    // The child inherits a source thread whose dependency-tool generation is unknown.
+    expect(mockTransportRequest).toHaveBeenCalledWith('thread/resume', expect.objectContaining({
+      threadId: 'thread-fork',
+      experimentalRawEvents: true,
+      baseInstructions: expect.stringContaining('predates Claudian client-hosted workspace dependency tools'),
+    }));
 
     const forkedSnapshot = session.getSnapshot();
     expect(forkedSnapshot.providerState).toEqual(expect.objectContaining({

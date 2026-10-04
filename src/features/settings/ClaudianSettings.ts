@@ -25,7 +25,7 @@ import { SkillsSettingsTab } from './SkillsSettingsTab';
 type SettingsTabId = 'general' | 'providers' | 'skills';
 
 export class ClaudianSettingTab extends PluginSettingTab {
-  plugin: FeatureHost;
+  private readonly host: FeatureHost;
   private activeTab: SettingsTabId = 'general';
   private activeProviderTab: ProviderId | null = null;
   private refreshTitleModelOptions: (() => void) | null = null;
@@ -34,10 +34,10 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private skillsTab: SkillsSettingsTab | null = null;
   private readonly textEdits: DebouncedSettingsWriter<ClaudianSettings>;
 
-  constructor(app: App, plugin: FeatureHost & Plugin) {
+  constructor(app: App, plugin: Plugin, host: FeatureHost) {
     super(app, plugin);
-    this.plugin = plugin;
-    this.textEdits = new DebouncedSettingsWriter(mutation => plugin.mutateSettings(mutation),
+    this.host = host;
+    this.textEdits = new DebouncedSettingsWriter(mutation => host.mutateSettings(mutation),
       () => { new Notice('Failed to save settings'); });
   }
 
@@ -62,12 +62,12 @@ export class ClaudianSettingTab extends PluginSettingTab {
     }
     this.refreshTitleModelOptions = null;
 
-    setLocale(this.plugin.settings.locale as Locale);
+    setLocale(this.host.settings.locale as Locale);
 
     const providerTabs = ProviderRegistry.getRegisteredProviderIds();
     const tabIds: SettingsTabId[] = ['general', 'providers', 'skills'];
-    const preferredProvider = providerTabs.includes(this.plugin.settings.settingsProvider)
-      ? this.plugin.settings.settingsProvider
+    const preferredProvider = providerTabs.includes(this.host.settings.settingsProvider)
+      ? this.host.settings.settingsProvider
       : providerTabs[0] ?? null;
     if (!this.activeProviderTab || !providerTabs.includes(this.activeProviderTab)) {
       this.activeProviderTab = preferredProvider;
@@ -103,7 +103,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
       try {
         await ProviderWorkspaceRegistry.ensureInitialized(
-          this.plugin.providerHost,
+          this.host.providerHost,
           providerId,
           'settings-tab',
         );
@@ -115,7 +115,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           return;
         }
         const handle = renderer.render(providerContent, {
-          plugin: this.plugin.providerHost,
+          plugin: this.host.providerHost,
           notifyProviderModelOptionsChanged: (changedProviderId) => {
             this.notifyProviderModelOptionsChanged(changedProviderId);
           },
@@ -175,8 +175,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
       this.skillsTab = new SkillsSettingsTab(
         tabContents.get('skills')!,
         this.app,
-        this.plugin.storage.getAdapter(),
-        this.plugin,
+        this.host.storage.getAdapter(),
+        this.host,
       );
     };
     if (this.activeTab === 'skills') renderSkillsTab();
@@ -232,14 +232,14 @@ export class ClaudianSettingTab extends PluginSettingTab {
           dropdown.addOption(locale, getLocaleDisplayName(locale));
         }
         dropdown
-          .setValue(this.plugin.settings.locale)
+          .setValue(this.host.settings.locale)
           .onChange(async (value) => {
             const locale = value as Locale;
             if (!setLocale(locale)) {
-              dropdown.setValue(this.plugin.settings.locale);
+              dropdown.setValue(this.host.settings.locale);
               return;
             }
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.locale = locale;
             });
             this.update();
@@ -258,9 +258,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .addOption('right-sidebar', t('settings.chatViewPlacement.rightSidebar'))
           .addOption('left-sidebar', t('settings.chatViewPlacement.leftSidebar'))
           .addOption('main-tab', t('settings.chatViewPlacement.mainTab'))
-          .setValue(this.plugin.settings.chatViewPlacement)
+          .setValue(this.host.settings.chatViewPlacement)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.chatViewPlacement = value as ChatViewPlacement;
             });
           });
@@ -271,9 +271,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.enableZenMode.desc'))
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.enableZenMode)
+          .setValue(this.host.settings.enableZenMode)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.enableZenMode = value;
             });
           })
@@ -284,16 +284,16 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.enableDualPane.desc'))
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.enableDualPane ?? true)
+          .setValue(this.host.settings.enableDualPane ?? true)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.enableDualPane = value;
             });
             this.update();
           })
       );
 
-    if (this.plugin.settings.enableDualPane ?? true) {
+    if (this.host.settings.enableDualPane ?? true) {
       new Setting(container)
         .setName(t('settings.dualPaneSide.name'))
         .setDesc(t('settings.dualPaneSide.desc'))
@@ -301,9 +301,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
           dropdown
             .addOption('left', t('settings.dualPaneSide.left'))
             .addOption('right', t('settings.dualPaneSide.right'))
-            .setValue(this.plugin.settings.dualPaneSide ?? 'right')
+            .setValue(this.host.settings.dualPaneSide ?? 'right')
             .onChange(async (value) => {
-              await this.plugin.mutateSettings((settings) => {
+              await this.host.mutateSettings((settings) => {
                 settings.dualPaneSide = value as DualPaneSide;
               });
               });
@@ -316,9 +316,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.restoreTabsOnStartup.desc'))
       .addToggle((toggle) => {
         toggle
-          .setValue(this.plugin.settings.restoreTabsOnStartup)
+          .setValue(this.host.settings.restoreTabsOnStartup)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.restoreTabsOnStartup = value;
             });
           });
@@ -329,9 +329,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.enableAutoScroll.desc'))
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.enableAutoScroll ?? true)
+          .setValue(this.host.settings.enableAutoScroll ?? true)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.enableAutoScroll = value;
             });
           })
@@ -342,9 +342,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.showMessageTimestamps.desc'))
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.showMessageTimestamps === true)
+          .setValue(this.host.settings.showMessageTimestamps === true)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.showMessageTimestamps = value;
             });
           })
@@ -355,9 +355,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.deferMathRenderingDuringStreaming.desc'))
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.deferMathRenderingDuringStreaming ?? true)
+          .setValue(this.host.settings.deferMathRenderingDuringStreaming ?? true)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.deferMathRenderingDuringStreaming = value;
             });
           })
@@ -368,9 +368,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.expandFileEditsByDefault.desc'))
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.expandFileEditsByDefault ?? false)
+          .setValue(this.host.settings.expandFileEditsByDefault ?? false)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.expandFileEditsByDefault = value;
             });
           })
@@ -385,16 +385,16 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.autoTitle.desc'))
       .addToggle((toggle) =>
         toggle
-          .setValue(this.plugin.settings.enableAutoTitleGeneration)
+          .setValue(this.host.settings.enableAutoTitleGeneration)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.enableAutoTitleGeneration = value;
             });
             this.update();
           })
       );
 
-    if (this.plugin.settings.enableAutoTitleGeneration) {
+    if (this.host.settings.enableAutoTitleGeneration) {
       new Setting(container)
         .setName(t('settings.titleLanguage.name'))
         .setDesc(t('settings.titleLanguage.desc'))
@@ -404,9 +404,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
             dropdown.addOption(locale, getLocaleDisplayName(locale));
           }
           dropdown
-            .setValue(this.plugin.settings.titleGenerationLocale || '')
+            .setValue(this.host.settings.titleGenerationLocale || '')
             .onChange(async (value) => {
-              await this.plugin.mutateSettings((settings) => {
+              await this.host.mutateSettings((settings) => {
                 settings.titleGenerationLocale = value;
               });
             });
@@ -429,23 +429,23 @@ export class ClaudianSettingTab extends PluginSettingTab {
             dropdown.selectEl.options[0].disabled = true;
             dropdown.selectEl.required = true;
 
-            const settingsBag = this.plugin.settings as unknown as Record<string, unknown>;
+            const settingsBag = this.host.settings as unknown as Record<string, unknown>;
             warning.hidden = ProviderRegistry.resolveTitleGenerationSelection(settingsBag) !== null;
             for (const model of ProviderRegistry.getTitleGenerationModelOptions(settingsBag)) {
               dropdown.addOption(model.value, model.label);
             }
-            const selected = this.plugin.settings.titleGenerationModel;
+            const selected = this.host.settings.titleGenerationModel;
             if (selected && !Array.from(dropdown.selectEl.options).some(option => option.value === selected)) {
               dropdown.addOption(selected, `Unavailable: ${selected}`);
               dropdown.selectEl.options[dropdown.selectEl.options.length - 1].disabled = true;
             }
-            dropdown.setValue(this.plugin.settings.titleGenerationModel || '');
+            dropdown.setValue(this.host.settings.titleGenerationModel || '');
           };
 
           this.refreshTitleModelOptions = refreshOptions;
           refreshOptions();
           dropdown.onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               ProviderSettingsCoordinator.applyTitleGenerationModelSelection(settings, value);
             });
             refreshOptions();
@@ -468,9 +468,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
           .addOption('7d', t('settings.sessionAutoArchiveAfter.days7'))
           .addOption('14d', t('settings.sessionAutoArchiveAfter.days14'))
           .addOption('30d', t('settings.sessionAutoArchiveAfter.days30'))
-          .setValue(this.plugin.settings.sessionAutoArchiveAfter ?? 'off')
+          .setValue(this.host.settings.sessionAutoArchiveAfter ?? 'off')
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.sessionAutoArchiveAfter = value as SessionAutoArchiveAfter;
             });
           });
@@ -486,7 +486,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .addText((text) => {
         text
           .setPlaceholder(t('settings.userName.name'))
-          .setValue(this.plugin.settings.userName)
+          .setValue(this.host.settings.userName)
           .onChange((value) => {
             this.textEdits.schedule('userName', (settings) => {
               settings.userName = value;
@@ -504,7 +504,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .addTextArea((text) => {
         text
           .setPlaceholder(t('settings.systemPrompt.name'))
-          .setValue(this.plugin.settings.systemPrompt)
+          .setValue(this.host.settings.systemPrompt)
           .onChange((value) => {
             this.textEdits.schedule('systemPrompt', (settings) => {
               settings.systemPrompt = value;
@@ -524,7 +524,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .addTextArea((text) => {
         text
           .setPlaceholder('System\nprivate\ndraft')
-          .setValue(this.plugin.settings.excludedTags.join('\n'))
+          .setValue(this.host.settings.excludedTags.join('\n'))
           .onChange((value) => {
             this.textEdits.schedule('excludedTags', (settings) => {
               settings.excludedTags = value
@@ -544,7 +544,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .addText((text) => {
         text
           .setPlaceholder('Attachments')
-          .setValue(this.plugin.settings.mediaFolder)
+          .setValue(this.host.settings.mediaFolder)
           .onChange((value) => {
             this.textEdits.schedule('mediaFolder', (settings) => {
               settings.mediaFolder = value.trim();
@@ -565,9 +565,9 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.requireCommandOrControlEnterToSend.desc'))
       .addToggle((toggle) => {
         toggle
-          .setValue(this.plugin.settings.requireCommandOrControlEnterToSend ?? false)
+          .setValue(this.host.settings.requireCommandOrControlEnterToSend ?? false)
           .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
+            await this.host.mutateSettings((settings) => {
               settings.requireCommandOrControlEnterToSend = value;
             });
           });
@@ -578,7 +578,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       .setDesc(t('settings.navMappings.desc'))
       .setClass('claudian-settings-textarea')
       .addTextArea((text) => {
-        let pendingValue = buildNavMappingText(this.plugin.settings.keyboardNavigation);
+        let pendingValue = buildNavMappingText(this.host.settings.keyboardNavigation);
         let saveTimeout: number | null = null;
 
         const commitValue = async (showError: boolean): Promise<void> => {
@@ -591,18 +591,18 @@ export class ClaudianSettingTab extends PluginSettingTab {
           if (!result.settings) {
             if (showError) {
               new Notice(`${t('common.error')}: ${result.error}`);
-              pendingValue = buildNavMappingText(this.plugin.settings.keyboardNavigation);
+              pendingValue = buildNavMappingText(this.host.settings.keyboardNavigation);
               text.setValue(pendingValue);
             }
             return;
           }
 
-          await this.plugin.mutateSettings((settings) => {
+          await this.host.mutateSettings((settings) => {
             settings.keyboardNavigation.scrollUpKey = result.settings!.scrollUp;
             settings.keyboardNavigation.scrollDownKey = result.settings!.scrollDown;
             settings.keyboardNavigation.focusInputKey = result.settings!.focusInput;
           });
-          pendingValue = buildNavMappingText(this.plugin.settings.keyboardNavigation);
+          pendingValue = buildNavMappingText(this.host.settings.keyboardNavigation);
           text.setValue(pendingValue);
         };
 
@@ -633,7 +633,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
     renderEnvironmentSettingsSection({
       container,
-      plugin: this.plugin.providerHost,
+      plugin: this.host.providerHost,
       scope: 'shared',
       heading: t('settings.environment'),
       name: t('settings.sharedEnvironment.name'),
@@ -658,7 +658,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   }
 
   private notifyProviderModelOptionsChanged(providerId: ProviderId): void {
-    this.plugin.notifyProviderChatOptionsChanged(providerId);
+    this.host.notifyProviderChatOptionsChanged(providerId);
     this.refreshTitleModelOptions?.();
   }
 
@@ -668,7 +668,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const modelAliases = ProviderRegistry.getChatUIConfig(providerId).customModelAliases;
     const uniqueModelIds = new Set<string>();
     const envVars = parseEnvironmentVariables(
-      this.plugin.getActiveEnvironmentVariables(providerId),
+      this.host.getActiveEnvironmentVariables(providerId),
     );
     for (const modelId of ProviderRegistry.getChatUIConfig(providerId).getCustomModelIds(envVars)) {
       uniqueModelIds.add(modelId);
@@ -690,8 +690,8 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const listEl = container.createDiv({ cls: 'claudian-context-limits-list' });
 
     for (const modelId of uniqueModelIds) {
-      const currentValue = this.plugin.settings.customContextLimits?.[modelId];
-      const currentAlias = (modelAliases?.get(this.plugin.settings) ?? {})[modelId] ?? '';
+      const currentValue = this.host.settings.customContextLimits?.[modelId];
+      const currentAlias = (modelAliases?.get(this.host.settings) ?? {})[modelId] ?? '';
 
       const itemEl = listEl.createDiv({ cls: 'claudian-context-limits-item' });
       const nameEl = itemEl.createDiv({ cls: 'claudian-context-limits-model' });
@@ -720,7 +720,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       const saveAlias = async (): Promise<void> => {
         const trimmed = aliasInputEl.value.trim();
 
-        await this.plugin.mutateSettings((settings) => {
+        await this.host.mutateSettings((settings) => {
           const aliases = (modelAliases?.get(settings) ?? {});
           if (trimmed) {
             aliases[modelId] = trimmed;
@@ -750,7 +750,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           validationEl.toggleClass('claudian-hidden', true);
           inputEl.classList.remove('claudian-input-error');
         }
-        await this.plugin.mutateSettings((settings) => {
+        await this.host.mutateSettings((settings) => {
           settings.customContextLimits ??= {};
           if (!trimmed) {
             delete settings.customContextLimits[modelId];
@@ -772,7 +772,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
           aliasInputEl.blur();
         } else if (event.key === 'Escape') {
           event.preventDefault();
-          aliasInputEl.value = (modelAliases?.get(this.plugin.settings) ?? {})[modelId] ?? '';
+          aliasInputEl.value = (modelAliases?.get(this.host.settings) ?? {})[modelId] ?? '';
           aliasInputEl.blur();
         }
       });
@@ -781,7 +781,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
   private async restartServiceForPromptChange(): Promise<void> {
     try {
-      await this.plugin.providerHost.runProviderExecutionTransition(
+      await this.host.providerHost.runProviderExecutionTransition(
         ProviderRegistry.getRegisteredProviderIds(),
         async () => undefined,
       );

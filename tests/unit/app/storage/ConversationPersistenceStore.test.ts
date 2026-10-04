@@ -1,9 +1,9 @@
 
-import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
+import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import {
   type SessionMetadataReadResult,
   SessionStorage,
-} from '@/core/bootstrap/SessionStorage';
+} from '@/app/storage/SessionStorage';
 import {
   DEVICE_SESSIONS_PATH,
   getDeviceSessionsPath,

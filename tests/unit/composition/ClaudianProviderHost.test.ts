@@ -1,121 +1,76 @@
-import { ClaudianProviderHost } from '@/composition/ClaudianProviderHost';
-import type { ProviderExecutionTransitionScope } from '@/core/execution';
-import type { ProviderHost } from '@/core/providers/ProviderHost';
+import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import { ClaudianProviderHost, type ClaudianProviderHostDeps } from '@/composition/ClaudianProviderHost';
+import {
+  ProviderExecutionLifecycleRegistry,
+  type ProviderExecutionTransitionScope,
+} from '@/core/execution';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import type { ProviderSessionArchive } from '@/core/providers/types';
+import type { ClaudianSettings } from '@/core/types';
 
-function createPlugin(overrides: Record<string, unknown> = {}): ProviderHost {
-  return {
-    app: {},
-    executionLifecycleRegistry: {},
-    settings: {},
-    storage: {},
-    manifest: { version: '1.2.3' },
-    saveSettings: jest.fn(async () => undefined),
-    loadData: jest.fn(async () => ({})),
-    saveData: jest.fn(async () => undefined),
-    normalizeModelVariantSettings: jest.fn(() => false),
-    getActiveEnvironmentVariables: jest.fn(() => 'OPENAI_API_KEY=test'),
-    getEnvironmentVariablesForScope: jest.fn(() => 'SHARED=value'),
-    applyEnvironmentVariables: jest.fn(async () => undefined),
-    applyEnvironmentVariablesBatch: jest.fn(async () => undefined),
-    applyProviderRuntimeSettings: jest.fn(async () => undefined),
-    getResolvedProviderCliPath: jest.fn(() => '/usr/bin/provider'),
-    runProviderExecutionTransition: jest.fn(
-      async (_providerIds: string[], mutation: () => Promise<unknown>) => mutation(),
-    ),
-    notifyProviderChatOptionsChanged: jest.fn(),
-    getAllViews: jest.fn(() => []),
-    getView: jest.fn(() => null),
+function createHost(overrides: Partial<ClaudianProviderHostDeps> = {}): ClaudianProviderHost {
+  const settings = { userName: 'before' } as ClaudianSettings;
+  return new ClaudianProviderHost({
+    app: {} as ClaudianProviderHostDeps['app'],
+    executionLifecycleRegistry: new ProviderExecutionLifecycleRegistry(),
+    storage: { installationKey: 'device-key' as never },
+    settings: new SettingsCoordinator(settings, async () => undefined),
+    environment: {} as ClaudianProviderHostDeps['environment'],
+    notifyProviderChatOptionsChanged: async () => undefined,
     ...overrides,
-  } as unknown as ProviderHost;
+  });
 }
 
 describe('ClaudianProviderHost', () => {
-  it('delegates provider capabilities without exposing plugin lifecycle APIs', async () => {
-    const trace: string[] = [];
-    const plugin = createPlugin({
-      registerView: jest.fn(),
-      addCommand: jest.fn(),
-      mutateSettings: jest.fn(async () => { trace.push('mutate'); }),
-      applyEnvironmentVariables: jest.fn(async () => { trace.push('environment'); }),
-      getResolvedProviderCliPath: jest.fn(() => {
-        trace.push('cli');
-        return '/usr/bin/codex';
-      }),
-    });
-    const host = new ClaudianProviderHost(plugin);
+  afterEach(() => {
+    ProviderWorkspaceRegistry.clear();
+  });
 
-    await host.mutateSettings(() => undefined);
-    await host.applyEnvironmentVariables('provider:codex', 'OPENAI_API_KEY=test');
-    await expect(host.getResolvedProviderCliPath('codex')).resolves.toBe('/usr/bin/codex');
+  it('exposes committed settings and serialized mutations without plugin lifecycle APIs', async () => {
+    const host = createHost();
+    const committed = host.settings;
 
-    expect(trace).toEqual(['mutate', 'environment', 'cli']);
+    await host.mutateSettings((settings) => { settings.userName = 'after'; });
+
+    expect(host.settings).toBe(committed);
+    expect(host.settings.userName).toBe('after');
     expect('registerView' in host).toBe(false);
     expect('addCommand' in host).toBe(false);
   });
 
-  it('routes provider chat-option changes through the application reconciliation boundary', () => {
-    const notifyProviderChatOptionsChanged = jest.fn();
-    const plugin = createPlugin({
-      notifyProviderChatOptionsChanged,
-    });
-    const host = new ClaudianProviderHost(plugin);
-
-    host.notifyProviderChatOptionsChanged('codex');
-
-    expect(notifyProviderChatOptionsChanged).toHaveBeenCalledWith('codex');
-  });
-
-  it('delegates execution transitions through the application lifecycle registry', async () => {
-    const executionLifecycleRegistry = {};
+  it('runs provider transitions through the application lifecycle registry', async () => {
+    const executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
+    const runTransition = jest.spyOn(executionLifecycleRegistry, 'runTransition')
+      .mockImplementation(async (_providerIds, mutation) => mutation({} as ProviderExecutionTransitionScope));
+    const host = createHost({ executionLifecycleRegistry });
     const mutation = jest.fn(async () => 'result');
-    const runProviderExecutionTransition = jest.fn(
-      async (_providerIds: string[], callback: () => Promise<string>) => callback(),
-    );
-    const plugin = createPlugin({
-      executionLifecycleRegistry,
-      runProviderExecutionTransition,
-    });
-    const host = new ClaudianProviderHost(plugin);
 
     expect(host.executionLifecycleRegistry).toBe(executionLifecycleRegistry);
     await expect(
       host.runProviderExecutionTransition(['opencode', 'claude'], mutation),
     ).resolves.toBe('result');
+    expect(runTransition).toHaveBeenLastCalledWith(['opencode', 'claude'], mutation);
 
-    expect(runProviderExecutionTransition).toHaveBeenCalledWith(
-      ['opencode', 'claude'],
-      mutation,
-    );
-
-    const parentScope = {
-      providerIds: ['claude'],
-    } as unknown as ProviderExecutionTransitionScope;
-    await host.runProviderExecutionTransition(
-      ['codex'],
-      mutation,
-      parentScope,
-    );
-    expect(runProviderExecutionTransition).toHaveBeenLastCalledWith(
-      ['codex'],
-      mutation,
-      parentScope,
-    );
+    const parentScope = { providerIds: ['claude'] } as unknown as ProviderExecutionTransitionScope;
+    await host.runProviderExecutionTransition(['codex'], mutation, parentScope);
+    expect(runTransition).toHaveBeenLastCalledWith(['codex'], mutation, parentScope);
   });
 
-  it('delegates atomic provider runtime settings changes', async () => {
-    const mutation = jest.fn();
-    const onApplied = jest.fn();
-    const applyProviderRuntimeSettings = jest.fn(async () => undefined);
-    const plugin = createPlugin({ applyProviderRuntimeSettings });
-    const host = new ClaudianProviderHost(plugin);
+  it('initializes only session-archive providers before reading their archive', async () => {
+    const sessionArchive = { setSessionsArchived: jest.fn() } as unknown as ProviderSessionArchive;
+    const initializeArchive = jest.fn(async () => ({ sessionArchive }));
+    const initializePlain = jest.fn(async () => ({}));
+    ProviderWorkspaceRegistry.register('test-archive', {
+      providesSessionArchive: true,
+      initialize: initializeArchive,
+    });
+    ProviderWorkspaceRegistry.register('test-plain', { initialize: initializePlain });
+    const host = createHost();
 
-    await host.applyProviderRuntimeSettings(['codex'], mutation, onApplied);
+    await expect(host.getSessionArchive('test-plain')).resolves.toBeNull();
+    await expect(host.getSessionArchive('test-archive')).resolves.toBe(sessionArchive);
 
-    expect(applyProviderRuntimeSettings).toHaveBeenCalledWith(
-      ['codex'],
-      mutation,
-      onApplied,
-    );
+    expect(initializePlain).not.toHaveBeenCalled();
+    expect(initializeArchive).toHaveBeenCalledWith(expect.objectContaining({ plugin: host }));
   });
-
 });

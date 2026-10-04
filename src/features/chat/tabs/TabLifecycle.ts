@@ -107,25 +107,12 @@ async function drainTabForShutdownSnapshotOnce(
   tab.session.pauseBackgroundWork();
   const cleanupFailures: TabRuntimeCleanupFailure[] = [];
   const cancelledActiveTurn = tab.session.turns.isActive;
-  if (cancelledActiveTurn) {
-    tab.state.cancelRequested = true;
-    tab.state.bumpStreamGeneration();
-    tab.session.turns.cancel('shutdown');
-  }
-
   await captureTeardownFailure(
     cleanupFailures,
-    'tab pending provider interaction',
-    () => tab.controllers.inputController.dismissPendingApproval(),
+    'tab turn cancellation',
+    () => { tab.session.cancelTurn('shutdown', { dismissInteractions: true }); },
   );
-  if (cancelledActiveTurn) {
-    await captureTeardownFailure(
-      cleanupFailures,
-      'tab active execution cancellation',
-      () => tab.executionCoordinator.cancel(),
-    );
-    await tab.session.turns.drain().catch(() => undefined);
-  }
+  if (cancelledActiveTurn) await tab.session.turns.drain().catch(() => undefined);
   await captureTeardownFailure(
     cleanupFailures,
     'tab session mention preparation',
@@ -172,7 +159,7 @@ async function destroyTabOnce(tab: AssembledTabRuntime): Promise<void> {
   await captureTeardownFailure(
     cleanupFailures,
     'tab resume dropdown',
-    () => tab.controllers.inputController.destroyResumeDropdown(),
+    () => tab.controllers.builtInCommandController.destroyResumeDropdown(),
   );
   const resourceOwner = tabRuntimeResourceOwners.get(tab);
   if (resourceOwner) {

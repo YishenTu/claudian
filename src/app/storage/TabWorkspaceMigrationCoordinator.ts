@@ -1,5 +1,5 @@
+import type { AppTabManagerState } from '../../core/bootstrap/tabManagerState';
 import { TAB_WORKSPACE_VIEW_STATE_KEY } from '../../core/bootstrap/tabManagerState';
-import type { AppTabManagerState } from '../../core/providers/types';
 import { VIEW_TYPE_CLAUDIAN } from '../../core/types';
 
 export interface TabWorkspaceStateDeliveryRegistration {

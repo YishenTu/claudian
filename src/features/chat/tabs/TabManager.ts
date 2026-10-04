@@ -1,5 +1,7 @@
 import { Notice } from 'obsidian';
 
+import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
+
 import { StartupProfiler } from '../../../core/performance/StartupProfiler';
 import { resolveCommandDiscoveryTimeoutMs } from '../../../core/providers/commands/catalogCommandDiscovery';
 import type { ProviderCommandDiscoveryResult } from '../../../core/providers/commands/ProviderCommandDiscoveryResult';
@@ -9,10 +11,7 @@ import type { ProviderCommandEntry } from '../../../core/providers/commands/Prov
 import { getRuntimeEnvironmentVariables } from '../../../core/providers/providerEnvironment';
 import { ProviderRegistry } from '../../../core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '../../../core/providers/ProviderWorkspaceRegistry';
-import type {
-  AppTabManagerState,
-  ProviderId,
-} from '../../../core/providers/types';
+import type { ProviderId } from '../../../core/providers/types';
 import type { Conversation, SlashCommand } from '../../../core/types';
 import { t } from '../../../i18n/i18n';
 import { chooseForkTarget } from '../../../shared/modals/ForkTargetModal';
@@ -857,8 +856,8 @@ export class TabManager implements TabManagerInterface {
       return false;
     }
 
-    // Don't close if streaming unless forced
-    if (runtime?.state.isStreaming && !force) {
+    // Only an explicit force may interrupt the foreground turn.
+    if (runtime?.session.hasActiveTurn && !force) {
       return false;
     }
 
@@ -1125,14 +1124,7 @@ export class TabManager implements TabManagerInterface {
 
   /** True while the tab has any user-visible foreground or background work in progress. */
   isTabWorking(tabId: TabId): boolean {
-    const tab = this.getTab(tabId);
-    if (!tab) return false;
-    return tab.state.isStreaming
-      || tab.session.turns.isResponseActive
-      || tab.executionCoordinator.hasBackgroundWork
-      || tab.services.subagentManager.hasActiveAsyncSubagents()
-      // Collapsed side work stays discoverable from the tab bar.
-      || (tab.controllers.sideChatController.runtime?.isWorking ?? false);
+    return this.getTab(tabId)?.session.isWorking ?? false;
   }
 
   /** Reconciles blank drafts after provider/model availability changes. */
@@ -1300,7 +1292,7 @@ export class TabManager implements TabManagerInterface {
         isActive: tab.id === this.activeTabId,
         isWorking: this.isTabWorking(tab.id),
         attention: runtime?.state.attention ?? null,
-        canClose: !runtime?.state.isRewinding && (this.tabs.size > 1 || !runtime?.state.isStreaming),
+        canClose: !runtime?.state.isRewinding && (this.tabs.size > 1 || !runtime?.session.hasActiveTurn),
       });
     }
 

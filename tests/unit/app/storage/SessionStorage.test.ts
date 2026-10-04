@@ -3,12 +3,10 @@ import '@/providers';
 import { testDate } from '@test/helpers/testClock';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
-import {
-  SESSIONS_PATH,
-  SessionStorage,
-} from '@/core/bootstrap/SessionStorage';
-import { getDeviceSessionsPath } from '@/core/bootstrap/storagePaths';
+import { SessionStorage } from '@/app/storage/SessionStorage';
+import { getDeviceSessionsPath, SESSIONS_PATH } from '@/core/bootstrap/storagePaths';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ProviderId } from '@/core/providers/types';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { Conversation, SessionMetadata, SubagentInfo, UsageInfo } from '@/core/types';
@@ -21,6 +19,8 @@ describe('SessionStorage', () => {
 
   function toSessionMetadata(conversation: Conversation): SessionMetadata {
     const repository = new ConversationRepository({
+      providers: ProviderRegistry,
+      providerSettings: ProviderSettingsCoordinator,
       getSettings: () => ({}),
       getVaultPath: () => '/vault',
       persistence: {} as never,

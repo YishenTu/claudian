@@ -1,64 +1,89 @@
-import type { ProviderExecutionTransitionScope } from '@/core/execution';
+import type { App } from 'obsidian';
+
+import type { EnvironmentSettingsService, EnvironmentUpdate } from '@/app/settings/EnvironmentSettingsService';
+import type { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
+import type { ProviderHostStorage } from '@/core/bootstrap/storage';
+import type {
+  ProviderExecutionLifecycleRegistry,
+  ProviderExecutionTransitionScope,
+} from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
-import type { ProviderCLIResolutionContext, ProviderId } from '@/core/providers/types';
+import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
+import type {
+  ProviderCLIResolutionContext,
+  ProviderId,
+  ProviderSessionArchive,
+} from '@/core/providers/types';
 import type { ClaudianSettings } from '@/core/types';
 import type { EnvironmentScope } from '@/core/types/settings';
 
+export interface ClaudianProviderHostDeps {
+  readonly app: App;
+  readonly manifest?: { version?: string };
+  readonly executionLifecycleRegistry: ProviderExecutionLifecycleRegistry;
+  readonly storage: ProviderHostStorage;
+  readonly settings: Pick<
+    SettingsCoordinator<ClaudianSettings>,
+    'getCommittedSettings' | 'mutate' | 'mutateConditionally'
+  >;
+  readonly environment: Pick<
+    EnvironmentSettingsService,
+    | 'applyEnvironmentVariables'
+    | 'applyEnvironmentVariablesBatch'
+    | 'applyProviderRuntimeSettings'
+    | 'getActiveEnvironmentVariables'
+    | 'getEnvironmentVariablesForScope'
+  >;
+  notifyProviderChatOptionsChanged(providerId: ProviderId): Promise<void>;
+}
+
 /**
- * Delegates provider-facing capabilities to the composition root, which structurally
- * provides them. Providers see only this narrow host, never plugin lifecycle APIs.
+ * Provider-facing capabilities assembled from application domains. Providers see
+ * only this narrow host, never plugin lifecycle, views, or conversation ownership.
  */
 export class ClaudianProviderHost implements ProviderHost {
-  constructor(private readonly plugin: ProviderHost) {}
+  readonly app: App;
+  readonly manifest?: { version?: string };
+  readonly executionLifecycleRegistry: ProviderExecutionLifecycleRegistry;
+  readonly storage: ProviderHostStorage;
 
-  get app() {
-    return this.plugin.app;
+  constructor(private readonly deps: ClaudianProviderHostDeps) {
+    this.app = deps.app;
+    this.manifest = deps.manifest;
+    this.executionLifecycleRegistry = deps.executionLifecycleRegistry;
+    this.storage = deps.storage;
   }
 
-  get executionLifecycleRegistry() {
-    return this.plugin.executionLifecycleRegistry;
-  }
-
-  get settings() {
-    return this.plugin.settings;
-  }
-
-  get storage() {
-    return this.plugin.storage;
-  }
-
-  get manifest() {
-    return this.plugin.manifest;
+  get settings(): Readonly<ClaudianSettings> {
+    return this.deps.settings.getCommittedSettings();
   }
 
   mutateSettings(
     mutation: (settings: ClaudianSettings) => void | Promise<void>,
   ): Promise<void> {
-    return this.plugin.mutateSettings(mutation);
+    return this.deps.settings.mutate(mutation);
   }
 
   mutateSettingsConditionally(
     mutation: (settings: ClaudianSettings) => boolean | Promise<boolean>,
   ): Promise<void> {
-    return this.plugin.mutateSettingsConditionally(mutation);
+    return this.deps.settings.mutateConditionally(mutation);
   }
 
   getActiveEnvironmentVariables(providerId: ProviderId): string {
-    return this.plugin.getActiveEnvironmentVariables(providerId);
+    return this.deps.environment.getActiveEnvironmentVariables(providerId);
   }
 
   getEnvironmentVariablesForScope(scope: EnvironmentScope): string {
-    return this.plugin.getEnvironmentVariablesForScope(scope);
+    return this.deps.environment.getEnvironmentVariablesForScope(scope);
   }
 
   applyEnvironmentVariables(scope: EnvironmentScope, envText: string): Promise<void> {
-    return this.plugin.applyEnvironmentVariables(scope, envText);
+    return this.deps.environment.applyEnvironmentVariables(scope, envText);
   }
 
-  applyEnvironmentVariablesBatch(
-    updates: Array<{ scope: EnvironmentScope; envText: string }>,
-  ): Promise<void> {
-    return this.plugin.applyEnvironmentVariablesBatch(updates);
+  applyEnvironmentVariablesBatch(updates: EnvironmentUpdate[]): Promise<void> {
+    return this.deps.environment.applyEnvironmentVariablesBatch(updates);
   }
 
   applyProviderRuntimeSettings(
@@ -66,14 +91,34 @@ export class ClaudianProviderHost implements ProviderHost {
     mutation: (settings: ClaudianSettings) => void | Promise<void>,
     onApplied?: () => void | Promise<void>,
   ): Promise<void> {
-    return this.plugin.applyProviderRuntimeSettings(providerIds, mutation, onApplied);
+    return this.deps.environment.applyProviderRuntimeSettings(providerIds, mutation, onApplied);
   }
 
   async getResolvedProviderCliPath(
     providerId: ProviderId,
     context?: ProviderCLIResolutionContext,
   ): Promise<string | null> {
-    return this.plugin.getResolvedProviderCliPath(providerId, context);
+    if (context?.providerTransitionOwner !== true) {
+      await ProviderWorkspaceRegistry.ensureInitialized(this, providerId, 'cli-resolution');
+    }
+    const cliResolver = ProviderWorkspaceRegistry.getCliResolver(providerId);
+    if (!cliResolver) {
+      if (context?.providerTransitionOwner === true) {
+        throw new Error(
+          `Provider transition owner requires initialized workspace services for "${providerId}".`,
+        );
+      }
+      return null;
+    }
+
+    return cliResolver.resolveFromSettings(this.settings, context);
+  }
+
+  /** Null when the provider has no native archive; initializes only archive providers. */
+  async getSessionArchive(providerId: ProviderId): Promise<ProviderSessionArchive | null> {
+    if (!ProviderWorkspaceRegistry.providesSessionArchive(providerId)) return null;
+    await ProviderWorkspaceRegistry.ensureInitialized(this, providerId, 'session-archive');
+    return ProviderWorkspaceRegistry.getIfInitialized(providerId)?.sessionArchive ?? null;
   }
 
   runProviderExecutionTransition<T>(
@@ -82,16 +127,12 @@ export class ClaudianProviderHost implements ProviderHost {
     parentScope?: ProviderExecutionTransitionScope,
   ): Promise<T> {
     if (!parentScope) {
-      return this.plugin.runProviderExecutionTransition(providerIds, mutation);
+      return this.executionLifecycleRegistry.runTransition(providerIds, mutation);
     }
-    return this.plugin.runProviderExecutionTransition(
-      providerIds,
-      mutation,
-      parentScope,
-    );
+    return this.executionLifecycleRegistry.runTransition(providerIds, mutation, parentScope);
   }
 
   notifyProviderChatOptionsChanged(providerId: ProviderId): void {
-    void this.plugin.notifyProviderChatOptionsChanged(providerId);
+    void this.deps.notifyProviderChatOptionsChanged(providerId);
   }
 }

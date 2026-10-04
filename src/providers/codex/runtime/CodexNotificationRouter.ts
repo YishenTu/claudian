@@ -1,35 +1,16 @@
-import * as path from 'path';
-
+import type { StreamChunk } from '@/core/types';
+import { parseCodexQuestionReply } from '@/providers/codex/normalization/codexQuestionNormalization';
+import {
+  CODEX_ASYNC_QUESTION_RESULT,
+  normalizeCodexToolInput,
+  normalizeCodexWebSearchInput,
+} from '@/providers/codex/normalization/codexToolNormalization';
 import { extractCodexUserVisibleText, joinCodexUserTextParts } from '@/providers/codex/normalization/codexUserText';
 
-import type { CitationGroup, StreamChunk, UsageInfo } from '../../../core/types';
-import {
-  normalizeCodexMemoryCitation,
-  stripCodexMemoryCitationMarkup,
-} from '../normalization/CodexMemoryCitation';
-import { parseCodexQuestionReply } from '../normalization/codexQuestionNormalization';
-import {
-  appendCodexCommandOutput,
-  codexToolRequestsMatch,
-  decodeCodexExecEnvelopeCalls,
-  extractCodexExecCellId,
-  isCodexInternalToolCall,
-  isCodexToolOutputError,
-  normalizeCodexToolCall,
-  normalizeCodexToolInput,
-  normalizeCodexToolName,
-  normalizeCodexToolResult,
-  parseCodexArguments,
-  readCodexExecCellIdArgument,
-  stableValueKey,
-  stringifyCodexToolOutput,
-} from '../normalization/codexToolNormalization';
 import type {
-  AgentMessageDeltaNotification,
   AgentMessageItem,
   CollabAgentToolCallItem,
   CommandExecutionItem,
-  ContextCompactionItem,
   DynamicToolCallItem,
   ErrorNotification,
   FileChangeItem,
@@ -38,277 +19,100 @@ import type {
   ItemCompletedNotification,
   ItemStartedNotification,
   MCPToolCallItem,
-  PlanDeltaNotification,
-  ReasoningSummaryTextDeltaNotification,
-  ReasoningTextDeltaNotification,
   TokenUsageUpdatedNotification,
   TurnCompletedNotification,
   TurnPlanUpdatedNotification,
-  UserInput,
   UserMessageItem,
   WebSearchItem,
 } from './codexAppServerTypes';
+import { CodexAssistantTextTracker } from './notifications/CodexAssistantTextTracker';
+import { CodexCommandCorrelator } from './notifications/CodexCommandCorrelator';
+import { CodexDeferredExecCorrelator } from './notifications/CodexDeferredExecCorrelator';
+import {
+  buildCanonicalToolProjection,
+  buildFileChangeInput,
+  FILE_CHANGE_TOOL_NAME,
+  hasWebSearchRequest,
+  isCanonicalToolItem,
+  projectCollabAgentToolResult,
+  projectCollabAgentToolUse,
+  projectCommandToolUse,
+  projectDynamicToolResult,
+  projectFileChangeToolResult,
+  projectImageViewToolUse,
+  projectMCPToolResult,
+  projectMCPToolUse,
+  projectPlanUpdate,
+  projectTokenUsage,
+  projectWebSearchToolResult,
+} from './notifications/codexItemToolProjection';
+import { asRecord, firstString, getItemId } from './notifications/codexNotificationValues';
+import { CodexRawToolCallTracker } from './notifications/CodexRawToolCallTracker';
+import {
+  type CodexToolChunkSink,
+  CodexToolLedger,
+  type CodexToolUseChunk,
+} from './notifications/CodexToolLedger';
 
 type ChunkEmitter = (chunk: StreamChunk) => void;
 
-interface RawToolResult {
-  content: string;
-  isError: boolean;
-}
-
-interface WrappedWaitCall {
-  commandCallId: string;
-  cellId: string;
-}
-
-interface PendingWrappedWaitCall {
-  callId: string;
-  cellId: string;
-  item: Record<string, unknown>;
-  rawArguments: Record<string, unknown>;
-}
-
-interface RawCommandProjection {
-  callId: string;
-  visibleId: string;
-  command: string;
-  workingDirectory?: string;
-  rawOwnsCompletion: boolean;
-}
-
-interface CanonicalCommandProjection {
-  itemId: string;
-  commands: string[];
-  workingDirectory?: string;
-}
-
-interface DeferredRawExecCall {
-  callId: string;
-  item: Record<string, unknown>;
-  rawArguments: Record<string, unknown>;
-  expectedCalls: Array<{
-    name: string;
-    input: Record<string, unknown>;
-    comparisonInput?: Record<string, unknown>;
-    claimed: boolean;
-    canonicalItemId?: string;
-    canonicalCompleted?: boolean;
-    fallbackId?: string;
-  }>;
-  hasRawOutput?: boolean;
-  rawOutput?: unknown;
-  /** The unsplit script output also contains hidden internal calls' values. */
-  withholdsRawOutput?: boolean;
-}
-
-const COLLAB_AGENT_TOOL_MAP: Record<string, string> = {
-  spawnAgent: 'spawn_agent',
-  wait: 'wait',
-  sendInput: 'send_input',
-  resumeAgent: 'resume_agent',
-  closeAgent: 'close_agent',
-  sendMessage: 'send_message',
-  followupTask: 'followup_task',
-  interruptAgent: 'interrupt_agent',
-  listAgents: 'list_agents',
-};
-
+/**
+ * Projects one thread's app-server notifications into stream chunks.
+ *
+ * Dispatches notifications, publishes canonical items, and owns the turn lifecycle.
+ * Raw response items, deferred script calls, command pairing, and assistant text
+ * deduplication are delegated to turn-scoped collaborators sharing one tool ledger.
+ */
 export class CodexNotificationRouter {
   #seenWebSearchIds = new Set<string>();
   #planUpdateCounter = 0;
   #startedUserMessageIds = new Set<string>();
-  #startedAgentMessageIds = new Set<string>();
-  #streamedAgentMessageTextById = new Map<string, string>();
-  #emittedMemoryCitationIds = new Set<string>();
-  #emittedMemoryCitationKeys = new Set<string>();
-  #streamedAssistantTurnText = '';
-  #currentAssistantSegmentId: string | undefined;
-  #currentAssistantSegmentText = '';
-  #seenRawCallIds = new Set<string>();
-  #pendingRawOutputItemsByCallId = new Map<string, Record<string, unknown>>();
-  #rawStartedCallIds = new Set<string>();
-  #startedCanonicalToolItemIds = new Set<string>();
-  #completedCanonicalToolItemIds = new Set<string>();
-  #rawToolNamesByCallId = new Map<string, string>();
-  #rawToolInputsByCallId = new Map<string, Record<string, unknown>>();
-  #rawToolOutputsByCallId = new Map<string, RawToolResult>();
-  #handledRawOutputCallIds = new Set<string>();
-  #inFlightRawFunctionCallIds = new Set<string>();
-  #immediateRawOutputCallIds = new Set<string>();
-  #emittedImmediateToolResultIds = new Set<string>();
-  #wrappedCommandCallIdsByCellId = new Map<string, string>();
-  #wrappedCommandOutputByCallId = new Map<string, string>();
-  #wrappedWaitCallsByCallId = new Map<string, WrappedWaitCall>();
-  #pendingWrappedWaitCallsByCallId = new Map<string, PendingWrappedWaitCall>();
-  #canonicalCommandOutputByItemId = new Map<string, string>();
-  #pendingCanonicalToolOutputByItemId = new Map<string, string[]>();
-  #canonicalPrefilledRawCommandCallIds = new Set<string>();
-  // Raw tool calls and canonical command items describe the same work with unrelated IDs.
-  // A uniquely correlated command keeps whichever projection started first as the visible row.
-  #unmatchedRawCommands: RawCommandProjection[] = [];
-  #unmatchedCanonicalCommands: CanonicalCommandProjection[] = [];
-  #rawCommandByCanonicalId = new Map<string, RawCommandProjection>();
-  // Non-Bash Code Mode exec calls are transport envelopes. Canonical items own their
-  // semantic lifecycles; the envelope remains available as a lossless raw-only fallback.
-  #deferredRawExecCalls = new Map<string, DeferredRawExecCall>();
-  #projectedCanonicalItemIds = new Set<string>();
-  #activeCanonicalToolProjections = new Map<string, CanonicalToolProjection>();
-  #deferredOwnedCanonicalItemIds = new Set<string>();
-  #ignoredLateRawOutputCallIds = new Set<string>();
-  #suppressedRawCallIds = new Set<string>();
-  /** Yielded cells of scripts whose output is withheld, and the calls whose output carries them. */
-  #withheldExecCellIds = new Set<string>();
-  #withheldOutputCallIds = new Set<string>();
-  #fileChangeInputsById = new Map<string, Record<string, unknown>>();
-
-  private readonly rawExecAliases = new Map<string, string>();
+  readonly #ledger = new CodexToolLedger();
+  readonly #assistantText: CodexAssistantTextTracker;
+  readonly #commands: CodexCommandCorrelator;
+  readonly #deferred: CodexDeferredExecCorrelator;
+  readonly #raw: CodexRawToolCallTracker;
 
   constructor(
     private readonly emitChunk: ChunkEmitter,
     private readonly workingDirectory?: string,
-    private readonly streamRawExecCalls = false,
-  ) {}
-
-  private emit(chunk: StreamChunk): void {
-    if (chunk.type === 'tool_use' || chunk.type === 'tool_result' || chunk.type === 'tool_output') {
-      const id = this.rawExecAliases.get(chunk.id);
-      if (id) { this.emitChunk({ ...chunk, id }); return; }
-    }
-    this.emitChunk(chunk);
-  }
-
-  #resetAssistantTextTracking(): void {
-    this.#streamedAssistantTurnText = '';
-    this.#resetAssistantSegmentText();
-  }
-
-  #resetAssistantSegmentText(): void {
-    this.#currentAssistantSegmentId = undefined;
-    this.#currentAssistantSegmentText = '';
-  }
-
-  #beginAssistantSegment(itemId: string): void {
-    if (this.#currentAssistantSegmentId === itemId) {
-      return;
-    }
-
-    this.#currentAssistantSegmentId = itemId;
-    this.#currentAssistantSegmentText = '';
-  }
-
-  #claimAssistantSegment(itemId?: string): void {
-    if (!itemId) {
-      return;
-    }
-
-    if (this.#currentAssistantSegmentId && this.#currentAssistantSegmentId !== itemId) {
-      this.#beginAssistantSegment(itemId);
-      return;
-    }
-
-    if (!this.#currentAssistantSegmentId) {
-      this.#currentAssistantSegmentId = itemId;
-    }
-  }
-
-  #appendAssistantText(text: string, itemId?: string): void {
-    if (!text) {
-      return;
-    }
-
-    this.#claimAssistantSegment(itemId);
-
-    this.#currentAssistantSegmentText += text;
-    this.#streamedAssistantTurnText += text;
+    streamRawExecCalls = false,
+  ) {
+    const sink: CodexToolChunkSink = {
+      emit: chunk => this.#emit(chunk),
+      emitToolUse: chunk => this.#emitToolUse(chunk),
+    };
+    this.#assistantText = new CodexAssistantTextTracker(chunk => this.#emit(chunk));
+    this.#commands = new CodexCommandCorrelator(
+      sink,
+      this.#ledger,
+      callId => this.#raw.releaseCommandCall(callId),
+      workingDirectory,
+    );
+    this.#deferred = new CodexDeferredExecCorrelator(sink, this.#ledger, {
+      workingDirectory,
+      streamRawExecCalls,
+      onCanonicalClaimed: itemId => this.#commands.dropUnmatchedCanonical(itemId),
+      onWebSearchClaimed: (itemId, requestedInput) => this.#adoptRequestedWebSearch(itemId, requestedInput),
+    });
+    this.#raw = new CodexRawToolCallTracker(sink, this.#ledger, this.#commands, this.#deferred);
   }
 
   beginTurn(): void {
-    this.rawExecAliases.clear();
-    this.#startedUserMessageIds.clear();
-    this.#startedAgentMessageIds.clear();
-    this.#streamedAgentMessageTextById.clear();
-    this.#emittedMemoryCitationIds.clear();
-    this.#emittedMemoryCitationKeys.clear();
-    this.#resetAssistantTextTracking();
-    this.#seenRawCallIds.clear();
-    this.#pendingRawOutputItemsByCallId.clear();
-    this.#rawStartedCallIds.clear();
-    this.#startedCanonicalToolItemIds.clear();
-    this.#completedCanonicalToolItemIds.clear();
-    this.#rawToolNamesByCallId.clear();
-    this.#rawToolInputsByCallId.clear();
-    this.#rawToolOutputsByCallId.clear();
-    this.#handledRawOutputCallIds.clear();
-    this.#inFlightRawFunctionCallIds.clear();
-    this.#immediateRawOutputCallIds.clear();
-    this.#emittedImmediateToolResultIds.clear();
-    this.#wrappedCommandCallIdsByCellId.clear();
-    this.#wrappedCommandOutputByCallId.clear();
-    this.#wrappedWaitCallsByCallId.clear();
-    this.#withheldExecCellIds.clear();
-    this.#withheldOutputCallIds.clear();
-    this.#pendingWrappedWaitCallsByCallId.clear();
-    this.#canonicalCommandOutputByItemId.clear();
-    this.#pendingCanonicalToolOutputByItemId.clear();
-    this.#canonicalPrefilledRawCommandCallIds.clear();
-    this.#unmatchedRawCommands.length = 0;
-    this.#unmatchedCanonicalCommands.length = 0;
-    this.#rawCommandByCanonicalId.clear();
-    this.#deferredRawExecCalls.clear();
-    this.#projectedCanonicalItemIds.clear();
-    this.#activeCanonicalToolProjections.clear();
-    this.#deferredOwnedCanonicalItemIds.clear();
-    this.#ignoredLateRawOutputCallIds.clear();
-    this.#suppressedRawCallIds.clear();
-    this.#fileChangeInputsById.clear();
+    this.#resetTurn();
   }
 
   endTurn(): void {
-    this.rawExecAliases.clear();
-    this.#startedUserMessageIds.clear();
-    this.#startedAgentMessageIds.clear();
-    this.#streamedAgentMessageTextById.clear();
-    this.#emittedMemoryCitationIds.clear();
-    this.#emittedMemoryCitationKeys.clear();
-    this.#resetAssistantTextTracking();
-    this.#seenRawCallIds.clear();
-    this.#pendingRawOutputItemsByCallId.clear();
-    this.#rawStartedCallIds.clear();
-    this.#startedCanonicalToolItemIds.clear();
-    this.#completedCanonicalToolItemIds.clear();
-    this.#rawToolNamesByCallId.clear();
-    this.#rawToolInputsByCallId.clear();
-    this.#rawToolOutputsByCallId.clear();
-    this.#handledRawOutputCallIds.clear();
-    this.#inFlightRawFunctionCallIds.clear();
-    this.#immediateRawOutputCallIds.clear();
-    this.#emittedImmediateToolResultIds.clear();
-    this.#wrappedCommandCallIdsByCellId.clear();
-    this.#wrappedCommandOutputByCallId.clear();
-    this.#wrappedWaitCallsByCallId.clear();
-    this.#withheldExecCellIds.clear();
-    this.#withheldOutputCallIds.clear();
-    this.#pendingWrappedWaitCallsByCallId.clear();
-    this.#canonicalCommandOutputByItemId.clear();
-    this.#pendingCanonicalToolOutputByItemId.clear();
-    this.#canonicalPrefilledRawCommandCallIds.clear();
-    this.#unmatchedRawCommands.length = 0;
-    this.#unmatchedCanonicalCommands.length = 0;
-    this.#rawCommandByCanonicalId.clear();
-    this.#deferredRawExecCalls.clear();
-    this.#projectedCanonicalItemIds.clear();
-    this.#activeCanonicalToolProjections.clear();
-    this.#deferredOwnedCanonicalItemIds.clear();
-    this.#ignoredLateRawOutputCallIds.clear();
-    this.#suppressedRawCallIds.clear();
-    this.#fileChangeInputsById.clear();
+    this.#resetTurn();
   }
 
   handleNotification(method: string, params: unknown): void {
     switch (method) {
-      case 'item/agentMessage/delta':
-        this.#onAgentMessageDelta(params as AgentMessageDeltaNotification);
+      case 'item/agentMessage/delta': {
+        const { itemId, delta } = params as { itemId: string; delta: string };
+        this.#assistantText.appendDelta(itemId, delta);
         break;
+      }
       case 'item/started':
         this.#onItemStarted(params as ItemStartedNotification);
         break;
@@ -316,21 +120,17 @@ export class CodexNotificationRouter {
         this.#onItemCompleted(params as ItemCompletedNotification);
         break;
       case 'item/reasoning/summaryTextDelta':
-        this.#onReasoningSummaryDelta(params as ReasoningSummaryTextDeltaNotification);
-        break;
       case 'item/reasoning/textDelta':
-        this.#onReasoningTextDelta(params as ReasoningTextDeltaNotification);
-        break;
-      case 'item/reasoning/summaryPartAdded':
+        this.#emit({ type: 'thinking', content: (params as { delta: string }).delta });
         break;
       case 'item/plan/delta':
-        this.#onPlanDelta(params as PlanDeltaNotification);
+        this.#emit({ type: 'text', content: (params as { delta: string }).delta });
         break;
       case 'item/commandExecution/outputDelta':
-        this.#onOutputDelta(params as { itemId: string; delta: string }, true);
+        this.#commands.handleOutputDelta(params as { itemId: string; delta: string }, true);
         break;
       case 'item/fileChange/outputDelta':
-        this.#onOutputDelta(params as { itemId: string; delta: string }, false);
+        this.#commands.handleOutputDelta(params as { itemId: string; delta: string }, false);
         break;
       case 'item/fileChange/patchUpdated':
         this.#onFileChangePatchUpdated(params as FileChangePatchUpdatedNotification);
@@ -341,9 +141,11 @@ export class CodexNotificationRouter {
       case 'event_msg':
         this.#onEventMsg(params);
         break;
-      case 'thread/tokenUsage/updated':
-        this.#onTokenUsageUpdated(params as TokenUsageUpdatedNotification);
+      case 'thread/tokenUsage/updated': {
+        const usageParams = params as TokenUsageUpdatedNotification;
+        this.#emit({ type: 'usage', usage: projectTokenUsage(usageParams), sessionId: usageParams.threadId });
         break;
+      }
       case 'turn/plan/updated':
         this.#onPlanUpdated(params as TurnPlanUpdatedNotification);
         break;
@@ -358,46 +160,51 @@ export class CodexNotificationRouter {
     }
   }
 
-  #onAgentMessageDelta(params: AgentMessageDeltaNotification): void {
-    const previousText = this.#streamedAgentMessageTextById.get(params.itemId) ?? '';
-    this.#streamedAgentMessageTextById.set(params.itemId, previousText + params.delta);
-    this.#appendAssistantText(params.delta, params.itemId);
-    this.emit({ type: 'text', content: params.delta });
+  #resetTurn(): void {
+    this.#startedUserMessageIds.clear();
+    this.#ledger.clear();
+    this.#assistantText.reset();
+    this.#commands.reset();
+    this.#deferred.reset();
+    this.#raw.reset();
   }
 
-  #onReasoningSummaryDelta(params: ReasoningSummaryTextDeltaNotification): void {
-    this.emit({ type: 'thinking', content: params.delta });
+  #emit(chunk: StreamChunk): void {
+    if (chunk.type === 'tool_use' || chunk.type === 'tool_result' || chunk.type === 'tool_output') {
+      const id = this.#deferred.aliasFor(chunk.id);
+      if (id) {
+        this.emitChunk({ ...chunk, id });
+        return;
+      }
+    }
+    this.emitChunk(chunk);
   }
 
-  #onReasoningTextDelta(params: ReasoningTextDeltaNotification): void {
-    this.emit({ type: 'thinking', content: params.delta });
-  }
-
-  #onPlanDelta(params: PlanDeltaNotification): void {
-    this.emit({ type: 'text', content: params.delta });
+  /** The single assistant-text boundary: a published tool card ends the current text segment. */
+  #emitToolUse(chunk: CodexToolUseChunk): void {
+    this.#assistantText.endSegment();
+    this.#emit(chunk);
   }
 
   #onItemStarted(params: ItemStartedNotification): void {
     const item = params.item;
     if (item.type === 'agentMessage' && this.#handleAsyncQuestion(item, false)) return;
     const itemId = getItemId(item);
-    const deferredOwned = this.#claimDeferredRawExecFromItem(item, false);
-    if (item.type === 'commandExecution' && !deferredOwned) {
-      if (this.#claimPendingRawCommand(item)) {
-        this.#activeCanonicalToolProjections.delete(item.id);
-        this.#flushPendingCanonicalToolOutput(item.id);
-        return;
-      }
+    const deferredOwned = this.#claimDeferredItem(item, false);
+    if (item.type === 'commandExecution' && !deferredOwned && this.#commands.claimPendingRawCommand(item)) {
+      this.#deferred.release(item.id);
+      this.#commands.flushPendingOutput(item.id);
+      return;
     }
-    if (itemId && this.#rawStartedCallIds.has(itemId)) {
-      this.#flushPendingCanonicalToolOutput(itemId);
+    if (itemId && this.#ledger.rawStartedIds.has(itemId)) {
+      this.#commands.flushPendingOutput(itemId);
       return;
     }
     if (itemId && isCanonicalToolItem(item)) {
-      if (this.#startedCanonicalToolItemIds.has(itemId)) {
+      if (this.#ledger.canonicalStartedIds.has(itemId)) {
         return;
       }
-      this.#startedCanonicalToolItemIds.add(itemId);
+      this.#ledger.canonicalStartedIds.add(itemId);
     }
 
     switch (item.type) {
@@ -406,52 +213,45 @@ export class CodexNotificationRouter {
         break;
 
       case 'agentMessage':
-        this.#emitAgentMessageBoundary(item);
-        break;
-
-      case 'reasoning':
+        this.#assistantText.startMessage(item.id);
         break;
 
       case 'commandExecution':
-        this.#emitToolUseFromCommand(item);
+        this.#emitCommandToolUse(item);
         if (!deferredOwned) {
-          this.#unmatchedCanonicalCommands.push({
-            itemId: item.id,
-            commands: readCanonicalCommandCandidates(item),
-            workingDirectory: normalizeWorkingDirectory(item.cwd, this.workingDirectory),
-          });
+          this.#commands.trackCanonicalCommand(item);
         }
         break;
 
       case 'fileChange':
-        this.#emitToolUseFromFileChange(item);
+        this.#emitFileChangeToolUse(item);
         break;
 
       case 'imageView':
-        this.#emitToolUseFromImageView(item);
+        this.#emitImageViewToolUse(item);
         break;
 
       case 'webSearch':
-        this.#emitToolUseFromWebSearch(item, true);
+        this.#emitWebSearchToolUse(item, true);
         break;
 
       case 'collabAgentToolCall':
-        this.#emitToolUseFromCollabAgent(item);
+        this.#emitCollabAgentToolUse(item);
         break;
 
       case 'mcpToolCall':
-        this.#emitToolUseFromMcp(item);
+        this.#emitMCPToolUse(item);
         break;
 
       case 'dynamicToolCall':
-        this.#emitToolUseFromDynamic(item);
+        this.#emitDynamicToolUse(item);
         break;
 
       default:
         break;
     }
     if (itemId && isCanonicalToolItem(item)) {
-      this.#flushPendingCanonicalToolOutput(itemId);
+      this.#commands.flushPendingOutput(itemId);
     }
   }
 
@@ -461,16 +261,16 @@ export class CodexNotificationRouter {
     if (item.type === 'subAgentActivity') {
       // Resumed threads can omit raw function calls. Keep an interaction anchor so
       // session-owned child updates have a tool to attach to when work starts.
-      if (item.kind === 'interacted' && !this.#rawStartedCallIds.has(item.id)) {
-        this.emit({ type: 'tool_use', id: item.id, name: 'send_input', input: { id: item.agentThreadId } });
-        this.emit({ type: 'tool_result', id: item.id, content: '', isError: false });
+      if (item.kind === 'interacted' && !this.#ledger.rawStartedIds.has(item.id)) {
+        this.#emit({ type: 'tool_use', id: item.id, name: 'send_input', input: { id: item.agentThreadId } });
+        this.#emit({ type: 'tool_result', id: item.id, content: '', isError: false });
       }
-      if (item.kind === 'started' && !this.#completedCanonicalToolItemIds.has(item.id)) {
-        this.#completedCanonicalToolItemIds.add(item.id);
-        this.emit({ type: 'tool_use', id: item.id, name: 'spawn_agent', input: normalizeCodexToolInput('spawn_agent', {
-          task_name: item.agentPath, ...this.#rawToolInputsByCallId.get(item.id),
+      if (item.kind === 'started' && !this.#ledger.canonicalCompletedIds.has(item.id)) {
+        this.#ledger.canonicalCompletedIds.add(item.id);
+        this.#emit({ type: 'tool_use', id: item.id, name: 'spawn_agent', input: normalizeCodexToolInput('spawn_agent', {
+          task_name: item.agentPath, ...this.#ledger.requestedInputs.get(item.id),
         }) });
-        this.emit({ type: 'tool_result', id: item.id, content: JSON.stringify({
+        this.#emit({ type: 'tool_result', id: item.id, content: JSON.stringify({
           agent_id: item.agentThreadId, task_name: item.agentPath,
         }), isError: false });
       }
@@ -478,94 +278,96 @@ export class CodexNotificationRouter {
     }
     const itemId = getItemId(item);
     if (itemId && isCanonicalToolItem(item)) {
-      if (this.#completedCanonicalToolItemIds.has(itemId)) {
+      if (this.#ledger.canonicalCompletedIds.has(itemId)) {
         return;
       }
-      this.#completedCanonicalToolItemIds.add(itemId);
-      this.#inFlightRawFunctionCallIds.delete(itemId);
+      this.#ledger.canonicalCompletedIds.add(itemId);
+      this.#ledger.inFlightRawCallIds.delete(itemId);
     }
-    const deferredOwned = this.#claimDeferredRawExecFromItem(item, true);
+    const deferredOwned = this.#claimDeferredItem(item, true);
     if (itemId && deferredOwned) {
-      this.#markDeferredCanonicalCompleted(itemId);
+      this.#deferred.markCanonicalCompleted(itemId);
     }
     const rawResult = item.type !== 'commandExecution' && itemId
-      ? this.#consumeRawToolOutput(itemId)
+      ? this.#ledger.consumeRawResult(itemId)
       : undefined;
     const hadCanonicalToolUse = itemId
-      ? this.#startedCanonicalToolItemIds.has(itemId)
+      ? this.#ledger.canonicalStartedIds.has(itemId)
       : false;
     const completedCommandRawProjection = item.type === 'commandExecution' && !deferredOwned
-      ? this.#rawCommandByCanonicalId.get(item.id) ?? this.#claimPendingRawCommand(item)
+      ? this.#commands.resolveCompletedRawCommand(item)
       : undefined;
     if (item.type === 'commandExecution') {
-      if (!this.#startedCanonicalToolItemIds.has(item.id) && !completedCommandRawProjection) {
-        this.#startedCanonicalToolItemIds.add(item.id);
-        this.#emitToolUseFromCommand(item);
+      if (!this.#ledger.canonicalStartedIds.has(item.id) && !completedCommandRawProjection) {
+        this.#ledger.canonicalStartedIds.add(item.id);
+        this.#emitCommandToolUse(item);
       } else if (completedCommandRawProjection) {
-        this.#startedCanonicalToolItemIds.add(item.id);
+        this.#ledger.canonicalStartedIds.add(item.id);
       }
     } else {
       this.#ensureCanonicalToolUseFromCompletion(item);
     }
     if (itemId && isCanonicalToolItem(item)) {
-      this.#flushPendingCanonicalToolOutput(itemId);
+      this.#commands.flushPendingOutput(itemId);
     }
 
     switch (item.type) {
       case 'userMessage':
-        if (!this.#startedUserMessageIds.has(item.id)) {
-          this.#emitUserMessageBoundary(item);
-        }
+        this.#emitUserMessageBoundary(item);
         break;
 
       case 'agentMessage':
-        this.#completeAgentMessage(item);
+        this.#assistantText.completeMessage(item);
         break;
 
       case 'commandExecution':
-        this.#completeCommand(item, false, completedCommandRawProjection);
+        this.#commands.complete(item, completedCommandRawProjection);
         break;
 
       case 'fileChange':
         if (hadCanonicalToolUse) {
-          this.#emitToolUseFromFileChange(item);
+          this.#emitFileChangeToolUse(item);
         }
-        this.#emitToolResultFromFileChange(item);
+        this.#emit({
+          type: 'tool_result',
+          id: item.id,
+          ...projectFileChangeToolResult(item, this.#rememberFileChangeInput(item.id, item.changes)),
+        });
         break;
 
       case 'imageView':
-        this.#emitToolResultFromImageView(item);
+        this.#emit({ type: 'tool_result', id: item.id, content: item.path, isError: false });
         break;
 
       case 'webSearch':
-        this.#emitToolUseFromWebSearch(item);
-        this.#emitToolResultFromWebSearch(item);
+        this.#emitWebSearchToolUse(item);
+        this.#emit({ type: 'tool_result', id: item.id, ...projectWebSearchToolResult(item) });
         break;
 
       case 'collabAgentToolCall':
-        if ((hadCanonicalToolUse || this.#rawStartedCallIds.has(item.id))
+        if ((hadCanonicalToolUse || this.#ledger.rawStartedIds.has(item.id))
           && (item.prompt || item.model || item.reasoningEffort
-            || (item.tool === 'spawnAgent' && this.#rawToolInputsByCallId.has(item.id)))) {
-          this.#emitToolUseFromCollabAgent(item);
+            || (item.tool === 'spawnAgent' && this.#ledger.requestedInputs.has(item.id)))) {
+          this.#emitCollabAgentToolUse(item);
         }
-        this.#emitToolResultFromCollabAgent(item, rawResult);
+        this.#emit({ type: 'tool_result', id: item.id, ...projectCollabAgentToolResult(item, rawResult) });
         break;
 
       case 'mcpToolCall':
-        this.#emitToolResultFromMcp(item);
+        this.#emit({ type: 'tool_result', id: item.id, ...projectMCPToolResult(item) });
         break;
 
       case 'dynamicToolCall':
-        this.#emitToolResultFromDynamic(item);
+        this.#emitDynamicToolResult(item);
         break;
 
       case 'contextCompaction':
-        this.#emitContextCompactionBoundary(item);
+        this.#emit({ type: 'context_compacted' });
         break;
 
       default:
         if (itemId && rawResult) {
-          this.emit({ type: 'tool_result', id: itemId, ...rawResult });
+          this.#emit({ type: 'tool_result', id: itemId, ...rawResult });
         }
         break;
     }
@@ -573,10 +375,10 @@ export class CodexNotificationRouter {
     if (
       itemId
       && item.type !== 'commandExecution'
-      && this.#rawStartedCallIds.has(itemId)
+      && this.#ledger.rawStartedIds.has(itemId)
       && !rawResult
     ) {
-      this.#ignoredLateRawOutputCallIds.add(itemId);
+      this.#raw.ignoreLateOutput(itemId);
     }
   }
 
@@ -589,25 +391,25 @@ export class CodexNotificationRouter {
 
     switch (itemType) {
       case 'function_call':
-        this.#handleRawFunctionCall(item);
-        this.#replayPendingRawToolOutput(item);
+        this.#raw.handleFunctionCall(item);
+        this.#raw.replayPendingOutput(item);
         break;
 
       case 'custom_tool_call':
-        this.#handleRawCustomToolCall(item);
-        this.#replayPendingRawToolOutput(item);
+        this.#raw.handleCustomToolCall(item);
+        this.#raw.replayPendingOutput(item);
         break;
 
       case 'function_call_output':
       case 'custom_tool_call_output':
-        this.#handleRawToolOutput(item);
+        this.#raw.handleOutput(item);
         break;
 
       case 'agent_message':
       case 'agentMessage':
       case 'message':
         if (this.#handleAsyncQuestion(item as unknown as AgentMessageItem, true)) break;
-        this.#emitMissingRawAgentMessageText(item);
+        this.#assistantText.completeRawMessage(item);
         break;
 
       default:
@@ -617,966 +419,78 @@ export class CodexNotificationRouter {
 
   #onEventMsg(params: unknown): void {
     const payload = asRecord(params);
-    if (!payload) {
+    if (payload?.type !== 'agent_message') {
       return;
     }
 
-    const payloadType = typeof payload.type === 'string' ? payload.type : undefined;
-    if (payloadType !== 'agent_message') {
-      return;
-    }
-
-    const text = stripCodexMemoryCitationMarkup(
+    this.#assistantText.completeTurnMessage(
       firstString(payload.text, payload.message),
-    );
-    this.#emitMissingAssistantTurnText(text);
-    this.#emitMemoryCitation(
       payload.memory_citation ?? payload.memoryCitation,
     );
   }
 
-  #handleRawFunctionCall(item: Record<string, unknown>): void {
-    const rawName = firstString(item.name, item.type);
-    const callId = readRawCallId(item);
-    if (!callId) {
-      return;
-    }
-    if (this.#seenRawCallIds.has(callId)) {
-      return;
-    }
-    this.#seenRawCallIds.add(callId);
-    if (this.#completedCanonicalToolItemIds.has(callId)) {
-      this.#ignoredLateRawOutputCallIds.add(callId);
-      return;
-    }
-    const rawArguments = parseRawArguments(item);
-    if (rawName === 'wait') {
-      const cellId = readCodexExecCellIdArgument(rawArguments);
-      if (cellId && this.#withheldExecCellIds.delete(cellId)) {
-        this.#withheldOutputCallIds.add(callId);
-        return;
-      }
-      const commandCallId = cellId
-        ? this.#wrappedCommandCallIdsByCellId.get(cellId)
-        : undefined;
-      if (cellId && commandCallId) {
-        this.#wrappedWaitCallsByCallId.set(callId, { commandCallId, cellId });
-        return;
-      }
-      if (cellId) {
-        this.#pendingWrappedWaitCallsByCallId.set(callId, {
-          callId,
-          cellId,
-          item,
-          rawArguments,
-        });
-        return;
-      }
-    }
-
-    if (
-      (rawName === 'write_stdin' && isSilentWriteStdinInput(rawArguments))
-      || isCodexInternalToolCall(rawName, item.namespace)
-    ) {
-      this.#suppressedRawCallIds.add(callId);
-      return;
-    }
-
-    this.#inFlightRawFunctionCallIds.add(callId);
-    this.#emitRawToolUse(callId, rawName, item, rawArguments);
-  }
-
-  #handleRawCustomToolCall(item: Record<string, unknown>): void {
-    const rawName = firstString(item.name, item.type);
-    const callId = readRawCallId(item);
-    if (!callId) {
-      return;
-    }
-    if (this.#seenRawCallIds.has(callId)) {
-      return;
-    }
-    this.#seenRawCallIds.add(callId);
-    if (this.#completedCanonicalToolItemIds.has(callId)) {
-      this.#ignoredLateRawOutputCallIds.add(callId);
-      return;
-    }
-
-    const rawArguments = parseRawArguments(item);
-    if (rawName === 'apply_patch') {
-      const input = normalizeCodexToolInput(rawName, rawArguments);
-      this.#rememberFileChangeInput(callId, input);
-      this.#deferredRawExecCalls.set(callId, {
-        callId,
-        item,
-        rawArguments,
-        expectedCalls: [{ name: 'apply_patch', input, claimed: false }],
-      });
-      this.#claimActiveCanonicalProjections();
-      return;
-    }
-
-    if (rawName === 'exec') {
-      const decodedCalls = decodeCodexExecEnvelopeCalls(rawArguments);
-      const isSingleCommand = decodedCalls?.length === 1
-        && decodedCalls[0]?.name === 'Bash';
-      const expectedCalls = decodedCalls?.filter(call => (
-        !isCodexInternalToolCall(call.rawName)
-        && !(call.rawName === 'write_stdin' && isSilentWriteStdinInput(call.rawInput))
-      ));
-      if (expectedCalls?.length === 0) {
-        // Its output, and any yielded continuation, carries only internal values or silent polls.
-        this.#withheldOutputCallIds.add(callId);
-        return;
-      }
-      if (expectedCalls && !isSingleCommand) {
-        this.#deferredRawExecCalls.set(callId, {
-          callId,
-          item,
-          rawArguments,
-          withholdsRawOutput: expectedCalls.length < decodedCalls!.length,
-          expectedCalls: expectedCalls.map((call) => {
-            const semanticCall = projectRawSemanticToolCall(
-              call.name,
-              call.input,
-              call.rawName,
-              call.rawInput,
-              this.workingDirectory,
-            );
-            return { ...semanticCall, claimed: false };
-          }),
-        });
-        this.#claimActiveCanonicalProjections();
-        const deferred = this.#deferredRawExecCalls.get(callId);
-        if (this.streamRawExecCalls && deferred) this.#emitDeferredRawExecFallback(deferred);
-        return;
-      }
-    }
-
-    // Raw custom output is terminal unless a canonical dynamic-tool completion also arrives.
-    this.#immediateRawOutputCallIds.add(callId);
-    this.#emitRawToolUse(callId, rawName, item, rawArguments);
-  }
-
-  #emitRawToolUse(
-    callId: string,
-    rawName: string,
-    item: Record<string, unknown>,
-    rawArguments?: Record<string, unknown>,
-    fromCanonicalProjection = false,
-  ): void {
-    const toolArguments = rawArguments ?? parseRawArguments(item);
-    const normalized = normalizeCodexToolCall(
-      rawName,
-      toolArguments,
-    );
-
-    if (this.#rawStartedCallIds.has(callId)) {
-      this.#rawToolNamesByCallId.set(callId, normalized.name);
-      this.#rawToolInputsByCallId.set(callId, normalized.input);
-      return;
-    }
-
-    this.#rawStartedCallIds.add(callId);
-    this.#rawToolNamesByCallId.set(callId, normalized.name);
-    this.#rawToolInputsByCallId.set(callId, normalized.input);
-    if (
-      normalized.name !== 'Bash'
-      && !fromCanonicalProjection
-      && this.#startedCanonicalToolItemIds.has(callId)
-    ) {
-      return;
-    }
-    const command = normalized.name === 'Bash'
-      ? firstString(normalized.input.command)
-      : '';
-    if (command) {
-      const workingDirectory = this.#readRawCommandWorkingDirectory(rawName, toolArguments);
-      const canonicalCommand = this.#takeUniqueCanonicalCommand(command, workingDirectory);
-      const projection: RawCommandProjection = {
-        callId,
-        visibleId: canonicalCommand?.itemId ?? callId,
-        command,
-        workingDirectory,
-        rawOwnsCompletion: this.#immediateRawOutputCallIds.has(callId),
-      };
-      if (canonicalCommand) {
-        this.#rawCommandByCanonicalId.set(canonicalCommand.itemId, projection);
-        this.#activeCanonicalToolProjections.delete(canonicalCommand.itemId);
-        const streamedOutput = this.#canonicalCommandOutputByItemId.get(canonicalCommand.itemId);
-        this.#canonicalCommandOutputByItemId.delete(canonicalCommand.itemId);
-        if (streamedOutput && projection.rawOwnsCompletion) {
-          this.#wrappedCommandOutputByCallId.set(callId, streamedOutput);
-          this.#canonicalPrefilledRawCommandCallIds.add(callId);
-        }
-      } else {
-        this.#unmatchedRawCommands.push(projection);
-      }
-
-      if (canonicalCommand) {
-        return;
-      }
-    }
-
-    this.#resetAssistantSegmentText();
-    this.emit({
-      type: 'tool_use',
-      id: callId,
-      name: normalized.name,
-      input: normalized.input,
-    });
-  }
-
-  #handleRawToolOutput(item: Record<string, unknown>): void {
-    const callId = readRawCallId(item);
-    if (!callId) {
-      return;
-    }
-    if (
-      !this.#seenRawCallIds.has(callId)
-      && !this.#rawStartedCallIds.has(callId)
-      && !this.#deferredRawExecCalls.has(callId)
-    ) {
-      this.#pendingRawOutputItemsByCallId.set(callId, item);
-      return;
-    }
-    if (this.#pendingWrappedWaitCallsByCallId.has(callId)) {
-      this.#pendingRawOutputItemsByCallId.set(callId, item);
-      return;
-    }
-    if (this.#handledRawOutputCallIds.has(callId)) {
-      return;
-    }
-    this.#handledRawOutputCallIds.add(callId);
-    this.#inFlightRawFunctionCallIds.delete(callId);
-
-    if (this.#withheldOutputCallIds.delete(callId)) {
-      this.#withholdExecCell(item.output);
-      return;
-    }
-
-    const wrappedWaitCall = this.#wrappedWaitCallsByCallId.get(callId);
-    if (wrappedWaitCall) {
-      this.#wrappedWaitCallsByCallId.delete(callId);
-      this.#handleWrappedWaitOutput(wrappedWaitCall, item.output);
-      return;
-    }
-
-    if (this.#suppressedRawCallIds.delete(callId)) {
-      return;
-    }
-
-    if (this.#ignoredLateRawOutputCallIds.has(callId)) {
-      return;
-    }
-
-    if (this.#emittedImmediateToolResultIds.has(callId)) {
-      return;
-    }
-
-    const deferredExec = this.#deferredRawExecCalls.get(callId);
-    if (deferredExec) {
-      if (deferredExec.expectedCalls.length > 0) {
-        deferredExec.hasRawOutput = true;
-        deferredExec.rawOutput = item.output;
-        if (deferredExec.withholdsRawOutput) this.#withholdExecCell(item.output);
-        if (this.streamRawExecCalls) this.#emitDeferredRawExecFallback(deferredExec, item.output, true);
-        if (deferredExec.expectedCalls.every(call => (
-          call.claimed && call.canonicalCompleted
-        ))) {
-          this.#deferredRawExecCalls.delete(callId);
-        }
-        return;
-      }
-
-      this.#deferredRawExecCalls.delete(callId);
-
-      this.#immediateRawOutputCallIds.add(callId);
-      this.#emitRawToolUse(
-        callId,
-        'exec',
-        deferredExec.item,
-        deferredExec.rawArguments,
-      );
-    }
-
-    const normalizedName = this.#rawToolNamesByCallId.get(callId);
-    if (!normalizedName) {
-      return;
-    }
-
-    const rawOutput = item.output;
-    const rawOutputText = stringifyCodexToolOutput(rawOutput);
-    const content = normalizeRawToolOutput(
-      normalizedName,
-      rawOutput,
-      this.#rawToolInputsByCallId.get(callId),
-    );
-    const result = {
-      content,
-      isError: isCodexToolOutputError(rawOutputText),
-    };
-
-    if (this.#immediateRawOutputCallIds.delete(callId)) {
-      const execCellId = normalizedName === 'Bash' || normalizedName === 'exec'
-        ? extractCodexExecCellId(rawOutputText)
-        : undefined;
-      if (execCellId) {
-        this.#wrappedCommandCallIdsByCellId.set(execCellId, callId);
-        this.#appendWrappedCommandOutput(callId, content);
-        this.#bindPendingWrappedWaitCalls(execCellId, callId);
-        return;
-      }
-
-      this.#wrappedCommandOutputByCallId.delete(callId);
-      this.#canonicalPrefilledRawCommandCallIds.delete(callId);
-      if (!this.#emittedImmediateToolResultIds.has(callId)) {
-        this.#emittedImmediateToolResultIds.add(callId);
-        this.emit({
-          type: 'tool_result',
-          id: this.#visibleRawCallId(callId),
-          ...result,
-        });
-      }
-      return;
-    }
-
-    this.#rawToolOutputsByCallId.set(callId, result);
-  }
-
-  /** A yielded withheld script continues through `wait` calls that carry the same combined output. */
-  #withholdExecCell(rawOutput: unknown): void {
-    const cellId = extractCodexExecCellId(stringifyCodexToolOutput(rawOutput));
-    if (cellId) this.#withheldExecCellIds.add(cellId);
-  }
-
-  #replayPendingRawToolOutput(item: Record<string, unknown>): void {
-    const callId = readRawCallId(item);
-    if (!callId) {
-      return;
-    }
-    const pendingOutput = this.#pendingRawOutputItemsByCallId.get(callId);
-    if (!pendingOutput) {
-      return;
-    }
-    this.#pendingRawOutputItemsByCallId.delete(callId);
-    this.#handleRawToolOutput(pendingOutput);
-  }
-
-  #handleWrappedWaitOutput(waitCall: WrappedWaitCall, rawOutput: unknown): void {
-    const rawOutputText = stringifyCodexToolOutput(rawOutput);
-    const content = normalizeRawToolOutput(
-      this.#rawToolNamesByCallId.get(waitCall.commandCallId) ?? 'Bash',
-      rawOutput,
-      this.#rawToolInputsByCallId.get(waitCall.commandCallId),
-    );
-    const nextCellId = extractCodexExecCellId(rawOutputText);
-
-    if (nextCellId) {
-      this.#wrappedCommandCallIdsByCellId.delete(waitCall.cellId);
-      this.#wrappedCommandCallIdsByCellId.set(nextCellId, waitCall.commandCallId);
-      this.#appendWrappedCommandOutput(waitCall.commandCallId, content);
-      return;
-    }
-
-    const previousOutput = this.#wrappedCommandOutputByCallId.get(waitCall.commandCallId);
-    const completeOutput = appendCodexCommandOutput(previousOutput, content);
-    this.#wrappedCommandOutputByCallId.delete(waitCall.commandCallId);
-    this.#canonicalPrefilledRawCommandCallIds.delete(waitCall.commandCallId);
-    this.#wrappedCommandCallIdsByCellId.delete(waitCall.cellId);
-    this.#emittedImmediateToolResultIds.add(waitCall.commandCallId);
-    this.emit({
-      type: 'tool_result',
-      id: this.#visibleRawCallId(waitCall.commandCallId),
-      content: completeOutput,
-      isError: isCodexToolOutputError(rawOutputText),
-    });
-  }
-
-  #bindPendingWrappedWaitCalls(cellId: string, commandCallId: string): void {
-    for (const [waitCallId, waitCall] of this.#pendingWrappedWaitCallsByCallId) {
-      if (waitCall.cellId !== cellId) {
-        continue;
-      }
-      this.#pendingWrappedWaitCallsByCallId.delete(waitCallId);
-      this.#wrappedWaitCallsByCallId.set(waitCallId, { commandCallId, cellId });
-      const pendingOutput = this.#pendingRawOutputItemsByCallId.get(waitCallId);
-      if (pendingOutput) {
-        this.#pendingRawOutputItemsByCallId.delete(waitCallId);
-        this.#handleRawToolOutput(pendingOutput);
-      }
-    }
-  }
-
-  #appendWrappedCommandOutput(callId: string, content: string): void {
-    if (!content) return;
-
-    const previousOutput = this.#wrappedCommandOutputByCallId.get(callId);
-    const completeOutput = this.#canonicalPrefilledRawCommandCallIds.delete(callId)
-      ? mergeOverlappingCommandOutput(previousOutput, content)
-      : appendCodexCommandOutput(previousOutput, content);
-    const delta = completeOutput.slice(previousOutput?.length ?? 0);
-    this.#wrappedCommandOutputByCallId.set(callId, completeOutput);
-    if (delta) {
-      this.emit({ type: 'tool_output', id: this.#visibleRawCallId(callId), content: delta });
-    }
-  }
-
-  #emitMissingRawAgentMessageText(item: Record<string, unknown>): void {
-    const rawText = item.type === 'message'
-      ? readAssistantMessageText(item)
-      : firstString(item.text, item.message);
-    const text = stripCodexMemoryCitationMarkup(rawText);
-    this.#emitMissingAssistantSegmentText(text);
-  }
-
-  #emitMissingAssistantSegmentText(text: string, itemId?: string): void {
-    this.#claimAssistantSegment(itemId);
-    const segmentId = itemId ?? this.#currentAssistantSegmentId;
-    const missingText = normalizeAgentMessageCompletionText(
-      text,
-      this.#currentAssistantSegmentText,
-    );
-    if (text) {
-      this.#currentAssistantSegmentText = text;
-      if (segmentId) {
-        this.#streamedAgentMessageTextById.set(segmentId, text);
-      }
-    }
-    if (!missingText) {
-      return;
-    }
-
-    this.#streamedAssistantTurnText += missingText;
-    this.emit({ type: 'text', content: missingText });
-  }
-
-  #emitMissingAgentMessageText(text: string, itemId: string): void {
-    const streamedText = this.#streamedAgentMessageTextById.get(itemId) ?? '';
-    const missingText = normalizeAgentMessageCompletionText(text, streamedText);
-    if (text) {
-      this.#streamedAgentMessageTextById.set(itemId, text);
-    }
-    if (!missingText) {
-      return;
-    }
-
-    this.#claimAssistantSegment(itemId);
-    this.#currentAssistantSegmentText = text;
-    this.#streamedAssistantTurnText += missingText;
-    this.emit({ type: 'text', content: missingText });
-  }
-
-  #emitMissingAssistantTurnText(text: string): void {
-    const missingText = normalizeAgentMessageCompletionText(
-      text,
-      this.#streamedAssistantTurnText,
-    );
-    if (!missingText) {
-      return;
-    }
-
-    this.#streamedAssistantTurnText += missingText;
-    this.#currentAssistantSegmentText += missingText;
-    if (this.#currentAssistantSegmentId) {
-      this.#streamedAgentMessageTextById.set(
-        this.#currentAssistantSegmentId,
-        this.#currentAssistantSegmentText,
-      );
-    }
-    this.emit({ type: 'text', content: missingText });
-  }
-
-  #consumeRawToolOutput(callId: string): RawToolResult | undefined {
-    const result = this.#rawToolOutputsByCallId.get(callId);
-    this.#rawToolOutputsByCallId.delete(callId);
-    return result;
-  }
-
-  #flushPendingRawToolOutputs(): void {
-    for (const [callId, result] of this.#rawToolOutputsByCallId) {
-      this.emit({ type: 'tool_result', id: this.#visibleRawCallId(callId), ...result });
-    }
-    this.#rawToolOutputsByCallId.clear();
-  }
-
-  #flushDeferredRawExecCalls(terminalError = false): void {
-    for (const deferredExec of this.#deferredRawExecCalls.values()) {
-      if (this.#emitDeferredRawExecFallback(
-        deferredExec,
-        deferredExec.rawOutput,
-        true,
-        terminalError,
-        true,
-      )) {
-        continue;
-      }
-      this.#emitRawToolUse(
-        deferredExec.callId,
-        'exec',
-        deferredExec.item,
-        deferredExec.rawArguments,
-      );
-      this.emit({
-        type: 'tool_result',
-        id: deferredExec.callId,
-        content: '',
-        isError: terminalError,
-      });
-    }
-    this.#deferredRawExecCalls.clear();
-  }
-
-  #flushPendingWrappedWaitCalls(terminalError: boolean): void {
-    for (const [callId, waitCall] of this.#pendingWrappedWaitCallsByCallId) {
-      this.#pendingWrappedWaitCallsByCallId.delete(callId);
-      this.#emitRawToolUse(callId, 'wait', waitCall.item, waitCall.rawArguments);
-      const pendingOutput = this.#pendingRawOutputItemsByCallId.get(callId);
-      if (pendingOutput) {
-        this.#pendingRawOutputItemsByCallId.delete(callId);
-        this.#handleRawToolOutput(pendingOutput);
-      } else {
-        this.#emittedImmediateToolResultIds.add(callId);
-        this.emit({ type: 'tool_result', id: callId, content: '', isError: terminalError });
-      }
-    }
-  }
-
-  #flushInFlightRawTools(isError: boolean): void {
-    const yieldedCommandCallIds = new Set(this.#wrappedCommandCallIdsByCellId.values());
-    for (const callId of yieldedCommandCallIds) {
-      if (this.#emittedImmediateToolResultIds.has(callId)) {
-        continue;
-      }
-      this.#emittedImmediateToolResultIds.add(callId);
-      this.emit({
-        type: 'tool_result',
-        id: this.#visibleRawCallId(callId),
-        content: this.#wrappedCommandOutputByCallId.get(callId) ?? '',
-        isError,
-      });
-    }
-    for (const callId of this.#immediateRawOutputCallIds) {
-      if (this.#emittedImmediateToolResultIds.has(callId)) {
-        continue;
-      }
-      this.#emittedImmediateToolResultIds.add(callId);
-      this.emit({
-        type: 'tool_result',
-        id: this.#visibleRawCallId(callId),
-        content: '',
-        isError,
-      });
-    }
-    for (const callId of this.#inFlightRawFunctionCallIds) {
-      if (this.#emittedImmediateToolResultIds.has(callId)) {
-        continue;
-      }
-      this.#emittedImmediateToolResultIds.add(callId);
-      this.emit({
-        type: 'tool_result',
-        id: this.#visibleRawCallId(callId),
-        content: '',
-        isError,
-      });
-    }
-    this.#wrappedCommandCallIdsByCellId.clear();
-    this.#wrappedCommandOutputByCallId.clear();
-    this.#wrappedWaitCallsByCallId.clear();
-    this.#withheldExecCellIds.clear();
-    this.#withheldOutputCallIds.clear();
-    this.#pendingWrappedWaitCallsByCallId.clear();
-    this.#inFlightRawFunctionCallIds.clear();
-    this.#immediateRawOutputCallIds.clear();
-  }
-
-  #emitDeferredRawExecFallback(
-    deferredExec: DeferredRawExecCall,
-    rawOutput?: unknown,
-    emitResult = false,
-    terminalError = false,
-    turnEnded = false,
-  ): boolean {
-    if (deferredExec.expectedCalls.length === 0) {
-      return false;
-    }
-
-    const rawOutputText = stringifyCodexToolOutput(rawOutput);
-    deferredExec.expectedCalls.forEach((call, index) => {
-      if (call.claimed) {
-        // Native completion carries search sources and withheld command output;
-        // script output closes those only when the turn ends.
-        if (emitResult && !call.canonicalCompleted && call.canonicalItemId
-          && (turnEnded || (call.name !== 'WebSearch' && !deferredExec.withholdsRawOutput))) {
-          this.#completedCanonicalToolItemIds.add(call.canonicalItemId);
-          this.emit({
-            type: 'tool_result',
-            id: call.canonicalItemId,
-            content: deferredExec.withholdsRawOutput ? '' : normalizeRawToolOutput(call.name, rawOutput, call.input),
-            isError: isCodexToolOutputError(rawOutputText)
-              || (terminalError && !deferredExec.hasRawOutput),
-          });
-          call.canonicalCompleted = true;
-        }
-        return;
-      }
-      const fallbackId = deferredExec.expectedCalls.length === 1
-        ? deferredExec.callId
-        : `${deferredExec.callId}:${index + 1}`;
-      if (!call.fallbackId) {
-        this.#resetAssistantSegmentText();
-        this.emit({ type: 'tool_use', id: fallbackId, name: call.name, input: call.input });
-        if (this.streamRawExecCalls) call.fallbackId = fallbackId;
-      }
-      if (emitResult) {
-        this.emit({
-          type: 'tool_result',
-          id: fallbackId,
-          content: deferredExec.withholdsRawOutput ? '' : normalizeRawToolOutput(call.name, rawOutput, call.input),
-          isError: isCodexToolOutputError(rawOutputText)
-            || (terminalError && !deferredExec.hasRawOutput),
-        });
-      }
-    });
-    return true;
-  }
-
-  #claimDeferredRawExecFromItem(
-    item: ItemStartedNotification['item'],
-    completed: boolean,
-  ): boolean {
+  /** Returns whether a deferred script call owns this canonical item. */
+  #claimDeferredItem(item: ItemStartedNotification['item'], completed: boolean): boolean {
     const projection = item.type === 'fileChange'
-      ? {
-          itemId: item.id,
-          name: 'apply_patch',
-          input: this.#rememberFileChangeInput(
-            item.id,
-            buildFileChangeInput(item.changes ?? []),
-          ),
-        }
+      ? { itemId: item.id, name: 'apply_patch', input: this.#rememberFileChangeInput(item.id, item.changes) }
       : buildCanonicalToolProjection(item, this.workingDirectory);
-    if (!projection) {
-      return false;
-    }
-    const claimed = this.#registerCanonicalToolProjection(projection, completed);
-    if (claimed) {
-      this.#deferredOwnedCanonicalItemIds.add(projection.itemId);
-    }
-    return claimed || this.#deferredOwnedCanonicalItemIds.has(projection.itemId);
+    return projection ? this.#deferred.claimItem(projection, completed) : false;
   }
 
-  #registerCanonicalToolProjection(
-    projection: CanonicalToolProjection,
-    completed = false,
-  ): boolean {
-    if (this.#projectedCanonicalItemIds.has(projection.itemId)) {
-      if (!this.#activeCanonicalToolProjections.has(projection.itemId)) {
-        return false;
-      }
-      if (this.#claimDeferredRawExec(
-        projection.name,
-        projection.input,
-        projection.comparisonInput,
-        projection.itemId,
-        completed,
-      )) {
-        this.#activeCanonicalToolProjections.delete(projection.itemId);
-        return true;
-      } else {
-        this.#activeCanonicalToolProjections.set(projection.itemId, projection);
-      }
-      return false;
-    }
-    this.#projectedCanonicalItemIds.add(projection.itemId);
-    const claimed = this.#claimDeferredRawExec(
-      projection.name,
-      projection.input,
-      projection.comparisonInput,
-      projection.itemId,
-      completed,
-    );
-    if (!claimed) {
-      this.#activeCanonicalToolProjections.set(projection.itemId, projection);
-    }
-    return claimed;
-  }
-
-  #claimActiveCanonicalProjections(): void {
-    for (const [itemId, projection] of this.#activeCanonicalToolProjections) {
-      if (this.#claimDeferredRawExec(
-        projection.name,
-        projection.input,
-        projection.comparisonInput,
-        itemId,
-        this.#completedCanonicalToolItemIds.has(itemId),
-        this.#completedCanonicalToolItemIds.has(itemId),
-      )) {
-        this.#activeCanonicalToolProjections.delete(itemId);
-        this.#deferredOwnedCanonicalItemIds.add(itemId);
-        const unmatchedCommandIndex = this.#unmatchedCanonicalCommands
-          .findIndex(command => command.itemId === itemId);
-        if (unmatchedCommandIndex !== -1) {
-          this.#unmatchedCanonicalCommands.splice(unmatchedCommandIndex, 1);
-        }
-      }
-    }
-  }
-
-  #claimDeferredRawExec(
-    name: string,
-    input: Record<string, unknown>,
-    comparisonInput = input,
-    canonicalItemId?: string,
-    canonicalCompleted = false,
-    requireSameId = false,
-  ): boolean {
-    const projectedName = semanticToolName(name);
-    const availableCalls = [...this.#deferredRawExecCalls.values()].flatMap(deferredExec => (
-      deferredExec.expectedCalls
-        .filter(call => !call.claimed && call.name === projectedName)
-        .map(expectedCall => ({ deferredExec, expectedCall }))
-    ));
-    const sameIdCalls = canonicalItemId
-      ? availableCalls.filter(({ deferredExec }) => deferredExec.callId === canonicalItemId)
-      : [];
-    const compatibleCalls = (
-      sameIdCalls.length > 0
-        ? sameIdCalls
-        : requireSameId
-          ? []
-          : availableCalls
-    )
-      .filter(({ expectedCall }) => toolInputsCompatible(
-        projectedName,
-        expectedCall.comparisonInput ?? expectedCall.input,
-        comparisonInput,
-        this.workingDirectory,
-      ));
-    const match = sameIdCalls.length === 1
-      ? sameIdCalls[0]
-      : compatibleCalls.length === 1
-        ? compatibleCalls[0]
-        : undefined;
-    if (!match) {
-      return false;
-    }
-
-    const { deferredExec, expectedCall } = match;
-    // Native web actions abbreviate the request ("first query ...", openPage, other); keep the requested one.
-    if (projectedName === 'WebSearch' && canonicalItemId) {
-      this.#rawToolInputsByCallId.set(canonicalItemId, expectedCall.input);
-      if (this.#seenWebSearchIds.has(canonicalItemId)) {
-        this.emit({ type: 'tool_use', id: canonicalItemId, name: 'WebSearch', input: expectedCall.input });
-      }
-    }
-    if (expectedCall.fallbackId && canonicalItemId) this.rawExecAliases.set(canonicalItemId, expectedCall.fallbackId);
-    expectedCall.claimed = true;
-    expectedCall.canonicalItemId = canonicalItemId;
-    expectedCall.canonicalCompleted = canonicalCompleted;
+  #ensureCanonicalToolUseFromCompletion(item: ItemCompletedNotification['item']): void {
+    const itemId = getItemId(item);
     if (
-      deferredExec.hasRawOutput
-      && deferredExec.expectedCalls.every(call => (
-        call.claimed && call.canonicalCompleted
-      ))
+      !itemId
+      || !isCanonicalToolItem(item)
+      || this.#ledger.canonicalStartedIds.has(itemId)
     ) {
-      this.#deferredRawExecCalls.delete(deferredExec.callId);
+      return;
     }
-    return true;
-  }
-
-  #markDeferredCanonicalCompleted(itemId: string): void {
-    for (const deferredExec of this.#deferredRawExecCalls.values()) {
-      const claimedCall = deferredExec.expectedCalls.find(call => (
-        call.canonicalItemId === itemId
-      ));
-      if (claimedCall) {
-        claimedCall.canonicalCompleted = true;
-        if (
-          deferredExec.hasRawOutput
-          && deferredExec.expectedCalls.every(call => (
-            call.claimed && call.canonicalCompleted
-          ))
-        ) {
-          this.#deferredRawExecCalls.delete(deferredExec.callId);
-        }
-        return;
-      }
-    }
-  }
-
-  // -- commandExecution -------------------------------------------------------
-
-  #claimPendingRawCommand(item: CommandExecutionItem): RawCommandProjection | undefined {
-    const rawAction = readCanonicalCommand(item);
-    const workingDirectory = normalizeWorkingDirectory(item.cwd, this.workingDirectory);
-    let index = this.#unmatchedRawCommands.findIndex(command => command.callId === item.id);
-    if (index === -1) {
-      const matchingIndexes = this.#unmatchedRawCommands
-        .map((command, candidateIndex) => ({ command, candidateIndex }))
-        .filter(({ command }) => (
-          (command.command === rawAction || command.command === item.command)
-          && command.workingDirectory === workingDirectory
-        ));
-      if (matchingIndexes.length === 1) {
-        index = matchingIndexes[0]?.candidateIndex ?? -1;
-      }
-    }
-    if (index === -1) {
-      return undefined;
-    }
-
-    const [command] = this.#unmatchedRawCommands.splice(index, 1);
-    if (!command) {
-      return undefined;
-    }
-    this.#rawCommandByCanonicalId.set(item.id, command);
-    return command;
-  }
-
-  #takeUniqueCanonicalCommand(
-    command: string,
-    workingDirectory?: string,
-  ): CanonicalCommandProjection | undefined {
-    const matches = this.#unmatchedCanonicalCommands
-      .map((candidate, index) => ({ candidate, index }))
-      .filter(({ candidate }) => (
-        candidate.commands.includes(command)
-        && candidate.workingDirectory === workingDirectory
-      ));
-    if (matches.length !== 1) {
-      return undefined;
-    }
-
-    const match = matches[0];
-    if (!match) {
-      return undefined;
-    }
-    this.#unmatchedCanonicalCommands.splice(match.index, 1);
-    return match.candidate;
-  }
-
-  #readRawCommandWorkingDirectory(
-    rawName: string,
-    rawArguments: Record<string, unknown>,
-  ): string | undefined {
-    let commandInput = rawArguments;
-    if (rawName === 'exec') {
-      const calls = decodeCodexExecEnvelopeCalls(rawArguments);
-      const commandCall = calls?.length === 1 && calls[0]?.name === 'Bash'
-        ? calls[0]
-        : undefined;
-      commandInput = commandCall?.rawInput ?? {};
-    }
-
-    const rawWorkingDirectory = firstString(
-      commandInput.workdir,
-      commandInput.cwd,
-      commandInput.workingDirectory,
-    );
-    if (rawWorkingDirectory) {
-      return this.workingDirectory
-        ? path.resolve(this.workingDirectory, rawWorkingDirectory)
-        : normalizeWorkingDirectory(rawWorkingDirectory);
-    }
-    return normalizeWorkingDirectory(this.workingDirectory);
-  }
-
-  #visibleRawCallId(callId: string): string {
-    for (const projection of this.#rawCommandByCanonicalId.values()) {
-      if (projection.callId === callId) {
-        return projection.visibleId;
-      }
-    }
-    return callId;
-  }
-
-  #completeCommand(
-    item: CommandExecutionItem,
-    allowRawCorrelation = true,
-    resolvedRawCommand?: RawCommandProjection,
-  ): void {
-    const rawCommand = resolvedRawCommand
-      ?? this.#rawCommandByCanonicalId.get(item.id)
-      ?? (allowRawCorrelation ? this.#claimPendingRawCommand(item) : undefined);
-    const unmatchedCanonicalIndex = this.#unmatchedCanonicalCommands
-      .findIndex(command => command.itemId === item.id);
-    if (unmatchedCanonicalIndex !== -1) {
-      this.#unmatchedCanonicalCommands.splice(unmatchedCanonicalIndex, 1);
-    }
-    if (rawCommand?.rawOwnsCompletion) {
+    this.#ledger.canonicalStartedIds.add(itemId);
+    if (this.#ledger.rawStartedIds.has(itemId)) {
       return;
     }
 
-    const resultId = rawCommand?.visibleId ?? item.id;
-    const rawResult = rawCommand
-      ? this.#consumeRawToolOutput(rawCommand.callId)
-      : this.#consumeRawToolOutput(item.id);
-    this.#emitToolResultFromCommand(item, rawResult, resultId);
-    this.#canonicalCommandOutputByItemId.delete(item.id);
-    if (rawCommand) {
-      this.#wrappedCommandOutputByCallId.delete(rawCommand.callId);
-      this.#canonicalPrefilledRawCommandCallIds.delete(rawCommand.callId);
+    switch (item.type) {
+      case 'fileChange':
+        this.#emitFileChangeToolUse(item);
+        break;
+      case 'imageView':
+        this.#emitImageViewToolUse(item);
+        break;
+      case 'webSearch':
+        this.#emitWebSearchToolUse(item);
+        break;
+      case 'collabAgentToolCall':
+        this.#emitCollabAgentToolUse(item);
+        break;
+      case 'mcpToolCall':
+        this.#emitMCPToolUse(item);
+        break;
+      case 'dynamicToolCall':
+        this.#emitDynamicToolUse(item);
+        break;
+      default:
+        break;
     }
-    if (rawCommand) {
-      this.#ignoredLateRawOutputCallIds.add(rawCommand.callId);
-    }
   }
 
-  #emitToolUseFromCommand(item: CommandExecutionItem): void {
-    const rawAction = item.commandActions?.[0]?.command ?? item.command;
-    const normalizedName = normalizeCodexToolName('command_execution');
-    const input = normalizeCodexToolInput('command_execution', { command: rawAction });
+  // -- canonical tool items ---------------------------------------------------
 
-    this.#resetAssistantSegmentText();
-    this.emit({ type: 'tool_use', id: item.id, name: normalizedName, input });
+  #emitCommandToolUse(item: CommandExecutionItem): void {
+    this.#emitToolUse({ type: 'tool_use', id: item.id, ...projectCommandToolUse(item) });
   }
 
-  #emitToolResultFromCommand(
-    item: CommandExecutionItem,
-    rawResult?: RawToolResult,
-    resultId = item.id,
-  ): void {
-    const normalizedName = normalizeCodexToolName('command_execution');
-    const output = item.aggregatedOutput ?? '';
-    const content = rawResult?.content ?? normalizeCodexToolResult(normalizedName, output);
-    const isError = item.exitCode !== null
-      ? item.exitCode !== 0
-      : rawResult?.isError ?? isCodexToolOutputError(output);
-
-    this.emit({ type: 'tool_result', id: resultId, content, isError });
+  #rememberFileChangeInput(itemId: string, changes: unknown): Record<string, unknown> {
+    return this.#ledger.rememberFileChangeInput(itemId, buildFileChangeInput(changes ?? []));
   }
 
-  // -- fileChange -------------------------------------------------------------
-
-  #emitToolUseFromFileChange(item: FileChangeItem): void {
-    const input = this.#rememberFileChangeInput(
-      item.id,
-      buildFileChangeInput(item.changes ?? []),
-    );
-
-    this.#resetAssistantSegmentText();
-    this.emit({
+  #emitFileChangeToolUse(item: FileChangeItem): void {
+    this.#emitToolUse({
       type: 'tool_use',
       id: item.id,
-      name: normalizeCodexToolName('file_change'),
-      input,
-    });
-  }
-
-  #emitToolResultFromFileChange(item: FileChangeItem): void {
-    const input = this.#rememberFileChangeInput(
-      item.id,
-      buildFileChangeInput(item.changes ?? []),
-    );
-    const changes = Array.isArray(input.changes) ? input.changes : [];
-    const paths = changes
-      .map(change => formatFileChangeSummary(change))
-      .filter(Boolean)
-      .join(', ');
-    this.emit({
-      type: 'tool_result',
-      id: item.id,
-      content: paths || 'File change completed',
-      isError: item.status === 'failed' || item.status === 'declined',
+      name: FILE_CHANGE_TOOL_NAME,
+      input: this.#rememberFileChangeInput(item.id, item.changes),
     });
   }
 
@@ -1586,221 +500,68 @@ export class CodexNotificationRouter {
       return;
     }
 
-    const input = this.#rememberFileChangeInput(
-      itemId,
-      buildFileChangeInput(params.changes ?? []),
-    );
-    const claimed = this.#registerCanonicalToolProjection(
-      { itemId, name: 'apply_patch', input },
-      false,
-    );
-    if (claimed) {
-      this.#deferredOwnedCanonicalItemIds.add(itemId);
-    }
-    this.#startedCanonicalToolItemIds.add(itemId);
-
-    this.#resetAssistantSegmentText();
-    this.emit({
-      type: 'tool_use',
-      id: itemId,
-      name: normalizeCodexToolName('file_change'),
-      input,
-    });
-    this.#flushPendingCanonicalToolOutput(itemId);
+    const input = this.#rememberFileChangeInput(itemId, params.changes);
+    this.#deferred.claimItem({ itemId, name: 'apply_patch', input }, false);
+    this.#ledger.canonicalStartedIds.add(itemId);
+    this.#emitToolUse({ type: 'tool_use', id: itemId, name: FILE_CHANGE_TOOL_NAME, input });
+    this.#commands.flushPendingOutput(itemId);
   }
 
-  #rememberFileChangeInput(
-    itemId: string,
-    input: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const previous = this.#fileChangeInputsById.get(itemId);
-    const merged = mergeApplyPatchInputs(previous, input);
-    this.#fileChangeInputsById.set(itemId, merged);
-    return merged;
+  #emitImageViewToolUse(item: ImageViewItem): void {
+    this.#emitToolUse({ type: 'tool_use', id: item.id, ...projectImageViewToolUse(item) });
   }
 
-  // -- imageView --------------------------------------------------------------
-
-  #emitToolUseFromImageView(item: ImageViewItem): void {
-    this.#resetAssistantSegmentText();
-    this.emit({
-      type: 'tool_use',
-      id: item.id,
-      name: normalizeCodexToolName('view_image'),
-      input: normalizeCodexToolInput('view_image', { path: item.path }),
-    });
-  }
-
-  #emitToolResultFromImageView(item: ImageViewItem): void {
-    this.emit({ type: 'tool_result', id: item.id, content: item.path, isError: false });
-  }
-
-  // -- webSearch --------------------------------------------------------------
-
-  #emitToolUseFromWebSearch(item: WebSearchItem, started = false): void {
+  #emitWebSearchToolUse(item: WebSearchItem, started = false): void {
     if (this.#seenWebSearchIds.has(item.id)) return;
-    const input = this.#rawToolInputsByCallId.get(item.id) ?? normalizeCodexToolInput('web_search', {
-      query: item.query ?? '',
-      queries: item.queries ?? [],
-      url: item.url ?? '',
-      pattern: item.pattern ?? '',
-      action: item.action ?? {},
-    });
+    const input = this.#ledger.requestedInputs.get(item.id) ?? normalizeCodexWebSearchInput(item);
     // Native searches start before their request is known. Publishing then would
     // leave an empty card beside the raw exec card that completion later claims.
-    if (started && !['query', 'url', 'pattern', 'actions', 'requests'].some(key => key in input)) return;
+    if (started && !hasWebSearchRequest(input)) return;
     this.#seenWebSearchIds.add(item.id);
-
-    this.#resetAssistantSegmentText();
-    this.emit({ type: 'tool_use', id: item.id, name: 'WebSearch', input });
+    this.#emitToolUse({ type: 'tool_use', id: item.id, name: 'WebSearch', input });
   }
 
-  #emitToolResultFromWebSearch(item: WebSearchItem): void {
-    this.emit({
-      type: 'tool_result',
-      id: item.id,
-      content: 'Search complete',
-      isError: item.status === 'failed' || item.status === 'error',
-      ...(Array.isArray(item.results) ? { toolUseResult: { webSearchResults: item.results } } : {}),
-    });
+  /** A deferred script call's request replaces the abbreviated native web action. */
+  #adoptRequestedWebSearch(itemId: string, requestedInput: Record<string, unknown>): void {
+    this.#ledger.requestedInputs.set(itemId, requestedInput);
+    if (this.#seenWebSearchIds.has(itemId)) {
+      this.#emit({ type: 'tool_use', id: itemId, name: 'WebSearch', input: requestedInput });
+    }
   }
 
-  // -- collabAgentToolCall ----------------------------------------------------
-
-  #emitToolUseFromCollabAgent(item: CollabAgentToolCallItem): void {
-    const toolName = COLLAB_AGENT_TOOL_MAP[item.tool] ?? item.tool;
-    this.#resetAssistantSegmentText();
-    this.emit({
+  #emitCollabAgentToolUse(item: CollabAgentToolCallItem): void {
+    this.#emitToolUse({
       type: 'tool_use',
       id: item.id,
-      name: toolName,
-      input: normalizeCodexToolInput(toolName, { ...this.#rawToolInputsByCallId.get(item.id), ...getCollabAgentInput(item) }),
+      ...projectCollabAgentToolUse(item, this.#ledger.requestedInputs.get(item.id)),
     });
   }
 
-  #emitToolResultFromCollabAgent(item: CollabAgentToolCallItem, rawResult?: RawToolResult): void {
-    this.emit({
-      type: 'tool_result',
-      id: item.id,
-      content: getCollabAgentResult(item, rawResult),
-      isError: rawResult?.isError || item.status === 'failed' || item.status === 'error',
-    });
+  #emitMCPToolUse(item: MCPToolCallItem): void {
+    this.#emitToolUse({ type: 'tool_use', id: item.id, ...projectMCPToolUse(item) });
   }
 
-  // -- mcpToolCall ------------------------------------------------------------
-
-  #emitToolUseFromMcp(item: MCPToolCallItem): void {
-    this.#resetAssistantSegmentText();
-    this.emit({
-      type: 'tool_use',
-      id: item.id,
-      name: `mcp__${item.server}__${item.tool}`,
-      input: item.arguments ?? {},
-    });
+  #emitDynamicToolUse(item: DynamicToolCallItem): void {
+    this.#raw.startCall(item.id, item.tool, asRecord(item.arguments) ?? {}, true);
   }
 
-  #emitToolResultFromMcp(item: MCPToolCallItem): void {
-    let content = '';
-    if (item.error) {
-      content = item.error;
-    } else if (item.result?.content) {
-      content = item.result.content
-        .map(c => c.text ?? '')
-        .filter(Boolean)
-        .join('\n');
-    }
-    if (!content) {
-      content = item.status === 'completed' ? 'Completed' : 'Failed';
-    }
-
-    this.emit({
-      type: 'tool_result',
-      id: item.id,
-      content,
-      isError: item.status === 'failed' || item.status === 'error',
-    });
+  #emitDynamicToolResult(item: DynamicToolCallItem): void {
+    if (this.#ledger.emittedResultIds.has(item.id)) return;
+    this.#ledger.emittedResultIds.add(item.id);
+    this.#emit({ type: 'tool_result', id: item.id, ...projectDynamicToolResult(item) });
   }
 
-  // -- dynamicToolCall --------------------------------------------------------
-
-  #emitToolUseFromDynamic(item: DynamicToolCallItem): void {
-    this.#emitRawToolUse(
-      item.id,
-      item.tool,
-      {},
-      asRecord(item.arguments) ?? {},
-      true,
-    );
-  }
-
-  #ensureCanonicalToolUseFromCompletion(
-    item: ItemCompletedNotification['item'],
-  ): void {
-    const itemId = getItemId(item);
-    if (
-      !itemId
-      || !isCanonicalToolItem(item)
-      || this.#startedCanonicalToolItemIds.has(itemId)
-    ) {
-      return;
-    }
-    this.#startedCanonicalToolItemIds.add(itemId);
-    if (this.#rawStartedCallIds.has(itemId)) {
-      return;
-    }
-
-    switch (item.type) {
-      case 'fileChange':
-        this.#emitToolUseFromFileChange(item);
-        break;
-      case 'imageView':
-        this.#emitToolUseFromImageView(item);
-        break;
-      case 'webSearch':
-        this.#emitToolUseFromWebSearch(item);
-        break;
-      case 'collabAgentToolCall':
-        this.#emitToolUseFromCollabAgent(item);
-        break;
-      case 'mcpToolCall':
-        this.#emitToolUseFromMcp(item);
-        break;
-      case 'dynamicToolCall':
-        this.#emitToolUseFromDynamic(item);
-        break;
-      default:
-        break;
-    }
-  }
-
-  #emitToolResultFromDynamic(item: DynamicToolCallItem): void {
-    if (this.#emittedImmediateToolResultIds.has(item.id)) return;
-    this.#emittedImmediateToolResultIds.add(item.id);
-
-    const content = (item.contentItems ?? [])
-      .map(contentItem => contentItem.type === 'inputText'
-        ? contentItem.text
-        : contentItem.imageUrl)
-      .filter(Boolean)
-      .join('\n');
-    this.emit({
-      type: 'tool_result',
-      id: item.id,
-      content: content || (item.success === false ? 'Failed' : 'Completed'),
-      isError: item.success === false || item.status === 'failed',
-    });
-  }
-
-  #emitContextCompactionBoundary(_item: ContextCompactionItem): void {
-    this.emit({ type: 'context_compacted' });
-  }
+  // -- messages ---------------------------------------------------------------
 
   #emitUserMessageBoundary(item: UserMessageItem): void {
     if (this.#startedUserMessageIds.has(item.id)) {
       return;
     }
 
-    const rawContent = this.#extractUserMessageText(item.content);
+    const rawContent = joinCodexUserTextParts(
+      item.content.map((part) => (part.type === 'text' ? part.text : '')),
+      '\n\n',
+    );
     const visibleContent = extractCodexUserVisibleText(rawContent);
     const isQuestionReply = parseCodexQuestionReply(rawContent).length > 0;
     this.#startedUserMessageIds.add(item.id);
@@ -1809,7 +570,7 @@ export class CodexNotificationRouter {
       return;
     }
 
-    this.emit({
+    this.#emit({
       type: 'user_message_start',
       itemId: item.id,
       content: visibleContent ?? (isQuestionReply ? '' : rawContent),
@@ -1818,64 +579,13 @@ export class CodexNotificationRouter {
 
   #handleAsyncQuestion(item: AgentMessageItem, completed: boolean): boolean {
     if (item.delivery !== 'async' || !Array.isArray(item.questions) || item.questions.length === 0) return false;
-    this.#emitRawToolUse(item.id, 'request_user_input_async', {}, { questions: item.questions });
-    if (completed && !this.#emittedImmediateToolResultIds.has(item.id)) {
-      this.#emittedImmediateToolResultIds.add(item.id);
-      this.#rawToolOutputsByCallId.delete(item.id);
-      this.emit({ type: 'tool_result', id: item.id, content: 'Question sent. Awaiting your reply.', isError: false });
+    this.#raw.startCall(item.id, 'request_user_input_async', { questions: item.questions });
+    if (completed && !this.#ledger.emittedResultIds.has(item.id)) {
+      this.#ledger.emittedResultIds.add(item.id);
+      this.#ledger.pendingRawResults.delete(item.id);
+      this.#emit({ type: 'tool_result', id: item.id, content: CODEX_ASYNC_QUESTION_RESULT, isError: false });
     }
     return true;
-  }
-
-  #emitAgentMessageBoundary(item: AgentMessageItem): void {
-    if (this.#startedAgentMessageIds.has(item.id)) {
-      return;
-    }
-
-    this.#startedAgentMessageIds.add(item.id);
-    this.#claimAssistantSegment(item.id);
-    this.emit({ type: 'assistant_message_start', itemId: item.id });
-  }
-
-  #completeAgentMessage(item: AgentMessageItem): void {
-    if (!this.#startedAgentMessageIds.has(item.id)) {
-      this.#emitAgentMessageBoundary(item);
-    }
-
-    const visibleText = stripCodexMemoryCitationMarkup(item.text);
-    if (visibleText) {
-      this.#emitMissingAgentMessageText(visibleText, item.id);
-    }
-
-    this.#emitMemoryCitation(item.memoryCitation, item.id);
-  }
-
-  #emitMemoryCitation(value: unknown, itemId?: string): void {
-    if (itemId && this.#emittedMemoryCitationIds.has(itemId)) {
-      return;
-    }
-    const citations = normalizeCodexMemoryCitation(value);
-    if (!citations) {
-      return;
-    }
-
-    if (itemId) {
-      this.#emittedMemoryCitationIds.add(itemId);
-    }
-    const citationKey = buildMemoryCitationKey(citations);
-    if (this.#emittedMemoryCitationKeys.has(citationKey)) {
-      return;
-    }
-
-    this.#emittedMemoryCitationKeys.add(citationKey);
-    this.emit({ type: 'citations', citations });
-  }
-
-  #extractUserMessageText(content: UserInput[]): string {
-    return joinCodexUserTextParts(
-      content.map((part) => (part.type === 'text' ? part.text : '')),
-      '\n\n',
-    );
   }
 
   // -- turn/plan/updated (update_plan) ----------------------------------------
@@ -1883,749 +593,32 @@ export class CodexNotificationRouter {
   #onPlanUpdated(params: TurnPlanUpdatedNotification): void {
     this.#planUpdateCounter += 1;
     const syntheticId = `plan-update-${params.turnId ?? 'turn'}-${this.#planUpdateCounter}`;
-    const PLAN_STATUS_MAP: Record<string, string> = {
-      inProgress: 'in_progress',
-      in_progress: 'in_progress',
-    };
-
-    const todos = params.plan.map(item => ({
-      id: '',
-      content: item.step,
-      activeForm: item.step,
-      status: PLAN_STATUS_MAP[item.status] ?? item.status,
-    }));
-
-    const projectionInput = {
-      todos,
-      ...(params.explanation ? { explanation: params.explanation } : {}),
-    };
-    this.#claimDeferredRawExec(
-      'TodoWrite',
-      projectionInput,
-      projectionInput,
-      syntheticId,
-      true,
-    );
-
-    this.#resetAssistantSegmentText();
-    this.emit({ type: 'tool_use', id: syntheticId, name: 'TodoWrite', input: { todos } });
-    this.emit({ type: 'tool_result', id: syntheticId, content: 'Plan updated', isError: false });
+    const { input, requestInput } = projectPlanUpdate(params);
+    this.#deferred.claimPlanUpdate(syntheticId, requestInput);
+    this.#emitToolUse({ type: 'tool_use', id: syntheticId, name: 'TodoWrite', input });
+    this.#emit({ type: 'tool_result', id: syntheticId, content: 'Plan updated', isError: false });
   }
 
-  // -- outputDelta (commandExecution + fileChange) ----------------------------
+  // -- turn end ---------------------------------------------------------------
 
-  #onOutputDelta(
-    params: { itemId: string; delta: string },
-    isCommandOutput: boolean,
-  ): void {
-    const rawCommand = this.#rawCommandByCanonicalId.get(params.itemId);
-    if (rawCommand?.rawOwnsCompletion) {
-      return;
-    }
-    if (isCommandOutput) {
-      const previousOutput = this.#canonicalCommandOutputByItemId.get(params.itemId) ?? '';
-      this.#canonicalCommandOutputByItemId.set(params.itemId, previousOutput + params.delta);
-    }
-    const lifecycleStarted = this.#startedCanonicalToolItemIds.has(params.itemId)
-      || this.#rawStartedCallIds.has(params.itemId)
-      || rawCommand !== undefined;
-    if (!lifecycleStarted) {
-      const pendingOutput = this.#pendingCanonicalToolOutputByItemId.get(params.itemId) ?? [];
-      pendingOutput.push(params.delta);
-      this.#pendingCanonicalToolOutputByItemId.set(params.itemId, pendingOutput);
-      return;
-    }
-    this.emit({
-      type: 'tool_output',
-      id: rawCommand?.visibleId ?? params.itemId,
-      content: params.delta,
-    });
-  }
-
-  #flushPendingCanonicalToolOutput(itemId: string): void {
-    const pendingOutput = this.#pendingCanonicalToolOutputByItemId.get(itemId);
-    if (!pendingOutput) {
-      return;
-    }
-    this.#pendingCanonicalToolOutputByItemId.delete(itemId);
-    const rawCommand = this.#rawCommandByCanonicalId.get(itemId);
-    if (rawCommand?.rawOwnsCompletion) {
-      return;
-    }
-    for (const content of pendingOutput) {
-      this.emit({
-        type: 'tool_output',
-        id: rawCommand?.visibleId ?? itemId,
-        content,
-      });
-    }
-  }
-
-  // -- tokenUsage / turnCompleted / error -------------------------------------
-
-  #onTokenUsageUpdated(params: TokenUsageUpdatedNotification): void {
-    const last = params.tokenUsage.last;
-    const contextTokens = last.inputTokens;
-    const reportedWindow = params.tokenUsage.modelContextWindow;
-    const contextWindow = typeof reportedWindow === 'number' && Number.isFinite(reportedWindow) && reportedWindow > 0
-      ? reportedWindow
-      : 0;
-
-    const usage: UsageInfo = {
-      inputTokens: last.inputTokens,
-      cacheCreationInputTokens: 0,
-      cacheReadInputTokens: last.cachedInputTokens,
-      contextWindow,
-      contextTokens,
-      percentage: contextWindow > 0 ? Math.min(100, Math.max(0, Math.round((contextTokens / contextWindow) * 100))) : 0,
-    };
-
-    this.emit({ type: 'usage', usage, sessionId: params.threadId });
+  #closeOpenTools(terminalError: boolean): void {
+    this.#deferred.flush(terminalError);
+    this.#raw.flush(terminalError);
   }
 
   #onTurnCompleted(params: TurnCompletedNotification): void {
     const turn = params.turn;
-
-    const terminalError = turn.status === 'failed';
-    this.#flushDeferredRawExecCalls(terminalError);
-    this.#flushPendingWrappedWaitCalls(terminalError);
-    this.#flushPendingRawToolOutputs();
-    this.#flushInFlightRawTools(terminalError);
+    this.#closeOpenTools(turn.status === 'failed');
     if (turn.status === 'failed' && turn.error) {
-      this.emit({ type: 'error', content: turn.error.message });
+      this.#emit({ type: 'error', content: turn.error.message });
     } else {
-      this.emit({ type: 'done' });
+      this.#emit({ type: 'done' });
     }
   }
 
   #onError(params: ErrorNotification): void {
     if (params.willRetry) return;
-    this.#flushDeferredRawExecCalls(true);
-    this.#flushPendingWrappedWaitCalls(true);
-    this.#flushPendingRawToolOutputs();
-    this.#flushInFlightRawTools(true);
-    this.emit({ type: 'error', content: params.error.message });
+    this.#closeOpenTools(true);
+    this.#emit({ type: 'error', content: params.error.message });
   }
-}
-
-interface CanonicalToolProjection {
-  itemId: string;
-  name: string;
-  input: Record<string, unknown>;
-  comparisonInput?: Record<string, unknown>;
-}
-
-function buildCanonicalToolProjection(
-  item: ItemStartedNotification['item'],
-  workingDirectory?: string,
-): CanonicalToolProjection | null {
-  switch (item.type) {
-    case 'commandExecution': {
-      const input = normalizeCodexToolInput('command_execution', {
-        command: readCanonicalCommand(item),
-      });
-      return {
-        itemId: item.id,
-        name: 'Bash',
-        input,
-        comparisonInput: {
-          ...input,
-          workingDirectory: resolveToolWorkingDirectory(item.cwd, workingDirectory),
-        },
-      };
-    }
-
-    case 'fileChange':
-      return {
-        itemId: item.id,
-        name: 'apply_patch',
-        input: buildFileChangeInput(item.changes ?? []),
-      };
-
-    case 'imageView':
-      return {
-        itemId: item.id,
-        name: 'Read',
-        input: normalizeCodexToolInput('view_image', { path: item.path }),
-      };
-
-    case 'webSearch':
-      return {
-        itemId: item.id,
-        name: 'WebSearch',
-        input: normalizeCodexToolInput('web_search', {
-          query: item.query ?? '',
-          queries: item.queries ?? [],
-          url: item.url ?? '',
-          pattern: item.pattern ?? '',
-          action: item.action ?? {},
-        }),
-      };
-
-    case 'collabAgentToolCall':
-      return {
-        itemId: item.id,
-        name: COLLAB_AGENT_TOOL_MAP[item.tool] ?? item.tool,
-        input: getCollabAgentInput(item),
-      };
-
-    case 'mcpToolCall':
-      return {
-        itemId: item.id,
-        name: `mcp__${item.server}__${item.tool}`,
-        input: item.arguments ?? {},
-      };
-
-    case 'dynamicToolCall': {
-      const normalized = normalizeCodexToolCall(
-        item.tool,
-        asRecord(item.arguments) ?? {},
-      );
-      return { itemId: item.id, ...normalized };
-    }
-
-    default:
-      return null;
-  }
-}
-
-function getCollabAgentResult(item: CollabAgentToolCallItem, rawResult?: RawToolResult): string {
-  // A failed tool request does not establish a new agent lifecycle state.
-  if (rawResult?.isError) return rawResult.content;
-  let rawRecord: Record<string, unknown> | null = null;
-  if (rawResult?.content) {
-    try {
-      rawRecord = asRecord(JSON.parse(rawResult.content));
-    } catch {
-      // Plain-text acknowledgements are retained alongside native state below.
-    }
-  }
-  const itemRecord = asRecord(item.result);
-  const result = { ...itemRecord, ...rawRecord };
-  // Raw answers can be richer than the native snapshot. Fill missing agents
-  // from native state without discarding acknowledgement or identity fields.
-  const statuses = { ...item.agentsStates, ...asRecord(itemRecord?.status), ...asRecord(rawRecord?.status) };
-  if (Object.keys(statuses).length) result.status = statuses;
-  if (item.tool === 'spawnAgent' && item.receiverThreadIds?.length === 1 && !result.agent_id) {
-    result.agent_id = item.receiverThreadIds[0];
-  }
-  const text = rawResult ? (rawRecord ? undefined : rawResult.content)
-    : typeof item.result === 'string' ? item.result : undefined;
-  if (Object.keys(result).length) {
-    if (text) result.output = text;
-    return JSON.stringify(result);
-  }
-  return text ?? rawResult?.content ?? (item.result !== undefined ? JSON.stringify(item.result)
-    : item.status === 'completed' ? 'Completed' : item.status ?? 'Done');
-}
-
-function getCollabAgentInput(item: CollabAgentToolCallItem): Record<string, unknown> {
-  return {
-    ...(item.prompt != null ? { message: item.prompt } : {}),
-    ...(item.model ? { model: item.model } : {}),
-    ...(item.reasoningEffort ? { reasoning_effort: item.reasoningEffort } : {}),
-    ...(item.tool !== 'spawnAgent' && item.receiverThreadIds?.length
-      ? { ids: item.receiverThreadIds } : {}),
-    ...item.arguments,
-  };
-}
-
-function readCanonicalCommand(item: CommandExecutionItem): string {
-  return item.commandActions?.[0]?.command ?? item.command;
-}
-
-function readCanonicalCommandCandidates(item: CommandExecutionItem): string[] {
-  return [...new Set([
-    readCanonicalCommand(item),
-    item.command,
-  ].filter(Boolean))];
-}
-
-function normalizeWorkingDirectory(
-  workingDirectory: string | undefined,
-  baseDirectory?: string,
-): string | undefined {
-  return workingDirectory
-    ? path.resolve(baseDirectory ?? '', workingDirectory)
-    : undefined;
-}
-
-function resolveToolWorkingDirectory(
-  workingDirectory: string | undefined,
-  baseDirectory?: string,
-): string | undefined {
-  return workingDirectory
-    ? normalizeWorkingDirectory(workingDirectory, baseDirectory)
-    : normalizeWorkingDirectory(baseDirectory);
-}
-
-function semanticToolName(name: string): string {
-  switch (name) {
-    case 'web__run':
-      return 'WebSearch';
-    case 'wait_agent':
-      return 'wait';
-    default:
-      return name;
-  }
-}
-
-function projectRawSemanticToolCall(
-  name: string,
-  input: Record<string, unknown>,
-  rawName?: string,
-  rawInput?: Record<string, unknown>,
-  workingDirectory?: string,
-): {
-  name: string;
-  input: Record<string, unknown>;
-  comparisonInput?: Record<string, unknown>;
-} {
-  if (rawName === 'update_plan') {
-    const explanation = firstString(rawInput?.explanation);
-    return {
-      name: 'TodoWrite',
-      input: {
-        ...input,
-        ...(explanation ? { explanation } : {}),
-      },
-    };
-  }
-  if (name === 'Bash') {
-    return {
-      name,
-      input,
-      comparisonInput: {
-        ...input,
-        workingDirectory: resolveToolWorkingDirectory(
-          firstString(
-            rawInput?.workdir,
-            rawInput?.cwd,
-            rawInput?.workingDirectory,
-          ),
-          workingDirectory,
-        ),
-      },
-    };
-  }
-  return { name: semanticToolName(name), input };
-}
-
-
-function toolInputsCompatible(
-  name: string,
-  expected: Record<string, unknown>,
-  actual: Record<string, unknown>,
-  workingDirectory?: string,
-): boolean {
-  if (name === 'apply_patch') {
-    const expectedChanges = extractRawPatchChanges(expected.patch, workingDirectory);
-    const actualChanges = extractCanonicalFileChanges(actual.changes, workingDirectory);
-    if (expectedChanges.length > 0 || actualChanges.length > 0) {
-      if (expectedChanges.some(change => change.kind === 'update' && !change.hasContext)) {
-        return false;
-      }
-      return stableValueKey(expectedChanges) === stableValueKey(actualChanges);
-    }
-  }
-
-  return codexToolRequestsMatch(name, expected, actual);
-}
-
-interface ComparedFileChange {
-  path: string;
-  kind: string;
-  movePath?: string;
-  lines: string[];
-  hasContext: boolean;
-}
-
-function extractRawPatchChanges(
-  value: unknown,
-  workingDirectory?: string,
-): ComparedFileChange[] {
-  if (typeof value !== 'string') {
-    return [];
-  }
-  const changes: ComparedFileChange[] = [];
-  let current: ComparedFileChange | undefined;
-  for (const line of value.split('\n')) {
-    const match = line.match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
-    if (match?.[1] && match[2]) {
-      if (current) {
-        changes.push(current);
-      }
-      current = {
-        path: normalizeComparedFilePath(match[2], workingDirectory),
-        kind: normalizeComparedChangeKind(match[1]),
-        lines: [],
-        hasContext: false,
-      };
-      continue;
-    }
-    const moveMatch = line.match(/^\*\*\* Move to: (.+)$/);
-    if (current && moveMatch?.[1]) {
-      current.movePath = normalizeComparedFilePath(moveMatch[1], workingDirectory);
-      continue;
-    }
-    if (!current || line.startsWith('+++ ') || line.startsWith('--- ')) {
-      continue;
-    }
-    if (line.startsWith('@@')) {
-      const anchor = extractRawPatchHunkAnchor(line);
-      if (anchor) {
-        current.lines.push(`@${anchor}`);
-        current.hasContext = true;
-      }
-    } else if (line.startsWith('+') || line.startsWith('-')) {
-      current.lines.push(line);
-    } else if (line.startsWith(' ')) {
-      current.lines.push(line);
-      current.hasContext = true;
-    }
-  }
-  if (current) {
-    changes.push(current);
-  }
-  return changes.sort(compareFileChanges);
-}
-
-function extractCanonicalFileChanges(
-  value: unknown,
-  workingDirectory?: string,
-): ComparedFileChange[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((change): ComparedFileChange | null => {
-      const record = asRecord(change);
-      const changePath = normalizeComparedFilePath(
-        firstString(record?.path),
-        workingDirectory,
-      );
-      if (!record || !changePath) {
-        return null;
-      }
-      const lines: string[] = [];
-      let hasContext = false;
-      for (const line of firstString(record.diff).split('\n')) {
-        if (line.startsWith('@@')) {
-          const anchor = extractCanonicalDiffHunkAnchor(line);
-          if (anchor) {
-            lines.push(`@${anchor}`);
-            hasContext = true;
-          }
-          continue;
-        }
-        if (
-          line.startsWith('+++ ')
-          || line.startsWith('--- ')
-        ) {
-          continue;
-        }
-        if (line.startsWith('+') || line.startsWith('-')) {
-          lines.push(line);
-        } else if (line.startsWith(' ')) {
-          lines.push(line);
-          hasContext = true;
-        }
-      }
-      const movePath = firstString(record.movePath);
-      return {
-        path: changePath,
-        kind: movePath
-          ? 'update'
-          : normalizeComparedChangeKind(firstString(record.kind, record.type)),
-        ...(movePath
-          ? {
-              movePath: normalizeComparedFilePath(
-                movePath,
-                workingDirectory,
-              ),
-            }
-          : {}),
-        lines,
-        hasContext,
-      };
-    })
-    .filter((change): change is ComparedFileChange => change !== null)
-    .sort(compareFileChanges);
-}
-
-function extractRawPatchHunkAnchor(line: string): string {
-  return line.slice(2).trim().replace(/\s*@@$/, '').trim();
-}
-
-function extractCanonicalDiffHunkAnchor(line: string): string {
-  const closingMarker = line.indexOf('@@', 2);
-  return closingMarker === -1 ? '' : line.slice(closingMarker + 2).trim();
-}
-
-function normalizeComparedChangeKind(kind: string): string {
-  switch (kind.toLowerCase()) {
-    case 'add':
-    case 'create':
-      return 'add';
-    case 'delete':
-    case 'remove':
-      return 'delete';
-    case 'modify':
-    case 'change':
-    case 'update':
-      return 'update';
-    default:
-      return kind.toLowerCase();
-  }
-}
-
-function compareFileChanges(first: ComparedFileChange, second: ComparedFileChange): number {
-  return first.path.localeCompare(second.path) || first.kind.localeCompare(second.kind);
-}
-
-function normalizeComparedFilePath(filePath: string, workingDirectory?: string): string {
-  const trimmedPath = filePath.trim();
-  if (!trimmedPath) {
-    return '';
-  }
-  return workingDirectory
-    ? path.resolve(workingDirectory, trimmedPath)
-    : path.normalize(trimmedPath);
-}
-
-function mergeOverlappingCommandOutput(previous: string | undefined, next: string): string {
-  if (!previous || !next) {
-    return previous || next;
-  }
-  if (next.startsWith(previous)) {
-    return next;
-  }
-  if (previous.endsWith(next)) {
-    return previous;
-  }
-  const maxOverlap = Math.min(previous.length, next.length);
-  for (let overlap = maxOverlap; overlap > 0; overlap -= 1) {
-    if (previous.endsWith(next.slice(0, overlap))) {
-      return previous + next.slice(overlap);
-    }
-  }
-  return appendCodexCommandOutput(previous, next);
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function firstString(...values: unknown[]): string {
-  for (const value of values) {
-    if (typeof value === 'string') {
-      return value;
-    }
-  }
-  return '';
-}
-
-function buildMemoryCitationKey(citations: CitationGroup): string {
-  return citations.entries
-    .map(entry => [entry.path, entry.lineStart, entry.lineEnd, entry.note].join('\0'))
-    .join('\u0001');
-}
-
-function getItemId(item: { id?: string } | Record<string, unknown>): string | undefined {
-  return typeof item.id === 'string' ? item.id : undefined;
-}
-
-function isCanonicalToolItem(item: ItemStartedNotification['item']): boolean {
-  return item.type === 'commandExecution'
-    || item.type === 'fileChange'
-    || item.type === 'imageView'
-    || item.type === 'webSearch'
-    || item.type === 'collabAgentToolCall'
-    || item.type === 'mcpToolCall'
-    || item.type === 'dynamicToolCall';
-}
-
-function readRawCallId(item: Record<string, unknown>): string {
-  return firstString(item.call_id, item.id);
-}
-
-function parseRawArguments(item: Record<string, unknown>): Record<string, unknown> {
-  const rawArgs = typeof item.arguments === 'string'
-    ? item.arguments
-    : typeof item.input === 'string'
-      ? item.input
-      : undefined;
-  return parseCodexArguments(rawArgs);
-}
-
-function isSilentWriteStdinInput(input: Record<string, unknown>): boolean {
-  return typeof input.chars !== 'string' || input.chars.length === 0;
-}
-
-function normalizeRawToolOutput(
-  normalizedName: string,
-  rawOutput: unknown,
-  input?: Record<string, unknown>,
-): string {
-  if (Array.isArray(rawOutput) && normalizedName === 'Read') {
-    const filePath = firstString(input?.file_path, input?.path);
-    if (filePath) {
-      return filePath;
-    }
-  }
-
-  return normalizeCodexToolResult(normalizedName, stringifyCodexToolOutput(rawOutput));
-}
-
-function buildFileChangeInput(changes: unknown): Record<string, unknown> {
-  return { changes: normalizeFileChanges(changes) };
-}
-
-function mergeApplyPatchInputs(
-  previous: Record<string, unknown> | undefined,
-  next: Record<string, unknown>,
-): Record<string, unknown> {
-  if (!previous) {
-    return next;
-  }
-
-  const patch = typeof next.patch === 'string'
-    ? next.patch
-    : typeof previous.patch === 'string'
-      ? previous.patch
-      : undefined;
-  const changes = mergeFileChanges(previous.changes, next.changes);
-  return {
-    ...previous,
-    ...next,
-    ...(patch ? { patch } : {}),
-    ...(changes.length > 0 ? { changes } : {}),
-  };
-}
-
-function normalizeFileChanges(changes: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(changes)) {
-    return [];
-  }
-
-  return changes
-    .map(normalizeFileChange)
-    .filter((change): change is Record<string, unknown> => change !== null);
-}
-
-function normalizeFileChange(change: unknown): Record<string, unknown> | null {
-  const record = asRecord(change);
-  const path = firstString(record?.path);
-  if (!record || !path) {
-    return null;
-  }
-
-  const kindInfo = normalizeFileChangeKind(record.kind ?? record.type);
-  const diff = firstString(record.diff);
-  return {
-    ...record,
-    path,
-    kind: kindInfo.kind,
-    type: kindInfo.kind,
-    ...(kindInfo.movePath ? { movePath: kindInfo.movePath } : {}),
-    ...(diff ? { diff } : {}),
-  };
-}
-
-function normalizeFileChangeKind(value: unknown): { kind: string; movePath?: string } {
-  if (typeof value === 'string' && value) {
-    return { kind: value };
-  }
-
-  const record = asRecord(value);
-  const kind = firstString(record?.type) || 'change';
-  const movePath = firstString(record?.move_path);
-  return {
-    kind,
-    ...(movePath ? { movePath } : {}),
-  };
-}
-
-function mergeFileChanges(previous: unknown, next: unknown): Record<string, unknown>[] {
-  const previousChanges = normalizeFileChanges(previous);
-  const nextChanges = normalizeFileChanges(next);
-  if (previousChanges.length === 0) return nextChanges;
-  if (nextChanges.length === 0) return previousChanges;
-
-  const merged = new Map<string, Record<string, unknown>>();
-  for (const change of previousChanges) {
-    merged.set(fileChangeKey(change), change);
-  }
-  for (const change of nextChanges) {
-    const key = fileChangeKey(change);
-    const previousChange = merged.get(key);
-    merged.set(key, previousChange ? mergeFileChange(previousChange, change) : change);
-  }
-  return [...merged.values()];
-}
-
-function mergeFileChange(
-  previous: Record<string, unknown>,
-  next: Record<string, unknown>,
-): Record<string, unknown> {
-  return {
-    ...previous,
-    ...next,
-    ...(typeof next.diff === 'string'
-      ? { diff: next.diff }
-      : typeof previous.diff === 'string'
-        ? { diff: previous.diff }
-        : {}),
-  };
-}
-
-function fileChangeKey(change: Record<string, unknown>): string {
-  return `${firstString(change.path)}\0${firstString(change.movePath)}`;
-}
-
-function formatFileChangeSummary(change: unknown): string {
-  const record = asRecord(change);
-  const path = firstString(record?.path);
-  if (!record || !path) {
-    return '';
-  }
-
-  const kind = firstString(record.kind, record.type) || 'change';
-  return `${kind}: ${path}`;
-}
-
-function readContentText(value: unknown): string {
-  if (!Array.isArray(value)) {
-    return '';
-  }
-
-  return value
-    .map((entry) => firstString(asRecord(entry)?.text))
-    .join('');
-}
-
-function readAssistantMessageText(item: Record<string, unknown>): string {
-  if (firstString(item.role) !== 'assistant') {
-    return '';
-  }
-
-  return readContentText(item.content);
-}
-
-function normalizeAgentMessageCompletionText(
-  text: string,
-  streamedAssistantText: string,
-): string {
-  if (!text) {
-    return '';
-  }
-  if (!streamedAssistantText) {
-    return text;
-  }
-  if (text.startsWith(streamedAssistantText)) {
-    return text.slice(streamedAssistantText.length);
-  }
-  return text;
 }

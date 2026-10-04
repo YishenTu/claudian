@@ -167,7 +167,8 @@ jest.mock('@/features/settings/SkillsSettingsTab', () => ({
   },
 }));
 
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import { ProviderWorkspaceRegistry } from '@/core/providers/ProviderWorkspaceRegistry';
 import { ClaudianSettingTab } from '@/features/settings/ClaudianSettings';
@@ -188,9 +189,6 @@ function createTab(enableDualPane: boolean): {
     storage: {
       getAdapter: jest.fn(() => ({})),
     },
-    warmExecutionPool: {
-      reconcileLimit: jest.fn(),
-    },
     providerHost: {
       settings,
       getEnvironmentVariablesForScope: jest.fn(() => ''),
@@ -199,7 +197,7 @@ function createTab(enableDualPane: boolean): {
   };
 
   return {
-    tab: new ClaudianSettingTab({} as any, plugin as any),
+    tab: new ClaudianSettingTab({} as any, {} as any, plugin as any),
     plugin,
   };
 }

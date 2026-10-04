@@ -1,6 +1,7 @@
-import type {
-  ProviderInteractionDismissReason,
-  ProviderInteractionPort,
+import {
+  PendingInteractionLedger,
+  type ProviderInteractionDismissReason,
+  type ProviderInteractionPort,
 } from '../../core/execution';
 import {
   buildACPApprovalDecisionOptions,
@@ -14,11 +15,6 @@ import type {
 const CANCELLED_RESPONSE: ACPRequestPermissionResponse = {
   outcome: { outcome: 'cancelled' },
 };
-
-interface PendingInteraction {
-  readonly abortController: AbortController;
-  dismissed: boolean;
-}
 
 export interface ACPPermissionPresentation {
   readonly blockedPath?: string;
@@ -40,9 +36,11 @@ export interface ACPInteractionControllerOptions {
 export class ACPInteractionController {
   private disposed = false;
   private interactionSequence = 0;
-  private readonly pending = new Map<string, PendingInteraction>();
+  private readonly pending: PendingInteractionLedger;
 
-  constructor(private readonly options: ACPInteractionControllerOptions) {}
+  constructor(private readonly options: ACPInteractionControllerOptions) {
+    this.pending = new PendingInteractionLedger(options.interactionPort);
+  }
 
   async requestPermission(
     request: ACPRequestPermissionRequest,
@@ -58,18 +56,8 @@ export class ACPInteractionController {
       'approval',
       ++this.interactionSequence,
     ].join(':');
-    const abortController = new AbortController();
-    const pending: PendingInteraction = {
-      abortController,
-      dismissed: false,
-    };
-    this.pending.set(interactionId, pending);
-
-    const abortFromCaller = (): void => {
-      this.#dismiss(interactionId, 'cancelled');
-      abortController.abort();
-    };
-    signal?.addEventListener('abort', abortFromCaller, { once: true });
+    const pending = this.pending.begin(interactionId, signal);
+    if (!pending) return CANCELLED_RESPONSE;
 
     try {
       const input = normalizeToolInput(request.toolCall.rawInput);
@@ -96,50 +84,36 @@ export class ACPInteractionController {
         sessionInstanceId: this.options.sessionInstanceId,
         toolName: presentation.toolName,
         turnId,
-      }, abortController.signal);
+      }, pending.signal);
 
-      if (this.disposed || abortController.signal.aborted) return CANCELLED_RESPONSE;
-      if (response.interactionId !== interactionId) {
-        this.#dismiss(interactionId, 'native-rejected');
+      if (this.disposed || pending.signal.aborted) return CANCELLED_RESPONSE;
+      if (this.pending.isStaleResponse(pending, response)) {
+        this.pending.settle(pending, 'native-rejected');
         return CANCELLED_RESPONSE;
       }
       if (this.options.getTurnId() !== turnId) {
-        this.#dismiss(interactionId, 'superseded');
+        this.pending.settle(pending, 'superseded');
         return CANCELLED_RESPONSE;
       }
 
-      this.#dismiss(interactionId, 'resolved');
+      this.pending.settle(pending, 'resolved');
       return mapACPApprovalDecision(response.decision, request.options);
     } catch {
-      this.#dismiss(interactionId, 'cancelled');
+      this.pending.settle(pending, 'cancelled');
       return CANCELLED_RESPONSE;
     } finally {
-      signal?.removeEventListener('abort', abortFromCaller);
-      this.pending.delete(interactionId);
+      this.pending.release(pending);
     }
   }
 
   dismissAll(reason: ProviderInteractionDismissReason): void {
-    for (const [interactionId, pending] of this.pending) {
-      this.#dismiss(interactionId, reason);
-      pending.abortController.abort();
-    }
+    this.pending.dismissAll(reason);
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.dismissAll('session-disposed');
-  }
-
-  #dismiss(
-    interactionId: string,
-    reason: ProviderInteractionDismissReason,
-  ): void {
-    const pending = this.pending.get(interactionId);
-    if (!pending || pending.dismissed) return;
-    pending.dismissed = true;
-    this.options.interactionPort.dismissInteraction(interactionId, reason);
   }
 }
 

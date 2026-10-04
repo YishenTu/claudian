@@ -1,24 +1,21 @@
-import { mapWithConcurrency } from '../../utils/concurrency';
-import { decodeLinkedContentPathFields } from '../path/LinkedContentPath';
+import {
+  assertValidSessionMetadataId,
+  getDeviceSessionsPath,
+  isValidSessionMetadataId,
+  SESSIONS_PATH,
+} from '@/core/bootstrap/storagePaths';
+import { decodeLinkedContentPathFields } from '@/core/path/LinkedContentPath';
 import {
   type SessionMetadataListOptions,
   type SessionMetadataScanResult,
-} from '../providers/types';
-import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
+} from '@/core/providers/types';
+import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type {
   ConversationModelRecoverySource,
   SessionMetadata,
-} from '../types';
-import {
-  getDeviceSessionsPath,
-  SESSIONS_PATH,
-} from './storagePaths';
+} from '@/core/types';
+import { mapWithConcurrency } from '@/utils/concurrency';
 
-export {
-  SESSIONS_PATH
-};
-
-const SAFE_METADATA_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SESSION_METADATA_READ_CONCURRENCY = 8;
 const SESSION_METADATA_PUBLISH_BATCH_SIZE = 16;
 const METADATA_SUFFIX = '.meta.json';
@@ -50,19 +47,6 @@ export interface SessionMetadataReader {
   loadMetadata(id: string): Promise<SessionMetadata | null>;
   scanMetadata(options?: SessionMetadataListOptions): Promise<SessionMetadataScanResult>;
   listMetadata(options?: SessionMetadataListOptions): Promise<SessionMetadata[]>;
-}
-
-export function isValidSessionMetadataId(id: string): boolean {
-  return SAFE_METADATA_ID_PATTERN.test(id)
-    && id !== '.'
-    && id !== '..'
-    && !/%(?:2f|5c)/i.test(id);
-}
-
-export function assertValidSessionMetadataId(id: string): void {
-  if (!isValidSessionMetadataId(id)) {
-    throw new Error(`Invalid session metadata id: ${JSON.stringify(id)}`);
-  }
 }
 
 export class SessionStorage implements SessionMetadataReader {

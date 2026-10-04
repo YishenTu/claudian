@@ -2,6 +2,7 @@
 import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
+import { createTestTabSession } from '@test/helpers/ConversationPorts';
 import { createHarness, releaseSideChatHarnesses, startSideChat } from '@test/helpers/features/chat/SideChatDOMHarness';
 import { fireEvent, screen, waitFor } from '@testing-library/dom';
 import { axe } from 'jest-axe';
@@ -267,9 +268,10 @@ it('closes the panel on queue admission, delivers later, and keeps it closed aft
 
 it('keeps a pending main question out of the side destination and restores its answers on return', async () => {
   const harness = createHarness({ onDestinationChanged: () => main.setPromptActive(harness.controller.destination === 'main') });
-  const state = new ChatState();
+  const session = createTestTabSession();
+  const state = new ChatState({}, undefined, session.turns);
   const main = new InputController({
-    state, getInputContainerEl: () => harness.inputContainerEl,
+    state, session, getInputContainerEl: () => harness.inputContainerEl,
     streamController: { hideThinkingIndicator: jest.fn(), resumeThinkingIndicator: jest.fn() },
     renderer: { updateQuestionTool: jest.fn() },
   } as unknown as InputControllerDeps);

@@ -253,7 +253,8 @@ export interface MCPToolCallItem {
   server: string;
   tool: string;
   status?: string;
-  arguments?: Record<string, unknown>;
+  /** JSON value; some servers report the raw argument string. */
+  arguments?: unknown;
   result?: { content?: Array<{ type?: string; text?: string }> } | null;
   error?: string | null;
   durationMs?: number | null;

@@ -1,4 +1,7 @@
+import { holdResponse } from '@test/helpers/ConversationPorts';
+
 import type { ChatMessage, ToolCallInfo } from '@/core/types';
+import { TurnCoordinator } from '@/features/chat/controllers/TurnCoordinator';
 import { ChatState } from '@/features/chat/state/ChatState';
 import { formatActivityPreview } from '@/features/chat/zen/activityPreview';
 
@@ -12,13 +15,14 @@ function assistant(overrides: Partial<ChatMessage> = {}): ChatMessage {
 
 describe('formatActivityPreview', () => {
   it('leaves an empty conversation blank and describes working state neutrally', () => {
-    const state = new ChatState();
+    const turns = new TurnCoordinator();
+    const state = new ChatState({}, undefined, turns);
     expect(formatActivityPreview(state)).toEqual({ text: '', tone: 'idle' });
 
     state.addMessage({ id: 'u1', role: 'user', content: 'raw', displayContent: '  Review\n the   note ', timestamp: 1 });
     expect(formatActivityPreview(state)).toEqual({ text: 'Review the note', tone: 'idle' });
 
-    state.isStreaming = true;
+    holdResponse(turns);
     state.addMessage(assistant());
     expect(formatActivityPreview(state)).toEqual({ text: 'Review the note', tone: 'working' });
 
@@ -79,7 +83,8 @@ describe('formatActivityPreview', () => {
   });
 
   it('leads a finished turn with its duration and the first line of the final result', () => {
-    const state = new ChatState();
+    const turns = new TurnCoordinator();
+    const state = new ChatState({}, undefined, turns);
     const call = tool('completed');
     state.messages = [assistant({
       content: 'Checking\n\n## Result line\nMore detail',
@@ -102,14 +107,15 @@ describe('formatActivityPreview', () => {
     state.recordActivity({ kind: 'tool', tool: call });
     expect(formatActivityPreview(state)).toEqual({ text: 'Worked for 00:07', tone: 'idle' });
 
-    state.isStreaming = true;
+    holdResponse(turns);
     expect(formatActivityPreview(state).text).toBe('Bash · done');
   });
 
   it('mirrors the main waiting status while streaming, except over a running tool', () => {
-    const state = new ChatState();
+    const turns = new TurnCoordinator();
+    const state = new ChatState({}, undefined, turns);
     state.addMessage({ id: 'u1', role: 'user', content: 'Review the note', timestamp: 1 });
-    state.isStreaming = true;
+    holdResponse(turns);
     state.waitingStatus = 'Compacting...';
     expect(formatActivityPreview(state)).toEqual({ text: 'Compacting...', tone: 'working' });
 

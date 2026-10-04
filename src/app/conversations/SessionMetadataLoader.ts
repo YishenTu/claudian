@@ -1,12 +1,12 @@
-import type {
-  SessionMetadataReader,
-  SessionMetadataReadResult,
-} from '../../core/bootstrap/SessionStorage';
 import { StartupProfiler } from '../../core/performance/StartupProfiler';
-import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
+import type { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { DEFAULT_CHAT_PROVIDER_ID } from '../../core/providers/types';
 import type { Conversation, SessionMetadata } from '../../core/types';
 import type { RuntimeSettingsCoordinator } from '../settings/RuntimeSettingsCoordinator';
+import type {
+  SessionMetadataReader,
+  SessionMetadataReadResult,
+} from '../storage/SessionStorage';
 import type { ConversationRepository } from './ConversationRepository';
 
 export interface InitialSessionMetadataScan {
@@ -18,6 +18,7 @@ export interface InitialSessionMetadataScan {
 export interface SessionMetadataLoaderOptions {
   sessions: SessionMetadataReader;
   conversations: ConversationRepository;
+  providerSettings: Pick<typeof ProviderSettingsCoordinator, 'invalidateConversationSessions'>;
   runtimeSettings: RuntimeSettingsCoordinator;
   isUnloading(): boolean;
   whenLayoutReady(callback: () => void): void;
@@ -27,7 +28,7 @@ export interface SessionMetadataLoaderOptions {
 
 /**
  * Loads session metadata for the conversation repository. It reads the
- * startup scan for `loadSettings`, which still adopts those records itself,
+ * startup scan for application startup, which adopts those records itself,
  * and owns the deferred background scan after layout and on-demand loading
  * of individual conversations.
  */
@@ -120,7 +121,7 @@ export class SessionMetadataLoader {
         ));
       const shells = publishable.map(({ conversation }) => conversation);
       const publishedIds = new Set(shells.map(({ id }) => id));
-      const invalidatedShells = ProviderSettingsCoordinator
+      const invalidatedShells = this.options.providerSettings
         .invalidateConversationSessions(
           shells,
           runtimeSettings.getPendingProviderIds(),
@@ -180,7 +181,7 @@ export class SessionMetadataLoader {
       source,
     }));
     const shells = entries.map(({ conversation }) => conversation);
-    const invalidatedEntries = ProviderSettingsCoordinator
+    const invalidatedEntries = this.options.providerSettings
       .invalidateConversationSessions(
         shells,
         runtimeSettings.getPendingProviderIds(),
@@ -281,7 +282,7 @@ export class SessionMetadataLoader {
     }));
     const shells = entries.map(({ conversation }) => conversation);
     const invalidatedIds = new Set(
-      ProviderSettingsCoordinator.invalidateConversationSessions(
+      this.options.providerSettings.invalidateConversationSessions(
         shells,
         runtimeSettings.getPendingProviderIds(),
       ).map(({ id }) => id),

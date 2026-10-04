@@ -1,15 +1,16 @@
 import '@/providers';
 
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { FakeSideBackend, waitFor } from '@test/helpers/features/chat/SideChatSessionHarness';
 import { testDate } from '@test/helpers/testClock';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
 import { SessionMetadataLoader } from '@/app/conversations/SessionMetadataLoader';
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { RuntimeSettingsCoordinator } from '@/app/settings/RuntimeSettingsCoordinator';
 import { SettingsCoordinator } from '@/app/settings/SettingsCoordinator';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { Conversation, SessionMetadata } from '@/core/types';
 import type { ChatFeatureHost } from '@/features/chat/ChatFeatureHost';
 import { ChatExecutionCoordinator } from '@/features/chat/execution/ChatExecutionCoordinator';
@@ -37,6 +38,8 @@ function fixture() {
   };
   const settings = structuredClone(DEFAULT_CLAUDIAN_SETTINGS);
   const repository = new ConversationRepository({
+    providers: ProviderRegistry,
+    providerSettings: ProviderSettingsCoordinator,
     getSettings: () => settings, getVaultPath: () => '/vault', persistence,
     onConversationDeleted: async () => undefined,
   });
@@ -111,7 +114,7 @@ test('a metadata scan paused during source resolution cannot publish writes afte
   let unloading = false;
   const loader = new SessionMetadataLoader({
     sessions: persistence.metadataReader, conversations: repository,
-    runtimeSettings,
+    providerSettings: ProviderSettingsCoordinator, runtimeSettings,
     isUnloading: () => unloading, whenLayoutReady: callback => callback(),
     onConversationListChanged: () => undefined,
   });
@@ -176,7 +179,8 @@ test('loader disposal drains an admitted migration and rejects further on-demand
   let finishWrite!: () => void;
   persistence.saveMetadata.mockImplementationOnce(() => new Promise<void>(resolve => { finishWrite = resolve; }));
   const loader = new SessionMetadataLoader({
-    sessions: persistence.metadataReader, conversations: repository, runtimeSettings,
+    sessions: persistence.metadataReader, conversations: repository,
+    providerSettings: ProviderSettingsCoordinator, runtimeSettings,
     isUnloading: () => false, whenLayoutReady: callback => callback(), onConversationListChanged: () => undefined,
   });
   const load = loader.ensureLoaded([conversation.id]);

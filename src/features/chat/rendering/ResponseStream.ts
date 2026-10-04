@@ -2,6 +2,7 @@ import type { ProviderExecutionEvent } from '@/core/execution';
 import type { ChatMessage } from '@/core/types';
 
 import { providerOutputEventToStreamChunk, type StreamController } from '../controllers/StreamController';
+import type { TurnCoordinator } from '../controllers/TurnCoordinator';
 import type { ChatState } from '../state/ChatState';
 import type { MessageRenderer } from './MessageRenderer';
 import { continueResponseAfterNotification } from './ResponseContinuation';
@@ -10,6 +11,8 @@ interface ResponseStreamHost {
   readonly state: ChatState;
   readonly renderer: MessageRenderer;
   readonly stream: StreamController;
+  /** The turn whose streaming presentation this response ends. */
+  readonly turns: Pick<TurnCoordinator, 'settle'>;
   createMessageId(): string;
 }
 
@@ -51,7 +54,6 @@ export class ResponseStream {
     const assistant = this.#active;
     if (!assistant) return;
     if (event.type === 'turn_completed') {
-      this.host.state.cancelRequested = false;
       assistant.turnStats = event.turnStats;
       return;
     }
@@ -81,8 +83,7 @@ export class ResponseStream {
         ? Math.floor((performance.now() - state.responseStartTime) / 1000) : 0;
     }
     state.responseStartTime = null;
-    state.isStreaming = false;
-    state.cancelRequested = false;
+    this.host.turns.settle();
     state.currentContentEl = null;
     await this.flush(message);
     renderer.finalizeResponse(message, state.messages, successful);

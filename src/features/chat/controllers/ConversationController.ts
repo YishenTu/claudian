@@ -17,7 +17,7 @@ import { extractUserDisplayContent } from '../../../utils/context';
 import type { ChatFeatureHost } from '../ChatFeatureHost';
 import type { ComposerDraft, ComposerDraftController } from '../composer/ComposerDraftController';
 import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
-import type { LinkedContentController } from '../linked-content';
+import type { LinkedContentController, LinkedContentSubmissionToken } from '../linked-content';
 import type { MessageRenderer } from '../rendering/MessageRenderer';
 import { cleanupThinkingBlock } from '../rendering/ThinkingBlockRenderer';
 import { createWelcomeElement, renderWelcomeContent } from '../rendering/WelcomeRenderer';
@@ -48,6 +48,11 @@ export interface ConversationCallbacks {
   onConversationSwitched?: () => void;
 }
 
+/** The tab session capabilities conversation transitions coordinate with. */
+export type ConversationSession = Pick<
+  TabSession, 'canNavigateConversation' | 'runConversationNavigation' | 'hasActiveTurn' | 'cancelTurn'
+>;
+
 export interface ConversationControllerDeps {
   plugin: ChatFeatureHost;
   state: ChatState;
@@ -57,12 +62,11 @@ export interface ConversationControllerDeps {
   setWelcomeEl: (el: HTMLElement | null) => void;
   getMessagesEl: () => HTMLElement;
   drafts: ComposerDraftController;
-  navigation: Pick<TabSession, 'canNavigateConversation' | 'runConversationNavigation'>;
+  session: ConversationSession;
   getLinkedContentController: () => LinkedContentController;
   clearQueuedMessage: () => void;
   getExecutionCoordinator: () => ChatExecutionCoordinator | null;
   ensureExecutionInitialized?: () => Promise<boolean>;
-  getProviderId?: () => ProviderId;
   getSelectedModel?: () => string | null;
   ensureExecutionForConversation?: (conversation: Conversation | null) => Promise<void>;
   dismissPendingInlinePrompts?: () => void;
@@ -112,26 +116,22 @@ export class ConversationController {
    * first message is sent. This prevents empty conversations cluttering history.
    */
   async createNew(options: { force?: boolean } = {}): Promise<void> {
-    const { plugin, state, subagentManager } = this.deps;
+    const { plugin, state, subagentManager, session } = this.deps;
     const force = !!options.force;
-    const isCancellingForegroundTurn = force && state.isStreaming;
-    if (state.isStreaming && !force) return;
+    const isCancellingForegroundTurn = force && session.hasActiveTurn;
+    if (session.hasActiveTurn && !force) return;
     if (state.isRewinding) return;
-    if (state.isCreatingConversation) return;
+    if (state.isResettingToNewChat) return;
     if (state.isSwitchingConversation) return;
 
     // Set flag to block message sending during reset
     this.cancelBranchDraft();
-    state.isCreatingConversation = true;
+    state.isResettingToNewChat = true;
 
     try {
       this.deps.dismissPendingInlinePrompts?.();
-
-      if (isCancellingForegroundTurn) {
-        state.cancelRequested = true;
-        state.bumpStreamGeneration();
-        this.#getExecutionCoordinator()?.cancel();
-      }
+      // The replaced turn unwinds without presenting into the new chat.
+      if (isCancellingForegroundTurn) session.cancelTurn('new-conversation');
 
       if (this.deps.awaitBackgroundWork) {
         await this.deps.awaitBackgroundWork();
@@ -154,7 +154,6 @@ export class ConversationController {
       state.currentThinkingState = null;
       state.toolCallElements.clear();
       state.writeEditStates.clear();
-      state.isStreaming = false;
 
       // Reset to entry point state - no conversation created yet
       this.branchState = { kind: 'idle' };
@@ -180,7 +179,7 @@ export class ConversationController {
 
       this.callbacks.onNewConversation?.();
     } finally {
-      state.isCreatingConversation = false;
+      state.isResettingToNewChat = false;
       this.deps.renderer.refreshBranchButtonState();
     }
   }
@@ -250,10 +249,10 @@ export class ConversationController {
 
     if (this.deps.isDisposed?.()) return;
     if (id === state.currentConversationId && this.deps.isConversationHydrated?.() !== false) return;
-    if (state.isStreaming) return;
+    if (this.deps.session.hasActiveTurn) return;
     if (state.isRewinding) return;
     if (state.isSwitchingConversation) return;
-    if (state.isCreatingConversation) return;
+    if (state.isResettingToNewChat) return;
 
     this.cancelBranchDraft();
     state.isSwitchingConversation = true;
@@ -301,7 +300,7 @@ export class ConversationController {
       new Notice(t('chat.rewind.inProgress'));
       return;
     }
-    if (state.isStreaming) {
+    if (this.deps.session.hasActiveTurn) {
       new Notice(t('chat.rewind.unavailableStreaming'));
       return;
     }
@@ -391,7 +390,7 @@ export class ConversationController {
         if (preview.conflicts && preview.conflicts.length > 0) {
           confirmationMessage = buildRewindConflictConfirmation(preview.conflicts);
         }
-        if (state.isStreaming) {
+        if (this.deps.session.hasActiveTurn) {
           new Notice(t('chat.rewind.unavailableStreaming'));
           return;
         }
@@ -408,7 +407,7 @@ export class ConversationController {
       );
       if (!confirmed) return;
 
-      if (state.isStreaming) {
+      if (this.deps.session.hasActiveTurn) {
         new Notice(t('chat.rewind.unavailableStreaming'));
         return;
       }
@@ -486,7 +485,7 @@ export class ConversationController {
   }
 
   async navigateBranch(messageId: string, branchMessageId?: string): Promise<void> {
-    const { state, renderer, drafts, navigation } = this.deps;
+    const { state, renderer, drafts, session: navigation } = this.deps;
     if (drafts.destination !== 'main') {
       new Notice('Collapse side chat before changing conversation branches.');
       return;
@@ -610,6 +609,26 @@ export class ConversationController {
       } else this.branchState = draft ? { kind: 'preview', draft } : { kind: 'idle' };
       state.isRewinding = false;
       renderer.refreshBranchButtonState();
+    }
+  }
+
+  /** Creates the Conversation for its first admitted turn and freezes that turn's Linked content. */
+  async createConversation(
+    token: LinkedContentSubmissionToken,
+    options: { providerId: ProviderId; selectedModel?: string },
+  ): Promise<void> {
+    const { plugin, state } = this.deps;
+    const conversation = await plugin.createConversation({
+      providerId: options.providerId,
+      ...(options.selectedModel ? { selectedModel: options.selectedModel } : {}),
+      ...(token.path ? { linkedContentPath: token.path } : {}),
+    });
+    state.currentConversationId = conversation.id;
+
+    const settlement = this.deps.getLinkedContentController().commitSubmission(token);
+    for (const event of settlement.queuedEvents) {
+      if (event.kind !== 'rename') continue;
+      await plugin.rewriteLinkedContentPaths(event.oldPath, event.newPath, event.includeDescendants);
     }
   }
 
@@ -811,18 +830,6 @@ export class ConversationController {
     }
 
     this.updateWelcomeVisibility();
-  }
-
-  // ============================================
-  // Utilities
-  // ============================================
-
-  /** Generates a fallback title from the first message (used when AI fails). */
-  generateFallbackTitle(firstMessage: string): string {
-    const firstSentence = firstMessage.split(/[.!?\n]/)[0].trim();
-    const autoTitle = firstSentence.substring(0, 50);
-    const suffix = firstSentence.length > 50 ? '...' : '';
-    return `${autoTitle}${suffix}`;
   }
 
 }

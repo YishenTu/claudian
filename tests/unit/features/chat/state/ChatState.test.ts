@@ -1,3 +1,6 @@
+import { holdResponse } from '@test/helpers/ConversationPorts';
+
+import { TurnCoordinator } from '@/features/chat/controllers/TurnCoordinator';
 import { ChatState } from '@/features/chat/state/ChatState';
 
 describe('ChatState', () => {
@@ -60,27 +63,18 @@ describe('ChatState', () => {
   });
 
   describe('streaming control', () => {
-    it('fires onStreamingStateChanged when isStreaming changes', () => {
+    it('derives streaming from its turn owner and reports each change once', async () => {
       const onStreamingStateChanged = jest.fn();
-      const chatState = new ChatState({ onStreamingStateChanged });
+      const turns = new TurnCoordinator();
+      const chatState = new ChatState({ onStreamingStateChanged }, undefined, turns);
 
-      chatState.isStreaming = true;
+      const release = holdResponse(turns);
+      expect(chatState.isStreaming).toBe(true);
+      await release();
 
-      expect(onStreamingStateChanged).toHaveBeenCalledWith(true);
+      expect(chatState.isStreaming).toBe(false);
+      expect(onStreamingStateChanged.mock.calls).toEqual([[true], [false]]);
     });
-
-    it('bumpStreamGeneration increments and returns the new value', () => {
-      const chatState = new ChatState();
-
-      expect(chatState.streamGeneration).toBe(0);
-      const gen1 = chatState.bumpStreamGeneration();
-      expect(gen1).toBe(1);
-      expect(chatState.streamGeneration).toBe(1);
-
-      const gen2 = chatState.bumpStreamGeneration();
-      expect(gen2).toBe(2);
-    });
-
   });
 
   describe('conversation', () => {

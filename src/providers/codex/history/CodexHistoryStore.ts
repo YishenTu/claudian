@@ -36,17 +36,21 @@ import { applyCodexSubagentActivity, normalizeCodexSubagentActivity } from '../n
 import { buildCodexSubagentInfo } from '../normalization/codexSubagentNormalization';
 import {
   appendCodexCommandOutput,
+  CODEX_ASYNC_QUESTION_RESULT,
+  CODEX_WEB_SEARCH_RESULT,
   codexToolRequestsMatch,
   decodeCodexExecEnvelopeCalls,
   extractCodexExecCellId,
+  isCodexFailedToolStatus,
   isCodexInternalToolCall,
+  isCodexSilentWriteStdinCall,
   isCodexToolOutputError,
   normalizeCodexMCPToolInput,
   normalizeCodexMCPToolName,
   normalizeCodexMCPToolState,
   normalizeCodexToolCall,
-  normalizeCodexToolInput,
   normalizeCodexToolResult,
+  normalizeCodexWebSearchInput,
   parseCodexArguments,
   readCodexExecCellIdArgument,
   stringifyCodexToolOutput
@@ -640,18 +644,16 @@ function processPersistedNormalizedToolCall(
     }
   }
 
-  if (normalized.name === 'write_stdin') {
-    if (isSilentWriteStdinInput(normalized.input)) {
-      const terminalSessionId = readTerminalSessionIdArgument(normalized.input);
-      const parentCallId = terminalSessionId
-        ? ctx.terminalSessionToCommandId.get(terminalSessionId)
-        : undefined;
-      if (parentCallId) {
-        ctx.stdinCallToCommandId.set(callId, parentCallId);
-      }
-      ctx.suppressedToolOutputIds.add(callId);
-      return;
+  if (isCodexSilentWriteStdinCall(normalized.name, normalized.input)) {
+    const terminalSessionId = readTerminalSessionIdArgument(normalized.input);
+    const parentCallId = terminalSessionId
+      ? ctx.terminalSessionToCommandId.get(terminalSessionId)
+      : undefined;
+    if (parentCallId) {
+      ctx.stdinCallToCommandId.set(callId, parentCallId);
     }
+    ctx.suppressedToolOutputIds.add(callId);
+    return;
   }
 
   pushPersistedNormalizedToolCall(callId, normalized, timestamp, ctx);
@@ -803,7 +805,7 @@ function applyPersistedNativeExecItem(item: NonNullable<PersistedEventPayload['i
     ctx.observedNativeItemIds.add(item.id);
   }
   if (item.type === 'Extension' && item.kind === 'web.search') {
-    const input = normalizeCodexToolInput('web_search', { query: item.query ?? '', action: item.action ?? {} });
+    const input = normalizeCodexWebSearchInput({ query: item.query, action: item.action });
     const toolCall = claimPersistedExecCall('WebSearch', [input], ctx);
     const webSearchResults = extractWebSearchResults({ webSearchResults: item.results });
     if (toolCall && webSearchResults) toolCall.webSearchResults = webSearchResults;
@@ -901,10 +903,6 @@ function readTerminalSessionIdArgument(input: Record<string, unknown>): string |
   if (typeof value === 'string' && value) return value;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return undefined;
-}
-
-function isSilentWriteStdinInput(input: Record<string, unknown>): boolean {
-  return typeof input.chars !== 'string' || input.chars.length === 0;
 }
 
 function readPersistedCommandToolResult(rawOutputText: string): {
@@ -1019,19 +1017,16 @@ function processPersistedWebSearchCall(
 
   if (bubble.toolIndexesById.has(callId)) return;
 
-  const input = normalizeCodexToolInput('web_search_call', {
-    action: payload.action ?? {},
-  });
-
-  const isTerminal = payload.status === 'completed' || payload.status === 'failed'
-    || payload.status === 'error' || payload.status === 'cancelled';
+  const input = normalizeCodexWebSearchInput({ action: payload.action });
+  const isError = isCodexFailedToolStatus(payload.status);
+  const isTerminal = isError || payload.status === 'completed';
 
   const toolCall: ToolCallInfo = {
     id: callId,
     name: 'WebSearch',
     input,
-    status: isTerminal ? (payload.status === 'completed' ? 'completed' : 'error') : 'running',
-    ...(isTerminal ? { result: 'Search complete' } : {}),
+    status: isTerminal ? (isError ? 'error' : 'completed') : 'running',
+    ...(isTerminal ? { result: CODEX_WEB_SEARCH_RESULT } : {}),
   };
 
   pushToolInvocation(bubble, toolCall);
@@ -1206,7 +1201,7 @@ function processEventMsg(
       const tool = findPersistedToolCallById(ctx, item.id);
       if (tool && tool.status === 'running') {
         tool.status = 'completed';
-        tool.result = 'Question sent. Awaiting your reply.';
+        tool.result = CODEX_ASYNC_QUESTION_RESULT;
       }
       break;
     }

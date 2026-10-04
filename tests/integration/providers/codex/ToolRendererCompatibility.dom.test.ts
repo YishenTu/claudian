@@ -78,7 +78,11 @@ function restoreSession(mode: 'live' | 'history', steps: SessionStep[], streamRa
     router.handleNotification('item/completed', { item: { ...step.webSearch, type: 'webSearch' } });
   }
   router.handleNotification('turn/completed', { turn: { id: 'turn', items: [], status: 'completed', error: null } });
-  // Mirrors the stream controller: repeated tool_use chunks refine one card.
+  return collectStreamedTools(chunks);
+}
+
+/** Mirrors the stream controller: repeated tool_use chunks refine one card. */
+function collectStreamedTools(chunks: StreamChunk[]): ToolCallInfo[] {
   const tools = new Map<string, ToolCallInfo>();
   for (const chunk of chunks) {
     if (chunk.type === 'tool_use') {
@@ -95,6 +99,46 @@ function restoreSession(mode: 'live' | 'history', steps: SessionStep[], streamRa
     }
   }
   return [...tools.values()];
+}
+
+interface NativeToolCall {
+  id: string;
+  status: string;
+  arguments?: unknown;
+  result?: unknown;
+  error?: string;
+}
+
+/** Restores a native MCP call from its live app-server item or its persisted rollout record. */
+function restoreNativeMcpTool(mode: 'live' | 'history', call: NativeToolCall): ToolCallInfo[] {
+  const native = { server: 'docs', tool: 'search', ...call };
+  if (mode === 'history') {
+    return parseCodexSessionContent(JSON.stringify({
+      type: 'response_item', timestamp: testTime(), payload: { ...native, type: 'mcp_tool_call', call_id: call.id },
+    })).flatMap(message => message.toolCalls ?? []);
+  }
+  const chunks: StreamChunk[] = [];
+  const router = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace');
+  router.beginTurn();
+  router.handleNotification('item/started', { item: { ...native, type: 'mcpToolCall', status: 'inProgress', result: null, error: null } });
+  router.handleNotification('item/completed', { item: { ...native, type: 'mcpToolCall' } });
+  router.handleNotification('turn/completed', { turn: { id: 'turn', items: [], status: 'completed', error: null } });
+  return collectStreamedTools(chunks);
+}
+
+/** Restores a native web search from its live app-server item or its persisted rollout record. */
+function restoreNativeWebSearch(mode: 'live' | 'history', call: NativeToolCall & { action: Record<string, unknown> }): ToolCallInfo[] {
+  if (mode === 'history') {
+    return parseCodexSessionContent(JSON.stringify({
+      type: 'response_item', timestamp: testTime(), payload: { type: 'web_search_call', call_id: call.id, status: call.status, action: call.action },
+    })).flatMap(message => message.toolCalls ?? []);
+  }
+  const chunks: StreamChunk[] = [];
+  const router = new CodexNotificationRouter(chunk => chunks.push(chunk), '/workspace');
+  router.beginTurn();
+  router.handleNotification('item/completed', { item: { type: 'webSearch', id: call.id, status: call.status, action: call.action } });
+  router.handleNotification('turn/completed', { turn: { id: 'turn', items: [], status: 'completed', error: null } });
+  return collectStreamedTools(chunks);
 }
 
 const scriptOutput = (...texts: string[]) => [
@@ -251,6 +295,29 @@ describe.each(['live', 'history'] as const)('%s Codex tool presentation', mode =
     expect(block.textContent).toContain('London');
     expect(block.textContent).toContain('Screenshot');
     expect(block.textContent).toContain('turn1view0');
+  });
+
+  it.each([
+    ['string arguments', { id: 'mcp-args', status: 'completed', arguments: '{"query":"vault notes"}', result: { content: [{ type: 'text', text: 'hit' }] } },
+      { input: { query: 'vault notes' }, status: 'completed', result: 'hit' }],
+    ['cancellation', { id: 'mcp-cancelled', status: 'cancelled', arguments: { query: 'vault notes' } },
+      { input: { query: 'vault notes' }, status: 'error', result: 'Failed' }],
+    ['error text', { id: 'mcp-error', status: 'completed', arguments: {}, error: 'Server disconnected' },
+      { input: {}, status: 'error', result: 'Server disconnected' }],
+  ] as const)('restores native MCP calls with %s', (_label, call, expected) => {
+    const tools = restoreNativeMcpTool(mode, call);
+    expect(tools).toEqual([expect.objectContaining({ id: call.id, name: 'mcp__docs__search', ...expected })]);
+  });
+
+  it.each([
+    ['completed', 'completed'],
+    ['failed', 'error'],
+    ['cancelled', 'error'],
+  ])('restores a %s native web search', (status, expectedStatus) => {
+    const tools = restoreNativeWebSearch(mode, { id: `search-${status}`, status, action: { type: 'search', query: 'vault sync' } });
+    expect(tools).toEqual([expect.objectContaining({
+      id: `search-${status}`, name: 'WebSearch', input: { actionType: 'search', query: 'vault sync' }, status: expectedStatus, result: 'Search complete',
+    })]);
   });
 
   it('renders async question acknowledgement with the original question and options', async () => {

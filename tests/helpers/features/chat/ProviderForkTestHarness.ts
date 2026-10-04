@@ -8,10 +8,11 @@ import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { App } from 'obsidian';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
-import { ConversationPersistenceStore } from '@/core/bootstrap/ConversationPersistenceStore';
+import { ConversationPersistenceStore } from '@/app/storage/ConversationPersistenceStore';
 import { type ProviderExecutionBackend, ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ProviderHistoryPathContext } from '@/core/providers/types';
 import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import type { ChatMessage, Conversation, ProviderId } from '@/core/types';
@@ -54,6 +55,8 @@ export async function createForkTestEnvironment() {
     getActiveEnvironmentVariables: () => `CLAUDE_CONFIG_DIR=${path.join(root, 'claude')}`,
   } as unknown as ProviderHost;
   const repository = new ConversationRepository({
+    providers: ProviderRegistry,
+    providerSettings: ProviderSettingsCoordinator,
     getSettings: () => settings,
     getVaultPath: () => root,
     persistence: new ConversationPersistenceStore(adapter, `device-${'a'.repeat(64)}`),

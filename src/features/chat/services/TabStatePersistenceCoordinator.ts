@@ -1,4 +1,4 @@
-import type { AppTabManagerState } from '../../../core/providers/types';
+import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 
 type TimerHost = Pick<Window, 'clearTimeout' | 'setTimeout'>;
 

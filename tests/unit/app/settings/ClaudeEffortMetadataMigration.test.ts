@@ -1,5 +1,7 @@
 import '@/providers';
 
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+
 import { ClaudianSettingsStorage } from '@/app/settings/ClaudianSettingsStorage';
 import type { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
 import { getClaudeProviderSettings } from '@/providers/claude/settings';
@@ -14,7 +16,7 @@ function createStorage(initial: Record<string, unknown>) {
   } as unknown as VaultFileAdapter;
   return {
     adapter,
-    storage: new ClaudianSettingsStorage(adapter),
+    storage: new ClaudianSettingsStorage(adapter, DEFAULT_CLAUDIAN_SETTINGS),
     read: () => JSON.parse(content) as Record<string, any>,
   };
 }

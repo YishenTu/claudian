@@ -369,3 +369,6 @@ export type ProviderSessionEvent =
   | ProviderSessionErrorEvent;
 
 export type ProviderExecutionEvent = ProviderRequestedExecutionEvent;
+
+/** An event before its owner assigns the correlation envelope. */
+export type WithoutEventScope<T> = T extends unknown ? Omit<T, 'scope'> : never;

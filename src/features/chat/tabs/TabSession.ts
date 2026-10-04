@@ -1,5 +1,5 @@
 import type { ProviderId } from '../../../core/providers/types';
-import { TurnCoordinator } from '../controllers/TurnCoordinator';
+import { type TurnCancelReason, TurnCoordinator } from '../controllers/TurnCoordinator';
 import type { ChatExecutionCoordinator } from '../execution/ChatExecutionCoordinator';
 import type { TabLifecycleState } from './types';
 
@@ -11,9 +11,25 @@ export interface TabSessionState {
   providerId: ProviderId | null;
 }
 
+export interface TabSessionOptions {
+  /** Shared with presentation state built before the session; its admission must use `admitsConversationOperations`. */
+  turns?: TurnCoordinator;
+  onWorkChanged?: () => void;
+  isConversationBusy?: () => boolean;
+  /** Work the execution coordinator does not own, such as async subagents and side chat. */
+  hasDetachedWork?: () => boolean;
+  /** Expires every pending prompt, including ones outside the active turn. */
+  dismissInteractions?: () => void;
+}
+
+export interface TurnCancelOptions {
+  dismissInteractions?: boolean;
+}
+
 export class TabSession {
-  /** Runtime selections survive tab activation and execution cooling, but not tab disposal. */
+  /** Runtime selections survive tab activation and idle session release, but not tab disposal. */
   readonly reasoningSelections = new Map<string, string>();
+  /** The single owner of this tab's foreground turn activity. */
   readonly turns: TurnCoordinator;
   private backgroundWork: Promise<void> = Promise.resolve();
   private backgroundWorkPauseDepth = 0;
@@ -26,10 +42,16 @@ export class TabSession {
   constructor(
     private readonly state: TabSessionState,
     private readonly coordinator: ChatExecutionCoordinator,
-    private readonly onWorkChanged?: () => void,
-    private readonly isConversationBusy: () => boolean = () => false,
+    private readonly options: TabSessionOptions = {},
   ) {
-    this.turns = new TurnCoordinator(() => this.onWorkChanged?.(), () => this.acceptsIntents && this.lifecycleState !== 'closing' && !this.identitySealed && !this.isConversationBusy());
+    this.turns = options.turns ?? new TurnCoordinator(() => this.admitsConversationOperations);
+    let wasActive = false;
+    this.turns.subscribe(() => {
+      // Session work changes at admission and release; phases within a turn are presentation.
+      if (this.turns.isActive === wasActive) return;
+      wasActive = this.turns.isActive;
+      this.options.onWorkChanged?.();
+    });
   }
 
   get id(): string { return this.state.id; }
@@ -42,9 +64,53 @@ export class TabSession {
   get userOwnershipRevision(): number { return this.userOwnershipRevisionValue; }
   get identityRevision(): number { return this.identityRevisionValue; }
 
-  get canNavigateConversation(): boolean {
+  /** Admission is open, the tab is not closing, and no conversation transition is running. */
+  get admitsConversationOperations(): boolean {
     return this.acceptsIntents && this.lifecycleState !== 'closing' && !this.identitySealed
-      && !this.turns.isActive && !this.coordinator.hasBackgroundWork && !this.isConversationBusy();
+      && !this.isConversationBusy;
+  }
+
+  /** No turn, background work, conversation transition, or close holds the tab, so its provider session may be released. */
+  get isIdle(): boolean {
+    return !this.turns.isActive && !this.hasBackgroundWork && !this.isConversationBusy
+      && this.lifecycleState !== 'closing';
+  }
+
+  private get isConversationBusy(): boolean {
+    return this.options.isConversationBusy?.() ?? false;
+  }
+
+  get canNavigateConversation(): boolean {
+    return this.admitsConversationOperations && !this.turns.isActive && !this.coordinator.hasBackgroundWork;
+  }
+
+  /** A foreground response holds the tab, from admission through settlement. */
+  get hasActiveTurn(): boolean {
+    return this.turns.isResponseActive;
+  }
+
+  /** Provider background turns, async subagents, or side chat work that outlives the foreground turn. */
+  get hasBackgroundWork(): boolean {
+    return this.coordinator.hasBackgroundWork || (this.options.hasDetachedWork?.() ?? false);
+  }
+
+  /** Any foreground or background work a user can see; closing the tab would interrupt it. */
+  get isWorking(): boolean {
+    return this.hasActiveTurn || this.hasBackgroundWork;
+  }
+
+  /**
+   * The one cancellation recipe for this tab's turn: records the request, aborts the turn,
+   * then cancels provider execution. Non-user reasons also release the turn's presentation.
+   */
+  cancelTurn(reason: TurnCancelReason, options: TurnCancelOptions = {}): boolean {
+    const cancelled = this.turns.cancel(reason);
+    try {
+      if (options.dismissInteractions) this.options.dismissInteractions?.();
+    } finally {
+      if (cancelled) this.coordinator.cancel();
+    }
+    return cancelled;
   }
 
   async runConversationNavigation(operation: (signal: AbortSignal) => Promise<unknown>): Promise<void> {

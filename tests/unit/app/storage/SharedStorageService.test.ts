@@ -1,3 +1,5 @@
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
+
 import { SharedStorageService } from '@/app/storage/SharedStorageService';
 
 describe('SharedStorageService', () => {
@@ -12,7 +14,7 @@ describe('SharedStorageService', () => {
     const plugin = {
       app: { vault: { adapter } },
     } as any;
-    const storage = new SharedStorageService(plugin);
+    const storage = new SharedStorageService(plugin, DEFAULT_CLAUDIAN_SETTINGS);
 
     await storage.initialize();
 
@@ -29,7 +31,7 @@ describe('SharedStorageService', () => {
       }),
       saveData: jest.fn().mockRejectedValue(error),
     } as any;
-    const storage = new SharedStorageService(plugin);
+    const storage = new SharedStorageService(plugin, DEFAULT_CLAUDIAN_SETTINGS);
 
     await expect(storage.clearTabManagerState()).rejects.toBe(error);
   });
@@ -46,7 +48,7 @@ describe('SharedStorageService', () => {
       }),
       saveData: jest.fn().mockResolvedValue(undefined),
     } as any;
-    const storage = new SharedStorageService(plugin);
+    const storage = new SharedStorageService(plugin, DEFAULT_CLAUDIAN_SETTINGS);
 
     await storage.clearTabManagerState();
 

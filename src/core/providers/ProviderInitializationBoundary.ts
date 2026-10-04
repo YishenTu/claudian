@@ -127,13 +127,8 @@ export class ProviderInitializationBoundary {
       throw new Error(`Provider workspace "${providerId}" is not registered.`);
     }
 
-    const storage = plugin.storage;
-    const vaultAdapter = storage.getAdapter();
-
     const context: ProviderWorkspaceInitContext = {
       plugin,
-      storage,
-      vaultAdapter,
       transitionScope,
     };
 

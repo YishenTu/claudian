@@ -1,24 +1,16 @@
 import type { InstallationKey } from '../device/InstallationKey';
-import type { AppTabManagerState } from '../providers/types';
 import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
-import type { SessionMetadataReader } from './SessionStorage';
 
 /**
- * Minimal shared app storage contract.
- *
- * This interface covers only the storage concerns that are shared across
- * all providers: Claudian settings, legacy tab state migration, and session metadata.
- *
- * Provider-specific storage surfaces (CC settings, slash commands, skills,
- * agents, MCP config) live behind provider-owned modules.
+ * Storage identity visible to providers: the durable installation key that
+ * scopes host-specific provider settings. Application persistence (settings,
+ * session metadata, legacy tab state) stays behind app-owned storage.
  */
-export interface SharedAppStorage {
+export interface ProviderHostStorage {
   readonly installationKey: InstallationKey;
-  initialize(): Promise<{ claudian: Record<string, unknown> }>;
-  saveClaudianSettings(settings: Record<string, unknown>): Promise<void>;
-  getTabManagerState(): Promise<AppTabManagerState | null>;
-  clearTabManagerState(): Promise<void>;
-  /** Read-only startup metadata access; conversation writers stay repository-private. */
-  sessions: SessionMetadataReader;
+}
+
+/** Storage capabilities available to user-facing features. */
+export interface SharedAppStorage extends ProviderHostStorage {
   getAdapter(): VaultFileAdapter;
 }

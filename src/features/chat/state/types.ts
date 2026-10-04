@@ -80,12 +80,8 @@ export interface ChatStateData {
   // Message state
   messages: ChatMessage[];
 
-  // Streaming control
-  isStreaming: boolean;
-  cancelRequested: boolean;
-  streamGeneration: number;
-  /** Guards against concurrent operations during conversation creation. */
-  isCreatingConversation: boolean;
+  /** Guards against concurrent operations while the tab resets to a new chat. */
+  isResettingToNewChat: boolean;
   /** Guards against concurrent operations during conversation switching. */
   isSwitchingConversation: boolean;
   /** Guards the destructive rewind transaction from overlapping tab actions. */

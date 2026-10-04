@@ -1,9 +1,11 @@
 import '@/providers';
 
 import { ConversationRepository } from '@/app/conversations/ConversationRepository';
-import type { ConversationPersistence } from '@/core/bootstrap/ConversationPersistenceStore';
-import type { SessionMetadataReader } from '@/core/bootstrap/SessionStorage';
+import type { ConversationPersistence } from '@/app/storage/ConversationPersistenceStore';
+import type { SessionMetadataReader } from '@/app/storage/SessionStorage';
 import type { ProviderSessionSnapshot } from '@/core/execution';
+import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
 import type { ChatMessage, Conversation } from '@/core/types';
 
 function createConversation(id = 'conversation-1'): Conversation {
@@ -51,6 +53,8 @@ function createRepository(
 ) {
   const onConversationDeleted = jest.fn().mockResolvedValue(undefined);
   const repository = new ConversationRepository({
+    providers: ProviderRegistry,
+    providerSettings: ProviderSettingsCoordinator,
     getSettings: () => ({}),
     getVaultPath: () => '/vault',
     persistence,

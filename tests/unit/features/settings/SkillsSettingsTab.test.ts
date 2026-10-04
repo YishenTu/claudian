@@ -1,10 +1,10 @@
 /** @jest-environment jsdom */
 import { DesktopVault } from '@test/helpers/core/DesktopVault';
+import { DEFAULT_CLAUDIAN_SETTINGS } from '@test/helpers/defaultSettings';
 import { fireEvent, screen, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import type { App } from 'obsidian';
 
-import { DEFAULT_CLAUDIAN_SETTINGS } from '@/app/settings/defaultSettings';
 import { AGENT_SKILLS_ROOT, CLAUDE_COMMANDS_ROOT, CLAUDE_SKILLS_ROOT } from '@/core/skills/AgentSkillRepository';
 import { ClaudeSkillSync } from '@/core/skills/ClaudeSkillSync';
 import type { ClaudianSettings } from '@/core/types';

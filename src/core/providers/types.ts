@@ -1,10 +1,8 @@
 import type { CursorContext } from '../../utils/editor';
-import type { SharedAppStorage } from '../bootstrap/storage';
 import type {
   ProviderExecutionBackend,
   ProviderExecutionTransitionScope,
 } from '../execution';
-import type { VaultFileAdapter } from '../storage/VaultFileAdapter';
 import type {
   AskUserAnswers,
   AuxiliaryContinuityReset,
@@ -123,12 +121,11 @@ export interface ProviderSettingsReconciler {
 // App-level service interfaces
 // ---------------------------------------------------------------------------
 
-/** Tab manager state persisted across restarts. */
-export interface AppTabManagerState {
-  openTabs: Array<{ tabId: string; conversationId: string | null; draftModel?: string; providerId?: ProviderId | null }>;
-  activeTabId: string | null;
-  expandedTitleTabIds?: string[];
-}
+/**
+ * Chat tab state is not a provider contract; its owner is `core/bootstrap/tabManagerState`.
+ * Retained only until chat imports it from that owner.
+ */
+export type { AppTabManagerState } from '../bootstrap/tabManagerState';
 
 /** Provider-neutral session metadata storage. */
 export interface SessionMetadataListOptions {
@@ -150,8 +147,8 @@ export interface SessionMetadataScanResult {
 //
 // These remain here as standalone types so app-level settings/chat code can
 // depend on stable provider workspace contracts without importing concrete
-// provider implementations. They are NOT part of the shared bootstrap storage
-// contract (`SharedAppStorage`).
+// provider implementations. They are NOT part of the provider-facing host
+// storage contract (`ProviderHostStorage`).
 // ---------------------------------------------------------------------------
 
 export interface AppCommandStorage {
@@ -419,8 +416,6 @@ export interface ProviderSettingsTabRenderer {
 
 export interface ProviderWorkspaceInitContext {
   plugin: ProviderHost;
-  storage: SharedAppStorage;
-  vaultAdapter: VaultFileAdapter;
   transitionScope: ProviderExecutionTransitionScope;
 }
 

@@ -3,10 +3,12 @@ import type {
   PermissionResult,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import type {
-  ProviderApprovalDecisionOption,
-  ProviderInteractionDismissReason,
-  ProviderInteractionPort,
+import {
+  type PendingInteraction,
+  PendingInteractionLedger,
+  type ProviderApprovalDecisionOption,
+  type ProviderInteractionDismissReason,
+  type ProviderInteractionPort,
 } from '../../../core/execution';
 import { getActionDescription } from '../../../core/security/approvalRules';
 import {
@@ -34,9 +36,11 @@ const PERSISTABLE_DECISION_OPTIONS: readonly ProviderApprovalDecisionOption[] = 
 ];
 
 export class ClaudeInteractionHandler {
-  private readonly pendingInteractionIds = new Set<string>();
+  private readonly pending: PendingInteractionLedger;
 
-  constructor(private readonly deps: ClaudeExecutionInteractionDeps) {}
+  constructor(private readonly deps: ClaudeExecutionInteractionDeps) {
+    this.pending = new PendingInteractionLedger(deps.interactionPort);
+  }
 
   readonly canUseTool: CanUseTool = async (
     toolName,
@@ -60,13 +64,13 @@ export class ClaudeInteractionHandler {
     }
 
     const interactionId = this.#getInteractionId(options.toolUseID);
-    if (this.pendingInteractionIds.has(interactionId)) {
+    const pending = this.pending.begin(interactionId);
+    if (!pending) {
       return {
         behavior: 'deny',
         message: `Interaction "${interactionId}" is already pending.`,
       };
     }
-    this.pendingInteractionIds.add(interactionId);
 
     let dismissReason: ProviderInteractionDismissReason = 'native-rejected';
     try {
@@ -88,7 +92,7 @@ export class ClaudeInteractionHandler {
           kind: 'question',
           input: questionInput,
         }, options.signal);
-        assertResponseIdentity(interactionId, response.interactionId);
+        this.#assertCurrentResponse(pending, response.interactionId);
         dismissReason = 'resolved';
         if (response.answers === null) {
           return {
@@ -119,7 +123,7 @@ export class ClaudeInteractionHandler {
           : ONE_TIME_DECISION_OPTIONS,
         additionalPermissions: options.suggestions,
       }, options.signal);
-      assertResponseIdentity(interactionId, response.interactionId);
+      this.#assertCurrentResponse(pending, response.interactionId);
       dismissReason = 'resolved';
       const decision = response.decision;
       if (decision === 'cancel') {
@@ -166,19 +170,28 @@ export class ClaudeInteractionHandler {
         interrupt: options.signal.aborted,
       };
     } finally {
-      this.pendingInteractionIds.delete(interactionId);
-      this.deps.interactionPort.dismissInteraction(
-        interactionId,
+      this.pending.settle(
+        pending,
         options.signal.aborted ? 'cancelled' : dismissReason,
       );
     }
   };
 
   dismissAll(reason: ProviderInteractionDismissReason): void {
-    for (const interactionId of this.pendingInteractionIds) {
-      this.deps.interactionPort.dismissInteraction(interactionId, reason);
+    this.pending.dismissAll(reason);
+  }
+
+  #assertCurrentResponse(pending: PendingInteraction, responseId: string): void {
+    if (responseId !== pending.interactionId) {
+      throw new StaleClaudeInteractionResponseError(
+        `Stale interaction response: expected "${pending.interactionId}", received "${responseId}".`,
+      );
     }
-    this.pendingInteractionIds.clear();
+    if (this.pending.isStaleResponse(pending, { interactionId: responseId })) {
+      throw new StaleClaudeInteractionResponseError(
+        `Stale interaction response: "${pending.interactionId}" was already dismissed.`,
+      );
+    }
   }
 
   #getInteractionId(nativeToolUseId: string): string {
@@ -187,14 +200,6 @@ export class ClaudeInteractionHandler {
 }
 
 class StaleClaudeInteractionResponseError extends Error {}
-
-function assertResponseIdentity(expected: string, actual: string): void {
-  if (actual !== expected) {
-    throw new StaleClaudeInteractionResponseError(
-      `Stale interaction response: expected "${expected}", received "${actual}".`,
-    );
-  }
-}
 
 function addCustomAnswerSupport(
   input: Readonly<Record<string, unknown>>,

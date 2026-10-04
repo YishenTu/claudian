@@ -7,7 +7,9 @@ import { DEFAULT_CHAT_PROVIDER_ID } from '../../../../core/providers/types';
 import { t } from '../../../../i18n/i18n';
 import { getVaultPath } from '../../../../utils/path';
 import { ComposerDraftController } from '../../composer/ComposerDraftController';
+import { AsyncSubagentHistoryRecovery } from '../../controllers/AsyncSubagentHistoryRecovery';
 import { BrowserSelectionController } from '../../controllers/BrowserSelectionController';
+import { BuiltInCommandController } from '../../controllers/BuiltInCommandController';
 import { CanvasSelectionController } from '../../controllers/CanvasSelectionController';
 import { ConversationController } from '../../controllers/ConversationController';
 import { InputController } from '../../controllers/InputController';
@@ -166,18 +168,14 @@ export function buildTabRuntimeControllers(
     () => canvasSelectionController.stop(),
   );
 
-  const streamController = new StreamController({
-    onQuestionToolChanged: tool => runtimeRef.requirePublished().controllers.inputController.updateAsyncQuestion(tool),
-    plugin,
-    state,
-    renderer,
+  const getMessagesEl = () => dom.messagesEl;
+  const getProviderId = () => requireTabProviderId(runtimeRef.requirePublished(), plugin);
+  const getProviderSessionId = () => shell.executionCoordinator.snapshot?.providerSessionId ?? null;
+  const asyncSubagentHistoryRecovery = new AsyncSubagentHistoryRecovery({
     subagentManager: services.subagentManager,
-    getMessagesEl: () => dom.messagesEl,
-    updateQueueIndicator: () => (
-      runtimeRef.requirePublished().controllers.inputController.updateQueueIndicator()
-    ),
-    getProviderId: () => requireTabProviderId(runtimeRef.requirePublished(), plugin),
-    getProviderSessionId: () => shell.executionCoordinator.snapshot?.providerSessionId ?? null,
+    getMessagesEl,
+    getProviderId,
+    getProviderSessionId,
     loadSubagentToolCalls: async (request) => {
       const vaultPath = getVaultPath(plugin.app);
       if (!vaultPath) return undefined;
@@ -213,6 +211,20 @@ export function buildTabRuntimeControllers(
         await tab.controllers.conversationController.save(false);
       }
     },
+  });
+  const streamController = new StreamController({
+    onQuestionToolChanged: tool => runtimeRef.requirePublished().controllers.inputController.updateAsyncQuestion(tool),
+    plugin,
+    state,
+    renderer,
+    subagentManager: services.subagentManager,
+    getMessagesEl,
+    updateQueueIndicator: () => (
+      runtimeRef.requirePublished().controllers.inputController.updateQueueIndicator()
+    ),
+    getProviderId,
+    getProviderSessionId,
+    asyncSubagentHistoryRecovery,
   });
   options.registerCleanup('tab stream controller', () => streamController.dispose());
   streamController.setTabActive(!dom.contentEl.hasClass('claudian-hidden'));
@@ -254,14 +266,13 @@ export function buildTabRuntimeControllers(
         }
       },
       getMessagesEl: () => dom.messagesEl,
-      navigation: shell.session,
+      session: shell.session,
       getLinkedContentController: () => ui.linkedContentController,
       clearQueuedMessage: () => (
         runtimeRef.requirePublished().controllers.inputController.clearQueuedMessage()
       ),
       getExecutionCoordinator: () => shell.executionCoordinator,
       ensureExecutionInitialized,
-      getProviderId: () => requireTabProviderId(runtimeRef.requirePublished(), plugin),
       getSelectedModel: () => getTabSelectedModel(runtimeRef.requirePublished(), plugin),
       dismissPendingInlinePrompts: () => (
         runtimeRef.requirePublished().controllers.inputController.dismissPendingApproval()
@@ -352,6 +363,38 @@ export function buildTabRuntimeControllers(
   });
   options.registerCleanup('tab side chat', () => sideChatController.dispose());
 
+  const builtInCommandController = new BuiltInCommandController({
+    plugin,
+    conversationController,
+    getLinkedContentController: () => ui.linkedContentController,
+    getCurrentConversationId: () => state.currentConversationId,
+    getInputContainerEl: () => dom.inputContainerEl,
+    getInputEl: () => dom.inputEl,
+    getSideChatController: () => sideChatController,
+    openConversation: openConversation
+      ? async (conversationId) => {
+          const runtime = runtimeRef.requirePublished();
+          if (!isRuntimeLive(runtime)) return;
+          await openConversation(conversationId);
+        }
+      : undefined,
+    handleNewConversationCommand: viewHost.handleNewConversationCommand
+      ? () => {
+          if (!isRuntimeLive(runtimeRef.requirePublished())) return Promise.resolve(true);
+          return viewHost.handleNewConversationCommand!();
+        }
+      : undefined,
+    onForkAll: forkRequestCallback
+      ? () => handleForkAll(
+          runtimeRef.requirePublished(),
+          plugin,
+          forkRequestCallback,
+          isRuntimeLive,
+        )
+      : undefined,
+    toggleFastMode: () => toggleTabServiceTier(runtimeRef.requirePublished(), plugin),
+  });
+
   const inputController = new InputController({
     plugin,
     state,
@@ -376,30 +419,9 @@ export function buildTabRuntimeControllers(
     canStartTurn: () => shell.session.acceptsIntents,
     isClosing: () => shell.lifecycleState === 'closing',
     getSideChatController: () => sideChatController,
-    turnOwner: shell.session.turns,
+    session: shell.session,
     ensureExecutionInitialized,
-    openConversation: openConversation
-      ? async (conversationId) => {
-          const runtime = runtimeRef.requirePublished();
-          if (!isRuntimeLive(runtime)) return;
-          await openConversation(conversationId);
-        }
-      : undefined,
-    handleNewConversationCommand: viewHost.handleNewConversationCommand
-      ? () => {
-          if (!isRuntimeLive(runtimeRef.requirePublished())) return Promise.resolve(true);
-          return viewHost.handleNewConversationCommand!();
-        }
-      : undefined,
-    onForkAll: forkRequestCallback
-      ? () => handleForkAll(
-          runtimeRef.requirePublished(),
-          plugin,
-          forkRequestCallback,
-          isRuntimeLive,
-        )
-      : undefined,
-    toggleFastMode: () => toggleTabServiceTier(runtimeRef.requirePublished(), plugin),
+    builtInCommands: builtInCommandController,
     captureReviewableSettlement: shell.captureReviewableSettlement ?? undefined,
   });
   const navigationController = new NavigationController({
@@ -408,7 +430,7 @@ export function buildTabRuntimeControllers(
     getSettings: () => plugin.settings.keyboardNavigation,
     isStreaming: () => state.isStreaming || inputController.isPreparingMainTurn,
     shouldSkipEscapeHandling: () => {
-      if (inputController.isResumeDropdownVisible()) return true;
+      if (builtInCommandController.isResumeDropdownVisible()) return true;
       if (ui.composerDropdown.isVisible()) return true;
       return false;
     },
@@ -425,6 +447,7 @@ export function buildTabRuntimeControllers(
       conversationController,
       streamController,
       inputController,
+      builtInCommandController,
       navigationController,
       sideChatController,
     },

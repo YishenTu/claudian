@@ -1,4 +1,6 @@
-import type { AppTabManagerState, ProviderId } from '../../core/providers/types';
+import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
+
+import type { ProviderId } from '../../core/providers/types';
 import type { Conversation, ConversationMeta, ConversationMutablePatch, ConversationSummary, StoredChatModelSelection } from '../../core/types';
 import type { FeatureHost } from '../FeatureHost';
 import type { ChatExecutionPersistence } from './execution/ChatExecutionCoordinator';

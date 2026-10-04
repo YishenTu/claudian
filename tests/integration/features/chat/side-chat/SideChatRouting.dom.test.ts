@@ -2,7 +2,7 @@
 import '@/providers';
 
 import { deferred } from '@test/helpers/ChatInputHarness';
-import { createConversationPorts } from '@test/helpers/ConversationPorts';
+import { createTestTabSession, holdResponse } from '@test/helpers/ConversationPorts';
 import {
   createHarness,
   releaseSideChatHarnesses,
@@ -30,23 +30,23 @@ function createRouting(
 ) {
   const mainExecutions: string[] = [];
   const mainMessages: ChatMessage[] = [];
+  const session = createTestTabSession({ coordinator: { cancel: () => deps.getExecutionCoordinator()?.cancel() } });
   const state = {
     acknowledgeReview: () => undefined,
     addMessage: (message: ChatMessage) => { mainMessages.push(message); },
-    isCreatingConversation: false,
+    isResettingToNewChat: false,
     isRewinding: false,
-    bumpStreamGeneration: () => 1,
-    cancelRequested: false,
+    get cancelRequested() { return session.turns.cancelRequested; },
     clearFlavorTimerInterval: () => undefined,
     currentContentEl: null,
     currentConversationId: 'conversation-1',
     writeEditStates: new Map(),
     hasPendingConversationSave: false,
-    isStreaming: false,
+    get isStreaming() { return session.turns.isInFlight; },
     isSwitchingConversation: false,
     messages: [] as ChatMessage[],
     responseStartTime: null,
-    streamGeneration: 1,
+    get streamGeneration() { return session.turns.streamGeneration; },
     queuedMessage: null as unknown,
     queueIndicatorEl: null,
   };
@@ -89,6 +89,7 @@ function createRouting(
       refreshActionButtons: () => undefined,
     },
     selectionController: { getContext: () => context.editorSelection ?? null },
+    session,
     state,
     streamController: {
       resetSubagentStreamingState: () => undefined,
@@ -105,7 +106,7 @@ function createRouting(
     controllers: { inputController: controller, sideChatController: harness.controller },
     state,
   } as unknown as AssembledTabRuntime;
-  return { controller, deps, mainExecutions, mainMessages, state, tab };
+  return { controller, deps, mainExecutions, mainMessages, session, state, tab };
 }
 
 it('starts a side chat from a submitted command instead of sending it to main', async () => {
@@ -165,7 +166,7 @@ it('cancels only the selected destination', async () => {
   expect(await started).toBe(true);
   expect(native.cancelCalls).toBe(1);
 
-  routing.state.isStreaming = true;
+  holdResponse(routing.session.turns);
   harness.controller.collapse();
   const cancelMain = jest.spyOn(routing.controller, 'cancelStreaming');
   expect(cancelSelectedDestinationTurn(routing.tab)).toBe(true);
@@ -493,7 +494,7 @@ it('protects parked main drafts and cancels branch previews when switching to si
   const history: ChatMessage[] = [{ id: 'first', role: 'user', content: 'First', timestamp: Date.now() }, prompt];
   routing.state.messages = history;
   const conversation = new ConversationController({
-    state: routing.state, drafts: harness.drafts, navigation: createConversationPorts(routing.deps as any).navigation, plugin: harness.plugin,
+    state: routing.state, drafts: harness.drafts, session: routing.session, plugin: harness.plugin,
     renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
     getInputEl: () => harness.inputEl, getMessagesEl: () => document.body,
     getImageContextManager: () => harness.imageContextManager,
@@ -543,7 +544,7 @@ it.each([false, true])('keeps side drafts separate while a branch submission set
   const navigation = deferred<{ status: string; messages: ChatMessage[] }>();
   const coordinator = { navigateConversationBranch: jest.fn().mockReturnValue(navigation.promise) };
   const conversation = new ConversationController({
-    ...routing.deps, navigation: createConversationPorts(routing.deps as any).navigation, plugin: { settings: {}, updateConversation: jest.fn() },
+    ...routing.deps, session: routing.session, plugin: { settings: {}, updateConversation: jest.fn() },
     renderer: { renderMessages: jest.fn(), refreshBranchButtonState: jest.fn() },
     setWelcomeEl: jest.fn(), getExecutionCoordinator: () => coordinator,
   } as any);
@@ -583,7 +584,7 @@ it.each([false, true])('keeps the captured side mention after collapse (cancel m
   await entered.promise;
   harness.controller.collapse();
   if (cancelMain) {
-    routing.state.isStreaming = true;
+    holdResponse(routing.session.turns);
     routing.controller.cancelStreaming();
   }
   harness.inputEl.value = 'new main draft';

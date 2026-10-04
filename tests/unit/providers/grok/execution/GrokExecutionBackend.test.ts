@@ -1976,6 +1976,43 @@ describe('GrokExecutionBackend', () => {
     expect(native.newRequests).toHaveLength(0);
   });
 
+  it('keeps out-of-turn session sequences increasing across native permission changes', async () => {
+    const native = new FakeNativeConnection();
+    const session = new GrokExecutionBackend(
+      createGrokHost(),
+      {
+        nativeFactory: { create: () => native },
+        resolvePromptIndex: async () => 3,
+      },
+    ).createSession(sessionConfig);
+    const sessionEvents: Array<{ type: string; sequence: number }> = [];
+    session.onEvent(event => {
+      sessionEvents.push({ type: event.type, sequence: event.scope.sequence });
+    });
+    if (!isRewindableExecutionSession(session)) {
+      throw new Error('Expected Grok rewind capability.');
+    }
+
+    try {
+      await session.previewRewind('user-1', 'assistant-1');
+      native.emitPermissionMode('yolo');
+      // A replaced process reloads the session and republishes idle state.
+      jest.spyOn(native, 'isAlive').mockReturnValue(false);
+      await session.previewRewind('user-1', 'assistant-1');
+
+      expect(sessionEvents.map(event => event.type)).toEqual([
+        'session_state_changed',
+        'permission_mode_changed',
+        'session_state_changed',
+      ]);
+      const sequences = sessionEvents.map(event => event.sequence);
+      expect(sequences).toEqual([...sequences].sort((left, right) => left - right));
+      expect(new Set(sequences).size).toBe(sequences.length);
+    } finally {
+      await session.dispose();
+    }
+  });
+
   it('rejects an ambiguous native interjection failure after handoff', async () => {
     const native = new FakeNativeConnection();
     native.promptImplementation = () => new Promise(() => {});

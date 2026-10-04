@@ -1,15 +1,16 @@
 import { Notice, type Plugin } from 'obsidian';
 
+import type { SharedAppStorage } from '@/core/bootstrap/storage';
+import type { AppTabManagerState } from '@/core/bootstrap/tabManagerState';
 import { getInstallationKey, type InstallationKey } from '@/core/device/InstallationKey';
+import { VaultFileAdapter } from '@/core/storage/VaultFileAdapter';
+import type { ClaudianSettings } from '@/core/types';
 
-import { ConversationPersistenceStore } from '../../core/bootstrap/ConversationPersistenceStore';
-import { migrateSessionSidecars } from '../../core/bootstrap/migrateSessionSidecars';
-import { SessionStorage } from '../../core/bootstrap/SessionStorage';
-import type { SharedAppStorage } from '../../core/bootstrap/storage';
-import { normalizeTabManagerState } from '../../core/bootstrap/tabManagerState';
-import type { AppTabManagerState } from '../../core/providers/types';
-import { VaultFileAdapter } from '../../core/storage/VaultFileAdapter';
 import { ClaudianSettingsStorage, type StoredClaudianSettings } from '../settings/ClaudianSettingsStorage';
+import { ConversationPersistenceStore } from './ConversationPersistenceStore';
+import { normalizeTabManagerState } from './legacyTabManagerState';
+import { migrateSessionSidecars } from './migrateSessionSidecars';
+import { SessionStorage } from './SessionStorage';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -25,11 +26,11 @@ export class SharedStorageService implements SharedAppStorage {
   private plugin: Plugin;
   private obsoleteSessionInputs: string[] = [];
 
-  constructor(plugin: Plugin) {
+  constructor(plugin: Plugin, defaultSettings: Readonly<ClaudianSettings>) {
     this.plugin = plugin;
     this.adapter = new VaultFileAdapter(plugin.app);
     const deviceKey = this.installationKey = getInstallationKey();
-    this.claudianSettings = new ClaudianSettingsStorage(this.adapter);
+    this.claudianSettings = new ClaudianSettingsStorage(this.adapter, defaultSettings);
     this.sessions = new SessionStorage(this.adapter, deviceKey);
     this.conversationPersistence = new ConversationPersistenceStore(this.adapter, deviceKey);
   }

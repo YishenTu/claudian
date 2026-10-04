@@ -13,6 +13,7 @@ import type { ChatFeatureHost } from '../ChatFeatureHost';
 import {
   StreamController,
 } from '../controllers/StreamController';
+import { TurnCoordinator } from '../controllers/TurnCoordinator';
 import { buildChatExecutionConfiguration, resolveChatDynamicSections } from '../execution/chatExecutionConfiguration';
 import { AsyncQuestionPrompts } from '../rendering/AsyncQuestionPrompts';
 import { BackgroundResponses } from '../rendering/BackgroundResponses';
@@ -74,6 +75,8 @@ export class SideChatRuntime {
   readonly #settings: SideChatSettingsProjection;
   #activeDelivery: SideChatSubmission['onDelivery'];
   readonly #responseStream: ResponseStream;
+  /** Owns the requested side turn; presentation state derives from it. */
+  readonly #turns = new TurnCoordinator();
   #status: SideChatStatus = 'preparing';
   #lastError: string | null = null;
   #disposed = false;
@@ -93,7 +96,7 @@ export class SideChatRuntime {
     this.state = new ChatState({
       onAttentionChanged: () => this.#refreshStatus(),
       onStreamingStateChanged: () => this.#refreshStatus(),
-    });
+    }, undefined, this.#turns);
     this.renderer = new MessageRenderer(
       deps.plugin,
       deps.component,
@@ -127,7 +130,8 @@ export class SideChatRuntime {
       updateQueueIndicator: () => undefined,
     });
     this.#responseStream = new ResponseStream({
-      state: this.state, renderer: this.renderer, stream: this.#stream, createMessageId: createSideMessageId,
+      state: this.state, renderer: this.renderer, stream: this.#stream, turns: this.#turns,
+      createMessageId: createSideMessageId,
     });
     this.#backgroundResponses = new BackgroundResponses({
       state: this.state, renderer: this.renderer, stream: this.#stream,
@@ -332,8 +336,11 @@ export class SideChatRuntime {
     const content = submission.content.trim();
     const images = [...(submission.images ?? [])];
     if (!content && images.length === 0) return;
-    if (this.state.isStreaming) return;
+    if (this.#turns.isActive) return;
+    await this.#turns.run(() => this.#respond(submission, content, images));
+  }
 
+  async #respond(submission: SideChatSubmission, content: string, images: ImageAttachment[]): Promise<void> {
     this.#lastError = null;
     const userMessage: ChatMessage = {
       content,
@@ -350,8 +357,7 @@ export class SideChatRuntime {
     }
 
     const assistantMessage = this.#responseStream.start();
-    this.state.isStreaming = true;
-    this.state.cancelRequested = false;
+    this.#turns.beginResponse();
     this.state.autoScrollEnabled = true;
     this.#stream.showThinkingIndicator();
     this.state.responseStartTime = performance.now();
@@ -359,6 +365,7 @@ export class SideChatRuntime {
 
     let interrupted = false;
     let failed = false;
+    let completed = false;
     try {
       const dynamicSections = await resolveChatDynamicSections(this.deps.plugin);
       if (this.#disposed || this.state.cancelRequested) return;
@@ -381,6 +388,7 @@ export class SideChatRuntime {
 
       if (result.accepted) submission.onDelivery?.(true);
       if (result.status === 'completed') {
+        completed = true;
         const finalAssistant = this.#responseStream.active ?? assistantMessage;
         finalAssistant.completedAt = Date.now();
         if (result.checkpointId) finalAssistant.assistantMessageId = result.checkpointId;
@@ -400,7 +408,8 @@ export class SideChatRuntime {
     } finally {
       this.#activeDelivery = undefined;
       const finalAssistant = this.#responseStream.active ?? assistantMessage;
-      const wasCancelled = interrupted || this.state.cancelRequested;
+      // Native completion wins over a cancel that reached the provider too late.
+      const wasCancelled = interrupted || (this.state.cancelRequested && !completed);
       if (wasCancelled) this.#discardQueuedSubmissions();
       await this.#responseStream.finish(finalAssistant, { interrupted: wasCancelled, failed });
       this.#responseStream.clear();
@@ -427,14 +436,14 @@ export class SideChatRuntime {
     this.#preparation?.controller.abort();
     this.#discardQueuedSubmissions();
     this.#refreshStatus();
-    if (this.state.isStreaming) this.state.cancelRequested = true;
+    this.#turns.cancel('user');
     this.#session.cancel();
   }
 
   async dispose(): Promise<void> {
     if (this.#disposed) return;
     this.#disposed = true;
-    this.state.cancelRequested = true;
+    this.#turns.cancel('shutdown');
     this.#session.cancel();
     this.#activeCommand?.cancel();
     this.#preparation?.controller.abort();
