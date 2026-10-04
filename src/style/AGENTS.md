@@ -7,3 +7,4 @@
 - Embedded inputs stay transparent/borderless in every state; their wrapper owns surface/focus treatment. Textarea resizing needs an explicit bounded modifier.
 - Persistent session-manager styles stay under its dedicated containers; shared history item primitives must not impose persistent-sidebar sizing or actions on the compact menu.
 - Pinned/session lists scroll independently. Preserve min-height: 0 through flex ancestors so bounded lists and sticky headers do not clip.
+- Surfaces that cover other content (overlays, popovers, menus) need an opaque base under theme colors: translucent themes can make `--background-primary` transparent, and jsdom cannot detect it.

@@ -8,5 +8,5 @@
 - Native Claude owns MCP setup/authentication/health. Never read, inject, migrate, or delete the obsolete `.claude/mcp.json`.
 - Resolve native history through configured Claude home, not hardcoded default paths. Branch replay must retain relevant sibling tool results.
 - Missing authoritative checkpoint/latest-segment model evidence cannot fall back to an older segment or make a recovery-only locator resumable.
-- A returned session differing from the resume target triggers history recovery, except initial fork session initialization. Crash retry is allowed only before any output chunk; late automatic turns may arrive without a handler.
+- A returned session differing from the resume target triggers history recovery, except initial fork session initialization. Late automatic turns may arrive without a handler.
 - A steer belongs to the requested run until a result consumes it, whether Claude folds it mid-turn or runs it as the next native turn. Queued sends survive a native interrupt, so cancelling with an undelivered steer must replace the process.
