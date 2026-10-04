@@ -3,7 +3,7 @@
   "name": "Claudian (with AntiGravity ACP)",
   "version": "2.4.0",
   "minAppVersion": "1.13.0",
-  "description": "Embeds Google AntiGravity, Claude Code, Codex, and other coding agents as AI collaborators in your vault via Agent Client Protocol (ACP). Your vault becomes their working directory, giving them capabilities for file reads and writes, search, bash commands, and multi-step workflows.",
+  "description": "Embeds AntiGravity, Claude Code, and other coding agents as AI collaborators in your vault. Your vault becomes their working directory for file edits, search, bash, and workflows.",
   "author": "Yishen Tu & AntiGravity ACP Contributors",
   "authorUrl": "https://github.com/agentclientprotocol/registry",
   "isDesktopOnly": true

@@ -1,3 +1,8 @@
+import type {
+  ProviderLinkedContentContext,
+  ProviderSelectionSnapshot,
+  ProviderSessionReference,
+} from '@/core/execution/ProviderExecutionRequest';
 import type { BrowserSelectionContext } from '@/core/prompt/browserContext';
 import type { CanvasSelectionContext } from '@/core/prompt/canvasContext';
 import type { EditorSelectionContext } from '@/core/prompt/editorContext';
@@ -8,11 +13,6 @@ import {
   appendSelectionContexts,
   appendSessionReferences,
 } from '@/core/prompt/promptContext';
-import type {
-  ProviderLinkedContentContext,
-  ProviderSelectionSnapshot,
-  ProviderSessionReference,
-} from '@/core/execution/ProviderExecutionRequest';
 import type { ChatMessage, ImageAttachment } from '@/core/types';
 import type { ACPContentBlock } from '@/providers/acp';
 

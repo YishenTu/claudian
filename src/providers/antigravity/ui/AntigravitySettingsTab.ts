@@ -1,6 +1,5 @@
 import { Setting } from 'obsidian';
 
-import { getInstallationKey } from '@/core/device/InstallationKey';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
 import { getRuntimeEnvironmentVariables } from '@/core/providers/providerEnvironment';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
@@ -27,14 +26,13 @@ import type {
   AntigravityPermissionMode,
 } from '../types';
 
-export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
+export function createAntigravitySettingsTabRenderer(): ProviderSettingsTabRenderer {
   return {
     render(container: HTMLElement, context: ProviderSettingsTabRendererContext) {
       const settingsBag = context.plugin.settings as unknown as Record<string, unknown>;
-      const hostnameKey = getInstallationKey();
+      const hostnameKey = context.plugin.storage.installationKey;
 
       const lastProviderWarning = renderLastEnabledProviderWarning(container);
-
       const modelWarning = renderProviderModelEnablementWarning(container, context, {
         getHasEnabledModels: () => getAntigravityProviderSettings(settingsBag).visibleModels.length > 0,
         getIsEnabled: () => getAntigravityProviderSettings(settingsBag).enabled,
@@ -49,7 +47,7 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
         onChange: async (value: boolean) => {
           let accepted = true;
           await context.plugin.runProviderExecutionTransition(['antigravity'], async () => {
-            await context.plugin.mutateSettings((settings: any) => {
+            await context.plugin.mutateSettings((settings) => {
               accepted = ProviderSettingsCoordinator.applyProviderEnablement(
                 settings,
                 'antigravity',
@@ -74,9 +72,8 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
         inspect: async () => {
           const settings = context.plugin.settings as unknown as Record<string, unknown>;
           const config = getAntigravityProviderSettings(settings);
-          const resolvedPath = await context.plugin.getResolvedProviderCliPath('antigravity');
           return probeCLIInstallation({
-            path: resolvedPath,
+            path: await context.plugin.getResolvedProviderCliPath('antigravity'),
             configuredPath: config.cliPathsByHost[hostnameKey] || config.cliPath,
             args: ['--help'],
             env: { ...process.env, ...getRuntimeEnvironmentVariables(settings, 'antigravity') },
@@ -88,8 +85,8 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
           const config = getAntigravityProviderSettings(settingsBag);
           return config.cliPathsByHost[hostnameKey] || config.cliPath;
         },
-        name: 'Antigravity Server Path',
-        onChange: async (value) => {
+        name: 'Antigravity server path',
+        onChange: async (value: string) => {
           const cliPathsByHost = {
             ...getAntigravityProviderSettings(settingsBag).cliPathsByHost,
           };
@@ -101,7 +98,7 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
 
           await context.plugin.applyProviderRuntimeSettings(
             ['antigravity'],
-            (settings: any) => {
+            (settings) => {
               updateAntigravityProviderSettings(settings, { cliPathsByHost });
             },
           );
@@ -109,17 +106,16 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
         placeholder: process.platform === 'win32'
           ? 'C:\\Path\\To\\agy_acp_server.exe'
           : '/path/to/agy_acp_server.par',
-        validate: validateCLIPath,
       });
 
       // Binary download notice if applicable
-      const downloadUrl = getPlatformDownloadUrl();
+      const downloadUrl: string | null = getPlatformDownloadUrl();
       if (downloadUrl) {
         new Setting(container)
-          .setName('Download Antigravity ACP Binary')
-          .setDesc('Download the official Google Antigravity ACP server standalone binary for your current operating system.')
+          .setName('Download antigravity acp binary')
+          .setDesc('Download the official Google antigravity acp server standalone binary for your current operating system.')
           .addButton((btn) => {
-            btn.setButtonText('Download Binary Archive')
+            btn.setButtonText('Download binary archive')
               .onClick(() => {
                 window.open(downloadUrl, '_blank');
               });
@@ -130,20 +126,20 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
       new Setting(container).setName('Authentication').setHeading();
 
       new Setting(container)
-        .setName('Authentication Method')
-        .setDesc('Choose how Obsidian authenticates with Google Antigravity.')
+        .setName('Authentication method')
+        .setDesc('Choose how Obsidian authenticates with Google antigravity.')
         .addDropdown((dropdown) => {
           const currentMethod = getAntigravityProviderSettings(settingsBag).authMethod;
           dropdown
-            .addOption('oauth-personal', 'OAuth Personal (Google Account)')
-            .addOption('gemini-api-key', 'Gemini API Key')
-            .addOption('oauth-business', 'OAuth Business')
-            .addOption('agent-platform', 'Agent Platform')
+            .addOption('oauth-personal', 'OAUTH personal (Google account)')
+            .addOption('gemini-api-key', 'Gemini API key')
+            .addOption('oauth-business', 'OAUTH business')
+            .addOption('agent-platform', 'Agent platform')
             .setValue(currentMethod)
-            .onChange(async (val) => {
+            .onChange(async (val: string) => {
               await context.plugin.applyProviderRuntimeSettings(
                 ['antigravity'],
-                (settings: any) => {
+                (settings) => {
                   updateAntigravityProviderSettings(settings, {
                     authMethod: val as AntigravityAuthMethod,
                   });
@@ -154,16 +150,16 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
         });
 
       const apiKeySetting = new Setting(container)
-        .setName('Gemini API Key')
+        .setName('Gemini API key')
         .setDesc('Enter your Gemini API key if authenticating with API key.')
         .addText((text) => {
           text
-            .setPlaceholder('AIzaSy...')
+            .setPlaceholder('Aizasy...')
             .setValue(getAntigravityProviderSettings(settingsBag).geminiApiKey)
-            .onChange(async (val) => {
+            .onChange(async (val: string) => {
               await context.plugin.applyProviderRuntimeSettings(
                 ['antigravity'],
-                (settings: any) => {
+                (settings) => {
                   updateAntigravityProviderSettings(settings, { geminiApiKey: val.trim() });
                 },
               );
@@ -175,22 +171,22 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
       apiKeySetting.settingEl.style.display = currentAuth === 'gemini-api-key' ? '' : 'none';
 
       // Permissions & Execution
-      new Setting(container).setName('Permissions & Execution').setHeading();
+      new Setting(container).setName('Permissions & execution').setHeading();
 
       new Setting(container)
-        .setName('Permission Mode')
+        .setName('Permission mode')
         .setDesc('Control how tool execution and filesystem changes are approved.')
         .addDropdown((dropdown) => {
           const currentMode = getAntigravityProviderSettings(settingsBag).permissionMode;
           dropdown
-            .addOption('default', 'Default (Ask before running tools)')
-            .addOption('auto_edit', 'Auto Edit (Auto-approve file changes)')
-            .addOption('yolo', 'YOLO (Auto-approve all tools)')
+            .addOption('default', 'Default (ask before running tools)')
+            .addOption('auto_edit', 'Auto edit (auto-approve file changes)')
+            .addOption('yolo', 'Yolo (auto-approve all tools)')
             .setValue(currentMode)
-            .onChange(async (val) => {
+            .onChange(async (val: string) => {
               await context.plugin.applyProviderRuntimeSettings(
                 ['antigravity'],
-                (settings: any) => {
+                (settings) => {
                   updateAntigravityProviderSettings(settings, {
                     permissionMode: val as AntigravityPermissionMode,
                   });
@@ -200,16 +196,16 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
         });
 
       new Setting(container)
-        .setName('Server Arguments')
+        .setName('Server arguments')
         .setDesc('Command-line arguments passed to agy_acp_server (e.g. --uid= on Linux).')
         .addText((text) => {
           text
             .setPlaceholder(process.platform === 'linux' ? '--uid=' : '')
             .setValue(getAntigravityProviderSettings(settingsBag).serverArguments)
-            .onChange(async (val) => {
+            .onChange(async (val: string) => {
               await context.plugin.applyProviderRuntimeSettings(
                 ['antigravity'],
-                (settings: any) => {
+                (settings) => {
                   updateAntigravityProviderSettings(settings, { serverArguments: val.trim() });
                 },
               );
@@ -220,7 +216,7 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
       new Setting(container).setName('Models').setHeading();
 
       new Setting(container)
-        .setName('Default Model')
+        .setName('Default model')
         .setDesc('Primary model to use for chat turns and editing.')
         .addDropdown((dropdown) => {
           const currentModel = getAntigravityProviderSettings(settingsBag).selectedModel;
@@ -228,10 +224,10 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
             dropdown.addOption(m.rawId, m.label);
           }
           dropdown.setValue(currentModel);
-          dropdown.onChange(async (val) => {
+          dropdown.onChange(async (val: string) => {
             await context.plugin.applyProviderRuntimeSettings(
               ['antigravity'],
-              (settings: any) => {
+              (settings) => {
                 updateAntigravityProviderSettings(settings, { selectedModel: val });
               },
             );
@@ -250,12 +246,4 @@ export function createAntigravitySettingsTab(): ProviderSettingsTabRenderer {
       });
     },
   };
-}
-
-function validateCLIPath(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  return null;
 }

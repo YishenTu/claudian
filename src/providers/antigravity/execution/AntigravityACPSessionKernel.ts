@@ -1,12 +1,12 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
 
-import {
-  mapACPApprovalDecision,
-} from '@/providers/acp/ACPPermissionAdapter';
 import { ACPClientConnection } from '@/providers/acp/ACPClientConnection';
 import { ACPInteractionController } from '@/providers/acp/ACPInteractionController';
 import { ACPJSONRPCTransport } from '@/providers/acp/ACPJSONRPCTransport';
+import {
+  mapACPApprovalDecision,
+} from '@/providers/acp/ACPPermissionAdapter';
 import { ACPSubprocess } from '@/providers/acp/ACPSubprocess';
 import type {
   ACPPromptRequest,
@@ -259,7 +259,7 @@ export class AntigravityACPSessionKernel implements AntigravitySessionKernel {
 
     if (this.transport) {
       try {
-        await this.transport.dispose();
+        this.transport.dispose();
       } catch {
         // ignore
       }

@@ -1,5 +1,4 @@
 import {
-  DEFAULT_ANTIGRAVITY_PROVIDER_SETTINGS,
   getAntigravityProviderSettings,
   updateAntigravityProviderSettings,
 } from '@/providers/antigravity/settings';

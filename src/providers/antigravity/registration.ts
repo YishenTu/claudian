@@ -2,6 +2,7 @@ import { getProviderConfig } from '@/core/providers/providerConfig';
 import { hasStoredConfigNormalization } from '@/core/providers/settings/storedSettings';
 import type { ProviderModule } from '@/core/providers/types';
 
+import { antigravityModelPolicy } from './AntigravityModelPolicy';
 import { antigravityWorkspaceRegistration } from './app/AntigravityWorkspaceServices';
 import {
   ANTIGRAVITY_PROVIDER_CAPABILITIES,
@@ -10,7 +11,6 @@ import {
 import { antigravitySettingsReconciler } from './env/AntigravitySettingsReconciler';
 import { AntigravityExecutionBackend } from './execution/AntigravityExecutionBackend';
 import { AntigravityConversationHistoryService } from './history/AntigravityConversationHistoryService';
-import { antigravityModelPolicy } from './AntigravityModelPolicy';
 import { antigravityTaskResultInterpreter } from './runtime/AntigravityTaskResultInterpreter';
 import {
   getAntigravityProviderSettings,

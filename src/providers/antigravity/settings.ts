@@ -30,12 +30,12 @@ export const DEFAULT_ANTIGRAVITY_PROVIDER_SETTINGS: Readonly<AntigravityProvider
   cliPathsByHost: {},
   environmentHash: '',
   environmentVariables: '',
-  authMethod: 'oauth-personal' as AntigravityAuthMethod,
+  authMethod: 'oauth-personal',
   geminiApiKey: '',
   selectedModel: DEFAULT_ANTIGRAVITY_MODEL,
   visibleModels: [...DEFAULT_ANTIGRAVITY_VISIBLE_MODELS],
   discoveredModels: [],
-  permissionMode: 'default' as AntigravityPermissionMode,
+  permissionMode: 'default',
   serverArguments: '',
   debugLogging: false,
   autoDownload: true,
@@ -66,7 +66,7 @@ export function normalizeAntigravityVisibleModels(value: unknown): string[] {
 export function getAntigravityProviderSettings(
   settings: unknown,
 ): AntigravityProviderSettings {
-  const config = (getProviderConfig(settings as Record<string, unknown>, 'antigravity') ?? {}) as Record<string, unknown>;
+  const config = getProviderConfig(settings, 'antigravity') ?? {};
 
   const authMethodRaw = typeof config.authMethod === 'string' ? config.authMethod : 'oauth-personal';
   const authMethod: AntigravityAuthMethod = (

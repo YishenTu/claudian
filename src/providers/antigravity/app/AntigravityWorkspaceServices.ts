@@ -7,7 +7,7 @@ import type {
 
 import { AntigravityCommandCatalog } from '../commands/AntigravityCommandCatalog';
 import { AntigravityBinaryResolver } from '../runtime/AntigravityBinaryResolver';
-import { createAntigravitySettingsTab } from '../ui/AntigravitySettingsTab';
+import { createAntigravitySettingsTabRenderer } from '../ui/AntigravitySettingsTab';
 
 export interface AntigravityWorkspaceServices extends ProviderWorkspaceServices {
   commandCatalog: AntigravityCommandCatalog;
@@ -23,7 +23,7 @@ export async function createAntigravityWorkspaceServices(
   return {
     commandCatalog,
     cliResolver,
-    settingsTabRenderer: createAntigravitySettingsTab(),
+    settingsTabRenderer: createAntigravitySettingsTabRenderer(),
     dispose: async () => {
       cliResolver.reset();
     },
