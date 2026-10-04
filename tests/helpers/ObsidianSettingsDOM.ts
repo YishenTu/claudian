@@ -46,7 +46,11 @@ class DropdownComponent {
 
 export class Setting {
   private readonly element: HTMLElement;
-  constructor(container: HTMLElement) { this.element = container.appendChild(document.createElement('div')); }
+  readonly settingEl: HTMLElement;
+  readonly controlEl: HTMLElement;
+  constructor(container: HTMLElement) {
+    this.element = this.settingEl = this.controlEl = container.appendChild(document.createElement('div'));
+  }
   setName(value: string): this { this.element.appendChild(document.createElement('div')).textContent = value; return this; }
   setDesc(value: string): this { this.element.appendChild(document.createElement('div')).textContent = value; return this; }
   setClass(value: string): this { this.element.classList.add(value); return this; }

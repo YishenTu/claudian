@@ -36,14 +36,14 @@ describe('ClaudeWorkspaceServices', () => {
     plugin.settings.providerConfigs = { claude: { enabled, visibleModels: [] } };
     plugin.mutateSettingsConditionally = jest.fn(async mutation => { await mutation(plugin.settings); });
     plugin.notifyProviderChatOptionsChanged = jest.fn();
-    const modelProbe = jest.fn().mockResolvedValue([{ value: 'sdk-only', label: 'SDK model', description: '' }]);
-    const services = await createClaudeWorkspaceServices(plugin, { modelProbe });
+    const catalogProbe = jest.fn().mockResolvedValue({ models: [{ value: 'sdk-only', label: 'SDK model', description: '' }], outputStyles: [] });
+    const services = await createClaudeWorkspaceServices(plugin, { catalogProbe });
     const ready = plugin.app.workspace.onLayoutReady as jest.Mock;
-    expect(modelProbe).not.toHaveBeenCalled();
+    expect(catalogProbe).not.toHaveBeenCalled();
     await registry.runTransition(['claude'], async () => {});
     expect(services.modelCatalog!.getSnapshot().stale).toBe(true);
     expect(ready).not.toHaveBeenCalled();
-    expect(modelProbe).not.toHaveBeenCalled();
+    expect(catalogProbe).not.toHaveBeenCalled();
     await services.dispose();
     await registry.dispose();
   });
@@ -59,15 +59,15 @@ describe('ClaudeWorkspaceServices', () => {
     let release!: () => void;
     let signal!: AbortSignal;
     const rows = [{ value: 'sonnet', label: 'Sonnet', description: '' }];
-    const modelProbe = jest.fn((_host, probeSignal) => {
+    const catalogProbe = jest.fn((_host, probeSignal) => {
       signal = probeSignal;
       started();
-      return new Promise<typeof rows>(resolve => {
-        release = () => resolve(rows);
-        signal.addEventListener('abort', () => resolve([]), { once: true });
+      return new Promise<{ models: typeof rows; outputStyles: string[] }>(resolve => {
+        release = () => resolve({ models: rows, outputStyles: [] });
+        signal.addEventListener('abort', () => resolve({ models: [], outputStyles: [] }), { once: true });
       });
     });
-    const services = await createClaudeWorkspaceServices(plugin, { modelProbe });
+    const services = await createClaudeWorkspaceServices(plugin, { catalogProbe });
     const catalog = jest.mocked(createClaudeSettingsTabRenderer).mock.calls.at(-1)![0].modelCatalog;
     let discovery: Promise<unknown> | undefined;
     const ready = () => { discovery = catalog.refresh(); };
@@ -81,7 +81,7 @@ describe('ClaudeWorkspaceServices', () => {
     release();
     await discovery;
     expect(getClaudeProviderSettings(plugin.settings).discoveredModels).toEqual(startDuring ? rows : []);
-    expect(modelProbe).toHaveBeenCalledTimes(1);
+    expect(catalogProbe).toHaveBeenCalledTimes(1);
     await services.dispose();
     await registry.dispose();
   });

@@ -464,8 +464,14 @@ describe('CodexSettingsTab', () => {
     expect(findOptionalSetting('Installation method')).toBeUndefined();
     expect(findOptionalSetting('WSL distro override')).toBeUndefined();
     const headings = createdSettings.filter(setting => setting.heading).map(setting => setting.name);
-    expect(headings).toEqual(expect.arrayContaining(['Models', 'Safety']));
-    expect(headings.indexOf('Models')).toBeLessThan(headings.indexOf('Safety'));
+    expect(headings).toEqual(expect.arrayContaining(['Models', 'Responses', 'Safety']));
+    expect(headings.indexOf('Models')).toBeLessThan(headings.indexOf('Responses'));
+    expect(headings.indexOf('Responses')).toBeLessThan(headings.indexOf('Safety'));
+    const responseSettings = createdSettings.slice(
+      createdSettings.indexOf(findSetting('Responses')) + 1,
+      createdSettings.indexOf(findSetting('Safety')),
+    );
+    expect(responseSettings.map(setting => setting.name)).toEqual(['Response style', 'Response verbosity', 'Reasoning summary']);
     expect(mockRenderCodexModelPicker).toHaveBeenCalledWith(
       container,
       'codex',
@@ -631,12 +637,27 @@ describe('CodexSettingsTab', () => {
     subtree.appendChild(findSetting('Response style').dropdownComponents[0].selectEl);
     const select = within(subtree).getByRole('combobox', { name: 'Response style' }) as HTMLSelectElement;
     expect(select.value).toBe('pragmatic');
-    for (const [label, value] of [['Friendly', 'friendly'], ['Pragmatic', 'pragmatic']]) {
+    for (const [label, value] of [['Friendly', 'friendly'], ['Neutral', 'none'], ['Pragmatic', 'pragmatic']]) {
       const option = within(select).getByRole('option', { name: label }) as HTMLOptionElement;
       fireEvent.change(select, { target: { value: option.value } });
       await waitFor(() => expect(plugin.settings.providerConfigs.codex.responseStyle).toBe(value));
     }
     expect(plugin.settings.providerConfigs.codex).not.toHaveProperty('customModels');
+    expect(await axe(subtree)).toHaveNoViolations();
+  });
+
+  it('persists response verbosity through an accessible native selector', async () => {
+    const plugin = createPlugin();
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
+    const subtree = document.createElement('main');
+    subtree.appendChild(findSetting('Response verbosity').dropdownComponents[0].selectEl);
+    const select = within(subtree).getByRole('combobox', { name: 'Response verbosity' }) as HTMLSelectElement;
+    expect(select.value).toBe('default');
+    for (const [label, value] of [['Low', 'low'], ['Medium', 'medium'], ['High', 'high'], ['Default', 'default']]) {
+      const option = within(select).getByRole('option', { name: label }) as HTMLOptionElement;
+      fireEvent.change(select, { target: { value: option.value } });
+      await waitFor(() => expect(plugin.settings.providerConfigs.codex.responseVerbosity).toBe(value));
+    }
     expect(await axe(subtree)).toHaveNoViolations();
   });
 

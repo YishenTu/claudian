@@ -43,3 +43,23 @@ it.each(aliasCases)('applies snippet aliases through provider settings while pre
   expect(settings).not.toHaveProperty('customModelAliases');
   expect(await axe(container)).toHaveNoViolations();
 });
+
+it('offers saving the current environment from the empty snippet state', async () => {
+  const settings = JSON.parse(JSON.stringify(DEFAULT_CLAUDIAN_SETTINGS)) as typeof DEFAULT_CLAUDIAN_SETTINGS;
+  settings.envSnippets = [];
+  const host = {
+    settings,
+    app: { workspace: { getLeavesOfType: () => [] } },
+    getEnvironmentVariablesForScope: () => 'ANTHROPIC_MODEL=custom',
+    mutateSettings: async (mutate: Parameters<ProviderHost['mutateSettings']>[0]) => { await mutate(settings); },
+  } as unknown as ProviderHost;
+  const container = document.body.createEl('main');
+  new EnvSnippetManager(container, host, 'provider:claude');
+
+  expect(within(container).getAllByRole('button')).toHaveLength(1);
+  expect(await axe(container)).toHaveNoViolations();
+  fireEvent.click(within(container).getByRole('button', { name: 'Save current environment as a snippet' }));
+
+  const dialog = within(document.body).getByRole('dialog', { name: 'Save snippet' });
+  expect(within(dialog).getByDisplayValue('ANTHROPIC_MODEL=custom')).toBeTruthy();
+});

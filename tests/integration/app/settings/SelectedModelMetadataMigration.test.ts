@@ -71,7 +71,7 @@ it.each([false, true])('repairs saved Claude family aliases through startup disc
   expect(read().providerConfigs.claude.selectedModels.map((model: { value: string }) => model.value))
     .toEqual(cached ? ['opus[1m]', 'claude-fable-5-10', 'sonnet', 'haiku'] : []);
   Object.assign(host.settings, await storage.load());
-  const probe = jest.fn(async () => rows);
+  const probe = jest.fn(async () => ({ models: rows, outputStyles: [] }));
   const catalog = createClaudeModels(host, signal => discoverClaudeModels(host, signal, probe));
   ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalog });
 
@@ -105,10 +105,10 @@ it('keeps saved family aliases enabled after discovering a newer unselected vers
   });
   const selected = { value: 'claude-fable-5-10', label: 'Selected Fable', description: '', supportedEffortLevels: ['high'] as const };
   const probe = jest.fn()
-    .mockResolvedValueOnce([selected])
-    .mockResolvedValueOnce([selected, {
+    .mockResolvedValueOnce({ models: [selected], outputStyles: [] })
+    .mockResolvedValueOnce({ models: [selected, {
       value: 'claude-fable-6-0', label: 'New Fable', description: '', resolvedModel: 'claude-fable-6-0', supportedEffortLevels: ['low'],
-    }]);
+    }], outputStyles: [] });
   const catalog = createClaudeModels(host, signal => discoverClaudeModels(host, signal, probe));
   ProviderWorkspaceRegistry.setServices('claude', { modelCatalog: catalog });
   await migrateSelectedModelMetadata(host, new AbortController().signal);

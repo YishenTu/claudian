@@ -129,6 +129,7 @@ let mockSupportedCommandsImplementation: (() => Promise<Array<{
   argumentHint?: string;
 }>>) | null = null;
 let mockSupportedModels: ModelInfo[] = [];
+let mockOutputStyles: string[] = [];
 let mockContextUsage: { rawMaxTokens: number } | null = null;
 let lastResponse: (AsyncGenerator<any> & {
   interrupt: jest.Mock;
@@ -157,6 +158,7 @@ export function resetMockMessages() {
   mockSupportedCommands = [];
   mockSupportedCommandsImplementation = null;
   mockSupportedModels = [];
+  mockOutputStyles = [];
   mockContextUsage = null;
   lastResponse = null;
   queryCallCount = 0;
@@ -180,6 +182,10 @@ export function setMockSupportedCommandsImplementation(
 
 export function setMockSupportedModels(models: ModelInfo[]) {
   mockSupportedModels = models;
+}
+
+export function setMockOutputStyles(styles: string[]) {
+  mockOutputStyles = styles;
 }
 
 export function setMockContextUsage(contextUsage: { rawMaxTokens: number } | null) {
@@ -270,7 +276,7 @@ export function query({ prompt, options }: { prompt: any; options: Options }): A
     agents: [],
     account: {},
     output_style: 'default',
-    available_output_styles: [],
+    available_output_styles: mockOutputStyles,
   }));
   gen.getContextUsage = jest.fn().mockImplementation(() => (
     mockContextUsage

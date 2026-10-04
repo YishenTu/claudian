@@ -21,7 +21,8 @@ import { toCodexRuntimeModelId } from './modelSelection';
 import { CODEX_SPARK_MODEL } from './types/models';
 
 export type CodexSafeMode = 'workspace-write' | 'read-only';
-export type CodexResponseStyle = 'pragmatic' | 'friendly';
+export type CodexResponseStyle = 'pragmatic' | 'friendly' | 'none';
+export type CodexResponseVerbosity = 'default' | 'low' | 'medium' | 'high';
 export type CodexReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
 export type CodexInstallationMethod = 'native-windows' | 'wsl';
 export type HostnameInstallationMethods = Record<string, CodexInstallationMethod>;
@@ -39,6 +40,7 @@ export interface CodexProviderConfig {
   visibleModels: string[] | null;
   enableUltraEffort: boolean;
   responseStyle: CodexResponseStyle;
+  responseVerbosity: CodexResponseVerbosity;
   reasoningSummary: CodexReasoningSummary;
   environmentVariables: string;
   environmentHash: string;
@@ -107,6 +109,7 @@ export interface CodexProviderSettings {
   visibleModels: CodexProviderConfig['visibleModels'];
   enableUltraEffort: CodexProviderConfig['enableUltraEffort'];
   responseStyle: CodexProviderConfig['responseStyle'];
+  responseVerbosity: CodexProviderConfig['responseVerbosity'];
   reasoningSummary: CodexProviderConfig['reasoningSummary'];
   environmentVariables: CodexProviderConfig['environmentVariables'];
   environmentHash: CodexProviderConfig['environmentHash'];
@@ -128,6 +131,7 @@ export const DEFAULT_CODEX_PROVIDER_CONFIG: Readonly<CodexProviderConfig> = Obje
   visibleModels: [],
   enableUltraEffort: false,
   responseStyle: 'pragmatic',
+  responseVerbosity: 'default',
   reasoningSummary: 'detailed',
   environmentVariables: '',
   environmentHash: '',
@@ -324,7 +328,10 @@ function getCodexStoredConfig(
     ),
     visibleModels,
     enableUltraEffort: config.enableUltraEffort === true,
-    responseStyle: config.responseStyle === 'friendly' ? 'friendly' : 'pragmatic',
+    responseStyle: config.responseStyle === 'friendly' || config.responseStyle === 'none'
+      ? config.responseStyle : 'pragmatic',
+    responseVerbosity: config.responseVerbosity === 'low' || config.responseVerbosity === 'medium' || config.responseVerbosity === 'high'
+      ? config.responseVerbosity : 'default',
     reasoningSummary: readStoredCodexReasoningSummary(
       config.reasoningSummary,
       DEFAULT_CODEX_PROVIDER_CONFIG.reasoningSummary,
@@ -492,6 +499,7 @@ export function updateCodexProviderSettings(
     visibleModels: next.visibleModels,
     enableUltraEffort: next.enableUltraEffort,
     responseStyle: next.responseStyle,
+    responseVerbosity: next.responseVerbosity,
     reasoningSummary: next.reasoningSummary,
     environmentVariables: next.environmentVariables,
     environmentHash: next.environmentHash,

@@ -31,7 +31,7 @@ describe('codex settings', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
-  it.each(['pragmatic', 'friendly'] as const)('persists the %s response style while stripping retired manual model settings', (responseStyle) => {
+  it.each(['pragmatic', 'friendly', 'none'] as const)('persists the %s response style while stripping retired manual model settings', (responseStyle) => {
     const settings = { providerConfigs: { codex: { customModels: 'custom' } } };
     updateCodexProviderSettings(settings, { responseStyle });
     expect(getCodexProviderSettings(settings)).toMatchObject({ responseStyle });
@@ -42,6 +42,19 @@ describe('codex settings', () => {
     const settings = { providerConfigs: { codex: { responseStyle } } };
     expect(getCodexProviderSettings(settings)).toMatchObject({ responseStyle: 'pragmatic' });
     expect(normalizeCodexStoredConfig(settings).config).toMatchObject({ responseStyle: 'pragmatic' });
+  });
+
+  it.each(['default', 'low', 'medium', 'high'] as const)('persists %s response verbosity', (responseVerbosity) => {
+    const settings = {};
+    updateCodexProviderSettings(settings, { responseVerbosity });
+    expect(getCodexProviderSettings(settings).responseVerbosity).toBe(responseVerbosity);
+    expect(normalizeCodexStoredConfig(settings).config.responseVerbosity).toBe(responseVerbosity);
+  });
+
+  it.each([undefined, null, '', 'invalid', 42, {}, []])('inherits Codex verbosity for invalid saved value %p', (responseVerbosity) => {
+    const settings = { providerConfigs: { codex: { responseVerbosity } } };
+    expect(getCodexProviderSettings(settings).responseVerbosity).toBe('default');
+    expect(normalizeCodexStoredConfig(settings).config.responseVerbosity).toBe('default');
   });
 
   it('defaults installationMethod to native-windows, ultra effort off, and leaves wslDistroOverride empty', () => {

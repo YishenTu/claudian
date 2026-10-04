@@ -481,7 +481,45 @@ describe('ClaudianSettingTab display settings', () => {
     expect(ensureInitialized.mock.calls.map(([, providerId]) => providerId))
       .toEqual(['claude', 'codex']);
   });
+
+  it('collapses a disabled Provider tab and follows later enablement changes', async () => {
+    let enabled = false;
+    jest.spyOn(ProviderRegistry, 'getRegisteredProviderIds').mockReturnValue(['codex']);
+    jest.spyOn(ProviderRegistry, 'getProviderDisplayName').mockReturnValue('CODEX');
+    jest.spyOn(ProviderRegistry, 'getTitleGenerationModelOptions').mockReturnValue([]);
+    jest.spyOn(ProviderRegistry, 'isEnabled').mockImplementation(() => enabled);
+    jest.spyOn(ProviderWorkspaceRegistry, 'ensureInitialized').mockResolvedValue(undefined);
+    let notify: ((providerId: 'codex') => void) | null = null;
+    jest.spyOn(ProviderWorkspaceRegistry, 'getSettingsTabRenderer').mockReturnValue({
+      render: (_container, context) => { notify = context.notifyProviderModelOptionsChanged; },
+    });
+    const { tab, plugin } = createTab(true);
+    plugin.notifyProviderChatOptionsChanged = jest.fn();
+    const container = createContainer();
+    (tab as any).activeTab = 'providers';
+
+    renderSettingsTab(tab, container);
+    await waitFor(() => expect(notify).not.toBeNull());
+    const content = findByClass(container, 'claudian-settings-provider-content')!;
+    const collapsed = (): boolean | undefined => content.toggleClass.mock.calls
+      .filter(([name]: [string]) => name === 'claudian-settings-provider-content--disabled')
+      .at(-1)?.[1];
+    expect(collapsed()).toBe(true);
+
+    enabled = true;
+    notify!('codex');
+    expect(collapsed()).toBe(false);
+  });
 });
+
+function findByClass(root: MockContainer, cls: string): MockContainer | null {
+  if ((root.cls as string | undefined)?.split(' ').includes(cls)) return root;
+  for (const child of root.children) {
+    const match = findByClass(child, cls);
+    if (match) return match;
+  }
+  return null;
+}
 
 it('batches a burst of text edits into one settings mutation and flushes on teardown', async () => {
   jest.useFakeTimers();

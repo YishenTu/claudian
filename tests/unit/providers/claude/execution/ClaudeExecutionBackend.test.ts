@@ -71,6 +71,7 @@ const sdkMock = sdkModule as unknown as {
     }>,
   ) => void;
   setMockSupportedModels: (models: sdkModule.ModelInfo[]) => void;
+  setMockOutputStyles: (styles: string[]) => void;
   setMockContextUsage: (
     contextUsage: { rawMaxTokens: number } | null,
   ) => void;
@@ -408,11 +409,11 @@ describe('ClaudeExecutionBackend', () => {
       }),
       notifyProviderChatOptionsChanged: jest.fn(),
     });
-    const services = await createClaudeWorkspaceServices(host, { commandProbe: async () => [], modelProbe: jest.fn() });
+    const services = await createClaudeWorkspaceServices(host, { commandProbe: async () => [], catalogProbe: jest.fn() });
     const publications: Array<Promise<void>> = [];
     const backend = new ClaudeExecutionBackend(host, {
-      publishSessionModels: models => {
-        const publication = services.publishSessionModels(models);
+      publishSessionCatalog: catalog => {
+        const publication = services.publishSessionCatalog(catalog);
         publications.push(publication);
         return publication;
       },
@@ -444,6 +445,48 @@ describe('ClaudeExecutionBackend', () => {
       });
       expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledTimes(1);
       expect(host.notifyProviderChatOptionsChanged).toHaveBeenCalledWith('claude');
+    } finally {
+      await services.dispose();
+      await registry.dispose();
+    }
+  });
+
+  it('writes live session output styles back once while keeping the stored model list', async () => {
+    const host = createHost();
+    const registry = new ProviderExecutionLifecycleRegistry();
+    let writes = 0;
+    Object.assign(host, {
+      executionLifecycleRegistry: registry,
+      mutateSettingsConditionally: jest.fn(async (mutation: (settings: ClaudianSettings) => Promise<boolean> | boolean) => {
+        if (await mutation(host.settings)) writes += 1;
+      }),
+      notifyProviderChatOptionsChanged: jest.fn(),
+    });
+    const services = await createClaudeWorkspaceServices(host, { commandProbe: async () => [], catalogProbe: jest.fn() });
+    const publications: Array<Promise<void>> = [];
+    const backend = new ClaudeExecutionBackend(host, {
+      publishSessionCatalog: catalog => {
+        const publication = services.publishSessionCatalog(catalog);
+        publications.push(publication);
+        return publication;
+      },
+    });
+    const storedModels = getClaudeProviderSettings(host.settings).discoveredModels;
+    sdkMock.setMockOutputStyles(['default', 'Concise', 'My Style']);
+
+    try {
+      for (let sessionIndex = 1; sessionIndex <= 2; sessionIndex += 1) {
+        const session = backend.createSession(createConfig());
+        await collectEvents(session.execute(createRequest()).events);
+        await waitFor(() => publications.length === sessionIndex);
+        await Promise.all(publications);
+        await session.dispose();
+        expect(writes).toBe(1);
+      }
+      expect(getClaudeProviderSettings(host.settings)).toMatchObject({
+        discoveredOutputStyles: ['default', 'Concise', 'My Style'],
+        discoveredModels: storedModels,
+      });
     } finally {
       await services.dispose();
       await registry.dispose();
@@ -1142,24 +1185,38 @@ describe('ClaudeExecutionBackend', () => {
     expect(interactionPort.requestApproval).not.toHaveBeenCalled();
   });
 
-  it('uses native output styles at launch and updates them on the same session', async () => {
+  it('uses native output styles at launch and updates or clears them on the same session', async () => {
     sdkMock.setMockMessages([
       { type: 'system', subtype: 'init', session_id: 'session-1' },
       { type: 'result', subtype: 'success' },
     ], { appendResult: false });
     const host = createHost();
-    host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), responseStyle: 'Concise' } };
+    const withStyle = (outputStyle: string | null) => ({
+      claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), outputStyle },
+    });
+    host.settings.providerConfigs = withStyle('Concise');
     const session = new ClaudeExecutionBackend(host).createSession(createConfig());
 
     await collectEvents(session.execute(createRequest()).events);
     expect(sdkMock.getLastOptions()?.settings).toEqual({ outputStyle: 'Concise' });
     const query = sdkMock.getLastResponse();
-    for (const responseStyle of ['Default', 'Concise']) {
-      host.settings.providerConfigs = { claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), responseStyle } };
+    for (const outputStyle of [null, 'My Style']) {
+      host.settings.providerConfigs = withStyle(outputStyle);
       await collectEvents(session.execute(createRequest()).events);
       expect(sdkMock.getLastResponse()).toBe(query);
-      expect(query?.applyFlagSettings).toHaveBeenLastCalledWith({ outputStyle: responseStyle });
+      expect(query?.applyFlagSettings).toHaveBeenLastCalledWith({ outputStyle });
     }
+    await session.dispose();
+  });
+
+  it('leaves Claude Code\'s own output style in force when none is chosen', async () => {
+    const host = createHost();
+    host.settings.providerConfigs = {
+      claude: { ...claudeCatalogFixture(['claude-sonnet-4-5'], ['low', 'medium', 'high']), outputStyle: null },
+    };
+    const session = new ClaudeExecutionBackend(host).createSession(createConfig());
+    await collectEvents(session.execute(createRequest()).events);
+    expect(sdkMock.getLastOptions()).not.toHaveProperty('settings');
     await session.dispose();
   });
 

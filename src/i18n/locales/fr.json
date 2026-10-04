@@ -104,6 +104,7 @@
     "content": "Contenu",
     "input": "Saisie",
     "models": "Modèles",
+    "responses": "Réponses",
     "experimental": "Expérimental",
     "userName": {
       "name": "Comment Claudian doit-il vous appeler ?",
@@ -149,9 +150,9 @@
       "name": "Charger les paramètres utilisateur de Claude Code",
       "desc": "Charge la configuration Claude Code au niveau utilisateur depuis ~/.claude : settings.json, skills, commandes, agents et plugins. Lorsque désactivé, seule la configuration au niveau du coffre est disponible. Lorsqu'activé, les règles de permission de l'utilisateur peuvent contourner le mode sécurisé."
     },
-    "codexSafeMode": {
-      "name": "Mode sécurisé",
-      "desc": "Mode sandbox utilisé lorsque le bouton Safe est actif."
+    "codexSandbox": {
+      "name": "Sandbox",
+      "desc": "Accès aux fichiers dans les modes Approve for me et Ask for approval. Lecture seule demande avant chaque modification ; Full access l'ignore."
     },
     "environment": "Environnement",
     "sharedEnvironment": {
@@ -165,7 +166,7 @@
     "envSnippets": {
       "name": "Extraits",
       "addBtn": "Ajouter un extrait",
-      "noSnippets": "Aucun extrait d'environnement enregistré. Cliquez sur + pour sauvegarder votre configuration actuelle.",
+      "saveCurrent": "Enregistrer l'environnement actuel comme extrait",
       "nameRequired": "Veuillez entrer un nom pour l'extrait",
       "insert": "Insérer",
       "modal": {
@@ -316,9 +317,9 @@
       "configuration": "Configuration",
       "responseStyle": {
         "name": "Style de réponse",
-        "desc": "Par défaut utilise le style habituel de Claude Code. Concis commence par les résultats et évite les préambules. Nécessite Claude Code 2.1.237 ou ultérieur.",
+        "desc": "Style de sortie de Claude Code pour les réponses, y compris les styles personnalisés. « Paramètre de Claude Code » suit votre configuration Claude Code. La liste se met à jour lors de l'actualisation des modèles ou au démarrage d'une discussion.",
         "default": "Par défaut",
-        "concise": "Concis"
+        "inherit": "Paramètre de Claude Code"
       }
     },
     "codex": {
@@ -346,7 +347,16 @@
         "name": "Style de réponse",
         "desc": "Choisissez le style de communication de Codex CLI sur les modèles compatibles. Ce choix s’applique dès le prochain message.",
         "pragmatic": "Pragmatique",
-        "friendly": "Amical"
+        "friendly": "Amical",
+        "neutral": "Neutre"
+      },
+      "responseVerbosity": {
+        "name": "Niveau de détail des réponses",
+        "desc": "Choisissez le niveau de détail des réponses pour les modèles compatibles. Par défaut, votre configuration Codex est utilisée. S’applique à partir du prochain message.",
+        "default": "Par défaut",
+        "low": "Faible",
+        "medium": "Moyen",
+        "high": "Élevé"
       },
       "reasoningSummary": {
         "name": "Résumé du raisonnement",

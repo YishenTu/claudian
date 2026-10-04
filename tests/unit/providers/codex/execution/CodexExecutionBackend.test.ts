@@ -1740,6 +1740,9 @@ describe('CodexExecutionBackend', () => {
     );
 
     await collectEvents(session.execute(createRequest()).events);
+    updateCodexProviderSettings(plugin.settings as unknown as Record<string, unknown>, { responseStyle: 'none' });
+    await collectEvents(session.execute(createRequest()).events);
+
     updateCodexProviderSettings(plugin.settings as unknown as Record<string, unknown>, { responseStyle: 'friendly' });
     await collectEvents(session.execute(createRequest()).events);
 
@@ -1748,10 +1751,10 @@ describe('CodexExecutionBackend', () => {
     ).toHaveLength(1);
     expect(
       mockTransportRequest.mock.calls.filter(call => call[0] === 'turn/start'),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
 
     expect(mockTransportRequest.mock.calls.filter(([method]) => method === 'turn/start').map(([, params]) => params.personality))
-      .toEqual(['pragmatic', 'friendly']);
+      .toEqual(['pragmatic', 'none', 'friendly']);
 
     await session.dispose();
   });

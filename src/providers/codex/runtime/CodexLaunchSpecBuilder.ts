@@ -1,3 +1,4 @@
+import { getCodexProviderSettings } from '../settings';
 import {
   inferWslDistroFromWindowsPath,
   resolveCodexExecutionTarget,
@@ -56,13 +57,20 @@ export function buildCodexLaunchSpec(
   }
 
   const resolvedCliCommand = options.resolvedCliCommand?.trim() || 'codex';
+  const verbosity = getCodexProviderSettings(options.settings).responseVerbosity;
+  // Verbosity has no turn/start override. Launch args participate in the runtime
+  // fingerprint, so changing this setting replaces the server for subsequent work.
+  const cliArgs = options.cliArgs ?? [
+    ...CODEX_APP_SERVER_ARGS,
+    ...(verbosity === 'default' ? [] : ['-c', `model_verbosity="${verbosity}"`]),
+  ];
   if (target.method === 'wsl') {
     const args = [
       ...(target.distroName ? ['--distribution', target.distroName] : []),
       '--cd',
       targetCwd,
       resolvedCliCommand,
-      ...(options.cliArgs ?? CODEX_APP_SERVER_ARGS),
+      ...cliArgs,
     ];
 
     return {
@@ -79,7 +87,7 @@ export function buildCodexLaunchSpec(
   return {
     target,
     command: resolvedCliCommand,
-    args: [...(options.cliArgs ?? CODEX_APP_SERVER_ARGS)],
+    args: [...cliArgs],
     spawnCwd,
     targetCwd,
     env: options.env,

@@ -20,7 +20,8 @@ import { getClaudeProviderSettings, updateClaudeProviderSettings } from './setti
 import { claudeSubagentAdapter } from './subagentAdapter';
 import { claudeChatUIConfig } from './ui/ClaudeChatUIConfig';
 
-const RETIRED_CLAUDE_CONFIG_KEYS = ['defaultModel', 'effortMetadataMigrated'];
+// `responseStyle` migrates to `outputStyle` when settings are read.
+const RETIRED_CLAUDE_CONFIG_KEYS = ['defaultModel', 'effortMetadataMigrated', 'responseStyle'];
 
 export const claudeProviderRegistration: ProviderModule = {
   id: 'claude',
@@ -57,7 +58,7 @@ export const claudeProviderRegistration: ProviderModule = {
     },
   },
   createExecutionBackend: plugin => new ClaudeExecutionBackend(plugin, {
-    publishSessionModels: models => getClaudeWorkspaceServices()?.publishSessionModels(models),
+    publishSessionCatalog: catalog => getClaudeWorkspaceServices()?.publishSessionCatalog(catalog),
   }),
   createSubagentHistoryService: plugin => new ClaudeSubagentHistoryService(plugin),
 

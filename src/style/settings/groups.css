@@ -187,10 +187,11 @@
   box-shadow: none;
 }
 
+/* Mouse focus stays on a clicked tab, so the underline must hold in every interaction state. */
 .claudian-settings button.claudian-settings-tab--active,
 .claudian-settings button.claudian-settings-provider-tab--active,
-.claudian-settings button.claudian-settings-tab--active:is(:hover, :focus-visible, :active),
-.claudian-settings button.claudian-settings-provider-tab--active:is(:hover, :focus-visible, :active) {
+.claudian-settings button.claudian-settings-tab--active:is(:hover, :focus, :active),
+.claudian-settings button.claudian-settings-provider-tab--active:is(:hover, :focus, :active) {
   color: var(--text-normal);
   box-shadow: inset 0 -2px var(--interactive-accent);
 }
@@ -257,6 +258,11 @@
 /* Installation cards stand on their own above the named provider groups. */
 .claudian-settings .claudian-settings-provider-content > .claudian-cli-installation-container {
   margin-bottom: var(--size-4-5);
+}
+
+/* Disabled providers keep the installation card; their named groups collapse until enabled. */
+.claudian-settings .claudian-settings-provider-content--disabled > .claudian-settings-group {
+  display: none;
 }
 
 .claudian-settings .claudian-settings-provider-tabs {

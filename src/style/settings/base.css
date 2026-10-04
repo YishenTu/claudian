@@ -67,13 +67,11 @@
 .claudian-settings button.claudian-settings-provider-tab:active {
   color: var(--text-normal);
   background: transparent;
-  box-shadow: none;
 }
 
 .claudian-settings button.claudian-settings-provider-tab--active {
   color: var(--text-normal);
   background: transparent;
-  box-shadow: none;
 }
 
 .claudian-settings-provider-content {

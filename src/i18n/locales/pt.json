@@ -104,6 +104,7 @@
     "content": "Conteúdo",
     "input": "Entrada",
     "models": "Modelos",
+    "responses": "Respostas",
     "experimental": "Experimental",
     "userName": {
       "name": "Como o Claudian deve chamá-lo?",
@@ -149,9 +150,9 @@
       "name": "Carregar configurações do usuário do Claude Code",
       "desc": "Carrega a configuração do Claude Code no nível do usuário a partir de ~/.claude: settings.json, skills, comandos, agentes e plugins. Quando desabilitado, apenas a configuração no nível do cofre fica disponível. Quando habilitado, as regras de permissão do usuário podem ignorar o modo seguro."
     },
-    "codexSafeMode": {
-      "name": "Modo seguro",
-      "desc": "Modo de sandbox usado quando o controle Safe está ativo."
+    "codexSandbox": {
+      "name": "Sandbox",
+      "desc": "Acesso a arquivos nos modos Approve for me e Ask for approval. Somente leitura pede aprovação antes de cada edição; Full access ignora esta opção."
     },
     "environment": "Ambiente",
     "sharedEnvironment": {
@@ -165,7 +166,7 @@
     "envSnippets": {
       "name": "Trechos",
       "addBtn": "Adicionar snippet",
-      "noSnippets": "Nenhum snippet de ambiente salvo. Clique em + para salvar sua configuração atual.",
+      "saveCurrent": "Salvar o ambiente atual como snippet",
       "nameRequired": "Por favor, insira um nome para o snippet",
       "insert": "Inserir",
       "modal": {
@@ -316,9 +317,9 @@
       "configuration": "Configuração",
       "responseStyle": {
         "name": "Estilo de resposta",
-        "desc": "Padrão usa o estilo habitual do Claude Code. Conciso começa pelos resultados e omite preâmbulos. Requer Claude Code 2.1.237 ou posterior.",
+        "desc": "Estilo de saída do Claude Code para as respostas, incluindo estilos personalizados. “Configuração do Claude Code” segue a sua configuração do Claude Code. A lista é atualizada ao atualizar os modelos ou iniciar um chat.",
         "default": "Padrão",
-        "concise": "Conciso"
+        "inherit": "Configuração do Claude Code"
       }
     },
     "codex": {
@@ -346,7 +347,16 @@
         "name": "Estilo de resposta",
         "desc": "Escolha como o Codex CLI se comunica nos modelos compatíveis. Aplica-se a partir da próxima mensagem.",
         "pragmatic": "Pragmático",
-        "friendly": "Amigável"
+        "friendly": "Amigável",
+        "neutral": "Neutro"
+      },
+      "responseVerbosity": {
+        "name": "Nível de detalhe das respostas",
+        "desc": "Escolha o nível de detalhe das respostas nos modelos compatíveis. A opção padrão usa sua configuração do Codex. Aplica-se a partir da próxima mensagem.",
+        "default": "Padrão",
+        "low": "Baixo",
+        "medium": "Médio",
+        "high": "Alto"
       },
       "reasoningSummary": {
         "name": "Resumo de raciocínio",

@@ -18,6 +18,21 @@ describe('buildCodexLaunchSpec', () => {
     execFileSyncSpy.mockRestore();
   });
 
+  it.each(['default', 'low', 'medium', 'high'])('applies %s verbosity only to app-server launches', (responseVerbosity) => {
+    const options = {
+      settings: { providerConfigs: { codex: { responseVerbosity } } },
+      resolvedCliCommand: 'codex',
+      hostVaultPath: '/vault',
+      env: {},
+      hostPlatform: 'darwin' as const,
+    };
+    expect(buildCodexLaunchSpec(options).args).toEqual([
+      'app-server', '--listen', 'stdio://',
+      ...(responseVerbosity === 'default' ? [] : ['-c', `model_verbosity="${responseVerbosity}"`]),
+    ]);
+    expect(buildCodexLaunchSpec({ ...options, cliArgs: ['--version'] }).args).toEqual(['--version']);
+  });
+
   it('builds a native Windows launch spec with a direct codex executable', () => {
     const spec = buildCodexLaunchSpec({
       settings: {

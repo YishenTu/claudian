@@ -104,6 +104,7 @@
     "content": "Content",
     "input": "Input",
     "models": "Models",
+    "responses": "Responses",
     "experimental": "Experimental",
     "userName": {
       "name": "What should Claudian call you?",
@@ -149,9 +150,9 @@
       "name": "Load user Claude Code settings",
       "desc": "Load user-level Claude Code configuration from ~/.claude: settings.json, skills, commands, agents, and plugins. When disabled, only vault-level configuration is available. When enabled, user permission rules may bypass Safe mode."
     },
-    "codexSafeMode": {
-      "name": "Safe mode",
-      "desc": "Sandbox mode used when the Safe toggle is active."
+    "codexSandbox": {
+      "name": "Sandbox",
+      "desc": "File access in Approve for me and Ask for approval modes. Read only asks before every edit; Full access ignores this."
     },
     "environment": "Environment",
     "sharedEnvironment": {
@@ -165,7 +166,7 @@
     "envSnippets": {
       "name": "Snippets",
       "addBtn": "Add snippet",
-      "noSnippets": "No saved environment snippets yet. Click + to save your current environment configuration.",
+      "saveCurrent": "Save current environment as a snippet",
       "nameRequired": "Please enter a name for the snippet",
       "insert": "Insert",
       "modal": {
@@ -316,9 +317,9 @@
       "configuration": "Configuration",
       "responseStyle": {
         "name": "Response style",
-        "desc": "Default uses Claude Code’s normal style. Concise leads with results and skips preamble. Requires Claude Code 2.1.237 or later.",
+        "desc": "Claude Code output style for replies, including custom styles. “Claude Code setting” follows your Claude Code configuration. The list updates when models are refreshed or a chat starts.",
         "default": "Default",
-        "concise": "Concise"
+        "inherit": "Claude Code setting"
       }
     },
     "codex": {
@@ -346,7 +347,16 @@
         "name": "Response style",
         "desc": "Choose how Codex CLI communicates on supported models. Applies from the next message.",
         "pragmatic": "Pragmatic",
-        "friendly": "Friendly"
+        "friendly": "Friendly",
+        "neutral": "Neutral"
+      },
+      "responseVerbosity": {
+        "name": "Response verbosity",
+        "desc": "Choose the amount of detail in responses on supported models. Default uses your Codex configuration. Applies from the next message.",
+        "default": "Default",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High"
       },
       "reasoningSummary": {
         "name": "Reasoning summary",

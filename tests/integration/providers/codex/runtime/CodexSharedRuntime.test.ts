@@ -9,9 +9,11 @@ import { ProviderExecutionLifecycleRegistry } from '@/core/execution/ProviderExe
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { createCodexWorkspaceServices } from '@/providers/codex/app/CodexWorkspaceServices';
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
+import { CodexAppServerProcess } from '@/providers/codex/runtime/CodexAppServerProcess';
 import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
+import { buildCodexLaunchSpec } from '@/providers/codex/runtime/CodexLaunchSpecBuilder';
 import { CodexModelDiscoveryService } from '@/providers/codex/runtime/CodexModelDiscoveryService';
-import { createCodexPathMapper } from '@/providers/codex/runtime/CodexPathMapper';
+import { updateCodexProviderSettings } from '@/providers/codex/settings';
 import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
 
 const mockProcesses: FakeProcess[] = [];
@@ -32,9 +34,9 @@ jest.mock('@/providers/codex/runtime/CodexAppServerProcess', () => ({
 
 jest.mock('@/providers/codex/runtime/codexAppServerSupport', () => ({
   ...jest.requireActual('@/providers/codex/runtime/codexAppServerSupport'),
-  resolveCodexAppServerLaunchSpec: jest.fn(async () => ({
-    command: 'codex', args: ['app-server'], env: { KEY: mockLaunchKey }, spawnCwd: '/vault', targetCwd: '/vault',
-    target, pathMapper: createCodexPathMapper(target),
+  resolveCodexAppServerLaunchSpec: jest.fn(async (host: ProviderHost) => buildCodexLaunchSpec({
+    settings: host.settings, resolvedCliCommand: 'codex', env: { KEY: mockLaunchKey }, hostVaultPath: '/vault',
+    executionTarget: target,
   })),
 }));
 
@@ -286,6 +288,36 @@ describe('Codex shared runtime', () => {
   function complete(process: FakeProcess, threadId: string): void {
     process.notify('turn/completed', { threadId, turn: { id: process.turns.get(threadId)?.id ?? `turn-${threadId}`, status: 'completed', items: [] } });
   }
+
+  it('applies verbosity changes and restores defaults while resuming the same conversation', async () => {
+    mockAutoReconcile = true;
+    const host = {
+      settings: { providerConfigs: { codex: { enabled: true, discoveredModels: TEST_CODEX_CATALOG } } },
+    } as unknown as ProviderHost;
+    const runtime = new CodexAppServerRuntime(host, jest.fn());
+    runtimes.push(runtime);
+    const session = new CodexExecutionBackend(host, runtime).createSession(config);
+    try {
+      for (const [index, responseVerbosity] of (['high', 'low', 'default'] as const).entries()) {
+        updateCodexProviderSettings(host.settings, { responseVerbosity });
+        const output = collect(session.execute(request).events);
+        const process = await waitForRequest('turn/start', index);
+        const spec = jest.mocked(CodexAppServerProcess).mock.calls.at(-1)![0];
+        expect(spec.args).toEqual([
+          'app-server', '--listen', 'stdio://',
+          ...(responseVerbosity === 'default' ? [] : ['-c', `model_verbosity="${responseVerbosity}"`]),
+        ]);
+        expect(process.requests.filter(r => r.method === 'thread/resume').map(r => r.params.threadId))
+          .toEqual(index === 0 ? [] : ['thread-1']);
+        expect(process.requests.filter(r => r.method === 'thread/start')).toHaveLength(index === 0 ? 1 : 0);
+        complete(process, 'thread-1');
+        expect((await output).at(-1)?.type).toBe('turn_completed');
+      }
+      expect(mockProcesses).toHaveLength(3);
+    } finally {
+      await session.dispose();
+    }
+  });
 
   it('releases a completed ephemeral thread and lets its retired server drain', async () => {
     mockAutoReconcile = true;

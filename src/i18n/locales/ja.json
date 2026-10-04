@@ -104,6 +104,7 @@
     "content": "コンテンツ",
     "input": "入力",
     "models": "モデル",
+    "responses": "回答",
     "experimental": "実験的機能",
     "userName": {
       "name": "Claudian はどのように呼びますか？",
@@ -149,9 +150,9 @@
       "name": "ユーザーの Claude Code 設定を読み込む",
       "desc": "~/.claude からユーザーレベルの Claude Code 設定（settings.json、スキル、コマンド、エージェント、プラグイン）を読み込みます。無効にすると、Vault レベルの設定のみ利用できます。有効にすると、ユーザーの許可ルールがセキュリティモードをバイパスする可能性があります。"
     },
-    "codexSafeMode": {
-      "name": "セーフモード",
-      "desc": "Safe トグルが有効なときに使用するサンドボックスモードです。"
+    "codexSandbox": {
+      "name": "サンドボックス",
+      "desc": "Approve for me と Ask for approval モードでのファイルアクセスです。読み取り専用では編集のたびに確認します。Full access では無視されます。"
     },
     "environment": "環境",
     "sharedEnvironment": {
@@ -165,7 +166,7 @@
     "envSnippets": {
       "name": "スニペット",
       "addBtn": "スニペットを追加",
-      "noSnippets": "保存された環境変数スニペットはありません。+をクリックして現在の設定を保存してください。",
+      "saveCurrent": "現在の環境をスニペットとして保存",
       "nameRequired": "スニペットの名前を入力してください",
       "insert": "挿入",
       "modal": {
@@ -316,9 +317,9 @@
       "configuration": "構成",
       "responseStyle": {
         "name": "応答スタイル",
-        "desc": "デフォルトは Claude Code の通常のスタイルです。簡潔モードは結果を先に示し、前置きを省きます。Claude Code 2.1.237 以降が必要です。",
+        "desc": "返信に使う Claude Code の出力スタイルです（カスタムスタイルを含む）。「Claude Code の設定」は Claude Code の構成に従います。モデルの更新時またはチャット開始時に一覧が更新されます。",
         "default": "デフォルト",
-        "concise": "簡潔"
+        "inherit": "Claude Code の設定"
       }
     },
     "codex": {
@@ -346,7 +347,16 @@
         "name": "応答スタイル",
         "desc": "対応モデルでの Codex CLI の話し方を選択します。次のメッセージから適用されます。",
         "pragmatic": "実用的",
-        "friendly": "フレンドリー"
+        "friendly": "フレンドリー",
+        "neutral": "ニュートラル"
+      },
+      "responseVerbosity": {
+        "name": "回答の詳しさ",
+        "desc": "対応モデルの回答の詳しさを選択します。デフォルトでは Codex の設定を使用します。次のメッセージから適用されます。",
+        "default": "デフォルト",
+        "low": "低",
+        "medium": "中",
+        "high": "高"
       },
       "reasoningSummary": {
         "name": "推論サマリー",

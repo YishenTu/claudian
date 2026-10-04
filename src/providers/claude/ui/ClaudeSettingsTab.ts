@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { Setting } from 'obsidian';
+import { type DropdownComponent, Setting } from 'obsidian';
 
 import { normalizeConfiguredCLIPath } from '@/core/process/cliPath';
 import { probeCLIInstallation } from '@/core/providers/cli/CLIInstallationProbe';
@@ -23,6 +23,8 @@ import {
   getClaudeProviderSettings,
   updateClaudeProviderSettings,
 } from '../settings';
+
+const INHERITED_OUTPUT_STYLE = '';
 
 export function createClaudeSettingsTabRenderer(
   claudeWorkspace: { cliResolver: Pick<ProviderCLIResolver, 'reset'>; modelCatalog: ProviderModelCatalog; },
@@ -141,24 +143,43 @@ export function createClaudeSettingsTabRenderer(
       // --- Models ---
 
       new Setting(container).setName(t('settings.models')).setHeading();
-      const modelPicker = renderProviderModelsSection(container, 'claude', 'Claude Code', claudeWorkspace.modelCatalog, () => modelWarning.refresh());
+      let outputStyleDropdown: DropdownComponent | null = null;
+      // Rebuilt whenever discovery reports a new list, keeping a saved style the list lacks selectable.
+      const renderOutputStyleOptions = (): void => {
+        if (!outputStyleDropdown) return;
+        const { outputStyle, discoveredOutputStyles } = getClaudeProviderSettings(settingsBag);
+        const names = outputStyle && !discoveredOutputStyles.includes(outputStyle)
+          ? [...discoveredOutputStyles, outputStyle]
+          : discoveredOutputStyles;
+        outputStyleDropdown.selectEl.replaceChildren();
+        outputStyleDropdown.addOption(INHERITED_OUTPUT_STYLE, t('settings.claude.responseStyle.inherit'));
+        for (const name of names) {
+          outputStyleDropdown.addOption(name, name === 'default' ? t('settings.claude.responseStyle.default') : name);
+        }
+        outputStyleDropdown.setValue(outputStyle ?? INHERITED_OUTPUT_STYLE);
+      };
+
+      const modelPicker = renderProviderModelsSection(container, 'claude', 'Claude Code', claudeWorkspace.modelCatalog, () => {
+        modelWarning.refresh();
+        renderOutputStyleOptions();
+      });
+
+      // --- Responses ---
+
+      new Setting(container).setName(t('settings.responses')).setHeading();
 
       new Setting(container)
         .setName(t('settings.claude.responseStyle.name'))
         .setDesc(t('settings.claude.responseStyle.desc'))
         .addDropdown((dropdown) => {
+          outputStyleDropdown = dropdown;
           dropdown.selectEl.setAttribute('aria-label', t('settings.claude.responseStyle.name'));
-          dropdown
-            .addOption('Default', t('settings.claude.responseStyle.default'))
-            .addOption('Concise', t('settings.claude.responseStyle.concise'))
-            .setValue(claudeSettings.responseStyle)
-            .onChange(async (value) => {
-              await context.plugin.mutateSettings((settings) => {
-                updateClaudeProviderSettings(settings, {
-                  responseStyle: value === 'Concise' ? 'Concise' : 'Default',
-                });
-              });
+          renderOutputStyleOptions();
+          dropdown.onChange(async (value) => {
+            await context.plugin.mutateSettings((settings) => {
+              updateClaudeProviderSettings(settings, { outputStyle: value || null });
             });
+          });
         });
 
       // --- Configuration ---

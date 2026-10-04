@@ -241,22 +241,44 @@ export function createCodexSettingsTabRenderer(
             context.notifyProviderModelOptionsChanged('codex');
           }));
 
+      // --- Responses ---
+
+      new Setting(container).setName(t('settings.responses')).setHeading();
+
       new Setting(container)
         .setName(t('settings.codex.responseStyle.name'))
         .setDesc(t('settings.codex.responseStyle.desc'))
         .addDropdown((dropdown) => {
           dropdown.selectEl.setAttribute('aria-label', t('settings.codex.responseStyle.name'));
           dropdown
+            .addOption('none', t('settings.codex.responseStyle.neutral'))
             .addOption('pragmatic', t('settings.codex.responseStyle.pragmatic'))
             .addOption('friendly', t('settings.codex.responseStyle.friendly'))
             .setValue(codexSettings.responseStyle)
             .onChange(async (value) => {
               await context.plugin.mutateSettings((settings) => {
                 updateCodexProviderSettings(settings, {
-                  responseStyle: value === 'friendly' ? 'friendly' : 'pragmatic',
+                  responseStyle: value === 'friendly' || value === 'none' ? value : 'pragmatic',
                 });
               });
             });
+        });
+
+      new Setting(container)
+        .setName(t('settings.codex.responseVerbosity.name'))
+        .setDesc(t('settings.codex.responseVerbosity.desc'))
+        .addDropdown((dropdown) => {
+          dropdown.selectEl.setAttribute('aria-label', t('settings.codex.responseVerbosity.name'));
+          for (const value of ['default', 'low', 'medium', 'high'] as const) {
+            dropdown.addOption(value, t(`settings.codex.responseVerbosity.${value}`));
+          }
+          dropdown.setValue(codexSettings.responseVerbosity).onChange(async (value) => {
+            await context.plugin.mutateSettings((settings) => {
+              updateCodexProviderSettings(settings, {
+                responseVerbosity: value === 'low' || value === 'medium' || value === 'high' ? value : 'default',
+              });
+            });
+          });
         });
 
       const SUMMARY_OPTIONS: { value: string; label: string }[] = [
@@ -289,8 +311,8 @@ export function createCodexSettingsTabRenderer(
       new Setting(container).setName(t('settings.safety')).setHeading();
 
       new Setting(container)
-        .setName(t('settings.codexSafeMode.name'))
-        .setDesc(t('settings.codexSafeMode.desc'))
+        .setName(t('settings.codexSandbox.name'))
+        .setDesc(t('settings.codexSandbox.desc'))
         .addDropdown((dropdown) => {
           dropdown
             .addOption('workspace-write', t('settings.codex.safeMode.workspaceWrite'))

@@ -104,6 +104,7 @@
     "content": "콘텐츠",
     "input": "입력",
     "models": "모델",
+    "responses": "응답",
     "experimental": "실험적 기능",
     "userName": {
       "name": "Claudian이 당신을 어떻게 불러야 합니까?",
@@ -149,9 +150,9 @@
       "name": "사용자 Claude Code 설정 로드",
       "desc": "~/.claude에서 사용자 수준 Claude Code 구성(settings.json, 스킬, 명령, 에이전트, 플러그인)을 로드합니다. 비활성화하면 Vault 수준 구성만 사용할 수 있습니다. 활성화하면 사용자의 허용 규칙이 보안 모드를 우회할 수 있습니다."
     },
-    "codexSafeMode": {
-      "name": "안전 모드",
-      "desc": "Safe 토글이 활성화되었을 때 사용하는 샌드박스 모드입니다."
+    "codexSandbox": {
+      "name": "샌드박스",
+      "desc": "Approve for me 및 Ask for approval 모드의 파일 접근 권한입니다. 읽기 전용은 편집할 때마다 확인을 요청하며, Full access에서는 무시됩니다."
     },
     "environment": "환경",
     "sharedEnvironment": {
@@ -165,7 +166,7 @@
     "envSnippets": {
       "name": "스니펫",
       "addBtn": "스니펫 추가",
-      "noSnippets": "저장된 환경 변수 스니펫이 없습니다. +를 클릭하여 현재 구성을 저장하세요.",
+      "saveCurrent": "현재 환경을 스니펫으로 저장",
       "nameRequired": "스니펫 이름을 입력하세요",
       "insert": "삽입",
       "modal": {
@@ -316,9 +317,9 @@
       "configuration": "구성",
       "responseStyle": {
         "name": "응답 스타일",
-        "desc": "기본은 Claude Code의 일반 스타일입니다. 간결 모드는 결과부터 제시하고 서두를 생략합니다. Claude Code 2.1.237 이상이 필요합니다.",
-        "default": "기본",
-        "concise": "간결"
+        "desc": "답변에 사용할 Claude Code 출력 스타일입니다(사용자 지정 스타일 포함). “Claude Code 설정”은 Claude Code 구성을 따릅니다. 모델을 새로 고치거나 채팅을 시작하면 목록이 업데이트됩니다.",
+        "default": "기본값",
+        "inherit": "Claude Code 설정"
       }
     },
     "codex": {
@@ -346,7 +347,16 @@
         "name": "응답 스타일",
         "desc": "지원되는 모델에서 Codex CLI의 대화 스타일을 선택합니다. 다음 메시지부터 적용됩니다.",
         "pragmatic": "실용적",
-        "friendly": "친근함"
+        "friendly": "친근함",
+        "neutral": "중립적"
+      },
+      "responseVerbosity": {
+        "name": "응답 상세 수준",
+        "desc": "지원되는 모델의 응답 상세 수준을 선택합니다. 기본값은 Codex 설정을 사용합니다. 다음 메시지부터 적용됩니다.",
+        "default": "기본값",
+        "low": "낮음",
+        "medium": "중간",
+        "high": "높음"
       },
       "reasoningSummary": {
         "name": "추론 요약",

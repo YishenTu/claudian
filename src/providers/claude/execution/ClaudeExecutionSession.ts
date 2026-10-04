@@ -31,12 +31,11 @@ import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { SlashCommand, TurnStats } from '../../../core/types';
 import { mapSDKCommands } from '../commands/probeRuntimeCommands';
 import { loadClaudeTurnStats } from '../history/ClaudeTurnStats';
-import type { ClaudeDiscoveredModel } from '../modelCatalog';
 import { type ClaudePermissionMode, fromClaudeSDKPermissionMode } from '../permissionModes';
 import { assertClaudeModelAvailable } from '../runtime/ClaudeModelAvailability';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
 import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
-import { toClaudeDiscoveredModel } from '../runtime/probeClaudeModels';
+import { type ClaudeRuntimeCatalog, toClaudeRuntimeCatalog } from '../runtime/probeClaudeModels';
 import { classifyClaudeError, getClaudeInvalidationReason } from './classifyClaudeError';
 import { ClaudeExecutionEventNormalizer } from './ClaudeExecutionEventNormalizer';
 import {
@@ -57,8 +56,8 @@ import { ClaudeTaskNotificationQueue } from './ClaudeTaskNotificationQueue';
 import { type ClaudeTurnInputs, getReplayedUserMessageId } from './ClaudeTurnInputs';
 
 export interface ClaudeExecutionSessionOptions {
-  /** Receives the model list each native query reports at init; persistence stays with the catalog owner. */
-  readonly publishSessionModels?: (models: ClaudeDiscoveredModel[]) => Promise<void> | void;
+  /** Receives the catalog each native query reports at init; persistence stays with the catalog owner. */
+  readonly publishSessionCatalog?: (catalog: ClaudeRuntimeCatalog) => Promise<void> | void;
 }
 
 interface ActiveRequestedRun {
@@ -719,13 +718,13 @@ ClaudeExecutionStrategySink {
     }
   }
 
-  publishModels(query: Query): void {
-    const publish = this.options.publishSessionModels;
+  publishCatalog(query: Query): void {
+    const publish = this.options.publishSessionCatalog;
     if (!publish || this.disposed || this.nativeQuery !== query) return;
     void query.initializationResult()
-      .then(({ models }) => {
-        if (this.disposed || this.nativeQuery !== query || models.length === 0) return;
-        return publish(models.map(toClaudeDiscoveredModel));
+      .then((initialization) => {
+        if (this.disposed || this.nativeQuery !== query) return;
+        return publish(toClaudeRuntimeCatalog(initialization));
       })
       // Catalog write-back is best-effort and cannot disrupt execution.
       .catch(() => undefined);

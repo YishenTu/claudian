@@ -123,13 +123,42 @@
   font-weight: var(--font-medium);
 }
 
-.claudian-snippet-empty {
-  padding: 20px;
-  text-align: center;
+/* Empty state doubles as the save action; specificity beats the settings button reset. */
+.claudian-settings .claudian-env-snippets-container button.claudian-snippet-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--size-4-2);
+  width: 100%;
+  height: auto;
+  padding: var(--size-4-3);
+  border-radius: var(--radius-m);
+  background: transparent;
   color: var(--text-muted);
-  background: var(--background-secondary);
-  border-radius: 6px;
-  margin-top: 8px;
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+/* The border must survive every interaction state, or the settings reset drops it and shifts layout. */
+.claudian-settings .claudian-env-snippets-container button.claudian-snippet-empty,
+.claudian-settings .claudian-env-snippets-container button.claudian-snippet-empty:is(:hover, :focus-visible, :active) {
+  border: 1px dashed var(--background-modifier-border);
+}
+
+.claudian-settings .claudian-env-snippets-container button.claudian-snippet-empty:is(:hover, :focus-visible) {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.claudian-snippet-empty-icon {
+  display: inline-flex;
+}
+
+.claudian-snippet-empty-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .claudian-snippet-list {

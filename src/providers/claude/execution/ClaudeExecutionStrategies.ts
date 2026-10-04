@@ -28,7 +28,7 @@ export interface ClaudeExecutionStrategySink {
   handleNativeQueryOpened(query: Query): void;
   handleNativeQueryClosed(query: Query): void;
   publishCommands(query: Query, commands?: SlashCommand[]): void;
-  publishModels(query: Query): void;
+  publishCatalog(query: Query): void;
 }
 
 export interface ClaudeExecutionStrategy {
@@ -278,8 +278,9 @@ implements ClaudeExecutionStrategy {
       ...(request.effort !== current.effort
         ? { effortLevel: request.effort }
         : {}),
-      ...(request.responseStyle !== current.responseStyle
-        ? { outputStyle: request.responseStyle }
+      // null clears the flag layer so Claude Code's own setting applies again.
+      ...(request.outputStyle !== current.outputStyle
+        ? { outputStyle: request.outputStyle }
         : {}),
     };
     if (Object.keys(flagSettings).length > 0) {
@@ -301,7 +302,7 @@ implements ClaudeExecutionStrategy {
         }
         if (message.type === 'system' && message.subtype === 'init') {
           this.sink.publishCommands(query);
-          this.sink.publishModels(query);
+          this.sink.publishCatalog(query);
         }
         if (message.type === 'system' && message.subtype === 'commands_changed') {
           this.sink.publishCommands(query, message.commands);
@@ -432,7 +433,7 @@ implements ClaudeExecutionStrategy {
         if (this.activeQuery !== query || this.disposed) break;
         if (message.type === 'system' && message.subtype === 'init') {
           this.sink.publishCommands(query);
-          this.sink.publishModels(query);
+          this.sink.publishCatalog(query);
         }
         if (message.type === 'system' && message.subtype === 'commands_changed') {
           this.sink.publishCommands(query, message.commands);

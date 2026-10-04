@@ -5,9 +5,9 @@ import { type ClaudeDiscoveredModel, decodeClaudeModels } from '../modelCatalog'
 import { getClaudeModelCatalog, hasClaudeModelIdentity, resolveClaudeVisibleModels } from '../modelOptions';
 import { toClaudeRuntimeModelId } from '../modelSelection';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '../settings';
-import { probeClaudeModels } from './probeClaudeModels';
+import { type ClaudeRuntimeCatalog, probeClaudeCatalog } from './probeClaudeModels';
 
-export type ClaudeModelProbe = (host: ProviderHost, signal: AbortSignal) => Promise<ClaudeDiscoveredModel[]>;
+export type ClaudeCatalogProbe = (host: ProviderHost, signal: AbortSignal) => Promise<ClaudeRuntimeCatalog>;
 export type ClaudeModelDiscovery = (signal: AbortSignal) => Promise<ProviderModelCatalogRefreshResult>;
 
 /** Replaces the discovered catalog and moves enabled identities (and their aliases) onto reported rows. */
@@ -30,6 +30,14 @@ function applyDiscoveredClaudeModels(settings: Record<string, unknown>, models: 
   updateClaudeProviderSettings(settings, { visibleModels, modelAliases });
 }
 
+/** Output styles only replace the stored list when Claude Code reported some. */
+function applyDiscoveredClaudeCatalog(settings: Record<string, unknown>, catalog: ClaudeRuntimeCatalog): void {
+  applyDiscoveredClaudeModels(settings, catalog.models);
+  if (catalog.outputStyles.length > 0) {
+    updateClaudeProviderSettings(settings, { discoveredOutputStyles: catalog.outputStyles });
+  }
+}
+
 /**
  * Probes Claude Code and writes the reported catalog back. Concurrency and supersession belong to
  * the common catalog controller; an aborted or disabled discovery never writes or publishes.
@@ -37,21 +45,21 @@ function applyDiscoveredClaudeModels(settings: Record<string, unknown>, models: 
 export async function discoverClaudeModels(
   host: ProviderHost,
   signal: AbortSignal,
-  probe: ClaudeModelProbe = probeClaudeModels,
+  probe: ClaudeCatalogProbe = probeClaudeCatalog,
 ): Promise<ProviderModelCatalogRefreshResult> {
   const current = (settings: Record<string, unknown> = host.settings): boolean => (
     !signal.aborted && getClaudeProviderSettings(settings).enabled
   );
-  let models: ClaudeDiscoveredModel[];
+  let catalog: ClaudeRuntimeCatalog;
   try {
-    models = await probe(host, signal);
+    catalog = await probe(host, signal);
   } catch (error) {
     if (!current()) return { changed: false };
     throw error;
   }
   await host.mutateSettingsConditionally(settings => {
     if (!current(settings)) return false;
-    applyDiscoveredClaudeModels(settings, models);
+    applyDiscoveredClaudeCatalog(settings, catalog);
     return true;
   });
   if (!current()) return { changed: false };
@@ -62,23 +70,30 @@ export async function discoverClaudeModels(
 /**
  * Writes the catalog a live session reported. Unlike discovery, a report equal to the stored
  * catalog is not written, so starting a session does not rewrite persisted settings.
+ * An empty model or style list leaves the stored one in place.
  */
-export async function applySessionClaudeModels(
+export async function applySessionClaudeCatalog(
   host: ProviderHost,
-  models: ClaudeDiscoveredModel[],
+  catalog: ClaudeRuntimeCatalog,
   isCurrent: () => boolean = () => true,
 ): Promise<boolean> {
-  const reported = decodeClaudeModels(models);
-  const serialized = JSON.stringify(reported);
+  const models = decodeClaudeModels(catalog.models);
+  const serializedModels = JSON.stringify(models);
+  const serializedStyles = JSON.stringify(catalog.outputStyles);
   const needsWrite = (settings: Record<string, unknown>): boolean => {
     const config = getClaudeProviderSettings(settings);
-    return isCurrent() && config.enabled && JSON.stringify(config.discoveredModels) !== serialized;
+    if (!isCurrent() || !config.enabled) return false;
+    return (models.length > 0 && JSON.stringify(config.discoveredModels) !== serializedModels)
+      || (catalog.outputStyles.length > 0 && JSON.stringify(config.discoveredOutputStyles) !== serializedStyles);
   };
-  if (reported.length === 0 || !needsWrite(host.settings)) return false;
+  if (!needsWrite(host.settings)) return false;
   let written = false;
   await host.mutateSettingsConditionally(settings => {
     if (!needsWrite(settings)) return false;
-    applyDiscoveredClaudeModels(settings, reported);
+    if (models.length > 0) applyDiscoveredClaudeModels(settings, models);
+    if (catalog.outputStyles.length > 0) {
+      updateClaudeProviderSettings(settings, { discoveredOutputStyles: catalog.outputStyles });
+    }
     written = true;
     return true;
   });

@@ -11,27 +11,27 @@ import {
   type CommandProbe,
 } from '../commands/ClaudeCommandCatalog';
 import { probeRuntimeCommands } from '../commands/probeRuntimeCommands';
-import type { ClaudeDiscoveredModel } from '../modelCatalog';
 import { ClaudeCLIResolver } from '../runtime/ClaudeCLIResolver';
 import {
-  applySessionClaudeModels,
-  type ClaudeModelProbe,
+  applySessionClaudeCatalog,
+  type ClaudeCatalogProbe,
   createClaudeModels,
   discoverClaudeModels,
 } from '../runtime/ClaudeModels';
+import type { ClaudeRuntimeCatalog } from '../runtime/probeClaudeModels';
 import { createClaudeSettingsTabRenderer } from '../ui/ClaudeSettingsTab';
 
 export interface ClaudeWorkspaceServices extends ProviderWorkspaceServices {
   cliResolver: ProviderCLIResolver;
   commandCatalog: ProviderCommandCatalog;
-  /** Writes back the model list a live session reported at init. */
-  publishSessionModels(models: ClaudeDiscoveredModel[]): Promise<void>;
+  /** Writes back the models and output styles a live session reported at init. */
+  publishSessionCatalog(catalog: ClaudeRuntimeCatalog): Promise<void>;
   dispose(): Promise<void>;
 }
 
 export interface ClaudeWorkspaceServicesOptions {
   readonly commandProbe?: CommandProbe;
-  readonly modelProbe?: ClaudeModelProbe;
+  readonly catalogProbe?: ClaudeCatalogProbe;
 }
 
 export async function createClaudeWorkspaceServices(
@@ -39,7 +39,7 @@ export async function createClaudeWorkspaceServices(
   options: ClaudeWorkspaceServicesOptions = {},
 ): Promise<ClaudeWorkspaceServices> {
   const cliResolver = new ClaudeCLIResolver();
-  const modelCatalog = createClaudeModels(plugin, signal => discoverClaudeModels(plugin, signal, options.modelProbe));
+  const modelCatalog = createClaudeModels(plugin, signal => discoverClaudeModels(plugin, signal, options.catalogProbe));
 
   const commandCatalog = new ClaudeCommandCatalog(
     options.commandProbe ?? (signal => probeRuntimeCommands(plugin, signal)),
@@ -67,9 +67,9 @@ export async function createClaudeWorkspaceServices(
     commandCatalog,
     settingsTabRenderer: createClaudeSettingsTabRenderer({ cliResolver, modelCatalog }),
     modelCatalog,
-    async publishSessionModels(models) {
+    async publishSessionCatalog(catalog) {
       // A session reporting across an environment transition may describe the old runtime.
-      await applySessionClaudeModels(plugin, models, () => !disposed && !transitioning);
+      await applySessionClaudeCatalog(plugin, catalog, () => !disposed && !transitioning);
     },
     dispose() {
       if (disposePromise) return disposePromise;

@@ -38,10 +38,7 @@ import {
   DISABLED_BUILTIN_TASK_TOOLS,
   UNSUPPORTED_SDK_TOOLS,
 } from '../runtime/types';
-import {
-  type ClaudeResponseStyle,
-  getClaudeProviderSettings,
-} from '../settings';
+import { getClaudeProviderSettings } from '../settings';
 import {
   type EffortLevel,
   isEffortLevel,
@@ -66,7 +63,8 @@ export interface ClaudeEncodedExecutionRequest {
   readonly model: string;
   /** Explicit effort, or null when Claude Code reported no capabilities for the model. */
   readonly effort: EffortLevel | null;
-  readonly responseStyle: ClaudeResponseStyle;
+  /** Native output style; null leaves Claude Code's own setting in force. */
+  readonly outputStyle: string | null;
   readonly sdkPermissionMode: SDKPermissionMode;
   readonly restartKey: string;
   readonly allowedTools: ReadonlySet<string> | null;
@@ -152,7 +150,7 @@ export class ClaudeExecutionRequestEncoder {
       model,
       ...(request.configuration.readableRoots?.length ? { additionalDirectories: [...request.configuration.readableRoots] } : {}),
       ...(effort ? { effort } : {}),
-      settings: { outputStyle: claudeSettings.responseStyle },
+      ...(claudeSettings.outputStyle ? { settings: { outputStyle: claudeSettings.outputStyle } } : {}),
       thinking: { type: 'adaptive' },
       abortController,
       permissionMode: sdkPermissionMode,
@@ -197,7 +195,7 @@ export class ClaudeExecutionRequestEncoder {
       model,
       effort,
       sdkPermissionMode,
-      responseStyle: claudeSettings.responseStyle,
+      outputStyle: claudeSettings.outputStyle,
       restartKey: JSON.stringify({
         systemPrompt,
         tools: policy.tools,

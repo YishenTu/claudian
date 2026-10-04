@@ -104,6 +104,7 @@
     "content": "内容",
     "input": "输入",
     "models": "模型",
+    "responses": "回复",
     "experimental": "实验性功能",
     "userName": {
       "name": "Claudian 应该如何称呼你？",
@@ -149,9 +150,9 @@
       "name": "加载用户 Claude Code 设置",
       "desc": "从 ~/.claude 加载用户级 Claude Code 配置：settings.json、技能、命令、智能体和插件。禁用时仅可使用仓库级配置。启用后，用户的权限规则可能绕过安全模式。"
     },
-    "codexSafeMode": {
-      "name": "安全模式",
-      "desc": "启用 Safe 开关时使用的沙盒模式。"
+    "codexSandbox": {
+      "name": "沙盒",
+      "desc": "Approve for me 和 Ask for approval 模式下的文件访问权限。只读模式会在每次编辑前请求确认；Full access 会忽略此设置。"
     },
     "environment": "环境",
     "sharedEnvironment": {
@@ -165,7 +166,7 @@
     "envSnippets": {
       "name": "片段",
       "addBtn": "添加片段",
-      "noSnippets": "尚无保存的环境变量片段。点击 + 保存当前配置。",
+      "saveCurrent": "将当前环境保存为片段",
       "nameRequired": "请输入片段名称",
       "insert": "插入",
       "modal": {
@@ -316,9 +317,9 @@
       "configuration": "配置",
       "responseStyle": {
         "name": "回复风格",
-        "desc": "默认使用 Claude Code 的常规风格。简洁模式先给出结果，省略开场白。需要 Claude Code 2.1.237 或更高版本。",
+        "desc": "Claude Code 回复所用的输出风格，包括自定义风格。“Claude Code 设置”沿用你的 Claude Code 配置。刷新模型或开始聊天时会更新列表。",
         "default": "默认",
-        "concise": "简洁"
+        "inherit": "Claude Code 设置"
       }
     },
     "codex": {
@@ -346,7 +347,16 @@
         "name": "回复风格",
         "desc": "选择支持此功能的模型中 Codex CLI 的沟通风格。从下一条消息开始生效。",
         "pragmatic": "务实",
-        "friendly": "友好"
+        "friendly": "友好",
+        "neutral": "中性"
+      },
+      "responseVerbosity": {
+        "name": "回复详细程度",
+        "desc": "选择支持此功能的模型的回复详细程度。默认使用 Codex 配置，从下一条消息起生效。",
+        "default": "默认",
+        "low": "低",
+        "medium": "中",
+        "high": "高"
       },
       "reasoningSummary": {
         "name": "推理摘要",

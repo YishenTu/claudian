@@ -1,7 +1,8 @@
-import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
+import type { ModelInfo, SDKControlInitializeResponse } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ClaudeDiscoveredModel } from '../modelCatalog';
+import { decodeOutputStyles } from '../settings';
 import { isEffortLevel } from '../types/models';
 import { probeClaudeRuntime } from './probeClaudeRuntime';
 
@@ -18,11 +19,26 @@ export function toClaudeDiscoveredModel(model: ModelInfo): ClaudeDiscoveredModel
   };
 }
 
-/** Claude Code's reported model choices, read from an independent SDK initialization. */
-export async function probeClaudeModels(
+/** What one Claude Code initialization reports for settings: model choices and output style names. */
+export interface ClaudeRuntimeCatalog {
+  readonly models: ClaudeDiscoveredModel[];
+  readonly outputStyles: string[];
+}
+
+/** Maps Claude Code's initialization answer onto the persisted catalog. */
+export function toClaudeRuntimeCatalog(
+  initialization: Pick<SDKControlInitializeResponse, 'models' | 'available_output_styles'>,
+): ClaudeRuntimeCatalog {
+  return {
+    models: initialization.models.map(toClaudeDiscoveredModel),
+    outputStyles: decodeOutputStyles(initialization.available_output_styles),
+  };
+}
+
+/** Claude Code's reported catalog, read from an independent SDK initialization. */
+export async function probeClaudeCatalog(
   host: ProviderHost,
   signal?: AbortSignal,
-): Promise<ClaudeDiscoveredModel[]> {
-  const { models } = await probeClaudeRuntime(host, signal);
-  return models.map(toClaudeDiscoveredModel);
+): Promise<ClaudeRuntimeCatalog> {
+  return toClaudeRuntimeCatalog(await probeClaudeRuntime(host, signal));
 }

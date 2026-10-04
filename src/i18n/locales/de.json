@@ -104,6 +104,7 @@
     "content": "Inhalte",
     "input": "Eingabe",
     "models": "Modelle",
+    "responses": "Antworten",
     "experimental": "Experimentell",
     "userName": {
       "name": "Wie soll Claudian dich nennen?",
@@ -149,9 +150,9 @@
       "name": "Claude-Code-Benutzereinstellungen laden",
       "desc": "Lädt die Claude-Code-Konfiguration auf Benutzerebene aus ~/.claude: settings.json, Skills, Befehle, Agenten und Plugins. Wenn deaktiviert, ist nur die Konfiguration auf Vault-Ebene verfügbar. Wenn aktiviert, können Benutzer-Berechtigungsregeln den Sicherheitsmodus umgehen."
     },
-    "codexSafeMode": {
-      "name": "Sicherheitsmodus",
-      "desc": "Sandbox-Modus, der verwendet wird, wenn der Safe-Schalter aktiv ist."
+    "codexSandbox": {
+      "name": "Sandbox",
+      "desc": "Dateizugriff in den Modi „Approve for me“ und „Ask for approval“. „Nur lesen“ fragt vor jeder Änderung; „Full access“ ignoriert diese Einstellung."
     },
     "environment": "Umgebung",
     "sharedEnvironment": {
@@ -165,7 +166,7 @@
     "envSnippets": {
       "name": "Snippets",
       "addBtn": "Snippet hinzufügen",
-      "noSnippets": "Keine gespeicherten Umgebungsvariablen-Snippets. Klicken Sie auf +, um Ihre aktuelle Konfiguration zu speichern.",
+      "saveCurrent": "Aktuelle Umgebung als Snippet speichern",
       "nameRequired": "Bitte geben Sie einen Namen für das Snippet ein",
       "insert": "Einfügen",
       "modal": {
@@ -316,9 +317,9 @@
       "configuration": "Konfiguration",
       "responseStyle": {
         "name": "Antwortstil",
-        "desc": "Standard verwendet den üblichen Stil von Claude Code. Knapp beginnt mit Ergebnissen und verzichtet auf Einleitungen. Erfordert Claude Code 2.1.237 oder neuer.",
+        "desc": "Claude-Code-Ausgabestil für Antworten, einschließlich eigener Stile. „Claude-Code-Einstellung“ folgt deiner Claude-Code-Konfiguration. Die Liste wird aktualisiert, wenn Modelle aktualisiert werden oder ein Chat startet.",
         "default": "Standard",
-        "concise": "Knapp"
+        "inherit": "Claude-Code-Einstellung"
       }
     },
     "codex": {
@@ -346,7 +347,16 @@
         "name": "Antwortstil",
         "desc": "Wähle den Kommunikationsstil von Codex CLI bei unterstützten Modellen. Gilt ab der nächsten Nachricht.",
         "pragmatic": "Pragmatisch",
-        "friendly": "Freundlich"
+        "friendly": "Freundlich",
+        "neutral": "Neutral"
+      },
+      "responseVerbosity": {
+        "name": "Antwortumfang",
+        "desc": "Wählen Sie den Detailgrad der Antworten bei unterstützten Modellen. Standard verwendet Ihre Codex-Konfiguration. Gilt ab der nächsten Nachricht.",
+        "default": "Standard",
+        "low": "Niedrig",
+        "medium": "Mittel",
+        "high": "Hoch"
       },
       "reasoningSummary": {
         "name": "Reasoning-Zusammenfassung",

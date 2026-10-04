@@ -30,6 +30,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
   private activeTab: SettingsTabId = 'general';
   private activeProviderTab: ProviderId | null = null;
   private refreshTitleModelOptions: (() => void) | null = null;
+  private syncProviderEnablement: ((providerId: ProviderId) => void) | null = null;
   private renderGeneration = 0;
   private readonly providerSettingsRenders = new Map<ProviderId, ProviderSettingsTabRenderHandle>();
   private skillsTab: SkillsSettingsTab | null = null;
@@ -62,6 +63,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       settingItems.classList.add('claudian-settings-items');
     }
     this.refreshTitleModelOptions = null;
+    this.syncProviderEnablement = null;
 
     setLocale(this.host.settings.locale as Locale);
 
@@ -90,6 +92,14 @@ export class ClaudianSettingTab extends PluginSettingTab {
     const providerButtons = new Map<ProviderId, HTMLButtonElement>();
     const providerContents = new Map<ProviderId, HTMLDivElement>();
     const renderedProviderIds = new Set<ProviderId>();
+    // Disabled providers keep only their installation card; later sections collapse until enabled.
+    const syncProviderEnablement = (providerId: ProviderId): void => {
+      providerContents.get(providerId)?.toggleClass(
+        'claudian-settings-provider-content--disabled',
+        !ProviderRegistry.isEnabled(providerId, this.host.settings),
+      );
+    };
+    this.syncProviderEnablement = syncProviderEnablement;
 
     const renderProviderTab = async (providerId: ProviderId): Promise<void> => {
       if (renderedProviderIds.has(providerId)) return;
@@ -126,6 +136,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
         });
         if (handle) this.providerSettingsRenders.set(providerId, handle);
         frameSettingsGroups(providerContent);
+        syncProviderEnablement(providerId);
       } catch (error) {
         if (renderGeneration !== this.renderGeneration) return;
         renderedProviderIds.delete(providerId);
@@ -220,6 +231,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
       this.disposeProviderSettingsRenders();
       this.disposeSkillsTab();
       this.refreshTitleModelOptions = null;
+      this.syncProviderEnablement = null;
     };
   }
 
@@ -660,6 +672,7 @@ export class ClaudianSettingTab extends PluginSettingTab {
 
   private notifyProviderModelOptionsChanged(providerId: ProviderId): void {
     this.host.notifyProviderChatOptionsChanged(providerId);
+    this.syncProviderEnablement?.(providerId);
     this.refreshTitleModelOptions?.();
   }
 

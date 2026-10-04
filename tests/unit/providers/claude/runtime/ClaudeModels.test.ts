@@ -2,9 +2,9 @@ import '@/providers';
 
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderSettingsCoordinator } from '@/core/providers/ProviderSettingsCoordinator';
+import type { ClaudeDiscoveredModel } from '@/providers/claude/modelCatalog';
 import { getClaudeModelOptions } from '@/providers/claude/modelOptions';
 import { claudeProviderRegistration } from '@/providers/claude/registration';
-import type { ClaudeModelProbe } from '@/providers/claude/runtime/ClaudeModels';
 import { createClaudeModels, discoverClaudeModels } from '@/providers/claude/runtime/ClaudeModels';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 import { claudeChatUIConfig } from '@/providers/claude/ui/ClaudeChatUIConfig';
@@ -20,15 +20,33 @@ function setup(enabled = true) {
   return { settings, host };
 }
 
-function discover(host: ProviderHost, probe: ClaudeModelProbe) {
-  return discoverClaudeModels(host, new AbortController().signal, probe);
+type ModelProbe = (host: ProviderHost, signal: AbortSignal) => Promise<ClaudeDiscoveredModel[]>;
+
+/** Model-only probes report no output styles. */
+function withoutStyles(probe: ModelProbe) {
+  return async (host: ProviderHost, signal: AbortSignal) => ({ models: await probe(host, signal), outputStyles: [] });
 }
 
-function catalogFor(host: ProviderHost, probe: ClaudeModelProbe) {
-  return createClaudeModels(host, signal => discoverClaudeModels(host, signal, probe));
+function discover(host: ProviderHost, probe: ModelProbe) {
+  return discoverClaudeModels(host, new AbortController().signal, withoutStyles(probe));
+}
+
+function catalogFor(host: ProviderHost, probe: ModelProbe) {
+  return createClaudeModels(host, signal => discoverClaudeModels(host, signal, withoutStyles(probe)));
 }
 
 describe('Claude panel model discovery', () => {
+  it('stores reported output styles and keeps the previous list when none are reported', async () => {
+    const { settings, host } = setup();
+    const probe = jest.fn()
+      .mockResolvedValueOnce({ models: rows, outputStyles: ['default', 'My Style'] })
+      .mockResolvedValueOnce({ models: rows, outputStyles: [] });
+    await discoverClaudeModels(host, new AbortController().signal, probe);
+    expect(getClaudeProviderSettings(settings).discoveredOutputStyles).toEqual(['default', 'My Style']);
+    await discoverClaudeModels(host, new AbortController().signal, probe);
+    expect(getClaudeProviderSettings(settings).discoveredOutputStyles).toEqual(['default', 'My Style']);
+  });
+
   it.each([
     { selected: null, expected: ['haiku', 'sonnet', 'opus[1m]', 'fable'] },
     { selected: ['opus', 'opus[1m]', 'removed-model'], expected: ['opus[1m]', 'removed-model'] },

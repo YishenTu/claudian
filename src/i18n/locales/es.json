@@ -104,6 +104,7 @@
     "content": "Contenido",
     "input": "Entrada",
     "models": "Modelos",
+    "responses": "Respuestas",
     "experimental": "Experimental",
     "userName": {
       "name": "¿Cómo debería Claudian llamarte?",
@@ -149,9 +150,9 @@
       "name": "Cargar configuración de usuario de Claude Code",
       "desc": "Carga la configuración de Claude Code a nivel de usuario desde ~/.claude: settings.json, skills, comandos, agentes y plugins. Si está deshabilitado, solo está disponible la configuración a nivel de bóveda. Si está habilitado, las reglas de permisos del usuario pueden eludir el modo seguro."
     },
-    "codexSafeMode": {
-      "name": "Modo seguro",
-      "desc": "Modo de sandbox usado cuando el interruptor Seguro está activo."
+    "codexSandbox": {
+      "name": "Sandbox",
+      "desc": "Acceso a archivos en los modos Approve for me y Ask for approval. Solo lectura pide aprobación antes de cada edición; Full access lo ignora."
     },
     "environment": "Entorno",
     "sharedEnvironment": {
@@ -165,7 +166,7 @@
     "envSnippets": {
       "name": "Fragmentos",
       "addBtn": "Añadir fragmento",
-      "noSnippets": "No hay fragmentos de entorno guardados. Haga clic en + para guardar su configuración actual.",
+      "saveCurrent": "Guardar el entorno actual como fragmento",
       "nameRequired": "Por favor ingrese un nombre para el fragmento",
       "insert": "Insertar",
       "modal": {
@@ -316,9 +317,9 @@
       "configuration": "Configuración",
       "responseStyle": {
         "name": "Estilo de respuesta",
-        "desc": "Predeterminado usa el estilo habitual de Claude Code. Conciso empieza con los resultados y omite preámbulos. Requiere Claude Code 2.1.237 o posterior.",
+        "desc": "Estilo de salida de Claude Code para las respuestas, incluidos los estilos personalizados. «Configuración de Claude Code» sigue tu configuración de Claude Code. La lista se actualiza al refrescar los modelos o al iniciar un chat.",
         "default": "Predeterminado",
-        "concise": "Conciso"
+        "inherit": "Configuración de Claude Code"
       }
     },
     "codex": {
@@ -346,7 +347,16 @@
         "name": "Estilo de respuesta",
         "desc": "Elige cómo se comunica Codex CLI en los modelos compatibles. Se aplica a partir del siguiente mensaje.",
         "pragmatic": "Pragmático",
-        "friendly": "Amigable"
+        "friendly": "Amigable",
+        "neutral": "Neutral"
+      },
+      "responseVerbosity": {
+        "name": "Nivel de detalle de las respuestas",
+        "desc": "Elige el nivel de detalle de las respuestas en los modelos compatibles. La opción predeterminada usa tu configuración de Codex. Se aplica a partir del siguiente mensaje.",
+        "default": "Predeterminado",
+        "low": "Bajo",
+        "medium": "Medio",
+        "high": "Alto"
       },
       "reasoningSummary": {
         "name": "Resumen de razonamiento",

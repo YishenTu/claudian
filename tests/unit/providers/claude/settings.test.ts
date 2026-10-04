@@ -1,5 +1,6 @@
 const mockGetHostnameKey = jest.fn(() => 'device:current');
 
+import { claudeProviderRegistration } from '@/providers/claude/registration';
 import { getClaudeProviderSettings, updateClaudeProviderSettings } from '@/providers/claude/settings';
 
 jest.mock('@/core/device/InstallationKey', () => ({
@@ -8,16 +9,32 @@ jest.mock('@/core/device/InstallationKey', () => ({
 }));
 
 describe('Claude settings normalization', () => {
-  it.each(['Default', 'Concise'] as const)('persists the %s response style while preserving other settings', (responseStyle) => {
+  it.each(['default', 'My Style', null] as const)('persists the %p output style while preserving other settings', (outputStyle) => {
     const settings = { providerConfigs: { claude: { customModels: 'custom' } } };
-    updateClaudeProviderSettings(settings, { responseStyle });
-    expect(getClaudeProviderSettings(settings)).toMatchObject({ responseStyle });
+    updateClaudeProviderSettings(settings, { outputStyle });
+    expect(getClaudeProviderSettings(settings)).toMatchObject({ outputStyle });
     expect(settings.providerConfigs.claude.customModels).toBe('custom');
   });
 
-  it.each([undefined, null, '', 'invalid', 42, {}, []])('normalizes invalid response style %p to Default', (responseStyle) => {
-    expect(getClaudeProviderSettings({ providerConfigs: { claude: { responseStyle } } }))
-      .toMatchObject({ responseStyle: 'Default' });
+  it.each([
+    [{ responseStyle: 'Concise' }, 'Concise'],
+    [{ responseStyle: 'Default' }, null],
+    [{}, null],
+    [{ outputStyle: '', responseStyle: 'Concise' }, 'Concise'],
+    [{ outputStyle: null, responseStyle: 'Concise' }, null],
+    [{ outputStyle: ' Explanatory ' }, 'Explanatory'],
+    [{ outputStyle: 42 }, null],
+  ])('reads stored style %p as %p', (config, outputStyle) => {
+    expect(getClaudeProviderSettings({ providerConfigs: { claude: config } })).toMatchObject({ outputStyle });
+  });
+
+  it('drops the retired response style when stored settings are normalized', () => {
+    const target: Record<string, unknown> = {};
+    const stored = { providerConfigs: { claude: { responseStyle: 'Concise' } } };
+    expect(claudeProviderRegistration.settingsStorage!.normalizeStored!(target, stored)).toBe(true);
+    const config = (target.providerConfigs as Record<string, Record<string, unknown>>).claude;
+    expect(config).toMatchObject({ outputStyle: 'Concise' });
+    expect(config).not.toHaveProperty('responseStyle');
   });
 
   it('normalizes mixed CLI maps without interpreting host-shaped keys', () => {
