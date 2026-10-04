@@ -53,7 +53,6 @@ import type {
   ProviderCLIResolutionContext,
   ProviderId,
 } from './core/providers/types';
-import { normalizeWarmExecutionLimit } from './core/settings/warmExecutionLimits';
 import type {
   ClaudianSettings,
   Conversation,
@@ -66,7 +65,6 @@ import {
 import type { ChatViewPlacement, EnvironmentScope } from './core/types/settings';
 import { ClaudianView } from './features/chat/ClaudianView';
 import type { ChatExecutionPersistence } from './features/chat/execution/ChatExecutionCoordinator';
-import { WarmExecutionPool } from './features/chat/execution/WarmExecutionPool';
 import { registerFileMenu } from './features/chat/fileMenu';
 import { InactiveSessionArchiver } from './features/chat/session-manager/InactiveSessionArchiver';
 import type { ZenModeSource } from './features/chat/zen/types';
@@ -87,9 +85,6 @@ export default class ClaudianPlugin extends Plugin {
   readonly executionLifecycleRegistry = new ProviderExecutionLifecycleRegistry();
   private settingsTab: ClaudianSettingTab | null = null;
   readonly providerHost = new ClaudianProviderHost(this);
-  readonly warmExecutionPool = new WarmExecutionPool(
-    () => normalizeWarmExecutionLimit(this.settings?.maxWarmAgentProcesses),
-  );
   private settingsCoordinator!: SettingsCoordinator<ClaudianSettings>;
   private chatModelSelectionCoordinator!: ChatModelSelectionCoordinator;
   private pinnedLinkedContentPaths!: PinnedLinkedContentPathCoordinator;
@@ -470,12 +465,6 @@ export default class ClaudianPlugin extends Plugin {
       ...DEFAULT_CLAUDIAN_SETTINGS,
       ...claudian,
     };
-    const normalizedWarmExecutionLimit = normalizeWarmExecutionLimit(
-      this.settings.maxWarmAgentProcesses,
-    );
-    const didNormalizeWarmExecutionLimit =
-      normalizedWarmExecutionLimit !== this.settings.maxWarmAgentProcesses;
-    this.settings.maxWarmAgentProcesses = normalizedWarmExecutionLimit;
     this.settingsCoordinator = new SettingsCoordinator(
       this.settings,
       async (settings) => {
@@ -585,7 +574,6 @@ export default class ClaudianPlugin extends Plugin {
       || didNormalizeModelVariants
       || didNormalizeProviderSelection
       || didNormalizePendingSessionInvalidations
-      || didNormalizeWarmExecutionLimit
     ) {
       await this.saveSettings();
     }
@@ -646,15 +634,6 @@ export default class ClaudianPlugin extends Plugin {
       && this.sessionMetadata.hasLoadedAll
     ) {
       this.archiveInactiveSessions();
-    }
-    if (settings.maxWarmAgentProcesses !== previous.maxWarmAgentProcesses) {
-      try {
-        if (!await this.warmExecutionPool.reconcileLimit()) {
-          new Notice('The new concurrent running session limit will apply as busy sessions become idle.');
-        }
-      } catch (error) {
-        new Notice(error instanceof Error ? error.message : 'Failed to release excess warm agent processes.');
-      }
     }
     if (errors.length > 0) throw new AggregateError(errors, 'Settings view publication failed.');
   }

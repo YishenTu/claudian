@@ -601,10 +601,8 @@ it.each(['background-approval', 'background-nested', 'mcp-form-late'])('keeps %s
     expect(result.status).toBe('completed');
     if (text === 'mcp-form-late') await asked;
     expect(coordinator.hasBackgroundWork).toBe(true);
-    expect(coordinator.canCool()).toBe(false);
     await asked;
     expect(interactions).toEqual(text === 'mcp-form-late' ? ['question'] : ['approval', 'question']);
-    expect(coordinator.canCool()).toBe(false);
     release();
     await automaticReply;
     await settled;

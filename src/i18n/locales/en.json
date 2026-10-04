@@ -8,7 +8,6 @@
     "clearAll": "Clear all",
     "error": "Error",
     "confirm": "Confirm",
-    "advanced": "Advanced",
     "refresh": "Refresh"
   },
   "chat": {
@@ -201,10 +200,6 @@
     "enableChrome": {
       "name": "Enable Chrome extension",
       "desc": "Allow Claude Code to interact with Chrome via the claude-in-chrome extension. Requires the extension to be installed. Requires session restart."
-    },
-    "maxWarmAgentProcesses": {
-      "name": "Maximum concurrent running sessions",
-      "desc": "Maximum number of agent sessions kept ready at once (5-10). Older idle sessions pause automatically and resume when used."
     },
     "enableDualPane": {
       "name": "Enable dual-pane mode",

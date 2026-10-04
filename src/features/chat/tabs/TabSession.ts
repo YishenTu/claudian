@@ -29,10 +29,7 @@ export class TabSession {
     private readonly onWorkChanged?: () => void,
     private readonly isConversationBusy: () => boolean = () => false,
   ) {
-    this.turns = new TurnCoordinator(() => {
-      this.onWorkChanged?.();
-      if (!this.turns.isActive) this.coordinator.notifyMayCool();
-    }, () => this.acceptsIntents && this.lifecycleState !== 'closing' && !this.identitySealed && !this.isConversationBusy());
+    this.turns = new TurnCoordinator(() => this.onWorkChanged?.(), () => this.acceptsIntents && this.lifecycleState !== 'closing' && !this.identitySealed && !this.isConversationBusy());
   }
 
   get id(): string { return this.state.id; }
@@ -57,7 +54,6 @@ export class TabSession {
 
   bindConversation(conversationId: string | null, providerId: ProviderId | null): void {
     this.replaceIdentity(conversationId, providerId, null);
-    this.setExecutionWarm(false);
   }
 
   selectDraft(providerId: ProviderId | null, model: string | null): void {
@@ -82,7 +78,7 @@ export class TabSession {
   }
 
   commitAdmission(): void {
-    if (this.lifecycleState === 'provisional') this.state.lifecycleState = 'cold';
+    if (this.lifecycleState === 'provisional') this.state.lifecycleState = 'open';
   }
 
   sealIdentity(): void {
@@ -92,11 +88,6 @@ export class TabSession {
 
   beginClose(): void {
     this.state.lifecycleState = 'closing';
-  }
-
-  setExecutionWarm(warm: boolean): void {
-    if (this.lifecycleState === 'closing' || this.lifecycleState === 'provisional') return;
-    this.state.lifecycleState = warm ? 'warm' : 'cold';
   }
 
   claimUserOwnership(): void {

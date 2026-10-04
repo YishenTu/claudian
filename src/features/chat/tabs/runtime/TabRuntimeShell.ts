@@ -15,7 +15,7 @@ import {
   createTabMessageId,
   enqueueTabSessionEvent,
 } from '../TabSessionEvents';
-import type { TabDOMElements, TabId, TabProviderCatalogContext } from '../types';
+import type { TabDOMElements, TabProviderCatalogContext } from '../types';
 import { generateTabId } from '../types';
 import type {
   PublishedTabRuntimeRef,
@@ -64,7 +64,6 @@ export function buildTabRuntimeShell(
     ? { ...options.initialState }
     : createTabSessionState(plugin.settings, conversation, { ...options, tabId: id });
   const executionCoordinator = createTabExecutionCoordinator(
-    id,
     state,
     options,
     runtimeRef,
@@ -171,8 +170,9 @@ function buildTabDOM(contentEl: HTMLElement, options: TabRuntimeConstructionCont
   };
 }
 
+const IDLE_SESSION_RELEASE_MS = 30 * 60_000;
+
 function createTabExecutionCoordinator(
-  id: TabId,
   state: ChatState,
   options: TabRuntimeConstructionContext,
   runtimeRef: PublishedTabRuntimeRef,
@@ -217,23 +217,18 @@ function createTabExecutionCoordinator(
     onError: error => {
       new Notice(error instanceof Error ? error.message : 'Provider execution failed.');
     },
-    warmExecution: {
-      ownerId: id,
-      pool: plugin.warmExecutionPool,
-      canCool: () => {
-        const tab = runtimeRef.requirePublished();
-        return !state.isStreaming
-          && !state.isRewinding
-          && !state.requiresAction
-          && !tab.session.turns.isActive
-          && tab.lifecycleState !== 'closing';
-      },
-      onWarmStateChanged: (isWarm) => {
-        const tab = runtimeRef.requirePublished();
-        if (tab.lifecycleState === 'closing') return;
-        tab.session.setExecutionWarm(isWarm);
-        if (!isWarm) options.onCommandContextChanged?.(tab);
-      },
+    idleReleaseMs: IDLE_SESSION_RELEASE_MS,
+    isOwnerIdle: () => {
+      const tab = runtimeRef.requirePublished();
+      return !state.isStreaming
+        && !state.isRewinding
+        && !state.requiresAction
+        && !tab.session.turns.isActive
+        && tab.lifecycleState !== 'closing';
+    },
+    onIdleRelease: () => {
+      const tab = runtimeRef.requirePublished();
+      if (tab.lifecycleState !== 'closing') options.onCommandContextChanged?.(tab);
     },
   });
 }

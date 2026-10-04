@@ -32,7 +32,7 @@ export function createTabSessionState(
       : DEFAULT_CHAT_PROVIDER_ID);
   return {
     id: options.tabId,
-    lifecycleState: options.lifecycleState ?? 'cold',
+    lifecycleState: options.lifecycleState ?? 'open',
     draftModel,
     providerId: initialProviderId,
     conversationId: conversation?.id ?? null,

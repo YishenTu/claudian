@@ -8,7 +8,6 @@
     "clearAll": "清除全部",
     "error": "错误",
     "confirm": "确认",
-    "advanced": "高级",
     "refresh": "刷新"
   },
   "chat": {
@@ -201,10 +200,6 @@
     "enableChrome": {
       "name": "启用 Chrome 扩展",
       "desc": "允许 Claude Code 通过 claude-in-chrome 扩展与 Chrome 交互。需要安装该扩展。需要重启会话。"
-    },
-    "maxWarmAgentProcesses": {
-      "name": "最大并发运行会话数",
-      "desc": "同时保持就绪的代理会话最大数量（5-10）。较早的空闲会话会自动暂停，并在使用时恢复。"
     },
     "enableDualPane": {
       "name": "启用双栏模式",

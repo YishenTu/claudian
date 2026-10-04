@@ -10,7 +10,7 @@ interface ExecutionInteractionsDeps {
   readonly port: ProviderInteractionPort;
   isCurrent(request: ProviderInteractionIdentity): boolean;
   staleError(interactionId: string): Error;
-  onPendingChange(): void;
+  onPendingChange?(): void;
 }
 
 /** Owns live provider requests; late replies cannot resolve or remove another request. */
@@ -34,7 +34,7 @@ export class ExecutionInteractions implements ProviderInteractionPort {
   dismissInteraction(id: string, reason: ProviderInteractionDismissReason): void {
     this.#pending.delete(id);
     this.deps.port.dismissInteraction(id, reason);
-    this.deps.onPendingChange();
+    this.deps.onPendingChange?.();
   }
 
   dismissTurn(turnId: string, reason: ProviderInteractionDismissReason): void {
@@ -56,7 +56,7 @@ export class ExecutionInteractions implements ProviderInteractionPort {
     if (this.#pending.has(request.interactionId)) throw new Error(`Duplicate provider interaction: ${request.interactionId}`);
     const pending = { ...request };
     this.#pending.set(request.interactionId, pending);
-    this.deps.onPendingChange();
+    this.deps.onPendingChange?.();
     try {
       const response = await forward();
       if (response.interactionId !== request.interactionId || signal.aborted
@@ -67,7 +67,7 @@ export class ExecutionInteractions implements ProviderInteractionPort {
     } finally {
       if (this.#pending.get(request.interactionId) === pending) {
         this.#pending.delete(request.interactionId);
-        this.deps.onPendingChange();
+        this.deps.onPendingChange?.();
       }
     }
   }

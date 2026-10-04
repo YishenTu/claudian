@@ -78,9 +78,8 @@ export function buildTabRuntimeControllers(
   const ensureExecutionInitialized = async (): Promise<boolean> => {
     const tab = runtimeRef.requirePublished();
     if (
-      tab.lifecycleState === 'warm'
-      && (tab.executionCoordinator.state === 'idle'
-        || tab.executionCoordinator.state === 'active')
+      tab.executionCoordinator.state === 'idle'
+      || tab.executionCoordinator.state === 'active'
     ) {
       return true;
     }

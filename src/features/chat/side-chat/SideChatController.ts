@@ -355,10 +355,6 @@ export class SideChatController {
       },
       source,
       vaultWorkingDirectory: vaultPath ?? '.',
-      warmExecution: {
-        ownerId: `${this.deps.getTab().id}:side`,
-        pool: this.deps.plugin.warmExecutionPool,
-      },
     });
     this.#runtime = runtime;
     // The panel is created expanded, so Side becomes the destination immediately.

@@ -8,7 +8,6 @@
     "clearAll": "Limpar tudo",
     "error": "Erro",
     "confirm": "Confirmar",
-    "advanced": "Avançado",
     "refresh": "Atualizar"
   },
   "chat": {
@@ -201,10 +200,6 @@
     "enableChrome": {
       "name": "Habilitar extensão do Chrome",
       "desc": "Permitir que o Claude Code interaja com o Chrome através da extensão claude-in-chrome. Requer que a extensão esteja instalada. Requer reinício de sessão."
-    },
-    "maxWarmAgentProcesses": {
-      "name": "Máximo de sessões em execução simultâneas",
-      "desc": "Número máximo de sessões de agente mantidas prontas ao mesmo tempo (5-10). Sessões ociosas mais antigas pausam automaticamente e retomam quando usadas."
     },
     "enableDualPane": {
       "name": "Ativar modo de painel duplo",

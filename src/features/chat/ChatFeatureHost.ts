@@ -2,7 +2,6 @@ import type { AppTabManagerState, ProviderId } from '../../core/providers/types'
 import type { Conversation, ConversationMeta, ConversationMutablePatch, ConversationSummary, StoredChatModelSelection } from '../../core/types';
 import type { FeatureHost } from '../FeatureHost';
 import type { ChatExecutionPersistence } from './execution/ChatExecutionCoordinator';
-import type { WarmExecutionPool } from './execution/WarmExecutionPool';
 import type { AssembledTabRuntime, TabId, TabManagerViewHost,TabProviderCatalogContext } from './tabs/types';
 import type { ZenModeSource } from './zen/types';
 
@@ -98,7 +97,6 @@ export interface ChatFeatureHost extends FeatureHost {
 
 
   readonly executionPersistence: ChatExecutionPersistence;
-  readonly warmExecutionPool: WarmExecutionPool;
 
   registerTabWorkspaceStateDelivery(
     view: ChatViewHost,

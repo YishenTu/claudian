@@ -82,7 +82,6 @@ describe('Codex side-chat native child', () => {
     const child = await traceSideChild(env, source, checkpoint, native.backend);
     await child!.send('Also remember B');
     expect(native.operations).toContainEqual({ method: 'thread/fork', params: expect.objectContaining({ threadId: 'codex-source', ephemeral: true, excludeTurns: true, lastTurnId: 'codex-turn-1' }) });
-    expect(child!.session.canCool()).toBe(false);
     expect(native.prompts.at(-1)).toEqual({ context: ['codex-turn-1'], threadId: 'codex-child' });
 
     await child!.send('Use A and B');

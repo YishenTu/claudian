@@ -47,7 +47,6 @@ async function handleTabSessionEvent(
   }
   if (event.type === 'subagent_updated') {
     await tab.controllers.conversationController.save(true);
-    tab.executionCoordinator.notifyMayCool();
     return;
   }
   if (event.type === 'async_subagent_completed') {
@@ -115,7 +114,6 @@ export function enqueueTabSessionEvent(
       return tab.controllers.conversationController.scheduleProgressSave(() => enqueueTabBackgroundWork(tab, async () => {
         if (!isCurrent()) return;
         await tab.controllers.conversationController.save(true);
-        tab.executionCoordinator.notifyMayCool();
       }));
     }
   }

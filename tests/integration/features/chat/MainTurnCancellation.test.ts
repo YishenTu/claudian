@@ -68,7 +68,7 @@ test('shutdown cancels a preparing turn and retains its unsent input for the fin
   const native = createHarness();
   await native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
   const session = new TabSession({
-    id: 'tab-1', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'cold',
+    id: 'tab-1', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'open',
   }, native.coordinator);
   const started = deferred<void>();
   const release = deferred<void>();

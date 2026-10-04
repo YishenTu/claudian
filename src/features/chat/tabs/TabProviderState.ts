@@ -394,9 +394,6 @@ export async function initializeTabExecution(
   if (conversation) {
     await tab.executionCoordinator.prepare();
   }
-  if (isClosingLifecycleState(tab.lifecycleState)) return;
-
-  if (conversation) tab.session.setExecutionWarm(true);
 }
 
 export async function updateTabPermissionMode(

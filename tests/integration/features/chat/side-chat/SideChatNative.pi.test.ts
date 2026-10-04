@@ -65,7 +65,6 @@ describe('Pi side-chat native child', () => {
     expect(afterFirst?.text).toContain('Captured passage 48271');
     expect(afterFirst?.images).toEqual([{ type: 'image', mimeType: 'image/png', data: capturedImage.data }]);
     expect(afterFirst?.text).not.toContain('Remember A2');
-    expect(child!.session.canCool()).toBe(false);
 
     await child!.send('Use A and B');
     const afterSecond = (await native.contexts()).at(-1);

@@ -209,7 +209,7 @@ it('withdraws an expired async answer waiting behind busy-main reference prepara
 
 it('cancels and drains queued snapshot preparation before tab shutdown finishes', async () => {
   const fixture = setup();
-  const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'warm' }, fixture.native.coordinator);
+  const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'open' }, fixture.native.coordinator);
   const gate = deferred<any>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(gate.promise);
@@ -237,7 +237,7 @@ it.each([false, true])('restores prepared drafts when rewind begins during hydra
   const initialization = deferred<boolean>();
   const source = await fixture.plugin.getConversationById(id);
   fixture.plugin.getConversationById.mockClear().mockReturnValue(hydration.promise);
-  const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'warm' }, fixture.native.coordinator);
+  const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'open' }, fixture.native.coordinator);
   const initialize = jest.fn().mockReturnValue(initialization.promise);
   const conversation = new ConversationController({
     ...fixture.deps,
@@ -482,7 +482,7 @@ it.each(['cancel', 'withdraw', 'discard', 'pause', 'shutdown', 'replacement'] as
   'retains scheduled queued input through %s without a stray handoff', async action => {
     jest.useFakeTimers();
     const fixture = setup();
-    const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'warm' }, fixture.native.coordinator);
+    const session = new TabSession({ id: 'tab', conversationId: 'conversation-1', providerId: 'claude', draftModel: null, lifecycleState: 'open' }, fixture.native.coordinator);
     fixture.deps.canStartTurn = () => session.acceptsIntents;
     await fixture.native.coordinator.bindConversation({ conversationId: 'conversation-1', providerId: 'claude' });
     try {

@@ -41,7 +41,6 @@ import {
   ExecutionSessionSupervisor,
 } from './ExecutionSessionSupervisor';
 import { SessionEventStream } from './SessionEventStream';
-import type { WarmExecutionPool } from './WarmExecutionPool';
 
 export type ChatExecutionCoordinatorState =
   | 'absent'
@@ -132,12 +131,11 @@ export interface ChatExecutionCoordinatorDeps {
     missingProviderSessionId?: string,
   ) => Promise<MissingProviderSessionResolution>;
   readonly onError?: (error: unknown) => void;
-  readonly warmExecution?: {
-    readonly ownerId: string;
-    readonly pool: WarmExecutionPool;
-    readonly canCool: () => boolean;
-    readonly onWarmStateChanged?: (isWarm: boolean) => void;
-  };
+  /** Releases an idle provider session after this long; omitted keeps it until disposal. */
+  readonly idleReleaseMs?: number;
+  /** Owner work invisible to the coordinator; an idle session is released only while this holds. */
+  readonly isOwnerIdle?: () => boolean;
+  readonly onIdleRelease?: () => void;
 }
 
 export interface ChatExecutionResult {
@@ -212,8 +210,9 @@ export class ChatExecutionCoordinator {
   #stale = false;
   #publishedBackgroundWork = false;
   #protectedOperationCount = 0;
-  #conversationBindingGeneration = 0;
   #preparationTail: Promise<void> = Promise.resolve();
+  #idleTimer: number | null = null;
+  #idleTimerGeneration = 0;
 
   constructor(private readonly deps: ChatExecutionCoordinatorDeps) {
     this.#supervisor = new ExecutionSessionSupervisor(deps.lifecycleRegistry);
@@ -221,7 +220,7 @@ export class ChatExecutionCoordinator {
       port: deps.interactionPort,
       isCurrent: request => this.#isInteractionCurrent(request),
       staleError: id => new ChatExecutionInteractionStaleError(id),
-      onPendingChange: () => this.notifyMayCool(),
+      onPendingChange: () => this.#restartIdleTimer(),
     });
   }
 
@@ -286,7 +285,6 @@ export class ChatExecutionCoordinator {
       return;
     }
 
-    this.#conversationBindingGeneration += 1;
     this.#invalidateActiveExecution('invalidated', 'conversation-switched');
     this.#pendingSteerAttempts.clear();
     this.#conversation = conversation;
@@ -299,10 +297,10 @@ export class ChatExecutionCoordinator {
     await this.#runProtectedOperation(() => this.#enqueuePreparation());
   }
 
-  #enqueuePreparation(): Promise<void> {
+  #enqueuePreparation(operation: () => Promise<void> = () => this.#prepareSession()): Promise<void> {
     const pending = this.#preparationTail
       .catch(() => undefined)
-      .then(() => this.#prepareSession());
+      .then(operation);
     this.#preparationTail = pending.then(
       () => undefined,
       () => undefined,
@@ -313,65 +311,46 @@ export class ChatExecutionCoordinator {
   async #prepareSession(): Promise<void> {
     this.#assertAvailable();
     const conversation = this.#requireConversation();
-    const bindingGeneration = this.#conversationBindingGeneration;
-    await this.#acquireWarmSlot();
-    if (!this.#isPreparationCurrent(conversation, bindingGeneration)) {
-      this.#releaseWarmSlot();
-      return;
-    }
     if (this.#sessionBinding && this.#isBindingCurrent(this.#sessionBinding)) return;
-    try {
-      const backend = this.deps.resolveBackend(conversation.providerId);
-      if (backend.providerId !== conversation.providerId) {
-        throw new Error(
-          `Execution backend provider mismatch: expected ${conversation.providerId}, got ${backend.providerId}`,
-        );
-      }
-
-      const supervised = this.#supervisor.acquire(
-        backend,
-        {
-          lifecycle: 'persistent',
-          nativePersistence: 'enabled',
-          resumeSeed: conversation.resumeSeed,
-          vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
-          interactionPort: this.#interactions,
-        },
-        (reason) => this.#handleLeaseInvalidation(reason),
-        (event) => this.#handleSessionEvent(event),
+    const backend = this.deps.resolveBackend(conversation.providerId);
+    if (backend.providerId !== conversation.providerId) {
+      throw new Error(
+        `Execution backend provider mismatch: expected ${conversation.providerId}, got ${backend.providerId}`,
       );
-      const binding: SessionBinding = {
-        conversation,
-        bindingId: this.deps.createId(),
-        generation: supervised.generation,
-        session: supervised.session,
-        lastSnapshotRevision: -1,
-        pendingWorkCount: 0,
-        events: new SessionEventStream(supervised.session.sessionInstanceId),
-      };
-      this.#sessionBinding = binding;
-      this.#stale = false;
-      try {
-        this.deps.persistence.registerExecutionBinding(
-          conversation.conversationId,
-          binding.bindingId,
-          binding.generation,
-        );
-        await this.#persistSnapshot(binding, binding.session.getSnapshot());
-        if (
-          this.#isBindingCurrent(binding)
-          && this.#isPreparationCurrent(conversation, bindingGeneration)
-        ) {
-          this.deps.warmExecution?.onWarmStateChanged?.(true);
-        }
-      } catch (error) {
-        await this.#releaseSessionBinding();
-        throw error;
-      }
+    }
+
+    const supervised = this.#supervisor.acquire(
+      backend,
+      {
+        lifecycle: 'persistent',
+        nativePersistence: 'enabled',
+        resumeSeed: conversation.resumeSeed,
+        vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
+        interactionPort: this.#interactions,
+      },
+      (reason) => this.#handleLeaseInvalidation(reason),
+      (event) => this.#handleSessionEvent(event),
+    );
+    const binding: SessionBinding = {
+      conversation,
+      bindingId: this.deps.createId(),
+      generation: supervised.generation,
+      session: supervised.session,
+      lastSnapshotRevision: -1,
+      pendingWorkCount: 0,
+      events: new SessionEventStream(supervised.session.sessionInstanceId),
+    };
+    this.#sessionBinding = binding;
+    this.#stale = false;
+    try {
+      this.deps.persistence.registerExecutionBinding(
+        conversation.conversationId,
+        binding.bindingId,
+        binding.generation,
+      );
+      await this.#persistSnapshot(binding, binding.session.getSnapshot());
     } catch (error) {
-      if (!this.#sessionBinding) {
-        this.#releaseWarmSlot();
-      }
+      await this.#releaseSessionBinding();
       throw error;
     }
   }
@@ -479,8 +458,6 @@ export class ChatExecutionCoordinator {
     const active = this.#activeExecution;
     if (!isSteerableExecutionSession(binding.session)) return false;
     try {
-      await this.#touchWarmSlot();
-      if (signal.aborted || this.#activeExecution !== active) return false;
       await this.deps.persistence.assertConversationExecutionAuthority(
         binding.conversation.conversationId, binding.bindingId, binding.generation,
       );
@@ -544,14 +521,14 @@ export class ChatExecutionCoordinator {
     } finally {
       if (this.#pendingSteerAttempts.get(submissionId) === attempt) {
         this.#pendingSteerAttempts.delete(submissionId);
-        this.notifyMayCool();
+        this.#restartIdleTimer();
       }
     }
   }
 
   releaseSteerCorrelation(submissionId: string): void {
     this.#pendingSteerAttempts.delete(submissionId);
-    this.notifyMayCool();
+    this.#restartIdleTimer();
   }
 
   async previewRewind(
@@ -699,7 +676,6 @@ export class ChatExecutionCoordinator {
   dispose(): Promise<void> {
     if (this.#disposePromise) return this.#disposePromise;
     this.#disposed = true;
-    this.#conversationBindingGeneration += 1;
     this.#invalidateActiveExecution('invalidated', 'session-disposed');
     this.#pendingSteerAttempts.clear();
     this.#disposePromise = this.#preparationTail
@@ -708,7 +684,7 @@ export class ChatExecutionCoordinator {
     return this.#disposePromise;
   }
 
-  canCool(): boolean {
+  #isIdle(): boolean {
     const binding = this.#sessionBinding;
     return Boolean(
       binding
@@ -721,34 +697,44 @@ export class ChatExecutionCoordinator {
       && !binding.session.hasBackgroundWork?.()
       && !binding.events.hasBackgroundWork
       && binding.pendingWorkCount === 0
-      && (this.deps.warmExecution?.canCool() ?? true),
+      && (this.deps.isOwnerIdle?.() ?? true),
     );
   }
 
-  notifyMayCool(): void {
-    const warmExecution = this.deps.warmExecution;
-    if (!warmExecution) return;
-    this.#fireAndReport(
-      warmExecution.pool.notifyOwnerMayCool(warmExecution.ownerId),
-    );
+  #restartIdleTimer(): void {
+    this.#clearIdleTimer();
+    const idleReleaseMs = this.deps.idleReleaseMs;
+    if (idleReleaseMs === undefined || this.#disposed || !this.#sessionBinding) return;
+    const generation = this.#idleTimerGeneration;
+    this.#idleTimer = window.setTimeout(() => {
+      this.#idleTimer = null;
+      this.#fireAndReport(this.#enqueuePreparation(() => this.#releaseIdleSession(generation)));
+    }, idleReleaseMs);
   }
 
-  async cool(): Promise<void> {
-    this.#assertAvailable();
-    if (!this.#sessionBinding) {
-      this.#releaseWarmSlot();
-      return;
-    }
-    if (!this.canCool()) {
-      throw new Error('Chat execution is busy and cannot be cooled');
-    }
+  #clearIdleTimer(): void {
+    this.#idleTimerGeneration += 1;
+    if (this.#idleTimer === null) return;
+    window.clearTimeout(this.#idleTimer);
+    this.#idleTimer = null;
+  }
 
+  async #releaseIdleSession(generation: number): Promise<void> {
     const binding = this.#sessionBinding;
-    await this.#persistSnapshot(binding, binding.session.getSnapshot());
-    if (this.#sessionBinding !== binding || !this.canCool()) {
-      throw new Error('Chat execution became busy while cooling');
+    if (!binding || generation !== this.#idleTimerGeneration) return;
+    try {
+      if (!this.#isIdle()) return;
+      await this.#persistSnapshot(binding, binding.session.getSnapshot());
+      if (this.#sessionBinding === binding && generation === this.#idleTimerGeneration && this.#isIdle()) {
+        await this.#releaseSessionBinding();
+        this.deps.onIdleRelease?.();
+      }
+    } finally {
+      // Retry busy or failed releases without replacing a newer activity timer.
+      if (this.#sessionBinding === binding && generation === this.#idleTimerGeneration) {
+        this.#restartIdleTimer();
+      }
     }
-    await this.#releaseSessionBinding();
   }
 
   async #consumeRequestedEvents(
@@ -925,7 +911,6 @@ export class ChatExecutionCoordinator {
     if (!admitted) return;
     if (event.type === 'background_turn_started') {
       this.#publishBackgroundWork();
-      this.#fireAndReport(this.#touchWarmSlot());
     }
     if (event.type === 'subagent_updated') this.#publishBackgroundWork();
     const eventWork: Promise<unknown>[] = [];
@@ -945,7 +930,7 @@ export class ChatExecutionCoordinator {
     this.#trackBindingWork(binding, Promise.all(eventWork));
     if (event.type === 'background_turn_completed') {
       this.#publishBackgroundWork();
-      this.notifyMayCool();
+      this.#restartIdleTimer();
     }
   }
 
@@ -983,7 +968,7 @@ export class ChatExecutionCoordinator {
       .finally(() => {
         binding.pendingWorkCount = Math.max(0, binding.pendingWorkCount - 1);
         if (this.#sessionBinding === binding && binding.pendingWorkCount === 0) {
-          this.notifyMayCool();
+          this.#restartIdleTimer();
         }
       });
   }
@@ -1002,12 +987,13 @@ export class ChatExecutionCoordinator {
       binding.conversation.conversationId,
       binding.bindingId,
     );
-    this.#releaseWarmSlot();
+    this.#clearIdleTimer();
   }
 
   async #releaseSessionBinding(): Promise<void> {
     const binding = this.#sessionBinding;
     this.#sessionBinding = null;
+    this.#clearIdleTimer();
     this.#publishBackgroundWork();
     try {
       await this.#supervisor.release();
@@ -1019,42 +1005,7 @@ export class ChatExecutionCoordinator {
           binding.bindingId,
         );
       }
-      this.#releaseWarmSlot();
     }
-  }
-
-  async #acquireWarmSlot(): Promise<void> {
-    const warmExecution = this.deps.warmExecution;
-    if (!warmExecution) return;
-
-    try {
-      await warmExecution.pool.acquire({
-        id: warmExecution.ownerId,
-        canCool: () => this.canCool(),
-        cool: () => this.cool(),
-      });
-    } catch (error) {
-      if (!this.#sessionBinding) {
-        warmExecution.pool.release(warmExecution.ownerId);
-      }
-      throw error;
-    }
-  }
-
-  #releaseWarmSlot(): void {
-    const warmExecution = this.deps.warmExecution;
-    if (!warmExecution) return;
-    const wasWarm = warmExecution.pool.has(warmExecution.ownerId);
-    warmExecution.pool.release(warmExecution.ownerId);
-    if (wasWarm) {
-      warmExecution.onWarmStateChanged?.(false);
-    }
-  }
-
-  async #touchWarmSlot(): Promise<void> {
-    const warmExecution = this.deps.warmExecution;
-    if (!warmExecution) return;
-    await warmExecution.pool.touch(warmExecution.ownerId);
   }
 
   async #runProtectedOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -1064,7 +1015,7 @@ export class ChatExecutionCoordinator {
     } finally {
       this.#protectedOperationCount -= 1;
       if (this.#protectedOperationCount === 0) {
-        this.notifyMayCool();
+        this.#restartIdleTimer();
       }
     }
   }
@@ -1095,17 +1046,6 @@ export class ChatExecutionCoordinator {
       && this.#sessionBinding === binding
       && sameConversationBinding(binding.conversation, this.#conversation)
       && this.#supervisor.isCurrent(binding.session, binding.generation)
-    );
-  }
-
-  #isPreparationCurrent(
-    conversation: ChatExecutionConversationBinding,
-    bindingGeneration: number,
-  ): boolean {
-    return (
-      !this.#disposed
-      && bindingGeneration === this.#conversationBindingGeneration
-      && sameConversationBinding(conversation, this.#conversation)
     );
   }
 

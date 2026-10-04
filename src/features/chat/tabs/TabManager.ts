@@ -54,7 +54,7 @@ type CreateTabOptions = {
   activate?: boolean;
   draftModel?: string;
   providerId?: ProviderId | null;
-  lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'cold'>;
+  lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'open'>;
 };
 
 type OpenConversationOptions = {
@@ -228,7 +228,7 @@ export class TabManager implements TabManagerInterface {
       activate = true,
       draftModel,
       providerId,
-      lifecycleState = 'cold',
+      lifecycleState = 'open',
     } = options;
 
     const conversation = conversationId
@@ -262,7 +262,6 @@ export class TabManager implements TabManagerInterface {
         onStreamingChanged: (runtime, isStreaming) => {
           if (!this.#isTabStateMutable(runtime)) return;
           this.callbacks.onTabStreamingChanged?.(runtime.id, isStreaming);
-          if (!isStreaming) runtime.session.executionCoordinator.notifyMayCool();
         },
         onWorkChanged: runtime => {
           if (!this.#isTabStateMutable(runtime)) return;
@@ -271,14 +270,10 @@ export class TabManager implements TabManagerInterface {
         onRewindingChanged: (runtime, isRewinding) => {
           if (!this.#isTabStateMutable(runtime)) return;
           this.callbacks.onTabRewindingChanged?.(runtime.id, isRewinding);
-          if (!isRewinding) runtime.session.executionCoordinator.notifyMayCool();
         },
         onAttentionChanged: (runtime, attention) => {
           if (!this.#isTabStateMutable(runtime)) return;
           this.callbacks.onTabAttentionChanged?.(runtime.id, attention);
-          if (attention?.kind !== 'action-required') {
-            runtime.session.executionCoordinator.notifyMayCool();
-          }
         },
         captureReviewableSettlement: (runtime, outcome) => {
           const shouldReport = this.#isTabStateMutable(runtime) && this.activeTabId !== runtime.id;
@@ -1199,7 +1194,7 @@ export class TabManager implements TabManagerInterface {
     return { openTabs, activeTabId };
   }
 
-  /** Restores open shells cold, then activates exactly one final target. */
+  /** Restores open shells without provider execution, then activates exactly one final target. */
   async restoreState(state: AppTabManagerState): Promise<void> {
     for (const tabState of state.openTabs) {
       if (
@@ -1212,7 +1207,7 @@ export class TabManager implements TabManagerInterface {
       if (this.tabs.has(tabState.tabId) || this.assemblingTabIds.has(tabState.tabId)) continue;
       const identity = createTabSessionState(this.plugin.settings,
         tabState.conversationId ? this.plugin.getCachedConversation(tabState.conversationId) : null,
-        { ...tabState, lifecycleState: 'cold' });
+        { ...tabState, lifecycleState: 'open' });
       this.tabs.set(identity.id, identity);
       this.committedTabIds.add(identity.id);
     }
@@ -1241,7 +1236,7 @@ export class TabManager implements TabManagerInterface {
     return !this.destroyed;
   }
 
-  /** Removes replaceable dual-mode previews while retaining cold and warm work. */
+  /** Removes replaceable dual-mode previews while retaining open work. */
   async discardProvisionalTabs(): Promise<void> {
     if (this.destroyed) return;
     if (this.provisionalCleanupPromise) {
@@ -1473,7 +1468,7 @@ export class TabManager implements TabManagerInterface {
       }
       const createdTab = await this.createTab(conversationId, undefined, {
         activate,
-        lifecycleState: provisional ? 'provisional' : 'cold',
+        lifecycleState: provisional ? 'provisional' : 'open',
       });
       if (!this.#isConversationNavigationCurrent(requestRevision, sourceTab)) {
         if (

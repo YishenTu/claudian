@@ -66,8 +66,6 @@ it('forks native disk history and resumes the side child independently after coo
     expect(prompts.at(-1)).toEqual({
       sessionId: 'ses-2', context: ['Remember A', 'Reply 1', 'Also remember B', 'Reply 2'], text: 'Use A and B',
     });
-    expect(child!.session.canCool()).toBe(true);
-    await child!.session.cool();
     expect((await child!.send('Continue the side')).terminal).toBe('turn_completed');
     expect(prompts.at(-1)).toEqual({
       sessionId: 'ses-2', context: ['Remember A', 'Reply 1', 'Also remember B', 'Reply 2', 'Use A and B', 'Reply 3'], text: 'Continue the side',

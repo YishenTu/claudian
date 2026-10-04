@@ -33,7 +33,7 @@ export interface TabRuntimeConstructionContext {
   initialState?: Readonly<TabSessionState>;
   draftModel?: string | null;
   providerId?: ProviderId | null;
-  lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'cold'>;
+  lifecycleState?: Extract<AssembledTabRuntime['lifecycleState'], 'provisional' | 'open'>;
   getProviderCatalogConfig: (
     tab: TabProviderCatalogContext,
   ) => ProviderCatalogInfo;

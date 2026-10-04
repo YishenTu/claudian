@@ -6,7 +6,6 @@ import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
 import type { ProviderCapabilities, ProviderConversationHistoryService, ProviderRegistration } from '@/core/providers/types';
 import { ComposerDraftController } from '@/features/chat/composer/ComposerDraftController';
-import { WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
 import { SideChatController } from '@/features/chat/side-chat/SideChatController';
 import type { AssembledTabRuntime } from '@/features/chat/tabs/types';
 
@@ -127,7 +126,6 @@ export function createHarness(options: {
     getMainAgentDynamicSystemPromptSections: options.getMainAgentDynamicSystemPromptSections,
     providerHost: { app, settings, executionLifecycleRegistry: lifecycleRegistry },
     settings,
-    warmExecutionPool: new WarmExecutionPool(() => 5),
   } as never;
 
   const destinationChanges: string[] = [];

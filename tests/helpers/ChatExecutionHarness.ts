@@ -1,8 +1,6 @@
 import { type ProviderExecutionBackend, type ProviderExecutionEvent, ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderExecutionRun, type ProviderExecutionSession, type ProviderInteractionPort, type ProviderSessionConfig, type ProviderSessionEvent, type ProviderSessionSnapshot, type ProviderSessionStatus, type RewindableExecutionSession, type SteerableExecutionSession } from '@/core/execution';
 import type { ProviderId, SlashCommand } from '@/core/types';
 import { ChatExecutionCoordinator, type ChatExecutionCoordinatorDeps, type ChatExecutionEventContext, type ChatExecutionPersistence, type ChatTurnSubmission, type MissingProviderSessionResolution } from '@/features/chat/execution/ChatExecutionCoordinator';
-import type { WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
-import { type WarmExecutionOwner } from '@/features/chat/execution/WarmExecutionPool';
 
 class EventQueue<T> implements AsyncIterable<T> {
   private readonly values: T[] = [];
@@ -199,7 +197,9 @@ export function createHarness(options: {
     event: ProviderSessionEvent,
     context: ChatExecutionEventContext,
   ) => void | Promise<void>;
-  warmExecution?: ChatExecutionCoordinatorDeps['warmExecution'];
+  idleReleaseMs?: number;
+  isOwnerIdle?: ChatExecutionCoordinatorDeps['isOwnerIdle'];
+  onIdleRelease?: ChatExecutionCoordinatorDeps['onIdleRelease'];
 } = {}) {
   const registry = new ProviderExecutionLifecycleRegistry();
   const backends = new Map<ProviderId, FakeBackend>([
@@ -254,7 +254,9 @@ export function createHarness(options: {
     onBackgroundWorkChanged: options.onBackgroundWorkChanged,
     onError: options.onError,
     resolveMissingProviderSession: missingSession,
-    ...(options.warmExecution ? { warmExecution: options.warmExecution } : {}),
+    idleReleaseMs: options.idleReleaseMs,
+    isOwnerIdle: options.isOwnerIdle,
+    onIdleRelease: options.onIdleRelease,
   });
 
   return {
@@ -306,19 +308,4 @@ export async function beginExecution(
   }
   if (!session || !run) throw new Error('Execution did not start');
   return { session, run, resultPromise };
-}
-
-export async function reserveProtectedWarmSlots(
-  pool: WarmExecutionPool,
-  count = 4,
-): Promise<WarmExecutionOwner[]> {
-  const owners = Array.from({ length: count }, (_, index) => ({
-    id: `reserved-${index}`,
-    canCool: () => false,
-    cool: jest.fn().mockResolvedValue(undefined),
-  }));
-  for (const owner of owners) {
-    await pool.acquire(owner);
-  }
-  return owners;
 }

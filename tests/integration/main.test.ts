@@ -1562,27 +1562,6 @@ describe('ClaudianPlugin', () => {
       expect(plugin.settings.hiddenCommands).toEqual(DEFAULT_SETTINGS.hiddenCommands);
     });
 
-    it('normalizes the concurrent running session limit to 5-10', async () => {
-      mockApp.vault.adapter.exists.mockImplementation(async (path: string) => (
-        path === '.claudian/claudian-settings.json'
-      ));
-      mockApp.vault.adapter.read.mockImplementation(async (path: string) => {
-        if (path === '.claudian/claudian-settings.json') {
-          return JSON.stringify({ maxWarmAgentProcesses: 3 });
-        }
-        return '';
-      });
-
-      await plugin.loadSettings();
-
-      expect(plugin.settings.maxWarmAgentProcesses).toBe(5);
-      const writeCall = (mockApp.vault.adapter.write as jest.Mock).mock.calls.filter(
-        ([path]) => path === '.claudian/claudian-settings.json',
-      ).at(-1);
-      expect(writeCall).toBeDefined();
-      expect(JSON.parse(writeCall[1]).maxWarmAgentProcesses).toBe(5);
-    });
-
     it('should use defaults when no saved data', async () => {
       // No settings file exists
       mockApp.vault.adapter.exists.mockResolvedValue(false);

@@ -160,11 +160,10 @@ export interface TabDOMElements {
 /**
  * Runtime tab lifecycle states, independent from conversation binding:
  * - `provisional`: Replaceable session preview created by dual-mode navigation.
- * - `cold`: Retained working state without provider execution resources.
- * - `warm`: Retained working state holding provider execution resources.
+ * - `open`: Retained working state; provider execution is owned by the execution coordinator.
  * - `closing`: Tab is being torn down.
  */
-export type TabLifecycleState = 'provisional' | 'cold' | 'warm' | 'closing';
+export type TabLifecycleState = 'provisional' | 'open' | 'closing';
 
 /** Conversation hydration state, independent from runtime activation. */
 export type TabHydrationState = 'idle' | 'loading' | 'ready' | 'failed';

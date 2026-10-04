@@ -157,7 +157,6 @@ export interface ClaudianSettings {
   pendingProviderSessionInvalidations: Partial<Record<string, number>>;
 
   // UI preferences
-  maxWarmAgentProcesses: number;
   enableAutoScroll: boolean;
   showMessageTimestamps?: boolean;
   deferMathRenderingDuringStreaming: boolean;

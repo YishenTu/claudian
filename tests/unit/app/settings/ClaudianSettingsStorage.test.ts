@@ -55,11 +55,12 @@ describe('ClaudianSettingsStorage', () => {
   });
 
   describe('load', () => {
-    it('retires saved directory selections while preserving current settings and provider configuration', async () => {
+    it('retires obsolete saved settings while preserving current settings and provider configuration', async () => {
       mockAdapter.exists.mockResolvedValue(true);
       mockAdapter.read.mockResolvedValue(JSON.stringify({
         ...DEFAULT_SETTINGS,
         persistentExternalContextPaths: ['/old/project'],
+        maxWarmAgentProcesses: 7,
         userName: 'Ada',
         providerConfigs: { claude: { loadUserSettings: true } },
       }));
@@ -72,6 +73,8 @@ describe('ClaudianSettingsStorage', () => {
       expect(written.providerConfigs.claude.loadUserSettings).toBe(true);
       expect(loaded).not.toHaveProperty('persistentExternalContextPaths');
       expect(written).not.toHaveProperty('persistentExternalContextPaths');
+      expect(loaded).not.toHaveProperty('maxWarmAgentProcesses');
+      expect(written).not.toHaveProperty('maxWarmAgentProcesses');
     });
 
 

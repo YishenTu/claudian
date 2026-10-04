@@ -665,7 +665,7 @@ it('previews a branch without saving it and restores history when focus leaves t
     { navigationSidebar: { setOnScrollIntent: jest.fn() }, composerDropdown: { handleInputChange: jest.fn() } } as any,
     { conversationController: controller, sideChatController: { handleComposerInput: jest.fn() } } as any,
     { plugin, registerCleanup: (_name: string, fn: () => void) => cleanup.push(fn) } as any,
-    { requirePublished: () => ({ lifecycleState: 'warm', session: { claimUserOwnership: jest.fn() } }) } as any);
+    { requirePublished: () => ({ lifecycleState: 'open', session: { claimUserOwnership: jest.fn() } }) } as any);
   renderer.renderMessages(history, () => 'Hello');
   fireEvent.click(within(messagesEl).getByRole('button', { name: 'Branch from this prompt' }));
   await new Promise(resolve => setTimeout(resolve, 0));

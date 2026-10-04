@@ -8,7 +8,6 @@
     "clearAll": "清除全部",
     "error": "錯誤",
     "confirm": "確認",
-    "advanced": "高級",
     "refresh": "重新整理"
   },
   "chat": {
@@ -201,10 +200,6 @@
     "enableChrome": {
       "name": "啟用 Chrome 擴充功能",
       "desc": "允許 Claude Code 透過 claude-in-chrome 擴充功能與 Chrome 互動。需要安裝該擴充功能。需要重新啟動工作階段。"
-    },
-    "maxWarmAgentProcesses": {
-      "name": "最大並行執行工作階段數",
-      "desc": "同時保持就緒的代理工作階段最大數量（5-10）。較早的閒置工作階段會自動暫停，並在使用時恢復。"
     },
     "enableDualPane": {
       "name": "啟用雙欄模式",

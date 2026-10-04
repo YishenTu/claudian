@@ -47,7 +47,7 @@ export interface TabRuntimeFactoryOptions {
   providerId?: ProviderId | null;
   lifecycleState?: Extract<
     AssembledTabRuntime['lifecycleState'],
-    'provisional' | 'cold'
+    'provisional' | 'open'
   >;
   getProviderCatalogConfig: (
     tab: TabProviderCatalogContext,

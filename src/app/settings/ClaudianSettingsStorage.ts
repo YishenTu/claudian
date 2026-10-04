@@ -38,6 +38,7 @@ const RETIRED_SHARED_SETTING_FIELDS = [
   'enableFilePane',
   'persistentExternalContextPaths',
   'hiddenProviderCommands',
+  'maxWarmAgentProcesses',
 ] as const;
 
 function getProviderSettingsAdapters() {

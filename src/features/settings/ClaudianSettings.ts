@@ -8,11 +8,6 @@ import { ProviderRegistry } from '../../core/providers/ProviderRegistry';
 import { ProviderSettingsCoordinator } from '../../core/providers/ProviderSettingsCoordinator';
 import { ProviderWorkspaceRegistry } from '../../core/providers/ProviderWorkspaceRegistry';
 import type { ProviderId, ProviderSettingsTabRenderHandle } from '../../core/providers/types';
-import {
-  DEFAULT_MAX_WARM_AGENT_PROCESSES,
-  MAX_WARM_AGENT_PROCESSES,
-  MIN_WARM_AGENT_PROCESSES,
-} from '../../core/settings/warmExecutionLimits';
 import type {
   ChatViewPlacement,
   ClaudianSettings,
@@ -645,26 +640,6 @@ export class ClaudianSettingTab extends PluginSettingTab {
       desc: t('settings.sharedEnvironment.desc'),
       placeholder: 'PATH=/opt/homebrew/bin:/usr/local/bin\nHTTPS_PROXY=http://proxy.example.com:8080\nSSL_CERT_FILE=/path/to/cert.pem',
     });
-
-    // --- Advanced ---
-
-    new Setting(container).setName(t('common.advanced')).setHeading();
-
-    new Setting(container)
-      .setName(t('settings.maxWarmAgentProcesses.name'))
-      .setDesc(t('settings.maxWarmAgentProcesses.desc'))
-      .addSlider((slider) => {
-        slider
-          .setLimits(MIN_WARM_AGENT_PROCESSES, MAX_WARM_AGENT_PROCESSES, 1)
-          .setValue(this.plugin.settings.maxWarmAgentProcesses ?? DEFAULT_MAX_WARM_AGENT_PROCESSES)
-          .onChange(async (value) => {
-            await this.plugin.mutateSettings((settings) => {
-              settings.maxWarmAgentProcesses = value;
-            });
-
-          });
-      });
-
   }
 
   private disposeProviderSettingsRenders(): void {

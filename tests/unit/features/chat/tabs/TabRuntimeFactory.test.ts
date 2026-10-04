@@ -44,7 +44,6 @@ interface MockCoordinator {
   cancel: jest.Mock;
   dispose: jest.Mock;
   isEventContextCurrent: jest.Mock;
-  notifyMayCool: jest.Mock;
   prepare: jest.Mock;
   resolveForkSource: jest.Mock;
   snapshot: { providerSessionId?: string } | null;
@@ -61,7 +60,6 @@ jest.mock('@/features/chat/execution/ChatExecutionCoordinator', () => ({
         ? Promise.reject(coordinatorDisposeError)
         : Promise.resolve()),
       isEventContextCurrent: jest.fn().mockReturnValue(true),
-      notifyMayCool: jest.fn(),
       prepare: jest.fn().mockResolvedValue(undefined),
       resolveForkSource: jest.fn().mockResolvedValue({ sessionId: 'native-session' }),
       snapshot: null,
@@ -419,7 +417,7 @@ describe('Tab provider execution ownership', () => {
       }, createEventContext());
       expect(await discovery.load()).toMatchObject({ status: 'ready', items: [{ name: 'after' }] });
       coordinatorInstances[0].getCommandSnapshot.mockReturnValue(undefined);
-      coordinatorDeps[0].warmExecution?.onWarmStateChanged?.(false);
+      coordinatorDeps[0].onIdleRelease?.();
       expect(await discovery.load()).toEqual({ status: 'empty' });
     } finally {
       await manager.destroy();
@@ -823,7 +821,7 @@ describe('Tab provider execution ownership', () => {
     expect(constructionContext).not.toHaveProperty('state');
 
     tab.session.selectDraft(tab.providerId, 'claude-alternate');
-    tab.session.setExecutionWarm(true);
+    tab.session.beginClose();
     tab.providerCatalogResolver();
 
     const currentContext = getProviderCatalogConfig.mock.lastCall?.[0] as Record<
@@ -832,7 +830,7 @@ describe('Tab provider execution ownership', () => {
     >;
     expect(currentContext).toBe(constructionContext);
     expect(currentContext.draftModel).toBe('claude-alternate');
-    expect(currentContext.lifecycleState).toBe('warm');
+    expect(currentContext.lifecycleState).toBe('closing');
   });
 
   it('publishes only a structurally ready runtime from TabManager', async () => {
@@ -865,7 +863,7 @@ describe('Tab provider execution ownership', () => {
       const messagesIndex = contentChildren.indexOf(tab!.dom.messagesWrapperEl);
       expect(contentChildren[messagesIndex + 1]).toBe(tab!.dom.inputComposerEl);
       expect(tab?.hydrationState).toBe('ready');
-      expect(tab?.lifecycleState).toBe('cold');
+      expect(tab?.lifecycleState).toBe('open');
       expect(onTabCreated).toHaveBeenCalledWith(tab);
       expect(coordinatorInstances[0].prepare).not.toHaveBeenCalled();
     } finally {
@@ -889,7 +887,7 @@ describe('Tab provider execution ownership', () => {
       expect(tab?.conversationId).toBe(conversation.id);
       expect(tab?.state.currentConversationId).toBe(conversation.id);
       expect(tab?.hydrationState).toBe('ready');
-      expect(tab?.lifecycleState).toBe('cold');
+      expect(tab?.lifecycleState).toBe('open');
       expect(coordinatorInstances[0].bindConversation).toHaveBeenCalledWith({
         conversationId: conversation.id,
         providerId: conversation.providerId,
@@ -1583,7 +1581,6 @@ describe('Tab provider execution ownership', () => {
       },
     });
     expect(coordinator.prepare).toHaveBeenCalledTimes(1);
-    expect(tab.lifecycleState).toBe('warm');
   });
 
   it('keeps blank-tab initialization session-free', async () => {
@@ -1644,7 +1641,7 @@ describe('Tab provider execution ownership', () => {
     tab.dom.inputEl.value = 'Keep this draft';
     (tab.dom.inputEl as any).dispatchEvent('input');
 
-    expect(tab.lifecycleState).toBe('cold');
+    expect(tab.lifecycleState).toBe('open');
     expect(tab.session.userOwnershipRevision).toBe(1);
   });
 
@@ -1663,7 +1660,7 @@ describe('Tab provider execution ownership', () => {
     tab.dom.inputEl.value = 'Keep this runtime';
     (tab.dom.inputEl as any).dispatchEvent('input');
 
-    expect(tab.lifecycleState).toBe('cold');
+    expect(tab.lifecycleState).toBe('open');
     expect(tab.session.userOwnershipRevision).toBe(1);
     expect(readOffsetHeight).not.toHaveBeenCalled();
     expect(readScrollHeight).not.toHaveBeenCalled();
@@ -1684,7 +1681,7 @@ describe('Tab provider execution ownership', () => {
     }, 'paste');
 
     expect(attached).toBe(true);
-    expect(tab.lifecycleState).toBe('cold');
+    expect(tab.lifecycleState).toBe('open');
   });
 
   it('commits a provisional preview when the user removes captured editor context', async () => {
@@ -1707,7 +1704,7 @@ describe('Tab provider execution ownership', () => {
     ) as any;
     removeButton.dispatchEvent('click');
 
-    expect(tab.lifecycleState).toBe('cold');
+    expect(tab.lifecycleState).toBe('open');
   });
 
   it('keeps a browsed conversation provisional after hydration', async () => {
@@ -1840,7 +1837,7 @@ describe('Tab provider execution ownership', () => {
       expect.any(AbortSignal),
     );
     expect(tab.state.requiresAction).toBe(true);
-    expect(coordinatorDeps[0].warmExecution?.canCool()).toBe(false);
+    expect(coordinatorDeps[0].isOwnerIdle?.()).toBe(false);
 
     resolveApproval('allow');
     await expect(request).resolves.toEqual({
@@ -1851,13 +1848,14 @@ describe('Tab provider execution ownership', () => {
     expect(tab.state.attention).toBeNull();
   });
 
-  it('allows review-only tabs to cool', async () => {
+  it('releases idle tab sessions after 30 minutes and treats review-only tabs as idle', async () => {
     const plugin = createPlugin();
     const tab = await createTestTab({ plugin, containerEl: createMockEl() as any });
 
     tab.state.markReviewRequired();
 
-    expect(coordinatorDeps[0].warmExecution?.canCool()).toBe(true);
+    expect(coordinatorDeps[0].idleReleaseMs).toBe(30 * 60_000);
+    expect(coordinatorDeps[0].isOwnerIdle?.()).toBe(true);
   });
 
   it('captures background review activity before persistence completes', async () => {
@@ -2462,7 +2460,7 @@ describe('Tab provider execution ownership', () => {
       await Promise.resolve();
     }
 
-    expect(tab.lifecycleState).toBe('cold');
+    expect(tab.lifecycleState).toBe('open');
     expect(coordinator.cancel).toHaveBeenCalledTimes(1);
     expect(coordinator.dispose).not.toHaveBeenCalled();
 
@@ -2471,7 +2469,7 @@ describe('Tab provider execution ownership', () => {
       cancelledActiveTurn: true,
       cleanupFailures: [],
     });
-    expect(tab.lifecycleState).toBe('cold');
+    expect(tab.lifecycleState).toBe('open');
   });
 
   it('numbers a fork from canonical user turns while retaining non-canonical history', async () => {

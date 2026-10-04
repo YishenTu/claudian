@@ -2,10 +2,9 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
 import { type OpencodeServerLease,OpencodeServerService } from '@/providers/opencode/http/OpencodeServerService';
 
-test('cooling the oldest execution bounds native processes across historical databases', async () => {
+test('disposing one lease ends only its native process across historical databases', async () => {
   const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-audit-')));
   const cli = path.join(root, 'opencode.cjs');
   writeFileSync(cli, `#!/usr/bin/env node
@@ -19,20 +18,17 @@ process.stdin.resume();
 process.stdin.on('end', () => server.close());
 `, { mode: 0o700 });
   const servers = new OpencodeServerService();
-  const pool = new WarmExecutionPool(() => 5);
   const leases: OpencodeServerLease[] = [];
   const pids: number[] = [];
   try {
     for (let index = 0; index < 6; index += 1) {
-      const ownerId = `audit-owner-${index}`;
-      await pool.acquire({ id: ownerId, canCool: () => true, cool: async () => { await lease.dispose(); pool.release(ownerId); } });
       const lease = await servers.acquire(cli, root, { ...process.env, OPENCODE_DB: path.join(root, `history-${index}.db`) });
       leases.push(lease);
       pids.push((await lease.request<{ data: { pid: number } }>('/fixture/pid')).data.pid);
     }
+    await leases[0].dispose();
     const alive = pids.filter(pid => { try { process.kill(pid, 0); return true; } catch { return false; } });
-    expect({ warmOwners: pool.getWarmCount(), liveProcesses: alive.length })
-      .toEqual({ warmOwners: 5, liveProcesses: 5 });
+    expect(alive).toEqual(pids.slice(1));
   } finally {
     await Promise.all(leases.map(lease => lease.dispose()));
     await servers.dispose();

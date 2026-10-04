@@ -48,7 +48,7 @@ function createModelRefreshTab(providerId: 'codex' | 'grok') {
         toggleClass: jest.fn(),
       },
     },
-    lifecycleState: 'cold',
+    lifecycleState: 'open',
     providerId,
     state: { usage: null },
     ui: {
@@ -73,7 +73,7 @@ function createBlankModelRefreshTab(providerId: 'codex' | 'grok') {
     ...createModelRefreshTab(providerId),
     conversationId: null,
     draftModel: null,
-    lifecycleState: 'cold',
+    lifecycleState: 'open',
     services: {
       subagentManager: {
         setTaskResultInterpreter: jest.fn(),
@@ -1396,16 +1396,16 @@ describe('ClaudianView tab controls', () => {
       id: 'pinned-tab',
       conversationId: 'pinned-conversation',
       lifecycleState: 'provisional',
-      session: createOwnershipSession(() => { pinnedTab.lifecycleState = 'cold'; }),
+      session: createOwnershipSession(() => { pinnedTab.lifecycleState = 'open'; }),
     };
     const previewTab = {
       id: 'preview-tab',
       conversationId: 'preview-conversation',
       lifecycleState: 'provisional',
-      session: createOwnershipSession(() => { previewTab.lifecycleState = 'cold'; }),
+      session: createOwnershipSession(() => { previewTab.lifecycleState = 'open'; }),
     };
     const discardProvisionalTabs = jest.fn().mockImplementation(async () => {
-      expect(pinnedTab.lifecycleState).toBe('cold');
+      expect(pinnedTab.lifecycleState).toBe('open');
       expect(previewTab.lifecycleState).toBe('provisional');
     });
 
@@ -1436,7 +1436,7 @@ describe('ClaudianView tab controls', () => {
     const openTab = {
       conversationId: 'open-conversation',
       lifecycleState: 'provisional',
-      session: createOwnershipSession(() => { openTab.lifecycleState = 'cold'; }),
+      session: createOwnershipSession(() => { openTab.lifecycleState = 'open'; }),
     };
     const setConversationPinned = jest.fn().mockResolvedValue(undefined);
     const view = Object.create(ClaudianView.prototype) as any;
@@ -1457,7 +1457,7 @@ describe('ClaudianView tab controls', () => {
     expect(setConversationPinned).toHaveBeenNthCalledWith(1, 'open-conversation', true);
     expect(setConversationPinned).toHaveBeenNthCalledWith(2, 'open-conversation', false);
     expect(setConversationPinned).toHaveBeenNthCalledWith(3, 'closed-conversation', true);
-    expect(openTab.lifecycleState).toBe('cold');
+    expect(openTab.lifecycleState).toBe('open');
     expect(view.tabManager.getAllTabs).toHaveBeenCalledTimes(2);
   });
 
@@ -1926,7 +1926,7 @@ describe('ClaudianView tab controls', () => {
     const provisionalTab = {
       conversationId: 'conversation-1',
       lifecycleState: 'provisional',
-      session: createOwnershipSession(() => { provisionalTab.lifecycleState = 'cold'; }),
+      session: createOwnershipSession(() => { provisionalTab.lifecycleState = 'open'; }),
     };
     const setConversationsPinned = jest.fn().mockResolvedValue(undefined);
     const view = Object.create(ClaudianView.prototype) as any;
@@ -1940,7 +1940,7 @@ describe('ClaudianView tab controls', () => {
 
     expect(setConversationsPinned).toHaveBeenCalledTimes(1);
     expect(setConversationsPinned).toHaveBeenCalledWith(['conversation-1', 'conversation-2'], true);
-    expect(provisionalTab.lifecycleState).toBe('cold');
+    expect(provisionalTab.lifecycleState).toBe('open');
   });
 
   it('archives many sessions in one batch after closing their tabs and skips running sessions', async () => {
@@ -2174,7 +2174,7 @@ describe('ClaudianView tab controls', () => {
       tabs.push({
         conversationId,
         lifecycleState: 'provisional',
-        session: createOwnershipSession(() => { tabs[tabs.length - 1].lifecycleState = 'cold'; }),
+        session: createOwnershipSession(() => { tabs[tabs.length - 1].lifecycleState = 'open'; }),
       });
     });
     const view = Object.create(ClaudianView.prototype) as any;
@@ -2194,7 +2194,7 @@ describe('ClaudianView tab controls', () => {
 
     await view.openSessionConversation('pinned-conversation');
 
-    expect(tabs[0].lifecycleState).toBe('cold');
+    expect(tabs[0].lifecycleState).toBe('open');
   });
 
   it('opens a provisional session even when the former tab limit is reached', async () => {
@@ -2950,7 +2950,7 @@ describe('ClaudianView composer input', () => {
       getActiveTab: jest.fn().mockReturnValue({
         id: 'active-tab',
         dom: { inputEl },
-        lifecycleState: 'cold',
+        lifecycleState: 'open',
         session: createOwnershipSession(),
       }),
     };

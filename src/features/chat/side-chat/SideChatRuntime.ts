@@ -14,7 +14,6 @@ import {
   StreamController,
 } from '../controllers/StreamController';
 import { buildChatExecutionConfiguration, resolveChatDynamicSections } from '../execution/chatExecutionConfiguration';
-import type { WarmExecutionPool } from '../execution/WarmExecutionPool';
 import { AsyncQuestionPrompts } from '../rendering/AsyncQuestionPrompts';
 import { BackgroundResponses } from '../rendering/BackgroundResponses';
 import { renderSessionTaskNotification } from '../rendering/BackgroundTurnRenderer';
@@ -45,7 +44,6 @@ export interface SideChatRuntimeDeps {
   readonly resolveBackend: (providerId: ProviderId) => ProviderExecutionBackend;
   readonly buildChildResumeState: () => Promise<Readonly<Record<string, unknown>>>;
   readonly vaultWorkingDirectory: string;
-  readonly warmExecution?: { readonly ownerId: string; readonly pool: WarmExecutionPool };
   readonly onStatusChanged: () => void;
   readonly onError?: (error: unknown) => void;
 }
@@ -160,7 +158,6 @@ export class SideChatRuntime {
       ephemeral,
       resolveBackend: deps.resolveBackend,
       vaultWorkingDirectory: deps.vaultWorkingDirectory,
-      ...(deps.warmExecution ? { warmExecution: deps.warmExecution } : {}),
     });
   }
 

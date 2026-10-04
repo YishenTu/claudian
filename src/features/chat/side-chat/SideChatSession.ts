@@ -21,7 +21,6 @@ import { consumeExecutionEvents } from '../execution/consumeExecutionEvents';
 import { ExecutionInteractions } from '../execution/ExecutionInteractions';
 import { ExecutionSessionSupervisor } from '../execution/ExecutionSessionSupervisor';
 import { SessionEventStream } from '../execution/SessionEventStream';
-import type { WarmExecutionPool } from '../execution/WarmExecutionPool';
 
 export type SideChatTurnStatus =
   | 'completed'
@@ -49,11 +48,6 @@ export interface SideChatTurnResult {
   readonly error?: Extract<ProviderExecutionEvent, { type: 'execution_error' }>;
 }
 
-export interface SideChatWarmExecution {
-  readonly ownerId: string;
-  readonly pool: WarmExecutionPool;
-}
-
 export interface SideChatSessionDeps {
   readonly providerId: ProviderId;
   readonly ephemeral: boolean;
@@ -66,7 +60,6 @@ export interface SideChatSessionDeps {
   readonly buildChildResumeState: () => Promise<Readonly<Record<string, unknown>>>;
   readonly vaultWorkingDirectory: string;
   readonly interactionPort: ProviderInteractionPort;
-  readonly warmExecution?: SideChatWarmExecution;
   readonly onRequestedEvent?: (event: ProviderExecutionEvent) => void | Promise<void>;
   readonly onSessionEvent?: (event: ProviderSessionEvent, isCurrent: () => boolean) => void | Promise<void>;
   readonly onBackgroundWorkChanged?: () => void;
@@ -87,7 +80,7 @@ interface ActiveSideExecution {
 /**
  * Memory-owned multi-turn execution for one side chat.
  *
- * It holds a lifecycle lease and a warm-pool slot of its own, and keeps the
+ * It holds a lifecycle lease of its own until disposal, and keeps the
  * child's normalized resume state in memory. Nothing here reaches conversation
  * persistence, the accepted-input ledger, or the parent's execution owner.
  */
@@ -102,7 +95,6 @@ export class SideChatSession {
   #active: ActiveSideExecution | null = null;
   #executionController: AbortController | null = null;
   #pendingWorkCount = 0;
-  #preparing = false;
   #disposed = false;
   #invalidated = false;
   #disposePromise: Promise<void> | null = null;
@@ -114,7 +106,6 @@ export class SideChatSession {
       port: deps.interactionPort,
       isCurrent: request => this.#isInteractionCurrent(request),
       staleError: id => new SideChatInteractionStaleError(id),
-      onPendingChange: () => this.#notifyMayCool(),
     });
   }
 
@@ -147,7 +138,6 @@ export class SideChatSession {
       return await this.#executeRequest(request, controller);
     } finally {
       if (this.#executionController === controller) this.#executionController = null;
-      this.#notifyMayCool();
     }
   }
 
@@ -201,7 +191,6 @@ export class SideChatSession {
       this.#interactions.dismissTurn(active.run.turnId, 'native-rejected');
       if (this.#active === active) this.#active = null;
       this.#captureSnapshot();
-      this.#notifyMayCool();
     }
   }
 
@@ -232,34 +221,6 @@ export class SideChatSession {
     active.run.cancel();
   }
 
-  canCool(): boolean {
-    return Boolean(
-      !this.#disposed
-      && this.#supervisor.current
-      // An ephemeral native id cannot survive eviction of its process.
-      && !this.deps.ephemeral
-      && !this.#preparing
-      && this.#executionController === null
-      && this.#active === null
-      && !this.#interactions.hasPending
-      && this.#pendingWorkCount === 0
-      && !this.#supervisor.current.session.hasBackgroundWork?.()
-      && !this.#events?.hasBackgroundWork
-      // A child without a verified native identity cannot be resumed safely.
-      && this.#providerSessionId !== undefined,
-    );
-  }
-
-  async cool(): Promise<void> {
-    this.#assertAvailable();
-    if (!this.#supervisor.current) return;
-    if (!this.canCool()) {
-      throw new Error('Side chat execution is busy and cannot be cooled');
-    }
-    this.#captureSnapshot();
-    await this.#releaseSession();
-  }
-
   dispose(): Promise<void> {
     if (this.#disposePromise) return this.#disposePromise;
     this.#disposed = true;
@@ -279,46 +240,33 @@ export class SideChatSession {
     signal.throwIfAborted();
     const existing = this.#supervisor.current;
     if (existing && this.#supervisor.isCurrent(existing.session, existing.generation)) {
-      await this.#touchWarmSlot();
-      signal.throwIfAborted();
       return existing.session;
     }
 
-    this.#preparing = true;
-    try {
-      const seed = await this.#resolveSeed();
-      signal.throwIfAborted();
-      this.#assertAvailable();
-      await this.#acquireWarmSlot();
-      signal.throwIfAborted();
-      this.#assertAvailable();
-      const backend = this.deps.resolveBackend(this.deps.providerId);
-      if (backend.providerId !== this.deps.providerId) {
-        throw new Error(
-          `Side chat backend provider mismatch: expected ${this.deps.providerId}, got ${backend.providerId}`,
-        );
-      }
-      this.#lastSnapshotRevision = -1;
-      const supervised = this.#supervisor.acquire(
-        backend,
-        {
-          interactionPort: this.#interactions,
-          lifecycle: this.deps.ephemeral ? 'ephemeral' : 'persistent',
-          nativePersistence: this.deps.ephemeral ? 'disabled-if-supported' : 'enabled',
-          ...(seed ? { resumeSeed: seed } : {}),
-          vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
-        },
-        reason => this.#handleInvalidation(reason),
-        event => this.#handleSessionEvent(event),
+    const seed = await this.#resolveSeed();
+    signal.throwIfAborted();
+    this.#assertAvailable();
+    const backend = this.deps.resolveBackend(this.deps.providerId);
+    if (backend.providerId !== this.deps.providerId) {
+      throw new Error(
+        `Side chat backend provider mismatch: expected ${this.deps.providerId}, got ${backend.providerId}`,
       );
-      this.#events = new SessionEventStream(supervised.session.sessionInstanceId);
-      return supervised.session;
-    } catch (error) {
-      if (!this.#supervisor.current) this.#releaseWarmSlot();
-      throw error;
-    } finally {
-      this.#preparing = false;
     }
+    this.#lastSnapshotRevision = -1;
+    const supervised = this.#supervisor.acquire(
+      backend,
+      {
+        interactionPort: this.#interactions,
+        lifecycle: this.deps.ephemeral ? 'ephemeral' : 'persistent',
+        nativePersistence: this.deps.ephemeral ? 'disabled-if-supported' : 'enabled',
+        ...(seed ? { resumeSeed: seed } : {}),
+        vaultWorkingDirectory: this.deps.vaultWorkingDirectory,
+      },
+      reason => this.#handleInvalidation(reason),
+      event => this.#handleSessionEvent(event),
+    );
+    this.#events = new SessionEventStream(supervised.session.sessionInstanceId);
+    return supervised.session;
   }
 
   async #resolveSeed(): Promise<ProviderNativeResumeSeed> {
@@ -429,7 +377,6 @@ export class SideChatSession {
       active.run.cancel();
     }
     this.#interactions.dismissAll('provider-transition');
-    this.#releaseWarmSlot();
     this.deps.onInvalidated?.(reason);
     this.deps.onBackgroundWorkChanged?.();
   }
@@ -469,51 +416,13 @@ export class SideChatSession {
       .finally(() => {
         this.#pendingWorkCount = Math.max(0, this.#pendingWorkCount - 1);
         this.deps.onBackgroundWorkChanged?.();
-        if (this.#pendingWorkCount === 0) this.#notifyMayCool();
       });
   }
 
   async #releaseSession(): Promise<void> {
     this.#events = null;
     this.#model = undefined;
-    try {
-      await this.#supervisor.release();
-    } finally {
-      this.#releaseWarmSlot();
-    }
-  }
-
-  async #acquireWarmSlot(): Promise<void> {
-    const warm = this.deps.warmExecution;
-    if (!warm) return;
-    try {
-      await warm.pool.acquire({
-        canCool: () => this.canCool(),
-        cool: () => this.cool(),
-        id: warm.ownerId,
-      });
-    } catch (error) {
-      if (!this.#supervisor.current) warm.pool.release(warm.ownerId);
-      throw error;
-    }
-  }
-
-  #releaseWarmSlot(): void {
-    const warm = this.deps.warmExecution;
-    warm?.pool.release(warm.ownerId);
-  }
-
-  async #touchWarmSlot(): Promise<void> {
-    const warm = this.deps.warmExecution;
-    if (!warm) return;
-    await warm.pool.touch(warm.ownerId);
-  }
-
-  #notifyMayCool(): void {
-    const warm = this.deps.warmExecution;
-    if (!warm) return;
-    void warm.pool.notifyOwnerMayCool(warm.ownerId)
-      .catch(error => this.deps.onError?.(error));
+    await this.#supervisor.release();
   }
 
   #isInteractionCurrent(request: {

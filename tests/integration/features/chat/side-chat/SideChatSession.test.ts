@@ -2,7 +2,6 @@ import { deferred } from '@test/helpers/ChatInputHarness';
 import { FakeSideBackend, waitFor } from '@test/helpers/features/chat/SideChatSessionHarness';
 
 import { ProviderExecutionLifecycleRegistry, type ProviderExecutionRequest, type ProviderSessionEvent } from '@/core/execution';
-import { WarmExecutionCapacityError, WarmExecutionPool } from '@/features/chat/execution/WarmExecutionPool';
 import { SideChatSession } from '@/features/chat/side-chat/SideChatSession';
 
 function createSession(overrides: Partial<ConstructorParameters<typeof SideChatSession>[0]> = {}) {
@@ -64,7 +63,6 @@ describe('SideChatSession', () => {
     native.emitRawSessionEvent({ type: 'text_delta', text: 'After completion', scope: { ...scope, sequence: 6 } });
     await waitFor(() => !harness.session.hasBackgroundWork || events.length > 4);
     expect(events.map(event => event.type)).toEqual(['task_notification', 'background_turn_started', 'text_delta', 'background_turn_completed']);
-    expect(harness.session.canCool()).toBe(true);
     await harness.session.dispose();
   });
 
@@ -163,17 +161,15 @@ describe('SideChatSession', () => {
     await harness.session.dispose();
   });
 
-  it('resumes the normalized child snapshot after idle cooling instead of reforking the parent', async () => {
-    const pool = new WarmExecutionPool(() => 5);
-    const harness = createSession({ warmExecution: { ownerId: 'side-1', pool } });
+  it('resumes the normalized child snapshot after a provider transition instead of reforking the parent', async () => {
+    const harness = createSession();
     const first = harness.session.execute(turn('Explore B'));
     await waitFor(() => harness.backend.sessions.length === 1);
     harness.backend.latest.establishChild('child-session', { childKey: 'value' });
     harness.backend.latest.complete();
     await first;
 
-    expect(harness.session.canCool()).toBe(true);
-    await harness.session.cool();
+    await harness.lifecycleRegistry.runTransition(['claude'], async () => undefined);
     expect(harness.backend.sessions[0].disposeCalls).toBe(1);
 
     const second = harness.session.execute(turn('Continue'));
@@ -188,7 +184,7 @@ describe('SideChatSession', () => {
     await harness.session.dispose();
   });
 
-  it('retains newer child state when snapshot revisions restart after cooling', async () => {
+  it('retains newer child state when snapshot revisions restart after a provider transition', async () => {
     const harness = createSession();
     for (const [index, value] of ['first', 'second'].entries()) {
       const running = harness.session.execute(turn('Continue'));
@@ -196,43 +192,13 @@ describe('SideChatSession', () => {
       harness.backend.latest.establishChild('child-session', { childKey: value });
       harness.backend.latest.complete();
       await running;
-      await harness.session.cool();
+      await harness.lifecycleRegistry.runTransition(['claude'], async () => undefined);
     }
     const resumed = harness.session.execute(turn('Continue'));
     await waitFor(() => harness.backend.sessions.length === 3);
     expect(harness.backend.latest.config.resumeSeed?.providerState).toMatchObject({ childKey: 'second' });
     harness.backend.latest.complete();
     await resumed;
-    await harness.session.dispose();
-  });
-
-  it('protects an executing owner from cooling and reports capacity errors without losing the turn', async () => {
-    const pool = new WarmExecutionPool(() => 5);
-    const harness = createSession({ warmExecution: { ownerId: 'side-1', pool } });
-    const running = harness.session.execute(turn('Explore B'));
-    await waitFor(() => harness.backend.sessions.length === 1);
-    expect(harness.session.canCool()).toBe(false);
-    await expect(harness.session.cool()).rejects.toThrow(/busy/i);
-    harness.backend.latest.complete();
-    await running;
-
-    // A child without a verified native identity stays protected from eviction.
-    expect(harness.session.canCool()).toBe(false);
-    const established = harness.session.execute(turn('Establish'));
-    await waitFor(() => harness.backend.latest.requests.length === 2);
-    harness.backend.latest.establishChild('child-session');
-    harness.backend.latest.complete();
-    await established;
-    expect(harness.session.canCool()).toBe(true);
-
-    const blockers = Array.from({ length: 5 }, (_unused, index) => ({
-      canCool: () => false,
-      cool: async () => undefined,
-      id: `blocker-${index}`,
-    }));
-    await harness.session.cool();
-    for (const blocker of blockers) await pool.acquire(blocker);
-    await expect(harness.session.execute(turn('Blocked'))).rejects.toBeInstanceOf(WarmExecutionCapacityError);
     await harness.session.dispose();
   });
 
@@ -354,7 +320,6 @@ describe('SideChatSession', () => {
     }, new AbortController().signal);
     await waitFor(() => resolveApproval !== null);
     expect(harness.session.hasPendingInteractions).toBe(true);
-    expect(harness.session.canCool()).toBe(false);
     resolveApproval!({ decision: 'allow', interactionId: 'side-approval-1' });
     await expect(approval).resolves.toMatchObject({ decision: 'allow' });
 

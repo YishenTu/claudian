@@ -385,7 +385,6 @@ it('retains a v2 side fork across turns and connection replacement, then deletes
     expect(await f.send('first side turn')).toMatchObject({ status: 'completed' });
     const childId = f.side.providerSessionId!;
     expect(childId).not.toBe(f.sourceId);
-    expect(f.side.canCool()).toBe(false);
     // Changed instructions replace the kernel, but must not delete the side session.
     expect(await f.send('second side turn')).toMatchObject({ status: 'completed' });
     expect(f.side.providerSessionId).toBe(childId);

@@ -9,7 +9,7 @@ export function createConversationPorts(deps: Pick<ConversationControllerDeps, '
   const drafts = new ComposerDraftController({
     getInput: deps.getInputEl, getImages: deps.getImageContextManager, getDestination: () => 'main',
   });
-  const navigation = new TabSession({ id: 'test', conversationId: null, providerId: 'pi', draftModel: null, lifecycleState: 'warm' },
+  const navigation = new TabSession({ id: 'test', conversationId: null, providerId: 'pi', draftModel: null, lifecycleState: 'open' },
     { notifyMayCool: () => undefined } as never, undefined,
     () => deps.state.isStreaming || deps.state.isRewinding || deps.state.isSwitchingConversation || deps.state.isCreatingConversation);
   return { drafts, navigation };
