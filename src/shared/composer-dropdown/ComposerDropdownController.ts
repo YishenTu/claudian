@@ -89,9 +89,11 @@ export class ComposerDropdownController {
       return;
     }
     const { match, source } = sourceMatch;
-    if (this.activeSource?.id !== source.id) this.activeFolder = null;
+    const opening = this.activeSource?.id !== source.id;
+    if (opening) this.activeFolder = null;
     this.activeSource = source;
     this.activeMatch = match;
+    if (opening) source.onOpen?.();
     this.#requestActiveLoad(inputDriven);
   }
 

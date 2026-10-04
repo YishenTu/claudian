@@ -30,6 +30,14 @@ export class CodexSubagentTracker {
     return [...this.agents.values()].some(agent => agent.info.status === 'running');
   }
 
+  threadClosed(threadId: string): void {
+    const agent = this.agents.get(threadId);
+    if (!agent) return;
+    agent.revision++;
+    agent.info = { ...agent.info, status: agent.info.status === 'running' ? 'error' : agent.info.status, completedAt: Date.now() };
+    this.publish({ ...agent.info });
+  }
+
   clear(): void { this.agents.clear(); }
 
   seed(thread: Thread): void {

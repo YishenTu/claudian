@@ -429,7 +429,10 @@ export class ChatExecutionCoordinator {
     if (this.#requestController?.signal.aborted) return;
     this.#requestController?.abort();
     const active = this.#activeExecution;
-    if (!active) return;
+    if (!active) {
+      if (this.hasBackgroundWork) this.#sessionBinding?.session.cancel();
+      return;
+    }
     active.terminationOverride = 'cancelled';
     active.requestController.abort();
     this.#interactions.dismissTurn(active.run.turnId, 'cancelled');

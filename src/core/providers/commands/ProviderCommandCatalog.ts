@@ -8,6 +8,8 @@ export interface ProviderCommandDropdownConfig {
   builtInPrefix: string;
   skillPrefix: string;
   commandPrefix: string;
+  /** Fetch current entries on each picker opening; filtering retains the open snapshot. */
+  refreshOnOpen?: boolean;
   /**
    * Discovery deadline in milliseconds. Omitted uses the shared picker deadline;
    * 'provider-owned' means the provider bounds discovery itself.

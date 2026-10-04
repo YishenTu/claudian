@@ -24,7 +24,8 @@ export interface ProviderExecutionRun {
 }
 
 /**
- * One independent provider-native session/process lifecycle.
+ * One independent provider-native session lifecycle. A provider may share its
+ * runtime process across sessions while isolating native work and cancellation.
  *
  * Implementations accept at most one requested execution at a time. Expected
  * provider, transport, cancellation, and missing-session failures terminate
@@ -40,7 +41,7 @@ export interface ProviderExecutionSession {
   cancel(): void;
   getSnapshot(): ProviderSessionSnapshot;
   getStatus(): ProviderSessionStatus;
-  /** Native work that outlives a requested turn protects the process from cooling. */
+  /** Native work that outlives a requested turn prevents idle session release. */
   hasBackgroundWork?(): boolean;
   /**
    * Current native query commands; undefined means no authoritative snapshot is available.

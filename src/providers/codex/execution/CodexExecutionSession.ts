@@ -3,8 +3,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { stringifyUnknown } from '@/utils/stringify';
-
 import {
   ExecutionEventQueue,
   type ProviderExecutionErrorCategory,
@@ -51,11 +49,7 @@ import {
   resolveCodexReasoningEffort,
 } from '../models';
 import { toCodexRuntimeModelId } from '../modelSelection';
-import { CodexAppServerProcess } from '../runtime/CodexAppServerProcess';
-import {
-  initializeCodexAppServerTransport,
-  resolveCodexAppServerLaunchSpec,
-} from '../runtime/codexAppServerSupport';
+import type { CodexAppServerConnection, CodexAppServerRuntime } from '../runtime/CodexAppServerRuntime';
 import type {
   ConfigReadParams,
   ConfigReadResult,
@@ -79,14 +73,15 @@ import { CodexDynamicToolRegistry } from '../runtime/CodexDynamicToolRegistry';
 import type { CodexLaunchSpec } from '../runtime/codexLaunchTypes';
 import { assertCodexModelAvailable } from '../runtime/CodexModelAvailability';
 import { CodexNotificationRouter } from '../runtime/CodexNotificationRouter';
+import type {
+  CodexRPCTransport} from '../runtime/CodexRPCTransport';
 import {
-  CodexRPCResponseError,
-  CodexRPCTransport,
+  CodexRPCResponseError
 } from '../runtime/CodexRPCTransport';
 import {
   type CodexRuntimeContext,
-  createCodexRuntimeContext,
 } from '../runtime/CodexRuntimeContext';
+import type { CodexThreadScope } from '../runtime/CodexThreadScope';
 import {
   CODEX_WORKSPACE_DEPENDENCY_TOOL_NAME,
   CODEX_WORKSPACE_DEPENDENCY_TOOL_NAMESPACE,
@@ -172,10 +167,13 @@ class CodexExecutionRun implements ProviderExecutionRun {
   private sequence = 0;
   private terminal = false;
   private cancelRequested = false;
+  private readonly cancellation = new AbortController();
+  readonly signal = this.cancellation.signal;
   private abortListener: (() => void) | null = null;
 
   nativeThreadId: string | null = null;
   nativeTurnId: string | null = null;
+  nativeStartSubmitted = false;
   completion: TurnCompletion | null = null;
   readonly responseTokens = new Map<string, number | undefined>();
 
@@ -221,6 +219,7 @@ class CodexExecutionRun implements ProviderExecutionRun {
   cancel(): void {
     if (this.cancelRequested || this.terminal) return;
     this.cancelRequested = true;
+    this.cancellation.abort();
     this.cancelRun(this);
   }
 
@@ -248,7 +247,9 @@ export class CodexExecutionSession
     new Set<(event: ProviderSessionEvent) => void>();
   private readonly activeInputBundles = new Set<CodexInputBundle>();
 
-  private process: CodexAppServerProcess | null = null;
+  private connection: CodexAppServerConnection | null = null;
+  private threadScope: CodexThreadScope | null = null;
+  private detachConnectionListeners: (() => void) | null = null;
   private transport: CodexRPCTransport | null = null;
   private launchSpec: CodexLaunchSpec | null = null;
   private runtimeContext: CodexRuntimeContext | null = null;
@@ -256,8 +257,7 @@ export class CodexExecutionSession
   private notificationRouter: CodexNotificationRouter | null = null;
   private activeRun: CodexExecutionRun | null = null;
   private pendingTurnNotifications: Array<{ method: string; params: unknown }> = [];
-  private processExitHandler: (() => void) | null = null;
-  private processDisposalPromise: Promise<void> | null = null;
+  private connectionReleasePromise: Promise<void> | null = null;
   private forkIdentityPromise: Promise<CodexPendingForkTarget> | null = null;
   private forkSetupPromise: Promise<CodexEnsuredThread> | null = null;
   private disposePromise: Promise<void> | null = null;
@@ -267,7 +267,10 @@ export class CodexExecutionSession
 
   private sessionSequence = 0;
   private readonly subagents = new CodexSubagentTracker(
-    subagent => this.#emitSessionEvent({ type: 'subagent_updated', subagent }),
+    subagent => {
+      this.#emitSessionEvent({ type: 'subagent_updated', subagent });
+      this.#releaseRetiredConnection();
+    },
     async threadId => {
       if (!this.transport) throw new Error('Codex CLI transport is unavailable');
       return (await this.transport.request<ThreadReadResult>('thread/read', { threadId, includeTurns: true }, 5_000)).thread;
@@ -275,7 +278,7 @@ export class CodexExecutionSession
     () => this.#resolveTargetWorkingDirectory(),
   );
 
-  hasBackgroundWork(): boolean { return this.subagents.hasBackgroundWork(); }
+  hasBackgroundWork(): boolean { return this.threadScope?.hasBackgroundWork ?? false; }
 
   private threadId: string | null;
   private loadedThreadId: string | null = null;
@@ -296,6 +299,7 @@ export class CodexExecutionSession
   constructor(
     private readonly plugin: ProviderHost,
     private readonly config: ProviderSessionConfig,
+    private readonly runtime: CodexAppServerRuntime,
   ) {
     this.seedState = Object.freeze({ ...(config.resumeSeed?.providerState ?? {}) });
     const codexState = this.seedState as CodexProviderState;
@@ -345,7 +349,12 @@ export class CodexExecutionSession
   }
 
   cancel(): void {
-    this.activeRun?.cancel();
+    if (this.activeRun) {
+      this.activeRun.cancel();
+      return;
+    }
+    this.serverRequestRouter.abortAll('cancelled');
+    void this.threadScope?.stop();
   }
 
   getSnapshot(): ProviderSessionSnapshot {
@@ -384,13 +393,12 @@ export class CodexExecutionSession
     }
 
     const bundle = this.#buildInputBundle(request);
-    this.activeInputBundles.add(bundle);
     try {
-      const result = await transport.request<TurnSteerResult>('turn/steer', {
+      const result = await this.threadScope!.steer<TurnSteerResult>({
         threadId: nativeThreadId,
         input: bundle.input,
         expectedTurnId: nativeTurnId,
-      });
+      }, () => bundle.cleanup());
       if (
         !result
         || typeof result !== 'object'
@@ -407,8 +415,6 @@ export class CodexExecutionSession
         return false;
       }
       throw error;
-    } finally {
-      this.#disposeInputBundle(bundle);
     }
   }
 
@@ -416,7 +422,7 @@ export class CodexExecutionSession
     if (this.disposePromise) return this.disposePromise;
     this.disposed = true;
     this.lifecycleGeneration += 1;
-    this.activeRun?.cancel();
+    this.cancel();
     this.serverRequestRouter.abortAll('session-disposed');
     this.disposePromise = this.#disposeInternal();
     return this.disposePromise;
@@ -428,7 +434,7 @@ export class CodexExecutionSession
     this.notificationRouter = null;
     this.pendingTurnNotifications = [];
     try {
-      const processDisposal = this.#disposeOwnedProcessAfterForkIdentity();
+      const processDisposal = this.#releaseConnectionAfterForkIdentity();
       const [processResult] = await Promise.allSettled([
         processDisposal,
         this.#settleForkSetup(),
@@ -450,8 +456,8 @@ export class CodexExecutionSession
     const generation = this.lifecycleGeneration;
     try {
       assertCodexModelAvailable(this.plugin.settings, request.configuration.model);
-      const settings = this.#resolveProviderSettings();
-      const model = this.#resolveModel(request, settings);
+      let settings = this.#resolveProviderSettings();
+      let model = this.#resolveModel(request, settings);
       if (!model) {
         this.#finishError(
           run,
@@ -461,7 +467,7 @@ export class CodexExecutionSession
         );
         return;
       }
-      const effort = this.#resolveReasoningEffort(request, settings, model);
+      let effort = this.#resolveReasoningEffort(request, settings, model);
 
       if (
         request.toolPolicy.kind === 'allow-list'
@@ -489,8 +495,12 @@ export class CodexExecutionSession
         return;
       }
 
-      await this.#ensureProcess(generation);
       if (!this.#isRunCurrent(run, generation)) return;
+      await this.#ensureConnection(generation, run.signal);
+      if (!this.#isRunCurrent(run, generation)) return;
+      settings = this.#resolveProviderSettings();
+      model = this.#resolveModel(request, settings)!;
+      effort = this.#resolveReasoningEffort(request, settings, model);
 
       const policy = this.#resolvePolicy(request, settings);
       const baseInstructions = this.#resolveBaseInstructions(request);
@@ -539,7 +549,9 @@ export class CodexExecutionSession
 
       assertCodexModelAvailable(this.plugin.settings, request.configuration.model);
       if (isCompactRequest(request)) {
-        await this.transport!.request<ThreadCompactStartResult>(
+        if (!await this.#allowRequestedTurn(run, generation)) return;
+        run.nativeStartSubmitted = true;
+        await this.threadScope!.startTurn<ThreadCompactStartResult>(
           'thread/compact/start',
           { threadId: thread.threadId },
         );
@@ -583,7 +595,10 @@ export class CodexExecutionSession
         ? this.#setLoadedThreadSandbox(null)
         : null;
 
-      const result = await this.transport!.request<TurnStartResult>('turn/start', {
+      if (!await this.#allowRequestedTurn(run, generation)) return;
+      run.nativeStartSubmitted = true;
+      this.activeInputBundles.delete(bundle);
+      const result = await this.threadScope!.startTurn<TurnStartResult>('turn/start', {
         threadId: thread.threadId,
         input: bundle.input,
         approvalPolicy: policy.approvalPolicy,
@@ -595,11 +610,14 @@ export class CodexExecutionSession
         personality: getCodexProviderSettings(settings).responseStyle,
         ...(sandboxPolicy ? { sandboxPolicy } : {}),
         collaborationMode,
-      });
+      }, () => bundle.cleanup());
       if (sandboxRevision === this.loadedThreadSandboxRevision) {
         this.#setLoadedThreadSandbox(policy.sandbox);
       }
       this.#markNativeConversationContextEstablished(run);
+      if (run.isCancellationRequested) {
+        run.nativeTurnId = result.turn.id;
+      }
       if (!this.#isRunCurrent(run, generation)) return;
       this.#observeNativeTurn(thread.threadId, result.turn.id);
     } catch (error) {
@@ -610,150 +628,86 @@ export class CodexExecutionSession
     }
   }
 
-  async #ensureProcess(generation: number): Promise<void> {
-    await this.processDisposalPromise;
+  async #ensureConnection(generation: number, signal: AbortSignal): Promise<void> {
+    await this.connectionReleasePromise;
+    await this.threadScope?.waitUntilReady();
     if (this.disposed || generation !== this.lifecycleGeneration) {
       throw new Error('Codex CLI execution session has been disposed.');
     }
-    if (
-      this.process
-      && this.transport
-      && this.process.isAlive()
-    ) {
+    // Acquisition also waits out provider transitions and checks the launch fingerprint.
+    const lease = await this.runtime.acquire({ signal });
+    if (this.disposed || generation !== this.lifecycleGeneration) {
+      await lease.release();
       return;
     }
-
+    if (this.connection === lease.connection) {
+      await lease.release();
+      return;
+    }
+    if (this.connection?.isAlive() && this.threadScope?.hasWork) {
+      await lease.release();
+      throw new Error('Codex background work is still draining from the previous environment. Retry when it finishes.');
+    }
     if (this.#resolveNativePersistence() === false && this.threadId) {
+      await lease.release();
       throw new Error('This non-persistent Codex CLI session cannot be restored after its process ends. Start a new side chat.');
     }
-    await this.#shutdownDeadProcess();
+    await this.#releaseConnection();
     if (this.disposed || generation !== this.lifecycleGeneration) {
-      throw new Error('Codex CLI execution session has been disposed.');
+      await lease.release();
+      return;
     }
-    const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
-    if (this.disposed || generation !== this.lifecycleGeneration) {
-      throw new Error('Codex CLI execution session has been disposed.');
-    }
-
-    const process = new CodexAppServerProcess(launchSpec);
-    this.launchSpec = launchSpec;
-    this.process = process;
-    const exitHandler = () => this.#handleProcessExit(process);
-    this.processExitHandler = exitHandler;
-    process.onExit(exitHandler);
-
-    try {
-      process.start();
-      if (this.disposed || generation !== this.lifecycleGeneration) {
-        throw new Error('Codex CLI execution session has been disposed.');
-      }
-      const transport = new CodexRPCTransport(process);
-      this.transport = transport;
-      transport.start();
-      if (this.disposed || generation !== this.lifecycleGeneration) {
-        throw new Error('Codex CLI execution session has been disposed.');
-      }
-      const initializeResult = await initializeCodexAppServerTransport(transport);
-      if (this.disposed || generation !== this.lifecycleGeneration) {
-        throw new Error('Codex CLI execution session has been disposed.');
-      }
-
-      this.runtimeContext = createCodexRuntimeContext(launchSpec, initializeResult);
-      this.dynamicToolRegistry = new CodexDynamicToolRegistry();
-      this.dynamicToolRegistry.register(
-        createCodexWorkspaceDependencyTool(this.runtimeContext),
-      );
-      this.serverRequestRouter.setDynamicToolRegistry(this.dynamicToolRegistry);
-      this.#wireTransportHandlers(transport, generation);
-    } catch (error) {
-      try {
-        await this.#disposeOwnedProcess();
-      } catch {
-        // Preserve the startup failure that caused cleanup.
-      }
-      throw error;
-    }
+    const connection = lease.connection;
+    this.connection = connection;
+    this.transport = connection.transport;
+    this.launchSpec = connection.launchSpec;
+    this.runtimeContext = await connection.initialized;
+    this.dynamicToolRegistry = new CodexDynamicToolRegistry();
+    this.dynamicToolRegistry.register(createCodexWorkspaceDependencyTool(this.runtimeContext));
+    this.serverRequestRouter.setDynamicToolRegistry(this.dynamicToolRegistry);
+    this.threadScope = connection.createThreadScope({
+      notification: (method, params) => this.handleNotification(method, params),
+      serverRequest: (id, method, params) => this.serverRequestRouter.handleServerRequest(id, method, params),
+      stop: () => this.dispose(),
+      workChanged: () => this.#releaseRetiredConnection(),
+    });
+    await lease.release();
+    const offExit = connection.onExit(() => this.#handleConnectionExit(connection));
+    const offRetire = connection.onRetired(() => this.#releaseRetiredConnection());
+    this.detachConnectionListeners = () => { offExit(); offRetire(); };
   }
 
-  async #shutdownDeadProcess(): Promise<void> {
-    await this.#disposeOwnedProcess();
+  #claimThread(threadId: string): void {
+    this.threadScope?.claim(threadId);
   }
 
-  #wireTransportHandlers(
-    transport: CodexRPCTransport,
-    generation: number,
-  ): void {
-    const notificationMethods = [
-      'item/agentMessage/delta',
-      'item/started',
-      'item/completed',
-      'item/plan/delta',
-      'item/reasoning/textDelta',
-      'item/reasoning/summaryTextDelta',
-      'item/reasoning/summaryPartAdded',
-      'thread/tokenUsage/updated',
-      'turn/plan/updated',
-      'turn/completed',
-      'error',
-      'thread/started',
-      'thread/status/changed',
-      'turn/started',
-      'serverRequest/resolved',
-      'item/commandExecution/outputDelta',
-      'item/fileChange/outputDelta',
-      'item/fileChange/patchUpdated',
-      'rawResponseItem/completed',
-      'rawResponse/completed',
-      'event_msg',
-    ];
-    for (const method of notificationMethods) {
-      transport.onNotification(
-        method,
-        (params) => {
-          if (!this.#isTransportCurrent(transport, generation)) return;
-          this.handleNotification(method, params);
-        },
-      );
+  #releaseRetiredConnection(): void {
+    if (this.connection?.isRetired() && !this.activeRun && !this.threadScope?.hasWork) {
+      void this.#releaseConnection().catch(() => undefined);
     }
-
-    const serverRequestMethods = [
-      'item/commandExecution/requestApproval',
-      'item/fileChange/requestApproval',
-      'item/permissions/requestApproval',
-      'item/tool/requestUserInput',
-      'item/tool/call',
-      'mcpServer/elicitation/request',
-    ];
-    for (const method of serverRequestMethods) {
-      transport.onServerRequest(
-        method,
-        (requestId, params) => {
-          if (!this.#isTransportCurrent(transport, generation)) {
-            return Promise.reject(new Error('Stale Codex CLI app-server transport.'));
-          }
-          return this.serverRequestRouter.handleServerRequest(
-            requestId,
-            method,
-            params,
-          );
-        },
-      );
-    }
-  }
-
-  #isTransportCurrent(
-    transport: CodexRPCTransport,
-    generation: number,
-  ): boolean {
-    return (
-      !this.disposed
-      && this.transport === transport
-      && generation === this.lifecycleGeneration
-    );
   }
 
   private handleNotification(method: string, params: unknown): void {
+    const scope = extractNotificationScope(method, params);
+    if (method === 'item/completed') {
+      const notification = params as ItemCompletedNotification;
+      if (notification.item.type === 'subAgentActivity') {
+        this.subagents.activity(notification.item, notification.turnId);
+      }
+    }
     if (this.disposed) return;
+    if (method === 'thread/closed') {
+      const closed = params as { threadId: string };
+      if (closed.threadId !== this.threadId) {
+        this.subagents.threadClosed(closed.threadId);
+        return;
+      }
+      const run = this.activeRun;
+      this.lifecycleGeneration++;
+      void this.#releaseConnection().catch(() => undefined);
+      if (run && !run.isTerminal) this.#finishError(run, 'provider', 'Codex thread was closed.', true);
+      return;
+    }
     if (method === 'serverRequest/resolved') {
       const resolved = params as ServerRequestResolvedNotification;
       this.serverRequestRouter.resolveNativeRequest(
@@ -763,12 +717,6 @@ export class CodexExecutionSession
       return;
     }
 
-    if (method === 'item/completed') {
-      const notification = params as ItemCompletedNotification;
-      if (notification.threadId === this.threadId && notification.item.type === 'subAgentActivity') {
-        this.subagents.activity(notification.item, notification.turnId);
-      }
-    }
     if (method === 'turn/started') {
       const started = params as TurnStartedNotification;
       if (this.subagents.turnStarted(started.threadId, started.turn.id)) return;
@@ -800,7 +748,6 @@ export class CodexExecutionSession
       return;
     }
 
-    const scope = extractNotificationScope(method, params);
     if (scope) {
       if (!run.nativeTurnId) {
         this.pendingTurnNotifications.push({ method, params });
@@ -1114,6 +1061,7 @@ export class CodexExecutionSession
     generation: number,
   ): Promise<CodexEnsuredThread> {
     this.currentRunToolPolicy = request.toolPolicy;
+    if (this.threadId) this.#claimThread(this.threadId);
     if (
       this.pendingFork
       && (this.pendingForkTarget !== undefined || !this.threadId)
@@ -1140,7 +1088,7 @@ export class CodexExecutionSession
       if (persistExtendedHistory === false) {
         throw new Error('This non-persistent Codex CLI session cannot be restored after its configuration changes. Start a new side chat.');
       }
-      const result = await this.transport!.request<ThreadResumeResult>(
+      const result = await this.threadScope!.open<ThreadResumeResult>(
         'thread/resume',
         {
           threadId: this.threadId,
@@ -1164,6 +1112,7 @@ export class CodexExecutionSession
       );
       this.#recordApprovalReviewer(result, policy.approvalsReviewer);
       this.subagents.seed(result.thread);
+      this.#claimThread(result.thread.id);
       this.loadedThreadId = result.thread.id;
       this.#setLoadedThreadSandbox(sandboxModeOf(result.sandbox));
       this.loadedThreadBaseInstructions = baseInstructions;
@@ -1185,7 +1134,7 @@ export class CodexExecutionSession
         isThreadStartToolAllowed(request.toolPolicy, spec.namespace, spec.name)
       )
       : [];
-    const result = await this.transport!.request<ThreadStartResult>(
+    const result = await this.threadScope!.open<ThreadStartResult>(
       'thread/start',
       {
         model,
@@ -1210,6 +1159,7 @@ export class CodexExecutionSession
       },
     );
     this.#recordApprovalReviewer(result, policy.approvalsReviewer);
+    this.#claimThread(result.thread.id);
     this.loadedThreadId = result.thread.id;
     this.#setLoadedThreadSandbox(sandboxModeOf(result.sandbox));
     this.loadedThreadBaseInstructions = baseInstructions;
@@ -1280,7 +1230,7 @@ export class CodexExecutionSession
 
     let target = this.pendingForkTarget;
     if (!target) {
-      target = await this.#resolveForkIdentity(run, fork, transport, persistExtendedHistory === false ? {
+      target = await this.#resolveForkIdentity(run, fork, persistExtendedHistory === false ? {
         ephemeral: true,
         excludeTurns: true,
         lastTurnId: fork.resumeAt,
@@ -1309,7 +1259,7 @@ export class CodexExecutionSession
       return { threadId: target.threadId, sessionFilePath: null };
     }
 
-    const resumeResult = await transport.request<ThreadResumeResult>(
+    const resumeResult = await this.threadScope!.open<ThreadResumeResult>(
       'thread/resume',
       {
         threadId: target.threadId,
@@ -1376,13 +1326,12 @@ export class CodexExecutionSession
   #resolveForkIdentity(
     run: CodexExecutionRun,
     fork: NonNullable<CodexProviderState['forkSource']>,
-    transport: CodexRPCTransport,
     overrides: Record<string, unknown> = {},
   ): Promise<CodexPendingForkTarget> {
     if (this.forkIdentityPromise) return this.forkIdentityPromise;
 
     const pathMapper = this.launchSpec?.pathMapper;
-    const identity = transport.request<ThreadForkResult>(
+    const identity = this.threadScope!.open<ThreadForkResult>(
       'thread/fork',
       { threadId: fork.sessionId, ...overrides },
     ).then((forkResult) => {
@@ -1416,6 +1365,7 @@ export class CodexExecutionSession
     run: CodexExecutionRun,
     target: CodexPendingForkTarget,
   ): void {
+    this.#claimThread(target.threadId);
     this.pendingForkTarget = target;
     this.threadId = target.threadId;
     this.sessionFilePath = target.sessionFilePath ?? null;
@@ -1457,23 +1407,22 @@ export class CodexExecutionSession
     }
   }
 
-  #cancelRun(run: CodexExecutionRun): void {
+  #cancelRun(run: CodexExecutionRun, finishCancelled = true): void {
     if (this.activeRun !== run || run.isTerminal) return;
     this.#cancelMissedTurnCompletionRecovery();
-    this.lifecycleGeneration += 1;
+    this.lifecycleGeneration++;
     this.serverRequestRouter.abortAll('cancelled');
-    const transport = this.transport;
-    if (transport && run.nativeThreadId && run.nativeTurnId) {
-      void transport.request('turn/interrupt', {
-        threadId: run.nativeThreadId,
-        turnId: run.nativeTurnId,
-      }).catch(() => undefined);
+    const stopping = this.threadScope?.stop() ?? Promise.resolve();
+    if (finishCancelled && this.forkSetupPromise) {
+      void Promise.allSettled([stopping, this.#settleForkSetup()]).then(() => this.#finishCancelled(run));
+    } else if (finishCancelled) {
+      this.#finishCancelled(run);
     }
-    const processDisposal = this.#disposeOwnedProcessAfterForkIdentity();
-    void Promise.allSettled([
-      processDisposal,
-      this.#settleForkSetup(),
-    ]).then(() => this.#finishCancelled(run));
+  }
+
+  async #allowRequestedTurn(run: CodexExecutionRun, generation: number): Promise<boolean> {
+    await this.threadScope!.beforeTurn();
+    return this.#isRunCurrent(run, generation);
   }
 
   #captureResponseUsage(run: CodexExecutionRun, method: string, params: unknown): void {
@@ -1574,6 +1523,7 @@ export class CodexExecutionSession
       this.activeRun = null;
     }
     this.#discoverSessionFile();
+    this.#releaseRetiredConnection();
   }
 
   #handleExecutionFailure(
@@ -1594,15 +1544,18 @@ export class CodexExecutionSession
       return;
     }
     const category = error instanceof ProviderModelUnavailableError ? 'configuration' : isTransportError(message) ? 'transport' : 'provider';
+    // A missing start acknowledgement does not establish that native work stopped.
+    // Keep the execution error visible while joining the same targeted cleanup as cancellation.
+    if (category === 'transport' && run.nativeStartSubmitted) this.#cancelRun(run, false);
     this.#finishError(run, category, message, category === 'transport');
   }
 
-  #handleProcessExit(process: CodexAppServerProcess): void {
-    if (this.process !== process || this.disposed) return;
+  #handleConnectionExit(connection: CodexAppServerConnection): void {
+    if (this.connection !== connection || this.disposed) return;
     this.lifecycleGeneration += 1;
     const run = this.activeRun;
     // The dead transport cannot deliver an unresolved fork identity.
-    const processDisposal = this.#disposeOwnedProcess();
+    const processDisposal = this.#releaseConnection();
     if (run && !run.isTerminal && !run.isCancellationRequested) {
       const forkSetup = this.forkSetupPromise;
       if (forkSetup) {
@@ -1636,22 +1589,19 @@ export class CodexExecutionSession
     void processDisposal.catch(() => undefined);
   }
 
-  async #disposeOwnedProcessAfterForkIdentity(): Promise<void> {
+  async #releaseConnectionAfterForkIdentity(): Promise<void> {
     await this.#settleForkIdentity();
-    await this.#disposeOwnedProcess();
+    await this.#releaseConnection();
   }
 
-  #disposeOwnedProcess(): Promise<void> {
-    if (this.processDisposalPromise) return this.processDisposalPromise;
-
-    const transport = this.transport;
+  #releaseConnection(): Promise<void> {
+    if (this.connectionReleasePromise) return this.connectionReleasePromise;
+    const scope = this.threadScope;
+    this.threadScope = null;
+    this.connection = null;
     this.transport = null;
-    const process = this.process;
-    this.process = null;
-    const exitHandler = this.processExitHandler;
-    this.processExitHandler = null;
-    if (process && exitHandler) process.offExit(exitHandler);
-
+    this.detachConnectionListeners?.();
+    this.detachConnectionListeners = null;
     this.launchSpec = null;
     this.runtimeContext = null;
     this.subagents.clear();
@@ -1661,38 +1611,12 @@ export class CodexExecutionSession
     this.supportsApprovalReviewer = false;
     this.dynamicToolRegistry = new CodexDynamicToolRegistry();
     this.serverRequestRouter.setDynamicToolRegistry(null);
-
-    if (!transport && !process) return Promise.resolve();
-
-    let cleanupError: unknown;
-    try {
-      transport?.dispose();
-    } catch (error) {
-      cleanupError = error;
-    }
-    const pending = (async () => {
-      try {
-        await process?.shutdown();
-      } catch (error) {
-        cleanupError ??= error;
-      }
-      if (cleanupError instanceof Error) throw cleanupError;
-      if (cleanupError !== undefined) {
-        throw new Error(stringifyUnknown(cleanupError), { cause: cleanupError });
-      }
-    })();
-    this.processDisposalPromise = pending;
-    void pending.then(
-      () => this.#clearProcessDisposal(pending),
-      () => this.#clearProcessDisposal(pending),
-    );
+    const pending = scope?.detach() ?? Promise.resolve();
+    this.connectionReleasePromise = pending;
+    void pending.finally(() => {
+      if (this.connectionReleasePromise === pending) this.connectionReleasePromise = null;
+    }).catch(() => undefined);
     return pending;
-  }
-
-  #clearProcessDisposal(pending: Promise<void>): void {
-    if (this.processDisposalPromise === pending) {
-      this.processDisposalPromise = null;
-    }
   }
 
   #emitSnapshot(run: CodexExecutionRun): void {
@@ -2075,11 +1999,6 @@ export class CodexExecutionSession
     }
   }
 
-  #disposeInputBundle(bundle: CodexInputBundle): void {
-    this.activeInputBundles.delete(bundle);
-    bundle.cleanup();
-  }
-
   #cleanupInputBundles(): void {
     for (const bundle of this.activeInputBundles) bundle.cleanup();
     this.activeInputBundles.clear();
@@ -2295,7 +2214,7 @@ function extractNotificationScope(
   const notification = params as Record<string, unknown>;
   const threadId = normalizeString(notification.threadId);
   if (!threadId) return null;
-  if (method === 'turn/completed') {
+  if (method === 'turn/completed' || method === 'turn/started') {
     const turn = notification.turn;
     const turnId = turn && typeof turn === 'object' && !Array.isArray(turn)
       ? normalizeString((turn as Record<string, unknown>).id)

@@ -7,6 +7,15 @@ import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestPro
 import spawn from 'cross-spawn';
 
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
+import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
+
+const runtimes: CodexAppServerRuntime[] = [];
+function createRuntime(host: ForkTestEnvironment['host']): CodexAppServerRuntime {
+  const runtime = new CodexAppServerRuntime(host, () => undefined);
+  runtimes.push(runtime);
+  return runtime;
+}
+afterEach(async () => { await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose())); });
 
 function createNativeCodex(env: ForkTestEnvironment) {
   const threads = new Map<string, string[]>([['codex-source', []]]);
@@ -21,6 +30,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
   jest.mocked(spawn).mockImplementation(() => createNativeRPCProcess(async (method, params, notify) => {
     operations.push({ method, params });
     if (method === 'initialize') return { userAgent: 'test', codexHome: env.root, platformFamily: process.platform === 'win32' ? 'windows' : 'unix', platformOs: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux' };
+    if (method === 'plugin/reconcile' || method === 'thread/unsubscribe') return {};
     if (method === 'thread/start') return result('codex-source');
     if (method === 'thread/fork') {
       threads.set('codex-child', [...threads.get(params.threadId)!]);
@@ -58,7 +68,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
     }
     throw new Error(`Unexpected Codex method: ${method}`);
   }));
-  return { backend: new CodexExecutionBackend(env.host), threads, prompts, operations, sourceFile };
+  return { backend: new CodexExecutionBackend(env.host, createRuntime(env.host)), threads, prompts, operations, sourceFile };
 }
 
 describe('Codex fork integration', () => {

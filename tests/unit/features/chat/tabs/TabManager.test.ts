@@ -253,6 +253,68 @@ describe('TabManager provider execution orchestration', () => {
     });
   });
 
+  it.each([
+    { conversationId: 'codex-history' },
+    { conversationId: null, providerId: 'codex' as const, draftModel: 'codex:gpt-5' },
+  ])('starts a shared runtime for an inactive restored provider tab without preparing execution: %o', async restored => {
+    const startRuntime = jest.fn().mockResolvedValue(undefined);
+    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => ({
+      providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === 'codex',
+    } as any));
+    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === 'codex' ? { startRuntime } : {});
+    const { manager } = createManager(createPlugin({
+      getCachedConversation: (id: string) => ({ id, providerId: id === 'codex-history' ? 'codex' : 'claude' }),
+    }));
+    await manager.restoreState({
+      openTabs: [
+        { tabId: 'visible', conversationId: 'claude-history' },
+        { tabId: 'hidden', ...restored },
+      ],
+      activeTabId: 'visible',
+    });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(startRuntime).toHaveBeenCalledTimes(1);
+    expect(manager.getTab('hidden')).toBeNull();
+    expect(mockTabs.every(tab => tab.executionCoordinator.prepare.mock.calls.length === 0)).toBe(true);
+    await manager.destroy();
+  });
+
+  it('starts a shared runtime when a blank tab selects its provider without preparing execution', async () => {
+    const startRuntime = jest.fn().mockResolvedValue(undefined);
+    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => ({
+      providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === 'codex',
+    } as any));
+    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === 'codex' ? { startRuntime } : {});
+    const { manager } = createManager();
+    const tab = await manager.createTab();
+    expect(startRuntime).not.toHaveBeenCalled();
+    tab!.session.selectDraft('codex', 'codex:gpt-5');
+    mockCreateTabRuntime.mock.calls[0][0].onDraftModelChanged(tab, tab!.draftModel);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(startRuntime).toHaveBeenCalledTimes(1);
+    expect(tab!.executionCoordinator.prepare).not.toHaveBeenCalled();
+    await manager.destroy();
+  });
+
+  it('keeps repeated passive runtime startup failures silent', async () => {
+    const startRuntime = jest.fn().mockRejectedValue(new Error('Codex CLI missing'));
+    jest.mocked(ProviderRegistry.getCapabilities).mockImplementation(providerId => ({
+      providerId, supportsProviderCommands: true, startsSharedRuntimeOnTabPresence: providerId === 'codex',
+    } as any));
+    jest.mocked(ProviderWorkspaceRegistry.getIfInitialized).mockImplementation(providerId => providerId === 'codex' ? { startRuntime } : {});
+    const { manager } = createManager();
+    const tab = await manager.createTab();
+    tab!.session.selectDraft('codex', 'codex:gpt-5');
+    const changed = mockCreateTabRuntime.mock.calls[0][0].onDraftModelChanged;
+    changed(tab, tab!.draftModel);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    changed(tab, tab!.draftModel);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(startRuntime).toHaveBeenCalledTimes(2);
+    expect(Notice).not.toHaveBeenCalled();
+    await manager.destroy();
+  });
+
   it.each(['admission', 'command lookup'] as const)('validates cached workspace ownership during %s', async phase => {
     const { ProviderInitializationBoundary } = jest.requireActual('@/core/providers/ProviderInitializationBoundary');
     const boundary = new ProviderInitializationBoundary();

@@ -25,7 +25,7 @@ export interface ProviderSessionConfig {
 
 /**
  * Cheap provider registration entry point. Active native lifecycle belongs to
- * the independently created session, never to the backend object. Neither this
+ * the session or a provider-owned shared runtime, never to the backend object. Neither this
  * configuration nor the backend receives a Claudian conversation identity.
  * The resume seed is fixed for the lifetime of the created session.
  */

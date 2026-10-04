@@ -47,6 +47,12 @@ export class SlashCommandSource implements ComposerDropdownSource {
     this.#bindDiscovery();
   }
 
+  onOpen(): void {
+    if (this.providerConfig?.refreshOnOpen && this.discovery?.getSnapshot().status !== 'idle') {
+      this.#startDiscovery('retry');
+    }
+  }
+
   clearProviderCatalog(): void {
     this.discoveryUnsubscribe?.();
     this.discoveryUnsubscribe = null;

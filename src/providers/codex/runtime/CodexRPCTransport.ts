@@ -64,12 +64,13 @@ export class CodexRPCTransport {
     method: string,
     params: unknown,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    signal?: AbortSignal,
   ): Promise<T> {
     if (this.disposed) throw new Error('Transport disposed');
     this.start();
 
     try {
-      return await this.transport!.request<T>(method, params, { timeoutMs });
+      return await this.transport!.request<T>(method, params, { timeoutMs, signal });
     } catch (error) {
       if (error instanceof JSONRPCErrorResponse) {
         throw new CodexRPCResponseError({

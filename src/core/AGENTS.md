@@ -13,7 +13,7 @@
 - App/features may store opaque provider state but may not interpret native session/checkpoint fields. Providers normalize native payloads at the core boundary.
 - Live output and history replay remain separate. Application metadata changes never edit or delete native history files; explicit native session operations belong to providers.
 - Persisted provider settings require runtime decoding; invalid permission/tool/sandbox modes fail closed. Writers merge provider-owned configuration.
-- Runtime-discovered commands are read-only. Auxiliary queries own processes/sessions independently from chat.
+- Runtime-discovered commands are read-only. Auxiliary queries own sessions independently from chat; Codex shares its provider-owned app-server and isolates caller cancellation and thread routing.
 - The shared model catalog owns selection policy; providers retain discovery, native metadata, and persistence. Only selected models persist. Startup fills missing selected-model reasoning metadata through provider-native discovery; no hardcoded model effort migrations. Unavailable selections stay visible as unavailable rather than silently defaulting.
 - Explicit selected-model order is durable user preference, including a full-list order; do not collapse it to legacy null/native-default ordering. Chat options, the toolbar, settings, and default resolution preserve that order; the first saved model appears at the top of the dropdown.
 

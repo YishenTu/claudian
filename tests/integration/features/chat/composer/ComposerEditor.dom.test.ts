@@ -4,6 +4,7 @@ import { fireEvent, waitFor, within } from '@testing-library/dom';
 import { axe } from 'jest-axe';
 import { type App, type Component, MarkdownRenderer, Platform, TFile } from 'obsidian';
 
+import { createCatalogCommandDiscoveryStore } from '@/core/providers/commands/catalogCommandDiscovery';
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { ComposerEditor } from '@/features/chat/composer/ComposerEditor';
@@ -14,6 +15,9 @@ import { sendTabInputMessageFromExplicitEnterShortcut } from '@/features/chat/ta
 import { ComposerContextTray } from '@/features/chat/ui/ComposerContextTray';
 import { FileContextManager } from '@/features/chat/ui/FileContext';
 import { ImageContextManager } from '@/features/chat/ui/ImageContext';
+import { CodexSkillCatalog } from '@/providers/codex/commands/CodexSkillCatalog';
+import type { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
+import { CodexSkillListingService } from '@/providers/codex/skills/CodexSkillListingService';
 import { ComposerDropdownController } from '@/shared/composer-dropdown/ComposerDropdownController';
 
 const nativeLinks: Record<string, { target: string; label: string }> = {
@@ -507,4 +511,53 @@ it('renders known commands and skills as chips while unknown tokens stay text', 
     fireEvent.keyDown(textbox, { key: 'Backspace', code: 'Backspace' });
     expect(editor.element.value).toBe('Run ');
   } finally { dropdown.destroy(); editor.destroy(); parent.remove(); }
+});
+
+it('reloads Codex skills on reopening the picker and filters the current opening locally', async () => {
+  const parent = document.body.createDiv();
+  const editor = createEditor(parent);
+  let name = 'first-skill';
+  const nativeRequest = jest.fn(async () => ({ data: [{ cwd: '/vault', skills: [{
+    name, path: '/skills/SKILL.md', scope: 'user', enabled: true,
+  }] }] }));
+  const skills = new CodexSkillListingService({
+    onSkillsChanged: () => () => undefined,
+    acquire: async () => ({
+      connection: {
+        launchSpec: { targetCwd: '/vault', pathMapper: { toHostPath: (path: string) => path } },
+        transport: { request: nativeRequest }, refreshPlugins: async () => undefined,
+      },
+      release: async () => undefined,
+    }),
+  } as unknown as CodexAppServerRuntime);
+  const catalog = new CodexSkillCatalog(skills);
+  const dropdown = new MainChatComposerDropdown(parent, editor.element, new FileContextManager(createApp()), {
+    providerId: 'codex', providerConfig: catalog.getDropdownConfig(),
+    providerDiscovery: createCatalogCommandDiscoveryStore(catalog),
+  });
+  try {
+    editor.element.value = '$';
+    editor.element.selectionStart = editor.element.selectionEnd = 1;
+    dropdown.handleInputChange();
+    await waitFor(() => within(parent).getByRole('option', { name: '$first-skill' }));
+    editor.element.value = '$first';
+    editor.element.selectionStart = editor.element.selectionEnd = 6;
+    dropdown.handleInputChange();
+    await waitFor(() => within(parent).getByRole('option', { name: '$first-skill' }));
+    expect(nativeRequest).toHaveBeenCalledTimes(1);
+    dropdown.hide();
+    name = 'second-skill';
+    editor.element.value = '$';
+    editor.element.selectionStart = editor.element.selectionEnd = 1;
+    dropdown.handleInputChange();
+    await waitFor(() => within(parent).getByRole('option', { name: '$second-skill' }));
+    expect(within(parent).queryByRole('option', { name: '$first-skill' })).toBeNull();
+    expect(nativeRequest).toHaveBeenCalledTimes(2);
+    expect((await axe(within(parent).getByRole('option', { name: '$second-skill' }))).violations).toEqual([]);
+  } finally {
+    dropdown.destroy();
+    editor.destroy();
+    parent.remove();
+    await skills.dispose();
+  }
 });

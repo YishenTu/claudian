@@ -7,8 +7,17 @@ import { createNativeRPCProcess } from '@test/helpers/providers/NativeRPCTestPro
 import spawn from 'cross-spawn';
 
 import { CodexExecutionBackend } from '@/providers/codex/execution/CodexExecutionBackend';
+import { CodexAppServerRuntime } from '@/providers/codex/runtime/CodexAppServerRuntime';
 
 import { traceSideChild } from './SideChatNativeTracer';
+
+const runtimes: CodexAppServerRuntime[] = [];
+function createRuntime(host: ForkTestEnvironment['host']): CodexAppServerRuntime {
+  const runtime = new CodexAppServerRuntime(host, () => undefined);
+  runtimes.push(runtime);
+  return runtime;
+}
+afterEach(async () => { await Promise.all(runtimes.splice(0).map(runtime => runtime.dispose())); });
 
 function createNativeCodex(env: ForkTestEnvironment) {
   const threads = new Map<string, string[]>([['codex-source', []]]);
@@ -23,6 +32,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
   jest.mocked(spawn).mockImplementation(() => createNativeRPCProcess(async (method, params, notify) => {
     operations.push({ method, params });
     if (method === 'initialize') return { codexHome: env.root, platformFamily: process.platform === 'win32' ? 'windows' : 'unix', platformOs: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux', userAgent: 'test' };
+    if (method === 'plugin/reconcile' || method === 'thread/unsubscribe') return {};
     if (method === 'thread/start') return result('codex-source');
     if (method === 'thread/fork') {
       if (params.ephemeral && !params.excludeTurns) throw new Error('ephemeral paginated thread/fork requires excludeTurns: true');
@@ -63,7 +73,7 @@ function createNativeCodex(env: ForkTestEnvironment) {
     }
     throw new Error(`Unexpected Codex method: ${method}`);
   }));
-  return { backend: new CodexExecutionBackend(env.host), operations, prompts, sourceFile, threads };
+  return { backend: new CodexExecutionBackend(env.host, createRuntime(env.host)), operations, prompts, sourceFile, threads };
 }
 
 describe('Codex side-chat native child', () => {

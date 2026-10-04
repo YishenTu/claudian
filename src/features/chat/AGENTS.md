@@ -1,6 +1,7 @@
 # Chat constraints
 
 - Conversation, persisted tab shell, runtime tab, hydration, and provider execution have independent lifetimes. Layout/selection/hydration cannot create provider execution, rewrite durable identity, or cancel another tab's turn.
+- Codex tab presence may start the shared provider runtime without creating a session, thread, or turn. This includes inactive restored shells and blank Codex drafts; it is an exception to startup restrictions, not permission to execute or create native history.
 - A tab's provider session lives until close, rebind, or 30 idle minutes. Idle release requires no turn, interaction, background work, or tab-owned busy state, and preserves hydrated UI/resume state.
 - History previews are provisional until explicit retention. Returning to compact mode must finish preview cleanup before exposing controls that could target closing tabs.
 - Persist view-scoped tab shells only, never composer drafts, hydrated messages, DOM, turns, or lifecycle values. Restore inactive shells before one final activation. Provider command discovery runs only on demand for the active tab (live session snapshot first, then an isolated metadata probe); it never runs eagerly and cannot create chat sessions.

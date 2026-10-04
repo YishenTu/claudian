@@ -1,17 +1,10 @@
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import { CodexMetadataTransitionGate } from '../metadata/CodexMetadataTransitionGate';
-import { CodexAppServerProcess } from '../runtime/CodexAppServerProcess';
-import {
-  initializeCodexAppServerTransport,
-  resolveCodexAppServerLaunchSpec,
-} from '../runtime/codexAppServerSupport';
+import type { CodexAppServerRuntime } from '../runtime/CodexAppServerRuntime';
 import type {
   SkillMetadata,
   SkillScope,
   SkillsListResult,
 } from '../runtime/codexAppServerTypes';
-import { CodexRPCTransport } from '../runtime/CodexRPCTransport';
-import { createCodexRuntimeContext } from '../runtime/CodexRuntimeContext';
 
 export interface CodexSkillListProvider {
   listSkills(options?: {
@@ -22,12 +15,8 @@ export interface CodexSkillListProvider {
 }
 
 interface CodexSkillListingServiceOptions {
-  ttlMs?: number;
-  now?: () => number;
   transitionGate?: CodexMetadataTransitionGate;
 }
-
-const DEFAULT_SKILL_LIST_TTL_MS = 5_000;
 
 interface ActiveSkillFetch {
   readonly completion: Promise<void>;
@@ -69,23 +58,19 @@ export function getCodexSkillDescription(
 }
 
 export class CodexSkillListingService implements CodexSkillListProvider {
-  private cache: SkillMetadata[] | null = null;
-  private cacheExpiresAt = 0;
   private pending: { generation: number; promise: Promise<SkillMetadata[]> } | null = null;
   private readonly activeFetches = new Set<ActiveSkillFetch>();
   private generation = 0;
-  private readonly ttlMs: number;
-  private readonly now: () => number;
+  private readonly unsubscribe: () => void;
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
   private readonly transitionGate: CodexMetadataTransitionGate;
 
   constructor(
-    private readonly plugin: ProviderHost,
+    private readonly runtime: CodexAppServerRuntime,
     options: CodexSkillListingServiceOptions = {},
   ) {
-    this.ttlMs = options.ttlMs ?? DEFAULT_SKILL_LIST_TTL_MS;
-    this.now = options.now ?? (() => Date.now());
+    this.unsubscribe = runtime.onSkillsChanged(() => this.invalidate());
     this.transitionGate = options.transitionGate ?? new CodexMetadataTransitionGate();
   }
 
@@ -107,20 +92,12 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     }
 
     if (options?.signal) {
-      if (this.cache && this.now() < this.cacheExpiresAt) {
-        return this.cache;
-      }
-      // A request-scoped signal owns its process lifetime. Do not coalesce it
-      // behind work that another consumer may invalidate independently.
+      // A caller may abort its own query without cancelling another consumer.
       return this.#startFetch(false, this.generation, options.signal);
     }
 
     if (this.pending?.generation === this.generation) {
       return this.pending.promise;
-    }
-
-    if (this.cache && this.now() < this.cacheExpiresAt) {
-      return this.cache;
     }
 
     return this.#startFetch(false, this.generation);
@@ -132,9 +109,9 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     signal?: AbortSignal,
   ): Promise<SkillMetadata[]> {
     const controller = new AbortController();
-    const onAbort = (): void => controller.abort();
+    const onAbort = (): void => controller.abort(signal?.reason);
     signal?.addEventListener('abort', onAbort, { once: true });
-    if (signal?.aborted) controller.abort();
+    if (signal?.aborted) onAbort();
     let resolveCompletion!: () => void;
     const entry: ActiveSkillFetch = {
       completion: new Promise<void>((resolve) => {
@@ -146,12 +123,6 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     this.activeFetches.add(entry);
     const fetch = this.fetchSkills(forceReload, controller.signal);
     const promise = fetch
-      .then((skills) => {
-        if (generation === this.generation) {
-          this.#storeCache(skills);
-        }
-        return skills;
-      })
       .finally(() => {
         signal?.removeEventListener('abort', onAbort);
         this.activeFetches.delete(entry);
@@ -168,8 +139,6 @@ export class CodexSkillListingService implements CodexSkillListProvider {
 
   invalidate(): void {
     this.generation++;
-    this.cache = null;
-    this.cacheExpiresAt = 0;
     this.pending = null;
   }
 
@@ -191,6 +160,7 @@ export class CodexSkillListingService implements CodexSkillListProvider {
   dispose(): Promise<void> {
     if (this.disposePromise) return this.disposePromise;
     this.disposed = true;
+    this.unsubscribe();
     this.transitionGate.dispose();
     this.disposePromise = this.quiesceForEnvironmentChange();
     return this.disposePromise;
@@ -201,24 +171,15 @@ export class CodexSkillListingService implements CodexSkillListProvider {
     signal?: AbortSignal,
   ): Promise<SkillMetadata[]> {
     signal?.throwIfAborted();
-    const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
-    signal?.throwIfAborted();
-    const process = new CodexAppServerProcess(launchSpec);
-    process.start();
-
-    const transport = new CodexRPCTransport(process);
-    transport.start();
-    const onAbort = (): void => transport.dispose();
-    signal?.addEventListener('abort', onAbort, { once: true });
-
+    const lease = await this.runtime.acquire({ signal });
     try {
-      const initializeResult = await initializeCodexAppServerTransport(transport);
+      const { launchSpec, transport } = lease.connection;
+      void lease.connection.refreshPlugins(forceReload).catch(() => undefined);
       signal?.throwIfAborted();
-      createCodexRuntimeContext(launchSpec, initializeResult);
       const result = await transport.request<SkillsListResult>('skills/list', {
         cwds: [launchSpec.targetCwd],
-        ...(forceReload ? { forceReload: true } : {}),
-      });
+        forceReload: true,
+      }, undefined, signal);
 
       const entry = result.data.find(candidate => candidate.cwd === launchSpec.targetCwd) ?? result.data[0];
       return (entry?.skills ?? []).map(skill => ({
@@ -226,14 +187,8 @@ export class CodexSkillListingService implements CodexSkillListProvider {
         path: launchSpec.pathMapper.toHostPath(skill.path) ?? skill.path,
       }));
     } finally {
-      signal?.removeEventListener('abort', onAbort);
-      transport.dispose();
-      await process.shutdown();
+      await lease.release();
     }
   }
 
-  #storeCache(skills: SkillMetadata[]): void {
-    this.cache = skills;
-    this.cacheExpiresAt = this.now() + this.ttlMs;
-  }
 }

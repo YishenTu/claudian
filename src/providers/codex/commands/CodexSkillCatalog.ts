@@ -71,6 +71,7 @@ export class CodexSkillCatalog implements ProviderCommandCatalog {
   getDropdownConfig(): ProviderCommandDropdownConfig {
     return {
       providerId: 'codex',
+      refreshOnOpen: true,
       triggerChars: ['/', '$'],
       builtInPrefix: '/',
       skillPrefix: '$',

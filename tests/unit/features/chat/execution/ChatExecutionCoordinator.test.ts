@@ -1108,6 +1108,8 @@ describe('ChatExecutionCoordinator', () => {
     session.emit({ type: 'background_turn_started', scope: backgroundScope });
     expect(harness.coordinator.hasBackgroundWork).toBe(true);
     expect(onBackgroundWorkChanged).toHaveBeenLastCalledWith(true);
+    harness.coordinator.cancel();
+    expect(session.cancelCalls).toBe(1);
     session.emit({
       type: 'text_delta',
       scope: { ...backgroundScope, sequence: 2 },

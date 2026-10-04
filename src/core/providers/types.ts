@@ -26,6 +26,8 @@ export type { ProviderId } from '../types/provider';
 export interface ProviderCapabilities {
   providerId: ProviderId;
   supportsNativeHistory: boolean;
+  /** Tab presence may start a shared runtime without creating a session, thread, or turn. */
+  startsSharedRuntimeOnTabPresence?: boolean;
   /** Can execute without saving native conversation history, including clarification turns. */
   supportsEphemeralSessions: boolean;
   supportsRewind: boolean;
@@ -366,6 +368,7 @@ export interface ProviderCommandLoader {
 }
 
 export interface ProviderWorkspaceServices {
+  startRuntime?(): Promise<void>;
   onAgentSkillsChanged?(): Promise<void> | void;
   commandCatalog?: ProviderCommandCatalog | null;
   cliResolver?: ProviderCLIResolver | null;

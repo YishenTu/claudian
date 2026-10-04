@@ -83,6 +83,42 @@ class TestBackend implements ProviderExecutionBackend {
   }
 }
 
+it('preserves leases for a provider that owns environment transitions while retaining unload disposal', async () => {
+  const registry = new ProviderExecutionLifecycleRegistry();
+  const backend = new TestBackend('shared-provider');
+  registry.registerTransitionHook('shared-provider', {
+    preserveSessions: () => true,
+    beforeTransition: () => undefined,
+  } as ProviderExecutionTransitionHook);
+  const lease = registry.acquire(backend, createSessionConfig(), 'chat');
+  await registry.runTransition(['shared-provider'], async () => {
+    expect(lease.isCurrent()).toBe(true);
+    expect(backend.sessions[0].disposeCalls).toBe(0);
+  });
+  expect(lease.isCurrent()).toBe(true);
+  await registry.dispose();
+  expect(lease.isCurrent()).toBe(false);
+  expect(backend.sessions[0].disposeCalls).toBe(1);
+});
+
+it('invalidates retained leases when the transition disables their provider', async () => {
+  const registry = new ProviderExecutionLifecycleRegistry();
+  const backend = new TestBackend('shared-provider');
+  let enabled = true;
+  registry.registerTransitionHook('shared-provider', {
+    preserveSessions: () => enabled,
+    beforeTransition: () => undefined,
+  });
+  const lease = registry.acquire(backend, createSessionConfig(), 'chat');
+  const invalidated = jest.fn();
+  lease.onInvalidated(invalidated);
+  await registry.runTransition(['shared-provider'], async () => { enabled = false; });
+  expect(lease.isCurrent()).toBe(false);
+  expect(invalidated).toHaveBeenCalledTimes(1);
+  expect(backend.sessions[0].disposeCalls).toBe(1);
+  await registry.dispose();
+});
+
 function createSessionConfig(
   lifecycle: ProviderSessionConfig['lifecycle'] = 'persistent',
 ): ProviderSessionConfig {

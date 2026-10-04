@@ -8,10 +8,12 @@ import type {
 } from '../../../core/providers/types';
 import { CodexSkillCatalog } from '../commands/CodexSkillCatalog';
 import { CodexThreadArchiveService } from '../history/CodexThreadArchiveService';
+import { CodexAppServerRuntime } from '../runtime/CodexAppServerRuntime';
 import { CodexCLIResolver } from '../runtime/CodexCLIResolver';
 import { CodexModelCatalogCoordinator } from '../runtime/CodexModelCatalogCoordinator';
 import { CodexModelDiscoveryService } from '../runtime/CodexModelDiscoveryService';
 import { createCodexModels } from '../runtime/CodexModels';
+import { getCodexProviderSettings } from '../settings';
 import { CodexSkillListingService } from '../skills/CodexSkillListingService';
 import { createCodexSettingsTabRenderer } from '../ui/CodexSettingsTab';
 
@@ -19,6 +21,7 @@ export interface CodexWorkspaceServices extends ProviderWorkspaceServices {
   commandCatalog: ProviderCommandCatalog;
   cliResolver: ProviderCLIResolver;
   modelCatalogCoordinator: CodexModelCatalogCoordinator;
+  runtime: CodexAppServerRuntime;
   dispose(): Promise<void>;
 }
 
@@ -31,18 +34,20 @@ export async function createCodexWorkspaceServices(
   plugin: ProviderHost,
   options: CodexWorkspaceServicesOptions = {},
 ): Promise<CodexWorkspaceServices> {
+  const runtime = new CodexAppServerRuntime(plugin);
   const skillListProvider = options.skillListingService
-    ?? new CodexSkillListingService(plugin);
+    ?? new CodexSkillListingService(runtime);
   const modelCatalogCoordinator = options.modelCatalogCoordinator
     ?? new CodexModelCatalogCoordinator(
       plugin,
-      new CodexModelDiscoveryService(plugin),
+      new CodexModelDiscoveryService(plugin, runtime),
     );
   const commandCatalog = new CodexSkillCatalog(skillListProvider);
   const modelCatalog = createCodexModels(plugin, modelCatalogCoordinator);
-  const sessionArchive = new CodexThreadArchiveService(plugin);
+  const sessionArchive = new CodexThreadArchiveService(runtime);
   const unregisterTransitionHook = plugin.executionLifecycleRegistry
     .registerTransitionHook('codex', {
+      preserveSessions: () => getCodexProviderSettings(plugin.settings).enabled,
       beforeTransition: async () => {
         modelCatalog.beginTransition();
         modelCatalogCoordinator.beginEnvironmentTransition();
@@ -53,12 +58,17 @@ export async function createCodexWorkspaceServices(
           skillListProvider.quiesceForEnvironmentChange(),
           sessionArchive.quiesceForEnvironmentChange(),
         ]);
+        runtime.beginEnvironmentTransition();
       },
-      afterTransition: () => {
-        modelCatalog.endTransition();
-        modelCatalogCoordinator.endEnvironmentTransition();
-        skillListProvider.endEnvironmentTransition();
-        sessionArchive.endEnvironmentTransition();
+      afterTransition: async () => {
+        try {
+          await runtime.endEnvironmentTransition();
+        } finally {
+          modelCatalog.endTransition();
+          modelCatalogCoordinator.endEnvironmentTransition();
+          skillListProvider.endEnvironmentTransition();
+          sessionArchive.endEnvironmentTransition();
+        }
       },
     });
   let disposePromise: Promise<void> | null = null;
@@ -66,6 +76,8 @@ export async function createCodexWorkspaceServices(
   const cliResolver = new CodexCLIResolver();
   return {
     commandCatalog,
+    runtime,
+    startRuntime: () => runtime.start(),
     onAgentSkillsChanged: () => commandCatalog.refresh(),
     cliResolver,
     modelCatalogCoordinator,
@@ -80,7 +92,7 @@ export async function createCodexWorkspaceServices(
         modelCatalogCoordinator.dispose(),
         skillListProvider.dispose(),
         sessionArchive.dispose(),
-      ]).then(() => undefined);
+      ]).finally(() => runtime.dispose()).then(() => undefined);
       return disposePromise;
     },
   };

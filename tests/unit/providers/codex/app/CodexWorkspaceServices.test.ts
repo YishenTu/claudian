@@ -262,6 +262,7 @@ describe('CodexWorkspaceServices', () => {
       {
         afterTransition: expect.any(Function),
         beforeTransition: expect.any(Function),
+        preserveSessions: expect.any(Function),
       },
     );
     const transition = plugin.transitionHook.beforeTransition();
@@ -284,7 +285,7 @@ describe('CodexWorkspaceServices', () => {
     expect(transitionSettled).toBe(false);
     releaseSkills();
     await transition;
-    plugin.transitionHook.afterTransition();
+    await plugin.transitionHook.afterTransition();
     expect(modelCatalogCoordinator.endEnvironmentTransition).toHaveBeenCalledTimes(1);
     expect(skillListingService.endEnvironmentTransition).toHaveBeenCalledTimes(1);
   });
@@ -310,7 +311,7 @@ describe('CodexWorkspaceServices', () => {
     const { CodexSkillListingService: ActualCodexSkillListingService } = jest.requireActual(
       '@/providers/codex/skills/CodexSkillListingService',
     ) as { CodexSkillListingService: typeof CodexSkillListingService };
-    const skillListingService = new ActualCodexSkillListingService(plugin, { ttlMs: 0 });
+    const skillListingService = new ActualCodexSkillListingService({ onSkillsChanged: () => () => undefined } as any);
     const observedSkillEnvironments: string[] = [];
     jest.spyOn(skillListingService as any, 'fetchSkills').mockImplementation(async () => {
       observedSkillEnvironments.push(plugin.getActiveEnvironmentVariables('codex'));
@@ -346,10 +347,10 @@ describe('CodexWorkspaceServices', () => {
       expect(modelRefreshSettled).toBe(false);
       expect(skillListingSettled).toBe(false);
 
-      plugin.transitionHook.afterTransition();
+      await plugin.transitionHook.afterTransition();
       await Promise.all([modelRefresh, skillListing]);
     } finally {
-      plugin.transitionHook.afterTransition();
+      await plugin.transitionHook.afterTransition();
       await Promise.allSettled([modelRefresh, skillListing]);
       await services.dispose();
     }

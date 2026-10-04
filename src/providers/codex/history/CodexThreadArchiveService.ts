@@ -1,23 +1,18 @@
-import type { ProviderHost } from '../../../core/providers/ProviderHost';
 import type { ProviderSessionArchive, ProviderSessionArchiveChange } from '../../../core/providers/types';
 import { CodexMetadataTransitionGate } from '../metadata/CodexMetadataTransitionGate';
-import { CodexAppServerProcess } from '../runtime/CodexAppServerProcess';
-import {
-  initializeCodexAppServerTransport,
-  resolveCodexAppServerLaunchSpec,
-} from '../runtime/codexAppServerSupport';
-import { CodexRPCResponseError, CodexRPCTransport } from '../runtime/CodexRPCTransport';
+import type { CodexAppServerRuntime } from '../runtime/CodexAppServerRuntime';
+import { CodexRPCResponseError } from '../runtime/CodexRPCTransport';
 import { getCodexState } from '../types';
 
 // The app-server reports a thread already in the requested state as a missing rollout.
 const ALREADY_IN_STATE_MESSAGE = /^no (archived )?rollout found for thread id /;
 
-/** Moves Codex rollouts between active and archived roots through a short-lived app-server. */
+/** Moves Codex rollouts between active and archived roots through the shared runtime. */
 export class CodexThreadArchiveService implements ProviderSessionArchive {
   private readonly active = new Set<Promise<void>>();
   private readonly transitionGate = new CodexMetadataTransitionGate();
 
-  constructor(private readonly plugin: ProviderHost) {}
+  constructor(private readonly runtime: CodexAppServerRuntime) {}
 
   async setSessionsArchived(changes: readonly ProviderSessionArchiveChange[]): Promise<void> {
     const requests = changes.flatMap(({ conversation, isArchived }) => {
@@ -59,13 +54,9 @@ export class CodexThreadArchiveService implements ProviderSessionArchive {
   }
 
   async #apply(requests: ReadonlyArray<{ threadId: string; isArchived: boolean }>): Promise<void> {
-    const launchSpec = await resolveCodexAppServerLaunchSpec(this.plugin, 'codex');
-    const process = new CodexAppServerProcess(launchSpec);
-    process.start();
-    const transport = new CodexRPCTransport(process);
-    transport.start();
+    const lease = await this.runtime.acquire({ readiness: 'initialized' });
+    const { transport } = lease.connection;
     try {
-      await initializeCodexAppServerTransport(transport);
       let firstFailure: Error | undefined;
       for (const { threadId, isArchived } of requests) {
         try {
@@ -77,8 +68,7 @@ export class CodexThreadArchiveService implements ProviderSessionArchive {
       }
       if (firstFailure) throw firstFailure;
     } finally {
-      transport.dispose();
-      await process.shutdown();
+      await lease.release();
     }
   }
 }
