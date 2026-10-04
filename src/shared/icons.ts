@@ -88,6 +88,11 @@ export const PI_PROVIDER_ICON: ProviderIconSvg = {
   ],
 };
 
+export const ANTIGRAVITY_PROVIDER_ICON: ProviderIconSvg = {
+  viewBox: "0 0 24 24",
+  path: "M12 2C12 7.523 7.523 12 2 12c5.477 0 10 4.477 10 10 0-5.523 4.477-10 10-10-5.523 0-10-4.477-10-10z",
+};
+
 export const GROK_PROVIDER_ICON: ProviderIconSvg = {
   viewBox: '0 0 24 24',
   path: 'M3.25 3h4.18l4.8 6.64L17.88 3h3.17l-7.36 8.65L20.44 21h-4.18l-5.16-7.14L5.02 21H1.85l7.79-9.16L3.25 3Zm3.03 1.7 10.85 14.6h1.28L7.56 4.7H6.28Z',

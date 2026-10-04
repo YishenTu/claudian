@@ -13,6 +13,7 @@ function getProviderConfig(
 describe('built-in ProviderModule catalog', () => {
   it('is the single ordered source for chat, workspace, and settings composition', () => {
     expect(BUILT_IN_PROVIDER_MODULES.map(module => module.id)).toEqual([
+      'antigravity',
       'claude',
       'codex',
       'grok',
@@ -55,6 +56,7 @@ describe('built-in ProviderModule catalog', () => {
     });
 
     const defaultEnabled: Record<string, boolean> = {
+      antigravity: false,
       claude: true,
       codex: false,
       grok: false,
