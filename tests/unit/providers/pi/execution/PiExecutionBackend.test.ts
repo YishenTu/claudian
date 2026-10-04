@@ -755,9 +755,9 @@ describe('PiExecutionBackend', () => {
     }
   });
 
-  it.each(['started', 'queued', undefined])('waits for settlement with prompt disposition %s', async disposition => {
+  it.each(['started', 'queued'])('waits for settlement with prompt disposition %s', async disposition => {
     const harness = createHarness();
-    harness.responses.set('prompt', disposition ? { disposition } : {});
+    harness.responses.set('prompt', { disposition });
     harness.responses.set('get_state', { sessionId: 'pi-session-1' });
     const events: ProviderExecutionEvent[] = [];
     const run = harness.session.execute(createRequest());
@@ -780,6 +780,35 @@ describe('PiExecutionBackend', () => {
       await consumption;
       expect(events).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Continued answer' }));
       expect(events.filter(event => event.type === 'turn_completed')).toHaveLength(1);
+    } finally {
+      run.cancel();
+      await consumption;
+      await harness.session.dispose();
+    }
+  });
+
+  // Pi before 1.0 answers prompts without a disposition and never sends agent_settled.
+  it('settles pre-1.0 Pi runs on the final agent_end', async () => {
+    const harness = createHarness();
+    harness.responses.set('prompt', {});
+    const events: ProviderExecutionEvent[] = [];
+    const run = harness.session.execute(createRequest());
+    const consumption = (async () => {
+      for await (const event of run.events) events.push(event);
+    })();
+    try {
+      await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+      const kernel = harness.kernels[0];
+      kernel.emit({ type: 'agent_start' });
+      kernel.emit({ type: 'agent_end', messages: [], willRetry: true });
+      await flush();
+      expect(events.some(event => event.type === 'turn_completed')).toBe(false);
+
+      kernel.emit({ type: 'agent_start' });
+      kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Legacy answer' } });
+      kernel.emit({ type: 'agent_end', messages: [], willRetry: false });
+      await waitFor(() => events.some(event => event.type === 'turn_completed'));
+      expect(events).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Legacy answer' }));
     } finally {
       run.cancel();
       await consumption;

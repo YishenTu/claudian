@@ -137,6 +137,9 @@ interface ActiveRun {
   turnStats?: TurnStats;
   nativeUserMessageId?: string;
   pendingTerminalError: Error | null;
+  /** Pi before 1.0 answers prompts without a disposition and never sends agent_settled. */
+  settlesOnAgentEnd: boolean;
+  endedWithoutRetry: boolean;
   runStarted: boolean;
   terminalSignal: Deferred<void>;
 }
@@ -519,6 +522,8 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       assistantStarted: false,
       nativeRequestDispatched: false,
       pendingTerminalError: null,
+      settlesOnAgentEnd: false,
+      endedWithoutRetry: false,
       runStarted: false,
       terminalSignal: createDeferred<void>(),
     };
@@ -570,6 +575,10 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         this.#ensureAccepted(active);
         // Extension commands and input handlers can consume input without starting a run.
         promptHandled = response?.disposition === 'handled';
+        if (typeof response?.disposition !== 'string') {
+          active.settlesOnAgentEnd = true;
+          if (active.endedWithoutRetry) this.#settleRun(active);
+        }
         if (!promptHandled) await active.terminalSignal.promise;
       }
       if (!this.isActive(active)) return;
@@ -910,23 +919,22 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     if (event.type === 'agent_start') {
       // Overflow recovery can start a new run even when agent_end.willRetry was false.
       active.pendingTerminalError = null;
+      active.endedWithoutRetry = false;
       active.runStarted = true;
       this.#ensureAccepted(active);
       return;
     }
     if (event.type === 'agent_end') {
-      if (event.willRetry === true) active.pendingTerminalError = null;
+      if (event.willRetry === true) {
+        active.pendingTerminalError = null;
+        return;
+      }
+      active.endedWithoutRetry = true;
+      if (active.settlesOnAgentEnd) this.#settleRun(active);
       return;
     }
     if (event.type === 'agent_settled') {
-      this.#ensureAccepted(active);
-      const pendingTerminalError = active.pendingTerminalError;
-      active.pendingTerminalError = null;
-      if (pendingTerminalError) {
-        active.terminalSignal.reject(pendingTerminalError);
-        return;
-      }
-      active.terminalSignal.resolve();
+      this.#settleRun(active);
       return;
     }
     if (event.type === 'error') {
@@ -1422,6 +1430,17 @@ implements ProviderExecutionSession, SteerableExecutionSession {
     return this.kernel === kernel
       && this.kernelGeneration === generation
       && !this.disposed;
+  }
+
+  #settleRun(active: ActiveRun): void {
+    this.#ensureAccepted(active);
+    const pendingTerminalError = active.pendingTerminalError;
+    active.pendingTerminalError = null;
+    if (pendingTerminalError) {
+      active.terminalSignal.reject(pendingTerminalError);
+      return;
+    }
+    active.terminalSignal.resolve();
   }
 
   #canReuseKernel(launchSpec: PiLaunchSpec): boolean {
