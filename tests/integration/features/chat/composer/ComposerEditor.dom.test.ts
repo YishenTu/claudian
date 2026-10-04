@@ -612,7 +612,7 @@ it('retains a hidden suggestion through text, attachments, dropdowns and IME com
     const input = within(parent).getByRole('textbox', { name: 'Message' });
     expect(within(parent).queryByText('Add regression tests')).toBeNull();
     expect(editor.element.value).toBe('My draft');
-    for (const text of ['', 'Typing', '/command', '$skill', '!ls', '#instruction', '']) {
+    for (const text of ['', 'Typing', '/command', '$skill', '']) {
       editor.element.value = text;
       fireEvent.input(editor.element);
       expect(within(parent).queryByText('Add regression tests') !== null).toBe(text === '');

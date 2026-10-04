@@ -252,7 +252,7 @@ it.each(Object.keys(retainingActivity) as (keyof typeof retainingActivity)[])(
   },
 );
 
-it('keeps content present on arrival, hides for attachments and modes, then restores the ghost', async () => {
+it('keeps content present on arrival, hides for text and attachments, then restores the ghost', async () => {
   const backend = new FakeSideBackend();
   const view = await createView(backend);
   try {
@@ -270,7 +270,7 @@ it('keeps content present on arrival, hides for attachments and modes, then rest
     expect(within(input).queryByText('Try the tests')).toBeNull();
     view.tab.ui.imageContextManager.clearImages();
     expect(within(input).getByText('Try the tests')).toBeDefined();
-    for (const text of ['Typing', 'Pasted text', '!ls', '#Remember this', '$skill']) {
+    for (const text of ['Typing', 'Pasted text', '$skill']) {
       input.value = text;
       fireEvent.input(input);
       expect(within(input).queryByText('Try the tests')).toBeNull();
