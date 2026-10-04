@@ -35,7 +35,7 @@ const OPENCODE_PROVIDER_STATE_KEYS = [
 ] as const;
 
 export class OpencodeConversationHistoryService implements ProviderConversationHistoryService {
-  constructor(private readonly getServerService?: (context?: ProviderHistoryPathContext) => OpencodeServerService | null | undefined | Promise<OpencodeServerService | null | undefined>) {}
+  constructor(private readonly getServerService?: (context?: ProviderHistoryPathContext) => Promise<OpencodeServerService | null | undefined>) {}
 
   hasConversationModelRecoverySource(conversation: ProviderHistoryInput): boolean {
     return !!this.resolveSessionIdForConversation(conversation);

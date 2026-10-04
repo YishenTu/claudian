@@ -310,6 +310,9 @@ export class ProviderExecutionLifecycleRegistry {
       let result: T | undefined;
       let hasResult = false;
       const transitionHooks = states.map(({ state }) => [...state.hooks]);
+      const isPreserved = (state: ProviderLifecycleState, lease: ProviderExecutionSessionLeaseImpl) => (
+        [...state.hooks].some(hook => hook.preserveSessions?.(lease.session))
+      );
 
       try {
         const leases = states.flatMap(({ providerId, state }) => {
@@ -319,7 +322,7 @@ export class ProviderExecutionLifecycleRegistry {
             generation: state.generation,
           };
           return [...state.leases].flatMap((lease) => {
-            if ([...state.hooks].some(hook => hook.preserveSessions?.(lease.session))) {
+            if (isPreserved(state, lease)) {
               lease.preserveAcrossTransition();
               return [];
             }
@@ -352,7 +355,7 @@ export class ProviderExecutionLifecycleRegistry {
         // A mutation can disable a provider that preserved its running sessions
         // before the transition. Invalidate those leases before runtime teardown.
         for (const { providerId, state } of states) {
-          const leases = [...state.leases].filter(lease => ![...state.hooks].some(hook => hook.preserveSessions?.(lease.session)));
+          const leases = [...state.leases].filter(lease => !isPreserved(state, lease));
           for (const lease of leases) lease.invalidate({ kind: 'provider-transition', providerId, generation: state.generation });
           errors.push(...await settleFailures(leases.map(lease => lease.release())));
         }

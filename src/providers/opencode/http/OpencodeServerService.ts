@@ -20,6 +20,8 @@ interface Server {
 
 interface ServerEntry {
   readonly promise: Promise<Server>;
+  /** The `servers` key; in-memory launches add a unique suffix to `launchKey`. */
+  readonly key: string;
   readonly compatibility: string;
   readonly launchKey: string;
   retainWhenIdle: boolean;
@@ -32,7 +34,7 @@ interface ServerEntry {
 /** Provider-owned native processes. Persistent consumers share by environment and database. */
 export class OpencodeServerService {
   private readonly servers = new Map<string, ServerEntry>();
-  private readonly draining = new Map<ServerEntry, string>();
+  private readonly draining = new Set<ServerEntry>();
   private readonly closing = new Set<Promise<void>>();
   private readonly fence = new ProviderTransitionFence();
   private generation = new AbortController();
@@ -44,6 +46,7 @@ export class OpencodeServerService {
   async waitUntilAvailable(signal?: AbortSignal): Promise<void> {
     do {
       if (!await this.fence.waitUntilAvailable(signal)) throw new Error('OpenCode server service is disposed.');
+      // Disposal or a new transition can overtake an already-resolved wait.
     } while (this.fence.isUnavailable());
   }
 
@@ -58,10 +61,7 @@ export class OpencodeServerService {
 
   private async borrow(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv, signal: AbortSignal | undefined, cleanup: boolean): Promise<OpencodeServerLease> {
     if (this.disposal) throw new Error('OpenCode server service is disposed.');
-    if (!cleanup) do {
-      if (!await this.fence.waitUntilAvailable(signal)) throw new Error('OpenCode server service is disposed.');
-      // Disposal or a new transition can overtake an already-resolved wait.
-    } while (this.fence.isUnavailable());
+    if (!cleanup) await this.waitUntilAvailable(signal);
     const generation = this.generation.signal;
     const launch = normalizeLaunch(cliPath, cwd, environment);
     const { compatibility, ephemeral, normalized } = launch;
@@ -70,19 +70,20 @@ export class OpencodeServerService {
     for (;;) {
       generation.throwIfAborted();
       signal?.throwIfAborted();
-      let entry = this.servers.get(key) ?? ((cleanup || obsolete) ? [...this.draining].find(([, binding]) => binding === key)?.[0] : undefined);
+      let entry = this.servers.get(key) ?? ((cleanup || obsolete) ? [...this.draining].find(draining => draining.key === key) : undefined);
       if (!entry) {
         entry = {
           promise: this.create(cliPath, cwd, normalized, generation),
+          key,
           compatibility,
           launchKey: launch.key,
-          retainWhenIdle: !ephemeral && !cleanup,
+          retainWhenIdle: false,
           consumers: 0,
           retired: obsolete,
           retirementListeners: new Set(),
           supersessionListeners: new Set(),
         };
-        if (obsolete) this.draining.set(entry, key);
+        if (obsolete) this.draining.add(entry);
         else this.servers.set(key, entry);
         // Observe failure immediately, including while older idle servers retire.
         const pendingEntry = entry;
@@ -96,29 +97,29 @@ export class OpencodeServerService {
       let handedOff = false;
       try {
         if (!cleanup && !obsolete) await Promise.all([...this.servers].flatMap(([idleKey, idle]) => (
-          idle.consumers === 0 && idleKey !== this.currentLaunch?.key ? [this.retire(idleKey, idle)] : []
+          idle.consumers === 0 && idleKey !== this.currentLaunch?.key ? [this.retire(idle)] : []
         )));
         const server = await entry.promise;
         generation.throwIfAborted();
         signal?.throwIfAborted();
         if (!server.client.isReusable() || server.close) {
-          await this.retire(key, entry, new Error('OpenCode server is no longer available.'));
+          await this.retire(entry, new Error('OpenCode server is no longer available.'));
           continue;
         }
-        const lease = this.lease(key, entry, server);
+        const lease = this.lease(entry, server);
         handedOff = true;
         return lease;
       } finally {
-        if (!handedOff) await this.release(key, entry);
+        if (!handedOff) await this.release(entry);
       }
     }
   }
 
-  private lease(key: string, entry: ServerEntry, server: Server): OpencodeServerLease {
+  private lease(entry: ServerEntry, server: Server): OpencodeServerLease {
     return new OpencodeServerLease(
       server,
-      () => this.release(key, entry),
-      error => this.retire(key, entry, error),
+      () => this.release(entry),
+      error => this.retire(entry, error),
       (event, listener) => {
         const listeners = event === 'retired' ? entry.retirementListeners : entry.supersessionListeners;
         listeners.add(listener);
@@ -127,7 +128,7 @@ export class OpencodeServerService {
       },
       () => {
         entry.consumers += 1;
-        return this.lease(key, entry, server);
+        return this.lease(entry, server);
       },
     );
   }
@@ -139,19 +140,19 @@ export class OpencodeServerService {
   reconcileLaunch(cliPath: string, cwd: string, environment: NodeJS.ProcessEnv): void {
     const launch = normalizeLaunch(cliPath, cwd, environment);
     this.currentLaunch = { compatibility: launch.compatibility, key: launch.key };
-    for (const entry of [...this.servers.values(), ...this.draining.keys()]) {
+    for (const entry of [...this.servers.values(), ...this.draining]) {
       if (this.isSuperseded(entry)) for (const listener of [...entry.supersessionListeners]) listener();
     }
     for (const [key, entry] of this.servers) {
       if (entry.compatibility === launch.compatibility) {
-        if (entry.consumers === 0 && key !== launch.key) void this.retire(key, entry);
+        if (entry.consumers === 0 && key !== launch.key) void this.retire(entry);
         continue;
       }
       this.servers.delete(key);
       entry.retired = true;
-      this.draining.set(entry, key);
+      this.draining.add(entry);
       for (const listener of [...entry.retirementListeners]) listener();
-      if (entry.consumers === 0) void this.retire(key, entry);
+      if (entry.consumers === 0) void this.retire(entry);
     }
   }
 
@@ -160,19 +161,19 @@ export class OpencodeServerService {
     return this.currentLaunch !== null && entry.launchKey !== this.currentLaunch.key;
   }
 
-  private async release(key: string, entry: ServerEntry): Promise<void> {
+  private async release(entry: ServerEntry): Promise<void> {
     entry.consumers -= 1;
     if (entry.consumers !== 0) return;
     // Retain one idle persistent server for repeated catalog/history calls: the committed
     // default launch, or a lone server before any launch is committed.
-    const retained = this.currentLaunch ? key === this.currentLaunch.key : this.servers.size === 1;
-    if (!entry.retainWhenIdle || !retained || this.servers.get(key) !== entry) {
-      await this.retire(key, entry);
+    const retained = this.currentLaunch ? entry.key === this.currentLaunch.key : this.servers.size === 1;
+    if (!entry.retainWhenIdle || !retained || this.servers.get(entry.key) !== entry) {
+      await this.retire(entry);
     }
   }
 
-  private retire(key: string, entry: ServerEntry, error?: Error): Promise<void> {
-    if (this.servers.get(key) === entry) this.servers.delete(key);
+  private retire(entry: ServerEntry, error?: Error): Promise<void> {
+    if (this.servers.get(entry.key) === entry) this.servers.delete(entry.key);
     this.draining.delete(entry);
     entry.retirementListeners.clear();
     entry.supersessionListeners.clear();
@@ -191,13 +192,13 @@ export class OpencodeServerService {
 
   async invalidate(): Promise<void> {
     this.fence.beginTransition();
-    const previous: Array<[string, ServerEntry]> = [...this.servers, ...[...this.draining].map(([entry, key]): [string, ServerEntry] => [key, entry])];
+    const previous = [...this.servers.values(), ...this.draining];
     this.generation.abort();
     this.generation = new AbortController();
     this.currentLaunch = null;
     try {
       await Promise.all([
-        ...previous.map(([key, entry]) => this.retire(key, entry, new Error('OpenCode server configuration changed.'))),
+        ...previous.map(entry => this.retire(entry, new Error('OpenCode server configuration changed.'))),
         ...this.closing,
       ]);
     } finally { this.fence.endTransition(); }
