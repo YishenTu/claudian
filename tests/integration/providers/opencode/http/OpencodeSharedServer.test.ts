@@ -737,6 +737,52 @@ it.each(['same instructions', 'changed instructions'])('keeps retired background
   } finally { await control.dispose(); await session.dispose(); await parent; await f.dispose(); }
 }, 10000);
 
+it('cancelling a turn waiting on retired background work leaves that work draining', async () => {
+  const f = await createFixture();
+  await f.workspace.metadataService.loadCatalog();
+  const session = f.createSession();
+  const background: any[] = [];
+  session.onEvent(event => background.push(event));
+  let started!: () => void;
+  const active = new Promise<void>(resolve => { started = resolve; });
+  const parent = (async () => { for await (const event of session.execute(turn('hold')).events) if (event.type === 'text_delta') started(); })();
+  const control = await f.workspace.serverService.acquire(f.cli, f.root, f.environment);
+  const emit = (type: string, data: object) => control.request('/fixture/event', { method: 'POST', body: { type, data } });
+  try {
+    await active;
+    const pid = f.processes()[0].pid;
+    const identity = { sessionID: 'ses_1', assistantMessageID: 'parent', id: 'spawn' };
+    await emit('session.tool.input.started', { ...identity, name: 'subagent' });
+    await emit('session.tool.called', { ...identity, input: { run_in_background: true } });
+    await emit('session.tool.progress', { ...identity, metadata: { sessionID: 'child' } });
+    await emit('session.execution.succeeded', { sessionID: 'ses_1' });
+    await parent;
+    await f.plugin.executionLifecycleRegistry.runTransition(['opencode'], async () => {
+      f.plugin.settings.providerConfigs.opencode.environmentVariables += '\nGENERATION=background';
+    });
+    const waiting = session.execute(turn('next'));
+    const events: ProviderExecutionEvent[] = [];
+    const consumed = (async () => { for await (const event of waiting.events) events.push(event); })();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    waiting.cancel();
+    await consumed;
+    expect(events.at(-1)).toMatchObject({ type: 'cancelled', reason: 'cancelled' });
+    expect(session.getStatus()).toBe('executing');
+    await emit('session.text.ended', { sessionID: 'child', assistantMessageID: 'child-reply', ordinal: 0, text: 'Still working' });
+    await emit('session.execution.succeeded', { sessionID: 'child' });
+    await control.dispose();
+    const deadline = Date.now() + 3000;
+    while (isAlive(pid) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(background).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'async_subagent_completed', subagentId: 'child', result: 'Still working' }),
+    ]));
+    expect(background).not.toContainEqual(expect.objectContaining({ type: 'background_turn_completed', reason: 'provider-ended' }));
+    expect(session.getStatus()).toBe('idle');
+    expect(isAlive(pid)).toBe(false);
+    expect(f.processes()).toHaveLength(1);
+  } finally { await control.dispose(); await session.dispose(); await parent; await f.dispose(); }
+}, 10000);
+
 it.each([
   ['an environment change', 'Current catalog'],
   ['a default database change that keeps the bound server', 'Chat replacement.db'],

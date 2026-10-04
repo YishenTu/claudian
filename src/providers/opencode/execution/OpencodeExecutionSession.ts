@@ -70,6 +70,7 @@ class OpencodeExecutionRun implements ProviderExecutionRun {
   lastSequence = 0;
   abortCleanup: (() => void) | null = null;
   nativeCompleted = false;
+  ownsNativeWork = false;
 
   constructor(
     readonly sessionInstanceId: string,
@@ -301,6 +302,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         native = null;
       }
       if (!kernel || !native) {
+        run.ownsNativeWork = true;
         const kernelGeneration = ++this.kernelGeneration;
         this.kernelMetadataController = new AbortController();
         kernel = this.createKernel({
@@ -421,6 +423,7 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
       this.#getRunNormalizer(run).reset();
       run.acceptingLiveOutput = true;
+      run.ownsNativeWork = true;
       const promptStartedAt = Date.now();
       const response = await kernel.prompt({
         prompt: buildPromptBlocks(
@@ -682,6 +685,15 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
     run.cancellationRequested = true;
     run.acceptingLiveOutput = false;
     const generation = ++this.lifecycleGeneration;
+    if (!run.ownsNativeWork) {
+      // The kernel may still serve an earlier turn's descendants; only stop waiting.
+      this.snapshot = this.#createSnapshot(this.backgroundTurn || this.backgroundScopes.size ? 'executing' : 'idle');
+      this.#emitRunSnapshot(run);
+      run.finish({ reason: 'cancelled', scope: run.scope(), type: 'cancelled' });
+      this.activeRun = null;
+      this.#releaseRetiredKernel();
+      return;
+    }
     this.#interruptKernel();
     this.snapshot = this.#createInvalidatedSnapshot(
       'cancelled',
