@@ -113,6 +113,16 @@ export class TabSession {
     return cancelled;
   }
 
+  /**
+   * Shutdown's synchronous fence, ahead of the drain's `cancelTurn`: closes intent admission and
+   * aborts the admitted turn, whose signal stops its provider execution. Interactions and detached
+   * provider work stay untouched until the drain has joined navigation and close.
+   */
+  beginShutdown(): void {
+    this.pauseIntentAdmission();
+    this.turns.cancel('shutdown');
+  }
+
   async runConversationNavigation(operation: (signal: AbortSignal) => Promise<unknown>): Promise<void> {
     if (!this.canNavigateConversation) return;
     await this.turns.run(async signal => { await operation(signal); }, 'navigation');

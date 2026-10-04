@@ -1421,6 +1421,27 @@ describe('TabManager provider execution orchestration', () => {
     await manager.destroy();
   });
 
+  it('aborts each admitted turn and supersedes its presentation as soon as shutdown begins', async () => {
+    const { manager } = createManager();
+    const tab = await manager.createTab();
+    const release = deferred<void>();
+    let turnSignal: AbortSignal | null = null;
+    const turn = tab!.session.turns.run(async signal => {
+      turnSignal = signal;
+      await release.promise;
+    });
+    const generation = tab!.session.turns.streamGeneration;
+
+    manager.beginShutdown();
+
+    expect(turnSignal!.aborted).toBe(true);
+    expect(tab!.session.turns.cancelRequested).toBe(true);
+    expect(tab!.session.turns.streamGeneration).toBeGreaterThan(generation);
+    release.resolve();
+    await turn;
+    await manager.destroy();
+  });
+
   it('does not invent a snapshot owner for intentionally inactive restored shells', async () => {
     const { manager } = createManager();
     const first = await manager.createTab(null, 'restored-1', { activate: false });

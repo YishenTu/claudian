@@ -1608,10 +1608,7 @@ export class TabManager implements TabManagerInterface {
     if (this.destroyed) return;
     this.destroyed = true;
     this.shutdownSnapshotOpen = true;
-    for (const tab of this.getAllTabs()) {
-      tab.session.pauseIntentAdmission();
-      tab.session.turns.cancel('shutdown');
-    }
+    for (const tab of this.getAllTabs()) tab.session.beginShutdown();
   }
 
   /** Seals the final identity snapshot so late runtime callbacks cannot mutate tab state. */
