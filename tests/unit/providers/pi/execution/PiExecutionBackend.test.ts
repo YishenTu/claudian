@@ -205,6 +205,7 @@ function createConversationHistory(prefix: string) {
 function completeTurn(kernel: FakeKernel): void {
   kernel.emit({ type: 'agent_start' });
   kernel.emit({ type: 'agent_end' });
+  kernel.emit({ type: 'agent_settled' });
 }
 
 function getPromptMessages(kernel: FakeKernel): string[] {
@@ -241,10 +242,10 @@ function createHarness(
       sessionFile: '/tmp/pi-session.jsonl',
       sessionId: 'pi-session-1',
     }],
-    ['prompt', { accepted: true }],
+    ['prompt', { disposition: 'started' }],
     ['set_model', {}],
     ['set_thinking_level', {}],
-    ['steer', { accepted: true }],
+    ['steer', { disposition: 'queued' }],
   ]);
   const commandCatalog = {
     getDropdownConfig: jest.fn(),
@@ -293,6 +294,7 @@ describe('PiExecutionBackend', () => {
     const result = collect(session.execute({ ...request, configuration: { ...request.configuration, reasoning } }).events);
     await waitFor(() => kernels[0]?.requests.some(r => r.type === 'prompt') ?? false);
     kernels[0].emit({ type: 'agent_end' });
+    kernels[0].emit({ type: 'agent_settled' });
     await result;
     expect(kernels[0].requests.filter(r => r.type === 'set_thinking_level')).toEqual(
       reasoning === null ? [] : [{ type: 'set_thinking_level', payload: { level: reasoning } }],
@@ -327,8 +329,17 @@ describe('PiExecutionBackend', () => {
       await fs.writeFile(sessionFile, content);
       harness.kernels[0].emit({ type: 'agent_start' });
       harness.kernels[0].emit({ type: 'agent_end' });
+      harness.kernels[0].emit({ type: 'agent_settled' });
       expect((await eventsPromise).at(-1)).toMatchObject({ type: 'turn_completed',
         turnStats: { outputTokens: 125, durationMs: 2500 } });
+
+      // A command consumed by an extension must not reuse the preceding answer's identity or stats.
+      harness.responses.set('prompt', { disposition: 'handled' });
+      const handledEvents = await collect(harness.session.execute(createRequest()).events);
+      expect(handledEvents.at(-1)).toMatchObject({
+        type: 'turn_completed', nativeUserMessageId: undefined, nativeAssistantId: undefined,
+      });
+      expect(handledEvents.at(-1)).not.toHaveProperty('turnStats');
     } finally {
       await harness.session.dispose();
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -361,6 +372,7 @@ describe('PiExecutionBackend', () => {
       ].map(r => JSON.stringify(r)).join('\n') + '\n');
       harness.kernels[0].emit({ type: 'agent_start' });
       harness.kernels[0].emit({ type: 'agent_end' });
+      harness.kernels[0].emit({ type: 'agent_settled' });
       const events = await eventsPromise;
       expect(events.at(-1)).toMatchObject({
         type: 'turn_completed', nativeAssistantId: 'assistant-2', nativeCheckpointId: 'assistant-2',
@@ -638,6 +650,7 @@ describe('PiExecutionBackend', () => {
       type: 'tool_execution_end',
     });
     kernel.emit({ type: 'agent_end' });
+    kernel.emit({ type: 'agent_settled' });
 
     const events = await eventsPromise;
     expect(events.map(event => event.type)).toEqual([
@@ -675,6 +688,97 @@ describe('PiExecutionBackend', () => {
       expect.objectContaining({ id: 'pi:runtime:compact', name: 'compact' }),
     ]);
     expect(new Set(events.map(event => event.scope.sequence)).size).toBe(events.length);
+  });
+
+  it('completes extension-handled prompts without waiting for a model run', async () => {
+    const harness = createHarness();
+    harness.responses.set('prompt', { disposition: 'handled' });
+    harness.responses.set('get_state', { sessionId: 'pi-session-1' });
+    const events: ProviderExecutionEvent[] = [];
+    const run = harness.session.execute(createRequest());
+    const consumption = (async () => {
+      for await (const event of run.events) events.push(event);
+    })();
+    try {
+      await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+      await flush();
+      expect(events).toContainEqual(expect.objectContaining({ type: 'turn_completed' }));
+      expect(events.some(event => event.type === 'assistant_message_started')).toBe(false);
+      expect(harness.session.getSnapshot().status).toBe('idle');
+    } finally {
+      run.cancel();
+      await consumption;
+      await harness.session.dispose();
+    }
+  });
+
+  it('keeps a handled command open for the run its extension starts', async () => {
+    const harness: ReturnType<typeof createHarness> = createHarness(createConfig(), undefined, async <T>(type: string) => {
+      if (type === 'prompt') {
+        const kernel = harness.kernels[0];
+        // A command calling sendUserMessage reports handled before its run starts.
+        queueMicrotask(() => {
+          kernel.emit({ type: 'agent_start' });
+          kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Extension answer' } });
+        });
+        return { disposition: 'handled' } as T;
+      }
+      return harness.responses.get(type) as T;
+    });
+    harness.responses.set('get_state', { sessionId: 'pi-session-1' });
+    const events: ProviderExecutionEvent[] = [];
+    const run = harness.session.execute(createRequest({ input: [{ text: '/ask Question', type: 'text' }] }));
+    const consumption = (async () => {
+      for await (const event of run.events) events.push(event);
+    })();
+    try {
+      await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'get_state') ?? false);
+      await flush();
+      expect(events).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Extension answer' }));
+      expect(events.some(event => event.type === 'turn_completed')).toBe(false);
+      expect(harness.session.getSnapshot().status).not.toBe('idle');
+
+      harness.kernels[0].emit({ type: 'agent_end', messages: [], willRetry: false });
+      harness.kernels[0].emit({ type: 'agent_settled' });
+      await consumption;
+      expect(events.filter(event => event.type === 'turn_completed')).toHaveLength(1);
+    } finally {
+      run.cancel();
+      await consumption;
+      await harness.session.dispose();
+    }
+  });
+
+  it.each(['started', 'queued', undefined])('waits for settlement with prompt disposition %s', async disposition => {
+    const harness = createHarness();
+    harness.responses.set('prompt', disposition ? { disposition } : {});
+    harness.responses.set('get_state', { sessionId: 'pi-session-1' });
+    const events: ProviderExecutionEvent[] = [];
+    const run = harness.session.execute(createRequest());
+    const consumption = (async () => {
+      for await (const event of run.events) events.push(event);
+    })();
+    try {
+      await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+      const kernel = harness.kernels[0];
+      kernel.emit({ type: 'agent_start' });
+      kernel.emit({ type: 'agent_end', messages: [], willRetry: false });
+      await flush();
+      expect(events.some(event => event.type === 'turn_completed')).toBe(false);
+
+      // Pi may continue queued input after a low-level run ends without retrying.
+      kernel.emit({ type: 'agent_start' });
+      kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Continued answer' } });
+      kernel.emit({ type: 'agent_end', messages: [], willRetry: false });
+      kernel.emit({ type: 'agent_settled' });
+      await consumption;
+      expect(events).toContainEqual(expect.objectContaining({ type: 'text_delta', text: 'Continued answer' }));
+      expect(events.filter(event => event.type === 'turn_completed')).toHaveLength(1);
+    } finally {
+      run.cancel();
+      await consumption;
+      await harness.session.dispose();
+    }
   });
 
   it('keeps one execution open across native Pi retries and commits the recovered answer', async () => {
@@ -741,6 +845,7 @@ describe('PiExecutionBackend', () => {
     });
     kernel.emit({ attempt: 2, success: true, type: 'auto_retry_end' });
     kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+    kernel.emit({ type: 'agent_settled' });
 
     const events = await eventsPromise;
     expect(events.filter(event => event.type === 'text_delta')).toEqual([
@@ -761,7 +866,31 @@ describe('PiExecutionBackend', () => {
     });
   });
 
-  it('surfaces a native Pi terminal error after a non-retrying agent end', async () => {
+  it('completes a recovered context overflow after compaction starts another run', async () => {
+    const harness = createHarness();
+    const eventsPromise = collect(harness.session.execute(createRequest()).events);
+    await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+    const kernel = harness.kernels[0];
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({ type: 'message_end', message: {
+      role: 'assistant', stopReason: 'error', errorMessage: 'Context window exceeded',
+    } });
+    // Pi treats context overflow separately from its rate-limit/server-error retry policy.
+    kernel.emit({ type: 'agent_end', messages: [], willRetry: false });
+    kernel.emit({ type: 'compaction_start', reason: 'overflow' });
+    kernel.emit({ type: 'compaction_end', reason: 'overflow', aborted: false, willRetry: true });
+    kernel.emit({ type: 'agent_start' });
+    kernel.emit({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Recovered' } });
+    kernel.emit({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } });
+    kernel.emit({ type: 'agent_end', messages: [], willRetry: false });
+    kernel.emit({ type: 'agent_settled' });
+    const events = await eventsPromise;
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'execution_error' }));
+    expect(events.at(-1)).toMatchObject({ type: 'turn_completed' });
+    await harness.session.dispose();
+  });
+
+  it('surfaces a native Pi terminal error after settlement', async () => {
     const harness = createHarness();
     const run = harness.session.execute(createRequest());
     const eventsPromise = collect(run.events);
@@ -779,6 +908,7 @@ describe('PiExecutionBackend', () => {
       type: 'message_end',
     });
     kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+    kernel.emit({ type: 'agent_settled' });
 
     const events = await eventsPromise;
     expect(events.at(-1)).toMatchObject({
@@ -853,6 +983,7 @@ describe('PiExecutionBackend', () => {
       type: 'message_update',
     });
     kernel.emit({ messages: [], type: 'agent_end', willRetry: false });
+    kernel.emit({ type: 'agent_settled' });
 
     const events = await eventsPromise;
     expect(events.filter(event => (
@@ -918,6 +1049,7 @@ describe('PiExecutionBackend', () => {
     await flush();
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await eventsPromise;
 
     expect(harness.kernels[0].launchSpec.args).toContain(sessionFile);
@@ -1673,6 +1805,7 @@ describe('PiExecutionBackend', () => {
     await waitFor(() => harness.kernels.length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await eventsPromise;
 
     expect(harness.kernels[0].launchSpec.args).toContain(expected);
@@ -1687,6 +1820,7 @@ describe('PiExecutionBackend', () => {
     await waitFor(() => harness.kernels.length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await eventsPromise;
 
     expect(harness.kernels[0].launchSpec.args).not.toContain('--tools');
@@ -1735,6 +1869,7 @@ describe('PiExecutionBackend', () => {
     await waitFor(() => harness.kernels.length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await eventsPromise;
 
     expect(harness.kernels[0].launchSpec.args).toEqual(expect.arrayContaining([
@@ -1771,6 +1906,7 @@ describe('PiExecutionBackend', () => {
     await expect(session.steer(createRequest())).resolves.toBe(false);
     expect(harness.kernels[0].requests.some(request => request.type === 'steer')).toBe(false);
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await events;
     await session.dispose();
   });
@@ -1812,7 +1948,26 @@ describe('PiExecutionBackend', () => {
     });
 
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await eventsPromise;
+  });
+
+  it.each([
+    ['queued', 1],
+    ['handled', 0],
+  ] as const)('accepts a %s steer and shows only delivered input', async (disposition, boundaries) => {
+    const harness = createHarness();
+    harness.responses.set('steer', { disposition });
+    const session = harness.session;
+    if (!isSteerableExecutionSession(session)) throw new Error('Pi session must expose steer');
+    const eventsPromise = collect(session.execute(createRequest()).events);
+    await waitFor(() => harness.kernels[0]?.requests.some(request => request.type === 'prompt') ?? false);
+
+    await expect(session.steer(createRequest({ input: [{ text: 'Correction', type: 'text' }] }))).resolves.toBe(true);
+    harness.kernels[0].emit({ type: 'agent_settled' });
+    const events = await eventsPromise;
+    expect(events.filter(event => event.type === 'user_message_started' && event.content === 'Correction'))
+      .toHaveLength(boundaries);
   });
 
   it('returns false when steer cannot reach native handoff', async () => {
@@ -1948,6 +2103,7 @@ describe('PiExecutionBackend', () => {
     await waitFor(() => harness.kernels.length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await firstEventsPromise;
 
     const oldKernel = harness.kernels[0];
@@ -1978,6 +2134,7 @@ describe('PiExecutionBackend', () => {
     await waitFor(() => harness.kernels.length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await firstEventsPromise;
 
     const oldKernel = harness.kernels[0];
@@ -2013,6 +2170,7 @@ describe('PiExecutionBackend', () => {
     await waitFor(() => harness.kernels.length === 1);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await firstEventsPromise;
 
     const restartRun = harness.session.execute(createRequest({
@@ -2269,6 +2427,7 @@ describe('PiExecutionBackend', () => {
     await waitFor(() => harness.kernels.length === 1, 100);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     const retryEvents = await retryEventsPromise;
 
     expect(firstEvents.filter(event => (
@@ -2407,6 +2566,7 @@ describe('PiExecutionBackend', () => {
     await waitFor(() => harness.kernels.length === 1, 100);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     const retryEvents = await retryEventsPromise;
 
     expect(retryEvents.at(-1)).toMatchObject({ type: 'turn_completed' });
@@ -2510,6 +2670,7 @@ describe('PiExecutionBackend', () => {
     });
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await eventsPromise;
 
     expect(forkFile).not.toBe(sourceFile);
@@ -2536,6 +2697,7 @@ describe('PiExecutionBackend', () => {
     await waitFor(() => getPromptMessages(harness.kernels[0]).length === 2);
     harness.kernels[0].emit({ type: 'agent_start' });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await continuedEventsPromise;
     expect(harness.kernels).toHaveLength(1);
     expect(harness.session.getSnapshot().providerStateDeletes).toEqual([
@@ -2559,6 +2721,7 @@ describe('PiExecutionBackend', () => {
       type: 'extension_ui_request',
     });
     harness.kernels[0].emit({ type: 'agent_end' });
+    harness.kernels[0].emit({ type: 'agent_settled' });
     await eventsPromise;
 
     expect(harness.kernels[0].sent).toContainEqual({

@@ -50,6 +50,7 @@ describe('Pi execution kernel with an external protocol process', () => {
       { type: 'agent_start' },
       { type: 'message_update', assistantMessageEvent: { text_delta: 'Reply 1' } },
       { type: 'agent_end' },
+      { type: 'agent_settled' },
     ]);
   });
 

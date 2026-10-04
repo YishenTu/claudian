@@ -10,7 +10,7 @@ import {
   TOOL_WEB_SEARCH,
   TOOL_WRITE,
 } from '../../../core/tools/toolNames';
-import type { ScriptToolCallItem, WebSearchResultItem } from '../../../core/types';
+import type { ScriptToolCallItem, ToolResultImage, WebSearchResultItem } from '../../../core/types';
 
 const PI_BUILT_IN_TOOL_NAMES: Record<string, string> = {
   bash: TOOL_BASH,
@@ -103,6 +103,24 @@ export function normalizePiToolInput(value: unknown, toolName?: string): Record<
  * unified `details.patch` is the only diff source.
  */
 export function normalizePiToolUseResult(
+  toolName: string,
+  result: unknown,
+  nestedArguments?: ReadonlyMap<string, unknown>,
+): Record<string, unknown> | undefined {
+  const details = normalizePiToolDetails(toolName, result, nestedArguments);
+  const content = Array.isArray(result) ? result : isPlainObject(result) ? result.content : undefined;
+  const resultImages = Array.isArray(content) ? content.flatMap((part): ToolResultImage[] => {
+    if (
+      !isPlainObject(part) || part.type !== 'image'
+      || typeof part.data !== 'string' || !part.data
+      || typeof part.mimeType !== 'string' || !part.mimeType.startsWith('image/')
+    ) return [];
+    return [{ kind: 'data', data: part.data, mediaType: part.mimeType }];
+  }) : [];
+  return resultImages.length > 0 ? { ...details, resultImages } : details;
+}
+
+function normalizePiToolDetails(
   toolName: string,
   result: unknown,
   nestedArguments?: ReadonlyMap<string, unknown>,

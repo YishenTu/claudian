@@ -775,7 +775,7 @@ export function renderExpandedContent(
 ): void {
   const images = toolCall.resultImages ?? [];
   // An image-only result needs no empty-state placeholder above its preview.
-  if (toolCall.result || images.length === 0) renderExpandedResult(container, toolCall);
+  if (toolCall.result || images.length === 0 || isScriptTool(toolCall.name)) renderExpandedResult(container, toolCall);
   if (images.length > 0) renderResultImages(container, images);
 }
 
@@ -1160,7 +1160,6 @@ function renderScriptToolCalls(container: HTMLElement, calls: ScriptToolCallItem
 function renderScriptContent(
   container: HTMLElement,
   toolCall: ExpandedToolContent,
-  initialText?: string,
 ): void {
   const source = getScriptSource(toolCall.input);
   if (source) {
@@ -1175,8 +1174,8 @@ function renderScriptContent(
   container.createDiv({ cls: 'claudian-tool-script-label', text: 'Output' });
   if (result) {
     container.createEl('pre', { cls: 'claudian-tool-script-output', text: result });
-  } else {
-    contentFallback(container, initialText ?? (toolCall.status === 'running' ? 'Running...' : 'No result'));
+  } else if (!toolCall.resultImages?.length) {
+    contentFallback(container, toolCall.status === 'running' ? 'Running...' : 'No result');
   }
 }
 
@@ -1242,7 +1241,7 @@ function renderToolContent(
   } else if (isAgentLifecycleTool(toolCall.name)) {
     renderAgentLifecycleExpanded(content, toolCall.result ?? '', toolCall.input, initialText);
   } else if (isScriptTool(toolCall.name)) {
-    renderScriptContent(content, toolCall, initialText);
+    renderExpandedContent(content, toolCall);
   } else if (toolCall.name === TOOL_BASH) {
     renderBashContent(content, toolCall.input, toolCall.result ?? '', initialText);
   } else if (initialText) {

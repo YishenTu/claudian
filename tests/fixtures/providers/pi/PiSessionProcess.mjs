@@ -26,7 +26,7 @@ let queueNextSteer = false;
 const commands = new Map();
 const extensionIndex = args.indexOf('--extension');
 if (extensionIndex >= 0) {
-  const sdkDir = path.join(path.dirname(args[extensionIndex + 1]), 'node_modules', '@mariozechner', 'pi-coding-agent');
+  const sdkDir = path.join(path.dirname(args[extensionIndex + 1]), 'node_modules', '@earendil-works', 'pi-coding-agent');
   fs.mkdirSync(sdkDir, { recursive: true });
   fs.writeFileSync(path.join(sdkDir, 'package.json'), JSON.stringify({ type: 'module', main: 'index.js' }));
   fs.copyFileSync(new URL('./PiSessionManager.mjs', import.meta.url), path.join(sdkDir, 'index.js'));
@@ -98,17 +98,18 @@ for await (const line of lines) {
       respond(request, {});
       write({ type: 'message_end', message: { role: 'assistant', stopReason: 'error', errorMessage: 'Fixture failure' } });
       write({ type: 'agent_end' });
+      write({ type: 'agent_settled' });
       break;
     case 'steer':
     case 'prompt': {
       if (request.type === 'steer' && queueNextSteer) {
         queueNextSteer = false;
-        respond(request, {});
+        respond(request, { disposition: 'queued' });
         break;
       }
       if (request.message?.startsWith('replay:')) {
         // Writes captured native events and leaves the run open, as while a tool is still executing.
-        respond(request, {});
+        respond(request, { disposition: 'started' });
         write({ type: 'agent_start' });
         process.stdout.write(fs.readFileSync(new URL(request.message.slice('replay:'.length), import.meta.url), 'utf8'));
         break;
@@ -116,7 +117,7 @@ for await (const line of lines) {
       const commandName = request.message?.split(' ')[0]?.slice(1);
       if (request.message?.startsWith('/') && commands.has(commandName)) {
         await commands.get(commandName).handler(request.message.slice(commandName.length + 2), extensionContext);
-        respond(request, {});
+        respond(request, { disposition: 'handled' });
         break;
       }
       const records = readRecords(sessionFile);
@@ -138,10 +139,13 @@ for await (const line of lines) {
       leafId = entries.at(-1).id;
       if (noSession) memoryRecords.push(...entries);
       else fs.appendFileSync(sessionFile, entries.map(entry => JSON.stringify(entry)).join('\n') + '\n');
-      respond(request, {});
+      respond(request, { disposition: request.type === 'steer' ? 'queued' : 'started' });
       write({ type: 'agent_start' });
       write({ type: 'message_update', assistantMessageEvent: { text_delta: `Reply ${ordinal}` } });
-      if (!holdNext) write({ type: 'agent_end' });
+      if (!holdNext) {
+        write({ type: 'agent_end' });
+        write({ type: 'agent_settled' });
+      }
       holdNext = false;
       break;
     }

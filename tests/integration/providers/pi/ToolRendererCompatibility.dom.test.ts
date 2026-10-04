@@ -45,13 +45,17 @@ interface NativeToolCall {
   args: Record<string, unknown>;
   /** Text parts of the result content. */
   text: string | string[];
+  images?: Array<{ type: 'image'; data: string; mimeType: string }>;
   details?: Record<string, unknown>;
   isError?: boolean;
   /** Live events for calls the tool itself made; Pi never persists them as separate entries. */
   nested?: Array<Record<string, unknown>>;
 }
 
-const textParts = (call: NativeToolCall) => [call.text].flat().map(text => ({ type: 'text', text }));
+const contentParts = (call: NativeToolCall) => [
+  ...[call.text].flat().map(text => ({ type: 'text', text })),
+  ...(call.images ?? []),
+];
 
 /** A chat stream over a fresh assistant message, rendering into a detached message list. */
 function createChatStream() {
@@ -72,7 +76,7 @@ function createChatStream() {
 /** Replays native RPC execution events through Pi normalization and the chat stream. */
 async function restoreLive(call: NativeToolCall): Promise<ToolCallInfo> {
   const normalization = createPiEventNormalizationState();
-  const result = { content: textParts(call), details: call.details ?? {} };
+  const result = { content: contentParts(call), details: call.details ?? {} };
   const chunks = [
     { type: 'tool_execution_start', toolCallId: 'tool', toolName: call.name, args: call.args },
     ...(call.nested ?? []).map(event => ({ ...event, parentToolCallId: 'tool' })),
@@ -94,7 +98,7 @@ function restoreHistory(call: NativeToolCall): ToolCallInfo {
     } },
     { type: 'message', id: 'result', parentId: 'assistant', message: {
       role: 'toolResult', toolCallId: 'tool', toolName: call.name,
-      content: textParts(call), ...(call.details ? { details: call.details } : {}), isError: call.isError ?? false,
+      content: contentParts(call), ...(call.details ? { details: call.details } : {}), isError: call.isError ?? false,
       ...(call.nested ? { nestedCalls: { complete: true, calls: call.nested
         .filter(event => event.type === 'tool_execution_start')
         .map(event => ({ id: event.toolCallId, name: event.toolName, status: 'ok', arguments: event.args })) } } : {}),
@@ -202,6 +206,26 @@ describe.each(['live', 'history'] as const)('%s Pi tool presentation', mode => {
     const ls = await restore(mode, { name: 'ls', args: { path: 'notes' }, text: 'plan.md\nideas/' });
     expect(getToolIcon(ls.name)).toBe('list');
     expand(renderStoredToolCall(document.body.createDiv(), ls), /^LS: notes/);
+  });
+
+  it.each([
+    { name: 'codemode', args: { code: 'image(block);' }, text: ['Script completed\nWall time 0.0 seconds\nOutput:\n'], title: /^Script:/ },
+    { name: 'codemode', args: { code: "text('Generated'); image(block);" }, text: ['Script completed\nWall time 0.0 seconds\nOutput:\n', 'Generated'], title: /^Script:/ },
+    { name: 'read', args: { path: 'picture.png' }, text: [], title: /^Read:/ },
+    { name: 'mcp__art__generate', args: {}, text: ['Generated'], title: /mcp__art__generate/ },
+  ])('renders image content from $name alongside its text and input', async ({ name, args, text, title }) => {
+    const data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5n8AAAAASUVORK5CYII=';
+    const tool = await restore(mode, { name, args, text, images: [{ type: 'image', data, mimeType: 'image/png' }] });
+    expect(tool.resultImages).toEqual([{ kind: 'data', data, mediaType: 'image/png' }]);
+    const block = renderStoredToolCall(document.body.createDiv(), tool);
+    expand(block, title);
+    const image = within(block).getByRole('img', { name: 'image/png' });
+    expect(image.getAttribute('src')).toBe(`data:image/png;base64,${data}`);
+    expect(block.textContent).not.toContain(data);
+    expect(block.textContent).not.toContain('No result');
+    expect(block.querySelector('code')?.textContent).toBe(args.code);
+    expect(within(block).queryAllByText('Generated')).toHaveLength(text.some(part => part === 'Generated') ? 1 : 0);
+    expect((await axe(block)).violations).toEqual([]);
   });
 
   describe('codemode', () => {

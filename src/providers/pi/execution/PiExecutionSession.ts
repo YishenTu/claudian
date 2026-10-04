@@ -140,6 +140,7 @@ interface ActiveRun {
   turnStats?: TurnStats;
   nativeUserMessageId?: string;
   pendingTerminalError: Error | null;
+  runStarted: boolean;
   sequence: number;
   terminal: boolean;
   terminalSignal: Deferred<void>;
@@ -468,10 +469,12 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return false;
     }
     const prompt = encodePrompt(request, false);
-    await kernel.request('steer', {
+    const response = await kernel.request<{ disposition?: string } | undefined>('steer', {
       ...(prompt.images.length > 0 ? { images: prompt.images } : {}),
       message: prompt.text,
     }, undefined, request.signal);
+    // An input handler that consumes the steer delivers nothing to the model.
+    if (response?.disposition === 'handled') return true;
     if (this.activeRun === active && !this.disposed && this.kernel === kernel) {
       this.#emitRequested(active, {
         content: getInputText(request),
@@ -564,6 +567,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       assistantStarted: false,
       nativeRequestDispatched: false,
       pendingTerminalError: null,
+      runStarted: false,
       sequence: 0,
       terminal: false,
       terminalSignal: createDeferred<void>(),
@@ -590,6 +594,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       assertPiModelAvailable(this.host.settings, request.configuration.model);
       const previousLeafId = getPiState(this.providerState).leafEntryId ?? null;
       const compactInstructions = getCompactInstructions(encoded.prompt);
+      let promptHandled = false;
       if (compactInstructions !== null) {
         active.nativeRequestDispatched = true;
         await this.kernel.request(
@@ -602,7 +607,7 @@ implements ProviderExecutionSession, SteerableExecutionSession {
         this.#emitRequested(active, { type: 'context_compacted' });
       } else {
         active.nativeRequestDispatched = true;
-        const promptRequest = this.kernel.request(
+        const response = await this.kernel.request<{ disposition?: string } | undefined>(
           'prompt',
           {
             ...(encoded.images.length > 0 ? { images: encoded.images } : {}),
@@ -611,15 +616,23 @@ implements ProviderExecutionSession, SteerableExecutionSession {
           undefined,
           active.abortController.signal,
         );
-        await promptRequest;
         this.#ensureAccepted(active);
-        await active.terminalSignal.promise;
+        // Extension commands and input handlers can consume input without starting a run.
+        promptHandled = response?.disposition === 'handled';
+        if (!promptHandled) await active.terminalSignal.promise;
       }
       if (!this.isActive(active)) return;
 
       await this.#refreshState(active.abortController.signal);
       if (!this.isActive(active)) return;
-      await this.#refreshNativeMessageIds(active, previousLeafId);
+      // A handled command may start its own run; its preflight events precede the state response.
+      if (promptHandled && active.runStarted) {
+        await active.terminalSignal.promise;
+        if (!this.isActive(active)) return;
+        await this.#refreshState(active.abortController.signal);
+        if (!this.isActive(active)) return;
+      }
+      if (!promptHandled || active.runStarted) await this.#refreshNativeMessageIds(active, previousLeafId);
       const usage = await this.#fetchUsage(
         encoded.model,
         active.abortController.signal,
@@ -942,15 +955,18 @@ implements ProviderExecutionSession, SteerableExecutionSession {
       return;
     }
     if (event.type === 'agent_start') {
+      // Overflow recovery can start a new run even when agent_end.willRetry was false.
+      active.pendingTerminalError = null;
+      active.runStarted = true;
       this.#ensureAccepted(active);
       return;
     }
     if (event.type === 'agent_end') {
+      if (event.willRetry === true) active.pendingTerminalError = null;
+      return;
+    }
+    if (event.type === 'agent_settled') {
       this.#ensureAccepted(active);
-      if (event.willRetry === true) {
-        active.pendingTerminalError = null;
-        return;
-      }
       const pendingTerminalError = active.pendingTerminalError;
       active.pendingTerminalError = null;
       if (pendingTerminalError) {

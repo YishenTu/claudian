@@ -40,7 +40,7 @@ export default function (pi) {
               if (!before || request.leafId !== entry.id) throw new Error('Invalid Pi branch position');
               // navigateTree(user) selects its parent. A native metadata child preserves
               // this incomplete branch without adding a message to model context.
-              const { SessionManager } = await import('@mariozechner/pi-coding-agent');
+              const { SessionManager } = await import('@earendil-works/pi-coding-agent');
               const disk = SessionManager.open(request.sessionFile);
               if (disk.getSessionId() !== request.sessionId || !disk.getEntry(entry.id)) {
                 throw new Error('Pi session changed before branch restoration');
