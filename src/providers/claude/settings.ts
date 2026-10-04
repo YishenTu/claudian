@@ -15,6 +15,7 @@ export interface ClaudeProviderSettings {
   enabled: boolean;
   /** Native output style name; null inherits Claude Code's own setting. */
   outputStyle: string | null;
+  promptSuggestions: boolean;
   /** Output style names Claude Code last reported, built-in and custom. */
   discoveredOutputStyles: string[];
   cliPath: string;
@@ -32,6 +33,7 @@ export interface ClaudeProviderSettings {
 export const DEFAULT_CLAUDE_PROVIDER_SETTINGS: Readonly<ClaudeProviderSettings> = Object.freeze({
   enabled: true,
   outputStyle: null,
+  promptSuggestions: false,
   discoveredOutputStyles: [],
   cliPath: '',
   cliPathsByHost: {},
@@ -60,6 +62,7 @@ export function getClaudeProviderSettings(
       DEFAULT_CLAUDE_PROVIDER_SETTINGS.enabled,
     ),
     outputStyle: readOutputStyle(config),
+    promptSuggestions: readStoredBoolean(config.promptSuggestions, false),
     discoveredOutputStyles: decodeOutputStyles(config.discoveredOutputStyles),
     cliPath: readStoredString(
       config.cliPath,

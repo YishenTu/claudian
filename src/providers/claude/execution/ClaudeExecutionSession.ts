@@ -36,6 +36,7 @@ import { assertClaudeModelAvailable } from '../runtime/ClaudeModelAvailability';
 import { executeClaudeRewind } from '../runtime/ClaudeRewindService';
 import { buildClaudeSDKUserMessage } from '../runtime/ClaudeUserMessageFactory';
 import { type ClaudeRuntimeCatalog, toClaudeRuntimeCatalog } from '../runtime/probeClaudeModels';
+import { getClaudeProviderSettings } from '../settings';
 import { classifyClaudeError, getClaudeInvalidationReason } from './classifyClaudeError';
 import { ClaudeExecutionEventNormalizer } from './ClaudeExecutionEventNormalizer';
 import {
@@ -104,6 +105,8 @@ ClaudeExecutionStrategySink {
   private readonly state: SessionSnapshotState;
   private readonly resume: ClaudeResumeState;
   private activeRun: ActiveRequestedRun | null = null;
+  /** Native predictions trail result and have no turn ID; only the latest successful requested turn can own one. */
+  private suggestionTurnId: string | null = null;
   // Native settlement can precede consumption of the requested event queue.
   private lastRequestedEventScope: ProviderRequestedEventScope | undefined;
   private lastBackgroundEventScope: ProviderBackgroundEventScope | undefined;
@@ -186,6 +189,7 @@ ClaudeExecutionStrategySink {
     if (this.activeRun) {
       throw new Error('Claude Code execution session already has an active run');
     }
+    this.suggestionTurnId = null;
 
     const run = new RequestedRunChannel({
       onCancel: () => {
@@ -213,6 +217,7 @@ ClaudeExecutionStrategySink {
   }
 
   cancel(): void {
+    this.suggestionTurnId = null;
     const active = this.activeRun;
     if (active?.nativeCompleted) return;
     if (!active || active.run.isTerminal) {
@@ -431,6 +436,18 @@ ClaudeExecutionStrategySink {
     queryToken: number,
   ): Promise<void> {
     if (this.disposed) return;
+    if (message.type === 'prompt_suggestion') {
+      const originatingTurnId = this.suggestionTurnId;
+      this.suggestionTurnId = null;
+      if (originatingTurnId && !this.activeRun
+        && message.session_id === this.resume.providerSessionId
+        && this.lastEncodedRequest?.options.promptSuggestions
+        && getClaudeProviderSettings(this.host.settings).promptSuggestions
+        && message.suggestion.trim()) {
+        this.#emitSession({ type: 'prompt_suggestion', originatingTurnId, suggestion: message.suggestion });
+      }
+      return;
+    }
     if (this.cancelledBackgroundQueryToken === queryToken) {
       if (message.type === 'result') this.#finishCancelledBackground(queryToken);
       return;
@@ -607,13 +624,19 @@ ClaudeExecutionStrategySink {
               ).catch(() => undefined);
             }
           }
-          if (this.activeRun === active && !active.run.isTerminal) this.#finishCompleted(active, 'completed', turnStats);
+          if (this.activeRun === active && !active.run.isTerminal) {
+            this.suggestionTurnId = message.type === 'result' && message.subtype === 'success'
+              && !message.is_error && this.lastEncodedRequest?.options.promptSuggestions
+              ? active.run.turnId : null;
+            this.#finishCompleted(active, 'completed', turnStats);
+          }
         }
       }
     }
   }
 
   handleNativeFailure(error: unknown, queryToken: number): void {
+    this.suggestionTurnId = null;
     if (this.disposed) return;
     if (this.#finishCancelledBackground(queryToken)) return;
     if (this.suppressedEphemeralQueryTokens.delete(queryToken)) return;
@@ -736,6 +759,7 @@ ClaudeExecutionStrategySink {
 
   handleNativeQueryOpened(query: Query): void {
     if (this.nativeQuery === query) return;
+    this.suggestionTurnId = null;
     this.nativeQuery = query;
     this.taskNotifications.reset();
     this.commandSnapshot = undefined;
@@ -744,6 +768,7 @@ ClaudeExecutionStrategySink {
 
   handleNativeQueryClosed(query: Query): void {
     if (this.nativeQuery !== query) return;
+    this.suggestionTurnId = null;
     this.nativeQuery = null;
     this.taskNotifications.reset();
     this.commandSnapshot = undefined;
@@ -804,6 +829,7 @@ ClaudeExecutionStrategySink {
   #getOutputTarget(channel = this.#currentOutputChannel()): ActiveRequestedRun | BackgroundTurn | null {
     if (channel === 'requested') return this.activeRun;
     if (!this.backgroundTurn) {
+      this.suggestionTurnId = null;
       const background: BackgroundTurn = {
         queryToken: this.nativeQueryToken,
         turnId: `claude-background-${++this.backgroundCounter}`,

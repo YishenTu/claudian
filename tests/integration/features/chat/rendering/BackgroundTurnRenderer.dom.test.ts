@@ -80,6 +80,7 @@ it.each([false, true])('keeps main-chat automatic work and later output on eithe
   const session = new TabSession({ id: 'tab', conversationId: 'conversation', draftModel: null,
     providerId: 'claude', lifecycleState: 'ready' } as any, coordinator);
   const tab = { state, renderer, session, executionCoordinator: coordinator, lifecycleState: 'ready',
+    ui: { promptSuggestion: { discard() {} } },
     dom: { contentEl: messagesEl }, services: { subagentManager: subagents },
     controllers: { streamController: stream, conversationController: { save: async () => undefined } } } as any;
   try {

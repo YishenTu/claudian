@@ -169,6 +169,17 @@ export function createClaudeSettingsTabRenderer(
       new Setting(container).setName(t('settings.responses')).setHeading();
 
       new Setting(container)
+        .setName(t('settings.claude.promptSuggestions.name'))
+        .setDesc(t('settings.claude.promptSuggestions.desc'))
+        .addToggle(toggle => toggle
+          .setValue(claudeSettings.promptSuggestions)
+          .onChange(async value => {
+            await context.plugin.mutateSettings(settings => {
+              updateClaudeProviderSettings(settings, { promptSuggestions: value });
+            });
+          }));
+
+      new Setting(container)
         .setName(t('settings.claude.responseStyle.name'))
         .setDesc(t('settings.claude.responseStyle.desc'))
         .addDropdown((dropdown) => {

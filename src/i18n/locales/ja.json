@@ -11,6 +11,7 @@
     "refresh": "更新"
   },
   "chat": {
+    "promptSuggestionHint": "Tab で採用",
     "selectAvailableModel": "送信する前に利用可能なモデルを選択してください。",
     "selectAvailableTitleModel": "Claudianの設定で利用可能なタイトル生成モデルを選択してください。",
     "rewind": {
@@ -314,6 +315,10 @@
       "stale": "{provider} のモデルカタログが古くなっています。「検出」をクリックして更新してください。"
     },
     "claude": {
+      "promptSuggestions": {
+        "name": "プロンプトの提案",
+        "desc": "空の入力欄に Claude が予測した次のプロンプトを表示します。提案ごとに各ターン後に追加の Claude リクエストが発生し、使用量の上限を早く消費する可能性があります。"
+      },
       "configuration": "構成",
       "responseStyle": {
         "name": "応答スタイル",
@@ -345,14 +350,14 @@
       },
       "responseStyle": {
         "name": "応答スタイル",
-        "desc": "対応モデルでの Codex CLI の話し方を選択します。次のメッセージから適用されます。",
+        "desc": "対応モデルでの Codex CLI の話し方を選択します。",
         "pragmatic": "実用的",
         "friendly": "フレンドリー",
         "neutral": "ニュートラル"
       },
       "responseVerbosity": {
         "name": "回答の詳しさ",
-        "desc": "対応モデルの回答の詳しさを選択します。デフォルトでは Codex の設定を使用します。次のメッセージから適用されます。",
+        "desc": "対応モデルの回答の詳しさを選択します。デフォルトでは Codex の設定を使用します。",
         "default": "デフォルト",
         "low": "低",
         "medium": "中",

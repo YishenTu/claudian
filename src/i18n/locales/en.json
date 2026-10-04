@@ -11,6 +11,7 @@
     "refresh": "Refresh"
   },
   "chat": {
+    "promptSuggestionHint": "Tab to accept",
     "selectAvailableModel": "Select an available model before sending.",
     "selectAvailableTitleModel": "Select an available title model in Claudian settings.",
     "rewind": {
@@ -314,6 +315,10 @@
       "stale": "{provider} model catalog is stale. Click Discover to refresh it."
     },
     "claude": {
+      "promptSuggestions": {
+        "name": "Prompt suggestions",
+        "desc": "Show Claude’s predicted next prompt in the empty composer. Each suggestion is an extra Claude request after every turn and can drain your usage limits faster."
+      },
       "configuration": "Configuration",
       "responseStyle": {
         "name": "Response style",
@@ -345,14 +350,14 @@
       },
       "responseStyle": {
         "name": "Response style",
-        "desc": "Choose how Codex CLI communicates on supported models. Applies from the next message.",
+        "desc": "Choose how Codex CLI communicates on supported models.",
         "pragmatic": "Pragmatic",
         "friendly": "Friendly",
         "neutral": "Neutral"
       },
       "responseVerbosity": {
         "name": "Response verbosity",
-        "desc": "Choose the amount of detail in responses on supported models. Default uses your Codex configuration. Applies from the next message.",
+        "desc": "Choose the amount of detail in responses on supported models. Default uses your Codex configuration.",
         "default": "Default",
         "low": "Low",
         "medium": "Medium",

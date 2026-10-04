@@ -6,6 +6,7 @@ import type { ProviderCommandDropdownConfig } from '../../../core/providers/comm
 import type { ProviderCommandDiscoveryController } from '../../../core/providers/commands/ProviderCommandDiscoveryStore';
 import type { ProviderCommandEntry } from '../../../core/providers/commands/ProviderCommandEntry';
 import type { ProviderId, TitleGenerationService } from '../../../core/providers/types';
+import type { ComposerPromptSuggestion } from '../composer/ComposerPromptSuggestion';
 import type { MainChatComposerDropdown } from '../composer/MainChatComposerDropdown';
 import type { BrowserSelectionController } from '../controllers/BrowserSelectionController';
 import type { BuiltInCommandController } from '../controllers/BuiltInCommandController';
@@ -116,6 +117,7 @@ export interface TabServices {
  * UI components managed per-tab.
  */
 export interface TabUIComponents {
+  readonly promptSuggestion: ComposerPromptSuggestion;
   readonly contextTray: ComposerContextTray;
   readonly fileContextManager: FileContextManager;
   readonly linkedContentController: LinkedContentController;

@@ -105,6 +105,14 @@ export function enqueueTabSessionEvent(
     backgroundResponses.get(tab)?.discard(context.bindingId);
     return undefined;
   }
+  if (event.type === 'prompt_suggestion') {
+    // Transient composer presentation never enters transcript rendering or persistence. A queued
+    // turn can start after deactivation discarded, so arrival into a hidden tab is dropped here.
+    if (!tab.dom.contentEl.hasClass('claudian-hidden')) {
+      tab.ui.promptSuggestion.receive(event.originatingTurnId, event.suggestion);
+    }
+    return undefined;
+  }
   // Display-only progress must not wait behind queued background rendering.
   if (event.type === 'subagent_updated') {
     const previousStatus = findSubagentStatus(tab.state.messages, event.subagent.id);
@@ -122,6 +130,7 @@ export function enqueueTabSessionEvent(
     return undefined;
   }
   if (event.type === 'background_turn_started') {
+    tab.ui.promptSuggestion.discard();
     getBackgroundResponses(tab).reserve(context.bindingId, event.scope.turnId);
   }
   const pending = enqueueTabBackgroundWork(tab, async () => {

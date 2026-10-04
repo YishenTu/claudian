@@ -67,6 +67,10 @@
   color: var(--text-muted);
 }
 
+.claudian-composer-editor .claudian-prompt-suggestion-hint {
+  color: var(--text-faint);
+}
+
 .claudian-composer-editor .cm-cursor {
   border-left-color: var(--text-normal);
 }

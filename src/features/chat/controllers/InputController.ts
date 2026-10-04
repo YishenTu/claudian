@@ -1195,9 +1195,12 @@ export class InputController {
 
     return {
       canonicalText: request.text,
-      configuration: buildChatExecutionConfiguration(
-        settings, this.deps.plugin.getSessionSnapshotDirectory(), dynamicSystemPromptSections,
-      ),
+      configuration: {
+        ...buildChatExecutionConfiguration(
+          settings, this.deps.plugin.getSessionSnapshotDirectory(), dynamicSystemPromptSections,
+        ),
+        ...(this.#getActiveCapabilities().supportsPromptSuggestions ? { promptSuggestions: true } : {}),
+      },
       context: {
         ...(request.selections !== undefined ? { selections: captureSelectionSnapshots(request) } : {}),
         ...(request.sessionReferences?.length ? { sessionReferences: request.sessionReferences } : {}),

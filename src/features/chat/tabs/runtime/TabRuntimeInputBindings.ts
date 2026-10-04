@@ -36,6 +36,8 @@ export function buildTabRuntimeInputBindings(
       return;
     }
 
+    if (ui.promptSuggestion.handleKeydown(event)) return;
+
     if (event.key === 'Escape' && !event.isComposing) {
       if (cancelSelectedDestinationTurn(tab)) {
         event.preventDefault();

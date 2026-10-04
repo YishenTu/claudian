@@ -10,5 +10,6 @@ export const CLAUDE_PROVIDER_CAPABILITIES: Readonly<ProviderCapabilities> = Obje
   supportsProviderCommands: true,
   supportsImageAttachments: true,
   supportsTurnSteer: true,
+  supportsPromptSuggestions: true,
   reasoningControl: 'effort',
 });

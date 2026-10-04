@@ -357,6 +357,7 @@ export function buildTabRuntimeControllers(
         tab.controllers.sideChatController.destination === 'main',
       );
       refreshTabProviderUI(tab);
+      ui.promptSuggestion.refresh();
     },
     onStatusChanged: () => options.onWorkChanged?.(runtimeRef.requirePublished()),
     plugin,

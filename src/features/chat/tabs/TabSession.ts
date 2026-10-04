@@ -15,6 +15,7 @@ export interface TabSessionOptions {
   /** Shared with presentation state built before the session; its admission must use `admitsConversationOperations`. */
   turns?: TurnCoordinator;
   onWorkChanged?: () => void;
+  onIdentityChanged?: () => void;
   isConversationBusy?: () => boolean;
   /** Work the execution coordinator does not own, such as async subagents and side chat. */
   hasDetachedWork?: () => boolean;
@@ -150,6 +151,7 @@ export class TabSession {
     if (this.conversationId !== conversationId || this.providerId !== providerId || this.draftModel !== draftModel) {
       this.identityRevisionValue++;
       Object.assign(this.state, { conversationId, providerId, draftModel });
+      this.options.onIdentityChanged?.();
     }
   }
 

@@ -40,6 +40,7 @@ export function buildTabRuntimeShell(
   const turns: TurnCoordinator = new TurnCoordinator(() => session.admitsConversationOperations);
   const state: ChatState = new ChatState({
     onStreamingStateChanged: isStreaming => {
+      if (isStreaming) runtimeRef.requirePublished().ui.promptSuggestion.beginTurn();
       runtimeRef.requirePublished().renderer.refreshBranchButtonState();
       options.onStreamingChanged?.(runtimeRef.requirePublished(), isStreaming);
     },
@@ -73,6 +74,7 @@ export function buildTabRuntimeShell(
   );
   const session: TabSession = new TabSession(sessionState, executionCoordinator, {
     turns,
+    onIdentityChanged: () => runtimeRef.current()?.ui.promptSuggestion.discard(),
     onWorkChanged: () => {
       const tab = runtimeRef.requirePublished();
       tab.renderer.refreshBranchButtonState();
@@ -205,9 +207,14 @@ function createTabExecutionCoordinator(
     interactionPort,
     vaultWorkingDirectory: getVaultPath(plugin.app) ?? '.',
     createId: createTabMessageId,
-    onRequestedEvent: event => (
-      runtimeRef.requirePublished().controllers.inputController.handleExecutionEvent(event)
-    ),
+    onRequestedEvent: (event, context) => {
+      const tab = runtimeRef.requirePublished();
+      if (event.type === 'turn_started') {
+        // Identity and model switches discard eagerly through their owners; this fences delivery only.
+        tab.ui.promptSuggestion.bindTurn(event.scope.turnId, () => tab.executionCoordinator.isEventContextCurrent(context));
+      }
+      return tab.controllers.inputController.handleExecutionEvent(event);
+    },
     onSessionEvent: (event, context) => {
       const tab = runtimeRef.requirePublished();
       if (event.type === 'commands_changed') {

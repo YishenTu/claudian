@@ -4,6 +4,7 @@ import { Decoration, type DecorationSet, EditorView, keymap, placeholder, Widget
 import { type App, type Component, MarkdownRenderer, setIcon } from 'obsidian';
 
 import type { ProviderCommandKind } from '@/core/providers/commands/ProviderCommandEntry';
+import { t } from '@/i18n/i18n';
 import type { ComposerCommandResolver, ComposerInputElement } from '@/shared/composer-dropdown/types';
 import { registerFileLinkHandler } from '@/utils/fileLink';
 
@@ -114,6 +115,7 @@ export class ComposerEditor {
   private readonly historyConfig = new Compartment();
   private readonly placeholderConfig = new Compartment();
   private placeholderText = 'Ask to make changes, @mention files, run /commands';
+  private ghostText: string | null = null;
   private destroyed = false;
   private ariaObserver: MutationObserver | null = null;
   private inputPending = false;
@@ -161,6 +163,8 @@ export class ComposerEditor {
         EditorView.contentAttributes.of({
           'aria-label': 'Message', 'aria-multiline': 'true', role: 'textbox', spellcheck: 'true', autocorrect: 'on',
         }),
+        EditorView.contentAttributes.of(view => this.ghostText && view.state.doc.length === 0
+          ? { 'aria-description': `${this.ghostText}. ${t('chat.promptSuggestionHint')}` } : null),
         EditorView.domEventHandlers({ input: event => { event.stopPropagation(); return false; } }),
         EditorView.updateListener.of(update => {
           this.state = update.state;
@@ -196,11 +200,15 @@ export class ComposerEditor {
         get: () => this.placeholderText,
         set: (value: string) => {
           this.placeholderText = value;
-          this.element.setAttribute('data-placeholder', value);
-          this.apply(this.state.update({ effects: this.placeholderConfig.reconfigure(placeholder(value)) }));
+          this.refreshPlaceholder();
         },
       },
     });
+    this.element.setGhostText = text => {
+      if (this.ghostText === text) return;
+      this.ghostText = text;
+      this.refreshPlaceholder();
+    };
     this.element.replaceText = (from, to, text) => {
       const change = this.state.changes({ from, to, insert: text });
       this.apply(this.state.update({
@@ -224,6 +232,26 @@ export class ComposerEditor {
     this.apply(this.state.update({ effects: refreshLinks.of(null) }));
   }
 
+  private refreshPlaceholder(): void {
+    const text = this.ghostText ?? this.placeholderText;
+    this.element.setAttribute('data-placeholder', text);
+    if (this.ghostText && this.state.doc.length === 0) {
+      this.element.setAttribute('aria-description', t('chat.promptSuggestionHint'));
+    } else this.element.removeAttribute('aria-description');
+    this.apply(this.state.update({
+      effects: this.placeholderConfig.reconfigure(placeholder(this.ghostText ? this.createGhostContent(this.ghostText) : text)),
+    }));
+  }
+
+  /** CodeMirror hides the placeholder from assistive tech; the content `aria-description` announces it. */
+  private createGhostContent(text: string): HTMLElement {
+    const content = createSpan();
+    content.createSpan({ text });
+    content.append(' ');
+    content.createSpan({ cls: 'claudian-prompt-suggestion-hint', text: `(${t('chat.promptSuggestionHint')})` });
+    return content;
+  }
+
   destroy(): void {
     this.destroyed = true;
     this.element.removeEventListener('focusin', this.onFocusIn);
@@ -241,6 +269,7 @@ export class ComposerEditor {
     if (!this.view) {
       this.element.replaceChildren();
       this.element.removeAttribute('role');
+      this.element.removeAttribute('aria-multiline');
       this.element.setAttribute('tabindex', '-1');
       this.view = new EditorView({ state: this.state, parent: this.element });
       const attributes = ['aria-autocomplete', 'aria-expanded', 'aria-activedescendant', 'aria-controls', 'aria-haspopup'];

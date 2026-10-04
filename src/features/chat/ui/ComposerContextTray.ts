@@ -57,6 +57,8 @@ export class ComposerContextTray {
   private pendingLayout: ScheduledAnimationFrame | null = null;
   private expanded = false;
 
+  get hasContent(): boolean { return this.itemsBySlot.size > 0; }
+
   constructor(containerEl: HTMLElement, options: ComposerContextTrayOptions = {}) {
     this.containerEl = containerEl;
     this.options = options;

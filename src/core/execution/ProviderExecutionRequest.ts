@@ -60,6 +60,8 @@ export interface ProviderExecutionConfiguration {
   readonly permissionMode?: string;
   readonly serviceTier?: string;
   readonly readableRoots?: readonly string[];
+  /** Request a transient next-prompt prediction, subject to provider settings. Omitted for auxiliary work. */
+  readonly promptSuggestions?: boolean;
 }
 
 export type ProviderToolPolicy =

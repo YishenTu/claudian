@@ -358,6 +358,10 @@ export type ProviderCommandsChangedEvent = ProviderEventBase<
 >;
 
 export type ProviderSessionEvent =
+  | (ProviderEventBase<'prompt_suggestion', ProviderSessionEventScope> & {
+      readonly originatingTurnId: string;
+      readonly suggestion: string;
+    })
   | ProviderCommandsChangedEvent
   | (ProviderTaskNotificationEvent & { readonly scope: ProviderSessionEventScope })
   | ProviderBackgroundTurnStartedEvent

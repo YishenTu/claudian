@@ -11,6 +11,7 @@
     "refresh": "새로고침"
   },
   "chat": {
+    "promptSuggestionHint": "Tab으로 수락",
     "selectAvailableModel": "전송하기 전에 사용 가능한 모델을 선택하세요.",
     "selectAvailableTitleModel": "Claudian 설정에서 사용 가능한 제목 생성 모델을 선택하세요.",
     "rewind": {
@@ -314,6 +315,10 @@
       "stale": "{provider} 모델 카탈로그가 오래되었습니다. 검색을 클릭하여 새로 고치세요."
     },
     "claude": {
+      "promptSuggestions": {
+        "name": "프롬프트 제안",
+        "desc": "빈 입력창에 Claude가 예측한 다음 프롬프트를 표시합니다. 제안마다 매 턴 후 추가 Claude 요청이 발생하며 사용량 한도를 더 빨리 소진할 수 있습니다."
+      },
       "configuration": "구성",
       "responseStyle": {
         "name": "응답 스타일",
@@ -345,14 +350,14 @@
       },
       "responseStyle": {
         "name": "응답 스타일",
-        "desc": "지원되는 모델에서 Codex CLI의 대화 스타일을 선택합니다. 다음 메시지부터 적용됩니다.",
+        "desc": "지원되는 모델에서 Codex CLI의 대화 스타일을 선택합니다.",
         "pragmatic": "실용적",
         "friendly": "친근함",
         "neutral": "중립적"
       },
       "responseVerbosity": {
         "name": "응답 상세 수준",
-        "desc": "지원되는 모델의 응답 상세 수준을 선택합니다. 기본값은 Codex 설정을 사용합니다. 다음 메시지부터 적용됩니다.",
+        "desc": "지원되는 모델의 응답 상세 수준을 선택합니다. 기본값은 Codex 설정을 사용합니다.",
         "default": "기본값",
         "low": "낮음",
         "medium": "중간",

@@ -11,6 +11,7 @@
     "refresh": "Actualiser"
   },
   "chat": {
+    "promptSuggestionHint": "Tab pour accepter",
     "selectAvailableModel": "Sélectionnez un modèle disponible avant d’envoyer.",
     "selectAvailableTitleModel": "Sélectionnez un modèle de titre disponible dans les paramètres de Claudian.",
     "rewind": {
@@ -314,6 +315,10 @@
       "stale": "Le catalogue de modèles {provider} est obsolète. Cliquez sur Découvrir pour l'actualiser."
     },
     "claude": {
+      "promptSuggestions": {
+        "name": "Suggestions de prompt",
+        "desc": "Afficher le prochain prompt prédit par Claude dans le champ vide. Chaque suggestion est une requête Claude supplémentaire après chaque tour et peut épuiser vos limites d’utilisation plus vite."
+      },
       "configuration": "Configuration",
       "responseStyle": {
         "name": "Style de réponse",
@@ -345,14 +350,14 @@
       },
       "responseStyle": {
         "name": "Style de réponse",
-        "desc": "Choisissez le style de communication de Codex CLI sur les modèles compatibles. Ce choix s’applique dès le prochain message.",
+        "desc": "Choisissez le style de communication de Codex CLI sur les modèles compatibles.",
         "pragmatic": "Pragmatique",
         "friendly": "Amical",
         "neutral": "Neutre"
       },
       "responseVerbosity": {
         "name": "Niveau de détail des réponses",
-        "desc": "Choisissez le niveau de détail des réponses pour les modèles compatibles. Par défaut, votre configuration Codex est utilisée. S’applique à partir du prochain message.",
+        "desc": "Choisissez le niveau de détail des réponses pour les modèles compatibles. Par défaut, votre configuration Codex est utilisée.",
         "default": "Par défaut",
         "low": "Faible",
         "medium": "Moyen",

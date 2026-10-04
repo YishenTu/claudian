@@ -6,6 +6,7 @@ import { claudeCatalogFixture } from '@test/helpers/claudeModels';
 import { ProviderExecutionLifecycleRegistry } from '@/core/execution';
 import type { ProviderHost } from '@/core/providers/ProviderHost';
 import { ProviderRegistry } from '@/core/providers/ProviderRegistry';
+import { updateClaudeProviderSettings } from '@/providers/claude/settings';
 
 const sdkMock = sdkModule as unknown as {
   getLastOptions(): sdkModule.Options | undefined;
@@ -57,6 +58,7 @@ describe('Claude auxiliary execution', () => {
     'keeps inline edit clarification in one non-persistent query and releases it on reset',
     async () => {
       const context = createContext();
+      updateClaudeProviderSettings(context.host.settings, { promptSuggestions: true });
       const service = ProviderRegistry.createInlineEditService(context.host, 'claude');
       const start = () => service.editText({
         instruction: 'Improve this draft',
@@ -74,6 +76,7 @@ describe('Claude auxiliary execution', () => {
         const firstQuery = sdkMock.getLastResponse();
         const firstOptions = sdkMock.getLastOptions();
         expect(firstOptions?.persistSession).toBe(false);
+        expect(firstOptions).not.toHaveProperty('promptSuggestions');
         expect(firstOptions?.resume).toBeUndefined();
         expect(firstOptions?.thinking).toEqual({ type: 'adaptive' });
         expect(firstOptions?.effort).toBe('medium');
@@ -100,6 +103,7 @@ describe('Claude auxiliary execution', () => {
 
   it('releases a non-persistent title query after its single response', async () => {
     const context = createContext();
+    updateClaudeProviderSettings(context.host.settings, { promptSuggestions: true });
     const service = ProviderRegistry.createTitleGenerationService(context.host, 'claude');
     const callback = jest.fn();
     try {
@@ -112,6 +116,7 @@ describe('Claude auxiliary execution', () => {
       });
       const options = sdkMock.getLastOptions();
       expect(options?.persistSession).toBe(false);
+      expect(options).not.toHaveProperty('promptSuggestions');
       expect(options?.thinking).toBeUndefined();
       expect(options?.effort).toBeUndefined();
       expect(options?.abortController?.signal.aborted).toBe(true);

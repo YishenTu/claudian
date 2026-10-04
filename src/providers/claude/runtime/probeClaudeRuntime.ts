@@ -28,6 +28,8 @@ export interface ClaudeLaunchOptionOverrides {
   readonly settings?: Record<string, unknown>;
   /** Environment defaults that the process environment and configured variables override. */
   readonly envDefaults?: Record<string, string>;
+  /** Launch-specific variables that override the process environment and configured variables. */
+  readonly envOverrides?: Record<string, string>;
 }
 
 /** Launch inputs every Claude Code process shares: working folder, executable, environment and settings sources. */
@@ -43,7 +45,13 @@ export function buildClaudeLaunchOptions(
   return {
     cwd,
     pathToClaudeCodeExecutable: cliPath,
-    env: { ...overrides.envDefaults, ...process.env, ...customEnv, PATH: enhancedPath },
+    env: {
+      ...overrides.envDefaults,
+      ...process.env,
+      ...customEnv,
+      ...overrides.envOverrides,
+      PATH: enhancedPath,
+    },
     settingSources: resolveClaudeSettingSources(loadUserSettings),
     spawnClaudeCodeProcess: createCustomSpawnFunction(enhancedPath),
   };

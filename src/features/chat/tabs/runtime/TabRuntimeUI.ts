@@ -15,6 +15,7 @@ import type {
   ProviderId,
 } from '../../../../core/providers/types';
 import { getChatSettingsSnapshot } from '../../ChatSettings';
+import { ComposerPromptSuggestion } from '../../composer/ComposerPromptSuggestion';
 import { MainChatComposerDropdown } from '../../composer/MainChatComposerDropdown';
 import { LinkedContentController } from '../../linked-content';
 import type { SideChatController } from '../../side-chat/SideChatController';
@@ -33,6 +34,7 @@ import {
   getBlankTabModelOptions,
   getTabCapabilities,
   getTabChatUIConfig,
+  getTabSelectedModel,
   getTabSettingsSnapshot,
   refreshTabProviderUI,
   syncComposerDropdownForProvider,
@@ -313,6 +315,8 @@ function buildInputToolbar(
       );
       if (!isSelectionTargetCurrent()) return;
 
+      // Sole writer of a bound conversation's model; blank-tab models change through session identity.
+      if (normalizedModel !== getTabSelectedModel(tab, plugin)) tab.ui.promptSuggestion.discard();
       await plugin.updateConversation(conversationId, {
         selectedModel: normalizedModel,
       });
@@ -396,6 +400,7 @@ export function buildTabRuntimeUI(
   const contextTray = new ComposerContextTray(dom.contextRowEl, {
     onDidChange: () => {
       runtimeRef.current()?.renderer.scrollToBottomIfNeeded();
+      runtimeRef.current()?.ui.promptSuggestion.refresh();
     },
   });
   options.registerCleanup('tab composer context tray', () => contextTray.destroy());
@@ -427,6 +432,14 @@ export function buildTabRuntimeUI(
   options.registerCleanup('tab navigation sidebar', () => navigationSidebar.destroy());
 
   const ui: TabUIComponents = {
+    promptSuggestion: new ComposerPromptSuggestion(dom.inputEl, () => {
+      const tab = runtimeRef.current();
+      return !!tab && getTabCapabilities(tab, plugin).supportsPromptSuggestions === true
+        && tab.controllers.sideChatController.destination === 'main'
+        && !contextTray.hasContent
+        // The resume picker removes the input's aria-expanded instead of setting it.
+        && !tab.controllers.builtInCommandController.isResumeDropdownVisible();
+    }, dom.inputContainerEl),
     contextTray,
     ...contextManagers,
     modelSelector: toolbar.modelSelector,
@@ -439,6 +452,7 @@ export function buildTabRuntimeUI(
     toolbarMenus: toolbar.menus,
     navigationSidebar,
   };
+  options.registerCleanup('tab prompt suggestion', () => ui.promptSuggestion.destroy());
 
   const resizeObserver = new ResizeObserver(() => {
     navigationSidebar.updateVisibility();

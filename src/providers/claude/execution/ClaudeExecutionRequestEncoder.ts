@@ -135,12 +135,21 @@ export class ClaudeExecutionRequestEncoder {
           ? [...request.configuration.systemInstructions.dynamicSections]
           : undefined,
       });
+    const promptSuggestions = Boolean(
+      request.configuration.promptSuggestions && claudeSettings.promptSuggestions,
+    );
     const options: Options = {
       ...buildClaudeLaunchOptions(
         this.deps.host,
         sessionConfig.vaultWorkingDirectory,
         cliPath,
-        { settings },
+        {
+          settings,
+          // Claude Code drops suggestions when settings.json has `promptSuggestionEnabled: false`;
+          // the env var wins, so the Claudian toggle applies without changing terminal Claude Code.
+          ...(promptSuggestions
+            ? { envOverrides: { CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: 'true' } } : {}),
+        },
       ),
       systemPrompt: {
         type: 'custom',
@@ -165,6 +174,7 @@ export class ClaudeExecutionRequestEncoder {
       includePartialMessages: true,
       // Subagent cards show the SDK's periodic one-line summaries while they run.
       agentProgressSummaries: true,
+      ...(promptSuggestions ? { promptSuggestions: true } : {}),
       enableFileCheckpointing: true,
       canUseTool,
       disallowedTools: [
@@ -205,6 +215,7 @@ export class ClaudeExecutionRequestEncoder {
         additionalDirectories: options.additionalDirectories,
         enableChrome: claudeSettings.enableChrome,
         persistSession: options.persistSession,
+        promptSuggestions: options.promptSuggestions,
       }),
       allowedTools: policy.allowedTools,
     };

@@ -11,6 +11,7 @@
     "refresh": "重新整理"
   },
   "chat": {
+    "promptSuggestionHint": "按 Tab 接受",
     "selectAvailableModel": "請先選擇可用的模型再傳送。",
     "selectAvailableTitleModel": "請在 Claudian 設定中選擇可用的標題產生模型。",
     "rewind": {
@@ -314,6 +315,10 @@
       "stale": "{provider} 模型目錄已過時。點擊「探索」以重新整理。"
     },
     "claude": {
+      "promptSuggestions": {
+        "name": "提示詞建議",
+        "desc": "在空白輸入框中顯示 Claude 預測的下一條提示詞。每則建議都會在每輪對話後額外發出一次 Claude 請求，可能更快耗盡用量額度。"
+      },
       "configuration": "組態",
       "responseStyle": {
         "name": "回覆風格",
@@ -345,14 +350,14 @@
       },
       "responseStyle": {
         "name": "回覆風格",
-        "desc": "選擇支援此功能的模型中 Codex CLI 的溝通風格。從下一則訊息開始生效。",
+        "desc": "選擇支援此功能的模型中 Codex CLI 的溝通風格。",
         "pragmatic": "務實",
         "friendly": "友善",
         "neutral": "中性"
       },
       "responseVerbosity": {
         "name": "回覆詳細程度",
-        "desc": "選擇支援此功能的模型的回覆詳細程度。預設使用 Codex 設定，從下一則訊息起生效。",
+        "desc": "選擇支援此功能的模型的回覆詳細程度。預設使用 Codex 設定。",
         "default": "預設",
         "low": "低",
         "medium": "中",

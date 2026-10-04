@@ -377,6 +377,19 @@ jest.mock('@/core/device/InstallationKey', () => ({
 }));
 
 describe('ClaudeSettingsTab', () => {
+  it('offers a default-off prompt suggestions toggle in Responses and persists changes', async () => {
+    const plugin = createPlugin();
+    createSettingsRenderer().render(createContainer(), createContext(plugin));
+    const setting = findSetting('settings.claude.promptSuggestions.name');
+    const toggle = setting.toggleComponents[0];
+    expect(toggle.value).toBe(false);
+    const index = createdSettings.indexOf(setting);
+    expect(createdSettings.slice(0, index).filter(item => item.heading).at(-1)?.name).toBe('settings.responses');
+    await toggle.onChangeCallback?.(true);
+    expect(plugin.settings.providerConfigs.claude.promptSuggestions).toBe(true);
+    expect(mockSaveSettings).toHaveBeenCalled();
+  });
+
   const mockedExistsSync = fs.existsSync as jest.MockedFunction<typeof fs.existsSync>;
   const mockedStatSync = fs.statSync as jest.MockedFunction<typeof fs.statSync>;
 

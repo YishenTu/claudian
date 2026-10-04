@@ -7,6 +7,8 @@ export interface ComposerInputElement extends HTMLElement {
   selectionEnd: number | null;
   placeholder: string;
   replaceText?: (from: number, to: number, text: string) => void;
+  /** Transient placeholder presentation, never part of value or undo history. */
+  setGhostText?: (text: string | null) => void;
   /** Lets an input present completed command and skill tokens; setting it again re-resolves them. */
   setCommandResolver?: (resolver: ComposerCommandResolver | null) => void;
 }

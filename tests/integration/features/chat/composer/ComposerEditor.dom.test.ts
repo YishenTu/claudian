@@ -8,6 +8,7 @@ import { createCatalogCommandDiscoveryStore } from '@/core/providers/commands/ca
 import type { ProviderCommandDiscoveryResult } from '@/core/providers/commands/ProviderCommandDiscoveryResult';
 import type { ProviderCommandEntry } from '@/core/providers/commands/ProviderCommandEntry';
 import { ComposerEditor } from '@/features/chat/composer/ComposerEditor';
+import { ComposerPromptSuggestion } from '@/features/chat/composer/ComposerPromptSuggestion';
 import { formatComposerSessionMention } from '@/features/chat/composer/composerSessionMentions';
 import { MainChatComposerDropdown } from '@/features/chat/composer/MainChatComposerDropdown';
 import { CanvasSelectionController } from '@/features/chat/controllers/CanvasSelectionController';
@@ -560,4 +561,80 @@ it('reloads Codex skills on reopening the picker and filters the current opening
     parent.remove();
     await skills.dispose();
   }
+});
+
+
+it('accepts a visible prompt suggestion with Tab only, without sending', async () => {
+  const parent = document.body.createDiv();
+  const editor = createEditor(parent);
+  const suggestion = new ComposerPromptSuggestion(editor.element, () => true, parent);
+  const send = jest.fn();
+  editor.element.addEventListener('keydown', event => {
+    if (suggestion.handleKeydown(event)) return;
+    if (event.key === 'Enter') send();
+  }, true);
+  try {
+    editor.element.focus();
+    suggestion.beginTurn();
+    suggestion.bindTurn('turn', () => true);
+    suggestion.receive('turn', 'Add regression tests');
+    const input = within(parent).getByRole('textbox', { name: 'Message' });
+    expect(within(parent).getByText('Add regression tests')).toBeDefined();
+    expect(within(parent).getByText('(Tab to accept)')).toBeDefined();
+    expect(editor.element.value).toBe('');
+    expect(input.getAttribute('aria-description')).toBe('Add regression tests. Tab to accept');
+    expect(await axe(parent)).toHaveNoViolations();
+    fireEvent.keyDown(input, { key: 'ArrowRight' });
+    expect(editor.element.value).toBe('');
+    expect(within(parent).getByText('Add regression tests')).toBeDefined();
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(editor.element.value).toBe('Add regression tests');
+    expect(send).not.toHaveBeenCalled();
+    editor.element.value = '';
+    fireEvent.input(editor.element);
+    expect(within(parent).queryByText('Add regression tests')).toBeNull();
+    expect(within(parent).queryByText('(Tab to accept)')).toBeNull();
+    expect(within(parent).getByText('Ask to make changes, @mention files, run /commands')).toBeDefined();
+  } finally { suggestion.destroy(); editor.destroy(); parent.remove(); }
+});
+
+it('retains a hidden suggestion through text, attachments, dropdowns and IME composition', () => {
+  const parent = document.body.createDiv();
+  const editor = createEditor(parent);
+  let attachments = false;
+  const suggestion = new ComposerPromptSuggestion(editor.element, () => !attachments, parent);
+  try {
+    editor.element.value = 'My draft';
+    editor.element.focus();
+    suggestion.beginTurn();
+    suggestion.bindTurn('turn', () => true);
+    suggestion.receive('turn', 'Add regression tests');
+    const input = within(parent).getByRole('textbox', { name: 'Message' });
+    expect(within(parent).queryByText('Add regression tests')).toBeNull();
+    expect(editor.element.value).toBe('My draft');
+    for (const text of ['', 'Typing', '/command', '$skill', '!ls', '#instruction', '']) {
+      editor.element.value = text;
+      fireEvent.input(editor.element);
+      expect(within(parent).queryByText('Add regression tests') !== null).toBe(text === '');
+    }
+    attachments = true;
+    suggestion.refresh();
+    expect(within(parent).queryByText('Add regression tests')).toBeNull();
+    attachments = false;
+    suggestion.refresh();
+    expect(within(parent).getByText('Add regression tests')).toBeDefined();
+    editor.element.setAttribute('aria-expanded', 'true');
+    suggestion.refresh();
+    expect(suggestion.handleKeydown(new KeyboardEvent('keydown', { key: 'Tab' }))).toBe(false);
+    expect(within(parent).queryByText('Add regression tests')).toBeNull();
+    editor.element.setAttribute('aria-expanded', 'false');
+    suggestion.refresh();
+    fireEvent.compositionStart(input);
+    expect(suggestion.handleKeydown(new KeyboardEvent('keydown', { key: 'Tab' }))).toBe(false);
+    fireEvent.compositionEnd(input);
+    expect(suggestion.handleKeydown(new KeyboardEvent('keydown', { key: 'Tab', isComposing: true }))).toBe(false);
+    expect(suggestion.handleKeydown(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true }))).toBe(false);
+    expect(editor.element.value).toBe('');
+    expect(within(parent).getByText('Add regression tests')).toBeDefined();
+  } finally { suggestion.destroy(); editor.destroy(); parent.remove(); }
 });

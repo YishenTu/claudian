@@ -51,6 +51,7 @@ export function activateTab(tab: AssembledTabRuntime): void {
 }
 
 export function deactivateTab(tab: AssembledTabRuntime): void {
+  tab.ui.promptSuggestion.discard();
   tab.controllers.streamController.setTabActive(false);
   tab.controllers.sideChatController.setTabActive(false);
   tab.dom.contentEl.addClass('claudian-hidden');

@@ -9,6 +9,11 @@ jest.mock('@/core/device/InstallationKey', () => ({
 }));
 
 describe('Claude settings normalization', () => {
+  it.each([undefined, null, 'true', 1, false, true])('decodes opt-in prompt suggestions from %p', value => {
+    const settings = { providerConfigs: { claude: { promptSuggestions: value } } };
+    expect(getClaudeProviderSettings(settings).promptSuggestions).toBe(value === true);
+  });
+
   it.each(['default', 'My Style', null] as const)('persists the %p output style while preserving other settings', (outputStyle) => {
     const settings = { providerConfigs: { claude: { customModels: 'custom' } } };
     updateClaudeProviderSettings(settings, { outputStyle });

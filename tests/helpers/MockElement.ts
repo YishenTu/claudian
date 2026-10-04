@@ -143,6 +143,8 @@ export function createMockEl(tag = 'div'): any {
   };
 
   const defaultView = {
+    // Attribute observation is exercised with real DOM fixtures, not MockElement.
+    MutationObserver: class { observe() {} disconnect() {} },
     addEventListener: () => {},
     removeEventListener: () => {},
     requestAnimationFrame: (callback: FrameRequestCallback): number => {
