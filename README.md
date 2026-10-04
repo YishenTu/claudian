@@ -140,30 +140,30 @@ For provider-specific installation and configuration guidance, refer to the prov
 
 ```
 src/
-├── main.ts                      # Plugin entry point
-├── app/                         # Application services, and storage
+├── main.ts                      # Plugin entry point and sole composition root
+├── composition/                 # Host objects and view wiring shared by app and features
+├── app/                         # Startup, conversations, settings, and storage
 ├── core/                        # Provider-neutral execution, registry, and type contracts
-│   ├── execution/               # Provider execution, session lifecycle, and interaction contracts
+│   ├── execution/               # Run, session snapshot, and interaction primitives
 │   ├── providers/               # Provider registry and workspace services
+│   ├── process/                 # CLI discovery and managed child processes
+│   ├── prompt/                  # Prompt and context encoding
 │   ├── auxiliary/               # Shared provider auxiliary services
-│   ├── bootstrap/               # Plugin bootstrap wiring
-│   ├── security/                # Approval utilities
-│   └── ...                      # commands, prompt, storage, tools, types
+│   └── ...                      # bootstrap, commands, rpc, security, storage, tools, types
 ├── providers/
-│   ├── claude/                  # Claude SDK adaptor, prompt encoding, storage, MCP, plugins
-│   ├── codex/                   # Codex app-server adaptor, JSON-RPC transport, JSONL history
+│   ├── claude/                  # Claude Agent SDK adaptor, native history, plugins
+│   ├── codex/                   # Codex shared app-server adaptor, JSON-RPC, JSONL history
 │   ├── grok/                    # Grok Build ACP adaptor, native history, models, and tools
-│   ├── opencode/                # OpenCode adaptor
+│   ├── opencode/                # OpenCode ACP and HTTP adaptors, shared server
 │   ├── pi/                      # Pi RPC adaptor, model discovery, JSONL history
-│   └── acp/                     # Agent Client Protocol shared transport
+│   └── acp/                     # Agent Client Protocol shared mechanics
 ├── features/
-│   ├── chat/                    # Sidebar chat: tabs, controllers, renderers
+│   ├── chat/                    # Sidebar chat: tabs, workspace lifecycle, controllers, renderers
 │   ├── inline-edit/             # Inline edit modal and provider-backed edit services
-│   └── settings/                # Settings shell with provider tabs
-├── shared/                      # Reusable UI components and modals
+│   └── settings/                # Settings shell, provider tabs, Vault skill management
+├── shared/                      # Reusable UI components, settings controls, mention/dropdown
 ├── i18n/                        # Internationalization (10 locales)
-├── types/                       # Shared ambient types
-├── utils/                       # Cross-cutting utilities
+├── utils/                       # Domain-free leaf helpers
 └── style/                       # Modular CSS
 ```
 
