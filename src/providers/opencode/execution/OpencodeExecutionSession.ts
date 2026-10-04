@@ -413,6 +413,8 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
         this.nativeInfo = native;
         await projectOpencodeMetadata(this.plugin, native, this.kernelMetadataController.signal);
       } else {
+        // Configuring a reused kernel is native work: cancellation must stop it.
+        run.ownsNativeWork = true;
         this.snapshot = this.#createSnapshot('executing');
         phase = 'run';
       }
@@ -423,7 +425,6 @@ export class OpencodeExecutionSession implements ProviderExecutionSession, Steer
       assertOpencodeModelAvailable(this.plugin.settings, request.configuration.model);
       this.#getRunNormalizer(run).reset();
       run.acceptingLiveOutput = true;
-      run.ownsNativeWork = true;
       const promptStartedAt = Date.now();
       const response = await kernel.prompt({
         prompt: buildPromptBlocks(

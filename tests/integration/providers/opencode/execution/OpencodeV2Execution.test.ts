@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
@@ -17,7 +17,7 @@ const fixture = `#!/usr/bin/env node
 const http = require('node:http');
 if (process.argv.includes('--version')) { console.log('opencode v2.0.12'); return; }
 if (!process.argv.includes('serve')) process.exit(3);
-let onSteer, selectedAgents = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0;
+let onSteer, selectedAgents = [], inbox = [], lateChild, feed, permission, grandApproval, form, mcpAnswer, settleInventory = false, cancelRace = false, ownedForms = [], idle = true, waiter, messages = [], turn = 0, modelRequests = 0, releaseModel;
 let activated = !process.env.ACTIVATION_DELAY_MS, activation;
 const emit = (type, data) => feed.write('data: ' + JSON.stringify({ type, data: { sessionID: 'ses_test', ...data } }) + '\\n\\n');
 const server = http.createServer(async (req, res) => {
@@ -67,6 +67,10 @@ const server = http.createServer(async (req, res) => {
     emit('session.inbox.cancelled', { inboxID: id }); res.writeHead(204).end(); return;
   }
   if (route.endsWith('/interrupt')) { emit('session.execution.interrupted', { reason: 'user' }); res.end(JSON.stringify({ interrupted: true })); return; }
+  if (route.endsWith('/model') && process.env.HOLD_SECOND_MODEL && ++modelRequests === 2) {
+    require('node:fs').writeFileSync(process.env.HOLD_SECOND_MODEL, '');
+    await new Promise(resolve => { releaseModel = resolve; setTimeout(resolve, 1000); });
+  }
   if (route.endsWith('/model') || route.endsWith('/agent')) { if (body.agent) selectedAgents.push(body.agent); if (process.env.LATE_CHILD_STAGE === 'configuration') lateChild?.(); res.writeHead(204).end(); return; }
   if (route === '/api/session/ses_grand/permission/per_grand/reply') { grandApproval = body.decision; res.writeHead(204).end(); return; }
   if (route.endsWith('/permission/per_test/reply')) { permission = body.decision; res.writeHead(204).end(); return; }
@@ -74,6 +78,7 @@ const server = http.createServer(async (req, res) => {
   if (route.endsWith('/message')) { res.end(JSON.stringify({ data: messages, cursor: {} })); return; }
   if (route.endsWith('/wait')) { if (idle) res.writeHead(204).end(); else waiter = res; return; }
   if (route.endsWith('/prompt') || route.endsWith('/command')) {
+    releaseModel?.();
     if (body.text.includes('Old local history')) { res.writeHead(400).end(); return; }
     const assistantMessageID = 'msg_assistant_' + (++turn);
     idle = false; res.end(JSON.stringify({ data: { id: body.id ?? 'msg_user' } }));
@@ -386,6 +391,29 @@ it('interrupts HTTP execution and continues the same native session on the next 
     expect(continued.at(-1)?.type).toBe('turn_completed');
     expect(f.session.getSnapshot()).toMatchObject({ providerSessionId: 'ses_test' });
   } finally { await f.dispose(); }
+}, 15000);
+
+it('keeps a turn cancelled during configuration from changing the next turn approval policy', async () => {
+  const hold = path.join(realpathSync(mkdtempSync(path.join(tmpdir(), 'claudian-http-hold-'))), 'model');
+  const f = createFixture(false, undefined, `HOLD_SECOND_MODEL=${hold}`);
+  try {
+    for await (const event of f.session.execute(request()).events) void event;
+    expect(f.approvals).toHaveLength(1);
+    const yolo = request();
+    const cancelled = f.session.execute({ ...yolo, configuration: { ...yolo.configuration, permissionMode: 'yolo' } });
+    const cancelledEvents: ProviderExecutionEvent[] = [];
+    const consumed = (async () => { for await (const event of cancelled.events) cancelledEvents.push(event); })();
+    const deadline = Date.now() + 3000;
+    while (!existsSync(hold) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(existsSync(hold)).toBe(true);
+    cancelled.cancel();
+    await consumed;
+    expect(cancelledEvents.at(-1)?.type).toBe('cancelled');
+    const events: ProviderExecutionEvent[] = [];
+    for await (const event of f.session.execute(request()).events) events.push(event);
+    expect(events.at(-1)?.type).toBe('turn_completed');
+    expect(f.approvals).toHaveLength(2);
+  } finally { await f.dispose(); rmSync(path.dirname(hold), { recursive: true, force: true }); }
 }, 15000);
 
 describe('native steering', () => {
