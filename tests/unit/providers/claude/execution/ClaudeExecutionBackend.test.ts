@@ -3703,33 +3703,35 @@ describe('Claude prompt suggestions', () => {
 
   it('opts in only for requested main turns and restarts when the setting changes', async () => {
     const host = createHost();
-    // A configured value stays in force unless Claudian opts the launch in.
-    jest.mocked(host.getActiveEnvironmentVariables).mockReturnValue('CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false');
     const session = new ClaudeExecutionBackend(host).createSession(createConfig());
     const request = createRequest();
     Object.assign(request.configuration, { promptSuggestions: true });
-    const suggestionEnv = () => sdkMock.getLastOptions()?.env?.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION;
+    const launch = () => sdkMock.getLastOptions();
+    const flagEnabled = () => (launch()?.settings as { promptSuggestionEnabled?: boolean } | undefined)
+      ?.promptSuggestionEnabled;
     try {
       await collectEvents(session.execute(request).events);
-      expect(sdkMock.getLastOptions()).not.toHaveProperty('promptSuggestions');
-      expect(suggestionEnv()).toBe('false');
+      expect(launch()).not.toHaveProperty('promptSuggestions');
+      expect(flagEnabled()).toBeUndefined();
       const initialQuery = sdkMock.getLastResponse();
       updateClaudeProviderSettings(host.settings, { promptSuggestions: true });
       await collectEvents(session.execute(request).events);
-      expect(sdkMock.getLastOptions()?.promptSuggestions).toBe(true);
-      // The launch env overrides native `promptSuggestionEnabled: false` in settings.json.
-      expect(suggestionEnv()).toBe('true');
+      expect(launch()?.promptSuggestions).toBe(true);
+      // The flag-settings layer outranks `promptSuggestionEnabled: false` in settings.json, while
+      // leaving the env override unset keeps Claude Code's near-limit suppression.
+      expect(flagEnabled()).toBe(true);
+      expect(launch()?.env).not.toHaveProperty('CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION');
       expect(sdkMock.getLastResponse()).not.toBe(initialQuery);
       const enabledQuery = sdkMock.getLastResponse();
       updateClaudeProviderSettings(host.settings, { promptSuggestions: false });
       await collectEvents(session.execute(request).events);
-      expect(sdkMock.getLastOptions()).not.toHaveProperty('promptSuggestions');
-      expect(suggestionEnv()).toBe('false');
+      expect(launch()).not.toHaveProperty('promptSuggestions');
+      expect(flagEnabled()).toBeUndefined();
       expect(sdkMock.getLastResponse()).not.toBe(enabledQuery);
       updateClaudeProviderSettings(host.settings, { promptSuggestions: true });
       await collectEvents(session.execute(createRequest()).events);
-      expect(sdkMock.getLastOptions()).not.toHaveProperty('promptSuggestions');
-      expect(suggestionEnv()).toBe('false');
+      expect(launch()).not.toHaveProperty('promptSuggestions');
+      expect(flagEnabled()).toBeUndefined();
     } finally { await session.dispose(); }
   });
 

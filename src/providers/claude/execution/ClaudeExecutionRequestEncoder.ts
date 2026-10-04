@@ -143,13 +143,7 @@ export class ClaudeExecutionRequestEncoder {
         this.deps.host,
         sessionConfig.vaultWorkingDirectory,
         cliPath,
-        {
-          settings,
-          // Claude Code drops suggestions when settings.json has `promptSuggestionEnabled: false`;
-          // the env var wins, so the Claudian toggle applies without changing terminal Claude Code.
-          ...(promptSuggestions
-            ? { envOverrides: { CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: 'true' } } : {}),
-        },
+        { settings },
       ),
       systemPrompt: {
         type: 'custom',
@@ -159,7 +153,14 @@ export class ClaudeExecutionRequestEncoder {
       model,
       ...(request.configuration.readableRoots?.length ? { additionalDirectories: [...request.configuration.readableRoots] } : {}),
       ...(effort ? { effort } : {}),
-      ...(claudeSettings.outputStyle ? { settings: { outputStyle: claudeSettings.outputStyle } } : {}),
+      ...(claudeSettings.outputStyle || promptSuggestions ? {
+        settings: {
+          ...(claudeSettings.outputStyle ? { outputStyle: claudeSettings.outputStyle } : {}),
+          // The flag layer outranks `promptSuggestionEnabled: false` in settings.json. The
+          // CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION override would also bypass near-limit suppression.
+          ...(promptSuggestions ? { promptSuggestionEnabled: true } : {}),
+        },
+      } : {}),
       thinking: { type: 'adaptive' },
       abortController,
       permissionMode: sdkPermissionMode,
