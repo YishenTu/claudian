@@ -1,5 +1,3 @@
-import '@/providers';
-
 import { createHarness, deferred, FakeSession, requestedScope } from '@test/helpers/ChatExecutionHarness';
 import { createFixture } from '@test/helpers/ChatInputHarness';
 

@@ -40,8 +40,6 @@ export interface ProviderCapabilities {
   supportsProviderCommands: boolean;
   supportsImageAttachments: boolean;
   supportsTurnSteer?: boolean;
-  /** Can predict a next prompt after a requested turn. */
-  supportsPromptSuggestions?: boolean;
   supportsFastMode?: boolean;
   /** Can report authoritative main-agent output tokens and elapsed turn time. */
   supportsResponseThroughput?: boolean;

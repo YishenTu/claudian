@@ -163,8 +163,10 @@ export class ComposerEditor {
         EditorView.contentAttributes.of({
           'aria-label': 'Message', 'aria-multiline': 'true', role: 'textbox', spellcheck: 'true', autocorrect: 'on',
         }),
-        EditorView.contentAttributes.of(view => this.ghostText && view.state.doc.length === 0
-          ? { 'aria-description': `${this.ghostText}. ${t('chat.promptSuggestionHint')}` } : null),
+        EditorView.contentAttributes.of(view => {
+          const description = this.ghostDescription(view.state.doc.length);
+          return description ? { 'aria-description': description } : null;
+        }),
         EditorView.domEventHandlers({ input: event => { event.stopPropagation(); return false; } }),
         EditorView.updateListener.of(update => {
           this.state = update.state;
@@ -235,12 +237,20 @@ export class ComposerEditor {
   private refreshPlaceholder(): void {
     const text = this.ghostText ?? this.placeholderText;
     this.element.setAttribute('data-placeholder', text);
-    if (this.ghostText && this.state.doc.length === 0) {
-      this.element.setAttribute('aria-description', t('chat.promptSuggestionHint'));
-    } else this.element.removeAttribute('aria-description');
     this.apply(this.state.update({
       effects: this.placeholderConfig.reconfigure(placeholder(this.ghostText ? this.createGhostContent(this.ghostText) : text)),
     }));
+  }
+
+  private ghostDescription(docLength: number): string | null {
+    return this.ghostText && docLength === 0 ? `${this.ghostText}. ${t('chat.promptSuggestionHint')}` : null;
+  }
+
+  /** Until the editor mounts on first focus, the host is the textbox and carries the description itself. */
+  private syncHostDescription(): void {
+    const description = this.view ? null : this.ghostDescription(this.state.doc.length);
+    if (description) this.element.setAttribute('aria-description', description);
+    else this.element.removeAttribute('aria-description');
   }
 
   /** CodeMirror hides the placeholder from assistive tech; the content `aria-description` announces it. */
@@ -272,6 +282,7 @@ export class ComposerEditor {
       this.element.removeAttribute('aria-multiline');
       this.element.setAttribute('tabindex', '-1');
       this.view = new EditorView({ state: this.state, parent: this.element });
+      this.syncHostDescription();
       const attributes = ['aria-autocomplete', 'aria-expanded', 'aria-activedescendant', 'aria-controls', 'aria-haspopup'];
       const syncAria = () => {
         for (const attribute of attributes) {
@@ -333,6 +344,7 @@ export class ComposerEditor {
     else {
       this.state = transaction.state;
       this.element.textContent = this.state.doc.toString();
+      this.syncHostDescription();
     }
   }
 

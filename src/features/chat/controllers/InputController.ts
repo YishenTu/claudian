@@ -1199,7 +1199,7 @@ export class InputController {
         ...buildChatExecutionConfiguration(
           settings, this.deps.plugin.getSessionSnapshotDirectory(), dynamicSystemPromptSections,
         ),
-        ...(this.#getActiveCapabilities().supportsPromptSuggestions ? { promptSuggestions: true } : {}),
+        promptSuggestions: true,
       },
       context: {
         ...(request.selections !== undefined ? { selections: captureSelectionSnapshots(request) } : {}),

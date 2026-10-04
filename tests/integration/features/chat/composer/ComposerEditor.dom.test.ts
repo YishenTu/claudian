@@ -583,6 +583,7 @@ it('accepts a visible prompt suggestion with Tab only, without sending', async (
     expect(within(parent).getByText('(Tab to accept)')).toBeDefined();
     expect(editor.element.value).toBe('');
     expect(input.getAttribute('aria-description')).toBe('Add regression tests. Tab to accept');
+    expect(editor.element.getAttribute('aria-description')).toBeNull();
     expect(await axe(parent)).toHaveNoViolations();
     fireEvent.keyDown(input, { key: 'ArrowRight' });
     expect(editor.element.value).toBe('');
@@ -595,6 +596,30 @@ it('accepts a visible prompt suggestion with Tab only, without sending', async (
     expect(within(parent).queryByText('Add regression tests')).toBeNull();
     expect(within(parent).queryByText('(Tab to accept)')).toBeNull();
     expect(within(parent).getByText('Ask to make changes, @mention files, run /commands')).toBeDefined();
+  } finally { suggestion.destroy(); editor.destroy(); parent.remove(); }
+});
+
+it('describes a suggestion on the unfocused host textbox and hands the description to the editor on focus', () => {
+  const parent = document.body.createDiv();
+  const editor = createEditor(parent);
+  const suggestion = new ComposerPromptSuggestion(editor.element, () => true, parent);
+  try {
+    suggestion.beginTurn();
+    suggestion.bindTurn('turn', () => true);
+    suggestion.receive('turn', 'Add regression tests');
+    const host = within(parent).getByRole('textbox', { name: 'Message' });
+    expect(host).toBe(editor.element);
+    expect(host.getAttribute('aria-description')).toBe('Add regression tests. Tab to accept');
+    // A restored draft hides the suggestion without an input event.
+    editor.element.value = 'Restored draft';
+    expect(host.getAttribute('aria-description')).toBeNull();
+    editor.element.value = '';
+    expect(host.getAttribute('aria-description')).toBe('Add regression tests. Tab to accept');
+    editor.element.focus();
+    const input = within(parent).getByRole('textbox', { name: 'Message' });
+    expect(input).not.toBe(editor.element);
+    expect(input.getAttribute('aria-description')).toBe('Add regression tests. Tab to accept');
+    expect(editor.element.getAttribute('aria-description')).toBeNull();
   } finally { suggestion.destroy(); editor.destroy(); parent.remove(); }
 });
 

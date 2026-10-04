@@ -434,8 +434,7 @@ export function buildTabRuntimeUI(
   const ui: TabUIComponents = {
     promptSuggestion: new ComposerPromptSuggestion(dom.inputEl, () => {
       const tab = runtimeRef.current();
-      return !!tab && getTabCapabilities(tab, plugin).supportsPromptSuggestions === true
-        && tab.controllers.sideChatController.destination === 'main'
+      return !!tab && tab.controllers.sideChatController.destination === 'main'
         && !contextTray.hasContent
         // The resume picker removes the input's aria-expanded instead of setting it.
         && !tab.controllers.builtInCommandController.isResumeDropdownVisible();

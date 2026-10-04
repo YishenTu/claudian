@@ -292,21 +292,6 @@ it('keeps content present on arrival, hides for text and attachments, then resto
   } finally { await view.dispose(); }
 });
 
-it('does not display suggestions without the provider capability', async () => {
-  const backend = new FakeSideBackend();
-  const capabilities = ProviderRegistry.getCapabilities('claude');
-  jest.spyOn(ProviderRegistry, 'getCapabilities').mockReturnValue({ ...capabilities, supportsPromptSuggestions: false });
-  const view = await createView(backend);
-  try {
-    const turnId = await finishFakeTurn(view, backend);
-    expect(backend.latest.requests[0].configuration).not.toHaveProperty('promptSuggestions');
-    backend.latest.emitSessionEvent({ type: 'prompt_suggestion', originatingTurnId: turnId, suggestion: 'Unsupported suggestion' });
-    expect(within(view.tab.dom.inputEl).getByRole('textbox')).toBeDefined();
-    expect(within(view.tab.dom.inputEl).queryByText('Unsupported suggestion')).toBeNull();
-  } finally { await view.dispose(); }
-});
-
-
 it.each(['before', 'after'] as const)('drops a trailing prediction while its originating tab is inactive (turn started %s switching away)', async started => {
   const backend = new FakeSideBackend();
   const view = await createView(backend);
